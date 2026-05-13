@@ -8,6 +8,7 @@ import Management from './pages/Management';
 import Dashboard from './pages/Dashboard';
 import Operator from './pages/operator';
 import LineSetup from './pages/LineSetup';
+import AddUser from './pages/AddUser';
 
 function ProtectedLayout({ session }) {
   const [isOpen, setIsOpen] = useState(window.innerWidth > 768);
@@ -63,6 +64,10 @@ function ProtectedLayout({ session }) {
           <Link to="/linesetup" onClick={() => window.innerWidth <= 768 && setIsOpen(false)} style={{ ...navLinkStyle, backgroundColor: '#34495e' }}>⚙️ ตั้งค่าผังไลน์ (Setup)</Link>
           <Link to="/register" onClick={() => window.innerWidth <= 768 && setIsOpen(false)} style={navLinkStyle}>➕ เพิ่มพนักงาน</Link>
           <Link to="/operator" onClick={() => window.innerWidth <= 768 && setIsOpen(false)} style={navLinkStyle}>👥 ฐานข้อมูลพนักงาน</Link>
+
+          <div style={{ borderTop: '1px solid #34495e', marginTop: '8px', paddingTop: '8px' }}>
+            <Link to="/add-user" onClick={() => window.innerWidth <= 768 && setIsOpen(false)} style={{ ...navLinkStyle, color: '#f39c12' }}>🔑 จัดการผู้ใช้งาน</Link>
+          </div>
         </div>
 
         <div style={{ marginTop: 'auto' }}>
@@ -85,6 +90,7 @@ function ProtectedLayout({ session }) {
             <Route path="/management" element={<Management />} />
             <Route path="/operator" element={<Operator />} />
             <Route path="/linesetup" element={<LineSetup />} />
+            <Route path="/add-user" element={<AddUser />} />
           </Routes>
         </div>
       </main>
