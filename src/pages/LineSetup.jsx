@@ -51,7 +51,8 @@ export default function LineSetup() {
     try {
       setIsUploading(true);
       const fileExt = file.name.split('.').pop();
-      const fileName = `${selectedLine}_${Date.now()}.${fileExt}`;
+      const safeLineName = selectedLine.replace(/[^a-zA-Z0-9]/g, '_');
+      const fileName = `layout_${safeLineName}_${Date.now()}.${fileExt}`;
       const { error: uploadError } = await supabase.storage.from('employee-photos').upload(`layouts/${fileName}`, file);
       if (uploadError) throw uploadError;
       const { data } = supabase.storage.from('employee-photos').getPublicUrl(`layouts/${fileName}`);
