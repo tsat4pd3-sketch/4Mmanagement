@@ -11,6 +11,13 @@ export default function Management() {
   const [lines, setLines] = useState([]);
   const [show4MModal, setShow4MModal] = useState(null);
   const [log4MForm, setLog4MForm] = useState({ category: 'Man', description: '' });
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
 
   useEffect(() => {
     const fetchLines = async () => {
@@ -87,93 +94,121 @@ export default function Management() {
       }
     }
     return (
-      <div draggable onDragStart={(e) => handleDragStart(e, worker)}
+      <div
+        draggable
+        onDragStart={(e) => handleDragStart(e, worker)}
         title={isLowSkill ? `ขาดทักษะ: ${missingSkills.join(', ')}` : 'ผ่านเกณฑ์'}
         style={{
-          padding: '2px 4px', backgroundColor: isLowSkill ? '#fff5f5' : 'white',
+          padding: '2px 4px',
+          backgroundColor: isLowSkill ? 'rgba(231,76,60,0.15)' : 'rgba(34,197,94,0.1)',
           border: isLowSkill ? '2px solid #e74c3c' : '1.5px solid #27ae60',
-          borderRadius: '5px', cursor: 'grab', display: 'flex', alignItems: 'center', gap: '4px',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.1)', width: isInLayout ? '65px' : 'auto',
+          borderRadius: 5, cursor: 'grab', display: 'flex', alignItems: 'center', gap: 4,
+          boxShadow: '0 2px 4px rgba(0,0,0,0.3)', width: isInLayout ? '65px' : 'auto',
           zIndex: 50, userSelect: 'none'
-        }}>
-        <img src={worker.employees.image_url || 'https://via.placeholder.com/50'} style={{ width: '18px', height: '18px', borderRadius: '50%', objectFit: 'cover', pointerEvents: 'none' }} />
+        }}
+      >
+        <img
+          src={worker.employees.image_url || 'https://via.placeholder.com/50'}
+          style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'cover', pointerEvents: 'none' }}
+        />
         <div style={{ flex: 1, minWidth: 0, pointerEvents: 'none' }}>
-          <div style={{ fontWeight: 'bold', fontSize: '7px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <div style={{ fontWeight: 700, fontSize: 7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text)' }}>
             {worker.employees.name.split(' ')[0]}
           </div>
-          {isInLayout && <div style={{ fontSize: '6px', color: isLowSkill ? '#e74c3c' : '#27ae60' }}>{isLowSkill ? '⚠️ Gap' : '✅ OK'}</div>}
+          {isInLayout && <div style={{ fontSize: 6, color: isLowSkill ? '#e74c3c' : '#27ae60' }}>{isLowSkill ? '⚠️ Gap' : '✅ OK'}</div>}
         </div>
       </div>
     );
   };
 
-  return (
-    <div style={{ display: 'flex', width: '100%', height: 'calc(100vh - 80px)', backgroundColor: '#f0f2f5', overflow: 'hidden' }}>
+  const poolStyle = isMobile
+    ? { width: '100%', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '10px 12px', display: 'flex', flexDirection: 'column', flexShrink: 0 }
+    : { width: 220, background: 'var(--bg2)', borderRight: '1px solid var(--border)', padding: 15, display: 'flex', flexDirection: 'column', flexShrink: 0 };
 
-      {/* Pool */}
-      <div onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, 'Pool')}
-        style={{ width: '220px', backgroundColor: '#fff', borderRight: '1px solid #ddd', padding: '15px', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-          <h3 style={{ margin: 0, fontSize: '16px' }}>🔵 พร้อมทำงาน</h3>
-          <select value={selectedLine} onChange={(e) => setSelectedLine(e.target.value)} style={{ padding: '4px', borderRadius: '5px', fontSize: '12px' }}>
+  const poolInnerStyle = isMobile
+    ? { display: 'flex', flexDirection: 'row', gap: 6, overflowX: 'auto', paddingBottom: 4, minHeight: 42 }
+    : { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: 'calc(100vh - 80px)', background: 'var(--bg)', overflow: 'hidden' }}>
+
+      <div onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, 'Pool')} style={poolStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isMobile ? 8 : 14, flexShrink: 0 }}>
+          <h3 style={{ margin: 0, fontSize: isMobile ? 14 : 15, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
+            🔵 พร้อมทำงาน
+          </h3>
+          <select
+            value={selectedLine}
+            onChange={(e) => setSelectedLine(e.target.value)}
+            style={{ padding: '4px 8px', borderRadius: 6, fontSize: 12, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', width: 'auto' }}
+          >
             {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
           </select>
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={poolInnerStyle}>
           {workers.filter(w => !w.assigned_line).map(w => <WorkerCard key={w.id} worker={w} />)}
           {workers.filter(w => !w.assigned_line).length === 0 && (
-            <div style={{ color: '#bdc3c7', fontSize: '12px', textAlign: 'center', padding: '20px' }}>ไม่มีพนักงานใน Pool</div>
+            <div style={{ color: 'var(--muted)', fontSize: 12, textAlign: 'center', padding: '10px 20px' }}>ไม่มีพนักงานใน Pool</div>
           )}
         </div>
       </div>
 
-      {/* Layout */}
-      <div style={{ flex: 1, position: 'relative', padding: '10px', display: 'flex', justifyContent: 'center' }}>
+      <div style={{ flex: 1, position: 'relative', padding: 10, display: 'flex', justifyContent: 'center', overflow: 'hidden' }}>
         <div style={{
-          position: 'relative', width: '100%', maxWidth: '1200px', height: '100%',
+          position: 'relative', width: '100%', maxWidth: 1200,
+          height: '100%',
           backgroundImage: lineLayout ? `url('${lineLayout}')` : 'none',
           backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center',
-          backgroundColor: lineLayout ? 'transparent' : 'white', borderRadius: '15px',
+          backgroundColor: lineLayout ? 'transparent' : 'var(--bg3)', borderRadius: 12,
+          border: lineLayout ? 'none' : '1px solid var(--border)',
         }}>
-          {!lineLayout && <div style={{ textAlign: 'center', marginTop: '20%', color: '#bdc3c7' }}>กรุณาอัปโหลดรูปผังไลน์ที่หน้า Setup</div>}
+          {!lineLayout && (
+            <div style={{ textAlign: 'center', marginTop: '20%', color: 'var(--muted)', fontSize: 14 }}>
+              กรุณาอัปโหลดรูปผังไลน์ที่หน้า Setup
+            </div>
+          )}
           {dynamicStations.map(st => {
             const workerAtStation = workers.find(w => String(w.assigned_line) === String(st.id));
             const has4M = fourMLogs.some(m => m.line_name === st.line_name);
             return (
-              <div key={st.id} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, st.id)}
+              <div
+                key={st.id}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => handleDrop(e, st.id)}
                 style={{
                   position: 'absolute', top: st.pos_top, left: st.pos_left, transform: 'translate(-50%, -50%)',
-                  width: '75px', minHeight: '30px', border: '1px dashed #bdc3c7', borderRadius: '6px',
-                  backgroundColor: 'rgba(255,255,255,0.6)', display: 'flex', flexDirection: 'column',
-                  alignItems: 'center', justifyContent: 'center', padding: '2px', transition: 'all 0.2s'
-                }}>
-                <div style={{ fontSize: '7px', fontWeight: 'bold', marginBottom: '1px', color: '#7f8c8d', textAlign: 'center', width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 2px' }}>
+                  width: 75, minHeight: 30,
+                  border: '1px dashed rgba(255,255,255,0.3)', borderRadius: 6,
+                  backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center', padding: 2, transition: 'all 0.2s'
+                }}
+              >
+                <div style={{ fontSize: 7, fontWeight: 700, marginBottom: 1, color: 'var(--text2)', textAlign: 'center', width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 2px' }}>
                   <span>{st.station_name}</span>
                   <button
                     onClick={(e) => { e.stopPropagation(); setShow4MModal({ stationId: st.id, lineName: st.line_name }); }}
-                    style={{ background: has4M ? '#e74c3c' : '#95a5a6', border: 'none', borderRadius: '3px', color: 'white', fontSize: '6px', cursor: 'pointer', padding: '1px 3px', lineHeight: 1 }}
+                    style={{ background: has4M ? '#e74c3c' : 'var(--border2)', border: 'none', borderRadius: 3, color: 'white', fontSize: 6, cursor: 'pointer', padding: '1px 3px', lineHeight: 1 }}
                     title="บันทึก 4M Change"
                   >
                     {has4M ? '🚨' : '+4M'}
                   </button>
                 </div>
-                {workerAtStation ? <WorkerCard worker={workerAtStation} isInLayout={true} /> : <div style={{ color: '#bdc3c7', fontSize: '12px' }}>+</div>}
+                {workerAtStation ? <WorkerCard worker={workerAtStation} isInLayout={true} /> : <div style={{ color: 'var(--muted)', fontSize: 12 }}>+</div>}
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* 4M Log Modal */}
       {show4MModal && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 }}>
-          <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '30px', width: '420px', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
-            <h3 style={{ marginTop: 0, color: '#c0392b' }}>🚨 บันทึก 4M Change</h3>
-            <p style={{ color: '#888', fontSize: '13px', marginTop: '-10px' }}>ไลน์: {show4MModal.lineName}</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div className="overlay">
+          <div className="modal" style={{ width: 'min(420px, 94vw)' }}>
+            <h3 style={{ marginTop: 0, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>🚨 บันทึก 4M Change</h3>
+            <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -10 }}>ไลน์: {show4MModal.lineName}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label style={labelStyle}>ประเภทการเปลี่ยนแปลง (4M Category)</label>
-                <select value={log4MForm.category} onChange={e => setLog4MForm({ ...log4MForm, category: e.target.value })} style={inputStyle}>
+                <label style={labelSt}>ประเภทการเปลี่ยนแปลง</label>
+                <select value={log4MForm.category} onChange={e => setLog4MForm({ ...log4MForm, category: e.target.value })}>
                   <option value="Man">Man — คน / พนักงาน</option>
                   <option value="Machine">Machine — เครื่องจักร</option>
                   <option value="Material">Material — วัสดุ</option>
@@ -181,21 +216,26 @@ export default function Management() {
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>รายละเอียด</label>
+                <label style={labelSt}>รายละเอียด</label>
                 <textarea
                   value={log4MForm.description}
                   onChange={e => setLog4MForm({ ...log4MForm, description: e.target.value })}
                   placeholder="ระบุรายละเอียดการเปลี่ยนแปลง..."
                   rows={3}
-                  style={{ ...inputStyle, resize: 'vertical' }}
+                  style={{ resize: 'vertical' }}
                 />
               </div>
-              <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
-                <button onClick={handleSave4MLog} style={{ flex: 2, padding: '11px', backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
+              <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                <button
+                  onClick={handleSave4MLog}
+                  style={{ flex: 2, padding: 11, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)' }}
+                >
                   บันทึก 4M Log
                 </button>
-                <button onClick={() => { setShow4MModal(null); setLog4MForm({ category: 'Man', description: '' }); }}
-                  style={{ flex: 1, padding: '11px', backgroundColor: '#95a5a6', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>
+                <button
+                  onClick={() => { setShow4MModal(null); setLog4MForm({ category: 'Man', description: '' }); }}
+                  style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8 }}
+                >
                   ยกเลิก
                 </button>
               </div>
@@ -203,14 +243,12 @@ export default function Management() {
           </div>
         </div>
       )}
-
-      <style>{`
-        @keyframes blink { 0% {opacity: 1;} 50% {opacity: 0.2;} 100% {opacity: 1;} }
-        .blink { animation: blink 1s infinite; color: red; }
-      `}</style>
     </div>
   );
 }
 
-const labelStyle = { display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '600', color: '#555' };
-const inputStyle = { width: '100%', padding: '9px 10px', borderRadius: '7px', border: '1px solid #ddd', fontSize: '14px', boxSizing: 'border-box' };
+const labelSt = {
+  display: 'block', fontSize: 12, fontWeight: 600,
+  color: 'var(--text2)', marginBottom: 6,
+  letterSpacing: '0.04em', textTransform: 'uppercase'
+};
