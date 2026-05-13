@@ -5,7 +5,7 @@ import Register from './pages/Register';
 import Checkin from './pages/Checkin';
 import Management from './pages/Management';
 import Dashboard from './pages/Dashboard';
-import Operator from './pages/Operator';
+import Operator from './pages/operator';
 import LineSetup from './pages/LineSetup';
 
 function App() {
