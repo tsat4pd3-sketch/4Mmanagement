@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
 export default function LineSetup() {
-  const [selectedLine, setSelectedLine] = useState('Line A');
+  const [lines, setLines] = useState([]);
+  const [selectedLine, setSelectedLine] = useState('');
   const [layoutImage, setLayoutImage] = useState(null);
   const [stations, setStations] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [tempPos, setTempPos] = useState(null); 
+  const [tempPos, setTempPos] = useState(null);
   const [formData, setFormData] = useState({ id: null, name: '', minScore: 70, skills: [] });
 
   const skillOptions = [
@@ -17,7 +18,18 @@ export default function LineSetup() {
     { id: 'skill_management', label: 'งานบริหาร' }
   ];
 
-  useEffect(() => { fetchLineData(); }, [selectedLine]);
+  useEffect(() => {
+    const fetchLines = async () => {
+      const { data } = await supabase.from('production_lines').select('id, name').order('name');
+      setLines(data || []);
+      if (data?.length > 0) setSelectedLine(data[0].name);
+    };
+    fetchLines();
+  }, []);
+
+  useEffect(() => {
+    if (selectedLine) fetchLineData();
+  }, [selectedLine]);
 
   const fetchLineData = async () => {
     const { data: layoutData } = await supabase.from('line_layouts').select('*').eq('line_name', selectedLine).single();
@@ -39,7 +51,7 @@ export default function LineSetup() {
       await supabase.from('line_layouts').upsert({ line_name: selectedLine, image_url: data.publicUrl }, { onConflict: 'line_name' });
       setLayoutImage(data.publicUrl);
       alert('อัปโหลดสำเร็จ!');
-    } catch (error) { alert('Error: ' + error.message); } 
+    } catch (error) { alert('Error: ' + error.message); }
     finally { setIsUploading(false); }
   };
 
@@ -60,19 +72,18 @@ export default function LineSetup() {
 
   const handleSaveStation = async () => {
     if (!formData.name || formData.skills.length === 0) return alert('กรุณาระบุชื่อและสกิล');
+    const existingStation = stations.find(s => s.id === formData.id);
     const payload = {
       line_name: selectedLine,
       station_name: formData.name,
-      pos_top: tempPos ? tempPos.top : stations.find(s => s.id === formData.id).pos_top,
-      pos_left: tempPos ? tempPos.left : stations.find(s => s.id === formData.id).pos_left,
+      pos_top: tempPos ? tempPos.top : existingStation?.pos_top,
+      pos_left: tempPos ? tempPos.left : existingStation?.pos_left,
       required_skill_field: formData.skills.join(','),
       min_skill_score: parseInt(formData.minScore)
     };
-
-    const { error } = formData.id 
+    const { error } = formData.id
       ? await supabase.from('workstations').update(payload).eq('id', formData.id)
       : await supabase.from('workstations').insert([payload]);
-
     if (!error) { fetchLineData(); setTempPos(null); setFormData({ id: null, name: '', minScore: 70, skills: [] }); }
   };
 
@@ -89,19 +100,19 @@ export default function LineSetup() {
 
   return (
     <div style={{ padding: '20px', display: 'flex', gap: '20px', height: 'calc(100vh - 40px)' }}>
-      {/* ฝั่งซ้าย: รูปภาพ Layout */}
+      {/* ฝั่งซ้าย: Layout */}
       <div style={{ flex: 1, backgroundColor: '#fff', borderRadius: '15px', position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #ddd' }}>
         {layoutImage ? (
           <div style={{ position: 'relative', width: '100%', height: '100%' }}>
             <img src={layoutImage} onClick={handleImageClick} style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'crosshair', display: 'block' }} />
             {stations.map(st => (
               <div key={st.id} onClick={(e) => { e.stopPropagation(); editStation(st); }}
-                style={{ 
-                  position: 'absolute', top: st.pos_top, left: st.pos_left, transform: 'translate(-50%, -50%)', 
-                  width: '75px', height: '30px', // ขนาดเล็กกะทัดรัด
-                  border: formData.id === st.id ? '2px solid #2ecc71' : '1px dashed #3498db', 
-                  backgroundColor: formData.id === st.id ? 'rgba(46, 204, 113, 0.2)' : 'rgba(52,152,219,0.1)', 
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                style={{
+                  position: 'absolute', top: st.pos_top, left: st.pos_left, transform: 'translate(-50%, -50%)',
+                  width: '75px', height: '30px',
+                  border: formData.id === st.id ? '2px solid #2ecc71' : '1px dashed #3498db',
+                  backgroundColor: formData.id === st.id ? 'rgba(46, 204, 113, 0.2)' : 'rgba(52,152,219,0.1)',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: '8px', fontWeight: 'bold', color: '#3498db', borderRadius: '4px', zIndex: 5, textAlign: 'center'
                 }}>
                 {st.station_name}
@@ -112,7 +123,7 @@ export default function LineSetup() {
         ) : (
           <div style={{ textAlign: 'center' }}>
             <p>ยังไม่มีรูปผังไลน์ {selectedLine}</p>
-            <label style={uploadBtnStyle}> {isUploading ? 'อัปโหลด...' : '➕ อัปโหลดรูป'} <input type="file" hidden onChange={handleUploadImage} disabled={isUploading} /></label>
+            <label style={uploadBtnStyle}>{isUploading ? 'อัปโหลด...' : '➕ อัปโหลดรูป'}<input type="file" hidden onChange={handleUploadImage} disabled={isUploading} /></label>
           </div>
         )}
       </div>
@@ -122,11 +133,11 @@ export default function LineSetup() {
         <div style={{ marginBottom: '20px' }}>
           <label style={{ fontWeight: 'bold' }}>เลือกไลน์: </label>
           <select value={selectedLine} onChange={(e) => setSelectedLine(e.target.value)} style={inputStyle}>
-            <option>Line A</option><option>Line B</option><option>Line C</option><option>Line D</option>
+            {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
           </select>
           {layoutImage && (
             <label style={{ fontSize: '11px', color: '#3498db', cursor: 'pointer', display: 'block', marginTop: '10px', textAlign: 'right' }}>
-              {isUploading ? 'อัปโหลด...' : '🔄 เปลี่ยนรูปภาพ'} <input type="file" hidden onChange={handleUploadImage} disabled={isUploading} />
+              {isUploading ? 'อัปโหลด...' : '🔄 เปลี่ยนรูปภาพ'}<input type="file" hidden onChange={handleUploadImage} disabled={isUploading} />
             </label>
           )}
         </div>
@@ -134,7 +145,7 @@ export default function LineSetup() {
         <h4>{formData.id ? '📝 แก้ไขจุดงาน' : '📍 เพิ่มจุดงาน'}</h4>
         {(tempPos || formData.id) ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', backgroundColor: '#f8f9fa', padding: '15px', borderRadius: '10px' }}>
-            <input placeholder="ชื่อจุด (OP10)" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} style={inputStyle} />
+            <input placeholder="ชื่อจุด (OP10)" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} style={inputStyle} />
             <label style={{ fontSize: '12px', fontWeight: 'bold' }}>สกิลที่ต้องการ:</label>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px' }}>
               {skillOptions.map(s => (
@@ -144,15 +155,15 @@ export default function LineSetup() {
               ))}
             </div>
             <label style={{ fontSize: '12px' }}>Min Score (%)</label>
-            <input type="number" value={formData.minScore} onChange={e => setFormData({...formData, minScore: e.target.value})} style={inputStyle} />
+            <input type="number" value={formData.minScore} onChange={e => setFormData({ ...formData, minScore: e.target.value })} style={inputStyle} />
             <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
               <button onClick={handleSaveStation} style={{ ...btn, backgroundColor: '#2ecc71', flex: 1 }}>{formData.id ? 'บันทึก' : 'เพิ่ม'}</button>
-              <button onClick={() => { setTempPos(null); setFormData({id: null, name: '', minScore: 70, skills: []}); }} style={{ ...btn, backgroundColor: '#95a5a6' }}>ยกเลิก</button>
+              <button onClick={() => { setTempPos(null); setFormData({ id: null, name: '', minScore: 70, skills: [] }); }} style={{ ...btn, backgroundColor: '#95a5a6' }}>ยกเลิก</button>
             </div>
           </div>
         ) : (
           <div style={{ textAlign: 'center', padding: '20px', border: '2px dashed #eee', color: '#bdc3c7', borderRadius: '10px', fontSize: '12px' }}>
-            คลิกบนรูปภาพเพื่อเพิ่มจุดงาน <br/> หรือคลิกที่จุดเดิมเพื่อแก้ไข
+            คลิกบนรูปภาพเพื่อเพิ่มจุดงาน <br /> หรือคลิกที่จุดเดิมเพื่อแก้ไข
           </div>
         )}
         <hr style={{ margin: '20px 0' }} />
