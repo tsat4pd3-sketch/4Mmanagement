@@ -104,6 +104,42 @@ export default function Management() {
         });
       }
     }
+
+    /* ---- Pool card: vertical, narrow, tall ---- */
+    if (!isInLayout) {
+      return (
+        <div
+          draggable
+          onDragStart={(e) => handleDragStart(e, worker)}
+          title={worker.employees?.name ?? '?'}
+          style={{
+            width: 60,
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            gap: 4, padding: '8px 4px',
+            backgroundColor: 'rgba(34,197,94,0.1)',
+            border: '1.5px solid #27ae60',
+            borderRadius: 8, cursor: 'grab',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+            userSelect: 'none', flexShrink: 0,
+          }}
+        >
+          <img
+            src={worker.employees?.image_url || ''}
+            style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', pointerEvents: 'none' }}
+          />
+          <div style={{
+            fontSize: 9, fontWeight: 700, color: '#fff',
+            textAlign: 'center', width: '100%',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            pointerEvents: 'none',
+          }}>
+            {worker.employees?.name?.split(' ')[0] ?? '?'}
+          </div>
+        </div>
+      );
+    }
+
+    /* ---- Layout card: horizontal, compact ---- */
     return (
       <div
         draggable
@@ -114,8 +150,8 @@ export default function Management() {
           backgroundColor: isLowSkill ? 'rgba(231,76,60,0.2)' : 'rgba(34,197,94,0.15)',
           border: isLowSkill ? '2px solid #e74c3c' : '1.5px solid #27ae60',
           borderRadius: 5, cursor: 'grab', display: 'flex', alignItems: 'center', gap: 4,
-          boxShadow: '0 2px 4px rgba(0,0,0,0.4)', width: isInLayout ? '88px' : 'auto',
-          zIndex: 50, userSelect: 'none'
+          boxShadow: '0 2px 4px rgba(0,0,0,0.4)', width: '88px',
+          zIndex: 50, userSelect: 'none',
         }}
       >
         <img
@@ -126,7 +162,9 @@ export default function Management() {
           <div style={{ fontWeight: 700, fontSize: 9, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#fff' }}>
             {worker.employees?.name?.split(' ')[0] ?? '?'}
           </div>
-          {isInLayout && <div style={{ fontSize: 8, color: isLowSkill ? '#e74c3c' : '#27ae60' }}>{isLowSkill ? '⚠️ Gap' : '✅ OK'}</div>}
+          <div style={{ fontSize: 8, color: isLowSkill ? '#e74c3c' : '#27ae60' }}>
+            {isLowSkill ? '⚠️ Gap' : '✅ OK'}
+          </div>
         </div>
       </div>
     );
@@ -138,7 +176,7 @@ export default function Management() {
 
   const poolInnerStyle = isMobile
     ? { display: 'flex', flexDirection: 'row', gap: 6, overflowX: 'auto', paddingBottom: 4, minHeight: 42 }
-    : { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 };
+    : { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignContent: 'flex-start' };
 
   return (
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: 'calc(100vh - 80px)', background: 'var(--bg)', overflow: 'hidden' }}>
@@ -161,7 +199,7 @@ export default function Management() {
         <div style={poolInnerStyle}>
           {workers.filter(w => !w.assigned_line).map(w => <WorkerCard key={w.id} worker={w} />)}
           {workers.filter(w => !w.assigned_line).length === 0 && (
-            <div style={{ color: 'var(--muted)', fontSize: 12, textAlign: 'center', padding: '10px 20px' }}>ไม่มีพนักงานใน Pool</div>
+            <div style={{ color: 'var(--muted)', fontSize: 12, textAlign: 'center', padding: '10px 20px', width: '100%' }}>ไม่มีพนักงานใน Pool</div>
           )}
         </div>
 
@@ -238,7 +276,6 @@ export default function Management() {
                   boxShadow: has4M ? '0 0 8px rgba(231,76,60,0.6)' : '0 2px 6px rgba(0,0,0,0.6)',
                 }}
               >
-                {/* Station header row */}
                 <div style={{
                   fontSize: 9, fontWeight: 700, color: '#fff', textAlign: 'center',
                   width: '100%', display: 'flex', justifyContent: 'space-between',
@@ -260,7 +297,6 @@ export default function Management() {
                   </button>
                 </div>
 
-                {/* 4M category badges */}
                 {(has4MCategories.Machine || has4MCategories.Material || has4MCategories.Method) && (
                   <div style={{ display: 'flex', gap: 2, marginBottom: 2 }}>
                     {has4MCategories.Machine  && <span style={{ fontSize: 6, background: '#f59e0b', color: '#000', borderRadius: 3, padding: '1px 3px', fontWeight: 700 }}>M/C</span>}
@@ -269,7 +305,6 @@ export default function Management() {
                   </div>
                 )}
 
-                {/* Worker slot */}
                 {workerAtStation
                   ? <WorkerCard worker={workerAtStation} isInLayout={true} />
                   : <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 18, lineHeight: 1, marginTop: 2 }}>+</div>
