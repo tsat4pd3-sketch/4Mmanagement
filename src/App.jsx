@@ -10,7 +10,7 @@ import Operator from './pages/operator';
 import LineSetup from './pages/LineSetup';
 import AddUser from './pages/AddUser';
 
-/* ─── Splash Screen ────────────────────────────────────── */
+/* ─── Splash Screen ─────────────────────────────────────── */
 function SplashScreen({ onDone }) {
   const barRef = useRef(null);
 
@@ -93,8 +93,8 @@ const NAV_ITEMS = [
   { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน' },
 ];
 
-/* ─── Sidebar ───────────────────────────────────────────────── */
-function Sidebar({ isOpen, onClose, onLogout }) {
+/* ─── Sidebar ────────────────────────────────────────────── */
+function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme }) {
   const location = useLocation();
   const isMobile = window.innerWidth <= 768;
 
@@ -113,7 +113,7 @@ function Sidebar({ isOpen, onClose, onLogout }) {
         overflow: 'hidden',
         transition: 'width 0.3s cubic-bezier(0.4,0,0.2,1), padding 0.3s',
         zIndex: 1000,
-        boxShadow: isOpen ? '4px 0 30px rgba(0,0,0,0.5)' : 'none',
+        boxShadow: isOpen ? '4px 0 30px rgba(0,0,0,0.3)' : 'none',
       }}>
         {/* Logo */}
         <div style={{ padding: '22px 6px 18px', borderBottom: '1px solid var(--border)', marginBottom: 10, whiteSpace: 'nowrap' }}>
@@ -156,21 +156,54 @@ function Sidebar({ isOpen, onClose, onLogout }) {
           </div>
         </div>
 
-        {/* Logout */}
-        <button
-          onClick={onLogout}
-          className="nav-link"
-          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: '#ff6b6b', marginTop: 8 }}
-        >
-          <span style={{ fontSize: 15 }}>🚪</span>
-          <span style={{ whiteSpace: 'nowrap' }}>ออกจากระบบ</span>
-        </button>
+        {/* Footer: Theme toggle + Logout */}
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {/* Theme toggle */}
+          <button
+            onClick={onToggleTheme}
+            className="nav-link"
+            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', justifyContent: 'space-between' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 15, flexShrink: 0 }}>{theme === 'dark' ? '☀️' : '🌙'}</span>
+              <span style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>
+                {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+              </span>
+            </div>
+            {/* Toggle pill */}
+            <div style={{
+              width: 36, height: 20, borderRadius: 10, flexShrink: 0,
+              background: theme === 'dark' ? 'var(--border2)' : 'var(--accent)',
+              position: 'relative',
+              transition: 'background 0.25s',
+            }}>
+              <div style={{
+                position: 'absolute', top: 2,
+                left: theme === 'dark' ? 2 : 18,
+                width: 16, height: 16, borderRadius: '50%',
+                background: '#fff',
+                transition: 'left 0.25s',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+              }} />
+            </div>
+          </button>
+
+          {/* Logout */}
+          <button
+            onClick={onLogout}
+            className="nav-link"
+            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: '#ff6b6b' }}
+          >
+            <span style={{ fontSize: 15 }}>🚪</span>
+            <span style={{ whiteSpace: 'nowrap' }}>ออกจากระบบ</span>
+          </button>
+        </div>
       </nav>
     </>
   );
 }
 
-/* ─── Toggle Button ────────────────────────────────────────── */
+/* ─── Toggle Button ──────────────────────────────────────── */
 function ToggleBtn({ isOpen, sidebarW, onClick }) {
   return (
     <button
@@ -194,8 +227,8 @@ function ToggleBtn({ isOpen, sidebarW, onClick }) {
   );
 }
 
-/* ─── Protected Layout ───────────────────────────────────────── */
-function ProtectedLayout({ session }) {
+/* ─── Protected Layout ───────────────────────────────────── */
+function ProtectedLayout({ session, theme, onToggleTheme }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
   const [isOpen, setIsOpen] = useState(!isMobile);
@@ -225,7 +258,13 @@ function ProtectedLayout({ session }) {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
       <ToggleBtn isOpen={isOpen} sidebarW={sidebarPx} onClick={() => setIsOpen(o => !o)} />
-      <Sidebar isOpen={isOpen} onClose={() => setIsOpen(false)} onLogout={handleLogout} />
+      <Sidebar
+        isOpen={isOpen}
+        onClose={() => setIsOpen(false)}
+        onLogout={handleLogout}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
+      />
 
       <main style={{
         flex: 1,
@@ -250,10 +289,18 @@ function ProtectedLayout({ session }) {
   );
 }
 
-/* ─── App Root ─────────────────────────────────────────────── */
+/* ─── App Root ───────────────────────────────────────────── */
 export default function App() {
   const [session,    setSession]    = useState(undefined);
   const [showSplash, setShowSplash] = useState(true);
+  const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('4m-theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
@@ -283,7 +330,7 @@ export default function App() {
         <Router>
           <Routes>
             <Route path="/login" element={session ? <Navigate to="/" replace /> : <Login />} />
-            <Route path="/*"     element={<ProtectedLayout session={session} />} />
+            <Route path="/*"     element={<ProtectedLayout session={session} theme={theme} onToggleTheme={toggleTheme} />} />
           </Routes>
         </Router>
       )}

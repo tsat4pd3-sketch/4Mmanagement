@@ -29,8 +29,30 @@
   --shadow-lg: 0 10px 40px rgba(0,0,0,0.8);
 }
 
+/* ─── Light Theme ────────────────────────────────── */
+[data-theme="light"] {
+  --bg:      #f2f2f2;
+  --bg2:     #e8e8e8;
+  --bg3:     #dcdcdc;
+  --card:    #ffffff;
+  --border:  #dedede;
+  --border2: #c8c8c8;
+  --text:    #111111;
+  --text2:   #505050;
+  --muted:   #909090;
+
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.07);
+  --shadow-md: 0 4px 20px rgba(0,0,0,0.10);
+  --shadow-lg: 0 10px 40px rgba(0,0,0,0.14);
+}
+
 /* ─── Reset ─────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ─── Theme transition ───────────────────────────── */
+body, .card, .modal, nav, main, input, select, textarea, button, td, th {
+  transition: background-color 0.22s ease, border-color 0.22s ease, color 0.15s ease, box-shadow 0.22s ease;
+}
 
 html, body {
   height: 100%;
