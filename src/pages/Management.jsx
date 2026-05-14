@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
+const LINE_4M_CATEGORIES = [
+  { key: 'Machine',  label: '🔧 Machine',  color: '#f59e0b' },
+  { key: 'Material', label: '📦 Material', color: '#8b5cf6' },
+  { key: 'Method',   label: '📋 Method',   color: '#22c55e' },
+];
+
 export default function Management() {
   const [workers, setWorkers] = useState([]);
   const [fourMLogs, setFourMLogs] = useState([]);
@@ -52,6 +58,11 @@ export default function Management() {
     setFourMLogs(mData || []);
   };
 
+  const openLineLevelModal = (category) => {
+    setLog4MForm({ category, description: '' });
+    setShow4MModal({ stationId: null, lineName: selectedLine });
+  };
+
   const handleSave4MLog = async () => {
     if (!log4MForm.description.trim()) return alert('กรุณาระบุรายละเอียด');
     const today = new Date().toISOString().split('T')[0];
@@ -99,23 +110,23 @@ export default function Management() {
         onDragStart={(e) => handleDragStart(e, worker)}
         title={isLowSkill ? `ขาดทักษะ: ${missingSkills.join(', ')}` : 'ผ่านเกณฑ์'}
         style={{
-          padding: '2px 4px',
-          backgroundColor: isLowSkill ? 'rgba(231,76,60,0.15)' : 'rgba(34,197,94,0.1)',
+          padding: '3px 5px',
+          backgroundColor: isLowSkill ? 'rgba(231,76,60,0.2)' : 'rgba(34,197,94,0.15)',
           border: isLowSkill ? '2px solid #e74c3c' : '1.5px solid #27ae60',
           borderRadius: 5, cursor: 'grab', display: 'flex', alignItems: 'center', gap: 4,
-          boxShadow: '0 2px 4px rgba(0,0,0,0.3)', width: isInLayout ? '65px' : 'auto',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.4)', width: isInLayout ? '88px' : 'auto',
           zIndex: 50, userSelect: 'none'
         }}
       >
         <img
           src={worker.employees?.image_url || ''}
-          style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'cover', pointerEvents: 'none' }}
+          style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover', pointerEvents: 'none', flexShrink: 0 }}
         />
         <div style={{ flex: 1, minWidth: 0, pointerEvents: 'none' }}>
-          <div style={{ fontWeight: 700, fontSize: 7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text)' }}>
+          <div style={{ fontWeight: 700, fontSize: 9, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#fff' }}>
             {worker.employees?.name?.split(' ')[0] ?? '?'}
           </div>
-          {isInLayout && <div style={{ fontSize: 6, color: isLowSkill ? '#e74c3c' : '#27ae60' }}>{isLowSkill ? '⚠️ Gap' : '✅ OK'}</div>}
+          {isInLayout && <div style={{ fontSize: 8, color: isLowSkill ? '#e74c3c' : '#27ae60' }}>{isLowSkill ? '⚠️ Gap' : '✅ OK'}</div>}
         </div>
       </div>
     );
@@ -132,6 +143,7 @@ export default function Management() {
   return (
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: 'calc(100vh - 80px)', background: 'var(--bg)', overflow: 'hidden' }}>
 
+      {/* ---- Left Panel: Pool + Line-level 4M controls ---- */}
       <div onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, 'Pool')} style={poolStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isMobile ? 8 : 14, flexShrink: 0 }}>
           <h3 style={{ margin: 0, fontSize: isMobile ? 14 : 15, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
@@ -145,14 +157,47 @@ export default function Management() {
             {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
           </select>
         </div>
+
         <div style={poolInnerStyle}>
           {workers.filter(w => !w.assigned_line).map(w => <WorkerCard key={w.id} worker={w} />)}
           {workers.filter(w => !w.assigned_line).length === 0 && (
             <div style={{ color: 'var(--muted)', fontSize: 12, textAlign: 'center', padding: '10px 20px' }}>ไม่มีพนักงานใน Pool</div>
           )}
         </div>
+
+        {/* Line-level 4M Change Management */}
+        {!isMobile && (
+          <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 12, flexShrink: 0 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+              4M การเปลี่ยนแปลงไลน์
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {LINE_4M_CATEGORIES.map(cat => {
+                const hasLog = fourMLogs.some(m => m.line_name === selectedLine && m.category === cat.key);
+                return (
+                  <button
+                    key={cat.key}
+                    onClick={() => openLineLevelModal(cat.key)}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '6px 10px', borderRadius: 7, cursor: 'pointer',
+                      background: hasLog ? `${cat.color}22` : 'var(--bg3)',
+                      border: hasLog ? `1.5px solid ${cat.color}` : '1px solid var(--border2)',
+                      color: hasLog ? cat.color : 'var(--text2)',
+                      fontSize: 12, fontWeight: 600, transition: 'all 0.15s'
+                    }}
+                  >
+                    <span>{cat.label}</span>
+                    {hasLog && <span style={{ fontSize: 10, background: cat.color, color: '#000', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
+      {/* ---- Factory Floor Map ---- */}
       <div style={{ flex: 1, position: 'relative', padding: 10, display: 'flex', justifyContent: 'center', overflow: 'hidden' }}>
         <div style={{
           position: 'relative', width: '100%', maxWidth: 1200,
@@ -170,6 +215,11 @@ export default function Management() {
           {dynamicStations.map(st => {
             const workerAtStation = workers.find(w => String(w.assigned_line) === String(st.id));
             const has4M = fourMLogs.some(m => m.line_name === st.line_name);
+            const has4MCategories = {
+              Machine:  fourMLogs.some(m => m.line_name === st.line_name && m.category === 'Machine'),
+              Material: fourMLogs.some(m => m.line_name === st.line_name && m.category === 'Material'),
+              Method:   fourMLogs.some(m => m.line_name === st.line_name && m.category === 'Method'),
+            };
             return (
               <div
                 key={st.id}
@@ -177,29 +227,60 @@ export default function Management() {
                 onDrop={(e) => handleDrop(e, st.id)}
                 style={{
                   position: 'absolute', top: st.pos_top, left: st.pos_left, transform: 'translate(-50%, -50%)',
-                  width: 75, minHeight: 30,
-                  border: '1px dashed rgba(255,255,255,0.3)', borderRadius: 6,
-                  backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column',
-                  alignItems: 'center', justifyContent: 'center', padding: 2, transition: 'all 0.2s'
+                  width: 100, minHeight: 50,
+                  border: has4M ? '2px solid #e74c3c' : '2px solid rgba(255,255,255,0.75)',
+                  borderRadius: 7,
+                  backgroundColor: 'rgba(0,0,0,0.82)',
+                  backdropFilter: 'blur(2px)',
+                  display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'flex-start', padding: '3px 3px 3px 3px',
+                  transition: 'all 0.2s',
+                  boxShadow: has4M ? '0 0 8px rgba(231,76,60,0.6)' : '0 2px 6px rgba(0,0,0,0.6)',
                 }}
               >
-                <div style={{ fontSize: 7, fontWeight: 700, marginBottom: 1, color: 'var(--text2)', textAlign: 'center', width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 2px' }}>
-                  <span>{st.station_name}</span>
+                {/* Station header row */}
+                <div style={{
+                  fontSize: 9, fontWeight: 700, color: '#fff', textAlign: 'center',
+                  width: '100%', display: 'flex', justifyContent: 'space-between',
+                  alignItems: 'center', padding: '0 2px', marginBottom: 2,
+                  borderBottom: '1px solid rgba(255,255,255,0.15)', paddingBottom: 2,
+                }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 62 }}>{st.station_name}</span>
                   <button
-                    onClick={(e) => { e.stopPropagation(); setShow4MModal({ stationId: st.id, lineName: st.line_name }); }}
-                    style={{ background: has4M ? '#e74c3c' : 'var(--border2)', border: 'none', borderRadius: 3, color: 'white', fontSize: 6, cursor: 'pointer', padding: '1px 3px', lineHeight: 1 }}
+                    onClick={(e) => { e.stopPropagation(); setLog4MForm({ category: 'Man', description: '' }); setShow4MModal({ stationId: st.id, lineName: st.line_name }); }}
+                    style={{
+                      background: has4M ? '#e74c3c' : 'rgba(255,255,255,0.15)',
+                      border: 'none', borderRadius: 3, color: '#fff',
+                      fontSize: 7, cursor: 'pointer', padding: '2px 4px', lineHeight: 1,
+                      flexShrink: 0,
+                    }}
                     title="บันทึก 4M Change"
                   >
                     {has4M ? '🚨' : '+4M'}
                   </button>
                 </div>
-                {workerAtStation ? <WorkerCard worker={workerAtStation} isInLayout={true} /> : <div style={{ color: 'var(--muted)', fontSize: 12 }}>+</div>}
+
+                {/* 4M category badges */}
+                {(has4MCategories.Machine || has4MCategories.Material || has4MCategories.Method) && (
+                  <div style={{ display: 'flex', gap: 2, marginBottom: 2 }}>
+                    {has4MCategories.Machine  && <span style={{ fontSize: 6, background: '#f59e0b', color: '#000', borderRadius: 3, padding: '1px 3px', fontWeight: 700 }}>M/C</span>}
+                    {has4MCategories.Material && <span style={{ fontSize: 6, background: '#8b5cf6', color: '#fff', borderRadius: 3, padding: '1px 3px', fontWeight: 700 }}>MAT</span>}
+                    {has4MCategories.Method   && <span style={{ fontSize: 6, background: '#22c55e', color: '#000', borderRadius: 3, padding: '1px 3px', fontWeight: 700 }}>MTD</span>}
+                  </div>
+                )}
+
+                {/* Worker slot */}
+                {workerAtStation
+                  ? <WorkerCard worker={workerAtStation} isInLayout={true} />
+                  : <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 18, lineHeight: 1, marginTop: 2 }}>+</div>
+                }
               </div>
             );
           })}
         </div>
       </div>
 
+      {/* ---- 4M Modal ---- */}
       {show4MModal && (
         <div className="overlay">
           <div className="modal" style={{ width: 'min(420px, 94vw)' }}>
