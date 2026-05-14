@@ -9,8 +9,9 @@ import Dashboard from './pages/Dashboard';
 import Operator from './pages/operator';
 import LineSetup from './pages/LineSetup';
 import AddUser from './pages/AddUser';
+import Report from './pages/Report';
 
-/* ─── Splash Screen ─────────────────────────────────────── */
+/* ─── Splash Screen ────────────────────────────────────────────────── */
 function SplashScreen({ onDone }) {
   const barRef = useRef(null);
 
@@ -46,7 +47,7 @@ function SplashScreen({ onDone }) {
   );
 }
 
-/* ─── Cursor Effect ─────────────────────────────────────── */
+/* ─── Cursor Effect ───────────────────────────────────────────────── */
 function useCursor() {
   useEffect(() => {
     const dot  = document.getElementById('cursor');
@@ -83,17 +84,18 @@ function useCursor() {
   }, []);
 }
 
-/* ─── Sidebar Nav Items ──────────────────────────────────── */
+/* ─── Sidebar Nav Items ─────────────────────────────────────────────── */
 const NAV_ITEMS = [
   { to: '/',           icon: '📊', label: 'Dashboard' },
   { to: '/management', icon: '🔄', label: 'จัดการสายผลิต' },
   { to: '/checkin',    icon: '📝', label: 'เช็คชื่อ & PPE' },
+  { to: '/report',     icon: '📋', label: 'รายงานการมาทำงาน' },
   { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์' },
   { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน' },
   { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน' },
 ];
 
-/* ─── Sidebar ────────────────────────────────────────────── */
+/* ─── Sidebar ────────────────────────────────────────────────────── */
 function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme }) {
   const location = useLocation();
   const isMobile = window.innerWidth <= 768;
@@ -158,7 +160,6 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme }) {
 
         {/* Footer: Theme toggle + Logout */}
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {/* Theme toggle */}
           <button
             onClick={onToggleTheme}
             className="nav-link"
@@ -170,25 +171,20 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme }) {
                 {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
               </span>
             </div>
-            {/* Toggle pill */}
             <div style={{
               width: 36, height: 20, borderRadius: 10, flexShrink: 0,
               background: theme === 'dark' ? 'var(--border2)' : 'var(--accent)',
-              position: 'relative',
-              transition: 'background 0.25s',
+              position: 'relative', transition: 'background 0.25s',
             }}>
               <div style={{
                 position: 'absolute', top: 2,
                 left: theme === 'dark' ? 2 : 18,
                 width: 16, height: 16, borderRadius: '50%',
-                background: '#fff',
-                transition: 'left 0.25s',
+                background: '#fff', transition: 'left 0.25s',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
               }} />
             </div>
           </button>
-
-          {/* Logout */}
           <button
             onClick={onLogout}
             className="nav-link"
@@ -203,7 +199,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme }) {
   );
 }
 
-/* ─── Toggle Button ──────────────────────────────────────── */
+/* ─── Toggle Button ──────────────────────────────────────────────── */
 function ToggleBtn({ isOpen, sidebarW, onClick }) {
   return (
     <button
@@ -227,7 +223,7 @@ function ToggleBtn({ isOpen, sidebarW, onClick }) {
   );
 }
 
-/* ─── Protected Layout ───────────────────────────────────── */
+/* ─── Protected Layout ─────────────────────────────────────────────── */
 function ProtectedLayout({ session, theme, onToggleTheme }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
@@ -283,13 +279,14 @@ function ProtectedLayout({ session, theme, onToggleTheme }) {
           <Route path="/operator"   element={<Operator />} />
           <Route path="/linesetup"  element={<LineSetup />} />
           <Route path="/add-user"   element={<AddUser />} />
+          <Route path="/report"     element={<Report />} />
         </Routes>
       </main>
     </div>
   );
 }
 
-/* ─── App Root ───────────────────────────────────────────── */
+/* ─── App Root ────────────────────────────────────────────────────────── */
 export default function App() {
   const [session,    setSession]    = useState(undefined);
   const [showSplash, setShowSplash] = useState(true);
