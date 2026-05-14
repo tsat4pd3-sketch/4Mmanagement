@@ -7,7 +7,6 @@ const LINE_4M_CATEGORIES = [
   { key: 'Method',   label: '📋 Method',   color: '#22c55e' },
 ];
 
-// Shared card size — pool card and workstation block use this
 const CARD_W = 60;
 
 export default function Management() {
@@ -21,6 +20,7 @@ export default function Management() {
   const [show4MModal, setShow4MModal] = useState(null);
   const [log4MForm, setLog4MForm] = useState({ category: 'Man', description: '' });
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [autoManAlert, setAutoManAlert] = useState(null); // { name, station }
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 768);
@@ -54,7 +54,8 @@ export default function Management() {
     const today = new Date().toISOString().split('T')[0];
     const { data: workerData } = await supabase
       .from('daily_production_logs')
-      .select(`id, assigned_line, employees ( employee_id_code, name, image_url, skill_welding, skill_spot_nut, skill_quality_check, skill_refill_part, skill_management )`)
+      // include employee_id for Man-change detection
+      .select(`id, assigned_line, employee_id, employees ( employee_id_code, name, image_url, skill_welding, skill_spot_nut, skill_quality_check, skill_refill_part, skill_management )`)
       .eq('work_date', today).eq('is_present', true).eq('has_helmet', true).eq('has_boots', true).eq('has_gloves', true);
     const { data: mData } = await supabase.from('four_m_logs').select('*').eq('work_date', today);
     setWorkers(workerData || []);
@@ -88,14 +89,54 @@ export default function Management() {
 
   const handleDrop = async (e, stationId) => {
     e.preventDefault();
-    const logId = e.dataTransfer.getData('logId');
+    const logId   = e.dataTransfer.getData('logId');
     const finalAssign = stationId === 'Pool' ? null : stationId;
+
+    // Optimistic UI update
     setWorkers(prev => prev.map(w => w.id === logId ? { ...w, assigned_line: finalAssign } : w));
     setDraggingWorker(null);
+
+    // Persist assignment
     await supabase.from('daily_production_logs').update({ assigned_line: finalAssign }).eq('id', logId);
+
+    // ── Auto Man-change detection ─────────────────────────────────
+    if (finalAssign) {
+      const worker  = workers.find(w => w.id === logId);
+      const station = dynamicStations.find(s => String(s.id) === String(finalAssign));
+      if (worker?.employee_id && station) {
+        const today = new Date().toISOString().split('T')[0];
+
+        // Has this employee ever worked at this station on a previous day?
+        const { data: history } = await supabase
+          .from('daily_production_logs')
+          .select('id')
+          .eq('employee_id', worker.employee_id)
+          .eq('assigned_line', String(finalAssign))
+          .lt('work_date', today)
+          .limit(1);
+
+        if (!history?.length) {
+          // First time — auto-log Man change (avoid duplicate by exact description)
+          const desc = `[Auto] ${worker.employees?.name} ประจำจุด ${station.station_name} เป็นครั้งแรก`;
+          const { data: dup } = await supabase.from('four_m_logs')
+            .select('id').eq('work_date', today).eq('category', 'Man').eq('description', desc).limit(1);
+
+          if (!dup?.length) {
+            await supabase.from('four_m_logs').insert([{
+              work_date: today,
+              line_name: station.line_name,
+              category: 'Man',
+              description: desc,
+            }]);
+            setAutoManAlert({ name: worker.employees?.name, station: station.station_name });
+            setTimeout(() => setAutoManAlert(null), 4000);
+            fetchData();
+          }
+        }
+      }
+    }
   };
 
-  /* Worker card — pool vs in-station share same vertical layout, differ only in size */
   const WorkerCard = ({ worker, isInLayout = false }) => {
     let isLowSkill = false;
     let missingSkills = [];
@@ -108,10 +149,8 @@ export default function Management() {
         });
       }
     }
-
     const imgSize  = isInLayout ? 32 : 40;
     const fontSize = isInLayout ? 8  : 9;
-
     return (
       <div
         draggable
@@ -123,24 +162,14 @@ export default function Management() {
           gap: 3, padding: isInLayout ? '4px 2px' : '8px 4px',
           backgroundColor: isLowSkill ? 'rgba(231,76,60,0.2)' : 'rgba(34,197,94,0.1)',
           border: isLowSkill ? '1.5px solid #e74c3c' : '1.5px solid #27ae60',
-          borderRadius: isInLayout ? 5 : 8,
-          cursor: 'grab',
-          boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
-          userSelect: 'none',
-          flexShrink: 0,
-          zIndex: 50,
+          borderRadius: isInLayout ? 5 : 8, cursor: 'grab',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.4)', userSelect: 'none', flexShrink: 0, zIndex: 50,
         }}
       >
-        <img
-          src={worker.employees?.image_url || ''}
-          style={{ width: imgSize, height: imgSize, borderRadius: '50%', objectFit: 'cover', pointerEvents: 'none' }}
-        />
-        <div style={{
-          fontSize, fontWeight: 700, color: '#fff',
-          textAlign: 'center', width: '100%',
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          pointerEvents: 'none',
-        }}>
+        <img src={worker.employees?.image_url || ''}
+          style={{ width: imgSize, height: imgSize, borderRadius: '50%', objectFit: 'cover', pointerEvents: 'none' }} />
+        <div style={{ fontSize, fontWeight: 700, color: '#fff', textAlign: 'center', width: '100%',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', pointerEvents: 'none' }}>
           {worker.employees?.name?.split(' ')[0] ?? '?'}
         </div>
         {isInLayout && (
@@ -163,17 +192,14 @@ export default function Management() {
   return (
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: 'calc(100vh - 80px)', background: 'var(--bg)', overflow: 'hidden' }}>
 
-      {/* ---- Left Panel: Pool + Line-level 4M controls ---- */}
+      {/* ---- Left Panel ---- */}
       <div onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, 'Pool')} style={poolStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isMobile ? 8 : 14, flexShrink: 0 }}>
           <h3 style={{ margin: 0, fontSize: isMobile ? 14 : 15, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
             🔵 พร้อมทำงาน
           </h3>
-          <select
-            value={selectedLine}
-            onChange={(e) => setSelectedLine(e.target.value)}
-            style={{ padding: '4px 8px', borderRadius: 6, fontSize: 12, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', width: 'auto' }}
-          >
+          <select value={selectedLine} onChange={(e) => setSelectedLine(e.target.value)}
+            style={{ padding: '4px 8px', borderRadius: 6, fontSize: 12, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', width: 'auto' }}>
             {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
           </select>
         </div>
@@ -185,7 +211,7 @@ export default function Management() {
           )}
         </div>
 
-        {/* Line-level 4M Change Management */}
+        {/* Line-level 4M buttons */}
         {!isMobile && (
           <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 12, flexShrink: 0 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
@@ -195,18 +221,14 @@ export default function Management() {
               {LINE_4M_CATEGORIES.map(cat => {
                 const hasLog = fourMLogs.some(m => m.line_name === selectedLine && m.category === cat.key);
                 return (
-                  <button
-                    key={cat.key}
-                    onClick={() => openLineLevelModal(cat.key)}
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '6px 10px', borderRadius: 7, cursor: 'pointer',
-                      background: hasLog ? `${cat.color}22` : 'var(--bg3)',
-                      border: hasLog ? `1.5px solid ${cat.color}` : '1px solid var(--border2)',
-                      color: hasLog ? cat.color : 'var(--text2)',
-                      fontSize: 12, fontWeight: 600, transition: 'all 0.15s'
-                    }}
-                  >
+                  <button key={cat.key} onClick={() => openLineLevelModal(cat.key)} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '6px 10px', borderRadius: 7, cursor: 'pointer',
+                    background: hasLog ? `${cat.color}22` : 'var(--bg3)',
+                    border: hasLog ? `1.5px solid ${cat.color}` : '1px solid var(--border2)',
+                    color: hasLog ? cat.color : 'var(--text2)',
+                    fontSize: 12, fontWeight: 600, transition: 'all 0.15s'
+                  }}>
                     <span>{cat.label}</span>
                     {hasLog && <span style={{ fontSize: 10, background: cat.color, color: '#000', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>✓</span>}
                   </button>
@@ -220,8 +242,7 @@ export default function Management() {
       {/* ---- Factory Floor Map ---- */}
       <div style={{ flex: 1, position: 'relative', padding: 10, display: 'flex', justifyContent: 'center', overflow: 'hidden' }}>
         <div style={{
-          position: 'relative', width: '100%', maxWidth: 1200,
-          height: '100%',
+          position: 'relative', width: '100%', maxWidth: 1200, height: '100%',
           backgroundImage: lineLayout ? `url('${lineLayout}')` : 'none',
           backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center',
           backgroundColor: lineLayout ? 'transparent' : 'var(--bg3)', borderRadius: 12,
@@ -232,35 +253,43 @@ export default function Management() {
               กรุณาอัปโหลดรูปผังไลน์ที่หน้า Setup
             </div>
           )}
+
+          {/* Auto Man-change toast */}
+          {autoManAlert && (
+            <div style={{
+              position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
+              background: 'rgba(77,159,255,0.95)', color: '#fff',
+              padding: '8px 16px', borderRadius: 10, zIndex: 100,
+              fontSize: 12, fontWeight: 600, boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+              display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap',
+            }}>
+              👤 Man Change (Auto): {autoManAlert.name} → {autoManAlert.station} ครั้งแรก
+            </div>
+          )}
+
           {dynamicStations.map(st => {
             const workerAtStation = workers.find(w => String(w.assigned_line) === String(st.id));
             const has4M = fourMLogs.some(m => m.line_name === st.line_name);
             const has4MCategories = {
+              Man:      fourMLogs.some(m => m.line_name === st.line_name && m.category === 'Man'),
               Machine:  fourMLogs.some(m => m.line_name === st.line_name && m.category === 'Machine'),
               Material: fourMLogs.some(m => m.line_name === st.line_name && m.category === 'Material'),
               Method:   fourMLogs.some(m => m.line_name === st.line_name && m.category === 'Method'),
             };
             return (
-              <div
-                key={st.id}
+              <div key={st.id}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => handleDrop(e, st.id)}
                 style={{
                   position: 'absolute', top: st.pos_top, left: st.pos_left,
-                  transform: 'translate(-50%, -50%)',
-                  width: CARD_W,
+                  transform: 'translate(-50%, -50%)', width: CARD_W,
                   border: has4M ? '2px solid #e74c3c' : '2px solid rgba(255,255,255,0.75)',
-                  borderRadius: 8,
-                  backgroundColor: 'rgba(0,0,0,0.82)',
-                  backdropFilter: 'blur(2px)',
-                  display: 'flex', flexDirection: 'column',
-                  alignItems: 'center',
-                  padding: '3px 3px 4px',
-                  transition: 'all 0.2s',
+                  borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(2px)',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  padding: '3px 3px 4px', transition: 'all 0.2s',
                   boxShadow: has4M ? '0 0 8px rgba(231,76,60,0.6)' : '0 2px 6px rgba(0,0,0,0.6)',
                 }}
               >
-                {/* Header: station name + 4M button */}
                 <div style={{
                   width: '100%', display: 'flex', justifyContent: 'space-between',
                   alignItems: 'center', marginBottom: 3,
@@ -271,27 +300,23 @@ export default function Management() {
                   </span>
                   <button
                     onClick={(e) => { e.stopPropagation(); setLog4MForm({ category: 'Man', description: '' }); setShow4MModal({ stationId: st.id, lineName: st.line_name }); }}
-                    style={{
-                      background: has4M ? '#e74c3c' : 'rgba(255,255,255,0.15)',
-                      border: 'none', borderRadius: 3, color: '#fff',
-                      fontSize: 6, cursor: 'pointer', padding: '1px 3px', lineHeight: 1, flexShrink: 0,
-                    }}
+                    style={{ background: has4M ? '#e74c3c' : 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 3, color: '#fff', fontSize: 6, cursor: 'pointer', padding: '1px 3px', lineHeight: 1, flexShrink: 0 }}
                     title="บันทึก 4M Change"
                   >
                     {has4M ? '🚨' : '+4M'}
                   </button>
                 </div>
 
-                {/* 4M category badges */}
-                {(has4MCategories.Machine || has4MCategories.Material || has4MCategories.Method) && (
-                  <div style={{ display: 'flex', gap: 2, marginBottom: 3 }}>
+                {/* 4M badges — now includes Man */}
+                {(has4MCategories.Man || has4MCategories.Machine || has4MCategories.Material || has4MCategories.Method) && (
+                  <div style={{ display: 'flex', gap: 2, marginBottom: 3, flexWrap: 'wrap', justifyContent: 'center' }}>
+                    {has4MCategories.Man      && <span style={{ fontSize: 6, background: '#4d9fff', color: '#fff', borderRadius: 3, padding: '1px 3px', fontWeight: 700 }}>MAN</span>}
                     {has4MCategories.Machine  && <span style={{ fontSize: 6, background: '#f59e0b', color: '#000', borderRadius: 3, padding: '1px 3px', fontWeight: 700 }}>M/C</span>}
                     {has4MCategories.Material && <span style={{ fontSize: 6, background: '#8b5cf6', color: '#fff', borderRadius: 3, padding: '1px 3px', fontWeight: 700 }}>MAT</span>}
                     {has4MCategories.Method   && <span style={{ fontSize: 6, background: '#22c55e', color: '#000', borderRadius: 3, padding: '1px 3px', fontWeight: 700 }}>MTD</span>}
                   </div>
                 )}
 
-                {/* Worker slot — same width as station block */}
                 {workerAtStation
                   ? <WorkerCard worker={workerAtStation} isInLayout={true} />
                   : <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 20, lineHeight: 1, padding: '6px 0' }}>+</div>
@@ -320,25 +345,17 @@ export default function Management() {
               </div>
               <div>
                 <label style={labelSt}>รายละเอียด</label>
-                <textarea
-                  value={log4MForm.description}
+                <textarea value={log4MForm.description}
                   onChange={e => setLog4MForm({ ...log4MForm, description: e.target.value })}
-                  placeholder="ระบุรายละเอียดการเปลี่ยนแปลง..."
-                  rows={3}
-                  style={{ resize: 'vertical' }}
-                />
+                  placeholder="ระบุรายละเอียดการเปลี่ยนแปลง..." rows={3} style={{ resize: 'vertical' }} />
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                <button
-                  onClick={handleSave4MLog}
-                  style={{ flex: 2, padding: 11, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)' }}
-                >
+                <button onClick={handleSave4MLog}
+                  style={{ flex: 2, padding: 11, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)' }}>
                   บันทึก 4M Log
                 </button>
-                <button
-                  onClick={() => { setShow4MModal(null); setLog4MForm({ category: 'Man', description: '' }); }}
-                  style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8 }}
-                >
+                <button onClick={() => { setShow4MModal(null); setLog4MForm({ category: 'Man', description: '' }); }}
+                  style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8 }}>
                   ยกเลิก
                 </button>
               </div>
