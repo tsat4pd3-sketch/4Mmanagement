@@ -7,6 +7,9 @@ const LINE_4M_CATEGORIES = [
   { key: 'Method',   label: '📋 Method',   color: '#22c55e' },
 ];
 
+// Shared card size — pool card and workstation block use this
+const CARD_W = 60;
+
 export default function Management() {
   const [workers, setWorkers] = useState([]);
   const [fourMLogs, setFourMLogs] = useState([]);
@@ -92,6 +95,7 @@ export default function Management() {
     await supabase.from('daily_production_logs').update({ assigned_line: finalAssign }).eq('id', logId);
   };
 
+  /* Worker card — pool vs in-station share same vertical layout, differ only in size */
   const WorkerCard = ({ worker, isInLayout = false }) => {
     let isLowSkill = false;
     let missingSkills = [];
@@ -105,67 +109,45 @@ export default function Management() {
       }
     }
 
-    /* ---- Pool card: vertical, narrow, tall ---- */
-    if (!isInLayout) {
-      return (
-        <div
-          draggable
-          onDragStart={(e) => handleDragStart(e, worker)}
-          title={worker.employees?.name ?? '?'}
-          style={{
-            width: 60,
-            display: 'flex', flexDirection: 'column', alignItems: 'center',
-            gap: 4, padding: '8px 4px',
-            backgroundColor: 'rgba(34,197,94,0.1)',
-            border: '1.5px solid #27ae60',
-            borderRadius: 8, cursor: 'grab',
-            boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
-            userSelect: 'none', flexShrink: 0,
-          }}
-        >
-          <img
-            src={worker.employees?.image_url || ''}
-            style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', pointerEvents: 'none' }}
-          />
-          <div style={{
-            fontSize: 9, fontWeight: 700, color: '#fff',
-            textAlign: 'center', width: '100%',
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            pointerEvents: 'none',
-          }}>
-            {worker.employees?.name?.split(' ')[0] ?? '?'}
-          </div>
-        </div>
-      );
-    }
+    const imgSize  = isInLayout ? 32 : 40;
+    const fontSize = isInLayout ? 8  : 9;
 
-    /* ---- Layout card: horizontal, compact ---- */
     return (
       <div
         draggable
         onDragStart={(e) => handleDragStart(e, worker)}
-        title={isLowSkill ? `ขาดทักษะ: ${missingSkills.join(', ')}` : 'ผ่านเกณฑ์'}
+        title={isLowSkill ? `ขาดทักษะ: ${missingSkills.join(', ')}` : (worker.employees?.name ?? '?')}
         style={{
-          padding: '3px 5px',
-          backgroundColor: isLowSkill ? 'rgba(231,76,60,0.2)' : 'rgba(34,197,94,0.15)',
-          border: isLowSkill ? '2px solid #e74c3c' : '1.5px solid #27ae60',
-          borderRadius: 5, cursor: 'grab', display: 'flex', alignItems: 'center', gap: 4,
-          boxShadow: '0 2px 4px rgba(0,0,0,0.4)', width: '88px',
-          zIndex: 50, userSelect: 'none',
+          width: isInLayout ? '100%' : CARD_W,
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          gap: 3, padding: isInLayout ? '4px 2px' : '8px 4px',
+          backgroundColor: isLowSkill ? 'rgba(231,76,60,0.2)' : 'rgba(34,197,94,0.1)',
+          border: isLowSkill ? '1.5px solid #e74c3c' : '1.5px solid #27ae60',
+          borderRadius: isInLayout ? 5 : 8,
+          cursor: 'grab',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+          userSelect: 'none',
+          flexShrink: 0,
+          zIndex: 50,
         }}
       >
         <img
           src={worker.employees?.image_url || ''}
-          style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover', pointerEvents: 'none', flexShrink: 0 }}
+          style={{ width: imgSize, height: imgSize, borderRadius: '50%', objectFit: 'cover', pointerEvents: 'none' }}
         />
-        <div style={{ flex: 1, minWidth: 0, pointerEvents: 'none' }}>
-          <div style={{ fontWeight: 700, fontSize: 9, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#fff' }}>
-            {worker.employees?.name?.split(' ')[0] ?? '?'}
-          </div>
-          <div style={{ fontSize: 8, color: isLowSkill ? '#e74c3c' : '#27ae60' }}>
+        <div style={{
+          fontSize, fontWeight: 700, color: '#fff',
+          textAlign: 'center', width: '100%',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          pointerEvents: 'none',
+        }}>
+          {worker.employees?.name?.split(' ')[0] ?? '?'}
+        </div>
+        {isInLayout && (
+          <div style={{ fontSize: 7, color: isLowSkill ? '#e74c3c' : '#27ae60', pointerEvents: 'none' }}>
             {isLowSkill ? '⚠️ Gap' : '✅ OK'}
           </div>
-        </div>
+        )}
       </div>
     );
   };
@@ -264,32 +246,35 @@ export default function Management() {
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => handleDrop(e, st.id)}
                 style={{
-                  position: 'absolute', top: st.pos_top, left: st.pos_left, transform: 'translate(-50%, -50%)',
-                  width: 100, minHeight: 50,
+                  position: 'absolute', top: st.pos_top, left: st.pos_left,
+                  transform: 'translate(-50%, -50%)',
+                  width: CARD_W,
                   border: has4M ? '2px solid #e74c3c' : '2px solid rgba(255,255,255,0.75)',
-                  borderRadius: 7,
+                  borderRadius: 8,
                   backgroundColor: 'rgba(0,0,0,0.82)',
                   backdropFilter: 'blur(2px)',
                   display: 'flex', flexDirection: 'column',
-                  alignItems: 'center', justifyContent: 'flex-start', padding: '3px 3px 3px 3px',
+                  alignItems: 'center',
+                  padding: '3px 3px 4px',
                   transition: 'all 0.2s',
                   boxShadow: has4M ? '0 0 8px rgba(231,76,60,0.6)' : '0 2px 6px rgba(0,0,0,0.6)',
                 }}
               >
+                {/* Header: station name + 4M button */}
                 <div style={{
-                  fontSize: 9, fontWeight: 700, color: '#fff', textAlign: 'center',
                   width: '100%', display: 'flex', justifyContent: 'space-between',
-                  alignItems: 'center', padding: '0 2px', marginBottom: 2,
+                  alignItems: 'center', marginBottom: 3,
                   borderBottom: '1px solid rgba(255,255,255,0.15)', paddingBottom: 2,
                 }}>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 62 }}>{st.station_name}</span>
+                  <span style={{ fontSize: 8, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 40 }}>
+                    {st.station_name}
+                  </span>
                   <button
                     onClick={(e) => { e.stopPropagation(); setLog4MForm({ category: 'Man', description: '' }); setShow4MModal({ stationId: st.id, lineName: st.line_name }); }}
                     style={{
                       background: has4M ? '#e74c3c' : 'rgba(255,255,255,0.15)',
                       border: 'none', borderRadius: 3, color: '#fff',
-                      fontSize: 7, cursor: 'pointer', padding: '2px 4px', lineHeight: 1,
-                      flexShrink: 0,
+                      fontSize: 6, cursor: 'pointer', padding: '1px 3px', lineHeight: 1, flexShrink: 0,
                     }}
                     title="บันทึก 4M Change"
                   >
@@ -297,17 +282,19 @@ export default function Management() {
                   </button>
                 </div>
 
+                {/* 4M category badges */}
                 {(has4MCategories.Machine || has4MCategories.Material || has4MCategories.Method) && (
-                  <div style={{ display: 'flex', gap: 2, marginBottom: 2 }}>
+                  <div style={{ display: 'flex', gap: 2, marginBottom: 3 }}>
                     {has4MCategories.Machine  && <span style={{ fontSize: 6, background: '#f59e0b', color: '#000', borderRadius: 3, padding: '1px 3px', fontWeight: 700 }}>M/C</span>}
                     {has4MCategories.Material && <span style={{ fontSize: 6, background: '#8b5cf6', color: '#fff', borderRadius: 3, padding: '1px 3px', fontWeight: 700 }}>MAT</span>}
                     {has4MCategories.Method   && <span style={{ fontSize: 6, background: '#22c55e', color: '#000', borderRadius: 3, padding: '1px 3px', fontWeight: 700 }}>MTD</span>}
                   </div>
                 )}
 
+                {/* Worker slot — same width as station block */}
                 {workerAtStation
                   ? <WorkerCard worker={workerAtStation} isInLayout={true} />
-                  : <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 18, lineHeight: 1, marginTop: 2 }}>+</div>
+                  : <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 20, lineHeight: 1, padding: '6px 0' }}>+</div>
                 }
               </div>
             );
