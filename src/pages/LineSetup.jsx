@@ -145,6 +145,7 @@ export default function LineSetup() {
       minHeight: isMobile ? 'calc(100vh - 40px)' : undefined,
       overflow: isMobile ? 'auto' : 'hidden',
     }}>
+      {/* ── Canvas panel ── */}
       <div style={{
         flex: 1,
         background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14,
@@ -202,11 +203,14 @@ export default function LineSetup() {
         )}
       </div>
 
+      {/* ── Right panel ── */}
       <div style={{
         width: isMobile ? '100%' : 320,
         background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14,
         padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', flexShrink: 0
       }}>
+
+        {/* ── Line list section ── */}
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
             <span style={labelSt}>ไลน์ผลิต ({lines.length})</span>
@@ -237,6 +241,7 @@ export default function LineSetup() {
                 </button>
               </div>
             ))}
+
             {lines.length === 0 && (
               <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>
                 ยังไม่มีไลน์ผลิต
@@ -244,6 +249,7 @@ export default function LineSetup() {
             )}
           </div>
 
+          {/* Add new line input */}
           <div style={{ display: 'flex', gap: 6 }}>
             <input
               placeholder="ชื่อไลน์ใหม่ เช่น ไลน์ F"
@@ -263,6 +269,7 @@ export default function LineSetup() {
         </div>
 
         {selectedLine && <>
+          {/* Change image link */}
           {layoutImage && (
             <label style={{ fontSize: 12, color: 'var(--blue)', cursor: 'pointer', display: 'block', marginBottom: 14, textAlign: 'right' }}>
               {isUploading ? 'อัปโหลด...' : '🔄 เปลี่ยนรูปภาพ'}
