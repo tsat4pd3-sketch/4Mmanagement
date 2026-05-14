@@ -52,7 +52,7 @@ function DailyTab() {
       .select('*, employees(name, employee_id_code, image_url, department)')
       .eq('work_date', date)
       .eq('is_present', true)
-      .order('created_at');
+      .order('updated_at');
     setLogs(data || []);
     setLoading(false);
   };
