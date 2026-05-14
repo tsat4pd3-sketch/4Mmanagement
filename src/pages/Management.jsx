@@ -221,7 +221,7 @@ export default function Management() {
       </div>
 
       {/* Factory map canvas */}
-      <div style={{ flex: 1, position: 'relative', padding: 10, display: 'flex', justifyContent: 'center', overflow: 'hidden' }}>
+      <div style={{ flex: 1, position: 'relative', padding: 10, overflow: 'auto', minHeight: isMobile ? 240 : undefined }}>
         {/* Auto Man alert toast */}
         {autoManAlert && (
           <div style={{
@@ -236,8 +236,13 @@ export default function Management() {
         )}
 
         <div style={{
-          position: 'relative', width: '100%', maxWidth: 1200,
-          height: '100%',
+          position: 'relative',
+          width: isMobile ? 900 : '100%',
+          minWidth: isMobile ? 900 : undefined,
+          maxWidth: isMobile ? undefined : 1200,
+          height: isMobile ? 600 : '100%',
+          minHeight: isMobile ? 600 : undefined,
+          margin: isMobile ? undefined : '0 auto',
           backgroundImage: lineLayout ? `url('${lineLayout}')` : 'none',
           backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center',
           backgroundColor: lineLayout ? 'transparent' : 'var(--bg3)', borderRadius: 12,

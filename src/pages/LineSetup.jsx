@@ -14,6 +14,7 @@ export default function LineSetup() {
   const [tempPos, setTempPos] = useState(null);
   const [formData, setFormData] = useState({ id: null, name: '', minScore: 70, skills: [] });
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [collisionWarn, setCollisionWarn] = useState(false);
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 768);
@@ -98,6 +99,24 @@ export default function LineSetup() {
     const rect = e.target.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
+
+    const newXpx = (x / 100) * rect.width;
+    const newYpx = (y / 100) * rect.height;
+    const PAD = CARD_W + 8;
+
+    const collision = stations.some(st => {
+      const stX = (parseFloat(st.pos_left) / 100) * rect.width;
+      const stY = (parseFloat(st.pos_top) / 100) * rect.height;
+      return Math.abs(newXpx - stX) < PAD && Math.abs(newYpx - stY) < PAD * 1.5;
+    });
+
+    if (collision) {
+      setCollisionWarn(true);
+      setTimeout(() => setCollisionWarn(false), 2000);
+      return;
+    }
+
+    setCollisionWarn(false);
     setTempPos({ top: `${y.toFixed(2)}%`, left: `${x.toFixed(2)}%` });
     setFormData({ id: null, name: '', minScore: 70, skills: [] });
   };
@@ -151,14 +170,33 @@ export default function LineSetup() {
       <div style={{
         flex: 1,
         background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14,
-        position: 'relative', overflow: 'hidden',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        minHeight: isMobile ? 280 : undefined,
-        height: isMobile ? 280 : undefined,
+        position: 'relative', overflow: 'auto',
+        display: layoutImage ? 'block' : 'flex',
+        alignItems: layoutImage ? undefined : 'center',
+        justifyContent: layoutImage ? undefined : 'center',
+        minHeight: isMobile ? 340 : undefined,
+        height: isMobile ? 340 : undefined,
       }}>
         {selectedLine ? (
           layoutImage ? (
-            <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+            <div style={{
+              position: 'relative',
+              width: isMobile ? 800 : '100%',
+              height: isMobile ? 500 : '100%',
+              minWidth: isMobile ? 800 : undefined,
+              minHeight: isMobile ? 500 : undefined,
+            }}>
+              {collisionWarn && (
+                <div style={{
+                  position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)',
+                  background: 'rgba(245,158,11,0.95)', color: '#fff',
+                  padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                  zIndex: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                  whiteSpace: 'nowrap', pointerEvents: 'none',
+                }}>
+                  ⚠️ ใกล้กับจุดงานอื่นเกินไป — คลิกในพื้นที่ว่าง
+                </div>
+              )}
               <img
                 src={layoutImage}
                 onClick={handleImageClick}
