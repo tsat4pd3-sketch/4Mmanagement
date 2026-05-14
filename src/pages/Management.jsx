@@ -88,7 +88,7 @@ export default function Management() {
       const station = dynamicStations.find(s => String(s.id) === String(worker.assigned_line));
       if (station) {
         station.required_skill_field.split(',').forEach(skillKey => {
-          const score = Number(worker.employees[skillKey.trim()] || 0);
+          const score = Number(worker.employees?.[skillKey.trim()] || 0);
           if (score < station.min_skill_score) { isLowSkill = true; missingSkills.push(skillKey); }
         });
       }
@@ -108,12 +108,12 @@ export default function Management() {
         }}
       >
         <img
-          src={worker.employees.image_url || 'https://via.placeholder.com/50'}
+          src={worker.employees?.image_url || ''}
           style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'cover', pointerEvents: 'none' }}
         />
         <div style={{ flex: 1, minWidth: 0, pointerEvents: 'none' }}>
           <div style={{ fontWeight: 700, fontSize: 7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text)' }}>
-            {worker.employees.name.split(' ')[0]}
+            {worker.employees?.name?.split(' ')[0] ?? '?'}
           </div>
           {isInLayout && <div style={{ fontSize: 6, color: isLowSkill ? '#e74c3c' : '#27ae60' }}>{isLowSkill ? '⚠️ Gap' : '✅ OK'}</div>}
         </div>

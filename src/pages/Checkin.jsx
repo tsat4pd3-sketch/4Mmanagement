@@ -20,11 +20,11 @@ export default function Checkin() {
       empData.forEach(emp => {
         const log = logData?.find(l => l.employee_id === emp.id);
         init[emp.id] = {
-          is_present: log ? log.is_present : false,
-          has_helmet: log ? log.has_helmet : false,
-          has_boots: log ? log.has_boots : false,
-          has_gloves: log ? log.has_gloves : false,
-          remark: log ? log.remark : ''
+          is_present:  log ? log.is_present  : false,
+          has_helmet:  log ? log.has_helmet  : false,
+          has_boots:   log ? log.has_boots   : false,
+          has_gloves:  log ? log.has_gloves  : false,
+          remark:      log ? log.remark      : ''
         };
       });
       setAttendance(init);
@@ -42,18 +42,23 @@ export default function Checkin() {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData?.user?.id) { alert('กรุณา Login ก่อน'); setIsSaving(false); return; }
 
+    const today = new Date().toISOString().split('T')[0];
     const logs = employees.map(emp => ({
-      employee_id: emp.id,
-      is_present: attendance[emp.id].is_present,
-      has_helmet: attendance[emp.id].has_helmet,
-      has_boots: attendance[emp.id].has_boots,
-      has_gloves: attendance[emp.id].has_gloves,
-      remark: attendance[emp.id].remark,
-      checked_by: userData.user.id,
-      work_date: new Date().toISOString().split('T')[0]
+      employee_id:  emp.id,
+      work_date:    today,
+      is_present:   attendance[emp.id].is_present,
+      has_helmet:   attendance[emp.id].has_helmet,
+      has_boots:    attendance[emp.id].has_boots,
+      has_gloves:   attendance[emp.id].has_gloves,
+      remark:       attendance[emp.id].remark,
+      checked_by:   userData.user.id,
     }));
 
-    const { error } = await supabase.from('daily_production_logs').upsert(logs, { onConflict: 'work_date, employee_id' });
+    // onConflict must match the unique constraint columns — no spaces
+    const { error } = await supabase
+      .from('daily_production_logs')
+      .upsert(logs, { onConflict: 'work_date,employee_id' });
+
     if (error) alert('เกิดข้อผิดพลาด: ' + error.message);
     else alert('บันทึกข้อมูลสำเร็จ!');
     setIsSaving(false);

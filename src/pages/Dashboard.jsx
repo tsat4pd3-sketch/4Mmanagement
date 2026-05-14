@@ -123,7 +123,7 @@ export default function Dashboard() {
               <div style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {summaryData.filter(d => d.is_present).map(emp => (
                   <div key={emp.id} style={nameTag('var(--green)')}>
-                    {emp.employees.name}
+                    {emp.employees?.name ?? '—'}
                     <small style={{ color: 'var(--muted)', marginLeft: 4 }}>({emp.assigned_line ? 'In-Line' : 'Pool'})</small>
                   </div>
                 ))}
@@ -134,7 +134,7 @@ export default function Dashboard() {
               <div style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {summaryData.filter(d => !d.is_present).map(emp => (
                   <div key={emp.id} style={nameTag('var(--red)')}>
-                    {emp.employees.name}
+                    {emp.employees?.name ?? '—'}
                   </div>
                 ))}
               </div>
