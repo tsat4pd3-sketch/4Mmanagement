@@ -4,34 +4,31 @@ import { supabase } from '../supabaseClient';
 export default function Operator() {
   const [employees, setEmployees] = useState([]);
   const [inactiveEmployees, setInactiveEmployees] = useState([]);
+  const [showInactive, setShowInactive] = useState(false);
   const [editingEmp, setEditingEmp] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [showInactive, setShowInactive] = useState(false);
 
   useEffect(() => { fetchEmployees(); }, []);
 
   const fetchEmployees = async () => {
-    const { data: active } = await supabase
-      .from('employees').select('*')
-      .eq('is_active', true).order('employee_id_code');
-    const { data: inactive } = await supabase
-      .from('employees').select('*')
-      .eq('is_active', false).order('employee_id_code');
+    const [{ data: active }, { data: inactive }] = await Promise.all([
+      supabase.from('employees').select('*').eq('is_active', true).order('employee_id_code'),
+      supabase.from('employees').select('*').eq('is_active', false).order('employee_id_code'),
+    ]);
     setEmployees(active || []);
     setInactiveEmployees(inactive || []);
   };
 
   const handleDeactivate = async (id, name) => {
-    if (!window.confirm(`ปิดใช้งานพนักงาน: ${name}?\nพนักงานจะหายไปจากระบบ แต่ประวัติยังคงอยู่`)) return;
+    if (!window.confirm(`ปิดใช้งานพนักงาน: ${name}?\nพนักงานจะไม่ปรากฏในระบบเช็คชื่อ แต่ข้อมูลยังคงอยู่`)) return;
     const { error } = await supabase.from('employees').update({ is_active: false }).eq('id', id);
-    if (error) alert('เกิดข้อผิดพลาด: ' + error.message);
+    if (error) alert('ไม่สามารถปิดใช้งานได้: ' + error.message);
     else fetchEmployees();
   };
 
-  const handleReactivate = async (id, name) => {
-    if (!window.confirm(`เปิดใช้งานพนักงาน: ${name} อีกครั้ง?`)) return;
+  const handleReactivate = async (id) => {
     const { error } = await supabase.from('employees').update({ is_active: true }).eq('id', id);
-    if (error) alert('เกิดข้อผิดพลาด: ' + error.message);
+    if (error) alert('Error: ' + error.message);
     else fetchEmployees();
   };
 
@@ -59,6 +56,7 @@ export default function Operator() {
         image_url: photoUrl
       }).eq('id', editingEmp.id);
       if (error) throw error;
+      alert('💾 อัปเดตข้อมูลพนักงานเรียบร้อย!');
       setEditingEmp(null);
       fetchEmployees();
     } catch (err) {
@@ -68,79 +66,26 @@ export default function Operator() {
     }
   };
 
-  const EmployeeRow = ({ emp, isInactive = false }) => (
-    <tr key={emp.id} style={isInactive ? { opacity: 0.45 } : {}}>
-      <td>
-        <img
-          src={emp.image_url || 'https://via.placeholder.com/50'}
-          alt=""
-          style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover', border: '1px solid var(--border2)', filter: isInactive ? 'grayscale(1)' : 'none' }}
-        />
-      </td>
-      <td style={{ fontWeight: 700, color: isInactive ? 'var(--muted)' : 'var(--blue)', fontFamily: 'var(--font-display)' }}>
-        {emp.employee_id_code}
-      </td>
-      <td>
-        <div style={{ fontWeight: 600, color: isInactive ? 'var(--muted)' : 'var(--text)' }}>{emp.name}</div>
-        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{emp.department || 'ไม่ระบุแผนก'}</div>
-      </td>
-      <td>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 8px', fontSize: 11 }}>
-          <span style={{ color: 'var(--text2)' }}>🛠️ <b style={{ color: 'var(--text)' }}>{emp.skill_welding}%</b></span>
-          <span style={{ color: 'var(--text2)' }}>🔩 <b style={{ color: 'var(--text)' }}>{emp.skill_spot_nut}%</b></span>
-          <span style={{ color: 'var(--text2)' }}>🔍 <b style={{ color: 'var(--text)' }}>{emp.skill_quality_check}%</b></span>
-          <span style={{ color: 'var(--text2)' }}>📦 <b style={{ color: 'var(--text)' }}>{emp.skill_refill_part}%</b></span>
-        </div>
-      </td>
-      <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-        {isInactive ? (
-          <button
-            onClick={() => handleReactivate(emp.id, emp.name)}
-            style={{ padding: '6px 12px', background: 'rgba(34,197,94,0.12)', color: 'var(--green)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 6, fontSize: 13 }}
-          >
-            ↩ เปิดใช้งาน
-          </button>
-        ) : (
-          <>
-            <button
-              onClick={() => setEditingEmp({ ...emp, newPhoto: null })}
-              style={{ padding: '6px 12px', background: 'rgba(245,158,11,0.15)', color: 'var(--amber)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 6, marginRight: 6, fontSize: 13 }}
-            >
-              ✏️ แก้ไข
-            </button>
-            <button
-              onClick={() => handleDeactivate(emp.id, emp.name)}
-              style={{ padding: '6px 12px', background: 'rgba(231,76,60,0.12)', color: 'var(--red)', border: '1px solid rgba(231,76,60,0.25)', borderRadius: 6, fontSize: 13 }}
-            >
-              🚫 ปิดใช้งาน
-            </button>
-          </>
-        )}
-      </td>
-    </tr>
-  );
+  const displayed = showInactive ? inactiveEmployees : employees;
 
   return (
     <div className="page-content">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
         <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px, 3vw, 22px)', color: 'var(--text)' }}>
           👥 ฐานข้อมูลพนักงาน
         </h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ fontSize: 13, color: 'var(--muted)' }}>ใช้งาน {employees.length} คน</span>
-          {inactiveEmployees.length > 0 && (
-            <button
-              onClick={() => setShowInactive(v => !v)}
-              style={{
-                padding: '5px 12px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
-                background: showInactive ? 'rgba(231,76,60,0.15)' : 'var(--bg3)',
-                color: showInactive ? 'var(--red)' : 'var(--muted)',
-                border: showInactive ? '1px solid rgba(231,76,60,0.3)' : '1px solid var(--border2)',
-              }}
-            >
-              ❌ ปิดใช้งาน ({inactiveEmployees.length})
-            </button>
-          )}
+          <button
+            onClick={() => setShowInactive(s => !s)}
+            style={{
+              padding: '6px 12px', borderRadius: 7, border: 'none', fontSize: 12, cursor: 'pointer',
+              background: showInactive ? 'rgba(231,76,60,0.15)' : 'var(--bg3)',
+              color: showInactive ? 'var(--red)' : 'var(--text2)',
+            }}
+          >
+            {showInactive ? `✅ ดูพนักงานใช้งาน (${employees.length})` : `❌ ปิดใช้งาน (${inactiveEmployees.length})`}
+          </button>
         </div>
       </div>
 
@@ -156,17 +101,61 @@ export default function Operator() {
             </tr>
           </thead>
           <tbody>
-            {employees.map(emp => <EmployeeRow key={emp.id} emp={emp} />)}
-            {showInactive && inactiveEmployees.length > 0 && (
-              <>
-                <tr>
-                  <td colSpan={5} style={{ padding: '6px 8px', background: 'rgba(231,76,60,0.06)', fontSize: 11, color: 'var(--muted)', fontWeight: 700, letterSpacing: '0.05em' }}>
-                    — ปิดใช้งานแล้ว —
-                  </td>
-                </tr>
-                {inactiveEmployees.map(emp => <EmployeeRow key={emp.id} emp={emp} isInactive />)}
-              </>
-            )}
+            {displayed.map(emp => (
+              <tr key={emp.id} style={!emp.is_active ? { opacity: 0.5 } : {}}>
+                <td>
+                  <img
+                    src={emp.image_url || 'https://via.placeholder.com/50'}
+                    alt=""
+                    style={{
+                      width: 44, height: 44, borderRadius: 10, objectFit: 'cover',
+                      border: '1px solid var(--border2)',
+                      filter: !emp.is_active ? 'grayscale(1)' : 'none',
+                    }}
+                  />
+                </td>
+                <td style={{ fontWeight: 700, color: 'var(--blue)', fontFamily: 'var(--font-display)' }}>
+                  {emp.employee_id_code}
+                </td>
+                <td>
+                  <div style={{ fontWeight: 600 }}>{emp.name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>{emp.department || 'ไม่ระบุแผนก'}</div>
+                </td>
+                <td>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 8px', fontSize: 11 }}>
+                    <span style={{ color: 'var(--text2)' }}>🛠️ <b style={{ color: 'var(--text)' }}>{emp.skill_welding}%</b></span>
+                    <span style={{ color: 'var(--text2)' }}>🔩 <b style={{ color: 'var(--text)' }}>{emp.skill_spot_nut}%</b></span>
+                    <span style={{ color: 'var(--text2)' }}>🔍 <b style={{ color: 'var(--text)' }}>{emp.skill_quality_check}%</b></span>
+                    <span style={{ color: 'var(--text2)' }}>📦 <b style={{ color: 'var(--text)' }}>{emp.skill_refill_part}%</b></span>
+                  </div>
+                </td>
+                <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                  {emp.is_active ? (
+                    <>
+                      <button
+                        onClick={() => setEditingEmp({ ...emp, newPhoto: null })}
+                        style={{ padding: '6px 12px', background: 'rgba(245,158,11,0.15)', color: 'var(--amber)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 6, marginRight: 6, fontSize: 13 }}
+                      >
+                        ✏️ แก้ไข
+                      </button>
+                      <button
+                        onClick={() => handleDeactivate(emp.id, emp.name)}
+                        style={{ padding: '6px 12px', background: 'rgba(231,76,60,0.12)', color: 'var(--red)', border: '1px solid rgba(231,76,60,0.25)', borderRadius: 6, fontSize: 13 }}
+                      >
+                        🚫 ปิดใช้งาน
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => handleReactivate(emp.id)}
+                      style={{ padding: '6px 12px', background: 'rgba(34,197,94,0.12)', color: 'var(--green)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 6, fontSize: 13 }}
+                    >
+                      ↩ เปิดใช้งาน
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -185,7 +174,7 @@ export default function Operator() {
                 </div>
                 <div>
                   <label style={labelSt}>แผนก</label>
-                  <input type="text" value={editingEmp.department || ''} onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value })} />
+                  <input type="text" value={editingEmp.department} onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value })} />
                 </div>
               </div>
 

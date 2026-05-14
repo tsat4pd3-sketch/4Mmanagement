@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
-// Must match CARD_W in Management.jsx
 const CARD_W = 60;
 
 export default function LineSetup() {
@@ -138,43 +137,6 @@ export default function LineSetup() {
     setFormData({ id: st.id, name: st.station_name, minScore: st.min_skill_score, skills: st.required_skill_field.split(',') });
   };
 
-  /* Station block — matches Management.jsx exactly */
-  const StationBlock = ({ st }) => {
-    const isSelected = formData.id === st.id;
-    return (
-      <div
-        onClick={(e) => { e.stopPropagation(); editStation(st); }}
-        style={{
-          position: 'absolute', top: st.pos_top, left: st.pos_left,
-          transform: 'translate(-50%, -50%)',
-          width: CARD_W,
-          border: isSelected ? '2px solid var(--green)' : '2px solid rgba(255,255,255,0.75)',
-          borderRadius: 8,
-          backgroundColor: isSelected ? 'rgba(34,197,94,0.18)' : 'rgba(0,0,0,0.82)',
-          backdropFilter: 'blur(2px)',
-          boxShadow: isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
-          cursor: 'pointer', zIndex: 5,
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          padding: '3px 3px 4px',
-        }}
-      >
-        {/* Header: station name */}
-        <div style={{
-          width: '100%', fontSize: 8, fontWeight: 700,
-          color: isSelected ? 'var(--green)' : '#fff',
-          textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          padding: '0 2px 2px',
-          borderBottom: '1px solid rgba(255,255,255,0.15)',
-          marginBottom: 3,
-        }}>
-          {st.station_name}
-        </div>
-        {/* Worker slot placeholder */}
-        <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 20, lineHeight: 1, padding: '6px 0' }}>+</div>
-      </div>
-    );
-  };
-
   return (
     <div style={{
       padding: '16px',
@@ -185,7 +147,7 @@ export default function LineSetup() {
       minHeight: isMobile ? 'calc(100vh - 40px)' : undefined,
       overflow: isMobile ? 'auto' : 'hidden',
     }}>
-      {/* ── Canvas panel ── */}
+      {/* Canvas panel */}
       <div style={{
         flex: 1,
         background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14,
@@ -202,24 +164,42 @@ export default function LineSetup() {
                 onClick={handleImageClick}
                 style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'crosshair', display: 'block' }}
               />
-              {stations.map(st => <StationBlock key={st.id} st={st} />)}
-
-              {/* Temp placeholder for new station */}
+              {stations.map(st => {
+                const isSelected = formData.id === st.id;
+                return (
+                  <div
+                    key={st.id}
+                    onClick={(e) => { e.stopPropagation(); editStation(st); }}
+                    style={{
+                      position: 'absolute', top: st.pos_top, left: st.pos_left, transform: 'translate(-50%, -50%)',
+                      width: CARD_W, minHeight: 30,
+                      border: isSelected ? '2px solid var(--green)' : '2px solid rgba(255,255,255,0.75)',
+                      borderRadius: 8,
+                      backgroundColor: isSelected ? 'rgba(34,197,94,0.18)' : 'rgba(0,0,0,0.82)',
+                      backdropFilter: 'blur(2px)',
+                      boxShadow: isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
+                      cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', justifyContent: 'center',
+                      padding: '3px 2px', zIndex: 5,
+                    }}
+                  >
+                    <div style={{ fontSize: 7, fontWeight: 700, color: isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {st.station_name}
+                    </div>
+                    <div style={{ color: isSelected ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.25)', fontSize: 14, lineHeight: '18px' }}>+</div>
+                  </div>
+                );
+              })}
               {tempPos && (
                 <div style={{
-                  position: 'absolute', top: tempPos.top, left: tempPos.left,
-                  transform: 'translate(-50%, -50%)',
-                  width: CARD_W,
-                  border: '2px solid var(--accent)',
-                  backgroundColor: 'rgba(227,25,55,0.2)',
+                  position: 'absolute', top: tempPos.top, left: tempPos.left, transform: 'translate(-50%, -50%)',
+                  width: CARD_W, minHeight: 30,
+                  border: '2px solid var(--accent)', backgroundColor: 'rgba(227,25,55,0.2)',
                   backdropFilter: 'blur(2px)',
-                  borderRadius: 8,
-                  zIndex: 10, pointerEvents: 'none',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  padding: '3px 3px 4px',
+                  zIndex: 10, pointerEvents: 'none', borderRadius: 8,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <div style={{ width: '100%', height: 12, borderBottom: '1px solid rgba(255,255,255,0.15)', marginBottom: 3 }} />
-                  <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 20, lineHeight: 1, padding: '6px 0' }}>+</div>
+                  <div style={{ color: 'var(--accent)', fontSize: 14 }}>+</div>
                 </div>
               )}
             </div>
@@ -237,14 +217,13 @@ export default function LineSetup() {
         )}
       </div>
 
-      {/* ── Right panel ── */}
+      {/* Right panel */}
       <div style={{
         width: isMobile ? '100%' : 320,
         background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14,
         padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', flexShrink: 0
       }}>
 
-        {/* ── Line list section ── */}
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
             <span style={labelSt}>ไลน์ผลิต ({lines.length})</span>

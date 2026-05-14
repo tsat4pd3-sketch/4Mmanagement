@@ -1,419 +1,354 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
-const TABS = [
-  { id: 'daily',    label: '📅 รายวัน' },
-  { id: 'employee', label: '👤 รายพนักงาน' },
-  { id: 'range',    label: '📊 สรุปช่วงเวลา' },
-  { id: 'fourm',    label: '🚨 4M Changes' },
-];
-
 const CAT_META = {
-  Man:      { color: '#4d9fff', bg: 'rgba(77,159,255,0.12)',  border: 'rgba(77,159,255,0.35)',  label: '👤 Man' },
-  Machine:  { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',  border: 'rgba(245,158,11,0.35)',  label: '🔧 Machine' },
-  Material: { color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)',  border: 'rgba(139,92,246,0.35)',  label: '📦 Material' },
-  Method:   { color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   border: 'rgba(34,197,94,0.35)',   label: '📋 Method' },
+  Man:      { color: '#4d9fff', bg: 'rgba(77,159,255,0.12)',  label: 'Man',      icon: '👷' },
+  Machine:  { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', label: 'Machine',  icon: '⚙️' },
+  Material: { color: '#22c55e', bg: 'rgba(34,197,94,0.12)',  label: 'Material', icon: '📦' },
+  Method:   { color: '#c084fc', bg: 'rgba(139,92,246,0.12)', label: 'Method',   icon: '📋' },
 };
 
-const today = new Date().toISOString().split('T')[0];
-
-function ppeStatus(row) {
-  return (row.has_helmet && row.has_boots && row.has_gloves) ? '✅ ครบ' : '⚠️ ไม่ครบ';
-}
-
-function defaultFrom(days = 29) {
-  const d = new Date(); d.setDate(d.getDate() - days); return d.toISOString().split('T')[0];
-}
+const TABS = ['รายวัน', 'รายพนักงาน', 'สรุปช่วงเวลา', '🚨 4M Changes'];
 
 export default function Report() {
-  const [tab, setTab] = useState('daily');
-
-  // ── Daily
-  const [dailyDate, setDailyDate] = useState(today);
-  const [dailyRows, setDailyRows] = useState([]);
-  const [dailyFilter, setDailyFilter] = useState('all');
-  const [dailyLoading, setDailyLoading] = useState(false);
-
-  // ── Per employee
-  const [employees, setEmployees] = useState([]);
-  const [selEmp, setSelEmp] = useState('');
-  const [empFrom, setEmpFrom] = useState(defaultFrom);
-  const [empTo,   setEmpTo]   = useState(today);
-  const [empRows, setEmpRows] = useState([]);
-  const [empLoading, setEmpLoading] = useState(false);
-
-  // ── Range summary
-  const [rangeFrom, setRangeFrom] = useState(defaultFrom);
-  const [rangeTo,   setRangeTo]   = useState(today);
-  const [rangeRows, setRangeRows] = useState([]);
-  const [rangeLoading, setRangeLoading] = useState(false);
-
-  // ── 4M
-  const [lines,       setLines]       = useState([]);
-  const [fourmFrom,   setFourmFrom]   = useState(defaultFrom);
-  const [fourmTo,     setFourmTo]     = useState(today);
-  const [fourmLine,   setFourmLine]   = useState('all');
-  const [fourmCat,    setFourmCat]    = useState('all');
-  const [fourmRows,   setFourmRows]   = useState([]);
-  const [fourmLoading, setFourmLoading] = useState(false);
-
-  // ── Load reference data once
-  useEffect(() => {
-    supabase.from('employees').select('id, name, employee_id_code, image_url')
-      .eq('is_active', true).order('employee_id_code')
-      .then(({ data }) => { setEmployees(data || []); if (data?.length) setSelEmp(data[0].id); });
-    supabase.from('production_lines').select('id, name').order('name')
-      .then(({ data }) => setLines(data || []));
-  }, []);
-
-  // ── Fetch daily
-  useEffect(() => {
-    if (tab !== 'daily') return;
-    setDailyLoading(true);
-    supabase.from('daily_production_logs')
-      .select('*, employees(id, name, employee_id_code, image_url)')
-      .eq('work_date', dailyDate)
-      .order('is_present', { ascending: false })
-      .then(({ data }) => { setDailyRows(data || []); setDailyLoading(false); });
-  }, [tab, dailyDate]);
-
-  // ── Fetch per-employee
-  useEffect(() => {
-    if (tab !== 'employee' || !selEmp) return;
-    setEmpLoading(true);
-    supabase.from('daily_production_logs')
-      .select('work_date, is_present, has_helmet, has_boots, has_gloves, remark')
-      .eq('employee_id', selEmp)
-      .gte('work_date', empFrom).lte('work_date', empTo)
-      .order('work_date', { ascending: false })
-      .then(({ data }) => { setEmpRows(data || []); setEmpLoading(false); });
-  }, [tab, selEmp, empFrom, empTo]);
-
-  // ── Fetch range
-  const fetchRange = async () => {
-    setRangeLoading(true);
-    const { data } = await supabase.from('daily_production_logs')
-      .select('employee_id, is_present, employees(id, name, employee_id_code, image_url)')
-      .gte('work_date', rangeFrom).lte('work_date', rangeTo);
-    const map = {};
-    (data || []).forEach(row => {
-      const id = row.employee_id;
-      if (!map[id]) map[id] = { emp: row.employees, present: 0, absent: 0 };
-      row.is_present ? map[id].present++ : map[id].absent++;
-    });
-    setRangeRows(Object.values(map).sort((a, b) => b.present - a.present));
-    setRangeLoading(false);
-  };
-  useEffect(() => { if (tab === 'range') fetchRange(); }, [tab, rangeFrom, rangeTo]);
-
-  // ── Fetch 4M
-  const fetchFourM = async () => {
-    setFourmLoading(true);
-    let q = supabase.from('four_m_logs').select('*')
-      .gte('work_date', fourmFrom).lte('work_date', fourmTo)
-      .order('work_date', { ascending: false })
-      .order('created_at', { ascending: false });
-    if (fourmLine !== 'all') q = q.eq('line_name', fourmLine);
-    if (fourmCat  !== 'all') q = q.eq('category', fourmCat);
-    const { data } = await q;
-    setFourmRows(data || []);
-    setFourmLoading(false);
-  };
-  useEffect(() => { if (tab === 'fourm') fetchFourM(); }, [tab, fourmFrom, fourmTo, fourmLine, fourmCat]);
-
-  // ── Helpers
-  const filteredDaily = dailyRows.filter(r =>
-    dailyFilter === 'all' ? true : dailyFilter === 'present' ? r.is_present : !r.is_present
-  );
-  const empInfo    = employees.find(e => e.id === selEmp);
-  const empPresent = empRows.filter(r => r.is_present).length;
-  const empAbsent  = empRows.filter(r => !r.is_present).length;
-
-  // 4M KPI counts
-  const fourmKpi = Object.keys(CAT_META).map(cat => ({
-    cat, ...CAT_META[cat],
-    count: fourmRows.filter(r => r.category === cat).length,
-  }));
+  const [activeTab, setActiveTab] = useState(0);
 
   return (
     <div className="page-content">
-      <h2 style={{ margin: '0 0 16px', fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
-        📋 รายงาน
-      </h2>
-
-      {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 12, flexWrap: 'wrap' }}>
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
-            padding: '7px 16px', borderRadius: 8, fontWeight: 600, fontSize: 13,
-            border: tab === t.id ? '1px solid var(--accent)' : '1px solid var(--border2)',
-            background: tab === t.id ? 'rgba(227,25,55,0.12)' : 'var(--bg3)',
-            color: tab === t.id ? 'var(--accent)' : 'var(--text2)',
-            cursor: 'pointer', transition: 'all 0.15s',
-          }}>{t.label}</button>
+      <div style={{ marginBottom: 18 }}>
+        <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
+          📋 รายงาน
+        </h2>
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20, overflowX: 'auto', flexShrink: 0 }}>
+        {TABS.map((t, i) => (
+          <button key={i} onClick={() => setActiveTab(i)} style={{
+            padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap',
+            background: activeTab === i ? 'var(--accent)' : 'var(--bg3)',
+            color: activeTab === i ? '#fff' : 'var(--text2)',
+            fontWeight: activeTab === i ? 700 : 400,
+          }}>{t}</button>
         ))}
       </div>
+      {activeTab === 0 && <DailyTab />}
+      {activeTab === 1 && <PerEmployeeTab />}
+      {activeTab === 2 && <RangeTab />}
+      {activeTab === 3 && <FourMTab />}
+    </div>
+  );
+}
 
-      {/* ══════════ DAILY ══════════ */}
-      {tab === 'daily' && (
-        <div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
-            <input type="date" value={dailyDate} onChange={e => setDailyDate(e.target.value)}
-              style={inputSt({ accent: true })} />
-            {['all','present','absent'].map(f => (
-              <button key={f} onClick={() => setDailyFilter(f)} style={filterBtn(dailyFilter === f)}>
-                {f === 'all'     ? `ทั้งหมด (${dailyRows.length})` :
-                 f === 'present' ? `✅ มาทำงาน (${dailyRows.filter(r=>r.is_present).length})` :
-                                   `❌ ขาดงาน (${dailyRows.filter(r=>!r.is_present).length})`}
-              </button>
-            ))}
-          </div>
-          <div className="card" style={{ overflowX: 'auto' }}>
-            {dailyLoading ? <Loader /> : (
-              <table style={{ minWidth: 540 }}>
-                <thead><tr><th></th><th>ID</th><th>ชื่อ</th><th style={{textAlign:'center'}}>สถานะ</th><th style={{textAlign:'center'}}>PPE</th><th>หมายเหตุ</th></tr></thead>
-                <tbody>
-                  {filteredDaily.length === 0 && <EmptyRow cols={6} />}
-                  {filteredDaily.map(row => (
-                    <tr key={row.id}>
-                      <td><Thumb src={row.employees?.image_url} /></td>
-                      <td style={{ fontWeight:700, color:'var(--blue)', fontSize:12 }}>{row.employees?.employee_id_code}</td>
-                      <td style={{ fontWeight:600 }}>{row.employees?.name ?? '—'}</td>
-                      <td style={{ textAlign:'center' }}><StatusBadge present={row.is_present} /></td>
-                      <td style={{ textAlign:'center', fontSize:12 }}>{row.is_present ? ppeStatus(row) : '—'}</td>
-                      <td style={{ fontSize:12, color:'var(--muted)' }}>{row.remark || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-      )}
+function DailyTab() {
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-      {/* ══════════ PER EMPLOYEE ══════════ */}
-      {tab === 'employee' && (
-        <div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
-            <select value={selEmp} onChange={e => setSelEmp(e.target.value)} style={inputSt()}>
-              {employees.map(e => <option key={e.id} value={e.id}>{e.employee_id_code} — {e.name}</option>)}
-            </select>
-            <input type="date" value={empFrom} onChange={e => setEmpFrom(e.target.value)} style={inputSt()} />
-            <span style={{ color:'var(--muted)', fontSize:13 }}>ถึง</span>
-            <input type="date" value={empTo}   onChange={e => setEmpTo(e.target.value)}   style={inputSt()} />
-          </div>
-          {empInfo && (
-            <div style={{ display:'flex', gap:12, marginBottom:16, flexWrap:'wrap' }}>
-              <div style={summaryCard}>
-                <img src={empInfo.image_url||''} style={{ width:48,height:48,borderRadius:12,objectFit:'cover',border:'2px solid var(--border2)' }} />
-                <div>
-                  <div style={{ fontWeight:700,fontSize:15,color:'var(--text)' }}>{empInfo.name}</div>
-                  <div style={{ fontSize:12,color:'var(--muted)' }}>{empInfo.employee_id_code}</div>
-                </div>
-              </div>
-              <KpiSmall value={empPresent} label="วันที่มา" color="var(--green)" />
-              <KpiSmall value={empAbsent}  label="วันที่ขาด" color="var(--red)" />
-              <KpiSmall value={(empPresent+empAbsent>0 ? Math.round(empPresent/(empPresent+empAbsent)*100) : 0)+'%'} label="อัตรามา" color="var(--blue)" />
-            </div>
-          )}
-          <div className="card" style={{ overflowX:'auto' }}>
-            {empLoading ? <Loader /> : (
-              <table style={{ minWidth:420 }}>
-                <thead><tr><th>วันที่</th><th style={{textAlign:'center'}}>สถานะ</th><th style={{textAlign:'center'}}>PPE</th><th>หมายเหตุ</th></tr></thead>
-                <tbody>
-                  {empRows.length === 0 && <EmptyRow cols={4} />}
-                  {empRows.map((row, i) => (
-                    <tr key={i}>
-                      <td style={{ fontWeight:600,fontSize:13,fontFamily:'var(--font-display)' }}>
-                        {new Date(row.work_date).toLocaleDateString('th-TH',{weekday:'short',year:'2-digit',month:'short',day:'numeric'})}
-                      </td>
-                      <td style={{ textAlign:'center' }}><StatusBadge present={row.is_present} /></td>
-                      <td style={{ textAlign:'center',fontSize:12 }}>{row.is_present ? ppeStatus(row) : '—'}</td>
-                      <td style={{ fontSize:12,color:'var(--muted)' }}>{row.remark||'—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-      )}
+  useEffect(() => { load(); }, [date]);
 
-      {/* ══════════ RANGE SUMMARY ══════════ */}
-      {tab === 'range' && (
-        <div>
-          <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center', marginBottom:16 }}>
-            <input type="date" value={rangeFrom} onChange={e => setRangeFrom(e.target.value)} style={inputSt()} />
-            <span style={{ color:'var(--muted)',fontSize:13 }}>ถึง</span>
-            <input type="date" value={rangeTo}   onChange={e => setRangeTo(e.target.value)}   style={inputSt()} />
-            <button onClick={fetchRange} style={actionBtn}>🔍 โหลดข้อมูล</button>
-          </div>
-          <div className="card" style={{ overflowX:'auto' }}>
-            {rangeLoading ? <Loader /> : (
-              <table style={{ minWidth:480 }}>
-                <thead><tr><th></th><th>ID</th><th>ชื่อ</th><th style={{textAlign:'center'}}>วันที่มา</th><th style={{textAlign:'center'}}>วันที่ขาด</th><th style={{textAlign:'center'}}>อัตรามา</th></tr></thead>
-                <tbody>
-                  {rangeRows.length === 0 && <EmptyRow cols={6} />}
-                  {rangeRows.map((row, i) => {
-                    const total = row.present + row.absent;
-                    const pct   = total > 0 ? Math.round(row.present/total*100) : 0;
-                    const c     = pct >= 90 ? 'var(--green)' : pct >= 70 ? 'var(--amber)' : 'var(--red)';
-                    return (
-                      <tr key={i}>
-                        <td><Thumb src={row.emp?.image_url} size={34} /></td>
-                        <td style={{ fontWeight:700,color:'var(--blue)',fontSize:12 }}>{row.emp?.employee_id_code}</td>
-                        <td style={{ fontWeight:600 }}>{row.emp?.name??'—'}</td>
-                        <td style={{ textAlign:'center',fontWeight:700,color:'var(--green)' }}>{row.present}</td>
-                        <td style={{ textAlign:'center',fontWeight:700,color:'var(--red)' }}>{row.absent}</td>
-                        <td style={{ textAlign:'center' }}>
-                          <div style={{ display:'flex',alignItems:'center',gap:6,justifyContent:'center' }}>
-                            <div style={{ width:60,height:6,borderRadius:3,background:'var(--border2)',overflow:'hidden' }}>
-                              <div style={{ width:pct+'%',height:'100%',background:c,borderRadius:3,transition:'width 0.4s' }} />
-                            </div>
-                            <span style={{ fontSize:12,fontWeight:700,color:c,minWidth:32 }}>{pct}%</span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-      )}
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('daily_production_logs')
+      .select('*, employees(name, employee_id_code, image_url, department)')
+      .eq('work_date', date)
+      .eq('is_present', true)
+      .order('created_at');
+    setLogs(data || []);
+    setLoading(false);
+  };
 
-      {/* ══════════ 4M CHANGES ══════════ */}
-      {tab === 'fourm' && (
-        <div>
-          {/* Filters */}
-          <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'center', marginBottom:16 }}>
-            <input type="date" value={fourmFrom} onChange={e => setFourmFrom(e.target.value)} style={inputSt()} />
-            <span style={{ color:'var(--muted)',fontSize:13 }}>ถึง</span>
-            <input type="date" value={fourmTo}   onChange={e => setFourmTo(e.target.value)}   style={inputSt()} />
-            <select value={fourmLine} onChange={e => setFourmLine(e.target.value)} style={inputSt()}>
-              <option value="all">ทุกไลน์</option>
-              {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-            </select>
-            <select value={fourmCat} onChange={e => setFourmCat(e.target.value)} style={inputSt()}>
-              <option value="all">ทุกประเภท</option>
-              {Object.entries(CAT_META).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
-            </select>
-          </div>
-
-          {/* KPI summary cards */}
-          {!fourmLoading && (
-            <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:16 }}>
-              <div style={{ ...kpiSmall, borderColor:'var(--border2)', minWidth:90 }}>
-                <div style={{ fontSize:24,fontWeight:800,color:'var(--text)',fontFamily:'var(--font-display)' }}>{fourmRows.length}</div>
-                <div style={{ fontSize:11,color:'var(--muted)' }}>ทั้งหมด</div>
-              </div>
-              {fourmKpi.map(k => (
-                <div key={k.cat} style={{ ...kpiSmall, borderColor: k.border, background: k.bg, minWidth:90 }}>
-                  <div style={{ fontSize:24,fontWeight:800,color:k.color,fontFamily:'var(--font-display)' }}>{k.count}</div>
-                  <div style={{ fontSize:11,color:k.color,fontWeight:600 }}>{k.label}</div>
-                </div>
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center' }}>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
+        <span style={{ color: 'var(--muted)', fontSize: 13 }}>รวม {logs.length} คน</span>
+      </div>
+      {loading ? <Loader /> : (
+        <div className="card" style={{ overflowX: 'auto' }}>
+          <table style={{ minWidth: 500 }}>
+            <thead>
+              <tr>
+                <th>โปรไฟล์</th><th>ID</th><th>ชื่อ</th><th>แผนก</th>
+                <th>PPE</th><th>จุดงาน</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.length === 0 ? <EmptyRow cols={6} /> : logs.map(l => (
+                <tr key={l.id}>
+                  <td><Thumb src={l.employees?.image_url} /></td>
+                  <td style={{ color: 'var(--blue)', fontWeight: 700 }}>{l.employees?.employee_id_code}</td>
+                  <td style={{ fontWeight: 600 }}>{l.employees?.name}</td>
+                  <td style={{ color: 'var(--muted)', fontSize: 12 }}>{l.employees?.department || '—'}</td>
+                  <td>
+                    <StatusBadge ok={l.has_helmet} label="หมวก" />
+                    <StatusBadge ok={l.has_boots} label="รองเท้า" />
+                    <StatusBadge ok={l.has_gloves} label="ถุงมือ" />
+                  </td>
+                  <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.assigned_line || '—'}</td>
+                </tr>
               ))}
-            </div>
-          )}
-
-          {/* Table */}
-          <div className="card" style={{ overflowX:'auto' }}>
-            {fourmLoading ? <Loader /> : (
-              <table style={{ minWidth:560 }}>
-                <thead>
-                  <tr>
-                    <th>วันที่</th>
-                    <th>ไลน์</th>
-                    <th style={{textAlign:'center'}}>ประเภท</th>
-                    <th>รายละเอียดการเปลี่ยนแปลง</th>
-                    <th style={{textAlign:'right',whiteSpace:'nowrap'}}>เวลาบันทึก</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {fourmRows.length === 0 && <EmptyRow cols={5} />}
-                  {fourmRows.map(row => {
-                    const meta = CAT_META[row.category] ?? { color:'var(--muted)', bg:'transparent', border:'var(--border2)', label: row.category };
-                    return (
-                      <tr key={row.id}>
-                        <td style={{ fontWeight:600, fontSize:13, whiteSpace:'nowrap', fontFamily:'var(--font-display)' }}>
-                          {new Date(row.work_date).toLocaleDateString('th-TH',{weekday:'short',year:'2-digit',month:'short',day:'numeric'})}
-                        </td>
-                        <td style={{ fontSize:13, color:'var(--text2)' }}>{row.line_name}</td>
-                        <td style={{ textAlign:'center' }}>
-                          <span style={{
-                            display:'inline-block',
-                            padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:700,
-                            background: meta.bg, color: meta.color,
-                            border:`1px solid ${meta.border}`,
-                            whiteSpace:'nowrap',
-                          }}>
-                            {meta.label}
-                          </span>
-                        </td>
-                        <td style={{ fontSize:13, color:'var(--text)', maxWidth:380 }}>{row.description}</td>
-                        <td style={{ fontSize:11, color:'var(--muted)', textAlign:'right', whiteSpace:'nowrap' }}>
-                          {row.created_at ? new Date(row.created_at).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}) : '—'}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
+            </tbody>
+          </table>
         </div>
       )}
     </div>
   );
 }
 
-/* ── Shared mini-components ─────────────────────────────── */
-const Loader = () => <div style={{ textAlign:'center', padding:40, color:'var(--muted)' }}>กำลังโหลด...</div>;
-const EmptyRow = ({ cols }) => <tr><td colSpan={cols} style={{ textAlign:'center', padding:32, color:'var(--muted)' }}>ไม่มีข้อมูล</td></tr>;
-const Thumb = ({ src, size=36 }) => <img src={src||''} style={{ width:size,height:size,borderRadius:8,objectFit:'cover',border:'1px solid var(--border2)' }} />;
-const StatusBadge = ({ present }) => (
-  <span style={{
-    padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:700,
-    background: present ? 'rgba(34,197,94,0.15)' : 'rgba(231,76,60,0.12)',
-    color:      present ? 'var(--green)' : 'var(--red)',
-    border:     present ? '1px solid rgba(34,197,94,0.3)' : '1px solid rgba(231,76,60,0.25)',
-  }}>
-    {present ? '✅ มา' : '❌ ขาด'}
-  </span>
-);
-const KpiSmall = ({ value, label, color }) => (
-  <div style={{ ...kpiSmall, borderColor: color }}>
-    <div style={{ fontSize:22,fontWeight:800,color,fontFamily:'var(--font-display)' }}>{value}</div>
-    <div style={{ fontSize:11,color:'var(--muted)' }}>{label}</div>
-  </div>
+function PerEmployeeTab() {
+  const [employees, setEmployees] = useState([]);
+  const [selected, setSelected] = useState('');
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+
+  useEffect(() => {
+    supabase.from('employees').select('id, name, employee_id_code').eq('is_active', true).order('name').then(({ data }) => {
+      setEmployees(data || []);
+      if (data?.length) setSelected(data[0].id);
+    });
+  }, []);
+
+  useEffect(() => { if (selected) load(); }, [selected, month]);
+
+  const load = async () => {
+    setLoading(true);
+    const from = month + '-01';
+    const to = month + '-31';
+    const { data } = await supabase
+      .from('daily_production_logs')
+      .select('work_date, is_present, has_helmet, has_boots, has_gloves, assigned_line')
+      .eq('employee_id', selected)
+      .gte('work_date', from).lte('work_date', to)
+      .order('work_date', { ascending: false });
+    setLogs(data || []);
+    setLoading(false);
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select value={selected} onChange={e => setSelected(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
+          {employees.map(e => <option key={e.id} value={e.id}>{e.employee_id_code} — {e.name}</option>)}
+        </select>
+        <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
+        <span style={{ color: 'var(--muted)', fontSize: 13 }}>มา {logs.filter(l => l.is_present).length} วัน</span>
+      </div>
+      {loading ? <Loader /> : (
+        <div className="card" style={{ overflowX: 'auto' }}>
+          <table style={{ minWidth: 400 }}>
+            <thead><tr><th>วันที่</th><th>PPE</th><th>จุดงาน</th></tr></thead>
+            <tbody>
+              {logs.length === 0 ? <EmptyRow cols={3} /> : logs.map((l, i) => (
+                <tr key={i}>
+                  <td style={{ fontWeight: 600 }}>{l.work_date}</td>
+                  <td>
+                    <StatusBadge ok={l.has_helmet} label="หมวก" />
+                    <StatusBadge ok={l.has_boots} label="รองเท้า" />
+                    <StatusBadge ok={l.has_gloves} label="ถุงมือ" />
+                  </td>
+                  <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.assigned_line || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RangeTab() {
+  const today = new Date().toISOString().split('T')[0];
+  const [from, setFrom] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 6);
+    return d.toISOString().split('T')[0];
+  });
+  const [to, setTo] = useState(today);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => { load(); }, [from, to]);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('daily_production_logs')
+      .select('work_date, is_present, employee_id, employees(name, employee_id_code)')
+      .gte('work_date', from).lte('work_date', to);
+    const map = {};
+    (data || []).forEach(l => {
+      const key = l.employee_id;
+      if (!map[key]) map[key] = { name: l.employees?.name, code: l.employees?.employee_id_code, total: 0, present: 0 };
+      map[key].total++;
+      if (l.is_present) map[key].present++;
+    });
+    setRows(Object.values(map).sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+    setLoading(false);
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+          <span style={{ color: 'var(--muted)' }}>จาก</span>
+          <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
+          <span style={{ color: 'var(--muted)' }}>ถึง</span>
+          <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
+        </div>
+      </div>
+      {loading ? <Loader /> : (
+        <div className="card" style={{ overflowX: 'auto' }}>
+          <table style={{ minWidth: 420 }}>
+            <thead><tr><th>ID</th><th>ชื่อ</th><th>มาทำงาน</th><th>%</th></tr></thead>
+            <tbody>
+              {rows.length === 0 ? <EmptyRow cols={4} /> : rows.map((r, i) => (
+                <tr key={i}>
+                  <td style={{ color: 'var(--blue)', fontWeight: 700 }}>{r.code}</td>
+                  <td style={{ fontWeight: 600 }}>{r.name}</td>
+                  <td><KpiSmall value={r.present} label={`/ ${r.total} วัน`} /></td>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ flex: 1, height: 6, background: 'var(--bg3)', borderRadius: 3, minWidth: 60 }}>
+                        <div style={{ width: `${r.total ? (r.present / r.total * 100) : 0}%`, height: '100%', background: 'var(--green)', borderRadius: 3, transition: 'width 0.5s' }} />
+                      </div>
+                      <span style={{ fontSize: 11, color: 'var(--text2)', minWidth: 30 }}>{r.total ? Math.round(r.present / r.total * 100) : 0}%</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FourMTab() {
+  const today = new Date().toISOString().split('T')[0];
+  const [from, setFrom] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 6);
+    return d.toISOString().split('T')[0];
+  });
+  const [to, setTo] = useState(today);
+  const [line, setLine] = useState('');
+  const [cat, setCat] = useState('');
+  const [logs, setLogs] = useState([]);
+  const [lines, setLines] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    supabase.from('production_lines').select('name').order('name').then(({ data }) => setLines(data || []));
+  }, []);
+
+  useEffect(() => { load(); }, [from, to, line, cat]);
+
+  const load = async () => {
+    setLoading(true);
+    let q = supabase.from('four_m_logs').select('*')
+      .gte('work_date', from).lte('work_date', to)
+      .order('work_date', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (line) q = q.eq('line_name', line);
+    if (cat) q = q.eq('category', cat);
+    const { data } = await q;
+    setLogs(data || []);
+    setLoading(false);
+  };
+
+  const kpi = Object.fromEntries(Object.keys(CAT_META).map(k => [k, logs.filter(l => l.category === k).length]));
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+        {Object.entries(CAT_META).map(([k, m]) => (
+          <div key={k} onClick={() => setCat(c => c === k ? '' : k)} style={{
+            background: cat === k ? m.bg : 'var(--card)',
+            border: `1px solid ${cat === k ? m.color : 'var(--border)'}`,
+            borderRadius: 10, padding: '12px 14px', cursor: 'pointer', transition: 'all 0.15s'
+          }}>
+            <div style={{ fontSize: 20 }}>{m.icon}</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{m.label}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: m.color, fontFamily: 'var(--font-display)' }}>{kpi[k] || 0}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }} />
+        <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
+        <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }} />
+        <select value={line} onChange={e => setLine(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
+          <option value="">ทุกไลน์</option>
+          {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+        </select>
+        <select value={cat} onChange={e => setCat(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
+          <option value="">ทุกประเภท</option>
+          {Object.keys(CAT_META).map(k => <option key={k} value={k}>{k}</option>)}
+        </select>
+        <span style={{ color: 'var(--muted)', fontSize: 12 }}>รวม {logs.length} รายการ</span>
+      </div>
+
+      {loading ? <Loader /> : (
+        <div className="card" style={{ overflowX: 'auto' }}>
+          <table style={{ minWidth: 560 }}>
+            <thead>
+              <tr>
+                <th>วันที่</th><th>ไลน์</th><th>ประเภท</th><th>รายละเอียดการเปลี่ยนแปลง</th><th>เวลาบันทึก</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.length === 0 ? <EmptyRow cols={5} /> : logs.map(l => {
+                const m = CAT_META[l.category] || {};
+                const ts = l.created_at
+                  ? new Date(l.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+                  : '—';
+                return (
+                  <tr key={l.id}>
+                    <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{l.work_date}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.line_name}</td>
+                    <td>
+                      <span style={{ background: m.bg, color: m.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>
+                        {m.icon} {l.category}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: 13 }}>{l.description}</td>
+                    <td style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{ts}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const Loader = () => (
+  <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
 );
 
-/* ── Style helpers ─────────────────────────────────────── */
-const inputSt = (opts={}) => ({
-  padding:'7px 12px', borderRadius:8,
-  background:'var(--bg3)', border:'1px solid var(--border2)',
-  color: opts.accent ? 'var(--accent)' : 'var(--text)',
-  fontWeight: opts.accent ? 700 : 400,
-  fontSize:13,
-});
-const filterBtn = (active) => ({
-  padding:'6px 14px', borderRadius:7, fontSize:12, fontWeight:600, cursor:'pointer',
-  border:      active ? '1px solid var(--accent)' : '1px solid var(--border2)',
-  background:  active ? 'rgba(227,25,55,0.12)'   : 'var(--bg3)',
-  color:       active ? 'var(--accent)'           : 'var(--text2)',
-});
-const actionBtn = {
-  padding:'7px 18px', borderRadius:8, background:'var(--accent)',
-  color:'#fff', border:'none', fontWeight:700, fontSize:13, cursor:'pointer',
-};
-const summaryCard = {
-  display:'flex', alignItems:'center', gap:12,
-  padding:'12px 16px', background:'var(--card)',
-  border:'1px solid var(--border)', borderRadius:10,
-};
-const kpiSmall = {
-  display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
-  padding:'10px 20px', background:'var(--card)',
-  border:'1px solid', borderRadius:10, minWidth:80,
-};
+const EmptyRow = ({ cols }) => (
+  <tr><td colSpan={cols} style={{ textAlign: 'center', padding: '20px 0', color: 'var(--muted)', fontSize: 12 }}>ไม่มีข้อมูล</td></tr>
+);
+
+const Thumb = ({ src }) => (
+  <img src={src || 'https://via.placeholder.com/40'} alt="" style={{ width: 38, height: 38, borderRadius: 8, objectFit: 'cover', border: '1px solid var(--border2)' }} />
+);
+
+const StatusBadge = ({ ok, label }) => (
+  <span style={{
+    display: 'inline-block', fontSize: 10, borderRadius: 4, padding: '1px 5px', marginRight: 3,
+    background: ok ? 'rgba(34,197,94,0.15)' : 'rgba(231,76,60,0.15)',
+    color: ok ? 'var(--green)' : 'var(--red)',
+    border: `1px solid ${ok ? 'rgba(34,197,94,0.3)' : 'rgba(231,76,60,0.3)'}`,
+  }}>{ok ? '✓' : '✗'} {label}</span>
+);
+
+const KpiSmall = ({ value, label }) => (
+  <span style={{ fontWeight: 700, color: 'var(--green)' }}>
+    {value}<span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}> {label}</span>
+  </span>
+);
