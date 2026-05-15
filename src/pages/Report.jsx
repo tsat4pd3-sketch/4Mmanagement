@@ -8,7 +8,15 @@ const CAT_META = {
   Method:   { color: '#c084fc', bg: 'rgba(139,92,246,0.12)', label: 'Method',   icon: '📋' },
 };
 
-const TABS = ['รายวัน', 'รายพนักงาน', 'สรุปช่วงเวลา', '🚨 4M Changes'];
+const TABS = ['รายวัน', 'รายพนักงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix'];
+
+const SKILL_LEVELS = [
+  { min: 80, label: 'ชำนาญ',       color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
+  { min: 60, label: 'ผ่านเกณฑ์',   color: '#84cc16', bg: 'rgba(132,204,18,0.15)' },
+  { min: 40, label: 'กำลังพัฒนา', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  { min: 0,  label: 'เริ่มต้น',     color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
+];
+const getLevel = (score) => SKILL_LEVELS.find(l => score >= l.min) || SKILL_LEVELS[3];
 
 export default function Report() {
   const [activeTab, setActiveTab] = useState(0);
@@ -34,6 +42,7 @@ export default function Report() {
       {activeTab === 1 && <PerEmployeeTab />}
       {activeTab === 2 && <RangeTab />}
       {activeTab === 3 && <FourMTab />}
+      {activeTab === 4 && <SkillMatrixTab />}
     </div>
   );
 }
@@ -50,9 +59,7 @@ function DailyTab() {
     const { data } = await supabase
       .from('daily_production_logs')
       .select('*, employees(name, employee_id_code, image_url, department)')
-      .eq('work_date', date)
-      .eq('is_present', true)
-      .order('updated_at');
+      .eq('work_date', date).eq('is_present', true).order('updated_at');
     setLogs(data || []);
     setLoading(false);
   };
@@ -66,12 +73,7 @@ function DailyTab() {
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 500 }}>
-            <thead>
-              <tr>
-                <th>โปรไฟล์</th><th>ID</th><th>ชื่อ</th><th>แผนก</th>
-                <th>PPE</th><th>จุดงาน</th>
-              </tr>
-            </thead>
+            <thead><tr><th>โปรไฟล์</th><th>ID</th><th>ชื่อ</th><th>แผนก</th><th>PPE</th><th>จุดงาน</th></tr></thead>
             <tbody>
               {logs.length === 0 ? <EmptyRow cols={6} /> : logs.map(l => (
                 <tr key={l.id}>
@@ -115,11 +117,9 @@ function PerEmployeeTab() {
     setLoading(true);
     const from = month + '-01';
     const to = month + '-31';
-    const { data } = await supabase
-      .from('daily_production_logs')
+    const { data } = await supabase.from('daily_production_logs')
       .select('work_date, is_present, has_helmet, has_boots, has_gloves, assigned_line')
-      .eq('employee_id', selected)
-      .gte('work_date', from).lte('work_date', to)
+      .eq('employee_id', selected).gte('work_date', from).lte('work_date', to)
       .order('work_date', { ascending: false });
     setLogs(data || []);
     setLoading(false);
@@ -160,10 +160,7 @@ function PerEmployeeTab() {
 
 function RangeTab() {
   const today = new Date().toISOString().split('T')[0];
-  const [from, setFrom] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() - 6);
-    return d.toISOString().split('T')[0];
-  });
+  const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
   const [to, setTo] = useState(today);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -172,8 +169,7 @@ function RangeTab() {
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from('daily_production_logs')
+    const { data } = await supabase.from('daily_production_logs')
       .select('work_date, is_present, employee_id, employees(name, employee_id_code)')
       .gte('work_date', from).lte('work_date', to);
     const map = {};
@@ -227,10 +223,7 @@ function RangeTab() {
 
 function FourMTab() {
   const today = new Date().toISOString().split('T')[0];
-  const [from, setFrom] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() - 6);
-    return d.toISOString().split('T')[0];
-  });
+  const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
   const [to, setTo] = useState(today);
   const [line, setLine] = useState('');
   const [cat, setCat] = useState('');
@@ -274,7 +267,6 @@ function FourMTab() {
           </div>
         ))}
       </div>
-
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }} />
         <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
@@ -289,32 +281,113 @@ function FourMTab() {
         </select>
         <span style={{ color: 'var(--muted)', fontSize: 12 }}>รวม {logs.length} รายการ</span>
       </div>
-
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 560 }}>
-            <thead>
-              <tr>
-                <th>วันที่</th><th>ไลน์</th><th>ประเภท</th><th>รายละเอียดการเปลี่ยนแปลง</th><th>เวลาบันทึก</th>
-              </tr>
-            </thead>
+            <thead><tr><th>วันที่</th><th>ไลน์</th><th>ประเภท</th><th>รายละเอียดการเปลี่ยนแปลง</th><th>เวลาบันทึก</th></tr></thead>
             <tbody>
               {logs.length === 0 ? <EmptyRow cols={5} /> : logs.map(l => {
                 const m = CAT_META[l.category] || {};
-                const ts = l.created_at
-                  ? new Date(l.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
-                  : '—';
+                const ts = l.created_at ? new Date(l.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '—';
                 return (
                   <tr key={l.id}>
                     <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{l.work_date}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.line_name}</td>
-                    <td>
-                      <span style={{ background: m.bg, color: m.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>
-                        {m.icon} {l.category}
-                      </span>
-                    </td>
+                    <td><span style={{ background: m.bg, color: m.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{m.icon} {l.category}</span></td>
                     <td style={{ fontSize: 13 }}>{l.description}</td>
                     <td style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{ts}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SkillMatrixTab() {
+  const [skillDefs, setSkillDefs] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [filterLine, setFilterLine] = useState('');
+  const [lines, setLines] = useState([]);
+
+  useEffect(() => {
+    supabase.from('production_lines').select('id, name').order('name').then(({ data }) => setLines(data || []));
+    load();
+  }, []);
+
+  useEffect(() => { load(); }, [filterLine]);
+
+  const load = async () => {
+    setLoading(true);
+    const [{ data: defs }, { data: emps }] = await Promise.all([
+      supabase.from('skill_definitions').select('*').order('sort_order'),
+      filterLine
+        ? supabase.from('employees').select('id, name, employee_id_code, line_id, employee_skills(skill_name, score)').eq('is_active', true).eq('line_id', filterLine).order('name')
+        : supabase.from('employees').select('id, name, employee_id_code, line_id, employee_skills(skill_name, score)').eq('is_active', true).order('name'),
+    ]);
+    setSkillDefs(defs || []);
+    setEmployees(emps || []);
+    setLoading(false);
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
+          <option value="">ทุกไลน์</option>
+          {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+        </select>
+        <span style={{ color: 'var(--muted)', fontSize: 13 }}>{employees.length} คน · {skillDefs.length} สกิล</span>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        {SKILL_LEVELS.map(lv => (
+          <span key={lv.label} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: lv.bg, color: lv.color, border: `1px solid ${lv.color}40` }}>
+            {lv.label} {lv.min > 0 ? `≥${lv.min}%` : '<40%'}
+          </span>
+        ))}
+        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>— ยังไม่ประเมิน</span>
+      </div>
+      {loading ? <Loader /> : (
+        <div className="card" style={{ overflowX: 'auto' }}>
+          <table style={{ minWidth: 300 + skillDefs.length * 90 }}>
+            <thead>
+              <tr>
+                <th style={{ minWidth: 130, textAlign: 'left' }}>พนักงาน</th>
+                {skillDefs.map(s => (
+                  <th key={s.name} style={{ minWidth: 88, textAlign: 'center', fontSize: 11 }}>
+                    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: s.color || '#4d9fff', marginRight: 3 }} />
+                    {s.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {employees.length === 0 ? <EmptyRow cols={1 + skillDefs.length} /> : employees.map(emp => {
+                const skillMap = {};
+                (emp.employee_skills || []).forEach(s => { skillMap[s.skill_name] = s.score; });
+                return (
+                  <tr key={emp.id}>
+                    <td>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{emp.name}</div>
+                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
+                    </td>
+                    {skillDefs.map(s => {
+                      const score = skillMap[s.name];
+                      if (score === undefined) return <td key={s.name} style={{ textAlign: 'center' }}><span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span></td>;
+                      const lv = getLevel(score);
+                      return (
+                        <td key={s.name} style={{ textAlign: 'center', padding: '6px 4px' }}>
+                          <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', background: lv.bg, borderRadius: 6, padding: '4px 8px', minWidth: 52 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: lv.color }}>{score}</span>
+                            <span style={{ fontSize: 9, color: lv.color, marginTop: 1 }}>{lv.label}</span>
+                          </div>
+                        </td>
+                      );
+                    })}
                   </tr>
                 );
               })}

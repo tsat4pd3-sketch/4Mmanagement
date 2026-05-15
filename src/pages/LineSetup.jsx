@@ -12,9 +12,10 @@ export default function LineSetup() {
   const [stations, setStations] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [tempPos, setTempPos] = useState(null);
-  const [formData, setFormData] = useState({ id: null, name: '', minScore: 70, skills: [] });
+  const [formData, setFormData] = useState({ id: null, name: '', requirements: {} });
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [collisionWarn, setCollisionWarn] = useState(false);
+  const [skillDefs, setSkillDefs] = useState([]);
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 768);
@@ -22,21 +23,16 @@ export default function LineSetup() {
     return () => window.removeEventListener('resize', handler);
   }, []);
 
-  const skillOptions = [
-    { id: 'skill_welding', label: 'งานเชื่อม' },
-    { id: 'skill_spot_nut', label: 'งานสปอทนัท' },
-    { id: 'skill_quality_check', label: 'งาน QC' },
-    { id: 'skill_refill_part', label: 'งานเติมพาร์ท' },
-    { id: 'skill_management', label: 'งานบริหาร' }
-  ];
-
   const fetchLines = async () => {
     const { data } = await supabase.from('production_lines').select('id, name').order('name');
     setLines(data || []);
     if (data?.length > 0 && !selectedLine) setSelectedLine(data[0].name);
   };
 
-  useEffect(() => { fetchLines(); }, []);
+  useEffect(() => {
+    fetchLines();
+    supabase.from('skill_definitions').select('*').order('sort_order').then(({ data }) => setSkillDefs(data || []));
+  }, []);
 
   useEffect(() => {
     if (selectedLine) fetchLineData();
@@ -45,7 +41,7 @@ export default function LineSetup() {
   const fetchLineData = async () => {
     const { data: layoutData } = await supabase.from('line_layouts').select('*').eq('line_name', selectedLine).single();
     setLayoutImage(layoutData?.image_url || null);
-    const { data: stationData } = await supabase.from('workstations').select('*').eq('line_name', selectedLine);
+    const { data: stationData } = await supabase.from('workstations').select('*, station_requirements(*)').eq('line_name', selectedLine);
     setStations(stationData || []);
   };
 
@@ -118,42 +114,74 @@ export default function LineSetup() {
 
     setCollisionWarn(false);
     setTempPos({ top: `${y.toFixed(2)}%`, left: `${x.toFixed(2)}%` });
-    setFormData({ id: null, name: '', minScore: 70, skills: [] });
+    setFormData({ id: null, name: '', requirements: {} });
   };
 
-  const toggleSkill = (skillId) => {
+  const toggleSkillReq = (skillName) => {
+    setFormData(prev => {
+      const reqs = { ...prev.requirements };
+      if (skillName in reqs) {
+        delete reqs[skillName];
+      } else {
+        reqs[skillName] = 70;
+      }
+      return { ...prev, requirements: reqs };
+    });
+  };
+
+  const setSkillScore = (skillName, score) => {
     setFormData(prev => ({
       ...prev,
-      skills: prev.skills.includes(skillId) ? prev.skills.filter(s => s !== skillId) : [...prev.skills, skillId]
+      requirements: { ...prev.requirements, [skillName]: parseInt(score) || 0 },
     }));
   };
 
   const handleSaveStation = async () => {
-    if (!formData.name || formData.skills.length === 0) return alert('กรุณาระบุชื่อและสกิล');
+    if (!formData.name) return alert('กรุณาระบุชื่อจุดงาน');
     const existingStation = stations.find(s => s.id === formData.id);
     const payload = {
       line_name: selectedLine,
       station_name: formData.name,
       pos_top: tempPos ? tempPos.top : existingStation?.pos_top,
       pos_left: tempPos ? tempPos.left : existingStation?.pos_left,
-      required_skill_field: formData.skills.join(','),
-      min_skill_score: parseInt(formData.minScore)
     };
-    const { error } = formData.id
-      ? await supabase.from('workstations').update(payload).eq('id', formData.id)
-      : await supabase.from('workstations').insert([payload]);
-    if (!error) { fetchLineData(); setTempPos(null); setFormData({ id: null, name: '', minScore: 70, skills: [] }); }
+    let stationId = formData.id;
+    if (stationId) {
+      const { error } = await supabase.from('workstations').update(payload).eq('id', stationId);
+      if (error) return alert('Error: ' + error.message);
+    } else {
+      const { data, error } = await supabase.from('workstations').insert([payload]).select().single();
+      if (error) return alert('Error: ' + error.message);
+      stationId = data.id;
+    }
+
+    await supabase.from('station_requirements').delete().eq('station_id', stationId);
+    const reqRows = Object.entries(formData.requirements).map(([skill_name, min_score]) => ({
+      station_id: stationId,
+      skill_name,
+      min_score,
+    }));
+    if (reqRows.length > 0) {
+      await supabase.from('station_requirements').insert(reqRows);
+    }
+
+    fetchLineData();
+    setTempPos(null);
+    setFormData({ id: null, name: '', requirements: {} });
   };
 
   const deleteStation = async (id) => {
     if (!window.confirm('ยืนยันการลบจุดงานนี้?')) return;
+    await supabase.from('station_requirements').delete().eq('station_id', id);
     const { error } = await supabase.from('workstations').delete().eq('id', id);
     if (!error) fetchLineData();
   };
 
   const editStation = (st) => {
     setTempPos(null);
-    setFormData({ id: st.id, name: st.station_name, minScore: st.min_skill_score, skills: st.required_skill_field.split(',') });
+    const reqMap = {};
+    (st.station_requirements || []).forEach(r => { reqMap[r.skill_name] = r.min_score; });
+    setFormData({ id: st.id, name: st.station_name, requirements: reqMap });
   };
 
   return (
@@ -166,7 +194,6 @@ export default function LineSetup() {
       minHeight: isMobile ? 'calc(100vh - 40px)' : undefined,
       overflow: isMobile ? 'auto' : 'hidden',
     }}>
-      {/* Canvas panel */}
       <div style={{
         flex: 1,
         background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14,
@@ -255,22 +282,18 @@ export default function LineSetup() {
         )}
       </div>
 
-      {/* Right panel */}
       <div style={{
         width: isMobile ? '100%' : 320,
         background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14,
         padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', flexShrink: 0
       }}>
-
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
             <span style={labelSt}>ไลน์ผลิต ({lines.length})</span>
           </div>
-
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
             {lines.map(l => (
-              <div
-                key={l.id}
+              <div key={l.id}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
@@ -278,41 +301,27 @@ export default function LineSetup() {
                   border: `1px solid ${selectedLine === l.name ? 'var(--accent)' : 'var(--border)'}`,
                   transition: 'background 0.15s, border-color 0.15s',
                 }}
-                onClick={() => { setSelectedLine(l.name); setTempPos(null); setFormData({ id: null, name: '', minScore: 70, skills: [] }); }}
+                onClick={() => { setSelectedLine(l.name); setTempPos(null); setFormData({ id: null, name: '', requirements: {} }); }}
               >
                 <span style={{ fontSize: 13, flex: 1, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400 }}>
                   {l.name}
                 </span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
+                <button onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
                   style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1 }}
-                  title="ลบไลน์"
-                >
-                  🗑️
-                </button>
+                  title="ลบไลน์">🗑️</button>
               </div>
             ))}
-
             {lines.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>
-                ยังไม่มีไลน์ผลิต
-              </div>
+              <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีไลน์ผลิต</div>
             )}
           </div>
-
           <div style={{ display: 'flex', gap: 6 }}>
-            <input
-              placeholder="ชื่อไลน์ใหม่ เช่น ไลน์ F"
-              value={newLineName}
+            <input placeholder="ชื่อไลน์ใหม่ เช่น ไลน์ F" value={newLineName}
               onChange={e => setNewLineName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleAddLine()}
-              style={{ flex: 1, fontSize: 13, padding: '8px 10px' }}
-            />
-            <button
-              onClick={handleAddLine}
-              disabled={isAddingLine || !newLineName.trim()}
-              style={{ padding: '8px 12px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, flexShrink: 0 }}
-            >
+              style={{ flex: 1, fontSize: 13, padding: '8px 10px' }} />
+            <button onClick={handleAddLine} disabled={isAddingLine || !newLineName.trim()}
+              style={{ padding: '8px 12px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
               {isAddingLine ? '...' : '+ เพิ่ม'}
             </button>
           </div>
@@ -325,41 +334,59 @@ export default function LineSetup() {
               <input type="file" hidden onChange={handleUploadImage} disabled={isUploading} />
             </label>
           )}
-
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginBottom: 10 }}>
             <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
               {formData.id ? '📝 แก้ไขจุดงาน' : '📍 เพิ่มจุดงาน'}
             </h4>
-
             {(tempPos || formData.id) ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>
-                <input
-                  placeholder="ชื่อจุด (OP10)"
-                  value={formData.name}
-                  onChange={e => setFormData({ ...formData, name: e.target.value })}
-                />
-                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>สกิลที่ต้องการ:</label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
-                  {skillOptions.map(s => (
-                    <label key={s.id} style={{
-                      fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5,
-                      padding: '6px 8px',
-                      background: formData.skills.includes(s.id) ? 'rgba(77,159,255,0.15)' : 'var(--bg3)',
-                      borderRadius: 5, border: `1px solid ${formData.skills.includes(s.id) ? 'var(--blue)' : 'var(--border)'}`,
-                      color: 'var(--text2)'
-                    }}>
-                      <input type="checkbox" style={{ width: 'auto' }} checked={formData.skills.includes(s.id)} onChange={() => toggleSkill(s.id)} />
-                      {s.label}
-                    </label>
-                  ))}
-                </div>
-                <label style={{ fontSize: 12, color: 'var(--text2)' }}>Min Score (%)</label>
-                <input type="number" value={formData.minScore} onChange={e => setFormData({ ...formData, minScore: e.target.value })} />
+                <input placeholder="ชื่อจุด (OP10)" value={formData.name}
+                  onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>
+                  สกิลที่ต้องการ: {Object.keys(formData.requirements).length > 0 && (
+                    <span style={{ color: 'var(--blue)', fontWeight: 400 }}>({Object.keys(formData.requirements).length} สกิล)</span>
+                  )}
+                </label>
+                {skillDefs.length === 0 ? (
+                  <div style={{ fontSize: 11, color: 'var(--muted)', padding: '8px', background: 'var(--bg3)', borderRadius: 6 }}>
+                    ยังไม่มีสกิล — กำหนดสกิลได้ที่หน้า Operator
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {skillDefs.map(skill => {
+                      const checked = skill.name in formData.requirements;
+                      return (
+                        <div key={skill.name} style={{
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          padding: '6px 8px', borderRadius: 6,
+                          background: checked ? 'rgba(77,159,255,0.1)' : 'var(--bg3)',
+                          border: `1px solid ${checked ? 'var(--blue)' : 'var(--border)'}`,
+                        }}>
+                          <input type="checkbox" style={{ width: 'auto', flexShrink: 0 }}
+                            checked={checked} onChange={() => toggleSkillReq(skill.name)} />
+                          <span style={{ fontSize: 11, color: 'var(--text2)', flex: 1 }}>
+                            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: skill.color || '#4d9fff', marginRight: 4 }} />
+                            {skill.label}
+                          </span>
+                          {checked && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                              <input type="number" min={0} max={100}
+                                value={formData.requirements[skill.name]}
+                                onChange={e => setSkillScore(skill.name, e.target.value)}
+                                style={{ width: 46, fontSize: 11, padding: '2px 4px', textAlign: 'center' }} />
+                              <span style={{ fontSize: 10, color: 'var(--muted)' }}>%</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                   <button onClick={handleSaveStation} style={{ flex: 1, padding: '9px', background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700 }}>
                     {formData.id ? 'บันทึก' : 'เพิ่ม'}
                   </button>
-                  <button onClick={() => { setTempPos(null); setFormData({ id: null, name: '', minScore: 70, skills: [] }); }}
+                  <button onClick={() => { setTempPos(null); setFormData({ id: null, name: '', requirements: {} }); }}
                     style={{ padding: '9px 14px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 7 }}>
                     ยกเลิก
                   </button>
@@ -371,21 +398,30 @@ export default function LineSetup() {
               </div>
             )}
           </div>
-
           <div style={{ borderTop: '1px solid var(--border)', margin: '10px 0 10px' }} />
           <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
             รายการจุดงาน ({stations.length})
           </h4>
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {stations.map(st => (
-              <div key={st.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div onClick={() => editStation(st)} style={{ cursor: 'pointer', flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{st.station_name}</div>
-                  <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{st.required_skill_field}</div>
+            {stations.map(st => {
+              const reqs = st.station_requirements || [];
+              return (
+                <div key={st.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div onClick={() => editStation(st)} style={{ cursor: 'pointer', flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{st.station_name}</div>
+                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                      {reqs.length > 0
+                        ? reqs.map(r => {
+                            const def = skillDefs.find(d => d.name === r.skill_name);
+                            return `${def?.label || r.skill_name} ≥${r.min_score}%`;
+                          }).join(', ')
+                        : 'ไม่มีสกิลที่กำหนด'}
+                    </div>
+                  </div>
+                  <button onClick={() => deleteStation(st.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>
                 </div>
-                <button onClick={() => deleteStation(st.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>}
       </div>
