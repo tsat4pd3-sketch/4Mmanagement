@@ -12,7 +12,7 @@ import AddUser from './pages/AddUser';
 import Report from './pages/Report';
 import ShiftOrganize from './pages/ShiftOrganize';
 
-/* ─── Role System ──────────────────────────────── */
+/* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null });
 
 const ROLE_LABELS = {
@@ -36,13 +36,13 @@ const NAV_ITEMS = [
 
 const canAccess = (role, roles) => !roles || roles.includes(role ?? 'admin');
 
-/* ─── Role Route Guard ──────────────────────── */
+/* ─── Role Route Guard ────────────────────────────────────── */
 function RoleRoute({ children, allow, userRole }) {
   if (!allow.includes(userRole ?? 'admin')) return <Navigate to="/" replace />;
   return children;
 }
 
-/* ─── Splash Screen ──────────────────────── */
+/* ─── Splash Screen ──────────────────────────────────────── */
 function SplashScreen({ onDone }) {
   const barRef = useRef(null);
 
@@ -78,7 +78,7 @@ function SplashScreen({ onDone }) {
   );
 }
 
-/* ─── Sidebar ──────────────────────────────────── */
+/* ─── Sidebar ──────────────────────────────────────────────────── */
 function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName }) {
   const location = useLocation();
   const isMobile = window.innerWidth <= 768;
@@ -238,7 +238,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   );
 }
 
-/* ─── Toggle Button ──────────────────────────── */
+/* ─── Toggle Button ──────────────────────────────────────────── */
 function ToggleBtn({ isOpen, sidebarW, onClick }) {
   return (
     <button
@@ -262,7 +262,7 @@ function ToggleBtn({ isOpen, sidebarW, onClick }) {
   );
 }
 
-/* ─── Protected Layout ─────────────────────────────── */
+/* ─── Protected Layout ─────────────────────────────────────────── */
 function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userEmail, userFullName }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
@@ -341,7 +341,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   );
 }
 
-/* ─── App Root ──────────────────────────────────────────── */
+/* ─── App Root ───────────────────────────────────────────────────────── */
 export default function App() {
   const [session,      setSession]      = useState(undefined);
   const [userRole,     setUserRole]     = useState(null);
