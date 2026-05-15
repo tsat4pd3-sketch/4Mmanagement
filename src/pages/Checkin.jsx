@@ -10,7 +10,7 @@ export default function Checkin() {
 
   const fetchEmployees = async () => {
     const today = new Date().toISOString().split('T')[0];
-    const { data: empData, error: empError } = await supabase.from('employees').select('*').order('employee_id_code');
+    const { data: empData, error: empError } = await supabase.from('employees').select('*').eq('is_active', true).order('employee_id_code');
     const { data: logData } = await supabase.from('daily_production_logs').select('*').eq('work_date', today);
 
     if (empError) { console.error('Error fetching employees:', empError); return; }

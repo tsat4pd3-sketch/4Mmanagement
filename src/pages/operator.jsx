@@ -43,11 +43,14 @@ export default function Operator() {
   };
 
   const fetchEmployees = async () => {
-    let base = supabase.from('employees').select('*, employee_skills(skill_name, score)');
-    if (isLeader && userLineId) base = base.eq('line_id', userLineId);
+    const makeBase = () => {
+      let q = supabase.from('employees').select('*, employee_skills(skill_name, score)');
+      if (isLeader && userLineId) q = q.eq('line_id', userLineId);
+      return q;
+    };
     const [{ data: active }, { data: inactive }] = await Promise.all([
-      base.eq('is_active', true).order('employee_id_code'),
-      base.eq('is_active', false).order('employee_id_code'),
+      makeBase().eq('is_active', true).order('employee_id_code'),
+      makeBase().eq('is_active', false).order('employee_id_code'),
     ]);
     setEmployees(active || []);
     setInactiveEmployees(inactive || []);
