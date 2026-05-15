@@ -21,6 +21,7 @@ export default function Checkin() {
   const [attendance,  setAttendance]  = useState({});
   const [isSaving,    setIsSaving]    = useState(false);
   const [filterShift, setFilterShift] = useState(true);
+  const [noSchedule,  setNoSchedule]  = useState(false);
 
   const shiftInfo = getShiftInfo();
 
@@ -45,6 +46,7 @@ export default function Checkin() {
 
     const lineSchedule = {};
     (scheduleData || []).forEach(s => { lineSchedule[s.line_id] = s.day_team; });
+    setNoSchedule(Object.keys(lineSchedule).length === 0);
 
     const empOverride = {};
     (overrideData || []).forEach(o => { empOverride[o.employee_id] = o.shift; });
@@ -156,6 +158,17 @@ export default function Checkin() {
           </button>
         </div>
       </div>
+
+      {noSchedule && (
+        <div style={{
+          padding: '10px 14px', borderRadius: 8, marginBottom: 14,
+          background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
+          fontSize: 13, color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <span>⚠️</span>
+          <span>ยังไม่มีตาราง shift สำหรับวันนี้ ({shiftInfo.workDateStr}) — คอลัมน์ "กะ" จะแสดง — ทั้งหมด ไปกำหนดได้ที่หน้า <strong>ตารางกะ</strong></span>
+        </div>
+      )}
 
       <div className="card" style={{ overflowX: 'auto' }}>
         <table style={{ minWidth: 680 }}>

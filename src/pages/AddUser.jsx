@@ -2,29 +2,78 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
 const ROLES = [
-  { value: 'admin',      label: 'Admin — ควบคุมทั้งระบบ' },
-  { value: 'manager',    label: 'Manager — ดูภาพรวม + จัดการ Cross Section' },
-  { value: 'supervisor', label: 'Supervisor — ดูภาพรวม + จัดการ Cross Line' },
-  { value: 'leader',     label: 'Leader — ดูภาพรวม + จัดการ Line ของตัวเอง' },
+  { value: 'admin',      label: 'Admin',      color: '#e31937', desc: 'ทุกหน้า + ตั้งค่าระบบ + จัดการผู้ใช้' },
+  { value: 'manager',    label: 'Manager',    color: '#f59e0b', desc: 'ภาพรวม + Cross Section + ตั้งค่าไลน์ + พนักงาน' },
+  { value: 'supervisor', label: 'Supervisor', color: '#4d9fff', desc: 'ภาพรวม + Cross Line + ตั้งค่าไลน์ + เช็คชื่อ' },
+  { value: 'leader',     label: 'Leader',     color: '#22c55e', desc: 'ภาพรวม + ไลน์ตัวเอง + พนักงานในไลน์' },
 ];
+const SECTIONS = ['PD1', 'PD2', 'PD3', 'PD4'];
+const TEAMS    = ['A', 'B'];
+
+const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', section: '', lineId: '', team: '' };
 
 export default function AddUser() {
-  const [email,    setEmail]    = useState('');
-  const [password, setPassword] = useState('');
-  const [role,     setRole]     = useState('supervisor');
-  const [lineId,   setLineId]   = useState('');
-  const [lines,    setLines]    = useState([]);
-  const [loading,  setLoading]  = useState(false);
-  const [message,  setMessage]  = useState(null);
-  const [error,    setError]    = useState(null);
+  const [users,         setUsers]         = useState([]);
+  const [lines,         setLines]         = useState([]);
+  const [fetchingUsers, setFetchingUsers] = useState(true);
+  const [showModal,     setShowModal]     = useState(false);
+  const [modalMode,     setModalMode]     = useState('create');
+  const [editingId,     setEditingId]     = useState(null);
+  const [form,          setForm]          = useState(emptyForm);
+  const [loading,       setLoading]       = useState(false);
+  const [message,       setMessage]       = useState(null);
+  const [error,         setError]         = useState(null);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name').order('name').then(({ data }) => setLines(data || []));
+    supabase.from('production_lines').select('id, name').order('name')
+      .then(({ data }) => setLines(data || []));
+    fetchUsers();
   }, []);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (role === 'leader' && !lineId) return setError('กรุณาเลือกไลน์ผลิตสำหรับ Leader');
+  const fetchUsers = async () => {
+    setFetchingUsers(true);
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name, role, line_id, section, team');
+    const { data: authUsers } = await supabase.rpc('get_auth_users');
+
+    const emailMap = {};
+    (authUsers || []).forEach(u => { emailMap[u.id] = u.email; });
+
+    setUsers((profiles || []).map(p => ({ ...p, email: emailMap[p.id] || '—' })));
+    setFetchingUsers(false);
+  };
+
+  const setF = (key, val) => setForm(f => ({ ...f, [key]: val }));
+
+  const openCreate = () => {
+    setForm(emptyForm);
+    setEditingId(null);
+    setModalMode('create');
+    setMessage(null);
+    setError(null);
+    setShowModal(true);
+  };
+
+  const openEdit = (u) => {
+    setForm({
+      email:    u.email,
+      password: '',
+      fullName: u.full_name || '',
+      role:     u.role      || 'supervisor',
+      section:  u.section   || '',
+      lineId:   u.line_id   ? String(u.line_id) : '',
+      team:     u.team      || '',
+    });
+    setEditingId(u.id);
+    setModalMode('edit');
+    setMessage(null);
+    setError(null);
+    setShowModal(true);
+  };
+
+  const handleCreate = async () => {
+    if (!form.email || !form.password) return setError('กรุณากรอก Email และรหัสผ่าน');
     setLoading(true);
     setMessage(null);
     setError(null);
@@ -35,23 +84,56 @@ export default function AddUser() {
         {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
+            'Content-Type':  'application/json',
             'Authorization': `Bearer ${session.access_token}`,
-            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+            'apikey':        import.meta.env.VITE_SUPABASE_ANON_KEY,
           },
-          body: JSON.stringify({ email, password, role, line_id: role === 'leader' ? Number(lineId) : null }),
+          body: JSON.stringify({
+            email:   form.email,
+            password: form.password,
+            role:    form.role,
+            line_id: form.lineId ? Number(form.lineId) : null,
+          }),
         }
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
 
-      // Patch line_id if the edge function returned the new user id
-      if (role === 'leader' && lineId && data.user?.id) {
-        await supabase.from('profiles').update({ line_id: Number(lineId) }).eq('id', data.user.id);
+      if (data.user?.id) {
+        await supabase.from('profiles').update({
+          full_name: form.fullName || null,
+          section:   form.section  || null,
+          team:      form.team     || null,
+          line_id:   form.lineId   ? Number(form.lineId) : null,
+        }).eq('id', data.user.id);
       }
 
-      setMessage(`สร้าง user "${email}" (${role}) สำเร็จ`);
-      setEmail(''); setPassword(''); setRole('supervisor'); setLineId('');
+      setMessage(`สร้าง user "${form.email}" (${form.role}) สำเร็จ`);
+      setShowModal(false);
+      fetchUsers();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdate = async () => {
+    setLoading(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const { error: err } = await supabase.from('profiles').update({
+        full_name: form.fullName || null,
+        role:      form.role,
+        section:   form.section  || null,
+        team:      form.team     || null,
+        line_id:   form.lineId   ? Number(form.lineId) : null,
+      }).eq('id', editingId);
+      if (err) throw err;
+      setMessage('อัปเดตข้อมูลผู้ใช้สำเร็จ');
+      setShowModal(false);
+      fetchUsers();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -60,42 +142,96 @@ export default function AddUser() {
   };
 
   return (
-    <div style={{
-      minHeight: 'calc(100vh - 80px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 20,
-    }}>
-      <div style={{
-        width: '100%', maxWidth: 480,
-        background: 'var(--card)',
-        border: '1px solid var(--border2)',
-        borderRadius: 16,
-        padding: '36px 32px',
-        boxShadow: 'var(--shadow-lg)',
-      }}>
-        <div style={{ marginBottom: 24 }}>
-          <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 20, color: 'var(--text)' }}>
-            🔑 เพิ่มผู้ใช้งานระบบ
+    <div className="page-content">
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
+        <div>
+          <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
+            🔑 จัดการผู้ใช้งาน
           </h2>
-          <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--muted)' }}>
-            สร้าง account สำหรับเข้าใช้งาน 4M System
-          </p>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>กำหนดสิทธิ์และสังกัด Section / Group / Team ของแต่ละ user</p>
         </div>
+        <button
+          onClick={openCreate}
+          style={{ padding: '10px 20px', background: 'var(--amber)', color: '#fff', border: 'none', borderRadius: 8, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+        >
+          ➕ เพิ่มผู้ใช้ใหม่
+        </button>
+      </div>
 
-        <div style={{ height: 2, background: 'var(--amber)', borderRadius: 2, marginBottom: 24, opacity: 0.7 }} />
+      {message && (
+        <div style={{ marginBottom: 14, padding: '10px 14px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, color: 'var(--green)', fontSize: 13 }}>
+          ✅ {message}
+        </div>
+      )}
 
-        {/* Role permission matrix */}
-        <div style={{ marginBottom: 20, padding: '12px 14px', background: 'var(--bg3)', borderRadius: 10, border: '1px solid var(--border2)' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            สิทธิ์การเข้าถึง
-          </div>
-          {[
-            { role: 'admin',      color: '#e31937', label: '👑 Admin',      desc: 'ทุกหน้า + ตั้งค่าระบบ + จัดการผู้ใช้' },
-            { role: 'manager',    color: '#f59e0b', label: '🏢 Manager',    desc: 'Dashboard + Report + Management (ทุกไลน์) + Setup Line + พนักงาน' },
-            { role: 'supervisor', color: '#4d9fff', label: '🎯 Supervisor', desc: 'Dashboard + Report + Management (ข้ามไลน์) + Setup Line + เช็คชื่อ' },
-            { role: 'leader',     color: '#22c55e', label: '⭐ Leader',     desc: 'Dashboard + Report + Management (ไลน์ตัวเอง) + พนักงานไลน์ตัวเอง' },
-          ].map(r => (
-            <div key={r.role} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
+      {/* User Table */}
+      <div className="card" style={{ overflowX: 'auto', marginBottom: 16 }}>
+        <table style={{ minWidth: 680 }}>
+          <thead>
+            <tr>
+              <th style={{ minWidth: 200 }}>ชื่อ / อีเมล</th>
+              <th style={{ textAlign: 'center', minWidth: 100 }}>สิทธิ์</th>
+              <th style={{ textAlign: 'center', minWidth: 80 }}>Section</th>
+              <th style={{ minWidth: 140 }}>ไลน์ / Group</th>
+              <th style={{ textAlign: 'center', minWidth: 80 }}>Team</th>
+              <th style={{ textAlign: 'center', minWidth: 80 }}>แก้ไข</th>
+            </tr>
+          </thead>
+          <tbody>
+            {fetchingUsers ? (
+              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>กำลังโหลด...</td></tr>
+            ) : users.length === 0 ? (
+              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบข้อมูลผู้ใช้</td></tr>
+            ) : users.map(u => {
+              const rc      = ROLES.find(r => r.value === u.role);
+              const lineName = lines.find(l => l.id === u.line_id)?.name || '—';
+              return (
+                <tr key={u.id}>
+                  <td>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{u.full_name || <span style={{ color: 'var(--muted)', fontWeight: 400 }}>ไม่ระบุชื่อ</span>}</div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)' }}>{u.email}</div>
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    <span style={{
+                      padding: '3px 10px', borderRadius: 5, fontSize: 11, fontWeight: 700,
+                      background: rc ? `${rc.color}22` : 'var(--bg3)',
+                      color:      rc ? rc.color        : 'var(--text2)',
+                      border:     `1px solid ${rc ? rc.color + '44' : 'var(--border2)'}`,
+                    }}>
+                      {u.role?.toUpperCase() || '—'}
+                    </span>
+                  </td>
+                  <td style={{ textAlign: 'center', fontSize: 13, color: u.section ? 'var(--text)' : 'var(--muted)' }}>
+                    {u.section || '—'}
+                  </td>
+                  <td style={{ fontSize: 13, color: u.line_id ? 'var(--text)' : 'var(--muted)' }}>
+                    {lineName}
+                  </td>
+                  <td style={{ textAlign: 'center', fontSize: 13, color: u.team ? 'var(--text)' : 'var(--muted)' }}>
+                    {u.team ? `Team ${u.team}` : '—'}
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    <button
+                      onClick={() => openEdit(u)}
+                      style={{ padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}
+                    >
+                      ✏️ แก้ไข
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Role reference */}
+      <div style={{ padding: '12px 16px', background: 'var(--bg3)', borderRadius: 10, border: '1px solid var(--border2)' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>สิทธิ์การเข้าถึง</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 6 }}>
+          {ROLES.map(r => (
+            <div key={r.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
               <div style={{ width: 6, height: 6, borderRadius: '50%', background: r.color, flexShrink: 0, marginTop: 4 }} />
               <div>
                 <span style={{ fontSize: 12, fontWeight: 700, color: r.color }}>{r.label}</span>
@@ -104,78 +240,98 @@ export default function AddUser() {
             </div>
           ))}
         </div>
+      </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div>
-            <label style={labelSt}>อีเมล</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="user@company.com"
-              required
-            />
-          </div>
+      {/* Create / Edit Modal */}
+      {showModal && (
+        <div className="overlay">
+          <div className="modal" style={{ maxWidth: 460 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 18, fontFamily: 'var(--font-display)', color: 'var(--text)', fontSize: 17 }}>
+              {modalMode === 'create' ? '➕ เพิ่มผู้ใช้ใหม่' : '✏️ แก้ไขข้อมูลผู้ใช้'}
+            </h3>
 
-          <div>
-            <label style={labelSt}>รหัสผ่าน</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="อย่างน้อย 6 ตัวอักษร"
-              minLength={6}
-              required
-            />
-          </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+              {modalMode === 'create' ? (
+                <>
+                  <div>
+                    <label style={labelSt}>อีเมล</label>
+                    <input type="email" placeholder="user@company.com" value={form.email} onChange={e => setF('email', e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={labelSt}>รหัสผ่าน (อย่างน้อย 6 ตัว)</label>
+                    <input type="password" placeholder="••••••" value={form.password} onChange={e => setF('password', e.target.value)} />
+                  </div>
+                </>
+              ) : (
+                <div style={{ padding: '8px 12px', background: 'var(--bg3)', borderRadius: 8, fontSize: 12, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  📧 <span style={{ color: 'var(--text)' }}>{form.email}</span>
+                </div>
+              )}
 
-          <div>
-            <label style={labelSt}>สิทธิ์การใช้งาน</label>
-            <select value={role} onChange={e => { setRole(e.target.value); setLineId(''); }}>
-              {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-            </select>
-          </div>
+              <div>
+                <label style={labelSt}>ชื่อ - นามสกุล</label>
+                <input type="text" placeholder="ชื่อเต็ม" value={form.fullName} onChange={e => setF('fullName', e.target.value)} />
+              </div>
 
-          {role === 'leader' && (
-            <div>
-              <label style={labelSt}>ไลน์ผลิต (สำหรับ Leader)</label>
-              <select value={lineId} onChange={e => setLineId(e.target.value)} required>
-                <option value="">— เลือกไลน์ —</option>
-                {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                Leader จะจัดการได้เฉพาะไลน์นี้เท่านั้น
+              <div>
+                <label style={labelSt}>สิทธิ์การใช้งาน (Role)</label>
+                <select value={form.role} onChange={e => setF('role', e.target.value)}>
+                  {ROLES.map(r => (
+                    <option key={r.value} value={r.value}>{r.label} — {r.desc}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={labelSt}>Section</label>
+                  <select value={form.section} onChange={e => setF('section', e.target.value)}>
+                    <option value="">— เลือก —</option>
+                    {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelSt}>Team</label>
+                  <select value={form.team} onChange={e => setF('team', e.target.value)}>
+                    <option value="">— เลือก —</option>
+                    {TEAMS.map(t => <option key={t} value={t}>Team {t}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={labelSt}>ไลน์ผลิต / Group</label>
+                <select value={form.lineId} onChange={e => setF('lineId', e.target.value)}>
+                  <option value="">— เลือกไลน์ —</option>
+                  {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              </div>
+
+              {error && (
+                <div style={{ padding: '8px 12px', background: 'rgba(227,25,55,0.08)', border: '1px solid rgba(227,25,55,0.2)', borderRadius: 7, color: 'var(--accent)', fontSize: 13 }}>
+                  ❌ {error}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button
+                  onClick={modalMode === 'create' ? handleCreate : handleUpdate}
+                  disabled={loading}
+                  style={{ flex: 2, padding: 12, background: loading ? 'var(--muted)' : 'var(--amber)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 14, cursor: loading ? 'default' : 'pointer' }}
+                >
+                  {loading ? 'กำลังบันทึก...' : modalMode === 'create' ? 'สร้าง Account' : 'บันทึก'}
+                </button>
+                <button
+                  onClick={() => setShowModal(false)}
+                  style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}
+                >
+                  ยกเลิก
+                </button>
               </div>
             </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              marginTop: 4,
-              padding: '13px',
-              background: loading ? 'var(--muted)' : 'var(--amber)',
-              color: '#fff', border: 'none', borderRadius: 8,
-              fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15,
-              cursor: loading ? 'default' : 'pointer',
-            }}
-          >
-            {loading ? 'กำลังสร้าง...' : 'สร้าง Account'}
-          </button>
-        </form>
-
-        {message && (
-          <div style={{ marginTop: 20, padding: '12px 16px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, color: 'var(--green)', fontSize: 14 }}>
-            ✅ {message}
           </div>
-        )}
-        {error && (
-          <div style={{ marginTop: 20, padding: '12px 16px', background: 'rgba(227,25,55,0.08)', border: '1px solid rgba(227,25,55,0.2)', borderRadius: 8, color: 'var(--accent)', fontSize: 14 }}>
-            ❌ {error}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
