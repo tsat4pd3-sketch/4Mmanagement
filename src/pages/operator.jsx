@@ -24,6 +24,9 @@ export default function Operator() {
   const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff' });
   const [isAddingSkill, setIsAddingSkill] = useState(false);
   const [myLineName, setMyLineName] = useState('');
+  const [filterSection, setFilterSection] = useState('');
+  const [filterGroup,   setFilterGroup]   = useState('');
+  const [filterTeam,    setFilterTeam]    = useState('');
 
   useEffect(() => {
     fetchSkillDefs();
@@ -89,9 +92,12 @@ export default function Operator() {
       }
 
       const { error } = await supabase.from('employees').update({
-        name: editingEmp.name,
+        name:       editingEmp.name,
         department: editingEmp.department,
-        image_url: photoUrl,
+        section:    editingEmp.section    || null,
+        group_name: editingEmp.group_name || null,
+        team:       editingEmp.team       || null,
+        image_url:  photoUrl,
       }).eq('id', editingEmp.id);
       if (error) throw error;
 
@@ -137,7 +143,15 @@ export default function Operator() {
     fetchEmployees();
   };
 
-  const displayed = showInactive ? inactiveEmployees : employees;
+  const allEmps = [...employees, ...inactiveEmployees];
+  const sectionOpts = [...new Set(allEmps.map(e => e.section).filter(Boolean))].sort();
+  const groupOpts   = [...new Set(allEmps.map(e => e.group_name).filter(Boolean))].sort();
+  const teamOpts    = [...new Set(allEmps.map(e => e.team).filter(Boolean))].sort();
+
+  const displayed = (showInactive ? inactiveEmployees : employees)
+    .filter(emp => !filterSection || emp.section    === filterSection)
+    .filter(emp => !filterGroup   || emp.group_name === filterGroup)
+    .filter(emp => !filterTeam    || emp.team       === filterTeam);
 
   return (
     <div className="page-content">
@@ -169,6 +183,27 @@ export default function Operator() {
 
       {tab === 0 && (
         <>
+          {/* Section / Group / Team filters */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+            {[
+              { label: 'Section', value: filterSection, opts: sectionOpts, set: setFilterSection },
+              { label: 'Group',   value: filterGroup,   opts: groupOpts,   set: setFilterGroup },
+              { label: 'Team',    value: filterTeam,    opts: teamOpts,    set: setFilterTeam },
+            ].map(f => (
+              <select key={f.label} value={f.value} onChange={e => f.set(e.target.value)}
+                style={{ fontSize: 12, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: f.value ? 'var(--text)' : 'var(--muted)', minWidth: 110 }}>
+                <option value="">— {f.label} —</option>
+                {f.opts.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            ))}
+            {(filterSection || filterGroup || filterTeam) && (
+              <button onClick={() => { setFilterSection(''); setFilterGroup(''); setFilterTeam(''); }}
+                style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>
+                ✕ ล้าง
+              </button>
+            )}
+          </div>
+
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, color: 'var(--muted)' }}>ใช้งาน {employees.length} คน</span>
             <button onClick={() => setShowInactive(s => !s)}
@@ -190,6 +225,9 @@ export default function Operator() {
                   <th>โปรไฟล์</th>
                   <th>ID</th>
                   <th>ชื่อ</th>
+                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Section</th>
+                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Group</th>
+                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Team</th>
                   {skillDefs.map(sd => (
                     <th key={sd.name} style={{ fontSize: 10, color: sd.color, whiteSpace: 'nowrap' }}>{sd.label}</th>
                   ))}
@@ -208,6 +246,9 @@ export default function Operator() {
                       <div style={{ fontWeight: 600 }}>{emp.name}</div>
                       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{emp.department || 'ไม่ระบุแผนก'}</div>
                     </td>
+                    <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.section    || '—'}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.group_name || '—'}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.team       || '—'}</td>
                     {skillDefs.map(sd => {
                       const score = getEmpSkill(emp, sd.name);
                       const lv = getLevel(score);
@@ -235,7 +276,7 @@ export default function Operator() {
                       ) : (
                         <button onClick={() => handleReactivate(emp.id)}
                           style={{ padding: '6px 12px', background: 'rgba(34,197,94,0.12)', color: 'var(--green)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 6, fontSize: 13 }}>
-                          ↩ เปิด
+                          ↩ เพิ่ม
                         </button>
                       )}
                     </td>
@@ -321,6 +362,24 @@ export default function Operator() {
                   <label style={labelSt}>แผนก</label>
                   <input type="text" value={editingEmp.department || ''}
                     onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value })} />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={labelSt}>Section</label>
+                  <input type="text" value={editingEmp.section || ''}
+                    onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value })} placeholder="เช่น A" />
+                </div>
+                <div>
+                  <label style={labelSt}>Group</label>
+                  <input type="text" value={editingEmp.group_name || ''}
+                    onChange={e => setEditingEmp({ ...editingEmp, group_name: e.target.value })} placeholder="เช่น G1" />
+                </div>
+                <div>
+                  <label style={labelSt}>Team</label>
+                  <input type="text" value={editingEmp.team || ''}
+                    onChange={e => setEditingEmp({ ...editingEmp, team: e.target.value })} placeholder="เช่น T1" />
                 </div>
               </div>
 

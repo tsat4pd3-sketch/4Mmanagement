@@ -5,6 +5,9 @@ export default function Register() {
   const [empCode,    setEmpCode]    = useState('');
   const [name,       setName]       = useState('');
   const [department, setDepartment] = useState('');
+  const [section,    setSection]    = useState('');
+  const [groupName,  setGroupName]  = useState('');
+  const [team,       setTeam]       = useState('');
   const [photo,      setPhoto]      = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -30,13 +33,18 @@ export default function Register() {
         employee_id_code: empCode,
         name,
         department,
+        section:    section    || null,
+        group_name: groupName  || null,
+        team:       team       || null,
         image_url: photoUrl,
         created_by: userId,
       }]);
       if (insertError) throw insertError;
 
       alert('เพิ่มพนักงานสำเร็จ!');
-      setEmpCode(''); setName(''); setDepartment(''); setPhoto(null);
+      setEmpCode(''); setName(''); setDepartment('');
+      setSection(''); setGroupName(''); setTeam('');
+      setPhoto(null);
       document.getElementById('photo-upload').value = '';
     } catch (err) {
       alert('เกิดข้อผิดพลาด: ' + err.message);
@@ -99,6 +107,21 @@ export default function Register() {
               value={department}
               onChange={e => setDepartment(e.target.value)}
             />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+            <div>
+              <label style={labelSt}>Section</label>
+              <input type="text" placeholder="เช่น A" value={section} onChange={e => setSection(e.target.value)} />
+            </div>
+            <div>
+              <label style={labelSt}>Group</label>
+              <input type="text" placeholder="เช่น G1" value={groupName} onChange={e => setGroupName(e.target.value)} />
+            </div>
+            <div>
+              <label style={labelSt}>Team</label>
+              <input type="text" placeholder="เช่น T1" value={team} onChange={e => setTeam(e.target.value)} />
+            </div>
           </div>
 
           <div>
