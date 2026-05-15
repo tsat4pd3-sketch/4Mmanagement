@@ -114,11 +114,15 @@ function useCursor() {
 }
 
 /* ─── Sidebar ────────────────────────────────────────────── */
-function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId }) {
+function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName }) {
   const location = useLocation();
   const isMobile = window.innerWidth <= 768;
 
   const visibleItems = NAV_ITEMS.filter(item => canAccess(userRole, item.roles));
+  const displayName = userFullName || userEmail || '';
+  const initials = displayName
+    ? displayName.split(/[\s@]/)[0].slice(0, 2).toUpperCase()
+    : '?';
 
   return (
     <>
@@ -180,19 +184,52 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
           )}
         </div>
 
-        {/* Footer: Role badge + Theme toggle + Logout */}
+        {/* Footer: User info + Theme toggle + Logout */}
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {userRole && (
+          {/* User info card */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 10px', borderRadius: 8,
+            background: 'var(--bg3)', border: '1px solid var(--border2)',
+            marginBottom: 2,
+          }}>
             <div style={{
-              fontSize: 11, color: 'var(--text2)', padding: '5px 8px',
-              borderRadius: 6, background: 'var(--bg3)',
-              border: '1px solid var(--border2)',
-              textAlign: 'center', whiteSpace: 'nowrap',
-              letterSpacing: '0.04em', fontWeight: 600,
+              width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+              background: 'linear-gradient(135deg, var(--accent), #ff6b6b)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 12, fontWeight: 800, color: '#fff',
             }}>
-              {ROLE_LABELS[userRole] ?? userRole}
+              {initials}
             </div>
-          )}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {userFullName || (userEmail?.split('@')[0]) || 'Unknown'}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {userEmail || ''}
+              </div>
+            </div>
+            <div style={{
+              fontSize: 9, fontWeight: 700, padding: '2px 5px',
+              borderRadius: 4, flexShrink: 0,
+              background: userRole === 'admin' ? 'rgba(227,25,55,0.15)' :
+                          userRole === 'manager' ? 'rgba(245,158,11,0.15)' :
+                          userRole === 'supervisor' ? 'rgba(77,159,255,0.15)' :
+                          'rgba(34,197,94,0.15)',
+              color: userRole === 'admin' ? '#e31937' :
+                     userRole === 'manager' ? '#f59e0b' :
+                     userRole === 'supervisor' ? '#4d9fff' :
+                     '#22c55e',
+              border: `1px solid ${
+                userRole === 'admin' ? 'rgba(227,25,55,0.3)' :
+                userRole === 'manager' ? 'rgba(245,158,11,0.3)' :
+                userRole === 'supervisor' ? 'rgba(77,159,255,0.3)' :
+                'rgba(34,197,94,0.3)'
+              }`,
+            }}>
+              {userRole?.toUpperCase() ?? 'ADMIN'}
+            </div>
+          </div>
 
           <button
             onClick={onToggleTheme}
@@ -261,7 +298,7 @@ function ToggleBtn({ isOpen, sidebarW, onClick }) {
 }
 
 /* ─── Protected Layout ───────────────────────────────────── */
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
   const [isOpen, setIsOpen] = useState(!isMobile);
@@ -301,6 +338,8 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId }
           onToggleTheme={onToggleTheme}
           userRole={role}
           userLineId={userLineId}
+          userEmail={userEmail}
+          userFullName={userFullName}
         />
 
         <main style={{
@@ -338,10 +377,12 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId }
 
 /* ─── App Root ───────────────────────────────────────────── */
 export default function App() {
-  const [session,    setSession]    = useState(undefined);
-  const [userRole,   setUserRole]   = useState(null);
-  const [userLineId, setUserLineId] = useState(null);
-  const [showSplash, setShowSplash] = useState(true);
+  const [session,      setSession]      = useState(undefined);
+  const [userRole,     setUserRole]     = useState(null);
+  const [userLineId,   setUserLineId]   = useState(null);
+  const [userEmail,    setUserEmail]    = useState(null);
+  const [userFullName, setUserFullName] = useState(null);
+  const [showSplash,   setShowSplash]   = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
 
   useEffect(() => {
@@ -351,21 +392,23 @@ export default function App() {
 
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
 
-  const fetchProfile = async (userId) => {
-    const { data } = await supabase.from('profiles').select('role, line_id').eq('id', userId).single();
+  const fetchProfile = async (user) => {
+    setUserEmail(user.email ?? null);
+    const { data } = await supabase.from('profiles').select('role, line_id, full_name').eq('id', user.id).single();
     setUserRole(data?.role ?? 'admin');
     setUserLineId(data?.line_id ?? null);
+    setUserFullName(data?.full_name ?? null);
   };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session?.user?.id) fetchProfile(session.user.id);
+      if (session?.user) fetchProfile(session.user);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
-      if (s?.user?.id) fetchProfile(s.user.id);
-      else { setUserRole(null); setUserLineId(null); }
+      if (s?.user) fetchProfile(s.user);
+      else { setUserRole(null); setUserLineId(null); setUserEmail(null); setUserFullName(null); }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -399,6 +442,8 @@ export default function App() {
                 onToggleTheme={toggleTheme}
                 userRole={userRole}
                 userLineId={userLineId}
+                userEmail={userEmail}
+                userFullName={userFullName}
               />
             } />
           </Routes>
