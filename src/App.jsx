@@ -12,8 +12,8 @@ import AddUser from './pages/AddUser';
 import Report from './pages/Report';
 import ShiftOrganize from './pages/ShiftOrganize';
 
-/* ─── Role System ──────────────────────────────────────────── */
-export const UserContext = createContext({ role: 'admin', lineId: null });
+/* ─── Role System ──────────────────────────────── */
+export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null });
 
 const ROLE_LABELS = {
   admin:      '👑 Admin',
@@ -36,13 +36,13 @@ const NAV_ITEMS = [
 
 const canAccess = (role, roles) => !roles || roles.includes(role ?? 'admin');
 
-/* ─── Role Route Guard ────────────────────────────────────── */
+/* ─── Role Route Guard ──────────────────────── */
 function RoleRoute({ children, allow, userRole }) {
   if (!allow.includes(userRole ?? 'admin')) return <Navigate to="/" replace />;
   return children;
 }
 
-/* ─── Splash Screen ──────────────────────────────────────── */
+/* ─── Splash Screen ──────────────────────── */
 function SplashScreen({ onDone }) {
   const barRef = useRef(null);
 
@@ -78,7 +78,7 @@ function SplashScreen({ onDone }) {
   );
 }
 
-/* ─── Sidebar ──────────────────────────────────────────────────── */
+/* ─── Sidebar ──────────────────────────────────── */
 function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName }) {
   const location = useLocation();
   const isMobile = window.innerWidth <= 768;
@@ -238,7 +238,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   );
 }
 
-/* ─── Toggle Button ──────────────────────────────────────────── */
+/* ─── Toggle Button ──────────────────────────── */
 function ToggleBtn({ isOpen, sidebarW, onClick }) {
   return (
     <button
@@ -262,8 +262,8 @@ function ToggleBtn({ isOpen, sidebarW, onClick }) {
   );
 }
 
-/* ─── Protected Layout ─────────────────────────────────────────── */
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName }) {
+/* ─── Protected Layout ─────────────────────────────── */
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userEmail, userFullName }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
   const [isOpen, setIsOpen] = useState(!isMobile);
@@ -290,7 +290,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   const role       = userRole ?? 'admin';
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId }}>
+    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection }}>
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         <ToggleBtn isOpen={isOpen} sidebarW={sidebarPx} onClick={() => setIsOpen(o => !o)} />
         <Sidebar
@@ -341,11 +341,13 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   );
 }
 
-/* ─── App Root ───────────────────────────────────────────────────────── */
+/* ─── App Root ──────────────────────────────────────────── */
 export default function App() {
   const [session,      setSession]      = useState(undefined);
   const [userRole,     setUserRole]     = useState(null);
   const [userLineId,   setUserLineId]   = useState(null);
+  const [userTeam,     setUserTeam]     = useState(null);
+  const [userSection,  setUserSection]  = useState(null);
   const [userEmail,    setUserEmail]    = useState(null);
   const [userFullName, setUserFullName] = useState(null);
   const [showSplash,   setShowSplash]   = useState(true);
@@ -360,10 +362,12 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const { data } = await supabase.from('profiles').select('role, line_id, full_name').eq('id', user.id).single();
+    const { data } = await supabase.from('profiles').select('role, line_id, full_name, team, section').eq('id', user.id).single();
     setUserRole(data?.role ?? 'admin');
     setUserLineId(data?.line_id ?? null);
     setUserFullName(data?.full_name ?? null);
+    setUserTeam(data?.team ?? null);
+    setUserSection(data?.section ?? null);
   };
 
   useEffect(() => {
@@ -374,7 +378,7 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
       if (s?.user) fetchProfile(s.user);
-      else { setUserRole(null); setUserLineId(null); setUserEmail(null); setUserFullName(null); }
+      else { setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserEmail(null); setUserFullName(null); }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -406,6 +410,8 @@ export default function App() {
                 onToggleTheme={toggleTheme}
                 userRole={userRole}
                 userLineId={userLineId}
+                userTeam={userTeam}
+                userSection={userSection}
                 userEmail={userEmail}
                 userFullName={userFullName}
               />

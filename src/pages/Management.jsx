@@ -20,8 +20,9 @@ const fitLabel = (score) => {
 };
 
 export default function Management() {
-  const { role, lineId: userLineId } = useContext(UserContext);
-  const isLeader = role === 'leader';
+  const { role, lineId: userLineId, team: userTeam } = useContext(UserContext);
+  const isLeader     = role === 'leader';
+  const isSupervisor = role === 'supervisor';
 
   const [workers, setWorkers] = useState([]);
   const [fourMLogs, setFourMLogs] = useState([]);
@@ -73,7 +74,7 @@ export default function Management() {
     const today = new Date().toISOString().split('T')[0];
     const { data: workerData } = await supabase
       .from('daily_production_logs')
-      .select(`id, assigned_line, employee_id, employees ( employee_id_code, name, image_url, employee_skills ( skill_name, score ) )`)
+      .select(`id, assigned_line, employee_id, employees ( employee_id_code, name, image_url, team, line_id, employee_skills ( skill_name, score ) )`)
       .eq('work_date', today).eq('is_present', true).eq('has_helmet', true).eq('has_boots', true).eq('has_gloves', true);
     const { data: mData } = await supabase.from('four_m_logs').select('*').eq('work_date', today);
     setWorkers(workerData || []);
@@ -222,6 +223,13 @@ export default function Management() {
     );
   };
 
+  // Pool visibility: leader sees only their team; supervisor/others see all unassigned
+  const poolWorkers = workers.filter(w => {
+    if (w.assigned_line) return false;
+    if (isLeader && userTeam) return w.employees?.team === userTeam;
+    return true;
+  });
+
   const poolStyle = isMobile
     ? { width: '100%', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '10px 12px', display: 'flex', flexDirection: 'column', flexShrink: 0 }
     : { width: 186, background: 'var(--bg2)', borderRight: '1px solid var(--border)', padding: '15px 10px', display: 'flex', flexDirection: 'column', flexShrink: 0, overflowY: 'auto' };
@@ -253,8 +261,8 @@ export default function Management() {
           style={{ flexShrink: 0, flex: isMobile ? undefined : 1 }}>
           <h3 style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🔵 พร้อมทำงาน</h3>
           <div style={poolInnerStyle}>
-            {workers.filter(w => !w.assigned_line).map(w => <PoolCard key={w.id} worker={w} />)}
-            {workers.filter(w => !w.assigned_line).length === 0 && (
+            {poolWorkers.map(w => <PoolCard key={w.id} worker={w} />)}
+            {poolWorkers.length === 0 && (
               <div style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'center', padding: '8px 0' }}>ไม่มีในPool</div>
             )}
           </div>

@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
+import { UserContext } from '../App';
 
 function getShiftInfo() {
   const now = new Date();
@@ -17,6 +18,8 @@ function getShiftInfo() {
 }
 
 export default function Checkin() {
+  const { role, lineId, team } = useContext(UserContext);
+
   const [employees,   setEmployees]   = useState([]);
   const [attendance,  setAttendance]  = useState({});
   const [isSaving,    setIsSaving]    = useState(false);
@@ -30,13 +33,21 @@ export default function Checkin() {
   const fetchData = async () => {
     const { workDateStr } = shiftInfo;
 
+    // Build employee query scoped to user's line/team
+    let empQ = supabase.from('employees').select('*').eq('is_active', true).order('employee_id_code');
+    if (role === 'supervisor' && lineId) empQ = empQ.eq('line_id', lineId);
+    if (role === 'leader') {
+      if (lineId) empQ = empQ.eq('line_id', lineId);
+      if (team)   empQ = empQ.eq('team', team);
+    }
+
     const [
       { data: empData },
       { data: logData },
       { data: scheduleData },
       { data: overrideData },
     ] = await Promise.all([
-      supabase.from('employees').select('*').eq('is_active', true).order('employee_id_code'),
+      empQ,
       supabase.from('daily_production_logs').select('*').eq('work_date', workDateStr),
       supabase.from('shift_schedules').select('*').eq('work_date', workDateStr),
       supabase.from('shift_overrides').select('*').eq('work_date', workDateStr),
