@@ -91,9 +91,9 @@ export default function AddUser() {
           </div>
           {[
             { role: 'admin',      color: '#e31937', label: '👑 Admin',      desc: 'ทุกหน้า + ตั้งค่าระบบ + จัดการผู้ใช้' },
-            { role: 'manager',    color: '#f59e0b', label: '🏢 Manager',    desc: 'Dashboard + Report + Management (ทุกไลน์) + พนักงาน' },
-            { role: 'supervisor', color: '#4d9fff', label: '🎯 Supervisor', desc: 'Dashboard + Report + Management (ข้ามไลน์) + เช็คชื่อ' },
-            { role: 'leader',     color: '#22c55e', label: '⭐ Leader',     desc: 'Dashboard + Report + Management (ไลน์ตัวเอง) + เช็คชื่อ' },
+            { role: 'manager',    color: '#f59e0b', label: '🏢 Manager',    desc: 'Dashboard + Report + Management (ทุกไลน์) + Setup Line + พนักงาน' },
+            { role: 'supervisor', color: '#4d9fff', label: '🎯 Supervisor', desc: 'Dashboard + Report + Management (ข้ามไลน์) + Setup Line + เช็คชื่อ' },
+            { role: 'leader',     color: '#22c55e', label: '⭐ Leader',     desc: 'Dashboard + Report + Management (ไลน์ตัวเอง) + พนักงานไลน์ตัวเอง' },
           ].map(r => (
             <div key={r.role} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
               <div style={{ width: 6, height: 6, borderRadius: '50%', background: r.color, flexShrink: 0, marginTop: 4 }} />

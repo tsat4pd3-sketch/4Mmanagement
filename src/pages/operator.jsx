@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
+import { UserContext } from '../App';
 
 const SKILL_LEVELS = [
   { min: 80, label: 'ชำนาญ',       color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
@@ -10,6 +11,9 @@ const SKILL_LEVELS = [
 const getLevel = (score) => SKILL_LEVELS.find(l => score >= l.min) || SKILL_LEVELS[3];
 
 export default function Operator() {
+  const { role, lineId: userLineId } = useContext(UserContext);
+  const isLeader = role === 'leader';
+
   const [tab, setTab] = useState(0);
   const [skillDefs, setSkillDefs] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -19,10 +23,15 @@ export default function Operator() {
   const [isSaving, setIsSaving] = useState(false);
   const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff' });
   const [isAddingSkill, setIsAddingSkill] = useState(false);
+  const [myLineName, setMyLineName] = useState('');
 
   useEffect(() => {
     fetchSkillDefs();
     fetchEmployees();
+    if (isLeader && userLineId) {
+      supabase.from('production_lines').select('name').eq('id', userLineId).single()
+        .then(({ data }) => setMyLineName(data?.name ?? ''));
+    }
   }, []);
 
   const fetchSkillDefs = async () => {
@@ -31,9 +40,11 @@ export default function Operator() {
   };
 
   const fetchEmployees = async () => {
+    let base = supabase.from('employees').select('*, employee_skills(skill_name, score)');
+    if (isLeader && userLineId) base = base.eq('line_id', userLineId);
     const [{ data: active }, { data: inactive }] = await Promise.all([
-      supabase.from('employees').select('*, employee_skills(skill_name, score)').eq('is_active', true).order('employee_id_code'),
-      supabase.from('employees').select('*, employee_skills(skill_name, score)').eq('is_active', false).order('employee_id_code'),
+      base.eq('is_active', true).order('employee_id_code'),
+      base.eq('is_active', false).order('employee_id_code'),
     ]);
     setEmployees(active || []);
     setInactiveEmployees(inactive || []);
@@ -137,7 +148,7 @@ export default function Operator() {
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
-        {['👥 พนักงาน', '⚙️ กำหนดสกิล'].map((t, i) => (
+        {(isLeader ? ['👥 พนักงาน'] : ['👥 พนักงาน', '⚙️ กำหนดสกิล']).map((t, i) => (
           <button key={i} onClick={() => setTab(i)} style={{
             padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
             background: tab === i ? 'var(--accent)' : 'var(--bg3)',
@@ -145,6 +156,15 @@ export default function Operator() {
             fontWeight: tab === i ? 700 : 400,
           }}>{t}</button>
         ))}
+        {isLeader && myLineName && (
+          <div style={{
+            fontSize: 11, color: '#22c55e', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
+            padding: '4px 8px', borderRadius: 6,
+            background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)',
+          }}>
+            📍 {myLineName}
+          </div>
+        )}
       </div>
 
       {tab === 0 && (
