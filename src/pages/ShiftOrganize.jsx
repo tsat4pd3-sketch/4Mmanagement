@@ -19,29 +19,27 @@ function toDateStr(d) {
   return d.toISOString().split('T')[0];
 }
 
-const DAY_LABELS = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
-
 export default function ShiftOrganize() {
   const { role } = useContext(UserContext);
   const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
 
-  const [weekRef,  setWeekRef]  = useState(new Date());
-  const [lines,    setLines]    = useState([]);
-  const [schedules, setSchedules] = useState({});
-  const [pending,  setPending]  = useState({});
-  const [isSaving, setIsSaving] = useState(false);
+  const [weekRef,   setWeekRef]   = useState(new Date());
+  const [lines,     setLines]     = useState([]);
+  const [weekTeams, setWeekTeams] = useState({}); // line_id → 'A' | 'B' | null
+  const [pending,   setPending]   = useState({}); // line_id → 'A' | 'B'
+  const [isSaving,  setIsSaving]  = useState(false);
 
-  const [overrides,     setOverrides]     = useState([]);
-  const [employees,     setEmployees]     = useState([]);
-  const [showOvrModal,  setShowOvrModal]  = useState(false);
-  const [ovrDate,       setOvrDate]       = useState(toDateStr(new Date()));
-  const [ovrEmpId,      setOvrEmpId]      = useState('');
-  const [ovrShift,      setOvrShift]      = useState('day');
-  const [ovrReason,     setOvrReason]     = useState('');
+  const [overrides,    setOverrides]    = useState([]);
+  const [employees,    setEmployees]    = useState([]);
+  const [showOvrModal, setShowOvrModal] = useState(false);
+  const [ovrDate,      setOvrDate]      = useState(toDateStr(new Date()));
+  const [ovrEmpId,     setOvrEmpId]     = useState('');
+  const [ovrShift,     setOvrShift]     = useState('day');
+  const [ovrReason,    setOvrReason]    = useState('');
 
   const weekDates = getWeekDates(weekRef);
-  const weekStart = toDateStr(weekDates[0]);
-  const weekEnd   = toDateStr(weekDates[6]);
+  const weekStart = toDateStr(weekDates[0]); // Monday
+  const weekEnd   = toDateStr(weekDates[6]); // Sunday
 
   useEffect(() => {
     fetchLines();
@@ -66,14 +64,14 @@ export default function ShiftOrganize() {
   };
 
   const fetchSchedules = async () => {
+    // Use Monday's record as the canonical setting for the week
     const { data } = await supabase
       .from('shift_schedules')
-      .select('work_date, line_id, day_team')
-      .gte('work_date', weekStart)
-      .lte('work_date', weekEnd);
+      .select('line_id, day_team')
+      .eq('work_date', weekStart);
     const map = {};
-    (data || []).forEach(r => { map[`${r.work_date}_${r.line_id}`] = r.day_team; });
-    setSchedules(map);
+    (data || []).forEach(r => { map[r.line_id] = r.day_team; });
+    setWeekTeams(map);
     setPending({});
   };
 
@@ -87,15 +85,13 @@ export default function ShiftOrganize() {
     setOverrides(data || []);
   };
 
-  const getTeam = (lineId, dateStr) => {
-    const key = `${dateStr}_${lineId}`;
-    return pending[key] !== undefined ? pending[key] : (schedules[key] || null);
-  };
+  const getTeam = (lineId) =>
+    pending[lineId] !== undefined ? pending[lineId] : (weekTeams[lineId] || null);
 
-  const toggleTeam = (lineId, dateStr) => {
+  const toggleTeam = (lineId) => {
     if (!canEdit) return;
-    const cur = getTeam(lineId, dateStr);
-    setPending(p => ({ ...p, [`${dateStr}_${lineId}`]: cur === 'A' ? 'B' : 'A' }));
+    const cur = getTeam(lineId);
+    setPending(p => ({ ...p, [lineId]: cur === 'A' ? 'B' : 'A' }));
   };
 
   const pendingCount = Object.keys(pending).length;
@@ -106,10 +102,13 @@ export default function ShiftOrganize() {
     const { data: userData } = await supabase.auth.getUser();
     const userId = userData?.user?.id;
 
-    const rows = Object.entries(pending).map(([key, day_team]) => {
-      const [work_date, line_id] = key.split('_');
-      return { work_date, line_id: parseInt(line_id), day_team, created_by: userId };
-    });
+    // Apply the same team to every day of the selected week
+    const rows = [];
+    for (const [lineId, day_team] of Object.entries(pending)) {
+      for (const d of weekDates) {
+        rows.push({ work_date: toDateStr(d), line_id: parseInt(lineId), day_team, created_by: userId });
+      }
+    }
 
     const { error } = await supabase
       .from('shift_schedules')
@@ -143,10 +142,11 @@ export default function ShiftOrganize() {
   const nextWeek = () => { const d = new Date(weekRef); d.setDate(d.getDate() + 7); setWeekRef(d); };
   const goToday  = () => setWeekRef(new Date());
 
-  const todayStr = toDateStr(new Date());
+  const fmtDate = (d) => d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
 
   return (
     <div className="page-content">
+      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
         <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
           🗓 ตารางกะการทำงาน
@@ -157,109 +157,105 @@ export default function ShiftOrganize() {
             disabled={isSaving}
             style={{ padding: '10px 22px', background: isSaving ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14 }}
           >
-            {isSaving ? '⏳ กำลังบันทึก...' : `💾 บันทึก (${pendingCount} รายการ)`}
+            {isSaving ? '⏳ กำลังบันทึก...' : `💾 บันทึก (${pendingCount} ไลน์)`}
           </button>
         )}
       </div>
 
       {/* Week Navigator */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         <button onClick={prevWeek} style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 16 }}>‹</button>
         <button onClick={goToday}  style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12 }}>วันนี้</button>
         <button onClick={nextWeek} style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 16 }}>›</button>
-        <span style={{ fontSize: 13, color: 'var(--text2)', marginLeft: 4 }}>
-          {weekDates[0].toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}
-          {' — '}
-          {weekDates[6].toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
-        </span>
-        {canEdit && (
-          <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 8 }}>คลิกเซลล์ ☀️ เพื่อสลับทีม</span>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border2)' }}>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>สัปดาห์</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
+            จ. {fmtDate(weekDates[0])} — อา. {fmtDate(weekDates[6])}
+          </span>
+        </div>
       </div>
 
-      {/* Schedule Grid */}
-      <div className="card" style={{ overflowX: 'auto', marginBottom: 24 }}>
-        <table style={{ minWidth: 680 }}>
+      {/* Weekly Shift Table */}
+      <div className="card" style={{ marginBottom: 8 }}>
+        <table>
           <thead>
             <tr>
-              <th style={{ minWidth: 160 }}>ไลน์ผลิต</th>
-              <th style={{ width: 70, textAlign: 'center', fontSize: 11 }}>กะ</th>
-              {weekDates.map((d, i) => {
-                const isToday = toDateStr(d) === todayStr;
-                return (
-                  <th key={i} style={{ textAlign: 'center', minWidth: 66, color: isToday ? 'var(--accent)' : 'var(--muted)' }}>
-                    <div>{DAY_LABELS[i]}</div>
-                    <div style={{ fontSize: 11, fontWeight: isToday ? 700 : 400 }}>{d.getDate()}/{d.getMonth() + 1}</div>
-                  </th>
-                );
-              })}
+              <th style={{ minWidth: 180 }}>ไลน์ผลิต</th>
+              <th style={{ minWidth: 80 }}>Section</th>
+              <th style={{ textAlign: 'center', minWidth: 130 }}>☀️ กะเช้า</th>
+              <th style={{ textAlign: 'center', minWidth: 130 }}>🌙 กะดึก</th>
+              {canEdit && <th style={{ textAlign: 'center', minWidth: 90 }}>จัดการ</th>}
             </tr>
           </thead>
           <tbody>
             {lines.map(line => {
-              const rows = [];
-              rows.push(
-                <tr key={`${line.id}-day`} style={{ background: 'rgba(255,255,255,0.01)' }}>
-                  <td rowSpan={2} style={{ verticalAlign: 'middle', borderRight: '1px solid var(--border)' }}>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>{line.name}</div>
-                    {line.section && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{line.section}</div>}
+              const team  = getTeam(line.id);
+              const night = team === 'A' ? 'B' : team === 'B' ? 'A' : null;
+              const isPending = pending[line.id] !== undefined;
+              return (
+                <tr key={line.id}>
+                  <td style={{ fontWeight: 600, fontSize: 14 }}>{line.name}</td>
+                  <td style={{ fontSize: 12, color: 'var(--muted)' }}>{line.section || '—'}</td>
+                  <td style={{ textAlign: 'center' }}>
+                    {team ? (
+                      <span style={{
+                        display: 'inline-block', padding: '5px 20px', borderRadius: 7,
+                        fontSize: 14, fontWeight: 800,
+                        background: team === 'A' ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)',
+                        color:      team === 'A' ? '#22c55e'              : '#f59e0b',
+                        border: isPending
+                          ? `2px solid ${team === 'A' ? '#22c55e' : '#f59e0b'}`
+                          : '1px solid transparent',
+                      }}>
+                        Team {team}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่กำหนด</span>
+                    )}
                   </td>
-                  <td style={{ textAlign: 'center', fontSize: 11, color: '#f59e0b', borderRight: '1px solid var(--border)', whiteSpace: 'nowrap', padding: '6px 8px' }}>☀️ เช้า</td>
-                  {weekDates.map(d => {
-                    const ds = toDateStr(d);
-                    const team = getTeam(line.id, ds);
-                    const isPending = pending[`${ds}_${line.id}`] !== undefined;
-                    return (
-                      <td key={ds} style={{ textAlign: 'center', padding: '6px 4px' }}>
-                        <div
-                          onClick={() => toggleTeam(line.id, ds)}
-                          style={{
-                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                            width: 40, height: 28, borderRadius: 6, fontSize: 13, fontWeight: 700,
-                            cursor: canEdit ? 'pointer' : 'default',
-                            border: isPending ? '2px solid var(--amber)' : '1px solid var(--border2)',
-                            background: team === 'A' ? 'rgba(34,197,94,0.15)' : team === 'B' ? 'rgba(245,158,11,0.15)' : 'var(--bg3)',
-                            color:      team === 'A' ? '#22c55e'              : team === 'B' ? '#f59e0b'              : 'var(--muted)',
-                            transition: 'all 0.15s',
-                            userSelect: 'none',
-                          }}
-                        >
-                          {team || '—'}
-                        </div>
-                      </td>
-                    );
-                  })}
+                  <td style={{ textAlign: 'center' }}>
+                    {night ? (
+                      <span style={{
+                        display: 'inline-block', padding: '5px 20px', borderRadius: 7,
+                        fontSize: 14, fontWeight: 800,
+                        background: night === 'A' ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)',
+                        color:      night === 'A' ? 'rgba(34,197,94,0.6)'  : 'rgba(245,158,11,0.6)',
+                        border: '1px solid transparent',
+                      }}>
+                        Team {night}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
+                    )}
+                  </td>
+                  {canEdit && (
+                    <td style={{ textAlign: 'center' }}>
+                      <button
+                        onClick={() => toggleTeam(line.id)}
+                        style={{
+                          padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
+                          border: '1px solid var(--border2)',
+                          background: isPending ? 'rgba(245,158,11,0.12)' : 'var(--bg3)',
+                          color: isPending ? 'var(--amber)' : 'var(--text2)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {team ? '⇄ สลับ' : '+ กำหนด'}
+                      </button>
+                    </td>
+                  )}
                 </tr>
               );
-              rows.push(
-                <tr key={`${line.id}-night`}>
-                  <td style={{ textAlign: 'center', fontSize: 11, color: '#4d9fff', borderRight: '1px solid var(--border)', whiteSpace: 'nowrap', padding: '6px 8px', borderBottom: '2px solid var(--border)' }}>🌙 ดึก</td>
-                  {weekDates.map(d => {
-                    const ds = toDateStr(d);
-                    const team = getTeam(line.id, ds);
-                    const night = team === 'A' ? 'B' : team === 'B' ? 'A' : null;
-                    return (
-                      <td key={ds} style={{ textAlign: 'center', padding: '6px 4px', borderBottom: '2px solid var(--border)' }}>
-                        <div style={{
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                          width: 40, height: 28, borderRadius: 6, fontSize: 13, fontWeight: 700,
-                          border: '1px solid var(--border)',
-                          background: night === 'A' ? 'rgba(34,197,94,0.08)' : night === 'B' ? 'rgba(245,158,11,0.08)' : 'transparent',
-                          color:      night === 'A' ? 'rgba(34,197,94,0.65)' : night === 'B' ? 'rgba(245,158,11,0.65)' : 'var(--muted)',
-                          opacity: 0.8,
-                        }}>
-                          {night || '—'}
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-              return rows;
             })}
           </tbody>
         </table>
       </div>
+
+      {canEdit && (
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 24, padding: '0 4px' }}>
+          การตั้งค่าจะมีผลกับทุกวันในสัปดาห์ (จันทร์–อาทิตย์) กด ⇄ สลับ แล้วกด 💾 บันทึก เพื่อบันทึกการเปลี่ยนแปลง
+        </div>
+      )}
 
       {/* Individual Overrides */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
