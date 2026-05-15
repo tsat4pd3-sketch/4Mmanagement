@@ -10,6 +10,18 @@ const SKILL_LEVELS = [
 ];
 const getLevel = (score) => SKILL_LEVELS.find(l => score >= l.min) || SKILL_LEVELS[3];
 
+const EMP_GRADES = {
+  gold:   { label: 'ประจำ',  gradient: 'linear-gradient(135deg,#7a5800,#ffd700,#c8941a,#ffd700,#7a5800)', glow: 'rgba(255,215,0,0.45)',   text: '#c8941a', badge: 'rgba(255,215,0,0.15)',   border: 'rgba(200,148,26,0.5)' },
+  silver: { label: 'รายวัน', gradient: 'linear-gradient(135deg,#555,#d0d0d0,#999,#d0d0d0,#555)',          glow: 'rgba(192,192,192,0.4)',  text: '#a0a0a0', badge: 'rgba(192,192,192,0.15)', border: 'rgba(160,160,160,0.5)' },
+  bronze: { label: 'อื่น¶',  gradient: 'linear-gradient(135deg,#4a2800,#cd7f32,#8b4a1e,#cd7f32,#4a2800)', glow: 'rgba(205,127,50,0.35)',  text: '#b06a28', badge: 'rgba(205,127,50,0.15)',  border: 'rgba(176,106,40,0.5)' },
+};
+
+const getEmpGrade = (code = '') => {
+  if (/^210/i.test(code))       return EMP_GRADES.gold;
+  if (/^(STM|PTA)/i.test(code)) return EMP_GRADES.silver;
+  return EMP_GRADES.bronze;
+};
+
 export default function Operator() {
   const { role, lineId: userLineId } = useContext(UserContext);
   const isLeader = role === 'leader';
@@ -27,6 +39,7 @@ export default function Operator() {
   const [filterSection, setFilterSection] = useState('');
   const [filterGroup,   setFilterGroup]   = useState('');
   const [filterTeam,    setFilterTeam]    = useState('');
+  const [filterGrade,   setFilterGrade]   = useState('');
   const [lines,         setLines]         = useState([]);
 
   useEffect(() => {
@@ -158,7 +171,8 @@ export default function Operator() {
   const displayed = (showInactive ? inactiveEmployees : employees)
     .filter(emp => !filterSection || emp.section    === filterSection)
     .filter(emp => !filterGroup   || emp.group_name === filterGroup)
-    .filter(emp => !filterTeam    || emp.team       === filterTeam);
+    .filter(emp => !filterTeam    || emp.team       === filterTeam)
+    .filter(emp => !filterGrade   || getEmpGrade(emp.employee_id_code) === EMP_GRADES[filterGrade]);
 
   return (
     <div className="page-content">
@@ -190,8 +204,8 @@ export default function Operator() {
 
       {tab === 0 && (
         <>
-          {/* Section / Group / Team filters */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+          {/* Section / Group / Team / Grade filters */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             {[
               { label: 'Section', value: filterSection, opts: sectionOpts, set: setFilterSection },
               { label: 'Group',   value: filterGroup,   opts: groupOpts,   set: setFilterGroup },
@@ -199,12 +213,35 @@ export default function Operator() {
             ].map(f => (
               <select key={f.label} value={f.value} onChange={e => f.set(e.target.value)}
                 style={{ fontSize: 12, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: f.value ? 'var(--text)' : 'var(--muted)', minWidth: 110 }}>
-                <option value="">— {f.label} —</option>
+                <option value="">{`— ${f.label} —`}</option>
                 {f.opts.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
             ))}
-            {(filterSection || filterGroup || filterTeam) && (
-              <button onClick={() => { setFilterSection(''); setFilterGroup(''); setFilterTeam(''); }}
+
+            {/* Grade filter chips */}
+            {[
+              { key: 'gold',   icon: '🥇' },
+              { key: 'silver', icon: '🥈' },
+              { key: 'bronze', icon: '🥉' },
+            ].map(({ key, icon }) => {
+              const g = EMP_GRADES[key];
+              const active = filterGrade === key;
+              return (
+                <button key={key} onClick={() => setFilterGrade(active ? '' : key)}
+                  style={{
+                    padding: '4px 11px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                    border: `1px solid ${active ? g.border : 'var(--border2)'}`,
+                    background: active ? g.badge : 'var(--bg3)',
+                    color: active ? g.text : 'var(--muted)',
+                    transition: 'all 0.15s',
+                  }}>
+                  {icon} {g.label}
+                </button>
+              );
+            })}
+
+            {(filterSection || filterGroup || filterTeam || filterGrade) && (
+              <button onClick={() => { setFilterSection(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); }}
                 style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>
                 ✕ ล้าง
               </button>
@@ -242,13 +279,41 @@ export default function Operator() {
                 </tr>
               </thead>
               <tbody>
-                {displayed.map(emp => (
+                {displayed.map(emp => {
+                  const grade = getEmpGrade(emp.employee_id_code);
+                  return (
                   <tr key={emp.id} style={!emp.is_active ? { opacity: 0.5 } : {}}>
                     <td>
-                      <img src={emp.image_url || 'https://via.placeholder.com/50'} alt=""
-                        style={{ width: 44, height: 44, borderRadius: 10, objectFit: 'cover', border: '1px solid var(--border2)', filter: !emp.is_active ? 'grayscale(1)' : 'none' }} />
+                      <div style={{
+                        display: 'inline-flex', padding: 2.5, borderRadius: 12,
+                        background: !emp.is_active ? 'var(--border2)' : grade.gradient,
+                        boxShadow: !emp.is_active ? 'none' : `0 0 10px ${grade.glow}`,
+                      }}>
+                        <img
+                          src={emp.image_url || ''}
+                          alt=""
+                          style={{
+                            width: 42, height: 42, borderRadius: 9,
+                            objectFit: 'cover', display: 'block',
+                            filter: !emp.is_active ? 'grayscale(1)' : 'none',
+                            background: 'var(--bg3)',
+                          }}
+                        />
+                      </div>
                     </td>
-                    <td style={{ fontWeight: 700, color: 'var(--blue)', fontFamily: 'var(--font-display)' }}>{emp.employee_id_code}</td>
+                    <td>
+                      <div style={{ fontWeight: 700, color: grade.text, fontFamily: 'var(--font-display)', fontSize: 13 }}>
+                        {emp.employee_id_code}
+                      </div>
+                      <div style={{
+                        display: 'inline-block', marginTop: 3,
+                        fontSize: 9, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase',
+                        padding: '1px 7px', borderRadius: 4,
+                        background: grade.badge, color: grade.text, border: `1px solid ${grade.border}`,
+                      }}>
+                        {grade.label}
+                      </div>
+                    </td>
                     <td>
                       <div style={{ fontWeight: 600 }}>{emp.name}</div>
                       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{emp.department || 'ไม่ระบุแผนก'}</div>
@@ -288,7 +353,8 @@ export default function Operator() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
