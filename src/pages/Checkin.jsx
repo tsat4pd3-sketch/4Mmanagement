@@ -1,34 +1,79 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
+function getShiftInfo() {
+  const now = new Date();
+  const h = now.getHours();
+  const totalMin = h * 60 + now.getMinutes();
+  const isDay = totalMin >= 8 * 60 && totalMin < 20 * 60;
+  const workDate = new Date(now);
+  if (h < 8) workDate.setDate(workDate.getDate() - 1);
+  return {
+    shift:       isDay ? 'day' : 'night',
+    workDateStr: workDate.toISOString().split('T')[0],
+    label:       isDay ? '☀️ กะเช้า' : '🌙 กะดึก',
+    timeRange:   isDay ? '08:00–19:59' : '20:00–07:59',
+  };
+}
+
 export default function Checkin() {
-  const [employees, setEmployees] = useState([]);
-  const [attendance, setAttendance] = useState({});
-  const [isSaving, setIsSaving] = useState(false);
+  const [employees,   setEmployees]   = useState([]);
+  const [attendance,  setAttendance]  = useState({});
+  const [isSaving,    setIsSaving]    = useState(false);
+  const [filterShift, setFilterShift] = useState(true);
 
-  useEffect(() => { fetchEmployees(); }, []);
+  const shiftInfo = getShiftInfo();
 
-  const fetchEmployees = async () => {
-    const today = new Date().toISOString().split('T')[0];
-    const { data: empData, error: empError } = await supabase.from('employees').select('*').eq('is_active', true).order('employee_id_code');
-    const { data: logData } = await supabase.from('daily_production_logs').select('*').eq('work_date', today);
+  useEffect(() => { fetchData(); }, []);
 
-    if (empError) { console.error('Error fetching employees:', empError); return; }
-    if (empData) {
-      setEmployees(empData);
-      const init = {};
-      empData.forEach(emp => {
-        const log = logData?.find(l => l.employee_id === emp.id);
-        init[emp.id] = {
-          is_present:  log ? log.is_present  : false,
-          has_helmet:  log ? log.has_helmet  : false,
-          has_boots:   log ? log.has_boots   : false,
-          has_gloves:  log ? log.has_gloves  : false,
-          remark:      log ? log.remark      : ''
-        };
-      });
-      setAttendance(init);
-    }
+  const fetchData = async () => {
+    const { workDateStr } = shiftInfo;
+
+    const [
+      { data: empData },
+      { data: logData },
+      { data: scheduleData },
+      { data: overrideData },
+    ] = await Promise.all([
+      supabase.from('employees').select('*').eq('is_active', true).order('employee_id_code'),
+      supabase.from('daily_production_logs').select('*').eq('work_date', workDateStr),
+      supabase.from('shift_schedules').select('*').eq('work_date', workDateStr),
+      supabase.from('shift_overrides').select('*').eq('work_date', workDateStr),
+    ]);
+
+    if (!empData) return;
+
+    const lineSchedule = {};
+    (scheduleData || []).forEach(s => { lineSchedule[s.line_id] = s.day_team; });
+
+    const empOverride = {};
+    (overrideData || []).forEach(o => { empOverride[o.employee_id] = o.shift; });
+
+    const enriched = empData.map(emp => {
+      let assignedShift = null;
+      if (empOverride[emp.id]) {
+        assignedShift = empOverride[emp.id];
+      } else if (emp.line_id && lineSchedule[emp.line_id]) {
+        const dayTeam = lineSchedule[emp.line_id];
+        assignedShift = emp.team === dayTeam ? 'day' : emp.team ? 'night' : null;
+      }
+      return { ...emp, assignedShift };
+    });
+
+    setEmployees(enriched);
+
+    const init = {};
+    enriched.forEach(emp => {
+      const log = logData?.find(l => l.employee_id === emp.id);
+      init[emp.id] = {
+        is_present: log ? log.is_present : false,
+        has_helmet: log ? log.has_helmet : false,
+        has_boots:  log ? log.has_boots  : false,
+        has_gloves: log ? log.has_gloves : false,
+        remark:     log ? log.remark     : '',
+      };
+    });
+    setAttendance(init);
   };
 
   const toggle = (empId, field) =>
@@ -42,19 +87,18 @@ export default function Checkin() {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData?.user?.id) { alert('กรุณา Login ก่อน'); setIsSaving(false); return; }
 
-    const today = new Date().toISOString().split('T')[0];
+    const { workDateStr } = shiftInfo;
     const logs = employees.map(emp => ({
-      employee_id:  emp.id,
-      work_date:    today,
-      is_present:   attendance[emp.id].is_present,
-      has_helmet:   attendance[emp.id].has_helmet,
-      has_boots:    attendance[emp.id].has_boots,
-      has_gloves:   attendance[emp.id].has_gloves,
-      remark:       attendance[emp.id].remark,
-      checked_by:   userData.user.id,
+      employee_id: emp.id,
+      work_date:   workDateStr,
+      is_present:  attendance[emp.id].is_present,
+      has_helmet:  attendance[emp.id].has_helmet,
+      has_boots:   attendance[emp.id].has_boots,
+      has_gloves:  attendance[emp.id].has_gloves,
+      remark:      attendance[emp.id].remark,
+      checked_by:  userData.user.id,
     }));
 
-    // onConflict must match the unique constraint columns — no spaces
     const { error } = await supabase
       .from('daily_production_logs')
       .upsert(logs, { onConflict: 'work_date,employee_id' });
@@ -64,31 +108,61 @@ export default function Checkin() {
     setIsSaving(false);
   };
 
+  const displayed = filterShift
+    ? employees.filter(emp => !emp.assignedShift || emp.assignedShift === shiftInfo.shift)
+    : employees;
+
   return (
     <div className="page-content">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
-        <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px, 3vw, 22px)', color: 'var(--text)' }}>
-          📝 เช็คชื่อ & PPE
-        </h2>
-        <button
-          onClick={handleSave}
-          disabled={isSaving}
-          style={{
-            padding: '10px 22px',
-            background: isSaving ? 'var(--muted)' : 'var(--accent)',
-            color: '#fff', border: 'none', borderRadius: 8,
-            fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14,
-          }}
-        >
-          {isSaving ? '⏳ กำลังบันทึก...' : '💾 บันทึก'}
-        </button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px, 3vw, 22px)', color: 'var(--text)' }}>
+            📝 เช็คชื่อ & PPE
+          </h2>
+          <span style={{
+            padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700,
+            background: shiftInfo.shift === 'day' ? 'rgba(245,158,11,0.15)' : 'rgba(77,159,255,0.15)',
+            color:      shiftInfo.shift === 'day' ? '#f59e0b'              : '#4d9fff',
+            border: `1px solid ${shiftInfo.shift === 'day' ? 'rgba(245,158,11,0.3)' : 'rgba(77,159,255,0.3)'}`,
+          }}>
+            {shiftInfo.label} · {shiftInfo.timeRange}
+          </span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{shiftInfo.workDateStr}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button
+            onClick={() => setFilterShift(f => !f)}
+            style={{
+              padding: '8px 14px', borderRadius: 8,
+              border: '1px solid var(--border2)', fontSize: 12, cursor: 'pointer',
+              background: filterShift ? 'rgba(77,159,255,0.12)' : 'var(--bg3)',
+              color:      filterShift ? 'var(--blue)'           : 'var(--text2)',
+              fontWeight: filterShift ? 600 : 400,
+            }}
+          >
+            {filterShift ? '👁 เฉพาะกะนี้' : '👥 ทุกคน'}
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            style={{
+              padding: '10px 22px',
+              background: isSaving ? 'var(--muted)' : 'var(--accent)',
+              color: '#fff', border: 'none', borderRadius: 8,
+              fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14,
+            }}
+          >
+            {isSaving ? '⏳ กำลังบันทึก...' : '💾 บันทึก'}
+          </button>
+        </div>
       </div>
 
       <div className="card" style={{ overflowX: 'auto' }}>
-        <table style={{ minWidth: 620 }}>
+        <table style={{ minWidth: 680 }}>
           <thead>
             <tr>
               <th style={{ minWidth: 160 }}>พนักงาน</th>
+              <th style={{ textAlign: 'center', minWidth: 52 }}>กะ</th>
               <th style={{ textAlign: 'center', minWidth: 64 }}>มางาน</th>
               <th style={{ textAlign: 'center', minWidth: 64 }}>หมวก</th>
               <th style={{ textAlign: 'center', minWidth: 64 }}>รองเท้า</th>
@@ -98,7 +172,7 @@ export default function Checkin() {
             </tr>
           </thead>
           <tbody>
-            {employees.map(emp => {
+            {displayed.map(emp => {
               const rec = attendance[emp.id];
               if (!rec) return null;
               const ready = rec.is_present && rec.has_helmet && rec.has_boots && rec.has_gloves;
@@ -115,6 +189,12 @@ export default function Checkin() {
                         <div style={{ fontSize: 12, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
                       </div>
                     </div>
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    {emp.assignedShift
+                      ? <span style={{ fontSize: 15 }}>{emp.assignedShift === 'day' ? '☀️' : '🌙'}</span>
+                      : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
+                    }
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: 'var(--accent)', width: 'auto' }} checked={rec.is_present} onChange={() => toggle(emp.id, 'is_present')} />
@@ -142,6 +222,13 @@ export default function Checkin() {
                 </tr>
               );
             })}
+            {displayed.length === 0 && (
+              <tr>
+                <td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>
+                  ไม่มีพนักงานในกะนี้ — ลองกด 👥 ทุกคน
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

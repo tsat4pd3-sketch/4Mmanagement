@@ -1,15 +1,25 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
+const SECTIONS = ['PD1', 'PD2', 'PD3', 'PD4'];
+const TEAMS    = ['A', 'B'];
+
 export default function Register() {
-  const [empCode,    setEmpCode]    = useState('');
-  const [name,       setName]       = useState('');
-  const [department, setDepartment] = useState('');
-  const [section,    setSection]    = useState('');
-  const [groupName,  setGroupName]  = useState('');
-  const [team,       setTeam]       = useState('');
-  const [photo,      setPhoto]      = useState(null);
+  const [empCode,     setEmpCode]     = useState('');
+  const [name,        setName]        = useState('');
+  const [department,  setDepartment]  = useState('');
+  const [section,     setSection]     = useState('');
+  const [groupName,   setGroupName]   = useState('');
+  const [lineId,      setLineId]      = useState(null);
+  const [team,        setTeam]        = useState('');
+  const [photo,       setPhoto]       = useState(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [lines,       setLines]       = useState([]);
+
+  useEffect(() => {
+    supabase.from('production_lines').select('id, name').order('name')
+      .then(({ data }) => setLines(data || []));
+  }, []);
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -33,17 +43,18 @@ export default function Register() {
         employee_id_code: empCode,
         name,
         department,
-        section:    section    || null,
-        group_name: groupName  || null,
-        team:       team       || null,
-        image_url: photoUrl,
+        section:    section   || null,
+        group_name: groupName || null,
+        team:       team      || null,
+        line_id:    lineId    || null,
+        image_url:  photoUrl,
         created_by: userId,
       }]);
       if (insertError) throw insertError;
 
       alert('เพิ่มพนักงานสำเร็จ!');
       setEmpCode(''); setName(''); setDepartment('');
-      setSection(''); setGroupName(''); setTeam('');
+      setSection(''); setGroupName(''); setTeam(''); setLineId(null);
       setPhoto(null);
       document.getElementById('photo-upload').value = '';
     } catch (err) {
@@ -79,67 +90,59 @@ export default function Register() {
         <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
             <label style={labelSt}>รหัสพนักงาน</label>
-            <input
-              type="text"
-              placeholder="เช่น EMP001"
-              value={empCode}
-              onChange={e => setEmpCode(e.target.value)}
-              required
-            />
+            <input type="text" placeholder="เช่น EMP001" value={empCode} onChange={e => setEmpCode(e.target.value)} required />
           </div>
 
           <div>
             <label style={labelSt}>ชื่อ - นามสกุล</label>
-            <input
-              type="text"
-              placeholder="ชื่อเต็มของพนักงาน"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              required
-            />
+            <input type="text" placeholder="ชื่อเต็มของพนักงาน" value={name} onChange={e => setName(e.target.value)} required />
           </div>
 
           <div>
             <label style={labelSt}>แผนก / สายงาน</label>
-            <input
-              type="text"
-              placeholder="เช่น ฝ่ายผลิต"
-              value={department}
-              onChange={e => setDepartment(e.target.value)}
-            />
+            <input type="text" placeholder="เช่น ฝ่ายผลิต" value={department} onChange={e => setDepartment(e.target.value)} />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>Section</label>
-              <input type="text" placeholder="เช่น A" value={section} onChange={e => setSection(e.target.value)} />
-            </div>
-            <div>
-              <label style={labelSt}>Group</label>
-              <input type="text" placeholder="เช่น G1" value={groupName} onChange={e => setGroupName(e.target.value)} />
+              <select value={section} onChange={e => setSection(e.target.value)}>
+                <option value="">— เลือก —</option>
+                {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
             </div>
             <div>
               <label style={labelSt}>Team</label>
-              <input type="text" placeholder="เช่น T1" value={team} onChange={e => setTeam(e.target.value)} />
+              <select value={team} onChange={e => setTeam(e.target.value)}>
+                <option value="">— เลือก —</option>
+                {TEAMS.map(t => <option key={t} value={t}>Team {t}</option>)}
+              </select>
             </div>
           </div>
 
           <div>
+            <label style={labelSt}>Group / Line</label>
+            <select value={groupName} onChange={e => {
+              const val = e.target.value;
+              setGroupName(val);
+              const line = lines.find(l => l.name === val);
+              setLineId(line?.id || null);
+            }}>
+              <option value="">— เลือก Line —</option>
+              {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+            </select>
+          </div>
+
+          <div>
             <label style={labelSt}>รูปถ่าย (ถ้ามี)</label>
-            <input
-              id="photo-upload"
-              type="file"
-              accept="image/*"
-              onChange={e => setPhoto(e.target.files[0])}
-            />
+            <input id="photo-upload" type="file" accept="image/*" onChange={e => setPhoto(e.target.files[0])} />
           </div>
 
           <button
             type="submit"
             disabled={isUploading}
             style={{
-              marginTop: 4,
-              padding: '13px',
+              marginTop: 4, padding: '13px',
               background: isUploading ? 'var(--muted)' : 'var(--accent)',
               color: '#fff', border: 'none', borderRadius: 8,
               fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15,

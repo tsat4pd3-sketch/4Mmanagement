@@ -10,6 +10,7 @@ import Operator from './pages/operator';
 import LineSetup from './pages/LineSetup';
 import AddUser from './pages/AddUser';
 import Report from './pages/Report';
+import ShiftOrganize from './pages/ShiftOrganize';
 
 /* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null });
@@ -29,7 +30,8 @@ const NAV_ITEMS = [
   { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   roles: ['admin', 'manager', 'supervisor'] },
   { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      roles: ['admin'] },
   { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager', 'leader'] },
-  { to: '/report',     icon: '📋', label: 'รายงาน',             roles: null },
+  { to: '/report',        icon: '📋', label: 'รายงาน',            roles: null },
+  { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         roles: ['admin', 'manager', 'supervisor'] },
 ];
 
 const canAccess = (role, roles) => !roles || roles.includes(role ?? 'admin');
@@ -328,6 +330,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
             } />
             <Route path="/add-user"   element={
               <RoleRoute allow={['admin']} userRole={role}><AddUser /></RoleRoute>
+            } />
+            <Route path="/shift-organize" element={
+              <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}><ShiftOrganize /></RoleRoute>
             } />
           </Routes>
         </main>

@@ -27,10 +27,13 @@ export default function Operator() {
   const [filterSection, setFilterSection] = useState('');
   const [filterGroup,   setFilterGroup]   = useState('');
   const [filterTeam,    setFilterTeam]    = useState('');
+  const [lines,         setLines]         = useState([]);
 
   useEffect(() => {
     fetchSkillDefs();
     fetchEmployees();
+    supabase.from('production_lines').select('id, name').order('name')
+      .then(({ data }) => setLines(data || []));
     if (isLeader && userLineId) {
       supabase.from('production_lines').select('name').eq('id', userLineId).single()
         .then(({ data }) => setMyLineName(data?.name ?? ''));
@@ -100,6 +103,7 @@ export default function Operator() {
         section:    editingEmp.section    || null,
         group_name: editingEmp.group_name || null,
         team:       editingEmp.team       || null,
+        line_id:    editingEmp.line_id    || null,
         image_url:  photoUrl,
       }).eq('id', editingEmp.id);
       if (error) throw error;
@@ -368,22 +372,32 @@ export default function Operator() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <label style={labelSt}>Section</label>
-                  <input type="text" value={editingEmp.section || ''}
-                    onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value })} placeholder="เช่น A" />
-                </div>
-                <div>
-                  <label style={labelSt}>Group</label>
-                  <input type="text" value={editingEmp.group_name || ''}
-                    onChange={e => setEditingEmp({ ...editingEmp, group_name: e.target.value })} placeholder="เช่น G1" />
+                  <select value={editingEmp.section || ''} onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value })}>
+                    <option value="">— เลือก —</option>
+                    {['PD1','PD2','PD3','PD4'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label style={labelSt}>Team</label>
-                  <input type="text" value={editingEmp.team || ''}
-                    onChange={e => setEditingEmp({ ...editingEmp, team: e.target.value })} placeholder="เช่น T1" />
+                  <select value={editingEmp.team || ''} onChange={e => setEditingEmp({ ...editingEmp, team: e.target.value })}>
+                    <option value="">— เลือก —</option>
+                    {['A','B'].map(t => <option key={t} value={t}>Team {t}</option>)}
+                  </select>
                 </div>
+              </div>
+              <div>
+                <label style={labelSt}>Group / Line</label>
+                <select value={editingEmp.group_name || ''} onChange={e => {
+                  const val = e.target.value;
+                  const line = lines.find(l => l.name === val);
+                  setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
+                }}>
+                  <option value="">— เลือก Line —</option>
+                  {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                </select>
               </div>
 
               <div style={{ background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>
