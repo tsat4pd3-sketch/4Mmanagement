@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect, useRef, useContext } from 'react';
+import { createContext, useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import Login from './pages/Login';
@@ -11,7 +11,7 @@ import LineSetup from './pages/LineSetup';
 import AddUser from './pages/AddUser';
 import Report from './pages/Report';
 
-/* ─── Role System ────────────────────────────────────────── */
+/* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null });
 
 const ROLE_LABELS = {
@@ -34,13 +34,13 @@ const NAV_ITEMS = [
 
 const canAccess = (role, roles) => !roles || roles.includes(role ?? 'admin');
 
-/* ─── Role Route Guard ───────────────────────────────────── */
+/* ─── Role Route Guard ────────────────────────────────────── */
 function RoleRoute({ children, allow, userRole }) {
   if (!allow.includes(userRole ?? 'admin')) return <Navigate to="/" replace />;
   return children;
 }
 
-/* ─── Splash Screen ─────────────────────────────────────── */
+/* ─── Splash Screen ──────────────────────────────────────── */
 function SplashScreen({ onDone }) {
   const barRef = useRef(null);
 
@@ -76,44 +76,7 @@ function SplashScreen({ onDone }) {
   );
 }
 
-/* ─── Cursor Effect ─────────────────────────────────────── */
-function useCursor() {
-  useEffect(() => {
-    const dot  = document.getElementById('cursor');
-    const ring = document.getElementById('cursor-ring');
-    if (!dot || !ring) return;
-    if (!window.matchMedia('(hover: hover)').matches) return;
-
-    dot.style.display  = 'block';
-    ring.style.display = 'block';
-
-    let mx = 0, my = 0, rx = 0, ry = 0;
-
-    const onMove = (e) => {
-      mx = e.clientX; my = e.clientY;
-      dot.style.left = mx + 'px';
-      dot.style.top  = my + 'px';
-    };
-    document.addEventListener('mousemove', onMove);
-
-    let rafId;
-    const animRing = () => {
-      rx += (mx - rx) * 0.12;
-      ry += (my - ry) * 0.12;
-      ring.style.left = rx + 'px';
-      ring.style.top  = ry + 'px';
-      rafId = requestAnimationFrame(animRing);
-    };
-    rafId = requestAnimationFrame(animRing);
-
-    return () => {
-      document.removeEventListener('mousemove', onMove);
-      cancelAnimationFrame(rafId);
-    };
-  }, []);
-}
-
-/* ─── Sidebar ────────────────────────────────────────────── */
+/* ─── Sidebar ──────────────────────────────────────────────────── */
 function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName }) {
   const location = useLocation();
   const isMobile = window.innerWidth <= 768;
@@ -273,7 +236,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   );
 }
 
-/* ─── Toggle Button ──────────────────────────────────────── */
+/* ─── Toggle Button ──────────────────────────────────────────── */
 function ToggleBtn({ isOpen, sidebarW, onClick }) {
   return (
     <button
@@ -297,14 +260,12 @@ function ToggleBtn({ isOpen, sidebarW, onClick }) {
   );
 }
 
-/* ─── Protected Layout ───────────────────────────────────── */
+/* ─── Protected Layout ─────────────────────────────────────────── */
 function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
   const [isOpen, setIsOpen] = useState(!isMobile);
   const navigate = useNavigate();
-
-  useCursor();
 
   useEffect(() => {
     const onResize = () => {
@@ -375,7 +336,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   );
 }
 
-/* ─── App Root ───────────────────────────────────────────── */
+/* ─── App Root ───────────────────────────────────────────────────────── */
 export default function App() {
   const [session,      setSession]      = useState(undefined);
   const [userRole,     setUserRole]     = useState(null);
@@ -415,8 +376,6 @@ export default function App() {
 
   return (
     <>
-      <div id="cursor"      style={{ display: 'none' }} />
-      <div id="cursor-ring" style={{ display: 'none' }} />
       <div id="noise-overlay" />
 
       {showSplash && (

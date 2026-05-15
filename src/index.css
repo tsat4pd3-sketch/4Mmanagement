@@ -1,4 +1,4 @@
-/* ─── Tesla Design System ───────────────────────────── */
+/* ─── Tesla Design System ──────────────────────────────────────────── */
 :root {
   --bg:      #050505;
   --bg2:     #0a0a0a;
@@ -29,7 +29,7 @@
   --shadow-lg: 0 10px 40px rgba(0,0,0,0.8);
 }
 
-/* ─── Light Theme ────────────────────────────────── */
+/* ─── Light Theme ──────────────────────────────────────────── */
 [data-theme="light"] {
   --bg:      #f2f2f2;
   --bg2:     #e8e8e8;
@@ -46,10 +46,10 @@
   --shadow-lg: 0 10px 40px rgba(0,0,0,0.14);
 }
 
-/* ─── Reset ─────────────────────────────────────── */
+/* ─── Reset ────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* ─── Theme transition ───────────────────────────── */
+/* ─── Theme transition ──────────────────────────────────────────── */
 body, .card, .modal, nav, main, input, select, textarea, button, td, th {
   transition: background-color 0.22s ease, border-color 0.22s ease, color 0.15s ease, box-shadow 0.22s ease;
 }
@@ -71,39 +71,7 @@ html, body {
   min-height: 100vh;
 }
 
-/* ─── Custom Cursor (desktop only) ─────────────────── */
-@media (hover: hover) {
-  * { cursor: none !important; }
-}
-
-#cursor {
-  position: fixed;
-  width: 8px; height: 8px;
-  background: var(--accent);
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 9999;
-  transform: translate(-50%, -50%);
-  transition: background 0.2s, transform 0.1s;
-  mix-blend-mode: difference;
-}
-
-#cursor-ring {
-  position: fixed;
-  width: 22px; height: 22px;
-  border: 1.5px solid var(--accent);
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 9998;
-  transform: translate(-50%, -50%);
-  opacity: 0.6;
-  transition: border-color 0.2s, opacity 0.2s, width 0.2s, height 0.2s;
-}
-
-body.cur-hover #cursor { transform: translate(-50%, -50%) scale(2.2); }
-body.cur-hover #cursor-ring { width: 36px; height: 36px; opacity: 0.3; }
-
-/* ─── Noise overlay ────────────────────────────────── */
+/* ─── Noise overlay ──────────────────────────────────────────── */
 #noise-overlay {
   position: fixed; inset: 0;
   pointer-events: none;
@@ -112,7 +80,7 @@ body.cur-hover #cursor-ring { width: 36px; height: 36px; opacity: 0.3; }
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4'/><feColorMatrix type='saturate' values='0'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>");
 }
 
-/* ─── Splash Screen ───────────────────────────────── */
+/* ─── Splash Screen ──────────────────────────────────────────── */
 #splash {
   position: fixed; inset: 0;
   background: #050505;
@@ -177,7 +145,7 @@ body.cur-hover #cursor-ring { width: 36px; height: 36px; opacity: 0.3; }
   transition: width 0.3s ease;
 }
 
-/* ─── Sidebar nav link ────────────────────────────── */
+/* ─── Sidebar nav link ────────────────────────────────────────── */
 .nav-link {
   color: var(--text2);
   text-decoration: none;
@@ -197,7 +165,7 @@ body.cur-hover #cursor-ring { width: 36px; height: 36px; opacity: 0.3; }
   color: var(--text);
 }
 
-/* ─── Card ────────────────────────────────────────── */
+/* ─── Card ─────────────────────────────────────────────────────── */
 .card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -210,7 +178,7 @@ body.cur-hover #cursor-ring { width: 36px; height: 36px; opacity: 0.3; }
   font-weight: 700;
 }
 
-/* ─── Table base ────────────────────────────────────── */
+/* ─── Table base ────────────────────────────────────────────────────── */
 table { width: 100%; border-collapse: collapse; }
 th {
   font-family: var(--font-display);
@@ -233,7 +201,7 @@ td {
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: rgba(255,255,255,0.02); }
 
-/* ─── Input / Select ────────────────────────────────── */
+/* ─── Input / Select ────────────────────────────────────────────────────── */
 input, select, textarea {
   background: var(--bg3);
   color: var(--text);
@@ -251,7 +219,7 @@ input:focus, select:focus, textarea:focus {
 }
 input::placeholder, textarea::placeholder { color: var(--muted); }
 
-/* ─── Button base ───────────────────────────────────── */
+/* ─── Button base ───────────────────────────────────────────────────────── */
 button {
   font-family: var(--font-body);
   cursor: pointer;
@@ -261,13 +229,13 @@ button:hover { opacity: 0.88; }
 button:active { transform: scale(0.97); }
 button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
-/* ─── Scrollbar ─────────────────────────────────────── */
+/* ─── Scrollbar ───────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
-/* ─── Responsive ─────────────────────────────────────── */
+/* ─── Responsive ───────────────────────────────────────────────────────── */
 @media (min-width: 1920px) {
   html, body { font-size: 17px; }
   .nav-link { font-size: 16px; padding: 12px 16px; }
@@ -290,7 +258,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 @media (min-width: 1920px) { .page-content { padding: 32px 40px; } }
 @media (max-width: 768px)  { .page-content { padding: 16px; } }
 
-/* ─── Overlay / Modal ────────────────────────────────── */
+/* ─── Overlay / Modal ────────────────────────────────────────────────────── */
 .overlay {
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.75);
@@ -307,13 +275,13 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   box-shadow: var(--shadow-lg);
 }
 
-/* ─── Badges ──────────────────────────────────────────── */
+/* ─── Badges ────────────────────────────────────────────────────────────── */
 .badge-green { color: var(--green); font-weight: 700; }
 .badge-red   { color: var(--red);   font-weight: 700; }
 .badge-amber { color: var(--amber); font-weight: 700; }
 .badge-blue  { color: var(--blue);  font-weight: 700; }
 
-/* ─── Mobile sidebar backdrop ──────────────────────────── */
+/* ─── Mobile sidebar backdrop ───────────────────────────────────────────────── */
 .sidebar-backdrop {
   display: none;
   position: fixed; inset: 0;
