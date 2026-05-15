@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { createContext, useState, useEffect, useRef, useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import Login from './pages/Login';
@@ -10,6 +10,35 @@ import Operator from './pages/operator';
 import LineSetup from './pages/LineSetup';
 import AddUser from './pages/AddUser';
 import Report from './pages/Report';
+
+/* ─── Role System ────────────────────────────────────────── */
+export const UserContext = createContext({ role: 'admin', lineId: null });
+
+const ROLE_LABELS = {
+  admin:      '👑 Admin',
+  manager:    '🏢 Manager',
+  supervisor: '🎯 Supervisor',
+  leader:     '⭐ Leader',
+};
+
+// null roles = accessible to every role
+const NAV_ITEMS = [
+  { to: '/',           icon: '📊', label: 'Dashboard',          roles: null },
+  { to: '/management', icon: '🔄', label: 'จัดการสายผลิต',     roles: null },
+  { to: '/checkin',    icon: '📝', label: 'เช็คชื่อ & PPE',    roles: null },
+  { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   roles: ['admin'] },
+  { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      roles: ['admin'] },
+  { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager'] },
+  { to: '/report',     icon: '📋', label: 'รายงาน',             roles: null },
+];
+
+const canAccess = (role, roles) => !roles || roles.includes(role ?? 'admin');
+
+/* ─── Role Route Guard ───────────────────────────────────── */
+function RoleRoute({ children, allow, userRole }) {
+  if (!allow.includes(userRole ?? 'admin')) return <Navigate to="/" replace />;
+  return children;
+}
 
 /* ─── Splash Screen ─────────────────────────────────────── */
 function SplashScreen({ onDone }) {
@@ -84,21 +113,12 @@ function useCursor() {
   }, []);
 }
 
-/* ─── Sidebar Nav Items ──────────────────────────────────── */
-const NAV_ITEMS = [
-  { to: '/',           icon: '📊', label: 'Dashboard' },
-  { to: '/management', icon: '🔄', label: 'จัดการสายผลิต' },
-  { to: '/checkin',    icon: '📝', label: 'เช็คชื่อ & PPE' },
-  { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์' },
-  { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน' },
-  { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน' },
-  { to: '/report',     icon: '📋', label: 'รายงาน' },
-];
-
 /* ─── Sidebar ────────────────────────────────────────────── */
-function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme }) {
+function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId }) {
   const location = useLocation();
   const isMobile = window.innerWidth <= 768;
+
+  const visibleItems = NAV_ITEMS.filter(item => canAccess(userRole, item.roles));
 
   return (
     <>
@@ -128,7 +148,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme }) {
 
         {/* Links */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {NAV_ITEMS.map(item => (
+          {visibleItems.map(item => (
             <Link
               key={item.to}
               to={item.to}
@@ -143,23 +163,37 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme }) {
             </Link>
           ))}
 
-          <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6 }}>
-            <Link
-              to="/add-user"
-              className="nav-link"
-              style={location.pathname === '/add-user'
-                ? { background: 'rgba(245,158,11,0.12)', color: 'var(--amber)' }
-                : { color: 'var(--amber)' }}
-              onClick={() => isMobile && onClose()}
-            >
-              <span style={{ fontSize: 15 }}>🔑</span>
-              <span style={{ whiteSpace: 'nowrap' }}>จัดการผู้ใช้งาน</span>
-            </Link>
-          </div>
+          {canAccess(userRole, ['admin']) && (
+            <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6 }}>
+              <Link
+                to="/add-user"
+                className="nav-link"
+                style={location.pathname === '/add-user'
+                  ? { background: 'rgba(245,158,11,0.12)', color: 'var(--amber)' }
+                  : { color: 'var(--amber)' }}
+                onClick={() => isMobile && onClose()}
+              >
+                <span style={{ fontSize: 15 }}>🔑</span>
+                <span style={{ whiteSpace: 'nowrap' }}>จัดการผู้ใช้งาน</span>
+              </Link>
+            </div>
+          )}
         </div>
 
-        {/* Footer: Theme toggle + Logout */}
+        {/* Footer: Role badge + Theme toggle + Logout */}
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {userRole && (
+            <div style={{
+              fontSize: 11, color: 'var(--text2)', padding: '5px 8px',
+              borderRadius: 6, background: 'var(--bg3)',
+              border: '1px solid var(--border2)',
+              textAlign: 'center', whiteSpace: 'nowrap',
+              letterSpacing: '0.04em', fontWeight: 600,
+            }}>
+              {ROLE_LABELS[userRole] ?? userRole}
+            </div>
+          )}
+
           <button
             onClick={onToggleTheme}
             className="nav-link"
@@ -227,7 +261,7 @@ function ToggleBtn({ isOpen, sidebarW, onClick }) {
 }
 
 /* ─── Protected Layout ───────────────────────────────────── */
-function ProtectedLayout({ session, theme, onToggleTheme }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
   const [isOpen, setIsOpen] = useState(!isMobile);
@@ -253,45 +287,60 @@ function ProtectedLayout({ session, theme, onToggleTheme }) {
 
   const sidebarPx  = isTV ? 280 : 240;
   const marginLeft = (!isMobile && isOpen) ? sidebarPx : 0;
+  const role       = userRole ?? 'admin';
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
-      <ToggleBtn isOpen={isOpen} sidebarW={sidebarPx} onClick={() => setIsOpen(o => !o)} />
-      <Sidebar
-        isOpen={isOpen}
-        onClose={() => setIsOpen(false)}
-        onLogout={handleLogout}
-        theme={theme}
-        onToggleTheme={onToggleTheme}
-      />
+    <UserContext.Provider value={{ role, lineId: userLineId }}>
+      <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
+        <ToggleBtn isOpen={isOpen} sidebarW={sidebarPx} onClick={() => setIsOpen(o => !o)} />
+        <Sidebar
+          isOpen={isOpen}
+          onClose={() => setIsOpen(false)}
+          onLogout={handleLogout}
+          theme={theme}
+          onToggleTheme={onToggleTheme}
+          userRole={role}
+          userLineId={userLineId}
+        />
 
-      <main style={{
-        flex: 1,
-        marginLeft,
-        minHeight: '100vh',
-        paddingTop: 60,
-        background: 'var(--bg)',
-        transition: 'margin-left 0.3s cubic-bezier(0.4,0,0.2,1)',
-        overflow: 'hidden',
-      }}>
-        <Routes>
-          <Route path="/"           element={<Dashboard />} />
-          <Route path="/register"   element={<Register />} />
-          <Route path="/checkin"    element={<Checkin />} />
-          <Route path="/management" element={<Management />} />
-          <Route path="/operator"   element={<Operator />} />
-          <Route path="/linesetup"  element={<LineSetup />} />
-          <Route path="/add-user"   element={<AddUser />} />
-          <Route path="/report"     element={<Report />} />
-        </Routes>
-      </main>
-    </div>
+        <main style={{
+          flex: 1,
+          marginLeft,
+          minHeight: '100vh',
+          paddingTop: 60,
+          background: 'var(--bg)',
+          transition: 'margin-left 0.3s cubic-bezier(0.4,0,0.2,1)',
+          overflow: 'hidden',
+        }}>
+          <Routes>
+            <Route path="/"           element={<Dashboard />} />
+            <Route path="/management" element={<Management />} />
+            <Route path="/checkin"    element={<Checkin />} />
+            <Route path="/report"     element={<Report />} />
+            <Route path="/register"   element={
+              <RoleRoute allow={['admin']} userRole={role}><Register /></RoleRoute>
+            } />
+            <Route path="/operator"   element={
+              <RoleRoute allow={['admin', 'manager']} userRole={role}><Operator /></RoleRoute>
+            } />
+            <Route path="/linesetup"  element={
+              <RoleRoute allow={['admin']} userRole={role}><LineSetup /></RoleRoute>
+            } />
+            <Route path="/add-user"   element={
+              <RoleRoute allow={['admin']} userRole={role}><AddUser /></RoleRoute>
+            } />
+          </Routes>
+        </main>
+      </div>
+    </UserContext.Provider>
   );
 }
 
 /* ─── App Root ───────────────────────────────────────────── */
 export default function App() {
   const [session,    setSession]    = useState(undefined);
+  const [userRole,   setUserRole]   = useState(null);
+  const [userLineId, setUserLineId] = useState(null);
   const [showSplash, setShowSplash] = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
 
@@ -302,9 +351,22 @@ export default function App() {
 
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
 
+  const fetchProfile = async (userId) => {
+    const { data } = await supabase.from('profiles').select('role, line_id').eq('id', userId).single();
+    setUserRole(data?.role ?? 'admin');
+    setUserLineId(data?.line_id ?? null);
+  };
+
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session?.user?.id) fetchProfile(session.user.id);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+      setSession(s);
+      if (s?.user?.id) fetchProfile(s.user.id);
+      else { setUserRole(null); setUserLineId(null); }
+    });
     return () => subscription.unsubscribe();
   }, []);
 
@@ -330,7 +392,15 @@ export default function App() {
         <Router>
           <Routes>
             <Route path="/login" element={session ? <Navigate to="/" replace /> : <Login />} />
-            <Route path="/*"     element={<ProtectedLayout session={session} theme={theme} onToggleTheme={toggleTheme} />} />
+            <Route path="/*"     element={
+              <ProtectedLayout
+                session={session}
+                theme={theme}
+                onToggleTheme={toggleTheme}
+                userRole={userRole}
+                userLineId={userLineId}
+              />
+            } />
           </Routes>
         </Router>
       )}

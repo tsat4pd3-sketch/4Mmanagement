@@ -1,16 +1,30 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+
+const ROLES = [
+  { value: 'admin',      label: 'Admin — ควบคุมทั้งระบบ' },
+  { value: 'manager',    label: 'Manager — ดูภาพรวม + จัดการ Cross Section' },
+  { value: 'supervisor', label: 'Supervisor — ดูภาพรวม + จัดการ Cross Line' },
+  { value: 'leader',     label: 'Leader — ดูภาพรวม + จัดการ Line ของตัวเอง' },
+];
 
 export default function AddUser() {
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [role,     setRole]     = useState('supervisor');
+  const [lineId,   setLineId]   = useState('');
+  const [lines,    setLines]    = useState([]);
   const [loading,  setLoading]  = useState(false);
   const [message,  setMessage]  = useState(null);
   const [error,    setError]    = useState(null);
 
+  useEffect(() => {
+    supabase.from('production_lines').select('id, name').order('name').then(({ data }) => setLines(data || []));
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (role === 'leader' && !lineId) return setError('กรุณาเลือกไลน์ผลิตสำหรับ Leader');
     setLoading(true);
     setMessage(null);
     setError(null);
@@ -25,13 +39,19 @@ export default function AddUser() {
             'Authorization': `Bearer ${session.access_token}`,
             'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
           },
-          body: JSON.stringify({ email, password, role }),
+          body: JSON.stringify({ email, password, role, line_id: role === 'leader' ? Number(lineId) : null }),
         }
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
-      setMessage(`สร้าง user "${email}" สำเร็จ`);
-      setEmail(''); setPassword(''); setRole('supervisor');
+
+      // Patch line_id if the edge function returned the new user id
+      if (role === 'leader' && lineId && data.user?.id) {
+        await supabase.from('profiles').update({ line_id: Number(lineId) }).eq('id', data.user.id);
+      }
+
+      setMessage(`สร้าง user "${email}" (${role}) สำเร็จ`);
+      setEmail(''); setPassword(''); setRole('supervisor'); setLineId('');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -46,7 +66,7 @@ export default function AddUser() {
       padding: 20,
     }}>
       <div style={{
-        width: '100%', maxWidth: 440,
+        width: '100%', maxWidth: 480,
         background: 'var(--card)',
         border: '1px solid var(--border2)',
         borderRadius: 16,
@@ -63,6 +83,27 @@ export default function AddUser() {
         </div>
 
         <div style={{ height: 2, background: 'var(--amber)', borderRadius: 2, marginBottom: 24, opacity: 0.7 }} />
+
+        {/* Role permission matrix */}
+        <div style={{ marginBottom: 20, padding: '12px 14px', background: 'var(--bg3)', borderRadius: 10, border: '1px solid var(--border2)' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            สิทธิ์การเข้าถึง
+          </div>
+          {[
+            { role: 'admin',      color: '#e31937', label: '👑 Admin',      desc: 'ทุกหน้า + ตั้งค่าระบบ + จัดการผู้ใช้' },
+            { role: 'manager',    color: '#f59e0b', label: '🏢 Manager',    desc: 'Dashboard + Report + Management (ทุกไลน์) + พนักงาน' },
+            { role: 'supervisor', color: '#4d9fff', label: '🎯 Supervisor', desc: 'Dashboard + Report + Management (ข้ามไลน์) + เช็คชื่อ' },
+            { role: 'leader',     color: '#22c55e', label: '⭐ Leader',     desc: 'Dashboard + Report + Management (ไลน์ตัวเอง) + เช็คชื่อ' },
+          ].map(r => (
+            <div key={r.role} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: r.color, flexShrink: 0, marginTop: 4 }} />
+              <div>
+                <span style={{ fontSize: 12, fontWeight: 700, color: r.color }}>{r.label}</span>
+                <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{r.desc}</span>
+              </div>
+            </div>
+          ))}
+        </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
@@ -90,11 +131,23 @@ export default function AddUser() {
 
           <div>
             <label style={labelSt}>สิทธิ์การใช้งาน</label>
-            <select value={role} onChange={e => setRole(e.target.value)}>
-              <option value="supervisor">Supervisor — เช็คชื่อ, จัดการสาย</option>
-              <option value="manager">Manager — เข้าถึงทุกส่วน</option>
+            <select value={role} onChange={e => { setRole(e.target.value); setLineId(''); }}>
+              {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
           </div>
+
+          {role === 'leader' && (
+            <div>
+              <label style={labelSt}>ไลน์ผลิต (สำหรับ Leader)</label>
+              <select value={lineId} onChange={e => setLineId(e.target.value)} required>
+                <option value="">— เลือกไลน์ —</option>
+                {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                Leader จะจัดการได้เฉพาะไลน์นี้เท่านั้น
+              </div>
+            </div>
+          )}
 
           <button
             type="submit"
@@ -105,6 +158,7 @@ export default function AddUser() {
               background: loading ? 'var(--muted)' : 'var(--amber)',
               color: '#fff', border: 'none', borderRadius: 8,
               fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15,
+              cursor: loading ? 'default' : 'pointer',
             }}
           >
             {loading ? 'กำลังสร้าง...' : 'สร้าง Account'}

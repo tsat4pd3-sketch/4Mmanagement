@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
+import { UserContext } from '../App';
 
 const CARD_W = 64;
 const LINE_4M_CATEGORIES = ['Machine', 'Material', 'Method'];
@@ -19,6 +20,9 @@ const fitLabel = (score) => {
 };
 
 export default function Management() {
+  const { role, lineId: userLineId } = useContext(UserContext);
+  const isLeader = role === 'leader';
+
   const [workers, setWorkers] = useState([]);
   const [fourMLogs, setFourMLogs] = useState([]);
   const [dynamicStations, setDynamicStations] = useState([]);
@@ -43,7 +47,9 @@ export default function Management() {
   useEffect(() => {
     supabase.from('skill_definitions').select('*').order('sort_order').then(({ data }) => setSkillDefs(data || []));
     const fetchLines = async () => {
-      const { data } = await supabase.from('production_lines').select('id, name').order('name');
+      let query = supabase.from('production_lines').select('id, name').order('name');
+      if (isLeader && userLineId) query = query.eq('id', userLineId);
+      const { data } = await query;
       setLines(data || []);
       if (data?.length > 0) setSelectedLine(data[0].name);
     };
@@ -230,8 +236,15 @@ export default function Management() {
       <div style={poolStyle}>
         <div style={{ marginBottom: 12, flexShrink: 0 }}>
           <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>ไลน์ผลิต</div>
-          <select value={selectedLine} onChange={(e) => setSelectedLine(e.target.value)}
-            style={{ width: '100%', padding: '5px 8px', borderRadius: 6, fontSize: 12, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
+          <select
+            value={selectedLine}
+            onChange={(e) => !isLeader && setSelectedLine(e.target.value)}
+            disabled={isLeader}
+            style={{
+              width: '100%', padding: '5px 8px', borderRadius: 6, fontSize: 12,
+              background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
+              opacity: isLeader ? 0.7 : 1, cursor: isLeader ? 'default' : 'pointer',
+            }}>
             {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
           </select>
         </div>
