@@ -8,7 +8,7 @@ const CAT_META = {
   Method:   { color: '#c084fc', bg: 'rgba(139,92,246,0.12)', label: 'Method',   icon: '📋' },
 };
 
-const TABS = ['รายวัน', 'รายพนักงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix'];
+const TABS = ['รายวัน', 'รายพนักงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '📄 Export PDF'];
 
 const SKILL_LEVELS = [
   { min: 80, label: 'ชำนาญ',       color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
@@ -43,6 +43,7 @@ export default function Report() {
       {activeTab === 2 && <RangeTab />}
       {activeTab === 3 && <FourMTab />}
       {activeTab === 4 && <SkillMatrixTab />}
+      {activeTab === 5 && <ExportPdfTab />}
     </div>
   );
 }
@@ -398,6 +399,363 @@ function SkillMatrixTab() {
     </div>
   );
 }
+
+// ─── PDF Export ────────────────────────────────────────────
+const SUMCOLS = ['ส', 'ป', 'ก', 'พง', 'กธ', 'บป', 'ข', 'มต'];
+const TH_MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+
+function ExportPdfTab() {
+  const [lines,      setLines]      = useState([]);
+  const [lineId,     setLineId]     = useState('');
+  const [month,      setMonth]      = useState(new Date().toISOString().slice(0, 7));
+  const [period,     setPeriod]     = useState('1');
+  const [dept,       setDept]       = useState('');
+  const [formType,   setFormType]   = useState('attendance');
+  const [employees,  setEmployees]  = useState([]);
+  const [logsMap,    setLogsMap]    = useState({});
+  const [isLoading,  setIsLoading]  = useState(false);
+  const [ready,      setReady]      = useState(false);
+
+  useEffect(() => {
+    supabase.from('production_lines').select('id, name').order('name')
+      .then(({ data }) => setLines(data || []));
+  }, []);
+
+  const [y, m] = month.split('-').map(Number);
+  const startDay = period === '1' ? 1 : 16;
+  const endDay   = period === '1' ? 15 : new Date(y, m, 0).getDate();
+  const days     = Array.from({ length: endDay - startDay + 1 }, (_, i) => startDay + i);
+  const thMonthStr = `${TH_MONTHS[m - 1]} ${y + 543}`;
+
+  const load = async () => {
+    setIsLoading(true);
+    const pad = d => String(d).padStart(2, '0');
+    const startDate = `${month}-${pad(startDay)}`;
+    const endDate   = `${month}-${pad(endDay)}`;
+
+    let empQ = supabase.from('employees')
+      .select('id, name, employee_id_code, team, department, section')
+      .eq('is_active', true).order('employee_id_code');
+    if (lineId) empQ = empQ.eq('line_id', lineId);
+    const { data: emps } = await empQ;
+
+    const empIds = (emps || []).map(e => e.id);
+    let logData = [];
+    if (empIds.length) {
+      const { data } = await supabase.from('daily_production_logs')
+        .select('employee_id, work_date, is_present')
+        .in('employee_id', empIds)
+        .gte('work_date', startDate).lte('work_date', endDate);
+      logData = data || [];
+    }
+
+    const map = {};
+    logData.forEach(l => {
+      const d = parseInt(l.work_date.split('-')[2]);
+      if (!map[l.employee_id]) map[l.employee_id] = {};
+      map[l.employee_id][d] = l.is_present;
+    });
+
+    setEmployees(emps || []);
+    setLogsMap(map);
+    setReady(true);
+    setIsLoading(false);
+  };
+
+  return (
+    <div>
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          #rpt-print, #rpt-print * { visibility: visible !important; }
+          #rpt-print { position: fixed; inset: 0; background: #fff; padding: 6mm; overflow: visible; }
+          @page { size: A4 landscape; margin: 0; }
+        }
+      `}</style>
+
+      <div className="card" style={{ padding: '18px 20px', marginBottom: 20 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text)' }}>📄 Export รายงาน PDF</div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div>
+            <div style={lbSt}>ประเภทรายงาน</div>
+            <select value={formType} onChange={e => { setFormType(e.target.value); setReady(false); }}
+              style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
+              <option value="attendance">ใบบันทึกการมาทำงาน</option>
+              <option value="ot">ใบสั่งงาน OT</option>
+            </select>
+          </div>
+          <div>
+            <div style={lbSt}>สายผลิต</div>
+            <select value={lineId} onChange={e => {
+              const id = e.target.value;
+              const ln = lines.find(l => l.id === id);
+              setLineId(id);
+              setDept(ln?.name || '');
+              setReady(false);
+            }} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
+              <option value="">ทุกไลน์</option>
+              {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={lbSt}>ชื่อแผนก</div>
+            <input value={dept} onChange={e => setDept(e.target.value)}
+              placeholder="เช่น Hydroform Dept"
+              style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13, width: 170 }} />
+          </div>
+          <div>
+            <div style={lbSt}>เดือน</div>
+            <input type="month" value={month} onChange={e => { setMonth(e.target.value); setReady(false); }}
+              style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
+          </div>
+          <div>
+            <div style={lbSt}>งวด</div>
+            <select value={period} onChange={e => { setPeriod(e.target.value); setReady(false); }}
+              style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
+              <option value="1">วันที่ 1–15</option>
+              <option value="2">วันที่ 16–สิ้นเดือน</option>
+            </select>
+          </div>
+          <button onClick={load} disabled={isLoading} style={{
+            padding: '8px 18px', borderRadius: 8, background: 'var(--accent)', color: '#fff',
+            border: 'none', fontWeight: 700, fontSize: 13, cursor: isLoading ? 'default' : 'pointer',
+          }}>
+            {isLoading ? 'กำลังโหลด...' : '📥 โหลดข้อมูล'}
+          </button>
+          {ready && (
+            <button onClick={() => window.print()} style={{
+              padding: '8px 18px', borderRadius: 8, background: '#16a34a', color: '#fff',
+              border: 'none', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+            }}>
+              🖨️ Print / Export PDF
+            </button>
+          )}
+        </div>
+        {ready && (
+          <div style={{ marginTop: 10, fontSize: 12, color: 'var(--muted)' }}>
+            โหลดแล้ว <strong>{employees.length}</strong> คน · {thMonthStr} งวด {startDay}–{endDay}
+            &nbsp;·&nbsp;กด <strong>🖨️ Print / Export PDF</strong> แล้วเลือก "Save as PDF" ใน dialog
+          </div>
+        )}
+      </div>
+
+      {ready && (
+        <div id="rpt-print" style={{ background: '#fff', color: '#000', border: '1px solid var(--border2)', borderRadius: 8, overflowX: 'auto' }}>
+          {formType === 'attendance'
+            ? <AttendancePrint employees={employees} days={days} logsMap={logsMap}
+                dept={dept} thMonthStr={thMonthStr} startDay={startDay} endDay={endDay} />
+            : <OTPrint employees={employees} dept={dept} thMonthStr={thMonthStr} />
+          }
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AttendancePrint({ employees, days, logsMap, dept, thMonthStr, startDay, endDay }) {
+  const bdr  = '0.5px solid #555';
+  const tdSt = (ex = {}) => ({ border: bdr, fontSize: 6.5, textAlign: 'center', padding: '0 1px', lineHeight: 1.3, verticalAlign: 'middle', ...ex });
+  const thSt = (ex = {}) => ({ ...tdSt(), background: '#dde8ff', fontWeight: 700, ...ex });
+
+  return (
+    <div style={{ fontFamily: '"Sarabun","TH Sarabun New",Arial,sans-serif', background: '#fff', color: '#000', padding: 6, minWidth: 900 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 3 }}>
+        <tbody>
+          <tr>
+            <td style={{ width: '35%', textAlign: 'center', fontWeight: 800, fontSize: 10 }}>
+              บริษัท ไทยซัมมิท โอโตโมทีฟ จำกัด
+            </td>
+            <td style={{ width: '20%', border: bdr, textAlign: 'center', fontSize: 8, padding: '3px 6px' }}>
+              เดือน <strong>{thMonthStr}</strong>
+            </td>
+            <td style={{ width: '22%', border: bdr, textAlign: 'center', fontSize: 8, padding: '3px 6px' }}>
+              งวด วันที่ {startDay}–{endDay}
+            </td>
+            <td style={{ width: '23%', border: bdr, textAlign: 'center', fontSize: 8, padding: '3px 6px' }}>
+              จำนวนพนักงาน <strong>{employees.length}</strong> คน
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style={{ textAlign: 'center', fontSize: 9.5, fontWeight: 700, marginBottom: 3 }}>
+        ใบบันทึกการมาทำงาน - การหยุดงานของพนักงาน
+      </div>
+
+      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 3 }}>
+        <tbody>
+          <tr>
+            <td style={{ fontSize: 7.5, padding: '1px 0' }}>หัวหน้าแผนก ___________________</td>
+            <td style={{ fontSize: 7.5, textAlign: 'center' }}>หัวหน้าส่วน ___________________</td>
+            <td style={{ fontSize: 7.5, textAlign: 'right' }}>ผู้จัดการ ___________________</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {dept && (
+        <div style={{ fontWeight: 700, fontSize: 8, marginBottom: 3, background: '#eef2ff', display: 'inline-block', padding: '1px 6px' }}>
+          {dept}
+        </div>
+      )}
+
+      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 6.5 }}>
+        <colgroup>
+          <col style={{ width: 18 }} />
+          <col style={{ width: 80 }} />
+          <col style={{ width: 46 }} />
+          {days.flatMap(d => [
+            <col key={`ca${d}`} style={{ width: 9 }} />,
+            <col key={`cb${d}`} style={{ width: 9 }} />,
+            <col key={`cc${d}`} style={{ width: 9 }} />,
+          ])}
+          {SUMCOLS.map(s => <col key={`cs${s}`} style={{ width: 12 }} />)}
+          <col style={{ width: 15 }} />
+        </colgroup>
+        <thead>
+          <tr>
+            <th rowSpan={2} style={thSt({ fontSize: 5.5 })}>ลำดับ</th>
+            <th rowSpan={2} style={thSt({ textAlign: 'left', paddingLeft: 3 })}>ชื่อ - สกุล</th>
+            <th rowSpan={2} style={thSt()}>เลขที่บัตร</th>
+            {days.map(d => <th key={d} colSpan={3} style={thSt()}>{d}</th>)}
+            {SUMCOLS.map(s => <th key={s} rowSpan={2} style={thSt({ fontSize: 5.5 })}>{s}</th>)}
+            <th rowSpan={2} style={thSt({ fontSize: 5.5 })}>OT<br/>ชม.</th>
+          </tr>
+          <tr>
+            {days.flatMap(d => [
+              <th key={`${d}c`} style={thSt({ fontSize: 5 })}>ช</th>,
+              <th key={`${d}b`} style={thSt({ fontSize: 5 })}>บ</th>,
+              <th key={`${d}o`} style={thSt({ fontSize: 5 })}>อ</th>,
+            ])}
+          </tr>
+        </thead>
+        <tbody>
+          {employees.map((emp, idx) => {
+            const log = logsMap[emp.id] || {};
+            const absentCount = days.filter(d => log[d] === false).length;
+
+            const mainCells = days.flatMap(d => {
+              const status = log[d];
+              return [
+                <td key={`${d}c`} style={tdSt({ background: status === false ? '#ffe4e1' : status === true ? '#f0fff4' : '#fff', fontSize: 6 })}>
+                  {status === false ? 'ข' : status === true ? '✓' : ''}
+                </td>,
+                <td key={`${d}b`} style={tdSt({ background: '#fff' })}></td>,
+                <td key={`${d}o`} style={tdSt({ background: '#fff' })}></td>,
+              ];
+            });
+
+            const otCells = days.flatMap(d => [
+              <td key={`${d}c2`} style={tdSt({ height: 10 })}></td>,
+              <td key={`${d}b2`} style={tdSt()}></td>,
+              <td key={`${d}o2`} style={tdSt()}></td>,
+            ]);
+
+            return [
+              <tr key={`${emp.id}a`} style={{ height: 14 }}>
+                <td rowSpan={2} style={tdSt({ textAlign: 'center', fontWeight: 600 })}>{idx + 1}</td>
+                <td rowSpan={2} style={tdSt({ textAlign: 'left', paddingLeft: 3 })}>{emp.name}</td>
+                <td rowSpan={2} style={tdSt({ fontSize: 6 })}>{emp.employee_id_code}</td>
+                {mainCells}
+                {SUMCOLS.map(s => (
+                  <td key={s} style={tdSt()}>{s === 'ข' && absentCount > 0 ? absentCount : ''}</td>
+                ))}
+                <td style={tdSt()}></td>
+              </tr>,
+              <tr key={`${emp.id}b`} style={{ height: 10 }}>
+                {otCells}
+                {SUMCOLS.map(s => <td key={s} style={tdSt()}></td>)}
+                <td style={tdSt()}></td>
+              </tr>,
+            ];
+          })}
+        </tbody>
+      </table>
+
+      <div style={{ marginTop: 5, fontSize: 6, lineHeight: 1.8, color: '#444' }}>
+        <div><strong>หมายเหตุ:</strong> ส=มาสาย &nbsp; ป=ลาป่วย &nbsp; ก=กาคิง &nbsp; พง=ลาพักผ่อนประจำปี &nbsp; กธ=ลากิจธุระอันจำเป็น &nbsp; บป=ลาอุปสมบท &nbsp; ข=ขาดงาน &nbsp; มต=ไม่มา Meeting</div>
+        <div>★ ช = ช่วงเช้า, บ = ช่วงบ่าย, อ = ช่วงโอที &nbsp; ★ ลา 12 ชั่วโมง = 0.2, ลาครึ่งวัน = 0.5</div>
+      </div>
+    </div>
+  );
+}
+
+function OTPrint({ employees, dept, thMonthStr }) {
+  const bdr  = '0.5px solid #444';
+  const tdSt = (ex = {}) => ({ border: bdr, fontSize: 8, padding: '2px 3px', verticalAlign: 'middle', ...ex });
+  const thSt = (ex = {}) => ({ ...tdSt(), background: '#c8e6c9', fontWeight: 700, textAlign: 'center', ...ex });
+
+  const half   = Math.ceil(employees.length / 2);
+  const groups = [employees.slice(0, half), employees.slice(half)];
+  const cols   = [
+    { label: 'สำดับ', w: 22 }, { label: 'เลขที่บัตร', w: 56 }, { label: 'ชื่อ-สกุล', w: 110 },
+    { label: 'งานที่ทำ', w: 90 }, { label: 'สายรอง', w: 60 },
+    { label: 'เวลาเริ่ม', w: 40 }, { label: 'ลายมือชื่อ ล.1', w: 48 },
+    { label: 'เวลาเลิก', w: 40 }, { label: 'ชั่วโมง', w: 28 }, { label: 'ลายมือชื่อ ล.2', w: 48 },
+  ];
+
+  const renderGroup = (grp, offset) => (
+    <table key={offset} style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 8, tableLayout: 'fixed', fontSize: 8 }}>
+      <colgroup>{cols.map((c, i) => <col key={i} style={{ width: c.w }} />)}</colgroup>
+      <thead>
+        <tr>{cols.map((c, i) => <th key={i} style={thSt()}>{c.label}</th>)}</tr>
+      </thead>
+      <tbody>
+        {grp.map((emp, i) => (
+          <tr key={emp.id} style={{ height: 20 }}>
+            <td style={tdSt({ textAlign: 'center' })}>{offset + i + 1}</td>
+            <td style={tdSt()}>{emp.employee_id_code}</td>
+            <td style={tdSt()}>{emp.name}</td>
+            {Array(7).fill(0).map((_, j) => <td key={j} style={tdSt()}></td>)}
+          </tr>
+        ))}
+        {Array.from({ length: Math.max(0, 5 - grp.length) }).map((_, i) => (
+          <tr key={`p${i}`} style={{ height: 20 }}>
+            {cols.map((_, j) => <td key={j} style={tdSt()}></td>)}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+
+  return (
+    <div style={{ fontFamily: '"Sarabun","TH Sarabun New",Arial,sans-serif', background: '#fff', color: '#000', padding: 10, minWidth: 700, fontSize: 9 }}>
+      <div style={{ textAlign: 'right', marginBottom: 6, fontSize: 8 }}>□ วันธรรมดา &nbsp;&nbsp; □ วันหยุด</div>
+      <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 800, marginBottom: 6 }}>
+        แบบฟอร์มใบสั่งงานและรายงานการทำงานล่วงเวลา (ใบ ล.1 และ ล.2)
+      </div>
+      <div style={{ marginBottom: 6, fontSize: 8, lineHeight: 1.8 }}>
+        <div>บริษัท: บริษัทไทยซัมมิท โอโตโมทีฟ จำกัด (สาขา 1) &nbsp;&nbsp;&nbsp; วันที่: ___________</div>
+        <div>ฝ่าย: Production &nbsp;&nbsp; ส่วน: {dept || '___________'} &nbsp;&nbsp; Cost: ___________</div>
+      </div>
+      <div style={{ fontWeight: 700, fontSize: 8.5, marginBottom: 4, borderBottom: '1px solid #555', paddingBottom: 2 }}>
+        รายชื่อพนักงานที่ทำงานล่วงเวลา
+      </div>
+      {groups.map((grp, i) => grp.length > 0 && renderGroup(grp, i === 0 ? 0 : groups[0].length))}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 10, fontSize: 8 }}>
+        {['ผู้บันทึกและผู้อนุมัติ ล.1', 'ผู้บันทึกและผู้อนุมัติ ล.2'].map((label, i) => (
+          <div key={i} style={{ border: bdr, padding: '8px 12px' }}>
+            <div style={{ fontWeight: 700, marginBottom: 12 }}>{label}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+              <span>ผู้บันทึก _________________</span><span>(หัวหน้างาน)</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span>( _________________ )</span><span>(ระดับจัดการ)</span>
+            </div>
+            <div style={{ fontSize: 7, color: '#888', marginTop: 4 }}>คุณภูลยทารสคน ลาตธนสารสมบัติ</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 8, fontSize: 7, lineHeight: 1.7, color: '#666', borderTop: '0.5px solid #ccc', paddingTop: 4 }}>
+        <strong>ระเบียบปฏิบัติ</strong><br/>
+        1. หน่วยงานต้องบันทึกข้อมูลการทำงานล่วงเวลาภายใน 15.00 น. เพื่อส่งข้อมูลให้ฝ่าย HRM จัดรอรับล่า โดยฝ่าย HRM จะแจ้งสายรองภายใน 16.00 น.<br/>
+        2. ผู้ที่ทำงานล่วงเวลาต้องลายมือชื่อทั้งก่อนเริ่มงาน (ล.1) และหลังเวลาเลิกงาน (ล.2) โดยให้ส่งแบบฟอร์มนี้ที่ฝ่าย HRM ภายในเวลา 10.00 น. ของวันอังคารไป<br/>
+        * รายการขอ OT ข้ามวัน, ** รายการขอ OT ย้อนหลัง
+      </div>
+    </div>
+  );
+}
+
+const lbSt = { fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 4, display: 'block' };
 
 const Loader = () => (
   <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
