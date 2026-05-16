@@ -83,6 +83,7 @@ export default function Checkin() {
         has_helmet: log ? log.has_helmet : false,
         has_boots:  log ? log.has_boots  : false,
         has_gloves: log ? log.has_gloves : false,
+        has_ot:     log ? log.has_ot     : false,
         remark:     log ? log.remark     : '',
       };
     });
@@ -108,6 +109,7 @@ export default function Checkin() {
       has_helmet:  attendance[emp.id].has_helmet,
       has_boots:   attendance[emp.id].has_boots,
       has_gloves:  attendance[emp.id].has_gloves,
+      has_ot:      attendance[emp.id].has_ot,
       remark:      attendance[emp.id].remark,
       checked_by:  userData.user.id,
     }));
@@ -191,6 +193,7 @@ export default function Checkin() {
               <th style={{ textAlign: 'center', minWidth: 64 }}>หมวก</th>
               <th style={{ textAlign: 'center', minWidth: 64 }}>รองเท้า</th>
               <th style={{ textAlign: 'center', minWidth: 64 }}>ถุงมือ</th>
+              <th style={{ textAlign: 'center', minWidth: 64 }}>OT</th>
               <th style={{ minWidth: 160 }}>หมายเหตุ</th>
               <th style={{ textAlign: 'center', minWidth: 90 }}>สถานะ</th>
             </tr>
@@ -232,6 +235,9 @@ export default function Checkin() {
                   <td style={{ textAlign: 'center' }}>
                     <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: 'var(--green)', width: 'auto' }} checked={rec.has_gloves} onChange={() => toggle(emp.id, 'has_gloves')} disabled={!rec.is_present} />
                   </td>
+                  <td style={{ textAlign: 'center' }}>
+                    <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: '#f59e0b', width: 'auto' }} checked={rec.has_ot} onChange={() => toggle(emp.id, 'has_ot')} disabled={!rec.is_present} />
+                  </td>
                   <td>
                     <input
                       type="text"
@@ -248,7 +254,7 @@ export default function Checkin() {
             })}
             {displayed.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>
+                <td colSpan={9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>
                   ไม่มีพนักงานในกะนี้ — ลองกด 👥 ทุกคน
                 </td>
               </tr>
