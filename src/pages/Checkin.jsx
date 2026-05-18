@@ -1,181 +1,266 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
+import { UserContext } from '../App';
+
+function getShiftInfo() {
+  const now = new Date();
+  const h = now.getHours();
+  const totalMin = h * 60 + now.getMinutes();
+  const isDay = totalMin >= 8 * 60 && totalMin < 20 * 60;
+  const workDate = new Date(now);
+  if (h < 8) workDate.setDate(workDate.getDate() - 1);
+  return {
+    shift:       isDay ? 'day' : 'night',
+    workDateStr: workDate.toISOString().split('T')[0],
+    label:       isDay ? '☀️ กะเช้า' : '🌙 กะดึก',
+    timeRange:   isDay ? '08:00–19:59' : '20:00–07:59',
+  };
+}
 
 export default function Checkin() {
-  const [employees, setEmployees] = useState([]);
-  const [attendance, setAttendance] = useState({});
-  const [isSaving, setIsSaving] = useState(false);
+  const { role, lineId, team } = useContext(UserContext);
 
-  useEffect(() => {
-    fetchEmployees();
-  }, []);
+  const [employees,   setEmployees]   = useState([]);
+  const [attendance,  setAttendance]  = useState({});
+  const [isSaving,    setIsSaving]    = useState(false);
+  const [filterShift, setFilterShift] = useState(true);
+  const [noSchedule,  setNoSchedule]  = useState(false);
 
-  const fetchEmployees = async () => {
-    const today = new Date().toISOString().split('T')[0];
-    
-    // 1. ดึงรายชื่อพนักงานทั้งหมด
-    const { data: empData, error: empError } = await supabase.from('employees').select('*').order('employee_id_code');
-    
-    // 2. ดึงข้อมูลประวัติการเช็คชื่อที่อาจจะเคยบันทึกไว้แล้วของ "วันนี้"
-    const { data: logData, error: logError } = await supabase
-      .from('daily_production_logs')
-      .select('*')
-      .eq('work_date', today);
+  const shiftInfo = getShiftInfo();
 
-    if (empError) {
-      console.error('Error fetching employees:', empError);
-      return;
+  useEffect(() => { fetchData(); }, []);
+
+  const fetchData = async () => {
+    const { workDateStr } = shiftInfo;
+
+    // Build employee query scoped to user's line/team
+    let empQ = supabase.from('employees').select('*').eq('is_active', true).order('employee_id_code');
+    if (role === 'supervisor' && lineId) empQ = empQ.eq('line_id', lineId);
+    if (role === 'leader') {
+      if (lineId) empQ = empQ.eq('line_id', lineId);
+      if (team)   empQ = empQ.eq('team', team);
     }
 
-    if (empData) {
-      setEmployees(empData);
-      const initialAttendance = {};
-      
-      empData.forEach(emp => {
-        // ค้นหาว่าคนนี้มี log ของวันนี้หรือยัง ถ้ามีให้ดึงค่าเดิมมาแสดง
-        const existingLog = logData?.find(l => l.employee_id === emp.id);
-        
-        initialAttendance[emp.id] = {
-          is_present: existingLog ? existingLog.is_present : false,
-          has_helmet: existingLog ? existingLog.has_helmet : false,
-          has_boots: existingLog ? existingLog.has_boots : false,
-          has_gloves: existingLog ? existingLog.has_gloves : false,
-          remark: existingLog ? existingLog.remark : '' // ดึงค่า remark เดิมมาโชว์
-        };
-      });
-      setAttendance(initialAttendance);
-    }
+    const [
+      { data: empData },
+      { data: logData },
+      { data: scheduleData },
+      { data: overrideData },
+    ] = await Promise.all([
+      empQ,
+      supabase.from('daily_production_logs').select('*').eq('work_date', workDateStr),
+      supabase.from('shift_schedules').select('*').eq('work_date', workDateStr),
+      supabase.from('shift_overrides').select('*').eq('work_date', workDateStr),
+    ]);
+
+    if (!empData) return;
+
+    const lineSchedule = {};
+    (scheduleData || []).forEach(s => { lineSchedule[s.line_id] = s.day_team; });
+    setNoSchedule(Object.keys(lineSchedule).length === 0);
+
+    const empOverride = {};
+    (overrideData || []).forEach(o => { empOverride[o.employee_id] = o.shift; });
+
+    const enriched = empData.map(emp => {
+      let assignedShift = null;
+      if (empOverride[emp.id]) {
+        assignedShift = empOverride[emp.id];
+      } else if (emp.line_id && lineSchedule[emp.line_id]) {
+        const dayTeam = lineSchedule[emp.line_id];
+        assignedShift = emp.team === dayTeam ? 'day' : emp.team ? 'night' : null;
+      }
+      return { ...emp, assignedShift };
+    });
+
+    setEmployees(enriched);
+
+    const init = {};
+    enriched.forEach(emp => {
+      const log = logData?.find(l => l.employee_id === emp.id);
+      init[emp.id] = {
+        is_present: log ? log.is_present : false,
+        has_helmet: log ? log.has_helmet : false,
+        has_boots:  log ? log.has_boots  : false,
+        has_gloves: log ? log.has_gloves : false,
+        has_ot:     log ? log.has_ot     : false,
+        remark:     log ? log.remark     : '',
+      };
+    });
+    setAttendance(init);
   };
 
-  const handleCheckboxChange = (empId, field) => {
-    setAttendance(prev => ({
-      ...prev,
-      [empId]: { ...prev[empId], [field]: !prev[empId][field] }
-    }));
-  };
+  const toggle = (empId, field) =>
+    setAttendance(prev => ({ ...prev, [empId]: { ...prev[empId], [field]: !prev[empId][field] } }));
 
-  const handleRemarkChange = (empId, value) => {
-    setAttendance(prev => ({
-      ...prev,
-      [empId]: { ...prev[empId], remark: value }
-    }));
-  };
+  const setRemark = (empId, value) =>
+    setAttendance(prev => ({ ...prev, [empId]: { ...prev[empId], remark: value } }));
 
   const handleSave = async () => {
     setIsSaving(true);
     const { data: userData } = await supabase.auth.getUser();
-    
-    if (!userData?.user?.id) {
-      alert('กรุณา Login ก่อนบันทึกข้อมูล');
-      setIsSaving(false);
-      return;
-    }
+    if (!userData?.user?.id) { alert('กรุณา Login ก่อน'); setIsSaving(false); return; }
 
-    const logsToSave = employees.map(emp => ({
+    const { workDateStr } = shiftInfo;
+    const logs = employees.map(emp => ({
       employee_id: emp.id,
-      is_present: attendance[emp.id].is_present,
-      has_helmet: attendance[emp.id].has_helmet,
-      has_boots: attendance[emp.id].has_boots,
-      has_gloves: attendance[emp.id].has_gloves,
-      remark: attendance[emp.id].remark, // บันทึก remark ลงไปด้วย
-      checked_by: userData.user.id,
-      work_date: new Date().toISOString().split('T')[0]
+      work_date:   workDateStr,
+      is_present:  attendance[emp.id].is_present,
+      has_helmet:  attendance[emp.id].has_helmet,
+      has_boots:   attendance[emp.id].has_boots,
+      has_gloves:  attendance[emp.id].has_gloves,
+      has_ot:      attendance[emp.id].has_ot,
+      remark:      attendance[emp.id].remark,
+      checked_by:  userData.user.id,
     }));
 
-    // ใช้ upsert เพื่อให้บันทึกซ้ำหรือแก้ไขข้อมูลของวันเดิมได้
-    const { error } = await supabase.from('daily_production_logs').upsert(logsToSave, { onConflict: 'work_date, employee_id' });
-    
-    if (error) {
-      alert('เกิดข้อผิดพลาด: ' + error.message);
-    } else {
-      alert('บันทึกข้อมูลสำเร็จ!');
-    }
+    const { error } = await supabase
+      .from('daily_production_logs')
+      .upsert(logs, { onConflict: 'work_date,employee_id' });
+
+    if (error) alert('เกิดข้อผิดพลาด: ' + error.message);
+    else alert('บันทึกข้อมูลสำเร็จ!');
     setIsSaving(false);
   };
 
+  const displayed = filterShift
+    ? employees.filter(emp => !emp.assignedShift || emp.assignedShift === shiftInfo.shift)
+    : employees;
+
   return (
-    <div style={{ padding: '30px', maxWidth: '1100px', margin: '0 auto' }}>
-      <h2 style={{ textAlign: 'center', marginBottom: '20px', color: '#ecf0f1' }}>📝 เช็คชื่อและตรวจสอบอุปกรณ์ PPE</h2>
-      
-      <div style={{ backgroundColor: 'white', borderRadius: '10px', padding: '20px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <div className="page-content">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px, 3vw, 22px)', color: 'var(--text)' }}>
+            📝 เช็คชื่อ & PPE
+          </h2>
+          <span style={{
+            padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700,
+            background: shiftInfo.shift === 'day' ? 'rgba(245,158,11,0.15)' : 'rgba(77,159,255,0.15)',
+            color:      shiftInfo.shift === 'day' ? '#f59e0b'              : '#4d9fff',
+            border: `1px solid ${shiftInfo.shift === 'day' ? 'rgba(245,158,11,0.3)' : 'rgba(77,159,255,0.3)'}`,
+          }}>
+            {shiftInfo.label} · {shiftInfo.timeRange}
+          </span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{shiftInfo.workDateStr}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button
+            onClick={() => setFilterShift(f => !f)}
+            style={{
+              padding: '8px 14px', borderRadius: 8,
+              border: '1px solid var(--border2)', fontSize: 12, cursor: 'pointer',
+              background: filterShift ? 'rgba(77,159,255,0.12)' : 'var(--bg3)',
+              color:      filterShift ? 'var(--blue)'           : 'var(--text2)',
+              fontWeight: filterShift ? 600 : 400,
+            }}
+          >
+            {filterShift ? '👁 เฉพาะกะนี้' : '👥 ทุกคน'}
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            style={{
+              padding: '10px 22px',
+              background: isSaving ? 'var(--muted)' : 'var(--accent)',
+              color: '#fff', border: 'none', borderRadius: 8,
+              fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14,
+            }}
+          >
+            {isSaving ? '⏳ กำลังบันทึก...' : '💾 บันทึก'}
+          </button>
+        </div>
+      </div>
+
+      {noSchedule && (
+        <div style={{
+          padding: '10px 14px', borderRadius: 8, marginBottom: 14,
+          background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
+          fontSize: 13, color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <span>⚠️</span>
+          <span>ยังไม่มีตาราง shift สำหรับวันนี้ ({shiftInfo.workDateStr}) — คอลัมน์ "กะ" จะแสดง — ทั้งหมด ไปกำหนดได้ที่หน้า <strong>ตารางกะ</strong></span>
+        </div>
+      )}
+
+      <div className="card" style={{ overflowX: 'auto' }}>
+        <table style={{ minWidth: 680 }}>
           <thead>
-            <tr style={{ backgroundColor: '#34495e', color: 'white', textAlign: 'left' }}>
-              <th style={{ padding: '15px', borderRadius: '10px 0 0 0' }}>พนักงาน</th>
-              <th style={{ padding: '15px', textAlign: 'center' }}>มางาน</th>
-              <th style={{ padding: '15px', textAlign: 'center' }}>หมวก</th>
-              <th style={{ padding: '15px', textAlign: 'center' }}>รองเท้า</th>
-              <th style={{ padding: '15px', textAlign: 'center' }}>ถุงมือ</th>
-              <th style={{ padding: '15px' }}>หมายเหตุ (Remark)</th>
-              <th style={{ padding: '15px', textAlign: 'center', borderRadius: '0 10px 0 0' }}>สถานะ</th>
+            <tr>
+              <th style={{ minWidth: 160 }}>พนักงาน</th>
+              <th style={{ textAlign: 'center', minWidth: 52 }}>กะ</th>
+              <th style={{ textAlign: 'center', minWidth: 64 }}>มางาน</th>
+              <th style={{ textAlign: 'center', minWidth: 64 }}>หมวก</th>
+              <th style={{ textAlign: 'center', minWidth: 64 }}>รองเท้า</th>
+              <th style={{ textAlign: 'center', minWidth: 64 }}>ถุงมือ</th>
+              <th style={{ textAlign: 'center', minWidth: 64 }}>OT</th>
+              <th style={{ minWidth: 160 }}>หมายเหตุ</th>
+              <th style={{ textAlign: 'center', minWidth: 90 }}>สถานะ</th>
             </tr>
           </thead>
           <tbody>
-            {employees.map(emp => {
-              const record = attendance[emp.id];
-              if (!record) return null;
-              
-              // ลอจิก: ต้องมาทำงาน และ PPE ครบ 3 อย่าง จึงจะพร้อม
-              const isReady = record.is_present && record.has_helmet && record.has_boots && record.has_gloves;
-
+            {displayed.map(emp => {
+              const rec = attendance[emp.id];
+              if (!rec) return null;
+              const ready = rec.is_present && rec.has_helmet && rec.has_boots && rec.has_gloves;
               return (
-                <tr key={emp.id} style={{ borderBottom: '1px solid #ddd', backgroundColor: isReady ? '#e8f8f5' : '#fdedec' }}>
-                  
-                  {/* รูปและชื่อพนักงาน */}
-                  <td style={{ padding: '10px', display: 'flex', alignItems: 'center', gap: '15px' }}>
-                    {emp.image_url ? (
-                      <img src={emp.image_url} alt="" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #fff', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }} />
-                    ) : (
-                      <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: '#bdc3c7', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '20px' }}>👤</div>
-                    )}
-                    <div>
-                      <div style={{ fontWeight: 'bold', color: '#2c3e50' }}>{emp.name}</div>
-                      <div style={{ fontSize: '12px', color: '#7f8c8d' }}>{emp.employee_id_code}</div>
+                <tr key={emp.id} style={{ background: ready ? 'rgba(34,197,94,0.05)' : 'rgba(231,76,60,0.04)' }}>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      {emp.image_url
+                        ? <img src={emp.image_url} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border2)', flexShrink: 0 }} />
+                        : <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>👤</div>
+                      }
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{emp.name}</div>
+                        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
+                      </div>
                     </div>
                   </td>
-
-                  {/* ติ๊กถูกต่างๆ */}
                   <td style={{ textAlign: 'center' }}>
-                    <input type="checkbox" style={{ transform: 'scale(1.5)', cursor: 'pointer' }} checked={record.is_present} onChange={() => handleCheckboxChange(emp.id, 'is_present')} />
+                    {emp.assignedShift
+                      ? <span style={{ fontSize: 15 }}>{emp.assignedShift === 'day' ? '☀️' : '🌙'}</span>
+                      : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
+                    }
                   </td>
                   <td style={{ textAlign: 'center' }}>
-                    <input type="checkbox" style={{ transform: 'scale(1.5)', cursor: 'pointer' }} checked={record.has_helmet} onChange={() => handleCheckboxChange(emp.id, 'has_helmet')} disabled={!record.is_present} />
+                    <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: 'var(--accent)', width: 'auto' }} checked={rec.is_present} onChange={() => toggle(emp.id, 'is_present')} />
                   </td>
                   <td style={{ textAlign: 'center' }}>
-                    <input type="checkbox" style={{ transform: 'scale(1.5)', cursor: 'pointer' }} checked={record.has_boots} onChange={() => handleCheckboxChange(emp.id, 'has_boots')} disabled={!record.is_present} />
+                    <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: 'var(--green)', width: 'auto' }} checked={rec.has_helmet} onChange={() => toggle(emp.id, 'has_helmet')} disabled={!rec.is_present} />
                   </td>
                   <td style={{ textAlign: 'center' }}>
-                    <input type="checkbox" style={{ transform: 'scale(1.5)', cursor: 'pointer' }} checked={record.has_gloves} onChange={() => handleCheckboxChange(emp.id, 'has_gloves')} disabled={!record.is_present} />
+                    <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: 'var(--green)', width: 'auto' }} checked={rec.has_boots} onChange={() => toggle(emp.id, 'has_boots')} disabled={!rec.is_present} />
                   </td>
-
-                  {/* ช่องกรอกหมายเหตุ */}
-                  <td style={{ padding: '10px' }}>
-                    <input 
-                      type="text" 
-                      placeholder="เช่น ขาดถุงมือ แต่เบิกใหม่แล้ว..." 
-                      value={record.remark || ''} 
-                      onChange={(e) => handleRemarkChange(emp.id, e.target.value)}
-                      style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', width: '90%', fontSize: '14px' }}
+                  <td style={{ textAlign: 'center' }}>
+                    <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: 'var(--green)', width: 'auto' }} checked={rec.has_gloves} onChange={() => toggle(emp.id, 'has_gloves')} disabled={!rec.is_present} />
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: '#f59e0b', width: 'auto' }} checked={rec.has_ot} onChange={() => toggle(emp.id, 'has_ot')} disabled={!rec.is_present} />
+                  </td>
+                  <td>
+                    <input
+                      type="text"
+                      placeholder="หมายเหตุ..."
+                      value={rec.remark || ''}
+                      onChange={e => setRemark(emp.id, e.target.value)}
                     />
                   </td>
-
-                  {/* สถานะ */}
-                  <td style={{ textAlign: 'center', fontWeight: 'bold', color: isReady ? '#27ae60' : '#c0392b' }}>
-                    {isReady ? '🟢 พร้อม' : '🔴 ไม่พร้อม'}
+                  <td style={{ textAlign: 'center', fontWeight: 700, color: ready ? 'var(--green)' : 'var(--red)', whiteSpace: 'nowrap', fontSize: 13 }}>
+                    {ready ? '🟢 พร้อม' : '🔴 ไม่พร้อม'}
                   </td>
-
                 </tr>
               );
             })}
+            {displayed.length === 0 && (
+              <tr>
+                <td colSpan={9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>
+                  ไม่มีพนักงานในกะนี้ — ลองกด 👥 ทุกคน
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
-
-        {/* ปุ่มบันทึก */}
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20px' }}>
-          <button onClick={handleSave} disabled={isSaving} style={{ padding: '12px 30px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '5px', fontSize: '16px', fontWeight: 'bold', cursor: isSaving ? 'not-allowed' : 'pointer', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
-            {isSaving ? '⏳ กำลังบันทึก...' : '💾 บันทึกข้อมูลประจำวัน'}
-          </button>
-        </div>
       </div>
     </div>
   );

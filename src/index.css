@@ -1,111 +1,293 @@
+/* ─── Tesla Design System ──────────────────────────────────────────── */
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --bg:      #050505;
+  --bg2:     #0a0a0a;
+  --bg3:     #111111;
+  --card:    #0d0d0d;
+  --border:  #1e1e1e;
+  --border2: #2a2a2a;
+  --accent:  #e31937;
+  --text:    #ffffff;
+  --text2:   #a8a8a8;
+  --muted:   #555555;
+  --green:   #22c55e;
+  --amber:   #f59e0b;
+  --red:     #e74c3c;
+  --blue:    #4d9fff;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --font-body:    'Sarabun', sans-serif;
+  --font-display: 'Inter', sans-serif;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
+  --sidebar-w:        240px;
+  --sidebar-w-tablet: 200px;
+  --sidebar-w-tv:     280px;
+  --radius:    10px;
+  --radius-lg: 15px;
+
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 20px rgba(0,0,0,0.6);
+  --shadow-lg: 0 10px 40px rgba(0,0,0,0.8);
+}
+
+/* ─── Light Theme ──────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg:      #f2f2f2;
+  --bg2:     #e8e8e8;
+  --bg3:     #dcdcdc;
+  --card:    #ffffff;
+  --border:  #dedede;
+  --border2: #c8c8c8;
+  --text:    #111111;
+  --text2:   #505050;
+  --muted:   #909090;
+
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.07);
+  --shadow-md: 0 4px 20px rgba(0,0,0,0.10);
+  --shadow-lg: 0 10px 40px rgba(0,0,0,0.14);
+}
+
+/* ─── Reset ────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ─── Theme transition ──────────────────────────────────────────── */
+body, .card, .modal, nav, main, input, select, textarea, button, td, th {
+  transition: background-color 0.22s ease, border-color 0.22s ease, color 0.15s ease, box-shadow 0.22s ease;
+}
+
+html, body {
+  height: 100%;
   background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-body {
-  margin: 0;
+  overflow-x: hidden;
 }
 
 #root {
   width: 100%;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
+  min-height: 100vh;
+}
+
+/* ─── Noise overlay ──────────────────────────────────────────── */
+#noise-overlay {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  z-index: 1;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4'/><feColorMatrix type='saturate' values='0'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>");
+}
+
+/* ─── Splash Screen ──────────────────────────────────────────── */
+#splash {
+  position: fixed; inset: 0;
+  background: #050505;
+  z-index: 9000;
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  transition: opacity 0.9s cubic-bezier(0.4, 0, 0.2, 1);
+}
+#splash.hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
+.splash-letters {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.splash-letter {
+  font-family: var(--font-display);
+  font-size: clamp(3.5rem, 10vw, 7rem);
+  font-weight: 800;
+  color: #fff;
+  transform: translateY(110%);
+  opacity: 0;
+  transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.5s ease;
+  display: inline-block;
+}
+.splash-letter.up  { transform: translateY(0); opacity: 1; }
+.splash-letter.red { color: var(--accent); }
+.splash-letter.dim { color: rgba(255,255,255,0.2); }
+
+.splash-sub {
+  font-family: var(--font-display);
+  font-size: clamp(0.75rem, 2vw, 1rem);
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text2);
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.6s ease 0.8s, transform 0.6s ease 0.8s;
+}
+.splash-sub.up { opacity: 1; transform: translateY(0); }
+
+.splash-bar-wrap {
+  width: min(240px, 60vw);
+  height: 2px;
+  background: var(--border2);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.splash-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+/* ─── Sidebar nav link ────────────────────────────────────────── */
+.nav-link {
+  color: var(--text2);
+  text-decoration: none;
+  padding: 10px 14px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
   font-weight: 500;
-  color: var(--text-h);
+  transition: background 0.18s, color 0.18s;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.nav-link:hover {
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
+/* ─── Card ─────────────────────────────────────────────────────── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+.kpi-val {
+  font-family: var(--font-display);
+  font-weight: 700;
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+/* ─── Table base ────────────────────────────────────────────────────── */
+table { width: 100%; border-collapse: collapse; }
+th {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  color: var(--text);
+  vertical-align: middle;
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(255,255,255,0.02); }
+
+/* ─── Input / Select ────────────────────────────────────────────────────── */
+input, select, textarea {
+  background: var(--bg3);
+  color: var(--text);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  padding: 10px 12px;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent);
+}
+input::placeholder, textarea::placeholder { color: var(--muted); }
+
+/* ─── Button base ───────────────────────────────────────────────────────── */
+button {
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: opacity 0.18s, transform 0.12s;
+}
+button:hover { opacity: 0.88; }
+button:active { transform: scale(0.97); }
+button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+/* ─── Scrollbar ───────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* ─── Responsive ───────────────────────────────────────────────────────── */
+@media (min-width: 1920px) {
+  html, body { font-size: 17px; }
+  .nav-link { font-size: 16px; padding: 12px 16px; }
+  th { font-size: 13px; }
+  td { font-size: 15px; padding: 14px 18px; }
+}
+
+@media (max-width: 768px) {
+  html, body { font-size: 14px; }
+  th { font-size: 11px; padding: 10px 12px; }
+  td { padding: 10px 12px; font-size: 13px; }
+}
+
+.page-content {
+  padding: 24px;
+  max-width: 1800px;
+  margin: 0 auto;
+  width: 100%;
+}
+@media (min-width: 1920px) { .page-content { padding: 32px 40px; } }
+@media (max-width: 768px)  { .page-content { padding: 16px; } }
+
+/* ─── Overlay / Modal ────────────────────────────────────────────────────── */
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2000;
+  backdrop-filter: blur(4px);
+}
+.modal {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  width: min(480px, 94vw);
+  box-shadow: var(--shadow-lg);
+}
+
+/* ─── Badges ────────────────────────────────────────────────────────────── */
+.badge-green { color: var(--green); font-weight: 700; }
+.badge-red   { color: var(--red);   font-weight: 700; }
+.badge-amber { color: var(--amber); font-weight: 700; }
+.badge-blue  { color: var(--blue);  font-weight: 700; }
+
+/* ─── Mobile sidebar backdrop ───────────────────────────────────────────────── */
+.sidebar-backdrop {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 990;
+}
+@media (max-width: 768px) {
+  .sidebar-backdrop.visible { display: block; }
 }
