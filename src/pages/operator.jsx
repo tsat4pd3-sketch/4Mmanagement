@@ -13,7 +13,7 @@ const getLevel = (score) => SKILL_LEVELS.find(l => score >= l.min) || SKILL_LEVE
 const EMP_GRADES = {
   gold:   { label: 'ประจำ',  gradient: 'linear-gradient(135deg,#7a5800,#ffd700,#c8941a,#ffd700,#7a5800)', glow: 'rgba(255,215,0,0.45)',   text: '#c8941a', badge: 'rgba(255,215,0,0.15)',   border: 'rgba(200,148,26,0.5)' },
   silver: { label: 'รายวัน', gradient: 'linear-gradient(135deg,#555,#d0d0d0,#999,#d0d0d0,#555)',          glow: 'rgba(192,192,192,0.4)',  text: '#a0a0a0', badge: 'rgba(192,192,192,0.15)', border: 'rgba(160,160,160,0.5)' },
-  bronze: { label: 'อื่น¶',  gradient: 'linear-gradient(135deg,#4a2800,#cd7f32,#8b4a1e,#cd7f32,#4a2800)', glow: 'rgba(205,127,50,0.35)',  text: '#b06a28', badge: 'rgba(205,127,50,0.15)',  border: 'rgba(176,106,40,0.5)' },
+  bronze: { label: 'อื่นๆ',  gradient: 'linear-gradient(135deg,#4a2800,#cd7f32,#8b4a1e,#cd7f32,#4a2800)', glow: 'rgba(205,127,50,0.35)',  text: '#b06a28', badge: 'rgba(205,127,50,0.15)',  border: 'rgba(176,106,40,0.5)' },
 };
 
 const getEmpGrade = (code = '') => {
@@ -23,10 +23,9 @@ const getEmpGrade = (code = '') => {
 };
 
 export default function Operator() {
-  const { role, lineId: userLineId } = useContext(UserContext);
+  const { role, lineId: userLineId, section: userSection } = useContext(UserContext);
   const isLeader = role === 'leader';
   const isSupervisor = role === 'supervisor';
-  const isLineRestricted = isLeader || isSupervisor;
 
   const [tab, setTab] = useState(0);
   const [skillDefs, setSkillDefs] = useState([]);
@@ -47,9 +46,9 @@ export default function Operator() {
   useEffect(() => {
     fetchSkillDefs();
     fetchEmployees();
-    supabase.from('production_lines').select('id, name').order('name')
+    supabase.from('production_lines').select('id, name, section').order('name')
       .then(({ data }) => setLines(data || []));
-    if (isLineRestricted && userLineId) {
+    if (isLeader && userLineId) {
       supabase.from('production_lines').select('name').eq('id', userLineId).single()
         .then(({ data }) => setMyLineName(data?.name ?? ''));
     }
@@ -63,7 +62,8 @@ export default function Operator() {
   const fetchEmployees = async () => {
     const makeBase = () => {
       let q = supabase.from('employees').select('*, employee_skills(skill_name, score)');
-      if (isLineRestricted && userLineId) q = q.eq('line_id', userLineId);
+      if (isLeader && userLineId)       q = q.eq('line_id', userLineId);
+      if (isSupervisor && userSection)  q = q.eq('section', userSection);
       return q;
     };
     const [{ data: active }, { data: inactive }] = await Promise.all([
@@ -115,7 +115,7 @@ export default function Operator() {
       const { error } = await supabase.from('employees').update({
         name:       editingEmp.name,
         department: editingEmp.department,
-        section:    editingEmp.section    || null,
+        section:    isSupervisor ? (userSection || null) : (editingEmp.section || null),
         group_name: editingEmp.group_name || null,
         team:       editingEmp.team       || null,
         line_id:    editingEmp.line_id    || null,
@@ -185,7 +185,7 @@ export default function Operator() {
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
-        {(isLineRestricted ? ['👥 พนักงาน'] : ['👥 พนักงาน', '⚙️ กำหนดสกิล']).map((t, i) => (
+        {(isLeader || isSupervisor ? ['👥 พนักงาน'] : ['👥 พนักงาน', '⚙️ กำหนดสกิล']).map((t, i) => (
           <button key={i} onClick={() => setTab(i)} style={{
             padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
             background: tab === i ? 'var(--accent)' : 'var(--bg3)',
@@ -193,7 +193,16 @@ export default function Operator() {
             fontWeight: tab === i ? 700 : 400,
           }}>{t}</button>
         ))}
-        {isLineRestricted && myLineName && (
+        {isSupervisor && userSection && (
+          <div style={{
+            fontSize: 11, color: '#4d9fff', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
+            padding: '4px 8px', borderRadius: 6,
+            background: 'rgba(77,159,255,0.1)', border: '1px solid rgba(77,159,255,0.25)',
+          }}>
+            🏢 {userSection}
+          </div>
+        )}
+        {isLeader && myLineName && (
           <div style={{
             fontSize: 11, color: '#22c55e', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
             padding: '4px 8px', borderRadius: 6,
@@ -443,10 +452,14 @@ export default function Operator() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <label style={labelSt}>Section</label>
-                  <select value={editingEmp.section || ''} onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value })}>
-                    <option value="">— เลือก —</option>
-                    {['PD1','PD2','PD3','PD4'].map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                  {isSupervisor ? (
+                    <input type="text" value={userSection || ''} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+                  ) : (
+                    <select value={editingEmp.section || ''} onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value })}>
+                      <option value="">— เลือก —</option>
+                      {['PD1','PD2','PD3','PD4'].map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label style={labelSt}>Team</label>
@@ -458,7 +471,7 @@ export default function Operator() {
               </div>
               <div>
                 <label style={labelSt}>Group / Line</label>
-                {isLineRestricted ? (
+                {isLeader ? (
                   <input type="text" value={editingEmp.group_name || myLineName || ''} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                 ) : (
                   <select value={editingEmp.group_name || ''} onChange={e => {
@@ -467,7 +480,8 @@ export default function Operator() {
                     setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
                   }}>
                     <option value="">— เลือก Line —</option>
-                    {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                    {(isSupervisor && userSection ? lines.filter(l => l.section === userSection) : lines)
+                      .map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                   </select>
                 )}
               </div>
