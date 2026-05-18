@@ -7,6 +7,7 @@ export default function LineSetup() {
   const [lines, setLines] = useState([]);
   const [selectedLine, setSelectedLine] = useState('');
   const [newLineName, setNewLineName] = useState('');
+  const [newLineSection, setNewLineSection] = useState('');
   const [isAddingLine, setIsAddingLine] = useState(false);
   const [layoutImage, setLayoutImage] = useState(null);
   const [stations, setStations] = useState([]);
@@ -24,7 +25,7 @@ export default function LineSetup() {
   }, []);
 
   const fetchLines = async () => {
-    const { data } = await supabase.from('production_lines').select('id, name').order('name');
+    const { data } = await supabase.from('production_lines').select('id, name, section').order('name');
     setLines(data || []);
     if (data?.length > 0 && !selectedLine) setSelectedLine(data[0].name);
   };
@@ -49,10 +50,11 @@ export default function LineSetup() {
     const name = newLineName.trim();
     if (!name) return;
     setIsAddingLine(true);
-    const { error } = await supabase.from('production_lines').insert([{ name }]);
+    const { error } = await supabase.from('production_lines').insert([{ name, section: newLineSection || null }]);
     if (error) { alert('Error: ' + error.message); }
     else {
       setNewLineName('');
+      setNewLineSection('');
       await fetchLines();
       setSelectedLine(name);
     }
@@ -72,6 +74,11 @@ export default function LineSetup() {
       setSelectedLine(next);
       if (!next) { setLayoutImage(null); setStations([]); }
     }
+  };
+
+  const handleUpdateSection = async (line, section) => {
+    await supabase.from('production_lines').update({ section: section || null }).eq('id', line.id);
+    await fetchLines();
   };
 
   const handleUploadImage = async (e) => {
@@ -295,7 +302,7 @@ export default function LineSetup() {
             {lines.map(l => (
               <div key={l.id}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
+                  display: 'flex', flexDirection: 'column', gap: 4,
                   padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
                   background: selectedLine === l.name ? 'rgba(227,25,55,0.1)' : 'var(--bg2)',
                   border: `1px solid ${selectedLine === l.name ? 'var(--accent)' : 'var(--border)'}`,
@@ -303,26 +310,49 @@ export default function LineSetup() {
                 }}
                 onClick={() => { setSelectedLine(l.name); setTempPos(null); setFormData({ id: null, name: '', requirements: {} }); }}
               >
-                <span style={{ fontSize: 13, flex: 1, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400 }}>
-                  {l.name}
-                </span>
-                <button onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
-                  style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1 }}
-                  title="ลบไลน์">🗑️</button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 13, flex: 1, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400 }}>
+                    {l.name}
+                  </span>
+                  {l.section && (
+                    <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)' }}>
+                      {l.section}
+                    </span>
+                  )}
+                  <button onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
+                    style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1 }}
+                    title="ลบไลน์">🗑️</button>
+                </div>
+                <select
+                  value={l.section || ''}
+                  onClick={e => e.stopPropagation()}
+                  onChange={e => { e.stopPropagation(); handleUpdateSection(l, e.target.value); }}
+                  style={{ fontSize: 11, padding: '2px 6px', borderRadius: 5, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}
+                >
+                  <option value="">— Section —</option>
+                  {['PD1','PD2','PD3','PD4'].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
               </div>
             ))}
             {lines.length === 0 && (
               <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีไลน์ผลิต</div>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <input placeholder="ชื่อไลน์ใหม่ เช่น ไลน์ F" value={newLineName}
-              onChange={e => setNewLineName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleAddLine()}
-              style={{ flex: 1, fontSize: 13, padding: '8px 10px' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input placeholder="ชื่อไลน์ใหม่ เช่น ไลน์ F" value={newLineName}
+                onChange={e => setNewLineName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAddLine()}
+                style={{ flex: 1, fontSize: 13, padding: '8px 10px' }} />
+              <select value={newLineSection} onChange={e => setNewLineSection(e.target.value)}
+                style={{ fontSize: 12, padding: '8px 8px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', flexShrink: 0 }}>
+                <option value="">Section</option>
+                {['PD1','PD2','PD3','PD4'].map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
             <button onClick={handleAddLine} disabled={isAddingLine || !newLineName.trim()}
-              style={{ padding: '8px 12px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
-              {isAddingLine ? '...' : '+ เพิ่ม'}
+              style={{ padding: '8px 12px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13 }}>
+              {isAddingLine ? '...' : '+ เพิ่มไลน์'}
             </button>
           </div>
         </div>
