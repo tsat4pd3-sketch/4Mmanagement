@@ -25,6 +25,8 @@ const getEmpGrade = (code = '') => {
 export default function Operator() {
   const { role, lineId: userLineId } = useContext(UserContext);
   const isLeader = role === 'leader';
+  const isSupervisor = role === 'supervisor';
+  const isLineRestricted = isLeader || isSupervisor;
 
   const [tab, setTab] = useState(0);
   const [skillDefs, setSkillDefs] = useState([]);
@@ -47,7 +49,7 @@ export default function Operator() {
     fetchEmployees();
     supabase.from('production_lines').select('id, name').order('name')
       .then(({ data }) => setLines(data || []));
-    if (isLeader && userLineId) {
+    if (isLineRestricted && userLineId) {
       supabase.from('production_lines').select('name').eq('id', userLineId).single()
         .then(({ data }) => setMyLineName(data?.name ?? ''));
     }
@@ -61,7 +63,7 @@ export default function Operator() {
   const fetchEmployees = async () => {
     const makeBase = () => {
       let q = supabase.from('employees').select('*, employee_skills(skill_name, score)');
-      if (isLeader && userLineId) q = q.eq('line_id', userLineId);
+      if (isLineRestricted && userLineId) q = q.eq('line_id', userLineId);
       return q;
     };
     const [{ data: active }, { data: inactive }] = await Promise.all([
@@ -183,7 +185,7 @@ export default function Operator() {
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
-        {(isLeader ? ['👥 พนักงาน'] : ['👥 พนักงาน', '⚙️ กำหนดสกิล']).map((t, i) => (
+        {(isLineRestricted ? ['👥 พนักงาน'] : ['👥 พนักงาน', '⚙️ กำหนดสกิล']).map((t, i) => (
           <button key={i} onClick={() => setTab(i)} style={{
             padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
             background: tab === i ? 'var(--accent)' : 'var(--bg3)',
@@ -191,7 +193,7 @@ export default function Operator() {
             fontWeight: tab === i ? 700 : 400,
           }}>{t}</button>
         ))}
-        {isLeader && myLineName && (
+        {isLineRestricted && myLineName && (
           <div style={{
             fontSize: 11, color: '#22c55e', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
             padding: '4px 8px', borderRadius: 6,
@@ -456,14 +458,18 @@ export default function Operator() {
               </div>
               <div>
                 <label style={labelSt}>Group / Line</label>
-                <select value={editingEmp.group_name || ''} onChange={e => {
-                  const val = e.target.value;
-                  const line = lines.find(l => l.name === val);
-                  setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
-                }}>
-                  <option value="">— เลือก Line —</option>
-                  {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                </select>
+                {isLineRestricted ? (
+                  <input type="text" value={editingEmp.group_name || myLineName || ''} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+                ) : (
+                  <select value={editingEmp.group_name || ''} onChange={e => {
+                    const val = e.target.value;
+                    const line = lines.find(l => l.name === val);
+                    setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
+                  }}>
+                    <option value="">— เลือก Line —</option>
+                    {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                  </select>
+                )}
               </div>
 
               <div style={{ background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>
