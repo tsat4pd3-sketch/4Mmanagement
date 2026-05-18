@@ -42,7 +42,7 @@ function RoleRoute({ children, allow, userRole }) {
   return children;
 }
 
-/* ─── Splash Screen ──────────────────────────────────────── */
+/* ─── Splash Screen ────────────────────────────────────── */
 function SplashScreen({ onDone }) {
   const barRef = useRef(null);
 
@@ -78,7 +78,7 @@ function SplashScreen({ onDone }) {
   );
 }
 
-/* ─── Sidebar ──────────────────────────────────────────────────── */
+/* ─── Sidebar ──────────────────────────────────────────────── */
 function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName }) {
   const location = useLocation();
   const isMobile = window.innerWidth <= 768;
@@ -262,7 +262,7 @@ function ToggleBtn({ isOpen, sidebarW, onClick }) {
   );
 }
 
-/* ─── Protected Layout ─────────────────────────────────────────── */
+/* ─── Protected Layout ─────────────────────────────────────────────── */
 function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userEmail, userFullName }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
@@ -341,7 +341,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   );
 }
 
-/* ─── App Root ───────────────────────────────────────────────────────── */
+/* ─── App Root ─────────────────────────────────────────────────────────── */
 export default function App() {
   const [session,      setSession]      = useState(undefined);
   const [userRole,     setUserRole]     = useState(null);
