@@ -1,8 +1,8 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 
-const CARD_W = 64;
+const CARD_W = 82;
 const LINE_4M_CATEGORIES = ['Machine', 'Material', 'Method'];
 
 const fitColor = (score) => {
@@ -38,6 +38,8 @@ export default function Management() {
   const [skillDefs, setSkillDefs] = useState([]);
   const [dragOverStation, setDragOverStation] = useState(null);
   const [fitPopup, setFitPopup] = useState(null);
+  const [hoverCard, setHoverCard] = useState(null); // { worker, x, y, fit? }
+  const hoverTimer = useRef(null);
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 768);
@@ -157,29 +159,49 @@ export default function Management() {
     }
   };
 
+  const onHoverEnter = (e, worker, fit = null) => {
+    clearTimeout(hoverTimer.current);
+    const rect = e.currentTarget.getBoundingClientRect();
+    hoverTimer.current = setTimeout(() => {
+      setHoverCard({ worker, fit, rect });
+    }, 180);
+  };
+  const onHoverLeave = () => {
+    clearTimeout(hoverTimer.current);
+    setHoverCard(null);
+  };
+
   /* ── Pool worker card ── */
   const PoolCard = ({ worker }) => (
     <div
       draggable
       onDragStart={(e) => handleDragStart(e, worker)}
       onDragEnd={handleDragEnd}
+      onMouseEnter={(e) => onHoverEnter(e, worker)}
+      onMouseLeave={onHoverLeave}
       style={{
-        width: CARD_W, padding: '6px 4px 5px',
+        width: CARD_W, padding: '8px 5px 7px',
         background: 'rgba(77,159,255,0.08)',
         border: '1.5px solid rgba(77,159,255,0.35)',
-        borderRadius: 8, cursor: 'grab',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+        borderRadius: 10, cursor: 'grab',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
         boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
         userSelect: 'none',
+        transition: 'border-color 0.15s, box-shadow 0.15s',
       }}
     >
-      <img
-        src={worker.employees?.image_url || ''}
-        style={{ width: 38, height: 38, borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(77,159,255,0.5)', pointerEvents: 'none' }}
-      />
-      <div style={{ fontSize: 8, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', textAlign: 'center', pointerEvents: 'none' }}>
+      {worker.employees?.image_url
+        ? <img src={worker.employees.image_url} style={{ width: 50, height: 50, borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(77,159,255,0.6)', pointerEvents: 'none', flexShrink: 0 }} />
+        : <div style={{ width: 50, height: 50, borderRadius: '50%', background: 'rgba(77,159,255,0.15)', border: '2px solid rgba(77,159,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
+      }
+      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', textAlign: 'center', pointerEvents: 'none' }}>
         {worker.employees?.name?.split(' ')[0] ?? '?'}
       </div>
+      {worker.employees?.team && (
+        <div style={{ fontSize: 8, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', borderRadius: 3, padding: '1px 5px', pointerEvents: 'none' }}>
+          Team {worker.employees.team}
+        </div>
+      )}
     </div>
   );
 
@@ -191,21 +213,19 @@ export default function Management() {
         draggable
         onDragStart={(e) => handleDragStart(e, worker)}
         onDragEnd={handleDragEnd}
-        style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'grab', userSelect: 'none' }}
+        onMouseEnter={(e) => onHoverEnter(e, worker, fit)}
+        onMouseLeave={onHoverLeave}
+        style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: 'grab', userSelect: 'none' }}
       >
-        <img
-          src={worker.employees?.image_url || ''}
-          style={{
-            width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', pointerEvents: 'none',
-            border: `2.5px solid ${fc}`,
-            boxShadow: `0 0 6px ${fc}88`,
-          }}
-        />
+        {worker.employees?.image_url
+          ? <img src={worker.employees.image_url} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', pointerEvents: 'none', border: `3px solid ${fc}`, boxShadow: `0 0 8px ${fc}88`, flexShrink: 0 }} />
+          : <div style={{ width: 42, height: 42, borderRadius: '50%', background: `${fc}22`, border: `3px solid ${fc}`, boxShadow: `0 0 8px ${fc}88`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
+        }
         <div style={{
           background: fc, color: '#fff',
-          fontSize: 10, fontWeight: 900,
-          padding: '1px 0', width: 36, textAlign: 'center',
-          borderRadius: 4,
+          fontSize: 12, fontWeight: 900,
+          padding: '2px 0', width: 44, textAlign: 'center',
+          borderRadius: 5,
           letterSpacing: '0.03em',
           boxShadow: `0 1px 5px ${fc}99`,
           pointerEvents: 'none',
@@ -213,7 +233,7 @@ export default function Management() {
           {fit.score}
         </div>
         <div style={{
-          fontSize: 7, fontWeight: 700, color: fc,
+          fontSize: 9, fontWeight: 700, color: fc,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           width: '100%', textAlign: 'center', pointerEvents: 'none',
         }}>
@@ -232,7 +252,7 @@ export default function Management() {
 
   const poolStyle = isMobile
     ? { width: '100%', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '10px 12px', display: 'flex', flexDirection: 'column', flexShrink: 0 }
-    : { width: 186, background: 'var(--bg2)', borderRight: '1px solid var(--border)', padding: '15px 10px', display: 'flex', flexDirection: 'column', flexShrink: 0, overflowY: 'auto' };
+    : { width: 210, background: 'var(--bg2)', borderRight: '1px solid var(--border)', padding: '15px 10px', display: 'flex', flexDirection: 'column', flexShrink: 0, overflowY: 'auto' };
 
   const poolInnerStyle = isMobile
     ? { display: 'flex', flexDirection: 'row', gap: 6, overflowX: 'auto', paddingBottom: 4, minHeight: 60 }
@@ -347,12 +367,12 @@ export default function Management() {
                     ? `0 0 14px ${activeFc}44, 0 2px 8px rgba(0,0,0,0.6)`
                     : '0 2px 8px rgba(0,0,0,0.6)',
                   display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  padding: '4px 3px 5px',
+                  padding: '5px 4px 6px',
                   transition: 'all 0.18s', zIndex: isOver ? 20 : 5,
                 }}
               >
                 <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                  <span style={{ fontSize: 7, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: activeFc || '#c8c8d0' }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: activeFc || '#c8c8d0' }}>
                     {st.station_name}
                   </span>
                   <div style={{ display: 'flex', gap: 1, flexShrink: 0 }}>
@@ -420,6 +440,8 @@ export default function Management() {
           })}
         </div>
       </div>
+
+      {hoverCard && <WorkerHoverCard card={hoverCard} skillDefs={skillDefs} />}
 
       {fitPopup && (
         <div style={{
@@ -527,6 +549,112 @@ export default function Management() {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+function WorkerHoverCard({ card, skillDefs }) {
+  const { worker, fit, rect } = card;
+  const emp = worker.employees;
+  const skills = emp?.employee_skills || [];
+
+  // Position: prefer right of card, fallback left if near edge
+  const tooltipW = 230;
+  const gap = 10;
+  let left = rect.right + gap;
+  if (left + tooltipW > window.innerWidth - 12) left = rect.left - tooltipW - gap;
+  const top = Math.max(8, Math.min(rect.top - 20, window.innerHeight - 340));
+
+  return (
+    <div
+      onMouseEnter={() => {}}
+      style={{
+        position: 'fixed', top, left,
+        width: tooltipW, zIndex: 3000, pointerEvents: 'none',
+        background: 'var(--card)',
+        border: '1px solid var(--border2)',
+        borderRadius: 14,
+        boxShadow: 'var(--shadow-lg)',
+        padding: '14px 14px 12px',
+        animation: 'hoverIn 0.18s ease',
+      }}
+    >
+      <style>{`@keyframes hoverIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
+
+      {/* Header */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10 }}>
+        {emp?.image_url
+          ? <img src={emp.image_url} style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border2)', flexShrink: 0 }} />
+          : <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0, border: '2px solid var(--border2)' }}>👤</div>
+        }
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', lineHeight: 1.3, wordBreak: 'break-word' }}>{emp?.name || '—'}</div>
+          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>{emp?.employee_id_code || ''}</div>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+            {emp?.team && (
+              <span style={{ fontSize: 9, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>
+                Team {emp.team}
+              </span>
+            )}
+            {emp?.section && (
+              <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(168,85,247,0.12)', color: '#a855f7', border: '1px solid rgba(168,85,247,0.25)', borderRadius: 4, padding: '1px 5px' }}>
+                {emp.section}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Fit score (if in station) */}
+      {fit && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
+          background: `${fitColor(fit.score)}15`, border: `1px solid ${fitColor(fit.score)}40`,
+          borderRadius: 8, padding: '6px 10px',
+        }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: fitColor(fit.score), fontFamily: 'var(--font-display)', lineHeight: 1 }}>{fit.score}</div>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: fitColor(fit.score) }}>{fitLabel(fit.score)}</div>
+            <div style={{ fontSize: 9, color: 'var(--muted)' }}>Fit Score</div>
+          </div>
+        </div>
+      )}
+
+      {/* Skills */}
+      {skillDefs.length > 0 && (
+        <div>
+          <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>ทักษะ</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {skillDefs.map(sd => {
+              const score = skills.find(s => s.skill_name === sd.name)?.score ?? 0;
+              const fitReq = fit?.details?.find(d => d.label === sd.label);
+              const barColor = fitReq ? (fitReq.pass ? '#22c55e' : '#ef4444') : sd.color;
+              return (
+                <div key={sd.name}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                    <span style={{ fontSize: 10, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: sd.color, flexShrink: 0, display: 'inline-block' }} />
+                      {sd.label}
+                    </span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: barColor }}>
+                      {score}%
+                      {fitReq && <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 9 }}>/{fitReq.required}%</span>}
+                    </span>
+                  </div>
+                  <div style={{ height: 4, background: 'var(--border2)', borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
+                    {fitReq && <div style={{ position: 'absolute', left: `${fitReq.required}%`, top: 0, bottom: 0, width: 1.5, background: 'var(--muted)', zIndex: 2 }} />}
+                    <div style={{ width: `${Math.min(score, 100)}%`, height: '100%', background: barColor, borderRadius: 3, transition: 'width 0.5s ease' }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {skillDefs.length === 0 && (
+        <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', paddingTop: 4 }}>ยังไม่มีทักษะบันทึก</div>
       )}
     </div>
   );
