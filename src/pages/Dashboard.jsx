@@ -14,6 +14,16 @@ function useNow() {
   return now;
 }
 
+function useIsMobile() {
+  const [mobile, setMobile] = useState(() => window.innerWidth <= 768);
+  useEffect(() => {
+    const h = () => setMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+  return mobile;
+}
+
 function getShiftInfo(date) {
   const h = date.getHours();
   const m = date.getMinutes();
@@ -28,7 +38,8 @@ function RadialProgress({ pct, size = 80, stroke = 7, color = '#e31937' }) {
   const offset = circ * (1 - pct / 100);
   return (
     <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke}
+        style={{ stroke: 'var(--border2)' }} />
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color}
         strokeWidth={stroke} strokeLinecap="round"
         strokeDasharray={circ} strokeDashoffset={offset}
@@ -40,7 +51,7 @@ function RadialProgress({ pct, size = 80, stroke = 7, color = '#e31937' }) {
 function MiniBar({ value, max, color }) {
   const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
   return (
-    <div style={{ height: 4, borderRadius: 3, background: 'rgba(255,255,255,0.1)', overflow: 'hidden', marginTop: 6 }}>
+    <div style={{ height: 4, borderRadius: 3, background: 'var(--border2)', overflow: 'hidden', marginTop: 6 }}>
       <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3, transition: 'width 0.7s ease' }} />
     </div>
   );
@@ -59,6 +70,7 @@ const getCatMeta = (cat = '') => {
 
 export default function Dashboard() {
   const now = useNow();
+  const isMobile = useIsMobile();
   const shiftInfo = getShiftInfo(now);
   const todayStr = now.toISOString().split('T')[0];
 
@@ -149,7 +161,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── KPI Row ─────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
         {[
           {
             label: 'พนักงานทั้งหมด', value: logs.length, unit: 'คน',
@@ -183,7 +195,7 @@ export default function Dashboard() {
           <motion.div key={kpi.label} {...stagger(i + 2)}>
             <div style={{
               background: 'var(--card)', border: '1px solid var(--border2)',
-              borderRadius: 14, padding: '18px 20px',
+              borderRadius: 14, padding: isMobile ? '14px 14px' : '18px 20px',
               boxShadow: 'var(--shadow-sm)',
               borderTop: `3px solid ${kpi.accent}`,
               display: 'flex', flexDirection: 'column', gap: 4,
@@ -221,7 +233,7 @@ export default function Dashboard() {
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
           สถานะไลน์ผลิต
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: isMobile ? 10 : 12 }}>
           {lineStats.map((line, i) => {
             const healthy = line.rate >= 80 && line.lineAlerts === 0;
             const warn    = line.lineAlerts > 0 || (line.rate > 0 && line.rate < 80);
@@ -277,7 +289,7 @@ export default function Dashboard() {
       </motion.div>
 
       {/* ── Bottom Grid ─────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,1fr)', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,2fr) minmax(0,1fr)', gap: 16 }}>
 
         {/* Attendance breakdown */}
         <motion.div {...stagger(12)}>
@@ -292,7 +304,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
               <AttendCol title="มาทำงาน" color="var(--green)" items={present} />
               <AttendCol title="ขาดงาน"  color="var(--red)"   items={absent} absent />
             </div>
