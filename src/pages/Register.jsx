@@ -6,7 +6,7 @@ const SECTIONS = ['PD1', 'PD2', 'PD3', 'PD4'];
 const TEAMS    = ['A', 'B'];
 
 export default function Register() {
-  const { role, lineId: userLineId } = useContext(UserContext);
+  const { role, lineId: userLineId, section: userSection } = useContext(UserContext);
   const isSupervisor = role === 'supervisor';
 
   const [empCode,     setEmpCode]     = useState('');
@@ -21,15 +21,11 @@ export default function Register() {
   const [lines,       setLines]       = useState([]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name').order('name')
+    supabase.from('production_lines').select('id, name, section').order('name')
       .then(({ data }) => {
         setLines(data || []);
-        if (isSupervisor && userLineId) {
-          const myLine = (data || []).find(l => l.id === userLineId);
-          if (myLine) {
-            setLineId(myLine.id);
-            setGroupName(myLine.name);
-          }
+        if (isSupervisor && userSection) {
+          setSection(userSection);
         }
       });
   }, []);
@@ -67,11 +63,10 @@ export default function Register() {
 
       alert('เพิ่มพนักงานสำเร็จ!');
       setEmpCode(''); setName(''); setDepartment('');
-      setSection(''); setTeam(''); setPhoto(null);
+      setSection(isSupervisor && userSection ? userSection : '');
+      setGroupName(''); setLineId(null);
+      setTeam(''); setPhoto(null);
       document.getElementById('photo-upload').value = '';
-      if (!isSupervisor) {
-        setGroupName(''); setLineId(null);
-      }
     } catch (err) {
       alert('เกิดข้อผิดพลาด: ' + err.message);
     } finally {
@@ -137,33 +132,22 @@ export default function Register() {
 
           <div>
             <label style={labelSt}>Group / Line</label>
-            {isSupervisor ? (
-              <div style={{
-                padding: '8px 12px',
-                background: 'var(--bg3)',
-                border: '1px solid var(--border2)',
-                borderRadius: 8,
-                fontSize: 13,
-                color: 'var(--text)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-              }}>
-                <span style={{ fontSize: 14 }}>🏭</span>
-                <span>{groupName || '—'}</span>
-                <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--muted)' }}>ไลน์ของคุณ</span>
-              </div>
-            ) : (
-              <select value={groupName} onChange={e => {
-                const val = e.target.value;
-                setGroupName(val);
-                const line = lines.find(l => l.name === val);
-                setLineId(line?.id || null);
-              }}>
-                <option value="">— เลือก Line —</option>
-                {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-              </select>
-            )}
+            {(() => {
+              const lineOpts = isSupervisor && userSection
+                ? lines.filter(l => l.section === userSection)
+                : lines;
+              return (
+                <select value={groupName} onChange={e => {
+                  const val = e.target.value;
+                  setGroupName(val);
+                  const line = lines.find(l => l.name === val);
+                  setLineId(line?.id || null);
+                }}>
+                  <option value="">— เลือก Line —</option>
+                  {lineOpts.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                </select>
+              );
+            })()}
           </div>
 
           <div>
