@@ -35,7 +35,6 @@ export default function Checkin() {
 
     // Build employee query scoped to user's line/team
     let empQ = supabase.from('employees').select('*').eq('is_active', true).order('employee_id_code');
-    if (role === 'supervisor' && lineId) empQ = empQ.eq('line_id', lineId);
     if (role === 'leader') {
       if (lineId) empQ = empQ.eq('line_id', lineId);
       if (team)   empQ = empQ.eq('team', team);
