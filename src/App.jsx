@@ -29,7 +29,7 @@ const NAV_ITEMS = [
   { to: '/checkin',    icon: '📝', label: 'เช็คชื่อ & PPE',    roles: null },
   { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   roles: ['admin', 'manager', 'supervisor'] },
   { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      roles: ['admin', 'supervisor'] },
-  { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager', 'leader'] },
+  { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager', 'supervisor', 'leader'] },
   { to: '/report',        icon: '📋', label: 'รายงาน',            roles: null },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         roles: ['admin', 'manager', 'supervisor'] },
 ];
@@ -323,7 +323,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <RoleRoute allow={['admin', 'supervisor']} userRole={role}><Register /></RoleRoute>
             } />
             <Route path="/operator"   element={
-              <RoleRoute allow={['admin', 'manager', 'leader']} userRole={role}><Operator /></RoleRoute>
+              <RoleRoute allow={['admin', 'manager', 'supervisor', 'leader']} userRole={role}><Operator /></RoleRoute>
             } />
             <Route path="/linesetup"  element={
               <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}><LineSetup /></RoleRoute>
