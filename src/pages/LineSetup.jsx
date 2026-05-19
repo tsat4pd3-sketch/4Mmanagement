@@ -302,7 +302,7 @@ export default function LineSetup() {
             {lines.map(l => (
               <div key={l.id}
                 style={{
-                  display: 'flex', flexDirection: 'column', gap: 4,
+                  display: 'flex', alignItems: 'center', gap: 6,
                   padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
                   background: selectedLine === l.name ? 'rgba(227,25,55,0.1)' : 'var(--bg2)',
                   border: `1px solid ${selectedLine === l.name ? 'var(--accent)' : 'var(--border)'}`,
@@ -310,28 +310,21 @@ export default function LineSetup() {
                 }}
                 onClick={() => { setSelectedLine(l.name); setTempPos(null); setFormData({ id: null, name: '', requirements: {} }); }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 13, flex: 1, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400 }}>
+                  <span style={{ fontSize: 13, flex: 1, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {l.name}
                   </span>
-                  {l.section && (
-                    <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)' }}>
-                      {l.section}
-                    </span>
-                  )}
+                  <select
+                    value={l.section || ''}
+                    onClick={e => e.stopPropagation()}
+                    onChange={e => { e.stopPropagation(); handleUpdateSection(l, e.target.value); }}
+                    style={{ fontSize: 11, padding: '2px 4px', borderRadius: 5, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', width: 'auto', flexShrink: 0 }}
+                  >
+                    <option value="">Section</option>
+                    {['PD1','PD2','PD3','PD4'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
                   <button onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
-                    style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1 }}
+                    style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
                     title="ลบไลน์">🗑️</button>
-                </div>
-                <select
-                  value={l.section || ''}
-                  onClick={e => e.stopPropagation()}
-                  onChange={e => { e.stopPropagation(); handleUpdateSection(l, e.target.value); }}
-                  style={{ fontSize: 11, padding: '2px 6px', borderRadius: 5, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}
-                >
-                  <option value="">— Section —</option>
-                  {['PD1','PD2','PD3','PD4'].map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
               </div>
             ))}
             {lines.length === 0 && (
