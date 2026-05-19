@@ -88,8 +88,9 @@ export default function Dashboard() {
       { data: lineData },
     ] = await Promise.all([
       supabase.from('daily_production_logs')
-        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, employees(id, name, employee_id_code, line_id)')
-        .eq('work_date', date),
+        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, employees!inner(id, name, employee_id_code, line_id, is_active)')
+        .eq('work_date', date)
+        .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
       supabase.from('production_lines').select('id, name, section').order('name'),
     ]);
