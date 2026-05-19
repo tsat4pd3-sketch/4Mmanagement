@@ -11,6 +11,7 @@ export default function Register() {
 
   const [empCode,     setEmpCode]     = useState('');
   const [name,        setName]        = useState('');
+  const [position,    setPosition]    = useState('');
   const [department,  setDepartment]  = useState('');
   const [section,     setSection]     = useState('');
   const [groupName,   setGroupName]   = useState('');
@@ -51,6 +52,7 @@ export default function Register() {
       const { error: insertError } = await supabase.from('employees').insert([{
         employee_id_code: empCode,
         name,
+        position:   position  || null,
         department,
         section:    section   || null,
         group_name: groupName || null,
@@ -62,7 +64,7 @@ export default function Register() {
       if (insertError) throw insertError;
 
       alert('เพิ่มพนักงานสำเร็จ!');
-      setEmpCode(''); setName(''); setDepartment('');
+      setEmpCode(''); setName(''); setPosition(''); setDepartment('');
       setSection(isSupervisor && userSection ? userSection : '');
       setGroupName(''); setLineId(null);
       setTeam(''); setPhoto(null);
@@ -108,9 +110,22 @@ export default function Register() {
             <input type="text" placeholder="ชื่อเต็มของพนักงาน" value={name} onChange={e => setName(e.target.value)} required />
           </div>
 
-          <div>
-            <label style={labelSt}>แผนก / สายงาน</label>
-            <input type="text" placeholder="เช่น ฝ่ายผลิต" value={department} onChange={e => setDepartment(e.target.value)} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <label style={labelSt}>ตำแหน่งงาน</label>
+              <select value={position} onChange={e => setPosition(e.target.value)}>
+                <option value="">— เลือก —</option>
+                <option value="Operator">Operator</option>
+                <option value="Leader">Leader</option>
+                <option value="Technician">Technician</option>
+                <option value="Engineer">Engineer</option>
+                <option value="QC">QC</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelSt}>แผนก / สายงาน</label>
+              <input type="text" placeholder="เช่น ฝ่ายผลิต" value={department} onChange={e => setDepartment(e.target.value)} />
+            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

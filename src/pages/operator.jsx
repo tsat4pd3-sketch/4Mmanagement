@@ -114,6 +114,7 @@ export default function Operator() {
 
       const { error } = await supabase.from('employees').update({
         name:       editingEmp.name,
+        position:   editingEmp.position   || null,
         department: editingEmp.department,
         section:    isSupervisor ? (userSection || null) : (editingEmp.section || null),
         group_name: editingEmp.group_name || null,
@@ -443,10 +444,22 @@ export default function Operator() {
                     onChange={e => setEditingEmp({ ...editingEmp, name: e.target.value })} required />
                 </div>
                 <div>
-                  <label style={labelSt}>แผนก</label>
-                  <input type="text" value={editingEmp.department || ''}
-                    onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value })} />
+                  <label style={labelSt}>ตำแหน่งงาน</label>
+                  <select value={editingEmp.position || ''}
+                    onChange={e => setEditingEmp({ ...editingEmp, position: e.target.value })}>
+                    <option value="">— เลือก —</option>
+                    <option value="Operator">Operator</option>
+                    <option value="Leader">Leader</option>
+                    <option value="Technician">Technician</option>
+                    <option value="Engineer">Engineer</option>
+                    <option value="QC">QC</option>
+                  </select>
                 </div>
+              </div>
+              <div>
+                <label style={labelSt}>แผนก</label>
+                <input type="text" value={editingEmp.department || ''}
+                  onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value })} />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
