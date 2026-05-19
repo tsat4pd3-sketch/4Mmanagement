@@ -186,7 +186,7 @@ export default function Operator() {
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
-        {(isLeader || isSupervisor ? ['👥 พนักงาน'] : ['👥 พนักงาน', '⚙️ กำหนดสกิล']).map((t, i) => (
+        {(isLeader ? ['👥 พนักงาน'] : ['👥 พนักงาน', '⚙️ กำหนดสกิล']).map((t, i) => (
           <button key={i} onClick={() => setTab(i)} style={{
             padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
             background: tab === i ? 'var(--accent)' : 'var(--bg3)',
