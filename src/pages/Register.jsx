@@ -36,7 +36,7 @@ export default function Register() {
     try {
       const { data: userData } = await supabase.auth.getUser();
       const userId = userData?.user?.id;
-      if (!userId) { alert('กรุณา Login ก่อนเพิ่มพนักงาน'); return; }
+      if (!userId) { alert('กรุณา Login ก่อนเพิ่มพนักงาน'); setIsUploading(false); return; }
 
       let photoUrl = null;
       if (photo) {
@@ -116,10 +116,14 @@ export default function Register() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>Section</label>
-              <select value={section} onChange={e => setSection(e.target.value)}>
-                <option value="">— เลือก —</option>
-                {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+              {isSupervisor && userSection ? (
+                <input type="text" value={userSection} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+              ) : (
+                <select value={section} onChange={e => setSection(e.target.value)}>
+                  <option value="">— เลือก —</option>
+                  {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              )}
             </div>
             <div>
               <label style={labelSt}>Team</label>
