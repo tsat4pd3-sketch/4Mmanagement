@@ -5,6 +5,7 @@ import { toast } from '../components/Toast';
 
 const CARD_W = 82;
 const LINE_4M_CATEGORIES = ['Machine', 'Material', 'Method'];
+const SPECIAL_TASKS = ['5ส', 'คัดงาน', 'แก้ไขปัญหาคุณภาพ', 'งานปรับปรุงไลน์', 'อื่นๆ'];
 
 const fitColor = (score) => {
   if (score >= 80) return '#22c55e';
@@ -43,6 +44,9 @@ export default function Management() {
   const [stationModal,   setStationModal]   = useState(null);
   const [homePositions,  setHomePositions]  = useState({});
   const [isSaving4M,     setIsSaving4M]     = useState(false);
+  const [specialTasks,   setSpecialTasks]   = useState([]);
+  const [specialModal,   setSpecialModal]   = useState(null); // worker to assign
+  const [specialTaskType,setSpecialTaskType]= useState('5ส');
   const hoverTimer = useRef(null);
 
   useEffect(() => {
@@ -84,8 +88,10 @@ export default function Management() {
       .eq('work_date', today).eq('is_present', true).eq('has_helmet', true).eq('has_boots', true).eq('has_gloves', true);
     const { data: mData } = await supabase.from('four_m_logs').select('*').eq('work_date', today);
     const { data: homeData } = await supabase.from('employee_home_positions').select('employee_id, station_id');
+    const { data: stData } = await supabase.from('operator_special_tasks').select('*').eq('work_date', today);
     setWorkers(workerData || []);
     setFourMLogs(mData || []);
+    setSpecialTasks(stData || []);
     const hpMap = {};
     (homeData || []).forEach(h => { hpMap[h.employee_id] = String(h.station_id); });
     setHomePositions(hpMap);
@@ -112,6 +118,12 @@ export default function Management() {
     setWorkers(prev => prev.map(w => w.id === logId ? { ...w, assigned_line: finalAssign } : w));
     setSelectedWorker(null);
     await supabase.from('daily_production_logs').update({ assigned_line: finalAssign }).eq('id', logId);
+    // ถ้า assign ไปสถานีผลิต → ล้าง special task อัตโนมัติ
+    if (finalAssign && droppedWorker?.employee_id) {
+      const today = new Date().toISOString().split('T')[0];
+      await supabase.from('operator_special_tasks').delete().eq('employee_id', droppedWorker.employee_id).eq('work_date', today);
+      setSpecialTasks(prev => prev.filter(t => t.employee_id !== droppedWorker.employee_id));
+    }
 
     if (finalAssign && droppedWorker) {
       const station = dynamicStations.find(s => String(s.id) === String(finalAssign));
@@ -207,11 +219,84 @@ export default function Management() {
     setHomePositions(prev => ({ ...prev, [empId]: String(stationId) }));
   };
 
+  const specialEmpIds = new Set(specialTasks.map(t => t.employee_id));
+
   const poolWorkers = workers.filter(w => {
     if (w.assigned_line) return false;
+    if (specialEmpIds.has(w.employee_id)) return false;
     if (isLeader && userTeam) return w.employees?.team === userTeam;
     return true;
   });
+
+  const specialWorkers = workers.filter(w => {
+    if (w.assigned_line) return false;
+    if (!specialEmpIds.has(w.employee_id)) return false;
+    if (isLeader && userTeam) return w.employees?.team === userTeam;
+    return true;
+  });
+
+  const assignSpecialTask = async (worker, taskType) => {
+    const today = new Date().toISOString().split('T')[0];
+    await supabase.from('operator_special_tasks').upsert(
+      { employee_id: worker.employee_id, task_type: taskType, work_date: today },
+      { onConflict: 'employee_id,work_date' }
+    );
+    setSpecialModal(null);
+    fetchData();
+  };
+
+  const removeSpecialTask = async (worker) => {
+    const today = new Date().toISOString().split('T')[0];
+    await supabase.from('operator_special_tasks').delete()
+      .eq('employee_id', worker.employee_id).eq('work_date', today);
+    fetchData();
+  };
+
+  /* ── Special Pool Card ── */
+  const SpecialCard = ({ worker }) => {
+    const task = specialTasks.find(t => t.employee_id === worker.employee_id);
+    const canDrag = ['admin', 'manager', 'supervisor'].includes(role);
+    const isSelected = selectedWorker?.id === worker.id;
+    return (
+      <div
+        draggable={!isMobile && canDrag}
+        onDragStart={!isMobile && canDrag ? (e) => handleDragStart(e, worker) : undefined}
+        onDragEnd={!isMobile ? handleDragEnd : undefined}
+        onClick={() => canDrag && handlePoolTap(worker)}
+        style={{
+          width: isMobile ? '100%' : CARD_W,
+          padding: isMobile ? '10px 8px' : '8px 5px 7px',
+          background: isSelected ? 'rgba(245,158,11,0.25)' : 'rgba(245,158,11,0.1)',
+          border: isSelected ? '2px solid #f59e0b' : '1.5px solid rgba(245,158,11,0.4)',
+          borderRadius: 10,
+          cursor: canDrag ? (isMobile ? 'pointer' : 'grab') : 'default',
+          display: 'flex', flexDirection: isMobile ? 'row' : 'column', alignItems: 'center',
+          gap: isMobile ? 10 : 5, userSelect: 'none', position: 'relative',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+        }}
+      >
+        {worker.employees?.image_url
+          ? <img src={worker.employees.image_url} style={{ width: isMobile ? 44 : 42, height: isMobile ? 44 : 42, borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(245,158,11,0.7)', flexShrink: 0 }} />
+          : <div style={{ width: isMobile ? 44 : 42, height: isMobile ? 44 : 42, borderRadius: '50%', background: 'rgba(245,158,11,0.15)', border: '2px solid rgba(245,158,11,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
+        }
+        <div style={{ flex: isMobile ? 1 : undefined, minWidth: 0 }}>
+          <div style={{ fontSize: isMobile ? 13 : 10, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: isMobile ? 'left' : 'center' }}>
+            {isMobile ? (worker.employees?.name ?? '?') : (worker.employees?.name?.split(' ')[0] ?? '?')}
+          </div>
+          <div style={{ fontSize: isMobile ? 11 : 8, color: '#f59e0b', fontWeight: 700, background: 'rgba(245,158,11,0.15)', borderRadius: 3, padding: isMobile ? '2px 6px' : '1px 4px', marginTop: 2, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : 68, whiteSpace: 'nowrap' }}>
+            {task?.task_type || 'งานพิเศษ'}
+          </div>
+        </div>
+        {/* remove button — leader+ */}
+        {['admin','manager','supervisor','leader'].includes(role) && (
+          <button onClick={(e) => { e.stopPropagation(); removeSpecialTask(worker); }}
+            style={{ position: 'absolute', top: 3, right: 3, width: 16, height: 16, borderRadius: '50%', background: 'rgba(239,68,68,0.85)', border: 'none', color: '#fff', fontSize: 10, lineHeight: '16px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
+            ✕
+          </button>
+        )}
+      </div>
+    );
+  };
 
   /* ── Pool PoolCard component ── */
   const PoolCard = ({ worker }) => {
@@ -258,6 +343,14 @@ export default function Management() {
         </div>
         {isMobile && isSelected && (
           <div style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', borderRadius: 6, padding: '4px 8px', flexShrink: 0 }}>เลือกแล้ว ✓</div>
+        )}
+        {/* assign to special task — leader+ */}
+        {['admin','manager','supervisor','leader'].includes(role) && (
+          <button onClick={(e) => { e.stopPropagation(); setSpecialModal(worker); setSpecialTaskType('5ส'); }}
+            title="กำหนดงานนอกไลน์"
+            style={{ position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: '50%', background: 'rgba(245,158,11,0.85)', border: 'none', color: '#fff', fontSize: 9, lineHeight: '18px', textAlign: 'center', cursor: 'pointer', padding: 0, display: isMobile ? 'none' : 'block' }}>
+            🏷
+          </button>
         )}
       </div>
     );
@@ -318,20 +411,41 @@ export default function Management() {
         <div
           onDragOver={!isMobile ? (e) => e.preventDefault() : undefined}
           onDrop={!isMobile ? (e) => handleDrop(e, 'Pool') : undefined}
-          style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+          style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 0 }}
         >
+          {/* Normal pool */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexShrink: 0 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🔵 พร้อมทำงาน</span>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>{poolWorkers.length} คน</span>
           </div>
-          <div style={
-            isMobile
-              ? { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }
-              : { flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }
-          }>
+          <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, maxHeight: isMobile ? undefined : '50%', flex: isMobile ? undefined : '0 0 auto' }}>
             {poolWorkers.map(w => <PoolCard key={w.id} worker={w} />)}
             {poolWorkers.length === 0 && (
-              <div style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'center', padding: '12px 0' }}>ไม่มีพนักงานใน Pool</div>
+              <div style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'center', padding: '8px 0' }}>ไม่มีพนักงานใน Pool</div>
+            )}
+          </div>
+
+          {/* Special task pool */}
+          <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed rgba(245,158,11,0.4)', flexShrink: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>🟡 งานนอกไลน์</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{specialWorkers.length} คน</span>
+            </div>
+            {['admin','manager','supervisor'].includes(role) && specialWorkers.length > 0 && (
+              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 5, fontStyle: 'italic' }}>drag กลับไลน์ผลิตได้</div>
+            )}
+          </div>
+          <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+            {specialWorkers.map(w => <SpecialCard key={w.id} worker={w} />)}
+            {specialWorkers.length === 0 && (
+              <div style={{ color: 'rgba(245,158,11,0.5)', fontSize: 10, textAlign: 'center', padding: '6px 0' }}>—</div>
+            )}
+            {/* mobile: assign button */}
+            {isMobile && ['admin','manager','supervisor','leader'].includes(role) && selectedWorker && !specialEmpIds.has(selectedWorker.employee_id) && (
+              <button onClick={() => { setSpecialModal(selectedWorker); setSpecialTaskType('5ส'); }}
+                style={{ marginTop: 6, padding: '8px', borderRadius: 8, background: 'rgba(245,158,11,0.15)', border: '1px dashed rgba(245,158,11,0.5)', color: '#f59e0b', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                🏷 กำหนดงานนอกไลน์ให้ผู้ถูกเลือก
+              </button>
             )}
           </div>
         </div>
@@ -712,6 +826,37 @@ export default function Management() {
           </div>
         );
       })()}
+
+      {/* ── Special Task Modal ── */}
+      {specialModal && (
+        <div className="overlay">
+          <div className="modal" style={{ width: 'min(360px, 94vw)' }}>
+            <h3 style={{ marginTop: 0, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>🏷 กำหนดงานนอกไลน์</h3>
+            <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -10 }}>{specialModal.employees?.name}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+              {SPECIAL_TASKS.map(t => (
+                <button key={t} onClick={() => setSpecialTaskType(t)}
+                  style={{ padding: '10px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, textAlign: 'left', cursor: 'pointer',
+                    background: specialTaskType === t ? 'rgba(245,158,11,0.2)' : 'var(--bg3)',
+                    border: specialTaskType === t ? '2px solid #f59e0b' : '1.5px solid var(--border2)',
+                    color: specialTaskType === t ? '#f59e0b' : 'var(--text2)' }}>
+                  {specialTaskType === t ? '✓ ' : ''}{t}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => assignSpecialTask(specialModal, specialTaskType)}
+                style={{ flex: 2, padding: 12, background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+                ยืนยัน
+              </button>
+              <button onClick={() => setSpecialModal(null)}
+                style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── 4M Modal ── */}
       {show4MModal && (
