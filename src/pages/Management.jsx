@@ -160,6 +160,21 @@ export default function Management() {
     setSelectedWorker(prev => prev?.id === worker.id ? null : worker);
   };
 
+  /* ── Save 4M log ── */
+  const handleSave4MLog = async () => {
+    if (!log4MForm.description.trim()) { alert('กรุณาระบุรายละเอียด'); return; }
+    const today = new Date().toISOString().split('T')[0];
+    await supabase.from('four_m_logs').insert([{
+      work_date: today,
+      line_name: show4MModal.lineName || selectedLine,
+      category: log4MForm.category,
+      description: log4MForm.description.trim(),
+    }]);
+    setShow4MModal(null);
+    setLog4MForm({ category: 'Man', description: '' });
+    fetchData();
+  };
+
   /* ── Station click: open picker modal ── */
   const handleStationClick = (st) => {
     setStationModal(st);
