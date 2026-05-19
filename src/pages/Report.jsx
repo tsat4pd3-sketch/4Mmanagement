@@ -1,5 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
+import {
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+  ResponsiveContainer, Tooltip,
+} from 'recharts';
 
 const CAT_META = {
   Man:      { color: '#4d9fff', bg: 'rgba(77,159,255,0.12)',  label: 'Man',      icon: '👷' },
@@ -308,12 +312,174 @@ function FourMTab() {
   );
 }
 
+/* ── Radar tooltip ── */
+function RadarTooltipContent({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const { subject, value } = payload[0].payload;
+  const lv = getLevel(value);
+  return (
+    <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 12px', fontSize: 12 }}>
+      <div style={{ fontWeight: 700, color: 'var(--text)' }}>{subject}</div>
+      <div style={{ color: lv.color, fontWeight: 800, fontSize: 15 }}>{value}<span style={{ fontSize: 10, fontWeight: 400, marginLeft: 2 }}>/ 100</span></div>
+      <div style={{ fontSize: 10, color: lv.color }}>{lv.label}</div>
+    </div>
+  );
+}
+
+/* ── Radar Panel ── */
+function OperatorRadarPanel({ emp, skillDefs, onClose }) {
+  const skillMap = {};
+  (emp.employee_skills || []).forEach(s => { skillMap[s.skill_name] = s.score; });
+
+  const radarData = skillDefs.map(s => ({
+    subject: s.label,
+    value: skillMap[s.name] ?? 0,
+    color: s.color || '#4d9fff',
+    fullMark: 100,
+  }));
+
+  const scores = radarData.map(d => d.value);
+  const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+  const overall = getLevel(avg);
+
+  /* dynamic gradient based on avg */
+  const glowColor = avg >= 80 ? '#22c55e' : avg >= 60 ? '#84cc16' : avg >= 40 ? '#f59e0b' : '#ef4444';
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 2100,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)',
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: 'min(460px, 94vw)',
+        background: 'var(--bg2)',
+        border: `1px solid ${glowColor}55`,
+        borderRadius: 20,
+        boxShadow: `0 0 40px ${glowColor}33, 0 20px 60px rgba(0,0,0,0.8)`,
+        overflow: 'hidden',
+        animation: 'smSlideUp 0.28s cubic-bezier(0.16,1,0.3,1)',
+      }}>
+        <style>{`
+          @keyframes smSlideUp {
+            from { opacity:0; transform:translateY(30px) scale(0.96); }
+            to   { opacity:1; transform:translateY(0) scale(1); }
+          }
+        `}</style>
+
+        {/* Header stripe */}
+        <div style={{ height: 4, background: `linear-gradient(90deg, ${glowColor}, transparent)` }} />
+
+        {/* Profile section */}
+        <div style={{ padding: '20px 24px 12px', display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <img
+              src={emp.image_url || ''}
+              alt=""
+              onError={e => { e.target.style.display = 'none'; }}
+              style={{ width: 72, height: 72, borderRadius: 14, objectFit: 'cover', border: `2px solid ${glowColor}88`, display: emp.image_url ? 'block' : 'none' }}
+            />
+            {!emp.image_url && (
+              <div style={{
+                width: 72, height: 72, borderRadius: 14,
+                background: `linear-gradient(135deg, ${glowColor}44, ${glowColor}22)`,
+                border: `2px solid ${glowColor}88`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 26, fontWeight: 800, color: glowColor,
+              }}>
+                {(emp.name || '?')[0]}
+              </div>
+            )}
+            {/* Overall ring */}
+            <div style={{
+              position: 'absolute', bottom: -6, right: -6,
+              background: glowColor, color: '#fff',
+              borderRadius: 8, padding: '1px 6px', fontSize: 10, fontWeight: 800,
+              border: '2px solid var(--bg2)',
+            }}>{avg}</div>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text)', lineHeight: 1.2 }}>{emp.name}</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{emp.employee_id_code}</div>
+            <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {emp.group_name && <span style={{ fontSize: 10, background: 'var(--bg3)', color: 'var(--text2)', borderRadius: 5, padding: '2px 7px', border: '1px solid var(--border2)' }}>{emp.group_name}</span>}
+              <span style={{ fontSize: 10, background: `${glowColor}22`, color: glowColor, borderRadius: 5, padding: '2px 7px', border: `1px solid ${glowColor}44`, fontWeight: 700 }}>
+                {overall.label}
+              </span>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', padding: 4, alignSelf: 'flex-start' }}>✕</button>
+        </div>
+
+        {/* Stat bars row */}
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(radarData.length, 4)}, 1fr)`, gap: 6, padding: '0 24px 12px' }}>
+          {radarData.slice(0, 4).map(d => {
+            const lv = getLevel(d.value);
+            return (
+              <div key={d.subject} style={{ background: 'var(--bg3)', borderRadius: 8, padding: '8px 10px', border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 9, color: 'var(--muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.subject}</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: lv.color, fontFamily: 'var(--font-display)' }}>{d.value}</div>
+                <div style={{ height: 3, background: 'var(--border2)', borderRadius: 2, marginTop: 4 }}>
+                  <div style={{ height: '100%', width: `${d.value}%`, background: lv.color, borderRadius: 2, transition: 'width 0.6s ease' }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Radar Chart */}
+        <div style={{ padding: '0 12px 16px' }}>
+          <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Skill Radar</div>
+          <ResponsiveContainer width="100%" height={240}>
+            <RadarChart data={radarData} margin={{ top: 10, right: 30, bottom: 10, left: 30 }}>
+              <PolarGrid stroke="var(--border2)" />
+              <PolarAngleAxis
+                dataKey="subject"
+                tick={{ fill: 'var(--text2)', fontSize: 11, fontFamily: 'var(--font-body)' }}
+              />
+              <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
+              <Radar
+                dataKey="value"
+                stroke={glowColor}
+                fill={glowColor}
+                fillOpacity={0.25}
+                strokeWidth={2}
+                dot={{ r: 4, fill: glowColor, strokeWidth: 0 }}
+              />
+              <Tooltip content={<RadarTooltipContent />} />
+            </RadarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* All skill bars (if > 4 skills) */}
+        {radarData.length > 4 && (
+          <div style={{ padding: '0 24px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {radarData.slice(4).map(d => {
+              const lv = getLevel(d.value);
+              return (
+                <div key={d.subject} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', width: 90, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.subject}</div>
+                  <div style={{ flex: 1, height: 6, background: 'var(--border2)', borderRadius: 3 }}>
+                    <div style={{ height: '100%', width: `${d.value}%`, background: lv.color, borderRadius: 3 }} />
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: lv.color, width: 28, textAlign: 'right' }}>{d.value}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SkillMatrixTab() {
-  const [skillDefs, setSkillDefs] = useState([]);
-  const [employees, setEmployees] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [filterLine, setFilterLine] = useState('');
-  const [lines, setLines] = useState([]);
+  const [skillDefs,    setSkillDefs]    = useState([]);
+  const [employees,    setEmployees]    = useState([]);
+  const [loading,      setLoading]      = useState(false);
+  const [filterLine,   setFilterLine]   = useState('');
+  const [lines,        setLines]        = useState([]);
+  const [selectedEmp,  setSelectedEmp]  = useState(null);
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name').order('name').then(({ data }) => setLines(data || []));
@@ -324,11 +490,12 @@ function SkillMatrixTab() {
 
   const load = async () => {
     setLoading(true);
+    const baseSelect = 'id, name, employee_id_code, image_url, group_name, line_id, employee_skills(skill_name, score)';
     const [{ data: defs }, { data: emps }] = await Promise.all([
       supabase.from('skill_definitions').select('*').order('sort_order'),
       filterLine
-        ? supabase.from('employees').select('id, name, employee_id_code, line_id, employee_skills(skill_name, score)').eq('is_active', true).eq('line_id', filterLine).order('name')
-        : supabase.from('employees').select('id, name, employee_id_code, line_id, employee_skills(skill_name, score)').eq('is_active', true).order('name'),
+        ? supabase.from('employees').select(baseSelect).eq('is_active', true).eq('line_id', filterLine).order('name')
+        : supabase.from('employees').select(baseSelect).eq('is_active', true).order('name'),
     ]);
     setSkillDefs(defs || []);
     setEmployees(emps || []);
@@ -337,13 +504,23 @@ function SkillMatrixTab() {
 
   return (
     <div>
+      {selectedEmp && (
+        <OperatorRadarPanel
+          emp={selectedEmp}
+          skillDefs={skillDefs}
+          onClose={() => setSelectedEmp(null)}
+        />
+      )}
+
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
         <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
           <option value="">ทุกไลน์</option>
           {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>{employees.length} คน · {skillDefs.length} สกิล</span>
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>· คลิกที่พนักงานเพื่อดู Radar Chart</span>
       </div>
+
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         {SKILL_LEVELS.map(lv => (
           <span key={lv.label} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: lv.bg, color: lv.color, border: `1px solid ${lv.color}40` }}>
@@ -352,11 +529,13 @@ function SkillMatrixTab() {
         ))}
         <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>— ยังไม่ประเมิน</span>
       </div>
+
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
-          <table style={{ minWidth: 300 + skillDefs.length * 90 }}>
+          <table style={{ minWidth: 220 + skillDefs.length * 90 }}>
             <thead>
               <tr>
+                <th style={{ minWidth: 44, textAlign: 'center' }}>รูป</th>
                 <th style={{ minWidth: 130, textAlign: 'left' }}>พนักงาน</th>
                 {skillDefs.map(s => (
                   <th key={s.name} style={{ minWidth: 88, textAlign: 'center', fontSize: 11 }}>
@@ -367,14 +546,43 @@ function SkillMatrixTab() {
               </tr>
             </thead>
             <tbody>
-              {employees.length === 0 ? <EmptyRow cols={1 + skillDefs.length} /> : employees.map(emp => {
+              {employees.length === 0 ? <EmptyRow cols={2 + skillDefs.length} /> : employees.map(emp => {
                 const skillMap = {};
                 (emp.employee_skills || []).forEach(s => { skillMap[s.skill_name] = s.score; });
+                const scores = skillDefs.map(s => skillMap[s.name] ?? 0);
+                const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+                const avgLv = getLevel(avg);
+
                 return (
-                  <tr key={emp.id}>
+                  <tr
+                    key={emp.id}
+                    onClick={() => setSelectedEmp(emp)}
+                    style={{ cursor: 'pointer', transition: 'background 0.15s' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                    onMouseLeave={e => e.currentTarget.style.background = ''}
+                  >
+                    <td style={{ textAlign: 'center', padding: '8px 6px' }}>
+                      {emp.image_url ? (
+                        <img src={emp.image_url} alt="" style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'cover', border: `2px solid ${avgLv.color}66`, display: 'block', margin: '0 auto' }} />
+                      ) : (
+                        <div style={{
+                          width: 38, height: 38, borderRadius: 10, margin: '0 auto',
+                          background: `${avgLv.color}22`, border: `2px solid ${avgLv.color}55`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 15, fontWeight: 800, color: avgLv.color,
+                        }}>
+                          {(emp.name || '?')[0]}
+                        </div>
+                      )}
+                    </td>
                     <td>
                       <div style={{ fontWeight: 600, fontSize: 13 }}>{emp.name}</div>
                       <div style={{ fontSize: 10, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
+                      {scores.length > 0 && (
+                        <div style={{ marginTop: 3, display: 'inline-block', fontSize: 9, fontWeight: 700, color: avgLv.color, background: avgLv.bg, borderRadius: 4, padding: '1px 5px' }}>
+                          avg {avg}%
+                        </div>
+                      )}
                     </td>
                     {skillDefs.map(s => {
                       const score = skillMap[s.name];
