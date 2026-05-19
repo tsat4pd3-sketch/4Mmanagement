@@ -89,24 +89,18 @@ export default function AddUser() {
             'apikey':        import.meta.env.VITE_SUPABASE_ANON_KEY,
           },
           body: JSON.stringify({
-            email:   form.email,
-            password: form.password,
-            role:    form.role,
-            line_id: form.lineId ? Number(form.lineId) : null,
+            email:     form.email,
+            password:  form.password,
+            role:      form.role,
+            full_name: form.fullName || null,
+            section:   form.section  || null,
+            team:      form.team     || null,
+            line_id:   form.lineId   ? Number(form.lineId) : null,
           }),
         }
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
-
-      if (data.user?.id) {
-        await supabase.from('profiles').update({
-          full_name: form.fullName || null,
-          section:   form.section  || null,
-          team:      form.team     || null,
-          line_id:   form.lineId   ? Number(form.lineId) : null,
-        }).eq('id', data.user.id);
-      }
 
       setMessage(`สร้าง user "${form.email}" (${form.role}) สำเร็จ`);
       setShowModal(false);
