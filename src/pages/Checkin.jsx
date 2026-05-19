@@ -81,7 +81,7 @@ export default function Checkin() {
     ] = await Promise.all([
       empQ,
       supabase.from('daily_production_logs')
-        .select('employee_id, is_present, has_helmet, has_boots, has_gloves, has_ot, remark, leave_type, leave_duration, leave_hours')
+        .select('employee_id, is_present, has_helmet, has_boots, has_gloves, has_ot, remark, leave_type, leave_duration, leave_period, leave_hours')
         .eq('work_date', workDateStr),
       supabase.from('shift_schedules').select('*').eq('work_date', workDateStr),
       supabase.from('shift_overrides').select('*').eq('work_date', workDateStr),
@@ -191,8 +191,47 @@ export default function Checkin() {
       .from('daily_production_logs')
       .upsert(logs, { onConflict: 'work_date,employee_id' });
 
-    if (error) alert('เกิดข้อผิดพลาด: ' + error.message);
-    else alert('บันทึกข้อมูลสำเร็จ!');
+    if (error) { alert('เกิดข้อผิดพลาด: ' + error.message); setIsSaving(false); return; }
+
+    /* ── Skill farming: +1 XP for employees working at stations requiring ≥70% skill ── */
+    try {
+      const { data: todayLogs } = await supabase
+        .from('daily_production_logs')
+        .select('employee_id, assigned_line, employees(employee_skills(skill_name, score))')
+        .eq('work_date', workDateStr)
+        .eq('is_present', true)
+        .not('assigned_line', 'is', null);
+
+      if (todayLogs?.length) {
+        const stationIds = [...new Set(todayLogs.map(l => l.assigned_line))];
+        const { data: reqs } = await supabase
+          .from('station_requirements')
+          .select('station_id, skill_name, min_score')
+          .in('station_id', stationIds)
+          .gte('min_score', 70);
+
+        if (reqs?.length) {
+          const skillUpserts = [];
+          for (const log of todayLogs) {
+            const stReqs = reqs.filter(r => String(r.station_id) === String(log.assigned_line));
+            if (!stReqs.length) continue;
+            const skills = log.employees?.employee_skills || [];
+            const skillMap = Object.fromEntries(skills.map(s => [s.skill_name, s.score]));
+            for (const req of stReqs) {
+              const cur = Number(skillMap[req.skill_name] ?? 0);
+              if (cur < req.min_score) {
+                skillUpserts.push({ employee_id: log.employee_id, skill_name: req.skill_name, score: Math.min(cur + 1, req.min_score), updated_at: new Date().toISOString() });
+              }
+            }
+          }
+          if (skillUpserts.length) {
+            await supabase.from('employee_skills').upsert(skillUpserts, { onConflict: 'employee_id,skill_name' });
+          }
+        }
+      }
+    } catch (_) { /* skill farming errors are non-critical */ }
+
+    alert('บันทึกข้อมูลสำเร็จ!');
     setIsSaving(false);
   };
 

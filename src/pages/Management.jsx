@@ -37,8 +37,10 @@ export default function Management() {
   const [dragOverStation,setDragOverStation]= useState(null);
   const [fitPopup,       setFitPopup]       = useState(null);
   const [hoverCard,      setHoverCard]      = useState(null);
-  const [selectedWorker, setSelectedWorker] = useState(null); // touch: selected pool worker
-  const [detailSheet,    setDetailSheet]    = useState(null); // touch: bottom sheet { worker, fit?, stationId? }
+  const [selectedWorker, setSelectedWorker] = useState(null);
+  const [detailSheet,    setDetailSheet]    = useState(null);
+  const [stationModal,   setStationModal]   = useState(null); // { station }
+  const [homePositions,  setHomePositions]  = useState({}); // { employee_id: station_id }
   const hoverTimer = useRef(null);
 
   useEffect(() => {
@@ -76,11 +78,15 @@ export default function Management() {
     const today = new Date().toISOString().split('T')[0];
     const { data: workerData } = await supabase
       .from('daily_production_logs')
-      .select('id, assigned_line, employee_id, employees(employee_id_code, name, image_url, team, section, line_id, employee_skills(skill_name, score))')
+      .select('id, assigned_line, employee_id, employees(id, employee_id_code, name, image_url, team, section, line_id, employee_skills(skill_name, score))')
       .eq('work_date', today).eq('is_present', true).eq('has_helmet', true).eq('has_boots', true).eq('has_gloves', true);
     const { data: mData } = await supabase.from('four_m_logs').select('*').eq('work_date', today);
+    const { data: homeData } = await supabase.from('employee_home_positions').select('employee_id, station_id');
     setWorkers(workerData || []);
     setFourMLogs(mData || []);
+    const hpMap = {};
+    (homeData || []).forEach(h => { hpMap[h.employee_id] = String(h.station_id); });
+    setHomePositions(hpMap);
   };
 
   const computeFit = (worker, station) => {
@@ -111,10 +117,12 @@ export default function Management() {
         const fit = computeFit(droppedWorker, station);
         setFitPopup({ worker: droppedWorker, station, fit });
         setTimeout(() => setFitPopup(null), 4500);
-        if (droppedWorker.employee_id) {
+        const empId = droppedWorker.employee_id;
+        const isHome = empId && homePositions[empId] === String(finalAssign);
+        if (!isHome && empId) {
           const today = new Date().toISOString().split('T')[0];
           const { data: history } = await supabase.from('daily_production_logs').select('id')
-            .eq('employee_id', droppedWorker.employee_id).eq('assigned_line', String(finalAssign))
+            .eq('employee_id', empId).eq('assigned_line', String(finalAssign))
             .lt('work_date', today).limit(1);
           if (!history?.length) {
             const desc = `[Auto] ${droppedWorker.employees?.name} ประจำจุด ${station.station_name} เป็นครั้งแรก`;
@@ -152,17 +160,20 @@ export default function Management() {
     setSelectedWorker(prev => prev?.id === worker.id ? null : worker);
   };
 
-  /* ── Touch tap on station ── */
-  const handleStationTap = (st, workerAtStation) => {
-    if (!isMobile) return;
-    if (selectedWorker) {
-      // assign selected worker to this station
-      assignWorker(selectedWorker.id, st.id);
-    } else if (workerAtStation) {
-      // show detail sheet for station worker
-      const fit = computeFit(workerAtStation, st);
-      setDetailSheet({ worker: workerAtStation, fit, stationId: st.id, stationName: st.station_name });
-    }
+  /* ── Station click: open picker modal ── */
+  const handleStationClick = (st) => {
+    setStationModal(st);
+  };
+
+  /* ── Save home position ── */
+  const saveHomePosition = async (worker, stationId) => {
+    const empId = worker.employee_id || worker.employees?.id;
+    if (!empId) return;
+    await supabase.from('employee_home_positions').upsert(
+      { employee_id: empId, station_id: stationId, line_name: selectedLine, updated_at: new Date().toISOString() },
+      { onConflict: 'employee_id' }
+    );
+    setHomePositions(prev => ({ ...prev, [empId]: String(stationId) }));
   };
 
   const poolWorkers = workers.filter(w => {
@@ -364,7 +375,7 @@ export default function Management() {
                 onDragEnter={!isMobile ? (e) => { e.preventDefault(); setDragOverStation(st.id); } : undefined}
                 onDragLeave={!isMobile ? (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOverStation(null); } : undefined}
                 onDrop={!isMobile ? (e) => handleDrop(e, st.id) : undefined}
-                onClick={() => handleStationTap(st, workerAtStation)}
+                onClick={() => handleStationClick(st)}
                 style={{
                   position: 'absolute', top: st.pos_top, left: st.pos_left, transform: 'translate(-50%, -50%)',
                   width: CARD_W,
@@ -387,7 +398,10 @@ export default function Management() {
                   <span style={{ fontSize: 9, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: activeFc || '#c8c8d0' }}>
                     {st.station_name}
                   </span>
-                  <div style={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+                  <div style={{ display: 'flex', gap: 1, flexShrink: 0, alignItems: 'center' }}>
+                    {workerAtStation?.employee_id && homePositions[workerAtStation.employee_id] === String(st.id) && (
+                      <span style={{ fontSize: 8, lineHeight: 1 }} title="ตำแหน่งประจำ">🏠</span>
+                    )}
                     {hasMan && <span style={{ background: '#4d9fff', color: '#fff', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800 }}>MAN</span>}
                     {has4M  && <span style={{ background: '#e74c3c', color: '#fff', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800 }}>4M</span>}
                     {!isMobile && (
@@ -570,6 +584,103 @@ export default function Management() {
           </div>
         </div>
       )}
+
+      {/* ── Station Picker Modal ── */}
+      {stationModal && (() => {
+        const st = stationModal;
+        const workerHere = workers.find(w => String(w.assigned_line) === String(st.id));
+        const fitHere    = workerHere ? computeFit(workerHere, st) : null;
+        const sortedPool = poolWorkers
+          .map(w => ({ ...w, _fit: computeFit(w, st) }))
+          .sort((a, b) => b._fit.score - a._fit.score);
+        return (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 3000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+            <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)' }} onClick={() => setStationModal(null)} />
+            <div style={{ position: 'relative', background: 'var(--card)', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480, padding: '20px 18px 36px', boxShadow: 'var(--shadow-lg)', maxHeight: '80vh', display: 'flex', flexDirection: 'column', animation: 'slideUp 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
+              {/* Handle */}
+              <div style={{ width: 36, height: 4, background: 'var(--border2)', borderRadius: 3, margin: '0 auto 14px' }} />
+              {/* Title */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{st.station_name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>เลือกพนักงานประจำจุดนี้</div>
+                </div>
+                <button onClick={() => setStationModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 22, cursor: 'pointer' }}>×</button>
+              </div>
+
+              {/* Current worker */}
+              {workerHere && (
+                <div style={{ marginBottom: 12, padding: '10px 12px', background: `${fitColor(fitHere.score)}12`, border: `1px solid ${fitColor(fitHere.score)}40`, borderRadius: 12 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>ประจำอยู่ตอนนี้</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {workerHere.employees?.image_url
+                      ? <img src={workerHere.employees.image_url} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', border: `2px solid ${fitColor(fitHere.score)}`, flexShrink: 0 }} />
+                      : <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
+                    }
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{workerHere.employees?.name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{workerHere.employees?.employee_id_code}</div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                      <div style={{ background: fitColor(fitHere.score), color: '#fff', fontWeight: 900, fontSize: 18, padding: '2px 10px', borderRadius: 6 }}>{fitHere.score}</div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {homePositions[workerHere.employee_id] !== String(st.id) && (
+                          <button
+                            onClick={async () => { await saveHomePosition(workerHere, st.id); }}
+                            style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', cursor: 'pointer', fontWeight: 700 }}
+                            title="บันทึกเป็นตำแหน่งประจำ"
+                          >📌 บันทึกตำแหน่งประจำ</button>
+                        )}
+                        {homePositions[workerHere.employee_id] === String(st.id) && (
+                          <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 700 }}>🏠 ตำแหน่งประจำ</span>
+                        )}
+                        <button
+                          onClick={() => { assignWorker(workerHere.id, 'Pool'); setStationModal(null); }}
+                          style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(231,76,60,0.1)', color: 'var(--red)', border: '1px solid rgba(231,76,60,0.3)', cursor: 'pointer', fontWeight: 700 }}
+                        >↩ Pool</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Pool workers sorted by fit */}
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+                พนักงานใน Pool ({sortedPool.length} คน) — เรียงตาม Fit Score
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {sortedPool.length === 0 && (
+                  <div style={{ color: 'var(--muted)', fontSize: 12, textAlign: 'center', padding: '20px 0' }}>ไม่มีพนักงานใน Pool</div>
+                )}
+                {sortedPool.map(w => {
+                  const fc = fitColor(w._fit.score);
+                  const isHome = w.employee_id && homePositions[w.employee_id] === String(st.id);
+                  return (
+                    <div
+                      key={w.id}
+                      onClick={() => { assignWorker(w.id, st.id); setStationModal(null); }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, background: `${fc}0d`, border: `1px solid ${fc}30`, cursor: 'pointer', transition: 'background 0.15s' }}
+                    >
+                      {w.employees?.image_url
+                        ? <img src={w.employees.image_url} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', border: `2px solid ${fc}`, flexShrink: 0 }} />
+                        : <div style={{ width: 40, height: 40, borderRadius: '50%', background: `${fc}18`, border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
+                      }
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                          {w.employees?.name}
+                          {isHome && <span style={{ fontSize: 10 }} title="ตำแหน่งประจำ">🏠</span>}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--muted)' }}>{w.employees?.employee_id_code}{w.employees?.team ? ` · Team ${w.employees.team}` : ''}</div>
+                      </div>
+                      <div style={{ background: fc, color: '#fff', fontWeight: 900, fontSize: 16, padding: '3px 10px', borderRadius: 6, flexShrink: 0 }}>{w._fit.score}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── 4M Modal ── */}
       {show4MModal && (
