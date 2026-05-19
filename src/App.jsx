@@ -22,6 +22,7 @@ const ROLE_LABELS = {
   manager:    '🏢 Manager',
   supervisor: '🎯 Supervisor',
   leader:     '⭐ Leader',
+  qa:         '🔍 QA',
 };
 
 // null roles = accessible to every role

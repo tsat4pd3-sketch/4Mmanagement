@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useContext } from 'react';
 import { supabase } from '../supabaseClient';
+import { UserContext } from '../App';
+import { toast } from '../components/Toast';
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, Tooltip,
@@ -270,44 +272,112 @@ function RangeTab() {
   );
 }
 
+const STATUS_META = {
+  pending:  { label: '⏳ รอ Approve', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)'  },
+  approved: { label: '✅ Approved',   color: '#22c55e', bg: 'rgba(34,197,94,0.12)'   },
+  rejected: { label: '❌ Rejected',   color: '#ef4444', bg: 'rgba(239,68,68,0.12)'   },
+};
+
 function FourMTab() {
+  const { role } = useContext(UserContext);
+  const canApprove = ['admin', 'manager', 'supervisor', 'qa'].includes(role);
+
   const today = new Date().toISOString().split('T')[0];
-  const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
-  const [to, setTo] = useState(today);
-  const [line, setLine] = useState('');
-  const [cat, setCat] = useState('');
-  const [logs, setLogs] = useState([]);
-  const [lines, setLines] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [from,        setFrom]        = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
+  const [to,          setTo]          = useState(today);
+  const [line,        setLine]        = useState('');
+  const [cat,         setCat]         = useState('');
+  const [statusFilter,setStatusFilter]= useState('');
+  const [logs,        setLogs]        = useState([]);
+  const [lines,       setLines]       = useState([]);
+  const [loading,     setLoading]     = useState(false);
+  const [rejectModal, setRejectModal] = useState(null); // log id
+  const [rejectReason,setRejectReason]= useState('');
+  const [approverMap, setApproverMap] = useState({}); // userId → fullName
 
   useEffect(() => {
     supabase.from('production_lines').select('name').order('name').then(({ data }) => setLines(data || []));
   }, []);
 
-  useEffect(() => { load(); }, [from, to, line, cat]);
+  useEffect(() => { load(); }, [from, to, line, cat, statusFilter]);
 
   const load = async () => {
     setLoading(true);
-    let q = supabase.from('four_m_logs').select('*')
+    let q = supabase.from('four_m_logs')
+      .select('id, work_date, line_name, category, description, created_at, status, approved_by, approved_at, reject_reason')
       .gte('work_date', from).lte('work_date', to)
       .order('work_date', { ascending: false })
       .order('created_at', { ascending: false });
-    if (line) q = q.eq('line_name', line);
-    if (cat) q = q.eq('category', cat);
+    if (line)         q = q.eq('line_name', line);
+    if (cat)          q = q.eq('category', cat);
+    if (statusFilter) q = q.eq('status', statusFilter);
     const { data } = await q;
     setLogs(data || []);
+
+    // load approver names
+    const ids = [...new Set((data || []).filter(l => l.approved_by).map(l => l.approved_by))];
+    if (ids.length) {
+      const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', ids);
+      const map = {};
+      (profiles || []).forEach(p => { map[p.id] = p.full_name || 'ไม่ระบุ'; });
+      setApproverMap(map);
+    }
     setLoading(false);
   };
 
+  const handleApprove = async (logId) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('four_m_logs').update({
+      status: 'approved', approved_by: user.id, approved_at: new Date().toISOString(), reject_reason: null,
+    }).eq('id', logId);
+    if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
+    toast.success('Approved เรียบร้อย');
+    load();
+  };
+
+  const handleReject = async () => {
+    if (!rejectReason.trim()) { toast.error('กรุณาระบุเหตุผล'); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('four_m_logs').update({
+      status: 'rejected', approved_by: user.id, approved_at: new Date().toISOString(), reject_reason: rejectReason.trim(),
+    }).eq('id', rejectModal);
+    if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
+    toast.success('Rejected แล้ว');
+    setRejectModal(null); setRejectReason('');
+    load();
+  };
+
   const kpi = Object.fromEntries(Object.keys(CAT_META).map(k => [k, logs.filter(l => l.category === k).length]));
+  const pendingCount = logs.filter(l => l.status === 'pending').length;
 
   return (
     <div>
+      {/* Reject modal */}
+      {rejectModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px 24px 20px', width: 'min(420px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
+            <h3 style={{ margin: '0 0 14px', color: '#ef4444', fontFamily: 'var(--font-display)' }}>❌ ระบุเหตุผลที่ Reject</h3>
+            <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
+              placeholder="เหตุผลที่ไม่อนุมัติ..." rows={3}
+              style={{ width: '100%', borderRadius: 8, padding: '8px 10px', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+            <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+              <button onClick={handleReject}
+                style={{ flex: 2, padding: 11, background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>
+                ยืนยัน Reject
+              </button>
+              <button onClick={() => { setRejectModal(null); setRejectReason(''); }}
+                style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
         {Object.entries(CAT_META).map(([k, m]) => (
           <div key={k} onClick={() => setCat(c => c === k ? '' : k)} style={{
-            background: cat === k ? m.bg : 'var(--card)',
-            border: `1px solid ${cat === k ? m.color : 'var(--border)'}`,
+            background: cat === k ? m.bg : 'var(--card)', border: `1px solid ${cat === k ? m.color : 'var(--border)'}`,
             borderRadius: 10, padding: '12px 14px', cursor: 'pointer', transition: 'all 0.15s'
           }}>
             <div style={{ fontSize: 20 }}>{m.icon}</div>
@@ -316,6 +386,7 @@ function FourMTab() {
           </div>
         ))}
       </div>
+
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }} />
         <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
@@ -328,28 +399,76 @@ function FourMTab() {
           <option value="">ทุกประเภท</option>
           {Object.keys(CAT_META).map(k => <option key={k} value={k}>{k}</option>)}
         </select>
-        <span style={{ color: 'var(--muted)', fontSize: 12 }}>รวม {logs.length} รายการ</span>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
+          <option value="">ทุกสถานะ</option>
+          <option value="pending">⏳ รอ Approve</option>
+          <option value="approved">✅ Approved</option>
+          <option value="rejected">❌ Rejected</option>
+        </select>
+        {pendingCount > 0 && (
+          <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 6, padding: '3px 8px' }}>
+            ⏳ รอ Approve {pendingCount} รายการ
+          </span>
+        )}
         <CsvBtn onClick={() => downloadCSV(
           `4m_changes_${from}_${to}.csv`,
-          ['วันที่', 'ไลน์', 'ประเภท', 'รายละเอียด', 'เวลาบันทึก'],
-          logs.map(l => [l.work_date, l.line_name, l.category, l.description, l.created_at ? new Date(l.created_at).toLocaleString('th-TH') : ''])
+          ['วันที่', 'ไลน์', 'ประเภท', 'รายละเอียด', 'สถานะ', 'Approved โดย', 'เวลา Approve', 'เหตุผล Reject'],
+          logs.map(l => [l.work_date, l.line_name, l.category, l.description, l.status, l.approved_by ? (approverMap[l.approved_by] || l.approved_by) : '', l.approved_at ? new Date(l.approved_at).toLocaleString('th-TH') : '', l.reject_reason || ''])
         )} />
       </div>
+
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
-          <table style={{ minWidth: 560 }}>
-            <thead><tr><th>วันที่</th><th>ไลน์</th><th>ประเภท</th><th>รายละเอียดการเปลี่ยนแปลง</th><th>เวลาบันทึก</th></tr></thead>
+          <table style={{ minWidth: 680 }}>
+            <thead>
+              <tr>
+                <th>วันที่</th><th>ไลน์</th><th>ประเภท</th><th>รายละเอียด</th>
+                <th style={{ textAlign: 'center' }}>สถานะ</th>
+                {canApprove && <th style={{ textAlign: 'center', minWidth: 140 }}>Action</th>}
+              </tr>
+            </thead>
             <tbody>
-              {logs.length === 0 ? <EmptyRow cols={5} /> : logs.map(l => {
-                const m = CAT_META[l.category] || {};
-                const ts = l.created_at ? new Date(l.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '—';
+              {logs.length === 0 ? <EmptyRow cols={canApprove ? 6 : 5} /> : logs.map(l => {
+                const m  = CAT_META[l.category] || {};
+                const sm = STATUS_META[l.status] || STATUS_META.pending;
+                const approverName = l.approved_by ? (approverMap[l.approved_by] || '...') : null;
                 return (
                   <tr key={l.id}>
-                    <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{l.work_date}</td>
+                    <td style={{ fontWeight: 600, whiteSpace: 'nowrap', fontSize: 12 }}>{l.work_date}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.line_name}</td>
                     <td><span style={{ background: m.bg, color: m.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{m.icon} {l.category}</span></td>
-                    <td style={{ fontSize: 13 }}>{l.description}</td>
-                    <td style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{ts}</td>
+                    <td style={{ fontSize: 13 }}>
+                      {l.description}
+                      {l.reject_reason && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>เหตุผล: {l.reject_reason}</div>}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <span style={{ background: sm.bg, color: sm.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{sm.label}</span>
+                        {approverName && <span style={{ fontSize: 9, color: 'var(--muted)' }}>{approverName}</span>}
+                        {l.approved_at && <span style={{ fontSize: 9, color: 'var(--muted)' }}>{new Date(l.approved_at).toLocaleDateString('th-TH')}</span>}
+                      </div>
+                    </td>
+                    {canApprove && (
+                      <td style={{ textAlign: 'center' }}>
+                        {l.status === 'pending' ? (
+                          <div style={{ display: 'flex', gap: 5, justifyContent: 'center' }}>
+                            <button onClick={() => handleApprove(l.id)}
+                              style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
+                              ✅ Approve
+                            </button>
+                            <button onClick={() => { setRejectModal(l.id); setRejectReason(''); }}
+                              style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>
+                              ❌ Reject
+                            </button>
+                          </div>
+                        ) : (
+                          <button onClick={() => supabase.from('four_m_logs').update({ status: 'pending', approved_by: null, approved_at: null, reject_reason: null }).eq('id', l.id).then(load)}
+                            style={{ padding: '3px 8px', borderRadius: 5, fontSize: 10, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
+                            Reset
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}

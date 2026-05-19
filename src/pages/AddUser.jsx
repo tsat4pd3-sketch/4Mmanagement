@@ -6,6 +6,7 @@ const ROLES = [
   { value: 'manager',    label: 'Manager',    color: '#f59e0b', desc: 'ภาพรวม + Cross Section + ตั้งค่าไลน์ + พนักงาน' },
   { value: 'supervisor', label: 'Supervisor', color: '#4d9fff', desc: 'ภาพรวม + Cross Line + ตั้งค่าไลน์ + เช็คชื่อ' },
   { value: 'leader',     label: 'Leader',     color: '#22c55e', desc: 'ภาพรวม + ไลน์ตัวเอง + พนักงานในไลน์' },
+  { value: 'qa',         label: 'QA',         color: '#c084fc', desc: 'Approve/Reject 4M Changes + ดูรายงาน' },
 ];
 const SECTIONS = ['PD1', 'PD2', 'PD3', 'PD4'];
 const TEAMS    = ['A', 'B'];
