@@ -338,7 +338,7 @@ export default function LineSetup() {
                 onKeyDown={e => e.key === 'Enter' && handleAddLine()}
                 style={{ flex: 1, fontSize: 13, padding: '8px 10px' }} />
               <select value={newLineSection} onChange={e => setNewLineSection(e.target.value)}
-                style={{ fontSize: 12, padding: '8px 8px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', flexShrink: 0 }}>
+                style={{ fontSize: 12, padding: '8px 8px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', flexShrink: 0, width: 'auto' }}>
                 <option value="">Section</option>
                 {['PD1','PD2','PD3','PD4'].map(s => <option key={s} value={s}>{s}</option>)}
               </select>
