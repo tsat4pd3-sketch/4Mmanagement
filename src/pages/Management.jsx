@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
+import { toast } from '../components/Toast';
 
 const CARD_W = 82;
 const LINE_4M_CATEGORIES = ['Machine', 'Material', 'Method'];
@@ -39,8 +40,9 @@ export default function Management() {
   const [hoverCard,      setHoverCard]      = useState(null);
   const [selectedWorker, setSelectedWorker] = useState(null);
   const [detailSheet,    setDetailSheet]    = useState(null);
-  const [stationModal,   setStationModal]   = useState(null); // { station }
-  const [homePositions,  setHomePositions]  = useState({}); // { employee_id: station_id }
+  const [stationModal,   setStationModal]   = useState(null);
+  const [homePositions,  setHomePositions]  = useState({});
+  const [isSaving4M,     setIsSaving4M]     = useState(false);
   const hoverTimer = useRef(null);
 
   useEffect(() => {
@@ -162,14 +164,17 @@ export default function Management() {
 
   /* ── Save 4M log ── */
   const handleSave4MLog = async () => {
-    if (!log4MForm.description.trim()) { alert('กรุณาระบุรายละเอียด'); return; }
+    if (!log4MForm.description.trim()) { toast.error('กรุณาระบุรายละเอียด'); return; }
+    setIsSaving4M(true);
     const today = new Date().toISOString().split('T')[0];
-    await supabase.from('four_m_logs').insert([{
+    const { error } = await supabase.from('four_m_logs').insert([{
       work_date: today,
       line_name: show4MModal.lineName || selectedLine,
       category: log4MForm.category,
       description: log4MForm.description.trim(),
     }]);
+    setIsSaving4M(false);
+    if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
     setShow4MModal(null);
     setLog4MForm({ category: 'Man', description: '' });
     fetchData();
@@ -719,11 +724,11 @@ export default function Management() {
                   placeholder="ระบุรายละเอียดการเปลี่ยนแปลง..." rows={3} style={{ resize: 'vertical' }} />
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                <button onClick={handleSave4MLog} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 15 }}>
-                  บันทึก 4M Log
+                <button onClick={handleSave4MLog} disabled={isSaving4M} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 15, opacity: isSaving4M ? 0.6 : 1, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
+                  {isSaving4M ? 'กำลังบันทึก...' : 'บันทึก 4M Log'}
                 </button>
-                <button onClick={() => { setShow4MModal(null); setLog4MForm({ category: 'Man', description: '' }); }}
-                  style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8 }}>
+                <button onClick={() => { if (!isSaving4M) { setShow4MModal(null); setLog4MForm({ category: 'Man', description: '' }); } }}
+                  style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
                   ยกเลิก
                 </button>
               </div>

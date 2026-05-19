@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
+import { toast } from '../components/Toast';
 
 const SKILL_LEVELS = [
   { min: 80, label: 'ชำนาญ',       color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
@@ -80,13 +81,13 @@ export default function Operator() {
   const handleDeactivate = async (id, name) => {
     if (!window.confirm(`ปิดใช้งานพนักงาน: ${name}?\nพนักงานจะไม่ปรากฏในระบบเช็คชื่อ แต่ข้อมูลยังคงอยู่`)) return;
     const { error } = await supabase.from('employees').update({ is_active: false }).eq('id', id);
-    if (error) alert('ไม่สามารถปิดใช้งานได้: ' + error.message);
+    if (error) toast.error('ไม่สามารถปิดใช้งานได้: ' + error.message);
     else fetchEmployees();
   };
 
   const handleReactivate = async (id) => {
     const { error } = await supabase.from('employees').update({ is_active: true }).eq('id', id);
-    if (error) alert('Error: ' + error.message);
+    if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
     else fetchEmployees();
   };
 
@@ -134,11 +135,11 @@ export default function Operator() {
         .upsert(upserts, { onConflict: 'employee_id,skill_name' });
       if (skillErr) throw skillErr;
 
-      alert('💾 อัปเดตข้อมูลพนักงานเรียบร้อย!');
+      toast.success('อัปเดตข้อมูลพนักงานเรียบร้อย!');
       setEditingEmp(null);
       fetchEmployees();
     } catch (err) {
-      alert('เกิดข้อผิดพลาด: ' + err.message);
+      toast.error('เกิดข้อผิดพลาด: ' + err.message);
     } finally {
       setIsSaving(false);
     }
@@ -152,7 +153,7 @@ export default function Operator() {
     const { error } = await supabase.from('skill_definitions').insert([{
       name, label: lbl, color: newSkill.color, sort_order: skillDefs.length + 1,
     }]);
-    if (error) alert('Error: ' + error.message);
+    if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
     else { setNewSkill({ label: '', color: '#4d9fff' }); fetchSkillDefs(); }
     setIsAddingSkill(false);
   };

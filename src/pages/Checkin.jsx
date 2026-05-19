@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
+import { toast } from '../components/Toast';
 
 const LEAVE_TYPES = ['ลากิจ', 'ลาป่วย', 'ลาพักร้อน'];
 const LEAVE_DURATION_OPTS = [
@@ -165,7 +166,7 @@ export default function Checkin() {
   const handleSave = async () => {
     setIsSaving(true);
     const { data: userData } = await supabase.auth.getUser();
-    if (!userData?.user?.id) { alert('กรุณา Login ก่อน'); setIsSaving(false); return; }
+    if (!userData?.user?.id) { toast.error('กรุณา Login ก่อน'); setIsSaving(false); return; }
 
     const { workDateStr } = shiftInfo;
     const logs = employees.map(emp => {
@@ -191,7 +192,7 @@ export default function Checkin() {
       .from('daily_production_logs')
       .upsert(logs, { onConflict: 'work_date,employee_id' });
 
-    if (error) { alert('เกิดข้อผิดพลาด: ' + error.message); setIsSaving(false); return; }
+    if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); setIsSaving(false); return; }
 
     /* ── Skill farming: +1 XP for employees working at stations requiring ≥70% skill ── */
     try {
@@ -231,7 +232,7 @@ export default function Checkin() {
       }
     } catch (_) { /* skill farming errors are non-critical */ }
 
-    alert('บันทึกข้อมูลสำเร็จ!');
+    toast.success('บันทึกข้อมูลสำเร็จ!');
     setIsSaving(false);
   };
 

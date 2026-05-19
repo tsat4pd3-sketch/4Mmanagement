@@ -1,16 +1,18 @@
-import { createContext, useState, useEffect, useRef } from 'react';
+import { createContext, useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from './supabaseClient';
+import { ToastContainer } from './components/Toast';
 import Login from './pages/Login';
-import Register from './pages/Register';
-import Checkin from './pages/Checkin';
-import Management from './pages/Management';
-import Dashboard from './pages/Dashboard';
-import Operator from './pages/operator';
-import LineSetup from './pages/LineSetup';
-import AddUser from './pages/AddUser';
-import Report from './pages/Report';
-import ShiftOrganize from './pages/ShiftOrganize';
+
+const Register     = lazy(() => import('./pages/Register'));
+const Checkin      = lazy(() => import('./pages/Checkin'));
+const Management   = lazy(() => import('./pages/Management'));
+const Dashboard    = lazy(() => import('./pages/Dashboard'));
+const Operator     = lazy(() => import('./pages/operator'));
+const LineSetup    = lazy(() => import('./pages/LineSetup'));
+const AddUser      = lazy(() => import('./pages/AddUser'));
+const Report       = lazy(() => import('./pages/Report'));
+const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 
 /* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null });
@@ -314,27 +316,29 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
           transition: 'margin-left 0.3s cubic-bezier(0.4,0,0.2,1)',
           overflow: 'hidden',
         }}>
-          <Routes>
-            <Route path="/"           element={<Dashboard />} />
-            <Route path="/management" element={<Management />} />
-            <Route path="/checkin"    element={<Checkin />} />
-            <Route path="/report"     element={<Report />} />
-            <Route path="/register"   element={
-              <RoleRoute allow={['admin', 'supervisor']} userRole={role}><Register /></RoleRoute>
-            } />
-            <Route path="/operator"   element={
-              <RoleRoute allow={['admin', 'manager', 'supervisor', 'leader']} userRole={role}><Operator /></RoleRoute>
-            } />
-            <Route path="/linesetup"  element={
-              <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}><LineSetup /></RoleRoute>
-            } />
-            <Route path="/add-user"   element={
-              <RoleRoute allow={['admin']} userRole={role}><AddUser /></RoleRoute>
-            } />
-            <Route path="/shift-organize" element={
-              <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}><ShiftOrganize /></RoleRoute>
-            } />
-          </Routes>
+          <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
+            <Routes>
+              <Route path="/"           element={<Dashboard />} />
+              <Route path="/management" element={<Management />} />
+              <Route path="/checkin"    element={<Checkin />} />
+              <Route path="/report"     element={<Report />} />
+              <Route path="/register"   element={
+                <RoleRoute allow={['admin', 'supervisor']} userRole={role}><Register /></RoleRoute>
+              } />
+              <Route path="/operator"   element={
+                <RoleRoute allow={['admin', 'manager', 'supervisor', 'leader']} userRole={role}><Operator /></RoleRoute>
+              } />
+              <Route path="/linesetup"  element={
+                <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}><LineSetup /></RoleRoute>
+              } />
+              <Route path="/add-user"   element={
+                <RoleRoute allow={['admin']} userRole={role}><AddUser /></RoleRoute>
+              } />
+              <Route path="/shift-organize" element={
+                <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}><ShiftOrganize /></RoleRoute>
+              } />
+            </Routes>
+          </Suspense>
         </main>
       </div>
     </UserContext.Provider>
@@ -419,6 +423,7 @@ export default function App() {
           </Routes>
         </Router>
       )}
+      <ToastContainer />
     </>
   );
 }
