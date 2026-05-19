@@ -13,7 +13,7 @@ export default function LineSetup() {
   const [stations, setStations] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [tempPos, setTempPos] = useState(null);
-  const [formData, setFormData] = useState({ id: null, name: '', requirements: {} });
+  const [formData, setFormData] = useState({ id: null, name: '', requirements: {}, skill_allowance: false });
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [collisionWarn, setCollisionWarn] = useState(false);
   const [skillDefs, setSkillDefs] = useState([]);
@@ -151,6 +151,7 @@ export default function LineSetup() {
       station_name: formData.name,
       pos_top: tempPos ? tempPos.top : existingStation?.pos_top,
       pos_left: tempPos ? tempPos.left : existingStation?.pos_left,
+      skill_allowance: formData.skill_allowance,
     };
     let stationId = formData.id;
     if (stationId) {
@@ -188,7 +189,7 @@ export default function LineSetup() {
     setTempPos(null);
     const reqMap = {};
     (st.station_requirements || []).forEach(r => { reqMap[r.skill_name] = r.min_score; });
-    setFormData({ id: st.id, name: st.station_name, requirements: reqMap });
+    setFormData({ id: st.id, name: st.station_name, requirements: reqMap, skill_allowance: st.skill_allowance || false });
   };
 
   return (
@@ -258,6 +259,7 @@ export default function LineSetup() {
                     <div style={{ fontSize: 7, fontWeight: 700, color: isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {st.station_name}
                     </div>
+                    {st.skill_allowance && <div style={{ fontSize: 6, color: '#22c55e', fontWeight: 800, lineHeight: '10px' }}>💰</div>}
                     <div style={{ color: isSelected ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.25)', fontSize: 14, lineHeight: '18px' }}>+</div>
                   </div>
                 );
@@ -405,11 +407,23 @@ export default function LineSetup() {
                     })}
                   </div>
                 )}
+                {/* skill allowance toggle */}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                  background: formData.skill_allowance ? 'rgba(34,197,94,0.1)' : 'var(--bg3)',
+                  border: `1.5px solid ${formData.skill_allowance ? 'rgba(34,197,94,0.4)' : 'var(--border2)'}` }}>
+                  <input type="checkbox" checked={formData.skill_allowance}
+                    onChange={e => setFormData({ ...formData, skill_allowance: e.target.checked })}
+                    style={{ width: 16, height: 16, accentColor: '#22c55e' }} />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: formData.skill_allowance ? '#22c55e' : 'var(--text2)' }}>💰 จุดงานได้ค่าฝีมือ</div>
+                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>พนักงานที่ถูก assign จุดนี้จะได้ค่าฝีมือรายวัน</div>
+                  </div>
+                </label>
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                   <button onClick={handleSaveStation} style={{ flex: 1, padding: '9px', background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700 }}>
                     {formData.id ? 'บันทึก' : 'เพิ่ม'}
                   </button>
-                  <button onClick={() => { setTempPos(null); setFormData({ id: null, name: '', requirements: {} }); }}
+                  <button onClick={() => { setTempPos(null); setFormData({ id: null, name: '', requirements: {}, skill_allowance: false }); }}
                     style={{ padding: '9px 14px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 7 }}>
                     ยกเลิก
                   </button>
@@ -431,7 +445,10 @@ export default function LineSetup() {
               return (
                 <div key={st.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div onClick={() => editStation(st)} style={{ cursor: 'pointer', flex: 1 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{st.station_name}</div>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      {st.station_name}
+                      {st.skill_allowance && <span style={{ fontSize: 10, background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>💰 ค่าฝีมือ</span>}
+                    </div>
                     <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
                       {reqs.length > 0
                         ? reqs.map(r => {
