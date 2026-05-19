@@ -31,7 +31,7 @@ export default function Management() {
   const [selectedLine,   setSelectedLine]   = useState('');
   const [lines,          setLines]          = useState([]);
   const [show4MModal,    setShow4MModal]    = useState(null);
-  const [log4MForm,      setLog4MForm]      = useState({ category: 'Man', description: '' });
+  const [log4MForm,      setLog4MForm]      = useState({ category: 'Man', description: '', sameDept: false, skillOk: false, subtype: 'change' });
   const [isMobile,       setIsMobile]       = useState(window.innerWidth <= 768);
   const [autoManAlert,   setAutoManAlert]   = useState(null);
   const [skillDefs,      setSkillDefs]      = useState([]);
@@ -131,7 +131,11 @@ export default function Management() {
             const { data: dup } = await supabase.from('four_m_logs')
               .select('id').eq('work_date', today).eq('category', 'Man').eq('description', desc).limit(1);
             if (!dup?.length) {
-              await supabase.from('four_m_logs').insert([{ work_date: today, line_name: station.line_name, category: 'Man', description: desc }]);
+              const currentLineId = lines.find(l => l.name === station.line_name)?.id;
+              const sameDept = droppedWorker.employees?.line_id != null && droppedWorker.employees.line_id === currentLineId;
+              const skillPass = fit.details.length === 0 || fit.details.every(d => d.pass);
+              const auto_requires_qa = !(sameDept && skillPass);
+              await supabase.from('four_m_logs').insert([{ work_date: today, line_name: station.line_name, category: 'Man', description: desc, requires_qa: auto_requires_qa }]);
               setAutoManAlert({ name: droppedWorker.employees?.name, station: station.station_name });
               setTimeout(() => setAutoManAlert(null), 4000);
               fetchData();
@@ -167,16 +171,23 @@ export default function Management() {
     if (!log4MForm.description.trim()) { toast.error('กรุณาระบุรายละเอียด'); return; }
     setIsSaving4M(true);
     const today = new Date().toISOString().split('T')[0];
+    const isMan = log4MForm.category === 'Man';
+    const requires_qa = isMan
+      ? !(log4MForm.sameDept && log4MForm.skillOk)
+      : log4MForm.subtype === 'change';
+    const change_subtype = isMan ? null : log4MForm.subtype;
     const { error } = await supabase.from('four_m_logs').insert([{
       work_date: today,
       line_name: show4MModal.lineName || selectedLine,
       category: log4MForm.category,
       description: log4MForm.description.trim(),
+      requires_qa,
+      change_subtype,
     }]);
     setIsSaving4M(false);
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
     setShow4MModal(null);
-    setLog4MForm({ category: 'Man', description: '' });
+    setLog4MForm({ category: 'Man', description: '', sameDept: false, skillOk: false, subtype: 'change' });
     fetchData();
   };
 
@@ -718,6 +729,51 @@ export default function Management() {
                   <option value="Method">Method — วิธีการ</option>
                 </select>
               </div>
+              {/* Man: same-dept + skill checkboxes */}
+              {log4MForm.category === 'Man' && (
+                <div style={{ background: 'rgba(77,159,255,0.07)', borderRadius: 8, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>เงื่อนไขการอนุมัติ</div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={log4MForm.sameDept} onChange={e => setLog4MForm({ ...log4MForm, sameDept: e.target.checked })} style={{ width: 16, height: 16 }} />
+                    เปลี่ยนในหน่วยงาน / สังกัดเดียวกัน
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={log4MForm.skillOk} onChange={e => setLog4MForm({ ...log4MForm, skillOk: e.target.checked })} style={{ width: 16, height: 16 }} />
+                    ทักษะผ่านเกณฑ์ที่กำหนด
+                  </label>
+                  <div style={{ fontSize: 11, marginTop: 2, padding: '5px 8px', borderRadius: 6,
+                    background: (log4MForm.sameDept && log4MForm.skillOk) ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.1)',
+                    color: (log4MForm.sameDept && log4MForm.skillOk) ? '#22c55e' : '#ef4444' }}>
+                    {(log4MForm.sameDept && log4MForm.skillOk)
+                      ? '✅ ระดับ: ไม่รุนแรง — หัวหน้างานอนุมัติได้'
+                      : '🔴 ระดับ: รุนแรง — ต้องผ่าน QA'}
+                  </div>
+                </div>
+              )}
+              {/* Machine/Material/Method: replace vs change */}
+              {log4MForm.category !== 'Man' && (
+                <div style={{ background: 'rgba(245,158,11,0.07)', borderRadius: 8, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>ลักษณะการเปลี่ยนแปลง</div>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    {[{ v: 'replace', label: '🔄 Replace', desc: 'สลับ / ทดแทน' }, { v: 'change', label: '⚠️ Change', desc: 'เปลี่ยนแปลง' }].map(opt => (
+                      <label key={opt.v} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '8px 6px', borderRadius: 7, cursor: 'pointer',
+                        border: `2px solid ${log4MForm.subtype === opt.v ? (opt.v === 'replace' ? '#22c55e' : '#ef4444') : 'var(--border2)'}`,
+                        background: log4MForm.subtype === opt.v ? (opt.v === 'replace' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.08)') : 'transparent' }}>
+                        <input type="radio" name="subtype" value={opt.v} checked={log4MForm.subtype === opt.v} onChange={() => setLog4MForm({ ...log4MForm, subtype: opt.v })} style={{ display: 'none' }} />
+                        <span style={{ fontSize: 14, fontWeight: 700 }}>{opt.label}</span>
+                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{opt.desc}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 11, marginTop: 2, padding: '5px 8px', borderRadius: 6,
+                    background: log4MForm.subtype === 'replace' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.1)',
+                    color: log4MForm.subtype === 'replace' ? '#22c55e' : '#ef4444' }}>
+                    {log4MForm.subtype === 'replace'
+                      ? '✅ ระดับ: ไม่รุนแรง — หัวหน้างานอนุมัติได้'
+                      : '🔴 ระดับ: รุนแรง — ต้องผ่าน QA'}
+                  </div>
+                </div>
+              )}
               <div>
                 <label style={labelSt}>รายละเอียด</label>
                 <textarea value={log4MForm.description} onChange={e => setLog4MForm({ ...log4MForm, description: e.target.value })}

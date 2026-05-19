@@ -280,7 +280,12 @@ const STATUS_META = {
 
 function FourMTab() {
   const { role } = useContext(UserContext);
-  const canApprove = ['admin', 'manager', 'supervisor', 'qa'].includes(role);
+  const canApproveLog = (log) => {
+    if (['admin', 'manager'].includes(role)) return true;
+    if (role === 'qa') return log.requires_qa !== false; // qa approves high-severity
+    if (['supervisor', 'leader'].includes(role)) return log.requires_qa === false; // supervisor approves low-severity only
+    return false;
+  };
 
   const today = new Date().toISOString().split('T')[0];
   const [from,        setFrom]        = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
@@ -304,7 +309,7 @@ function FourMTab() {
   const load = async () => {
     setLoading(true);
     let q = supabase.from('four_m_logs')
-      .select('id, work_date, line_name, category, description, created_at, status, approved_by, approved_at, reject_reason')
+      .select('id, work_date, line_name, category, description, created_at, status, approved_by, approved_at, reject_reason, requires_qa, change_subtype')
       .gte('work_date', from).lte('work_date', to)
       .order('work_date', { ascending: false })
       .order('created_at', { ascending: false });
@@ -424,14 +429,17 @@ function FourMTab() {
               <tr>
                 <th>วันที่</th><th>ไลน์</th><th>ประเภท</th><th>รายละเอียด</th>
                 <th style={{ textAlign: 'center' }}>สถานะ</th>
-                {canApprove && <th style={{ textAlign: 'center', minWidth: 140 }}>Action</th>}
+                <th style={{ textAlign: 'center', minWidth: 90 }}>ระดับ</th>
+                <th style={{ textAlign: 'center', minWidth: 140 }}>Action</th>
               </tr>
             </thead>
             <tbody>
-              {logs.length === 0 ? <EmptyRow cols={canApprove ? 6 : 5} /> : logs.map(l => {
+              {logs.length === 0 ? <EmptyRow cols={7} /> : logs.map(l => {
                 const m  = CAT_META[l.category] || {};
                 const sm = STATUS_META[l.status] || STATUS_META.pending;
                 const approverName = l.approved_by ? (approverMap[l.approved_by] || '...') : null;
+                const needsQA = l.requires_qa !== false;
+                const userCanAct = canApproveLog(l);
                 return (
                   <tr key={l.id}>
                     <td style={{ fontWeight: 600, whiteSpace: 'nowrap', fontSize: 12 }}>{l.work_date}</td>
@@ -439,6 +447,7 @@ function FourMTab() {
                     <td><span style={{ background: m.bg, color: m.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{m.icon} {l.category}</span></td>
                     <td style={{ fontSize: 13 }}>
                       {l.description}
+                      {l.change_subtype && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{l.change_subtype === 'replace' ? '🔄 Replace' : '⚠️ Change'}</div>}
                       {l.reject_reason && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>เหตุผล: {l.reject_reason}</div>}
                     </td>
                     <td style={{ textAlign: 'center' }}>
@@ -448,9 +457,16 @@ function FourMTab() {
                         {l.approved_at && <span style={{ fontSize: 9, color: 'var(--muted)' }}>{new Date(l.approved_at).toLocaleDateString('th-TH')}</span>}
                       </div>
                     </td>
-                    {canApprove && (
-                      <td style={{ textAlign: 'center' }}>
-                        {l.status === 'pending' ? (
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 5,
+                        background: needsQA ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
+                        color: needsQA ? '#ef4444' : '#22c55e' }}>
+                        {needsQA ? '🔴 QA' : '🟢 SV'}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      {l.status === 'pending' ? (
+                        userCanAct ? (
                           <div style={{ display: 'flex', gap: 5, justifyContent: 'center' }}>
                             <button onClick={() => handleApprove(l.id)}
                               style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
@@ -462,13 +478,19 @@ function FourMTab() {
                             </button>
                           </div>
                         ) : (
+                          <span style={{ fontSize: 10, color: 'var(--muted)' }}>
+                            {needsQA ? 'รอ QA' : 'รอหัวหน้า'}
+                          </span>
+                        )
+                      ) : (
+                        ['admin','manager'].includes(role) && (
                           <button onClick={() => supabase.from('four_m_logs').update({ status: 'pending', approved_by: null, approved_at: null, reject_reason: null }).eq('id', l.id).then(load)}
                             style={{ padding: '3px 8px', borderRadius: 5, fontSize: 10, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
                             Reset
                           </button>
-                        )}
-                      </td>
-                    )}
+                        )
+                      )}
+                    </td>
                   </tr>
                 );
               })}
