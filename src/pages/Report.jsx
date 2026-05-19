@@ -5,6 +5,32 @@ import {
   ResponsiveContainer, Tooltip,
 } from 'recharts';
 
+/* ── CSV export utility ── */
+function downloadCSV(filename, headers, rows) {
+  const escape = v => {
+    const s = v == null ? '' : String(v);
+    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [headers.map(escape).join(','), ...rows.map(r => r.map(escape).join(','))];
+  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function CsvBtn({ onClick, style = {} }) {
+  return (
+    <button onClick={onClick} style={{
+      padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+      background: 'rgba(34,197,94,0.12)', color: '#22c55e',
+      border: '1px solid rgba(34,197,94,0.35)', display: 'flex', alignItems: 'center', gap: 5,
+      ...style,
+    }}>
+      ⬇️ CSV
+    </button>
+  );
+}
+
 const CAT_META = {
   Man:      { color: '#4d9fff', bg: 'rgba(77,159,255,0.12)',  label: 'Man',      icon: '👷' },
   Machine:  { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', label: 'Machine',  icon: '⚙️' },
@@ -12,7 +38,7 @@ const CAT_META = {
   Method:   { color: '#c084fc', bg: 'rgba(139,92,246,0.12)', label: 'Method',   icon: '📋' },
 };
 
-const TABS = ['รายวัน', 'รายพนักงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '📄 Export PDF'];
+const TABS = ['รายวัน', 'รายพนักงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '📤 Export'];
 
 const SKILL_LEVELS = [
   { min: 80, label: 'ชำนาญ',       color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
@@ -47,7 +73,7 @@ export default function Report() {
       {activeTab === 2 && <RangeTab />}
       {activeTab === 3 && <FourMTab />}
       {activeTab === 4 && <SkillMatrixTab />}
-      {activeTab === 5 && <ExportPdfTab />}
+      {activeTab === 5 && <ExportTab />}
     </div>
   );
 }
@@ -71,9 +97,14 @@ function DailyTab() {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
         <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>รวม {logs.length} คน</span>
+        <CsvBtn onClick={() => downloadCSV(
+          `daily_${date}.csv`,
+          ['วันที่', 'รหัสพนักงาน', 'ชื่อ', 'แผนก', 'หมวก', 'รองเท้า', 'ถุงมือ', 'OT'],
+          logs.map(l => [date, l.employees?.employee_id_code, l.employees?.name, l.employees?.department || '', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.has_ot ? '✓' : ''])
+        )} />
       </div>
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
@@ -138,6 +169,14 @@ function PerEmployeeTab() {
         </select>
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>มา {logs.filter(l => l.is_present).length} วัน</span>
+        <CsvBtn onClick={() => {
+          const emp = employees.find(e => e.id === selected);
+          downloadCSV(
+            `employee_${emp?.employee_id_code || selected}_${month}.csv`,
+            ['วันที่', 'มาทำงาน', 'หมวก', 'รองเท้า', 'ถุงมือ', 'จุดงาน'],
+            logs.map(l => [l.work_date, l.is_present ? '✓' : '✗', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.assigned_line || ''])
+          );
+        }} />
       </div>
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
@@ -197,6 +236,11 @@ function RangeTab() {
           <span style={{ color: 'var(--muted)' }}>ถึง</span>
           <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
         </div>
+        <CsvBtn onClick={() => downloadCSV(
+          `summary_${from}_${to}.csv`,
+          ['รหัสพนักงาน', 'ชื่อ', 'วันที่มา', 'วันทั้งหมด', '%การมาทำงาน'],
+          rows.map(r => [r.code, r.name, r.present, r.total, r.total ? Math.round(r.present / r.total * 100) + '%' : '0%'])
+        )} />
       </div>
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
@@ -285,6 +329,11 @@ function FourMTab() {
           {Object.keys(CAT_META).map(k => <option key={k} value={k}>{k}</option>)}
         </select>
         <span style={{ color: 'var(--muted)', fontSize: 12 }}>รวม {logs.length} รายการ</span>
+        <CsvBtn onClick={() => downloadCSV(
+          `4m_changes_${from}_${to}.csv`,
+          ['วันที่', 'ไลน์', 'ประเภท', 'รายละเอียด', 'เวลาบันทึก'],
+          logs.map(l => [l.work_date, l.line_name, l.category, l.description, l.created_at ? new Date(l.created_at).toLocaleString('th-TH') : ''])
+        )} />
       </div>
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
@@ -519,6 +568,16 @@ function SkillMatrixTab() {
         </select>
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>{employees.length} คน · {skillDefs.length} สกิล</span>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>· คลิกที่พนักงานเพื่อดู Radar Chart</span>
+        <CsvBtn onClick={() => {
+          const headers = ['รหัสพนักงาน', 'ชื่อ', ...skillDefs.map(s => s.label), 'เฉลี่ย'];
+          const rows = employees.map(emp => {
+            const skillMap = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
+            const scores = skillDefs.map(s => skillMap[s.name] ?? 0);
+            const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+            return [emp.employee_id_code, emp.name, ...scores, avg];
+          });
+          downloadCSV('skill_matrix.csv', headers, rows);
+        }} />
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -608,11 +667,86 @@ function SkillMatrixTab() {
   );
 }
 
-// ─── PDF Export ────────────────────────────────────────────
+// ─── Export Tab ─────────────────────────────────────────────
 const SUMCOLS = ['ส', 'ป', 'ก', 'พง', 'กธ', 'บป', 'ข', 'มต'];
 const TH_MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 
-function ExportPdfTab() {
+/* ── Quick CSV export section at top of Export tab ── */
+function QuickCsvSection() {
+  const today = new Date().toISOString().split('T')[0];
+  const thisMonth = today.slice(0, 7);
+  const [isLoading, setIsLoading] = useState({});
+
+  const run = (key, fn) => async () => {
+    setIsLoading(p => ({ ...p, [key]: true }));
+    await fn();
+    setIsLoading(p => ({ ...p, [key]: false }));
+  };
+
+  const exportDailyCSV = async (date = today) => {
+    const { data } = await supabase.from('daily_production_logs')
+      .select('work_date, employees(name, employee_id_code, department), is_present, has_helmet, has_boots, has_gloves, has_ot, leave_type, remark')
+      .eq('work_date', date);
+    downloadCSV(`daily_${date}.csv`,
+      ['วันที่', 'รหัส', 'ชื่อ', 'แผนก', 'มาทำงาน', 'หมวก', 'รองเท้า', 'ถุงมือ', 'OT', 'ลา', 'หมายเหตุ'],
+      (data || []).map(l => [l.work_date, l.employees?.employee_id_code, l.employees?.name, l.employees?.department || '', l.is_present ? '✓' : '✗', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.has_ot ? '✓' : '', l.leave_type || '', l.remark || ''])
+    );
+  };
+
+  const exportFourMCSV = async () => {
+    const from = thisMonth + '-01'; const to = thisMonth + '-31';
+    const { data } = await supabase.from('four_m_logs').select('*').gte('work_date', from).lte('work_date', to).order('work_date');
+    downloadCSV(`4m_changes_${thisMonth}.csv`,
+      ['วันที่', 'ไลน์', 'ประเภท', 'รายละเอียด', 'เวลา'],
+      (data || []).map(l => [l.work_date, l.line_name, l.category, l.description, l.created_at ? new Date(l.created_at).toLocaleString('th-TH') : ''])
+    );
+  };
+
+  const exportSkillCSV = async () => {
+    const [{ data: defs }, { data: emps }] = await Promise.all([
+      supabase.from('skill_definitions').select('*').order('sort_order'),
+      supabase.from('employees').select('name, employee_id_code, department, employee_skills(skill_name, score)').eq('is_active', true).order('employee_id_code'),
+    ]);
+    const headers = ['รหัส', 'ชื่อ', 'แผนก', ...(defs || []).map(d => d.label), 'เฉลี่ย'];
+    const rows = (emps || []).map(emp => {
+      const sm = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
+      const scores = (defs || []).map(d => sm[d.name] ?? 0);
+      const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+      return [emp.employee_id_code, emp.name, emp.department || '', ...scores, avg];
+    });
+    downloadCSV(`skill_matrix_${today}.csv`, headers, rows);
+  };
+
+  const QUICK_EXPORTS = [
+    { key: 'daily',  icon: '📋', label: 'เช็คชื่อวันนี้',     sub: today,           fn: () => exportDailyCSV(today) },
+    { key: 'fourm',  icon: '🚨', label: '4M Changes เดือนนี้', sub: thisMonth,       fn: exportFourMCSV },
+    { key: 'skill',  icon: '📊', label: 'Skill Matrix ทั้งหมด', sub: 'ข้อมูลล่าสุด', fn: exportSkillCSV },
+  ];
+
+  return (
+    <div className="card" style={{ padding: '18px 20px', marginBottom: 20 }}>
+      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text)' }}>⬇️ Export CSV — ดาวน์โหลดด่วน</div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {QUICK_EXPORTS.map(item => (
+          <button key={item.key} onClick={run(item.key, item.fn)} disabled={isLoading[item.key]}
+            style={{
+              padding: '12px 18px', borderRadius: 10, border: '1px solid rgba(34,197,94,0.3)',
+              background: isLoading[item.key] ? 'var(--bg3)' : 'rgba(34,197,94,0.08)',
+              color: '#22c55e', cursor: isLoading[item.key] ? 'not-allowed' : 'pointer',
+              display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 3, minWidth: 160,
+              opacity: isLoading[item.key] ? 0.6 : 1,
+            }}>
+            <span style={{ fontSize: 20 }}>{item.icon}</span>
+            <span style={{ fontWeight: 700, fontSize: 13 }}>{isLoading[item.key] ? 'กำลังดาวน์โหลด...' : item.label}</span>
+            <span style={{ fontSize: 10, color: 'var(--muted)' }}>{item.sub}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ExportTab() {
   const [lines,      setLines]      = useState([]);
   const [lineId,     setLineId]     = useState('');
   const [month,      setMonth]      = useState(new Date().toISOString().slice(0, 7));
@@ -681,8 +815,10 @@ function ExportPdfTab() {
         }
       `}</style>
 
+      <QuickCsvSection />
+
       <div className="card" style={{ padding: '18px 20px', marginBottom: 20 }}>
-        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text)' }}>📄 Export รายงาน PDF</div>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text)' }}>📄 Export รายงาน PDF (ฟอร์มทางการ)</div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div>
             <div style={lbSt}>ประเภทรายงาน</div>
