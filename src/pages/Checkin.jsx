@@ -8,6 +8,10 @@ const LEAVE_DURATION_OPTS = [
   { value: 'half',  label: 'ครึ่งวัน' },
   { value: 'hours', label: 'ระบุชั่วโมง' },
 ];
+const LEAVE_PERIOD_OPTS = [
+  { value: 'morning',   label: '🌅 ลาช่วงเช้า', sub: 'มาบ่าย' },
+  { value: 'afternoon', label: '🌇 ลาช่วงบ่าย', sub: 'มาเช้า' },
+];
 
 function getShiftInfo() {
   const now = new Date();
@@ -28,7 +32,7 @@ function getRowStatus(rec) {
   if (!rec) return null;
   if (rec.leave_type) {
     if (rec.leave_duration === 'full')  return 'leave-full';
-    if (rec.leave_duration === 'half')  return 'leave-half';
+    if (rec.leave_duration === 'half')  return rec.leave_period === 'morning' ? 'leave-half-am' : 'leave-half-pm';
     if (rec.leave_duration === 'hours') return 'leave-hours';
     return 'leave-full';
   }
@@ -38,12 +42,13 @@ function getRowStatus(rec) {
 }
 
 const STATUS_META = {
-  'ready':       { bg: 'rgba(34,197,94,0.06)',   label: '🟢 พร้อม',        color: '#22c55e' },
-  'partial':     { bg: 'rgba(245,158,11,0.06)',  label: '🟡 PPE ไม่ครบ',   color: '#f59e0b' },
-  'absent':      { bg: 'rgba(231,76,60,0.06)',   label: '🔴 ขาดงาน',       color: '#ef4444' },
-  'leave-full':  { bg: 'rgba(139,92,246,0.06)',  label: '🟣 ลา (เต็มวัน)', color: '#a855f7' },
-  'leave-half':  { bg: 'rgba(77,159,255,0.06)',  label: '🔵 ลาครึ่งวัน',   color: '#4d9fff' },
-  'leave-hours': { bg: 'rgba(77,159,255,0.06)',  label: '🔵 ลาบางส่วน',    color: '#4d9fff' },
+  'ready':          { bg: 'rgba(34,197,94,0.06)',   label: '🟢 พร้อม',             color: '#22c55e' },
+  'partial':        { bg: 'rgba(245,158,11,0.06)',  label: '🟡 PPE ไม่ครบ',        color: '#f59e0b' },
+  'absent':         { bg: 'rgba(231,76,60,0.06)',   label: '🔴 ขาดงาน',            color: '#ef4444' },
+  'leave-full':     { bg: 'rgba(139,92,246,0.06)',  label: '🟣 ลาเต็มวัน',         color: '#a855f7' },
+  'leave-half-am':  { bg: 'rgba(77,159,255,0.06)',  label: '🔵 ลาช่วงเช้า',        color: '#4d9fff' },
+  'leave-half-pm':  { bg: 'rgba(34,197,94,0.06)',   label: '🔵 ลาช่วงบ่าย',        color: '#38bdf8' },
+  'leave-hours':    { bg: 'rgba(77,159,255,0.06)',  label: '🔵 ลาบางส่วน',         color: '#4d9fff' },
 };
 
 export default function Checkin() {
@@ -116,6 +121,7 @@ export default function Checkin() {
         remark:         log ? (log.remark || '') : '',
         leave_type:     log ? (log.leave_type     || '') : '',
         leave_duration: log ? (log.leave_duration || '') : '',
+        leave_period:   log ? (log.leave_period   || '') : '',
         leave_hours:    log ? (log.leave_hours    || '') : '',
       };
     });
@@ -128,15 +134,12 @@ export default function Checkin() {
   const setField = (empId, field, value) =>
     setAttendance(prev => ({ ...prev, [empId]: { ...prev[empId], [field]: value } }));
 
-  /* When leave_type changes, auto-adjust is_present and reset duration */
   const setLeaveType = (empId, value) => {
     setAttendance(prev => {
       const cur = prev[empId];
       if (!value) {
-        /* Clearing leave — restore is_present to true (they came to work) */
-        return { ...prev, [empId]: { ...cur, leave_type: '', leave_duration: '', leave_hours: '', is_present: true } };
+        return { ...prev, [empId]: { ...cur, leave_type: '', leave_duration: '', leave_period: '', leave_hours: '', is_present: true } };
       }
-      /* Default to full-day leave when first selecting */
       const duration = cur.leave_duration || 'full';
       const isPresent = duration !== 'full';
       return { ...prev, [empId]: { ...cur, leave_type: value, leave_duration: duration, is_present: isPresent } };
@@ -147,7 +150,15 @@ export default function Checkin() {
     setAttendance(prev => {
       const cur = prev[empId];
       const isPresent = value !== 'full';
-      return { ...prev, [empId]: { ...cur, leave_duration: value, is_present: isPresent, leave_hours: value !== 'hours' ? '' : cur.leave_hours } };
+      return {
+        ...prev, [empId]: {
+          ...cur,
+          leave_duration: value,
+          is_present: isPresent,
+          leave_period: value === 'half' ? (cur.leave_period || 'afternoon') : '',
+          leave_hours:   value !== 'hours' ? '' : cur.leave_hours,
+        }
+      };
     });
   };
 
@@ -170,6 +181,7 @@ export default function Checkin() {
         remark:         rec.remark || null,
         leave_type:     rec.leave_type     || null,
         leave_duration: rec.leave_duration || null,
+        leave_period:   rec.leave_period   || null,
         leave_hours:    rec.leave_hours    ? Number(rec.leave_hours) : null,
         checked_by:     userData.user.id,
       };
@@ -378,6 +390,29 @@ export default function Checkin() {
                         </div>
                       )}
 
+                      {/* Period selector — half day only */}
+                      {hasLeave && rec.leave_duration === 'half' && (
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          {LEAVE_PERIOD_OPTS.map(opt => (
+                            <button
+                              key={opt.value}
+                              onClick={() => setField(emp.id, 'leave_period', opt.value)}
+                              title={opt.sub}
+                              style={{
+                                flex: 1, padding: '3px 4px', fontSize: 10, fontWeight: 700,
+                                borderRadius: 5, border: 'none', cursor: 'pointer',
+                                background: rec.leave_period === opt.value ? '#0ea5e9' : 'var(--bg2)',
+                                color: rec.leave_period === opt.value ? '#fff' : 'var(--text2)',
+                                transition: 'all 0.15s', lineHeight: 1.3,
+                              }}
+                            >
+                              {opt.label}
+                              <div style={{ fontSize: 8, opacity: 0.8, fontWeight: 400 }}>{opt.sub}</div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
                       {/* Hours input */}
                       {hasLeave && rec.leave_duration === 'hours' && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -409,6 +444,11 @@ export default function Checkin() {
                   {/* Status */}
                   <td style={{ textAlign: 'center', fontWeight: 700, color: meta.color, whiteSpace: 'nowrap', fontSize: 12 }}>
                     {meta.label}
+                    {hasLeave && rec.leave_type && (
+                      <div style={{ fontSize: 10, fontWeight: 600, color: meta.color, marginTop: 1, opacity: 0.8 }}>
+                        {rec.leave_type}
+                      </div>
+                    )}
                     {hasLeave && rec.leave_duration === 'hours' && rec.leave_hours && (
                       <div style={{ fontSize: 10, fontWeight: 400, color: 'var(--muted)', marginTop: 1 }}>
                         {rec.leave_hours} ชม.
