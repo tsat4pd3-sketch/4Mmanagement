@@ -286,6 +286,11 @@ export default function Management() {
           <div style={{ fontSize: isMobile ? 11 : 8, color: '#f59e0b', fontWeight: 700, background: 'rgba(245,158,11,0.15)', borderRadius: 3, padding: isMobile ? '2px 6px' : '1px 4px', marginTop: 2, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : 68, whiteSpace: 'nowrap' }}>
             {task?.task_type || 'งานพิเศษ'}
           </div>
+          {worker.employees?.section && (
+            <div style={{ fontSize: isMobile ? 10 : 7, color: '#a78bfa', background: 'rgba(167,139,250,0.12)', borderRadius: 3, padding: isMobile ? '1px 6px' : '1px 4px', marginTop: 2, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : 68, whiteSpace: 'nowrap' }}>
+              📍 {worker.employees.section}
+            </div>
+          )}
         </div>
         {/* remove button — leader+ */}
         {['admin','manager','supervisor','leader'].includes(role) && (
@@ -338,6 +343,11 @@ export default function Management() {
           {worker.employees?.team && (
             <div style={{ fontSize: isMobile ? 11 : 8, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', borderRadius: 3, padding: isMobile ? '2px 7px' : '1px 5px', marginTop: 3, display: 'inline-block' }}>
               Team {worker.employees.team}
+            </div>
+          )}
+          {worker.employees?.section && (
+            <div style={{ fontSize: isMobile ? 11 : 7, color: '#a78bfa', background: 'rgba(167,139,250,0.12)', borderRadius: 3, padding: isMobile ? '2px 7px' : '1px 4px', marginTop: 2, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 160 : 72, whiteSpace: 'nowrap' }}>
+              📍 {worker.employees.section}
             </div>
           )}
         </div>
@@ -667,6 +677,11 @@ export default function Management() {
                   {detailSheet.worker.employees?.team && (
                     <span style={{ fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 5, padding: '2px 8px' }}>Team {detailSheet.worker.employees.team}</span>
                   )}
+                  {detailSheet.worker.employees?.section && (
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', background: 'rgba(167,139,250,0.13)', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 5, padding: '2px 8px' }}>
+                      📍 สังกัด: {detailSheet.worker.employees.section}
+                    </span>
+                  )}
                   {detailSheet.stationName && (
                     <span style={{ fontSize: 11, fontWeight: 700, color: fitColor(detailSheet.fit.score), background: `${fitColor(detailSheet.fit.score)}15`, border: `1px solid ${fitColor(detailSheet.fit.score)}40`, borderRadius: 5, padding: '2px 8px' }}>
                       {detailSheet.stationName} · {detailSheet.fit.score}% {fitLabel(detailSheet.fit.score)}
@@ -965,6 +980,7 @@ function WorkerHoverCard({ card, skillDefs }) {
           <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>{emp?.employee_id_code || ''}</div>
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
             {emp?.team && <span style={{ fontSize: 9, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
+            {emp?.section && <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
           </div>
         </div>
       </div>
