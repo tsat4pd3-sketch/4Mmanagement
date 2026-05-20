@@ -836,41 +836,47 @@ function scoreToLevel(score) {
 
 const msStyle = (lv) => MS_LEVELS.find(l => l.level === lv) || { bg: '#fff', color: '#999', border: '#ccc' };
 
-/* ── SVG Skill Gauge (quadrant fill, manufacturing style) ── */
+/* ── SVG Skill Gauge — circle quartered like factory skill matrix form ── */
+/* Fill order clockwise: bottom-left → bottom-right → top-right → top-left  */
 const GAUGE_FILL = ['none', '#f97316', '#eab308', '#3b82f6', '#22c55e'];
-const GAUGE_GLOW = ['none', 'rgba(249,115,22,0.18)', 'rgba(234,179,8,0.18)', 'rgba(59,130,246,0.18)', 'rgba(34,197,94,0.18)'];
+const GAUGE_STROKE = ['#9ca3af', '#f97316', '#ca8a04', '#2563eb', '#16a34a'];
+
+/* SVG arc paths for each quadrant (cx=17, cy=17, r=15, clockwise fill)
+   L1=bottom-left  L2=+bottom-right  L3=+top-right  L4=+top-left        */
+const Q_PATHS = [
+  'M17,17 L2,17 A15,15 0 0,1 17,32 Z',   // bottom-left
+  'M17,17 L17,32 A15,15 0 0,1 32,17 Z',  // bottom-right
+  'M17,17 L32,17 A15,15 0 0,1 17,2 Z',   // top-right
+  'M17,17 L17,2 A15,15 0 0,1 2,17 Z',    // top-left
+];
 
 function SkillGauge({ level, size = 34 }) {
-  const fill = GAUGE_FILL[level] || 'none';
-  const glow = GAUGE_GLOW[level] || 'none';
-  const h = size / 2;
+  const fill   = GAUGE_FILL[level]   || 'none';
+  const stroke = GAUGE_STROKE[level] || '#9ca3af';
   return (
     <svg width={size} height={size} viewBox="0 0 34 34" xmlns="http://www.w3.org/2000/svg" style={{ display: 'block', margin: 'auto' }}>
-      <rect x="1" y="1" width="32" height="32" fill={level > 0 ? glow : 'none'} rx="3"/>
-      {level >= 1 && <rect x="2"  y="17" width="13" height="15" fill={fill} rx="1"/>}
-      {level >= 2 && <rect x="19" y="17" width="13" height="15" fill={fill} rx="1"/>}
-      {level >= 3 && <rect x="19" y="2"  width="13" height="13" fill={fill} rx="1"/>}
-      {level >= 4 && <rect x="2"  y="2"  width="13" height="13" fill={fill} rx="1"/>}
-      <rect x="1" y="1" width="32" height="32" fill="none" stroke="var(--border2)" strokeWidth="1.5" rx="3"/>
-      <line x1="17" y1="1" x2="17" y2="33" stroke="var(--border2)" strokeWidth="1"/>
-      <line x1="1"  y1="17" x2="33" y2="17" stroke="var(--border2)" strokeWidth="1"/>
+      <circle cx="17" cy="17" r="15" fill="none" stroke={stroke} strokeWidth="1.5"/>
+      {Q_PATHS.slice(0, level).map((d, i) => <path key={i} d={d} fill={fill} opacity="0.85"/>)}
+      <line x1="17" y1="2"  x2="17" y2="32" stroke={stroke} strokeWidth="1"/>
+      <line x1="2"  y1="17" x2="32" y2="17" stroke={stroke} strokeWidth="1"/>
+      <circle cx="17" cy="17" r="15" fill="none" stroke={stroke} strokeWidth="1.5"/>
     </svg>
   );
 }
 
 /* inline SVG string for PDF export */
 function skillGaugeSvgStr(lv) {
-  const fill = GAUGE_FILL[lv] || 'none';
-  const glowBg = lv > 0 ? GAUGE_GLOW[lv] : 'none';
+  const fill   = GAUGE_FILL[lv]   || 'none';
+  const stroke = GAUGE_STROKE[lv] || '#9ca3af';
+  const sectors = Q_PATHS.slice(0, lv)
+    .map(d => `<path d="${d}" fill="${fill}" opacity="0.85"/>`)
+    .join('');
   return `<svg width="26" height="26" viewBox="0 0 34 34" xmlns="http://www.w3.org/2000/svg">
-    <rect x="1" y="1" width="32" height="32" fill="${glowBg}" rx="3"/>
-    ${lv >= 1 ? `<rect x="2" y="17" width="13" height="15" fill="${fill}" rx="1"/>` : ''}
-    ${lv >= 2 ? `<rect x="19" y="17" width="13" height="15" fill="${fill}" rx="1"/>` : ''}
-    ${lv >= 3 ? `<rect x="19" y="2" width="13" height="13" fill="${fill}" rx="1"/>` : ''}
-    ${lv >= 4 ? `<rect x="2" y="2" width="13" height="13" fill="${fill}" rx="1"/>` : ''}
-    <rect x="1" y="1" width="32" height="32" fill="none" stroke="#9ca3af" stroke-width="1.5" rx="3"/>
-    <line x1="17" y1="1" x2="17" y2="33" stroke="#9ca3af" stroke-width="1"/>
-    <line x1="1" y1="17" x2="33" y2="17" stroke="#9ca3af" stroke-width="1"/>
+    <circle cx="17" cy="17" r="15" fill="none" stroke="${stroke}" stroke-width="1.5"/>
+    ${sectors}
+    <line x1="17" y1="2" x2="17" y2="32" stroke="${stroke}" stroke-width="1"/>
+    <line x1="2" y1="17" x2="32" y2="17" stroke="${stroke}" stroke-width="1"/>
+    <circle cx="17" cy="17" r="15" fill="none" stroke="${stroke}" stroke-width="1.5"/>
   </svg>`;
 }
 
@@ -894,7 +900,7 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
     </tr>`).join('');
 
   const summaryRowsHtml = MS_LEVELS.map((lv, li) => {
-    const fillHex = GAUGE_FILL[lv.level] === 'none' ? '' : `background:${GAUGE_GLOW[lv.level]};`;
+    const fillHex = GAUGE_FILL[lv.level] === 'none' ? '' : `background:${lv.bg + "33"};`;
     return `<tr>
       <td style="border:1px solid #999;padding:2px;text-align:center;vertical-align:middle">${skillGaugeSvgStr(lv.level)}</td>
       <td style="border:1px solid #999;padding:2px 4px;font-size:9px">${lv.pct} — ${lv.label}</td>
@@ -1124,7 +1130,7 @@ function MultiSkillFormTab() {
             {/* Legend */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
               {MS_LEVELS.map(lv => (
-                <div key={lv.level} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 8, background: lv.level > 0 ? GAUGE_GLOW[lv.level] : 'var(--bg3)', border: `1px solid ${lv.level > 0 ? lv.border : 'var(--border)'}` }}>
+                <div key={lv.level} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 8, background: lv.level > 0 ? lv.bg + "33" : 'var(--bg3)', border: `1px solid ${lv.level > 0 ? lv.border : 'var(--border)'}` }}>
                   <SkillGauge level={lv.level} size={20} />
                   <span style={{ fontSize: 10, color: lv.level > 0 ? lv.color : 'var(--muted)', fontWeight: lv.level > 0 ? 700 : 400 }}>
                     {lv.pct} · {lv.label}
@@ -1160,7 +1166,7 @@ function MultiSkillFormTab() {
                         <SkillGauge level={lv} size={30} />
                       </td>
                     ))}
-                    <td style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '4px 2px', background: overall > 0 ? GAUGE_GLOW[overall] : '' }}>
+                    <td style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '4px 2px', background: overall > 0 ? msStyle(overall).bg + "22" : '' }}>
                       <SkillGauge level={overall} size={30} />
                     </td>
                   </tr>
@@ -1187,7 +1193,7 @@ function MultiSkillFormTab() {
                     const c = msLevelColor(lv.level);
                     return (
                       <tr key={lv.level}>
-                        <td style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '4px 6px', background: lv.level > 0 ? GAUGE_GLOW[lv.level] : '' }}>
+                        <td style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '4px 6px', background: lv.level > 0 ? lv.bg + "33" : '' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                             <SkillGauge level={lv.level} size={22} />
                             <span style={{ fontSize: 10, color: 'var(--muted)' }}>{lv.pct}</span>
