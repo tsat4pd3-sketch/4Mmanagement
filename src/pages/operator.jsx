@@ -479,7 +479,9 @@ export default function Operator() {
                   <label style={labelSt}>Team</label>
                   <select value={editingEmp.team || ''} onChange={e => setEditingEmp({ ...editingEmp, team: e.target.value })}>
                     <option value="">— เลือก —</option>
-                    {['A','B'].map(t => <option key={t} value={t}>Team {t}</option>)}
+                    <option value="A">Team A (กะเช้า)</option>
+                    <option value="B">Team B (กะดึก)</option>
+                    <option value="C">Team C (ไม่มีพันธะกะ)</option>
                   </select>
                 </div>
               </div>

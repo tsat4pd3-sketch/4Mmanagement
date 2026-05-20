@@ -75,7 +75,7 @@ export default function Report() {
       {activeTab === 2 && <RangeTab />}
       {activeTab === 3 && <FourMTab />}
       {activeTab === 4 && <SkillMatrixTab />}
-      {activeTab === 5 && <ExportTab />}
+      {activeTab === 5 && <ExportTab goToTab={setActiveTab} />}
       {activeTab === 6 && <SkillAllowanceTab />}
       {activeTab === 7 && <AttendanceFormTab />}
       {activeTab === 8 && <MultiSkillFormTab />}
@@ -1113,10 +1113,7 @@ function MultiSkillFormTab() {
                 <span style={{ fontWeight: 700, fontSize: 15 }}>MULTI SKILL OF OPERATORS</span>
                 <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 10 }}>{employees.length} คน · {skillDefs.length} ทักษะ</span>
               </div>
-              <button onClick={handlePrint}
-                style={{ padding: '8px 20px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                🖨️ พิมพ์ PDF (A3)
-              </button>
+              <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic' }}>🖨️ พิมพ์ได้จากแท็บ Export</span>
             </div>
 
             {/* Legend */}
@@ -1308,7 +1305,28 @@ function QuickCsvSection() {
   );
 }
 
-function ExportTab() {
+const PDF_EXPORTS = [
+  {
+    tab: 6, icon: '💰', label: 'ใบสรุปค่าฝีมือ',
+    desc: 'สรุปวันที่ได้รับค่าฝีมือของแต่ละพนักงานแยกตามงวด (A4 landscape)',
+    tags: ['งวด 1-15', 'งวด 16-31', 'แยกตามไลน์'],
+    color: '#f59e0b', bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.30)',
+  },
+  {
+    tab: 7, icon: '📋', label: 'ใบบันทึกการมาทำงาน',
+    desc: 'ตารางการมาทำงานรายวันพร้อมกะ 01/02/OT แยกตามส่วนงาน (A3 landscape)',
+    tags: ['กะ 01', 'กะ 02', 'OT'],
+    color: '#4d9fff', bg: 'rgba(77,159,255,0.10)', border: 'rgba(77,159,255,0.30)',
+  },
+  {
+    tab: 8, icon: '🏅', label: 'Multi-Skill Form',
+    desc: 'MULTI SKILL OF OPERATORS — ระดับทักษะพนักงานพร้อมสรุปและลายเซ็น (A3 landscape)',
+    tags: ['ระดับ 1-4', 'สรุปแยก skill', '3 ลายเซ็น'],
+    color: '#22c55e', bg: 'rgba(34,197,94,0.10)', border: 'rgba(34,197,94,0.30)',
+  },
+];
+
+function ExportTab({ goToTab }) {
   const [lines,      setLines]      = useState([]);
   const [lineId,     setLineId]     = useState('');
   const [month,      setMonth]      = useState(new Date().toISOString().slice(0, 7));
@@ -1379,8 +1397,47 @@ function ExportTab() {
 
       <QuickCsvSection />
 
+      {/* ── PDF Exports ── */}
       <div className="card" style={{ padding: '18px 20px', marginBottom: 20 }}>
-        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text)' }}>📄 Export รายงาน PDF (ฟอร์มทางการ)</div>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4, color: 'var(--text)' }}>🖨️ Export PDF — เอกสารทางการ</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>เลือกรายงาน → ตั้งค่าตัวกรอง → กดพิมพ์ PDF</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
+          {/* Inline PDF: attendance/OT — kept here */}
+          <button onClick={() => {}} style={{ textAlign: 'left', padding: '14px 16px', borderRadius: 12, border: '1px solid rgba(139,92,246,0.30)', background: 'rgba(139,92,246,0.08)', cursor: 'default' }}>
+            <div style={{ fontSize: 22, marginBottom: 6 }}>📄</div>
+            <div style={{ fontWeight: 700, fontSize: 13, color: '#c084fc', marginBottom: 4 }}>ใบบันทึก / ใบสั่ง OT</div>
+            <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 8 }}>ใบบันทึกมาทำงาน และใบสั่งงาน OT (A4 landscape) ตั้งค่าด้านล่าง</div>
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {['A4 landscape', 'แยกตามไลน์', 'งวด 1/2'].map(t => (
+                <span key={t} style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: 'rgba(139,92,246,0.15)', color: '#c084fc' }}>{t}</span>
+              ))}
+            </div>
+          </button>
+          {PDF_EXPORTS.map(p => (
+            <button key={p.tab} onClick={() => goToTab(p.tab)} style={{
+              textAlign: 'left', padding: '14px 16px', borderRadius: 12,
+              border: `1px solid ${p.border}`, background: p.bg, cursor: 'pointer',
+              transition: 'transform 0.1s', display: 'flex', flexDirection: 'column',
+            }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+              onMouseLeave={e => e.currentTarget.style.transform = ''}
+            >
+              <div style={{ fontSize: 22, marginBottom: 6 }}>{p.icon}</div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: p.color, marginBottom: 4 }}>{p.label}</div>
+              <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 8, flex: 1 }}>{p.desc}</div>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+                {p.tags.map(t => (
+                  <span key={t} style={{ fontSize: 9, padding: '1px 6px', borderRadius: 4, background: `${p.bg}`, color: p.color, border: `1px solid ${p.border}` }}>{t}</span>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: p.color }}>⚙️ ตั้งค่าและพิมพ์ →</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: '18px 20px', marginBottom: 20 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text)' }}>📄 ใบบันทึก / ใบสั่ง OT (ตั้งค่าตรงนี้)</div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div>
             <div style={lbSt}>ประเภทรายงาน</div>
@@ -1454,6 +1511,384 @@ function ExportTab() {
           }
         </div>
       )}
+
+      <SkillAllowanceExportCard />
+      <MultiSkillExportCard />
+    </div>
+  );
+}
+
+/* ── Compact export cards embedded in ExportTab ── */
+
+function SkillAllowanceExportCard() {
+  const today = new Date();
+  const [year,    setYear]    = useState(today.getFullYear());
+  const [month,   setMonth]   = useState(today.getMonth() + 1);
+  const [period,  setPeriod]  = useState(1);
+  const [line,    setLine]    = useState('');
+  const [section, setSection] = useState('');
+  const [lines,   setLines]   = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    supabase.from('production_lines').select('name, section').order('name')
+      .then(({ data }) => setLines(data || []));
+  }, []);
+
+  const periodDays = () => {
+    const dim = new Date(year, month, 0).getDate();
+    return period === 1
+      ? Array.from({ length: 15 }, (_, i) => i + 1)
+      : Array.from({ length: dim - 15 }, (_, i) => i + 16);
+  };
+
+  const handlePrint = async () => {
+    setLoading(true);
+    const days = periodDays();
+    const pad = d => String(d).padStart(2, '0');
+    const startDate = `${year}-${pad(month)}-${pad(days[0])}`;
+    const endDate   = `${year}-${pad(month)}-${pad(days[days.length - 1])}`;
+
+    let stQ = supabase.from('workstations').select('id, station_name, line_name').eq('skill_allowance', true);
+    if (line) stQ = stQ.eq('line_name', line);
+    const { data: stations } = await stQ;
+    if (!stations?.length) { toast.info('ไม่พบตำแหน่งที่ได้ค่าฝีมือ'); setLoading(false); return; }
+
+    const stationIds = stations.map(s => String(s.id));
+    const { data: logs } = await supabase
+      .from('daily_production_logs')
+      .select('work_date, employee_id, employees(employee_id_code, name, section, team)')
+      .gte('work_date', startDate).lte('work_date', endDate)
+      .eq('is_present', true).eq('has_helmet', true).eq('has_boots', true).eq('has_gloves', true)
+      .in('assigned_line', stationIds);
+
+    const empMap = {};
+    (logs || []).forEach(log => {
+      const d = parseInt(log.work_date.split('-')[2]);
+      if (!empMap[log.employee_id]) empMap[log.employee_id] = { emp: log.employees, days: {} };
+      empMap[log.employee_id].days[d] = true;
+    });
+
+    const rows = Object.values(empMap)
+      .filter(r => section ? r.emp?.section === section : true)
+      .sort((a, b) => (a.emp?.name || '').localeCompare(b.emp?.name || '', 'th'));
+
+    setLoading(false);
+    if (!rows.length) { toast.info('ไม่มีข้อมูล'); return; }
+
+    const dStr = `${days[0]}-${days[days.length - 1]}`;
+    const sectionLabel = section || (line ? `ไลน์ ${line}` : 'ทุกไลน์');
+    const tableRows = rows.map((r, i) => {
+      const dayCells = days.map(d =>
+        `<td style="text-align:center;border:1px solid #333;font-size:13px">${r.days[d] ? '✓' : ''}</td>`
+      ).join('');
+      const total = Object.keys(r.days).length;
+      return `<tr>
+        <td style="text-align:center;border:1px solid #333">${i+1}</td>
+        <td style="border:1px solid #333;white-space:nowrap;padding:0 4px">${r.emp?.employee_id_code || ''}</td>
+        <td style="border:1px solid #333;padding:0 4px">${r.emp?.name || ''}</td>
+        ${dayCells}
+        <td style="text-align:center;border:1px solid #333;font-weight:bold">${total}</td>
+        <td style="border:1px solid #333;width:70px"></td>
+        <td style="border:1px solid #333;width:80px"></td>
+        <td style="border:1px solid #333;width:70px"></td>
+        <td style="border:1px solid #333"></td>
+      </tr>`;
+    }).join('');
+    const extraRows = Math.max(0, 10 - rows.length);
+    const emptyRows = Array.from({ length: extraRows }, (_, i) => `
+      <tr style="height:28px">
+        <td style="text-align:center;border:1px solid #333">${rows.length + i + 1}</td>
+        <td style="border:1px solid #333"></td><td style="border:1px solid #333"></td>
+        ${days.map(() => '<td style="border:1px solid #333"></td>').join('')}
+        <td style="border:1px solid #333"></td><td style="border:1px solid #333"></td>
+        <td style="border:1px solid #333"></td><td style="border:1px solid #333"></td>
+        <td style="border:1px solid #333"></td>
+      </tr>`).join('');
+    const daySumRow = days.map(d => {
+      const cnt = rows.filter(r => r.days[d]).length;
+      return `<td style="text-align:center;border:1px solid #333;font-size:12px">${cnt || 0}</td>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/>
+<title>ใบสรุปค่าฝีมือ ${THAI_MONTHS[month]} ${year + 543}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}body{font-family:'Sarabun',sans-serif;font-size:13px;background:#fff;color:#000}
+  .page{padding:12mm 10mm;width:297mm;min-height:210mm}table{border-collapse:collapse;width:100%;font-size:11px}
+  th{border:1px solid #333;background:#f0f0f0;text-align:center;padding:3px 2px;font-size:11px}
+  td{border:1px solid #333;padding:2px 2px;font-size:11px}
+  @media print{@page{size:A4 landscape;margin:8mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head><body><div class="page">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+    <div style="flex:1;text-align:center"><div style="font-size:16px;font-weight:bold">ใบสรุปการปฏิบัติงานค่าฝีมือ</div></div>
+    <div style="font-size:12px;white-space:nowrap">ฟอร์ม SA-01</div>
+  </div>
+  <div style="margin-bottom:2px">ประจำงวด วันที่ ${dStr} เดือน ${THAI_MONTHS[month]} ปี ${year + 543}</div>
+  <div style="margin-bottom:8px">ส่วนงาน ${sectionLabel}</div>
+  <table><thead>
+    <tr>
+      <th rowspan="2" style="width:28px">ลำดับ</th>
+      <th rowspan="2" style="width:70px">เลขที่บัตรพนักงาน</th>
+      <th rowspan="2" style="min-width:100px">ชื่อ - สกุล</th>
+      <th colspan="${days.length}">เดือน ${THAI_MONTHS[month]} ${year + 543}</th>
+      <th rowspan="2" style="width:30px">รวม</th>
+      <th rowspan="2" style="width:70px">ลายเซ็นพนักงาน</th>
+      <th rowspan="2" style="width:80px">TA ตรวจสอบ</th>
+      <th rowspan="2" style="width:70px">ลายเซ็น TA</th>
+      <th rowspan="2" style="width:50px">หมายเหตุ</th>
+    </tr>
+    <tr>${days.map(d => `<th style="width:22px">${d}</th>`).join('')}</tr>
+  </thead><tbody>
+    ${tableRows}${emptyRows}
+    <tr style="background:#f0f0f0;font-weight:bold">
+      <td colspan="3" style="text-align:center;border:1px solid #333">รวม</td>
+      ${daySumRow}
+      <td style="text-align:center;border:1px solid #333">${rows.reduce((s,r)=>s+Object.keys(r.days).length,0)}</td>
+      <td style="border:1px solid #333" colspan="4"></td>
+    </tr>
+  </tbody></table>
+  <div style="margin-top:10px;font-size:11px;line-height:1.8">
+    <strong>หมายเหตุ :</strong><br/>
+    1. วันที่ 1-15 จะจ่ายในงวดวันที่ 22 ของทุกเดือน<br/>
+    2. วันที่ 16-31 จะจ่ายในงวดวันที่ 7 ของทุกเดือน<br/>
+    3. กรณีใบ Certification ขาดอายุจะถูกระงับการจ่ายค่าฝีมือ<br/>
+    4. พนักงานมีสิทธิ์ได้รับค่าฝีมือต้องปฏิบัติงานครบ 8 ชั่วโมง / วัน
+  </div>
+</div>
+<script>window.onload = () => { window.print(); }</script></body></html>`;
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+  };
+
+  return (
+    <div className="card" style={{ padding: '18px 20px', marginBottom: 16 }}>
+      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text)' }}>💰 ใบสรุปค่าฝีมือ (SA-01)</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
+        <div>
+          <span style={lbSt}>ปี</span>
+          <select value={year} onChange={e => setYear(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            {[today.getFullYear()-1, today.getFullYear(), today.getFullYear()+1].map(y => <option key={y} value={y}>{y+543}</option>)}
+          </select>
+        </div>
+        <div>
+          <span style={lbSt}>เดือน</span>
+          <select value={month} onChange={e => setMonth(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <span style={lbSt}>งวด</span>
+          <select value={period} onChange={e => setPeriod(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            <option value={1}>งวด 1 (1-15)</option>
+            <option value={2}>งวด 2 (16-สิ้นเดือน)</option>
+          </select>
+        </div>
+        <div>
+          <span style={lbSt}>ไลน์</span>
+          <select value={line} onChange={e => setLine(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            <option value="">ทุกไลน์</option>
+            {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+          </select>
+        </div>
+        <button onClick={handlePrint} disabled={loading}
+          style={{ padding: '8px 20px', background: '#f59e0b', color: '#000', border: 'none', borderRadius: 8, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}>
+          {loading ? 'กำลังโหลด...' : '🖨️ พิมพ์ PDF'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MultiSkillExportCard() {
+  const [lines,      setLines]      = useState([]);
+  const [skillDefs,  setSkillDefs]  = useState([]);
+  const [filterLine, setFilterLine] = useState('');
+  const [dept,       setDept]       = useState('Production');
+  const [section,    setSection]    = useState('');
+  const [department, setDepartment] = useState('');
+  const [headName,   setHeadName]   = useState('');
+  const [maker,      setMaker]      = useState('');
+  const [checker,    setChecker]    = useState('');
+  const [approver,   setApprover]   = useState('');
+  const [loading,    setLoading]    = useState(false);
+
+  useEffect(() => {
+    supabase.from('production_lines').select('id, name').order('name').then(({ data }) => setLines(data || []));
+    supabase.from('skill_definitions').select('*').order('sort_order').then(({ data }) => setSkillDefs(data || []));
+  }, []);
+
+  const handlePrint = async () => {
+    setLoading(true);
+    const sel = 'id, name, employee_id_code, position, section, team, employee_skills(skill_name, score)';
+    const q = filterLine
+      ? supabase.from('employees').select(sel).eq('is_active', true).eq('line_id', filterLine).order('name')
+      : supabase.from('employees').select(sel).eq('is_active', true).order('name');
+    const { data } = await q;
+    setLoading(false);
+    const employees = data || [];
+    if (!employees.length) { toast.info('ไม่พบพนักงาน'); return; }
+
+    const today = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+    const empRows = employees.map((emp, i) => {
+      const sm = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
+      const levels = skillDefs.map(s => scoreToLevel(sm[s.name]));
+      const validLevels = levels.filter(l => l > 0);
+      const overall = validLevels.length ? Math.round(validLevels.reduce((a, b) => a + b, 0) / validLevels.length) : 0;
+      return { emp, levels, overall, index: i + 1 };
+    });
+
+    const levelCounts = MS_LEVELS.map(lv =>
+      [...skillDefs.map((_, si) => empRows.filter(r => r.levels[si] === lv.level).length),
+       empRows.filter(r => r.overall === lv.level).length]
+    );
+
+    const lvBg  = { 4:'#bbf7d0',3:'#bfdbfe',2:'#fef9c3',1:'#fed7aa',0:'#fff' };
+    const lvClr = { 4:'#166534',3:'#1e3a5f',2:'#713f12',1:'#7c2d12',0:'#999' };
+    const levelCell = (lv) => lv > 0
+      ? `<td style="text-align:center;border:1px solid #999;background:${lvBg[lv]};color:${lvClr[lv]};font-weight:700">${lv}</td>`
+      : `<td style="text-align:center;border:1px solid #999"></td>`;
+
+    const skillHeaderCells = skillDefs.map(s =>
+      `<th style="border:1px solid #666;background:#e5e7eb;padding:3px 2px;font-size:9px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:90px;white-space:nowrap">${s.label}</th>`
+    ).join('');
+
+    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/>
+<title>MULTI SKILL OF OPERATORS</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}body{font-family:'Sarabun',sans-serif;font-size:10px;background:#fff;color:#000}
+  .page{padding:8mm}table{border-collapse:collapse;font-size:10px}
+  @media print{@page{size:A3 landscape;margin:6mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head><body><div class="page">
+  <table style="width:100%;margin-bottom:4px"><tr>
+    <td style="vertical-align:top;width:22%">
+      <div style="font-size:9px;line-height:2">
+        <div>ฝ่าย : <strong>${dept}</strong></div>
+        <div>ส่วน : <strong>${section}</strong></div>
+        <div>แผนก : <strong>${department}</strong></div>
+        <div>หัวหน้าแผนก : <strong>${headName}</strong></div>
+      </div>
+    </td>
+    <td style="vertical-align:top;text-align:center;width:50%">
+      <div style="font-size:14px;font-weight:800;margin-bottom:6px">MULTI SKILL OF OPERATORS</div>
+      <table style="margin:0 auto;font-size:8px">
+        ${MS_LEVELS.map(lv => `<tr>
+          <td style="padding:1px 4px;background:${lv.level>0?lvBg[lv.level]:'#f3f4f6'};color:${lv.level>0?lvClr[lv.level]:'#333'};font-weight:700;text-align:center;min-width:40px;border:1px solid #ccc">${lv.pct}</td>
+          <td style="padding:1px 6px">${lv.label}</td></tr>`).join('')}
+      </table>
+    </td>
+    <td style="vertical-align:top;width:28%">
+      <table style="width:100%;font-size:8px;border-collapse:collapse">
+        <tr>
+          <th style="border:1px solid #666;background:#f3f4f6;padding:2px;text-align:center">จัดทำโดย</th>
+          <th style="border:1px solid #666;background:#f3f4f6;padding:2px;text-align:center">ตรวจสอบโดย</th>
+          <th style="border:1px solid #666;background:#f3f4f6;padding:2px;text-align:center">อนุมัติโดย</th>
+        </tr>
+        <tr style="height:40px">
+          <td style="border:1px solid #666"></td><td style="border:1px solid #666"></td><td style="border:1px solid #666"></td>
+        </tr>
+        <tr>
+          <td style="border:1px solid #666;padding:2px;text-align:center">(${maker||'......................'})</td>
+          <td style="border:1px solid #666;padding:2px;text-align:center">(${checker||'......................'})</td>
+          <td style="border:1px solid #666;padding:2px;text-align:center">(${approver||'......................'})</td>
+        </tr>
+        <tr>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">หัวหน้าแผนก</td>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">วิศวกร/หัวหน้าส่วน</td>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">ผู้จัดการส่วนผลิต</td>
+        </tr>
+        <tr>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">วันที่ .................</td>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">วันที่ .................</td>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">วันที่ .................</td>
+        </tr>
+      </table>
+    </td>
+  </tr></table>
+  <table style="width:100%"><thead>
+    <tr style="background:#d1d5db">
+      <th style="border:1px solid #666;padding:3px;text-align:center;width:24px" rowspan="2">ลำดับ</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;width:70px" rowspan="2">เลขที่บัตร</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:110px" rowspan="2">ชื่อ-นามสกุล</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:80px" rowspan="2">ตำแหน่ง</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center" colspan="${skillDefs.length + 1}">ทักษะความสามารถการปฏิบัติงานของพนักงาน</th>
+    </tr>
+    <tr style="background:#e5e7eb">${skillHeaderCells}
+      <th style="border:1px solid #666;background:#d1fae5;padding:3px 2px;font-size:9px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:90px;white-space:nowrap">ทักษะโดยรวม</th>
+    </tr>
+  </thead><tbody>
+    ${empRows.map(({ emp, levels, overall, index }) => `<tr>
+      <td style="text-align:center;border:1px solid #999;white-space:nowrap">${index}</td>
+      <td style="border:1px solid #999;padding:0 3px;font-size:9px">${emp.employee_id_code||''}</td>
+      <td style="border:1px solid #999;padding:0 3px;font-size:9px">${emp.name||''}</td>
+      <td style="border:1px solid #999;padding:0 3px;font-size:9px">${emp.position||''}</td>
+      ${levels.map(levelCell).join('')}${levelCell(overall)}
+    </tr>`).join('')}
+  </tbody></table>
+  <div style="margin-top:10px">
+    <table style="width:100%"><thead>
+      <tr style="background:#d1d5db">
+        <th style="border:1px solid #666;padding:3px;font-size:9px;text-align:center" colspan="2">ระดับความสามารถ</th>
+        ${skillDefs.map(s => `<th style="border:1px solid #666;background:#e5e7eb;padding:3px 2px;font-size:9px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:70px;white-space:nowrap">${s.label}</th>`).join('')}
+        <th style="border:1px solid #666;background:#d1fae5;padding:3px 2px;font-size:9px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:70px;white-space:nowrap">ทักษะโดยรวม</th>
+      </tr>
+    </thead><tbody>
+      ${MS_LEVELS.map((lv, li) => {
+        const bg = lv.level > 0 ? `background:${lvBg[lv.level]};color:${lvClr[lv.level]};` : '';
+        return `<tr>
+          <td style="border:1px solid #999;padding:2px 4px;font-size:9px">${lv.pct}</td>
+          <td style="border:1px solid #999;padding:2px 4px;font-size:9px;${bg}">${lv.label}</td>
+          ${levelCounts[li].map(cnt => `<td style="text-align:center;border:1px solid #999;font-size:9px;font-weight:700;${cnt>0?bg:''}">${cnt||''}</td>`).join('')}
+        </tr>`;
+      }).join('')}
+      <tr style="background:#f3f4f6;font-weight:700">
+        <td colspan="2" style="border:1px solid #999;text-align:center;padding:2px;font-size:9px">รวมพนักงานทั้งหมด</td>
+        ${skillDefs.map(() => `<td style="text-align:center;border:1px solid #999;font-size:9px">${empRows.length}</td>`).join('')}
+        <td style="text-align:center;border:1px solid #999;font-size:9px">${empRows.length}</td>
+      </tr>
+    </tbody></table>
+  </div>
+  <div style="margin-top:6px;font-size:8px;color:#555">พิมพ์วันที่ ${today} · จำนวนพนักงาน ${empRows.length} คน</div>
+</div>
+<script>window.onload = () => { window.print(); }</script></body></html>`;
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+  };
+
+  return (
+    <div className="card" style={{ padding: '18px 20px', marginBottom: 16 }}>
+      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text)' }}>🏅 Multi-Skill Form (MULTI SKILL OF OPERATORS)</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
+        <div>
+          <span style={lbSt}>ไลน์ผลิต</span>
+          <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            <option value="">ทุกไลน์</option>
+            {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+        </div>
+        {[
+          { label: 'ฝ่าย', val: dept,       set: setDept },
+          { label: 'ส่วน', val: section,    set: setSection },
+          { label: 'แผนก', val: department, set: setDepartment },
+          { label: 'หัวหน้าแผนก', val: headName, set: setHeadName },
+          { label: 'จัดทำโดย',    val: maker,   set: setMaker },
+          { label: 'ตรวจสอบโดย', val: checker,  set: setChecker },
+          { label: 'อนุมัติโดย',  val: approver, set: setApprover },
+        ].map(({ label, val, set }) => (
+          <div key={label}>
+            <span style={lbSt}>{label}</span>
+            <input value={val} onChange={e => set(e.target.value)} placeholder={label}
+              style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 130, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)' }} />
+          </div>
+        ))}
+        <button onClick={handlePrint} disabled={loading}
+          style={{ padding: '8px 20px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}>
+          {loading ? 'กำลังโหลด...' : '🖨️ พิมพ์ PDF (A3)'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -1920,10 +2355,7 @@ function SkillAllowanceTab() {
           {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
         </button>
         {rows.length > 0 && (
-          <button onClick={handlePrint}
-            style={{ padding: '8px 20px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>
-            🖨️ พิมพ์ PDF
-          </button>
+          <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic', alignSelf: 'center' }}>🖨️ พิมพ์ได้จากแท็บ Export</span>
         )}
       </div>
 
@@ -2282,10 +2714,7 @@ function AttendanceFormTab() {
           {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
         </button>
         {empRows.length > 0 && (
-          <button onClick={handlePrint}
-            style={{ padding: '8px 20px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>
-            🖨️ พิมพ์ PDF (A3)
-          </button>
+          <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic', alignSelf: 'center' }}>🖨️ พิมพ์ได้จากแท็บ Export</span>
         )}
       </div>
 

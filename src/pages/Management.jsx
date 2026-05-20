@@ -221,18 +221,22 @@ export default function Management() {
 
   const specialEmpIds = new Set(specialTasks.map(t => t.employee_id));
 
+  const matchesTeam = (w) => {
+    if (!isLeader || !userTeam) return true;
+    const empTeam = w.employees?.team;
+    return empTeam === userTeam || empTeam === 'C';
+  };
+
   const poolWorkers = workers.filter(w => {
     if (w.assigned_line) return false;
     if (specialEmpIds.has(w.employee_id)) return false;
-    if (isLeader && userTeam) return w.employees?.team === userTeam;
-    return true;
+    return matchesTeam(w);
   });
 
   const specialWorkers = workers.filter(w => {
     if (w.assigned_line) return false;
     if (!specialEmpIds.has(w.employee_id)) return false;
-    if (isLeader && userTeam) return w.employees?.team === userTeam;
-    return true;
+    return matchesTeam(w);
   });
 
   const assignSpecialTask = async (worker, taskType) => {
