@@ -1,25 +1,28 @@
-import { createContext, useState, useEffect, useRef } from 'react';
+import { createContext, useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from './supabaseClient';
+import { ToastContainer } from './components/Toast';
 import Login from './pages/Login';
-import Register from './pages/Register';
-import Checkin from './pages/Checkin';
-import Management from './pages/Management';
-import Dashboard from './pages/Dashboard';
-import Operator from './pages/operator';
-import LineSetup from './pages/LineSetup';
-import AddUser from './pages/AddUser';
-import Report from './pages/Report';
-import ShiftOrganize from './pages/ShiftOrganize';
+
+const Register     = lazy(() => import('./pages/Register'));
+const Checkin      = lazy(() => import('./pages/Checkin'));
+const Management   = lazy(() => import('./pages/Management'));
+const Dashboard    = lazy(() => import('./pages/Dashboard'));
+const Operator     = lazy(() => import('./pages/operator'));
+const LineSetup    = lazy(() => import('./pages/LineSetup'));
+const AddUser      = lazy(() => import('./pages/AddUser'));
+const Report       = lazy(() => import('./pages/Report'));
+const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 
 /* ─── Role System ──────────────────────────────────────────── */
-export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null });
+export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null });
 
 const ROLE_LABELS = {
   admin:      '👑 Admin',
   manager:    '🏢 Manager',
   supervisor: '🎯 Supervisor',
   leader:     '⭐ Leader',
+  qa:         '🔍 QA',
 };
 
 // null roles = accessible to every role
@@ -29,7 +32,7 @@ const NAV_ITEMS = [
   { to: '/checkin',    icon: '📝', label: 'เช็คชื่อ & PPE',    roles: null },
   { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   roles: ['admin', 'manager', 'supervisor'] },
   { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      roles: ['admin', 'supervisor'] },
-  { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager', 'leader'] },
+  { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager', 'supervisor', 'leader'] },
   { to: '/report',        icon: '📋', label: 'รายงาน',            roles: null },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         roles: ['admin', 'manager', 'supervisor'] },
 ];
@@ -42,7 +45,7 @@ function RoleRoute({ children, allow, userRole }) {
   return children;
 }
 
-/* ─── Splash Screen ──────────────────────────────────────── */
+/* ─── Splash Screen ────────────────────────────────────── */
 function SplashScreen({ onDone }) {
   const barRef = useRef(null);
 
@@ -78,7 +81,7 @@ function SplashScreen({ onDone }) {
   );
 }
 
-/* ─── Sidebar ──────────────────────────────────────────────────── */
+/* ─── Sidebar ──────────────────────────────────────────────── */
 function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName }) {
   const location = useLocation();
   const isMobile = window.innerWidth <= 768;
@@ -262,8 +265,8 @@ function ToggleBtn({ isOpen, sidebarW, onClick }) {
   );
 }
 
-/* ─── Protected Layout ─────────────────────────────────────────── */
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userEmail, userFullName }) {
+/* ─── Protected Layout ─────────────────────────────────────────────── */
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userEmail, userFullName, userNotifyEmail }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
   const [isOpen, setIsOpen] = useState(!isMobile);
@@ -290,7 +293,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   const role       = userRole ?? 'admin';
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection }}>
+    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, notifyEmail: userNotifyEmail }}>
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         <ToggleBtn isOpen={isOpen} sidebarW={sidebarPx} onClick={() => setIsOpen(o => !o)} />
         <Sidebar
@@ -314,42 +317,45 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
           transition: 'margin-left 0.3s cubic-bezier(0.4,0,0.2,1)',
           overflow: 'hidden',
         }}>
-          <Routes>
-            <Route path="/"           element={<Dashboard />} />
-            <Route path="/management" element={<Management />} />
-            <Route path="/checkin"    element={<Checkin />} />
-            <Route path="/report"     element={<Report />} />
-            <Route path="/register"   element={
-              <RoleRoute allow={['admin', 'supervisor']} userRole={role}><Register /></RoleRoute>
-            } />
-            <Route path="/operator"   element={
-              <RoleRoute allow={['admin', 'manager', 'leader']} userRole={role}><Operator /></RoleRoute>
-            } />
-            <Route path="/linesetup"  element={
-              <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}><LineSetup /></RoleRoute>
-            } />
-            <Route path="/add-user"   element={
-              <RoleRoute allow={['admin']} userRole={role}><AddUser /></RoleRoute>
-            } />
-            <Route path="/shift-organize" element={
-              <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}><ShiftOrganize /></RoleRoute>
-            } />
-          </Routes>
+          <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
+            <Routes>
+              <Route path="/"           element={<Dashboard />} />
+              <Route path="/management" element={<Management />} />
+              <Route path="/checkin"    element={<Checkin />} />
+              <Route path="/report"     element={<Report />} />
+              <Route path="/register"   element={
+                <RoleRoute allow={['admin', 'supervisor']} userRole={role}><Register /></RoleRoute>
+              } />
+              <Route path="/operator"   element={
+                <RoleRoute allow={['admin', 'manager', 'supervisor', 'leader']} userRole={role}><Operator /></RoleRoute>
+              } />
+              <Route path="/linesetup"  element={
+                <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}><LineSetup /></RoleRoute>
+              } />
+              <Route path="/add-user"   element={
+                <RoleRoute allow={['admin']} userRole={role}><AddUser /></RoleRoute>
+              } />
+              <Route path="/shift-organize" element={
+                <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}><ShiftOrganize /></RoleRoute>
+              } />
+            </Routes>
+          </Suspense>
         </main>
       </div>
     </UserContext.Provider>
   );
 }
 
-/* ─── App Root ───────────────────────────────────────────────────────── */
+/* ─── App Root ─────────────────────────────────────────────────────────── */
 export default function App() {
   const [session,      setSession]      = useState(undefined);
   const [userRole,     setUserRole]     = useState(null);
   const [userLineId,   setUserLineId]   = useState(null);
   const [userTeam,     setUserTeam]     = useState(null);
   const [userSection,  setUserSection]  = useState(null);
-  const [userEmail,    setUserEmail]    = useState(null);
-  const [userFullName, setUserFullName] = useState(null);
+  const [userEmail,       setUserEmail]       = useState(null);
+  const [userFullName,    setUserFullName]    = useState(null);
+  const [userNotifyEmail, setUserNotifyEmail] = useState(null);
   const [showSplash,   setShowSplash]   = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
 
@@ -362,12 +368,13 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const { data } = await supabase.from('profiles').select('role, line_id, full_name, team, section').eq('id', user.id).single();
+    const { data } = await supabase.from('profiles').select('role, line_id, full_name, team, section, notify_email').eq('id', user.id).single();
     setUserRole(data?.role ?? 'admin');
     setUserLineId(data?.line_id ?? null);
     setUserFullName(data?.full_name ?? null);
     setUserTeam(data?.team ?? null);
     setUserSection(data?.section ?? null);
+    setUserNotifyEmail(data?.notify_email ?? null);
   };
 
   useEffect(() => {
@@ -378,7 +385,7 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
       if (s?.user) fetchProfile(s.user);
-      else { setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserEmail(null); setUserFullName(null); }
+      else { setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -414,11 +421,13 @@ export default function App() {
                 userSection={userSection}
                 userEmail={userEmail}
                 userFullName={userFullName}
+                userNotifyEmail={userNotifyEmail}
               />
             } />
           </Routes>
         </Router>
       )}
+      <ToastContainer />
     </>
   );
 }

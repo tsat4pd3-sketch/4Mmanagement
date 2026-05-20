@@ -1,5 +1,37 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useContext, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
+import { UserContext } from '../App';
+import { toast } from '../components/Toast';
+import {
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+  ResponsiveContainer, Tooltip,
+} from 'recharts';
+
+/* ── CSV export utility ── */
+function downloadCSV(filename, headers, rows) {
+  const escape = v => {
+    const s = v == null ? '' : String(v);
+    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [headers.map(escape).join(','), ...rows.map(r => r.map(escape).join(','))];
+  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function CsvBtn({ onClick, style = {} }) {
+  return (
+    <button onClick={onClick} style={{
+      padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+      background: 'rgba(34,197,94,0.12)', color: '#22c55e',
+      border: '1px solid rgba(34,197,94,0.35)', display: 'flex', alignItems: 'center', gap: 5,
+      ...style,
+    }}>
+      ⬇️ CSV
+    </button>
+  );
+}
 
 const CAT_META = {
   Man:      { color: '#4d9fff', bg: 'rgba(77,159,255,0.12)',  label: 'Man',      icon: '👷' },
@@ -8,7 +40,7 @@ const CAT_META = {
   Method:   { color: '#c084fc', bg: 'rgba(139,92,246,0.12)', label: 'Method',   icon: '📋' },
 };
 
-const TABS = ['รายวัน', 'รายพนักงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '📄 Export PDF'];
+const TABS = ['รายวัน', 'รายพนักงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '📤 Export', '💰 ค่าฝีมือ', '📋 ใบบันทึก', '🏅 Multi-Skill Form'];
 
 const SKILL_LEVELS = [
   { min: 80, label: 'ชำนาญ',       color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
@@ -17,6 +49,8 @@ const SKILL_LEVELS = [
   { min: 0,  label: 'เริ่มต้น',     color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
 ];
 const getLevel = (score) => SKILL_LEVELS.find(l => score >= l.min) || SKILL_LEVELS[3];
+
+const lbSt = { fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 4, display: 'block' };
 
 export default function Report() {
   const [activeTab, setActiveTab] = useState(0);
@@ -43,33 +77,71 @@ export default function Report() {
       {activeTab === 2 && <RangeTab />}
       {activeTab === 3 && <FourMTab />}
       {activeTab === 4 && <SkillMatrixTab />}
-      {activeTab === 5 && <ExportPdfTab />}
+      {activeTab === 5 && <ExportTab goToTab={setActiveTab} />}
+      {activeTab === 6 && <SkillAllowanceTab />}
+      {activeTab === 7 && <AttendanceFormTab />}
+      {activeTab === 8 && <MultiSkillFormTab />}
     </div>
   );
 }
 
 function DailyTab() {
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [logs, setLogs] = useState([]);
+  const now = new Date();
+  const isDay = (now.getHours() * 60 + now.getMinutes()) >= 480 && (now.getHours() * 60 + now.getMinutes()) < 1200;
+  const [date, setDate]   = useState(new Date().toISOString().split('T')[0]);
+  const [shift, setShift] = useState(isDay ? 'day' : 'night');
+  const [logs, setLogs]   = useState([]);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { load(); }, [date]);
+  useEffect(() => { load(); }, [date, shift]);
 
   const load = async () => {
     setLoading(true);
     const { data } = await supabase
       .from('daily_production_logs')
-      .select('*, employees(name, employee_id_code, image_url, department)')
+      .select('*, employees(name, employee_id_code, image_url, department, team)')
       .eq('work_date', date).eq('is_present', true).order('updated_at');
-    setLogs(data || []);
+
+    // filter by shift: use shift column if present, fallback to employee.team
+    const filtered = (data || []).filter(l => {
+      if (shift === 'all') return true;
+      const s = l.shift;
+      const team = l.employees?.team;
+      if (s) return s === shift;
+      if (shift === 'day')   return team === 'A' || team === 'C' || !team;
+      if (shift === 'night') return team === 'B' || team === 'C' || !team;
+      return true;
+    });
+    setLogs(filtered);
     setLoading(false);
   };
 
+  const shiftBtnStyle = (val) => ({
+    padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+    background: shift === val
+      ? val === 'day' ? 'rgba(245,158,11,0.2)' : val === 'night' ? 'rgba(77,159,255,0.2)' : 'rgba(255,255,255,0.1)'
+      : 'transparent',
+    color: shift === val
+      ? val === 'day' ? '#f59e0b' : val === 'night' ? '#4d9fff' : 'var(--text2)'
+      : 'var(--muted)',
+  });
+
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
         <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
+        {/* Shift toggle */}
+        <div style={{ display: 'flex', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 3, gap: 2 }}>
+          <button style={shiftBtnStyle('day')}   onClick={() => setShift('day')}>☀️ กะเช้า</button>
+          <button style={shiftBtnStyle('night')} onClick={() => setShift('night')}>🌙 กะดึก</button>
+          <button style={shiftBtnStyle('all')}   onClick={() => setShift('all')}>ทั้งหมด</button>
+        </div>
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>รวม {logs.length} คน</span>
+        <CsvBtn onClick={() => downloadCSV(
+          `daily_${date}_${shift}.csv`,
+          ['วันที่', 'กะ', 'รหัสพนักงาน', 'ชื่อ', 'แผนก', 'หมวก', 'รองเท้า', 'ถุงมือ', 'OT'],
+          logs.map(l => [date, l.shift || (l.employees?.team === 'A' ? 'day' : l.employees?.team === 'B' ? 'night' : ''), l.employees?.employee_id_code, l.employees?.name, l.employees?.department || '', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.has_ot ? '✓' : ''])
+        )} />
       </div>
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
@@ -134,6 +206,14 @@ function PerEmployeeTab() {
         </select>
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>มา {logs.filter(l => l.is_present).length} วัน</span>
+        <CsvBtn onClick={() => {
+          const emp = employees.find(e => e.id === selected);
+          downloadCSV(
+            `employee_${emp?.employee_id_code || selected}_${month}.csv`,
+            ['วันที่', 'มาทำงาน', 'หมวก', 'รองเท้า', 'ถุงมือ', 'จุดงาน'],
+            logs.map(l => [l.work_date, l.is_present ? '✓' : '✗', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.assigned_line || ''])
+          );
+        }} />
       </div>
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
@@ -193,6 +273,11 @@ function RangeTab() {
           <span style={{ color: 'var(--muted)' }}>ถึง</span>
           <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
         </div>
+        <CsvBtn onClick={() => downloadCSV(
+          `summary_${from}_${to}.csv`,
+          ['รหัสพนักงาน', 'ชื่อ', 'วันที่มา', 'วันทั้งหมด', '%การมาทำงาน'],
+          rows.map(r => [r.code, r.name, r.present, r.total, r.total ? Math.round(r.present / r.total * 100) + '%' : '0%'])
+        )} />
       </div>
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
@@ -222,44 +307,117 @@ function RangeTab() {
   );
 }
 
+const STATUS_META = {
+  pending:  { label: '⏳ รอ Approve', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)'  },
+  approved: { label: '✅ Approved',   color: '#22c55e', bg: 'rgba(34,197,94,0.12)'   },
+  rejected: { label: '❌ Rejected',   color: '#ef4444', bg: 'rgba(239,68,68,0.12)'   },
+};
+
 function FourMTab() {
+  const { role } = useContext(UserContext);
+  const canApproveLog = (log) => {
+    if (['admin', 'manager'].includes(role)) return true;
+    if (role === 'qa') return log.requires_qa !== false; // qa approves high-severity
+    if (['supervisor', 'leader'].includes(role)) return log.requires_qa === false; // supervisor approves low-severity only
+    return false;
+  };
+
   const today = new Date().toISOString().split('T')[0];
-  const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
-  const [to, setTo] = useState(today);
-  const [line, setLine] = useState('');
-  const [cat, setCat] = useState('');
-  const [logs, setLogs] = useState([]);
-  const [lines, setLines] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [from,        setFrom]        = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
+  const [to,          setTo]          = useState(today);
+  const [line,        setLine]        = useState('');
+  const [cat,         setCat]         = useState('');
+  const [statusFilter,setStatusFilter]= useState('');
+  const [logs,        setLogs]        = useState([]);
+  const [lines,       setLines]       = useState([]);
+  const [loading,     setLoading]     = useState(false);
+  const [rejectModal, setRejectModal] = useState(null); // log id
+  const [rejectReason,setRejectReason]= useState('');
+  const [approverMap, setApproverMap] = useState({}); // userId → fullName
 
   useEffect(() => {
     supabase.from('production_lines').select('name').order('name').then(({ data }) => setLines(data || []));
   }, []);
 
-  useEffect(() => { load(); }, [from, to, line, cat]);
+  useEffect(() => { load(); }, [from, to, line, cat, statusFilter]);
 
   const load = async () => {
     setLoading(true);
-    let q = supabase.from('four_m_logs').select('*')
+    let q = supabase.from('four_m_logs')
+      .select('id, work_date, line_name, category, description, created_at, status, approved_by, approved_at, reject_reason, requires_qa, change_subtype')
       .gte('work_date', from).lte('work_date', to)
       .order('work_date', { ascending: false })
       .order('created_at', { ascending: false });
-    if (line) q = q.eq('line_name', line);
-    if (cat) q = q.eq('category', cat);
+    if (line)         q = q.eq('line_name', line);
+    if (cat)          q = q.eq('category', cat);
+    if (statusFilter) q = q.eq('status', statusFilter);
     const { data } = await q;
     setLogs(data || []);
+
+    // load approver names
+    const ids = [...new Set((data || []).filter(l => l.approved_by).map(l => l.approved_by))];
+    if (ids.length) {
+      const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', ids);
+      const map = {};
+      (profiles || []).forEach(p => { map[p.id] = p.full_name || 'ไม่ระบุ'; });
+      setApproverMap(map);
+    }
     setLoading(false);
   };
 
+  const handleApprove = async (logId) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('four_m_logs').update({
+      status: 'approved', approved_by: user.id, approved_at: new Date().toISOString(), reject_reason: null,
+    }).eq('id', logId);
+    if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
+    toast.success('Approved เรียบร้อย');
+    load();
+  };
+
+  const handleReject = async () => {
+    if (!rejectReason.trim()) { toast.error('กรุณาระบุเหตุผล'); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('four_m_logs').update({
+      status: 'rejected', approved_by: user.id, approved_at: new Date().toISOString(), reject_reason: rejectReason.trim(),
+    }).eq('id', rejectModal);
+    if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
+    toast.success('Rejected แล้ว');
+    setRejectModal(null); setRejectReason('');
+    load();
+  };
+
   const kpi = Object.fromEntries(Object.keys(CAT_META).map(k => [k, logs.filter(l => l.category === k).length]));
+  const pendingCount = logs.filter(l => l.status === 'pending').length;
 
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+      {/* Reject modal */}
+      {rejectModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px 24px 20px', width: 'min(420px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
+            <h3 style={{ margin: '0 0 14px', color: '#ef4444', fontFamily: 'var(--font-display)' }}>❌ ระบุเหตุผลที่ Reject</h3>
+            <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
+              placeholder="เหตุผลที่ไม่อนุมัติ..." rows={3}
+              style={{ width: '100%', borderRadius: 8, padding: '8px 10px', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+            <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+              <button onClick={handleReject}
+                style={{ flex: 2, padding: 11, background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>
+                ยืนยัน Reject
+              </button>
+              <button onClick={() => { setRejectModal(null); setRejectReason(''); }}
+                style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
         {Object.entries(CAT_META).map(([k, m]) => (
           <div key={k} onClick={() => setCat(c => c === k ? '' : k)} style={{
-            background: cat === k ? m.bg : 'var(--card)',
-            border: `1px solid ${cat === k ? m.color : 'var(--border)'}`,
+            background: cat === k ? m.bg : 'var(--card)', border: `1px solid ${cat === k ? m.color : 'var(--border)'}`,
             borderRadius: 10, padding: '12px 14px', cursor: 'pointer', transition: 'all 0.15s'
           }}>
             <div style={{ fontSize: 20 }}>{m.icon}</div>
@@ -268,6 +426,7 @@ function FourMTab() {
           </div>
         ))}
       </div>
+
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }} />
         <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
@@ -280,23 +439,89 @@ function FourMTab() {
           <option value="">ทุกประเภท</option>
           {Object.keys(CAT_META).map(k => <option key={k} value={k}>{k}</option>)}
         </select>
-        <span style={{ color: 'var(--muted)', fontSize: 12 }}>รวม {logs.length} รายการ</span>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
+          <option value="">ทุกสถานะ</option>
+          <option value="pending">⏳ รอ Approve</option>
+          <option value="approved">✅ Approved</option>
+          <option value="rejected">❌ Rejected</option>
+        </select>
+        {pendingCount > 0 && (
+          <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 6, padding: '3px 8px' }}>
+            ⏳ รอ Approve {pendingCount} รายการ
+          </span>
+        )}
+        <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic' }}>⬇️ ดาวน์โหลดได้จากแท็บ Export</span>
       </div>
+
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
-          <table style={{ minWidth: 560 }}>
-            <thead><tr><th>วันที่</th><th>ไลน์</th><th>ประเภท</th><th>รายละเอียดการเปลี่ยนแปลง</th><th>เวลาบันทึก</th></tr></thead>
+          <table style={{ minWidth: 680 }}>
+            <thead>
+              <tr>
+                <th>วันที่</th><th>ไลน์</th><th>ประเภท</th><th>รายละเอียด</th>
+                <th style={{ textAlign: 'center' }}>สถานะ</th>
+                <th style={{ textAlign: 'center', minWidth: 90 }}>ระดับ</th>
+                <th style={{ textAlign: 'center', minWidth: 140 }}>Action</th>
+              </tr>
+            </thead>
             <tbody>
-              {logs.length === 0 ? <EmptyRow cols={5} /> : logs.map(l => {
-                const m = CAT_META[l.category] || {};
-                const ts = l.created_at ? new Date(l.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '—';
+              {logs.length === 0 ? <EmptyRow cols={7} /> : logs.map(l => {
+                const m  = CAT_META[l.category] || {};
+                const sm = STATUS_META[l.status] || STATUS_META.pending;
+                const approverName = l.approved_by ? (approverMap[l.approved_by] || '...') : null;
+                const needsQA = l.requires_qa !== false;
+                const userCanAct = canApproveLog(l);
                 return (
                   <tr key={l.id}>
-                    <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{l.work_date}</td>
+                    <td style={{ fontWeight: 600, whiteSpace: 'nowrap', fontSize: 12 }}>{l.work_date}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.line_name}</td>
                     <td><span style={{ background: m.bg, color: m.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{m.icon} {l.category}</span></td>
-                    <td style={{ fontSize: 13 }}>{l.description}</td>
-                    <td style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{ts}</td>
+                    <td style={{ fontSize: 13 }}>
+                      {l.description}
+                      {l.change_subtype && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{l.change_subtype === 'replace' ? '🔄 Replace' : '⚠️ Change'}</div>}
+                      {l.reject_reason && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>เหตุผล: {l.reject_reason}</div>}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <span style={{ background: sm.bg, color: sm.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{sm.label}</span>
+                        {approverName && <span style={{ fontSize: 9, color: 'var(--muted)' }}>{approverName}</span>}
+                        {l.approved_at && <span style={{ fontSize: 9, color: 'var(--muted)' }}>{new Date(l.approved_at).toLocaleDateString('th-TH')}</span>}
+                      </div>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 5,
+                        background: needsQA ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
+                        color: needsQA ? '#ef4444' : '#22c55e' }}>
+                        {needsQA ? '🔴 QA' : '🟢 SV'}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      {l.status === 'pending' ? (
+                        userCanAct ? (
+                          <div style={{ display: 'flex', gap: 5, justifyContent: 'center' }}>
+                            <button onClick={() => handleApprove(l.id)}
+                              style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
+                              ✅ Approve
+                            </button>
+                            <button onClick={() => { setRejectModal(l.id); setRejectReason(''); }}
+                              style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>
+                              ❌ Reject
+                            </button>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: 10, color: 'var(--muted)' }}>
+                            {needsQA ? 'รอ QA' : 'รอหัวหน้า'}
+                          </span>
+                        )
+                      ) : (
+                        ['admin','manager'].includes(role) && (
+                          <button onClick={() => supabase.from('four_m_logs').update({ status: 'pending', approved_by: null, approved_at: null, reject_reason: null }).eq('id', l.id).then(load)}
+                            style={{ padding: '3px 8px', borderRadius: 5, fontSize: 10, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
+                            Reset
+                          </button>
+                        )
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -308,12 +533,174 @@ function FourMTab() {
   );
 }
 
+/* ── Radar tooltip ── */
+function RadarTooltipContent({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const { subject, value } = payload[0].payload;
+  const lv = getLevel(value);
+  return (
+    <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 12px', fontSize: 12 }}>
+      <div style={{ fontWeight: 700, color: 'var(--text)' }}>{subject}</div>
+      <div style={{ color: lv.color, fontWeight: 800, fontSize: 15 }}>{value}<span style={{ fontSize: 10, fontWeight: 400, marginLeft: 2 }}>/ 100</span></div>
+      <div style={{ fontSize: 10, color: lv.color }}>{lv.label}</div>
+    </div>
+  );
+}
+
+/* ── Radar Panel ── */
+function OperatorRadarPanel({ emp, skillDefs, onClose }) {
+  const skillMap = {};
+  (emp.employee_skills || []).forEach(s => { skillMap[s.skill_name] = s.score; });
+
+  const radarData = skillDefs.map(s => ({
+    subject: s.label,
+    value: skillMap[s.name] ?? 0,
+    color: s.color || '#4d9fff',
+    fullMark: 100,
+  }));
+
+  const scores = radarData.map(d => d.value);
+  const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+  const overall = getLevel(avg);
+
+  /* dynamic gradient based on avg */
+  const glowColor = avg >= 80 ? '#22c55e' : avg >= 60 ? '#84cc16' : avg >= 40 ? '#f59e0b' : '#ef4444';
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 2100,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)',
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: 'min(460px, 94vw)',
+        background: 'var(--bg2)',
+        border: `1px solid ${glowColor}55`,
+        borderRadius: 20,
+        boxShadow: `0 0 40px ${glowColor}33, 0 20px 60px rgba(0,0,0,0.8)`,
+        overflow: 'hidden',
+        animation: 'smSlideUp 0.28s cubic-bezier(0.16,1,0.3,1)',
+      }}>
+        <style>{`
+          @keyframes smSlideUp {
+            from { opacity:0; transform:translateY(30px) scale(0.96); }
+            to   { opacity:1; transform:translateY(0) scale(1); }
+          }
+        `}</style>
+
+        {/* Header stripe */}
+        <div style={{ height: 4, background: `linear-gradient(90deg, ${glowColor}, transparent)` }} />
+
+        {/* Profile section */}
+        <div style={{ padding: '20px 24px 12px', display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <img
+              src={emp.image_url || ''}
+              alt=""
+              onError={e => { e.target.style.display = 'none'; }}
+              style={{ width: 72, height: 72, borderRadius: 14, objectFit: 'cover', border: `2px solid ${glowColor}88`, display: emp.image_url ? 'block' : 'none' }}
+            />
+            {!emp.image_url && (
+              <div style={{
+                width: 72, height: 72, borderRadius: 14,
+                background: `linear-gradient(135deg, ${glowColor}44, ${glowColor}22)`,
+                border: `2px solid ${glowColor}88`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 26, fontWeight: 800, color: glowColor,
+              }}>
+                {(emp.name || '?')[0]}
+              </div>
+            )}
+            {/* Overall ring */}
+            <div style={{
+              position: 'absolute', bottom: -6, right: -6,
+              background: glowColor, color: '#fff',
+              borderRadius: 8, padding: '1px 6px', fontSize: 10, fontWeight: 800,
+              border: '2px solid var(--bg2)',
+            }}>{avg}</div>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text)', lineHeight: 1.2 }}>{emp.name}</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{emp.employee_id_code}</div>
+            <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {emp.group_name && <span style={{ fontSize: 10, background: 'var(--bg3)', color: 'var(--text2)', borderRadius: 5, padding: '2px 7px', border: '1px solid var(--border2)' }}>{emp.group_name}</span>}
+              <span style={{ fontSize: 10, background: `${glowColor}22`, color: glowColor, borderRadius: 5, padding: '2px 7px', border: `1px solid ${glowColor}44`, fontWeight: 700 }}>
+                {overall.label}
+              </span>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', padding: 4, alignSelf: 'flex-start' }}>✕</button>
+        </div>
+
+        {/* Stat bars row */}
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(radarData.length, 4)}, 1fr)`, gap: 6, padding: '0 24px 12px' }}>
+          {radarData.slice(0, 4).map(d => {
+            const lv = getLevel(d.value);
+            return (
+              <div key={d.subject} style={{ background: 'var(--bg3)', borderRadius: 8, padding: '8px 10px', border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 9, color: 'var(--muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.subject}</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: lv.color, fontFamily: 'var(--font-display)' }}>{d.value}</div>
+                <div style={{ height: 3, background: 'var(--border2)', borderRadius: 2, marginTop: 4 }}>
+                  <div style={{ height: '100%', width: `${d.value}%`, background: lv.color, borderRadius: 2, transition: 'width 0.6s ease' }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Radar Chart */}
+        <div style={{ padding: '0 12px 16px' }}>
+          <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Skill Radar</div>
+          <ResponsiveContainer width="100%" height={240}>
+            <RadarChart data={radarData} margin={{ top: 10, right: 30, bottom: 10, left: 30 }}>
+              <PolarGrid stroke="var(--border2)" />
+              <PolarAngleAxis
+                dataKey="subject"
+                tick={{ fill: 'var(--text2)', fontSize: 11, fontFamily: 'var(--font-body)' }}
+              />
+              <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
+              <Radar
+                dataKey="value"
+                stroke={glowColor}
+                fill={glowColor}
+                fillOpacity={0.25}
+                strokeWidth={2}
+                dot={{ r: 4, fill: glowColor, strokeWidth: 0 }}
+              />
+              <Tooltip content={<RadarTooltipContent />} />
+            </RadarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* All skill bars (if > 4 skills) */}
+        {radarData.length > 4 && (
+          <div style={{ padding: '0 24px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {radarData.slice(4).map(d => {
+              const lv = getLevel(d.value);
+              return (
+                <div key={d.subject} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', width: 90, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.subject}</div>
+                  <div style={{ flex: 1, height: 6, background: 'var(--border2)', borderRadius: 3 }}>
+                    <div style={{ height: '100%', width: `${d.value}%`, background: lv.color, borderRadius: 3 }} />
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: lv.color, width: 28, textAlign: 'right' }}>{d.value}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SkillMatrixTab() {
-  const [skillDefs, setSkillDefs] = useState([]);
-  const [employees, setEmployees] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [filterLine, setFilterLine] = useState('');
-  const [lines, setLines] = useState([]);
+  const [skillDefs,    setSkillDefs]    = useState([]);
+  const [employees,    setEmployees]    = useState([]);
+  const [loading,      setLoading]      = useState(false);
+  const [filterLine,   setFilterLine]   = useState('');
+  const [lines,        setLines]        = useState([]);
+  const [selectedEmp,  setSelectedEmp]  = useState(null);
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name').order('name').then(({ data }) => setLines(data || []));
@@ -324,11 +711,12 @@ function SkillMatrixTab() {
 
   const load = async () => {
     setLoading(true);
+    const baseSelect = 'id, name, employee_id_code, image_url, group_name, line_id, employee_skills(skill_name, score)';
     const [{ data: defs }, { data: emps }] = await Promise.all([
       supabase.from('skill_definitions').select('*').order('sort_order'),
       filterLine
-        ? supabase.from('employees').select('id, name, employee_id_code, line_id, employee_skills(skill_name, score)').eq('is_active', true).eq('line_id', filterLine).order('name')
-        : supabase.from('employees').select('id, name, employee_id_code, line_id, employee_skills(skill_name, score)').eq('is_active', true).order('name'),
+        ? supabase.from('employees').select(baseSelect).eq('is_active', true).eq('line_id', filterLine).order('name')
+        : supabase.from('employees').select(baseSelect).eq('is_active', true).order('name'),
     ]);
     setSkillDefs(defs || []);
     setEmployees(emps || []);
@@ -337,13 +725,24 @@ function SkillMatrixTab() {
 
   return (
     <div>
+      {selectedEmp && (
+        <OperatorRadarPanel
+          emp={selectedEmp}
+          skillDefs={skillDefs}
+          onClose={() => setSelectedEmp(null)}
+        />
+      )}
+
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
         <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
           <option value="">ทุกไลน์</option>
           {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>{employees.length} คน · {skillDefs.length} สกิล</span>
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>· คลิกที่พนักงานเพื่อดู Radar Chart</span>
+        <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic' }}>⬇️ ดาวน์โหลดได้จากแท็บ Export</span>
       </div>
+
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         {SKILL_LEVELS.map(lv => (
           <span key={lv.label} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: lv.bg, color: lv.color, border: `1px solid ${lv.color}40` }}>
@@ -352,11 +751,13 @@ function SkillMatrixTab() {
         ))}
         <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>— ยังไม่ประเมิน</span>
       </div>
+
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
-          <table style={{ minWidth: 300 + skillDefs.length * 90 }}>
+          <table style={{ minWidth: 220 + skillDefs.length * 90 }}>
             <thead>
               <tr>
+                <th style={{ minWidth: 44, textAlign: 'center' }}>รูป</th>
                 <th style={{ minWidth: 130, textAlign: 'left' }}>พนักงาน</th>
                 {skillDefs.map(s => (
                   <th key={s.name} style={{ minWidth: 88, textAlign: 'center', fontSize: 11 }}>
@@ -367,14 +768,43 @@ function SkillMatrixTab() {
               </tr>
             </thead>
             <tbody>
-              {employees.length === 0 ? <EmptyRow cols={1 + skillDefs.length} /> : employees.map(emp => {
+              {employees.length === 0 ? <EmptyRow cols={2 + skillDefs.length} /> : employees.map(emp => {
                 const skillMap = {};
                 (emp.employee_skills || []).forEach(s => { skillMap[s.skill_name] = s.score; });
+                const scores = skillDefs.map(s => skillMap[s.name] ?? 0);
+                const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+                const avgLv = getLevel(avg);
+
                 return (
-                  <tr key={emp.id}>
+                  <tr
+                    key={emp.id}
+                    onClick={() => setSelectedEmp(emp)}
+                    style={{ cursor: 'pointer', transition: 'background 0.15s' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                    onMouseLeave={e => e.currentTarget.style.background = ''}
+                  >
+                    <td style={{ textAlign: 'center', padding: '8px 6px' }}>
+                      {emp.image_url ? (
+                        <img src={emp.image_url} alt="" style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'cover', border: `2px solid ${avgLv.color}66`, display: 'block', margin: '0 auto' }} />
+                      ) : (
+                        <div style={{
+                          width: 38, height: 38, borderRadius: 10, margin: '0 auto',
+                          background: `${avgLv.color}22`, border: `2px solid ${avgLv.color}55`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 15, fontWeight: 800, color: avgLv.color,
+                        }}>
+                          {(emp.name || '?')[0]}
+                        </div>
+                      )}
+                    </td>
                     <td>
                       <div style={{ fontWeight: 600, fontSize: 13 }}>{emp.name}</div>
                       <div style={{ fontSize: 10, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
+                      {scores.length > 0 && (
+                        <div style={{ marginTop: 3, display: 'inline-block', fontSize: 9, fontWeight: 700, color: avgLv.color, background: avgLv.bg, borderRadius: 4, padding: '1px 5px' }}>
+                          avg {avg}%
+                        </div>
+                      )}
                     </td>
                     {skillDefs.map(s => {
                       const score = skillMap[s.name];
@@ -400,11 +830,498 @@ function SkillMatrixTab() {
   );
 }
 
-// ─── PDF Export ────────────────────────────────────────────
+/* ══════════════════════════════════════════════════════════════
+   🏅 MultiSkillFormTab — MULTI SKILL OF OPERATORS export
+   ══════════════════════════════════════════════════════════════ */
+
+const MS_LEVELS = [
+  { level: 4, pct: '100%',   label: 'สามารถสอนงานผู้อื่นได้',                          color: '#166534', bg: '#bbf7d0', border: '#16a34a' },
+  { level: 3, pct: '75-99%', label: 'สามารถแก้ปัญหาและตัดสินใจในการทำงานได้',          color: '#1e3a5f', bg: '#bfdbfe', border: '#3b82f6' },
+  { level: 2, pct: '50-74%', label: 'ปฏิบัติงานได้โดยไม่ต้องมีผู้แนะนำ',              color: '#713f12', bg: '#fef9c3', border: '#eab308' },
+  { level: 1, pct: '25-49%', label: 'ผ่านการอบรม(OJT)และปฏิบัติงานได้โดยมีผู้แนะนำ', color: '#7c2d12', bg: '#fed7aa', border: '#f97316' },
+  { level: 0, pct: '0-24%',  label: 'อยู่ระหว่างการฝึกอบรม',                           color: '#7f1d1d', bg: '#fecaca', border: '#ef4444' },
+];
+
+function scoreToLevel(score) {
+  if (score === undefined || score === null) return 0;
+  if (score >= 100) return 4;
+  if (score >= 75)  return 3;
+  if (score >= 50)  return 2;
+  if (score >= 25)  return 1;
+  return 0;
+}
+
+const msStyle = (lv) => MS_LEVELS.find(l => l.level === lv) || { bg: '#fff', color: '#999', border: '#ccc' };
+
+/* ── SVG Skill Gauge — circle quartered like factory skill matrix form ── */
+/* Fill order clockwise: bottom-left → bottom-right → top-right → top-left  */
+const GAUGE_FILL = ['none', '#f97316', '#eab308', '#3b82f6', '#22c55e'];
+const GAUGE_STROKE = ['#9ca3af', '#f97316', '#ca8a04', '#2563eb', '#16a34a'];
+
+/* SVG arc paths for each quadrant (cx=17, cy=17, r=15, clockwise fill)
+   L1=bottom-left  L2=+bottom-right  L3=+top-right  L4=+top-left        */
+const Q_PATHS = [
+  'M17,17 L2,17 A15,15 0 0,1 17,32 Z',   // bottom-left
+  'M17,17 L17,32 A15,15 0 0,1 32,17 Z',  // bottom-right
+  'M17,17 L32,17 A15,15 0 0,1 17,2 Z',   // top-right
+  'M17,17 L17,2 A15,15 0 0,1 2,17 Z',    // top-left
+];
+
+function SkillGauge({ level, size = 34 }) {
+  const fill   = GAUGE_FILL[level]   || 'none';
+  const stroke = GAUGE_STROKE[level] || '#9ca3af';
+  return (
+    <svg width={size} height={size} viewBox="0 0 34 34" xmlns="http://www.w3.org/2000/svg" style={{ display: 'block', margin: 'auto' }}>
+      <circle cx="17" cy="17" r="15" fill="none" stroke={stroke} strokeWidth="1.5"/>
+      {Q_PATHS.slice(0, level).map((d, i) => <path key={i} d={d} fill={fill} opacity="0.85"/>)}
+      <line x1="17" y1="2"  x2="17" y2="32" stroke={stroke} strokeWidth="1"/>
+      <line x1="2"  y1="17" x2="32" y2="17" stroke={stroke} strokeWidth="1"/>
+      <circle cx="17" cy="17" r="15" fill="none" stroke={stroke} strokeWidth="1.5"/>
+    </svg>
+  );
+}
+
+/* inline SVG string for PDF export */
+function skillGaugeSvgStr(lv) {
+  const fill   = GAUGE_FILL[lv]   || 'none';
+  const stroke = GAUGE_STROKE[lv] || '#9ca3af';
+  const sectors = Q_PATHS.slice(0, lv)
+    .map(d => `<path d="${d}" fill="${fill}" opacity="0.85"/>`)
+    .join('');
+  return `<svg width="26" height="26" viewBox="0 0 34 34" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="17" cy="17" r="15" fill="none" stroke="${stroke}" stroke-width="1.5"/>
+    ${sectors}
+    <line x1="17" y1="2" x2="17" y2="32" stroke="${stroke}" stroke-width="1"/>
+    <line x1="2" y1="17" x2="32" y2="17" stroke="${stroke}" stroke-width="1"/>
+    <circle cx="17" cy="17" r="15" fill="none" stroke="${stroke}" stroke-width="1.5"/>
+  </svg>`;
+}
+
+function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps }) {
+  const today = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  const levelCell = (lv) =>
+    `<td style="text-align:center;border:1px solid #999;padding:2px">${skillGaugeSvgStr(lv)}</td>`;
+
+  const skillHeaderCells = skillDefs.map(s =>
+    `<th style="border:1px solid #666;background:#e5e7eb;padding:3px 2px;font-size:9px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:90px;white-space:nowrap">${s.label}</th>`
+  ).join('');
+
+  const empRowsHtml = empRows.map(({ emp, levels, overall, index }) => `
+    <tr>
+      <td style="text-align:center;border:1px solid #999;white-space:nowrap">${index}</td>
+      <td style="border:1px solid #999;padding:0 3px;white-space:nowrap;font-size:9px">${emp.employee_id_code || ''}</td>
+      <td style="border:1px solid #999;padding:0 3px;font-size:9px">${emp.name || ''}</td>
+      <td style="border:1px solid #999;padding:0 3px;font-size:9px">${emp.position || ''}</td>
+      ${levels.map(levelCell).join('')}${levelCell(overall)}
+    </tr>`).join('');
+
+  const summaryRowsHtml = MS_LEVELS.map((lv, li) => {
+    const fillHex = GAUGE_FILL[lv.level] === 'none' ? '' : `background:${lv.bg + "33"};`;
+    return `<tr>
+      <td style="border:1px solid #999;padding:2px;text-align:center;vertical-align:middle">${skillGaugeSvgStr(lv.level)}</td>
+      <td style="border:1px solid #999;padding:2px 4px;font-size:9px">${lv.pct} — ${lv.label}</td>
+      ${levelCounts[li].map(cnt =>
+        `<td style="text-align:center;border:1px solid #999;font-size:9px;font-weight:700;${cnt > 0 ? fillHex : ''}">${cnt || ''}</td>`
+      ).join('')}
+    </tr>`;
+  }).join('');
+
+  const legendHtml = MS_LEVELS.map(lv => {
+    const s = msStyle(lv.level);
+    return `<tr>
+      <td style="padding:2px 4px;text-align:center;border:1px solid #ccc;vertical-align:middle">${skillGaugeSvgStr(lv.level)}</td>
+      <td style="padding:1px 6px;font-size:8px">${lv.pct} — ${lv.label}</td>
+    </tr>`;
+  }).join('');
+
+  return `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/>
+<title>MULTI SKILL OF OPERATORS</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}body{font-family:'Sarabun',sans-serif;font-size:10px;background:#fff;color:#000}
+  .page{padding:8mm}table{border-collapse:collapse;font-size:10px}
+  @media print{@page{size:A3 landscape;margin:6mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head><body><div class="page">
+  <table style="width:100%;margin-bottom:4px"><tr>
+    <td style="vertical-align:top;width:22%">
+      <div style="font-size:9px;line-height:2">
+        <div>ฝ่าย : <strong>${dept}</strong></div>
+        <div>ส่วน : <strong>${section}</strong></div>
+        <div>แผนก : <strong>${department}</strong></div>
+        <div>หัวหน้าแผนก : <strong>${headName}</strong></div>
+      </div>
+    </td>
+    <td style="vertical-align:top;text-align:center;width:50%">
+      <div style="font-size:14px;font-weight:800;margin-bottom:6px">MULTI SKILL OF OPERATORS</div>
+      <table style="margin:0 auto;font-size:8px">${legendHtml}</table>
+    </td>
+    <td style="vertical-align:top;width:28%">
+      <table style="width:100%;font-size:8px;border-collapse:collapse">
+        <tr>
+          <th style="border:1px solid #666;background:#f3f4f6;padding:2px;text-align:center">จัดทำโดย</th>
+          <th style="border:1px solid #666;background:#f3f4f6;padding:2px;text-align:center">ตรวจสอบโดย</th>
+          <th style="border:1px solid #666;background:#f3f4f6;padding:2px;text-align:center">อนุมัติโดย</th>
+        </tr>
+        <tr style="height:40px">
+          <td style="border:1px solid #666"></td><td style="border:1px solid #666"></td><td style="border:1px solid #666"></td>
+        </tr>
+        <tr>
+          <td style="border:1px solid #666;padding:2px;text-align:center">(${maker || '......................'})</td>
+          <td style="border:1px solid #666;padding:2px;text-align:center">(${checker || '......................'})</td>
+          <td style="border:1px solid #666;padding:2px;text-align:center">(${approver || '......................'})</td>
+        </tr>
+        <tr>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">หัวหน้าแผนก</td>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">วิศวกร/หัวหน้าส่วน</td>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">ผู้จัดการส่วนผลิต</td>
+        </tr>
+        <tr>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">วันที่ .................</td>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">วันที่ .................</td>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">วันที่ .................</td>
+        </tr>
+      </table>
+    </td>
+  </tr></table>
+  <table style="width:100%"><thead>
+    <tr style="background:#d1d5db">
+      <th style="border:1px solid #666;padding:3px;text-align:center;width:24px" rowspan="2">ลำดับ</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;width:70px" rowspan="2">เลขที่บัตร</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:110px" rowspan="2">ชื่อ-นามสกุล</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:80px" rowspan="2">ตำแหน่ง</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center" colspan="${skillDefs.length + 1}">ทักษะความสามารถการปฏิบัติงานของพนักงาน</th>
+    </tr>
+    <tr style="background:#e5e7eb">${skillHeaderCells}
+      <th style="border:1px solid #666;background:#d1fae5;padding:3px 2px;font-size:9px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:90px;white-space:nowrap">ทักษะโดยรวม</th>
+    </tr>
+  </thead><tbody>${empRowsHtml}</tbody></table>
+  <div style="margin-top:10px">
+    <table style="width:100%"><thead>
+      <tr style="background:#d1d5db">
+        <th style="border:1px solid #666;padding:3px;font-size:9px;text-align:center" colspan="2">ระดับความสามารถ</th>
+        ${skillDefs.map(s => `<th style="border:1px solid #666;background:#e5e7eb;padding:3px 2px;font-size:9px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:70px;white-space:nowrap">${s.label}</th>`).join('')}
+        <th style="border:1px solid #666;background:#d1fae5;padding:3px 2px;font-size:9px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:70px;white-space:nowrap">ทักษะโดยรวม</th>
+      </tr>
+    </thead><tbody>
+      ${summaryRowsHtml}
+      <tr style="background:#f3f4f6;font-weight:700">
+        <td colspan="2" style="border:1px solid #999;text-align:center;padding:2px;font-size:9px">รวมพนักงานทั้งหมด</td>
+        ${skillDefs.map(() => `<td style="text-align:center;border:1px solid #999;font-size:9px">${totalEmps}</td>`).join('')}
+        <td style="text-align:center;border:1px solid #999;font-size:9px">${totalEmps}</td>
+      </tr>
+    </tbody></table>
+  </div>
+  <div style="margin-top:6px;font-size:8px;color:#555">พิมพ์วันที่ ${today} · จำนวนพนักงาน ${totalEmps} คน</div>
+</div>
+<script>window.onload = () => { window.print(); }</script></body></html>`;
+}
+
+function MultiSkillFormTab() {
+  const [skillDefs,  setSkillDefs]  = useState([]);
+  const [employees,  setEmployees]  = useState([]);
+  const [lines,      setLines]      = useState([]);
+  const [loading,    setLoading]    = useState(false);
+  const [filterLine, setFilterLine] = useState('');
+
+  // Header info inputs
+  const [dept,       setDept]       = useState('Production');
+  const [section,    setSection]    = useState('');
+  const [department, setDepartment] = useState('');
+  const [headName,   setHeadName]   = useState('');
+  const [maker,      setMaker]      = useState('');
+  const [checker,    setChecker]    = useState('');
+  const [approver,   setApprover]   = useState('');
+
+  useEffect(() => {
+    supabase.from('production_lines').select('id, name').order('name')
+      .then(({ data }) => setLines(data || []));
+    supabase.from('skill_definitions').select('*').order('sort_order')
+      .then(({ data }) => setSkillDefs(data || []));
+  }, []);
+
+  const load = async () => {
+    setLoading(true);
+    const sel = 'id, name, employee_id_code, position, section, team, employee_skills(skill_name, score)';
+    const q = filterLine
+      ? supabase.from('employees').select(sel).eq('is_active', true).eq('line_id', filterLine).order('name')
+      : supabase.from('employees').select(sel).eq('is_active', true).order('name');
+    const { data } = await q;
+    setEmployees(data || []);
+    setLoading(false);
+  };
+
+  const handlePrint = () => {
+    const empRows = employees.map((emp, i) => {
+      const sm = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
+      const levels = skillDefs.map(s => scoreToLevel(sm[s.name]));
+      const validLevels = levels.filter(l => l > 0);
+      const overall = validLevels.length
+        ? Math.round(validLevels.reduce((a, b) => a + b, 0) / validLevels.length)
+        : 0;
+      return { emp, levels, overall, index: i + 1 };
+    });
+    const levelCounts = MS_LEVELS.map(lv => [
+      ...skillDefs.map((_, si) => empRows.filter(r => r.levels[si] === lv.level).length),
+      empRows.filter(r => r.overall === lv.level).length,
+    ]);
+    const html = buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps: empRows.length });
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+  };
+
+  const msLevelColor = (lv) => {
+    const m = msStyle(lv);
+    return { bg: m.bg || 'var(--bg3)', color: m.color || 'var(--muted)' };
+  };
+
+  // Precompute per-employee levels once (avoids O(n*skills) recalculation on every render)
+  const empLevelRows = useMemo(() => employees.map(emp => {
+    const sm = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
+    const levels = skillDefs.map(s => scoreToLevel(sm[s.name]));
+    const validLevels = levels.filter(l => l > 0);
+    const overall = validLevels.length
+      ? Math.round(validLevels.reduce((a, b) => a + b, 0) / validLevels.length)
+      : 0;
+    return { emp, levels, overall };
+  }), [employees, skillDefs]);
+
+  // Precompute summary counts (avoids O(levels*skills*employees) inline in JSX)
+  const summaryCounts = useMemo(() => MS_LEVELS.map(lv => ({
+    lv,
+    counts: skillDefs.map((_, si) => empLevelRows.filter(r => r.levels[si] === lv.level).length),
+    total:  empLevelRows.filter(r => r.overall === lv.level).length,
+  })), [empLevelRows, skillDefs]);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Filters + header inputs */}
+      <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
+        <div>
+          <span style={lbSt}>ไลน์ผลิต</span>
+          <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            <option value="">ทุกไลน์</option>
+            {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+        </div>
+        <button onClick={load} disabled={loading}
+          style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
+        </button>
+      </div>
+
+      {employees.length > 0 && (
+        <>
+          {/* Document header inputs */}
+          <div className="card">
+            <div style={{ fontWeight: 700, marginBottom: 12, color: 'var(--text2)', fontSize: 13 }}>ข้อมูลหัวเอกสาร</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
+              {[
+                { label: 'ฝ่าย', val: dept,       set: setDept },
+                { label: 'ส่วน', val: section,    set: setSection },
+                { label: 'แผนก', val: department, set: setDepartment },
+                { label: 'หัวหน้าแผนก', val: headName, set: setHeadName },
+                { label: 'จัดทำโดย', val: maker,   set: setMaker },
+                { label: 'ตรวจสอบโดย', val: checker, set: setChecker },
+                { label: 'อนุมัติโดย', val: approver, set: setApprover },
+              ].map(({ label, val, set }) => (
+                <div key={label}>
+                  <span style={lbSt}>{label}</span>
+                  <input value={val} onChange={e => set(e.target.value)} style={{ width: '100%', padding: '6px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)' }} />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Preview */}
+          <div className="card" style={{ overflowX: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div>
+                <span style={{ fontWeight: 700, fontSize: 15 }}>MULTI SKILL OF OPERATORS</span>
+                <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 10 }}>{employees.length} คน · {skillDefs.length} ทักษะ</span>
+              </div>
+              <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic' }}>🖨️ พิมพ์ได้จากแท็บ Export</span>
+            </div>
+
+            {/* Legend */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+              {MS_LEVELS.map(lv => (
+                <div key={lv.level} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 8, background: lv.level > 0 ? lv.bg + "33" : 'var(--bg3)', border: `1px solid ${lv.level > 0 ? lv.border : 'var(--border)'}` }}>
+                  <SkillGauge level={lv.level} size={20} />
+                  <span style={{ fontSize: 10, color: lv.level > 0 ? lv.color : 'var(--muted)', fontWeight: lv.level > 0 ? 700 : 400 }}>
+                    {lv.pct} · {lv.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <table style={{ minWidth: 300 + skillDefs.length * 70, borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', width: 30, textAlign: 'center' }}>#</th>
+                  <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', width: 80 }}>รหัส</th>
+                  <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120 }}>ชื่อ-สกุล</th>
+                  <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 80 }}>ตำแหน่ง</th>
+                  {skillDefs.map(s => (
+                    <th key={s.name} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 68, textAlign: 'center', fontSize: 10, verticalAlign: 'bottom' }}>
+                      {s.label}
+                    </th>
+                  ))}
+                  <th style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'rgba(34,197,94,0.12)', color: '#22c55e', width: 68, textAlign: 'center', fontSize: 10, verticalAlign: 'bottom' }}>ทักษะโดยรวม</th>
+                </tr>
+              </thead>
+              <tbody>
+                {empLevelRows.map(({ emp, levels, overall }, i) => (
+                  <tr key={emp.id}>
+                    <td style={{ border: '1px solid var(--border2)', textAlign: 'center', color: 'var(--muted)', fontSize: 11 }}>{i+1}</td>
+                    <td style={{ border: '1px solid var(--border2)', padding: '3px 5px', fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code}</td>
+                    <td style={{ border: '1px solid var(--border2)', padding: '3px 5px', fontWeight: 500 }}>{emp.name}</td>
+                    <td style={{ border: '1px solid var(--border2)', padding: '3px 5px', fontSize: 11, color: 'var(--text2)' }}>{emp.position || ''}</td>
+                    {levels.map((lv, si) => (
+                      <td key={si} style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '4px 2px' }}>
+                        <SkillGauge level={lv} size={30} />
+                      </td>
+                    ))}
+                    <td style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '4px 2px', background: overall > 0 ? msStyle(overall).bg + "22" : '' }}>
+                      <SkillGauge level={overall} size={30} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Summary count table */}
+            <div style={{ marginTop: 16 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: 'var(--text2)' }}>สรุปจำนวนพนักงานแยกตามระดับ</div>
+              <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr>
+                    <th style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 60 }}>ระดับ</th>
+                    <th style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 120 }}>ความหมาย</th>
+                    {skillDefs.map(s => (
+                      <th key={s.name} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 68, textAlign: 'center', fontSize: 10 }}>{s.label}</th>
+                    ))}
+                    <th style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'rgba(34,197,94,0.12)', color: '#22c55e', width: 68, textAlign: 'center', fontSize: 10 }}>รวม</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summaryCounts.map(({ lv, counts, total }) => {
+                    const c = msLevelColor(lv.level);
+                    return (
+                      <tr key={lv.level}>
+                        <td style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '4px 6px', background: lv.level > 0 ? lv.bg + "33" : '' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                            <SkillGauge level={lv.level} size={22} />
+                            <span style={{ fontSize: 10, color: 'var(--muted)' }}>{lv.pct}</span>
+                          </div>
+                        </td>
+                        <td style={{ border: '1px solid var(--border2)', padding: '3px 8px', fontSize: 11, color: 'var(--text2)' }}>{lv.label}</td>
+                        {counts.map((cnt, i) => (
+                          <td key={i} style={{ border: '1px solid var(--border2)', textAlign: 'center', fontWeight: cnt > 0 ? 700 : 400, color: cnt > 0 ? (lv.level > 0 ? c.color : 'var(--muted)') : 'var(--muted)' }}>
+                            {cnt || ''}
+                          </td>
+                        ))}
+                        <td style={{ border: '1px solid var(--border2)', textAlign: 'center', fontWeight: 700, color: total > 0 ? '#22c55e' : 'var(--muted)' }}>{total || ''}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {!loading && employees.length === 0 && (
+        <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>
+          เลือกไลน์และกด "ดึงข้อมูล" เพื่อแสดง Multi-Skill Matrix
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Export Tab ─────────────────────────────────────────────
 const SUMCOLS = ['ส', 'ป', 'ก', 'พง', 'กธ', 'บป', 'ข', 'มต'];
 const TH_MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 
-function ExportPdfTab() {
+/* ── Quick CSV export section at top of Export tab ── */
+function QuickCsvSection() {
+  const today = new Date().toISOString().split('T')[0];
+  const thisMonth = today.slice(0, 7);
+  const [isLoading, setIsLoading] = useState({});
+
+  const run = (key, fn) => async () => {
+    setIsLoading(p => ({ ...p, [key]: true }));
+    await fn();
+    setIsLoading(p => ({ ...p, [key]: false }));
+  };
+
+  const exportDailyCSV = async (date = today) => {
+    const { data } = await supabase.from('daily_production_logs')
+      .select('work_date, employees(name, employee_id_code, department), is_present, has_helmet, has_boots, has_gloves, has_ot, leave_type, remark')
+      .eq('work_date', date);
+    downloadCSV(`daily_${date}.csv`,
+      ['วันที่', 'รหัส', 'ชื่อ', 'แผนก', 'มาทำงาน', 'หมวก', 'รองเท้า', 'ถุงมือ', 'OT', 'ลา', 'หมายเหตุ'],
+      (data || []).map(l => [l.work_date, l.employees?.employee_id_code, l.employees?.name, l.employees?.department || '', l.is_present ? '✓' : '✗', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.has_ot ? '✓' : '', l.leave_type || '', l.remark || ''])
+    );
+  };
+
+  const exportFourMCSV = async () => {
+    const from = thisMonth + '-01'; const to = thisMonth + '-31';
+    const { data } = await supabase.from('four_m_logs').select('*').gte('work_date', from).lte('work_date', to).order('work_date');
+    downloadCSV(`4m_changes_${thisMonth}.csv`,
+      ['วันที่', 'ไลน์', 'ประเภท', 'รายละเอียด', 'เวลา'],
+      (data || []).map(l => [l.work_date, l.line_name, l.category, l.description, l.created_at ? new Date(l.created_at).toLocaleString('th-TH') : ''])
+    );
+  };
+
+  const exportSkillCSV = async () => {
+    const [{ data: defs }, { data: emps }] = await Promise.all([
+      supabase.from('skill_definitions').select('*').order('sort_order'),
+      supabase.from('employees').select('name, employee_id_code, department, employee_skills(skill_name, score)').eq('is_active', true).order('employee_id_code'),
+    ]);
+    const headers = ['รหัส', 'ชื่อ', 'แผนก', ...(defs || []).map(d => d.label), 'เฉลี่ย'];
+    const rows = (emps || []).map(emp => {
+      const sm = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
+      const scores = (defs || []).map(d => sm[d.name] ?? 0);
+      const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+      return [emp.employee_id_code, emp.name, emp.department || '', ...scores, avg];
+    });
+    downloadCSV(`skill_matrix_${today}.csv`, headers, rows);
+  };
+
+  const QUICK_EXPORTS = [
+    { key: 'daily',  icon: '📋', label: 'เช็คชื่อวันนี้',     sub: today,           fn: () => exportDailyCSV(today) },
+    { key: 'fourm',  icon: '🚨', label: '4M Changes เดือนนี้', sub: thisMonth,       fn: exportFourMCSV },
+    { key: 'skill',  icon: '📊', label: 'Skill Matrix ทั้งหมด', sub: 'ข้อมูลล่าสุด', fn: exportSkillCSV },
+  ];
+
+  return (
+    <div className="card" style={{ padding: '18px 20px', marginBottom: 20 }}>
+      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text)' }}>⬇️ Export CSV — ดาวน์โหลดด่วน</div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {QUICK_EXPORTS.map(item => (
+          <button key={item.key} onClick={run(item.key, item.fn)} disabled={isLoading[item.key]}
+            style={{
+              padding: '12px 18px', borderRadius: 10, border: '1px solid rgba(34,197,94,0.3)',
+              background: isLoading[item.key] ? 'var(--bg3)' : 'rgba(34,197,94,0.08)',
+              color: '#22c55e', cursor: isLoading[item.key] ? 'not-allowed' : 'pointer',
+              display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 3, minWidth: 160,
+              opacity: isLoading[item.key] ? 0.6 : 1,
+            }}>
+            <span style={{ fontSize: 20 }}>{item.icon}</span>
+            <span style={{ fontWeight: 700, fontSize: 13 }}>{isLoading[item.key] ? 'กำลังดาวน์โหลด...' : item.label}</span>
+            <span style={{ fontSize: 10, color: 'var(--muted)' }}>{item.sub}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ExportTab({ goToTab }) {
   const [lines,      setLines]      = useState([]);
   const [lineId,     setLineId]     = useState('');
   const [month,      setMonth]      = useState(new Date().toISOString().slice(0, 7));
@@ -473,8 +1390,10 @@ function ExportPdfTab() {
         }
       `}</style>
 
+      <QuickCsvSection />
+
       <div className="card" style={{ padding: '18px 20px', marginBottom: 20 }}>
-        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text)' }}>📄 Export รายงาน PDF</div>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text)' }}>📄 ใบบันทึก / ใบสั่ง OT</div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div>
             <div style={lbSt}>ประเภทรายงาน</div>
@@ -548,6 +1467,275 @@ function ExportPdfTab() {
           }
         </div>
       )}
+
+      <SkillAllowanceExportCard />
+      <MultiSkillExportCard />
+    </div>
+  );
+}
+
+/* ── Compact export cards embedded in ExportTab ── */
+
+function SkillAllowanceExportCard() {
+  const today = new Date();
+  const [year,    setYear]    = useState(today.getFullYear());
+  const [month,   setMonth]   = useState(today.getMonth() + 1);
+  const [period,  setPeriod]  = useState(1);
+  const [line,    setLine]    = useState('');
+  const [section, setSection] = useState('');
+  const [lines,   setLines]   = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    supabase.from('production_lines').select('name, section').order('name')
+      .then(({ data }) => setLines(data || []));
+  }, []);
+
+  const periodDays = () => {
+    const dim = new Date(year, month, 0).getDate();
+    return period === 1
+      ? Array.from({ length: 15 }, (_, i) => i + 1)
+      : Array.from({ length: dim - 15 }, (_, i) => i + 16);
+  };
+
+  const handlePrint = async () => {
+    setLoading(true);
+    const days = periodDays();
+    const pad = d => String(d).padStart(2, '0');
+    const startDate = `${year}-${pad(month)}-${pad(days[0])}`;
+    const endDate   = `${year}-${pad(month)}-${pad(days[days.length - 1])}`;
+
+    let stQ = supabase.from('workstations').select('id, station_name, line_name').eq('skill_allowance', true);
+    if (line) stQ = stQ.eq('line_name', line);
+    const { data: stations } = await stQ;
+    if (!stations?.length) { toast.info('ไม่พบตำแหน่งที่ได้ค่าฝีมือ'); setLoading(false); return; }
+
+    const stationIds = stations.map(s => String(s.id));
+    const { data: logs } = await supabase
+      .from('daily_production_logs')
+      .select('work_date, employee_id, employees(employee_id_code, name, section, team)')
+      .gte('work_date', startDate).lte('work_date', endDate)
+      .eq('is_present', true).eq('has_helmet', true).eq('has_boots', true).eq('has_gloves', true)
+      .in('assigned_line', stationIds);
+
+    const empMap = {};
+    (logs || []).forEach(log => {
+      const d = parseInt(log.work_date.split('-')[2]);
+      if (!empMap[log.employee_id]) empMap[log.employee_id] = { emp: log.employees, days: {} };
+      empMap[log.employee_id].days[d] = true;
+    });
+
+    const rows = Object.values(empMap)
+      .filter(r => section ? r.emp?.section === section : true)
+      .sort((a, b) => (a.emp?.name || '').localeCompare(b.emp?.name || '', 'th'));
+
+    setLoading(false);
+    if (!rows.length) { toast.info('ไม่มีข้อมูล'); return; }
+
+    const dStr = `${days[0]}-${days[days.length - 1]}`;
+    const sectionLabel = section || (line ? `ไลน์ ${line}` : 'ทุกไลน์');
+    const tableRows = rows.map((r, i) => {
+      const dayCells = days.map(d =>
+        `<td style="text-align:center;border:1px solid #333;font-size:13px">${r.days[d] ? '✓' : ''}</td>`
+      ).join('');
+      const total = Object.keys(r.days).length;
+      return `<tr>
+        <td style="text-align:center;border:1px solid #333">${i+1}</td>
+        <td style="border:1px solid #333;white-space:nowrap;padding:0 4px">${r.emp?.employee_id_code || ''}</td>
+        <td style="border:1px solid #333;padding:0 4px">${r.emp?.name || ''}</td>
+        ${dayCells}
+        <td style="text-align:center;border:1px solid #333;font-weight:bold">${total}</td>
+        <td style="border:1px solid #333;width:70px"></td>
+        <td style="border:1px solid #333;width:80px"></td>
+        <td style="border:1px solid #333;width:70px"></td>
+        <td style="border:1px solid #333"></td>
+      </tr>`;
+    }).join('');
+    const extraRows = Math.max(0, 10 - rows.length);
+    const emptyRows = Array.from({ length: extraRows }, (_, i) => `
+      <tr style="height:28px">
+        <td style="text-align:center;border:1px solid #333">${rows.length + i + 1}</td>
+        <td style="border:1px solid #333"></td><td style="border:1px solid #333"></td>
+        ${days.map(() => '<td style="border:1px solid #333"></td>').join('')}
+        <td style="border:1px solid #333"></td><td style="border:1px solid #333"></td>
+        <td style="border:1px solid #333"></td><td style="border:1px solid #333"></td>
+        <td style="border:1px solid #333"></td>
+      </tr>`).join('');
+    const daySumRow = days.map(d => {
+      const cnt = rows.filter(r => r.days[d]).length;
+      return `<td style="text-align:center;border:1px solid #333;font-size:12px">${cnt || 0}</td>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/>
+<title>ใบสรุปค่าฝีมือ ${THAI_MONTHS[month]} ${year + 543}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}body{font-family:'Sarabun',sans-serif;font-size:13px;background:#fff;color:#000}
+  .page{padding:12mm 10mm;width:297mm;min-height:210mm}table{border-collapse:collapse;width:100%;font-size:11px}
+  th{border:1px solid #333;background:#f0f0f0;text-align:center;padding:3px 2px;font-size:11px}
+  td{border:1px solid #333;padding:2px 2px;font-size:11px}
+  @media print{@page{size:A4 landscape;margin:8mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head><body><div class="page">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+    <div style="flex:1;text-align:center"><div style="font-size:16px;font-weight:bold">ใบสรุปการปฏิบัติงานค่าฝีมือ</div></div>
+    <div style="font-size:12px;white-space:nowrap">ฟอร์ม SA-01</div>
+  </div>
+  <div style="margin-bottom:2px">ประจำงวด วันที่ ${dStr} เดือน ${THAI_MONTHS[month]} ปี ${year + 543}</div>
+  <div style="margin-bottom:8px">ส่วนงาน ${sectionLabel}</div>
+  <table><thead>
+    <tr>
+      <th rowspan="2" style="width:28px">ลำดับ</th>
+      <th rowspan="2" style="width:70px">เลขที่บัตรพนักงาน</th>
+      <th rowspan="2" style="min-width:100px">ชื่อ - สกุล</th>
+      <th colspan="${days.length}">เดือน ${THAI_MONTHS[month]} ${year + 543}</th>
+      <th rowspan="2" style="width:30px">รวม</th>
+      <th rowspan="2" style="width:70px">ลายเซ็นพนักงาน</th>
+      <th rowspan="2" style="width:80px">TA ตรวจสอบ</th>
+      <th rowspan="2" style="width:70px">ลายเซ็น TA</th>
+      <th rowspan="2" style="width:50px">หมายเหตุ</th>
+    </tr>
+    <tr>${days.map(d => `<th style="width:22px">${d}</th>`).join('')}</tr>
+  </thead><tbody>
+    ${tableRows}${emptyRows}
+    <tr style="background:#f0f0f0;font-weight:bold">
+      <td colspan="3" style="text-align:center;border:1px solid #333">รวม</td>
+      ${daySumRow}
+      <td style="text-align:center;border:1px solid #333">${rows.reduce((s,r)=>s+Object.keys(r.days).length,0)}</td>
+      <td style="border:1px solid #333" colspan="4"></td>
+    </tr>
+  </tbody></table>
+  <div style="margin-top:10px;font-size:11px;line-height:1.8">
+    <strong>หมายเหตุ :</strong><br/>
+    1. วันที่ 1-15 จะจ่ายในงวดวันที่ 22 ของทุกเดือน<br/>
+    2. วันที่ 16-31 จะจ่ายในงวดวันที่ 7 ของทุกเดือน<br/>
+    3. กรณีใบ Certification ขาดอายุจะถูกระงับการจ่ายค่าฝีมือ<br/>
+    4. พนักงานมีสิทธิ์ได้รับค่าฝีมือต้องปฏิบัติงานครบ 8 ชั่วโมง / วัน
+  </div>
+</div>
+<script>window.onload = () => { window.print(); }</script></body></html>`;
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+  };
+
+  return (
+    <div className="card" style={{ padding: '18px 20px', marginBottom: 16 }}>
+      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text)' }}>💰 ใบสรุปค่าฝีมือ (SA-01)</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
+        <div>
+          <span style={lbSt}>ปี</span>
+          <select value={year} onChange={e => setYear(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            {[today.getFullYear()-1, today.getFullYear(), today.getFullYear()+1].map(y => <option key={y} value={y}>{y+543}</option>)}
+          </select>
+        </div>
+        <div>
+          <span style={lbSt}>เดือน</span>
+          <select value={month} onChange={e => setMonth(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <span style={lbSt}>งวด</span>
+          <select value={period} onChange={e => setPeriod(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            <option value={1}>งวด 1 (1-15)</option>
+            <option value={2}>งวด 2 (16-สิ้นเดือน)</option>
+          </select>
+        </div>
+        <div>
+          <span style={lbSt}>ไลน์</span>
+          <select value={line} onChange={e => setLine(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            <option value="">ทุกไลน์</option>
+            {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+          </select>
+        </div>
+        <button onClick={handlePrint} disabled={loading}
+          style={{ padding: '8px 20px', background: '#f59e0b', color: '#000', border: 'none', borderRadius: 8, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}>
+          {loading ? 'กำลังโหลด...' : '🖨️ พิมพ์ PDF'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MultiSkillExportCard() {
+  const [lines,      setLines]      = useState([]);
+  const [skillDefs,  setSkillDefs]  = useState([]);
+  const [filterLine, setFilterLine] = useState('');
+  const [dept,       setDept]       = useState('Production');
+  const [section,    setSection]    = useState('');
+  const [department, setDepartment] = useState('');
+  const [headName,   setHeadName]   = useState('');
+  const [maker,      setMaker]      = useState('');
+  const [checker,    setChecker]    = useState('');
+  const [approver,   setApprover]   = useState('');
+  const [loading,    setLoading]    = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from('production_lines').select('id, name').order('name'),
+      supabase.from('skill_definitions').select('*').order('sort_order'),
+    ]).then(([{ data: l }, { data: s }]) => { setLines(l || []); setSkillDefs(s || []); });
+  }, []);
+
+  const handlePrint = async () => {
+    setLoading(true);
+    const sel = 'id, name, employee_id_code, position, section, team, employee_skills(skill_name, score)';
+    const q = filterLine
+      ? supabase.from('employees').select(sel).eq('is_active', true).eq('line_id', filterLine).order('name')
+      : supabase.from('employees').select(sel).eq('is_active', true).order('name');
+    const { data } = await q;
+    setLoading(false);
+    const employees = data || [];
+    if (!employees.length) { toast.info('ไม่พบพนักงาน'); return; }
+
+    const empRows = employees.map((emp, i) => {
+      const sm = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
+      const levels = skillDefs.map(s => scoreToLevel(sm[s.name]));
+      const validLevels = levels.filter(l => l > 0);
+      const overall = validLevels.length ? Math.round(validLevels.reduce((a, b) => a + b, 0) / validLevels.length) : 0;
+      return { emp, levels, overall, index: i + 1 };
+    });
+    const levelCounts = MS_LEVELS.map(lv => [
+      ...skillDefs.map((_, si) => empRows.filter(r => r.levels[si] === lv.level).length),
+      empRows.filter(r => r.overall === lv.level).length,
+    ]);
+    const html = buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps: empRows.length });
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+  };
+
+  return (
+    <div className="card" style={{ padding: '18px 20px', marginBottom: 16 }}>
+      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14, color: 'var(--text)' }}>🏅 Multi-Skill Form (MULTI SKILL OF OPERATORS)</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
+        <div>
+          <span style={lbSt}>ไลน์ผลิต</span>
+          <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            <option value="">ทุกไลน์</option>
+            {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+        </div>
+        {[
+          { label: 'ฝ่าย', val: dept,       set: setDept },
+          { label: 'ส่วน', val: section,    set: setSection },
+          { label: 'แผนก', val: department, set: setDepartment },
+          { label: 'หัวหน้าแผนก', val: headName, set: setHeadName },
+          { label: 'จัดทำโดย',    val: maker,   set: setMaker },
+          { label: 'ตรวจสอบโดย', val: checker,  set: setChecker },
+          { label: 'อนุมัติโดย',  val: approver, set: setApprover },
+        ].map(({ label, val, set }) => (
+          <div key={label}>
+            <span style={lbSt}>{label}</span>
+            <input value={val} onChange={e => set(e.target.value)} placeholder={label}
+              style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 130, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)' }} />
+          </div>
+        ))}
+        <button onClick={handlePrint} disabled={loading}
+          style={{ padding: '8px 20px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}>
+          {loading ? 'กำลังโหลด...' : '🖨️ พิมพ์ PDF (A3)'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -755,8 +1943,6 @@ function OTPrint({ employees, dept, thMonthStr }) {
   );
 }
 
-const lbSt = { fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 4, display: 'block' };
-
 const Loader = () => (
   <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
 );
@@ -783,3 +1969,657 @@ const KpiSmall = ({ value, label }) => (
     {value}<span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}> {label}</span>
   </span>
 );
+
+/* ══════════════════════════════════════════════════════════════
+   💰 SkillAllowanceTab — ใบสรุปค่าฝีมือ
+   ══════════════════════════════════════════════════════════════ */
+const THAI_MONTHS = ['', 'มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
+  'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+
+function SkillAllowanceTab() {
+  const today = new Date();
+  const [year,   setYear]   = useState(today.getFullYear());
+  const [month,  setMonth]  = useState(today.getMonth() + 1);
+  const [period, setPeriod] = useState(1); // 1=วันที่ 1-15, 2=วันที่ 16-31
+  const [line,   setLine]   = useState('');
+  const [section, setSection] = useState('');
+  const [lines,  setLines]  = useState([]);
+  const [rows,   setRows]   = useState([]); // [{emp, days:{1:true,...}, total}]
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    supabase.from('production_lines').select('name, section').order('name')
+      .then(({ data }) => setLines(data || []));
+  }, []);
+
+  // ช่วงวันตามงวด
+  const periodDays = () => {
+    const daysInMonth = new Date(year, month, 0).getDate();
+    if (period === 1) return Array.from({ length: 15 }, (_, i) => i + 1);       // 1-15
+    return Array.from({ length: daysInMonth - 15 }, (_, i) => i + 16);           // 16-end
+  };
+
+  const load = async () => {
+    setLoading(true);
+    const days = periodDays();
+    const startDate = `${year}-${String(month).padStart(2,'0')}-${String(days[0]).padStart(2,'0')}`;
+    const endDate   = `${year}-${String(month).padStart(2,'0')}-${String(days[days.length-1]).padStart(2,'0')}`;
+
+    // หา station ที่มี skill_allowance=true
+    let stQ = supabase.from('workstations').select('id, station_name, line_name').eq('skill_allowance', true);
+    if (line) stQ = stQ.eq('line_name', line);
+    const { data: stations } = await stQ;
+    if (!stations?.length) { setRows([]); setLoading(false); return; }
+
+    const stationIds = stations.map(s => String(s.id));
+
+    // logs ที่ qualify
+    const { data: logs } = await supabase
+      .from('daily_production_logs')
+      .select('work_date, employee_id, assigned_line, employees(employee_id_code, name, section, team)')
+      .gte('work_date', startDate)
+      .lte('work_date', endDate)
+      .eq('is_present', true)
+      .eq('has_helmet', true)
+      .eq('has_boots', true)
+      .eq('has_gloves', true)
+      .in('assigned_line', stationIds);
+
+    // group by employee
+    const empMap = {};
+    (logs || []).forEach(log => {
+      const empId = log.employee_id;
+      const day   = parseInt(log.work_date.split('-')[2]);
+      if (!empMap[empId]) empMap[empId] = { emp: log.employees, days: {} };
+      empMap[empId].days[day] = true;
+    });
+
+    const result = Object.values(empMap)
+      .filter(r => section ? r.emp?.section === section : true)
+      .sort((a, b) => (a.emp?.name || '').localeCompare(b.emp?.name || '', 'th'));
+
+    setRows(result);
+    setLoading(false);
+  };
+
+  const handlePrint = () => {
+    const days = periodDays();
+    const dStr = `${days[0]}-${days[days.length-1]}`;
+    const sectionLabel = section || (line ? `ไลน์ ${line}` : 'ทุกไลน์');
+
+    const tableRows = rows.map((r, i) => {
+      const dayCells = days.map(d =>
+        `<td style="text-align:center;border:1px solid #333;font-size:13px">${r.days[d] ? '✓' : ''}</td>`
+      ).join('');
+      const total = Object.keys(r.days).length;
+      return `
+        <tr>
+          <td style="text-align:center;border:1px solid #333">${i+1}</td>
+          <td style="border:1px solid #333;white-space:nowrap;padding:0 4px">${r.emp?.employee_id_code || ''}</td>
+          <td style="border:1px solid #333;padding:0 4px">${r.emp?.name || ''}</td>
+          ${dayCells}
+          <td style="text-align:center;border:1px solid #333;font-weight:bold">${total}</td>
+          <td style="border:1px solid #333;width:70px"></td>
+          <td style="border:1px solid #333;width:80px"></td>
+          <td style="border:1px solid #333;width:70px"></td>
+          <td style="border:1px solid #333"></td>
+        </tr>`;
+    }).join('');
+
+    // แถวว่างเพิ่มเติม (รวม 10 แถว)
+    const extraRows = Math.max(0, 10 - rows.length);
+    const emptyRows = Array.from({ length: extraRows }, (_, i) => `
+      <tr style="height:28px">
+        <td style="text-align:center;border:1px solid #333">${rows.length + i + 1}</td>
+        <td style="border:1px solid #333"></td>
+        <td style="border:1px solid #333"></td>
+        ${days.map(() => '<td style="border:1px solid #333"></td>').join('')}
+        <td style="border:1px solid #333"></td>
+        <td style="border:1px solid #333"></td>
+        <td style="border:1px solid #333"></td>
+        <td style="border:1px solid #333"></td>
+        <td style="border:1px solid #333"></td>
+      </tr>`).join('');
+
+    const daySumRow = days.map(d => {
+      const cnt = rows.filter(r => r.days[d]).length;
+      return `<td style="text-align:center;border:1px solid #333;font-size:12px">${cnt || 0}</td>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8"/>
+<title>ใบสรุปค่าฝีมือ ${THAI_MONTHS[month]} ${year + 543}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Sarabun', sans-serif; font-size: 13px; background: #fff; color: #000; }
+  .page { padding: 12mm 10mm; width: 297mm; min-height: 210mm; }
+  table { border-collapse: collapse; width: 100%; font-size: 11px; }
+  th { border: 1px solid #333; background: #f0f0f0; text-align: center; padding: 3px 2px; font-size: 11px; }
+  td { border: 1px solid #333; padding: 2px 2px; font-size: 11px; }
+  @media print {
+    @page { size: A4 landscape; margin: 8mm; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+    <div style="flex:1;text-align:center">
+      <div style="font-size:16px;font-weight:bold">ใบสรุปการปฏิบัติงานค่าฝีมือ</div>
+    </div>
+    <div style="font-size:12px;white-space:nowrap">ฟอร์ม SA-01</div>
+  </div>
+  <div style="margin-bottom:2px">ประจำงวด วันที่ ${dStr} เดือน ${THAI_MONTHS[month]} ปี ${year + 543}</div>
+  <div style="margin-bottom:8px">ส่วนงาน ${sectionLabel}</div>
+  <table>
+    <thead>
+      <tr>
+        <th rowspan="2" style="width:28px">ลำดับ</th>
+        <th rowspan="2" style="width:70px">เลขที่บัตรพนักงาน</th>
+        <th rowspan="2" style="min-width:100px">ชื่อ - สกุล</th>
+        <th colspan="${days.length}">เดือน ${THAI_MONTHS[month]} ${year + 543}</th>
+        <th rowspan="2" style="width:30px">รวม</th>
+        <th rowspan="2" style="width:70px">ลายเซ็นพนักงาน</th>
+        <th rowspan="2" style="width:80px">TA ตรวจสอบการทำงาน</th>
+        <th rowspan="2" style="width:70px">ลายเซ็น TA</th>
+        <th rowspan="2" style="width:50px">หมายเหตุ</th>
+      </tr>
+      <tr>
+        ${days.map(d => `<th style="width:22px">${d}</th>`).join('')}
+      </tr>
+    </thead>
+    <tbody>
+      ${tableRows}
+      ${emptyRows}
+      <tr style="background:#f0f0f0;font-weight:bold">
+        <td colspan="3" style="text-align:center;border:1px solid #333">รวม</td>
+        ${daySumRow}
+        <td style="text-align:center;border:1px solid #333">${rows.reduce((s,r)=>s+Object.keys(r.days).length,0)}</td>
+        <td style="border:1px solid #333" colspan="4"></td>
+      </tr>
+    </tbody>
+  </table>
+  <div style="margin-top:10px;font-size:11px;line-height:1.8">
+    <strong>หมายเหตุ :</strong><br/>
+    1. วันที่ 1-15 จะจ่ายในงวดวันที่ 22 ของทุกเดือน<br/>
+    2. วันที่ 16-31 จะจ่ายในงวดวันที่ 7 ของทุกเดือน<br/>
+    3. กรณีใบ Certification ขาดอายุจะถูกระงับการจ่ายค่าฝีมือ<br/>
+    4. พนักงานมีสิทธิ์ได้รับค่าฝีมือต้องปฏิบัติงานครบ 8 ชั่วโมง / วัน<br/>
+    5. หลักเกณฑ์การจ่ายค่าฝีมือ ตามประกาศที่ SVP.051/2566
+  </div>
+</div>
+<script>window.onload = () => { window.print(); }</script>
+</body>
+</html>`;
+
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+  };
+
+  const days = periodDays();
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Filters */}
+      <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ปี</div>
+          <select value={year} onChange={e => setYear(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            {[today.getFullYear()-1, today.getFullYear(), today.getFullYear()+1].map(y => (
+              <option key={y} value={y}>{y + 543}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>เดือน</div>
+          <select value={month} onChange={e => setMonth(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>งวด</div>
+          <select value={period} onChange={e => setPeriod(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            <option value={1}>งวด 1 (วันที่ 1-15)</option>
+            <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์ผลิต</div>
+          <select value={line} onChange={e => setLine(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            <option value="">ทุกไลน์</option>
+            {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+          </select>
+        </div>
+        <button onClick={load} disabled={loading}
+          style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
+        </button>
+        {rows.length > 0 && (
+          <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic', alignSelf: 'center' }}>🖨️ พิมพ์ได้จากแท็บ Export</span>
+        )}
+      </div>
+
+      {/* Preview table */}
+      {rows.length > 0 && (
+        <div className="card" style={{ overflowX: 'auto' }}>
+          <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <span style={{ fontWeight: 700, fontSize: 15 }}>ใบสรุปค่าฝีมือ</span>
+              <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 10 }}>
+                งวดวันที่ {days[0]}-{days[days.length-1]} {THAI_MONTHS[month]} {year + 543}
+              </span>
+            </div>
+            <span style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>
+              {rows.length} คน
+            </span>
+          </div>
+          <table style={{ minWidth: 600, borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', whiteSpace: 'nowrap' }}>ลำดับ</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', whiteSpace: 'nowrap' }}>รหัส</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120 }}>ชื่อ - สกุล</th>
+                {days.map(d => (
+                  <th key={d} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 24, textAlign: 'center', fontSize: 10 }}>{d}</th>
+                ))}
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', textAlign: 'center' }}>รวม</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i}>
+                  <td style={{ border: '1px solid var(--border2)', padding: '3px 6px', textAlign: 'center' }}>{i+1}</td>
+                  <td style={{ border: '1px solid var(--border2)', padding: '3px 6px', whiteSpace: 'nowrap' }}>{r.emp?.employee_id_code}</td>
+                  <td style={{ border: '1px solid var(--border2)', padding: '3px 6px' }}>{r.emp?.name}</td>
+                  {days.map(d => (
+                    <td key={d} style={{ border: '1px solid var(--border2)', textAlign: 'center', color: '#22c55e', fontWeight: 700 }}>
+                      {r.days[d] ? '✓' : ''}
+                    </td>
+                  ))}
+                  <td style={{ border: '1px solid var(--border2)', textAlign: 'center', fontWeight: 700, color: 'var(--accent)' }}>
+                    {Object.keys(r.days).length}
+                  </td>
+                </tr>
+              ))}
+              <tr style={{ background: 'var(--bg3)', fontWeight: 700 }}>
+                <td colSpan={3} style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '3px 6px' }}>รวม</td>
+                {days.map(d => (
+                  <td key={d} style={{ border: '1px solid var(--border2)', textAlign: 'center', fontSize: 11 }}>
+                    {rows.filter(r => r.days[d]).length || ''}
+                  </td>
+                ))}
+                <td style={{ border: '1px solid var(--border2)', textAlign: 'center' }}>
+                  {rows.reduce((s,r) => s + Object.keys(r.days).length, 0)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+      {!loading && rows.length === 0 && (
+        <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>
+          เลือกเงื่อนไขและกด "ดึงข้อมูล" เพื่อแสดงข้อมูลค่าฝีมือ
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   📋 AttendanceFormTab — ใบบันทึกการมาทำงาน
+   ══════════════════════════════════════════════════════════════ */
+function AttendanceFormTab() {
+  const today   = new Date();
+  const [year,    setYear]    = useState(today.getFullYear());
+  const [month,   setMonth]   = useState(today.getMonth() + 1);
+  const [period,  setPeriod]  = useState(2); // 1=1-15, 2=16-end
+  const [line,    setLine]    = useState('');
+  const [dept,    setDept]    = useState('');
+  const [lines,   setLines]   = useState([]);
+  const [empRows, setEmpRows] = useState([]); // [{emp, byDay:{d:{present,ot,leave}}}]
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    supabase.from('production_lines').select('name, section').order('name')
+      .then(({ data }) => setLines(data || []));
+  }, []);
+
+  const periodDays = () => {
+    const dim = new Date(year, month, 0).getDate();
+    if (period === 1) return Array.from({ length: 15 }, (_, i) => i + 1);
+    return Array.from({ length: dim - 15 }, (_, i) => i + 16);
+  };
+
+  const isSunday = (day) => {
+    const d = new Date(year, month - 1, day);
+    return d.getDay() === 0;
+  };
+
+  const load = async () => {
+    setLoading(true);
+    const days = periodDays();
+    const pad = (n) => String(n).padStart(2, '0');
+    const startDate = `${year}-${pad(month)}-${pad(days[0])}`;
+    const endDate   = `${year}-${pad(month)}-${pad(days[days.length - 1])}`;
+
+    let q = supabase
+      .from('daily_production_logs')
+      .select('work_date, employee_id, is_present, has_ot, leave_type, leave_duration, leave_period, employees(name, employee_id_code, section, team, line_id)')
+      .gte('work_date', startDate)
+      .lte('work_date', endDate);
+
+    const { data: logs } = await q;
+
+    // group by employee
+    const empMap = {};
+    (logs || []).forEach(log => {
+      const emp = log.employees;
+      if (!emp) return;
+      // filter by line or dept if set
+      if (line) {
+        // match by line name via production_lines — approximate by section or just skip if no match
+        // we'll filter by section (dept) below
+      }
+      if (dept && emp.section !== dept) return;
+
+      const id  = log.employee_id;
+      const day = parseInt(log.work_date.split('-')[2]);
+      if (!empMap[id]) empMap[id] = { emp, byDay: {} };
+      empMap[id].byDay[day] = {
+        present: log.is_present,
+        ot:      log.has_ot,
+        leave:   log.leave_type || null,
+        leaveDur: log.leave_duration || null,
+      };
+    });
+
+    const result = Object.values(empMap)
+      .sort((a, b) => (a.emp.name || '').localeCompare(b.emp.name || '', 'th'));
+    setEmpRows(result);
+    setLoading(false);
+  };
+
+  const handlePrint = () => {
+    const days    = periodDays();
+    const dStr    = `${days[0]}-${days[days.length-1]}`;
+    const deptLabel = dept || line || 'ทุกแผนก';
+    const totalEmp  = empRows.length;
+
+    const thStyle = 'border:1px solid #000;background:#d8d8d8;text-align:center;font-size:9px;padding:1px 2px;';
+    const tdStyle = 'border:1px solid #000;text-align:center;font-size:9px;padding:0;';
+
+    // day header
+    const dayHeaders = days.map(d => {
+      const sun  = isSunday(d);
+      const bg   = sun ? 'background:#f5c842;' : '';
+      return `<th style="${thStyle}${bg}width:20px">${d}</th>`;
+    }).join('');
+
+    // employee rows (3 sub-rows each: กะ01, กะ02, OT)
+    const empHtml = empRows.map((r, i) => {
+      const totalPresent01 = days.filter(d => r.byDay[d]?.present && !r.byDay[d]?.ot).length;
+      const totalOT        = days.filter(d => r.byDay[d]?.ot).length;
+
+      const makeDayCells = (rowType) => days.map(d => {
+        const sun = isSunday(d);
+        const bg  = sun ? 'background:#fff8d0;' : '';
+        const info = r.byDay[d];
+        let mark = '';
+        if (rowType === 'k01') {
+          if (info?.present) mark = '<span style="font-size:13px;line-height:1">✓</span>';
+          else if (info?.leave) mark = `<span style="font-size:8px;color:#c00">${info.leave}</span>`;
+        } else if (rowType === 'ot') {
+          if (info?.ot) mark = '<span style="font-size:9px;font-weight:bold;color:#c05000">OT</span>';
+        }
+        return `<td style="${tdStyle}${bg}height:16px">${mark}</td>`;
+      }).join('');
+
+      return `
+        <tr>
+          <td rowspan="3" style="border:1px solid #000;text-align:center;font-size:9px;vertical-align:middle">${i+1}</td>
+          <td rowspan="3" style="border:1px solid #000;font-size:9px;padding:0 3px;vertical-align:middle;min-width:80px">${r.emp.name || ''}</td>
+          <td rowspan="3" style="border:1px solid #000;text-align:center;font-size:9px;padding:0 2px;vertical-align:middle;white-space:nowrap">${r.emp.employee_id_code || ''}</td>
+          <td style="border:1px solid #000;background:#cce4ff;width:12px"></td>
+          <td style="border:1px solid #000;background:#fff4aa;width:12px"></td>
+          <td style="border:1px solid #000;background:#ffcccc;width:12px"></td>
+          <td style="border:1px solid #000;font-size:8px;padding:0 2px;white-space:nowrap;color:#333">งาน ช. กะ 01</td>
+          ${makeDayCells('k01')}
+          <td style="border:1px solid #000;text-align:center;font-size:9px;font-weight:bold">${totalPresent01 || ''}</td>
+          <td style="border:1px solid #000"></td>
+          <td style="border:1px solid #000"></td>
+          <td style="border:1px solid #000"></td>
+        </tr>
+        <tr>
+          <td style="border:1px solid #000;background:#cce4ff"></td>
+          <td style="border:1px solid #000;background:#fff4aa"></td>
+          <td style="border:1px solid #000;background:#ffcccc"></td>
+          <td style="border:1px solid #000;font-size:8px;padding:0 2px;white-space:nowrap;color:#333">งาน ช. กะ 02</td>
+          ${days.map(d => { const sun=isSunday(d); return `<td style="${tdStyle}${sun?'background:#fff8d0;':''}">&nbsp;</td>`; }).join('')}
+          <td style="border:1px solid #000"></td>
+          <td style="border:1px solid #000"></td>
+          <td style="border:1px solid #000"></td>
+          <td style="border:1px solid #000"></td>
+        </tr>
+        <tr>
+          <td style="border:1px solid #000;background:#cce4ff"></td>
+          <td style="border:1px solid #000;background:#fff4aa"></td>
+          <td style="border:1px solid #000;background:#ffcccc"></td>
+          <td style="border:1px solid #000;font-size:8px;padding:0 2px;white-space:nowrap;color:#333">งาน ช. กะ OT</td>
+          ${makeDayCells('ot')}
+          <td style="border:1px solid #000;text-align:center;font-size:9px;font-weight:bold;color:#c05000">${totalOT || ''}</td>
+          <td style="border:1px solid #000"></td>
+          <td style="border:1px solid #000"></td>
+          <td style="border:1px solid #000"></td>
+        </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8"/>
+<title>ใบบันทึกการมาทำงาน ${THAI_MONTHS[month]} ${year+543}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Sarabun',sans-serif;font-size:10px;background:#fff;color:#000}
+  .page{padding:6mm 5mm;width:420mm;min-height:297mm}
+  table{border-collapse:collapse}
+  @media print{
+    @page{size:A3 landscape;margin:5mm}
+    body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <!-- Header -->
+  <table style="width:100%;margin-bottom:3px">
+    <tr>
+      <td style="width:200px;vertical-align:middle;padding:2px 6px">
+        <div style="font-size:20px;font-weight:900;color:#c00;letter-spacing:-1px;line-height:1">S<span style="font-size:14px">T</span></div>
+        <div style="font-size:7px;font-weight:bold;letter-spacing:1px">AUTOMOTIVE</div>
+      </td>
+      <td style="text-align:center;vertical-align:middle">
+        <div style="font-size:13px;font-weight:bold">บริษัท ไทยซัมมิท โอโตโมทีฟ จำกัด</div>
+        <div style="font-size:11px;font-weight:bold;margin-top:4px">ใบบันทึกการมาทำงาน - การกระจายอัตรากำลังพนักงาน</div>
+        <div style="font-size:11px;margin-top:2px">${deptLabel}</div>
+      </td>
+      <td style="text-align:right;vertical-align:top;padding:2px;white-space:nowrap">
+        <table style="float:right;font-size:10px">
+          <tr><td style="border:1px solid #000;padding:3px 10px">เดือน ${THAI_MONTHS[month]} ${year+543}</td></tr>
+          <tr><td style="border:1px solid #000;padding:3px 10px">งวด วันที่ ${dStr}</td></tr>
+          <tr><td style="border:1px solid #000;padding:3px 10px">จำนวนพนักงาน <strong>${totalEmp}</strong> คน</td></tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Signature row -->
+  <table style="width:100%;margin-bottom:4px">
+    <tr>
+      <td style="width:33%;border:1px solid #000;height:50px;text-align:center;vertical-align:top;padding-top:3px;font-size:10px">หัวหน้าแผนก</td>
+      <td style="width:34%;border:1px solid #000;text-align:center;vertical-align:top;padding-top:3px;font-size:10px">พักหน้าส่วน</td>
+      <td style="width:33%;border:1px solid #000;text-align:center;vertical-align:top;padding-top:3px;font-size:10px">ผู้จัดการ</td>
+    </tr>
+  </table>
+
+  <!-- Main table -->
+  <table style="width:100%">
+    <thead>
+      <tr>
+        <th rowspan="2" style="${thStyle}width:18px">ลำดับ</th>
+        <th rowspan="2" style="${thStyle}min-width:80px">ชื่อ - สกุล</th>
+        <th rowspan="2" style="${thStyle}width:55px">รหัสพนักงาน</th>
+        <th colspan="3" style="${thStyle}width:36px">กะ</th>
+        <th rowspan="2" style="${thStyle}width:55px">ประเภทงาน</th>
+        ${dayHeaders}
+        <th rowspan="2" style="${thStyle}width:22px">รวม</th>
+        <th rowspan="2" style="${thStyle}width:40px">ลายเซ็น</th>
+        <th rowspan="2" style="${thStyle}width:40px">TA</th>
+        <th rowspan="2" style="${thStyle}width:30px">หมาย<br/>เหตุ</th>
+      </tr>
+      <tr>
+        <th style="${thStyle}background:#cce4ff;width:12px">ข</th>
+        <th style="${thStyle}background:#fff4aa;width:12px">น</th>
+        <th style="${thStyle}background:#ffcccc;width:12px">0</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${empHtml}
+    </tbody>
+  </table>
+
+  <!-- Footer legend -->
+  <div style="margin-top:6px;font-size:9px;line-height:1.8;border-top:1px solid #000;padding-top:4px">
+    <strong>หมายเหตุ:</strong> ข=ช่วงเช้า, น=ช่วงบ่าย, 0=ช่วงค่ำ, กะ=สะสมเดือนประจำ, บก=ไม่มา Meeting<br/>
+    * ข = ช่วงเช้า, น = ช่วงบ่าย, 0 = ช่วงค่ำ, กะ = สะสมเดือนประจำ, บก = ไม่มา Meeting<br/>
+    * อาร ช่วงเช้า = 0.2, อาทร์ช่วงบ่าย = 0.5
+  </div>
+</div>
+<script>window.onload = () => window.print();</script>
+</body>
+</html>`;
+
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+  };
+
+  const days = periodDays();
+  const depts = [...new Set(lines.map(l => l.section).filter(Boolean))];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Filters */}
+      <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ปี</div>
+          <select value={year} onChange={e => setYear(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            {[today.getFullYear()-1, today.getFullYear(), today.getFullYear()+1].map(y => (
+              <option key={y} value={y}>{y+543}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>เดือน</div>
+          <select value={month} onChange={e => setMonth(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>งวด</div>
+          <select value={period} onChange={e => setPeriod(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            <option value={1}>งวด 1 (วันที่ 1-15)</option>
+            <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์</div>
+          <select value={line} onChange={e => setLine(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            <option value="">ทุกไลน์</option>
+            {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+          </select>
+        </div>
+        {depts.length > 0 && (
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ส่วนงาน / Section</div>
+            <select value={dept} onChange={e => setDept(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+              <option value="">ทุกส่วนงาน</option>
+              {depts.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+        )}
+        <button onClick={load} disabled={loading}
+          style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
+        </button>
+        {empRows.length > 0 && (
+          <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic', alignSelf: 'center' }}>🖨️ พิมพ์ได้จากแท็บ Export</span>
+        )}
+      </div>
+
+      {/* Preview */}
+      {empRows.length > 0 && (
+        <div className="card" style={{ overflowX: 'auto' }}>
+          <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 700 }}>ใบบันทึกการมาทำงาน</span>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+              งวดวันที่ {days[0]}-{days[days.length-1]} {THAI_MONTHS[month]} {year+543} · {empRows.length} คน
+            </span>
+          </div>
+          <table style={{ borderCollapse: 'collapse', fontSize: 11 }}>
+            <thead>
+              <tr>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', whiteSpace: 'nowrap' }}>#</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 100 }}>ชื่อ - สกุล</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)' }}>รหัส</th>
+                {days.map(d => (
+                  <th key={d} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: isSunday(d) ? 'rgba(245,200,50,0.35)' : 'var(--bg3)', width: 22, textAlign: 'center', fontSize: 10 }}>{d}</th>
+                ))}
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', textAlign: 'center' }}>รวม</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'rgba(255,150,50,0.15)', textAlign: 'center', color: '#c05000' }}>OT</th>
+              </tr>
+            </thead>
+            <tbody>
+              {empRows.map((r, i) => {
+                const totalP = days.filter(d => r.byDay[d]?.present).length;
+                const totalOT = days.filter(d => r.byDay[d]?.ot).length;
+                return (
+                  <tr key={i}>
+                    <td style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '3px 4px' }}>{i+1}</td>
+                    <td style={{ border: '1px solid var(--border2)', padding: '3px 6px', whiteSpace: 'nowrap' }}>{r.emp.name}</td>
+                    <td style={{ border: '1px solid var(--border2)', padding: '3px 6px', whiteSpace: 'nowrap' }}>{r.emp.employee_id_code}</td>
+                    {days.map(d => {
+                      const info = r.byDay[d];
+                      const sunBg = isSunday(d) ? 'rgba(245,200,50,0.2)' : 'transparent';
+                      return (
+                        <td key={d} style={{ border: '1px solid var(--border2)', textAlign: 'center', background: sunBg }}>
+                          {info?.present ? <span style={{ color: '#22c55e', fontWeight: 700 }}>✓</span>
+                            : info?.leave ? <span style={{ color: '#f59e0b', fontSize: 9 }}>{info.leave}</span>
+                            : ''}
+                          {info?.ot ? <span style={{ color: '#c05000', fontSize: 8, display: 'block' }}>OT</span> : ''}
+                        </td>
+                      );
+                    })}
+                    <td style={{ border: '1px solid var(--border2)', textAlign: 'center', fontWeight: 700, color: '#22c55e' }}>{totalP}</td>
+                    <td style={{ border: '1px solid var(--border2)', textAlign: 'center', fontWeight: 700, color: '#c05000' }}>{totalOT || ''}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {!loading && empRows.length === 0 && (
+        <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>
+          เลือกเงื่อนไขและกด "ดึงข้อมูล" เพื่อแสดงใบบันทึกการมาทำงาน
+        </div>
+      )}
+    </div>
+  );
+}

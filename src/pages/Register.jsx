@@ -6,11 +6,12 @@ const SECTIONS = ['PD1', 'PD2', 'PD3', 'PD4'];
 const TEAMS    = ['A', 'B'];
 
 export default function Register() {
-  const { role, lineId: userLineId } = useContext(UserContext);
+  const { role, lineId: userLineId, section: userSection } = useContext(UserContext);
   const isSupervisor = role === 'supervisor';
 
   const [empCode,     setEmpCode]     = useState('');
   const [name,        setName]        = useState('');
+  const [position,    setPosition]    = useState('');
   const [department,  setDepartment]  = useState('');
   const [section,     setSection]     = useState('');
   const [groupName,   setGroupName]   = useState('');
@@ -21,15 +22,11 @@ export default function Register() {
   const [lines,       setLines]       = useState([]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name').order('name')
+    supabase.from('production_lines').select('id, name, section').order('name')
       .then(({ data }) => {
         setLines(data || []);
-        if (isSupervisor && userLineId) {
-          const myLine = (data || []).find(l => l.id === userLineId);
-          if (myLine) {
-            setLineId(myLine.id);
-            setGroupName(myLine.name);
-          }
+        if (isSupervisor && userSection) {
+          setSection(userSection);
         }
       });
   }, []);
@@ -40,7 +37,7 @@ export default function Register() {
     try {
       const { data: userData } = await supabase.auth.getUser();
       const userId = userData?.user?.id;
-      if (!userId) { alert('กรุณา Login ก่อนเพิ่มพนักงาน'); return; }
+      if (!userId) { alert('กรุณา Login ก่อนเพิ่มพนักงาน'); setIsUploading(false); return; }
 
       let photoUrl = null;
       if (photo) {
@@ -55,6 +52,7 @@ export default function Register() {
       const { error: insertError } = await supabase.from('employees').insert([{
         employee_id_code: empCode,
         name,
+        position:   position  || null,
         department,
         section:    section   || null,
         group_name: groupName || null,
@@ -66,12 +64,11 @@ export default function Register() {
       if (insertError) throw insertError;
 
       alert('เพิ่มพนักงานสำเร็จ!');
-      setEmpCode(''); setName(''); setDepartment('');
-      setSection(''); setTeam(''); setPhoto(null);
+      setEmpCode(''); setName(''); setPosition(''); setDepartment('');
+      setSection(isSupervisor && userSection ? userSection : '');
+      setGroupName(''); setLineId(null);
+      setTeam(''); setPhoto(null);
       document.getElementById('photo-upload').value = '';
-      if (!isSupervisor) {
-        setGroupName(''); setLineId(null);
-      }
     } catch (err) {
       alert('เกิดข้อผิดพลาด: ' + err.message);
     } finally {
@@ -113,18 +110,35 @@ export default function Register() {
             <input type="text" placeholder="ชื่อเต็มของพนักงาน" value={name} onChange={e => setName(e.target.value)} required />
           </div>
 
-          <div>
-            <label style={labelSt}>แผนก / สายงาน</label>
-            <input type="text" placeholder="เช่น ฝ่ายผลิต" value={department} onChange={e => setDepartment(e.target.value)} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <label style={labelSt}>ตำแหน่งงาน</label>
+              <select value={position} onChange={e => setPosition(e.target.value)}>
+                <option value="">— เลือก —</option>
+                <option value="Operator">Operator</option>
+                <option value="Leader">Leader</option>
+                <option value="Technician">Technician</option>
+                <option value="Engineer">Engineer</option>
+                <option value="QC">QC</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelSt}>แผนก / สายงาน</label>
+              <input type="text" placeholder="เช่น ฝ่ายผลิต" value={department} onChange={e => setDepartment(e.target.value)} />
+            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>Section</label>
-              <select value={section} onChange={e => setSection(e.target.value)}>
-                <option value="">— เลือก —</option>
-                {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+              {isSupervisor && userSection ? (
+                <input type="text" value={userSection} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+              ) : (
+                <select value={section} onChange={e => setSection(e.target.value)}>
+                  <option value="">— เลือก —</option>
+                  {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              )}
             </div>
             <div>
               <label style={labelSt}>Team</label>
@@ -137,33 +151,22 @@ export default function Register() {
 
           <div>
             <label style={labelSt}>Group / Line</label>
-            {isSupervisor ? (
-              <div style={{
-                padding: '8px 12px',
-                background: 'var(--bg3)',
-                border: '1px solid var(--border2)',
-                borderRadius: 8,
-                fontSize: 13,
-                color: 'var(--text)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-              }}>
-                <span style={{ fontSize: 14 }}>🏭</span>
-                <span>{groupName || '—'}</span>
-                <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--muted)' }}>ไลน์ของคุณ</span>
-              </div>
-            ) : (
-              <select value={groupName} onChange={e => {
-                const val = e.target.value;
-                setGroupName(val);
-                const line = lines.find(l => l.name === val);
-                setLineId(line?.id || null);
-              }}>
-                <option value="">— เลือก Line —</option>
-                {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-              </select>
-            )}
+            {(() => {
+              const lineOpts = isSupervisor && userSection
+                ? lines.filter(l => l.section === userSection)
+                : lines;
+              return (
+                <select value={groupName} onChange={e => {
+                  const val = e.target.value;
+                  setGroupName(val);
+                  const line = lines.find(l => l.name === val);
+                  setLineId(line?.id || null);
+                }}>
+                  <option value="">— เลือก Line —</option>
+                  {lineOpts.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                </select>
+              );
+            })()}
           </div>
 
           <div>
