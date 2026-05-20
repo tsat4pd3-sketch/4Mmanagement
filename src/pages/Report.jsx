@@ -86,31 +86,61 @@ export default function Report() {
 }
 
 function DailyTab() {
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [logs, setLogs] = useState([]);
+  const now = new Date();
+  const isDay = (now.getHours() * 60 + now.getMinutes()) >= 480 && (now.getHours() * 60 + now.getMinutes()) < 1200;
+  const [date, setDate]   = useState(new Date().toISOString().split('T')[0]);
+  const [shift, setShift] = useState(isDay ? 'day' : 'night');
+  const [logs, setLogs]   = useState([]);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { load(); }, [date]);
+  useEffect(() => { load(); }, [date, shift]);
 
   const load = async () => {
     setLoading(true);
     const { data } = await supabase
       .from('daily_production_logs')
-      .select('*, employees(name, employee_id_code, image_url, department)')
+      .select('*, employees(name, employee_id_code, image_url, department, team)')
       .eq('work_date', date).eq('is_present', true).order('updated_at');
-    setLogs(data || []);
+
+    // filter by shift: use shift column if present, fallback to employee.team
+    const filtered = (data || []).filter(l => {
+      if (shift === 'all') return true;
+      const s = l.shift;
+      const team = l.employees?.team;
+      if (s) return s === shift;
+      if (shift === 'day')   return team === 'A' || team === 'C' || !team;
+      if (shift === 'night') return team === 'B' || team === 'C' || !team;
+      return true;
+    });
+    setLogs(filtered);
     setLoading(false);
   };
+
+  const shiftBtnStyle = (val) => ({
+    padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+    background: shift === val
+      ? val === 'day' ? 'rgba(245,158,11,0.2)' : val === 'night' ? 'rgba(77,159,255,0.2)' : 'rgba(255,255,255,0.1)'
+      : 'transparent',
+    color: shift === val
+      ? val === 'day' ? '#f59e0b' : val === 'night' ? '#4d9fff' : 'var(--text2)'
+      : 'var(--muted)',
+  });
 
   return (
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
         <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
+        {/* Shift toggle */}
+        <div style={{ display: 'flex', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 3, gap: 2 }}>
+          <button style={shiftBtnStyle('day')}   onClick={() => setShift('day')}>☀️ กะเช้า</button>
+          <button style={shiftBtnStyle('night')} onClick={() => setShift('night')}>🌙 กะดึก</button>
+          <button style={shiftBtnStyle('all')}   onClick={() => setShift('all')}>ทั้งหมด</button>
+        </div>
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>รวม {logs.length} คน</span>
         <CsvBtn onClick={() => downloadCSV(
-          `daily_${date}.csv`,
-          ['วันที่', 'รหัสพนักงาน', 'ชื่อ', 'แผนก', 'หมวก', 'รองเท้า', 'ถุงมือ', 'OT'],
-          logs.map(l => [date, l.employees?.employee_id_code, l.employees?.name, l.employees?.department || '', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.has_ot ? '✓' : ''])
+          `daily_${date}_${shift}.csv`,
+          ['วันที่', 'กะ', 'รหัสพนักงาน', 'ชื่อ', 'แผนก', 'หมวก', 'รองเท้า', 'ถุงมือ', 'OT'],
+          logs.map(l => [date, l.shift || (l.employees?.team === 'A' ? 'day' : l.employees?.team === 'B' ? 'night' : ''), l.employees?.employee_id_code, l.employees?.name, l.employees?.department || '', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.has_ot ? '✓' : ''])
         )} />
       </div>
       {loading ? <Loader /> : (
