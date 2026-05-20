@@ -188,19 +188,23 @@ export default function Management() {
       ? !(log4MForm.sameDept && log4MForm.skillOk)
       : log4MForm.subtype === 'change';
     const change_subtype = isMan ? null : log4MForm.subtype;
-    const { error } = await supabase.from('four_m_logs').insert([{
+    const { data: { user } } = await supabase.auth.getUser();
+    const logData = {
       work_date: today,
       line_name: show4MModal.lineName || selectedLine,
       category: log4MForm.category,
       description: log4MForm.description.trim(),
       requires_qa,
       change_subtype,
-    }]);
+      created_by: user?.id ?? null,
+    };
+    const { error } = await supabase.from('four_m_logs').insert([logData]);
     setIsSaving4M(false);
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
     setShow4MModal(null);
     setLog4MForm({ category: 'Man', description: '', sameDept: false, skillOk: false, subtype: 'change' });
     fetchData();
+    supabase.functions.invoke('send-notification', { body: { event: 'new_4m', log: logData } }).catch(() => {});
   };
 
   /* ── Station click: open picker modal ── */

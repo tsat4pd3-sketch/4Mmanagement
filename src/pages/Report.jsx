@@ -344,7 +344,7 @@ function FourMTab() {
   const load = async () => {
     setLoading(true);
     let q = supabase.from('four_m_logs')
-      .select('id, work_date, line_name, category, description, created_at, status, approved_by, approved_at, reject_reason, requires_qa, change_subtype')
+      .select('id, work_date, line_name, category, description, created_at, status, approved_by, approved_at, reject_reason, requires_qa, change_subtype, created_by')
       .gte('work_date', from).lte('work_date', to)
       .order('work_date', { ascending: false })
       .order('created_at', { ascending: false });
@@ -372,6 +372,8 @@ function FourMTab() {
     }).eq('id', logId);
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
     toast.success('Approved เรียบร้อย');
+    const log = logs.find(l => l.id === logId);
+    if (log) supabase.functions.invoke('send-notification', { body: { event: 'status_change', log: { ...log, status: 'approved' } } }).catch(() => {});
     load();
   };
 
@@ -383,6 +385,8 @@ function FourMTab() {
     }).eq('id', rejectModal);
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
     toast.success('Rejected แล้ว');
+    const log = logs.find(l => l.id === rejectModal);
+    if (log) supabase.functions.invoke('send-notification', { body: { event: 'status_change', log: { ...log, status: 'rejected', reject_reason: rejectReason.trim() } } }).catch(() => {});
     setRejectModal(null); setRejectReason('');
     load();
   };
