@@ -40,7 +40,7 @@ const CAT_META = {
   Method:   { color: '#c084fc', bg: 'rgba(139,92,246,0.12)', label: 'Method',   icon: '📋' },
 };
 
-const TABS = ['รายวัน', 'รายพนักงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '📤 Export'];
+const TABS = ['รายวัน', 'รายพนักงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '📤 Export', '💰 ค่าฝีมือ'];
 
 const SKILL_LEVELS = [
   { min: 80, label: 'ชำนาญ',       color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
@@ -76,6 +76,7 @@ export default function Report() {
       {activeTab === 3 && <FourMTab />}
       {activeTab === 4 && <SkillMatrixTab />}
       {activeTab === 5 && <ExportTab />}
+      {activeTab === 6 && <SkillAllowanceTab />}
     </div>
   );
 }
@@ -1268,3 +1269,306 @@ const KpiSmall = ({ value, label }) => (
     {value}<span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}> {label}</span>
   </span>
 );
+
+/* ══════════════════════════════════════════════════════════════
+   💰 SkillAllowanceTab — ใบสรุปค่าฝีมือ
+   ══════════════════════════════════════════════════════════════ */
+const THAI_MONTHS = ['', 'มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
+  'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+
+function SkillAllowanceTab() {
+  const today = new Date();
+  const [year,   setYear]   = useState(today.getFullYear());
+  const [month,  setMonth]  = useState(today.getMonth() + 1);
+  const [period, setPeriod] = useState(1); // 1=วันที่ 1-15, 2=วันที่ 16-31
+  const [line,   setLine]   = useState('');
+  const [section, setSection] = useState('');
+  const [lines,  setLines]  = useState([]);
+  const [rows,   setRows]   = useState([]); // [{emp, days:{1:true,...}, total}]
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    supabase.from('production_lines').select('name, section').order('name')
+      .then(({ data }) => setLines(data || []));
+  }, []);
+
+  // ช่วงวันตามงวด
+  const periodDays = () => {
+    const daysInMonth = new Date(year, month, 0).getDate();
+    if (period === 1) return Array.from({ length: 15 }, (_, i) => i + 1);       // 1-15
+    return Array.from({ length: daysInMonth - 15 }, (_, i) => i + 16);           // 16-end
+  };
+
+  const load = async () => {
+    setLoading(true);
+    const days = periodDays();
+    const startDate = `${year}-${String(month).padStart(2,'0')}-${String(days[0]).padStart(2,'0')}`;
+    const endDate   = `${year}-${String(month).padStart(2,'0')}-${String(days[days.length-1]).padStart(2,'0')}`;
+
+    // หา station ที่มี skill_allowance=true
+    let stQ = supabase.from('workstations').select('id, station_name, line_name').eq('skill_allowance', true);
+    if (line) stQ = stQ.eq('line_name', line);
+    const { data: stations } = await stQ;
+    if (!stations?.length) { setRows([]); setLoading(false); return; }
+
+    const stationIds = stations.map(s => String(s.id));
+
+    // logs ที่ qualify
+    const { data: logs } = await supabase
+      .from('daily_production_logs')
+      .select('work_date, employee_id, assigned_line, employees(employee_id_code, name, section, team)')
+      .gte('work_date', startDate)
+      .lte('work_date', endDate)
+      .eq('is_present', true)
+      .eq('has_helmet', true)
+      .eq('has_boots', true)
+      .eq('has_gloves', true)
+      .in('assigned_line', stationIds);
+
+    // group by employee
+    const empMap = {};
+    (logs || []).forEach(log => {
+      const empId = log.employee_id;
+      const day   = parseInt(log.work_date.split('-')[2]);
+      if (!empMap[empId]) empMap[empId] = { emp: log.employees, days: {} };
+      empMap[empId].days[day] = true;
+    });
+
+    const result = Object.values(empMap)
+      .filter(r => section ? r.emp?.section === section : true)
+      .sort((a, b) => (a.emp?.name || '').localeCompare(b.emp?.name || '', 'th'));
+
+    setRows(result);
+    setLoading(false);
+  };
+
+  const handlePrint = () => {
+    const days = periodDays();
+    const dStr = `${days[0]}-${days[days.length-1]}`;
+    const sectionLabel = section || (line ? `ไลน์ ${line}` : 'ทุกไลน์');
+
+    const tableRows = rows.map((r, i) => {
+      const dayCells = days.map(d =>
+        `<td style="text-align:center;border:1px solid #333;font-size:13px">${r.days[d] ? '✓' : ''}</td>`
+      ).join('');
+      const total = Object.keys(r.days).length;
+      return `
+        <tr>
+          <td style="text-align:center;border:1px solid #333">${i+1}</td>
+          <td style="border:1px solid #333;white-space:nowrap;padding:0 4px">${r.emp?.employee_id_code || ''}</td>
+          <td style="border:1px solid #333;padding:0 4px">${r.emp?.name || ''}</td>
+          ${dayCells}
+          <td style="text-align:center;border:1px solid #333;font-weight:bold">${total}</td>
+          <td style="border:1px solid #333;width:70px"></td>
+          <td style="border:1px solid #333;width:80px"></td>
+          <td style="border:1px solid #333;width:70px"></td>
+          <td style="border:1px solid #333"></td>
+        </tr>`;
+    }).join('');
+
+    // แถวว่างเพิ่มเติม (รวม 10 แถว)
+    const extraRows = Math.max(0, 10 - rows.length);
+    const emptyRows = Array.from({ length: extraRows }, (_, i) => `
+      <tr style="height:28px">
+        <td style="text-align:center;border:1px solid #333">${rows.length + i + 1}</td>
+        <td style="border:1px solid #333"></td>
+        <td style="border:1px solid #333"></td>
+        ${days.map(() => '<td style="border:1px solid #333"></td>').join('')}
+        <td style="border:1px solid #333"></td>
+        <td style="border:1px solid #333"></td>
+        <td style="border:1px solid #333"></td>
+        <td style="border:1px solid #333"></td>
+        <td style="border:1px solid #333"></td>
+      </tr>`).join('');
+
+    const daySumRow = days.map(d => {
+      const cnt = rows.filter(r => r.days[d]).length;
+      return `<td style="text-align:center;border:1px solid #333;font-size:12px">${cnt || 0}</td>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8"/>
+<title>ใบสรุปค่าฝีมือ ${THAI_MONTHS[month]} ${year + 543}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Sarabun', sans-serif; font-size: 13px; background: #fff; color: #000; }
+  .page { padding: 12mm 10mm; width: 297mm; min-height: 210mm; }
+  table { border-collapse: collapse; width: 100%; font-size: 11px; }
+  th { border: 1px solid #333; background: #f0f0f0; text-align: center; padding: 3px 2px; font-size: 11px; }
+  td { border: 1px solid #333; padding: 2px 2px; font-size: 11px; }
+  @media print {
+    @page { size: A4 landscape; margin: 8mm; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+    <div style="flex:1;text-align:center">
+      <div style="font-size:16px;font-weight:bold">ใบสรุปการปฏิบัติงานค่าฝีมือ</div>
+    </div>
+    <div style="font-size:12px;white-space:nowrap">ฟอร์ม SA-01</div>
+  </div>
+  <div style="margin-bottom:2px">ประจำงวด วันที่ ${dStr} เดือน ${THAI_MONTHS[month]} ปี ${year + 543}</div>
+  <div style="margin-bottom:8px">ส่วนงาน ${sectionLabel}</div>
+  <table>
+    <thead>
+      <tr>
+        <th rowspan="2" style="width:28px">ลำดับ</th>
+        <th rowspan="2" style="width:70px">เลขที่บัตรพนักงาน</th>
+        <th rowspan="2" style="min-width:100px">ชื่อ - สกุล</th>
+        <th colspan="${days.length}">เดือน ${THAI_MONTHS[month]} ${year + 543}</th>
+        <th rowspan="2" style="width:30px">รวม</th>
+        <th rowspan="2" style="width:70px">ลายเซ็นพนักงาน</th>
+        <th rowspan="2" style="width:80px">TA ตรวจสอบการทำงาน</th>
+        <th rowspan="2" style="width:70px">ลายเซ็น TA</th>
+        <th rowspan="2" style="width:50px">หมายเหตุ</th>
+      </tr>
+      <tr>
+        ${days.map(d => `<th style="width:22px">${d}</th>`).join('')}
+      </tr>
+    </thead>
+    <tbody>
+      ${tableRows}
+      ${emptyRows}
+      <tr style="background:#f0f0f0;font-weight:bold">
+        <td colspan="3" style="text-align:center;border:1px solid #333">รวม</td>
+        ${daySumRow}
+        <td style="text-align:center;border:1px solid #333">${rows.reduce((s,r)=>s+Object.keys(r.days).length,0)}</td>
+        <td style="border:1px solid #333" colspan="4"></td>
+      </tr>
+    </tbody>
+  </table>
+  <div style="margin-top:10px;font-size:11px;line-height:1.8">
+    <strong>หมายเหตุ :</strong><br/>
+    1. วันที่ 1-15 จะจ่ายในงวดวันที่ 22 ของทุกเดือน<br/>
+    2. วันที่ 16-31 จะจ่ายในงวดวันที่ 7 ของทุกเดือน<br/>
+    3. กรณีใบ Certification ขาดอายุจะถูกระงับการจ่ายค่าฝีมือ<br/>
+    4. พนักงานมีสิทธิ์ได้รับค่าฝีมือต้องปฏิบัติงานครบ 8 ชั่วโมง / วัน<br/>
+    5. หลักเกณฑ์การจ่ายค่าฝีมือ ตามประกาศที่ SVP.051/2566
+  </div>
+</div>
+<script>window.onload = () => { window.print(); }</script>
+</body>
+</html>`;
+
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+  };
+
+  const days = periodDays();
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Filters */}
+      <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ปี</div>
+          <select value={year} onChange={e => setYear(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            {[today.getFullYear()-1, today.getFullYear(), today.getFullYear()+1].map(y => (
+              <option key={y} value={y}>{y + 543}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>เดือน</div>
+          <select value={month} onChange={e => setMonth(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>งวด</div>
+          <select value={period} onChange={e => setPeriod(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            <option value={1}>งวด 1 (วันที่ 1-15)</option>
+            <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์ผลิต</div>
+          <select value={line} onChange={e => setLine(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            <option value="">ทุกไลน์</option>
+            {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+          </select>
+        </div>
+        <button onClick={load} disabled={loading}
+          style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
+        </button>
+        {rows.length > 0 && (
+          <button onClick={handlePrint}
+            style={{ padding: '8px 20px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>
+            🖨️ พิมพ์ PDF
+          </button>
+        )}
+      </div>
+
+      {/* Preview table */}
+      {rows.length > 0 && (
+        <div className="card" style={{ overflowX: 'auto' }}>
+          <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <span style={{ fontWeight: 700, fontSize: 15 }}>ใบสรุปค่าฝีมือ</span>
+              <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 10 }}>
+                งวดวันที่ {days[0]}-{days[days.length-1]} {THAI_MONTHS[month]} {year + 543}
+              </span>
+            </div>
+            <span style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>
+              {rows.length} คน
+            </span>
+          </div>
+          <table style={{ minWidth: 600, borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', whiteSpace: 'nowrap' }}>ลำดับ</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', whiteSpace: 'nowrap' }}>รหัส</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120 }}>ชื่อ - สกุล</th>
+                {days.map(d => (
+                  <th key={d} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 24, textAlign: 'center', fontSize: 10 }}>{d}</th>
+                ))}
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', textAlign: 'center' }}>รวม</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i}>
+                  <td style={{ border: '1px solid var(--border2)', padding: '3px 6px', textAlign: 'center' }}>{i+1}</td>
+                  <td style={{ border: '1px solid var(--border2)', padding: '3px 6px', whiteSpace: 'nowrap' }}>{r.emp?.employee_id_code}</td>
+                  <td style={{ border: '1px solid var(--border2)', padding: '3px 6px' }}>{r.emp?.name}</td>
+                  {days.map(d => (
+                    <td key={d} style={{ border: '1px solid var(--border2)', textAlign: 'center', color: '#22c55e', fontWeight: 700 }}>
+                      {r.days[d] ? '✓' : ''}
+                    </td>
+                  ))}
+                  <td style={{ border: '1px solid var(--border2)', textAlign: 'center', fontWeight: 700, color: 'var(--accent)' }}>
+                    {Object.keys(r.days).length}
+                  </td>
+                </tr>
+              ))}
+              <tr style={{ background: 'var(--bg3)', fontWeight: 700 }}>
+                <td colSpan={3} style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '3px 6px' }}>รวม</td>
+                {days.map(d => (
+                  <td key={d} style={{ border: '1px solid var(--border2)', textAlign: 'center', fontSize: 11 }}>
+                    {rows.filter(r => r.days[d]).length || ''}
+                  </td>
+                ))}
+                <td style={{ border: '1px solid var(--border2)', textAlign: 'center' }}>
+                  {rows.reduce((s,r) => s + Object.keys(r.days).length, 0)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+      {!loading && rows.length === 0 && (
+        <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>
+          เลือกเงื่อนไขและกด "ดึงข้อมูล" เพื่อแสดงข้อมูลค่าฝีมือ
+        </div>
+      )}
+    </div>
+  );
+}
