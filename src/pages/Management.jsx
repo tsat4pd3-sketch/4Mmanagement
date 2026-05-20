@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 
-const CARD_W = '100%'; // 2-column grid handles width
+const CARD_W = 82;
 const LINE_4M_CATEGORIES = ['Machine', 'Material', 'Method'];
 const SPECIAL_TASKS = ['5ส', 'คัดงาน', 'แก้ไขปัญหาคุณภาพ', 'งานปรับปรุงไลน์', 'อื่นๆ'];
 
@@ -428,10 +428,10 @@ export default function Management() {
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🔵 พร้อมทำงาน</span>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>{poolWorkers.length} คน</span>
           </div>
-          <div style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: isMobile ? undefined : 'repeat(2, 1fr)', flexDirection: isMobile ? 'column' : undefined, gap: 6, flex: '7 0 0', minHeight: 0 }}>
+          <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, flex: '7 0 0', minHeight: 0 }}>
             {poolWorkers.map(w => <PoolCard key={w.id} worker={w} />)}
             {poolWorkers.length === 0 && (
-              <div style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'center', padding: '8px 0', gridColumn: '1/-1' }}>ไม่มีพนักงานใน Pool</div>
+              <div style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'center', padding: '8px 0' }}>ไม่มีพนักงานใน Pool</div>
             )}
           </div>
 
@@ -445,7 +445,7 @@ export default function Management() {
               <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 5, fontStyle: 'italic' }}>drag กลับไลน์ผลิตได้</div>
             )}
           </div>
-          <div style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: isMobile ? undefined : 'repeat(2, 1fr)', flexDirection: isMobile ? 'column' : undefined, gap: 6, flex: '3 0 0', minHeight: 0 }}>
+          <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, flex: '3 0 0', minHeight: 0 }}>
             {specialWorkers.map(w => <SpecialCard key={w.id} worker={w} />)}
             {specialWorkers.length === 0 && (
               <div style={{ color: 'rgba(245,158,11,0.5)', fontSize: 10, textAlign: 'center', padding: '6px 0', gridColumn: '1/-1' }}>—</div>
