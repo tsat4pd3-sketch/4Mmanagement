@@ -15,7 +15,7 @@ const Report       = lazy(() => import('./pages/Report'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 
 /* ─── Role System ──────────────────────────────────────────── */
-export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null });
+export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null });
 
 const ROLE_LABELS = {
   admin:      '👑 Admin',
@@ -266,7 +266,7 @@ function ToggleBtn({ isOpen, sidebarW, onClick }) {
 }
 
 /* ─── Protected Layout ─────────────────────────────────────────────── */
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userEmail, userFullName }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userEmail, userFullName, userNotifyEmail }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
   const [isOpen, setIsOpen] = useState(!isMobile);
@@ -293,7 +293,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   const role       = userRole ?? 'admin';
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection }}>
+    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, notifyEmail: userNotifyEmail }}>
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         <ToggleBtn isOpen={isOpen} sidebarW={sidebarPx} onClick={() => setIsOpen(o => !o)} />
         <Sidebar
@@ -353,8 +353,9 @@ export default function App() {
   const [userLineId,   setUserLineId]   = useState(null);
   const [userTeam,     setUserTeam]     = useState(null);
   const [userSection,  setUserSection]  = useState(null);
-  const [userEmail,    setUserEmail]    = useState(null);
-  const [userFullName, setUserFullName] = useState(null);
+  const [userEmail,       setUserEmail]       = useState(null);
+  const [userFullName,    setUserFullName]    = useState(null);
+  const [userNotifyEmail, setUserNotifyEmail] = useState(null);
   const [showSplash,   setShowSplash]   = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
 
@@ -367,12 +368,13 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const { data } = await supabase.from('profiles').select('role, line_id, full_name, team, section').eq('id', user.id).single();
+    const { data } = await supabase.from('profiles').select('role, line_id, full_name, team, section, notify_email').eq('id', user.id).single();
     setUserRole(data?.role ?? 'admin');
     setUserLineId(data?.line_id ?? null);
     setUserFullName(data?.full_name ?? null);
     setUserTeam(data?.team ?? null);
     setUserSection(data?.section ?? null);
+    setUserNotifyEmail(data?.notify_email ?? null);
   };
 
   useEffect(() => {
@@ -383,7 +385,7 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
       if (s?.user) fetchProfile(s.user);
-      else { setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserEmail(null); setUserFullName(null); }
+      else { setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -419,6 +421,7 @@ export default function App() {
                 userSection={userSection}
                 userEmail={userEmail}
                 userFullName={userFullName}
+                userNotifyEmail={userNotifyEmail}
               />
             } />
           </Routes>

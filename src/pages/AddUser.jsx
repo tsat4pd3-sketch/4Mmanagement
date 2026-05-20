@@ -11,7 +11,7 @@ const ROLES = [
 const SECTIONS = ['PD1', 'PD2', 'PD3', 'PD4'];
 const TEAMS    = ['A', 'B'];
 
-const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', section: '', lineId: '', team: '' };
+const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', section: '', lineId: '', team: '', notifyEmail: '' };
 
 export default function AddUser() {
   const [users,         setUsers]         = useState([]);
@@ -35,7 +35,7 @@ export default function AddUser() {
     setFetchingUsers(true);
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name, role, line_id, section, team');
+      .select('id, full_name, role, line_id, section, team, notify_email');
     const { data: authUsers } = await supabase.rpc('get_auth_users');
 
     const emailMap = {};
@@ -58,13 +58,14 @@ export default function AddUser() {
 
   const openEdit = (u) => {
     setForm({
-      email:    u.email,
-      password: '',
-      fullName: u.full_name || '',
-      role:     u.role      || 'supervisor',
-      section:  u.section   || '',
-      lineId:   u.line_id   ? String(u.line_id) : '',
-      team:     u.team      || '',
+      email:       u.email,
+      password:    '',
+      fullName:    u.full_name    || '',
+      role:        u.role         || 'supervisor',
+      section:     u.section      || '',
+      lineId:      u.line_id      ? String(u.line_id) : '',
+      team:        u.team         || '',
+      notifyEmail: u.notify_email || '',
     });
     setEditingId(u.id);
     setModalMode('edit');
@@ -119,11 +120,12 @@ export default function AddUser() {
     setError(null);
     try {
       const { error: err } = await supabase.from('profiles').update({
-        full_name: form.fullName || null,
-        role:      form.role,
-        section:   form.section  || null,
-        team:      form.team     || null,
-        line_id:   form.lineId   ? Number(form.lineId) : null,
+        full_name:    form.fullName    || null,
+        role:         form.role,
+        section:      form.section     || null,
+        team:         form.team        || null,
+        line_id:      form.lineId      ? Number(form.lineId) : null,
+        notify_email: form.notifyEmail || null,
       }).eq('id', editingId);
       if (err) throw err;
       setMessage('อัปเดตข้อมูลผู้ใช้สำเร็จ');
@@ -170,14 +172,15 @@ export default function AddUser() {
               <th style={{ textAlign: 'center', minWidth: 80 }}>Section</th>
               <th style={{ minWidth: 140 }}>ไลน์ / Group</th>
               <th style={{ textAlign: 'center', minWidth: 80 }}>Team</th>
+              <th style={{ minWidth: 180 }}>📬 Notify Email</th>
               <th style={{ textAlign: 'center', minWidth: 80 }}>แก้ไข</th>
             </tr>
           </thead>
           <tbody>
             {fetchingUsers ? (
-              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>กำลังโหลด...</td></tr>
+              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>กำลังโหลด...</td></tr>
             ) : users.length === 0 ? (
-              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบข้อมูลผู้ใช้</td></tr>
+              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบข้อมูลผู้ใช้</td></tr>
             ) : users.map(u => {
               const rc      = ROLES.find(r => r.value === u.role);
               const lineName = lines.find(l => l.id === u.line_id)?.name || '—';
@@ -205,6 +208,11 @@ export default function AddUser() {
                   </td>
                   <td style={{ textAlign: 'center', fontSize: 13, color: u.team ? 'var(--text)' : 'var(--muted)' }}>
                     {u.team ? `Team ${u.team}` : '—'}
+                  </td>
+                  <td style={{ fontSize: 12 }}>
+                    {u.notify_email
+                      ? <span style={{ color: 'var(--green)' }}>📬 {u.notify_email}</span>
+                      : <span style={{ color: 'var(--muted)' }}>—</span>}
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     <button
@@ -300,6 +308,19 @@ export default function AddUser() {
                   <option value="">— เลือกไลน์ —</option>
                   {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select>
+              </div>
+
+              <div>
+                <label style={labelSt}>📬 Notify Email (รับการแจ้งเตือน)</label>
+                <input
+                  type="email"
+                  placeholder="notify@company.com (เว้นว่างถ้าใช้ email login)"
+                  value={form.notifyEmail}
+                  onChange={e => setF('notifyEmail', e.target.value)}
+                />
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                  ระบุ email ที่จะรับการแจ้งเตือนจากระบบ (4M Changes, ขาดงาน ฯลฯ) เว้นว่างเพื่อใช้ email login แทน
+                </div>
               </div>
 
               {error && (
