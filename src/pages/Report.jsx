@@ -450,11 +450,7 @@ function FourMTab() {
             ⏳ รอ Approve {pendingCount} รายการ
           </span>
         )}
-        <CsvBtn onClick={() => downloadCSV(
-          `4m_changes_${from}_${to}.csv`,
-          ['วันที่', 'ไลน์', 'ประเภท', 'รายละเอียด', 'สถานะ', 'Approved โดย', 'เวลา Approve', 'เหตุผล Reject'],
-          logs.map(l => [l.work_date, l.line_name, l.category, l.description, l.status, l.approved_by ? (approverMap[l.approved_by] || l.approved_by) : '', l.approved_at ? new Date(l.approved_at).toLocaleString('th-TH') : '', l.reject_reason || ''])
-        )} />
+        <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic' }}>⬇️ ดาวน์โหลดได้จากแท็บ Export</span>
       </div>
 
       {loading ? <Loader /> : (
@@ -744,16 +740,7 @@ function SkillMatrixTab() {
         </select>
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>{employees.length} คน · {skillDefs.length} สกิล</span>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>· คลิกที่พนักงานเพื่อดู Radar Chart</span>
-        <CsvBtn onClick={() => {
-          const headers = ['รหัสพนักงาน', 'ชื่อ', ...skillDefs.map(s => s.label), 'เฉลี่ย'];
-          const rows = employees.map(emp => {
-            const skillMap = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
-            const scores = skillDefs.map(s => skillMap[s.name] ?? 0);
-            const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-            return [emp.employee_id_code, emp.name, ...scores, avg];
-          });
-          downloadCSV('skill_matrix.csv', headers, rows);
-        }} />
+        <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic' }}>⬇️ ดาวน์โหลดได้จากแท็บ Export</span>
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
