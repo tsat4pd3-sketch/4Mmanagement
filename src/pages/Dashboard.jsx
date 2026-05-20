@@ -74,23 +74,26 @@ export default function Dashboard() {
   const shiftInfo = getShiftInfo(now);
   const todayStr = now.toISOString().split('T')[0];
 
-  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [selectedDate,  setSelectedDate]  = useState(todayStr);
+  const [selectedShift, setSelectedShift] = useState(shiftInfo.isDay ? 'day' : 'night');
   const [logs, setLogs]         = useState([]);
   const [fourMLogs, setFourMLogs] = useState([]);
   const [lines, setLines]       = useState([]);
   const [loading, setLoading]   = useState(true);
 
-  const fetchAll = useCallback(async (date) => {
+  const fetchAll = useCallback(async (date, shift) => {
     setLoading(true);
+    let logQ = supabase.from('daily_production_logs')
+      .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, shift, employees!inner(id, name, employee_id_code, line_id, is_active)')
+      .eq('work_date', date)
+      .eq('employees.is_active', true);
+    if (shift !== 'all') logQ = logQ.eq('shift', shift);
     const [
       { data: logData },
       { data: fmData },
       { data: lineData },
     ] = await Promise.all([
-      supabase.from('daily_production_logs')
-        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, employees!inner(id, name, employee_id_code, line_id, is_active)')
-        .eq('work_date', date)
-        .eq('employees.is_active', true),
+      logQ,
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
       supabase.from('production_lines').select('id, name, section').order('name'),
     ]);
@@ -100,7 +103,7 @@ export default function Dashboard() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchAll(selectedDate); }, [selectedDate]);
+  useEffect(() => { fetchAll(selectedDate, selectedShift); }, [selectedDate, selectedShift]);
 
   const present = logs.filter(l => l.is_present);
   const absent  = logs.filter(l => !l.is_present);
@@ -130,14 +133,15 @@ export default function Dashboard() {
             Production Overview
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
-            {isToday && (
+            {selectedShift !== 'all' && (
               <span style={{
                 padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-                background: shiftInfo.isDay ? 'rgba(245,158,11,0.15)' : 'rgba(77,159,255,0.15)',
-                color: shiftInfo.isDay ? '#f59e0b' : '#4d9fff',
-                border: `1px solid ${shiftInfo.isDay ? 'rgba(245,158,11,0.3)' : 'rgba(77,159,255,0.3)'}`,
+                background: selectedShift === 'day' ? 'rgba(245,158,11,0.15)' : 'rgba(77,159,255,0.15)',
+                color: selectedShift === 'day' ? '#f59e0b' : '#4d9fff',
+                border: `1px solid ${selectedShift === 'day' ? 'rgba(245,158,11,0.3)' : 'rgba(77,159,255,0.3)'}`,
               }}>
-                {shiftInfo.icon} {shiftInfo.label}
+                {selectedShift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'}
+                {isToday && selectedShift === (shiftInfo.isDay ? 'day' : 'night') && ' · กะปัจจุบัน'}
               </span>
             )}
             <span style={{ fontSize: 12, color: 'var(--muted)', fontFamily: 'var(--font-display)' }}>
@@ -148,7 +152,26 @@ export default function Dashboard() {
           </div>
         </motion.div>
 
-        <motion.div {...stagger(1)}>
+        <motion.div {...stagger(1)} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Shift toggle */}
+          <div style={{ display: 'flex', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 3, gap: 2 }}>
+            {[
+              { val: 'day',   label: '☀️ กะเช้า', active: 'rgba(245,158,11,0.2)', color: '#f59e0b' },
+              { val: 'night', label: '🌙 กะดึก',  active: 'rgba(77,159,255,0.2)', color: '#4d9fff' },
+              { val: 'all',   label: 'ทั้งหมด',    active: 'rgba(255,255,255,0.1)', color: 'var(--text2)' },
+            ].map(s => (
+              <button key={s.val} onClick={() => setSelectedShift(s.val)}
+                style={{
+                  padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                  background: selectedShift === s.val ? s.active : 'transparent',
+                  color: selectedShift === s.val ? s.color : 'var(--muted)',
+                  transition: 'all 0.15s',
+                }}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+          {/* Date picker */}
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8,
             background: 'var(--card)', border: '1px solid var(--border2)',
