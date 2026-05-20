@@ -414,7 +414,7 @@ function FourMTab() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
         {Object.entries(CAT_META).map(([k, m]) => (
           <div key={k} onClick={() => setCat(c => c === k ? '' : k)} style={{
             background: cat === k ? m.bg : 'var(--card)', border: `1px solid ${cat === k ? m.color : 'var(--border)'}`,
