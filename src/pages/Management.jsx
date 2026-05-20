@@ -299,7 +299,7 @@ export default function Management() {
         {/* remove button — leader+ */}
         {['admin','manager','supervisor','leader'].includes(role) && (
           <button onClick={(e) => { e.stopPropagation(); removeSpecialTask(worker); }}
-            style={{ position: 'absolute', top: 3, right: 3, width: 16, height: 16, borderRadius: '50%', background: 'rgba(239,68,68,0.85)', border: 'none', color: '#fff', fontSize: 10, lineHeight: '16px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
+            style={{ position: 'absolute', top: 2, right: 2, width: 22, height: 22, borderRadius: '50%', background: 'rgba(239,68,68,0.85)', border: 'none', color: '#fff', fontSize: 11, lineHeight: '22px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
             ✕
           </button>
         )}
