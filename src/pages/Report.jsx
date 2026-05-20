@@ -836,14 +836,49 @@ function scoreToLevel(score) {
 
 const msStyle = (lv) => MS_LEVELS.find(l => l.level === lv) || { bg: '#fff', color: '#999', border: '#ccc' };
 
+/* ── SVG Skill Gauge (quadrant fill, manufacturing style) ── */
+const GAUGE_FILL = ['none', '#f97316', '#eab308', '#3b82f6', '#22c55e'];
+const GAUGE_GLOW = ['none', 'rgba(249,115,22,0.18)', 'rgba(234,179,8,0.18)', 'rgba(59,130,246,0.18)', 'rgba(34,197,94,0.18)'];
+
+function SkillGauge({ level, size = 34 }) {
+  const fill = GAUGE_FILL[level] || 'none';
+  const glow = GAUGE_GLOW[level] || 'none';
+  const h = size / 2;
+  return (
+    <svg width={size} height={size} viewBox="0 0 34 34" xmlns="http://www.w3.org/2000/svg" style={{ display: 'block', margin: 'auto' }}>
+      <rect x="1" y="1" width="32" height="32" fill={level > 0 ? glow : 'none'} rx="3"/>
+      {level >= 1 && <rect x="2"  y="17" width="13" height="15" fill={fill} rx="1"/>}
+      {level >= 2 && <rect x="19" y="17" width="13" height="15" fill={fill} rx="1"/>}
+      {level >= 3 && <rect x="19" y="2"  width="13" height="13" fill={fill} rx="1"/>}
+      {level >= 4 && <rect x="2"  y="2"  width="13" height="13" fill={fill} rx="1"/>}
+      <rect x="1" y="1" width="32" height="32" fill="none" stroke="var(--border2)" strokeWidth="1.5" rx="3"/>
+      <line x1="17" y1="1" x2="17" y2="33" stroke="var(--border2)" strokeWidth="1"/>
+      <line x1="1"  y1="17" x2="33" y2="17" stroke="var(--border2)" strokeWidth="1"/>
+    </svg>
+  );
+}
+
+/* inline SVG string for PDF export */
+function skillGaugeSvgStr(lv) {
+  const fill = GAUGE_FILL[lv] || 'none';
+  const glowBg = lv > 0 ? GAUGE_GLOW[lv] : 'none';
+  return `<svg width="26" height="26" viewBox="0 0 34 34" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="1" width="32" height="32" fill="${glowBg}" rx="3"/>
+    ${lv >= 1 ? `<rect x="2" y="17" width="13" height="15" fill="${fill}" rx="1"/>` : ''}
+    ${lv >= 2 ? `<rect x="19" y="17" width="13" height="15" fill="${fill}" rx="1"/>` : ''}
+    ${lv >= 3 ? `<rect x="19" y="2" width="13" height="13" fill="${fill}" rx="1"/>` : ''}
+    ${lv >= 4 ? `<rect x="2" y="2" width="13" height="13" fill="${fill}" rx="1"/>` : ''}
+    <rect x="1" y="1" width="32" height="32" fill="none" stroke="#9ca3af" stroke-width="1.5" rx="3"/>
+    <line x1="17" y1="1" x2="17" y2="33" stroke="#9ca3af" stroke-width="1"/>
+    <line x1="1" y1="17" x2="33" y2="17" stroke="#9ca3af" stroke-width="1"/>
+  </svg>`;
+}
+
 function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps }) {
   const today = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
 
-  const levelCell = (lv) => {
-    if (lv === 0) return `<td style="text-align:center;border:1px solid #999"></td>`;
-    const s = msStyle(lv);
-    return `<td style="text-align:center;border:1px solid #999;background:${s.bg};color:${s.color};font-weight:700">${lv}</td>`;
-  };
+  const levelCell = (lv) =>
+    `<td style="text-align:center;border:1px solid #999;padding:2px">${skillGaugeSvgStr(lv)}</td>`;
 
   const skillHeaderCells = skillDefs.map(s =>
     `<th style="border:1px solid #666;background:#e5e7eb;padding:3px 2px;font-size:9px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:90px;white-space:nowrap">${s.label}</th>`
@@ -859,13 +894,12 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
     </tr>`).join('');
 
   const summaryRowsHtml = MS_LEVELS.map((lv, li) => {
-    const s = msStyle(lv.level);
-    const bg = lv.level > 0 ? `background:${s.bg};color:${s.color};` : '';
+    const fillHex = GAUGE_FILL[lv.level] === 'none' ? '' : `background:${GAUGE_GLOW[lv.level]};`;
     return `<tr>
-      <td style="border:1px solid #999;padding:2px 4px;font-size:9px">${lv.pct}</td>
-      <td style="border:1px solid #999;padding:2px 4px;font-size:9px;${bg}">${lv.label}</td>
+      <td style="border:1px solid #999;padding:2px;text-align:center;vertical-align:middle">${skillGaugeSvgStr(lv.level)}</td>
+      <td style="border:1px solid #999;padding:2px 4px;font-size:9px">${lv.pct} — ${lv.label}</td>
       ${levelCounts[li].map(cnt =>
-        `<td style="text-align:center;border:1px solid #999;font-size:9px;font-weight:700;${cnt > 0 ? bg : ''}">${cnt || ''}</td>`
+        `<td style="text-align:center;border:1px solid #999;font-size:9px;font-weight:700;${cnt > 0 ? fillHex : ''}">${cnt || ''}</td>`
       ).join('')}
     </tr>`;
   }).join('');
@@ -873,8 +907,8 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
   const legendHtml = MS_LEVELS.map(lv => {
     const s = msStyle(lv.level);
     return `<tr>
-      <td style="padding:1px 4px;background:${lv.level > 0 ? s.bg : '#f3f4f6'};color:${lv.level > 0 ? s.color : '#333'};font-weight:700;text-align:center;min-width:40px;border:1px solid #ccc">${lv.pct}</td>
-      <td style="padding:1px 6px">${lv.label}</td>
+      <td style="padding:2px 4px;text-align:center;border:1px solid #ccc;vertical-align:middle">${skillGaugeSvgStr(lv.level)}</td>
+      <td style="padding:1px 6px;font-size:8px">${lv.pct} — ${lv.label}</td>
     </tr>`;
   }).join('');
 
@@ -1088,11 +1122,14 @@ function MultiSkillFormTab() {
             </div>
 
             {/* Legend */}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
               {MS_LEVELS.map(lv => (
-                <span key={lv.level} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: lv.level > 0 ? lv.bg : 'var(--bg3)', color: lv.level > 0 ? lv.color : 'var(--muted)', border: `1px solid ${lv.level > 0 ? lv.border : 'var(--border)'}`, fontWeight: lv.level > 0 ? 700 : 400 }}>
-                  {lv.level > 0 ? lv.level : '—'} · {lv.pct} {lv.label}
-                </span>
+                <div key={lv.level} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 8, background: lv.level > 0 ? GAUGE_GLOW[lv.level] : 'var(--bg3)', border: `1px solid ${lv.level > 0 ? lv.border : 'var(--border)'}` }}>
+                  <SkillGauge level={lv.level} size={20} />
+                  <span style={{ fontSize: 10, color: lv.level > 0 ? lv.color : 'var(--muted)', fontWeight: lv.level > 0 ? 700 : 400 }}>
+                    {lv.pct} · {lv.label}
+                  </span>
+                </div>
               ))}
             </div>
 
@@ -1118,16 +1155,13 @@ function MultiSkillFormTab() {
                     <td style={{ border: '1px solid var(--border2)', padding: '3px 5px', fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code}</td>
                     <td style={{ border: '1px solid var(--border2)', padding: '3px 5px', fontWeight: 500 }}>{emp.name}</td>
                     <td style={{ border: '1px solid var(--border2)', padding: '3px 5px', fontSize: 11, color: 'var(--text2)' }}>{emp.position || ''}</td>
-                    {levels.map((lv, si) => {
-                      const c = msLevelColor(lv);
-                      return (
-                        <td key={si} style={{ border: '1px solid var(--border2)', textAlign: 'center', background: lv > 0 ? c.bg + '33' : '' }}>
-                          {lv > 0 ? <span style={{ fontWeight: 700, color: c.color, fontSize: 13 }}>{lv}</span> : <span style={{ color: 'var(--muted)' }}>—</span>}
-                        </td>
-                      );
-                    })}
-                    <td style={{ border: '1px solid var(--border2)', textAlign: 'center', background: overall > 0 ? msLevelColor(overall).bg + '33' : '' }}>
-                      {overall > 0 ? <span style={{ fontWeight: 700, color: msLevelColor(overall).color, fontSize: 13 }}>{overall}</span> : <span style={{ color: 'var(--muted)' }}>—</span>}
+                    {levels.map((lv, si) => (
+                      <td key={si} style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '4px 2px' }}>
+                        <SkillGauge level={lv} size={30} />
+                      </td>
+                    ))}
+                    <td style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '4px 2px', background: overall > 0 ? GAUGE_GLOW[overall] : '' }}>
+                      <SkillGauge level={overall} size={30} />
                     </td>
                   </tr>
                 ))}
@@ -1153,8 +1187,11 @@ function MultiSkillFormTab() {
                     const c = msLevelColor(lv.level);
                     return (
                       <tr key={lv.level}>
-                        <td style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '3px 6px', background: lv.level > 0 ? c.bg + '33' : '', fontWeight: 700, color: lv.level > 0 ? c.color : 'var(--muted)' }}>
-                          {lv.level > 0 ? lv.level : '—'} ({lv.pct})
+                        <td style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '4px 6px', background: lv.level > 0 ? GAUGE_GLOW[lv.level] : '' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                            <SkillGauge level={lv.level} size={22} />
+                            <span style={{ fontSize: 10, color: 'var(--muted)' }}>{lv.pct}</span>
+                          </div>
                         </td>
                         <td style={{ border: '1px solid var(--border2)', padding: '3px 8px', fontSize: 11, color: 'var(--text2)' }}>{lv.label}</td>
                         {counts.map((cnt, i) => (
