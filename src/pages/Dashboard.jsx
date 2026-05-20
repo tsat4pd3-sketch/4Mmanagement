@@ -81,12 +81,15 @@ export default function Dashboard() {
   const [lines, setLines]       = useState([]);
   const [loading, setLoading]   = useState(true);
 
+  const [empCounts, setEmpCounts] = useState({});   // { [line_id]: count }
+
   const fetchAll = useCallback(async (date) => {
     setLoading(true);
     const [
       { data: logData },
       { data: fmData },
       { data: lineData },
+      { data: empData },
     ] = await Promise.all([
       supabase.from('daily_production_logs')
         .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, shift, employees!inner(id, name, employee_id_code, line_id, team, is_active)')
@@ -94,10 +97,24 @@ export default function Dashboard() {
         .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
       supabase.from('production_lines').select('id, name, section').order('name'),
+      supabase.from('employees').select('id, line_id, team').eq('is_active', true),
     ]);
     setLogs(logData || []);
     setFourMLogs(fmData || []);
     setLines(lineData || []);
+    // Build line capacity: count active employees per line, filtered by shift team
+    const counts = {};
+    (empData || []).forEach(emp => {
+      if (!emp.line_id) return;
+      if (!counts[emp.line_id]) counts[emp.line_id] = { day: 0, night: 0, all: 0 };
+      counts[emp.line_id].all++;
+      const t = emp.team;
+      if (t === 'A') counts[emp.line_id].day++;
+      else if (t === 'B') counts[emp.line_id].night++;
+      else if (t === 'C') { counts[emp.line_id].day++; counts[emp.line_id].night++; }
+      else { counts[emp.line_id].day++; counts[emp.line_id].night++; } // no team → count both
+    });
+    setEmpCounts(counts);
     setLoading(false);
   }, []);
 
@@ -118,13 +135,17 @@ export default function Dashboard() {
   const absent  = shiftLogs.filter(l => !l.is_present);
   const ppeReady = present.filter(l => l.has_helmet && l.has_boots && l.has_gloves);
   const otCount  = present.filter(l => l.has_ot).length;
-  const attendRate = shiftLogs.length > 0 ? Math.round((present.length / shiftLogs.length) * 100) : 0;
+
+  const shiftKey     = selectedShift === 'all' ? 'all' : selectedShift;
+  const totalCapacity = Object.values(empCounts).reduce((s, c) => s + (c[shiftKey] ?? 0), 0) || shiftLogs.length;
+
+  const attendRate = totalCapacity > 0 ? Math.round((present.length / totalCapacity) * 100) : 0;
   const ppeRate    = present.length > 0 ? Math.round((ppeReady.length / present.length) * 100) : 0;
 
   const lineStats = lines.map(line => {
-    const lineLogs = shiftLogs.filter(l => l.employees?.line_id === line.id);
+    const lineLogs    = shiftLogs.filter(l => l.employees?.line_id === line.id);
     const linePresent = lineLogs.filter(l => l.is_present).length;
-    const lineTotal   = lineLogs.length;
+    const lineTotal   = empCounts[line.id]?.[shiftKey] ?? lineLogs.length;
     const lineAlerts  = fourMLogs.filter(f => f.line_name === line.name).length;
     const rate = lineTotal > 0 ? Math.round((linePresent / lineTotal) * 100) : 0;
     return { ...line, linePresent, lineTotal, lineAlerts, rate };
@@ -197,8 +218,8 @@ export default function Dashboard() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
         {[
           {
-            label: 'พนักงานทั้งหมด', value: shiftLogs.length, unit: 'คน',
-            sub: `เช็คชื่อแล้ว ${shiftLogs.length} รายการ`,
+            label: 'พนักงานทั้งหมด', value: totalCapacity, unit: 'คน',
+            sub: `เช็คชื่อแล้ว ${shiftLogs.length} / ${totalCapacity} คน`,
             accent: '#4d9fff', icon: '👥',
             radial: null,
           },
