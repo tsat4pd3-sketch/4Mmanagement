@@ -81,19 +81,17 @@ export default function Dashboard() {
   const [lines, setLines]       = useState([]);
   const [loading, setLoading]   = useState(true);
 
-  const fetchAll = useCallback(async (date, shift) => {
+  const fetchAll = useCallback(async (date) => {
     setLoading(true);
-    let logQ = supabase.from('daily_production_logs')
-      .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, shift, employees!inner(id, name, employee_id_code, line_id, is_active)')
-      .eq('work_date', date)
-      .eq('employees.is_active', true);
-    if (shift !== 'all') logQ = logQ.eq('shift', shift);
     const [
       { data: logData },
       { data: fmData },
       { data: lineData },
     ] = await Promise.all([
-      logQ,
+      supabase.from('daily_production_logs')
+        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, shift, employees!inner(id, name, employee_id_code, line_id, team, is_active)')
+        .eq('work_date', date)
+        .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
       supabase.from('production_lines').select('id, name, section').order('name'),
     ]);
@@ -103,17 +101,28 @@ export default function Dashboard() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchAll(selectedDate, selectedShift); }, [selectedDate, selectedShift]);
+  useEffect(() => { fetchAll(selectedDate); }, [selectedDate]);
 
-  const present = logs.filter(l => l.is_present);
-  const absent  = logs.filter(l => !l.is_present);
+  /* Filter by shift: prefer shift column (new records), fall back to employee team
+     team A = กะเช้า (day), team B = กะดึก (night), team C = ทุกกะ, null = แสดงทุกกะ */
+  const shiftLogs = selectedShift === 'all' ? logs : logs.filter(l => {
+    const sh = l.shift;
+    const team = l.employees?.team;
+    if (sh) return sh === selectedShift;                         // new records have shift
+    if (selectedShift === 'day')   return team === 'A' || team === 'C' || !team;
+    if (selectedShift === 'night') return team === 'B' || team === 'C' || !team;
+    return true;
+  });
+
+  const present = shiftLogs.filter(l => l.is_present);
+  const absent  = shiftLogs.filter(l => !l.is_present);
   const ppeReady = present.filter(l => l.has_helmet && l.has_boots && l.has_gloves);
   const otCount  = present.filter(l => l.has_ot).length;
-  const attendRate = logs.length > 0 ? Math.round((present.length / logs.length) * 100) : 0;
+  const attendRate = shiftLogs.length > 0 ? Math.round((present.length / shiftLogs.length) * 100) : 0;
   const ppeRate    = present.length > 0 ? Math.round((ppeReady.length / present.length) * 100) : 0;
 
   const lineStats = lines.map(line => {
-    const lineLogs = logs.filter(l => l.employees?.line_id === line.id);
+    const lineLogs = shiftLogs.filter(l => l.employees?.line_id === line.id);
     const linePresent = lineLogs.filter(l => l.is_present).length;
     const lineTotal   = lineLogs.length;
     const lineAlerts  = fourMLogs.filter(f => f.line_name === line.name).length;
@@ -188,8 +197,8 @@ export default function Dashboard() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
         {[
           {
-            label: 'พนักงานทั้งหมด', value: logs.length, unit: 'คน',
-            sub: `เช็คชื่อแล้ว ${logs.length} รายการ`,
+            label: 'พนักงานทั้งหมด', value: shiftLogs.length, unit: 'คน',
+            sub: `เช็คชื่อแล้ว ${shiftLogs.length} รายการ`,
             accent: '#4d9fff', icon: '👥',
             radial: null,
           },
