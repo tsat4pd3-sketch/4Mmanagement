@@ -122,6 +122,7 @@ export default function Operator() {
         team:       editingEmp.team       || null,
         line_id:    editingEmp.line_id    || null,
         image_url:  photoUrl,
+        start_date: editingEmp.start_date || null,
       }).eq('id', editingEmp.id);
       if (error) throw error;
 
@@ -285,6 +286,7 @@ export default function Operator() {
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Section</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Group</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Team</th>
+                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>วันเริ่มงาน</th>
                   {skillDefs.map(sd => (
                     <th key={sd.name} style={{ fontSize: 10, color: sd.color, whiteSpace: 'nowrap' }}>{sd.label}</th>
                   ))}
@@ -334,6 +336,9 @@ export default function Operator() {
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.section    || '—'}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.group_name || '—'}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.team       || '—'}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                      {emp.start_date ? emp.start_date : '—'}
+                    </td>
                     {skillDefs.map(sd => {
                       const score = getEmpSkill(emp, sd.name);
                       const lv = getLevel(score);
@@ -461,6 +466,11 @@ export default function Operator() {
                 <label style={labelSt}>แผนก</label>
                 <input type="text" value={editingEmp.department || ''}
                   onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value })} />
+              </div>
+              <div>
+                <label style={labelSt}>วันเริ่มงาน</label>
+                <input type="date" value={editingEmp.start_date || ''}
+                  onChange={e => setEditingEmp({ ...editingEmp, start_date: e.target.value })} />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

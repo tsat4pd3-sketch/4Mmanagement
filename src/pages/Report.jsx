@@ -984,6 +984,19 @@ function skillGaugeSvgStr(lv) {
   </svg>`;
 }
 
+function calcServiceDuration(startDate) {
+  if (!startDate) return '';
+  const start = new Date(startDate);
+  const now = new Date();
+  let years = now.getFullYear() - start.getFullYear();
+  let months = now.getMonth() - start.getMonth();
+  if (months < 0) { years--; months += 12; }
+  const parts = [];
+  if (years > 0) parts.push(`${years}ปี`);
+  if (months > 0) parts.push(`${months}เดือน`);
+  return parts.length ? parts.join(' ') : '< 1 เดือน';
+}
+
 function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps, makerSigUrl, checkerSigUrl, approverSigUrl }) {
   const today = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
 
@@ -1000,6 +1013,7 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
       <td style="border:1px solid #999;padding:0 3px;white-space:nowrap;font-size:9px">${emp.employee_id_code || ''}</td>
       <td style="border:1px solid #999;padding:0 3px;font-size:9px">${emp.name || ''}</td>
       <td style="border:1px solid #999;padding:0 3px;font-size:9px">${emp.position || ''}</td>
+      <td style="border:1px solid #999;padding:0 3px;font-size:9px;white-space:nowrap">${calcServiceDuration(emp.start_date)}</td>
       ${levels.map(levelCell).join('')}${levelCell(overall)}
     </tr>`).join('');
 
@@ -1079,6 +1093,7 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
       <th style="border:1px solid #666;padding:3px;text-align:center;width:70px" rowspan="2">เลขที่บัตร</th>
       <th style="border:1px solid #666;padding:3px;text-align:center;min-width:110px" rowspan="2">ชื่อ-นามสกุล</th>
       <th style="border:1px solid #666;padding:3px;text-align:center;min-width:80px" rowspan="2">ตำแหน่ง</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:60px" rowspan="2">อายุงาน</th>
       <th style="border:1px solid #666;padding:3px;text-align:center" colspan="${skillDefs.length + 1}">ทักษะความสามารถการปฏิบัติงานของพนักงาน</th>
     </tr>
     <tr style="background:#e5e7eb">${skillHeaderCells}
@@ -1131,7 +1146,7 @@ function MultiSkillFormTab() {
 
   const load = async () => {
     setLoading(true);
-    const sel = 'id, name, employee_id_code, position, section, team, employee_skills(skill_name, score)';
+    const sel = 'id, name, employee_id_code, position, section, team, start_date, employee_skills(skill_name, score)';
     const q = filterLine
       ? supabase.from('employees').select(sel).eq('is_active', true).eq('line_id', filterLine).order('name')
       : supabase.from('employees').select(sel).eq('is_active', true).order('name');
@@ -1771,7 +1786,7 @@ function MultiSkillExportCard() {
 
   const handlePrint = async () => {
     setLoading(true);
-    const sel = 'id, name, employee_id_code, position, section, team, employee_skills(skill_name, score)';
+    const sel = 'id, name, employee_id_code, position, section, team, start_date, employee_skills(skill_name, score)';
     const q = filterLine
       ? supabase.from('employees').select(sel).eq('is_active', true).eq('line_id', filterLine).order('name')
       : supabase.from('employees').select(sel).eq('is_active', true).order('name');
