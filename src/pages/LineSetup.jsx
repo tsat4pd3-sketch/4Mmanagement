@@ -7,12 +7,13 @@ export default function LineSetup() {
   const [lines, setLines] = useState([]);
   const [selectedLine, setSelectedLine] = useState('');
   const [newLineName, setNewLineName] = useState('');
+  const [newLineSection, setNewLineSection] = useState('');
   const [isAddingLine, setIsAddingLine] = useState(false);
   const [layoutImage, setLayoutImage] = useState(null);
   const [stations, setStations] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [tempPos, setTempPos] = useState(null);
-  const [formData, setFormData] = useState({ id: null, name: '', requirements: {} });
+  const [formData, setFormData] = useState({ id: null, name: '', requirements: {}, skill_allowance: false });
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [collisionWarn, setCollisionWarn] = useState(false);
   const [skillDefs, setSkillDefs] = useState([]);
@@ -24,7 +25,7 @@ export default function LineSetup() {
   }, []);
 
   const fetchLines = async () => {
-    const { data } = await supabase.from('production_lines').select('id, name').order('name');
+    const { data } = await supabase.from('production_lines').select('id, name, section').order('name');
     setLines(data || []);
     if (data?.length > 0 && !selectedLine) setSelectedLine(data[0].name);
   };
@@ -49,10 +50,11 @@ export default function LineSetup() {
     const name = newLineName.trim();
     if (!name) return;
     setIsAddingLine(true);
-    const { error } = await supabase.from('production_lines').insert([{ name }]);
+    const { error } = await supabase.from('production_lines').insert([{ name, section: newLineSection || null }]);
     if (error) { alert('Error: ' + error.message); }
     else {
       setNewLineName('');
+      setNewLineSection('');
       await fetchLines();
       setSelectedLine(name);
     }
@@ -72,6 +74,11 @@ export default function LineSetup() {
       setSelectedLine(next);
       if (!next) { setLayoutImage(null); setStations([]); }
     }
+  };
+
+  const handleUpdateSection = async (line, section) => {
+    await supabase.from('production_lines').update({ section: section || null }).eq('id', line.id);
+    await fetchLines();
   };
 
   const handleUploadImage = async (e) => {
@@ -144,6 +151,7 @@ export default function LineSetup() {
       station_name: formData.name,
       pos_top: tempPos ? tempPos.top : existingStation?.pos_top,
       pos_left: tempPos ? tempPos.left : existingStation?.pos_left,
+      skill_allowance: formData.skill_allowance,
     };
     let stationId = formData.id;
     if (stationId) {
@@ -181,7 +189,7 @@ export default function LineSetup() {
     setTempPos(null);
     const reqMap = {};
     (st.station_requirements || []).forEach(r => { reqMap[r.skill_name] = r.min_score; });
-    setFormData({ id: st.id, name: st.station_name, requirements: reqMap });
+    setFormData({ id: st.id, name: st.station_name, requirements: reqMap, skill_allowance: st.skill_allowance || false });
   };
 
   return (
@@ -248,9 +256,10 @@ export default function LineSetup() {
                       padding: '3px 2px', zIndex: 5,
                     }}
                   >
-                    <div style={{ fontSize: 7, fontWeight: 700, color: isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, color: isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {st.station_name}
                     </div>
+                    {st.skill_allowance && <div style={{ fontSize: 6, color: '#22c55e', fontWeight: 800, lineHeight: '10px' }}>💰</div>}
                     <div style={{ color: isSelected ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.25)', fontSize: 14, lineHeight: '18px' }}>+</div>
                   </div>
                 );
@@ -303,26 +312,42 @@ export default function LineSetup() {
                 }}
                 onClick={() => { setSelectedLine(l.name); setTempPos(null); setFormData({ id: null, name: '', requirements: {} }); }}
               >
-                <span style={{ fontSize: 13, flex: 1, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400 }}>
-                  {l.name}
-                </span>
-                <button onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
-                  style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1 }}
-                  title="ลบไลน์">🗑️</button>
+                  <span style={{ fontSize: 13, flex: 1, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {l.name}
+                  </span>
+                  <select
+                    value={l.section || ''}
+                    onClick={e => e.stopPropagation()}
+                    onChange={e => { e.stopPropagation(); handleUpdateSection(l, e.target.value); }}
+                    style={{ fontSize: 11, padding: '2px 4px', borderRadius: 5, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', width: 'auto', flexShrink: 0 }}
+                  >
+                    <option value="">Section</option>
+                    {['PD1','PD2','PD3','PD4'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <button onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
+                    style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
+                    title="ลบไลน์">🗑️</button>
               </div>
             ))}
             {lines.length === 0 && (
               <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีไลน์ผลิต</div>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <input placeholder="ชื่อไลน์ใหม่ เช่น ไลน์ F" value={newLineName}
-              onChange={e => setNewLineName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleAddLine()}
-              style={{ flex: 1, fontSize: 13, padding: '8px 10px' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input placeholder="ชื่อไลน์ใหม่ เช่น ไลน์ F" value={newLineName}
+                onChange={e => setNewLineName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAddLine()}
+                style={{ flex: 1, fontSize: 13, padding: '8px 10px' }} />
+              <select value={newLineSection} onChange={e => setNewLineSection(e.target.value)}
+                style={{ fontSize: 12, padding: '8px 8px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', flexShrink: 0, width: 'auto' }}>
+                <option value="">Section</option>
+                {['PD1','PD2','PD3','PD4'].map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
             <button onClick={handleAddLine} disabled={isAddingLine || !newLineName.trim()}
-              style={{ padding: '8px 12px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
-              {isAddingLine ? '...' : '+ เพิ่ม'}
+              style={{ padding: '8px 12px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13 }}>
+              {isAddingLine ? '...' : '+ เพิ่มไลน์'}
             </button>
           </div>
         </div>
@@ -382,11 +407,23 @@ export default function LineSetup() {
                     })}
                   </div>
                 )}
+                {/* skill allowance toggle */}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                  background: formData.skill_allowance ? 'rgba(34,197,94,0.1)' : 'var(--bg3)',
+                  border: `1.5px solid ${formData.skill_allowance ? 'rgba(34,197,94,0.4)' : 'var(--border2)'}` }}>
+                  <input type="checkbox" checked={formData.skill_allowance}
+                    onChange={e => setFormData({ ...formData, skill_allowance: e.target.checked })}
+                    style={{ width: 16, height: 16, accentColor: '#22c55e' }} />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: formData.skill_allowance ? '#22c55e' : 'var(--text2)' }}>💰 จุดงานได้ค่าฝีมือ</div>
+                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>พนักงานที่ถูก assign จุดนี้จะได้ค่าฝีมือรายวัน</div>
+                  </div>
+                </label>
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                   <button onClick={handleSaveStation} style={{ flex: 1, padding: '9px', background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700 }}>
                     {formData.id ? 'บันทึก' : 'เพิ่ม'}
                   </button>
-                  <button onClick={() => { setTempPos(null); setFormData({ id: null, name: '', requirements: {} }); }}
+                  <button onClick={() => { setTempPos(null); setFormData({ id: null, name: '', requirements: {}, skill_allowance: false }); }}
                     style={{ padding: '9px 14px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 7 }}>
                     ยกเลิก
                   </button>
@@ -408,7 +445,10 @@ export default function LineSetup() {
               return (
                 <div key={st.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div onClick={() => editStation(st)} style={{ cursor: 'pointer', flex: 1 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{st.station_name}</div>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      {st.station_name}
+                      {st.skill_allowance && <span style={{ fontSize: 10, background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>💰 ค่าฝีมือ</span>}
+                    </div>
                     <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
                       {reqs.length > 0
                         ? reqs.map(r => {

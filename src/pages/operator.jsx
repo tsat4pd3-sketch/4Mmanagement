@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
+import { toast } from '../components/Toast';
 
 const SKILL_LEVELS = [
   { min: 80, label: 'ชำนาญ',       color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
@@ -13,7 +14,7 @@ const getLevel = (score) => SKILL_LEVELS.find(l => score >= l.min) || SKILL_LEVE
 const EMP_GRADES = {
   gold:   { label: 'ประจำ',  gradient: 'linear-gradient(135deg,#7a5800,#ffd700,#c8941a,#ffd700,#7a5800)', glow: 'rgba(255,215,0,0.45)',   text: '#c8941a', badge: 'rgba(255,215,0,0.15)',   border: 'rgba(200,148,26,0.5)' },
   silver: { label: 'รายวัน', gradient: 'linear-gradient(135deg,#555,#d0d0d0,#999,#d0d0d0,#555)',          glow: 'rgba(192,192,192,0.4)',  text: '#a0a0a0', badge: 'rgba(192,192,192,0.15)', border: 'rgba(160,160,160,0.5)' },
-  bronze: { label: 'อื่น¶',  gradient: 'linear-gradient(135deg,#4a2800,#cd7f32,#8b4a1e,#cd7f32,#4a2800)', glow: 'rgba(205,127,50,0.35)',  text: '#b06a28', badge: 'rgba(205,127,50,0.15)',  border: 'rgba(176,106,40,0.5)' },
+  bronze: { label: 'อื่นๆ',  gradient: 'linear-gradient(135deg,#4a2800,#cd7f32,#8b4a1e,#cd7f32,#4a2800)', glow: 'rgba(205,127,50,0.35)',  text: '#b06a28', badge: 'rgba(205,127,50,0.15)',  border: 'rgba(176,106,40,0.5)' },
 };
 
 const getEmpGrade = (code = '') => {
@@ -23,8 +24,9 @@ const getEmpGrade = (code = '') => {
 };
 
 export default function Operator() {
-  const { role, lineId: userLineId } = useContext(UserContext);
+  const { role, lineId: userLineId, section: userSection } = useContext(UserContext);
   const isLeader = role === 'leader';
+  const isSupervisor = role === 'supervisor';
 
   const [tab, setTab] = useState(0);
   const [skillDefs, setSkillDefs] = useState([]);
@@ -45,7 +47,7 @@ export default function Operator() {
   useEffect(() => {
     fetchSkillDefs();
     fetchEmployees();
-    supabase.from('production_lines').select('id, name').order('name')
+    supabase.from('production_lines').select('id, name, section').order('name')
       .then(({ data }) => setLines(data || []));
     if (isLeader && userLineId) {
       supabase.from('production_lines').select('name').eq('id', userLineId).single()
@@ -61,7 +63,8 @@ export default function Operator() {
   const fetchEmployees = async () => {
     const makeBase = () => {
       let q = supabase.from('employees').select('*, employee_skills(skill_name, score)');
-      if (isLeader && userLineId) q = q.eq('line_id', userLineId);
+      if (isLeader && userLineId)       q = q.eq('line_id', userLineId);
+      if (isSupervisor && userSection)  q = q.eq('section', userSection);
       return q;
     };
     const [{ data: active }, { data: inactive }] = await Promise.all([
@@ -78,13 +81,13 @@ export default function Operator() {
   const handleDeactivate = async (id, name) => {
     if (!window.confirm(`ปิดใช้งานพนักงาน: ${name}?\nพนักงานจะไม่ปรากฏในระบบเช็คชื่อ แต่ข้อมูลยังคงอยู่`)) return;
     const { error } = await supabase.from('employees').update({ is_active: false }).eq('id', id);
-    if (error) alert('ไม่สามารถปิดใช้งานได้: ' + error.message);
+    if (error) toast.error('ไม่สามารถปิดใช้งานได้: ' + error.message);
     else fetchEmployees();
   };
 
   const handleReactivate = async (id) => {
     const { error } = await supabase.from('employees').update({ is_active: true }).eq('id', id);
-    if (error) alert('Error: ' + error.message);
+    if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
     else fetchEmployees();
   };
 
@@ -112,12 +115,14 @@ export default function Operator() {
 
       const { error } = await supabase.from('employees').update({
         name:       editingEmp.name,
+        position:   editingEmp.position   || null,
         department: editingEmp.department,
-        section:    editingEmp.section    || null,
+        section:    isSupervisor ? (userSection || null) : (editingEmp.section || null),
         group_name: editingEmp.group_name || null,
         team:       editingEmp.team       || null,
         line_id:    editingEmp.line_id    || null,
         image_url:  photoUrl,
+        start_date: editingEmp.start_date || null,
       }).eq('id', editingEmp.id);
       if (error) throw error;
 
@@ -131,11 +136,11 @@ export default function Operator() {
         .upsert(upserts, { onConflict: 'employee_id,skill_name' });
       if (skillErr) throw skillErr;
 
-      alert('💾 อัปเดตข้อมูลพนักงานเรียบร้อย!');
+      toast.success('อัปเดตข้อมูลพนักงานเรียบร้อย!');
       setEditingEmp(null);
       fetchEmployees();
     } catch (err) {
-      alert('เกิดข้อผิดพลาด: ' + err.message);
+      toast.error('เกิดข้อผิดพลาด: ' + err.message);
     } finally {
       setIsSaving(false);
     }
@@ -149,7 +154,7 @@ export default function Operator() {
     const { error } = await supabase.from('skill_definitions').insert([{
       name, label: lbl, color: newSkill.color, sort_order: skillDefs.length + 1,
     }]);
-    if (error) alert('Error: ' + error.message);
+    if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
     else { setNewSkill({ label: '', color: '#4d9fff' }); fetchSkillDefs(); }
     setIsAddingSkill(false);
   };
@@ -191,6 +196,15 @@ export default function Operator() {
             fontWeight: tab === i ? 700 : 400,
           }}>{t}</button>
         ))}
+        {isSupervisor && userSection && (
+          <div style={{
+            fontSize: 11, color: '#4d9fff', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
+            padding: '4px 8px', borderRadius: 6,
+            background: 'rgba(77,159,255,0.1)', border: '1px solid rgba(77,159,255,0.25)',
+          }}>
+            🏢 {userSection}
+          </div>
+        )}
         {isLeader && myLineName && (
           <div style={{
             fontSize: 11, color: '#22c55e', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
@@ -272,6 +286,7 @@ export default function Operator() {
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Section</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Group</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Team</th>
+                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>วันเริ่มงาน</th>
                   {skillDefs.map(sd => (
                     <th key={sd.name} style={{ fontSize: 10, color: sd.color, whiteSpace: 'nowrap' }}>{sd.label}</th>
                   ))}
@@ -321,6 +336,9 @@ export default function Operator() {
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.section    || '—'}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.group_name || '—'}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.team       || '—'}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                      {emp.start_date ? emp.start_date : '—'}
+                    </td>
                     {skillDefs.map(sd => {
                       const score = getEmpSkill(emp, sd.name);
                       const lv = getLevel(score);
@@ -432,38 +450,66 @@ export default function Operator() {
                     onChange={e => setEditingEmp({ ...editingEmp, name: e.target.value })} required />
                 </div>
                 <div>
-                  <label style={labelSt}>แผนก</label>
-                  <input type="text" value={editingEmp.department || ''}
-                    onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value })} />
+                  <label style={labelSt}>ตำแหน่งงาน</label>
+                  <select value={editingEmp.position || ''}
+                    onChange={e => setEditingEmp({ ...editingEmp, position: e.target.value })}>
+                    <option value="">— เลือก —</option>
+                    <option value="Operator">Operator</option>
+                    <option value="Leader">Leader</option>
+                    <option value="Technician">Technician</option>
+                    <option value="Engineer">Engineer</option>
+                    <option value="QC">QC</option>
+                  </select>
                 </div>
+              </div>
+              <div>
+                <label style={labelSt}>แผนก</label>
+                <input type="text" value={editingEmp.department || ''}
+                  onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value })} />
+              </div>
+              <div>
+                <label style={labelSt}>วันเริ่มงาน</label>
+                <input type="date" value={editingEmp.start_date || ''}
+                  onChange={e => setEditingEmp({ ...editingEmp, start_date: e.target.value })} />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <label style={labelSt}>Section</label>
-                  <select value={editingEmp.section || ''} onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value })}>
-                    <option value="">— เลือก —</option>
-                    {['PD1','PD2','PD3','PD4'].map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                  {isSupervisor ? (
+                    <input type="text" value={userSection || ''} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+                  ) : (
+                    <select value={editingEmp.section || ''} onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value })}>
+                      <option value="">— เลือก —</option>
+                      {['PD1','PD2','PD3','PD4'].map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label style={labelSt}>Team</label>
                   <select value={editingEmp.team || ''} onChange={e => setEditingEmp({ ...editingEmp, team: e.target.value })}>
                     <option value="">— เลือก —</option>
-                    {['A','B'].map(t => <option key={t} value={t}>Team {t}</option>)}
+                    <option value="A">Team A (กะเช้า)</option>
+                    <option value="B">Team B (กะดึก)</option>
+                    <option value="C">Team C (ไม่มีพันธะกะ)</option>
                   </select>
                 </div>
               </div>
               <div>
                 <label style={labelSt}>Group / Line</label>
-                <select value={editingEmp.group_name || ''} onChange={e => {
-                  const val = e.target.value;
-                  const line = lines.find(l => l.name === val);
-                  setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
-                }}>
-                  <option value="">— เลือก Line —</option>
-                  {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                </select>
+                {isLeader ? (
+                  <input type="text" value={editingEmp.group_name || myLineName || ''} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+                ) : (
+                  <select value={editingEmp.group_name || ''} onChange={e => {
+                    const val = e.target.value;
+                    const line = lines.find(l => l.name === val);
+                    setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
+                  }}>
+                    <option value="">— เลือก Line —</option>
+                    {(isSupervisor && userSection ? lines.filter(l => l.section === userSection) : lines)
+                      .map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                  </select>
+                )}
               </div>
 
               <div style={{ background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>
