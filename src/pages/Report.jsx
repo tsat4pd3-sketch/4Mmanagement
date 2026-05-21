@@ -7,6 +7,22 @@ import {
   ResponsiveContainer, Tooltip,
 } from 'recharts';
 
+/* ── Signature URL to DataURL helper ── */
+async function urlToDataUrl(url) {
+  if (!url) return null;
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return await new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
 /* ── CSV export utility ── */
 function downloadCSV(filename, headers, rows) {
   const escape = v => {
@@ -391,6 +407,67 @@ function FourMTab() {
     load();
   };
 
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportPdf = async () => {
+    setExporting(true);
+    const approverIds = [...new Set(logs.filter(l => l.approved_by).map(l => l.approved_by))];
+    const { data: approverProfiles } = await supabase.from('profiles').select('id, full_name, signature_url').in('id', approverIds.length ? approverIds : ['__none__']);
+    const approverMap = {};
+    for (const p of (approverProfiles || [])) {
+      const sigUrl = p.signature_url ? await urlToDataUrl(p.signature_url) : null;
+      approverMap[p.id] = { name: p.full_name, sigUrl };
+    }
+
+    const today = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
+    const rowsHtml = logs.map((l, i) => {
+      const m = { Man: { icon: '👤', color: '#3b82f6' }, Machine: { icon: '⚙️', color: '#8b5cf6' }, Material: { icon: '📦', color: '#f59e0b' }, Method: { icon: '📋', color: '#22c55e' } }[l.category] || {};
+      const statusLabel = l.status === 'approved' ? '✅ Approved' : l.status === 'rejected' ? '❌ Rejected' : '⏳ Pending';
+      const approver = l.approved_by ? approverMap[l.approved_by] : null;
+      return `<tr>
+        <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;white-space:nowrap">${i+1}</td>
+        <td style="border:1px solid #ccc;padding:4px 6px;white-space:nowrap">${l.work_date}</td>
+        <td style="border:1px solid #ccc;padding:4px 6px">${l.line_name}</td>
+        <td style="border:1px solid #ccc;padding:4px 6px;color:${m.color || '#000'}">${l.category}</td>
+        <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px">${l.description}</td>
+        <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;white-space:nowrap">${statusLabel}</td>
+        <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;min-width:90px">
+          ${approver?.sigUrl ? `<img src="${approver.sigUrl}" style="max-height:40px;max-width:80px;object-fit:contain"/>` : ''}
+          ${approver?.name ? `<div style="font-size:9px;color:#666;margin-top:2px">${approver.name}</div>` : ''}
+        </td>
+      </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>4M Change Log</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+  body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
+  table{border-collapse:collapse;width:100%}
+  @media print{@page{size:A4 landscape;margin:10mm}body{-webkit-print-color-adjust:exact}}
+</style></head><body style="padding:10mm">
+  <h2 style="margin:0 0 4px;font-size:16px">บันทึกการเปลี่ยนแปลง 4M</h2>
+  <p style="color:#666;margin:0 0 12px;font-size:10px">พิมพ์วันที่: ${today} · รวม ${logs.length} รายการ</p>
+  <table>
+    <thead><tr style="background:#f3f4f6">
+      <th style="border:1px solid #ccc;padding:4px;text-align:center">#</th>
+      <th style="border:1px solid #ccc;padding:4px">วันที่</th>
+      <th style="border:1px solid #ccc;padding:4px">ไลน์</th>
+      <th style="border:1px solid #ccc;padding:4px">ประเภท</th>
+      <th style="border:1px solid #ccc;padding:4px">รายละเอียด</th>
+      <th style="border:1px solid #ccc;padding:4px;text-align:center">สถานะ</th>
+      <th style="border:1px solid #ccc;padding:4px;text-align:center">ลายเซ็นอนุมัติ</th>
+    </tr></thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+<script>window.onload = () => window.print();</script>
+</body></html>`;
+
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+    setExporting(false);
+  };
+
   const kpi = Object.fromEntries(Object.keys(CAT_META).map(k => [k, logs.filter(l => l.category === k).length]));
   const pendingCount = logs.filter(l => l.status === 'pending').length;
 
@@ -454,6 +531,12 @@ function FourMTab() {
             ⏳ รอ Approve {pendingCount} รายการ
           </span>
         )}
+        <button onClick={handleExportPdf} disabled={exporting || logs.length === 0}
+          style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)',
+            opacity: (exporting || logs.length === 0) ? 0.5 : 1 }}>
+          {exporting ? 'กำลังสร้าง...' : '🖨️ Export PDF'}
+        </button>
         <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic' }}>⬇️ ดาวน์โหลดได้จากแท็บ Export</span>
       </div>
 
@@ -901,7 +984,7 @@ function skillGaugeSvgStr(lv) {
   </svg>`;
 }
 
-function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps }) {
+function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps, makerSigUrl, checkerSigUrl, approverSigUrl }) {
   const today = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
 
   const levelCell = (lv) =>
@@ -968,7 +1051,9 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
           <th style="border:1px solid #666;background:#f3f4f6;padding:2px;text-align:center">อนุมัติโดย</th>
         </tr>
         <tr style="height:40px">
-          <td style="border:1px solid #666"></td><td style="border:1px solid #666"></td><td style="border:1px solid #666"></td>
+          <td style="border:1px solid #666;text-align:center;vertical-align:middle">${makerSigUrl ? `<img src="${makerSigUrl}" style="max-height:36px;max-width:90px;object-fit:contain"/>` : ''}</td>
+          <td style="border:1px solid #666;text-align:center;vertical-align:middle">${checkerSigUrl ? `<img src="${checkerSigUrl}" style="max-height:36px;max-width:90px;object-fit:contain"/>` : ''}</td>
+          <td style="border:1px solid #666;text-align:center;vertical-align:middle">${approverSigUrl ? `<img src="${approverSigUrl}" style="max-height:36px;max-width:90px;object-fit:contain"/>` : ''}</td>
         </tr>
         <tr>
           <td style="border:1px solid #666;padding:2px;text-align:center">(${maker || '......................'})</td>
@@ -1055,7 +1140,7 @@ function MultiSkillFormTab() {
     setLoading(false);
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     const empRows = employees.map((emp, i) => {
       const sm = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
       const levels = skillDefs.map(s => scoreToLevel(sm[s.name]));
@@ -1069,7 +1154,10 @@ function MultiSkillFormTab() {
       ...skillDefs.map((_, si) => empRows.filter(r => r.levels[si] === lv.level).length),
       empRows.filter(r => r.overall === lv.level).length,
     ]);
-    const html = buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps: empRows.length });
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: prof } = await supabase.from('profiles').select('signature_url').eq('id', user.id).single();
+    const makerSigUrl = prof?.signature_url ? await urlToDataUrl(prof.signature_url) : null;
+    const html = buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps: empRows.length, makerSigUrl, checkerSigUrl: null, approverSigUrl: null });
     const w = window.open('', '_blank');
     w.document.write(html);
     w.document.close();
@@ -1703,7 +1791,10 @@ function MultiSkillExportCard() {
       ...skillDefs.map((_, si) => empRows.filter(r => r.levels[si] === lv.level).length),
       empRows.filter(r => r.overall === lv.level).length,
     ]);
-    const html = buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps: empRows.length });
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: prof } = await supabase.from('profiles').select('signature_url').eq('id', user.id).single();
+    const makerSigUrl = prof?.signature_url ? await urlToDataUrl(prof.signature_url) : null;
+    const html = buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps: empRows.length, makerSigUrl, checkerSigUrl: null, approverSigUrl: null });
     const w = window.open('', '_blank');
     w.document.write(html);
     w.document.close();
@@ -2348,11 +2439,15 @@ function AttendanceFormTab() {
     setLoading(false);
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     const days    = periodDays();
     const dStr    = `${days[0]}-${days[days.length-1]}`;
     const deptLabel = dept || line || 'ทุกแผนก';
     const totalEmp  = empRows.length;
+
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: prof } = await supabase.from('profiles').select('signature_url').eq('id', user.id).single();
+    const sigDataUrl = prof?.signature_url ? await urlToDataUrl(prof.signature_url) : null;
 
     const thStyle = 'border:1px solid #000;background:#d8d8d8;text-align:center;font-size:9px;padding:1px 2px;';
     const tdStyle = 'border:1px solid #000;text-align:center;font-size:9px;padding:0;';
@@ -2466,7 +2561,10 @@ function AttendanceFormTab() {
   <!-- Signature row -->
   <table style="width:100%;margin-bottom:4px">
     <tr>
-      <td style="width:33%;border:1px solid #000;height:50px;text-align:center;vertical-align:top;padding-top:3px;font-size:10px">หัวหน้าแผนก</td>
+      <td style="width:33%;border:1px solid #000;height:60px;text-align:center;vertical-align:middle;padding-top:3px;font-size:10px">
+        ${sigDataUrl ? `<img src="${sigDataUrl}" style="max-height:50px;max-width:110px;object-fit:contain;display:block;margin:0 auto"/>` : ''}
+        หัวหน้าแผนก
+      </td>
       <td style="width:34%;border:1px solid #000;text-align:center;vertical-align:top;padding-top:3px;font-size:10px">พักหน้าส่วน</td>
       <td style="width:33%;border:1px solid #000;text-align:center;vertical-align:top;padding-top:3px;font-size:10px">ผู้จัดการ</td>
     </tr>

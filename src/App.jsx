@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, us
 import { supabase } from './supabaseClient';
 import { ToastContainer } from './components/Toast';
 import Login from './pages/Login';
+import SignatureModal from './components/SignatureModal';
 
 const Register     = lazy(() => import('./pages/Register'));
 const Checkin      = lazy(() => import('./pages/Checkin'));
@@ -82,9 +83,11 @@ function SplashScreen({ onDone }) {
 }
 
 /* ─── Sidebar ──────────────────────────────────────────────── */
-function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName }) {
+function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl }) {
   const location = useLocation();
   const isMobile = window.innerWidth <= 768;
+  const [sigModalOpen, setSigModalOpen] = useState(false);
+  const [sigUrl, setSigUrl] = useState(userSignatureUrl);
 
   const visibleItems = NAV_ITEMS.filter(item => canAccess(userRole, item.roles));
   const displayName = userFullName || userEmail || '';
@@ -200,6 +203,15 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
           </div>
 
           <button
+            onClick={() => setSigModalOpen(true)}
+            className="nav-link"
+            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: 'var(--text2)' }}
+          >
+            <span style={{ fontSize: 15, flexShrink: 0 }}>✍️</span>
+            <span style={{ whiteSpace: 'nowrap' }}>ลายเซ็น</span>
+          </button>
+
+          <button
             onClick={onToggleTheme}
             className="nav-link"
             style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', justifyContent: 'space-between' }}
@@ -237,6 +249,12 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
           </button>
         </div>
       </nav>
+      <SignatureModal
+        open={sigModalOpen}
+        onClose={() => setSigModalOpen(false)}
+        currentSignatureUrl={sigUrl}
+        onSaved={(url) => setSigUrl(url)}
+      />
     </>
   );
 }
@@ -266,7 +284,7 @@ function ToggleBtn({ isOpen, sidebarW, onClick }) {
 }
 
 /* ─── Protected Layout ─────────────────────────────────────────────── */
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userEmail, userFullName, userNotifyEmail }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userEmail, userFullName, userNotifyEmail, userSignatureUrl }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
   const [isOpen, setIsOpen] = useState(!isMobile);
@@ -306,6 +324,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
           userLineId={userLineId}
           userEmail={userEmail}
           userFullName={userFullName}
+          userSignatureUrl={userSignatureUrl}
         />
 
         <main style={{
@@ -353,9 +372,10 @@ export default function App() {
   const [userLineId,   setUserLineId]   = useState(null);
   const [userTeam,     setUserTeam]     = useState(null);
   const [userSection,  setUserSection]  = useState(null);
-  const [userEmail,       setUserEmail]       = useState(null);
-  const [userFullName,    setUserFullName]    = useState(null);
-  const [userNotifyEmail, setUserNotifyEmail] = useState(null);
+  const [userEmail,        setUserEmail]        = useState(null);
+  const [userFullName,     setUserFullName]     = useState(null);
+  const [userNotifyEmail,  setUserNotifyEmail]  = useState(null);
+  const [userSignatureUrl, setUserSignatureUrl] = useState(null);
   const [showSplash,   setShowSplash]   = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
 
@@ -368,13 +388,14 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const { data } = await supabase.from('profiles').select('role, line_id, full_name, team, section, notify_email').eq('id', user.id).single();
+    const { data } = await supabase.from('profiles').select('role, line_id, full_name, team, section, notify_email, signature_url').eq('id', user.id).single();
     setUserRole(data?.role ?? 'admin');
     setUserLineId(data?.line_id ?? null);
     setUserFullName(data?.full_name ?? null);
     setUserTeam(data?.team ?? null);
     setUserSection(data?.section ?? null);
     setUserNotifyEmail(data?.notify_email ?? null);
+    setUserSignatureUrl(data?.signature_url ?? null);
   };
 
   useEffect(() => {
@@ -385,7 +406,7 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
       if (s?.user) fetchProfile(s.user);
-      else { setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); }
+      else { setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null); }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -422,6 +443,7 @@ export default function App() {
                 userEmail={userEmail}
                 userFullName={userFullName}
                 userNotifyEmail={userNotifyEmail}
+                userSignatureUrl={userSignatureUrl}
               />
             } />
           </Routes>
