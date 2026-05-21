@@ -11,6 +11,15 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
   const drawing = useRef(false);
   const lastPos = useRef({ x: 0, y: 0 });
 
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!open) {
+      setUploadFile(null);
+      setUploadPreview(null);
+      setTab('draw');
+    }
+  }, [open]);
+
   // Init canvas white background when tab=draw and modal opens
   useEffect(() => {
     if (!open || tab !== 'draw') return;

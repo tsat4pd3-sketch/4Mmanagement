@@ -1822,6 +1822,8 @@ function SkillAllowanceExportCard() {
 }
 
 function MultiSkillExportCard() {
+  const { role, signatureUrl: ctxSigUrl, fullName: ctxFullName } = useContext(UserContext);
+
   const [lines,      setLines]      = useState([]);
   const [skillDefs,  setSkillDefs]  = useState([]);
   const [filterLine, setFilterLine] = useState('');
@@ -1833,6 +1835,23 @@ function MultiSkillExportCard() {
   const [checker,    setChecker]    = useState('');
   const [approver,   setApprover]   = useState('');
   const [loading,    setLoading]    = useState(false);
+  const [makerSig,    setMakerSig]    = useState(null);
+  const [checkerSig,  setCheckerSig]  = useState(null);
+  const [approverSig, setApproverSig] = useState(null);
+
+  useEffect(() => {
+    if (!ctxSigUrl && !ctxFullName) return;
+    if (['leader'].includes(role)) {
+      if (ctxFullName) setMaker(n => n || ctxFullName);
+      if (ctxSigUrl)   setMakerSig(ctxSigUrl);
+    } else if (['supervisor'].includes(role)) {
+      if (ctxFullName) setChecker(n => n || ctxFullName);
+      if (ctxSigUrl)   setCheckerSig(ctxSigUrl);
+    } else if (['manager', 'admin'].includes(role)) {
+      if (ctxFullName) setApprover(n => n || ctxFullName);
+      if (ctxSigUrl)   setApproverSig(ctxSigUrl);
+    }
+  }, [role, ctxFullName, ctxSigUrl]);
 
   useEffect(() => {
     Promise.all([
@@ -1863,10 +1882,12 @@ function MultiSkillExportCard() {
       ...skillDefs.map((_, si) => empRows.filter(r => r.levels[si] === lv.level).length),
       empRows.filter(r => r.overall === lv.level).length,
     ]);
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data: prof } = await supabase.from('profiles').select('signature_url').eq('id', user.id).single();
-    const makerSigUrl = prof?.signature_url ? await urlToDataUrl(prof.signature_url) : null;
-    const html = buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps: empRows.length, makerSigUrl, checkerSigUrl: null, approverSigUrl: null });
+    const [mSig, cSig, aSig] = await Promise.all([
+      makerSig    ? urlToDataUrl(makerSig)    : Promise.resolve(null),
+      checkerSig  ? urlToDataUrl(checkerSig)  : Promise.resolve(null),
+      approverSig ? urlToDataUrl(approverSig) : Promise.resolve(null),
+    ]);
+    const html = buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps: empRows.length, makerSigUrl: mSig, checkerSigUrl: cSig, approverSigUrl: aSig });
     const w = window.open('', '_blank');
     w.document.write(html);
     w.document.close();
@@ -1888,9 +1909,6 @@ function MultiSkillExportCard() {
           { label: 'ส่วน', val: section,    set: setSection },
           { label: 'แผนก', val: department, set: setDepartment },
           { label: 'หัวหน้าแผนก', val: headName, set: setHeadName },
-          { label: 'จัดทำโดย',    val: maker,   set: setMaker },
-          { label: 'ตรวจสอบโดย', val: checker,  set: setChecker },
-          { label: 'อนุมัติโดย',  val: approver, set: setApprover },
         ].map(({ label, val, set }) => (
           <div key={label}>
             <span style={lbSt}>{label}</span>
@@ -1898,8 +1916,37 @@ function MultiSkillExportCard() {
               style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 130, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)' }} />
           </div>
         ))}
+      </div>
+
+      {/* Signature slots */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 10, alignItems: 'flex-end' }}>
+        {[
+          { label: 'จัดทำโดย', name: maker, setName: setMaker, sig: makerSig, setSig: setMakerSig, autoRole: 'leader' },
+          { label: 'ตรวจสอบโดย', name: checker, setName: setChecker, sig: checkerSig, setSig: setCheckerSig, autoRole: 'supervisor' },
+          { label: 'อนุมัติโดย', name: approver, setName: setApprover, sig: approverSig, setSig: setApproverSig, autoRole: 'manager/admin' },
+        ].map(({ label, name, setName, sig, setSig, autoRole }) => (
+          <div key={label} style={{ border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 10px', background: 'var(--bg2)', minWidth: 170 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <span style={lbSt}>{label}</span>
+              <span style={{ fontSize: 9, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 4, padding: '1px 4px' }}>{autoRole}</span>
+            </div>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="ชื่อ-นามสกุล"
+              style={{ width: '100%', padding: '4px 8px', borderRadius: 6, fontSize: 12, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 5 }} />
+            {sig ? (
+              <div style={{ position: 'relative' }}>
+                <img src={sig} alt="sig" style={{ width: '100%', height: 40, objectFit: 'contain', background: '#fff', border: '1px solid var(--border2)', borderRadius: 4 }} />
+                <button onClick={() => setSig(null)} style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff', borderRadius: 4, fontSize: 9, cursor: 'pointer', padding: '1px 4px' }}>✕</button>
+              </div>
+            ) : (
+              <label style={{ cursor: 'pointer' }}>
+                <div style={{ height: 40, border: '1px dashed var(--border2)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>📎 อัปโหลด</div>
+                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { const f = e.target.files[0]; if (f) setSig(URL.createObjectURL(f)); }} />
+              </label>
+            )}
+          </div>
+        ))}
         <button onClick={handlePrint} disabled={loading}
-          style={{ padding: '8px 20px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}>
+          style={{ padding: '8px 20px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1, alignSelf: 'flex-end' }}>
           {loading ? 'กำลังโหลด...' : '🖨️ พิมพ์ PDF (A3)'}
         </button>
       </div>
