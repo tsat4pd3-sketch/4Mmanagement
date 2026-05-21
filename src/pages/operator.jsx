@@ -277,12 +277,12 @@ export default function Operator() {
           </div>
 
           <div className="card" style={{ overflowX: 'auto' }}>
-            <table style={{ minWidth: 560 }}>
+            <table style={{ minWidth: 560, borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  <th>โปรไฟล์</th>
-                  <th>ID</th>
-                  <th>ชื่อ</th>
+                  <th style={{ position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 2 }}>โปรไฟล์</th>
+                  <th style={{ position: 'sticky', left: 58, background: 'var(--bg2)', zIndex: 2 }}>ID</th>
+                  <th style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 2, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>ชื่อ</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Section</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Group</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Team</th>
@@ -290,7 +290,7 @@ export default function Operator() {
                   {skillDefs.map(sd => (
                     <th key={sd.name} style={{ fontSize: 10, color: sd.color, whiteSpace: 'nowrap' }}>{sd.label}</th>
                   ))}
-                  <th style={{ textAlign: 'center' }}>จัดการ</th>
+                  <th style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 2, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>จัดการ</th>
                 </tr>
               </thead>
               <tbody>
@@ -298,7 +298,7 @@ export default function Operator() {
                   const grade = getEmpGrade(emp.employee_id_code);
                   return (
                   <tr key={emp.id} style={!emp.is_active ? { opacity: 0.5 } : {}}>
-                    <td>
+                    <td style={{ position: 'sticky', left: 0, background: !emp.is_active ? 'var(--bg2)' : 'var(--bg2)', zIndex: 1 }}>
                       <div style={{
                         display: 'inline-flex', padding: 2.5, borderRadius: 12,
                         background: !emp.is_active ? 'var(--border2)' : grade.gradient,
@@ -316,7 +316,7 @@ export default function Operator() {
                         />
                       </div>
                     </td>
-                    <td>
+                    <td style={{ position: 'sticky', left: 58, background: 'var(--bg2)', zIndex: 1 }}>
                       <div style={{ fontWeight: 700, color: grade.text, fontFamily: 'var(--font-display)', fontSize: 13 }}>
                         {emp.employee_id_code}
                       </div>
@@ -329,7 +329,7 @@ export default function Operator() {
                         {grade.label}
                       </div>
                     </td>
-                    <td>
+                    <td style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 1, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>
                       <div style={{ fontWeight: 600 }}>{emp.name}</div>
                       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{emp.department || 'ไม่ระบุแผนก'}</div>
                     </td>
@@ -351,7 +351,7 @@ export default function Operator() {
                         </td>
                       );
                     })}
-                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 1, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>
                       {emp.is_active ? (
                         <>
                           <button onClick={() => openEdit(emp)}

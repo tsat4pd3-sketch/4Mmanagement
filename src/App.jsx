@@ -16,7 +16,7 @@ const Report       = lazy(() => import('./pages/Report'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 
 /* ─── Role System ──────────────────────────────────────────── */
-export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null });
+export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null, signatureUrl: null, fullName: null });
 
 const ROLE_LABELS = {
   admin:      '👑 Admin',
@@ -313,7 +313,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   const role       = userRole ?? 'admin';
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, notifyEmail: userNotifyEmail }}>
+    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         <ToggleBtn isOpen={isOpen} sidebarW={sidebarPx} onClick={() => setIsOpen(o => !o)} />
         <Sidebar
