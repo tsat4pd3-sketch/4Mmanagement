@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 
 const SECTIONS = ['PD1', 'PD2', 'PD3', 'PD4'];
-const TEAMS    = ['A', 'B'];
+const TEAMS    = ['A', 'B', 'C'];
 
 export default function Register() {
   const { role, lineId: userLineId, section: userSection } = useContext(UserContext);
