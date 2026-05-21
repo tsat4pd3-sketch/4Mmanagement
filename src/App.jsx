@@ -32,7 +32,7 @@ const NAV_ITEMS = [
   { to: '/management', icon: '🔄', label: 'จัดการสายผลิต',     roles: null },
   { to: '/checkin',    icon: '📝', label: 'เช็คชื่อ & PPE',    roles: null },
   { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   roles: ['admin', 'manager', 'supervisor'] },
-  { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      roles: ['admin', 'supervisor'] },
+  { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      roles: ['admin', 'manager', 'supervisor'] },
   { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager', 'supervisor', 'leader'] },
   { to: '/report',        icon: '📋', label: 'รายงาน',            roles: null },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         roles: ['admin', 'manager', 'supervisor'] },
