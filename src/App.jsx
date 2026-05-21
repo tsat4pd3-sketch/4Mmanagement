@@ -89,6 +89,8 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   const [sigModalOpen, setSigModalOpen] = useState(false);
   const [sigUrl, setSigUrl] = useState(userSignatureUrl);
 
+  useEffect(() => { setSigUrl(userSignatureUrl); }, [userSignatureUrl]);
+
   const visibleItems = NAV_ITEMS.filter(item => canAccess(userRole, item.roles));
   const displayName = userFullName || userEmail || '';
   const initials = displayName
