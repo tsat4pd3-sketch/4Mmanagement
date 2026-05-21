@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
 const ROLES = [
-  { value: 'admin',      label: 'Admin',      color: '#e31937', desc: 'ทุกหน้า + ตั้งค่าระบบ + จัดการผู้ใช้' },
+  { value: 'admin',      label: 'Admin',      color: 'var(--accent)', desc: 'ทุกหน้า + ตั้งค่าระบบ + จัดการผู้ใช้' },
   { value: 'manager',    label: 'Manager',    color: '#f59e0b', desc: 'ภาพรวม + Cross Section + ตั้งค่าไลน์ + พนักงาน' },
   { value: 'supervisor', label: 'Supervisor', color: '#4d9fff', desc: 'ภาพรวม + Cross Line + ตั้งค่าไลน์ + เช็คชื่อ' },
   { value: 'leader',     label: 'Leader',     color: '#22c55e', desc: 'ภาพรวม + ไลน์ตัวเอง + พนักงานในไลน์' },
@@ -324,7 +324,7 @@ export default function AddUser() {
               </div>
 
               {error && (
-                <div style={{ padding: '8px 12px', background: 'rgba(227,25,55,0.08)', border: '1px solid rgba(227,25,55,0.2)', borderRadius: 7, color: 'var(--accent)', fontSize: 13 }}>
+                <div style={{ padding: '8px 12px', background: 'rgba(231,76,60,0.08)', border: '1px solid rgba(231,76,60,0.2)', borderRadius: 7, color: 'var(--red)', fontSize: 13 }}>
                   ❌ {error}
                 </div>
               )}

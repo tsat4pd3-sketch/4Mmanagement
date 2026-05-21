@@ -268,7 +268,7 @@ export default function LineSetup() {
                 <div style={{
                   position: 'absolute', top: tempPos.top, left: tempPos.left, transform: 'translate(-50%, -50%)',
                   width: CARD_W, minHeight: 30,
-                  border: '2px solid var(--accent)', backgroundColor: 'rgba(227,25,55,0.2)',
+                  border: '2px solid var(--accent)', backgroundColor: 'rgba(61,214,92,0.18)',
                   backdropFilter: 'blur(2px)',
                   zIndex: 10, pointerEvents: 'none', borderRadius: 8,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -306,7 +306,7 @@ export default function LineSetup() {
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-                  background: selectedLine === l.name ? 'rgba(227,25,55,0.1)' : 'var(--bg2)',
+                  background: selectedLine === l.name ? 'var(--accent-dim)' : 'var(--bg2)',
                   border: `1px solid ${selectedLine === l.name ? 'var(--accent)' : 'var(--border)'}`,
                   transition: 'background 0.15s, border-color 0.15s',
                 }}

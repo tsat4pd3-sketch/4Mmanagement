@@ -32,7 +32,7 @@ function getShiftInfo(date) {
   return { isDay, label: isDay ? 'กะเช้า' : 'กะดึก', icon: isDay ? '☀️' : '🌙' };
 }
 
-function RadialProgress({ pct, size = 80, stroke = 7, color = '#e31937' }) {
+function RadialProgress({ pct, size = 80, stroke = 7, color = 'var(--accent)' }) {
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
   const offset = circ * (1 - pct / 100);

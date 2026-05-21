@@ -641,7 +641,7 @@ export default function Management() {
             width: 54, height: 54, borderRadius: '50%',
             background: 'var(--accent)', color: '#fff', border: 'none',
             fontSize: 22, fontWeight: 900, cursor: 'pointer',
-            boxShadow: '0 4px 20px rgba(227,25,55,0.5)',
+            boxShadow: '0 4px 20px rgba(61,214,92,0.4)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
           title="บันทึก 4M"
