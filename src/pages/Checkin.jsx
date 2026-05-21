@@ -14,6 +14,13 @@ const LEAVE_PERIOD_OPTS = [
   { value: 'afternoon', label: '🌇 ลาช่วงบ่าย', sub: 'มาเช้า' },
 ];
 
+function toLocalDateStr(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 function getShiftInfo() {
   const now = new Date();
   const h = now.getHours();
@@ -23,7 +30,7 @@ function getShiftInfo() {
   if (h < 8) workDate.setDate(workDate.getDate() - 1);
   return {
     shift:       isDay ? 'day' : 'night',
-    workDateStr: workDate.toISOString().split('T')[0],
+    workDateStr: toLocalDateStr(workDate),
     label:       isDay ? '☀️ กะเช้า' : '🌙 กะดึก',
     timeRange:   isDay ? '08:00–19:59' : '20:00–07:59',
   };

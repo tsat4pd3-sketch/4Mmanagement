@@ -3,6 +3,13 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 
+function getWorkDate() {
+  const now = new Date();
+  const h = now.getHours();
+  if (h < 8) now.setDate(now.getDate() - 1);
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
 const CARD_W = 82;
 const LINE_4M_CATEGORIES = ['Machine', 'Material', 'Method'];
 const SPECIAL_TASKS = ['5ส', 'คัดงาน', 'แก้ไขปัญหาคุณภาพ', 'งานปรับปรุงไลน์', 'อื่นๆ'];
@@ -81,7 +88,7 @@ export default function Management() {
   };
 
   const fetchData = async () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getWorkDate();
     const { data: workerData } = await supabase
       .from('daily_production_logs')
       .select('id, assigned_line, employee_id, employees(id, employee_id_code, name, image_url, team, section, line_id, employee_skills(skill_name, score))')
@@ -120,7 +127,7 @@ export default function Management() {
     await supabase.from('daily_production_logs').update({ assigned_line: finalAssign }).eq('id', logId);
     // ถ้า assign ไปสถานีผลิต → ล้าง special task อัตโนมัติ
     if (finalAssign && droppedWorker?.employee_id) {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getWorkDate();
       await supabase.from('operator_special_tasks').delete().eq('employee_id', droppedWorker.employee_id).eq('work_date', today);
       setSpecialTasks(prev => prev.filter(t => t.employee_id !== droppedWorker.employee_id));
     }
@@ -134,7 +141,7 @@ export default function Management() {
         const empId = droppedWorker.employee_id;
         const isHome = empId && homePositions[empId] === String(finalAssign);
         if (!isHome && empId) {
-          const today = new Date().toISOString().split('T')[0];
+          const today = getWorkDate();
           const { data: history } = await supabase.from('daily_production_logs').select('id')
             .eq('employee_id', empId).eq('assigned_line', String(finalAssign))
             .lt('work_date', today).limit(1);
@@ -182,7 +189,7 @@ export default function Management() {
   const handleSave4MLog = async () => {
     if (!log4MForm.description.trim()) { toast.error('กรุณาระบุรายละเอียด'); return; }
     setIsSaving4M(true);
-    const today = new Date().toISOString().split('T')[0];
+    const today = getWorkDate();
     const isMan = log4MForm.category === 'Man';
     const requires_qa = isMan
       ? !(log4MForm.sameDept && log4MForm.skillOk)
@@ -244,7 +251,7 @@ export default function Management() {
   });
 
   const assignSpecialTask = async (worker, taskType) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getWorkDate();
     await supabase.from('operator_special_tasks').upsert(
       { employee_id: worker.employee_id, task_type: taskType, work_date: today },
       { onConflict: 'employee_id,work_date' }
@@ -254,7 +261,7 @@ export default function Management() {
   };
 
   const removeSpecialTask = async (worker) => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getWorkDate();
     await supabase.from('operator_special_tasks').delete()
       .eq('employee_id', worker.employee_id).eq('work_date', today);
     fetchData();
