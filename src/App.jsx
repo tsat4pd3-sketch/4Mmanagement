@@ -115,12 +115,19 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
         boxShadow: isOpen ? '4px 0 30px rgba(0,0,0,0.3)' : 'none',
       }}>
         {/* Logo */}
-        <div style={{ padding: '22px 6px 18px', borderBottom: '1px solid var(--border)', marginBottom: 10, whiteSpace: 'nowrap' }}>
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ color: 'var(--accent)', fontSize: 22 }}>4M</span>
-            <span style={{ color: 'var(--text2)', fontWeight: 400, fontSize: 13 }}>System</span>
+        <div style={{ padding: '18px 6px 16px', borderBottom: '1px solid var(--border)', marginBottom: 10, whiteSpace: 'nowrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 28, height: 28, background: 'var(--accent)', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width="14" height="13" viewBox="0 0 14 13" fill="none">
+                <path d="M7 1L13 12H1L7 1Z" fill="rgba(255,255,255,0.92)"/>
+                <path d="M7 5L10 12H4L7 5Z" fill="var(--bg2)"/>
+              </svg>
+            </div>
+            <div>
+              <div style={{ fontSize: 8, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
+              <div style={{ fontSize: 7, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>4M · VX System</div>
+            </div>
           </div>
-          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2, letterSpacing: '0.1em' }}>PRODUCTION INTELLIGENCE</div>
         </div>
 
         {/* Links */}
@@ -131,7 +138,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
               to={item.to}
               className="nav-link"
               style={location.pathname === item.to
-                ? { background: 'rgba(227,25,55,0.12)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
+                ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
                 : {}}
               onClick={() => isMobile && onClose()}
             >
@@ -146,8 +153,8 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
                 to="/add-user"
                 className="nav-link"
                 style={location.pathname === '/add-user'
-                  ? { background: 'rgba(245,158,11,0.12)', color: 'var(--amber)' }
-                  : { color: 'var(--amber)' }}
+                  ? { background: 'var(--accent2-dim)', color: 'var(--accent2)' }
+                  : { color: 'var(--accent2)' }}
                 onClick={() => isMobile && onClose()}
               >
                 <span style={{ fontSize: 15 }}>🔑</span>
@@ -185,19 +192,19 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             <div style={{
               fontSize: 9, fontWeight: 700, padding: '2px 5px',
               borderRadius: 4, flexShrink: 0,
-              background: userRole === 'admin' ? 'rgba(227,25,55,0.15)' :
-                          userRole === 'manager' ? 'rgba(245,158,11,0.15)' :
-                          userRole === 'supervisor' ? 'rgba(77,159,255,0.15)' :
-                          'rgba(34,197,94,0.15)',
-              color: userRole === 'admin' ? '#e31937' :
-                     userRole === 'manager' ? '#f59e0b' :
+              background: userRole === 'admin' ? 'var(--accent-dim)' :
+                          userRole === 'manager' ? 'var(--accent2-dim)' :
+                          userRole === 'supervisor' ? 'rgba(77,159,255,0.12)' :
+                          'var(--accent-dim)',
+              color: userRole === 'admin' ? 'var(--accent)' :
+                     userRole === 'manager' ? 'var(--accent2)' :
                      userRole === 'supervisor' ? '#4d9fff' :
-                     '#22c55e',
+                     'var(--green)',
               border: `1px solid ${
-                userRole === 'admin' ? 'rgba(227,25,55,0.3)' :
-                userRole === 'manager' ? 'rgba(245,158,11,0.3)' :
+                userRole === 'admin' ? 'rgba(61,214,92,0.3)' :
+                userRole === 'manager' ? 'rgba(245,154,63,0.3)' :
                 userRole === 'supervisor' ? 'rgba(77,159,255,0.3)' :
-                'rgba(34,197,94,0.3)'
+                'rgba(61,214,92,0.3)'
               }`,
             }}>
               {userRole?.toUpperCase() ?? 'ADMIN'}
@@ -226,13 +233,13 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             </div>
             <div style={{
               width: 36, height: 20, borderRadius: 10, flexShrink: 0,
-              background: theme === 'dark' ? 'var(--border2)' : 'var(--accent)',
+              background: theme === 'dark' ? 'var(--accent)' : 'var(--border2)',
               position: 'relative',
               transition: 'background 0.25s',
             }}>
               <div style={{
                 position: 'absolute', top: 2,
-                left: theme === 'dark' ? 2 : 18,
+                left: theme === 'dark' ? 18 : 2,
                 width: 16, height: 16, borderRadius: '50%',
                 background: '#fff',
                 transition: 'left 0.25s',
