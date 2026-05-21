@@ -2380,7 +2380,7 @@ function AttendanceFormTab() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    supabase.from('production_lines').select('name, section').order('name')
+    supabase.from('production_lines').select('id, name, section').order('name')
       .then(({ data }) => setLines(data || []));
   }, []);
 
@@ -2411,15 +2411,12 @@ function AttendanceFormTab() {
     const { data: logs } = await q;
 
     // group by employee
+    const selectedLineId = line ? (lines.find(l => l.name === line)?.id ?? null) : null;
     const empMap = {};
     (logs || []).forEach(log => {
       const emp = log.employees;
       if (!emp) return;
-      // filter by line or dept if set
-      if (line) {
-        // match by line name via production_lines — approximate by section or just skip if no match
-        // we'll filter by section (dept) below
-      }
+      if (selectedLineId && emp.line_id !== selectedLineId) return;
       if (dept && emp.section !== dept) return;
 
       const id  = log.employee_id;
@@ -2449,71 +2446,84 @@ function AttendanceFormTab() {
     const { data: prof } = await supabase.from('profiles').select('signature_url').eq('id', user.id).single();
     const sigDataUrl = prof?.signature_url ? await urlToDataUrl(prof.signature_url) : null;
 
-    const thStyle = 'border:1px solid #000;background:#d8d8d8;text-align:center;font-size:9px;padding:1px 2px;';
-    const tdStyle = 'border:1px solid #000;text-align:center;font-size:9px;padding:0;';
+    const thStyle = 'border:1px solid #000;background:#e8e8e8;text-align:center;font-size:8px;padding:1px 0;';
+    const tdStyle = 'border:1px solid #000;text-align:center;font-size:9px;padding:0;height:14px;';
+    const tdOTStyle = 'border:1px solid #000;text-align:center;font-size:8px;padding:0;height:12px;';
 
-    // day header
-    const dayHeaders = days.map(d => {
-      const sun  = isSunday(d);
-      const bg   = sun ? 'background:#f5c842;' : '';
-      return `<th style="${thStyle}${bg}width:20px">${d}</th>`;
+    const leaveCode = {'ลากิจ':'ก', 'ลาป่วย':'ป', 'ลาพักร้อน':'พง'};
+
+    const makeDayRow1 = (d, r) => {
+      const sun = isSunday(d);
+      const sunBg = sun ? 'background:#fff8d0;' : '';
+      const info = r.byDay[d];
+      let markCh = '', markB = '', markO = '';
+      if (info?.leave) {
+        markCh = `<span style="font-size:8px;color:#b00">${leaveCode[info.leave] || info.leave}</span>`;
+      } else if (info?.present) {
+        markCh = `<span style="font-size:11px;line-height:1">╱</span>`;
+      }
+      if (info?.ot) markO = `<span style="font-size:11px;line-height:1">╱</span>`;
+      return `<td style="${tdStyle}${sunBg}">${markCh}</td><td style="${tdStyle}${sunBg}">${markB}</td><td style="${tdStyle}${sunBg}">${markO}</td>`;
+    };
+
+    const makeDayRow2 = (d, r) => {
+      const sun = isSunday(d);
+      const sunBg = sun ? 'background:#fff8d0;' : '';
+      const info = r.byDay[d];
+      const otHr = info?.ot ? '2' : '';
+      return `<td style="${tdOTStyle}${sunBg}"></td><td style="${tdOTStyle}${sunBg}"></td><td style="${tdOTStyle}${sunBg}">${otHr}</td>`;
+    };
+
+    const dayHeaderRow1 = days.map(d => {
+      const sun = isSunday(d);
+      const bg = sun ? 'background:#f5c842;' : '';
+      return `<th colspan="3" style="${thStyle}${bg}">${d}</th>`;
     }).join('');
 
-    // employee rows (3 sub-rows each: กะ01, กะ02, OT)
-    const empHtml = empRows.map((r, i) => {
-      const totalPresent01 = days.filter(d => r.byDay[d]?.present && !r.byDay[d]?.ot).length;
-      const totalOT        = days.filter(d => r.byDay[d]?.ot).length;
+    const dayHeaderRow2 = days.map(d => {
+      const sun = isSunday(d);
+      const bg = sun ? 'background:#fff8d0;' : '';
+      return `<th style="${thStyle}${bg}width:7px">ช</th><th style="${thStyle}${bg}width:7px">บ</th><th style="${thStyle}${bg}width:7px">อ</th>`;
+    }).join('');
 
-      const makeDayCells = (rowType) => days.map(d => {
-        const sun = isSunday(d);
-        const bg  = sun ? 'background:#fff8d0;' : '';
-        const info = r.byDay[d];
-        let mark = '';
-        if (rowType === 'k01') {
-          if (info?.present) mark = '<span style="font-size:13px;line-height:1">✓</span>';
-          else if (info?.leave) mark = `<span style="font-size:8px;color:#c00">${info.leave}</span>`;
-        } else if (rowType === 'ot') {
-          if (info?.ot) mark = '<span style="font-size:9px;font-weight:bold;color:#c05000">OT</span>';
-        }
-        return `<td style="${tdStyle}${bg}height:16px">${mark}</td>`;
-      }).join('');
+    const dayCols = days.map(() => `<col style="width:7px"/><col style="width:7px"/><col style="width:7px"/>`).join('');
+
+    const empHtml = empRows.map((r, i) => {
+      const cntSick     = days.filter(d => r.byDay[d]?.leave === 'ลาป่วย').length;
+      const cntPersonal = days.filter(d => r.byDay[d]?.leave === 'ลากิจ').length;
+      const cntVacation = days.filter(d => r.byDay[d]?.leave === 'ลาพักร้อน').length;
+      const cntAbsent   = days.filter(d => { const b=r.byDay[d]; return b && !b.present && !b.leave; }).length;
+      const cntOT       = days.filter(d => r.byDay[d]?.ot).length;
+      const fmt = v => v > 0 ? String(v) : '';
 
       return `
         <tr>
-          <td rowspan="3" style="border:1px solid #000;text-align:center;font-size:9px;vertical-align:middle">${i+1}</td>
-          <td rowspan="3" style="border:1px solid #000;font-size:9px;padding:0 3px;vertical-align:middle;min-width:80px">${r.emp.name || ''}</td>
-          <td rowspan="3" style="border:1px solid #000;text-align:center;font-size:9px;padding:0 2px;vertical-align:middle;white-space:nowrap">${r.emp.employee_id_code || ''}</td>
-          <td style="border:1px solid #000;background:#cce4ff;width:12px"></td>
-          <td style="border:1px solid #000;background:#fff4aa;width:12px"></td>
-          <td style="border:1px solid #000;background:#ffcccc;width:12px"></td>
-          <td style="border:1px solid #000;font-size:8px;padding:0 2px;white-space:nowrap;color:#333">งาน ช. กะ 01</td>
-          ${makeDayCells('k01')}
-          <td style="border:1px solid #000;text-align:center;font-size:9px;font-weight:bold">${totalPresent01 || ''}</td>
-          <td style="border:1px solid #000"></td>
-          <td style="border:1px solid #000"></td>
-          <td style="border:1px solid #000"></td>
+          <td rowspan="2" style="border:1px solid #000;text-align:center;font-size:9px;vertical-align:middle;padding:0">${i+1}</td>
+          <td rowspan="2" style="border:1px solid #000;font-size:9px;padding:0 3px;vertical-align:middle">${r.emp.name || ''}</td>
+          <td rowspan="2" style="border:1px solid #000;text-align:center;font-size:9px;padding:0;vertical-align:middle;white-space:nowrap">${r.emp.employee_id_code || ''}</td>
+          ${days.map(d => makeDayRow1(d, r)).join('')}
+          <td style="${tdStyle}">${fmt(0)}</td>
+          <td style="${tdStyle}">${fmt(cntSick)}</td>
+          <td style="${tdStyle}">${fmt(cntPersonal)}</td>
+          <td style="${tdStyle}">${fmt(cntVacation)}</td>
+          <td style="${tdStyle}">${fmt(0)}</td>
+          <td style="${tdStyle}">${fmt(0)}</td>
+          <td style="${tdStyle}">${fmt(cntAbsent)}</td>
+          <td style="${tdStyle}">${fmt(0)}</td>
+          <td style="${tdStyle}">${fmt(cntOT)}</td>
         </tr>
         <tr>
-          <td style="border:1px solid #000;background:#cce4ff"></td>
-          <td style="border:1px solid #000;background:#fff4aa"></td>
-          <td style="border:1px solid #000;background:#ffcccc"></td>
-          <td style="border:1px solid #000;font-size:8px;padding:0 2px;white-space:nowrap;color:#333">งาน ช. กะ 02</td>
-          ${days.map(d => { const sun=isSunday(d); return `<td style="${tdStyle}${sun?'background:#fff8d0;':''}">&nbsp;</td>`; }).join('')}
-          <td style="border:1px solid #000"></td>
-          <td style="border:1px solid #000"></td>
-          <td style="border:1px solid #000"></td>
-          <td style="border:1px solid #000"></td>
-        </tr>
-        <tr>
-          <td style="border:1px solid #000;background:#cce4ff"></td>
-          <td style="border:1px solid #000;background:#fff4aa"></td>
-          <td style="border:1px solid #000;background:#ffcccc"></td>
-          <td style="border:1px solid #000;font-size:8px;padding:0 2px;white-space:nowrap;color:#333">งาน ช. กะ OT</td>
-          ${makeDayCells('ot')}
-          <td style="border:1px solid #000;text-align:center;font-size:9px;font-weight:bold;color:#c05000">${totalOT || ''}</td>
-          <td style="border:1px solid #000"></td>
-          <td style="border:1px solid #000"></td>
-          <td style="border:1px solid #000"></td>
+          <td colspan="3" style="border:1px solid #000;font-size:8px;text-align:left;padding:0 3px;height:12px">→ จำนวน ช.ม ที่ทำ OT</td>
+          ${days.slice(1).map(d => makeDayRow2(d, r)).join('')}
+          <td style="${tdOTStyle}">${fmt(cntOT)}</td>
+          <td style="${tdOTStyle}"></td>
+          <td style="${tdOTStyle}"></td>
+          <td style="${tdOTStyle}"></td>
+          <td style="${tdOTStyle}"></td>
+          <td style="${tdOTStyle}"></td>
+          <td style="${tdOTStyle}"></td>
+          <td style="${tdOTStyle}"></td>
+          <td style="${tdOTStyle}"></td>
         </tr>`;
     }).join('');
 
@@ -2526,86 +2536,100 @@ function AttendanceFormTab() {
   @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'Sarabun',sans-serif;font-size:10px;background:#fff;color:#000}
-  .page{padding:6mm 5mm;width:420mm;min-height:297mm}
-  table{border-collapse:collapse}
-  @media print{
-    @page{size:A3 landscape;margin:5mm}
-    body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  }
+  table{border-collapse:collapse;width:100%}
+  @media print{@page{size:A3 landscape;margin:5mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style>
 </head>
-<body>
-<div class="page">
-  <!-- Header -->
-  <table style="width:100%;margin-bottom:3px">
+<body style="padding:5mm">
+
+<!-- HEADER TABLE -->
+<table style="width:100%;border-collapse:collapse;margin-bottom:3px">
+  <tr>
+    <td style="width:70px;vertical-align:middle;padding:2px 4px;text-align:center">
+      <svg width="55" height="42" viewBox="0 0 55 42">
+        <rect x="1" y="1" width="53" height="40" rx="3" fill="#fff" stroke="#c00" stroke-width="1.5"/>
+        <text x="8" y="28" font-family="Arial Black,sans-serif" font-size="22" font-weight="900" fill="#c00">S</text>
+        <text x="26" y="28" font-family="Arial Black,sans-serif" font-size="16" font-weight="900" fill="#c00">T</text>
+        <text x="36" y="28" font-family="Arial Black,sans-serif" font-size="14" font-weight="900" fill="#c00">S</text>
+        <text x="5" y="38" font-family="Arial,sans-serif" font-size="5" letter-spacing="1" fill="#333">AUTOMOTIVE</text>
+      </svg>
+    </td>
+    <td style="vertical-align:middle;padding:2px 8px">
+      <div style="font-size:11px;font-weight:bold;text-align:center">บริษัท ไทยซัมมิท โอโตโมทีฟ จำกัด</div>
+      <div style="font-size:10px;font-weight:bold;text-align:center;margin-top:2px">ใบบันทึกการมาทำงาน - การหยุดงานของพนักงาน</div>
+      <div style="font-size:10px;text-align:center;margin-top:2px">${deptLabel}</div>
+    </td>
+    <td style="width:38%;vertical-align:top;padding:0">
+      <table style="width:100%;border-collapse:collapse;font-size:9px">
+        <tr>
+          <td style="border:1px solid #000;padding:2px 6px;text-align:center">เดือน ${THAI_MONTHS[month]} ${year+543}</td>
+          <td style="border:1px solid #000;padding:2px 6px;text-align:center">งวด วันที่ ${dStr}</td>
+          <td style="border:1px solid #000;padding:2px 6px;text-align:center">จำนวนพนักงาน <b>${totalEmp}</b> คน</td>
+        </tr>
+        <tr>
+          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:top;padding-top:2px;font-size:8px">
+            ${sigDataUrl ? `<img src="${sigDataUrl}" style="max-height:40px;max-width:90px;object-fit:contain;display:block;margin:0 auto 2px"/>` : '<div style="height:40px"></div>'}
+            หัวหน้าแผนก
+          </td>
+          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:8px">หัวหน้าส่วน</td>
+          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:8px">ผู้จัดการ</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+
+<!-- MAIN TABLE -->
+<table style="width:100%;border-collapse:collapse;table-layout:fixed">
+  <colgroup>
+    <col style="width:16px"/>
+    <col style="width:88px"/>
+    <col style="width:52px"/>
+    ${dayCols}
+    <col style="width:13px"/>
+    <col style="width:13px"/>
+    <col style="width:13px"/>
+    <col style="width:14px"/>
+    <col style="width:14px"/>
+    <col style="width:14px"/>
+    <col style="width:13px"/>
+    <col style="width:14px"/>
+    <col style="width:16px"/>
+  </colgroup>
+  <thead>
     <tr>
-      <td style="width:200px;vertical-align:middle;padding:2px 6px">
-        <div style="font-size:20px;font-weight:900;color:#c00;letter-spacing:-1px;line-height:1">S<span style="font-size:14px">T</span></div>
-        <div style="font-size:7px;font-weight:bold;letter-spacing:1px">AUTOMOTIVE</div>
-      </td>
-      <td style="text-align:center;vertical-align:middle">
-        <div style="font-size:13px;font-weight:bold">บริษัท ไทยซัมมิท โอโตโมทีฟ จำกัด</div>
-        <div style="font-size:11px;font-weight:bold;margin-top:4px">ใบบันทึกการมาทำงาน - การกระจายอัตรากำลังพนักงาน</div>
-        <div style="font-size:11px;margin-top:2px">${deptLabel}</div>
-      </td>
-      <td style="text-align:right;vertical-align:top;padding:2px;white-space:nowrap">
-        <table style="float:right;font-size:10px">
-          <tr><td style="border:1px solid #000;padding:3px 10px">เดือน ${THAI_MONTHS[month]} ${year+543}</td></tr>
-          <tr><td style="border:1px solid #000;padding:3px 10px">งวด วันที่ ${dStr}</td></tr>
-          <tr><td style="border:1px solid #000;padding:3px 10px">จำนวนพนักงาน <strong>${totalEmp}</strong> คน</td></tr>
-        </table>
-      </td>
+      <th rowspan="2" style="${thStyle}">ลำดับ</th>
+      <th rowspan="2" style="${thStyle}">ชื่อ - สกุล</th>
+      <th rowspan="2" style="${thStyle}">เลขที่บัตร</th>
+      ${dayHeaderRow1}
+      <th rowspan="2" style="${thStyle}width:13px">ส</th>
+      <th rowspan="2" style="${thStyle}width:13px">ป</th>
+      <th rowspan="2" style="${thStyle}width:13px">ก</th>
+      <th rowspan="2" style="${thStyle}width:14px">พง</th>
+      <th rowspan="2" style="${thStyle}width:14px">กธ</th>
+      <th rowspan="2" style="${thStyle}width:14px">บป</th>
+      <th rowspan="2" style="${thStyle}width:13px">ข</th>
+      <th rowspan="2" style="${thStyle}width:14px">มต</th>
+      <th rowspan="2" style="${thStyle}width:16px">OT</th>
     </tr>
-  </table>
-
-  <!-- Signature row -->
-  <table style="width:100%;margin-bottom:4px">
     <tr>
-      <td style="width:33%;border:1px solid #000;height:60px;text-align:center;vertical-align:middle;padding-top:3px;font-size:10px">
-        ${sigDataUrl ? `<img src="${sigDataUrl}" style="max-height:50px;max-width:110px;object-fit:contain;display:block;margin:0 auto"/>` : ''}
-        หัวหน้าแผนก
-      </td>
-      <td style="width:34%;border:1px solid #000;text-align:center;vertical-align:top;padding-top:3px;font-size:10px">พักหน้าส่วน</td>
-      <td style="width:33%;border:1px solid #000;text-align:center;vertical-align:top;padding-top:3px;font-size:10px">ผู้จัดการ</td>
+      ${dayHeaderRow2}
     </tr>
-  </table>
+  </thead>
+  <tbody>
+    ${empHtml}
+  </tbody>
+</table>
 
-  <!-- Main table -->
-  <table style="width:100%">
-    <thead>
-      <tr>
-        <th rowspan="2" style="${thStyle}width:18px">ลำดับ</th>
-        <th rowspan="2" style="${thStyle}min-width:80px">ชื่อ - สกุล</th>
-        <th rowspan="2" style="${thStyle}width:55px">รหัสพนักงาน</th>
-        <th colspan="3" style="${thStyle}width:36px">กะ</th>
-        <th rowspan="2" style="${thStyle}width:55px">ประเภทงาน</th>
-        ${dayHeaders}
-        <th rowspan="2" style="${thStyle}width:22px">รวม</th>
-        <th rowspan="2" style="${thStyle}width:40px">ลายเซ็น</th>
-        <th rowspan="2" style="${thStyle}width:40px">TA</th>
-        <th rowspan="2" style="${thStyle}width:30px">หมาย<br/>เหตุ</th>
-      </tr>
-      <tr>
-        <th style="${thStyle}background:#cce4ff;width:12px">ข</th>
-        <th style="${thStyle}background:#fff4aa;width:12px">น</th>
-        <th style="${thStyle}background:#ffcccc;width:12px">0</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${empHtml}
-    </tbody>
-  </table>
-
-  <!-- Footer legend -->
-  <div style="margin-top:6px;font-size:9px;line-height:1.8;border-top:1px solid #000;padding-top:4px">
-    <strong>หมายเหตุ:</strong> ข=ช่วงเช้า, น=ช่วงบ่าย, 0=ช่วงค่ำ, กะ=สะสมเดือนประจำ, บก=ไม่มา Meeting<br/>
-    * ข = ช่วงเช้า, น = ช่วงบ่าย, 0 = ช่วงค่ำ, กะ = สะสมเดือนประจำ, บก = ไม่มา Meeting<br/>
-    * อาร ช่วงเช้า = 0.2, อาทร์ช่วงบ่าย = 0.5
-  </div>
+<!-- FOOTER -->
+<div style="margin-top:4px;font-size:8px;line-height:1.7;border-top:1px solid #666;padding-top:3px">
+  หมายเหตุ * ส=มาสาย &nbsp; ป=ลาป่วย &nbsp; ก=ลากิจ &nbsp; พง=พักผ่อนประจำปี &nbsp; กธ=กิจธุระอันจำเป็น &nbsp; บป=ลาอุปสมบท &nbsp; ข=ขาดงาน &nbsp; พง=พักงาน<br/>
+  * ช = ช่วงเช้า, บ = ช่วงบ่าย, อ = ช่วงโอที, มต = ไม่มา Meeting<br/>
+  * ลา 2 ชั่วโมง = 0.2, ลาครึ่งวัน = 0.5
 </div>
+
 <script>window.onload = () => window.print();</script>
-</body>
-</html>`;
+</body></html>`;
 
     const w = window.open('', '_blank');
     w.document.write(html);
