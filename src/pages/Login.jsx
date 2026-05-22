@@ -2,20 +2,14 @@ import { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { useNavigate } from 'react-router-dom';
 
-const TriangleLogo = ({ size = 48 }) => (
-  <div style={{
-    width: size, height: size,
-    background: 'var(--accent)',
-    borderRadius: 6,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    flexShrink: 0,
-    boxShadow: '0 4px 20px rgba(61,214,92,0.25)',
-  }}>
-    <svg width={size * 0.58} height={size * 0.52} viewBox="0 0 28 26" fill="none">
-      <path d="M14 1L27 25H1L14 1Z" fill="rgba(255,255,255,0.95)"/>
-      <path d="M14 9L21 25H7L14 9Z" fill="var(--bg2)"/>
-    </svg>
-  </div>
+const ThaiSummitLogo = ({ size = 48 }) => (
+  <img
+    src="/thai-summit-logo.svg"
+    alt="Thai Summit Group"
+    width={size}
+    height={size}
+    style={{ flexShrink: 0, display: 'block' }}
+  />
 );
 
 export default function Login() {
@@ -57,7 +51,7 @@ export default function Login() {
         {/* VX Logo */}
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
-            <TriangleLogo size={52} />
+            <ThaiSummitLogo size={64} />
           </div>
           <div style={{
             fontFamily: 'var(--font-display)', fontWeight: 700,

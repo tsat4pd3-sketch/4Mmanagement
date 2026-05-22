@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <!-- Thai Summit Group Logo: interlocking T (green) and S (orange) -->
+  <rect width="120" height="120" rx="12" fill="#1e6e1e"/>
+
+  <!-- Orange S: top-right block -->
+  <rect x="62" y="8" width="50" height="46" rx="6" fill="#c85515"/>
+  <!-- Orange S: bottom-left block -->
+  <rect x="8" y="66" width="50" height="46" rx="6" fill="#c85515"/>
+
+  <!-- Green cross (T): horizontal bar -->
+  <rect x="8" y="52" width="104" height="16" rx="0" fill="#1e6e1e"/>
+  <!-- Green cross (T): vertical bar -->
+  <rect x="52" y="8" width="16" height="104" rx="0" fill="#1e6e1e"/>
+
+  <!-- Round corners on the cross intersections -->
+  <rect x="52" y="52" width="16" height="16" fill="#1e6e1e"/>
+</svg>
