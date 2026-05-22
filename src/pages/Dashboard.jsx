@@ -68,13 +68,23 @@ const getCatMeta = (cat = '') => {
   return key ? CAT_META[key] : { color: '#888', icon: '🔔', bg: 'rgba(128,128,128,0.1)' };
 };
 
+function getWorkDateStr(date) {
+  const h = date.getHours();
+  const d = new Date(date);
+  if (h < 8) d.setDate(d.getDate() - 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export default function Dashboard() {
   const now = useNow();
   const isMobile = useIsMobile();
   const shiftInfo = getShiftInfo(now);
-  const todayStr = now.toISOString().split('T')[0];
+  const workDateStr = getWorkDateStr(now);
 
-  const [selectedDate,  setSelectedDate]  = useState(todayStr);
+  const [selectedDate,  setSelectedDate]  = useState(workDateStr);
   const [selectedShift, setSelectedShift] = useState(shiftInfo.isDay ? 'day' : 'night');
   const [logs, setLogs]         = useState([]);
   const [fourMLogs, setFourMLogs] = useState([]);
@@ -151,7 +161,7 @@ export default function Dashboard() {
     return { ...line, linePresent, lineTotal, lineAlerts, rate };
   });
 
-  const isToday = selectedDate === todayStr;
+  const isToday = selectedDate === workDateStr;
 
   return (
     <div className="page-content" style={{ maxWidth: 1400 }}>
