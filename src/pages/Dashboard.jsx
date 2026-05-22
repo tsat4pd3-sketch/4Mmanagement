@@ -121,8 +121,7 @@ export default function Dashboard() {
       const t = emp.team;
       if (t === 'A') counts[emp.line_id].day++;
       else if (t === 'B') counts[emp.line_id].night++;
-      else if (t === 'C') { counts[emp.line_id].day++; counts[emp.line_id].night++; }
-      else { counts[emp.line_id].day++; counts[emp.line_id].night++; } // no team → count both
+      // Team C = วันหยุด, no team = unknown → count only in 'all', not in specific shifts
     });
     setEmpCounts(counts);
     setLoading(false);
@@ -136,8 +135,8 @@ export default function Dashboard() {
     const sh = l.shift;
     const team = l.employees?.team;
     if (sh) return sh === selectedShift;                         // new records have shift
-    if (selectedShift === 'day')   return team === 'A' || team === 'C' || !team;
-    if (selectedShift === 'night') return team === 'B' || team === 'C' || !team;
+    if (selectedShift === 'day')   return team === 'A';
+    if (selectedShift === 'night') return team === 'B';
     return true;
   });
 
@@ -229,7 +228,7 @@ export default function Dashboard() {
         {[
           {
             label: 'พนักงานทั้งหมด', value: totalCapacity, unit: 'คน',
-            sub: `เช็คชื่อแล้ว ${shiftLogs.length} / ${totalCapacity} คน`,
+            sub: `เช็คชื่อแล้ว ${present.length + absent.length} / ${totalCapacity} คน`,
             accent: '#4d9fff', icon: '👥',
             radial: null,
           },
