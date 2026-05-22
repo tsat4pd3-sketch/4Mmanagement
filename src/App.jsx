@@ -73,16 +73,7 @@ function SplashScreen({ onDone }) {
         transition: 'opacity 0.6s ease, transform 0.6s ease',
         display: 'flex', alignItems: 'center', gap: 14, marginBottom: 8,
       }}>
-        <div style={{
-          width: 52, height: 52, background: 'var(--accent)', borderRadius: 5,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 0 30px rgba(61,214,92,0.3)',
-        }}>
-          <svg width="28" height="26" viewBox="0 0 28 26" fill="none">
-            <path d="M14 1L27 25H1L14 1Z" fill="rgba(255,255,255,0.95)"/>
-            <path d="M14 9L21 25H7L14 9Z" fill="#080f08"/>
-          </svg>
-        </div>
+        <img src="/thai-summit-logo.svg" alt="Thai Summit Group" width={52} height={52} style={{ borderRadius: 5 }} />
         <div style={{ textAlign: 'left' }}>
           <div style={{
             fontFamily: 'var(--font-display)', fontWeight: 700,
@@ -152,12 +143,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
         {/* Logo */}
         <div style={{ padding: '18px 6px 16px', borderBottom: '1px solid var(--border)', marginBottom: 10, whiteSpace: 'nowrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 28, height: 28, background: 'var(--accent)', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <svg width="14" height="13" viewBox="0 0 14 13" fill="none">
-                <path d="M7 1L13 12H1L7 1Z" fill="rgba(255,255,255,0.92)"/>
-                <path d="M7 5L10 12H4L7 5Z" fill="var(--bg2)"/>
-              </svg>
-            </div>
+            <img src="/thai-summit-logo.svg" alt="Thai Summit Group" width={28} height={28} style={{ borderRadius: 3, flexShrink: 0 }} />
             <div>
               <div style={{ fontSize: 8, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
               <div style={{ fontSize: 7, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>4M · VX System</div>
