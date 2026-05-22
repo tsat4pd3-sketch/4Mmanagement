@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { useNavigate } from 'react-router-dom';
+import tsLogo from '../assets/TS logo.png';
 
 const ThaiSummitLogo = ({ size = 48 }) => (
   <img
-    src="/thai-summit-logo.svg"
+    src={tsLogo}
     alt="Thai Summit Group"
     width={size}
     height={size}

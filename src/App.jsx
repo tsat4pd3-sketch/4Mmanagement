@@ -1,4 +1,5 @@
 import { createContext, useState, useEffect, useRef, lazy, Suspense } from 'react';
+import tsLogo from './assets/TS logo.png';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import { ToastContainer } from './components/Toast';
@@ -73,7 +74,7 @@ function SplashScreen({ onDone }) {
         transition: 'opacity 0.6s ease, transform 0.6s ease',
         display: 'flex', alignItems: 'center', gap: 14, marginBottom: 8,
       }}>
-        <img src="/thai-summit-logo.svg" alt="Thai Summit Group" width={52} height={52} style={{ borderRadius: 5 }} />
+        <img src={tsLogo} alt="Thai Summit Group" width={52} height={52} style={{ borderRadius: 5 }} />
         <div style={{ textAlign: 'left' }}>
           <div style={{
             fontFamily: 'var(--font-display)', fontWeight: 700,
@@ -143,7 +144,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
         {/* Logo */}
         <div style={{ padding: '18px 6px 16px', borderBottom: '1px solid var(--border)', marginBottom: 10, whiteSpace: 'nowrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <img src="/thai-summit-logo.svg" alt="Thai Summit Group" width={28} height={28} style={{ borderRadius: 3, flexShrink: 0 }} />
+            <img src={tsLogo} alt="Thai Summit Group" width={28} height={28} style={{ borderRadius: 3, flexShrink: 0 }} />
             <div>
               <div style={{ fontSize: 8, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
               <div style={{ fontSize: 7, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>4M · VX System</div>
