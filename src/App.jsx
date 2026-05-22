@@ -51,16 +51,15 @@ function SplashScreen({ onDone }) {
   const barRef = useRef(null);
 
   useEffect(() => {
-    ['s0','s1','s2','s3'].forEach((id, i) => {
-      setTimeout(() => document.getElementById(id)?.classList.add('up'), 120 + i * 120);
-    });
-    setTimeout(() => document.getElementById('splash-sub')?.classList.add('up'), 800);
+    setTimeout(() => document.getElementById('splash-logo')?.classList.add('up'), 100);
+    setTimeout(() => document.getElementById('splash-title')?.classList.add('up'), 300);
+    setTimeout(() => document.getElementById('splash-sub')?.classList.add('up'), 500);
 
     let w = 0;
     const iv = setInterval(() => {
-      w = Math.min(w + 3, 100);
+      w = Math.min(w + 2.5, 100);
       if (barRef.current) barRef.current.style.width = w + '%';
-      if (w >= 100) { clearInterval(iv); setTimeout(onDone, 300); }
+      if (w >= 100) { clearInterval(iv); setTimeout(onDone, 400); }
     }, 20);
 
     return () => clearInterval(iv);
@@ -68,14 +67,50 @@ function SplashScreen({ onDone }) {
 
   return (
     <div id="splash">
-      <div className="splash-letters">
-        <span className="splash-letter" id="s0">4</span>
-        <span className="splash-letter red" id="s1">M</span>
-        <span className="splash-letter dim" id="s2">&nbsp;</span>
-        <span className="splash-letter" id="s3">System</span>
+      {/* Triangle logo */}
+      <div id="splash-logo" style={{
+        opacity: 0, transform: 'translateY(20px)',
+        transition: 'opacity 0.6s ease, transform 0.6s ease',
+        display: 'flex', alignItems: 'center', gap: 14, marginBottom: 8,
+      }}>
+        <div style={{
+          width: 52, height: 52, background: 'var(--accent)', borderRadius: 5,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 0 30px rgba(61,214,92,0.3)',
+        }}>
+          <svg width="28" height="26" viewBox="0 0 28 26" fill="none">
+            <path d="M14 1L27 25H1L14 1Z" fill="rgba(255,255,255,0.95)"/>
+            <path d="M14 9L21 25H7L14 9Z" fill="#080f08"/>
+          </svg>
+        </div>
+        <div style={{ textAlign: 'left' }}>
+          <div style={{
+            fontFamily: 'var(--font-display)', fontWeight: 700,
+            fontSize: 13, letterSpacing: '2px', textTransform: 'uppercase',
+            color: 'rgba(255,255,255,0.9)',
+          }}>Thai Summit Group</div>
+          <div style={{
+            fontFamily: 'var(--font-display)', fontSize: 10,
+            letterSpacing: '2px', textTransform: 'uppercase',
+            color: 'rgba(255,255,255,0.35)',
+          }}>VX Production System</div>
+        </div>
       </div>
-      <div className="splash-sub" id="splash-sub">Production Intelligence</div>
-      <div className="splash-bar-wrap">
+
+      {/* 4M title */}
+      <div id="splash-title" style={{
+        opacity: 0, transform: 'translateY(16px)',
+        transition: 'opacity 0.5s ease 0.15s, transform 0.5s ease 0.15s',
+        fontFamily: 'var(--font-display)', fontWeight: 700,
+        fontSize: 'clamp(2.5rem,8vw,5rem)', letterSpacing: '-1px',
+        color: 'var(--accent)', lineHeight: 1,
+      }}>
+        4M System
+      </div>
+
+      <div className="splash-sub" id="splash-sub">Zero defect is possible</div>
+
+      <div className="splash-bar-wrap" style={{ marginTop: 12 }}>
         <div className="splash-bar-fill" ref={barRef} />
       </div>
     </div>
