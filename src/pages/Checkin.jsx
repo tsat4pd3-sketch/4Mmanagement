@@ -182,7 +182,7 @@ export default function Checkin() {
       return {
         employee_id:    emp.id,
         work_date:      workDateStr,
-        shift:          shiftInfo.shift,
+        shift:          emp.assignedShift || shiftInfo.shift,
         is_present:     rec.is_present,
         has_helmet:     rec.has_helmet,
         has_boots:      rec.has_boots,
