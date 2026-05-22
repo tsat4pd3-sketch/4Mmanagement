@@ -110,7 +110,8 @@ export default function Checkin() {
         assignedShift = empOverride[emp.id];
       } else if (emp.line_id && lineSchedule[emp.line_id]) {
         const dayTeam = lineSchedule[emp.line_id];
-        assignedShift = emp.team === dayTeam ? 'day' : emp.team ? 'night' : null;
+        const nightTeam = dayTeam === 'A' ? 'B' : 'A';
+        assignedShift = emp.team === dayTeam ? 'day' : emp.team === nightTeam ? 'night' : null;
       }
       return { ...emp, assignedShift };
     });
