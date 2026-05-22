@@ -129,12 +129,11 @@ export default function Dashboard() {
 
   useEffect(() => { fetchAll(selectedDate); }, [selectedDate]);
 
-  /* Filter by shift: prefer shift column (new records), fall back to employee team
-     team A = กะเช้า (day), team B = กะดึก (night), team C = ทุกกะ, null = แสดงทุกกะ */
+  /* Filter by shift using employee team as source of truth.
+     shift column in logs reflects when checkin was done, not which shift the employee belongs to.
+     team A = กะเช้า (day), team B = กะดึก (night), team C/null = วันหยุด/ไม่ระบุ */
   const shiftLogs = selectedShift === 'all' ? logs : logs.filter(l => {
-    const sh = l.shift;
     const team = l.employees?.team;
-    if (sh) return sh === selectedShift;                         // new records have shift
     if (selectedShift === 'day')   return team === 'A';
     if (selectedShift === 'night') return team === 'B';
     return true;
