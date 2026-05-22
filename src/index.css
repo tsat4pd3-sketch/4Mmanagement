@@ -1,12 +1,12 @@
 /* ─── Thai Summit VX Design System ──────────────────────────────────── */
 :root {
   /* Dark Mode — VX Dark Forest Green (default) */
-  --bg:       #060f07;
-  --bg2:      #091209;
-  --bg3:      #0f1a10;
-  --card:     #0c1a0d;
-  --border:   #1a2e1c;
-  --border2:  #243626;
+  --bg:       #080f08;
+  --bg2:      #0d1a0e;
+  --bg3:      #132415;
+  --card:     #0f1f10;
+  --border:   #1e3421;
+  --border2:  #2a4530;
 
   --accent:      #3dd65c;
   --accent-dim:  rgba(61, 214, 92, 0.09);
@@ -19,10 +19,10 @@
   --blue:   #4d9fff;
   --purple: #9b8de8;
 
-  --text:   #e8f5e9;
-  --text2:  #a5c9a8;
-  --muted:  #4a6e4d;
-  --muted2: #2d4430;
+  --text:   #dff0e1;
+  --text2:  #8aba8e;
+  --muted:  #527855;
+  --muted2: #334e36;
 
   --pd3:        #4dcc6a;
   --pd3-bg:     rgba(77, 204, 106, 0.08);
