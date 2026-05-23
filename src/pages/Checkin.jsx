@@ -62,11 +62,14 @@ const STATUS_META = {
 export default function Checkin() {
   const { role, lineId, team } = useContext(UserContext);
 
-  const [employees,   setEmployees]   = useState([]);
-  const [attendance,  setAttendance]  = useState({});
-  const [isSaving,    setIsSaving]    = useState(false);
-  const [filterShift, setFilterShift] = useState(true);
-  const [noSchedule,  setNoSchedule]  = useState(false);
+  const [employees,      setEmployees]      = useState([]);
+  const [lines,          setLines]          = useState([]);
+  const [attendance,     setAttendance]     = useState({});
+  const [isSaving,       setIsSaving]       = useState(false);
+  const [filterShift,    setFilterShift]    = useState(true);
+  const [noSchedule,     setNoSchedule]     = useState(false);
+  const [selSection,     setSelSection]     = useState('');
+  const [selLine,        setSelLine]        = useState('');
 
   const shiftInfo = getShiftInfo();
 
@@ -86,6 +89,7 @@ export default function Checkin() {
       { data: logData },
       { data: scheduleData },
       { data: overrideData },
+      { data: lineData },
     ] = await Promise.all([
       empQ,
       supabase.from('daily_production_logs')
@@ -93,7 +97,9 @@ export default function Checkin() {
         .eq('work_date', workDateStr),
       supabase.from('shift_schedules').select('*').eq('work_date', workDateStr),
       supabase.from('shift_overrides').select('*').eq('work_date', workDateStr),
+      supabase.from('production_lines').select('id, name, section').order('section').order('name'),
     ]);
+    setLines(lineData || []);
 
     if (!empData) return;
 
@@ -245,9 +251,18 @@ export default function Checkin() {
     setIsSaving(false);
   };
 
-  const displayed = filterShift
-    ? employees.filter(emp => !emp.assignedShift || emp.assignedShift === shiftInfo.shift)
-    : employees;
+  const sections = [...new Set(lines.map(l => l.section))].sort();
+  const linesForSection = selSection ? lines.filter(l => l.section === selSection) : lines;
+
+  const displayed = employees.filter(emp => {
+    if (filterShift && emp.assignedShift && emp.assignedShift !== shiftInfo.shift) return false;
+    if (selLine)    return emp.line_id === Number(selLine);
+    if (selSection) {
+      const lineIds = linesForSection.map(l => l.id);
+      return lineIds.includes(emp.line_id);
+    }
+    return true;
+  });
 
   /* Summary counts */
   const counts = displayed.reduce((acc, emp) => {
@@ -302,6 +317,64 @@ export default function Checkin() {
         </div>
       </div>
 
+      {/* Section & Line filter bar — supervisor only */}
+      {role !== 'leader' && lines.length > 0 && (
+        <div style={{
+          background: 'var(--card)', border: '1px solid var(--border)',
+          borderRadius: 10, padding: '12px 16px', marginBottom: 14,
+          display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
+        }}>
+          {/* Section tabs */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Section</span>
+            <button
+              onClick={() => { setSelSection(''); setSelLine(''); }}
+              style={{
+                padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                border: selSection === '' ? '2px solid var(--accent)' : '1px solid var(--border2)',
+                background: selSection === '' ? 'var(--accent-dim)' : 'var(--bg3)',
+                color: selSection === '' ? 'var(--accent)' : 'var(--text2)',
+              }}
+            >ทั้งหมด</button>
+            {sections.map(sec => (
+              <button
+                key={sec}
+                onClick={() => { setSelSection(sec); setSelLine(''); }}
+                style={{
+                  padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  border: selSection === sec ? '2px solid var(--accent)' : '1px solid var(--border2)',
+                  background: selSection === sec ? 'var(--accent-dim)' : 'var(--bg3)',
+                  color: selSection === sec ? 'var(--accent)' : 'var(--text2)',
+                }}
+              >{sec}</button>
+            ))}
+          </div>
+
+          {/* Divider */}
+          {selSection && <div style={{ width: 1, height: 28, background: 'var(--border)' }} />}
+
+          {/* Line dropdown */}
+          {selSection && (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>ไลน์</span>
+              <select
+                value={selLine}
+                onChange={e => setSelLine(e.target.value)}
+                style={{ padding: '6px 10px', borderRadius: 6, fontSize: 13, width: 'auto', minWidth: 180 }}
+              >
+                <option value="">— ทุกไลน์ใน {selSection} —</option>
+                {linesForSection.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </div>
+          )}
+
+          {/* Employee count badge */}
+          <div style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>
+            แสดง <span style={{ color: 'var(--text)', fontWeight: 700 }}>{displayed.length}</span> คน
+          </div>
+        </div>
+      )}
+
       {/* Summary pills */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         {Object.entries(STATUS_META).map(([key, m]) => counts[key] ? (
@@ -312,7 +385,7 @@ export default function Checkin() {
             {m.label} {counts[key]}
           </span>
         ) : null)}
-        <span style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0' }}>รวม {displayed.length} คน</span>
+        {role === 'leader' && <span style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0' }}>รวม {displayed.length} คน</span>}
       </div>
 
       {noSchedule && (

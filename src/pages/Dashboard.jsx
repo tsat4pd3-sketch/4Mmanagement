@@ -100,6 +100,8 @@ export default function Dashboard() {
       { data: fmData },
       { data: lineData },
       { data: empData },
+      { data: scheduleData },
+      { data: overrideData },
     ] = await Promise.all([
       supabase.from('daily_production_logs')
         .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, shift, employees!inner(id, name, employee_id_code, line_id, team, is_active)')
@@ -108,20 +110,49 @@ export default function Dashboard() {
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
       supabase.from('production_lines').select('id, name, section').order('name'),
       supabase.from('employees').select('id, line_id, team').eq('is_active', true),
+      supabase.from('shift_schedules').select('line_id, day_team').eq('work_date', date),
+      supabase.from('shift_overrides').select('employee_id, shift').eq('work_date', date),
     ]);
-    setLogs(logData || []);
+
+    // Build per-line day_team map
+    const lineSchedule = {};
+    (scheduleData || []).forEach(s => { lineSchedule[s.line_id] = s.day_team; });
+
+    // Build per-employee override map
+    const empOverride = {};
+    (overrideData || []).forEach(o => { empOverride[o.employee_id] = o.shift; });
+
+    // Enrich logs with assignedShift (same logic as Checkin.jsx)
+    const enriched = (logData || []).map(log => {
+      const emp = log.employees;
+      let assignedShift = null;
+      if (emp) {
+        if (empOverride[emp.id]) {
+          assignedShift = empOverride[emp.id];
+        } else if (emp.line_id && lineSchedule[emp.line_id]) {
+          const dayTeam = lineSchedule[emp.line_id];
+          const nightTeam = dayTeam === 'A' ? 'B' : 'A';
+          assignedShift = emp.team === dayTeam ? 'day' : emp.team === nightTeam ? 'night' : null;
+        }
+      }
+      return { ...log, assignedShift };
+    });
+
+    setLogs(enriched);
     setFourMLogs(fmData || []);
     setLines(lineData || []);
-    // Build line capacity: count active employees per line, filtered by shift team
+
+    // Build line capacity using shift_schedules for correct day/night split
     const counts = {};
     (empData || []).forEach(emp => {
       if (!emp.line_id) return;
       if (!counts[emp.line_id]) counts[emp.line_id] = { day: 0, night: 0, all: 0 };
       counts[emp.line_id].all++;
-      const t = emp.team;
-      if (t === 'A') counts[emp.line_id].day++;
-      else if (t === 'B') counts[emp.line_id].night++;
-      // Team C = วันหยุด, no team = unknown → count only in 'all', not in specific shifts
+      const dayTeam = lineSchedule[emp.line_id];
+      if (!dayTeam) return;
+      const nightTeam = dayTeam === 'A' ? 'B' : 'A';
+      if (emp.team === dayTeam)   counts[emp.line_id].day++;
+      else if (emp.team === nightTeam) counts[emp.line_id].night++;
     });
     setEmpCounts(counts);
     setLoading(false);
@@ -129,15 +160,9 @@ export default function Dashboard() {
 
   useEffect(() => { fetchAll(selectedDate); }, [selectedDate]);
 
-  /* Filter by shift using employee team as source of truth.
-     shift column in logs reflects when checkin was done, not which shift the employee belongs to.
-     team A = กะเช้า (day), team B = กะดึก (night), team C/null = วันหยุด/ไม่ระบุ */
-  const shiftLogs = selectedShift === 'all' ? logs : logs.filter(l => {
-    const team = l.employees?.team;
-    if (selectedShift === 'day')   return team === 'A';
-    if (selectedShift === 'night') return team === 'B';
-    return true;
-  });
+  /* Filter by assignedShift — computed per-employee based on their line's shift_schedules.
+     This correctly handles lines where day_team differs (e.g. line A: Team A=day, line B: Team B=day) */
+  const shiftLogs = selectedShift === 'all' ? logs : logs.filter(l => l.assignedShift === selectedShift);
 
   const present = shiftLogs.filter(l => l.is_present);
   const absent  = shiftLogs.filter(l => !l.is_present);
