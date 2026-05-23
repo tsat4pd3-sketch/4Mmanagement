@@ -117,7 +117,8 @@ export default function Checkin() {
       } else if (emp.line_id && lineSchedule[emp.line_id]) {
         const dayTeam = lineSchedule[emp.line_id];
         const nightTeam = dayTeam === 'A' ? 'B' : 'A';
-        assignedShift = emp.team === dayTeam ? 'day' : emp.team === nightTeam ? 'night' : null;
+        // Team C = fixed day shift (ไม่หมุน A/B)
+        assignedShift = emp.team === 'C' ? 'day' : emp.team === dayTeam ? 'day' : emp.team === nightTeam ? 'night' : null;
       }
       return { ...emp, assignedShift };
     });
