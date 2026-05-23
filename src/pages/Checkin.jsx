@@ -317,6 +317,64 @@ export default function Checkin() {
         </div>
       </div>
 
+      {/* Section & Line filter bar — supervisor only */}
+      {role !== 'leader' && lines.length > 0 && (
+        <div style={{
+          background: 'var(--card)', border: '1px solid var(--border)',
+          borderRadius: 10, padding: '12px 16px', marginBottom: 14,
+          display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
+        }}>
+          {/* Section tabs */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Section</span>
+            <button
+              onClick={() => { setSelSection(''); setSelLine(''); }}
+              style={{
+                padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                border: selSection === '' ? '2px solid var(--accent)' : '1px solid var(--border2)',
+                background: selSection === '' ? 'var(--accent-dim)' : 'var(--bg3)',
+                color: selSection === '' ? 'var(--accent)' : 'var(--text2)',
+              }}
+            >ทั้งหมด</button>
+            {sections.map(sec => (
+              <button
+                key={sec}
+                onClick={() => { setSelSection(sec); setSelLine(''); }}
+                style={{
+                  padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  border: selSection === sec ? '2px solid var(--accent)' : '1px solid var(--border2)',
+                  background: selSection === sec ? 'var(--accent-dim)' : 'var(--bg3)',
+                  color: selSection === sec ? 'var(--accent)' : 'var(--text2)',
+                }}
+              >{sec}</button>
+            ))}
+          </div>
+
+          {/* Divider */}
+          {selSection && <div style={{ width: 1, height: 28, background: 'var(--border)' }} />}
+
+          {/* Line dropdown */}
+          {selSection && (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>ไลน์</span>
+              <select
+                value={selLine}
+                onChange={e => setSelLine(e.target.value)}
+                style={{ padding: '6px 10px', borderRadius: 6, fontSize: 13, width: 'auto', minWidth: 180 }}
+              >
+                <option value="">— ทุกไลน์ใน {selSection} —</option>
+                {linesForSection.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </div>
+          )}
+
+          {/* Employee count badge */}
+          <div style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>
+            แสดง <span style={{ color: 'var(--text)', fontWeight: 700 }}>{displayed.length}</span> คน
+          </div>
+        </div>
+      )}
+
       {/* Summary pills */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         {Object.entries(STATUS_META).map(([key, m]) => counts[key] ? (
@@ -327,47 +385,8 @@ export default function Checkin() {
             {m.label} {counts[key]}
           </span>
         ) : null)}
-        <span style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0' }}>รวม {displayed.length} คน</span>
+        {role === 'leader' && <span style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0' }}>รวม {displayed.length} คน</span>}
       </div>
-
-      {/* Section & Line filter — supervisor only (role !== 'leader') */}
-      {role !== 'leader' && lines.length > 0 && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase' }}>Section</span>
-          {sections.map(sec => (
-            <button
-              key={sec}
-              onClick={() => { setSelSection(s => s === sec ? '' : sec); setSelLine(''); }}
-              style={{
-                padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, border: 'none', cursor: 'pointer',
-                background: selSection === sec ? 'var(--accent)' : 'var(--bg3)',
-                color:      selSection === sec ? '#0a1f0c'       : 'var(--text2)',
-              }}
-            >{sec}</button>
-          ))}
-
-          {selSection && (
-            <>
-              <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginLeft: 4 }}>ไลน์</span>
-              <select
-                value={selLine}
-                onChange={e => setSelLine(e.target.value)}
-                style={{ padding: '5px 10px', borderRadius: 6, fontSize: 12, width: 'auto', minWidth: 160 }}
-              >
-                <option value="">— ทุกไลน์ใน {selSection} —</option>
-                {linesForSection.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
-            </>
-          )}
-
-          {(selSection || selLine) && (
-            <button
-              onClick={() => { setSelSection(''); setSelLine(''); }}
-              style={{ padding: '5px 10px', borderRadius: 6, fontSize: 11, border: '1px solid var(--border2)', background: 'transparent', color: 'var(--muted)', cursor: 'pointer' }}
-            >✕ ล้าง</button>
-          )}
-        </div>
-      )}
 
       {noSchedule && (
         <div style={{
