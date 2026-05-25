@@ -90,6 +90,7 @@ export default function Checkin() {
       { data: scheduleData },
       { data: overrideData },
       { data: lineData },
+      { data: mergeData },
     ] = await Promise.all([
       empQ,
       supabase.from('daily_production_logs')
@@ -98,6 +99,7 @@ export default function Checkin() {
       supabase.from('shift_schedules').select('*').eq('work_date', workDateStr),
       supabase.from('shift_overrides').select('*').eq('work_date', workDateStr),
       supabase.from('production_lines').select('id, name, section').order('section').order('name'),
+      supabase.from('shift_merge_events').select('*').lte('start_date', workDateStr).gte('end_date', workDateStr),
     ]);
     setLines(lineData || []);
 
@@ -110,15 +112,30 @@ export default function Checkin() {
     const empOverride = {};
     (overrideData || []).forEach(o => { empOverride[o.employee_id] = o.shift; });
 
+    // map lineId → section for merge event lookup
+    const lineSection = {};
+    (lineData || []).forEach(l => { lineSection[l.id] = l.section; });
+
     const enriched = empData.map(emp => {
       let assignedShift = null;
       if (empOverride[emp.id]) {
+        // 1st priority: individual override
         assignedShift = empOverride[emp.id];
-      } else if (emp.line_id && lineSchedule[emp.line_id]) {
-        const dayTeam = lineSchedule[emp.line_id];
-        const nightTeam = dayTeam === 'A' ? 'B' : 'A';
-        // Team C = fixed day shift (ไม่หมุน A/B)
-        assignedShift = emp.team === 'C' ? 'day' : emp.team === dayTeam ? 'day' : emp.team === nightTeam ? 'night' : null;
+      } else {
+        // 2nd priority: merge event (line-level beats section-level)
+        const empSec = lineSection[emp.line_id];
+        const mergeEvent =
+          (mergeData || []).find(e => e.line_id === emp.line_id) ||
+          (mergeData || []).find(e => e.section && e.section === empSec);
+        if (mergeEvent) {
+          assignedShift = mergeEvent.target_shift;
+        } else if (emp.line_id && lineSchedule[emp.line_id]) {
+          // 3rd priority: normal A/B schedule
+          const dayTeam = lineSchedule[emp.line_id];
+          const nightTeam = dayTeam === 'A' ? 'B' : 'A';
+          // Team C = fixed day shift (ไม่หมุน A/B)
+          assignedShift = emp.team === 'C' ? 'day' : emp.team === dayTeam ? 'day' : emp.team === nightTeam ? 'night' : null;
+        }
       }
       return { ...emp, assignedShift };
     });
