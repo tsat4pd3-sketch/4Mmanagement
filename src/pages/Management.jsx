@@ -714,24 +714,6 @@ export default function Management() {
                     <Radar name="ทักษะ" dataKey="score" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.25} strokeWidth={2} />
                   </RadarChart>
                 </ResponsiveContainer>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
-                  {skillDefs.map(sd => {
-                    const score = radarWorker.employees?.employee_skills?.find(s => s.skill_name === sd.name)?.score ?? 0;
-                    return (
-                      <div key={sd.name}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                          <span style={{ fontSize: 11, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: sd.color, display: 'inline-block' }} />{sd.label}
-                          </span>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: fitColor(score) }}>{score}%</span>
-                        </div>
-                        <div style={{ height: 4, background: 'var(--border2)', borderRadius: 3, overflow: 'hidden' }}>
-                          <div style={{ width: `${Math.min(score,100)}%`, height: '100%', background: fitColor(score), borderRadius: 3 }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
               </>
             ) : (
               <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '20px 0' }}>ยังไม่มีข้อมูลทักษะ</div>
