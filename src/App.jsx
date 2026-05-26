@@ -1,4 +1,5 @@
 import { createContext, useState, useEffect, useRef, lazy, Suspense } from 'react';
+import LandingPage from './pages/Landing';
 import tsLogo from './assets/TS logo.png';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from './supabaseClient';
@@ -461,6 +462,7 @@ export default function App() {
       ) : (
         <Router>
           <Routes>
+            <Route path="/landing" element={<LandingPage />} />
             <Route path="/login" element={session ? <Navigate to="/" replace /> : <Login />} />
             <Route path="/*"     element={
               <ProtectedLayout
