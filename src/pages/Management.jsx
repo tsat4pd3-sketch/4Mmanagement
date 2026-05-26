@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -681,9 +682,9 @@ export default function Management() {
         >🚨</button>
       )}
 
-      {/* ── Radar skill modal ── */}
-      {radarWorker && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)' }}
+      {/* ── Radar skill modal (portal → renders at body to escape stacking context) ── */}
+      {radarWorker && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}
           onClick={() => setRadarWorker(null)}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 16, padding: '20px 24px', width: 'min(90vw, 380px)', boxShadow: 'var(--shadow-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
@@ -737,7 +738,7 @@ export default function Management() {
             )}
           </div>
         </div>
-      )}
+      , document.body)}
 
       {/* ── Desktop hover card ── */}
       {!isMobile && hoverCard && <WorkerHoverCard card={hoverCard} skillDefs={skillDefs} />}
