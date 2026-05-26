@@ -185,6 +185,8 @@ export default function Management() {
   /* ── Touch tap on pool card ── */
   const handlePoolTap = (worker) => {
     if (!isMobile) {
+      clearTimeout(hoverTimer.current);
+      setHoverCard(null);
       setRadarWorker(worker);
       return;
     }
@@ -723,7 +725,7 @@ export default function Management() {
       , document.body)}
 
       {/* ── Desktop hover card ── */}
-      {!isMobile && hoverCard && <WorkerHoverCard card={hoverCard} skillDefs={skillDefs} />}
+      {!isMobile && hoverCard && !radarWorker && <WorkerHoverCard card={hoverCard} skillDefs={skillDefs} />}
 
       {/* ── Desktop fit popup ── */}
       {!isMobile && fitPopup && <FitPopup fitPopup={fitPopup} onClose={() => setFitPopup(null)} />}
