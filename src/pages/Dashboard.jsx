@@ -437,8 +437,11 @@ export default function Dashboard() {
                 {layouts.map(layout => {
                   const lineWs = workstations.filter(w => w.line_name === layout.line_name);
                   const lineStaff = lineWs.map(ws => stationEmpMap[ws.id]).filter(e => e && (!shiftEmpIds || shiftEmpIds.has(e.id)));
-                  const presentCount = lineStaff.filter(e => e.is_present === true).length;
-                  const absentCount  = lineStaff.filter(e => e.is_present === false).length;
+                  // Use lineStats (same source as KPI cards) for the footer counts
+                  const lineStat = lineStats.find(l => l.name === layout.line_name);
+                  const footerPresent = lineStat ? lineStat.linePresent : lineStaff.filter(e => e.is_present === true).length;
+                  const footerTotal   = lineStat ? lineStat.lineTotal   : lineStaff.length;
+                  const footerAbsent  = lineStat ? (footerTotal - footerPresent) : lineStaff.filter(e => e.is_present === false).length;
                   return (
                     <div
                       key={layout.line_name}
@@ -484,9 +487,9 @@ export default function Dashboard() {
                         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60%' }}>
                           {layout.line_name}
                         </span>
-                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                          {presentCount > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.12)', padding: '2px 6px', borderRadius: 4 }}>✓ {presentCount}</span>}
-                          {absentCount  > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#e74c3c', background: 'rgba(231,76,60,0.12)',  padding: '2px 6px', borderRadius: 4 }}>✗ {absentCount}</span>}
+                        <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.12)', padding: '2px 6px', borderRadius: 4 }}>✓ {footerPresent}/{footerTotal}</span>
+                          {footerAbsent > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#e74c3c', background: 'rgba(231,76,60,0.12)', padding: '2px 6px', borderRadius: 4 }}>✗ {footerAbsent}</span>}
                         </div>
                       </div>
                     </div>
