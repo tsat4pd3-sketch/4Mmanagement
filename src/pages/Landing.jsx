@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { motion, useScroll, useTransform, useReducedMotion, useInView } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 
@@ -109,7 +109,7 @@ function Hero({ onLogin }) {
 
   return (
     <section ref={containerRef} style={{
-      position: 'relative', minHeight: '100svh', overflow: 'hidden',
+      position: 'relative', minHeight: '100vh', overflow: 'hidden',
       background: C.bg, color: C.text,
     }}>
       {/* Noise */}
@@ -144,7 +144,7 @@ function Hero({ onLogin }) {
         position:'relative', zIndex:10,
         ...maxW, ...px,
         display:'flex', flexDirection:'column', justifyContent:'space-between',
-        minHeight:'100svh', paddingTop:'clamp(100px,14vw,160px)', paddingBottom: 80,
+        minHeight:'100vh', paddingTop:'clamp(100px,14vw,160px)', paddingBottom: 80,
         y: reduced ? '0%' : headlineY,
         opacity: reduced ? 1 : headlineOp,
       }}>
@@ -603,8 +603,15 @@ export default function Landing() {
   const navigate = useNavigate();
   const goLogin = () => navigate('/login');
 
+  // Override dark body background while on landing page
+  useEffect(() => {
+    const prev = document.body.style.background;
+    document.body.style.background = C.bg;
+    return () => { document.body.style.background = prev; };
+  }, []);
+
   return (
-    <div style={{ fontFamily:'Inter, system-ui, sans-serif', background:C.bg }}>
+    <div className="lp-root" style={{ fontFamily:'Inter, system-ui, sans-serif', background:C.bg }}>
       <Nav onLogin={goLogin} />
       <Hero onLogin={goLogin} />
       <Features />
