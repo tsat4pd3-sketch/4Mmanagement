@@ -86,6 +86,13 @@ export default function Dashboard() {
 
   const [selectedDate,  setSelectedDate]  = useState(workDateStr);
   const [selectedShift, setSelectedShift] = useState(shiftInfo.isDay ? 'day' : 'night');
+
+  // Auto-sync shift when day→night boundary crosses (20:00) while viewing today
+  useEffect(() => {
+    if (selectedDate === workDateStr) {
+      setSelectedShift(shiftInfo.isDay ? 'day' : 'night');
+    }
+  }, [shiftInfo.isDay, selectedDate, workDateStr]);
   const [logs, setLogs]         = useState([]);
   const [fourMLogs, setFourMLogs] = useState([]);
   const [lines, setLines]       = useState([]);
