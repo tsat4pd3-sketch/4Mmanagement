@@ -2,6 +2,7 @@ import { useState, useEffect, useContext, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
 
 function getWorkDate() {
   const now = new Date();
@@ -50,6 +51,7 @@ export default function Management() {
   const [detailSheet,    setDetailSheet]    = useState(null);
   const [stationModal,   setStationModal]   = useState(null);
   const [homePositions,  setHomePositions]  = useState({});
+  const [radarWorker,    setRadarWorker]    = useState(null);
   const [isSaving4M,     setIsSaving4M]     = useState(false);
   const [specialTasks,   setSpecialTasks]   = useState([]);
   const [specialModal,   setSpecialModal]   = useState(null); // worker to assign
@@ -181,7 +183,10 @@ export default function Management() {
 
   /* ── Touch tap on pool card ── */
   const handlePoolTap = (worker) => {
-    if (!isMobile) return;
+    if (!isMobile) {
+      setRadarWorker(worker);
+      return;
+    }
     setSelectedWorker(prev => prev?.id === worker.id ? null : worker);
   };
 
@@ -233,9 +238,10 @@ export default function Management() {
   const specialEmpIds = new Set(specialTasks.map(t => t.employee_id));
 
   const matchesTeam = (w) => {
-    if (!isLeader || !userTeam) return true;
-    const empTeam = w.employees?.team;
-    return empTeam === userTeam || empTeam === 'C';
+    if (!isLeader) return true;
+    // Leaders only see workers from their own line
+    if (userLineId && w.employees?.line_id !== userLineId) return false;
+    return true;
   };
 
   const poolWorkers = workers.filter(w => {
@@ -369,6 +375,14 @@ export default function Management() {
         {isMobile && isSelected && (
           <div style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', borderRadius: 6, padding: '4px 8px', flexShrink: 0 }}>เลือกแล้ว ✓</div>
         )}
+        {/* radar chart button (mobile) */}
+        {isMobile && (
+          <button onClick={(e) => { e.stopPropagation(); setRadarWorker(worker); }}
+            title="ดูทักษะ"
+            style={{ position: 'absolute', top: 3, right: 3, width: 22, height: 22, borderRadius: '50%', background: 'rgba(61,214,92,0.85)', border: 'none', color: '#fff', fontSize: 10, lineHeight: '22px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
+            📊
+          </button>
+        )}
         {/* assign to special task — leader+ */}
         {['admin','manager','supervisor','leader'].includes(role) && (
           <button onClick={(e) => { e.stopPropagation(); setSpecialModal(worker); setSpecialTaskType('5ส'); }}
@@ -451,7 +465,17 @@ export default function Management() {
           </div>
 
           {/* Special task pool — 30% */}
-          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed rgba(245,158,11,0.4)', flexShrink: 0 }}>
+          <div
+            onDragOver={!isMobile ? (e) => e.preventDefault() : undefined}
+            onDrop={!isMobile ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const logId = e.dataTransfer.getData('logId');
+              const w = workers.find(wk => String(wk.id) === String(logId));
+              if (w) { setSpecialModal(w); setSpecialTaskType('5ส'); setDraggingWorker(null); }
+            } : undefined}
+            style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed rgba(245,158,11,0.4)', flexShrink: 0 }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>🟡 งานนอกไลน์</span>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>{specialWorkers.length} คน</span>
@@ -460,7 +484,16 @@ export default function Management() {
               <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 5, fontStyle: 'italic' }}>drag กลับไลน์ผลิตได้</div>
             )}
           </div>
-          <div style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: 'repeat(2, 1fr)', flexDirection: 'column', gap: 6, flex: '3 0 0', minHeight: 0 }}>
+          <div
+            onDragOver={!isMobile ? (e) => e.preventDefault() : undefined}
+            onDrop={!isMobile ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const logId = e.dataTransfer.getData('logId');
+              const w = workers.find(wk => String(wk.id) === String(logId));
+              if (w) { setSpecialModal(w); setSpecialTaskType('5ส'); setDraggingWorker(null); }
+            } : undefined}
+            style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: 'repeat(2, 1fr)', flexDirection: 'column', gap: 6, flex: '3 0 0', minHeight: 0 }}>
             {specialWorkers.map(w => <SpecialCard key={w.id} worker={w} />)}
             {specialWorkers.length === 0 && (
               <div style={{ color: 'rgba(245,158,11,0.5)', fontSize: 10, textAlign: 'center', padding: '6px 0', gridColumn: '1/-1' }}>—</div>
@@ -646,6 +679,64 @@ export default function Management() {
           }}
           title="บันทึก 4M"
         >🚨</button>
+      )}
+
+      {/* ── Radar skill modal ── */}
+      {radarWorker && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)' }}
+          onClick={() => setRadarWorker(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 16, padding: '20px 24px', width: 'min(90vw, 380px)', boxShadow: 'var(--shadow-lg)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+              {radarWorker.employees?.image_url
+                ? <img src={radarWorker.employees.image_url} style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border2)', flexShrink: 0 }} />
+                : <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>👤</div>}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{radarWorker.employees?.name}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{radarWorker.employees?.employee_id_code}</div>
+                <div style={{ display: 'flex', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
+                  {radarWorker.employees?.team && <span style={{ fontSize: 10, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', borderRadius: 4, padding: '1px 6px' }}>Team {radarWorker.employees.team}</span>}
+                  {radarWorker.employees?.section && <span style={{ fontSize: 10, color: '#a78bfa', background: 'rgba(167,139,250,0.12)', borderRadius: 4, padding: '1px 6px' }}>📍 {radarWorker.employees.section}</span>}
+                </div>
+              </div>
+              <button onClick={() => setRadarWorker(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', padding: '0 4px', alignSelf: 'flex-start' }}>✕</button>
+            </div>
+            {skillDefs.length > 0 ? (
+              <>
+                <ResponsiveContainer width="100%" height={200}>
+                  <RadarChart data={skillDefs.map(sd => ({
+                    subject: sd.label,
+                    score: radarWorker.employees?.employee_skills?.find(s => s.skill_name === sd.name)?.score ?? 0,
+                    fullMark: 100,
+                  }))}>
+                    <PolarGrid stroke="var(--border2)" />
+                    <PolarAngleAxis dataKey="subject" tick={{ fill: 'var(--text2)', fontSize: 10 }} />
+                    <Radar name="ทักษะ" dataKey="score" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.25} strokeWidth={2} />
+                  </RadarChart>
+                </ResponsiveContainer>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                  {skillDefs.map(sd => {
+                    const score = radarWorker.employees?.employee_skills?.find(s => s.skill_name === sd.name)?.score ?? 0;
+                    return (
+                      <div key={sd.name}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                          <span style={{ fontSize: 11, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: sd.color, display: 'inline-block' }} />{sd.label}
+                          </span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: fitColor(score) }}>{score}%</span>
+                        </div>
+                        <div style={{ height: 4, background: 'var(--border2)', borderRadius: 3, overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min(score,100)}%`, height: '100%', background: fitColor(score), borderRadius: 3 }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '20px 0' }}>ยังไม่มีข้อมูลทักษะ</div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* ── Desktop hover card ── */}

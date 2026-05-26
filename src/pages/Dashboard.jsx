@@ -198,6 +198,11 @@ export default function Dashboard() {
 
   const shiftKey     = selectedShift === 'all' ? 'all' : selectedShift;
 
+  // Set of employee IDs that belong to the selected shift (for floor map filtering)
+  const shiftEmpIds = selectedShift === 'all'
+    ? null
+    : new Set(shiftLogs.map(l => l.employees?.id).filter(Boolean));
+
   const lineStats = lines.map(line => {
     const lineLogs    = shiftLogs.filter(l => l.employees?.line_id === line.id);
     const linePresent = lineLogs.filter(l => l.is_present).length;
@@ -424,7 +429,7 @@ export default function Dashboard() {
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
                 {layouts.map(layout => {
                   const lineWs = workstations.filter(w => w.line_name === layout.line_name);
-                  const lineStaff = lineWs.map(ws => stationEmpMap[ws.id]).filter(Boolean);
+                  const lineStaff = lineWs.map(ws => stationEmpMap[ws.id]).filter(e => e && (!shiftEmpIds || shiftEmpIds.has(e.id)));
                   const presentCount = lineStaff.filter(e => e.is_present === true).length;
                   const absentCount  = lineStaff.filter(e => e.is_present === false).length;
                   return (
@@ -443,6 +448,7 @@ export default function Dashboard() {
                         {lineWs.map(ws => {
                           const emp = stationEmpMap[ws.id];
                           if (!emp) return null;
+                          if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
                           const color = emp.is_present === true ? '#22c55e' : emp.is_present === false ? '#e74c3c' : '#aaa';
                           return (
                             <div key={ws.id} style={{
@@ -574,6 +580,7 @@ export default function Dashboard() {
                 {lineWs.map(ws => {
                   const emp = stationEmpMap[ws.id];
                   if (!emp) return null;
+                  if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
                   const color = emp.is_present === true ? '#22c55e' : emp.is_present === false ? '#e74c3c' : '#aaa';
                   const shortName = (emp.name || '').split(' ')[0];
                   return (
