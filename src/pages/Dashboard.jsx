@@ -116,7 +116,7 @@ export default function Dashboard() {
         .eq('work_date', date)
         .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
-      supabase.from('production_lines').select('id, name, section').order('name'),
+      supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift').order('name'),
       supabase.from('employees').select('id, line_id, team').eq('is_active', true),
       supabase.from('shift_schedules').select('line_id, day_team').eq('work_date', date),
       supabase.from('shift_overrides').select('employee_id, shift').eq('work_date', date),
@@ -197,19 +197,24 @@ export default function Dashboard() {
   const otCount  = present.filter(l => l.has_ot).length;
 
   const shiftKey     = selectedShift === 'all' ? 'all' : selectedShift;
-  const totalCapacity = Object.values(empCounts).reduce((s, c) => s + (c[shiftKey] ?? 0), 0) || shiftLogs.length;
-
-  const attendRate = totalCapacity > 0 ? Math.round((present.length / totalCapacity) * 100) : 0;
-  const ppeRate    = present.length > 0 ? Math.round((ppeReady.length / present.length) * 100) : 0;
 
   const lineStats = lines.map(line => {
     const lineLogs    = shiftLogs.filter(l => l.employees?.line_id === line.id);
     const linePresent = lineLogs.filter(l => l.is_present).length;
-    const lineTotal   = empCounts[line.id]?.[shiftKey] ?? lineLogs.length;
+    // Use standard manpower if set, fallback to actual employee count
+    const stdTotal = selectedShift === 'day'  ? (line.std_day_shift   || 0)
+                   : selectedShift === 'night' ? (line.std_night_shift || 0)
+                   : (line.std_day_shift || 0) + (line.std_night_shift || 0);
+    const lineTotal = stdTotal > 0 ? stdTotal : (empCounts[line.id]?.[shiftKey] ?? lineLogs.length);
     const lineAlerts  = fourMLogs.filter(f => f.line_name === line.name).length;
     const rate = lineTotal > 0 ? Math.round((linePresent / lineTotal) * 100) : 0;
     return { ...line, linePresent, lineTotal, lineAlerts, rate };
   });
+
+  const totalCapacity = lineStats.reduce((s, l) => s + l.lineTotal, 0) || shiftLogs.length;
+
+  const attendRate = totalCapacity > 0 ? Math.round((present.length / totalCapacity) * 100) : 0;
+  const ppeRate    = present.length > 0 ? Math.round((ppeReady.length / present.length) * 100) : 0;
 
   const isToday = selectedDate === workDateStr;
 
