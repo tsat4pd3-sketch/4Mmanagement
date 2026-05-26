@@ -339,6 +339,7 @@ export default function Management() {
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
         onClick={() => handlePoolTap(worker)}
         style={{
+          position: 'relative',
           width: '100%',
           padding: isMobile ? '10px 8px' : '6px 5px 6px',
           background: isSelected ? 'rgba(77,159,255,0.2)' : 'rgba(77,159,255,0.08)',
@@ -460,7 +461,7 @@ export default function Management() {
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🔵 พร้อมทำงาน</span>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>{poolWorkers.length} คน</span>
           </div>
-          <div style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: 'repeat(2, 1fr)', flexDirection: 'column', gap: 6, flex: '7 0 0', minHeight: 0 }}>
+          <div style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: 'repeat(2, 1fr)', flexDirection: 'column', gap: 6, ...(isMobile ? { maxHeight: '28vh' } : { flex: '7 0 0', minHeight: 0 }) }}>
             {poolWorkers.map(w => <PoolCard key={w.id} worker={w} />)}
             {poolWorkers.length === 0 && (
               <div style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'center', padding: '8px 0', gridColumn: '1/-1' }}>ไม่มีพนักงานใน Pool</div>
@@ -496,7 +497,7 @@ export default function Management() {
               const w = workers.find(wk => String(wk.id) === String(logId));
               if (w) { setSpecialModal(w); setSpecialTaskType('5ส'); setDraggingWorker(null); }
             } : undefined}
-            style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: 'repeat(2, 1fr)', flexDirection: 'column', gap: 6, flex: '3 0 0', minHeight: 0 }}>
+            style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: 'repeat(2, 1fr)', flexDirection: 'column', gap: 6, ...(isMobile ? { maxHeight: '15vh' } : { flex: '3 0 0', minHeight: 0 }) }}>
             {specialWorkers.map(w => <SpecialCard key={w.id} worker={w} />)}
             {specialWorkers.length === 0 && (
               <div style={{ color: 'rgba(245,158,11,0.5)', fontSize: 10, textAlign: 'center', padding: '6px 0', gridColumn: '1/-1' }}>—</div>
