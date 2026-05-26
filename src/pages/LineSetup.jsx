@@ -3,22 +3,6 @@ import { supabase } from '../supabaseClient';
 
 const CARD_W = 60;
 
-function getWeekStart(d = new Date()) {
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  const mon = new Date(d);
-  mon.setDate(d.getDate() + diff);
-  return mon.toISOString().split('T')[0];
-}
-
-function fmtWeek(dateStr) {
-  if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  const end = new Date(d); end.setDate(d.getDate() + 6);
-  const fmt = (dt) => dt.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
-  return `${fmt(d)} – ${fmt(end)}`;
-}
-
 export default function LineSetup() {
   const [lines, setLines] = useState([]);
   const [selectedLine, setSelectedLine] = useState('');
@@ -34,10 +18,10 @@ export default function LineSetup() {
   const [collisionWarn, setCollisionWarn] = useState(false);
   const [skillDefs, setSkillDefs] = useState([]);
 
-  // Manpower plan
-  const [manpowerPlans,  setManpowerPlans]  = useState([]);
-  const [showMpForm,     setShowMpForm]     = useState(false);
-  const [mpForm,         setMpForm]         = useState({ id: null, week_start: getWeekStart(), day_shift: 0, night_shift: 0, remark: '' });
+  // Standard manpower
+  const [stdDay,   setStdDay]   = useState(0);
+  const [stdNight, setStdNight] = useState(0);
+  const [mpSaving, setMpSaving] = useState(false);
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 768);
@@ -65,50 +49,24 @@ export default function LineSetup() {
     setLayoutImage(layoutData?.image_url || null);
     const { data: stationData } = await supabase.from('workstations').select('*, station_requirements(*)').eq('line_name', selectedLine);
     setStations(stationData || []);
-    // fetch manpower plans for this line
     const lineObj = lines.find(l => l.name === selectedLine);
     if (lineObj) {
-      const { data: mpData } = await supabase
-        .from('manpower_plans')
-        .select('*')
-        .eq('line_id', lineObj.id)
-        .order('week_start', { ascending: false })
-        .limit(12);
-      setManpowerPlans(mpData || []);
+      setStdDay(lineObj.std_day_shift ?? 0);
+      setStdNight(lineObj.std_night_shift ?? 0);
     }
   };
 
-  const handleSaveMp = async () => {
+  const handleSaveStdManpower = async () => {
     const lineObj = lines.find(l => l.name === selectedLine);
-    if (!lineObj || !mpForm.week_start) return;
-    const { data: userData } = await supabase.auth.getUser();
-    const payload = {
-      line_id:     lineObj.id,
-      week_start:  mpForm.week_start,
-      day_shift:   parseInt(mpForm.day_shift) || 0,
-      night_shift: parseInt(mpForm.night_shift) || 0,
-      remark:      mpForm.remark || null,
-      updated_at:  new Date().toISOString(),
-      created_by:  userData?.user?.id,
-    };
-    const { error } = mpForm.id
-      ? await supabase.from('manpower_plans').update(payload).eq('id', mpForm.id)
-      : await supabase.from('manpower_plans').upsert([payload], { onConflict: 'line_id,week_start' });
-    if (error) { alert('Error: ' + error.message); return; }
-    setShowMpForm(false);
-    setMpForm({ id: null, week_start: getWeekStart(), day_shift: 0, night_shift: 0, remark: '' });
-    fetchLineData();
-  };
-
-  const handleDeleteMp = async (id) => {
-    if (!confirm('ลบแผนกำลังคนนี้?')) return;
-    await supabase.from('manpower_plans').delete().eq('id', id);
-    fetchLineData();
-  };
-
-  const handleEditMp = (plan) => {
-    setMpForm({ id: plan.id, week_start: plan.week_start, day_shift: plan.day_shift, night_shift: plan.night_shift, remark: plan.remark || '' });
-    setShowMpForm(true);
+    if (!lineObj) return;
+    setMpSaving(true);
+    const { error } = await supabase
+      .from('production_lines')
+      .update({ std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0 })
+      .eq('id', lineObj.id);
+    if (error) alert('Error: ' + error.message);
+    else await fetchLines();
+    setMpSaving(false);
   };
 
   const handleAddLine = async () => {
@@ -529,105 +487,35 @@ export default function LineSetup() {
             })}
           </div>
 
-          {/* ── Manpower Plan ─────────────────────────────── */}
-          <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 10px' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <h4 style={{ margin: 0, color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
-              📊 Manpower Plan
-            </h4>
-            <button
-              onClick={() => { setMpForm({ id: null, week_start: getWeekStart(), day_shift: 0, night_shift: 0, remark: '' }); setShowMpForm(s => !s); }}
-              style={{ padding: '5px 12px', background: showMpForm ? 'var(--bg3)' : 'rgba(77,159,255,0.15)', color: showMpForm ? 'var(--muted)' : 'var(--blue)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-            >
-              {showMpForm ? 'ยกเลิก' : '➕ เพิ่มแผน'}
-            </button>
-          </div>
-
-          {/* Form */}
-          {showMpForm && (
-            <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 14, marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div>
-                <label style={labelSt}>สัปดาห์ (เลือกวันจันทร์)</label>
-                <input type="date" value={mpForm.week_start}
-                  onChange={e => setMpForm(p => ({ ...p, week_start: getWeekStart(new Date(e.target.value)) }))}
-                  style={{ marginTop: 4 }} />
-                <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>{fmtWeek(mpForm.week_start)}</div>
+          {/* ── Standard Manpower ─────────────────────────── */}
+          <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />
+          <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
+            👥 Standard Manpower
+          </h4>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 14 }}>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+              <div style={{ flex: 1 }}>
+                <label style={labelSt}>☀️ กะเช้า (คน)</label>
+                <input type="number" min={0} value={stdDay}
+                  onChange={e => setStdDay(e.target.value)}
+                  style={{ marginTop: 4, fontSize: 18, fontWeight: 700, textAlign: 'center' }} />
               </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <div style={{ flex: 1 }}>
-                  <label style={labelSt}>☀️ กะเช้า (คน)</label>
-                  <input type="number" min={0} value={mpForm.day_shift}
-                    onChange={e => setMpForm(p => ({ ...p, day_shift: e.target.value }))}
-                    style={{ marginTop: 4 }} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={labelSt}>🌙 กะดึก (คน)</label>
-                  <input type="number" min={0} value={mpForm.night_shift}
-                    onChange={e => setMpForm(p => ({ ...p, night_shift: e.target.value }))}
-                    style={{ marginTop: 4 }} />
-                </div>
-              </div>
-              <div>
-                <label style={labelSt}>หมายเหตุ</label>
-                <input type="text" placeholder="เช่น ลดแผน Q2" value={mpForm.remark}
-                  onChange={e => setMpForm(p => ({ ...p, remark: e.target.value }))}
-                  style={{ marginTop: 4 }} />
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
-                <button onClick={handleSaveMp}
-                  style={{ flex: 2, padding: '9px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700 }}>
-                  {mpForm.id ? '💾 บันทึก' : '✅ เพิ่มแผน'}
-                </button>
-                <button onClick={() => setShowMpForm(false)}
-                  style={{ flex: 1, padding: '9px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 7 }}>
-                  ยกเลิก
-                </button>
+              <div style={{ flex: 1 }}>
+                <label style={labelSt}>🌙 กะดึก (คน)</label>
+                <input type="number" min={0} value={stdNight}
+                  onChange={e => setStdNight(e.target.value)}
+                  style={{ marginTop: 4, fontSize: 18, fontWeight: 700, textAlign: 'center' }} />
               </div>
             </div>
-          )}
-
-          {/* Plan list */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto' }}>
-            {manpowerPlans.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--muted)', fontSize: 12 }}>
-                ยังไม่มีแผนกำลังคน — กด ➕ เพิ่มแผน
-              </div>
-            )}
-            {manpowerPlans.map(plan => {
-              const total = plan.day_shift + plan.night_shift;
-              const isThisWeek = plan.week_start === getWeekStart();
-              return (
-                <div key={plan.id} style={{
-                  padding: '10px 12px', borderRadius: 8,
-                  background: isThisWeek ? 'rgba(34,197,94,0.07)' : 'var(--bg3)',
-                  border: `1px solid ${isThisWeek ? 'rgba(34,197,94,0.3)' : 'var(--border2)'}`,
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-                }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
-                        {fmtWeek(plan.week_start)}
-                      </span>
-                      {isThisWeek && (
-                        <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4, background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>สัปดาห์นี้</span>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', gap: 10, marginTop: 5 }}>
-                      <span style={{ fontSize: 11, color: '#f59e0b' }}>☀️ {plan.day_shift} คน</span>
-                      <span style={{ fontSize: 11, color: '#4d9fff' }}>🌙 {plan.night_shift} คน</span>
-                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>รวม {total} คน</span>
-                    </div>
-                    {plan.remark && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>{plan.remark}</div>}
-                  </div>
-                  <div style={{ display: 'flex', gap: 4, flexShrink: 0, marginLeft: 8 }}>
-                    <button onClick={() => handleEditMp(plan)}
-                      style={{ background: 'none', border: 'none', color: 'var(--blue)', cursor: 'pointer', fontSize: 14, padding: '0 3px' }}>✏️</button>
-                    <button onClick={() => handleDeleteMp(plan.id)}
-                      style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14, padding: '0 3px' }}>🗑️</button>
-                  </div>
-                </div>
-              );
-            })}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                รวม <strong style={{ color: 'var(--text)' }}>{(parseInt(stdDay) || 0) + (parseInt(stdNight) || 0)}</strong> คน
+              </span>
+              <button onClick={handleSaveStdManpower} disabled={mpSaving}
+                style={{ padding: '7px 18px', background: mpSaving ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                {mpSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
+              </button>
+            </div>
           </div>
 
         </>}
