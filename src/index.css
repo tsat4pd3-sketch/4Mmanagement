@@ -333,3 +333,23 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   font-size: 9px; letter-spacing: 2px;
   color: var(--muted); text-transform: uppercase;
 }
+
+/* ─── Landing page isolation ───────────────────────────────────── */
+.lp-root {
+  background: #F7F5F1;
+  color: #1A1A1A;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.lp-root nav {
+  background: rgba(247,245,241,0.88) !important;
+  color: #1A1A1A !important;
+  border-bottom: 1px solid rgba(26,26,26,0.08) !important;
+  box-shadow: none !important;
+  transition: background 0.2s !important;
+}
+.lp-root button {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  transition: opacity 0.2s, transform 0.2s !important;
+}
+.lp-root button:hover  { opacity: 0.85 !important; }
+.lp-root button:active { transform: scale(0.98) !important; }
