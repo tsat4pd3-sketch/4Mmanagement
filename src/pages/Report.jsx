@@ -7,6 +7,12 @@ import {
   ResponsiveContainer, Tooltip,
 } from 'recharts';
 
+function getWorkDate() {
+  const now = new Date();
+  if (now.getHours() < 8) now.setDate(now.getDate() - 1);
+  return now.toISOString().split('T')[0];
+}
+
 /* ── Signature URL to DataURL helper ── */
 async function urlToDataUrl(url) {
   if (!url) return null;
@@ -104,7 +110,7 @@ export default function Report() {
 function DailyTab() {
   const now = new Date();
   const isDay = (now.getHours() * 60 + now.getMinutes()) >= 480 && (now.getHours() * 60 + now.getMinutes()) < 1200;
-  const [date, setDate]   = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate]   = useState(getWorkDate());
   const [shift, setShift] = useState(isDay ? 'day' : 'night');
   const [logs, setLogs]   = useState([]);
   const [loading, setLoading] = useState(false);
@@ -256,8 +262,8 @@ function PerEmployeeTab() {
 }
 
 function RangeTab() {
-  const today = new Date().toISOString().split('T')[0];
-  const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
+  const today = getWorkDate();
+  const [from, setFrom] = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
   const [to, setTo] = useState(today);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -338,8 +344,8 @@ function FourMTab() {
     return false;
   };
 
-  const today = new Date().toISOString().split('T')[0];
-  const [from,        setFrom]        = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
+  const today = getWorkDate();
+  const [from,        setFrom]        = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
   const [to,          setTo]          = useState(today);
   const [line,        setLine]        = useState('');
   const [cat,         setCat]         = useState('');
@@ -1412,7 +1418,7 @@ const TH_MONTHS = ['มกราคม','กุมภาพันธ์','มี
 
 /* ── Quick CSV export section at top of Export tab ── */
 function QuickCsvSection() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getWorkDate();
   const thisMonth = today.slice(0, 7);
   const [isLoading, setIsLoading] = useState({});
 
