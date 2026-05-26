@@ -62,7 +62,7 @@ const CAT_META = {
   Method:   { color: '#c084fc', bg: 'rgba(139,92,246,0.12)', label: 'Method',   icon: '📋' },
 };
 
-const TABS = ['รายวัน', 'รายพนักงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '📤 Export', '💰 ค่าฝีมือ', '📋 ใบบันทึก', '🏅 Multi-Skill Form'];
+const TABS = ['รายวัน', 'รายพนักงาน', '📍 Log จุดงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '📤 Export', '💰 ค่าฝีมือ', '📋 ใบบันทึก', '🏅 Multi-Skill Form'];
 
 const SKILL_LEVELS = [
   { min: 80, label: 'ชำนาญ',       color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
@@ -96,13 +96,14 @@ export default function Report() {
       </div>
       {activeTab === 0 && <DailyTab />}
       {activeTab === 1 && <PerEmployeeTab />}
-      {activeTab === 2 && <RangeTab />}
-      {activeTab === 3 && <FourMTab />}
-      {activeTab === 4 && <SkillMatrixTab />}
-      {activeTab === 5 && <ExportTab goToTab={setActiveTab} />}
-      {activeTab === 6 && <SkillAllowanceTab />}
-      {activeTab === 7 && <AttendanceFormTab />}
-      {activeTab === 8 && <MultiSkillFormTab />}
+      {activeTab === 2 && <StationLogTab />}
+      {activeTab === 3 && <RangeTab />}
+      {activeTab === 4 && <FourMTab />}
+      {activeTab === 5 && <SkillMatrixTab />}
+      {activeTab === 6 && <ExportTab goToTab={setActiveTab} />}
+      {activeTab === 7 && <SkillAllowanceTab />}
+      {activeTab === 8 && <AttendanceFormTab />}
+      {activeTab === 9 && <MultiSkillFormTab />}
     </div>
   );
 }
@@ -114,6 +115,15 @@ function DailyTab() {
   const [shift, setShift] = useState(isDay ? 'day' : 'night');
   const [logs, setLogs]   = useState([]);
   const [loading, setLoading] = useState(false);
+  const [stationMap, setStationMap] = useState({});
+
+  useEffect(() => {
+    supabase.from('workstations').select('id, station_name').then(({ data }) => {
+      const m = {};
+      (data || []).forEach(w => { m[String(w.id)] = w.station_name; });
+      setStationMap(m);
+    });
+  }, []);
 
   useEffect(() => { load(); }, [date, shift]);
 
@@ -181,7 +191,7 @@ function DailyTab() {
                     <StatusBadge ok={l.has_boots} label="รองเท้า" />
                     <StatusBadge ok={l.has_gloves} label="ถุงมือ" />
                   </td>
-                  <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.assigned_line || '—'}</td>
+                  <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.assigned_line ? (stationMap[String(l.assigned_line)] || l.assigned_line) : '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -198,8 +208,14 @@ function PerEmployeeTab() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [stationMap, setStationMap] = useState({});
 
   useEffect(() => {
+    supabase.from('workstations').select('id, station_name').then(({ data }) => {
+      const m = {};
+      (data || []).forEach(w => { m[String(w.id)] = w.station_name; });
+      setStationMap(m);
+    });
     supabase.from('employees').select('id, name, employee_id_code').eq('is_active', true).order('name').then(({ data }) => {
       setEmployees(data || []);
       if (data?.length) setSelected(data[0].id);
@@ -250,7 +266,119 @@ function PerEmployeeTab() {
                     <StatusBadge ok={l.has_boots} label="รองเท้า" />
                     <StatusBadge ok={l.has_gloves} label="ถุงมือ" />
                   </td>
-                  <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.assigned_line || '—'}</td>
+                  <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.assigned_line ? (stationMap[String(l.assigned_line)] || l.assigned_line) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StationLogTab() {
+  const today = getWorkDate();
+  const [stations, setStations] = useState([]);
+  const [selectedStation, setSelectedStation] = useState('');
+  const [from, setFrom] = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
+  const [to, setTo] = useState(today);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    supabase.from('workstations').select('id, station_name, line_name').order('line_name').order('station_name').then(({ data }) => {
+      setStations(data || []);
+      if (data?.length) setSelectedStation(String(data[0].id));
+    });
+  }, []);
+
+  useEffect(() => { if (selectedStation) load(); }, [selectedStation, from, to]);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('daily_production_logs')
+      .select('work_date, is_present, has_helmet, has_boots, has_gloves, shift, employees(name, employee_id_code, image_url, team, section)')
+      .eq('assigned_line', selectedStation)
+      .gte('work_date', from).lte('work_date', to)
+      .order('work_date', { ascending: false });
+    setRows(data || []);
+    setLoading(false);
+  };
+
+  const station = stations.find(s => String(s.id) === selectedStation);
+
+  // group by line for optgroup
+  const byLine = stations.reduce((acc, s) => {
+    if (!acc[s.line_name]) acc[s.line_name] = [];
+    acc[s.line_name].push(s);
+    return acc;
+  }, {});
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)}
+          style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13, minWidth: 200 }}>
+          {Object.entries(byLine).map(([line, sts]) => (
+            <optgroup key={line} label={line}>
+              {sts.map(s => <option key={s.id} value={String(s.id)}>{s.station_name}</option>)}
+            </optgroup>
+          ))}
+        </select>
+        <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
+        <span style={{ color: 'var(--muted)', fontSize: 13 }}>—</span>
+        <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
+        <span style={{ color: 'var(--muted)', fontSize: 13 }}>{rows.length} รายการ</span>
+        <CsvBtn onClick={() => downloadCSV(
+          `station_${station?.station_name || selectedStation}_${from}_${to}.csv`,
+          ['วันที่', 'รหัส', 'ชื่อ', 'ทีม', 'สังกัด', 'มาทำงาน', 'PPE ครบ'],
+          rows.map(r => [r.work_date, r.employees?.employee_id_code, r.employees?.name, r.employees?.team || '', r.employees?.section || '', r.is_present ? '✓' : '✗', (r.has_helmet && r.has_boots && r.has_gloves) ? '✓' : '✗'])
+        )} />
+      </div>
+
+      {station && (
+        <div style={{ marginBottom: 12, padding: '8px 14px', borderRadius: 8, background: 'var(--accent-dim)', border: '1px solid rgba(61,214,92,0.2)', display: 'inline-flex', gap: 10, alignItems: 'center' }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)' }}>📍 {station.station_name}</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{station.line_name}</span>
+        </div>
+      )}
+
+      {loading ? <Loader /> : (
+        <div className="card" style={{ overflowX: 'auto' }}>
+          <table style={{ minWidth: 520 }}>
+            <thead>
+              <tr>
+                <th>วันที่</th>
+                <th>โปรไฟล์</th>
+                <th>รหัส</th>
+                <th>ชื่อ</th>
+                <th>ทีม</th>
+                <th>PPE</th>
+                <th>สถานะ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? <EmptyRow cols={7} /> : rows.map((r, i) => (
+                <tr key={i}>
+                  <td style={{ fontWeight: 600, fontSize: 12 }}>{r.work_date}</td>
+                  <td><Thumb src={r.employees?.image_url} /></td>
+                  <td style={{ color: 'var(--blue)', fontWeight: 700 }}>{r.employees?.employee_id_code}</td>
+                  <td style={{ fontWeight: 600 }}>{r.employees?.name}</td>
+                  <td style={{ fontSize: 12 }}>
+                    {r.employees?.team && <span style={{ background: 'rgba(77,159,255,0.15)', color: '#4d9fff', borderRadius: 4, padding: '1px 6px', fontSize: 11, fontWeight: 700 }}>Team {r.employees.team}</span>}
+                  </td>
+                  <td>
+                    <StatusBadge ok={r.has_helmet} label="หมวก" />
+                    <StatusBadge ok={r.has_boots} label="รองเท้า" />
+                    <StatusBadge ok={r.has_gloves} label="ถุงมือ" />
+                  </td>
+                  <td>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: r.is_present ? 'var(--green)' : 'var(--red)' }}>
+                      {r.is_present ? '✓ มา' : '✗ ขาด'}
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>
