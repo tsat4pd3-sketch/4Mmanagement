@@ -18,6 +18,11 @@ export default function LineSetup() {
   const [collisionWarn, setCollisionWarn] = useState(false);
   const [skillDefs, setSkillDefs] = useState([]);
 
+  // Standard manpower
+  const [stdDay,   setStdDay]   = useState(0);
+  const [stdNight, setStdNight] = useState(0);
+  const [mpSaving, setMpSaving] = useState(false);
+
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 768);
     window.addEventListener('resize', handler);
@@ -44,6 +49,24 @@ export default function LineSetup() {
     setLayoutImage(layoutData?.image_url || null);
     const { data: stationData } = await supabase.from('workstations').select('*, station_requirements(*)').eq('line_name', selectedLine);
     setStations(stationData || []);
+    const lineObj = lines.find(l => l.name === selectedLine);
+    if (lineObj) {
+      setStdDay(lineObj.std_day_shift ?? 0);
+      setStdNight(lineObj.std_night_shift ?? 0);
+    }
+  };
+
+  const handleSaveStdManpower = async () => {
+    const lineObj = lines.find(l => l.name === selectedLine);
+    if (!lineObj) return;
+    setMpSaving(true);
+    const { error } = await supabase
+      .from('production_lines')
+      .update({ std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0 })
+      .eq('id', lineObj.id);
+    if (error) alert('Error: ' + error.message);
+    else await fetchLines();
+    setMpSaving(false);
   };
 
   const handleAddLine = async () => {
@@ -463,6 +486,38 @@ export default function LineSetup() {
               );
             })}
           </div>
+
+          {/* ── Standard Manpower ─────────────────────────── */}
+          <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />
+          <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
+            👥 Standard Manpower
+          </h4>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 14 }}>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+              <div style={{ flex: 1 }}>
+                <label style={labelSt}>☀️ กะเช้า (คน)</label>
+                <input type="number" min={0} value={stdDay}
+                  onChange={e => setStdDay(e.target.value)}
+                  style={{ marginTop: 4, fontSize: 18, fontWeight: 700, textAlign: 'center' }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={labelSt}>🌙 กะดึก (คน)</label>
+                <input type="number" min={0} value={stdNight}
+                  onChange={e => setStdNight(e.target.value)}
+                  style={{ marginTop: 4, fontSize: 18, fontWeight: 700, textAlign: 'center' }} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                รวม <strong style={{ color: 'var(--text)' }}>{(parseInt(stdDay) || 0) + (parseInt(stdNight) || 0)}</strong> คน
+              </span>
+              <button onClick={handleSaveStdManpower} disabled={mpSaving}
+                style={{ padding: '7px 18px', background: mpSaving ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                {mpSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
+              </button>
+            </div>
+          </div>
+
         </>}
       </div>
     </div>
