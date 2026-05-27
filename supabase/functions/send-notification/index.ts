@@ -49,7 +49,7 @@ async function buildTelegramMessage(log: Record<string, unknown>, title: string)
     `👤 ผู้แจ้ง: ${creatorName}`,
   ];
 
-  if (log.sv_approved_by) lines.push(`✅ SV อนุมัติ: ${svName}`);
+  if (log.sv_approved_by) lines.push(`✅ Supervisor อนุมัติ: ${svName}`);
   if (log.approved_by)    lines.push(`✅ QA อนุมัติ: ${approverName}`);
   if (log.reject_reason)  lines.push(`❌ เหตุผล: ${log.reject_reason}`);
 
