@@ -841,7 +841,9 @@ function FourMTab() {
                     <td><span style={{ background: m.bg, color: m.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{m.icon} {l.category}</span></td>
                     <td style={{ fontSize: 13 }}>
                       {l.description}
-                      {l.change_subtype && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{l.change_subtype === 'replace' ? '🔄 Replace' : '⚠️ Change'}</div>}
+                      {l.change_subtype && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                        {{ replace: '🔄 Replace', change: '⚠️ Change', same_ok: '🟢 ไลน์เดิม/ผ่านเกณฑ์', cross_skill_ok: '🟡 ข้ามไลน์/skill OK', cross_needs_ojt: '🔴 ข้ามไลน์/ต้อง OJT' }[l.change_subtype] ?? l.change_subtype}
+                      </div>}
                       {l.reject_reason && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>เหตุผล: {l.reject_reason}</div>}
                       <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                         {l.request_image_url && (

@@ -57,6 +57,21 @@ const fitLabel = (score) => {
   return 'ต่ำกว่าเกณฑ์';
 };
 
+// Man 4M case classification
+// 1 = same-line + skill OK + has history → silent approved log
+// 2 = cross-line + skill OK → OJT image + SV approve
+// 3 = cross-line + (no skill OR no history) → OJT image + SV + QA
+const getManCase = ({ moveType, skillOk, hasHistory }) => {
+  if (moveType === 'same' && skillOk && hasHistory) return 1;
+  if (moveType === 'cross' && skillOk) return 2;
+  return 3;
+};
+const MAN_CASE_META = {
+  1: { label: '✅ เก็บ log อัตโนมัติ ไม่ต้องอนุมัติ', color: '#22c55e', bg: 'rgba(34,197,94,0.1)', needsImage: false, requiresQa: false, autoApprove: true },
+  2: { label: '🟡 ต้องแนบรูป OJT + SV อนุมัติ',      color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', needsImage: true,  requiresQa: false, autoApprove: false },
+  3: { label: '🔴 ต้องแนบรูป OJT + SV + QA อนุมัติ', color: '#ef4444', bg: 'rgba(239,68,68,0.1)',  needsImage: true,  requiresQa: true,  autoApprove: false },
+};
+
 export default function Management() {
   const { role, lineId: userLineId, team: userTeam } = useContext(UserContext);
   const isLeader = role === 'leader';
@@ -69,7 +84,7 @@ export default function Management() {
   const [selectedLine,   setSelectedLine]   = useState('');
   const [lines,          setLines]          = useState([]);
   const [show4MModal,    setShow4MModal]    = useState(null);
-  const [log4MForm,      setLog4MForm]      = useState({ category: 'Man', description: '', sameDept: false, skillOk: false, subtype: 'change' });
+  const [log4MForm,      setLog4MForm]      = useState({ category: 'Man', description: '', moveType: 'same', skillOk: false, hasHistory: false, subtype: 'change' });
   const [isMobile,       setIsMobile]       = useState(window.innerWidth <= 768);
   const vw = useWidth();
   const isWide  = vw >= 1280;
@@ -181,20 +196,36 @@ export default function Management() {
           const { data: history } = await supabase.from('daily_production_logs').select('id')
             .eq('employee_id', empId).eq('assigned_line', String(finalAssign))
             .lt('work_date', today).limit(1);
-          if (!history?.length) {
-            const desc = `[Auto] ${droppedWorker.employees?.name} ประจำจุด ${station.station_name} เป็นครั้งแรก`;
+          const hasHistory = (history?.length ?? 0) > 0;
+          const currentLineId = lines.find(l => l.name === station.line_name)?.id;
+          const sameLine = droppedWorker.employees?.line_id != null && droppedWorker.employees.line_id === currentLineId;
+          const skillOk = fit.details.length === 0 || fit.details.every(d => d.pass);
+          const moveType = sameLine ? 'same' : 'cross';
+          const manCase = getManCase({ moveType, skillOk, hasHistory });
+
+          if (manCase === 1) {
+            // Silent: log directly as approved, no notification
+            const desc = `${droppedWorker.employees?.name} ย้ายไปจุด ${station.station_name} (ไลน์เดิม / skill ผ่าน / มีประวัติ)`;
             const { data: dup } = await supabase.from('four_m_logs')
               .select('id').eq('work_date', today).eq('category', 'Man').eq('description', desc).limit(1);
             if (!dup?.length) {
-              const currentLineId = lines.find(l => l.name === station.line_name)?.id;
-              const sameDept = droppedWorker.employees?.line_id != null && droppedWorker.employees.line_id === currentLineId;
-              const skillPass = fit.details.length === 0 || fit.details.every(d => d.pass);
-              const auto_requires_qa = !(sameDept && skillPass);
-              await supabase.from('four_m_logs').insert([{ work_date: today, line_name: station.line_name, category: 'Man', description: desc, requires_qa: auto_requires_qa }]);
-              setAutoManAlert({ name: droppedWorker.employees?.name, station: station.station_name });
-              setTimeout(() => setAutoManAlert(null), 4000);
+              await supabase.from('four_m_logs').insert([{
+                work_date: today, line_name: station.line_name, category: 'Man',
+                description: desc, requires_qa: false, status: 'approved',
+                change_subtype: 'same_ok',
+              }]);
               fetchData();
             }
+          } else {
+            // Need OJT image + approval → open 4M modal pre-filled
+            const desc = `${droppedWorker.employees?.name} ${moveType === 'cross' ? 'ย้ายข้ามไลน์ไปจุด' : 'ย้ายไปจุด'} ${station.station_name}`;
+            setLog4MForm({
+              category: 'Man', description: desc,
+              moveType, skillOk, hasHistory,
+              subtype: 'change',
+            });
+            setReqImageFile(null); setReqImagePreview(null);
+            setShow4MModal({ lineName: station.line_name });
           }
         }
       }
@@ -230,13 +261,24 @@ export default function Management() {
   const handleSave4MLog = async () => {
     if (!log4MForm.description.trim()) { toast.error('กรุณาระบุรายละเอียด'); return; }
     const isMan = log4MForm.category === 'Man';
-    const requires_qa = isMan
-      ? !(log4MForm.sameDept && log4MForm.skillOk)
-      : log4MForm.subtype === 'change';
-    if (requires_qa && !reqImageFile) { toast.error('กรุณาแนบรูปรายละเอียดการเปลี่ยนแปลง (บังคับสำหรับรายการที่ต้องผ่าน QA)'); return; }
+
+    // Compute case/requires_qa
+    let requires_qa, change_subtype, autoApprove;
+    if (isMan) {
+      const mc = MAN_CASE_META[getManCase(log4MForm)];
+      requires_qa = mc.requiresQa;
+      autoApprove = mc.autoApprove;
+      change_subtype = log4MForm.moveType === 'same' ? 'same_ok' : log4MForm.skillOk ? 'cross_skill_ok' : 'cross_needs_ojt';
+      if (mc.needsImage && !reqImageFile) { toast.error('กรุณาแนบรูปหลักฐาน OJT'); return; }
+    } else {
+      requires_qa = log4MForm.subtype === 'change';
+      change_subtype = log4MForm.subtype;
+      autoApprove = false;
+      if (requires_qa && !reqImageFile) { toast.error('กรุณาแนบรูปรายละเอียดการเปลี่ยนแปลง (บังคับสำหรับรายการที่ต้องผ่าน QA)'); return; }
+    }
+
     setIsSaving4M(true);
     const today = getWorkDate();
-    const change_subtype = isMan ? null : log4MForm.subtype;
     const { data: { user } } = await supabase.auth.getUser();
 
     let request_image_url = null;
@@ -258,15 +300,18 @@ export default function Management() {
       change_subtype,
       created_by: user?.id ?? null,
       request_image_url,
+      ...(autoApprove ? { status: 'approved' } : {}),
     };
     const { error } = await supabase.from('four_m_logs').insert([logData]);
     setIsSaving4M(false);
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
     setShow4MModal(null);
-    setLog4MForm({ category: 'Man', description: '', sameDept: false, skillOk: false, subtype: 'change' });
+    setLog4MForm({ category: 'Man', description: '', moveType: 'same', skillOk: false, hasHistory: false, subtype: 'change' });
     setReqImageFile(null); setReqImagePreview(null);
     fetchData();
-    supabase.functions.invoke('send-notification', { body: { event: 'new_4m', log: logData } }).catch(() => {});
+    if (!autoApprove) {
+      supabase.functions.invoke('send-notification', { body: { event: 'new_4m', log: logData } }).catch(() => {});
+    }
   };
 
   /* ── Station click: open picker modal ── */
@@ -1074,27 +1119,42 @@ export default function Management() {
                   <option value="Method">Method — วิธีการ</option>
                 </select>
               </div>
-              {/* Man: same-dept + skill checkboxes */}
-              {log4MForm.category === 'Man' && (
-                <div style={{ background: 'rgba(77,159,255,0.07)', borderRadius: 8, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>เงื่อนไขการอนุมัติ</div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={log4MForm.sameDept} onChange={e => setLog4MForm({ ...log4MForm, sameDept: e.target.checked })} style={{ width: 16, height: 16 }} />
-                    เปลี่ยนในหน่วยงาน / สังกัดเดียวกัน
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={log4MForm.skillOk} onChange={e => setLog4MForm({ ...log4MForm, skillOk: e.target.checked })} style={{ width: 16, height: 16 }} />
-                    ทักษะผ่านเกณฑ์ที่กำหนด
-                  </label>
-                  <div style={{ fontSize: 11, marginTop: 2, padding: '5px 8px', borderRadius: 6,
-                    background: (log4MForm.sameDept && log4MForm.skillOk) ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.1)',
-                    color: (log4MForm.sameDept && log4MForm.skillOk) ? '#22c55e' : '#ef4444' }}>
-                    {(log4MForm.sameDept && log4MForm.skillOk)
-                      ? '✅ ระดับ: ไม่รุนแรง — หัวหน้างานอนุมัติได้'
-                      : '🔴 ระดับ: รุนแรง — ต้องผ่าน QA'}
+              {/* Man: 3-case logic */}
+              {log4MForm.category === 'Man' && (() => {
+                const manCase = getManCase(log4MForm);
+                const meta = MAN_CASE_META[manCase];
+                return (
+                  <div style={{ background: 'rgba(77,159,255,0.06)', borderRadius: 8, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>ลักษณะการย้ายงาน</div>
+                    {/* move type */}
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {[{ v: 'same', label: '🏭 ไลน์เดิม', desc: 'ย้ายในไลน์/ส่วนงานเดียวกัน' }, { v: 'cross', label: '🔀 ข้ามไลน์', desc: 'ย้ายข้ามไลน์ / ข้ามส่วนงาน' }].map(opt => (
+                        <label key={opt.v} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '7px 6px', borderRadius: 7, cursor: 'pointer',
+                          border: `2px solid ${log4MForm.moveType === opt.v ? '#4d9fff' : 'var(--border2)'}`,
+                          background: log4MForm.moveType === opt.v ? 'rgba(77,159,255,0.1)' : 'transparent' }}>
+                          <input type="radio" name="moveType" value={opt.v} checked={log4MForm.moveType === opt.v}
+                            onChange={() => setLog4MForm({ ...log4MForm, moveType: opt.v })} style={{ display: 'none' }} />
+                          <span style={{ fontSize: 13, fontWeight: 700 }}>{opt.label}</span>
+                          <span style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center' }}>{opt.desc}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {/* skill + history */}
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={log4MForm.skillOk} onChange={e => setLog4MForm({ ...log4MForm, skillOk: e.target.checked })} style={{ width: 15, height: 15 }} />
+                      ทักษะผ่านเกณฑ์ที่กำหนด
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={log4MForm.hasHistory} onChange={e => setLog4MForm({ ...log4MForm, hasHistory: e.target.checked })} style={{ width: 15, height: 15 }} />
+                      มีประวัติเคยทำงานจุดนี้มาก่อน
+                    </label>
+                    {/* result badge */}
+                    <div style={{ fontSize: 11, padding: '5px 8px', borderRadius: 6, background: meta.bg, color: meta.color, fontWeight: 600 }}>
+                      {meta.label}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
               {/* Machine/Material/Method: replace vs change */}
               {log4MForm.category !== 'Man' && (
                 <div style={{ background: 'rgba(245,158,11,0.07)', borderRadius: 8, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1124,14 +1184,18 @@ export default function Management() {
                 <textarea value={log4MForm.description} onChange={e => setLog4MForm({ ...log4MForm, description: e.target.value })}
                   placeholder="ระบุรายละเอียดการเปลี่ยนแปลง..." rows={3} style={{ resize: 'vertical' }} />
               </div>
-              {/* Image upload — required when requires_qa */}
+              {/* Image upload — required when needsImage */}
               {(() => {
                 const isMan = log4MForm.category === 'Man';
-                const willRequireQa = isMan ? !(log4MForm.sameDept && log4MForm.skillOk) : log4MForm.subtype === 'change';
-                if (!willRequireQa) return null;
+                const needsImage = isMan
+                  ? MAN_CASE_META[getManCase(log4MForm)].needsImage
+                  : log4MForm.subtype === 'change';
+                if (!needsImage) return null;
                 return (
                   <div>
-                    <label style={{ ...labelSt, color: '#a855f7' }}>📎 รูปรายละเอียดการเปลี่ยนแปลง <span style={{ color: '#ef4444' }}>*</span></label>
+                    <label style={{ ...labelSt, color: '#a855f7' }}>
+                      📎 {log4MForm.category === 'Man' ? 'รูปหลักฐาน OJT' : 'รูปรายละเอียดการเปลี่ยนแปลง'} <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
                     <div style={{ border: `2px dashed ${reqImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: reqImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center', position: 'relative' }}
                       onClick={() => document.getElementById('req-img-input').click()}>
                       <input id="req-img-input" type="file" accept="image/*" style={{ display: 'none' }}
