@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { createContext, useState, useEffect, useRef, lazy, Suspense, useCallback } from 'react';
 import tsLogo from './assets/TS logo.png';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from './supabaseClient';
@@ -306,6 +306,139 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   );
 }
 
+/* ─── Notification Bell ─────────────────────────────────────── */
+function NotificationBell({ userId }) {
+  const [notifs, setNotifs]     = useState([]);
+  const [open,   setOpen]       = useState(false);
+  const dropRef                 = useRef(null);
+
+  const load = useCallback(async () => {
+    if (!userId) return;
+    const { data } = await supabase
+      .from('notifications')
+      .select('id, title, body, type, is_read, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(30);
+    setNotifs(data || []);
+  }, [userId]);
+
+  useEffect(() => {
+    load();
+    if (!userId) return;
+    const ch = supabase
+      .channel(`notif-${userId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => load())
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [userId, load]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => { if (dropRef.current && !dropRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const markAllRead = async () => {
+    const unread = notifs.filter(n => !n.is_read).map(n => n.id);
+    if (!unread.length) return;
+    await supabase.from('notifications').update({ is_read: true }).in('id', unread);
+    setNotifs(n => n.map(x => ({ ...x, is_read: true })));
+  };
+
+  const markOne = async (id) => {
+    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    setNotifs(n => n.map(x => x.id === id ? { ...x, is_read: true } : x));
+  };
+
+  const unread = notifs.filter(n => !n.is_read).length;
+
+  const typeColor = { success: '#22c55e', error: '#ef4444', warning: '#f59e0b', info: '#4d9fff' };
+
+  return (
+    <div ref={dropRef} style={{ position: 'fixed', top: 10, right: 14, zIndex: 1200 }}>
+      <button
+        onClick={() => { setOpen(o => !o); if (!open) load(); }}
+        style={{
+          width: 36, height: 36, borderRadius: 8,
+          background: 'var(--bg3)', border: '1px solid var(--border2)',
+          color: 'var(--text2)', fontSize: 16,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer', position: 'relative', boxShadow: 'var(--shadow-sm)',
+        }}
+        title="แจ้งเตือน"
+      >
+        🔔
+        {unread > 0 && (
+          <span style={{
+            position: 'absolute', top: -4, right: -4,
+            background: '#ef4444', color: '#fff',
+            fontSize: 10, fontWeight: 800,
+            minWidth: 17, height: 17, borderRadius: 9,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '0 3px', lineHeight: 1,
+          }}>
+            {unread > 99 ? '99+' : unread}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: 42, right: 0,
+          width: 'min(340px,92vw)',
+          background: 'var(--card)',
+          border: '1px solid var(--border2)',
+          borderRadius: 12,
+          boxShadow: 'var(--shadow-lg)',
+          overflow: 'hidden',
+          maxHeight: '70vh', display: 'flex', flexDirection: 'column',
+        }}>
+          <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 700, fontSize: 13 }}>🔔 แจ้งเตือน</span>
+            {unread > 0 && (
+              <button onClick={markAllRead} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                อ่านทั้งหมด
+              </button>
+            )}
+          </div>
+
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            {notifs.length === 0 ? (
+              <div style={{ padding: '20px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>ไม่มีแจ้งเตือน</div>
+            ) : notifs.map(n => (
+              <div
+                key={n.id}
+                onClick={() => markOne(n.id)}
+                style={{
+                  padding: '9px 14px', borderBottom: '1px solid var(--border)',
+                  background: n.is_read ? 'transparent' : 'var(--accent-dim)',
+                  cursor: 'pointer', transition: 'background 0.15s',
+                }}
+              >
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <div style={{
+                    width: 7, height: 7, borderRadius: '50%', flexShrink: 0, marginTop: 4,
+                    background: n.is_read ? 'var(--border2)' : (typeColor[n.type] || '#4d9fff'),
+                  }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: n.is_read ? 400 : 700, color: 'var(--text)', lineHeight: 1.4 }}>{n.title}</div>
+                    {n.body && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.body}</div>}
+                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>
+                      {new Date(n.created_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Toggle Button ──────────────────────────────────────────── */
 function ToggleBtn({ isOpen, sidebarW, onClick }) {
   return (
@@ -336,6 +469,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
   const [isOpen, setIsOpen] = useState(!isMobile);
   const navigate = useNavigate();
+  const userId = session?.user?.id ?? null;
 
   useEffect(() => {
     const onResize = () => {
@@ -361,6 +495,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
     <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         <ToggleBtn isOpen={isOpen} sidebarW={sidebarPx} onClick={() => setIsOpen(o => !o)} />
+        <NotificationBell userId={userId} />
         <Sidebar
           isOpen={isOpen}
           onClose={() => setIsOpen(false)}

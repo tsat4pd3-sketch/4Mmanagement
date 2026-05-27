@@ -458,17 +458,20 @@ function RangeTab() {
 }
 
 const STATUS_META = {
-  pending:  { label: '⏳ รอ Approve', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)'  },
-  approved: { label: '✅ Approved',   color: '#22c55e', bg: 'rgba(34,197,94,0.12)'   },
-  rejected: { label: '❌ Rejected',   color: '#ef4444', bg: 'rgba(239,68,68,0.12)'   },
+  pending:     { label: '⏳ รอ SV Approve',  color: '#f59e0b', bg: 'rgba(245,158,11,0.12)'  },
+  pending_qa:  { label: '🔍 รอ QA Approve',  color: '#a855f7', bg: 'rgba(168,85,247,0.12)'  },
+  approved:    { label: '✅ Approved',        color: '#22c55e', bg: 'rgba(34,197,94,0.12)'   },
+  rejected:    { label: '❌ Rejected',        color: '#ef4444', bg: 'rgba(239,68,68,0.12)'   },
 };
 
 function FourMTab() {
   const { role } = useContext(UserContext);
+
+  // Determine if the current user can act on this log at its current stage
   const canApproveLog = (log) => {
     if (['admin', 'manager'].includes(role)) return true;
-    if (role === 'qa') return log.requires_qa !== false; // qa approves high-severity
-    if (['supervisor', 'leader'].includes(role)) return log.requires_qa === false; // supervisor approves low-severity only
+    if (log.status === 'pending')    return ['supervisor', 'leader'].includes(role);
+    if (log.status === 'pending_qa') return role === 'qa';
     return false;
   };
 
@@ -481,9 +484,9 @@ function FourMTab() {
   const [logs,        setLogs]        = useState([]);
   const [lines,       setLines]       = useState([]);
   const [loading,     setLoading]     = useState(false);
-  const [rejectModal, setRejectModal] = useState(null); // log id
+  const [rejectModal, setRejectModal] = useState(null);
   const [rejectReason,setRejectReason]= useState('');
-  const [approverMap, setApproverMap] = useState({}); // userId → fullName
+  const [profileMap,  setProfileMap]  = useState({}); // userId → fullName
 
   useEffect(() => {
     supabase.from('production_lines').select('name').order('name').then(({ data }) => setLines(data || []));
@@ -494,7 +497,7 @@ function FourMTab() {
   const load = async () => {
     setLoading(true);
     let q = supabase.from('four_m_logs')
-      .select('id, work_date, line_name, category, description, created_at, status, approved_by, approved_at, reject_reason, requires_qa, change_subtype, created_by')
+      .select('id, work_date, line_name, category, description, created_at, status, sv_approved_by, sv_approved_at, approved_by, approved_at, reject_reason, requires_qa, change_subtype, created_by')
       .gte('work_date', from).lte('work_date', to)
       .order('work_date', { ascending: false })
       .order('created_at', { ascending: false });
@@ -504,26 +507,42 @@ function FourMTab() {
     const { data } = await q;
     setLogs(data || []);
 
-    // load approver names
-    const ids = [...new Set((data || []).filter(l => l.approved_by).map(l => l.approved_by))];
-    if (ids.length) {
-      const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', ids);
+    const allIds = [...new Set((data || []).flatMap(l => [l.sv_approved_by, l.approved_by].filter(Boolean)))];
+    if (allIds.length) {
+      const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', allIds);
       const map = {};
       (profiles || []).forEach(p => { map[p.id] = p.full_name || 'ไม่ระบุ'; });
-      setApproverMap(map);
+      setProfileMap(map);
     }
     setLoading(false);
   };
 
-  const handleApprove = async (logId) => {
+  const handleApprove = async (log) => {
     const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from('four_m_logs').update({
-      status: 'approved', approved_by: user.id, approved_at: new Date().toISOString(), reject_reason: null,
-    }).eq('id', logId);
+    const now = new Date().toISOString();
+    let update;
+    let nextStatus;
+
+    if (log.status === 'pending') {
+      if (log.requires_qa !== false) {
+        // Supervisor approved → waiting for QA
+        update = { status: 'pending_qa', sv_approved_by: user.id, sv_approved_at: now };
+        nextStatus = 'pending_qa';
+      } else {
+        // No QA needed → directly approved (supervisor is final approver)
+        update = { status: 'approved', sv_approved_by: user.id, sv_approved_at: now, approved_by: user.id, approved_at: now, reject_reason: null };
+        nextStatus = 'approved';
+      }
+    } else {
+      // pending_qa → QA final approval
+      update = { status: 'approved', approved_by: user.id, approved_at: now, reject_reason: null };
+      nextStatus = 'approved';
+    }
+
+    const { error } = await supabase.from('four_m_logs').update(update).eq('id', log.id);
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
-    toast.success('Approved เรียบร้อย');
-    const log = logs.find(l => l.id === logId);
-    if (log) supabase.functions.invoke('send-notification', { body: { event: 'status_change', log: { ...log, status: 'approved' } } }).catch(() => {});
+    toast.success(nextStatus === 'pending_qa' ? 'SV Approved → รอ QA' : 'Approved เรียบร้อย');
+    supabase.functions.invoke('send-notification', { body: { event: 'status_change', log: { ...log, ...update, status: nextStatus } } }).catch(() => {});
     load();
   };
 
@@ -545,19 +564,21 @@ function FourMTab() {
 
   const handleExportPdf = async () => {
     setExporting(true);
-    const approverIds = [...new Set(logs.filter(l => l.approved_by).map(l => l.approved_by))];
-    const { data: approverProfiles } = await supabase.from('profiles').select('id, full_name, signature_url').in('id', approverIds.length ? approverIds : ['__none__']);
-    const approverMap = {};
-    for (const p of (approverProfiles || [])) {
+    const allIds = [...new Set(logs.flatMap(l => [l.sv_approved_by, l.approved_by].filter(Boolean)))];
+    const { data: sigProfiles } = await supabase.from('profiles').select('id, full_name, signature_url').in('id', allIds.length ? allIds : ['__none__']);
+    const sigMap = {};
+    for (const p of (sigProfiles || [])) {
       const sigUrl = p.signature_url ? await urlToDataUrl(p.signature_url) : null;
-      approverMap[p.id] = { name: p.full_name, sigUrl };
+      sigMap[p.id] = { name: p.full_name, sigUrl };
     }
 
-    const today = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
+    const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
     const rowsHtml = logs.map((l, i) => {
       const m = { Man: { icon: '👤', color: '#3b82f6' }, Machine: { icon: '⚙️', color: '#8b5cf6' }, Material: { icon: '📦', color: '#f59e0b' }, Method: { icon: '📋', color: '#22c55e' } }[l.category] || {};
-      const statusLabel = l.status === 'approved' ? '✅ Approved' : l.status === 'rejected' ? '❌ Rejected' : '⏳ Pending';
-      const approver = l.approved_by ? approverMap[l.approved_by] : null;
+      const statusLabel = l.status === 'approved' ? '✅ Approved' : l.status === 'rejected' ? '❌ Rejected' : l.status === 'pending_qa' ? '🔍 รอ QA' : '⏳ Pending';
+      const svApprover  = l.sv_approved_by ? sigMap[l.sv_approved_by] : null;
+      const qaApprover  = l.approved_by    ? sigMap[l.approved_by]    : null;
+      const needsQA     = l.requires_qa !== false;
       return `<tr>
         <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;white-space:nowrap">${i+1}</td>
         <td style="border:1px solid #ccc;padding:4px 6px;white-space:nowrap">${l.work_date}</td>
@@ -565,9 +586,13 @@ function FourMTab() {
         <td style="border:1px solid #ccc;padding:4px 6px;color:${m.color || '#000'}">${l.category}</td>
         <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px">${l.description}</td>
         <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;white-space:nowrap">${statusLabel}</td>
-        <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;min-width:90px">
-          ${approver?.sigUrl ? `<img src="${approver.sigUrl}" style="max-height:40px;max-width:80px;object-fit:contain"/>` : ''}
-          ${approver?.name ? `<div style="font-size:9px;color:#666;margin-top:2px">${approver.name}</div>` : ''}
+        <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;min-width:80px">
+          ${svApprover?.sigUrl ? `<img src="${svApprover.sigUrl}" style="max-height:36px;max-width:72px;object-fit:contain"/>` : ''}
+          ${svApprover?.name ? `<div style="font-size:9px;color:#666;margin-top:2px">${svApprover.name}</div>` : ''}
+        </td>
+        <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;min-width:80px">
+          ${!needsQA ? '<span style="color:#999;font-size:10px">-</span>' : qaApprover?.sigUrl ? `<img src="${qaApprover.sigUrl}" style="max-height:36px;max-width:72px;object-fit:contain"/>` : ''}
+          ${needsQA && qaApprover?.name ? `<div style="font-size:9px;color:#666;margin-top:2px">${qaApprover.name}</div>` : ''}
         </td>
       </tr>`;
     }).join('');
@@ -580,7 +605,7 @@ function FourMTab() {
   @media print{@page{size:A4 landscape;margin:10mm}body{-webkit-print-color-adjust:exact}}
 </style></head><body style="padding:10mm">
   <h2 style="margin:0 0 4px;font-size:16px">บันทึกการเปลี่ยนแปลง 4M</h2>
-  <p style="color:#666;margin:0 0 12px;font-size:10px">พิมพ์วันที่: ${today} · รวม ${logs.length} รายการ</p>
+  <p style="color:#666;margin:0 0 12px;font-size:10px">พิมพ์วันที่: ${todayStr} · รวม ${logs.length} รายการ</p>
   <table>
     <thead><tr style="background:#f3f4f6">
       <th style="border:1px solid #ccc;padding:4px;text-align:center">#</th>
@@ -589,7 +614,8 @@ function FourMTab() {
       <th style="border:1px solid #ccc;padding:4px">ประเภท</th>
       <th style="border:1px solid #ccc;padding:4px">รายละเอียด</th>
       <th style="border:1px solid #ccc;padding:4px;text-align:center">สถานะ</th>
-      <th style="border:1px solid #ccc;padding:4px;text-align:center">ลายเซ็นอนุมัติ</th>
+      <th style="border:1px solid #ccc;padding:4px;text-align:center">ลายเซ็น SV</th>
+      <th style="border:1px solid #ccc;padding:4px;text-align:center">ลายเซ็น QA</th>
     </tr></thead>
     <tbody>${rowsHtml}</tbody>
   </table>
@@ -603,7 +629,7 @@ function FourMTab() {
   };
 
   const kpi = Object.fromEntries(Object.keys(CAT_META).map(k => [k, logs.filter(l => l.category === k).length]));
-  const pendingCount = logs.filter(l => l.status === 'pending').length;
+  const actionableCount = logs.filter(l => ['pending','pending_qa'].includes(l.status)).length;
 
   return (
     <div>
@@ -656,13 +682,14 @@ function FourMTab() {
         </select>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
           <option value="">ทุกสถานะ</option>
-          <option value="pending">⏳ รอ Approve</option>
+          <option value="pending">⏳ รอ SV Approve</option>
+          <option value="pending_qa">🔍 รอ QA Approve</option>
           <option value="approved">✅ Approved</option>
           <option value="rejected">❌ Rejected</option>
         </select>
-        {pendingCount > 0 && (
+        {actionableCount > 0 && (
           <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 6, padding: '3px 8px' }}>
-            ⏳ รอ Approve {pendingCount} รายการ
+            ⏳ รอดำเนินการ {actionableCount} รายการ
           </span>
         )}
         <button onClick={handleExportPdf} disabled={exporting || logs.length === 0}
@@ -676,22 +703,24 @@ function FourMTab() {
 
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
-          <table style={{ minWidth: 680 }}>
+          <table style={{ minWidth: 720 }}>
             <thead>
               <tr>
                 <th>วันที่</th><th>ไลน์</th><th>ประเภท</th><th>รายละเอียด</th>
                 <th style={{ textAlign: 'center' }}>สถานะ</th>
                 <th style={{ textAlign: 'center', minWidth: 90 }}>ระดับ</th>
-                <th style={{ textAlign: 'center', minWidth: 140 }}>Action</th>
+                <th style={{ textAlign: 'center', minWidth: 160 }}>Action</th>
               </tr>
             </thead>
             <tbody>
               {logs.length === 0 ? <EmptyRow cols={7} /> : logs.map(l => {
                 const m  = CAT_META[l.category] || {};
                 const sm = STATUS_META[l.status] || STATUS_META.pending;
-                const approverName = l.approved_by ? (approverMap[l.approved_by] || '...') : null;
+                const svName  = l.sv_approved_by ? (profileMap[l.sv_approved_by] || '...') : null;
+                const qaName  = l.approved_by    ? (profileMap[l.approved_by]    || '...') : null;
                 const needsQA = l.requires_qa !== false;
                 const userCanAct = canApproveLog(l);
+                const isActionable = ['pending','pending_qa'].includes(l.status);
                 return (
                   <tr key={l.id}>
                     <td style={{ fontWeight: 600, whiteSpace: 'nowrap', fontSize: 12 }}>{l.work_date}</td>
@@ -705,7 +734,8 @@ function FourMTab() {
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <span style={{ background: sm.bg, color: sm.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{sm.label}</span>
-                        {approverName && <span style={{ fontSize: 9, color: 'var(--muted)' }}>{approverName}</span>}
+                        {svName && <span style={{ fontSize: 9, color: 'var(--muted)' }}>SV: {svName}</span>}
+                        {qaName && <span style={{ fontSize: 9, color: 'var(--muted)' }}>QA: {qaName}</span>}
                         {l.approved_at && <span style={{ fontSize: 9, color: 'var(--muted)' }}>{new Date(l.approved_at).toLocaleDateString('th-TH')}</span>}
                       </div>
                     </td>
@@ -717,12 +747,12 @@ function FourMTab() {
                       </span>
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      {l.status === 'pending' ? (
+                      {isActionable ? (
                         userCanAct ? (
                           <div style={{ display: 'flex', gap: 5, justifyContent: 'center' }}>
-                            <button onClick={() => handleApprove(l.id)}
+                            <button onClick={() => handleApprove(l)}
                               style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
-                              ✅ Approve
+                              ✅ {l.status === 'pending_qa' ? 'QA Approve' : 'SV Approve'}
                             </button>
                             <button onClick={() => { setRejectModal(l.id); setRejectReason(''); }}
                               style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>
@@ -731,12 +761,12 @@ function FourMTab() {
                           </div>
                         ) : (
                           <span style={{ fontSize: 10, color: 'var(--muted)' }}>
-                            {needsQA ? 'รอ QA' : 'รอหัวหน้า'}
+                            {l.status === 'pending_qa' ? 'รอ QA' : needsQA ? 'รอ SV → QA' : 'รอหัวหน้า'}
                           </span>
                         )
                       ) : (
                         ['admin','manager'].includes(role) && (
-                          <button onClick={() => supabase.from('four_m_logs').update({ status: 'pending', approved_by: null, approved_at: null, reject_reason: null }).eq('id', l.id).then(load)}
+                          <button onClick={() => supabase.from('four_m_logs').update({ status: 'pending', sv_approved_by: null, sv_approved_at: null, approved_by: null, approved_at: null, reject_reason: null }).eq('id', l.id).then(load)}
                             style={{ padding: '3px 8px', borderRadius: 5, fontSize: 10, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
                             Reset
                           </button>
