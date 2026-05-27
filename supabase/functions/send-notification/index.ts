@@ -5,37 +5,21 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
 );
 
-const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-const SMTP_HOST      = Deno.env.get('SMTP_HOST');
-const SMTP_PORT      = Deno.env.get('SMTP_PORT');
-const SMTP_USER      = Deno.env.get('SMTP_USER');
-const SMTP_PASS      = Deno.env.get('SMTP_PASS');
-const SMTP_FROM      = Deno.env.get('SMTP_FROM') ?? SMTP_USER;
+const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN');
+const TELEGRAM_CHAT_ID   = Deno.env.get('TELEGRAM_CHAT_ID');
 
-/* ── Email sender ───────────────────────────────── */
-async function sendEmail(to: string, subject: string, html: string) {
-  if (RESEND_API_KEY) {
-    // Resend API
-    const from = Deno.env.get('EMAIL_FROM') ?? 'noreply@thaisummit.co.th';
-    await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RESEND_API_KEY}` },
-      body: JSON.stringify({ from, to, subject, html }),
-    });
-  } else if (SMTP_HOST) {
-    // SMTP via Deno SMTP library
-    const { SMTPClient } = await import('https://deno.land/x/denomailer@1.6.0/mod.ts');
-    const client = new SMTPClient({
-      connection: {
-        hostname: SMTP_HOST,
-        port: Number(SMTP_PORT ?? 587),
-        tls: Number(SMTP_PORT ?? 587) === 465,
-        auth: { username: SMTP_USER!, password: SMTP_PASS! },
-      },
-    });
-    await client.send({ from: SMTP_FROM!, to, subject, html });
-    await client.close();
-  }
+/* ── Telegram sender ────────────────────────────── */
+async function sendTelegram(message: string) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: TELEGRAM_CHAT_ID,
+      text: message,
+      parse_mode: 'HTML',
+    }),
+  });
 }
 
 /* ── Helpers ────────────────────────────────────── */
@@ -43,19 +27,21 @@ function statusLabel(status: string) {
   return { pending: 'รอ SV Approve', pending_qa: 'รอ QA Approve', approved: 'Approved ✅', rejected: 'Rejected ❌' }[status] ?? status;
 }
 
-function buildHtml(log: Record<string, unknown>) {
-  return `<div style="font-family:sans-serif;max-width:560px">
-    <h2 style="color:#1a1a2e">🔔 แจ้งเตือนระบบ 4M</h2>
-    <table style="border-collapse:collapse;width:100%">
-      <tr><td style="padding:6px;border:1px solid #ddd;font-weight:bold">วันที่</td><td style="padding:6px;border:1px solid #ddd">${log.work_date}</td></tr>
-      <tr><td style="padding:6px;border:1px solid #ddd;font-weight:bold">ไลน์</td><td style="padding:6px;border:1px solid #ddd">${log.line_name}</td></tr>
-      <tr><td style="padding:6px;border:1px solid #ddd;font-weight:bold">ประเภท</td><td style="padding:6px;border:1px solid #ddd">${log.category}</td></tr>
-      <tr><td style="padding:6px;border:1px solid #ddd;font-weight:bold">รายละเอียด</td><td style="padding:6px;border:1px solid #ddd">${log.description}</td></tr>
-      <tr><td style="padding:6px;border:1px solid #ddd;font-weight:bold">สถานะ</td><td style="padding:6px;border:1px solid #ddd">${statusLabel(log.status as string)}</td></tr>
-      ${log.reject_reason ? `<tr><td style="padding:6px;border:1px solid #ddd;font-weight:bold;color:#ef4444">เหตุผล</td><td style="padding:6px;border:1px solid #ddd;color:#ef4444">${log.reject_reason}</td></tr>` : ''}
-    </table>
-    <p style="color:#666;font-size:12px;margin-top:16px">— 4M Management System · Thai Summit Group</p>
-  </div>`;
+function buildTelegramMessage(log: Record<string, unknown>, title: string) {
+  const lines = [
+    `🔔 <b>${title}</b>`,
+    ``,
+    `📅 วันที่: ${log.work_date}`,
+    `🏭 ไลน์: ${log.line_name}`,
+    `📋 ประเภท: ${log.category}`,
+    `📝 รายละเอียด: ${log.description}`,
+    `🔖 สถานะ: ${statusLabel(log.status as string)}`,
+  ];
+  if (log.reject_reason) {
+    lines.push(`❌ เหตุผล: ${log.reject_reason}`);
+  }
+  lines.push(``, `— 4M Management System`);
+  return lines.join('\n');
 }
 
 /* ── Handler ─────────────────────────────────────── */
@@ -69,32 +55,26 @@ Deno.serve(async (req) => {
     const status: string = log.status;
 
     /* Determine notification targets ──────────────── */
-    type Target = { userId: string; email: string | null };
+    type Target = { userId: string };
     const targets: Target[] = [];
 
-    const addProfilesByRole = async (roles: string[], lineId?: string | number) => {
-      let q = supabase.from('profiles').select('id, notify_email, role, line_id').in('role', roles);
-      if (lineId) q = q.eq('line_id', lineId);
-      const { data } = await q;
-      for (const p of data ?? []) targets.push({ userId: p.id, email: p.notify_email });
+    const addProfilesByRole = async (roles: string[]) => {
+      const { data } = await supabase.from('profiles').select('id').in('role', roles);
+      for (const p of data ?? []) targets.push({ userId: p.id });
     };
 
     const addCreator = async () => {
       if (!log.created_by) return;
-      const { data } = await supabase.from('profiles').select('id, notify_email').eq('id', log.created_by).single();
-      if (data) targets.push({ userId: data.id, email: data.notify_email });
+      targets.push({ userId: log.created_by as string });
     };
 
     if (status === 'pending') {
-      // New log: notify supervisors/leaders of that line + QA if requires_qa
       await addProfilesByRole(['supervisor', 'leader', 'admin', 'manager']);
       if (log.requires_qa !== false) await addProfilesByRole(['qa']);
     } else if (status === 'pending_qa') {
-      // SV approved → notify QA
       await addProfilesByRole(['qa', 'admin', 'manager']);
       await addCreator();
     } else {
-      // approved or rejected → notify creator
       await addCreator();
       await addProfilesByRole(['admin', 'manager']);
     }
@@ -107,20 +87,19 @@ Deno.serve(async (req) => {
       ? `4M ${log.category} · ${log.line_name} → ${statusLabel(status)}`
       : `4M แจ้งเตือน · ${log.line_name}`;
     const body = `${log.work_date} · ${log.description}`;
-    const html = buildHtml(log);
 
+    /* In-app notifications */
     await Promise.allSettled(unique.map(async (t) => {
-      // In-app notification
       await supabase.from('notifications').insert({
         user_id: t.userId, title, body,
         type: status === 'rejected' ? 'error' : status === 'approved' ? 'success' : 'info',
         ref_table: 'four_m_logs', ref_id: log.id,
       });
-      // Email
-      if (t.email) {
-        await sendEmail(t.email, `[4M System] ${title}`, html).catch(console.error);
-      }
     }));
+
+    /* Telegram notification (ส่งครั้งเดียวไปยัง Group) */
+    const message = buildTelegramMessage(log, title);
+    await sendTelegram(message).catch(console.error);
 
     return new Response(JSON.stringify({ ok: true, sent: unique.length }), { headers: { 'Content-Type': 'application/json' } });
   } catch (err) {
