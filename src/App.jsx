@@ -5,6 +5,7 @@ import { supabase } from './supabaseClient';
 import { ToastContainer } from './components/Toast';
 import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
+import ChangePasswordModal from './components/ChangePasswordModal';
 
 const Register     = lazy(() => import('./pages/Register'));
 const Checkin      = lazy(() => import('./pages/Checkin'));
@@ -113,8 +114,9 @@ function SplashScreen({ onDone }) {
 function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl }) {
   const location = useLocation();
   const isMobile = window.innerWidth <= 768;
-  const [sigModalOpen, setSigModalOpen] = useState(false);
-  const [sigUrl, setSigUrl] = useState(userSignatureUrl);
+  const [sigModalOpen,  setSigModalOpen]  = useState(false);
+  const [sigUrl,        setSigUrl]        = useState(userSignatureUrl);
+  const [pwdModalOpen,  setPwdModalOpen]  = useState(false);
 
   useEffect(() => { setSigUrl(userSignatureUrl); }, [userSignatureUrl]);
 
@@ -243,6 +245,15 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
           </button>
 
           <button
+            onClick={() => setPwdModalOpen(true)}
+            className="nav-link"
+            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: 'var(--text2)' }}
+          >
+            <span style={{ fontSize: 15, flexShrink: 0 }}>🔐</span>
+            <span style={{ whiteSpace: 'nowrap' }}>เปลี่ยนรหัสผ่าน</span>
+          </button>
+
+          <button
             onClick={onToggleTheme}
             className="nav-link"
             style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', justifyContent: 'space-between' }}
@@ -285,6 +296,11 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
         onClose={() => setSigModalOpen(false)}
         currentSignatureUrl={sigUrl}
         onSaved={(url) => setSigUrl(url)}
+      />
+      <ChangePasswordModal
+        open={pwdModalOpen}
+        onClose={() => setPwdModalOpen(false)}
+        userEmail={userEmail}
       />
     </>
   );
