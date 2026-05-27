@@ -13,6 +13,16 @@ function getWorkDate() {
 }
 
 const CARD_W = 82;
+
+function useWidth() {
+  const [w, setW] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const h = () => setW(window.innerWidth);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+  return w;
+}
 const LINE_4M_CATEGORIES = ['Machine', 'Material', 'Method'];
 const SPECIAL_TASKS = ['5ส', 'คัดงาน', 'แก้ไขปัญหาคุณภาพ', 'งานปรับปรุงไลน์', 'อื่นๆ'];
 
@@ -43,6 +53,9 @@ export default function Management() {
   const [show4MModal,    setShow4MModal]    = useState(null);
   const [log4MForm,      setLog4MForm]      = useState({ category: 'Man', description: '', sameDept: false, skillOk: false, subtype: 'change' });
   const [isMobile,       setIsMobile]       = useState(window.innerWidth <= 768);
+  const vw = useWidth();
+  const isWide  = vw >= 1280;
+  const isUltra = vw >= 1600;
   const [autoManAlert,   setAutoManAlert]   = useState(null);
   const [skillDefs,      setSkillDefs]      = useState([]);
   const [dragOverStation,setDragOverStation]= useState(null);
@@ -426,9 +439,10 @@ export default function Management() {
   };
 
   /* ── Layout ── */
+  const poolW = isMobile ? '100%' : isUltra ? 280 : isWide ? 248 : 210;
   const poolStyle = isMobile
     ? { width: '100%', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '10px 12px', flexShrink: 0, maxHeight: '42vh', display: 'flex', flexDirection: 'column' }
-    : { width: 210, background: 'var(--bg2)', borderRight: '1px solid var(--border)', padding: '15px 10px', display: 'flex', flexDirection: 'column', flexShrink: 0, overflowY: 'auto' };
+    : { width: poolW, background: 'var(--bg2)', borderRight: '1px solid var(--border)', padding: isWide ? '18px 12px' : '15px 10px', display: 'flex', flexDirection: 'column', flexShrink: 0, overflowY: 'auto' };
 
   return (
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: 'calc(100vh - 80px)', background: 'var(--bg)', overflow: 'hidden' }}>
@@ -461,7 +475,7 @@ export default function Management() {
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🔵 พร้อมทำงาน</span>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>{poolWorkers.length} คน</span>
           </div>
-          <div style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: 'repeat(2, 1fr)', flexDirection: 'column', gap: 6, ...(isMobile ? { maxHeight: '28vh' } : { flex: '7 0 0', minHeight: 0 }) }}>
+          <div style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: isUltra ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', flexDirection: 'column', gap: isWide ? 7 : 6, ...(isMobile ? { maxHeight: '28vh' } : { flex: '7 0 0', minHeight: 0 }) }}>
             {poolWorkers.map(w => <PoolCard key={w.id} worker={w} />)}
             {poolWorkers.length === 0 && (
               <div style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'center', padding: '8px 0', gridColumn: '1/-1' }}>ไม่มีพนักงานใน Pool</div>
@@ -497,7 +511,7 @@ export default function Management() {
               const w = workers.find(wk => String(wk.id) === String(logId));
               if (w) { setSpecialModal(w); setSpecialTaskType('5ส'); setDraggingWorker(null); }
             } : undefined}
-            style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: 'repeat(2, 1fr)', flexDirection: 'column', gap: 6, ...(isMobile ? { maxHeight: '15vh' } : { flex: '3 0 0', minHeight: 0 }) }}>
+            style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: isUltra ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', flexDirection: 'column', gap: isWide ? 7 : 6, ...(isMobile ? { maxHeight: '15vh' } : { flex: '3 0 0', minHeight: 0 }) }}>
             {specialWorkers.map(w => <SpecialCard key={w.id} worker={w} />)}
             {specialWorkers.length === 0 && (
               <div style={{ color: 'rgba(245,158,11,0.5)', fontSize: 10, textAlign: 'center', padding: '6px 0', gridColumn: '1/-1' }}>—</div>
@@ -519,7 +533,7 @@ export default function Management() {
             {LINE_4M_CATEGORIES.map(cat => (
               <button key={cat} onClick={() => { setShow4MModal({ lineName: selectedLine }); setLog4MForm({ category: cat, description: '' }); }}
                 style={{
-                  width: '100%', marginBottom: 5, padding: '6px 8px', fontSize: 11, textAlign: 'left', borderRadius: 6, cursor: 'pointer',
+                  width: '100%', marginBottom: 5, padding: isWide ? '8px 10px' : '6px 8px', fontSize: isWide ? 12 : 11, textAlign: 'left', borderRadius: 6, cursor: 'pointer',
                   background: cat === 'Machine' ? 'rgba(245,158,11,0.12)' : cat === 'Material' ? 'rgba(34,197,94,0.12)' : 'rgba(139,92,246,0.12)',
                   color: cat === 'Machine' ? 'var(--amber)' : cat === 'Material' ? 'var(--green)' : '#c084fc',
                   border: `1px solid ${cat === 'Machine' ? 'rgba(245,158,11,0.3)' : cat === 'Material' ? 'rgba(34,197,94,0.3)' : 'rgba(139,92,246,0.3)'}`,
@@ -602,7 +616,7 @@ export default function Management() {
                 }}
               >
                 <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                  <span style={{ fontSize: 9, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: activeFc || '#c8c8d0' }}>
+                  <span style={{ fontSize: isWide ? 10 : 9, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: activeFc || '#c8c8d0' }}>
                     {st.station_name}
                   </span>
                   <div style={{ display: 'flex', gap: 1, flexShrink: 0, alignItems: 'center' }}>
