@@ -119,7 +119,7 @@ export default function Dashboard() {
       { data: hpData },
     ] = await Promise.all([
       supabase.from('daily_production_logs')
-        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, shift, employees!inner(id, name, employee_id_code, line_id, team, is_active)')
+        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, shift, assigned_line, employees!inner(id, name, image_url, employee_id_code, line_id, team, is_active)')
         .eq('work_date', date)
         .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
@@ -176,19 +176,38 @@ export default function Dashboard() {
     setLayouts(layoutData || []);
     setWorkstations(wsData || []);
     // Build stationEmpMap: station_id → employee + today's attendance
-    // Use enriched (has assignedShift) as the lookup
+    // Priority: assigned_line from today's log (matches Management page) → fallback to home positions
     const attMap = {};
     enriched.forEach(l => { if (l.employees?.id) attMap[l.employees.id] = l; });
+
     const semap = {};
+
+    // 1st pass: home positions as baseline
     (hpData || []).forEach(hp => {
       if (!hp.employees) return;
       const att = attMap[hp.employee_id];
-      semap[hp.station_id] = {
+      semap[String(hp.station_id)] = {
         ...hp.employees,
         is_present:      att ? att.is_present      : null,
         has_ot:          att?.has_ot          ?? false,
         has_extended_ot: att?.has_extended_ot ?? false,
         assignedShift:   att?.assignedShift   ?? null,
+      };
+    });
+
+    // 2nd pass: override with today's actual assigned_line (same source as Management page)
+    enriched.forEach(l => {
+      if (!l.assigned_line || !l.employees?.id) return;
+      const stId = String(l.assigned_line);
+      semap[stId] = {
+        id:              l.employees.id,
+        name:            l.employees.name,
+        image_url:       l.employees.image_url ?? null,
+        position:        l.employees.position  ?? null,
+        is_present:      l.is_present,
+        has_ot:          l.has_ot          ?? false,
+        has_extended_ot: l.has_extended_ot ?? false,
+        assignedShift:   l.assignedShift   ?? null,
       };
     });
     setStationEmpMap(semap);
@@ -456,7 +475,7 @@ export default function Dashboard() {
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
                 {layouts.map(layout => {
                   const lineWs = workstations.filter(w => w.line_name === layout.line_name);
-                  const lineStaff = lineWs.map(ws => stationEmpMap[ws.id]).filter(e => e && (!shiftEmpIds || shiftEmpIds.has(e.id)));
+                  const lineStaff = lineWs.map(ws => stationEmpMap[String(ws.id)]).filter(e => e && (!shiftEmpIds || shiftEmpIds.has(e.id)));
                   // Use lineStats (same source as KPI cards) for the footer counts
                   const lineStat = lineStats.find(l => l.name === layout.line_name);
                   const footerPresent = lineStat ? lineStat.linePresent : lineStaff.filter(e => e.is_present === true).length;
@@ -476,7 +495,7 @@ export default function Dashboard() {
                           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: 0.65 }}
                         />
                         {lineWs.map(ws => {
-                          const emp = stationEmpMap[ws.id];
+                          const emp = stationEmpMap[String(ws.id)];
                           if (!emp) return null;
                           if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
                           // Use shiftLogs (same source as KPI cards) for attendance color
@@ -611,7 +630,7 @@ export default function Dashboard() {
                   style={{ width: '100%', display: 'block', opacity: 0.7 }}
                 />
                 {lineWs.map(ws => {
-                  const emp = stationEmpMap[ws.id];
+                  const emp = stationEmpMap[String(ws.id)];
                   if (!emp) return null;
                   if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
                   const shiftLog = shiftLogs.find(l => l.employees?.id === emp.id);
