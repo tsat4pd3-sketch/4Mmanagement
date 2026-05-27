@@ -3,13 +3,35 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 
+function resizeImage(file, maxPx = 1280, quality = 0.85) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const { width: w, height: h } = img;
+      const scale = Math.min(1, maxPx / Math.max(w, h));
+      const canvas = document.createElement('canvas');
+      canvas.width  = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(blob => resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', quality);
+    };
+    img.src = url;
+  });
+}
+
+// 5-level standard matching factory requirements
 const SKILL_LEVELS = [
-  { min: 80, label: 'ชำนาญ',       color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
-  { min: 60, label: 'ผ่านเกณฑ์',   color: '#84cc16', bg: 'rgba(132,204,18,0.15)' },
-  { min: 40, label: 'กำลังพัฒนา', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
-  { min: 0,  label: 'เริ่มต้น',     color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
+  { min: 100, label: 'ผู้เชี่ยวชาญ',   color: '#a855f7', bg: 'rgba(168,85,247,0.15)',  band: 4, desc: 'ผ่านอบรมเฉพาะทาง + สอบ' },
+  { min: 75,  label: 'แก้ปัญหาได้',    color: '#22c55e', bg: 'rgba(34,197,94,0.15)',   band: 3, desc: 'ทำงานได้ + แก้ไขปัญหา' },
+  { min: 50,  label: 'มาตรฐาน',        color: '#84cc16', bg: 'rgba(132,204,18,0.15)',  band: 2, desc: 'ทำงานตามมาตรฐานอิสระ' },
+  { min: 25,  label: 'ต้องดูแล',       color: '#f59e0b', bg: 'rgba(245,158,11,0.15)',  band: 1, desc: 'OJT แล้ว ยังต้องดูแล' },
+  { min: 0,   label: 'ยังไม่ผ่าน OJT', color: '#ef4444', bg: 'rgba(239,68,68,0.15)',   band: 0, desc: 'ต้องผ่านการ OJT ก่อน' },
 ];
-const getLevel = (score) => SKILL_LEVELS.find(l => score >= l.min) || SKILL_LEVELS[3];
+const SKILL_GATES = [25, 50, 75, 100]; // levels requiring approval
+const getLevel = (score) => SKILL_LEVELS.find(l => score >= l.min) ?? SKILL_LEVELS[4];
+const getBandCeiling = (score) => score < 25 ? 24 : score < 50 ? 49 : score < 75 ? 74 : 99;
 
 const EMP_GRADES = {
   gold:   { label: 'ประจำ',  gradient: 'linear-gradient(135deg,#7a5800,#ffd700,#c8941a,#ffd700,#7a5800)', glow: 'rgba(255,215,0,0.45)',   text: '#c8941a', badge: 'rgba(255,215,0,0.15)',   border: 'rgba(200,148,26,0.5)' },
@@ -42,11 +64,19 @@ export default function Operator() {
   const [filterGroup,   setFilterGroup]   = useState('');
   const [filterTeam,    setFilterTeam]    = useState('');
   const [filterGrade,   setFilterGrade]   = useState('');
-  const [lines,         setLines]         = useState([]);
+  const [lines,           setLines]           = useState([]);
+  const [levelUpRequests, setLevelUpRequests] = useState([]);
+  const [luDocFile,       setLuDocFile]       = useState(null);
+  const [luDocPreview,    setLuDocPreview]    = useState(null);
+  const [isReviewing,     setIsReviewing]     = useState(false);
+  const [rejectLuModal,   setRejectLuModal]   = useState(null);
+  const [rejectLuReason,  setRejectLuReason]  = useState('');
+  const [runningWeekly,   setRunningWeekly]   = useState(false);
 
   useEffect(() => {
     fetchSkillDefs();
     fetchEmployees();
+    fetchLevelUpRequests();
     supabase.from('production_lines').select('id, name, section').order('name')
       .then(({ data }) => setLines(data || []));
     if (isLeader && userLineId) {
@@ -55,6 +85,83 @@ export default function Operator() {
     }
   }, []);
 
+  const fetchLevelUpRequests = async () => {
+    let q = supabase.from('skill_level_up_requests')
+      .select('*, employees(id, name, employee_id_code, section, line_id)')
+      .eq('status', 'pending')
+      .order('requested_at', { ascending: true });
+    if (isSupervisor && userSection) {
+      // fetch employee ids in this section first then filter
+    }
+    const { data } = await q;
+    setLevelUpRequests(data || []);
+  };
+
+  const handleRunWeeklyUpdate = async () => {
+    if (!window.confirm('รัน Weekly Skill Update สำหรับสัปดาห์ที่แล้ว?\n(ปกติรันอัตโนมัติทุกวันจันทร์ 08:05)')) return;
+    setRunningWeekly(true);
+    const { data, error } = await supabase.rpc('fn_weekly_skill_update');
+    setRunningWeekly(false);
+    if (error) { toast.error('ผิดพลาด: ' + error.message); return; }
+    toast.success(data);
+    fetchEmployees();
+    fetchLevelUpRequests();
+  };
+
+  const handleApproveLevel = async (req) => {
+    if (req.to_level === 100 && !luDocFile && !req.doc_url) {
+      toast.error('ระดับ 100 ต้องแนบเอกสารการอบรมก่อน'); return;
+    }
+    setIsReviewing(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    let doc_url = req.doc_url || null;
+
+    if (luDocFile) {
+      const path = `skill-docs/${req.employee_id}_${req.skill_name}_${Date.now()}.jpg`;
+      // resize if image
+      let fileToUpload = luDocFile;
+      if (luDocFile.type.startsWith('image/')) {
+        fileToUpload = await resizeImage(luDocFile);
+      }
+      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, fileToUpload, { upsert: false });
+      if (upErr) { toast.error('อัปโหลดเอกสารไม่สำเร็จ'); setIsReviewing(false); return; }
+      const { data: urlData } = supabase.storage.from('four-m-images').getPublicUrl(path);
+      doc_url = urlData.publicUrl;
+    }
+
+    const { error: rErr } = await supabase.from('skill_level_up_requests').update({
+      status: 'approved', reviewed_by: user.id, reviewed_at: new Date().toISOString(), doc_url,
+    }).eq('id', req.id);
+    if (rErr) { toast.error('ผิดพลาด: ' + rErr.message); setIsReviewing(false); return; }
+
+    await supabase.from('employee_skills').upsert({
+      employee_id: req.employee_id, skill_name: req.skill_name,
+      score: req.to_level, pending_level: null,
+    }, { onConflict: 'employee_id,skill_name' });
+
+    toast.success(`อนุมัติ Level ${req.to_level} สำเร็จ`);
+    setIsReviewing(false);
+    setLuDocFile(null); setLuDocPreview(null);
+    fetchLevelUpRequests();
+    fetchEmployees();
+  };
+
+  const handleRejectLevel = async () => {
+    if (!rejectLuReason.trim()) { toast.error('กรุณาระบุเหตุผล'); return; }
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase.from('skill_level_up_requests').update({
+      status: 'rejected', reviewed_by: user.id, reviewed_at: new Date().toISOString(),
+      reject_reason: rejectLuReason.trim(),
+    }).eq('id', rejectLuModal.id);
+    // Clear pending_level so farming can resume from current score
+    await supabase.from('employee_skills').update({ pending_level: null })
+      .eq('employee_id', rejectLuModal.employee_id).eq('skill_name', rejectLuModal.skill_name);
+    toast.info('Rejected — พนักงานสามารถ farm ต่อได้');
+    setRejectLuModal(null); setRejectLuReason('');
+    fetchLevelUpRequests();
+    fetchEmployees();
+  };
+
   const fetchSkillDefs = async () => {
     const { data } = await supabase.from('skill_definitions').select('*').order('sort_order');
     setSkillDefs(data || []);
@@ -62,7 +169,7 @@ export default function Operator() {
 
   const fetchEmployees = async () => {
     const makeBase = () => {
-      let q = supabase.from('employees').select('*, employee_skills(skill_name, score)');
+      let q = supabase.from('employees').select('*, employee_skills(skill_name, score, pending_level)');
       if (isLeader && userLineId)       q = q.eq('line_id', userLineId);
       if (isSupervisor && userSection)  q = q.eq('section', userSection);
       return q;
@@ -187,14 +294,22 @@ export default function Operator() {
         </h2>
       </div>
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 18 }}>
-        {(isLeader ? ['👥 พนักงาน'] : ['👥 พนักงาน', '⚙️ กำหนดสกิล']).map((t, i) => (
+      <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
+        {(isLeader ? ['👥 พนักงาน'] : ['👥 พนักงาน', '⚙️ กำหนดสกิล', '⬆️ Level Up']).map((t, i) => (
           <button key={i} onClick={() => setTab(i)} style={{
             padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
             background: tab === i ? 'var(--accent)' : 'var(--bg3)',
             color: tab === i ? '#fff' : 'var(--text2)',
             fontWeight: tab === i ? 700 : 400,
-          }}>{t}</button>
+            position: 'relative',
+          }}>
+            {t}
+            {i === 2 && levelUpRequests.length > 0 && (
+              <span style={{ position: 'absolute', top: -4, right: -4, background: '#ef4444', color: '#fff', borderRadius: '50%', width: 16, height: 16, fontSize: 9, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {levelUpRequests.length}
+              </span>
+            )}
+          </button>
         ))}
         {isSupervisor && userSection && (
           <div style={{
@@ -340,14 +455,21 @@ export default function Operator() {
                       {emp.start_date ? emp.start_date : '—'}
                     </td>
                     {skillDefs.map(sd => {
-                      const score = getEmpSkill(emp, sd.name);
+                      const skillObj = emp.employee_skills?.find(s => s.skill_name === sd.name);
+                      const score = skillObj?.score ?? 0;
+                      const pending = skillObj?.pending_level ?? null;
                       const lv = getLevel(score);
                       return (
                         <td key={sd.name} style={{ textAlign: 'center' }}>
-                          <div style={{ fontWeight: 700, fontSize: 13, color: lv.color }}>{score}%</div>
+                          <div style={{ fontWeight: 700, fontSize: 13, color: lv.color }}>{score}</div>
                           <div style={{ fontSize: 9, background: lv.bg, color: lv.color, borderRadius: 4, padding: '1px 5px', marginTop: 2, whiteSpace: 'nowrap' }}>
                             {lv.label}
                           </div>
+                          {pending && (
+                            <div style={{ fontSize: 8, color: '#f59e0b', fontWeight: 700, marginTop: 2, animation: 'pulse 1.5s infinite' }}>
+                              ⏳ Lv.{pending}
+                            </div>
+                          )}
                         </td>
                       );
                     })}
@@ -433,6 +555,148 @@ export default function Operator() {
               * ชื่อ key ถูกสร้างอัตโนมัติจากชื่อ เช่น "งานพ่นสี" → skill_
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Tab 2: Level-Up Requests ── */}
+      {tab === 2 && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+              คำขออัพระดับทักษะที่รอการอนุมัติ ({levelUpRequests.length} รายการ)
+            </div>
+            {['admin','manager'].includes(role) && (
+              <button onClick={handleRunWeeklyUpdate} disabled={runningWeekly}
+                style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)',
+                  opacity: runningWeekly ? 0.6 : 1 }}>
+                {runningWeekly ? 'กำลังรัน...' : '🔄 Run Weekly Update'}
+              </button>
+            )}
+          </div>
+
+          {/* Level legend */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+            {SKILL_LEVELS.map(lv => (
+              <div key={lv.min} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 6, background: lv.bg, fontSize: 11 }}>
+                <span style={{ fontWeight: 800, color: lv.color }}>{lv.min === 100 ? '100' : `${lv.min}–${lv.min === 75 ? 99 : lv.min === 50 ? 74 : lv.min === 25 ? 49 : lv.min === 0 ? 24 : 100}`}</span>
+                <span style={{ color: lv.color, fontWeight: 600 }}>{lv.label}</span>
+                <span style={{ color: 'var(--muted)' }}>— {lv.desc}</span>
+              </div>
+            ))}
+          </div>
+
+          {levelUpRequests.length === 0 ? (
+            <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 14 }}>
+              ✅ ไม่มีคำขออัพระดับที่รอการอนุมัติ
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {levelUpRequests.map(req => {
+                const emp = req.employees;
+                const toLv = SKILL_LEVELS.find(l => l.min === req.to_level);
+                const needsDoc = req.to_level === 100;
+                const canApprove = req.to_level === 100
+                  ? ['admin','manager'].includes(role)
+                  : ['admin','manager','supervisor'].includes(role);
+                return (
+                  <div key={req.id} className="card" style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '14px 16px' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+                        <span style={{ fontWeight: 700, fontSize: 14 }}>{emp?.name}</span>
+                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{emp?.employee_id_code}</span>
+                        {emp?.section && <span style={{ fontSize: 10, background: 'rgba(77,159,255,0.1)', color: '#4d9fff', borderRadius: 4, padding: '1px 6px' }}>{emp.section}</span>}
+                      </div>
+                      <div style={{ fontSize: 13, marginBottom: 4 }}>
+                        ทักษะ: <strong style={{ color: 'var(--accent)' }}>{req.skill_name}</strong>
+                        &nbsp;·&nbsp;
+                        <span style={{ color: '#f59e0b', fontWeight: 600 }}>score {req.from_score}</span>
+                        &nbsp;→&nbsp;
+                        <span style={{ color: toLv?.color, fontWeight: 800 }}>Level {req.to_level} ({toLv?.label})</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                        ขอเมื่อ {new Date(req.requested_at).toLocaleDateString('th-TH', { dateStyle: 'medium' })}
+                      </div>
+
+                      {/* Doc upload for level 100 */}
+                      {needsDoc && canApprove && (
+                        <div style={{ marginTop: 10 }}>
+                          <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 600, marginBottom: 4 }}>
+                            📄 แนบเอกสารการอบรมเฉพาะทาง <span style={{ color: '#ef4444' }}>*</span>
+                          </div>
+                          <div style={{ border: `2px dashed ${luDocFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 7, padding: '8px 12px', cursor: 'pointer', background: luDocFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', textAlign: 'center' }}
+                            onClick={() => document.getElementById(`doc-${req.id}`).click()}>
+                            <input id={`doc-${req.id}`} type="file" accept="image/*,application/pdf" style={{ display: 'none' }}
+                              onChange={e => {
+                                const f = e.target.files?.[0];
+                                if (!f) return;
+                                setLuDocFile(f);
+                                if (f.type.startsWith('image/')) {
+                                  const reader = new FileReader();
+                                  reader.onload = ev => setLuDocPreview(ev.target.result);
+                                  reader.readAsDataURL(f);
+                                } else {
+                                  setLuDocPreview(null);
+                                }
+                              }} />
+                            {luDocPreview
+                              ? <img src={luDocPreview} style={{ maxHeight: 80, maxWidth: '100%', borderRadius: 4 }} />
+                              : <span style={{ color: 'var(--muted)', fontSize: 12 }}>{luDocFile ? luDocFile.name : '📎 แตะเลือกไฟล์'}</span>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {canApprove && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+                        <button onClick={() => handleApproveLevel(req)} disabled={isReviewing}
+                          style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                            background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)',
+                            opacity: isReviewing ? 0.6 : 1 }}>
+                          ✅ อนุมัติ
+                        </button>
+                        <button onClick={() => { setRejectLuModal(req); setRejectLuReason(''); }} disabled={isReviewing}
+                          style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                            background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>
+                          ❌ ไม่อนุมัติ
+                        </button>
+                      </div>
+                    )}
+                    {!canApprove && (
+                      <span style={{ fontSize: 11, color: 'var(--muted)', fontSize: 10 }}>
+                        {req.to_level === 100 ? 'รอ Manager' : 'รอ Supervisor'}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Reject modal */}
+          {rejectLuModal && (
+            <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px', width: 'min(400px,94vw)' }}>
+                <h3 style={{ margin: '0 0 4px', color: '#ef4444' }}>❌ ไม่อนุมัติ Level Up</h3>
+                <p style={{ color: 'var(--muted)', fontSize: 13, margin: '0 0 12px' }}>
+                  {rejectLuModal.employees?.name} · {rejectLuModal.skill_name} → Lv.{rejectLuModal.to_level}
+                </p>
+                <textarea value={rejectLuReason} onChange={e => setRejectLuReason(e.target.value)}
+                  placeholder="ระบุเหตุผล..." rows={3}
+                  style={{ width: '100%', borderRadius: 8, padding: '8px 10px', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+                <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                  <button onClick={handleRejectLevel}
+                    style={{ flex: 2, padding: 10, background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>
+                    ยืนยัน
+                  </button>
+                  <button onClick={() => { setRejectLuModal(null); setRejectLuReason(''); }}
+                    style={{ flex: 1, padding: 10, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                    ยกเลิก
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
