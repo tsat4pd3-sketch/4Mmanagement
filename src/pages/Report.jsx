@@ -7,6 +7,30 @@ import {
   ResponsiveContainer, Tooltip,
 } from 'recharts';
 
+function resizeImage(file, maxPx = 1280, quality = 0.85) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const { width: w, height: h } = img;
+      const scale = Math.min(1, maxPx / Math.max(w, h));
+      const canvas = document.createElement('canvas');
+      canvas.width  = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(blob => resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', quality);
+    };
+    img.src = url;
+  });
+}
+
+function getWorkDate() {
+  const now = new Date();
+  if (now.getHours() < 8) now.setDate(now.getDate() - 1);
+  return now.toISOString().split('T')[0];
+}
+
 /* ── Signature URL to DataURL helper ── */
 async function urlToDataUrl(url) {
   if (!url) return null;
@@ -56,7 +80,7 @@ const CAT_META = {
   Method:   { color: '#c084fc', bg: 'rgba(139,92,246,0.12)', label: 'Method',   icon: '📋' },
 };
 
-const TABS = ['รายวัน', 'รายพนักงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '📤 Export', '💰 ค่าฝีมือ', '📋 ใบบันทึก', '🏅 Multi-Skill Form'];
+const TABS = ['รายวัน', 'รายพนักงาน', '📍 Log จุดงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '📤 Export', '💰 ค่าฝีมือ', '📋 ใบบันทึก', '🏅 Multi-Skill Form'];
 
 const SKILL_LEVELS = [
   { min: 80, label: 'ชำนาญ',       color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
@@ -90,13 +114,14 @@ export default function Report() {
       </div>
       {activeTab === 0 && <DailyTab />}
       {activeTab === 1 && <PerEmployeeTab />}
-      {activeTab === 2 && <RangeTab />}
-      {activeTab === 3 && <FourMTab />}
-      {activeTab === 4 && <SkillMatrixTab />}
-      {activeTab === 5 && <ExportTab goToTab={setActiveTab} />}
-      {activeTab === 6 && <SkillAllowanceTab />}
-      {activeTab === 7 && <AttendanceFormTab />}
-      {activeTab === 8 && <MultiSkillFormTab />}
+      {activeTab === 2 && <StationLogTab />}
+      {activeTab === 3 && <RangeTab />}
+      {activeTab === 4 && <FourMTab />}
+      {activeTab === 5 && <SkillMatrixTab />}
+      {activeTab === 6 && <ExportTab goToTab={setActiveTab} />}
+      {activeTab === 7 && <SkillAllowanceTab />}
+      {activeTab === 8 && <AttendanceFormTab />}
+      {activeTab === 9 && <MultiSkillFormTab />}
     </div>
   );
 }
@@ -104,10 +129,19 @@ export default function Report() {
 function DailyTab() {
   const now = new Date();
   const isDay = (now.getHours() * 60 + now.getMinutes()) >= 480 && (now.getHours() * 60 + now.getMinutes()) < 1200;
-  const [date, setDate]   = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate]   = useState(getWorkDate());
   const [shift, setShift] = useState(isDay ? 'day' : 'night');
   const [logs, setLogs]   = useState([]);
   const [loading, setLoading] = useState(false);
+  const [stationMap, setStationMap] = useState({});
+
+  useEffect(() => {
+    supabase.from('workstations').select('id, station_name').then(({ data }) => {
+      const m = {};
+      (data || []).forEach(w => { m[String(w.id)] = w.station_name; });
+      setStationMap(m);
+    });
+  }, []);
 
   useEffect(() => { load(); }, [date, shift]);
 
@@ -175,7 +209,7 @@ function DailyTab() {
                     <StatusBadge ok={l.has_boots} label="รองเท้า" />
                     <StatusBadge ok={l.has_gloves} label="ถุงมือ" />
                   </td>
-                  <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.assigned_line || '—'}</td>
+                  <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.assigned_line ? (stationMap[String(l.assigned_line)] || l.assigned_line) : '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -192,8 +226,14 @@ function PerEmployeeTab() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [stationMap, setStationMap] = useState({});
 
   useEffect(() => {
+    supabase.from('workstations').select('id, station_name').then(({ data }) => {
+      const m = {};
+      (data || []).forEach(w => { m[String(w.id)] = w.station_name; });
+      setStationMap(m);
+    });
     supabase.from('employees').select('id, name, employee_id_code').eq('is_active', true).order('name').then(({ data }) => {
       setEmployees(data || []);
       if (data?.length) setSelected(data[0].id);
@@ -244,7 +284,119 @@ function PerEmployeeTab() {
                     <StatusBadge ok={l.has_boots} label="รองเท้า" />
                     <StatusBadge ok={l.has_gloves} label="ถุงมือ" />
                   </td>
-                  <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.assigned_line || '—'}</td>
+                  <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.assigned_line ? (stationMap[String(l.assigned_line)] || l.assigned_line) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StationLogTab() {
+  const today = getWorkDate();
+  const [stations, setStations] = useState([]);
+  const [selectedStation, setSelectedStation] = useState('');
+  const [from, setFrom] = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
+  const [to, setTo] = useState(today);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    supabase.from('workstations').select('id, station_name, line_name').order('line_name').order('station_name').then(({ data }) => {
+      setStations(data || []);
+      if (data?.length) setSelectedStation(String(data[0].id));
+    });
+  }, []);
+
+  useEffect(() => { if (selectedStation) load(); }, [selectedStation, from, to]);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('daily_production_logs')
+      .select('work_date, is_present, has_helmet, has_boots, has_gloves, shift, employees(name, employee_id_code, image_url, team, section)')
+      .eq('assigned_line', selectedStation)
+      .gte('work_date', from).lte('work_date', to)
+      .order('work_date', { ascending: false });
+    setRows(data || []);
+    setLoading(false);
+  };
+
+  const station = stations.find(s => String(s.id) === selectedStation);
+
+  // group by line for optgroup
+  const byLine = stations.reduce((acc, s) => {
+    if (!acc[s.line_name]) acc[s.line_name] = [];
+    acc[s.line_name].push(s);
+    return acc;
+  }, {});
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)}
+          style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13, minWidth: 200 }}>
+          {Object.entries(byLine).map(([line, sts]) => (
+            <optgroup key={line} label={line}>
+              {sts.map(s => <option key={s.id} value={String(s.id)}>{s.station_name}</option>)}
+            </optgroup>
+          ))}
+        </select>
+        <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
+        <span style={{ color: 'var(--muted)', fontSize: 13 }}>—</span>
+        <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
+        <span style={{ color: 'var(--muted)', fontSize: 13 }}>{rows.length} รายการ</span>
+        <CsvBtn onClick={() => downloadCSV(
+          `station_${station?.station_name || selectedStation}_${from}_${to}.csv`,
+          ['วันที่', 'รหัส', 'ชื่อ', 'ทีม', 'สังกัด', 'มาทำงาน', 'PPE ครบ'],
+          rows.map(r => [r.work_date, r.employees?.employee_id_code, r.employees?.name, r.employees?.team || '', r.employees?.section || '', r.is_present ? '✓' : '✗', (r.has_helmet && r.has_boots && r.has_gloves) ? '✓' : '✗'])
+        )} />
+      </div>
+
+      {station && (
+        <div style={{ marginBottom: 12, padding: '8px 14px', borderRadius: 8, background: 'var(--accent-dim)', border: '1px solid rgba(61,214,92,0.2)', display: 'inline-flex', gap: 10, alignItems: 'center' }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)' }}>📍 {station.station_name}</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{station.line_name}</span>
+        </div>
+      )}
+
+      {loading ? <Loader /> : (
+        <div className="card" style={{ overflowX: 'auto' }}>
+          <table style={{ minWidth: 520 }}>
+            <thead>
+              <tr>
+                <th>วันที่</th>
+                <th>โปรไฟล์</th>
+                <th>รหัส</th>
+                <th>ชื่อ</th>
+                <th>ทีม</th>
+                <th>PPE</th>
+                <th>สถานะ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? <EmptyRow cols={7} /> : rows.map((r, i) => (
+                <tr key={i}>
+                  <td style={{ fontWeight: 600, fontSize: 12 }}>{r.work_date}</td>
+                  <td><Thumb src={r.employees?.image_url} /></td>
+                  <td style={{ color: 'var(--blue)', fontWeight: 700 }}>{r.employees?.employee_id_code}</td>
+                  <td style={{ fontWeight: 600 }}>{r.employees?.name}</td>
+                  <td style={{ fontSize: 12 }}>
+                    {r.employees?.team && <span style={{ background: 'rgba(77,159,255,0.15)', color: '#4d9fff', borderRadius: 4, padding: '1px 6px', fontSize: 11, fontWeight: 700 }}>Team {r.employees.team}</span>}
+                  </td>
+                  <td>
+                    <StatusBadge ok={r.has_helmet} label="หมวก" />
+                    <StatusBadge ok={r.has_boots} label="รองเท้า" />
+                    <StatusBadge ok={r.has_gloves} label="ถุงมือ" />
+                  </td>
+                  <td>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: r.is_present ? 'var(--green)' : 'var(--red)' }}>
+                      {r.is_present ? '✓ มา' : '✗ ขาด'}
+                    </span>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -256,8 +408,8 @@ function PerEmployeeTab() {
 }
 
 function RangeTab() {
-  const today = new Date().toISOString().split('T')[0];
-  const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
+  const today = getWorkDate();
+  const [from, setFrom] = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
   const [to, setTo] = useState(today);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -324,22 +476,25 @@ function RangeTab() {
 }
 
 const STATUS_META = {
-  pending:  { label: '⏳ รอ Approve', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)'  },
-  approved: { label: '✅ Approved',   color: '#22c55e', bg: 'rgba(34,197,94,0.12)'   },
-  rejected: { label: '❌ Rejected',   color: '#ef4444', bg: 'rgba(239,68,68,0.12)'   },
+  pending:     { label: '⏳ รอ SV Approve',  color: '#f59e0b', bg: 'rgba(245,158,11,0.12)'  },
+  pending_qa:  { label: '🔍 รอ QA Approve',  color: '#a855f7', bg: 'rgba(168,85,247,0.12)'  },
+  approved:    { label: '✅ Approved',        color: '#22c55e', bg: 'rgba(34,197,94,0.12)'   },
+  rejected:    { label: '❌ Rejected',        color: '#ef4444', bg: 'rgba(239,68,68,0.12)'   },
 };
 
 function FourMTab() {
   const { role } = useContext(UserContext);
+
+  // Determine if the current user can act on this log at its current stage
   const canApproveLog = (log) => {
     if (['admin', 'manager'].includes(role)) return true;
-    if (role === 'qa') return log.requires_qa !== false; // qa approves high-severity
-    if (['supervisor', 'leader'].includes(role)) return log.requires_qa === false; // supervisor approves low-severity only
+    if (log.status === 'pending')    return ['supervisor', 'leader'].includes(role);
+    if (log.status === 'pending_qa') return role === 'qa';
     return false;
   };
 
-  const today = new Date().toISOString().split('T')[0];
-  const [from,        setFrom]        = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
+  const today = getWorkDate();
+  const [from,        setFrom]        = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
   const [to,          setTo]          = useState(today);
   const [line,        setLine]        = useState('');
   const [cat,         setCat]         = useState('');
@@ -347,9 +502,14 @@ function FourMTab() {
   const [logs,        setLogs]        = useState([]);
   const [lines,       setLines]       = useState([]);
   const [loading,     setLoading]     = useState(false);
-  const [rejectModal, setRejectModal] = useState(null); // log id
-  const [rejectReason,setRejectReason]= useState('');
-  const [approverMap, setApproverMap] = useState({}); // userId → fullName
+  const [rejectModal,  setRejectModal]  = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [profileMap,   setProfileMap]   = useState({});
+  const [qaApproveModal,  setQaApproveModal]  = useState(null); // log waiting for QA image
+  const [qaImageFile,     setQaImageFile]     = useState(null);
+  const [qaImagePreview,  setQaImagePreview]  = useState(null);
+  const [isApprovingSaving, setIsApprovingSaving] = useState(false);
+  const [imageViewModal, setImageViewModal] = useState(null); // { url, title }
 
   useEffect(() => {
     supabase.from('production_lines').select('name').order('name').then(({ data }) => setLines(data || []));
@@ -360,7 +520,7 @@ function FourMTab() {
   const load = async () => {
     setLoading(true);
     let q = supabase.from('four_m_logs')
-      .select('id, work_date, line_name, category, description, created_at, status, approved_by, approved_at, reject_reason, requires_qa, change_subtype, created_by')
+      .select('id, work_date, line_name, category, description, created_at, status, sv_approved_by, sv_approved_at, approved_by, approved_at, reject_reason, requires_qa, change_subtype, created_by, request_image_url, qa_image_url')
       .gte('work_date', from).lte('work_date', to)
       .order('work_date', { ascending: false })
       .order('created_at', { ascending: false });
@@ -370,26 +530,65 @@ function FourMTab() {
     const { data } = await q;
     setLogs(data || []);
 
-    // load approver names
-    const ids = [...new Set((data || []).filter(l => l.approved_by).map(l => l.approved_by))];
-    if (ids.length) {
-      const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', ids);
+    const allIds = [...new Set((data || []).flatMap(l => [l.sv_approved_by, l.approved_by].filter(Boolean)))];
+    if (allIds.length) {
+      const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', allIds);
       const map = {};
       (profiles || []).forEach(p => { map[p.id] = p.full_name || 'ไม่ระบุ'; });
-      setApproverMap(map);
+      setProfileMap(map);
     }
     setLoading(false);
   };
 
-  const handleApprove = async (logId) => {
+  const handleApprove = async (log) => {
+    // QA step requires image confirmation — open modal instead
+    if (log.status === 'pending_qa') {
+      setQaApproveModal(log);
+      setQaImageFile(null);
+      setQaImagePreview(null);
+      return;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from('four_m_logs').update({
-      status: 'approved', approved_by: user.id, approved_at: new Date().toISOString(), reject_reason: null,
-    }).eq('id', logId);
+    const now = new Date().toISOString();
+    let update;
+    let nextStatus;
+
+    if (log.requires_qa !== false) {
+      update = { status: 'pending_qa', sv_approved_by: user.id, sv_approved_at: now };
+      nextStatus = 'pending_qa';
+    } else {
+      update = { status: 'approved', sv_approved_by: user.id, sv_approved_at: now, approved_by: user.id, approved_at: now, reject_reason: null };
+      nextStatus = 'approved';
+    }
+
+    const { error } = await supabase.from('four_m_logs').update(update).eq('id', log.id);
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
-    toast.success('Approved เรียบร้อย');
-    const log = logs.find(l => l.id === logId);
-    if (log) supabase.functions.invoke('send-notification', { body: { event: 'status_change', log: { ...log, status: 'approved' } } }).catch(() => {});
+    toast.success(nextStatus === 'pending_qa' ? 'SV Approved → รอ QA' : 'Approved เรียบร้อย');
+    supabase.functions.invoke('send-notification', { body: { event: 'status_change', log: { ...log, ...update, status: nextStatus } } }).catch(() => {});
+    load();
+  };
+
+  const handleQaApproveSubmit = async () => {
+    if (!qaImageFile) { toast.error('กรุณาแนบรูปยืนยันคุณภาพงาน'); return; }
+    setIsApprovingSaving(true);
+    const { data: { user } } = await supabase.auth.getUser();
+
+    const resized = await resizeImage(qaImageFile);
+    const path = `qa/${Date.now()}_${user?.id ?? 'anon'}.jpg`;
+    const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: false, contentType: 'image/jpeg' });
+    if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); setIsApprovingSaving(false); return; }
+    const { data: urlData } = supabase.storage.from('four-m-images').getPublicUrl(path);
+    const qa_image_url = urlData.publicUrl;
+
+    const now = new Date().toISOString();
+    const update = { status: 'approved', approved_by: user.id, approved_at: now, reject_reason: null, qa_image_url };
+    const { error } = await supabase.from('four_m_logs').update(update).eq('id', qaApproveModal.id);
+    setIsApprovingSaving(false);
+    if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
+    toast.success('QA Approved เรียบร้อย');
+    supabase.functions.invoke('send-notification', { body: { event: 'status_change', log: { ...qaApproveModal, ...update, status: 'approved' } } }).catch(() => {});
+    setQaApproveModal(null); setQaImageFile(null); setQaImagePreview(null);
     load();
   };
 
@@ -411,19 +610,21 @@ function FourMTab() {
 
   const handleExportPdf = async () => {
     setExporting(true);
-    const approverIds = [...new Set(logs.filter(l => l.approved_by).map(l => l.approved_by))];
-    const { data: approverProfiles } = await supabase.from('profiles').select('id, full_name, signature_url').in('id', approverIds.length ? approverIds : ['__none__']);
-    const approverMap = {};
-    for (const p of (approverProfiles || [])) {
+    const allIds = [...new Set(logs.flatMap(l => [l.sv_approved_by, l.approved_by].filter(Boolean)))];
+    const { data: sigProfiles } = await supabase.from('profiles').select('id, full_name, signature_url').in('id', allIds.length ? allIds : ['__none__']);
+    const sigMap = {};
+    for (const p of (sigProfiles || [])) {
       const sigUrl = p.signature_url ? await urlToDataUrl(p.signature_url) : null;
-      approverMap[p.id] = { name: p.full_name, sigUrl };
+      sigMap[p.id] = { name: p.full_name, sigUrl };
     }
 
-    const today = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
+    const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
     const rowsHtml = logs.map((l, i) => {
       const m = { Man: { icon: '👤', color: '#3b82f6' }, Machine: { icon: '⚙️', color: '#8b5cf6' }, Material: { icon: '📦', color: '#f59e0b' }, Method: { icon: '📋', color: '#22c55e' } }[l.category] || {};
-      const statusLabel = l.status === 'approved' ? '✅ Approved' : l.status === 'rejected' ? '❌ Rejected' : '⏳ Pending';
-      const approver = l.approved_by ? approverMap[l.approved_by] : null;
+      const statusLabel = l.status === 'approved' ? '✅ Approved' : l.status === 'rejected' ? '❌ Rejected' : l.status === 'pending_qa' ? '🔍 รอ QA' : '⏳ Pending';
+      const svApprover  = l.sv_approved_by ? sigMap[l.sv_approved_by] : null;
+      const qaApprover  = l.approved_by    ? sigMap[l.approved_by]    : null;
+      const needsQA     = l.requires_qa !== false;
       return `<tr>
         <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;white-space:nowrap">${i+1}</td>
         <td style="border:1px solid #ccc;padding:4px 6px;white-space:nowrap">${l.work_date}</td>
@@ -431,9 +632,13 @@ function FourMTab() {
         <td style="border:1px solid #ccc;padding:4px 6px;color:${m.color || '#000'}">${l.category}</td>
         <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px">${l.description}</td>
         <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;white-space:nowrap">${statusLabel}</td>
-        <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;min-width:90px">
-          ${approver?.sigUrl ? `<img src="${approver.sigUrl}" style="max-height:40px;max-width:80px;object-fit:contain"/>` : ''}
-          ${approver?.name ? `<div style="font-size:9px;color:#666;margin-top:2px">${approver.name}</div>` : ''}
+        <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;min-width:80px">
+          ${svApprover?.sigUrl ? `<img src="${svApprover.sigUrl}" style="max-height:36px;max-width:72px;object-fit:contain"/>` : ''}
+          ${svApprover?.name ? `<div style="font-size:9px;color:#666;margin-top:2px">${svApprover.name}</div>` : ''}
+        </td>
+        <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;min-width:80px">
+          ${!needsQA ? '<span style="color:#999;font-size:10px">-</span>' : qaApprover?.sigUrl ? `<img src="${qaApprover.sigUrl}" style="max-height:36px;max-width:72px;object-fit:contain"/>` : ''}
+          ${needsQA && qaApprover?.name ? `<div style="font-size:9px;color:#666;margin-top:2px">${qaApprover.name}</div>` : ''}
         </td>
       </tr>`;
     }).join('');
@@ -446,7 +651,7 @@ function FourMTab() {
   @media print{@page{size:A4 landscape;margin:10mm}body{-webkit-print-color-adjust:exact}}
 </style></head><body style="padding:10mm">
   <h2 style="margin:0 0 4px;font-size:16px">บันทึกการเปลี่ยนแปลง 4M</h2>
-  <p style="color:#666;margin:0 0 12px;font-size:10px">พิมพ์วันที่: ${today} · รวม ${logs.length} รายการ</p>
+  <p style="color:#666;margin:0 0 12px;font-size:10px">พิมพ์วันที่: ${todayStr} · รวม ${logs.length} รายการ</p>
   <table>
     <thead><tr style="background:#f3f4f6">
       <th style="border:1px solid #ccc;padding:4px;text-align:center">#</th>
@@ -455,7 +660,8 @@ function FourMTab() {
       <th style="border:1px solid #ccc;padding:4px">ประเภท</th>
       <th style="border:1px solid #ccc;padding:4px">รายละเอียด</th>
       <th style="border:1px solid #ccc;padding:4px;text-align:center">สถานะ</th>
-      <th style="border:1px solid #ccc;padding:4px;text-align:center">ลายเซ็นอนุมัติ</th>
+      <th style="border:1px solid #ccc;padding:4px;text-align:center">ลายเซ็น SV</th>
+      <th style="border:1px solid #ccc;padding:4px;text-align:center">ลายเซ็น QA</th>
     </tr></thead>
     <tbody>${rowsHtml}</tbody>
   </table>
@@ -469,7 +675,7 @@ function FourMTab() {
   };
 
   const kpi = Object.fromEntries(Object.keys(CAT_META).map(k => [k, logs.filter(l => l.category === k).length]));
-  const pendingCount = logs.filter(l => l.status === 'pending').length;
+  const actionableCount = logs.filter(l => ['pending','pending_qa'].includes(l.status)).length;
 
   return (
     <div>
@@ -491,6 +697,73 @@ function FourMTab() {
                 ยกเลิก
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* QA Approve Modal */}
+      {qaApproveModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px 24px 20px', width: 'min(460px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
+            <h3 style={{ margin: '0 0 4px', color: '#a855f7', fontFamily: 'var(--font-display)' }}>🔍 QA ยืนยันคุณภาพงาน</h3>
+            <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 13 }}>
+              {qaApproveModal.line_name} · {qaApproveModal.category} · {qaApproveModal.description}
+            </p>
+            {/* Request image preview */}
+            {qaApproveModal.request_image_url && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>📎 รูปจากผู้แจ้ง</div>
+                <img src={qaApproveModal.request_image_url} style={{ maxHeight: 130, maxWidth: '100%', borderRadius: 8, objectFit: 'contain', border: '1px solid var(--border2)', cursor: 'pointer' }}
+                  onClick={() => setImageViewModal({ url: qaApproveModal.request_image_url, title: 'รูปจากผู้แจ้ง' })} />
+              </div>
+            )}
+            <div style={{ fontSize: 12, color: '#a855f7', fontWeight: 600, marginBottom: 6 }}>📷 แนบรูปยืนยันคุณภาพ <span style={{ color: '#ef4444' }}>*</span></div>
+            <div style={{ border: `2px dashed ${qaImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: qaImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
+              onClick={() => document.getElementById('qa-img-input').click()}>
+              <input id="qa-img-input" type="file" accept="image/*" style={{ display: 'none' }}
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  setQaImageFile(f);
+                  const reader = new FileReader();
+                  reader.onload = ev => setQaImagePreview(ev.target.result);
+                  reader.readAsDataURL(f);
+                }} />
+              {qaImagePreview
+                ? <img src={qaImagePreview} style={{ maxHeight: 140, maxWidth: '100%', borderRadius: 6, objectFit: 'contain' }} />
+                : <div style={{ color: 'var(--muted)', fontSize: 13 }}>📷 แตะเพื่อเลือกรูปยืนยัน</div>}
+            </div>
+            {qaImageFile && (
+              <button type="button" onClick={() => { setQaImageFile(null); setQaImagePreview(null); }}
+                style={{ marginTop: 4, fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                ✕ ลบรูป
+              </button>
+            )}
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button onClick={handleQaApproveSubmit} disabled={isApprovingSaving}
+                style={{ flex: 2, padding: 11, background: '#a855f7', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: isApprovingSaving ? 'not-allowed' : 'pointer', opacity: isApprovingSaving ? 0.6 : 1 }}>
+                {isApprovingSaving ? 'กำลังบันทึก...' : '✅ QA Approve'}
+              </button>
+              <button onClick={() => { setQaApproveModal(null); setQaImageFile(null); setQaImagePreview(null); }} disabled={isApprovingSaving}
+                style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image viewer modal */}
+      {imageViewModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setImageViewModal(null)}>
+          <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 13, color: '#fff', marginBottom: 8, fontWeight: 600 }}>{imageViewModal.title}</div>
+            <img src={imageViewModal.url} style={{ maxWidth: '88vw', maxHeight: '80vh', borderRadius: 10, objectFit: 'contain', display: 'block' }} />
+            <button onClick={() => setImageViewModal(null)}
+              style={{ position: 'absolute', top: -10, right: -10, background: '#ef4444', color: '#fff', border: 'none', borderRadius: '50%', width: 28, height: 28, fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              ×
+            </button>
           </div>
         </div>
       )}
@@ -522,13 +795,14 @@ function FourMTab() {
         </select>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
           <option value="">ทุกสถานะ</option>
-          <option value="pending">⏳ รอ Approve</option>
+          <option value="pending">⏳ รอ SV Approve</option>
+          <option value="pending_qa">🔍 รอ QA Approve</option>
           <option value="approved">✅ Approved</option>
           <option value="rejected">❌ Rejected</option>
         </select>
-        {pendingCount > 0 && (
+        {actionableCount > 0 && (
           <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 6, padding: '3px 8px' }}>
-            ⏳ รอ Approve {pendingCount} รายการ
+            ⏳ รอดำเนินการ {actionableCount} รายการ
           </span>
         )}
         <button onClick={handleExportPdf} disabled={exporting || logs.length === 0}
@@ -542,22 +816,24 @@ function FourMTab() {
 
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
-          <table style={{ minWidth: 680 }}>
+          <table style={{ minWidth: 720 }}>
             <thead>
               <tr>
                 <th>วันที่</th><th>ไลน์</th><th>ประเภท</th><th>รายละเอียด</th>
                 <th style={{ textAlign: 'center' }}>สถานะ</th>
                 <th style={{ textAlign: 'center', minWidth: 90 }}>ระดับ</th>
-                <th style={{ textAlign: 'center', minWidth: 140 }}>Action</th>
+                <th style={{ textAlign: 'center', minWidth: 160 }}>Action</th>
               </tr>
             </thead>
             <tbody>
               {logs.length === 0 ? <EmptyRow cols={7} /> : logs.map(l => {
                 const m  = CAT_META[l.category] || {};
                 const sm = STATUS_META[l.status] || STATUS_META.pending;
-                const approverName = l.approved_by ? (approverMap[l.approved_by] || '...') : null;
+                const svName  = l.sv_approved_by ? (profileMap[l.sv_approved_by] || '...') : null;
+                const qaName  = l.approved_by    ? (profileMap[l.approved_by]    || '...') : null;
                 const needsQA = l.requires_qa !== false;
                 const userCanAct = canApproveLog(l);
+                const isActionable = ['pending','pending_qa'].includes(l.status);
                 return (
                   <tr key={l.id}>
                     <td style={{ fontWeight: 600, whiteSpace: 'nowrap', fontSize: 12 }}>{l.work_date}</td>
@@ -567,11 +843,26 @@ function FourMTab() {
                       {l.description}
                       {l.change_subtype && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{l.change_subtype === 'replace' ? '🔄 Replace' : '⚠️ Change'}</div>}
                       {l.reject_reason && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>เหตุผล: {l.reject_reason}</div>}
+                      <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                        {l.request_image_url && (
+                          <button onClick={() => setImageViewModal({ url: l.request_image_url, title: '📎 รูปจากผู้แจ้ง' })}
+                            style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', background: 'rgba(168,85,247,0.12)', color: '#a855f7', border: '1px solid rgba(168,85,247,0.3)', fontWeight: 600 }}>
+                            📎 รูปแจ้ง
+                          </button>
+                        )}
+                        {l.qa_image_url && (
+                          <button onClick={() => setImageViewModal({ url: l.qa_image_url, title: '🔍 รูป QA ยืนยัน' })}
+                            style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 600 }}>
+                            🔍 รูป QA
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <span style={{ background: sm.bg, color: sm.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{sm.label}</span>
-                        {approverName && <span style={{ fontSize: 9, color: 'var(--muted)' }}>{approverName}</span>}
+                        {svName && <span style={{ fontSize: 9, color: 'var(--muted)' }}>SV: {svName}</span>}
+                        {qaName && <span style={{ fontSize: 9, color: 'var(--muted)' }}>QA: {qaName}</span>}
                         {l.approved_at && <span style={{ fontSize: 9, color: 'var(--muted)' }}>{new Date(l.approved_at).toLocaleDateString('th-TH')}</span>}
                       </div>
                     </td>
@@ -583,12 +874,12 @@ function FourMTab() {
                       </span>
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      {l.status === 'pending' ? (
+                      {isActionable ? (
                         userCanAct ? (
                           <div style={{ display: 'flex', gap: 5, justifyContent: 'center' }}>
-                            <button onClick={() => handleApprove(l.id)}
+                            <button onClick={() => handleApprove(l)}
                               style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
-                              ✅ Approve
+                              ✅ {l.status === 'pending_qa' ? 'QA Approve' : 'SV Approve'}
                             </button>
                             <button onClick={() => { setRejectModal(l.id); setRejectReason(''); }}
                               style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>
@@ -597,12 +888,12 @@ function FourMTab() {
                           </div>
                         ) : (
                           <span style={{ fontSize: 10, color: 'var(--muted)' }}>
-                            {needsQA ? 'รอ QA' : 'รอหัวหน้า'}
+                            {l.status === 'pending_qa' ? 'รอ QA' : needsQA ? 'รอ SV → QA' : 'รอหัวหน้า'}
                           </span>
                         )
                       ) : (
                         ['admin','manager'].includes(role) && (
-                          <button onClick={() => supabase.from('four_m_logs').update({ status: 'pending', approved_by: null, approved_at: null, reject_reason: null }).eq('id', l.id).then(load)}
+                          <button onClick={() => supabase.from('four_m_logs').update({ status: 'pending', sv_approved_by: null, sv_approved_at: null, approved_by: null, approved_at: null, reject_reason: null }).eq('id', l.id).then(load)}
                             style={{ padding: '3px 8px', borderRadius: 5, fontSize: 10, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
                             Reset
                           </button>
@@ -1412,7 +1703,7 @@ const TH_MONTHS = ['มกราคม','กุมภาพันธ์','มี
 
 /* ── Quick CSV export section at top of Export tab ── */
 function QuickCsvSection() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getWorkDate();
   const thisMonth = today.slice(0, 7);
   const [isLoading, setIsLoading] = useState({});
 

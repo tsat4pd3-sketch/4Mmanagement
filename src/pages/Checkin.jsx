@@ -32,7 +32,7 @@ function getShiftInfo() {
     shift:       isDay ? 'day' : 'night',
     workDateStr: toLocalDateStr(workDate),
     label:       isDay ? '☀️ กะเช้า' : '🌙 กะดึก',
-    timeRange:   isDay ? '08:00–19:59' : '20:00–07:59',
+    timeRange:   isDay ? '08:00–17:30 · OT 17:30–20:00' : 'OT 20:00–22:30 · 22:30–07:59',
   };
 }
 
@@ -90,14 +90,16 @@ export default function Checkin() {
       { data: scheduleData },
       { data: overrideData },
       { data: lineData },
+      { data: mergeData },
     ] = await Promise.all([
       empQ,
       supabase.from('daily_production_logs')
-        .select('employee_id, is_present, has_helmet, has_boots, has_gloves, has_ot, remark, leave_type, leave_duration, leave_period, leave_hours')
+        .select('employee_id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, remark, leave_type, leave_duration, leave_period, leave_hours')
         .eq('work_date', workDateStr),
       supabase.from('shift_schedules').select('*').eq('work_date', workDateStr),
       supabase.from('shift_overrides').select('*').eq('work_date', workDateStr),
       supabase.from('production_lines').select('id, name, section').order('section').order('name'),
+      supabase.from('shift_merge_events').select('*').lte('start_date', workDateStr).gte('end_date', workDateStr),
     ]);
     setLines(lineData || []);
 
@@ -110,15 +112,30 @@ export default function Checkin() {
     const empOverride = {};
     (overrideData || []).forEach(o => { empOverride[o.employee_id] = o.shift; });
 
+    // map lineId → section for merge event lookup
+    const lineSection = {};
+    (lineData || []).forEach(l => { lineSection[l.id] = l.section; });
+
     const enriched = empData.map(emp => {
       let assignedShift = null;
       if (empOverride[emp.id]) {
+        // 1st priority: individual override
         assignedShift = empOverride[emp.id];
-      } else if (emp.line_id && lineSchedule[emp.line_id]) {
-        const dayTeam = lineSchedule[emp.line_id];
-        const nightTeam = dayTeam === 'A' ? 'B' : 'A';
-        // Team C = fixed day shift (ไม่หมุน A/B)
-        assignedShift = emp.team === 'C' ? 'day' : emp.team === dayTeam ? 'day' : emp.team === nightTeam ? 'night' : null;
+      } else {
+        // 2nd priority: merge event (line-level beats section-level)
+        const empSec = lineSection[emp.line_id];
+        const mergeEvent =
+          (mergeData || []).find(e => e.line_id === emp.line_id) ||
+          (mergeData || []).find(e => e.section && e.section === empSec);
+        if (mergeEvent) {
+          assignedShift = mergeEvent.target_shift;
+        } else if (emp.line_id && lineSchedule[emp.line_id]) {
+          // 3rd priority: normal A/B schedule
+          const dayTeam = lineSchedule[emp.line_id];
+          const nightTeam = dayTeam === 'A' ? 'B' : 'A';
+          // Team C = fixed day shift (ไม่หมุน A/B)
+          assignedShift = emp.team === 'C' ? 'day' : emp.team === dayTeam ? 'day' : emp.team === nightTeam ? 'night' : null;
+        }
       }
       return { ...emp, assignedShift };
     });
@@ -129,11 +146,12 @@ export default function Checkin() {
     enriched.forEach(emp => {
       const log = logData?.find(l => l.employee_id === emp.id);
       init[emp.id] = {
-        is_present:     log ? log.is_present     : false,
-        has_helmet:     log ? log.has_helmet     : false,
-        has_boots:      log ? log.has_boots      : false,
-        has_gloves:     log ? log.has_gloves     : false,
-        has_ot:         log ? log.has_ot         : false,
+        is_present:       log ? log.is_present       : false,
+        has_helmet:       log ? log.has_helmet       : false,
+        has_boots:        log ? log.has_boots        : false,
+        has_gloves:       log ? log.has_gloves       : false,
+        has_ot:           log ? log.has_ot           : false,
+        has_extended_ot:  log ? log.has_extended_ot  : false,
         remark:         log ? (log.remark || '') : '',
         leave_type:     log ? (log.leave_type     || '') : '',
         leave_duration: log ? (log.leave_duration || '') : '',
@@ -194,8 +212,9 @@ export default function Checkin() {
         has_helmet:     rec.has_helmet,
         has_boots:      rec.has_boots,
         has_gloves:     rec.has_gloves,
-        has_ot:         rec.has_ot,
-        remark:         rec.remark || null,
+        has_ot:           rec.has_ot,
+        has_extended_ot:  rec.has_extended_ot || false,
+        remark:           rec.remark || null,
         leave_type:     rec.leave_type     || null,
         leave_duration: rec.leave_duration || null,
         leave_period:   rec.leave_period   || null,
@@ -409,7 +428,7 @@ export default function Checkin() {
               <th style={{ textAlign: 'center', minWidth: 64 }}>หมวก</th>
               <th style={{ textAlign: 'center', minWidth: 64 }}>รองเท้า</th>
               <th style={{ textAlign: 'center', minWidth: 64 }}>ถุงมือ</th>
-              <th style={{ textAlign: 'center', minWidth: 56 }}>OT</th>
+              <th style={{ textAlign: 'center', minWidth: 72 }} title="OT ปกติ | OT+23 = กะเช้าต่อถึง 23:00 (พิเศษ)">OT</th>
               <th style={{ minWidth: 220 }}>🏖️ การลา</th>
               <th style={{ minWidth: 140 }}>หมายเหตุ</th>
               <th style={{ textAlign: 'center', minWidth: 110 }}>สถานะ</th>
@@ -470,7 +489,28 @@ export default function Checkin() {
 
                   {/* OT */}
                   <td style={{ textAlign: 'center' }}>
-                    <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: '#f59e0b', width: 'auto' }} checked={rec.has_ot} onChange={() => toggle(emp.id, 'has_ot')} disabled={!rec.is_present} />
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: '#f59e0b', width: 'auto' }} checked={rec.has_ot} onChange={() => toggle(emp.id, 'has_ot')} disabled={!rec.is_present} />
+                      {/* Special extended OT (day shift 20:00–23:00) — rare case */}
+                      {(emp.assignedShift === 'day' || shiftInfo.shift === 'day') && rec.has_ot && (
+                        <div
+                          title="OT พิเศษ กะเช้า ต่อถึง 23:00"
+                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer' }}
+                          onClick={() => toggle(emp.id, 'has_extended_ot')}
+                        >
+                          <div style={{
+                            fontSize: 9, fontWeight: 700, letterSpacing: '0.05em',
+                            padding: '2px 5px', borderRadius: 4,
+                            background: rec.has_extended_ot ? 'rgba(239,68,68,0.15)' : 'var(--bg2)',
+                            color: rec.has_extended_ot ? '#ef4444' : 'var(--muted)',
+                            border: `1px solid ${rec.has_extended_ot ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`,
+                            transition: 'all 0.15s',
+                          }}>
+                            {rec.has_extended_ot ? '🔴 OT+23' : '○ OT+23'}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </td>
 
                   {/* Leave column */}

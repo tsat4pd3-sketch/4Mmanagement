@@ -1,7 +1,27 @@
 import { useState, useEffect, useContext, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
+
+function resizeImage(file, maxPx = 1280, quality = 0.85) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const { width: w, height: h } = img;
+      const scale = Math.min(1, maxPx / Math.max(w, h));
+      const canvas = document.createElement('canvas');
+      canvas.width  = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(blob => resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', quality);
+    };
+    img.src = url;
+  });
+}
 
 function getWorkDate() {
   const now = new Date();
@@ -11,6 +31,16 @@ function getWorkDate() {
 }
 
 const CARD_W = 82;
+
+function useWidth() {
+  const [w, setW] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const h = () => setW(window.innerWidth);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+  return w;
+}
 const LINE_4M_CATEGORIES = ['Machine', 'Material', 'Method'];
 const SPECIAL_TASKS = ['5ส', 'คัดงาน', 'แก้ไขปัญหาคุณภาพ', 'งานปรับปรุงไลน์', 'อื่นๆ'];
 
@@ -41,6 +71,9 @@ export default function Management() {
   const [show4MModal,    setShow4MModal]    = useState(null);
   const [log4MForm,      setLog4MForm]      = useState({ category: 'Man', description: '', sameDept: false, skillOk: false, subtype: 'change' });
   const [isMobile,       setIsMobile]       = useState(window.innerWidth <= 768);
+  const vw = useWidth();
+  const isWide  = vw >= 1280;
+  const isUltra = vw >= 1600;
   const [autoManAlert,   setAutoManAlert]   = useState(null);
   const [skillDefs,      setSkillDefs]      = useState([]);
   const [dragOverStation,setDragOverStation]= useState(null);
@@ -50,7 +83,10 @@ export default function Management() {
   const [detailSheet,    setDetailSheet]    = useState(null);
   const [stationModal,   setStationModal]   = useState(null);
   const [homePositions,  setHomePositions]  = useState({});
+  const [radarWorker,    setRadarWorker]    = useState(null);
   const [isSaving4M,     setIsSaving4M]     = useState(false);
+  const [reqImageFile,   setReqImageFile]   = useState(null);
+  const [reqImagePreview,setReqImagePreview]= useState(null);
   const [specialTasks,   setSpecialTasks]   = useState([]);
   const [specialModal,   setSpecialModal]   = useState(null); // worker to assign
   const [specialTaskType,setSpecialTaskType]= useState('5ส');
@@ -181,21 +217,38 @@ export default function Management() {
 
   /* ── Touch tap on pool card ── */
   const handlePoolTap = (worker) => {
-    if (!isMobile) return;
+    if (!isMobile) {
+      clearTimeout(hoverTimer.current);
+      setHoverCard(null);
+      setRadarWorker(worker);
+      return;
+    }
     setSelectedWorker(prev => prev?.id === worker.id ? null : worker);
   };
 
   /* ── Save 4M log ── */
   const handleSave4MLog = async () => {
     if (!log4MForm.description.trim()) { toast.error('กรุณาระบุรายละเอียด'); return; }
-    setIsSaving4M(true);
-    const today = getWorkDate();
     const isMan = log4MForm.category === 'Man';
     const requires_qa = isMan
       ? !(log4MForm.sameDept && log4MForm.skillOk)
       : log4MForm.subtype === 'change';
+    if (requires_qa && !reqImageFile) { toast.error('กรุณาแนบรูปรายละเอียดการเปลี่ยนแปลง (บังคับสำหรับรายการที่ต้องผ่าน QA)'); return; }
+    setIsSaving4M(true);
+    const today = getWorkDate();
     const change_subtype = isMan ? null : log4MForm.subtype;
     const { data: { user } } = await supabase.auth.getUser();
+
+    let request_image_url = null;
+    if (reqImageFile) {
+      const resized = await resizeImage(reqImageFile);
+      const path = `request/${Date.now()}_${user?.id ?? 'anon'}.jpg`;
+      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: false, contentType: 'image/jpeg' });
+      if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); setIsSaving4M(false); return; }
+      const { data: urlData } = supabase.storage.from('four-m-images').getPublicUrl(path);
+      request_image_url = urlData.publicUrl;
+    }
+
     const logData = {
       work_date: today,
       line_name: show4MModal.lineName || selectedLine,
@@ -204,12 +257,14 @@ export default function Management() {
       requires_qa,
       change_subtype,
       created_by: user?.id ?? null,
+      request_image_url,
     };
     const { error } = await supabase.from('four_m_logs').insert([logData]);
     setIsSaving4M(false);
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
     setShow4MModal(null);
     setLog4MForm({ category: 'Man', description: '', sameDept: false, skillOk: false, subtype: 'change' });
+    setReqImageFile(null); setReqImagePreview(null);
     fetchData();
     supabase.functions.invoke('send-notification', { body: { event: 'new_4m', log: logData } }).catch(() => {});
   };
@@ -233,9 +288,10 @@ export default function Management() {
   const specialEmpIds = new Set(specialTasks.map(t => t.employee_id));
 
   const matchesTeam = (w) => {
-    if (!isLeader || !userTeam) return true;
-    const empTeam = w.employees?.team;
-    return empTeam === userTeam || empTeam === 'C';
+    if (!isLeader) return true;
+    // Leaders only see workers from their own line
+    if (userLineId && w.employees?.line_id !== userLineId) return false;
+    return true;
   };
 
   const poolWorkers = workers.filter(w => {
@@ -330,6 +386,7 @@ export default function Management() {
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
         onClick={() => handlePoolTap(worker)}
         style={{
+          position: 'relative',
           width: '100%',
           padding: isMobile ? '10px 8px' : '6px 5px 6px',
           background: isSelected ? 'rgba(77,159,255,0.2)' : 'rgba(77,159,255,0.08)',
@@ -368,6 +425,14 @@ export default function Management() {
         </div>
         {isMobile && isSelected && (
           <div style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', borderRadius: 6, padding: '4px 8px', flexShrink: 0 }}>เลือกแล้ว ✓</div>
+        )}
+        {/* radar chart button (mobile) */}
+        {isMobile && (
+          <button onClick={(e) => { e.stopPropagation(); setRadarWorker(worker); }}
+            title="ดูทักษะ"
+            style={{ position: 'absolute', top: 3, right: 3, width: 22, height: 22, borderRadius: '50%', background: 'rgba(61,214,92,0.85)', border: 'none', color: '#fff', fontSize: 10, lineHeight: '22px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
+            📊
+          </button>
         )}
         {/* assign to special task — leader+ */}
         {['admin','manager','supervisor','leader'].includes(role) && (
@@ -408,9 +473,10 @@ export default function Management() {
   };
 
   /* ── Layout ── */
+  const poolW = isMobile ? '100%' : isUltra ? 280 : isWide ? 248 : 210;
   const poolStyle = isMobile
     ? { width: '100%', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '10px 12px', flexShrink: 0, maxHeight: '42vh', display: 'flex', flexDirection: 'column' }
-    : { width: 210, background: 'var(--bg2)', borderRight: '1px solid var(--border)', padding: '15px 10px', display: 'flex', flexDirection: 'column', flexShrink: 0, overflowY: 'auto' };
+    : { width: poolW, background: 'var(--bg2)', borderRight: '1px solid var(--border)', padding: isWide ? '18px 12px' : '15px 10px', display: 'flex', flexDirection: 'column', flexShrink: 0, overflowY: 'auto' };
 
   return (
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: 'calc(100vh - 80px)', background: 'var(--bg)', overflow: 'hidden' }}>
@@ -443,7 +509,7 @@ export default function Management() {
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🔵 พร้อมทำงาน</span>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>{poolWorkers.length} คน</span>
           </div>
-          <div style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: 'repeat(2, 1fr)', flexDirection: 'column', gap: 6, flex: '7 0 0', minHeight: 0 }}>
+          <div style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: isUltra ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', flexDirection: 'column', gap: isWide ? 7 : 6, ...(isMobile ? { maxHeight: '28vh' } : { flex: '7 0 0', minHeight: 0 }) }}>
             {poolWorkers.map(w => <PoolCard key={w.id} worker={w} />)}
             {poolWorkers.length === 0 && (
               <div style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'center', padding: '8px 0', gridColumn: '1/-1' }}>ไม่มีพนักงานใน Pool</div>
@@ -451,7 +517,17 @@ export default function Management() {
           </div>
 
           {/* Special task pool — 30% */}
-          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed rgba(245,158,11,0.4)', flexShrink: 0 }}>
+          <div
+            onDragOver={!isMobile ? (e) => e.preventDefault() : undefined}
+            onDrop={!isMobile ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const logId = e.dataTransfer.getData('logId');
+              const w = workers.find(wk => String(wk.id) === String(logId));
+              if (w) { setSpecialModal(w); setSpecialTaskType('5ส'); setDraggingWorker(null); }
+            } : undefined}
+            style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed rgba(245,158,11,0.4)', flexShrink: 0 }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>🟡 งานนอกไลน์</span>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>{specialWorkers.length} คน</span>
@@ -460,7 +536,16 @@ export default function Management() {
               <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 5, fontStyle: 'italic' }}>drag กลับไลน์ผลิตได้</div>
             )}
           </div>
-          <div style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: 'repeat(2, 1fr)', flexDirection: 'column', gap: 6, flex: '3 0 0', minHeight: 0 }}>
+          <div
+            onDragOver={!isMobile ? (e) => e.preventDefault() : undefined}
+            onDrop={!isMobile ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const logId = e.dataTransfer.getData('logId');
+              const w = workers.find(wk => String(wk.id) === String(logId));
+              if (w) { setSpecialModal(w); setSpecialTaskType('5ส'); setDraggingWorker(null); }
+            } : undefined}
+            style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: isUltra ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', flexDirection: 'column', gap: isWide ? 7 : 6, ...(isMobile ? { maxHeight: '15vh' } : { flex: '3 0 0', minHeight: 0 }) }}>
             {specialWorkers.map(w => <SpecialCard key={w.id} worker={w} />)}
             {specialWorkers.length === 0 && (
               <div style={{ color: 'rgba(245,158,11,0.5)', fontSize: 10, textAlign: 'center', padding: '6px 0', gridColumn: '1/-1' }}>—</div>
@@ -482,7 +567,7 @@ export default function Management() {
             {LINE_4M_CATEGORIES.map(cat => (
               <button key={cat} onClick={() => { setShow4MModal({ lineName: selectedLine }); setLog4MForm({ category: cat, description: '' }); }}
                 style={{
-                  width: '100%', marginBottom: 5, padding: '6px 8px', fontSize: 11, textAlign: 'left', borderRadius: 6, cursor: 'pointer',
+                  width: '100%', marginBottom: 5, padding: isWide ? '8px 10px' : '6px 8px', fontSize: isWide ? 12 : 11, textAlign: 'left', borderRadius: 6, cursor: 'pointer',
                   background: cat === 'Machine' ? 'rgba(245,158,11,0.12)' : cat === 'Material' ? 'rgba(34,197,94,0.12)' : 'rgba(139,92,246,0.12)',
                   color: cat === 'Machine' ? 'var(--amber)' : cat === 'Material' ? 'var(--green)' : '#c084fc',
                   border: `1px solid ${cat === 'Machine' ? 'rgba(245,158,11,0.3)' : cat === 'Material' ? 'rgba(34,197,94,0.3)' : 'rgba(139,92,246,0.3)'}`,
@@ -514,7 +599,52 @@ export default function Management() {
           border: lineLayout ? 'none' : '1px solid var(--border)',
         }}>
           {!lineLayout && (
-            <div style={{ textAlign: 'center', marginTop: '20%', color: 'var(--muted)', fontSize: 14 }}>กรุณาอัปโหลดรูปผังไลน์ที่หน้า Setup</div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 24, padding: 32 }}>
+              <div style={{ fontSize: 48, opacity: 0.25 }}>🏭</div>
+              <div style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>
+                ยังไม่มีผังไลน์ —{' '}
+                <span style={{ color: 'var(--accent)', fontWeight: 600, cursor: 'default' }}>ตั้งค่าที่หน้า ตั้งค่าผังไลน์</span>
+              </div>
+              {/* Worker summary cards */}
+              {workers.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, width: '100%', maxWidth: 700 }}>
+                  {[
+                    { label: 'พร้อมทำงาน', count: poolWorkers.length, color: '#4d9fff', icon: '🔵' },
+                    { label: 'ประจำสถานี', count: workers.filter(w => w.assigned_line).length, color: 'var(--accent)', icon: '✅' },
+                    { label: 'งานนอกไลน์', count: specialWorkers.length, color: '#f59e0b', icon: '🟡' },
+                  ].map(s => (
+                    <div key={s.label} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '16px 20px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 24, marginBottom: 4 }}>{s.icon}</div>
+                      <div style={{ fontSize: 28, fontWeight: 800, fontFamily: 'var(--font-display)', color: s.color }}>{s.count}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Worker list */}
+              {workers.length > 0 && (
+                <div style={{ width: '100%', maxWidth: 700 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>รายชื่อพนักงานวันนี้</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
+                    {workers.map(w => (
+                      <div key={w.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px',
+                      }}>
+                        {w.employees?.image_url
+                          ? <img src={w.employees.image_url} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                          : <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>👤</div>
+                        }
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.employees?.name?.split(' ')[0] || '?'}</div>
+                          <div style={{ fontSize: 9, color: 'var(--muted)' }}>{w.employees?.team ? `Team ${w.employees.team}` : ''}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           <style>{`
@@ -565,7 +695,7 @@ export default function Management() {
                 }}
               >
                 <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                  <span style={{ fontSize: 9, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: activeFc || '#c8c8d0' }}>
+                  <span style={{ fontSize: isWide ? 10 : 9, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: activeFc || '#c8c8d0' }}>
                     {st.station_name}
                   </span>
                   <div style={{ display: 'flex', gap: 1, flexShrink: 0, alignItems: 'center' }}>
@@ -648,8 +778,48 @@ export default function Management() {
         >🚨</button>
       )}
 
+      {/* ── Radar skill modal (portal → renders at body to escape stacking context) ── */}
+      {radarWorker && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}
+          onClick={() => setRadarWorker(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 16, padding: '20px 24px', width: 'min(90vw, 380px)', boxShadow: 'var(--shadow-lg)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+              {radarWorker.employees?.image_url
+                ? <img src={radarWorker.employees.image_url} style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border2)', flexShrink: 0 }} />
+                : <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>👤</div>}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{radarWorker.employees?.name}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{radarWorker.employees?.employee_id_code}</div>
+                <div style={{ display: 'flex', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
+                  {radarWorker.employees?.team && <span style={{ fontSize: 10, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', borderRadius: 4, padding: '1px 6px' }}>Team {radarWorker.employees.team}</span>}
+                  {radarWorker.employees?.section && <span style={{ fontSize: 10, color: '#a78bfa', background: 'rgba(167,139,250,0.12)', borderRadius: 4, padding: '1px 6px' }}>📍 {radarWorker.employees.section}</span>}
+                </div>
+              </div>
+              <button onClick={() => setRadarWorker(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', padding: '0 4px', alignSelf: 'flex-start' }}>✕</button>
+            </div>
+            {skillDefs.length > 0 ? (
+              <>
+                <ResponsiveContainer width="100%" height={200}>
+                  <RadarChart data={skillDefs.map(sd => ({
+                    subject: sd.label,
+                    score: radarWorker.employees?.employee_skills?.find(s => s.skill_name === sd.name)?.score ?? 0,
+                    fullMark: 100,
+                  }))}>
+                    <PolarGrid stroke="var(--border2)" />
+                    <PolarAngleAxis dataKey="subject" tick={{ fill: 'var(--text2)', fontSize: 10 }} />
+                    <Radar name="ทักษะ" dataKey="score" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.25} strokeWidth={2} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </>
+            ) : (
+              <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '20px 0' }}>ยังไม่มีข้อมูลทักษะ</div>
+            )}
+          </div>
+        </div>
+      , document.body)}
+
       {/* ── Desktop hover card ── */}
-      {!isMobile && hoverCard && <WorkerHoverCard card={hoverCard} skillDefs={skillDefs} />}
+      {!isMobile && hoverCard && !radarWorker && <WorkerHoverCard card={hoverCard} skillDefs={skillDefs} />}
 
       {/* ── Desktop fit popup ── */}
       {!isMobile && fitPopup && <FitPopup fitPopup={fitPopup} onClose={() => setFitPopup(null)} />}
@@ -954,11 +1124,43 @@ export default function Management() {
                 <textarea value={log4MForm.description} onChange={e => setLog4MForm({ ...log4MForm, description: e.target.value })}
                   placeholder="ระบุรายละเอียดการเปลี่ยนแปลง..." rows={3} style={{ resize: 'vertical' }} />
               </div>
+              {/* Image upload — required when requires_qa */}
+              {(() => {
+                const isMan = log4MForm.category === 'Man';
+                const willRequireQa = isMan ? !(log4MForm.sameDept && log4MForm.skillOk) : log4MForm.subtype === 'change';
+                if (!willRequireQa) return null;
+                return (
+                  <div>
+                    <label style={{ ...labelSt, color: '#a855f7' }}>📎 รูปรายละเอียดการเปลี่ยนแปลง <span style={{ color: '#ef4444' }}>*</span></label>
+                    <div style={{ border: `2px dashed ${reqImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: reqImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center', position: 'relative' }}
+                      onClick={() => document.getElementById('req-img-input').click()}>
+                      <input id="req-img-input" type="file" accept="image/*" style={{ display: 'none' }}
+                        onChange={e => {
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          setReqImageFile(f);
+                          const reader = new FileReader();
+                          reader.onload = ev => setReqImagePreview(ev.target.result);
+                          reader.readAsDataURL(f);
+                        }} />
+                      {reqImagePreview
+                        ? <img src={reqImagePreview} style={{ maxHeight: 140, maxWidth: '100%', borderRadius: 6, objectFit: 'contain' }} />
+                        : <div style={{ color: 'var(--muted)', fontSize: 13 }}>📷 แตะเพื่อเลือกรูป (JPG/PNG/WebP)</div>}
+                    </div>
+                    {reqImageFile && (
+                      <button type="button" onClick={() => { setReqImageFile(null); setReqImagePreview(null); }}
+                        style={{ marginTop: 4, fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                        ✕ ลบรูป
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
                 <button onClick={handleSave4MLog} disabled={isSaving4M} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 15, opacity: isSaving4M ? 0.6 : 1, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
                   {isSaving4M ? 'กำลังบันทึก...' : 'บันทึก 4M Log'}
                 </button>
-                <button onClick={() => { if (!isSaving4M) { setShow4MModal(null); setLog4MForm({ category: 'Man', description: '' }); } }}
+                <button onClick={() => { if (!isSaving4M) { setShow4MModal(null); setLog4MForm({ category: 'Man', description: '' }); setReqImageFile(null); setReqImagePreview(null); } }}
                   style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
                   ยกเลิก
                 </button>
@@ -976,63 +1178,86 @@ function WorkerHoverCard({ card, skillDefs }) {
   const { worker, fit, rect } = card;
   const emp = worker.employees;
   const skills = emp?.employee_skills || [];
-  const tooltipW = 230;
+  const tooltipW = 260;
   const gap = 10;
   let left = rect.right + gap;
   if (left + tooltipW > window.innerWidth - 12) left = rect.left - tooltipW - gap;
-  const top = Math.max(8, Math.min(rect.top - 20, window.innerHeight - 340));
+  const top = Math.max(8, Math.min(rect.top - 20, window.innerHeight - 400));
+
+  const radarData = skillDefs.map(sd => ({
+    skill: sd.label,
+    score: skills.find(s => s.skill_name === sd.name)?.score ?? 0,
+    fullMark: 100,
+  }));
 
   return (
-    <div style={{ position: 'fixed', top, left, width: tooltipW, zIndex: 3000, pointerEvents: 'none', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: '14px 14px 12px', animation: 'hoverIn 0.18s ease' }}>
+    <div style={{ position: 'fixed', top, left, width: tooltipW, zIndex: 3000, pointerEvents: 'none', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: '14px 14px 10px', animation: 'hoverIn 0.18s ease' }}>
       <style>{`@keyframes hoverIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
+
+      {/* Header */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10 }}>
         {emp?.image_url
-          ? <img src={emp.image_url} style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border2)', flexShrink: 0 }} />
-          : <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>👤</div>
+          ? <img src={emp.image_url} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border2)', flexShrink: 0 }} />
+          : <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
         }
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', lineHeight: 1.3 }}>{emp?.name || '—'}</div>
-          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>{emp?.employee_id_code || ''}</div>
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{emp?.employee_id_code || ''}</div>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 3 }}>
             {emp?.team && <span style={{ fontSize: 9, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
             {emp?.section && <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
           </div>
         </div>
       </div>
+
+      {/* Fit score badge */}
       {fit && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, background: `${fitColor(fit.score)}15`, border: `1px solid ${fitColor(fit.score)}40`, borderRadius: 8, padding: '6px 10px' }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: fitColor(fit.score), fontFamily: 'var(--font-display)', lineHeight: 1 }}>{fit.score}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, background: `${fitColor(fit.score)}15`, border: `1px solid ${fitColor(fit.score)}40`, borderRadius: 8, padding: '5px 10px' }}>
+          <div style={{ fontSize: 20, fontWeight: 900, color: fitColor(fit.score), fontFamily: 'var(--font-display)', lineHeight: 1 }}>{fit.score}</div>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: fitColor(fit.score) }}>{fitLabel(fit.score)}</div>
             <div style={{ fontSize: 9, color: 'var(--muted)' }}>Fit Score</div>
           </div>
         </div>
       )}
+
+      {/* Radar chart */}
       {skillDefs.length > 0 && (
-        <div>
-          <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>ทักษะ</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <>
+          <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 2 }}>ทักษะ</div>
+          <div style={{ width: '100%', height: 170 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart data={radarData} margin={{ top: 8, right: 20, bottom: 8, left: 20 }}>
+                <PolarGrid stroke="var(--border2)" />
+                <PolarAngleAxis dataKey="skill" tick={{ fontSize: 8, fill: 'var(--muted)', fontWeight: 600 }} />
+                <Radar name="ทักษะ" dataKey="score" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.22} strokeWidth={1.5} dot={{ r: 2, fill: 'var(--accent)' }} />
+                {fit && (
+                  <Radar name="required" dataKey={() => null}
+                    data={skillDefs.map(sd => {
+                      const req = fit.details?.find(d => d.label === sd.label);
+                      return { skill: sd.label, score: req?.required ?? 0 };
+                    })}
+                    stroke="rgba(239,68,68,0.6)" fill="rgba(239,68,68,0.06)" strokeWidth={1} strokeDasharray="3 2"
+                  />
+                )}
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+          {/* Score legend */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 10px', marginTop: 2 }}>
             {skillDefs.map(sd => {
               const score = skills.find(s => s.skill_name === sd.name)?.score ?? 0;
               const fitReq = fit?.details?.find(d => d.label === sd.label);
-              const bar = fitReq ? (fitReq.pass ? '#22c55e' : '#ef4444') : sd.color;
+              const pass = fitReq ? fitReq.pass : null;
               return (
-                <div key={sd.name}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                    <span style={{ fontSize: 10, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: sd.color, display: 'inline-block' }} />{sd.label}
-                    </span>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: bar }}>{score}%{fitReq && <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 9 }}>/{fitReq.required}%</span>}</span>
-                  </div>
-                  <div style={{ height: 4, background: 'var(--border2)', borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
-                    {fitReq && <div style={{ position: 'absolute', left: `${fitReq.required}%`, top: 0, bottom: 0, width: 1.5, background: 'var(--muted)', zIndex: 2 }} />}
-                    <div style={{ width: `${Math.min(score, 100)}%`, height: '100%', background: bar, borderRadius: 3 }} />
-                  </div>
-                </div>
+                <span key={sd.name} style={{ fontSize: 9, color: pass === false ? '#ef4444' : pass === true ? 'var(--accent)' : 'var(--muted)' }}>
+                  <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: sd.color, marginRight: 3 }} />
+                  {sd.label} <strong>{score}</strong>{fitReq ? `/${fitReq.required}` : ''}
+                </span>
               );
             })}
           </div>
-        </div>
+        </>
       )}
     </div>
   );

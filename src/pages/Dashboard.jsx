@@ -24,6 +24,16 @@ function useIsMobile() {
   return mobile;
 }
 
+function useWidth() {
+  const [w, setW] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const h = () => setW(window.innerWidth);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+  return w;
+}
+
 function getShiftInfo(date) {
   const h = date.getHours();
   const m = date.getMinutes();
@@ -81,17 +91,32 @@ function getWorkDateStr(date) {
 export default function Dashboard() {
   const now = useNow();
   const isMobile = useIsMobile();
+  const vw = useWidth();
+  const isWide = vw >= 1280;   // desktop / laptop
+  const isUltra = vw >= 1600;  // large desktop / TV
   const shiftInfo = getShiftInfo(now);
   const workDateStr = getWorkDateStr(now);
 
   const [selectedDate,  setSelectedDate]  = useState(workDateStr);
   const [selectedShift, setSelectedShift] = useState(shiftInfo.isDay ? 'day' : 'night');
+
+  // Auto-sync shift when day→night boundary crosses (20:00) while viewing today
+  useEffect(() => {
+    if (selectedDate === workDateStr) {
+      setSelectedShift(shiftInfo.isDay ? 'day' : 'night');
+    }
+  }, [shiftInfo.isDay, selectedDate, workDateStr]);
   const [logs, setLogs]         = useState([]);
   const [fourMLogs, setFourMLogs] = useState([]);
   const [lines, setLines]       = useState([]);
   const [loading, setLoading]   = useState(true);
 
   const [empCounts, setEmpCounts] = useState({});   // { [line_id]: count }
+
+  const [layouts,       setLayouts]       = useState([]);
+  const [workstations,  setWorkstations]  = useState([]);
+  const [stationEmpMap, setStationEmpMap] = useState({});
+  const [expandedLine,  setExpandedLine]  = useState(null);
 
   const fetchAll = useCallback(async (date) => {
     setLoading(true);
@@ -102,16 +127,22 @@ export default function Dashboard() {
       { data: empData },
       { data: scheduleData },
       { data: overrideData },
+      { data: layoutData },
+      { data: wsData },
+      { data: hpData },
     ] = await Promise.all([
       supabase.from('daily_production_logs')
-        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, shift, employees!inner(id, name, employee_id_code, line_id, team, is_active)')
+        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, shift, assigned_line, employees!inner(id, name, image_url, employee_id_code, line_id, team, is_active)')
         .eq('work_date', date)
         .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
-      supabase.from('production_lines').select('id, name, section').order('name'),
+      supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift').order('name'),
       supabase.from('employees').select('id, line_id, team').eq('is_active', true),
       supabase.from('shift_schedules').select('line_id, day_team').eq('work_date', date),
       supabase.from('shift_overrides').select('employee_id, shift').eq('work_date', date),
+      supabase.from('line_layouts').select('line_name, image_url'),
+      supabase.from('workstations').select('id, line_name, station_name, pos_top, pos_left'),
+      supabase.from('employee_home_positions').select('employee_id, station_id, employees(id, name, image_url, position)'),
     ]);
 
     // Build per-line day_team map
@@ -155,6 +186,44 @@ export default function Dashboard() {
       else if (emp.team === nightTeam) counts[emp.line_id].night++;
     });
     setEmpCounts(counts);
+    setLayouts(layoutData || []);
+    setWorkstations(wsData || []);
+    // Build stationEmpMap: station_id → employee + today's attendance
+    // Priority: assigned_line from today's log (matches Management page) → fallback to home positions
+    const attMap = {};
+    enriched.forEach(l => { if (l.employees?.id) attMap[l.employees.id] = l; });
+
+    const semap = {};
+
+    // 1st pass: home positions as baseline
+    (hpData || []).forEach(hp => {
+      if (!hp.employees) return;
+      const att = attMap[hp.employee_id];
+      semap[String(hp.station_id)] = {
+        ...hp.employees,
+        is_present:      att ? att.is_present      : null,
+        has_ot:          att?.has_ot          ?? false,
+        has_extended_ot: att?.has_extended_ot ?? false,
+        assignedShift:   att?.assignedShift   ?? null,
+      };
+    });
+
+    // 2nd pass: override with today's actual assigned_line (same source as Management page)
+    enriched.forEach(l => {
+      if (!l.assigned_line || !l.employees?.id) return;
+      const stId = String(l.assigned_line);
+      semap[stId] = {
+        id:              l.employees.id,
+        name:            l.employees.name,
+        image_url:       l.employees.image_url ?? null,
+        position:        l.employees.position  ?? null,
+        is_present:      l.is_present,
+        has_ot:          l.has_ot          ?? false,
+        has_extended_ot: l.has_extended_ot ?? false,
+        assignedShift:   l.assignedShift   ?? null,
+      };
+    });
+    setStationEmpMap(semap);
     setLoading(false);
   }, []);
 
@@ -170,24 +239,51 @@ export default function Dashboard() {
   const otCount  = present.filter(l => l.has_ot).length;
 
   const shiftKey     = selectedShift === 'all' ? 'all' : selectedShift;
-  const totalCapacity = Object.values(empCounts).reduce((s, c) => s + (c[shiftKey] ?? 0), 0) || shiftLogs.length;
 
-  const attendRate = totalCapacity > 0 ? Math.round((present.length / totalCapacity) * 100) : 0;
-  const ppeRate    = present.length > 0 ? Math.round((ppeReady.length / present.length) * 100) : 0;
+  // Determine OT windows based on current time (for live "today" view)
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  // Day OT window: 17:30–20:00 (1050–1200)
+  const inDayOTWindow      = nowMin >= 17 * 60 + 30 && nowMin < 20 * 60;
+  // Extended OT window: 20:00–23:00 (1200–1380)
+  const inExtendedOTWindow = nowMin >= 20 * 60 && nowMin < 23 * 60;
+
+  // Set of employee IDs to show on floor map:
+  // - Always: employees matching the selected shift
+  // - If viewing today & night shift: also include day-shift employees still on OT
+  const shiftEmpIds = selectedShift === 'all'
+    ? null
+    : (() => {
+        const ids = new Set(shiftLogs.map(l => l.employees?.id).filter(Boolean));
+        // During extended OT window (20:00–23:00): day-shift employees with has_extended_ot stay visible
+        if (selectedDate === workDateStr && selectedShift === 'night' && inExtendedOTWindow) {
+          logs.filter(l => l.assignedShift === 'day' && l.has_extended_ot && l.is_present)
+              .forEach(l => { if (l.employees?.id) ids.add(l.employees.id); });
+        }
+        return ids;
+      })();
 
   const lineStats = lines.map(line => {
     const lineLogs    = shiftLogs.filter(l => l.employees?.line_id === line.id);
     const linePresent = lineLogs.filter(l => l.is_present).length;
-    const lineTotal   = empCounts[line.id]?.[shiftKey] ?? lineLogs.length;
+    // Use standard manpower if set, fallback to actual employee count
+    const stdTotal = selectedShift === 'day'  ? (line.std_day_shift   || 0)
+                   : selectedShift === 'night' ? (line.std_night_shift || 0)
+                   : (line.std_day_shift || 0) + (line.std_night_shift || 0);
+    const lineTotal = stdTotal > 0 ? stdTotal : (empCounts[line.id]?.[shiftKey] ?? lineLogs.length);
     const lineAlerts  = fourMLogs.filter(f => f.line_name === line.name).length;
     const rate = lineTotal > 0 ? Math.round((linePresent / lineTotal) * 100) : 0;
     return { ...line, linePresent, lineTotal, lineAlerts, rate };
   });
 
+  const totalCapacity = lineStats.reduce((s, l) => s + l.lineTotal, 0) || shiftLogs.length;
+
+  const attendRate = totalCapacity > 0 ? Math.round((present.length / totalCapacity) * 100) : 0;
+  const ppeRate    = present.length > 0 ? Math.round((ppeReady.length / present.length) * 100) : 0;
+
   const isToday = selectedDate === workDateStr;
 
   return (
-    <div className="page-content" style={{ maxWidth: 1400 }}>
+    <div className="page-content" style={{ maxWidth: '100%' }}>
 
       {/* ── Header ─────────────────────────────────────── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, gap: 16, flexWrap: 'wrap' }}>
@@ -248,7 +344,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── KPI Row ─────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isWide ? 'repeat(5, 1fr)' : 'repeat(auto-fit, minmax(140px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
         {[
           {
             label: 'พนักงานทั้งหมด', value: totalCapacity, unit: 'คน',
@@ -282,30 +378,31 @@ export default function Dashboard() {
           <motion.div key={kpi.label} {...stagger(i + 2)}>
             <div style={{
               background: 'var(--card)', border: '1px solid var(--border2)',
-              borderRadius: 14, padding: isMobile ? '14px 14px' : '18px 20px',
+              borderRadius: 14, padding: isMobile ? '14px 14px' : isWide ? '22px 24px' : '18px 20px',
               boxShadow: 'var(--shadow-sm)',
               borderTop: `3px solid ${kpi.accent}`,
               display: 'flex', flexDirection: 'column', gap: 4,
               position: 'relative', overflow: 'hidden',
+              minHeight: isWide ? 130 : undefined,
             }}>
-              <div style={{ position: 'absolute', top: 14, right: 16, opacity: 0.12, fontSize: 42, lineHeight: 1, userSelect: 'none' }}>
+              <div style={{ position: 'absolute', top: 14, right: 16, opacity: 0.12, fontSize: isWide ? 56 : 42, lineHeight: 1, userSelect: 'none' }}>
                 {kpi.icon}
               </div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+              <div style={{ fontSize: isWide ? 12 : 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
                 {kpi.label}
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginTop: 4 }}>
                 {kpi.radial !== null ? (
-                  <div style={{ position: 'relative', width: 60, height: 60, flexShrink: 0 }}>
-                    <RadialProgress pct={kpi.radial} size={60} stroke={6} color={kpi.accent} />
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: kpi.accent, fontFamily: 'var(--font-display)' }}>
+                  <div style={{ position: 'relative', width: isWide ? 72 : 60, height: isWide ? 72 : 60, flexShrink: 0 }}>
+                    <RadialProgress pct={kpi.radial} size={isWide ? 72 : 60} stroke={isWide ? 7 : 6} color={kpi.accent} />
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isWide ? 15 : 13, fontWeight: 800, color: kpi.accent, fontFamily: 'var(--font-display)' }}>
                       {kpi.value}
                     </div>
                   </div>
                 ) : (
-                  <div style={{ fontSize: 36, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1 }}>
+                  <div style={{ fontSize: isWide ? 42 : 36, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1 }}>
                     {loading ? '—' : kpi.value}
-                    <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>{kpi.unit}</span>
+                    <span style={{ fontSize: isWide ? 16 : 14, fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>{kpi.unit}</span>
                   </div>
                 )}
               </div>
@@ -320,7 +417,7 @@ export default function Dashboard() {
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
           สถานะไลน์ผลิต
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: isMobile ? 10 : 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isUltra ? 'repeat(auto-fill, minmax(200px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(180px, 1fr))' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: isMobile ? 10 : 14 }}>
           {lineStats.map((line, i) => {
             const healthy = line.rate >= 80 && line.lineAlerts === 0;
             const warn    = line.lineAlerts > 0 || (line.rate > 0 && line.rate < 80);
@@ -329,12 +426,12 @@ export default function Dashboard() {
               <motion.div key={line.id} {...stagger(8 + i)}>
                 <div style={{
                   background: 'var(--card)', border: '1px solid var(--border2)',
-                  borderRadius: 12, padding: '14px 16px',
+                  borderRadius: 12, padding: isWide ? '18px 20px' : '14px 16px',
                   boxShadow: 'var(--shadow-sm)',
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{line.name}</div>
+                      <div style={{ fontSize: isWide ? 14 : 13, fontWeight: 700, color: 'var(--text)' }}>{line.name}</div>
                       {line.section && (
                         <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 2, fontWeight: 600 }}>{line.section}</div>
                       )}
@@ -357,10 +454,10 @@ export default function Dashboard() {
                   </div>
 
                   <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                    <span style={{ fontSize: 24, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
+                    <span style={{ fontSize: isWide ? 32 : 24, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
                       {line.linePresent}
                     </span>
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>/ {line.lineTotal} คน</span>
+                    <span style={{ fontSize: isWide ? 13 : 11, color: 'var(--muted)' }}>/ {line.lineTotal} คน</span>
                   </div>
 
                   <MiniBar value={line.linePresent} max={line.lineTotal} color={color} />
@@ -376,25 +473,86 @@ export default function Dashboard() {
       </motion.div>
 
       {/* ── Bottom Grid ─────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,2fr) minmax(0,1fr)', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isUltra ? 'minmax(0,3fr) minmax(0,1fr)' : 'minmax(0,2fr) minmax(0,1fr)', gap: isWide ? 20 : 16 }}>
 
-        {/* Attendance breakdown */}
+        {/* Line Floor Maps */}
         <motion.div {...stagger(12)}>
           <div className="card" style={{ padding: 20, height: '100%' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
-                Attendance Breakdown
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Pill label={`✓ ${present.length}`} color="var(--green)" />
-                <Pill label={`✗ ${absent.length}`}  color="var(--red)" />
-              </div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
+              🏭 Line Floor Maps
             </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
-              <AttendCol title="มาทำงาน" color="var(--green)" items={present} />
-              <AttendCol title="ขาดงาน"  color="var(--red)"   items={absent} absent />
-            </div>
+            {layouts.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 13 }}>
+                ยังไม่มีผัง — ไปตั้งค่าที่หน้า <strong>ตั้งค่าผังไลน์</strong>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
+                {layouts.map(layout => {
+                  const lineWs = workstations.filter(w => w.line_name === layout.line_name);
+                  const lineStaff = lineWs.map(ws => stationEmpMap[String(ws.id)]).filter(e => e && (!shiftEmpIds || shiftEmpIds.has(e.id)));
+                  // Use lineStats (same source as KPI cards) for the footer counts
+                  const lineStat = lineStats.find(l => l.name === layout.line_name);
+                  const footerPresent = lineStat ? lineStat.linePresent : lineStaff.filter(e => e.is_present === true).length;
+                  const footerTotal   = lineStat ? lineStat.lineTotal   : lineStaff.length;
+                  const footerAbsent  = lineStat ? (footerTotal - footerPresent) : lineStaff.filter(e => e.is_present === false).length;
+                  return (
+                    <div
+                      key={layout.line_name}
+                      onClick={() => setExpandedLine(layout.line_name)}
+                      style={{ cursor: 'pointer', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border2)', background: '#111' }}
+                    >
+                      {/* Map thumbnail */}
+                      <div style={{ position: 'relative', aspectRatio: '16/9' }}>
+                        <img
+                          src={layout.image_url}
+                          alt={layout.line_name}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: 0.65 }}
+                        />
+                        {lineWs.map(ws => {
+                          const emp = stationEmpMap[String(ws.id)];
+                          if (!emp) return null;
+                          if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
+                          // Use shiftLogs (same source as KPI cards) for attendance color
+                          const shiftLog = shiftLogs.find(l => l.employees?.id === emp.id);
+                          const isPresent = shiftLog ? shiftLog.is_present : null;
+                          const color = isPresent === true ? '#22c55e' : isPresent === false ? '#e74c3c' : '#aaa';
+                          return (
+                            <div key={ws.id} style={{
+                              position: 'absolute', top: ws.pos_top, left: ws.pos_left,
+                              transform: 'translate(-50%, -50%)',
+                              zIndex: 2,
+                            }}>
+                              <div style={{
+                                width: 26, height: 26, borderRadius: '50%',
+                                border: `2px solid ${color}`,
+                                boxShadow: `0 0 6px ${color}88`,
+                                overflow: 'hidden',
+                                background: '#1a1a1a',
+                              }}>
+                                {emp.image_url
+                                  ? <img src={emp.image_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                  : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color }}>{(emp.name || '?')[0]}</div>
+                                }
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {/* Line label */}
+                      <div style={{ padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg3)' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60%' }}>
+                          {layout.line_name}
+                        </span>
+                        <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.12)', padding: '2px 6px', borderRadius: 4 }}>✓ {footerPresent}/{footerTotal}</span>
+                          {footerAbsent > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#e74c3c', background: 'rgba(231,76,60,0.12)', padding: '2px 6px', borderRadius: 4 }}>✗ {footerAbsent}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </motion.div>
 
@@ -404,7 +562,7 @@ export default function Dashboard() {
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
               4M Activity Feed
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420, overflowY: 'auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: isWide ? 600 : 420, overflowY: 'auto' }}>
               <AnimatePresence>
                 {fourMLogs.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '48px 20px' }}>
@@ -446,6 +604,97 @@ export default function Dashboard() {
           </div>
         </motion.div>
       </div>
+
+      {/* Expanded Line Map Modal */}
+      {expandedLine && (() => {
+        const layout = layouts.find(l => l.line_name === expandedLine);
+        const lineWs = workstations.filter(w => w.line_name === expandedLine);
+        if (!layout) return null;
+        return (
+          <div
+            className="overlay"
+            onClick={() => setExpandedLine(null)}
+            style={{ zIndex: 1000 }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                background: 'var(--card)',
+                borderRadius: 14,
+                padding: 20,
+                width: 'min(90vw, 900px)',
+                maxHeight: '90vh',
+                overflow: 'auto',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, color: 'var(--text)' }}>
+                  🏭 {expandedLine}
+                </div>
+                <button
+                  onClick={() => setExpandedLine(null)}
+                  style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--muted)', padding: '0 4px' }}
+                >✕</button>
+              </div>
+              <div style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', background: '#111' }}>
+                <img
+                  src={layout.image_url}
+                  alt={expandedLine}
+                  style={{ width: '100%', display: 'block', opacity: 0.7 }}
+                />
+                {lineWs.map(ws => {
+                  const emp = stationEmpMap[String(ws.id)];
+                  if (!emp) return null;
+                  if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
+                  const shiftLog = shiftLogs.find(l => l.employees?.id === emp.id);
+                  const isPresent = shiftLog ? shiftLog.is_present : null;
+                  const color = isPresent === true ? '#22c55e' : isPresent === false ? '#e74c3c' : '#aaa';
+                  const shortName = (emp.name || '').split(' ')[0];
+                  return (
+                    <div key={ws.id} style={{
+                      position: 'absolute', top: ws.pos_top, left: ws.pos_left,
+                      transform: 'translate(-50%, -50%)',
+                      zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                    }}>
+                      <div style={{
+                        width: 40, height: 40, borderRadius: '50%',
+                        border: `2.5px solid ${color}`,
+                        boxShadow: `0 0 10px ${color}99`,
+                        overflow: 'hidden', background: '#1a1a1a',
+                      }}>
+                        {emp.image_url
+                          ? <img src={emp.image_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color }}>{(emp.name || '?')[0]}</div>
+                        }
+                      </div>
+                      <div style={{
+                        background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
+                        borderRadius: 4, padding: '1px 5px',
+                        fontSize: 9, fontWeight: 700, color: '#fff',
+                        whiteSpace: 'nowrap', maxWidth: 60,
+                        overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>{shortName}</div>
+                      {emp.has_extended_ot && (
+                        <div style={{ fontSize: 8, fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: '1px 4px', borderRadius: 3 }}>OT+23</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Legend */}
+              <div style={{ display: 'flex', gap: 16, marginTop: 12, flexWrap: 'wrap' }}>
+                {[['#22c55e', 'มาทำงาน'], ['#e74c3c', 'ขาดงาน'], ['#aaa', 'ยังไม่เช็คชื่อ']].map(([c, l]) => (
+                  <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--muted)' }}>
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: c, boxShadow: `0 0 5px ${c}` }} />
+                    {l}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

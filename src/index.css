@@ -333,3 +333,43 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   font-size: 9px; letter-spacing: 2px;
   color: var(--muted); text-transform: uppercase;
 }
+
+/* ─── Tablet (768–1024px) ─────────────────────────────────────── */
+@media (min-width: 769px) and (max-width: 1024px) {
+  :root { --sidebar-w: var(--sidebar-w-tablet); }
+  .page-content { padding: 18px 20px; }
+  .card { padding: 16px; }
+  th { font-size: 10px; padding: 8px 10px; }
+  td { padding: 8px 10px; font-size: 13px; }
+}
+
+/* ─── Mobile ≤ 768px ─────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .card { padding: 14px; }
+  .modal { padding: 20px 16px; }
+
+  /* Tables: allow horizontal scroll */
+  .table-scroll-wrap {
+    width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  }
+
+  /* Stat grids: force 2 col on mobile */
+  .stat-grid-4 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* ─── Small phones ≤ 480px ───────────────────────────────────── */
+@media (max-width: 480px) {
+  html, body { font-size: 13px; }
+  .page-content { padding: 10px; }
+  .card { padding: 12px; border-radius: 10px; }
+  .modal { padding: 16px 12px; width: min(480px, 97vw); }
+  .nav-link { font-size: 12px; padding: 8px 10px; }
+
+  /* KPI cards: single column */
+  .stat-grid-4 { grid-template-columns: 1fr 1fr !important; }
+
+  th { font-size: 9px; padding: 7px 8px; }
+  td { padding: 7px 8px; font-size: 12px; }
+}
