@@ -381,7 +381,8 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
           paddingTop: 60,
           background: 'var(--bg)',
           transition: 'margin-left 0.3s cubic-bezier(0.4,0,0.2,1)',
-          overflow: 'hidden',
+          overflow: 'auto',
+          minWidth: 0,
         }}>
           <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
             <Routes>
