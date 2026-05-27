@@ -67,6 +67,8 @@ export default function Management() {
   const [homePositions,  setHomePositions]  = useState({});
   const [radarWorker,    setRadarWorker]    = useState(null);
   const [isSaving4M,     setIsSaving4M]     = useState(false);
+  const [reqImageFile,   setReqImageFile]   = useState(null);
+  const [reqImagePreview,setReqImagePreview]= useState(null);
   const [specialTasks,   setSpecialTasks]   = useState([]);
   const [specialModal,   setSpecialModal]   = useState(null); // worker to assign
   const [specialTaskType,setSpecialTaskType]= useState('5ส');
@@ -209,14 +211,26 @@ export default function Management() {
   /* ── Save 4M log ── */
   const handleSave4MLog = async () => {
     if (!log4MForm.description.trim()) { toast.error('กรุณาระบุรายละเอียด'); return; }
-    setIsSaving4M(true);
-    const today = getWorkDate();
     const isMan = log4MForm.category === 'Man';
     const requires_qa = isMan
       ? !(log4MForm.sameDept && log4MForm.skillOk)
       : log4MForm.subtype === 'change';
+    if (requires_qa && !reqImageFile) { toast.error('กรุณาแนบรูปรายละเอียดการเปลี่ยนแปลง (บังคับสำหรับรายการที่ต้องผ่าน QA)'); return; }
+    setIsSaving4M(true);
+    const today = getWorkDate();
     const change_subtype = isMan ? null : log4MForm.subtype;
     const { data: { user } } = await supabase.auth.getUser();
+
+    let request_image_url = null;
+    if (reqImageFile) {
+      const ext = reqImageFile.name.split('.').pop();
+      const path = `request/${Date.now()}_${user?.id ?? 'anon'}.${ext}`;
+      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, reqImageFile, { upsert: false });
+      if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); setIsSaving4M(false); return; }
+      const { data: urlData } = supabase.storage.from('four-m-images').getPublicUrl(path);
+      request_image_url = urlData.publicUrl;
+    }
+
     const logData = {
       work_date: today,
       line_name: show4MModal.lineName || selectedLine,
@@ -225,12 +239,14 @@ export default function Management() {
       requires_qa,
       change_subtype,
       created_by: user?.id ?? null,
+      request_image_url,
     };
     const { error } = await supabase.from('four_m_logs').insert([logData]);
     setIsSaving4M(false);
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
     setShow4MModal(null);
     setLog4MForm({ category: 'Man', description: '', sameDept: false, skillOk: false, subtype: 'change' });
+    setReqImageFile(null); setReqImagePreview(null);
     fetchData();
     supabase.functions.invoke('send-notification', { body: { event: 'new_4m', log: logData } }).catch(() => {});
   };
@@ -1090,11 +1106,43 @@ export default function Management() {
                 <textarea value={log4MForm.description} onChange={e => setLog4MForm({ ...log4MForm, description: e.target.value })}
                   placeholder="ระบุรายละเอียดการเปลี่ยนแปลง..." rows={3} style={{ resize: 'vertical' }} />
               </div>
+              {/* Image upload — required when requires_qa */}
+              {(() => {
+                const isMan = log4MForm.category === 'Man';
+                const willRequireQa = isMan ? !(log4MForm.sameDept && log4MForm.skillOk) : log4MForm.subtype === 'change';
+                if (!willRequireQa) return null;
+                return (
+                  <div>
+                    <label style={{ ...labelSt, color: '#a855f7' }}>📎 รูปรายละเอียดการเปลี่ยนแปลง <span style={{ color: '#ef4444' }}>*</span></label>
+                    <div style={{ border: `2px dashed ${reqImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: reqImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center', position: 'relative' }}
+                      onClick={() => document.getElementById('req-img-input').click()}>
+                      <input id="req-img-input" type="file" accept="image/*" style={{ display: 'none' }}
+                        onChange={e => {
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          setReqImageFile(f);
+                          const reader = new FileReader();
+                          reader.onload = ev => setReqImagePreview(ev.target.result);
+                          reader.readAsDataURL(f);
+                        }} />
+                      {reqImagePreview
+                        ? <img src={reqImagePreview} style={{ maxHeight: 140, maxWidth: '100%', borderRadius: 6, objectFit: 'contain' }} />
+                        : <div style={{ color: 'var(--muted)', fontSize: 13 }}>📷 แตะเพื่อเลือกรูป (JPG/PNG/WebP)</div>}
+                    </div>
+                    {reqImageFile && (
+                      <button type="button" onClick={() => { setReqImageFile(null); setReqImagePreview(null); }}
+                        style={{ marginTop: 4, fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                        ✕ ลบรูป
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
                 <button onClick={handleSave4MLog} disabled={isSaving4M} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 15, opacity: isSaving4M ? 0.6 : 1, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
                   {isSaving4M ? 'กำลังบันทึก...' : 'บันทึก 4M Log'}
                 </button>
-                <button onClick={() => { if (!isSaving4M) { setShow4MModal(null); setLog4MForm({ category: 'Man', description: '' }); } }}
+                <button onClick={() => { if (!isSaving4M) { setShow4MModal(null); setLog4MForm({ category: 'Man', description: '' }); setReqImageFile(null); setReqImagePreview(null); } }}
                   style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
                   ยกเลิก
                 </button>

@@ -484,9 +484,14 @@ function FourMTab() {
   const [logs,        setLogs]        = useState([]);
   const [lines,       setLines]       = useState([]);
   const [loading,     setLoading]     = useState(false);
-  const [rejectModal, setRejectModal] = useState(null);
-  const [rejectReason,setRejectReason]= useState('');
-  const [profileMap,  setProfileMap]  = useState({}); // userId → fullName
+  const [rejectModal,  setRejectModal]  = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [profileMap,   setProfileMap]   = useState({});
+  const [qaApproveModal,  setQaApproveModal]  = useState(null); // log waiting for QA image
+  const [qaImageFile,     setQaImageFile]     = useState(null);
+  const [qaImagePreview,  setQaImagePreview]  = useState(null);
+  const [isApprovingSaving, setIsApprovingSaving] = useState(false);
+  const [imageViewModal, setImageViewModal] = useState(null); // { url, title }
 
   useEffect(() => {
     supabase.from('production_lines').select('name').order('name').then(({ data }) => setLines(data || []));
@@ -497,7 +502,7 @@ function FourMTab() {
   const load = async () => {
     setLoading(true);
     let q = supabase.from('four_m_logs')
-      .select('id, work_date, line_name, category, description, created_at, status, sv_approved_by, sv_approved_at, approved_by, approved_at, reject_reason, requires_qa, change_subtype, created_by')
+      .select('id, work_date, line_name, category, description, created_at, status, sv_approved_by, sv_approved_at, approved_by, approved_at, reject_reason, requires_qa, change_subtype, created_by, request_image_url, qa_image_url')
       .gte('work_date', from).lte('work_date', to)
       .order('work_date', { ascending: false })
       .order('created_at', { ascending: false });
@@ -518,24 +523,24 @@ function FourMTab() {
   };
 
   const handleApprove = async (log) => {
+    // QA step requires image confirmation — open modal instead
+    if (log.status === 'pending_qa') {
+      setQaApproveModal(log);
+      setQaImageFile(null);
+      setQaImagePreview(null);
+      return;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     const now = new Date().toISOString();
     let update;
     let nextStatus;
 
-    if (log.status === 'pending') {
-      if (log.requires_qa !== false) {
-        // Supervisor approved → waiting for QA
-        update = { status: 'pending_qa', sv_approved_by: user.id, sv_approved_at: now };
-        nextStatus = 'pending_qa';
-      } else {
-        // No QA needed → directly approved (supervisor is final approver)
-        update = { status: 'approved', sv_approved_by: user.id, sv_approved_at: now, approved_by: user.id, approved_at: now, reject_reason: null };
-        nextStatus = 'approved';
-      }
+    if (log.requires_qa !== false) {
+      update = { status: 'pending_qa', sv_approved_by: user.id, sv_approved_at: now };
+      nextStatus = 'pending_qa';
     } else {
-      // pending_qa → QA final approval
-      update = { status: 'approved', approved_by: user.id, approved_at: now, reject_reason: null };
+      update = { status: 'approved', sv_approved_by: user.id, sv_approved_at: now, approved_by: user.id, approved_at: now, reject_reason: null };
       nextStatus = 'approved';
     }
 
@@ -543,6 +548,29 @@ function FourMTab() {
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
     toast.success(nextStatus === 'pending_qa' ? 'SV Approved → รอ QA' : 'Approved เรียบร้อย');
     supabase.functions.invoke('send-notification', { body: { event: 'status_change', log: { ...log, ...update, status: nextStatus } } }).catch(() => {});
+    load();
+  };
+
+  const handleQaApproveSubmit = async () => {
+    if (!qaImageFile) { toast.error('กรุณาแนบรูปยืนยันคุณภาพงาน'); return; }
+    setIsApprovingSaving(true);
+    const { data: { user } } = await supabase.auth.getUser();
+
+    const ext = qaImageFile.name.split('.').pop();
+    const path = `qa/${Date.now()}_${user?.id ?? 'anon'}.${ext}`;
+    const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, qaImageFile, { upsert: false });
+    if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); setIsApprovingSaving(false); return; }
+    const { data: urlData } = supabase.storage.from('four-m-images').getPublicUrl(path);
+    const qa_image_url = urlData.publicUrl;
+
+    const now = new Date().toISOString();
+    const update = { status: 'approved', approved_by: user.id, approved_at: now, reject_reason: null, qa_image_url };
+    const { error } = await supabase.from('four_m_logs').update(update).eq('id', qaApproveModal.id);
+    setIsApprovingSaving(false);
+    if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
+    toast.success('QA Approved เรียบร้อย');
+    supabase.functions.invoke('send-notification', { body: { event: 'status_change', log: { ...qaApproveModal, ...update, status: 'approved' } } }).catch(() => {});
+    setQaApproveModal(null); setQaImageFile(null); setQaImagePreview(null);
     load();
   };
 
@@ -655,6 +683,73 @@ function FourMTab() {
         </div>
       )}
 
+      {/* QA Approve Modal */}
+      {qaApproveModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px 24px 20px', width: 'min(460px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
+            <h3 style={{ margin: '0 0 4px', color: '#a855f7', fontFamily: 'var(--font-display)' }}>🔍 QA ยืนยันคุณภาพงาน</h3>
+            <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 13 }}>
+              {qaApproveModal.line_name} · {qaApproveModal.category} · {qaApproveModal.description}
+            </p>
+            {/* Request image preview */}
+            {qaApproveModal.request_image_url && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>📎 รูปจากผู้แจ้ง</div>
+                <img src={qaApproveModal.request_image_url} style={{ maxHeight: 130, maxWidth: '100%', borderRadius: 8, objectFit: 'contain', border: '1px solid var(--border2)', cursor: 'pointer' }}
+                  onClick={() => setImageViewModal({ url: qaApproveModal.request_image_url, title: 'รูปจากผู้แจ้ง' })} />
+              </div>
+            )}
+            <div style={{ fontSize: 12, color: '#a855f7', fontWeight: 600, marginBottom: 6 }}>📷 แนบรูปยืนยันคุณภาพ <span style={{ color: '#ef4444' }}>*</span></div>
+            <div style={{ border: `2px dashed ${qaImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: qaImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
+              onClick={() => document.getElementById('qa-img-input').click()}>
+              <input id="qa-img-input" type="file" accept="image/*" style={{ display: 'none' }}
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  setQaImageFile(f);
+                  const reader = new FileReader();
+                  reader.onload = ev => setQaImagePreview(ev.target.result);
+                  reader.readAsDataURL(f);
+                }} />
+              {qaImagePreview
+                ? <img src={qaImagePreview} style={{ maxHeight: 140, maxWidth: '100%', borderRadius: 6, objectFit: 'contain' }} />
+                : <div style={{ color: 'var(--muted)', fontSize: 13 }}>📷 แตะเพื่อเลือกรูปยืนยัน</div>}
+            </div>
+            {qaImageFile && (
+              <button type="button" onClick={() => { setQaImageFile(null); setQaImagePreview(null); }}
+                style={{ marginTop: 4, fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                ✕ ลบรูป
+              </button>
+            )}
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button onClick={handleQaApproveSubmit} disabled={isApprovingSaving}
+                style={{ flex: 2, padding: 11, background: '#a855f7', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: isApprovingSaving ? 'not-allowed' : 'pointer', opacity: isApprovingSaving ? 0.6 : 1 }}>
+                {isApprovingSaving ? 'กำลังบันทึก...' : '✅ QA Approve'}
+              </button>
+              <button onClick={() => { setQaApproveModal(null); setQaImageFile(null); setQaImagePreview(null); }} disabled={isApprovingSaving}
+                style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image viewer modal */}
+      {imageViewModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setImageViewModal(null)}>
+          <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 13, color: '#fff', marginBottom: 8, fontWeight: 600 }}>{imageViewModal.title}</div>
+            <img src={imageViewModal.url} style={{ maxWidth: '88vw', maxHeight: '80vh', borderRadius: 10, objectFit: 'contain', display: 'block' }} />
+            <button onClick={() => setImageViewModal(null)}
+              style={{ position: 'absolute', top: -10, right: -10, background: '#ef4444', color: '#fff', border: 'none', borderRadius: '50%', width: 28, height: 28, fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
         {Object.entries(CAT_META).map(([k, m]) => (
           <div key={k} onClick={() => setCat(c => c === k ? '' : k)} style={{
@@ -730,6 +825,20 @@ function FourMTab() {
                       {l.description}
                       {l.change_subtype && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{l.change_subtype === 'replace' ? '🔄 Replace' : '⚠️ Change'}</div>}
                       {l.reject_reason && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>เหตุผล: {l.reject_reason}</div>}
+                      <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                        {l.request_image_url && (
+                          <button onClick={() => setImageViewModal({ url: l.request_image_url, title: '📎 รูปจากผู้แจ้ง' })}
+                            style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', background: 'rgba(168,85,247,0.12)', color: '#a855f7', border: '1px solid rgba(168,85,247,0.3)', fontWeight: 600 }}>
+                            📎 รูปแจ้ง
+                          </button>
+                        )}
+                        {l.qa_image_url && (
+                          <button onClick={() => setImageViewModal({ url: l.qa_image_url, title: '🔍 รูป QA ยืนยัน' })}
+                            style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 600 }}>
+                            🔍 รูป QA
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
