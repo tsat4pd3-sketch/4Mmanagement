@@ -565,7 +565,52 @@ export default function Management() {
           border: lineLayout ? 'none' : '1px solid var(--border)',
         }}>
           {!lineLayout && (
-            <div style={{ textAlign: 'center', marginTop: '20%', color: 'var(--muted)', fontSize: 14 }}>กรุณาอัปโหลดรูปผังไลน์ที่หน้า Setup</div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 24, padding: 32 }}>
+              <div style={{ fontSize: 48, opacity: 0.25 }}>🏭</div>
+              <div style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>
+                ยังไม่มีผังไลน์ —{' '}
+                <span style={{ color: 'var(--accent)', fontWeight: 600, cursor: 'default' }}>ตั้งค่าที่หน้า ตั้งค่าผังไลน์</span>
+              </div>
+              {/* Worker summary cards */}
+              {workers.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, width: '100%', maxWidth: 700 }}>
+                  {[
+                    { label: 'พร้อมทำงาน', count: poolWorkers.length, color: '#4d9fff', icon: '🔵' },
+                    { label: 'ประจำสถานี', count: workers.filter(w => w.assigned_line).length, color: 'var(--accent)', icon: '✅' },
+                    { label: 'งานนอกไลน์', count: specialWorkers.length, color: '#f59e0b', icon: '🟡' },
+                  ].map(s => (
+                    <div key={s.label} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '16px 20px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 24, marginBottom: 4 }}>{s.icon}</div>
+                      <div style={{ fontSize: 28, fontWeight: 800, fontFamily: 'var(--font-display)', color: s.color }}>{s.count}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Worker list */}
+              {workers.length > 0 && (
+                <div style={{ width: '100%', maxWidth: 700 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>รายชื่อพนักงานวันนี้</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
+                    {workers.map(w => (
+                      <div key={w.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px',
+                      }}>
+                        {w.employees?.image_url
+                          ? <img src={w.employees.image_url} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                          : <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>👤</div>
+                        }
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.employees?.name?.split(' ')[0] || '?'}</div>
+                          <div style={{ fontSize: 9, color: 'var(--muted)' }}>{w.employees?.team ? `Team ${w.employees.team}` : ''}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           <style>{`
@@ -1067,63 +1112,86 @@ function WorkerHoverCard({ card, skillDefs }) {
   const { worker, fit, rect } = card;
   const emp = worker.employees;
   const skills = emp?.employee_skills || [];
-  const tooltipW = 230;
+  const tooltipW = 260;
   const gap = 10;
   let left = rect.right + gap;
   if (left + tooltipW > window.innerWidth - 12) left = rect.left - tooltipW - gap;
-  const top = Math.max(8, Math.min(rect.top - 20, window.innerHeight - 340));
+  const top = Math.max(8, Math.min(rect.top - 20, window.innerHeight - 400));
+
+  const radarData = skillDefs.map(sd => ({
+    skill: sd.label,
+    score: skills.find(s => s.skill_name === sd.name)?.score ?? 0,
+    fullMark: 100,
+  }));
 
   return (
-    <div style={{ position: 'fixed', top, left, width: tooltipW, zIndex: 3000, pointerEvents: 'none', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: '14px 14px 12px', animation: 'hoverIn 0.18s ease' }}>
+    <div style={{ position: 'fixed', top, left, width: tooltipW, zIndex: 3000, pointerEvents: 'none', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: '14px 14px 10px', animation: 'hoverIn 0.18s ease' }}>
       <style>{`@keyframes hoverIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
+
+      {/* Header */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10 }}>
         {emp?.image_url
-          ? <img src={emp.image_url} style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border2)', flexShrink: 0 }} />
-          : <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>👤</div>
+          ? <img src={emp.image_url} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border2)', flexShrink: 0 }} />
+          : <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
         }
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', lineHeight: 1.3 }}>{emp?.name || '—'}</div>
-          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>{emp?.employee_id_code || ''}</div>
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{emp?.employee_id_code || ''}</div>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 3 }}>
             {emp?.team && <span style={{ fontSize: 9, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
             {emp?.section && <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
           </div>
         </div>
       </div>
+
+      {/* Fit score badge */}
       {fit && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, background: `${fitColor(fit.score)}15`, border: `1px solid ${fitColor(fit.score)}40`, borderRadius: 8, padding: '6px 10px' }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: fitColor(fit.score), fontFamily: 'var(--font-display)', lineHeight: 1 }}>{fit.score}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, background: `${fitColor(fit.score)}15`, border: `1px solid ${fitColor(fit.score)}40`, borderRadius: 8, padding: '5px 10px' }}>
+          <div style={{ fontSize: 20, fontWeight: 900, color: fitColor(fit.score), fontFamily: 'var(--font-display)', lineHeight: 1 }}>{fit.score}</div>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: fitColor(fit.score) }}>{fitLabel(fit.score)}</div>
             <div style={{ fontSize: 9, color: 'var(--muted)' }}>Fit Score</div>
           </div>
         </div>
       )}
+
+      {/* Radar chart */}
       {skillDefs.length > 0 && (
-        <div>
-          <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>ทักษะ</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <>
+          <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 2 }}>ทักษะ</div>
+          <div style={{ width: '100%', height: 170 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart data={radarData} margin={{ top: 8, right: 20, bottom: 8, left: 20 }}>
+                <PolarGrid stroke="var(--border2)" />
+                <PolarAngleAxis dataKey="skill" tick={{ fontSize: 8, fill: 'var(--muted)', fontWeight: 600 }} />
+                <Radar name="ทักษะ" dataKey="score" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.22} strokeWidth={1.5} dot={{ r: 2, fill: 'var(--accent)' }} />
+                {fit && (
+                  <Radar name="required" dataKey={() => null}
+                    data={skillDefs.map(sd => {
+                      const req = fit.details?.find(d => d.label === sd.label);
+                      return { skill: sd.label, score: req?.required ?? 0 };
+                    })}
+                    stroke="rgba(239,68,68,0.6)" fill="rgba(239,68,68,0.06)" strokeWidth={1} strokeDasharray="3 2"
+                  />
+                )}
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+          {/* Score legend */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 10px', marginTop: 2 }}>
             {skillDefs.map(sd => {
               const score = skills.find(s => s.skill_name === sd.name)?.score ?? 0;
               const fitReq = fit?.details?.find(d => d.label === sd.label);
-              const bar = fitReq ? (fitReq.pass ? '#22c55e' : '#ef4444') : sd.color;
+              const pass = fitReq ? fitReq.pass : null;
               return (
-                <div key={sd.name}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                    <span style={{ fontSize: 10, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: sd.color, display: 'inline-block' }} />{sd.label}
-                    </span>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: bar }}>{score}%{fitReq && <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 9 }}>/{fitReq.required}%</span>}</span>
-                  </div>
-                  <div style={{ height: 4, background: 'var(--border2)', borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
-                    {fitReq && <div style={{ position: 'absolute', left: `${fitReq.required}%`, top: 0, bottom: 0, width: 1.5, background: 'var(--muted)', zIndex: 2 }} />}
-                    <div style={{ width: `${Math.min(score, 100)}%`, height: '100%', background: bar, borderRadius: 3 }} />
-                  </div>
-                </div>
+                <span key={sd.name} style={{ fontSize: 9, color: pass === false ? '#ef4444' : pass === true ? 'var(--accent)' : 'var(--muted)' }}>
+                  <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: sd.color, marginRight: 3 }} />
+                  {sd.label} <strong>{score}</strong>{fitReq ? `/${fitReq.required}` : ''}
+                </span>
               );
             })}
           </div>
-        </div>
+        </>
       )}
     </div>
   );
