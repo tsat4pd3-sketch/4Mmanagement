@@ -1,495 +1,339 @@
-# SKILL.md — React + Vite + Supabase Project Playbook
+# 4M Management System — Project Knowledge Base
 
-ใช้ไฟล์นี้เป็น reference เวลาเริ่มโปรเจคใหม่ที่มี stack และ pattern เดียวกัน
-ส่งให้ Claude อ่านก่อนเริ่มงาน จะทำงานได้ตรง convention ทันที
-
----
-
-## Stack
-
-| ส่วน | เทคโนโลยี |
-|------|----------|
-| Frontend | React 19 + Vite |
-| Database | Supabase (PostgreSQL) |
-| Routing | React Router DOM v7 |
-| Charts | Recharts |
-| Animation | Framer Motion |
-| Deploy | Render.com (Static Site) |
-
-```json
-{
-  "@supabase/supabase-js": "^2.105.4",
-  "framer-motion": "^12.38.0",
-  "react": "^19.2.6",
-  "react-dom": "^19.2.6",
-  "react-router-dom": "^7.15.0",
-  "recharts": "^3.8.1"
-}
-```
+> เอกสารสรุปโปรเจคสำหรับใช้อ้างอิงใน Preventive Maintenance Checker และโปรเจคถัดไป
 
 ---
 
-## Environment Variables
+## 1. ภาพรวมโปรเจค
 
-```
-VITE_SUPABASE_URL=https://<project-id>.supabase.co
-VITE_SUPABASE_ANON_KEY=<anon key>
-```
+ระบบจัดการสายผลิต **4M (Man, Machine, Material, Method)** สำหรับโรงงาน Thai Summit Group  
+ใช้ติดตามพนักงาน, เช็คชื่อ-PPE รายวัน, จัดการสถานีงาน, และบันทึกการเปลี่ยนแปลงกระบวนการผลิต
 
 ---
 
-## Project Structure
+## 2. Tech Stack
 
-```
-src/
-  supabaseClient.js     ← singleton client
-  App.jsx               ← routing + auth + UserContext provider
-  index.css             ← CSS variables + global classes
-  pages/                ← one file per route
-  components/
-    Toast.jsx           ← global toast system
-```
-
----
-
-## Supabase Client
-
-```js
-// src/supabaseClient.js
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl     = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
-```
+| Layer | Technology | Version |
+|-------|-----------|---------|
+| Frontend | React | 19.2.6 |
+| Build tool | Vite | 8.0.12 |
+| Routing | React Router DOM | 7.15.0 |
+| Animation | Framer Motion | 12.38.0 |
+| Charts | Recharts | 3.8.1 |
+| Database | Supabase (PostgreSQL) | - |
+| Auth | Supabase Auth | - |
+| Storage | Supabase Storage | - |
+| Realtime | Supabase Realtime | - |
+| Edge Functions | Deno (Supabase) | - |
+| Notification | Telegram Bot API | - |
+| Deploy | Render.com (Static Site) | - |
 
 ---
 
-## Auth & UserContext
+## 3. Supabase Project
 
-### Context shape
-```js
-// App.jsx
-export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null });
-```
-
-### Provider
-```jsx
-<UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection }}>
-  {children}
-</UserContext.Provider>
-```
-
-### Profile fetch (after login)
-```js
-const fetchProfile = async (user) => {
-  const { data } = await supabase
-    .from('profiles')
-    .select('role, line_id, full_name, team, section')
-    .eq('id', user.id)
-    .single();
-  setUserRole(data?.role ?? 'admin');
-  setUserLineId(data?.line_id ?? null);
-  setUserTeam(data?.team ?? null);
-  setUserSection(data?.section ?? null);
-};
-```
-
-### Consume in page
-```js
-const { role, lineId: userLineId, team: userTeam } = useContext(UserContext);
-```
+- **Project ID:** `ewhdfqwfwofivojtsizn`
+- **URL:** `https://ewhdfqwfwofivojtsizn.supabase.co`
 
 ---
 
-## Role System
+## 4. Database Schema
 
-### ทุก role ที่ใช้
-```js
-const ROLE_LABELS = {
-  admin:      '👑 Admin',
-  manager:    '🏢 Manager',
-  supervisor: '🎯 Supervisor',
-  leader:     '⭐ Leader',
-  qa:         '🔍 QA',
-};
+### หลัก
+| Table | คำอธิบาย | Fields สำคัญ |
+|-------|---------|-------------|
+| `employees` | ข้อมูลพนักงาน | id, employee_id_code, name, image_url, line_id, team (A/B/C), section, is_active, position |
+| `production_lines` | ไลน์ผลิต | id, name, section, std_day_shift, std_night_shift |
+| `profiles` | User roles | id, email, role, full_name, line_id, section, notify_email, signature_url |
+
+### การผลิตรายวัน
+| Table | คำอธิบาย | Fields สำคัญ |
+|-------|---------|-------------|
+| `daily_production_logs` | เช็คชื่อ + PPE | work_date, employee_id, is_present, has_helmet, has_boots, has_gloves, assigned_line, shift, has_ot, has_extended_ot |
+| `attendances` | บันทึกเข้างาน | - |
+| `operator_special_tasks` | งานนอกไลน์ | employee_id, work_date, task_type |
+
+### สถานีงาน
+| Table | คำอธิบาย |
+|-------|---------|
+| `workstations` | สถานีในแต่ละไลน์ (pos_top, pos_left สำหรับวาง map) |
+| `station_requirements` | ทักษะที่ต้องการต่อสถานี (skill_name, min_score) |
+| `line_layouts` | รูปผังไลน์ (image_url) |
+| `employee_home_positions` | สถานีประจำของพนักงาน |
+
+### ทักษะ
+| Table | คำอธิบาย |
+|-------|---------|
+| `employee_skills` | คะแนนทักษะรายพนักงาน (skill_name, score 0-100) |
+| `skill_definitions` | นิยามทักษะ (id, name, label, color) |
+
+### กะการทำงาน
+| Table | คำอธิบาย |
+|-------|---------|
+| `shift_schedules` | ตารางกะ A/B รายสัปดาห์ |
+| `shift_overrides` | Override กะรายบุคคล |
+| `shift_merge_events` | Merge กะทั้ง section/line |
+
+### 4M & Notifications
+| Table | คำอธิบาย | Fields สำคัญ |
+|-------|---------|-------------|
+| `four_m_logs` | บันทึกการเปลี่ยนแปลง 4M | work_date, line_name, category (Man/Machine/Material/Method), description, status, created_by, sv_approved_by, approved_by, reject_reason |
+| `notifications` | In-app notifications | user_id, title, body, type (success/error/info), is_read, ref_table, ref_id |
+| `ppe_items` | รายการ PPE | - |
+| `ppe_requirements` | PPE ที่แต่ละไลน์ต้องการ | - |
+| `ppe_checks` | บันทึกการตรวจ PPE | - |
+
+---
+
+## 5. Pages & Routes
+
+| Route | หน้า | Role ที่เข้าได้ | คำอธิบาย |
+|-------|-----|--------------|---------|
+| `/` | Dashboard | ทุก role | KPI cards, line status, floor maps, 4M activity feed |
+| `/management` | Management | ทุก role | Drag-drop station assignment, skill fit scoring, 4M logging |
+| `/checkin` | Checkin | ทุก role | เช็คชื่อ + PPE + ลางาน รายวัน |
+| `/linesetup` | LineSetup | Admin/Manager/SV | ตั้งค่าไลน์, อัปโหลด layout, เพิ่ม workstations |
+| `/register` | Register | Admin/SV | เพิ่มพนักงานใหม่พร้อมรูปและข้อมูล |
+| `/operator` | Operator | Admin/Manager/SV/Leader | ฐานข้อมูลพนักงาน + skill matrix |
+| `/report` | Report | ทุก role | 10 tabs + CSV export |
+| `/shift-organize` | ShiftOrganize | Admin/Manager/SV | ตารางกะ A/B + overrides |
+| `/add-user` | AddUser | Admin เท่านั้น | สร้าง/แก้ไข system users + roles |
+| `/login` | Login | ไม่ต้อง auth | หน้าเข้าสู่ระบบ |
+
+---
+
+## 6. Role System
+
+| Role | สิทธิ์หลัก |
+|------|-----------|
+| `admin` | ทุกอย่าง รวมถึง Add User |
+| `manager` | ดูและแก้ไขได้ทุกหน้า ยกเว้น Add User |
+| `supervisor` | จัดการไลน์ตัวเอง, Register พนักงาน, อนุมัติ 4M step 1 |
+| `leader` | เห็นเฉพาะ line/team ของตัวเอง |
+| `qa` | ดู Dashboard + Report, อนุมัติ 4M step QA |
+
+---
+
+## 7. 4M Approval Workflow
+
 ```
+ช่าง/SV สร้าง Log → status: "pending"
+         ↓
+Supervisor อนุมัติ → status: "pending_qa"  (ถ้า requires_qa = true)
+                  → status: "approved"     (ถ้าไม่ต้อง QA)
+         ↓
+QA อนุมัติ → status: "approved"
+         ↓ (หรือ)
+ใครก็ได้ Reject → status: "rejected" + reject_reason
 
-### Route guard
-```jsx
-function RoleRoute({ children, allow, userRole }) {
-  if (!allow.includes(userRole ?? 'admin')) return <Navigate to="/" replace />;
-  return children;
-}
-
-// usage
-<Route path="/linesetup" element={
-  <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}>
-    <LineSetup />
-  </RoleRoute>
-} />
-```
-
-### Inline role check
-```js
-const canEdit   = ['admin', 'manager'].includes(role);
-const canApprove = (log) => {
-  if (['admin', 'manager'].includes(role)) return true;
-  if (role === 'qa')         return log.requires_qa !== false;
-  if (role === 'supervisor') return log.requires_qa === false;
-  return false;
-};
-```
-
-### Leader scoping (filter by team/line)
-```js
-const isLeader  = role === 'leader';
-const poolItems = items.filter(w => {
-  if (isLeader && userTeam) return w.team === userTeam;
-  return true;
-});
+ทุก status change → Telegram Group แจ้งเตือนทันที
 ```
 
 ---
 
-## Navigation
+## 8. Telegram Notification
 
-```js
-const NAV_ITEMS = [
-  { to: '/',      icon: '📊', label: 'Dashboard',    roles: null },
-  { to: '/page1', icon: '🔄', label: 'หน้า 1',       roles: null },
-  { to: '/admin', icon: '⚙️', label: 'ตั้งค่า',       roles: ['admin', 'manager'] },
-];
-// roles: null = ทุกคนเห็น, roles: [...] = เฉพาะ role ที่ระบุ
+### Edge Function: `send-notification`
+- **Endpoint:** `POST /functions/v1/send-notification`
+- **Payload:** `{ event: "status_change", log: { ...four_m_log } }`
+- **Secrets:**
+  - `TELEGRAM_BOT_TOKEN` — จาก @BotFather
+  - `TELEGRAM_CHAT_ID` — Group Chat ID (เลขติดลบ เช่น `-5279077923`)
+
+### ข้อความที่ส่ง
+```
+🔔 4M Man · Line 1 → รอ SV Approve
+
+📅 วันที่: 2026-05-27
+🏭 ไลน์: Line 1
+📋 ประเภท: Man
+📝 รายละเอียด: เปลี่ยนพนักงาน
+🔖 สถานะ: รอ SV Approve
+👤 ผู้แจ้ง: สมชาย ใจดี
+✅ Supervisor อนุมัติ: สุดา มีสุข  ← แสดงเมื่อ approved แล้ว
+✅ QA อนุมัติ: วิชัย เก่งมาก      ← แสดงเมื่อ QA approved แล้ว
+
+— 4M Management System
 ```
 
 ---
 
-## Supabase Query Patterns
+## 9. File Structure
 
-### SELECT + nested join
-```js
-const { data } = await supabase
-  .from('daily_production_logs')
-  .select('id, assigned_line, employee_id, employees(id, name, team, employee_skills(skill_name, score))')
-  .eq('work_date', today)
-  .eq('is_present', true);
 ```
-
-### Dynamic filter (conditional)
-```js
-let q = supabase.from('production_lines').select('id, name').order('name');
-if (isLeader && userLineId) q = q.eq('id', userLineId);
-const { data } = await q;
-```
-
-### INSERT
-```js
-await supabase.from('four_m_logs').insert([{
-  work_date: today,
-  category: 'Man',
-  description: desc,
-  requires_qa: true,
-}]);
-```
-
-### UPDATE
-```js
-await supabase.from('daily_production_logs')
-  .update({ assigned_line: stationId })
-  .eq('id', logId);
-```
-
-### UPSERT (conflict on composite key)
-```js
-await supabase.from('employee_skills').upsert(
-  { employee_id: empId, skill_name: 'welding', score: 80 },
-  { onConflict: 'employee_id,skill_name' }
-);
-```
-
-### DELETE
-```js
-await supabase.from('operator_special_tasks')
-  .delete()
-  .eq('employee_id', empId)
-  .eq('work_date', today);
-```
-
-### history lookup (limit 1)
-```js
-const { data: history } = await supabase.from('daily_production_logs')
-  .select('id')
-  .eq('employee_id', empId)
-  .lt('work_date', today)
-  .limit(1);
-if (!history?.length) { /* first time */ }
+4Mmanagement/
+├── src/
+│   ├── App.jsx                    # Router + Sidebar + Auth + UserContext
+│   ├── index.css                  # Theme CSS variables (dark/light)
+│   ├── supabaseClient.js          # Supabase init
+│   ├── components/
+│   │   ├── Toast.jsx              # Global toast singleton
+│   │   ├── SignatureModal.jsx     # วาด/อัปโหลดลายเซ็น
+│   │   └── ChangePasswordModal.jsx
+│   └── pages/
+│       ├── Dashboard.jsx          # KPI + Floor maps + Activity feed
+│       ├── Management.jsx         # Drag-drop station + 4M logging
+│       ├── Checkin.jsx            # เช็คชื่อ + PPE + ลางาน
+│       ├── LineSetup.jsx          # ตั้งค่าไลน์ + workstations
+│       ├── Register.jsx           # เพิ่มพนักงาน
+│       ├── Operator.jsx           # ฐานข้อมูล + skill matrix
+│       ├── Report.jsx             # 10 tabs + CSV export
+│       ├── ShiftOrganize.jsx      # ตารางกะ
+│       ├── AddUser.jsx            # จัดการ system users
+│       └── Login.jsx
+├── supabase/
+│   └── functions/
+│       └── send-notification/
+│           └── index.ts           # Telegram + in-app notifications
+├── CLAUDE.md                      # Tech stack + tables (project instructions)
+├── SKILL.md                       # ไฟล์นี้
+└── WI-4M-System-101.md           # คู่มือการใช้งาน
 ```
 
 ---
 
-## DB Migration Pattern
+## 10. Patterns & Utilities
 
-ใช้ Supabase MCP tool `apply_migration`:
-```sql
--- naming: snake_case, descriptive
--- name: add_requires_qa_to_four_m_logs
-
-ALTER TABLE four_m_logs ADD COLUMN IF NOT EXISTS requires_qa boolean DEFAULT true;
-ALTER TABLE four_m_logs ADD COLUMN IF NOT EXISTS change_subtype text;
-```
-
-```sql
--- ตาราง + RLS boilerplate
-CREATE TABLE IF NOT EXISTS operator_special_tasks (
-  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  employee_id  uuid NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-  task_type    text NOT NULL,
-  work_date    date NOT NULL DEFAULT CURRENT_DATE,
-  created_at   timestamptz DEFAULT now(),
-  UNIQUE (employee_id, work_date)
-);
-
-ALTER TABLE operator_special_tasks ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "authenticated read"   ON operator_special_tasks FOR SELECT TO authenticated USING (true);
-CREATE POLICY "authenticated insert" ON operator_special_tasks FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "authenticated delete" ON operator_special_tasks FOR DELETE TO authenticated USING (true);
-```
-
----
-
-## Edge Function Pattern
-
-```ts
-// supabase/functions/<name>/index.ts
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
-
-  try {
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-    )
-
-    // verify caller
-    const { data: { user }, error } = await supabaseAdmin.auth.getUser(
-      req.headers.get('Authorization')?.replace('Bearer ', '') ?? ''
-    )
-    if (error || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-
-    const body = await req.json()
-    // ... logic ...
-
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
-  } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
-  }
-})
-```
-
----
-
-## Toast System
-
+### Toast (Singleton)
 ```js
-// src/components/Toast.jsx
-let _dispatch = null;
-export const toast = {
-  success: (msg) => _dispatch?.({ type: 'success', msg }),
-  error:   (msg) => _dispatch?.({ type: 'error',   msg }),
-  info:    (msg) => _dispatch?.({ type: 'info',     msg }),
-};
+import { toast } from '../components/Toast'
+toast.success('บันทึกสำเร็จ')
+toast.error('เกิดข้อผิดพลาด')
+toast.info('กำลังโหลด...')
 ```
 
+### UserContext
 ```js
-// usage ในทุก page
-import { toast } from '../components/Toast';
+const { role, lineId, team, section, fullName } = useContext(UserContext)
+```
 
-toast.success('บันทึกสำเร็จ');
-toast.error('เกิดข้อผิดพลาด: ' + error.message);
-toast.info('กำลังโหลด...');
+### Date/Time Utilities
+```js
+getWorkDate()       // วันทำงาน — ก่อน 08:00 = วันก่อนหน้า
+toLocalDateStr()    // YYYY-MM-DD format
+getShiftInfo()      // กะเช้า 08:00-20:00 / กะดึก 20:00-08:00
+```
+
+### Skill Fit Scoring
+```js
+computeFit(employee, station)  // % ของทักษะที่ผ่าน min_score
+fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
+fitLabel(score)   // ดีเยี่ยม / ดี / พอใช้ / ต่ำกว่าเกณฑ์
+```
+
+### CSV Export
+```js
+downloadCSV(rows, filename)  // Client-side export ไม่ต้อง server
 ```
 
 ---
 
-## Modal / Overlay
+## 11. Design System
 
-```jsx
-{showModal && (
-  <div className="overlay">
-    <div className="modal" style={{ width: 'min(420px, 94vw)' }}>
-      <h3 style={{ marginTop: 0, color: 'var(--accent)' }}>ชื่อ Modal</h3>
-      {/* content */}
-      <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-        <button onClick={handleSave} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700 }}>
-          บันทึก
-        </button>
-        <button onClick={() => setShowModal(null)} style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8 }}>
-          ยกเลิก
-        </button>
-      </div>
-    </div>
-  </div>
-)}
-```
-
-CSS classes ที่มีในระบบ:
-- `.overlay` — fixed backdrop blur, z-index 2000
-- `.modal` — bg3, border2, radius-lg, shadow-lg, padding 32px
-
----
-
-## CSS Variables
-
+### CSS Variables (Theme)
 ```css
-/* Dark (default) */
---bg:      #050505;
---bg2:     #0a0a0a;
---bg3:     #111111;
---card:    #0d0d0d;
---border:  #1e1e1e;
---border2: #2a2a2a;
---accent:  #e31937;      /* brand red */
---text:    #ffffff;
---text2:   #a8a8a8;
---muted:   #555555;
---green:   #22c55e;
---amber:   #f59e0b;
---red:     #e74c3c;
---blue:    #4d9fff;
-
---font-body:    'Sarabun', sans-serif;   /* ภาษาไทย */
---font-display: 'Inter', sans-serif;
-
---radius:    10px;
---radius-lg: 15px;
---shadow-sm: 0 2px 8px rgba(0,0,0,0.4);
---shadow-md: 0 4px 20px rgba(0,0,0,0.6);
---shadow-lg: 0 10px 40px rgba(0,0,0,0.8);
+--bg, --bg2, --bg3      /* พื้นหลัง 3 ระดับ */
+--card                  /* Card background */
+--border, --border2     /* เส้นขอบ */
+--accent                /* สีหลัก (green) */
+--accent2               /* สีรอง (amber) */
+--text, --text2, --muted
+--sidebar-w: 252px
+--radius-lg: 8px
 ```
 
-Light mode: `document.documentElement.setAttribute('data-theme', 'light')`
-```css
-[data-theme="light"] {
-  --bg: #f2f2f2; --bg2: #e8e8e8; --bg3: #dcdcdc;
-  --card: #ffffff; --border: #dedede; --border2: #c8c8c8;
-  --text: #111111; --text2: #505050; --muted: #909090;
-}
-```
+### Responsive Breakpoints
+| ชื่อ | ขนาด |
+|------|------|
+| Mobile | < 768px |
+| Tablet | 768–1279px |
+| Desktop | 1280–1599px |
+| Ultra-wide | ≥ 1600px |
+
+### Fonts
+- **Body:** Sarabun (รองรับภาษาไทย)
+- **Display:** Tahoma
 
 ---
 
-## State Naming Convention
+## 12. Shift Logic
 
-```js
-// data arrays        → plural noun
-const [workers,     setWorkers]     = useState([]);
-const [lines,       setLines]       = useState([]);
-const [skillDefs,   setSkillDefs]   = useState([]);
+| กะ | เวลา | OT |
+|----|------|-----|
+| กะเช้า (Day) | 08:00–17:30 | 17:30–20:00 |
+| กะดึก (Night) | 20:00–07:59 | 20:00–22:30 |
+| Extended OT | 20:00–23:00 | กะเช้าพิเศษ |
 
-// selected / active → selected* หรือ active*
-const [selectedLine,   setSelectedLine]   = useState('');
-const [selectedWorker, setSelectedWorker] = useState(null);
+- **Team A** = กะเช้าสัปดาห์คู่ / กะดึกสัปดาห์คี่ (หมุน)
+- **Team B** = ตรงข้าม Team A
+- **Team C** = กะเช้าตลอด ไม่หมุน
+- **Work date:** ก่อน 08:00 = นับเป็นวันก่อนหน้า
 
-// modal / popup → show* (null = ปิด, value = ข้อมูล)
-const [showModal,    setShowModal]    = useState(null);
-const [stationModal, setStationModal] = useState(null);
+---
 
-// loading / saving → is*
-const [isSaving, setIsSaving] = useState(false);
-const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+## 13. Deploy
 
-// map / lookup → *Map
-const [approverMap,    setApproverMap]    = useState({});
-const [homePositions,  setHomePositions]  = useState({});
+```
+Platform:    Render.com (Static Site)
+Build cmd:   npm run build
+Output dir:  ./dist
+Branch:      main
+
+Environment Variables:
+  VITE_SUPABASE_URL=https://ewhdfqwfwofivojtsizn.supabase.co
+  VITE_SUPABASE_ANON_KEY=<key from Supabase dashboard>
 ```
 
 ---
 
-## Score / Status Color Pattern
+## 14. สิ่งที่ Reuse ได้ใน Preventive Maintenance Checker
 
-```js
-// score → color
-const scoreColor = (score) => {
-  if (score >= 80) return '#22c55e';   // ชำนาญ
-  if (score >= 60) return '#84cc16';   // ผ่านเกณฑ์
-  if (score >= 40) return '#f59e0b';   // กำลังพัฒนา
-  return '#ef4444';                     // ต่ำกว่าเกณฑ์
-};
+### Components/Patterns นำไปใช้ได้เลย
+| สิ่งที่มี | วิธีใช้ใน PM |
+|---------|------------|
+| Supabase Auth + Profiles + Roles | ใช้ระบบ Auth เดิมทั้งหมด |
+| Toast.jsx | Copy ไปใช้แสดง feedback |
+| Telegram Bot notification | Copy Edge Function + ตั้ง Secrets ใหม่ |
+| In-app notification bell | ใช้กับ `notifications` table เดิม |
+| 4M Approval workflow | ดัดแปลงเป็น PM approval (ช่าง → SV → approve) |
+| SignatureModal.jsx | ลายเซ็นยืนยันงาน PM เสร็จ |
+| CSV export | Report ประวัติ PM |
+| Dark/Light theme | Copy index.css variables |
+| Recharts | แสดงสถิติ PM (กราฟ bar/line) |
+| ChangePasswordModal | ใช้ร่วมกันได้เลย |
 
-// status meta pattern
-const STATUS_META = {
-  pending:  { label: '⏳ รออนุมัติ', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
-  approved: { label: '✅ Approved',  color: '#22c55e', bg: 'rgba(34,197,94,0.12)'  },
-  rejected: { label: '❌ Rejected',  color: '#ef4444', bg: 'rgba(239,68,68,0.12)'  },
-};
+### Database Tables ที่แนะนำสำหรับ PM Checker
+
+```sql
+machines              -- เครื่องจักร (id, name, line_id, type, image_url, location)
+pm_schedules          -- กำหนดการ PM (machine_id, frequency_days, last_pm_date, next_pm_date)
+pm_checklist_items    -- รายการตรวจ (id, schedule_id, item_name, method, standard, unit)
+pm_logs               -- บันทึกผล PM (id, machine_id, scheduled_date, done_date, technician_id, status)
+pm_log_results        -- ผลตรวจแต่ละรายการ (pm_log_id, item_id, actual_value, is_pass, remark)
+pm_attachments        -- รูปถ่ายหรือเอกสาร (pm_log_id, file_url, uploaded_at)
+```
+
+### Roles สำหรับ PM
+| Role | สิทธิ์ |
+|------|-------|
+| `technician` | ทำ PM, บันทึกผล, อัปโหลดรูป |
+| `supervisor` | อนุมัติผล PM, ดู report ทุกไลน์ |
+| `manager` | ดู dashboard + report รวม |
+| `admin` | ตั้งค่าทุกอย่าง, จัดการ users |
+
+### Flow ที่แนะนำ
+```
+ระบบแจ้งเตือนอัตโนมัติ (cron/trigger) → PM ใกล้ครบกำหนด
+         ↓
+ช่าง (technician) เปิด PM Log → กรอก checklist ทีละรายการ
+         ↓
+อัปโหลดรูปหลักฐาน + ลายเซ็นดิจิทัล
+         ↓
+Supervisor อนุมัติ → status: "approved"
+         ↓
+Telegram แจ้ง Group + อัปเดต next_pm_date
 ```
 
 ---
 
-## Mobile Responsive Pattern
-
-```js
-const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
-useEffect(() => {
-  const h = () => setIsMobile(window.innerWidth <= 768);
-  window.addEventListener('resize', h);
-  return () => window.removeEventListener('resize', h);
-}, []);
-
-// layout
-<div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row' }}>
-  <div style={{ width: isMobile ? '100%' : 210 }}>  {/* sidebar */}
-  <div style={{ flex: 1 }}>                          {/* content */}
-```
-
----
-
-## Deploy (Render.com)
-
-| Setting | Value |
-|---------|-------|
-| Type | Static Site |
-| Build Command | `npm run build` |
-| Publish Directory | `./dist` |
-| Branch | `main` |
-| Env vars | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` |
-
----
-
-## Checklist เริ่มโปรเจคใหม่
-
-- [ ] `npm create vite@latest <name> -- --template react`
-- [ ] ติดตั้ง packages ตาม stack ข้างบน
-- [ ] สร้าง `src/supabaseClient.js`
-- [ ] สร้าง `src/components/Toast.jsx` (copy จากโปรเจคนี้)
-- [ ] วาง CSS variables ใน `index.css`
-- [ ] สร้าง `profiles` table + RLS ใน Supabase
-- [ ] สร้าง `UserContext` ใน `App.jsx`
-- [ ] เพิ่ม `CLAUDE.md` บอก stack, tables, routes
-- [ ] ตั้ง env vars บน Render
-
----
-
-## ตั้งค่า Claude สำหรับโปรเจคใหม่
-
-สร้าง `CLAUDE.md` ที่ root โดยมี:
-1. Tech stack + version
-2. Supabase Project ID + URL
-3. รายการ tables + description
-4. รายการ routes + components
-5. Deploy info
-
-แนบ `SKILL.md` นี้ด้วยก็ได้ หรือ copy เฉพาะส่วนที่ใช้
+*อัปเดตล่าสุด: 2026-05-27*
