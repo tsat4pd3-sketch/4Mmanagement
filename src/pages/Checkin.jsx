@@ -32,7 +32,7 @@ function getShiftInfo() {
     shift:       isDay ? 'day' : 'night',
     workDateStr: toLocalDateStr(workDate),
     label:       isDay ? '☀️ กะเช้า' : '🌙 กะดึก',
-    timeRange:   isDay ? '08:00–19:59' : '20:00–07:59',
+    timeRange:   isDay ? '08:00–17:30 · OT 17:30–20:00' : 'OT 20:00–22:30 · 22:30–07:59',
   };
 }
 
@@ -94,7 +94,7 @@ export default function Checkin() {
     ] = await Promise.all([
       empQ,
       supabase.from('daily_production_logs')
-        .select('employee_id, is_present, has_helmet, has_boots, has_gloves, has_ot, remark, leave_type, leave_duration, leave_period, leave_hours')
+        .select('employee_id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, remark, leave_type, leave_duration, leave_period, leave_hours')
         .eq('work_date', workDateStr),
       supabase.from('shift_schedules').select('*').eq('work_date', workDateStr),
       supabase.from('shift_overrides').select('*').eq('work_date', workDateStr),
@@ -146,11 +146,12 @@ export default function Checkin() {
     enriched.forEach(emp => {
       const log = logData?.find(l => l.employee_id === emp.id);
       init[emp.id] = {
-        is_present:     log ? log.is_present     : false,
-        has_helmet:     log ? log.has_helmet     : false,
-        has_boots:      log ? log.has_boots      : false,
-        has_gloves:     log ? log.has_gloves     : false,
-        has_ot:         log ? log.has_ot         : false,
+        is_present:       log ? log.is_present       : false,
+        has_helmet:       log ? log.has_helmet       : false,
+        has_boots:        log ? log.has_boots        : false,
+        has_gloves:       log ? log.has_gloves       : false,
+        has_ot:           log ? log.has_ot           : false,
+        has_extended_ot:  log ? log.has_extended_ot  : false,
         remark:         log ? (log.remark || '') : '',
         leave_type:     log ? (log.leave_type     || '') : '',
         leave_duration: log ? (log.leave_duration || '') : '',
@@ -211,8 +212,9 @@ export default function Checkin() {
         has_helmet:     rec.has_helmet,
         has_boots:      rec.has_boots,
         has_gloves:     rec.has_gloves,
-        has_ot:         rec.has_ot,
-        remark:         rec.remark || null,
+        has_ot:           rec.has_ot,
+        has_extended_ot:  rec.has_extended_ot || false,
+        remark:           rec.remark || null,
         leave_type:     rec.leave_type     || null,
         leave_duration: rec.leave_duration || null,
         leave_period:   rec.leave_period   || null,
@@ -426,7 +428,7 @@ export default function Checkin() {
               <th style={{ textAlign: 'center', minWidth: 64 }}>หมวก</th>
               <th style={{ textAlign: 'center', minWidth: 64 }}>รองเท้า</th>
               <th style={{ textAlign: 'center', minWidth: 64 }}>ถุงมือ</th>
-              <th style={{ textAlign: 'center', minWidth: 56 }}>OT</th>
+              <th style={{ textAlign: 'center', minWidth: 72 }} title="OT ปกติ | OT+23 = กะเช้าต่อถึง 23:00 (พิเศษ)">OT</th>
               <th style={{ minWidth: 220 }}>🏖️ การลา</th>
               <th style={{ minWidth: 140 }}>หมายเหตุ</th>
               <th style={{ textAlign: 'center', minWidth: 110 }}>สถานะ</th>
@@ -487,7 +489,28 @@ export default function Checkin() {
 
                   {/* OT */}
                   <td style={{ textAlign: 'center' }}>
-                    <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: '#f59e0b', width: 'auto' }} checked={rec.has_ot} onChange={() => toggle(emp.id, 'has_ot')} disabled={!rec.is_present} />
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: '#f59e0b', width: 'auto' }} checked={rec.has_ot} onChange={() => toggle(emp.id, 'has_ot')} disabled={!rec.is_present} />
+                      {/* Special extended OT (day shift 20:00–23:00) — rare case */}
+                      {(emp.assignedShift === 'day' || shiftInfo.shift === 'day') && rec.has_ot && (
+                        <div
+                          title="OT พิเศษ กะเช้า ต่อถึง 23:00"
+                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer' }}
+                          onClick={() => toggle(emp.id, 'has_extended_ot')}
+                        >
+                          <div style={{
+                            fontSize: 9, fontWeight: 700, letterSpacing: '0.05em',
+                            padding: '2px 5px', borderRadius: 4,
+                            background: rec.has_extended_ot ? 'rgba(239,68,68,0.15)' : 'var(--bg2)',
+                            color: rec.has_extended_ot ? '#ef4444' : 'var(--muted)',
+                            border: `1px solid ${rec.has_extended_ot ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`,
+                            transition: 'all 0.15s',
+                          }}>
+                            {rec.has_extended_ot ? '🔴 OT+23' : '○ OT+23'}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </td>
 
                   {/* Leave column */}

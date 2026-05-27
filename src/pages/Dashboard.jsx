@@ -86,6 +86,13 @@ export default function Dashboard() {
 
   const [selectedDate,  setSelectedDate]  = useState(workDateStr);
   const [selectedShift, setSelectedShift] = useState(shiftInfo.isDay ? 'day' : 'night');
+
+  // Auto-sync shift when day→night boundary crosses (20:00) while viewing today
+  useEffect(() => {
+    if (selectedDate === workDateStr) {
+      setSelectedShift(shiftInfo.isDay ? 'day' : 'night');
+    }
+  }, [shiftInfo.isDay, selectedDate, workDateStr]);
   const [logs, setLogs]         = useState([]);
   const [fourMLogs, setFourMLogs] = useState([]);
   const [lines, setLines]       = useState([]);
@@ -112,7 +119,7 @@ export default function Dashboard() {
       { data: hpData },
     ] = await Promise.all([
       supabase.from('daily_production_logs')
-        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, shift, employees!inner(id, name, employee_id_code, line_id, team, is_active)')
+        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, shift, employees!inner(id, name, employee_id_code, line_id, team, is_active)')
         .eq('work_date', date)
         .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
@@ -169,16 +176,19 @@ export default function Dashboard() {
     setLayouts(layoutData || []);
     setWorkstations(wsData || []);
     // Build stationEmpMap: station_id → employee + today's attendance
+    // Use enriched (has assignedShift) as the lookup
     const attMap = {};
-    (logData || []).forEach(l => { if (l.employees?.id) attMap[l.employees.id] = l; });
+    enriched.forEach(l => { if (l.employees?.id) attMap[l.employees.id] = l; });
     const semap = {};
     (hpData || []).forEach(hp => {
       if (!hp.employees) return;
       const att = attMap[hp.employee_id];
       semap[hp.station_id] = {
         ...hp.employees,
-        is_present: att ? att.is_present : null,
-        has_ot: att?.has_ot ?? false,
+        is_present:      att ? att.is_present      : null,
+        has_ot:          att?.has_ot          ?? false,
+        has_extended_ot: att?.has_extended_ot ?? false,
+        assignedShift:   att?.assignedShift   ?? null,
       };
     });
     setStationEmpMap(semap);
@@ -198,10 +208,27 @@ export default function Dashboard() {
 
   const shiftKey     = selectedShift === 'all' ? 'all' : selectedShift;
 
-  // Set of employee IDs that belong to the selected shift (for floor map filtering)
+  // Determine OT windows based on current time (for live "today" view)
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  // Day OT window: 17:30–20:00 (1050–1200)
+  const inDayOTWindow      = nowMin >= 17 * 60 + 30 && nowMin < 20 * 60;
+  // Extended OT window: 20:00–23:00 (1200–1380)
+  const inExtendedOTWindow = nowMin >= 20 * 60 && nowMin < 23 * 60;
+
+  // Set of employee IDs to show on floor map:
+  // - Always: employees matching the selected shift
+  // - If viewing today & night shift: also include day-shift employees still on OT
   const shiftEmpIds = selectedShift === 'all'
     ? null
-    : new Set(shiftLogs.map(l => l.employees?.id).filter(Boolean));
+    : (() => {
+        const ids = new Set(shiftLogs.map(l => l.employees?.id).filter(Boolean));
+        // During extended OT window (20:00–23:00): day-shift employees with has_extended_ot stay visible
+        if (selectedDate === workDateStr && selectedShift === 'night' && inExtendedOTWindow) {
+          logs.filter(l => l.assignedShift === 'day' && l.has_extended_ot && l.is_present)
+              .forEach(l => { if (l.employees?.id) ids.add(l.employees.id); });
+        }
+        return ids;
+      })();
 
   const lineStats = lines.map(line => {
     const lineLogs    = shiftLogs.filter(l => l.employees?.line_id === line.id);
@@ -430,8 +457,11 @@ export default function Dashboard() {
                 {layouts.map(layout => {
                   const lineWs = workstations.filter(w => w.line_name === layout.line_name);
                   const lineStaff = lineWs.map(ws => stationEmpMap[ws.id]).filter(e => e && (!shiftEmpIds || shiftEmpIds.has(e.id)));
-                  const presentCount = lineStaff.filter(e => e.is_present === true).length;
-                  const absentCount  = lineStaff.filter(e => e.is_present === false).length;
+                  // Use lineStats (same source as KPI cards) for the footer counts
+                  const lineStat = lineStats.find(l => l.name === layout.line_name);
+                  const footerPresent = lineStat ? lineStat.linePresent : lineStaff.filter(e => e.is_present === true).length;
+                  const footerTotal   = lineStat ? lineStat.lineTotal   : lineStaff.length;
+                  const footerAbsent  = lineStat ? (footerTotal - footerPresent) : lineStaff.filter(e => e.is_present === false).length;
                   return (
                     <div
                       key={layout.line_name}
@@ -477,9 +507,9 @@ export default function Dashboard() {
                         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60%' }}>
                           {layout.line_name}
                         </span>
-                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                          {presentCount > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.12)', padding: '2px 6px', borderRadius: 4 }}>✓ {presentCount}</span>}
-                          {absentCount  > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#e74c3c', background: 'rgba(231,76,60,0.12)',  padding: '2px 6px', borderRadius: 4 }}>✗ {absentCount}</span>}
+                        <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.12)', padding: '2px 6px', borderRadius: 4 }}>✓ {footerPresent}/{footerTotal}</span>
+                          {footerAbsent > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#e74c3c', background: 'rgba(231,76,60,0.12)', padding: '2px 6px', borderRadius: 4 }}>✗ {footerAbsent}</span>}
                         </div>
                       </div>
                     </div>
@@ -607,6 +637,9 @@ export default function Dashboard() {
                         whiteSpace: 'nowrap', maxWidth: 60,
                         overflow: 'hidden', textOverflow: 'ellipsis',
                       }}>{shortName}</div>
+                      {emp.has_extended_ot && (
+                        <div style={{ fontSize: 8, fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: '1px 4px', borderRadius: 3 }}>OT+23</div>
+                      )}
                     </div>
                   );
                 })}
