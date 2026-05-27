@@ -5,6 +5,24 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
 
+function resizeImage(file, maxPx = 1280, quality = 0.85) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const { width: w, height: h } = img;
+      const scale = Math.min(1, maxPx / Math.max(w, h));
+      const canvas = document.createElement('canvas');
+      canvas.width  = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(blob => resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', quality);
+    };
+    img.src = url;
+  });
+}
+
 function getWorkDate() {
   const now = new Date();
   const h = now.getHours();
@@ -223,9 +241,9 @@ export default function Management() {
 
     let request_image_url = null;
     if (reqImageFile) {
-      const ext = reqImageFile.name.split('.').pop();
-      const path = `request/${Date.now()}_${user?.id ?? 'anon'}.${ext}`;
-      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, reqImageFile, { upsert: false });
+      const resized = await resizeImage(reqImageFile);
+      const path = `request/${Date.now()}_${user?.id ?? 'anon'}.jpg`;
+      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: false, contentType: 'image/jpeg' });
       if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); setIsSaving4M(false); return; }
       const { data: urlData } = supabase.storage.from('four-m-images').getPublicUrl(path);
       request_image_url = urlData.publicUrl;
