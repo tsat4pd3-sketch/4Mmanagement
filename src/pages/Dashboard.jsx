@@ -479,7 +479,10 @@ export default function Dashboard() {
                           const emp = stationEmpMap[ws.id];
                           if (!emp) return null;
                           if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
-                          const color = emp.is_present === true ? '#22c55e' : emp.is_present === false ? '#e74c3c' : '#aaa';
+                          // Use shiftLogs (same source as KPI cards) for attendance color
+                          const shiftLog = shiftLogs.find(l => l.employees?.id === emp.id);
+                          const isPresent = shiftLog ? shiftLog.is_present : null;
+                          const color = isPresent === true ? '#22c55e' : isPresent === false ? '#e74c3c' : '#aaa';
                           return (
                             <div key={ws.id} style={{
                               position: 'absolute', top: ws.pos_top, left: ws.pos_left,
@@ -611,7 +614,9 @@ export default function Dashboard() {
                   const emp = stationEmpMap[ws.id];
                   if (!emp) return null;
                   if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
-                  const color = emp.is_present === true ? '#22c55e' : emp.is_present === false ? '#e74c3c' : '#aaa';
+                  const shiftLog = shiftLogs.find(l => l.employees?.id === emp.id);
+                  const isPresent = shiftLog ? shiftLog.is_present : null;
+                  const color = isPresent === true ? '#22c55e' : isPresent === false ? '#e74c3c' : '#aaa';
                   const shortName = (emp.name || '').split(' ')[0];
                   return (
                     <div key={ws.id} style={{
