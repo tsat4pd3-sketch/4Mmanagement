@@ -27,7 +27,17 @@ function statusLabel(status: string) {
   return { pending: 'รอ SV Approve', pending_qa: 'รอ QA Approve', approved: 'Approved ✅', rejected: 'Rejected ❌' }[status] ?? status;
 }
 
-function buildTelegramMessage(log: Record<string, unknown>, title: string) {
+async function getFullName(userId: string | null | undefined): Promise<string> {
+  if (!userId) return '-';
+  const { data } = await supabase.from('profiles').select('full_name').eq('id', userId).single();
+  return (data?.full_name as string) || '-';
+}
+
+async function buildTelegramMessage(log: Record<string, unknown>, title: string) {
+  const creatorName   = await getFullName(log.created_by as string);
+  const svName        = await getFullName(log.sv_approved_by as string);
+  const approverName  = await getFullName(log.approved_by as string);
+
   const lines = [
     `🔔 <b>${title}</b>`,
     ``,
@@ -36,10 +46,13 @@ function buildTelegramMessage(log: Record<string, unknown>, title: string) {
     `📋 ประเภท: ${log.category}`,
     `📝 รายละเอียด: ${log.description}`,
     `🔖 สถานะ: ${statusLabel(log.status as string)}`,
+    `👤 ผู้แจ้ง: ${creatorName}`,
   ];
-  if (log.reject_reason) {
-    lines.push(`❌ เหตุผล: ${log.reject_reason}`);
-  }
+
+  if (log.sv_approved_by) lines.push(`✅ SV อนุมัติ: ${svName}`);
+  if (log.approved_by)    lines.push(`✅ QA อนุมัติ: ${approverName}`);
+  if (log.reject_reason)  lines.push(`❌ เหตุผล: ${log.reject_reason}`);
+
   lines.push(``, `— 4M Management System`);
   return lines.join('\n');
 }
@@ -98,7 +111,7 @@ Deno.serve(async (req) => {
     }));
 
     /* Telegram notification (ส่งครั้งเดียวไปยัง Group) */
-    const message = buildTelegramMessage(log, title);
+    const message = await buildTelegramMessage(log, title);
     await sendTelegram(message).catch(console.error);
 
     return new Response(JSON.stringify({ ok: true, sent: unique.length }), { headers: { 'Content-Type': 'application/json' } });
