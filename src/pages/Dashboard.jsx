@@ -24,6 +24,16 @@ function useIsMobile() {
   return mobile;
 }
 
+function useWidth() {
+  const [w, setW] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const h = () => setW(window.innerWidth);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, []);
+  return w;
+}
+
 function getShiftInfo(date) {
   const h = date.getHours();
   const m = date.getMinutes();
@@ -81,6 +91,9 @@ function getWorkDateStr(date) {
 export default function Dashboard() {
   const now = useNow();
   const isMobile = useIsMobile();
+  const vw = useWidth();
+  const isWide = vw >= 1280;   // desktop / laptop
+  const isUltra = vw >= 1600;  // large desktop / TV
   const shiftInfo = getShiftInfo(now);
   const workDateStr = getWorkDateStr(now);
 
@@ -119,7 +132,7 @@ export default function Dashboard() {
       { data: hpData },
     ] = await Promise.all([
       supabase.from('daily_production_logs')
-        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, shift, employees!inner(id, name, employee_id_code, line_id, team, is_active)')
+        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, shift, assigned_line, employees!inner(id, name, image_url, employee_id_code, line_id, team, is_active)')
         .eq('work_date', date)
         .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
@@ -176,19 +189,38 @@ export default function Dashboard() {
     setLayouts(layoutData || []);
     setWorkstations(wsData || []);
     // Build stationEmpMap: station_id → employee + today's attendance
-    // Use enriched (has assignedShift) as the lookup
+    // Priority: assigned_line from today's log (matches Management page) → fallback to home positions
     const attMap = {};
     enriched.forEach(l => { if (l.employees?.id) attMap[l.employees.id] = l; });
+
     const semap = {};
+
+    // 1st pass: home positions as baseline
     (hpData || []).forEach(hp => {
       if (!hp.employees) return;
       const att = attMap[hp.employee_id];
-      semap[hp.station_id] = {
+      semap[String(hp.station_id)] = {
         ...hp.employees,
         is_present:      att ? att.is_present      : null,
         has_ot:          att?.has_ot          ?? false,
         has_extended_ot: att?.has_extended_ot ?? false,
         assignedShift:   att?.assignedShift   ?? null,
+      };
+    });
+
+    // 2nd pass: override with today's actual assigned_line (same source as Management page)
+    enriched.forEach(l => {
+      if (!l.assigned_line || !l.employees?.id) return;
+      const stId = String(l.assigned_line);
+      semap[stId] = {
+        id:              l.employees.id,
+        name:            l.employees.name,
+        image_url:       l.employees.image_url ?? null,
+        position:        l.employees.position  ?? null,
+        is_present:      l.is_present,
+        has_ot:          l.has_ot          ?? false,
+        has_extended_ot: l.has_extended_ot ?? false,
+        assignedShift:   l.assignedShift   ?? null,
       };
     });
     setStationEmpMap(semap);
@@ -251,7 +283,7 @@ export default function Dashboard() {
   const isToday = selectedDate === workDateStr;
 
   return (
-    <div className="page-content" style={{ maxWidth: 1400 }}>
+    <div className="page-content" style={{ maxWidth: '100%' }}>
 
       {/* ── Header ─────────────────────────────────────── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, gap: 16, flexWrap: 'wrap' }}>
@@ -312,7 +344,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── KPI Row ─────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isWide ? 'repeat(5, 1fr)' : 'repeat(auto-fit, minmax(140px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
         {[
           {
             label: 'พนักงานทั้งหมด', value: totalCapacity, unit: 'คน',
@@ -346,30 +378,31 @@ export default function Dashboard() {
           <motion.div key={kpi.label} {...stagger(i + 2)}>
             <div style={{
               background: 'var(--card)', border: '1px solid var(--border2)',
-              borderRadius: 14, padding: isMobile ? '14px 14px' : '18px 20px',
+              borderRadius: 14, padding: isMobile ? '14px 14px' : isWide ? '22px 24px' : '18px 20px',
               boxShadow: 'var(--shadow-sm)',
               borderTop: `3px solid ${kpi.accent}`,
               display: 'flex', flexDirection: 'column', gap: 4,
               position: 'relative', overflow: 'hidden',
+              minHeight: isWide ? 130 : undefined,
             }}>
-              <div style={{ position: 'absolute', top: 14, right: 16, opacity: 0.12, fontSize: 42, lineHeight: 1, userSelect: 'none' }}>
+              <div style={{ position: 'absolute', top: 14, right: 16, opacity: 0.12, fontSize: isWide ? 56 : 42, lineHeight: 1, userSelect: 'none' }}>
                 {kpi.icon}
               </div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+              <div style={{ fontSize: isWide ? 12 : 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
                 {kpi.label}
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginTop: 4 }}>
                 {kpi.radial !== null ? (
-                  <div style={{ position: 'relative', width: 60, height: 60, flexShrink: 0 }}>
-                    <RadialProgress pct={kpi.radial} size={60} stroke={6} color={kpi.accent} />
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: kpi.accent, fontFamily: 'var(--font-display)' }}>
+                  <div style={{ position: 'relative', width: isWide ? 72 : 60, height: isWide ? 72 : 60, flexShrink: 0 }}>
+                    <RadialProgress pct={kpi.radial} size={isWide ? 72 : 60} stroke={isWide ? 7 : 6} color={kpi.accent} />
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isWide ? 15 : 13, fontWeight: 800, color: kpi.accent, fontFamily: 'var(--font-display)' }}>
                       {kpi.value}
                     </div>
                   </div>
                 ) : (
-                  <div style={{ fontSize: 36, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1 }}>
+                  <div style={{ fontSize: isWide ? 42 : 36, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1 }}>
                     {loading ? '—' : kpi.value}
-                    <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>{kpi.unit}</span>
+                    <span style={{ fontSize: isWide ? 16 : 14, fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>{kpi.unit}</span>
                   </div>
                 )}
               </div>
@@ -384,7 +417,7 @@ export default function Dashboard() {
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
           สถานะไลน์ผลิต
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: isMobile ? 10 : 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isUltra ? 'repeat(auto-fill, minmax(200px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(180px, 1fr))' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: isMobile ? 10 : 14 }}>
           {lineStats.map((line, i) => {
             const healthy = line.rate >= 80 && line.lineAlerts === 0;
             const warn    = line.lineAlerts > 0 || (line.rate > 0 && line.rate < 80);
@@ -393,12 +426,12 @@ export default function Dashboard() {
               <motion.div key={line.id} {...stagger(8 + i)}>
                 <div style={{
                   background: 'var(--card)', border: '1px solid var(--border2)',
-                  borderRadius: 12, padding: '14px 16px',
+                  borderRadius: 12, padding: isWide ? '18px 20px' : '14px 16px',
                   boxShadow: 'var(--shadow-sm)',
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{line.name}</div>
+                      <div style={{ fontSize: isWide ? 14 : 13, fontWeight: 700, color: 'var(--text)' }}>{line.name}</div>
                       {line.section && (
                         <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 2, fontWeight: 600 }}>{line.section}</div>
                       )}
@@ -421,10 +454,10 @@ export default function Dashboard() {
                   </div>
 
                   <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                    <span style={{ fontSize: 24, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
+                    <span style={{ fontSize: isWide ? 32 : 24, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
                       {line.linePresent}
                     </span>
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>/ {line.lineTotal} คน</span>
+                    <span style={{ fontSize: isWide ? 13 : 11, color: 'var(--muted)' }}>/ {line.lineTotal} คน</span>
                   </div>
 
                   <MiniBar value={line.linePresent} max={line.lineTotal} color={color} />
@@ -440,7 +473,7 @@ export default function Dashboard() {
       </motion.div>
 
       {/* ── Bottom Grid ─────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,2fr) minmax(0,1fr)', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isUltra ? 'minmax(0,3fr) minmax(0,1fr)' : 'minmax(0,2fr) minmax(0,1fr)', gap: isWide ? 20 : 16 }}>
 
         {/* Line Floor Maps */}
         <motion.div {...stagger(12)}>
@@ -453,10 +486,10 @@ export default function Dashboard() {
                 ยังไม่มีผัง — ไปตั้งค่าที่หน้า <strong>ตั้งค่าผังไลน์</strong>
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
                 {layouts.map(layout => {
                   const lineWs = workstations.filter(w => w.line_name === layout.line_name);
-                  const lineStaff = lineWs.map(ws => stationEmpMap[ws.id]).filter(e => e && (!shiftEmpIds || shiftEmpIds.has(e.id)));
+                  const lineStaff = lineWs.map(ws => stationEmpMap[String(ws.id)]).filter(e => e && (!shiftEmpIds || shiftEmpIds.has(e.id)));
                   // Use lineStats (same source as KPI cards) for the footer counts
                   const lineStat = lineStats.find(l => l.name === layout.line_name);
                   const footerPresent = lineStat ? lineStat.linePresent : lineStaff.filter(e => e.is_present === true).length;
@@ -476,7 +509,7 @@ export default function Dashboard() {
                           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: 0.65 }}
                         />
                         {lineWs.map(ws => {
-                          const emp = stationEmpMap[ws.id];
+                          const emp = stationEmpMap[String(ws.id)];
                           if (!emp) return null;
                           if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
                           // Use shiftLogs (same source as KPI cards) for attendance color
@@ -529,7 +562,7 @@ export default function Dashboard() {
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
               4M Activity Feed
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420, overflowY: 'auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: isWide ? 600 : 420, overflowY: 'auto' }}>
               <AnimatePresence>
                 {fourMLogs.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '48px 20px' }}>
@@ -611,7 +644,7 @@ export default function Dashboard() {
                   style={{ width: '100%', display: 'block', opacity: 0.7 }}
                 />
                 {lineWs.map(ws => {
-                  const emp = stationEmpMap[ws.id];
+                  const emp = stationEmpMap[String(ws.id)];
                   if (!emp) return null;
                   if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
                   const shiftLog = shiftLogs.find(l => l.employees?.id === emp.id);
