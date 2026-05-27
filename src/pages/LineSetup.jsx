@@ -30,7 +30,7 @@ export default function LineSetup() {
   }, []);
 
   const fetchLines = async () => {
-    const { data } = await supabase.from('production_lines').select('id, name, section').order('name');
+    const { data } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift').order('name');
     setLines(data || []);
     if (data?.length > 0 && !selectedLine) setSelectedLine(data[0].name);
   };
