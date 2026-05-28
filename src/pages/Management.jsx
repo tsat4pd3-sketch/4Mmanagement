@@ -864,7 +864,7 @@ export default function Management() {
       , document.body)}
 
       {/* ── Desktop hover card ── */}
-      {!isMobile && hoverCard && !radarWorker && <WorkerHoverCard card={hoverCard} skillDefs={skillDefs} />}
+      {!isMobile && hoverCard && !radarWorker && !stationModal && <WorkerHoverCard card={hoverCard} skillDefs={skillDefs} />}
 
       {/* ── Desktop fit popup ── */}
       {!isMobile && fitPopup && <FitPopup fitPopup={fitPopup} onClose={() => setFitPopup(null)} />}

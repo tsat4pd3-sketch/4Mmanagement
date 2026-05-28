@@ -954,8 +954,8 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
     fullMark: 100,
   }));
 
-  const scores = radarData.map(d => d.value);
-  const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+  const definedScores = skillDefs.map(s => skillMap[s.name]).filter(s => s !== undefined);
+  const avg = definedScores.length ? Math.round(definedScores.reduce((a, b) => a + b, 0) / definedScores.length) : 0;
   const overall = getLevel(avg);
 
   /* dynamic gradient based on avg */
@@ -1100,29 +1100,60 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
   );
 }
 
+/* ── Shared Filter Bar for employee tabs ── */
+const selSt = { padding: '7px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)' };
+
+function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilterLine, filterTeam, setFilterTeam }) {
+  const sections = useMemo(() => [...new Set(lines.map(l => l.section).filter(Boolean))].sort(), [lines]);
+  const visibleLines = filterSection ? lines.filter(l => l.section === filterSection) : lines;
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+      <select value={filterSection} onChange={e => { setFilterSection(e.target.value); setFilterLine(''); }} style={selSt}>
+        <option value="">ทุกส่วนงาน</option>
+        {sections.map(s => <option key={s} value={s}>{s}</option>)}
+      </select>
+      <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={selSt}>
+        <option value="">ทุกไลน์</option>
+        {visibleLines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+      </select>
+      <select value={filterTeam} onChange={e => setFilterTeam(e.target.value)} style={selSt}>
+        <option value="">ทุก Team</option>
+        <option value="A">Team A</option>
+        <option value="B">Team B</option>
+        <option value="C">Team C</option>
+      </select>
+    </div>
+  );
+}
+
 function SkillMatrixTab() {
-  const [skillDefs,    setSkillDefs]    = useState([]);
-  const [employees,    setEmployees]    = useState([]);
-  const [loading,      setLoading]      = useState(false);
-  const [filterLine,   setFilterLine]   = useState('');
-  const [lines,        setLines]        = useState([]);
-  const [selectedEmp,  setSelectedEmp]  = useState(null);
+  const [skillDefs,      setSkillDefs]      = useState([]);
+  const [employees,      setEmployees]      = useState([]);
+  const [loading,        setLoading]        = useState(false);
+  const [filterLine,     setFilterLine]     = useState('');
+  const [filterSection,  setFilterSection]  = useState('');
+  const [filterTeam,     setFilterTeam]     = useState('');
+  const [lines,          setLines]          = useState([]);
+  const [selectedEmp,    setSelectedEmp]    = useState(null);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name').order('name').then(({ data }) => setLines(data || []));
+    supabase.from('production_lines').select('id, name, section').order('name').then(({ data }) => setLines(data || []));
     load();
   }, []);
 
-  useEffect(() => { load(); }, [filterLine]);
+  useEffect(() => { load(); }, [filterLine, filterSection, filterTeam]);
 
   const load = async () => {
     setLoading(true);
-    const baseSelect = 'id, name, employee_id_code, image_url, group_name, line_id, employee_skills(skill_name, score)';
+    const baseSelect = 'id, name, employee_id_code, image_url, group_name, line_id, section, team, employee_skills(skill_name, score)';
+    let q = supabase.from('employees').select(baseSelect).eq('is_active', true);
+    if (filterLine) q = q.eq('line_id', filterLine);
+    else if (filterSection) q = q.eq('section', filterSection);
+    if (filterTeam) q = q.eq('team', filterTeam);
+    q = q.order('name');
     const [{ data: defs }, { data: emps }] = await Promise.all([
       supabase.from('skill_definitions').select('*').order('sort_order'),
-      filterLine
-        ? supabase.from('employees').select(baseSelect).eq('is_active', true).eq('line_id', filterLine).order('name')
-        : supabase.from('employees').select(baseSelect).eq('is_active', true).order('name'),
+      q,
     ]);
     setSkillDefs(defs || []);
     setEmployees(emps || []);
@@ -1140,19 +1171,16 @@ function SkillMatrixTab() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
-          <option value="">ทุกไลน์</option>
-          {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-        </select>
+        <FilterBar lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} />
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>{employees.length} คน · {skillDefs.length} สกิล</span>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>· คลิกที่พนักงานเพื่อดู Radar Chart</span>
         <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic' }}>⬇️ ดาวน์โหลดได้จากแท็บ Export</span>
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-        {SKILL_LEVELS.map(lv => (
+        {SKILL_LEVELS.filter(lv => lv.min > 0).map(lv => (
           <span key={lv.label} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: lv.bg, color: lv.color, border: `1px solid ${lv.color}40` }}>
-            {lv.label} {lv.min > 0 ? `≥${lv.min}%` : '<40%'}
+            {lv.label} ≥{lv.min}
           </span>
         ))}
         <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>— ยังไม่ประเมิน</span>
@@ -1195,9 +1223,9 @@ function SkillMatrixTab() {
                 {employees.length === 0 ? <EmptyRow cols={2 + orderedDefs.length} /> : employees.map(emp => {
                   const skillMap = {};
                   (emp.employee_skills || []).forEach(s => { skillMap[s.skill_name] = s.score; });
-                  const scores = orderedDefs.map(s => skillMap[s.name] ?? 0);
-                  const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-                  const avgLv = getLevel(avg);
+                  const assignedScores = orderedDefs.map(s => skillMap[s.name]).filter(s => s !== undefined);
+                  const avg = assignedScores.length ? Math.round(assignedScores.reduce((a, b) => a + b, 0) / assignedScores.length) : null;
+                  const avgLv = avg !== null ? getLevel(avg) : { color: 'var(--border2)', bg: 'var(--bg3)', label: '' };
 
                   return (
                     <tr key={emp.id} onClick={() => setSelectedEmp(emp)}
@@ -1213,7 +1241,7 @@ function SkillMatrixTab() {
                       <td>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>{emp.name}</div>
                         <div style={{ fontSize: 10, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
-                        {scores.length > 0 && (
+                        {avg !== null && (
                           <div style={{ marginTop: 3, display: 'inline-block', fontSize: 9, fontWeight: 700, color: avgLv.color, background: avgLv.bg, borderRadius: 4, padding: '1px 5px' }}>
                             avg {avg}
                           </div>
@@ -1468,11 +1496,13 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
 function MultiSkillFormTab() {
   const { role, signatureUrl: ctxSigUrl, fullName: ctxFullName } = useContext(UserContext);
 
-  const [skillDefs,  setSkillDefs]  = useState([]);
-  const [employees,  setEmployees]  = useState([]);
-  const [lines,      setLines]      = useState([]);
-  const [loading,    setLoading]    = useState(false);
-  const [filterLine, setFilterLine] = useState('');
+  const [skillDefs,     setSkillDefs]     = useState([]);
+  const [employees,     setEmployees]     = useState([]);
+  const [lines,         setLines]         = useState([]);
+  const [loading,       setLoading]       = useState(false);
+  const [filterLine,    setFilterLine]    = useState('');
+  const [filterSection, setFilterSection] = useState('');
+  const [filterTeam,    setFilterTeam]    = useState('');
 
   // Header info inputs
   const [dept,       setDept]       = useState('Production');
@@ -1504,18 +1534,42 @@ function MultiSkillFormTab() {
   }, [role, ctxFullName, ctxSigUrl]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name').order('name')
+    supabase.from('production_lines').select('id, name, section').order('name')
       .then(({ data }) => setLines(data || []));
     supabase.from('skill_definitions').select('*').order('sort_order')
       .then(({ data }) => setSkillDefs(data || []));
   }, []);
 
+  useEffect(() => {
+    if (!filterLine) return;
+    const lineData = lines.find(l => String(l.id) === String(filterLine));
+    if (lineData) {
+      setSection(lineData.section || '');
+      setDepartment(lineData.name || '');
+    }
+    supabase.from('profiles')
+      .select('role, full_name, signature_url')
+      .eq('line_id', filterLine)
+      .in('role', ['supervisor', 'leader', 'manager'])
+      .then(({ data }) => {
+        if (!data) return;
+        const sv  = data.find(p => p.role === 'supervisor');
+        const ldr = data.find(p => p.role === 'leader');
+        const mgr = data.find(p => p.role === 'manager');
+        if (ldr) { setMaker(ldr.full_name || ''); setMakerSig(ldr.signature_url || null); }
+        if (sv)  { setChecker(sv.full_name || ''); setCheckerSig(sv.signature_url || null); setHeadName(sv.full_name || ''); }
+        if (mgr) { setApprover(mgr.full_name || ''); setApproverSig(mgr.signature_url || null); }
+      });
+  }, [filterLine, lines]);
+
   const load = async () => {
     setLoading(true);
     const sel = 'id, name, employee_id_code, position, section, team, start_date, employee_skills(skill_name, score)';
-    const q = filterLine
-      ? supabase.from('employees').select(sel).eq('is_active', true).eq('line_id', filterLine).order('name')
-      : supabase.from('employees').select(sel).eq('is_active', true).order('name');
+    let q = supabase.from('employees').select(sel).eq('is_active', true);
+    if (filterLine) q = q.eq('line_id', filterLine);
+    else if (filterSection) q = q.eq('section', filterSection);
+    if (filterTeam) q = q.eq('team', filterTeam);
+    q = q.order('name');
     const { data } = await q;
     setEmployees(data || []);
     setLoading(false);
@@ -1578,11 +1632,8 @@ function MultiSkillFormTab() {
       {/* Filters + header inputs */}
       <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
         <div>
-          <span style={lbSt}>ไลน์ผลิต</span>
-          <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value="">ทุกไลน์</option>
-            {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-          </select>
+          <span style={lbSt}>ตัวกรอง</span>
+          <FilterBar lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} />
         </div>
         <button onClick={load} disabled={loading}
           style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
