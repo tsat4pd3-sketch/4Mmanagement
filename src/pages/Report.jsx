@@ -146,6 +146,10 @@ function DailyTab() {
   const [logs, setLogs]   = useState([]);
   const [loading, setLoading] = useState(false);
   const [stationMap, setStationMap] = useState({});
+  const [lines, setLines] = useState([]);
+  const [dailySection, setDailySection] = useState('');
+  const [dailyLine, setDailyLine] = useState('');
+  const [dailyTeam, setDailyTeam] = useState('');
 
   useEffect(() => {
     supabase.from('workstations').select('id, station_name').then(({ data }) => {
@@ -153,6 +157,7 @@ function DailyTab() {
       (data || []).forEach(w => { m[String(w.id)] = w.station_name; });
       setStationMap(m);
     });
+    supabase.from('production_lines').select('id, name, section').order('name').then(({ data }) => setLines(data || []));
   }, []);
 
   useEffect(() => { load(); }, [date, shift]);
@@ -161,7 +166,7 @@ function DailyTab() {
     setLoading(true);
     const { data } = await supabase
       .from('daily_production_logs')
-      .select('*, employees(name, employee_id_code, image_url, department, team)')
+      .select('*, employees(name, employee_id_code, image_url, department, team, section, line_id)')
       .eq('work_date', date).eq('is_present', true).order('updated_at');
 
     // filter by shift: use shift column if present, fallback to employee.team
@@ -178,6 +183,19 @@ function DailyTab() {
     setLoading(false);
   };
 
+  const dailySections = useMemo(() => [...new Set(lines.map(l => l.section).filter(Boolean))].sort(), [lines]);
+  const dailyVisibleLines = dailySection ? lines.filter(l => l.section === dailySection) : lines;
+
+  const filteredLogs = useMemo(() => logs.filter(l => {
+    if (dailySection && l.employees?.section !== dailySection) return false;
+    if (dailyLine) {
+      const lineObj = lines.find(ln => String(ln.id) === String(dailyLine));
+      if (lineObj && l.employees?.line_id !== lineObj.id) return false;
+    }
+    if (dailyTeam && l.employees?.team !== dailyTeam) return false;
+    return true;
+  }), [logs, dailySection, dailyLine, dailyTeam, lines]);
+
   const shiftBtnStyle = (val) => ({
     padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
     background: shift === val
@@ -187,6 +205,42 @@ function DailyTab() {
       ? val === 'day' ? '#f59e0b' : val === 'night' ? '#4d9fff' : 'var(--text2)'
       : 'var(--muted)',
   });
+
+  const handlePrintDaily = () => {
+    const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
+    const rowsHtml = filteredLogs.map((l, i) => `<tr>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${i+1}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${l.employees?.employee_id_code || ''}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${l.employees?.name || ''}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${l.employees?.department || ''}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.employees?.team || ''}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_helmet ? '✓' : '✗'}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_boots ? '✓' : '✗'}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_gloves ? '✓' : '✗'}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_ot ? '✓' : ''}</td>
+    </tr>`).join('');
+    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>รายวัน ${date}</title>
+<style>@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
+table{border-collapse:collapse;width:100%}
+@media print{@page{size:A4 landscape;margin:10mm}body{-webkit-print-color-adjust:exact}}</style>
+</head><body style="padding:10mm">
+<h2 style="margin:0 0 4px;font-size:16px">รายงานเช็คชื่อประจำวัน</h2>
+<p style="color:#666;margin:0 0 12px;font-size:10px">วันที่: ${date} · กะ: ${shift === 'day' ? 'เช้า' : shift === 'night' ? 'ดึก' : 'ทั้งหมด'} · พิมพ์วันที่: ${todayStr} · รวม ${filteredLogs.length} คน</p>
+<table><thead><tr style="background:#f3f4f6">
+<th style="border:1px solid #ccc;padding:4px">#</th>
+<th style="border:1px solid #ccc;padding:4px">รหัส</th>
+<th style="border:1px solid #ccc;padding:4px">ชื่อ</th>
+<th style="border:1px solid #ccc;padding:4px">แผนก</th>
+<th style="border:1px solid #ccc;padding:4px">ทีม</th>
+<th style="border:1px solid #ccc;padding:4px">หมวก</th>
+<th style="border:1px solid #ccc;padding:4px">รองเท้า</th>
+<th style="border:1px solid #ccc;padding:4px">ถุงมือ</th>
+<th style="border:1px solid #ccc;padding:4px">OT</th>
+</tr></thead><tbody>${rowsHtml}</tbody></table>
+<script>window.onload = () => window.print();</script></body></html>`;
+    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+  };
 
   return (
     <div>
@@ -198,11 +252,28 @@ function DailyTab() {
           <button style={shiftBtnStyle('night')} onClick={() => setShift('night')}>🌙 กะดึก</button>
           <button style={shiftBtnStyle('all')}   onClick={() => setShift('all')}>ทั้งหมด</button>
         </div>
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>รวม {logs.length} คน</span>
+        <select value={dailySection} onChange={e => { setDailySection(e.target.value); setDailyLine(''); }} style={selSt}>
+          <option value="">ทุกส่วนงาน</option>
+          {dailySections.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={dailyLine} onChange={e => setDailyLine(e.target.value)} style={selSt}>
+          <option value="">ทุกไลน์</option>
+          {dailyVisibleLines.map(l => <option key={l.id} value={String(l.id)}>{l.name}</option>)}
+        </select>
+        <select value={dailyTeam} onChange={e => setDailyTeam(e.target.value)} style={selSt}>
+          <option value="">ทุก Team</option>
+          <option value="A">Team A</option>
+          <option value="B">Team B</option>
+          <option value="C">Team C</option>
+        </select>
+        <span style={{ color: 'var(--muted)', fontSize: 13 }}>รวม {filteredLogs.length} คน</span>
+        <button onClick={handlePrintDaily} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
+          🖨️ PDF
+        </button>
         <CsvBtn onClick={() => downloadCSV(
           `daily_${date}_${shift}.csv`,
-          ['วันที่', 'กะ', 'รหัสพนักงาน', 'ชื่อ', 'แผนก', 'หมวก', 'รองเท้า', 'ถุงมือ', 'OT'],
-          logs.map(l => [date, l.shift || (l.employees?.team === 'A' ? 'day' : l.employees?.team === 'B' ? 'night' : ''), l.employees?.employee_id_code, l.employees?.name, l.employees?.department || '', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.has_ot ? '✓' : ''])
+          ['วันที่', 'กะ', 'รหัสพนักงาน', 'ชื่อ', 'แผนก', 'ทีม', 'หมวก', 'รองเท้า', 'ถุงมือ', 'OT'],
+          filteredLogs.map(l => [date, l.shift || (l.employees?.team === 'A' ? 'day' : l.employees?.team === 'B' ? 'night' : ''), l.employees?.employee_id_code, l.employees?.name, l.employees?.department || '', l.employees?.team || '', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.has_ot ? '✓' : ''])
         )} />
       </div>
       {loading ? <Loader /> : (
@@ -210,7 +281,7 @@ function DailyTab() {
           <table style={{ minWidth: 500 }}>
             <thead><tr><th>โปรไฟล์</th><th>ID</th><th>ชื่อ</th><th>แผนก</th><th>PPE</th><th>จุดงาน</th></tr></thead>
             <tbody>
-              {logs.length === 0 ? <EmptyRow cols={6} /> : logs.map(l => (
+              {filteredLogs.length === 0 ? <EmptyRow cols={6} /> : filteredLogs.map(l => (
                 <tr key={l.id}>
                   <td><Thumb src={l.employees?.image_url} /></td>
                   <td style={{ color: 'var(--blue)', fontWeight: 700 }}>{l.employees?.employee_id_code}</td>
@@ -239,6 +310,8 @@ function PerEmployeeTab() {
   const [loading, setLoading] = useState(false);
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [stationMap, setStationMap] = useState({});
+  const [empSection, setEmpSection] = useState('');
+  const [empTeam, setEmpTeam] = useState('');
 
   useEffect(() => {
     supabase.from('workstations').select('id, station_name').then(({ data }) => {
@@ -246,7 +319,7 @@ function PerEmployeeTab() {
       (data || []).forEach(w => { m[String(w.id)] = w.station_name; });
       setStationMap(m);
     });
-    supabase.from('employees').select('id, name, employee_id_code').eq('is_active', true).order('name').then(({ data }) => {
+    supabase.from('employees').select('id, name, employee_id_code, section, team').eq('is_active', true).order('name').then(({ data }) => {
       setEmployees(data || []);
       if (data?.length) setSelected(data[0].id);
     });
@@ -266,14 +339,63 @@ function PerEmployeeTab() {
     setLoading(false);
   };
 
+  const empSections = useMemo(() => [...new Set(employees.map(e => e.section).filter(Boolean))].sort(), [employees]);
+  const filteredEmployees = useMemo(() => employees.filter(e => {
+    if (empSection && e.section !== empSection) return false;
+    if (empTeam && e.team !== empTeam) return false;
+    return true;
+  }), [employees, empSection, empTeam]);
+
+  const handlePrintPerEmp = () => {
+    const emp = employees.find(e => e.id === selected);
+    const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
+    const rowsHtml = logs.map((l, i) => `<tr>
+      <td style="border:1px solid #ccc;padding:3px 6px">${l.work_date}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.is_present ? '✓' : '✗'}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_helmet ? '✓' : '✗'}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_boots ? '✓' : '✗'}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_gloves ? '✓' : '✗'}</td>
+    </tr>`).join('');
+    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>รายพนักงาน ${emp?.name || ''}</title>
+<style>@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
+table{border-collapse:collapse;width:100%}
+@media print{@page{size:A4 portrait;margin:10mm}body{-webkit-print-color-adjust:exact}}</style>
+</head><body style="padding:10mm">
+<h2 style="margin:0 0 4px;font-size:16px">รายงานรายพนักงาน</h2>
+<p style="color:#666;margin:0 0 12px;font-size:10px">${emp?.employee_id_code || ''} — ${emp?.name || ''} · เดือน: ${month} · พิมพ์วันที่: ${todayStr}</p>
+<table><thead><tr style="background:#f3f4f6">
+<th style="border:1px solid #ccc;padding:4px">วันที่</th>
+<th style="border:1px solid #ccc;padding:4px">มาทำงาน</th>
+<th style="border:1px solid #ccc;padding:4px">หมวก</th>
+<th style="border:1px solid #ccc;padding:4px">รองเท้า</th>
+<th style="border:1px solid #ccc;padding:4px">ถุงมือ</th>
+</tr></thead><tbody>${rowsHtml}</tbody></table>
+<script>window.onload = () => window.print();</script></body></html>`;
+    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select value={empSection} onChange={e => setEmpSection(e.target.value)} style={selSt}>
+          <option value="">ทุกส่วนงาน</option>
+          {empSections.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={empTeam} onChange={e => setEmpTeam(e.target.value)} style={selSt}>
+          <option value="">ทุก Team</option>
+          <option value="A">Team A</option>
+          <option value="B">Team B</option>
+          <option value="C">Team C</option>
+        </select>
         <select value={selected} onChange={e => setSelected(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
-          {employees.map(e => <option key={e.id} value={e.id}>{e.employee_id_code} — {e.name}</option>)}
+          {filteredEmployees.map(e => <option key={e.id} value={e.id}>{e.employee_id_code} — {e.name}</option>)}
         </select>
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>มา {logs.filter(l => l.is_present).length} วัน</span>
+        <button onClick={handlePrintPerEmp} disabled={logs.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: logs.length === 0 ? 0.5 : 1 }}>
+          🖨️ PDF
+        </button>
         <CsvBtn onClick={() => {
           const emp = employees.find(e => e.id === selected);
           downloadCSV(
@@ -315,6 +437,8 @@ function StationLogTab() {
   const [to, setTo] = useState(today);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [stationTeam, setStationTeam] = useState('');
+  const [stationShift, setStationShift] = useState('');
 
   useEffect(() => {
     supabase.from('workstations').select('id, station_name, line_name').order('line_name').order('station_name').then(({ data }) => {
@@ -346,6 +470,54 @@ function StationLogTab() {
     return acc;
   }, {});
 
+  const filteredRows = useMemo(() => rows.filter(r => {
+    if (stationTeam && r.employees?.team !== stationTeam) return false;
+    if (stationShift) {
+      const s = r.shift;
+      const team = r.employees?.team;
+      if (s) { if (s !== stationShift) return false; }
+      else {
+        if (stationShift === 'day'   && !(team === 'A' || team === 'C' || !team)) return false;
+        if (stationShift === 'night' && !(team === 'B' || team === 'C' || !team)) return false;
+      }
+    }
+    return true;
+  }), [rows, stationTeam, stationShift]);
+
+  const handlePrintStation = () => {
+    const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
+    const rowsHtml = filteredRows.map((r, i) => `<tr>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${i+1}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${r.work_date}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${r.employees?.employee_id_code || ''}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${r.employees?.name || ''}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${r.employees?.team || ''}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${r.shift || ''}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${r.is_present ? '✓' : '✗'}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${(r.has_helmet && r.has_boots && r.has_gloves) ? '✓' : '✗'}</td>
+    </tr>`).join('');
+    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>Log จุดงาน ${station?.station_name || ''}</title>
+<style>@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
+table{border-collapse:collapse;width:100%}
+@media print{@page{size:A4 landscape;margin:10mm}body{-webkit-print-color-adjust:exact}}</style>
+</head><body style="padding:10mm">
+<h2 style="margin:0 0 4px;font-size:16px">Log จุดงาน: ${station?.station_name || ''}</h2>
+<p style="color:#666;margin:0 0 12px;font-size:10px">ไลน์: ${station?.line_name || ''} · ${from} — ${to} · พิมพ์วันที่: ${todayStr} · รวม ${filteredRows.length} รายการ</p>
+<table><thead><tr style="background:#f3f4f6">
+<th style="border:1px solid #ccc;padding:4px">#</th>
+<th style="border:1px solid #ccc;padding:4px">วันที่</th>
+<th style="border:1px solid #ccc;padding:4px">รหัส</th>
+<th style="border:1px solid #ccc;padding:4px">ชื่อ</th>
+<th style="border:1px solid #ccc;padding:4px">ทีม</th>
+<th style="border:1px solid #ccc;padding:4px">กะ</th>
+<th style="border:1px solid #ccc;padding:4px">มาทำงาน</th>
+<th style="border:1px solid #ccc;padding:4px">PPE ครบ</th>
+</tr></thead><tbody>${rowsHtml}</tbody></table>
+<script>window.onload = () => window.print();</script></body></html>`;
+    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -360,11 +532,25 @@ function StationLogTab() {
         <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>—</span>
         <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>{rows.length} รายการ</span>
+        <select value={stationTeam} onChange={e => setStationTeam(e.target.value)} style={selSt}>
+          <option value="">ทุก Team</option>
+          <option value="A">Team A</option>
+          <option value="B">Team B</option>
+          <option value="C">Team C</option>
+        </select>
+        <select value={stationShift} onChange={e => setStationShift(e.target.value)} style={selSt}>
+          <option value="">ทุกกะ</option>
+          <option value="day">☀️ กะเช้า</option>
+          <option value="night">🌙 กะดึก</option>
+        </select>
+        <span style={{ color: 'var(--muted)', fontSize: 13 }}>{filteredRows.length} รายการ</span>
+        <button onClick={handlePrintStation} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
+          🖨️ PDF
+        </button>
         <CsvBtn onClick={() => downloadCSV(
           `station_${station?.station_name || selectedStation}_${from}_${to}.csv`,
-          ['วันที่', 'รหัส', 'ชื่อ', 'ทีม', 'สังกัด', 'มาทำงาน', 'PPE ครบ'],
-          rows.map(r => [r.work_date, r.employees?.employee_id_code, r.employees?.name, r.employees?.team || '', r.employees?.section || '', r.is_present ? '✓' : '✗', (r.has_helmet && r.has_boots && r.has_gloves) ? '✓' : '✗'])
+          ['วันที่', 'รหัส', 'ชื่อ', 'ทีม', 'กะ', 'สังกัด', 'มาทำงาน', 'PPE ครบ'],
+          filteredRows.map(r => [r.work_date, r.employees?.employee_id_code, r.employees?.name, r.employees?.team || '', r.shift || '', r.employees?.section || '', r.is_present ? '✓' : '✗', (r.has_helmet && r.has_boots && r.has_gloves) ? '✓' : '✗'])
         )} />
       </div>
 
@@ -390,7 +576,7 @@ function StationLogTab() {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? <EmptyRow cols={7} /> : rows.map((r, i) => (
+              {filteredRows.length === 0 ? <EmptyRow cols={7} /> : filteredRows.map((r, i) => (
                 <tr key={i}>
                   <td style={{ fontWeight: 600, fontSize: 12 }}>{r.work_date}</td>
                   <td><Thumb src={r.employees?.image_url} /></td>
@@ -425,23 +611,74 @@ function RangeTab() {
   const [to, setTo] = useState(today);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [lines, setLines] = useState([]);
+  const [rangeSection, setRangeSection] = useState('');
+  const [rangeLine, setRangeLine] = useState('');
+  const [rangeTeam, setRangeTeam] = useState('');
+
+  useEffect(() => {
+    supabase.from('production_lines').select('id, name, section').order('name').then(({ data }) => setLines(data || []));
+  }, []);
 
   useEffect(() => { load(); }, [from, to]);
 
   const load = async () => {
     setLoading(true);
     const { data } = await supabase.from('daily_production_logs')
-      .select('work_date, is_present, employee_id, employees(name, employee_id_code)')
+      .select('work_date, is_present, employee_id, employees(name, employee_id_code, section, team, line_id)')
       .gte('work_date', from).lte('work_date', to);
     const map = {};
     (data || []).forEach(l => {
       const key = l.employee_id;
-      if (!map[key]) map[key] = { name: l.employees?.name, code: l.employees?.employee_id_code, total: 0, present: 0 };
+      if (!map[key]) map[key] = { name: l.employees?.name, code: l.employees?.employee_id_code, section: l.employees?.section, team: l.employees?.team, lineId: l.employees?.line_id, total: 0, present: 0 };
       map[key].total++;
       if (l.is_present) map[key].present++;
     });
     setRows(Object.values(map).sort((a, b) => (a.name || '').localeCompare(b.name || '')));
     setLoading(false);
+  };
+
+  const rangeSections = useMemo(() => [...new Set(lines.map(l => l.section).filter(Boolean))].sort(), [lines]);
+  const rangeVisibleLines = rangeSection ? lines.filter(l => l.section === rangeSection) : lines;
+
+  const filteredRows = useMemo(() => rows.filter(r => {
+    if (rangeSection && r.section !== rangeSection) return false;
+    if (rangeLine) {
+      const lineObj = lines.find(ln => String(ln.id) === String(rangeLine));
+      if (lineObj && r.lineId !== lineObj.id) return false;
+    }
+    if (rangeTeam && r.team !== rangeTeam) return false;
+    return true;
+  }), [rows, rangeSection, rangeLine, rangeTeam, lines]);
+
+  const handlePrintRange = () => {
+    const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
+    const rowsHtml = filteredRows.map((r, i) => `<tr>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${i+1}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${r.code || ''}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${r.name || ''}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${r.present}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${r.total}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${r.total ? Math.round(r.present / r.total * 100) : 0}%</td>
+    </tr>`).join('');
+    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>สรุปช่วงเวลา ${from} — ${to}</title>
+<style>@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
+table{border-collapse:collapse;width:100%}
+@media print{@page{size:A4 portrait;margin:10mm}body{-webkit-print-color-adjust:exact}}</style>
+</head><body style="padding:10mm">
+<h2 style="margin:0 0 4px;font-size:16px">สรุปการมาทำงานช่วงเวลา</h2>
+<p style="color:#666;margin:0 0 12px;font-size:10px">${from} — ${to} · พิมพ์วันที่: ${todayStr} · รวม ${filteredRows.length} คน</p>
+<table><thead><tr style="background:#f3f4f6">
+<th style="border:1px solid #ccc;padding:4px">#</th>
+<th style="border:1px solid #ccc;padding:4px">รหัส</th>
+<th style="border:1px solid #ccc;padding:4px">ชื่อ</th>
+<th style="border:1px solid #ccc;padding:4px">มาทำงาน</th>
+<th style="border:1px solid #ccc;padding:4px">วันทั้งหมด</th>
+<th style="border:1px solid #ccc;padding:4px">%</th>
+</tr></thead><tbody>${rowsHtml}</tbody></table>
+<script>window.onload = () => window.print();</script></body></html>`;
+    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
   };
 
   return (
@@ -453,10 +690,28 @@ function RangeTab() {
           <span style={{ color: 'var(--muted)' }}>ถึง</span>
           <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
         </div>
+        <select value={rangeSection} onChange={e => { setRangeSection(e.target.value); setRangeLine(''); }} style={selSt}>
+          <option value="">ทุกส่วนงาน</option>
+          {rangeSections.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={rangeLine} onChange={e => setRangeLine(e.target.value)} style={selSt}>
+          <option value="">ทุกไลน์</option>
+          {rangeVisibleLines.map(l => <option key={l.id} value={String(l.id)}>{l.name}</option>)}
+        </select>
+        <select value={rangeTeam} onChange={e => setRangeTeam(e.target.value)} style={selSt}>
+          <option value="">ทุก Team</option>
+          <option value="A">Team A</option>
+          <option value="B">Team B</option>
+          <option value="C">Team C</option>
+        </select>
+        <span style={{ color: 'var(--muted)', fontSize: 13 }}>{filteredRows.length} คน</span>
+        <button onClick={handlePrintRange} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
+          🖨️ PDF
+        </button>
         <CsvBtn onClick={() => downloadCSV(
           `summary_${from}_${to}.csv`,
           ['รหัสพนักงาน', 'ชื่อ', 'วันที่มา', 'วันทั้งหมด', '%การมาทำงาน'],
-          rows.map(r => [r.code, r.name, r.present, r.total, r.total ? Math.round(r.present / r.total * 100) + '%' : '0%'])
+          filteredRows.map(r => [r.code, r.name, r.present, r.total, r.total ? Math.round(r.present / r.total * 100) + '%' : '0%'])
         )} />
       </div>
       {loading ? <Loader /> : (
@@ -464,7 +719,7 @@ function RangeTab() {
           <table style={{ minWidth: 420 }}>
             <thead><tr><th>ID</th><th>ชื่อ</th><th>มาทำงาน</th><th>%</th></tr></thead>
             <tbody>
-              {rows.length === 0 ? <EmptyRow cols={4} /> : rows.map((r, i) => (
+              {filteredRows.length === 0 ? <EmptyRow cols={4} /> : filteredRows.map((r, i) => (
                 <tr key={i}>
                   <td style={{ color: 'var(--blue)', fontWeight: 700 }}>{r.code}</td>
                   <td style={{ fontWeight: 600 }}>{r.name}</td>
@@ -514,6 +769,7 @@ function FourMTab() {
   const [logs,        setLogs]        = useState([]);
   const [lines,       setLines]       = useState([]);
   const [loading,     setLoading]     = useState(false);
+  const [fourMSection, setFourMSection] = useState('');
   const [rejectModal,  setRejectModal]  = useState(null);
   const [rejectReason, setRejectReason] = useState('');
   const [profileMap,   setProfileMap]   = useState({});
@@ -524,7 +780,7 @@ function FourMTab() {
   const [imageViewModal, setImageViewModal] = useState(null); // { url, title }
 
   useEffect(() => {
-    supabase.from('production_lines').select('name').order('name').then(({ data }) => setLines(data || []));
+    supabase.from('production_lines').select('name, section').order('name').then(({ data }) => setLines(data || []));
   }, []);
 
   useEffect(() => { load(); }, [from, to, line, cat, statusFilter]);
@@ -798,10 +1054,20 @@ function FourMTab() {
         <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }} />
         <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
         <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }} />
-        <select value={line} onChange={e => setLine(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
-          <option value="">ทุกไลน์</option>
-          {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
-        </select>
+        {(() => {
+          const fourMSections = [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+          const fourMVisibleLines = fourMSection ? lines.filter(l => l.section === fourMSection) : lines;
+          return (<>
+            <select value={fourMSection} onChange={e => { setFourMSection(e.target.value); setLine(''); }} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
+              <option value="">ทุกส่วนงาน</option>
+              {fourMSections.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select value={line} onChange={e => setLine(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
+              <option value="">ทุกไลน์</option>
+              {fourMVisibleLines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+            </select>
+          </>);
+        })()}
         <select value={cat} onChange={e => setCat(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
           <option value="">ทุกประเภท</option>
           {Object.keys(CAT_META).map(k => <option key={k} value={k}>{k}</option>)}
@@ -1178,6 +1444,48 @@ function SkillMatrixTab() {
         <FilterBar lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} />
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>{employees.length} คน · {skillDefs.length} สกิล</span>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>· คลิกที่พนักงานเพื่อดู Radar Chart</span>
+        <button onClick={() => {
+          const groups = groupSkillsByCategory(skillDefs);
+          const ordered = groups.flatMap(g => g.skills);
+          const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
+          const headerCells = ordered.map(s => `<th style="border:1px solid #ccc;padding:3px 2px;font-size:9px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:80px;white-space:nowrap">${s.label}</th>`).join('');
+          const rowsHtml = employees.map((emp, i) => {
+            const sm = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
+            const scores = ordered.map(s => sm[s.name]);
+            const defined = scores.filter(v => v !== undefined);
+            const avg = defined.length ? Math.round(defined.reduce((a,b)=>a+b,0)/defined.length) : null;
+            const cells = ordered.map((s, si) => {
+              const v = sm[s.name];
+              return `<td style="border:1px solid #ccc;text-align:center;padding:2px">${v !== undefined ? v : '—'}</td>`;
+            }).join('');
+            return `<tr><td style="border:1px solid #ccc;text-align:center;padding:2px">${i+1}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.employee_id_code || ''}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.name || ''}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.section || ''}</td><td style="border:1px solid #ccc;padding:2px 4px;text-align:center">${emp.team || ''}</td>${cells}<td style="border:1px solid #ccc;text-align:center;font-weight:700;padding:2px">${avg !== null ? avg : '—'}</td></tr>`;
+          }).join('');
+          const catHeaderCells = groups.map(g => `<th colspan="${g.skills.length}" style="border:1px solid #ccc;background:${g.color}18;color:${g.color};padding:3px 2px;font-size:9px;font-weight:800;text-align:center">${g.icon} ${g.label}</th>`).join('');
+          const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>Skill Matrix</title>
+<style>@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+body{font-family:'Sarabun',sans-serif;font-size:10px;color:#000;background:#fff}
+table{border-collapse:collapse;width:100%}
+@media print{@page{size:A3 landscape;margin:8mm}body{-webkit-print-color-adjust:exact}}</style>
+</head><body style="padding:8mm">
+<h2 style="margin:0 0 4px;font-size:14px">Skill Matrix</h2>
+<p style="color:#666;margin:0 0 8px;font-size:9px">พิมพ์วันที่: ${todayStr} · รวม ${employees.length} คน</p>
+<table><thead>
+<tr style="background:#f3f4f6">
+<th rowspan="2" style="border:1px solid #ccc;padding:3px">#</th>
+<th rowspan="2" style="border:1px solid #ccc;padding:3px">รหัส</th>
+<th rowspan="2" style="border:1px solid #ccc;padding:3px">ชื่อ</th>
+<th rowspan="2" style="border:1px solid #ccc;padding:3px">ส่วนงาน</th>
+<th rowspan="2" style="border:1px solid #ccc;padding:3px">Team</th>
+${catHeaderCells}
+<th rowspan="2" style="border:1px solid #ccc;padding:3px;background:#d1fae5;color:#16a34a">เฉลี่ย</th>
+</tr>
+<tr style="background:#e5e7eb">${headerCells}</tr>
+</thead><tbody>${rowsHtml}</tbody></table>
+<script>window.onload = () => window.print();</script></body></html>`;
+          const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+        }} disabled={employees.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: employees.length === 0 ? 0.5 : 1 }}>
+          🖨️ PDF
+        </button>
         <CsvBtn onClick={() => {
           const groups = groupSkillsByCategory(skillDefs);
           const ordered = groups.flatMap(g => g.skills);
@@ -1657,6 +1965,25 @@ function MultiSkillFormTab() {
           style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
           {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
         </button>
+        {employees.length > 0 && (
+          <CsvBtn onClick={() => {
+            const ordered = msCatGroups.flatMap(g => g.skills);
+            downloadCSV(
+              `multi_skill_${new Date().toISOString().slice(0,10)}.csv`,
+              ['รหัส', 'ชื่อ', 'ตำแหน่ง', 'ส่วนงาน', 'Team', 'อายุงาน', ...ordered.map(s => s.label), 'ทักษะโดยรวม'],
+              empLevelRows.map(({ emp, levels, overall }) => [
+                emp.employee_id_code || '',
+                emp.name || '',
+                emp.position || '',
+                emp.section || '',
+                emp.team || '',
+                calcServiceDuration(emp.start_date),
+                ...levels,
+                overall,
+              ])
+            );
+          }} />
+        )}
       </div>
 
       {employees.length > 0 && (
@@ -1722,7 +2049,9 @@ function MultiSkillFormTab() {
                 <span style={{ fontWeight: 700, fontSize: 15 }}>MULTI SKILL OF OPERATORS</span>
                 <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 10 }}>{employees.length} คน · {skillDefs.length} ทักษะ</span>
               </div>
-              <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic' }}>🖨️ กด Export ด้านล่างเพื่อพิมพ์</span>
+              <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                🖨️ Export PDF
+              </button>
             </div>
 
             {/* Legend */}
@@ -2303,21 +2632,43 @@ function SkillAllowanceTab() {
         {rows.length > 0 && (
           <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic', alignSelf: 'center' }}>🖨️ กด Export ด้านล่างเพื่อพิมพ์</span>
         )}
+        {rows.length > 0 && (
+          <CsvBtn onClick={() => {
+            const daysArr = periodDays();
+            downloadCSV(
+              `skill_allowance_${year}_${String(month).padStart(2,'0')}_p${period}.csv`,
+              ['รหัสพนักงาน', 'ชื่อ', 'ส่วนงาน', 'Team', ...daysArr.map(d => String(d)), 'รวมวัน'],
+              rows.map(r => [
+                r.emp?.employee_id_code || '',
+                r.emp?.name || '',
+                r.emp?.section || '',
+                r.emp?.team || '',
+                ...daysArr.map(d => r.days[d] ? '✓' : ''),
+                Object.keys(r.days).length,
+              ])
+            );
+          }} />
+        )}
       </div>
 
       {/* Preview table */}
       {rows.length > 0 && (
         <div className="card" style={{ overflowX: 'auto' }}>
-          <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
             <div>
               <span style={{ fontWeight: 700, fontSize: 15 }}>ใบสรุปค่าฝีมือ</span>
               <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 10 }}>
                 งวดวันที่ {days[0]}-{days[days.length-1]} {THAI_MONTHS[month]} {year + 543}
               </span>
             </div>
-            <span style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>
-              {rows.length} คน
-            </span>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>
+                {rows.length} คน
+              </span>
+              <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                🖨️ Export PDF
+              </button>
+            </div>
           </div>
           <table style={{ minWidth: 600, borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
@@ -2693,16 +3044,48 @@ function AttendanceFormTab() {
         {empRows.length > 0 && (
           <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic', alignSelf: 'center' }}>🖨️ กด Export ด้านล่างเพื่อพิมพ์</span>
         )}
+        {empRows.length > 0 && (
+          <CsvBtn onClick={() => {
+            const daysArr = periodDays();
+            downloadCSV(
+              `attendance_${year}_${String(month).padStart(2,'0')}_p${period}.csv`,
+              ['รหัสพนักงาน', 'ชื่อ', 'ส่วนงาน', 'Team', ...daysArr.map(d => String(d)), 'รวมวัน', 'OT'],
+              empRows.map(r => {
+                const totalP  = daysArr.filter(d => r.byDay[d]?.present).length;
+                const totalOT = daysArr.filter(d => r.byDay[d]?.ot).length;
+                return [
+                  r.emp.employee_id_code || '',
+                  r.emp.name || '',
+                  r.emp.section || '',
+                  r.emp.team || '',
+                  ...daysArr.map(d => {
+                    const info = r.byDay[d];
+                    if (!info) return '';
+                    if (info.leave) return info.leave;
+                    return info.present ? '✓' : 'ข';
+                  }),
+                  totalP,
+                  totalOT || '',
+                ];
+              })
+            );
+          }} />
+        )}
       </div>
 
       {/* Preview */}
       {empRows.length > 0 && (
         <div className="card" style={{ overflowX: 'auto' }}>
-          <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
             <span style={{ fontWeight: 700 }}>ใบบันทึกการมาทำงาน</span>
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-              งวดวันที่ {days[0]}-{days[days.length-1]} {THAI_MONTHS[month]} {year+543} · {empRows.length} คน
-            </span>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                งวดวันที่ {days[0]}-{days[days.length-1]} {THAI_MONTHS[month]} {year+543} · {empRows.length} คน
+              </span>
+              <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                🖨️ Export PDF
+              </button>
+            </div>
           </div>
           <table style={{ borderCollapse: 'collapse', fontSize: 11 }}>
             <thead>
