@@ -105,6 +105,10 @@ export default function Management() {
   const [specialTasks,   setSpecialTasks]   = useState([]);
   const [specialModal,   setSpecialModal]   = useState(null); // worker to assign
   const [specialTaskType,setSpecialTaskType]= useState('5ส');
+  const [pendingDocModal, setPendingDocModal] = useState(null); // { log: {...} }
+  const [docImageFile,    setDocImageFile]    = useState(null);
+  const [docImagePreview, setDocImagePreview] = useState(null);
+  const [isSavingDoc,     setIsSavingDoc]     = useState(false);
   const hoverTimer = useRef(null);
 
   useEffect(() => {
@@ -217,15 +221,20 @@ export default function Management() {
               fetchData();
             }
           } else {
-            // Need OJT image + approval → open 4M modal pre-filled
             const desc = `${droppedWorker.employees?.name} ${moveType === 'cross' ? 'ย้ายข้ามไลน์ไปจุด' : 'ย้ายไปจุด'} ${station.station_name}`;
-            setLog4MForm({
-              category: 'Man', description: desc,
-              moveType, skillOk, hasHistory,
-              subtype: 'change',
-            });
-            setReqImageFile(null); setReqImagePreview(null);
-            setShow4MModal({ lineName: station.line_name });
+            const mc = MAN_CASE_META[manCase];
+            await supabase.from('four_m_logs').insert([{
+              work_date: today,
+              line_name: station.line_name,
+              category: 'Man',
+              description: desc,
+              requires_qa: mc.requiresQa,
+              status: 'pending_doc',
+              change_subtype: manCase === 2 ? 'cross_skill_ok' : 'cross_needs_ojt',
+              created_by: (await supabase.auth.getUser()).data.user?.id ?? null,
+            }]);
+            toast.info('เข้าตำแหน่งแล้ว — กรุณาแนบเอกสาร OJT ภายหลัง');
+            fetchData();
           }
         }
       }
@@ -517,6 +526,15 @@ export default function Management() {
     );
   };
 
+  /* ── Pending doc logs by line ── */
+  const pendingDocByLine = {};
+  for (const m of fourMLogs) {
+    if (m.status === 'pending_doc') {
+      if (!pendingDocByLine[m.line_name]) pendingDocByLine[m.line_name] = [];
+      pendingDocByLine[m.line_name].push(m);
+    }
+  }
+
   /* ── Layout ── */
   const poolW = isMobile ? '100%' : isUltra ? 280 : isWide ? 248 : 210;
   const poolStyle = isMobile
@@ -749,6 +767,41 @@ export default function Management() {
                     )}
                     {hasMan && <span style={{ background: '#4d9fff', color: '#fff', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800 }}>MAN</span>}
                     {has4M  && <span style={{ background: '#e74c3c', color: '#fff', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800 }}>4M</span>}
+                    {/* pending_doc badge — worker at station */}
+                    {(pendingDocByLine[st.line_name]?.length > 0) && (() => {
+                      const workerEmpId = workerAtStation?.employee_id;
+                      const isHomeStation = workerEmpId && homePositions[workerEmpId] === String(st.id);
+                      const logsForLine = pendingDocByLine[st.line_name] ?? [];
+                      const relevantLog = logsForLine.find(l =>
+                        workerAtStation && l.description?.includes(workerAtStation.employees?.name)
+                      ) || (isHomeStation && logsForLine[0]);
+                      if (!relevantLog) return null;
+                      return (
+                        <span
+                          key="pending-doc-badge"
+                          onClick={(e) => { e.stopPropagation(); setPendingDocModal({ log: relevantLog }); setDocImageFile(null); setDocImagePreview(null); }}
+                          title="ค้างแนบเอกสาร OJT — คลิกเพื่อแนบ"
+                          style={{ background: '#f59e0b', color: '#000', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800, cursor: 'pointer' }}
+                        >⚠️DOC</span>
+                      );
+                    })()}
+                    {/* pending_doc badge — home station, worker away */}
+                    {!workerAtStation && (() => {
+                      const logsForLine = pendingDocByLine[st.line_name] ?? [];
+                      if (!logsForLine.length) return null;
+                      const homeWorker = workers.find(w => w.employee_id && homePositions[w.employee_id] === String(st.id));
+                      if (!homeWorker) return null;
+                      const relevantLog = logsForLine.find(l => l.description?.includes(homeWorker.employees?.name));
+                      if (!relevantLog) return null;
+                      return (
+                        <span
+                          key="pending-doc-home-badge"
+                          onClick={(e) => { e.stopPropagation(); setPendingDocModal({ log: relevantLog }); setDocImageFile(null); setDocImagePreview(null); }}
+                          title="ค้างแนบเอกสาร OJT — คลิกเพื่อแนบ"
+                          style={{ background: '#f59e0b', color: '#000', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800, cursor: 'pointer' }}
+                        >⚠️DOC</span>
+                      );
+                    })()}
                     {!isMobile && (
                       <button onClick={(e) => { e.stopPropagation(); setShow4MModal({ stationId: st.id, lineName: st.line_name }); setLog4MForm({ category: 'Man', description: '' }); }}
                         style={{ background: 'rgba(255,255,255,0.12)', border: 'none', borderRadius: 2, color: 'white', fontSize: 5, cursor: 'pointer', padding: '1px 2px', lineHeight: 1 }}>+4M</button>
@@ -1096,6 +1149,74 @@ export default function Management() {
               </button>
               <button onClick={() => setSpecialModal(null)}
                 style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Attach-doc modal ── */}
+      {pendingDocModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: 'var(--card)', borderRadius: 12, padding: 24, width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>📎 แนบเอกสาร OJT</div>
+            <div style={{ fontSize: 13, color: 'var(--text2)' }}>
+              <b>{pendingDocModal.log.category}</b> · {pendingDocModal.log.line_name}<br/>
+              {pendingDocModal.log.description}
+            </div>
+            {/* Image upload */}
+            <div>
+              <label style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+                รูปหลักฐาน OJT <span style={{ color: '#ef4444' }}>*</span>
+              </label>
+              <div
+                style={{ border: `2px dashed ${docImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: docImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
+                onClick={() => document.getElementById('doc-img-input').click()}
+              >
+                {docImagePreview
+                  ? <img src={docImagePreview} alt="" style={{ maxHeight: 140, borderRadius: 6, objectFit: 'contain' }} />
+                  : <span style={{ color: 'var(--muted)', fontSize: 13 }}>📸 แตะเพื่อเลือกรูป</span>
+                }
+              </div>
+              <input id="doc-img-input" type="file" accept="image/*" style={{ display: 'none' }}
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) { setDocImageFile(f); const r = new FileReader(); r.onload = ev => setDocImagePreview(ev.target.result); r.readAsDataURL(f); }
+                }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button disabled={isSavingDoc} onClick={async () => {
+                if (!docImageFile) { toast.error('กรุณาแนบรูปหลักฐาน OJT'); return; }
+                setIsSavingDoc(true);
+                try {
+                  const ext = docImageFile.name.split('.').pop();
+                  const path = `4m-requests/${Date.now()}.${ext}`;
+                  const { error: upErr } = await supabase.storage.from('4m-images').upload(path, docImageFile, { upsert: true });
+                  if (upErr) throw upErr;
+                  const { data: { publicUrl } } = supabase.storage.from('4m-images').getPublicUrl(path);
+                  const { error: updErr } = await supabase.from('four_m_logs').update({
+                    status: 'pending',
+                    request_image_url: publicUrl,
+                  }).eq('id', pendingDocModal.log.id);
+                  if (updErr) throw updErr;
+                  supabase.functions.invoke('send-notification', {
+                    body: { event: 'status_change', log: { ...pendingDocModal.log, status: 'pending', request_image_url: publicUrl } }
+                  }).catch(() => {});
+                  toast.success('แนบเอกสารเรียบร้อย — รอ SV อนุมัติ');
+                  setPendingDocModal(null);
+                  fetchData();
+                } catch (err) {
+                  toast.error('เกิดข้อผิดพลาด: ' + err.message);
+                } finally {
+                  setIsSavingDoc(false);
+                }
+              }} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 14, opacity: isSavingDoc ? 0.6 : 1, cursor: isSavingDoc ? 'not-allowed' : 'pointer' }}>
+                {isSavingDoc ? 'กำลังบันทึก...' : 'ส่งอนุมัติ'}
+              </button>
+              <button onClick={() => { if (!isSavingDoc) { setPendingDocModal(null); setDocImageFile(null); setDocImagePreview(null); } }}
+                style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
                 ยกเลิก
               </button>
             </div>
