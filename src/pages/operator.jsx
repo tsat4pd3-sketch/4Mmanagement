@@ -59,6 +59,7 @@ export default function Operator() {
   const [isSaving, setIsSaving] = useState(false);
   const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff', category: 'hard_skill', scope_section: '' });
   const [isAddingSkill, setIsAddingSkill] = useState(false);
+  const [editingSkill, setEditingSkill] = useState(null); // skill being edited inline
   const [myLineName, setMyLineName] = useState('');
   const [filterSection, setFilterSection] = useState('');
   const [filterGroup,   setFilterGroup]   = useState('');
@@ -278,6 +279,21 @@ export default function Operator() {
     await supabase.from('employee_skills').delete().eq('skill_name', sd.name);
     await supabase.from('station_requirements').delete().eq('skill_name', sd.name);
     await supabase.from('skill_definitions').delete().eq('id', sd.id);
+    fetchSkillDefs();
+    fetchEmployees();
+  };
+
+  const handleUpdateSkill = async () => {
+    if (!editingSkill?.label?.trim()) { toast.error('กรุณาระบุชื่อสกิล'); return; }
+    const { error } = await supabase.from('skill_definitions').update({
+      label:         editingSkill.label.trim(),
+      color:         editingSkill.color,
+      category:      editingSkill.category,
+      scope_section: editingSkill.scope_section || null,
+    }).eq('id', editingSkill.id);
+    if (error) { toast.error('แก้ไขไม่สำเร็จ: ' + error.message); return; }
+    toast.success('บันทึกสำเร็จ');
+    setEditingSkill(null);
     fetchSkillDefs();
     fetchEmployees();
   };
@@ -547,8 +563,16 @@ export default function Operator() {
                           </div>
                         </div>
                       </div>
-                      <button onClick={() => handleDeleteSkill(sd)}
-                        style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '2px 4px', flexShrink: 0 }}>🗑️</button>
+                      <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                        {['admin','manager','supervisor'].includes(role) && (
+                          <button onClick={() => setEditingSkill({ ...sd, scope_section: sd.scope_section || '' })}
+                            style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>✏️</button>
+                        )}
+                        {['admin','manager'].includes(role) && (
+                          <button onClick={() => handleDeleteSkill(sd)}
+                            style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>🗑️</button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -575,8 +599,10 @@ export default function Operator() {
                 </div>
                 <div>
                   <label style={labelSt}>ส่วนงาน (ถ้าจำเพาะ)</label>
-                  <input placeholder="เว้นว่าง = ทุกส่วนงาน" value={newSkill.scope_section}
-                    onChange={e => setNewSkill({ ...newSkill, scope_section: e.target.value })} />
+                  <select value={newSkill.scope_section} onChange={e => setNewSkill({ ...newSkill, scope_section: e.target.value })}>
+                    <option value="">— ทุกส่วนงาน —</option>
+                    {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label style={labelSt}>สีแสดงผล</label>
@@ -612,6 +638,57 @@ export default function Operator() {
                 ))}
               </div>
             </div>
+
+            {/* Edit skill modal */}
+            {editingSkill && (
+              <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px', width: 'min(480px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
+                  <h3 style={{ margin: '0 0 16px', fontFamily: 'var(--font-display)' }}>✏️ แก้ไขสกิล</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                    <div style={{ gridColumn: '1/-1' }}>
+                      <label style={labelSt}>ชื่อสกิล</label>
+                      <input value={editingSkill.label}
+                        onChange={e => setEditingSkill({ ...editingSkill, label: e.target.value })} />
+                    </div>
+                    <div>
+                      <label style={labelSt}>ประเภทสกิล</label>
+                      <select value={editingSkill.category || 'hard_skill'}
+                        onChange={e => setEditingSkill({ ...editingSkill, category: e.target.value })}>
+                        <option value="hard_skill">🔧 Hard Skill</option>
+                        <option value="machine_skill">⚙️ Machine Skill</option>
+                        <option value="product_skill">📦 Product Skill</option>
+                        <option value="soft_skill">🧠 Soft Skill</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={labelSt}>ส่วนงาน</label>
+                      <select value={editingSkill.scope_section || ''}
+                        onChange={e => setEditingSkill({ ...editingSkill, scope_section: e.target.value })}>
+                        <option value="">— ทุกส่วนงาน —</option>
+                        {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ gridColumn: '1/-1', display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <label style={{ ...labelSt, marginBottom: 0 }}>สีแสดงผล</label>
+                      <input type="color" value={editingSkill.color}
+                        onChange={e => setEditingSkill({ ...editingSkill, color: e.target.value })}
+                        style={{ width: 44, height: 36, padding: 2, borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', cursor: 'pointer' }} />
+                      <span style={{ fontSize: 13, color: editingSkill.color, fontWeight: 700 }}>● {editingSkill.label || 'ตัวอย่าง'}</span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={handleUpdateSkill}
+                      style={{ flex: 2, padding: 11, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>
+                      💾 บันทึก
+                    </button>
+                    <button onClick={() => setEditingSkill(null)}
+                      style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                      ยกเลิก
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         );
       })()}
