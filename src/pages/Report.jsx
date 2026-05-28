@@ -582,19 +582,20 @@ function FourMTab() {
   };
 
   const handleQaApproveSubmit = async () => {
-    if (!qaImageFile) { toast.error('กรุณาแนบรูปยืนยันคุณภาพงาน'); return; }
     setIsApprovingSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
 
-    const resized = await resizeImage(qaImageFile);
-    const path = `qa/${Date.now()}_${user?.id ?? 'anon'}.jpg`;
-    const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: false, contentType: 'image/jpeg' });
-    if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); setIsApprovingSaving(false); return; }
-    const { data: urlData } = supabase.storage.from('four-m-images').getPublicUrl(path);
-    const qa_image_url = urlData.publicUrl;
+    let qa_image_url = null;
+    if (qaImageFile) {
+      const resized = await resizeImage(qaImageFile);
+      const path = `qa/${Date.now()}_${user?.id ?? 'anon'}.jpg`;
+      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: false, contentType: 'image/jpeg' });
+      if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); setIsApprovingSaving(false); return; }
+      qa_image_url = supabase.storage.from('four-m-images').getPublicUrl(path).data.publicUrl;
+    }
 
     const now = new Date().toISOString();
-    const update = { status: 'approved', approved_by: user.id, approved_at: now, reject_reason: null, qa_image_url };
+    const update = { status: 'approved', approved_by: user.id, approved_at: now, reject_reason: null, ...(qa_image_url ? { qa_image_url } : {}) };
     const { error } = await supabase.from('four_m_logs').update(update).eq('id', qaApproveModal.id);
     setIsApprovingSaving(false);
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
@@ -729,7 +730,7 @@ function FourMTab() {
                   onClick={() => setImageViewModal({ url: qaApproveModal.request_image_url, title: 'รูปจากผู้แจ้ง' })} />
               </div>
             )}
-            <div style={{ fontSize: 12, color: '#a855f7', fontWeight: 600, marginBottom: 6 }}>📷 แนบรูปยืนยันคุณภาพ <span style={{ color: '#ef4444' }}>*</span></div>
+            <div style={{ fontSize: 12, color: '#a855f7', fontWeight: 600, marginBottom: 6 }}>📷 แนบรูปยืนยันคุณภาพ <span style={{ color: 'var(--muted)' }}>(ไม่บังคับ)</span></div>
             <div style={{ border: `2px dashed ${qaImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: qaImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
               onClick={() => document.getElementById('qa-img-input').click()}>
               <input id="qa-img-input" type="file" accept="image/*" style={{ display: 'none' }}
