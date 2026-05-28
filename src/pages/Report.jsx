@@ -83,12 +83,25 @@ const CAT_META = {
 const TABS = ['รายวัน', 'รายพนักงาน', '📍 Log จุดงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '📤 Export', '💰 ค่าฝีมือ', '📋 ใบบันทึก', '🏅 Multi-Skill Form'];
 
 const SKILL_LEVELS = [
-  { min: 80, label: 'ชำนาญ',       color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
-  { min: 60, label: 'ผ่านเกณฑ์',   color: '#84cc16', bg: 'rgba(132,204,18,0.15)' },
-  { min: 40, label: 'กำลังพัฒนา', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
-  { min: 0,  label: 'เริ่มต้น',     color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
+  { min: 100, label: 'ผู้เชี่ยวชาญ',   color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
+  { min: 75,  label: 'แก้ปัญหาได้',    color: '#22c55e', bg: 'rgba(34,197,94,0.15)'  },
+  { min: 50,  label: 'มาตรฐาน',        color: '#84cc16', bg: 'rgba(132,204,18,0.15)' },
+  { min: 25,  label: 'ต้องดูแล',       color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  { min: 0,   label: 'ยังไม่ผ่าน OJT', color: '#ef4444', bg: 'rgba(239,68,68,0.15)'  },
 ];
-const getLevel = (score) => SKILL_LEVELS.find(l => score >= l.min) || SKILL_LEVELS[3];
+const getLevel = (score) => SKILL_LEVELS.find(l => score >= l.min) ?? SKILL_LEVELS[4];
+
+const SKILL_CAT_META = {
+  hard_skill:    { label: 'Hard Skill',    color: '#ef4444', icon: '🔧' },
+  machine_skill: { label: 'Machine Skill', color: '#f97316', icon: '⚙️' },
+  product_skill: { label: 'Product Skill', color: '#3b82f6', icon: '📦' },
+  soft_skill:    { label: 'Soft Skill',    color: '#a855f7', icon: '🧠' },
+};
+// Group skillDefs by category, preserving sort_order within each group
+const groupSkillsByCategory = (defs) =>
+  Object.entries(SKILL_CAT_META)
+    .map(([k, m]) => ({ key: k, ...m, skills: defs.filter(s => (s.category || 'hard_skill') === k) }))
+    .filter(g => g.skills.length > 0);
 
 const lbSt = { fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 4, display: 'block' };
 
@@ -932,6 +945,8 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
   const skillMap = {};
   (emp.employee_skills || []).forEach(s => { skillMap[s.skill_name] = s.score; });
 
+  const catGroups = groupSkillsByCategory(skillDefs);
+
   const radarData = skillDefs.map(s => ({
     subject: s.label,
     value: skillMap[s.name] ?? 0,
@@ -1052,23 +1067,34 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
           </ResponsiveContainer>
         </div>
 
-        {/* All skill bars (if > 4 skills) */}
-        {radarData.length > 4 && (
-          <div style={{ padding: '0 24px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {radarData.slice(4).map(d => {
-              const lv = getLevel(d.value);
-              return (
-                <div key={d.subject} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text2)', width: 90, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.subject}</div>
-                  <div style={{ flex: 1, height: 6, background: 'var(--border2)', borderRadius: 3 }}>
-                    <div style={{ height: '100%', width: `${d.value}%`, background: lv.color, borderRadius: 3 }} />
-                  </div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: lv.color, width: 28, textAlign: 'right' }}>{d.value}</div>
+        {/* All skill bars grouped by category */}
+        <div style={{ padding: '0 24px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {catGroups.map(g => {
+            const gSkills = g.skills.map(s => ({ subject: s.label, value: skillMap[s.name] ?? 0 }));
+            if (gSkills.length === 0) return null;
+            return (
+              <div key={g.key}>
+                <div style={{ fontSize: 9, fontWeight: 800, color: g.color, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 6, borderBottom: `1px solid ${g.color}33`, paddingBottom: 3 }}>
+                  {g.icon} {g.label}
                 </div>
-              );
-            })}
-          </div>
-        )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {gSkills.map(d => {
+                    const lv = getLevel(d.value);
+                    return (
+                      <div key={d.subject} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text2)', width: 90, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.subject}</div>
+                        <div style={{ flex: 1, height: 6, background: 'var(--border2)', borderRadius: 3 }}>
+                          <div style={{ height: '100%', width: `${d.value}%`, background: lv.color, borderRadius: 3 }} />
+                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: lv.color, width: 28, textAlign: 'right' }}>{d.value}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -1132,80 +1158,92 @@ function SkillMatrixTab() {
         <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>— ยังไม่ประเมิน</span>
       </div>
 
-      {loading ? <Loader /> : (
-        <div className="card" style={{ overflowX: 'auto' }}>
-          <table style={{ minWidth: 220 + skillDefs.length * 90 }}>
-            <thead>
-              <tr>
-                <th style={{ minWidth: 44, textAlign: 'center' }}>รูป</th>
-                <th style={{ minWidth: 130, textAlign: 'left' }}>พนักงาน</th>
-                {skillDefs.map(s => (
-                  <th key={s.name} style={{ minWidth: 88, textAlign: 'center', fontSize: 11 }}>
-                    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: s.color || '#4d9fff', marginRight: 3 }} />
-                    {s.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {employees.length === 0 ? <EmptyRow cols={2 + skillDefs.length} /> : employees.map(emp => {
-                const skillMap = {};
-                (emp.employee_skills || []).forEach(s => { skillMap[s.skill_name] = s.score; });
-                const scores = skillDefs.map(s => skillMap[s.name] ?? 0);
-                const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-                const avgLv = getLevel(avg);
+      {loading ? <Loader /> : (() => {
+        const groups = groupSkillsByCategory(skillDefs);
+        const orderedDefs = groups.flatMap(g => g.skills);
+        return (
+          <div className="card" style={{ overflowX: 'auto' }}>
+            <table style={{ minWidth: 220 + orderedDefs.length * 90 }}>
+              <thead>
+                {/* Category group row */}
+                <tr>
+                  <th colSpan={2} style={{ borderBottom: 'none', background: 'var(--bg2)' }} />
+                  {groups.map(g => (
+                    <th key={g.key} colSpan={g.skills.length}
+                      style={{ textAlign: 'center', fontSize: 10, fontWeight: 800, color: g.color,
+                        background: `${g.color}10`, borderBottom: `2px solid ${g.color}44`,
+                        letterSpacing: '0.06em', padding: '5px 4px', borderLeft: `2px solid ${g.color}33` }}>
+                      {g.icon} {g.label}
+                    </th>
+                  ))}
+                </tr>
+                {/* Skill name row */}
+                <tr>
+                  <th style={{ minWidth: 44, textAlign: 'center' }}>รูป</th>
+                  <th style={{ minWidth: 130, textAlign: 'left' }}>พนักงาน</th>
+                  {groups.map(g => g.skills.map((s, si) => (
+                    <th key={s.name} style={{ minWidth: 82, textAlign: 'center', fontSize: 10,
+                      borderLeft: si === 0 ? `2px solid ${g.color}33` : undefined }}>
+                      <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: s.color || g.color, marginRight: 3 }} />
+                      {s.label}
+                      {s.scope_section && <div style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 400 }}>📍{s.scope_section}</div>}
+                    </th>
+                  )))}
+                </tr>
+              </thead>
+              <tbody>
+                {employees.length === 0 ? <EmptyRow cols={2 + orderedDefs.length} /> : employees.map(emp => {
+                  const skillMap = {};
+                  (emp.employee_skills || []).forEach(s => { skillMap[s.skill_name] = s.score; });
+                  const scores = orderedDefs.map(s => skillMap[s.name] ?? 0);
+                  const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+                  const avgLv = getLevel(avg);
 
-                return (
-                  <tr
-                    key={emp.id}
-                    onClick={() => setSelectedEmp(emp)}
-                    style={{ cursor: 'pointer', transition: 'background 0.15s' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-                    onMouseLeave={e => e.currentTarget.style.background = ''}
-                  >
-                    <td style={{ textAlign: 'center', padding: '8px 6px' }}>
-                      {emp.image_url ? (
-                        <img src={emp.image_url} alt="" style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'cover', border: `2px solid ${avgLv.color}66`, display: 'block', margin: '0 auto' }} />
-                      ) : (
-                        <div style={{
-                          width: 38, height: 38, borderRadius: 10, margin: '0 auto',
-                          background: `${avgLv.color}22`, border: `2px solid ${avgLv.color}55`,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 15, fontWeight: 800, color: avgLv.color,
-                        }}>
-                          {(emp.name || '?')[0]}
-                        </div>
-                      )}
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{emp.name}</div>
-                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
-                      {scores.length > 0 && (
-                        <div style={{ marginTop: 3, display: 'inline-block', fontSize: 9, fontWeight: 700, color: avgLv.color, background: avgLv.bg, borderRadius: 4, padding: '1px 5px' }}>
-                          avg {avg}%
-                        </div>
-                      )}
-                    </td>
-                    {skillDefs.map(s => {
-                      const score = skillMap[s.name];
-                      if (score === undefined) return <td key={s.name} style={{ textAlign: 'center' }}><span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span></td>;
-                      const lv = getLevel(score);
-                      return (
-                        <td key={s.name} style={{ textAlign: 'center', padding: '6px 4px' }}>
-                          <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', background: lv.bg, borderRadius: 6, padding: '4px 8px', minWidth: 52 }}>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: lv.color }}>{score}</span>
-                            <span style={{ fontSize: 9, color: lv.color, marginTop: 1 }}>{lv.label}</span>
+                  return (
+                    <tr key={emp.id} onClick={() => setSelectedEmp(emp)}
+                      style={{ cursor: 'pointer', transition: 'background 0.15s' }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                      onMouseLeave={e => e.currentTarget.style.background = ''}>
+                      <td style={{ textAlign: 'center', padding: '8px 6px' }}>
+                        {emp.image_url
+                          ? <img src={emp.image_url} alt="" style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'cover', border: `2px solid ${avgLv.color}66`, display: 'block', margin: '0 auto' }} />
+                          : <div style={{ width: 38, height: 38, borderRadius: 10, margin: '0 auto', background: `${avgLv.color}22`, border: `2px solid ${avgLv.color}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: avgLv.color }}>{(emp.name || '?')[0]}</div>
+                        }
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{emp.name}</div>
+                        <div style={{ fontSize: 10, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
+                        {scores.length > 0 && (
+                          <div style={{ marginTop: 3, display: 'inline-block', fontSize: 9, fontWeight: 700, color: avgLv.color, background: avgLv.bg, borderRadius: 4, padding: '1px 5px' }}>
+                            avg {avg}
                           </div>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+                        )}
+                      </td>
+                      {groups.map(g => g.skills.map((s, si) => {
+                        const score = skillMap[s.name];
+                        if (score === undefined) return (
+                          <td key={s.name} style={{ textAlign: 'center', borderLeft: si === 0 ? `2px solid ${g.color}22` : undefined }}>
+                            <span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span>
+                          </td>
+                        );
+                        const lv = getLevel(score);
+                        return (
+                          <td key={s.name} style={{ textAlign: 'center', padding: '6px 4px', borderLeft: si === 0 ? `2px solid ${g.color}22` : undefined }}>
+                            <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', background: lv.bg, borderRadius: 6, padding: '4px 8px', minWidth: 48 }}>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: lv.color }}>{score}</span>
+                              <span style={{ fontSize: 8, color: lv.color, marginTop: 1 }}>{lv.label}</span>
+                            </div>
+                          </td>
+                        );
+                      }))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -1296,7 +1334,15 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
   const levelCell = (lv) =>
     `<td style="text-align:center;border:1px solid #999;padding:2px">${skillGaugeSvgStr(lv)}</td>`;
 
-  const skillHeaderCells = skillDefs.map(s =>
+  const catGroups = groupSkillsByCategory(skillDefs);
+  const orderedDefs = catGroups.flatMap(g => g.skills);
+
+  // category header row for main skill table
+  const catHeaderCells = catGroups.map(g =>
+    `<th colspan="${g.skills.length}" style="border:1px solid #666;background:${g.color}18;color:${g.color};padding:3px 2px;font-size:8px;font-weight:800;text-align:center;letter-spacing:0.05em">${g.icon} ${g.label}</th>`
+  ).join('');
+
+  const skillHeaderCells = orderedDefs.map(s =>
     `<th style="border:1px solid #666;background:#e5e7eb;padding:3px 2px;font-size:9px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:90px;white-space:nowrap">${s.label}</th>`
   ).join('');
 
@@ -1382,29 +1428,34 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
   </tr></table>
   <table style="width:100%"><thead>
     <tr style="background:#d1d5db">
-      <th style="border:1px solid #666;padding:3px;text-align:center;width:24px" rowspan="2">ลำดับ</th>
-      <th style="border:1px solid #666;padding:3px;text-align:center;width:70px" rowspan="2">เลขที่บัตร</th>
-      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:110px" rowspan="2">ชื่อ-นามสกุล</th>
-      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:80px" rowspan="2">ตำแหน่ง</th>
-      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:60px" rowspan="2">อายุงาน</th>
-      <th style="border:1px solid #666;padding:3px;text-align:center" colspan="${skillDefs.length + 1}">ทักษะความสามารถการปฏิบัติงานของพนักงาน</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;width:24px" rowspan="3">ลำดับ</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;width:70px" rowspan="3">เลขที่บัตร</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:110px" rowspan="3">ชื่อ-นามสกุล</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:80px" rowspan="3">ตำแหน่ง</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:60px" rowspan="3">อายุงาน</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center" colspan="${orderedDefs.length + 1}">ทักษะความสามารถการปฏิบัติงานของพนักงาน</th>
+    </tr>
+    <tr style="background:#f9fafb">${catHeaderCells}
+      <th style="border:1px solid #666;background:#d1fae5;padding:3px 2px;font-size:8px;text-align:center" rowspan="2">ทักษะโดยรวม</th>
     </tr>
     <tr style="background:#e5e7eb">${skillHeaderCells}
-      <th style="border:1px solid #666;background:#d1fae5;padding:3px 2px;font-size:9px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:90px;white-space:nowrap">ทักษะโดยรวม</th>
     </tr>
   </thead><tbody>${empRowsHtml}</tbody></table>
   <div style="margin-top:10px">
     <table style="width:100%"><thead>
       <tr style="background:#d1d5db">
-        <th style="border:1px solid #666;padding:3px;font-size:9px;text-align:center" colspan="2">ระดับความสามารถ</th>
-        ${skillDefs.map(s => `<th style="border:1px solid #666;background:#e5e7eb;padding:3px 2px;font-size:9px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:70px;white-space:nowrap">${s.label}</th>`).join('')}
-        <th style="border:1px solid #666;background:#d1fae5;padding:3px 2px;font-size:9px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:70px;white-space:nowrap">ทักษะโดยรวม</th>
+        <th style="border:1px solid #666;padding:3px;font-size:9px;text-align:center" colspan="2" rowspan="2">ระดับความสามารถ</th>
+        ${catGroups.map(g => `<th colspan="${g.skills.length}" style="border:1px solid #666;background:${g.color}18;color:${g.color};padding:3px 2px;font-size:8px;font-weight:800;text-align:center">${g.icon} ${g.label}</th>`).join('')}
+        <th style="border:1px solid #666;background:#d1fae5;padding:3px 2px;font-size:9px;text-align:center" rowspan="2">ทักษะโดยรวม</th>
+      </tr>
+      <tr style="background:#e5e7eb">
+        ${orderedDefs.map(s => `<th style="border:1px solid #666;background:#e5e7eb;padding:3px 2px;font-size:9px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:70px;white-space:nowrap">${s.label}</th>`).join('')}
       </tr>
     </thead><tbody>
       ${summaryRowsHtml}
       <tr style="background:#f3f4f6;font-weight:700">
         <td colspan="2" style="border:1px solid #999;text-align:center;padding:2px;font-size:9px">รวมพนักงานทั้งหมด</td>
-        ${skillDefs.map(() => `<td style="text-align:center;border:1px solid #999;font-size:9px">${totalEmps}</td>`).join('')}
+        ${orderedDefs.map(() => `<td style="text-align:center;border:1px solid #999;font-size:9px">${totalEmps}</td>`).join('')}
         <td style="text-align:center;border:1px solid #999;font-size:9px">${totalEmps}</td>
       </tr>
     </tbody></table>
@@ -1471,9 +1522,10 @@ function MultiSkillFormTab() {
   };
 
   const handlePrint = async () => {
+    const ordered = groupSkillsByCategory(skillDefs).flatMap(g => g.skills);
     const empRows = employees.map((emp, i) => {
       const sm = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
-      const levels = skillDefs.map(s => scoreToLevel(sm[s.name]));
+      const levels = ordered.map(s => scoreToLevel(sm[s.name]));
       const validLevels = levels.filter(l => l > 0);
       const overall = validLevels.length
         ? Math.round(validLevels.reduce((a, b) => a + b, 0) / validLevels.length)
@@ -1481,7 +1533,7 @@ function MultiSkillFormTab() {
       return { emp, levels, overall, index: i + 1 };
     });
     const levelCounts = MS_LEVELS.map(lv => [
-      ...skillDefs.map((_, si) => empRows.filter(r => r.levels[si] === lv.level).length),
+      ...ordered.map((_, si) => empRows.filter(r => r.levels[si] === lv.level).length),
       empRows.filter(r => r.overall === lv.level).length,
     ]);
     const [mSig, cSig, aSig] = await Promise.all([
@@ -1500,23 +1552,26 @@ function MultiSkillFormTab() {
     return { bg: m.bg || 'var(--bg3)', color: m.color || 'var(--muted)' };
   };
 
+  const msCatGroups  = useMemo(() => groupSkillsByCategory(skillDefs), [skillDefs]);
+  const msOrderedDefs = useMemo(() => msCatGroups.flatMap(g => g.skills), [msCatGroups]);
+
   // Precompute per-employee levels once (avoids O(n*skills) recalculation on every render)
   const empLevelRows = useMemo(() => employees.map(emp => {
     const sm = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
-    const levels = skillDefs.map(s => scoreToLevel(sm[s.name]));
+    const levels = msOrderedDefs.map(s => scoreToLevel(sm[s.name]));
     const validLevels = levels.filter(l => l > 0);
     const overall = validLevels.length
       ? Math.round(validLevels.reduce((a, b) => a + b, 0) / validLevels.length)
       : 0;
     return { emp, levels, overall };
-  }), [employees, skillDefs]);
+  }), [employees, msOrderedDefs]);
 
   // Precompute summary counts (avoids O(levels*skills*employees) inline in JSX)
   const summaryCounts = useMemo(() => MS_LEVELS.map(lv => ({
     lv,
-    counts: skillDefs.map((_, si) => empLevelRows.filter(r => r.levels[si] === lv.level).length),
+    counts: msOrderedDefs.map((_, si) => empLevelRows.filter(r => r.levels[si] === lv.level).length),
     total:  empLevelRows.filter(r => r.overall === lv.level).length,
-  })), [empLevelRows, skillDefs]);
+  })), [empLevelRows, msOrderedDefs]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1613,19 +1668,26 @@ function MultiSkillFormTab() {
               ))}
             </div>
 
-            <table style={{ minWidth: 300 + skillDefs.length * 70, borderCollapse: 'collapse', fontSize: 12 }}>
+            <table style={{ minWidth: 300 + msOrderedDefs.length * 70, borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr>
-                  <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', width: 30, textAlign: 'center' }}>#</th>
-                  <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', width: 80 }}>รหัส</th>
-                  <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120 }}>ชื่อ-สกุล</th>
-                  <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 80 }}>ตำแหน่ง</th>
-                  {skillDefs.map(s => (
+                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', width: 30, textAlign: 'center' }}>#</th>
+                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', width: 80 }}>รหัส</th>
+                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120 }}>ชื่อ-สกุล</th>
+                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 80 }}>ตำแหน่ง</th>
+                  {msCatGroups.map(g => (
+                    <th key={g.key} colSpan={g.skills.length} style={{ border: '1px solid var(--border2)', padding: '3px 4px', background: `${g.color}15`, color: g.color, textAlign: 'center', fontSize: 10, fontWeight: 800 }}>
+                      {g.icon} {g.label}
+                    </th>
+                  ))}
+                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'rgba(34,197,94,0.12)', color: '#22c55e', width: 68, textAlign: 'center', fontSize: 10, verticalAlign: 'bottom' }}>ทักษะโดยรวม</th>
+                </tr>
+                <tr>
+                  {msOrderedDefs.map(s => (
                     <th key={s.name} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 68, textAlign: 'center', fontSize: 10, verticalAlign: 'bottom' }}>
                       {s.label}
                     </th>
                   ))}
-                  <th style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'rgba(34,197,94,0.12)', color: '#22c55e', width: 68, textAlign: 'center', fontSize: 10, verticalAlign: 'bottom' }}>ทักษะโดยรวม</th>
                 </tr>
               </thead>
               <tbody>
@@ -1654,12 +1716,19 @@ function MultiSkillFormTab() {
               <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr>
-                    <th style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 60 }}>ระดับ</th>
-                    <th style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 120 }}>ความหมาย</th>
-                    {skillDefs.map(s => (
+                    <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 60 }}>ระดับ</th>
+                    <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 120 }}>ความหมาย</th>
+                    {msCatGroups.map(g => (
+                      <th key={g.key} colSpan={g.skills.length} style={{ border: '1px solid var(--border2)', padding: '3px 4px', background: `${g.color}15`, color: g.color, textAlign: 'center', fontSize: 10, fontWeight: 800 }}>
+                        {g.icon} {g.label}
+                      </th>
+                    ))}
+                    <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'rgba(34,197,94,0.12)', color: '#22c55e', width: 68, textAlign: 'center', fontSize: 10 }}>รวม</th>
+                  </tr>
+                  <tr>
+                    {msOrderedDefs.map(s => (
                       <th key={s.name} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 68, textAlign: 'center', fontSize: 10 }}>{s.label}</th>
                     ))}
-                    <th style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'rgba(34,197,94,0.12)', color: '#22c55e', width: 68, textAlign: 'center', fontSize: 10 }}>รวม</th>
                   </tr>
                 </thead>
                 <tbody>
