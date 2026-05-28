@@ -57,7 +57,7 @@ export default function Operator() {
   const [showInactive, setShowInactive] = useState(false);
   const [editingEmp, setEditingEmp] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff' });
+  const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff', category: 'hard_skill', scope_section: '' });
   const [isAddingSkill, setIsAddingSkill] = useState(false);
   const [myLineName, setMyLineName] = useState('');
   const [filterSection, setFilterSection] = useState('');
@@ -255,14 +255,21 @@ export default function Operator() {
 
   const handleAddSkill = async () => {
     const lbl = newSkill.label.trim();
-    if (!lbl) return;
-    const name = 'skill_' + lbl.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    if (!lbl) { toast.error('กรุณาระบุชื่อสกิล'); return; }
+    // UUID-based key: never conflicts, works with Thai/any language
+    const uid = crypto.randomUUID().replace(/-/g, '').slice(0, 10);
+    const name = 'skill_' + uid;
     setIsAddingSkill(true);
     const { error } = await supabase.from('skill_definitions').insert([{
-      name, label: lbl, color: newSkill.color, sort_order: skillDefs.length + 1,
+      name,
+      label: lbl,
+      color: newSkill.color,
+      category: newSkill.category,
+      scope_section: newSkill.scope_section.trim() || null,
+      sort_order: skillDefs.length + 1,
     }]);
     if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
-    else { setNewSkill({ label: '', color: '#4d9fff' }); fetchSkillDefs(); }
+    else { setNewSkill({ label: '', color: '#4d9fff', category: 'hard_skill', scope_section: '' }); fetchSkillDefs(); }
     setIsAddingSkill(false);
   };
 
@@ -403,7 +410,10 @@ export default function Operator() {
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Team</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>วันเริ่มงาน</th>
                   {skillDefs.map(sd => (
-                    <th key={sd.name} style={{ fontSize: 10, color: sd.color, whiteSpace: 'nowrap' }}>{sd.label}</th>
+                    <th key={sd.name} style={{ fontSize: 10, color: sd.color, whiteSpace: 'nowrap' }}>
+                      <div>{{ hard_skill:'🔧', machine_skill:'⚙️', product_skill:'📦', soft_skill:'🧠' }[sd.category || 'hard_skill']} {sd.label}</div>
+                      {sd.scope_section && <div style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 400 }}>📍{sd.scope_section}</div>}
+                    </th>
                   ))}
                   <th style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 2, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>จัดการ</th>
                 </tr>
@@ -501,62 +511,110 @@ export default function Operator() {
         </>
       )}
 
-      {tab === 1 && (
-        <div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10, marginBottom: 20 }}>
-            {skillDefs.map(sd => (
-              <div key={sd.id} className="card" style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: sd.color, flexShrink: 0 }} />
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)' }}>{sd.label}</div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>{sd.name}</div>
-                  </div>
+      {tab === 1 && (() => {
+        const CAT_META = {
+          hard_skill:    { label: 'Hard Skill',    color: '#ef4444', icon: '🔧' },
+          machine_skill: { label: 'Machine Skill', color: '#f97316', icon: '⚙️' },
+          product_skill: { label: 'Product Skill', color: '#3b82f6', icon: '📦' },
+          soft_skill:    { label: 'Soft Skill',    color: '#a855f7', icon: '🧠' },
+        };
+        const grouped = Object.entries(CAT_META).map(([k, m]) => ({
+          key: k, ...m, skills: skillDefs.filter(sd => (sd.category || 'hard_skill') === k),
+        })).filter(g => g.skills.length > 0 || true);
+
+        return (
+          <div>
+            {/* Skill list grouped by category */}
+            {grouped.map(g => g.skills.length === 0 ? null : (
+              <div key={g.key} style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {g.icon} {g.label}
                 </div>
-                <button onClick={() => handleDeleteSkill(sd)}
-                  style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15, padding: '2px 4px' }}>🗑️</button>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
+                  {g.skills.map(sd => (
+                    <div key={sd.id} className="card" style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: sd.color, flexShrink: 0 }} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13 }}>{sd.label}</div>
+                          <div style={{ display: 'flex', gap: 4, marginTop: 2, flexWrap: 'wrap' }}>
+                            {sd.scope_section && (
+                              <span style={{ fontSize: 9, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
+                                📍 {sd.scope_section}
+                              </span>
+                            )}
+                            <span style={{ fontSize: 9, color: 'var(--muted)' }}>{sd.name}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <button onClick={() => handleDeleteSkill(sd)}
+                        style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '2px 4px', flexShrink: 0 }}>🗑️</button>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
-          </div>
 
-          <div className="card" style={{ padding: 16, marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              ระดับสกิล (Skill Levels)
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {SKILL_LEVELS.map(lv => (
-                <div key={lv.label} style={{ display: 'flex', alignItems: 'center', gap: 8, background: lv.bg, borderRadius: 8, padding: '8px 14px' }}>
-                  <span style={{ fontWeight: 800, color: lv.color, fontSize: 16 }}>{lv.min}%+</span>
-                  <span style={{ fontSize: 12, color: lv.color, fontWeight: 600 }}>{lv.label}</span>
+            {/* Add skill form */}
+            <div className="card" style={{ padding: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>➕ เพิ่มสกิลใหม่</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10, marginBottom: 10 }}>
+                <div>
+                  <label style={labelSt}>ชื่อสกิล (ภาษาไทยหรืออังกฤษ)</label>
+                  <input placeholder="เช่น งานพ่นสี, Robot Arm" value={newSkill.label}
+                    onChange={e => setNewSkill({ ...newSkill, label: e.target.value })}
+                    onKeyDown={e => e.key === 'Enter' && handleAddSkill()} />
                 </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="card" style={{ padding: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>➕ เพิ่มสกิลใหม่</div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              <input placeholder="ชื่อสกิล เช่น งานพ่นสี" value={newSkill.label}
-                onChange={e => setNewSkill({ ...newSkill, label: e.target.value })}
-                onKeyDown={e => e.key === 'Enter' && handleAddSkill()}
-                style={{ flex: 1, minWidth: 180 }} />
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 12, color: 'var(--muted)' }}>สี</span>
-                <input type="color" value={newSkill.color}
-                  onChange={e => setNewSkill({ ...newSkill, color: e.target.value })}
-                  style={{ width: 44, height: 34, padding: 2, borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', cursor: 'pointer' }} />
+                <div>
+                  <label style={labelSt}>ประเภทสกิล</label>
+                  <select value={newSkill.category} onChange={e => setNewSkill({ ...newSkill, category: e.target.value })}>
+                    {Object.entries(CAT_META).map(([k, m]) => (
+                      <option key={k} value={k}>{m.icon} {m.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelSt}>ส่วนงาน (ถ้าจำเพาะ)</label>
+                  <input placeholder="เว้นว่าง = ทุกส่วนงาน" value={newSkill.scope_section}
+                    onChange={e => setNewSkill({ ...newSkill, scope_section: e.target.value })} />
+                </div>
+                <div>
+                  <label style={labelSt}>สีแสดงผล</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input type="color" value={newSkill.color}
+                      onChange={e => setNewSkill({ ...newSkill, color: e.target.value })}
+                      style={{ width: 44, height: 36, padding: 2, borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', cursor: 'pointer' }} />
+                    <span style={{ fontSize: 12, color: newSkill.color, fontWeight: 700 }}>● ตัวอย่าง</span>
+                  </div>
+                </div>
               </div>
               <button onClick={handleAddSkill} disabled={isAddingSkill || !newSkill.label.trim()}
-                style={{ padding: '8px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13 }}>
-                {isAddingSkill ? '...' : 'เพิ่ม'}
+                style={{ padding: '9px 24px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: (!newSkill.label.trim() || isAddingSkill) ? 0.5 : 1 }}>
+                {isAddingSkill ? 'กำลังบันทึก...' : '➕ เพิ่มสกิล'}
               </button>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
+                🔑 Key สร้างอัตโนมัติแบบ UUID — ชื่อไทยหรืออักขระพิเศษใช้ได้ทั้งหมด ไม่มีการชนกัน
+              </div>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
-              * ชื่อ key ถูกสร้างอัตโนมัติจากชื่อ เช่น "งานพ่นสี" → skill_
+
+            {/* Level reference */}
+            <div className="card" style={{ padding: 14, marginTop: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>มาตรฐานระดับสกิล</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {SKILL_LEVELS.slice().reverse().map(lv => (
+                  <div key={lv.min} style={{ display: 'flex', alignItems: 'center', gap: 6, background: lv.bg, borderRadius: 7, padding: '6px 12px' }}>
+                    <span style={{ fontWeight: 800, color: lv.color, fontSize: 15, minWidth: 28 }}>{lv.min}</span>
+                    <div>
+                      <div style={{ fontSize: 11, color: lv.color, fontWeight: 700 }}>{lv.label}</div>
+                      <div style={{ fontSize: 9, color: 'var(--muted)' }}>{lv.desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Tab 2: Level-Up Requests ── */}
       {tab === 2 && (
@@ -608,7 +666,7 @@ export default function Operator() {
                         {emp?.section && <span style={{ fontSize: 10, background: 'rgba(77,159,255,0.1)', color: '#4d9fff', borderRadius: 4, padding: '1px 6px' }}>{emp.section}</span>}
                       </div>
                       <div style={{ fontSize: 13, marginBottom: 4 }}>
-                        ทักษะ: <strong style={{ color: 'var(--accent)' }}>{req.skill_name}</strong>
+                        ทักษะ: <strong style={{ color: 'var(--accent)' }}>{skillDefs.find(s => s.name === req.skill_name)?.label ?? req.skill_name}</strong>
                         &nbsp;·&nbsp;
                         <span style={{ color: '#f59e0b', fontWeight: 600 }}>score {req.from_score}</span>
                         &nbsp;→&nbsp;
