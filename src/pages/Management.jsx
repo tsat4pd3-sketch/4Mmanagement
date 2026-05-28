@@ -1168,7 +1168,7 @@ export default function Management() {
             {/* Image upload */}
             <div>
               <label style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, display: 'block', marginBottom: 6 }}>
-                รูปหลักฐาน OJT <span style={{ color: '#ef4444' }}>*</span>
+                รูปหลักฐาน OJT <span style={{ color: 'var(--muted)' }}>(ไม่บังคับ)</span>
               </label>
               <div
                 style={{ border: `2px dashed ${docImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: docImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
@@ -1188,17 +1188,19 @@ export default function Management() {
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button disabled={isSavingDoc} onClick={async () => {
-                if (!docImageFile) { toast.error('กรุณาแนบรูปหลักฐาน OJT'); return; }
                 setIsSavingDoc(true);
                 try {
-                  const ext = docImageFile.name.split('.').pop();
-                  const path = `4m-requests/${Date.now()}.${ext}`;
-                  const { error: upErr } = await supabase.storage.from('4m-images').upload(path, docImageFile, { upsert: true });
-                  if (upErr) throw upErr;
-                  const { data: { publicUrl } } = supabase.storage.from('4m-images').getPublicUrl(path);
+                  let publicUrl = null;
+                  if (docImageFile) {
+                    const ext = docImageFile.name.split('.').pop();
+                    const path = `4m-requests/${Date.now()}.${ext}`;
+                    const { error: upErr } = await supabase.storage.from('4m-images').upload(path, docImageFile, { upsert: true });
+                    if (upErr) throw upErr;
+                    publicUrl = supabase.storage.from('4m-images').getPublicUrl(path).data.publicUrl;
+                  }
                   const { error: updErr } = await supabase.from('four_m_logs').update({
                     status: 'pending',
-                    request_image_url: publicUrl,
+                    ...(publicUrl ? { request_image_url: publicUrl } : {}),
                   }).eq('id', pendingDocModal.log.id);
                   if (updErr) throw updErr;
                   supabase.functions.invoke('send-notification', {
