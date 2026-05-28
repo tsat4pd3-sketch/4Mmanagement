@@ -912,29 +912,55 @@ export default function Operator() {
               </div>
 
               <div style={{ background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>
-                <label style={{ ...labelSt, marginBottom: 10, display: 'block' }}>📊 ระดับทักษะ (%)</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
-                  {skillDefs.map(sd => {
-                    const score = Number(editingEmp.skillScores?.[sd.name] ?? 0);
-                    const lv = getLevel(score);
-                    return (
-                      <div key={sd.name}>
-                        <label style={{ fontSize: 11, display: 'flex', justifyContent: 'space-between', marginBottom: 4, color: sd.color }}>
-                          <span style={{ fontWeight: 600 }}>{sd.label}</span>
-                          <span style={{ background: lv.bg, color: lv.color, borderRadius: 4, padding: '0 5px', fontSize: 9, fontWeight: 700 }}>
-                            {lv.label}
-                          </span>
-                        </label>
-                        <input type="number" value={score}
-                          onChange={e => setEditingEmp({
-                            ...editingEmp,
-                            skillScores: { ...editingEmp.skillScores, [sd.name]: e.target.value },
-                          })}
-                          min={0} max={100} />
+                <label style={{ ...labelSt, marginBottom: 12, display: 'block' }}>📊 ระดับทักษะ</label>
+                {(() => {
+                  const CAT_META = {
+                    hard_skill:    { label: 'Hard Skill',    color: '#ef4444', icon: '🔧' },
+                    machine_skill: { label: 'Machine Skill', color: '#f97316', icon: '⚙️' },
+                    product_skill: { label: 'Product Skill', color: '#3b82f6', icon: '📦' },
+                    soft_skill:    { label: 'Soft Skill',    color: '#a855f7', icon: '🧠' },
+                  };
+                  const grouped = Object.entries(CAT_META).map(([k, m]) => ({
+                    key: k, ...m, skills: skillDefs.filter(sd => (sd.category || 'hard_skill') === k),
+                  })).filter(g => g.skills.length > 0);
+                  return grouped.map(g => (
+                    <div key={g.key} style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
+                        {g.icon} {g.label}
                       </div>
-                    );
-                  })}
-                </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))', gap: 8 }}>
+                        {g.skills.map(sd => {
+                          const score = Number(editingEmp.skillScores?.[sd.name] ?? 0);
+                          const lv = getLevel(score);
+                          const pending = editingEmp.employee_skills?.find(s => s.skill_name === sd.name)?.pending_level;
+                          return (
+                            <div key={sd.name} style={{ background: 'var(--bg3)', borderRadius: 8, padding: '8px 10px', border: `1px solid ${pending ? '#f59e0b55' : 'var(--border)'}` }}>
+                              <div style={{ fontSize: 10, display: 'flex', justifyContent: 'space-between', marginBottom: 5, alignItems: 'center' }}>
+                                <span style={{ fontWeight: 600, color: sd.color, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {sd.label}
+                                  {sd.scope_section && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {sd.scope_section}</span>}
+                                </span>
+                                <span style={{ background: lv.bg, color: lv.color, borderRadius: 4, padding: '1px 5px', fontSize: 8, fontWeight: 700, flexShrink: 0, marginLeft: 4 }}>
+                                  {lv.label}
+                                </span>
+                              </div>
+                              <input type="number" value={score}
+                                onChange={e => setEditingEmp({
+                                  ...editingEmp,
+                                  skillScores: { ...editingEmp.skillScores, [sd.name]: e.target.value },
+                                })}
+                                min={0} max={100}
+                                style={{ width: '100%', boxSizing: 'border-box' }} />
+                              {pending && (
+                                <div style={{ fontSize: 8, color: '#f59e0b', fontWeight: 700, marginTop: 3 }}>⏳ รอ approve Lv.{pending}</div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ));
+                })()}
               </div>
 
               <div>
