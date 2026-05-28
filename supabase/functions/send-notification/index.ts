@@ -8,16 +8,41 @@ const supabase = createClient(
 const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN');
 const TELEGRAM_CHAT_ID   = Deno.env.get('TELEGRAM_CHAT_ID');
 
-/* ── Telegram sender ────────────────────────────── */
+/* ── Telegram senders ──────────────────────────── */
 async function sendTelegram(message: string) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: message, parse_mode: 'HTML' }),
+  });
+}
+
+async function sendTelegramPhoto(photoUrl: string, caption: string) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, photo: photoUrl, caption, parse_mode: 'HTML' }),
+  });
+}
+
+async function sendTelegramMediaGroup(photos: { url: string; caption: string }[]) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || !photos.length) return;
+  if (photos.length === 1) {
+    await sendTelegramPhoto(photos[0].url, photos[0].caption);
+    return;
+  }
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMediaGroup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       chat_id: TELEGRAM_CHAT_ID,
-      text: message,
-      parse_mode: 'HTML',
+      media: photos.map((p, i) => ({
+        type: 'photo',
+        media: p.url,
+        ...(i === 0 ? { caption: p.caption, parse_mode: 'HTML' } : {}),
+      })),
     }),
   });
 }
@@ -110,9 +135,33 @@ Deno.serve(async (req) => {
       });
     }));
 
-    /* Telegram notification (ส่งครั้งเดียวไปยัง Group) */
+    /* Telegram text notification */
     const message = await buildTelegramMessage(log, title);
     await sendTelegram(message).catch(console.error);
+
+    /* Telegram image attachments ─────────────────── */
+    /* pending_qa: SV อนุมัติแล้ว ส่งรูป OJT ให้ QA ดู */
+    if (status === 'pending_qa' && log.request_image_url) {
+      await sendTelegramPhoto(
+        log.request_image_url as string,
+        `📎 <b>รูปหลักฐาน OJT</b>\n${log.category} · ${log.line_name}\n${log.description}`
+      ).catch(console.error);
+    }
+
+    /* approved: ส่งทั้งรูป OJT + รูป QA เป็น album */
+    if (status === 'approved') {
+      const photos: { url: string; caption: string }[] = [];
+      if (log.request_image_url) {
+        photos.push({
+          url: log.request_image_url as string,
+          caption: `✅ <b>อนุมัติแล้ว — 4M ${log.category}</b>\n🏭 ${log.line_name} · 📅 ${log.work_date}\n📝 ${log.description}\n\n📎 รูปหลักฐาน OJT (ผู้แจ้ง)`,
+        });
+      }
+      if (log.qa_image_url) {
+        photos.push({ url: log.qa_image_url as string, caption: `🔍 รูปยืนยันคุณภาพ (QA)` });
+      }
+      if (photos.length) await sendTelegramMediaGroup(photos).catch(console.error);
+    }
 
     return new Response(JSON.stringify({ ok: true, sent: unique.length }), { headers: { 'Content-Type': 'application/json' } });
   } catch (err) {
