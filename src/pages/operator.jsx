@@ -55,6 +55,7 @@ export default function Operator() {
   const [employees, setEmployees] = useState([]);
   const tableWrapRef = useRef(null);
   const topScrollRef = useRef(null);
+  const [scrollState, setScrollState] = useState({ left: false, right: true, hinted: false });
   const [inactiveEmployees, setInactiveEmployees] = useState([]);
   const [showInactive, setShowInactive] = useState(false);
   const [editingEmp, setEditingEmp] = useState(null);
@@ -343,18 +344,27 @@ export default function Operator() {
     })
   );
 
-  // Keep top mirror scrollbar width in sync with actual table scroll width
+  // Keep top mirror scrollbar width in sync + track scroll shadow state
   useEffect(() => {
     const el = tableWrapRef.current;
     if (!el) return;
+    const updateScroll = () => {
+      const left = el.scrollLeft > 8;
+      const right = el.scrollLeft < el.scrollWidth - el.clientWidth - 8;
+      setScrollState(s => ({ ...s, left, right, hinted: s.hinted || el.scrollLeft > 0 }));
+      if (topScrollRef.current) topScrollRef.current.scrollLeft = el.scrollLeft;
+    };
     const obs = new ResizeObserver(() => {
       if (topScrollRef.current) {
         const inner = topScrollRef.current.firstElementChild;
         if (inner) inner.style.width = el.scrollWidth + 'px';
       }
+      updateScroll();
     });
+    el.addEventListener('scroll', updateScroll, { passive: true });
     obs.observe(el);
-    return () => obs.disconnect();
+    updateScroll();
+    return () => { el.removeEventListener('scroll', updateScroll); obs.disconnect(); };
   }, [activeSkillDefs, displayed]);
 
   return (
@@ -462,15 +472,40 @@ export default function Operator() {
             </button>
           </div>
 
-          {/* Top mirror scrollbar — synced with table */}
+          {/* Scroll hint chip */}
+          {!scrollState.hinted && scrollState.right && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--accent)', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 20, padding: '3px 10px', animation: 'pulse 2s ease-in-out infinite' }}>
+                ← เลื่อนดูสกิลเพิ่มเติม →
+              </div>
+            </div>
+          )}
+
+          {/* Table + fade overlays */}
+          <div style={{ position: 'relative' }}>
+            {/* Left fade */}
+            <div style={{ position: 'absolute', left: 220, top: 0, bottom: 14, width: 48, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to right, var(--bg2), transparent)', opacity: scrollState.left ? 1 : 0, transition: 'opacity 0.2s' }} />
+            {/* Right fade */}
+            <div style={{ position: 'absolute', right: 0, top: 0, bottom: 14, width: 64, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to left, var(--bg2), transparent)', opacity: scrollState.right ? 1 : 0, transition: 'opacity 0.2s' }}>
+              {scrollState.right && <div style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 18, color: 'var(--accent)', opacity: 0.7, animation: 'bounceX 1.2s ease-in-out infinite' }}>›</div>}
+            </div>
+
+          {/* Top mirror scrollbar */}
+          <style>{`
+            .skill-table-wrap::-webkit-scrollbar { height: 8px; }
+            .skill-table-wrap::-webkit-scrollbar-track { background: var(--bg3); border-radius: 4px; }
+            .skill-table-wrap::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 4px; opacity: 0.8; }
+            .skill-table-wrap::-webkit-scrollbar-thumb:hover { background: var(--accent2); }
+            @keyframes bounceX { 0%,100% { transform: translateY(-50%) translateX(0); } 50% { transform: translateY(-50%) translateX(5px); } }
+          `}</style>
           <div ref={topScrollRef}
             onScroll={e => { if (tableWrapRef.current) tableWrapRef.current.scrollLeft = e.target.scrollLeft; }}
-            style={{ overflowX: 'auto', overflowY: 'hidden', marginBottom: 2, borderRadius: 6 }}>
+            style={{ overflowX: 'auto', overflowY: 'hidden', borderRadius: '4px 4px 0 0' }}
+            className="skill-table-wrap">
             <div style={{ height: 1, width: tableWrapRef.current?.scrollWidth || 2000 }} />
           </div>
-          <div ref={tableWrapRef} className="card"
-            onScroll={e => { if (topScrollRef.current) topScrollRef.current.scrollLeft = e.target.scrollLeft; }}
-            style={{ overflowX: 'auto' }}>
+          <div ref={tableWrapRef} className="card skill-table-wrap"
+            style={{ overflowX: 'auto', borderRadius: '0 0 8px 8px', marginTop: 0 }}>
             <table style={{ minWidth: 560, borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
@@ -606,6 +641,7 @@ export default function Operator() {
               </tbody>
             </table>
           </div>
+          </div> {/* end position:relative wrapper */}
         </>
       )}
 
