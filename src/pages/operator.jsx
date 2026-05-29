@@ -506,7 +506,7 @@ export default function Operator() {
                     </td>
                     {skillDefs.map(sd => {
                       const skillObj = emp.employee_skills?.find(s => s.skill_name === sd.name);
-                      const hasRecord = skillObj !== undefined;
+                      const hasRecord = skillObj !== undefined && skillObj.score > 0;
                       const score = hasRecord ? skillObj.score : undefined;
                       const pending = skillObj?.pending_level ?? null;
                       const lv = hasRecord ? getLevel(score) : null;

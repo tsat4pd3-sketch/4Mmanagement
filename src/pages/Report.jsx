@@ -1252,14 +1252,11 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
 
   const catGroups = groupSkillsByCategory(skillDefs);
 
-  const radarData = skillDefs.map(s => ({
-    subject: s.label,
-    value: skillMap[s.name] ?? 0,
-    color: s.color || '#4d9fff',
-    fullMark: 100,
-  }));
+  const radarData = skillDefs
+    .map(s => ({ subject: s.label, value: skillMap[s.name] ?? 0, color: s.color || '#4d9fff', fullMark: 100 }))
+    .filter(d => d.value > 0);
 
-  const definedScores = skillDefs.map(s => skillMap[s.name]).filter(s => s !== undefined);
+  const definedScores = skillDefs.map(s => skillMap[s.name]).filter(s => s !== undefined && s > 0);
   const avg = definedScores.length ? Math.round(definedScores.reduce((a, b) => a + b, 0) / definedScores.length) : 0;
   const overall = getLevel(avg);
 
@@ -1332,7 +1329,8 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', padding: 4, alignSelf: 'flex-start' }}>✕</button>
         </div>
 
-        {/* Stat bars row */}
+        {/* Stat bars row — top 4 non-zero skills */}
+        {radarData.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(radarData.length, 4)}, 1fr)`, gap: 6, padding: '0 24px 12px' }}>
           {radarData.slice(0, 4).map(d => {
             const lv = getLevel(d.value);
@@ -1347,6 +1345,7 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
             );
           })}
         </div>
+        )}
 
         {/* Radar Chart */}
         <div style={{ padding: '0 12px 16px' }}>
@@ -1375,7 +1374,7 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
         {/* All skill bars grouped by category */}
         <div style={{ padding: '0 24px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           {catGroups.map(g => {
-            const gSkills = g.skills.map(s => ({ subject: s.label, value: skillMap[s.name] ?? 0 }));
+            const gSkills = g.skills.map(s => ({ subject: s.label, value: skillMap[s.name] ?? 0 })).filter(d => d.value > 0);
             if (gSkills.length === 0) return null;
             return (
               <div key={g.key}>

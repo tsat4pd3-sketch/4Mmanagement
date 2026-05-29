@@ -983,6 +983,8 @@ export default function Management() {
                     const skills = detailSheet.worker.employees?.employee_skills || [];
                     const score = skills.find(s => s.skill_name === sd.name)?.score ?? 0;
                     const fitReq = detailSheet.fit?.details?.find(d => d.label === sd.label);
+                    // hide skills with score 0 that have no station requirement
+                    if (score === 0 && !fitReq) return null;
                     const bar = fitReq ? (fitReq.pass ? '#22c55e' : '#ef4444') : sd.color;
                     return (
                       <div key={sd.name}>
@@ -991,7 +993,7 @@ export default function Management() {
                             <span style={{ width: 8, height: 8, borderRadius: '50%', background: sd.color, display: 'inline-block', flexShrink: 0 }} />{sd.label}
                           </span>
                           <span style={{ fontSize: 13, fontWeight: 700, color: bar }}>
-                            {score}%{fitReq && <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}>/{fitReq.required}%</span>}
+                            {score > 0 ? `${score}%` : '—'}{fitReq && <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}>/{fitReq.required}%</span>}
                             {fitReq && <span style={{ marginLeft: 4 }}>{fitReq.pass ? '✓' : '✗'}</span>}
                           </span>
                         </div>
