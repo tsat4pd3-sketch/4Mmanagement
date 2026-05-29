@@ -538,22 +538,41 @@ export default function Operator() {
                         </td>
                       );
                     })}
-                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 1, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>
+                    <td style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 1, boxShadow: '-2px 0 8px rgba(0,0,0,0.18)', padding: '0 8px' }}>
                       {emp.is_active ? (
-                        <>
-                          <button onClick={() => openEdit(emp)}
-                            style={{ padding: '6px 12px', background: 'rgba(245,158,11,0.15)', color: 'var(--amber)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 6, marginRight: 6, fontSize: 13 }}>
-                            ✏️ แก้ไข
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
+                          <button title="แก้ไขข้อมูล" onClick={() => openEdit(emp)} style={{
+                            width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
+                            background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
+                            fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            transition: 'background 0.15s, transform 0.1s',
+                          }}
+                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(245,158,11,0.28)'; e.currentTarget.style.transform = 'scale(1.15)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245,158,11,0.12)'; e.currentTarget.style.transform = 'scale(1)'; }}>
+                            ✏️
                           </button>
-                          <button onClick={() => handleDeactivate(emp.id, emp.name)}
-                            style={{ padding: '6px 12px', background: 'rgba(231,76,60,0.12)', color: 'var(--red)', border: '1px solid rgba(231,76,60,0.25)', borderRadius: 6, fontSize: 13 }}>
-                            🚫 ปิด
+                          <button title="ปิดใช้งาน" onClick={() => handleDeactivate(emp.id, emp.name)} style={{
+                            width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
+                            background: 'rgba(239,68,68,0.1)', color: '#ef4444',
+                            fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            transition: 'background 0.15s, transform 0.1s',
+                          }}
+                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.25)'; e.currentTarget.style.transform = 'scale(1.15)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; e.currentTarget.style.transform = 'scale(1)'; }}>
+                            🚫
                           </button>
-                        </>
+                        </div>
                       ) : (
-                        <button onClick={() => handleReactivate(emp.id)}
-                          style={{ padding: '6px 12px', background: 'rgba(34,197,94,0.12)', color: 'var(--green)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 6, fontSize: 13 }}>
-                          ↩ เพิ่ม
+                        <button title="เปิดใช้งานอีกครั้ง" onClick={() => handleReactivate(emp.id)} style={{
+                          width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
+                          background: 'rgba(34,197,94,0.12)', color: '#22c55e',
+                          fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          margin: '0 auto',
+                          transition: 'background 0.15s, transform 0.1s',
+                        }}
+                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(34,197,94,0.28)'; e.currentTarget.style.transform = 'scale(1.15)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(34,197,94,0.12)'; e.currentTarget.style.transform = 'scale(1)'; }}>
+                          ↩
                         </button>
                       )}
                     </td>
