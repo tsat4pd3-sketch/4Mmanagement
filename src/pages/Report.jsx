@@ -7,6 +7,16 @@ import {
   ResponsiveContainer, Tooltip,
 } from 'recharts';
 
+function useWidth() {
+  const [w, setW] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const fn = () => setW(window.innerWidth);
+    window.addEventListener('resize', fn);
+    return () => window.removeEventListener('resize', fn);
+  }, []);
+  return w;
+}
+
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -1422,6 +1432,7 @@ function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilt
 }
 
 function SkillMatrixTab() {
+  const vw = useWidth();
   const [skillDefs,      setSkillDefs]      = useState([]);
   const [employees,      setEmployees]      = useState([]);
   const [loading,        setLoading]        = useState(false);
@@ -1540,14 +1551,66 @@ ${catHeaderCells}
       {loading ? <Loader /> : (() => {
         const groups = groupSkillsByCategory(skillDefs);
         const orderedDefs = groups.flatMap(g => g.skills);
+
+        // Only show columns where at least one employee has a skill record
+        const visibleDefs = orderedDefs.filter(s =>
+          employees.some(emp => {
+            const sm = {};
+            (emp.employee_skills || []).forEach(sk => { sm[sk.skill_name] = sk.score; });
+            return sm[s.name] !== undefined;
+          })
+        );
+        const visibleGroups = groups
+          .map(g => ({ ...g, skills: g.skills.filter(s => visibleDefs.find(v => v.name === s.name)) }))
+          .filter(g => g.skills.length > 0);
+
+        // Mobile card view
+        if (vw < 768) {
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {employees.map(emp => {
+                const skillMap = {};
+                (emp.employee_skills || []).forEach(s => { skillMap[s.skill_name] = s.score; });
+                const mySkills = visibleDefs.filter(s => skillMap[s.name] !== undefined);
+                if (mySkills.length === 0) return null;
+                return (
+                  <div key={emp.id} className="card" style={{ padding: '10px 12px', cursor: 'pointer' }} onClick={() => setSelectedEmp(emp)}>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+                      {emp.image_url
+                        ? <img src={emp.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'cover' }} />
+                        : <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>{(emp.name || '?')[0]}</div>
+                      }
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>{emp.name}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {mySkills.map(s => {
+                        const score = skillMap[s.name];
+                        const lv = getLevel(score);
+                        return (
+                          <span key={s.name} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: lv.bg, color: lv.color, border: `1px solid ${lv.color}33` }}>
+                            {s.label} {score}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        }
+
         return (
-          <div className="card" style={{ overflowX: 'auto' }}>
-            <table style={{ minWidth: 220 + orderedDefs.length * 90 }}>
+          <div className="card" style={{ overflowX: 'auto', position: 'relative' }}>
+            <table style={{ minWidth: 220 + visibleDefs.length * 44 }}>
               <thead>
                 {/* Category group row */}
                 <tr>
-                  <th colSpan={2} style={{ borderBottom: 'none', background: 'var(--bg2)' }} />
-                  {groups.map(g => (
+                  <th colSpan={2} style={{ borderBottom: 'none', background: 'var(--card)', position: 'sticky', left: 0, zIndex: 4 }} />
+                  {visibleGroups.map(g => (
                     <th key={g.key} colSpan={g.skills.length}
                       style={{ textAlign: 'center', fontSize: 10, fontWeight: 800, color: g.color,
                         background: `${g.color}10`, borderBottom: `2px solid ${g.color}44`,
@@ -1558,23 +1621,39 @@ ${catHeaderCells}
                 </tr>
                 {/* Skill name row */}
                 <tr>
-                  <th style={{ minWidth: 44, textAlign: 'center' }}>รูป</th>
-                  <th style={{ minWidth: 130, textAlign: 'left' }}>พนักงาน</th>
-                  {groups.map(g => g.skills.map((s, si) => (
-                    <th key={s.name} style={{ minWidth: 82, textAlign: 'center', fontSize: 10,
-                      borderLeft: si === 0 ? `2px solid ${g.color}33` : undefined }}>
-                      <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: s.color || g.color, marginRight: 3 }} />
-                      {s.label}
-                      {s.scope_section && <div style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 400 }}>📍{s.scope_section}</div>}
+                  <th style={{ minWidth: 44, textAlign: 'center', position: 'sticky', left: 0, zIndex: 3, background: 'var(--card)' }}>รูป</th>
+                  <th style={{ minWidth: 130, textAlign: 'left', position: 'sticky', left: 52, zIndex: 3, background: 'var(--card)' }}>พนักงาน</th>
+                  {visibleGroups.map(g => g.skills.map((s, si) => (
+                    <th key={s.name} style={{
+                      minWidth: 44,
+                      textAlign: 'center',
+                      fontSize: 9,
+                      verticalAlign: 'bottom',
+                      padding: '4px 2px',
+                      borderLeft: si === 0 ? `2px solid ${g.color}33` : undefined,
+                    }}>
+                      <div style={{
+                        writingMode: 'vertical-rl',
+                        transform: 'rotate(180deg)',
+                        whiteSpace: 'nowrap',
+                        height: 80,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                        paddingBottom: 4,
+                      }}>
+                        <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: s.color || g.color, marginBottom: 3 }} />
+                        {s.label}
+                      </div>
                     </th>
                   )))}
                 </tr>
               </thead>
               <tbody>
-                {employees.length === 0 ? <EmptyRow cols={2 + orderedDefs.length} /> : employees.map(emp => {
+                {employees.length === 0 ? <EmptyRow cols={2 + visibleDefs.length} /> : employees.map(emp => {
                   const skillMap = {};
                   (emp.employee_skills || []).forEach(s => { skillMap[s.skill_name] = s.score; });
-                  const assignedScores = orderedDefs.map(s => skillMap[s.name]).filter(s => s !== undefined);
+                  const assignedScores = visibleDefs.map(s => skillMap[s.name]).filter(s => s !== undefined);
                   const avg = assignedScores.length ? Math.round(assignedScores.reduce((a, b) => a + b, 0) / assignedScores.length) : null;
                   const avgLv = avg !== null ? getLevel(avg) : { color: 'var(--border2)', bg: 'var(--bg3)', label: '' };
 
@@ -1583,13 +1662,13 @@ ${catHeaderCells}
                       style={{ cursor: 'pointer', transition: 'background 0.15s' }}
                       onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
                       onMouseLeave={e => e.currentTarget.style.background = ''}>
-                      <td style={{ textAlign: 'center', padding: '8px 6px' }}>
+                      <td style={{ textAlign: 'center', padding: '8px 6px', position: 'sticky', left: 0, zIndex: 2, background: 'var(--bg)' }}>
                         {emp.image_url
                           ? <img src={emp.image_url} alt="" style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'cover', border: `2px solid ${avgLv.color}66`, display: 'block', margin: '0 auto' }} />
                           : <div style={{ width: 38, height: 38, borderRadius: 10, margin: '0 auto', background: `${avgLv.color}22`, border: `2px solid ${avgLv.color}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: avgLv.color }}>{(emp.name || '?')[0]}</div>
                         }
                       </td>
-                      <td>
+                      <td style={{ position: 'sticky', left: 52, zIndex: 2, background: 'var(--bg)' }}>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>{emp.name}</div>
                         <div style={{ fontSize: 10, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
                         {avg !== null && (
@@ -1598,7 +1677,7 @@ ${catHeaderCells}
                           </div>
                         )}
                       </td>
-                      {groups.map(g => g.skills.map((s, si) => {
+                      {visibleGroups.map(g => g.skills.map((s, si) => {
                         const score = skillMap[s.name];
                         if (score === undefined) return (
                           <td key={s.name} style={{ textAlign: 'center', borderLeft: si === 0 ? `2px solid ${g.color}22` : undefined }}>
@@ -1608,9 +1687,9 @@ ${catHeaderCells}
                         const lv = getLevel(score);
                         return (
                           <td key={s.name} style={{ textAlign: 'center', padding: '6px 4px', borderLeft: si === 0 ? `2px solid ${g.color}22` : undefined }}>
-                            <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', background: lv.bg, borderRadius: 6, padding: '4px 8px', minWidth: 48 }}>
-                              <span style={{ fontSize: 13, fontWeight: 700, color: lv.color }}>{score}</span>
-                              <span style={{ fontSize: 8, color: lv.color, marginTop: 1 }}>{lv.label}</span>
+                            <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', background: lv.bg, borderRadius: 4, padding: '3px 4px', minWidth: 36 }}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: lv.color }}>{score}</span>
+                              <span style={{ fontSize: 7, color: lv.color }}>{lv.label}</span>
                             </div>
                           </td>
                         );
@@ -1845,6 +1924,7 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
 }
 
 function MultiSkillFormTab() {
+  const vw = useWidth();
   const { role, signatureUrl: ctxSigUrl, fullName: ctxFullName } = useContext(UserContext);
 
   const [skillDefs,     setSkillDefs]     = useState([]);
@@ -1960,23 +2040,37 @@ function MultiSkillFormTab() {
   const msCatGroups  = useMemo(() => groupSkillsByCategory(skillDefs), [skillDefs]);
   const msOrderedDefs = useMemo(() => msCatGroups.flatMap(g => g.skills), [msCatGroups]);
 
+  // Filter to only skills where at least one employee has a record
+  const msVisibleDefs = useMemo(() => msOrderedDefs.filter(s =>
+    employees.some(emp => {
+      const sm = {};
+      (emp.employee_skills || []).forEach(sk => { sm[sk.skill_name] = sk.score; });
+      return sm[s.name] !== undefined;
+    })
+  ), [msOrderedDefs, employees]);
+
+  const msVisibleGroups = useMemo(() => msCatGroups
+    .map(g => ({ ...g, skills: g.skills.filter(s => msVisibleDefs.find(v => v.name === s.name)) }))
+    .filter(g => g.skills.length > 0),
+  [msCatGroups, msVisibleDefs]);
+
   // Precompute per-employee levels once (avoids O(n*skills) recalculation on every render)
   const empLevelRows = useMemo(() => employees.map(emp => {
     const sm = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
-    const levels = msOrderedDefs.map(s => scoreToLevel(sm[s.name]));
+    const levels = msVisibleDefs.map(s => scoreToLevel(sm[s.name]));
     const validLevels = levels.filter(l => l > 0);
     const overall = validLevels.length
       ? Math.round(validLevels.reduce((a, b) => a + b, 0) / validLevels.length)
       : 0;
     return { emp, levels, overall };
-  }), [employees, msOrderedDefs]);
+  }), [employees, msVisibleDefs]);
 
   // Precompute summary counts (avoids O(levels*skills*employees) inline in JSX)
   const summaryCounts = useMemo(() => MS_LEVELS.map(lv => ({
     lv,
-    counts: msOrderedDefs.map((_, si) => empLevelRows.filter(r => r.levels[si] === lv.level).length),
+    counts: msVisibleDefs.map((_, si) => empLevelRows.filter(r => r.levels[si] === lv.level).length),
     total:  empLevelRows.filter(r => r.overall === lv.level).length,
-  })), [empLevelRows, msOrderedDefs]);
+  })), [empLevelRows, msVisibleDefs]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
