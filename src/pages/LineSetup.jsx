@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
 const SKILL_CAT_META = {
-  hard_skill:    { label: 'Hard Skill',    color: '#ef4444', icon: '🔧' },
-  machine_skill: { label: 'Machine Skill', color: '#f97316', icon: '⚙️' },
-  product_skill: { label: 'Product Skill', color: '#3b82f6', icon: '📦' },
-  soft_skill:    { label: 'Soft Skill',    color: '#a855f7', icon: '🧠' },
+  hard_skill:    { label: 'Hard Skill',    color: '#ef4444', icon: '🔧', desc: 'ทักษะการทำงานรูปแบบต่างๆ' },
+  machine_skill: { label: 'Machine Skill', color: '#f97316', icon: '⚙️', desc: 'ใช้ ปรับตั้ง ควบคุมเครื่องจักร' },
+  product_skill: { label: 'Product Skill', color: '#3b82f6', icon: '📦', desc: 'คุณภาพกระบวนการผลิต' },
+  soft_skill:    { label: 'Soft Skill',    color: '#a855f7', icon: '🧠', desc: 'หลักการคิด ระบบการทำงาน' },
 };
 
 const CARD_W = 60;
@@ -413,8 +413,9 @@ export default function LineSetup() {
                       if (catSkills.length === 0) return null;
                       return (
                         <div key={catKey}>
-                          <div style={{ fontSize: 10, fontWeight: 800, color: catMeta.color, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4, paddingBottom: 3, borderBottom: `1px solid ${catMeta.color}33` }}>
-                            {catMeta.icon} {catMeta.label}
+                          <div style={{ marginBottom: 4, paddingBottom: 3, borderBottom: `1px solid ${catMeta.color}33`, display: 'flex', alignItems: 'baseline', gap: 7 }}>
+                            <span style={{ fontSize: 10, fontWeight: 800, color: catMeta.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{catMeta.icon} {catMeta.label}</span>
+                            {catMeta.desc && <span style={{ fontSize: 9, color: catMeta.color, opacity: 0.7 }}>{catMeta.desc}</span>}
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                             {catSkills.map(skill => {

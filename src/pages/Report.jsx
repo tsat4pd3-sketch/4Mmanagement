@@ -102,10 +102,10 @@ const SKILL_LEVELS = [
 const getLevel = (score) => SKILL_LEVELS.find(l => score >= l.min) ?? SKILL_LEVELS[4];
 
 const SKILL_CAT_META = {
-  hard_skill:    { label: 'Hard Skill',    color: '#ef4444', icon: '🔧' },
-  machine_skill: { label: 'Machine Skill', color: '#f97316', icon: '⚙️' },
-  product_skill: { label: 'Product Skill', color: '#3b82f6', icon: '📦' },
-  soft_skill:    { label: 'Soft Skill',    color: '#a855f7', icon: '🧠' },
+  hard_skill:    { label: 'Hard Skill',    color: '#ef4444', icon: '🔧', desc: 'ทักษะการทำงานรูปแบบต่างๆ' },
+  machine_skill: { label: 'Machine Skill', color: '#f97316', icon: '⚙️', desc: 'ใช้ ปรับตั้ง ควบคุมเครื่องจักร' },
+  product_skill: { label: 'Product Skill', color: '#3b82f6', icon: '📦', desc: 'คุณภาพกระบวนการผลิต' },
+  soft_skill:    { label: 'Soft Skill',    color: '#a855f7', icon: '🧠', desc: 'หลักการคิด ระบบการทำงาน' },
 };
 // Group skillDefs by category, preserving sort_order within each group
 const groupSkillsByCategory = (defs) =>
@@ -1378,8 +1378,9 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
             if (gSkills.length === 0) return null;
             return (
               <div key={g.key}>
-                <div style={{ fontSize: 9, fontWeight: 800, color: g.color, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 6, borderBottom: `1px solid ${g.color}33`, paddingBottom: 3 }}>
-                  {g.icon} {g.label}
+                <div style={{ marginBottom: 6, borderBottom: `1px solid ${g.color}33`, paddingBottom: 3 }}>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: g.color, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{g.icon} {g.label}</span>
+                  {g.desc && <span style={{ fontSize: 8, color: g.color, opacity: 0.7, marginLeft: 6 }}>{g.desc}</span>}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                   {gSkills.map(d => {
@@ -1611,10 +1612,11 @@ ${catHeaderCells}
                   <th colSpan={2} style={{ borderBottom: 'none', background: 'var(--card)', position: 'sticky', left: 0, zIndex: 4 }} />
                   {visibleGroups.map(g => (
                     <th key={g.key} colSpan={g.skills.length}
-                      style={{ textAlign: 'center', fontSize: 10, fontWeight: 800, color: g.color,
+                      style={{ textAlign: 'center', color: g.color,
                         background: `${g.color}10`, borderBottom: `2px solid ${g.color}44`,
-                        letterSpacing: '0.06em', padding: '5px 4px', borderLeft: `2px solid ${g.color}33` }}>
-                      {g.icon} {g.label}
+                        padding: '5px 4px', borderLeft: `2px solid ${g.color}33` }}>
+                      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.06em' }}>{g.icon} {g.label}</div>
+                      {g.desc && <div style={{ fontSize: 8, fontWeight: 400, opacity: 0.75, marginTop: 1 }}>{g.desc}</div>}
                     </th>
                   ))}
                 </tr>
@@ -2221,8 +2223,9 @@ function MultiSkillFormTab() {
                   <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120, position: 'sticky', left: 30, zIndex: 3 }}>ชื่อ-สกุล</th>
                   <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 80, position: 'sticky', left: 150, zIndex: 3 }}>ตำแหน่ง</th>
                   {msVisibleGroups.map(g => (
-                    <th key={g.key} colSpan={g.skills.length} style={{ border: '1px solid var(--border2)', padding: '3px 4px', background: `${g.color}15`, color: g.color, textAlign: 'center', fontSize: 10, fontWeight: 800 }}>
-                      {g.icon} {g.label}
+                    <th key={g.key} colSpan={g.skills.length} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: `${g.color}15`, color: g.color, textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.04em' }}>{g.icon} {g.label}</div>
+                      {g.desc && <div style={{ fontSize: 8, fontWeight: 400, color: g.color, opacity: 0.75, marginTop: 1 }}>{g.desc}</div>}
                     </th>
                   ))}
                   <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'rgba(34,197,94,0.12)', color: '#22c55e', width: 44, textAlign: 'center', fontSize: 9, verticalAlign: 'bottom' }}>ทักษะโดยรวม</th>

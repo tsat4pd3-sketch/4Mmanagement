@@ -587,10 +587,10 @@ export default function Operator() {
 
       {tab === 1 && (() => {
         const CAT_META = {
-          hard_skill:    { label: 'Hard Skill',    color: '#ef4444', icon: '🔧' },
-          machine_skill: { label: 'Machine Skill', color: '#f97316', icon: '⚙️' },
-          product_skill: { label: 'Product Skill', color: '#3b82f6', icon: '📦' },
-          soft_skill:    { label: 'Soft Skill',    color: '#a855f7', icon: '🧠' },
+          hard_skill:    { label: 'Hard Skill',    color: '#ef4444', icon: '🔧', desc: 'ทักษะการทำงานรูปแบบต่างๆ' },
+          machine_skill: { label: 'Machine Skill', color: '#f97316', icon: '⚙️', desc: 'ใช้ ปรับตั้ง ควบคุมเครื่องจักร' },
+          product_skill: { label: 'Product Skill', color: '#3b82f6', icon: '📦', desc: 'คุณภาพกระบวนการผลิต' },
+          soft_skill:    { label: 'Soft Skill',    color: '#a855f7', icon: '🧠', desc: 'หลักการคิด ระบบการทำงาน' },
         };
         const grouped = Object.entries(CAT_META).map(([k, m]) => ({
           key: k, ...m, skills: skillDefs.filter(sd => (sd.category || 'hard_skill') === k),
@@ -601,8 +601,9 @@ export default function Operator() {
             {/* Skill list grouped by category */}
             {grouped.map(g => g.skills.length === 0 ? null : (
               <div key={g.key} style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {g.icon} {g.label}
+                <div style={{ marginBottom: 8, display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.icon} {g.label}</span>
+                  {g.desc && <span style={{ fontSize: 10, color: g.color, opacity: 0.7 }}>{g.desc}</span>}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
                   {g.skills.map(sd => (
@@ -983,8 +984,9 @@ export default function Operator() {
                   })).filter(g => g.skills.length > 0);
                   return grouped.map(g => (
                     <div key={g.key} style={{ marginBottom: 14 }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
-                        {g.icon} {g.label}
+                      <div style={{ marginBottom: 6, display: 'flex', alignItems: 'baseline', gap: 7 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.icon} {g.label}</span>
+                        {g.desc && <span style={{ fontSize: 9, color: g.color, opacity: 0.7 }}>{g.desc}</span>}
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))', gap: 8 }}>
                         {g.skills.map(sd => {
