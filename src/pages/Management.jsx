@@ -895,21 +895,24 @@ export default function Management() {
               </div>
               <button onClick={() => setRadarWorker(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', padding: '0 4px', alignSelf: 'flex-start' }}>✕</button>
             </div>
-            {skillDefs.length > 0 ? (
-              <>
+            {skillDefs.length > 0 ? (() => {
+              const workerSkills = radarWorker.employees?.employee_skills || [];
+              const radarDataFiltered = skillDefs
+                .map(sd => ({ subject: sd.label, score: workerSkills.find(s => s.skill_name === sd.name)?.score ?? 0, fullMark: 100 }))
+                .filter(d => d.score > 0);
+              if (radarDataFiltered.length === 0) return (
+                <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '20px 0' }}>ยังไม่มีข้อมูลทักษะ</div>
+              );
+              return (
                 <ResponsiveContainer width="100%" height={200}>
-                  <RadarChart data={skillDefs.map(sd => ({
-                    subject: sd.label,
-                    score: radarWorker.employees?.employee_skills?.find(s => s.skill_name === sd.name)?.score ?? 0,
-                    fullMark: 100,
-                  }))}>
+                  <RadarChart data={radarDataFiltered}>
                     <PolarGrid stroke="var(--border2)" />
                     <PolarAngleAxis dataKey="subject" tick={{ fill: 'var(--text2)', fontSize: 10 }} />
                     <Radar name="ทักษะ" dataKey="score" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.25} strokeWidth={2} />
                   </RadarChart>
                 </ResponsiveContainer>
-              </>
-            ) : (
+              );
+            })() : (
               <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '20px 0' }}>ยังไม่มีข้อมูลทักษะ</div>
             )}
           </div>
@@ -1373,11 +1376,9 @@ function WorkerHoverCard({ card, skillDefs }) {
   if (left + tooltipW > window.innerWidth - 12) left = rect.left - tooltipW - gap;
   const top = Math.max(8, Math.min(rect.top - 20, window.innerHeight - 400));
 
-  const radarData = skillDefs.map(sd => ({
-    skill: sd.label,
-    score: skills.find(s => s.skill_name === sd.name)?.score ?? 0,
-    fullMark: 100,
-  }));
+  const radarData = skillDefs
+    .map(sd => ({ skill: sd.label, score: skills.find(s => s.skill_name === sd.name)?.score ?? 0, fullMark: 100 }))
+    .filter(d => d.score > 0);
 
   return (
     <div style={{ position: 'fixed', top, left, width: tooltipW, zIndex: 3000, pointerEvents: 'none', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: '14px 14px 10px', animation: 'hoverIn 0.18s ease' }}>
@@ -1432,16 +1433,17 @@ function WorkerHoverCard({ card, skillDefs }) {
               </RadarChart>
             </ResponsiveContainer>
           </div>
-          {/* Score legend */}
+          {/* Score legend — only show skills with score > 0 */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 10px', marginTop: 2 }}>
             {skillDefs.map(sd => {
               const score = skills.find(s => s.skill_name === sd.name)?.score ?? 0;
               const fitReq = fit?.details?.find(d => d.label === sd.label);
+              if (score === 0 && !fitReq) return null;
               const pass = fitReq ? fitReq.pass : null;
               return (
                 <span key={sd.name} style={{ fontSize: 9, color: pass === false ? '#ef4444' : pass === true ? 'var(--accent)' : 'var(--muted)' }}>
                   <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: sd.color, marginRight: 3 }} />
-                  {sd.label} <strong>{score}</strong>{fitReq ? `/${fitReq.required}` : ''}
+                  {sd.label} <strong>{score > 0 ? score : '—'}</strong>{fitReq ? `/${fitReq.required}` : ''}
                 </span>
               );
             })}

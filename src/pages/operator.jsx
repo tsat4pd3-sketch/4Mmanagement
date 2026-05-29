@@ -438,24 +438,24 @@ export default function Operator() {
             </button>
           </div>
 
-          <div className="card" style={{ overflowX: 'auto' }}>
+          <div className="card" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 210px)' }}>
             <table style={{ minWidth: 560, borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  <th style={{ position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 2 }}>โปรไฟล์</th>
-                  <th style={{ position: 'sticky', left: 58, background: 'var(--bg2)', zIndex: 2 }}>ID</th>
-                  <th style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 2, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>ชื่อ</th>
-                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Section</th>
-                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Group</th>
-                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Team</th>
-                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>วันเริ่มงาน</th>
+                  <th style={{ position: 'sticky', left: 0, top: 0, background: 'var(--bg2)', zIndex: 4 }}>โปรไฟล์</th>
+                  <th style={{ position: 'sticky', left: 58, top: 0, background: 'var(--bg2)', zIndex: 4 }}>ID</th>
+                  <th style={{ position: 'sticky', left: 148, top: 0, background: 'var(--bg2)', zIndex: 4, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>ชื่อ</th>
+                  <th style={{ fontSize: 10, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 2 }}>Section</th>
+                  <th style={{ fontSize: 10, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 2 }}>Group</th>
+                  <th style={{ fontSize: 10, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 2 }}>Team</th>
+                  <th style={{ fontSize: 10, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 2 }}>วันเริ่มงาน</th>
                   {skillDefs.map(sd => (
-                    <th key={sd.name} style={{ fontSize: 10, color: sd.color, whiteSpace: 'nowrap' }}>
+                    <th key={sd.name} style={{ fontSize: 10, color: sd.color, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 2 }}>
                       <div>{{ hard_skill:'🔧', machine_skill:'⚙️', product_skill:'📦', soft_skill:'🧠' }[sd.category || 'hard_skill']} {sd.label}</div>
                       {sd.scope_section && <div style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 400 }}>📍{sd.scope_section}</div>}
                     </th>
                   ))}
-                  <th style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 2, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>จัดการ</th>
+                  <th style={{ textAlign: 'center', position: 'sticky', right: 0, top: 0, background: 'var(--bg2)', zIndex: 4, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>จัดการ</th>
                 </tr>
               </thead>
               <tbody>

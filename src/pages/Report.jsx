@@ -2048,8 +2048,13 @@ function MultiSkillFormTab() {
   // Precompute per-employee levels once (avoids O(n*skills) recalculation on every render)
   const empLevelRows = useMemo(() => employees.map(emp => {
     const sm = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
-    const levels = msVisibleDefs.map(s => scoreToLevel(sm[s.name]));
-    const validLevels = levels.filter(l => l > 0);
+    // null = N/A (no record or score=0), number = valid level
+    const levels = msVisibleDefs.map(s => {
+      const score = sm[s.name];
+      if (score === undefined || score === 0) return null;
+      return scoreToLevel(score);
+    });
+    const validLevels = levels.filter(l => l !== null && l > 0);
     const overall = validLevels.length
       ? Math.round(validLevels.reduce((a, b) => a + b, 0) / validLevels.length)
       : 0;
@@ -2059,7 +2064,7 @@ function MultiSkillFormTab() {
   // Precompute summary counts (avoids O(levels*skills*employees) inline in JSX)
   const summaryCounts = useMemo(() => MS_LEVELS.map(lv => ({
     lv,
-    counts: msVisibleDefs.map((_, si) => empLevelRows.filter(r => r.levels[si] === lv.level).length),
+    counts: msVisibleDefs.map((_, si) => empLevelRows.filter(r => r.levels[si] !== null && r.levels[si] === lv.level).length),
     total:  empLevelRows.filter(r => r.overall === lv.level).length,
   })), [empLevelRows, msVisibleDefs]);
 
@@ -2253,7 +2258,9 @@ function MultiSkillFormTab() {
                       const firstInGroup = g && g.skills[0].name === s.name;
                       return (
                         <td key={si} style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '4px 2px', borderLeft: firstInGroup ? `2px solid ${g.color}22` : undefined }}>
-                          <SkillGauge level={lv} size={30} />
+                          {lv === null
+                            ? <span style={{ color: 'var(--border2)', fontSize: 11 }}>—</span>
+                            : <SkillGauge level={lv} size={30} />}
                         </td>
                       );
                     })}

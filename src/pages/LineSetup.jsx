@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
+const SKILL_CAT_META = {
+  hard_skill:    { label: 'Hard Skill',    color: '#ef4444', icon: '🔧' },
+  machine_skill: { label: 'Machine Skill', color: '#f97316', icon: '⚙️' },
+  product_skill: { label: 'Product Skill', color: '#3b82f6', icon: '📦' },
+  soft_skill:    { label: 'Soft Skill',    color: '#a855f7', icon: '🧠' },
+};
+
 const CARD_W = 60;
 
 export default function LineSetup() {
@@ -400,31 +407,44 @@ export default function LineSetup() {
                     ยังไม่มีสกิล — กำหนดสกิลได้ที่หน้า Operator
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {skillDefs.map(skill => {
-                      const checked = skill.name in formData.requirements;
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {Object.entries(SKILL_CAT_META).map(([catKey, catMeta]) => {
+                      const catSkills = skillDefs.filter(s => (s.category || 'hard_skill') === catKey);
+                      if (catSkills.length === 0) return null;
                       return (
-                        <div key={skill.name} style={{
-                          display: 'flex', alignItems: 'center', gap: 6,
-                          padding: '6px 8px', borderRadius: 6,
-                          background: checked ? 'rgba(77,159,255,0.1)' : 'var(--bg3)',
-                          border: `1px solid ${checked ? 'var(--blue)' : 'var(--border)'}`,
-                        }}>
-                          <input type="checkbox" style={{ width: 'auto', flexShrink: 0 }}
-                            checked={checked} onChange={() => toggleSkillReq(skill.name)} />
-                          <span style={{ fontSize: 11, color: 'var(--text2)', flex: 1 }}>
-                            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: skill.color || '#4d9fff', marginRight: 4 }} />
-                            {skill.label}
-                          </span>
-                          {checked && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                              <input type="number" min={0} max={100}
-                                value={formData.requirements[skill.name]}
-                                onChange={e => setSkillScore(skill.name, e.target.value)}
-                                style={{ width: 46, fontSize: 11, padding: '2px 4px', textAlign: 'center' }} />
-                              <span style={{ fontSize: 10, color: 'var(--muted)' }}>%</span>
-                            </div>
-                          )}
+                        <div key={catKey}>
+                          <div style={{ fontSize: 10, fontWeight: 800, color: catMeta.color, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4, paddingBottom: 3, borderBottom: `1px solid ${catMeta.color}33` }}>
+                            {catMeta.icon} {catMeta.label}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            {catSkills.map(skill => {
+                              const checked = skill.name in formData.requirements;
+                              return (
+                                <div key={skill.name} style={{
+                                  display: 'flex', alignItems: 'center', gap: 6,
+                                  padding: '5px 8px', borderRadius: 6,
+                                  background: checked ? `${catMeta.color}12` : 'var(--bg3)',
+                                  border: `1px solid ${checked ? catMeta.color + '55' : 'var(--border)'}`,
+                                }}>
+                                  <input type="checkbox" style={{ width: 'auto', flexShrink: 0 }}
+                                    checked={checked} onChange={() => toggleSkillReq(skill.name)} />
+                                  <span style={{ fontSize: 11, color: 'var(--text2)', flex: 1 }}>
+                                    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: skill.color || catMeta.color, marginRight: 4 }} />
+                                    {skill.label}
+                                  </span>
+                                  {checked && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                                      <input type="number" min={0} max={100}
+                                        value={formData.requirements[skill.name]}
+                                        onChange={e => setSkillScore(skill.name, e.target.value)}
+                                        style={{ width: 46, fontSize: 11, padding: '2px 4px', textAlign: 'center' }} />
+                                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>%</span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       );
                     })}
