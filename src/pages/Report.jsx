@@ -1571,7 +1571,7 @@ ${catHeaderCells}
               {employees.map(emp => {
                 const skillMap = {};
                 (emp.employee_skills || []).forEach(s => { skillMap[s.skill_name] = s.score; });
-                const mySkills = visibleDefs.filter(s => skillMap[s.name] !== undefined);
+                const mySkills = visibleDefs.filter(s => skillMap[s.name] !== undefined && skillMap[s.name] > 0);
                 if (mySkills.length === 0) return null;
                 return (
                   <div key={emp.id} className="card" style={{ padding: '10px 12px', cursor: 'pointer' }} onClick={() => setSelectedEmp(emp)}>
@@ -1625,25 +1625,17 @@ ${catHeaderCells}
                   <th style={{ minWidth: 130, textAlign: 'left', position: 'sticky', left: 52, zIndex: 3, background: 'var(--card)' }}>พนักงาน</th>
                   {visibleGroups.map(g => g.skills.map((s, si) => (
                     <th key={s.name} style={{
-                      minWidth: 44,
+                      minWidth: 56,
+                      maxWidth: 70,
                       textAlign: 'center',
                       fontSize: 9,
                       verticalAlign: 'bottom',
-                      padding: '4px 2px',
+                      padding: '4px 3px 6px',
                       borderLeft: si === 0 ? `2px solid ${g.color}33` : undefined,
                     }}>
-                      <div style={{
-                        writingMode: 'vertical-rl',
-                        transform: 'rotate(180deg)',
-                        whiteSpace: 'nowrap',
-                        height: 80,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'flex-end',
-                        paddingBottom: 4,
-                      }}>
-                        <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: s.color || g.color, marginBottom: 3 }} />
-                        {s.label}
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                        <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: s.color || g.color, flexShrink: 0 }} />
+                        <span style={{ wordBreak: 'break-word', lineHeight: 1.3, whiteSpace: 'normal' }}>{s.label}</span>
                       </div>
                     </th>
                   )))}
@@ -1653,7 +1645,7 @@ ${catHeaderCells}
                 {employees.length === 0 ? <EmptyRow cols={2 + visibleDefs.length} /> : employees.map(emp => {
                   const skillMap = {};
                   (emp.employee_skills || []).forEach(s => { skillMap[s.skill_name] = s.score; });
-                  const assignedScores = visibleDefs.map(s => skillMap[s.name]).filter(s => s !== undefined);
+                  const assignedScores = visibleDefs.map(s => skillMap[s.name]).filter(s => s !== undefined && s > 0);
                   const avg = assignedScores.length ? Math.round(assignedScores.reduce((a, b) => a + b, 0) / assignedScores.length) : null;
                   const avgLv = avg !== null ? getLevel(avg) : { color: 'var(--border2)', bg: 'var(--bg3)', label: '' };
 
@@ -1679,7 +1671,7 @@ ${catHeaderCells}
                       </td>
                       {visibleGroups.map(g => g.skills.map((s, si) => {
                         const score = skillMap[s.name];
-                        if (score === undefined) return (
+                        if (score === undefined || score === 0) return (
                           <td key={s.name} style={{ textAlign: 'center', borderLeft: si === 0 ? `2px solid ${g.color}22` : undefined }}>
                             <span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span>
                           </td>
@@ -2237,13 +2229,13 @@ function MultiSkillFormTab() {
                     const firstInGroup = g && g.skills[0].name === s.name;
                     return (
                       <th key={s.name} style={{
-                        minWidth: 44, textAlign: 'center', fontSize: 9, verticalAlign: 'bottom',
-                        padding: '4px 2px', border: '1px solid var(--border2)', background: 'var(--bg3)',
+                        minWidth: 56, maxWidth: 70, textAlign: 'center', fontSize: 9, verticalAlign: 'bottom',
+                        padding: '4px 3px 6px', border: '1px solid var(--border2)', background: 'var(--bg3)',
                         borderLeft: firstInGroup ? `2px solid ${g.color}44` : undefined,
                       }}>
-                        <div style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', whiteSpace: 'nowrap', height: 80, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 4 }}>
-                          <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: s.color || (g?.color || '#888'), marginBottom: 3 }} />
-                          {s.label}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                          <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: s.color || (g?.color || '#888'), flexShrink: 0 }} />
+                          <span style={{ wordBreak: 'break-word', lineHeight: 1.3, whiteSpace: 'normal' }}>{s.label}</span>
                         </div>
                       </th>
                     );
