@@ -342,7 +342,7 @@ export default function Operator() {
   );
 
   return (
-    <div className="page-content">
+    <div className="page-content" style={{ height: 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
         <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
           👥 ฐานข้อมูลพนักงาน
@@ -387,7 +387,7 @@ export default function Operator() {
       </div>
 
       {tab === 0 && (
-        <>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {/* Section / Group / Team / Grade filters */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             {[
@@ -446,7 +446,7 @@ export default function Operator() {
             </button>
           </div>
 
-          <div className="card" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)' }}>
+          <div className="card" style={{ flex: 1, overflowX: 'auto', overflowY: 'auto', minHeight: 0 }}>
             <table style={{ minWidth: 560, borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
@@ -563,7 +563,7 @@ export default function Operator() {
               </tbody>
             </table>
           </div>
-        </>
+        </div>
       )}
 
       {tab === 1 && (() => {
