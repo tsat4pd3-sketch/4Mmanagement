@@ -2185,40 +2185,87 @@ function MultiSkillFormTab() {
               ))}
             </div>
 
-            <table style={{ minWidth: 300 + msOrderedDefs.length * 70, borderCollapse: 'collapse', fontSize: 12 }}>
+            {vw < 768 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {empLevelRows.map(({ emp, levels, overall }, i) => {
+                  const mySkills = msVisibleDefs.filter((_, si) => levels[si] > 0);
+                  if (mySkills.length === 0) return null;
+                  return (
+                    <div key={emp.id} className="card" style={{ padding: '10px 12px' }}>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+                        <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>{(emp.name || '?')[0]}</div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 14 }}>{emp.name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code} · {emp.position || ''}</div>
+                        </div>
+                        <div style={{ marginLeft: 'auto' }}><SkillGauge level={overall} size={32} /></div>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {mySkills.map((s, idx) => {
+                          const si = msVisibleDefs.indexOf(s);
+                          const lv = levels[si];
+                          const m = msStyle(lv);
+                          return (
+                            <span key={s.name} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: m.bg + '55', color: m.color, border: `1px solid ${m.border}55` }}>
+                              {s.label} L{lv}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+            <div style={{ overflowX: 'auto', position: 'relative' }}>
+            <table style={{ minWidth: 220 + msVisibleDefs.length * 44, borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr>
-                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', width: 30, textAlign: 'center' }}>#</th>
-                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', width: 80 }}>รหัส</th>
-                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120 }}>ชื่อ-สกุล</th>
-                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 80 }}>ตำแหน่ง</th>
-                  {msCatGroups.map(g => (
+                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', width: 30, textAlign: 'center', position: 'sticky', left: 0, zIndex: 3 }}>#</th>
+                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120, position: 'sticky', left: 30, zIndex: 3 }}>ชื่อ-สกุล</th>
+                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 80, position: 'sticky', left: 150, zIndex: 3 }}>ตำแหน่ง</th>
+                  {msVisibleGroups.map(g => (
                     <th key={g.key} colSpan={g.skills.length} style={{ border: '1px solid var(--border2)', padding: '3px 4px', background: `${g.color}15`, color: g.color, textAlign: 'center', fontSize: 10, fontWeight: 800 }}>
                       {g.icon} {g.label}
                     </th>
                   ))}
-                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'rgba(34,197,94,0.12)', color: '#22c55e', width: 68, textAlign: 'center', fontSize: 10, verticalAlign: 'bottom' }}>ทักษะโดยรวม</th>
+                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'rgba(34,197,94,0.12)', color: '#22c55e', width: 44, textAlign: 'center', fontSize: 9, verticalAlign: 'bottom' }}>ทักษะโดยรวม</th>
                 </tr>
                 <tr>
-                  {msOrderedDefs.map(s => (
-                    <th key={s.name} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 68, textAlign: 'center', fontSize: 10, verticalAlign: 'bottom' }}>
-                      {s.label}
-                    </th>
-                  ))}
+                  {msVisibleDefs.map((s, si) => {
+                    const g = msVisibleGroups.find(g => g.skills.find(sk => sk.name === s.name));
+                    const firstInGroup = g && g.skills[0].name === s.name;
+                    return (
+                      <th key={s.name} style={{
+                        minWidth: 44, textAlign: 'center', fontSize: 9, verticalAlign: 'bottom',
+                        padding: '4px 2px', border: '1px solid var(--border2)', background: 'var(--bg3)',
+                        borderLeft: firstInGroup ? `2px solid ${g.color}44` : undefined,
+                      }}>
+                        <div style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', whiteSpace: 'nowrap', height: 80, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 4 }}>
+                          <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: s.color || (g?.color || '#888'), marginBottom: 3 }} />
+                          {s.label}
+                        </div>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
                 {empLevelRows.map(({ emp, levels, overall }, i) => (
                   <tr key={emp.id}>
-                    <td style={{ border: '1px solid var(--border2)', textAlign: 'center', color: 'var(--muted)', fontSize: 11 }}>{i+1}</td>
-                    <td style={{ border: '1px solid var(--border2)', padding: '3px 5px', fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code}</td>
-                    <td style={{ border: '1px solid var(--border2)', padding: '3px 5px', fontWeight: 500 }}>{emp.name}</td>
-                    <td style={{ border: '1px solid var(--border2)', padding: '3px 5px', fontSize: 11, color: 'var(--text2)' }}>{emp.position || ''}</td>
-                    {levels.map((lv, si) => (
-                      <td key={si} style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '4px 2px' }}>
-                        <SkillGauge level={lv} size={30} />
-                      </td>
-                    ))}
+                    <td style={{ border: '1px solid var(--border2)', textAlign: 'center', color: 'var(--muted)', fontSize: 11, position: 'sticky', left: 0, zIndex: 2, background: 'var(--bg)' }}>{i+1}</td>
+                    <td style={{ border: '1px solid var(--border2)', padding: '3px 5px', fontWeight: 500, position: 'sticky', left: 30, zIndex: 2, background: 'var(--bg)' }}>{emp.name}</td>
+                    <td style={{ border: '1px solid var(--border2)', padding: '3px 5px', fontSize: 11, color: 'var(--text2)', position: 'sticky', left: 150, zIndex: 2, background: 'var(--bg)' }}>{emp.position || ''}</td>
+                    {levels.map((lv, si) => {
+                      const s = msVisibleDefs[si];
+                      const g = msVisibleGroups.find(g => g.skills.find(sk => sk.name === s.name));
+                      const firstInGroup = g && g.skills[0].name === s.name;
+                      return (
+                        <td key={si} style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '4px 2px', borderLeft: firstInGroup ? `2px solid ${g.color}22` : undefined }}>
+                          <SkillGauge level={lv} size={30} />
+                        </td>
+                      );
+                    })}
                     <td style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '4px 2px', background: overall > 0 ? msStyle(overall).bg + "22" : '' }}>
                       <SkillGauge level={overall} size={30} />
                     </td>
@@ -2226,16 +2273,19 @@ function MultiSkillFormTab() {
                 ))}
               </tbody>
             </table>
+            </div>
+            )}
 
             {/* Summary count table */}
             <div style={{ marginTop: 16 }}>
               <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: 'var(--text2)' }}>สรุปจำนวนพนักงานแยกตามระดับ</div>
+              <div style={{ overflowX: 'auto' }}>
               <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr>
                     <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 60 }}>ระดับ</th>
                     <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 120 }}>ความหมาย</th>
-                    {msCatGroups.map(g => (
+                    {msVisibleGroups.map(g => (
                       <th key={g.key} colSpan={g.skills.length} style={{ border: '1px solid var(--border2)', padding: '3px 4px', background: `${g.color}15`, color: g.color, textAlign: 'center', fontSize: 10, fontWeight: 800 }}>
                         {g.icon} {g.label}
                       </th>
@@ -2243,8 +2293,8 @@ function MultiSkillFormTab() {
                     <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'rgba(34,197,94,0.12)', color: '#22c55e', width: 68, textAlign: 'center', fontSize: 10 }}>รวม</th>
                   </tr>
                   <tr>
-                    {msOrderedDefs.map(s => (
-                      <th key={s.name} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 68, textAlign: 'center', fontSize: 10 }}>{s.label}</th>
+                    {msVisibleDefs.map(s => (
+                      <th key={s.name} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 44, textAlign: 'center', fontSize: 9 }}>{s.label}</th>
                     ))}
                   </tr>
                 </thead>
@@ -2271,6 +2321,7 @@ function MultiSkillFormTab() {
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         </>
