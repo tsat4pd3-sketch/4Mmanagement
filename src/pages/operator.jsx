@@ -342,7 +342,7 @@ export default function Operator() {
   );
 
   return (
-    <div className="page-content" style={{ height: 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+    <div className="page-content">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
         <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
           👥 ฐานข้อมูลพนักงาน
@@ -387,7 +387,7 @@ export default function Operator() {
       </div>
 
       {tab === 0 && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <>
           {/* Section / Group / Team / Grade filters */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             {[
@@ -446,24 +446,24 @@ export default function Operator() {
             </button>
           </div>
 
-          <div className="card" style={{ flex: 1, overflowX: 'auto', overflowY: 'auto', minHeight: 0 }}>
+          <div className="card" style={{ overflowX: 'auto' }}>
             <table style={{ minWidth: 560, borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  <th style={{ position: 'sticky', left: 0, top: 0, background: 'var(--bg2)', zIndex: 4 }}>โปรไฟล์</th>
-                  <th style={{ position: 'sticky', left: 58, top: 0, background: 'var(--bg2)', zIndex: 4 }}>ID</th>
-                  <th style={{ position: 'sticky', left: 148, top: 0, background: 'var(--bg2)', zIndex: 4, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>ชื่อ</th>
-                  <th style={{ fontSize: 10, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 2 }}>Section</th>
-                  <th style={{ fontSize: 10, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 2 }}>Group</th>
-                  <th style={{ fontSize: 10, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 2 }}>Team</th>
-                  <th style={{ fontSize: 10, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 2 }}>วันเริ่มงาน</th>
+                  <th style={{ position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 2 }}>โปรไฟล์</th>
+                  <th style={{ position: 'sticky', left: 58, background: 'var(--bg2)', zIndex: 2 }}>ID</th>
+                  <th style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 2, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>ชื่อ</th>
+                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Section</th>
+                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Group</th>
+                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Team</th>
+                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>วันเริ่มงาน</th>
                   {activeSkillDefs.map(sd => (
-                    <th key={sd.name} style={{ fontSize: 10, color: sd.color, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 2 }}>
+                    <th key={sd.name} style={{ fontSize: 10, color: sd.color, whiteSpace: 'nowrap' }}>
                       <div>{{ hard_skill:'🔧', machine_skill:'⚙️', product_skill:'📦', soft_skill:'🧠' }[sd.category || 'hard_skill']} {sd.label}</div>
                       {sd.scope_section && <div style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 400 }}>📍{sd.scope_section}</div>}
                     </th>
                   ))}
-                  <th style={{ textAlign: 'center', position: 'sticky', right: 0, top: 0, background: 'var(--bg2)', zIndex: 4, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>จัดการ</th>
+                  <th style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 2, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>จัดการ</th>
                 </tr>
               </thead>
               <tbody>
@@ -582,7 +582,7 @@ export default function Operator() {
               </tbody>
             </table>
           </div>
-        </div>
+        </>
       )}
 
       {tab === 1 && (() => {

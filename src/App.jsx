@@ -512,7 +512,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
         <main style={{
           flex: 1,
           marginLeft,
-          height: '100vh',
+          minHeight: '100vh',
           paddingTop: 60,
           background: 'var(--bg)',
           transition: 'margin-left 0.3s cubic-bezier(0.4,0,0.2,1)',
