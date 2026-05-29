@@ -333,6 +333,14 @@ export default function Operator() {
     .filter(emp => !filterTeam    || emp.team       === filterTeam)
     .filter(emp => !filterGrade   || getEmpGrade(emp.employee_id_code) === EMP_GRADES[filterGrade]);
 
+  // Only show skill columns where at least one displayed employee has score > 0
+  const activeSkillDefs = skillDefs.filter(sd =>
+    displayed.some(emp => {
+      const s = emp.employee_skills?.find(es => es.skill_name === sd.name);
+      return s && s.score > 0;
+    })
+  );
+
   return (
     <div className="page-content">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
@@ -438,7 +446,7 @@ export default function Operator() {
             </button>
           </div>
 
-          <div className="card" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 210px)' }}>
+          <div className="card" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)' }}>
             <table style={{ minWidth: 560, borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
@@ -449,7 +457,7 @@ export default function Operator() {
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 2 }}>Group</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 2 }}>Team</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 2 }}>วันเริ่มงาน</th>
-                  {skillDefs.map(sd => (
+                  {activeSkillDefs.map(sd => (
                     <th key={sd.name} style={{ fontSize: 10, color: sd.color, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 2 }}>
                       <div>{{ hard_skill:'🔧', machine_skill:'⚙️', product_skill:'📦', soft_skill:'🧠' }[sd.category || 'hard_skill']} {sd.label}</div>
                       {sd.scope_section && <div style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 400 }}>📍{sd.scope_section}</div>}
@@ -504,7 +512,7 @@ export default function Operator() {
                     <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                       {emp.start_date ? emp.start_date : '—'}
                     </td>
-                    {skillDefs.map(sd => {
+                    {activeSkillDefs.map(sd => {
                       const skillObj = emp.employee_skills?.find(s => s.skill_name === sd.name);
                       const hasRecord = skillObj !== undefined && skillObj.score > 0;
                       const score = hasRecord ? skillObj.score : undefined;
