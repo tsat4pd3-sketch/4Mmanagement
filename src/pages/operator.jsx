@@ -183,8 +183,10 @@ export default function Operator() {
     setInactiveEmployees(inactive || []);
   };
 
-  const getEmpSkill = (emp, skillName) =>
-    emp.employee_skills?.find(s => s.skill_name === skillName)?.score ?? 0;
+  const getEmpSkill = (emp, skillName) => {
+    const rec = emp.employee_skills?.find(s => s.skill_name === skillName);
+    return rec !== undefined ? rec.score : undefined;
+  };
 
   const handleDeactivate = async (id, name) => {
     if (!window.confirm(`ปิดใช้งานพนักงาน: ${name}?\nพนักงานจะไม่ปรากฏในระบบเช็คชื่อ แต่ข้อมูลยังคงอยู่`)) return;
@@ -201,10 +203,18 @@ export default function Operator() {
 
   const openEdit = (emp) => {
     const scores = {};
+    const skillEnabled = {}; // true = has record (will upsert), false = no record (will delete)
     skillDefs.forEach(sd => {
-      scores[sd.name] = emp.employee_skills?.find(s => s.skill_name === sd.name)?.score ?? 0;
+      const rec = emp.employee_skills?.find(s => s.skill_name === sd.name);
+      if (rec !== undefined) {
+        scores[sd.name] = rec.score;
+        skillEnabled[sd.name] = true;
+      } else {
+        scores[sd.name] = 0;
+        skillEnabled[sd.name] = false;
+      }
     });
-    setEditingEmp({ ...emp, newPhoto: null, skillScores: scores });
+    setEditingEmp({ ...emp, newPhoto: null, skillScores: scores, skillEnabled });
   };
 
   const handleUpdate = async (e) => {
@@ -234,15 +244,29 @@ export default function Operator() {
       }).eq('id', editingEmp.id);
       if (error) throw error;
 
-      const upserts = skillDefs.map(sd => ({
-        employee_id: editingEmp.id,
-        skill_name: sd.name,
-        score: Number(editingEmp.skillScores?.[sd.name] ?? 0),
-        updated_at: new Date().toISOString(),
-      }));
-      const { error: skillErr } = await supabase.from('employee_skills')
-        .upsert(upserts, { onConflict: 'employee_id,skill_name' });
-      if (skillErr) throw skillErr;
+      // Skills marked as enabled → upsert; disabled (N/A) → delete record
+      const enabledSkills = skillDefs.filter(sd => editingEmp.skillEnabled?.[sd.name]);
+      const disabledSkillNames = skillDefs.filter(sd => !editingEmp.skillEnabled?.[sd.name]).map(sd => sd.name);
+
+      if (enabledSkills.length > 0) {
+        const upserts = enabledSkills.map(sd => ({
+          employee_id: editingEmp.id,
+          skill_name: sd.name,
+          score: Number(editingEmp.skillScores?.[sd.name] ?? 0),
+          updated_at: new Date().toISOString(),
+        }));
+        const { error: skillErr } = await supabase.from('employee_skills')
+          .upsert(upserts, { onConflict: 'employee_id,skill_name' });
+        if (skillErr) throw skillErr;
+      }
+
+      if (disabledSkillNames.length > 0) {
+        const { error: delErr } = await supabase.from('employee_skills')
+          .delete()
+          .eq('employee_id', editingEmp.id)
+          .in('skill_name', disabledSkillNames);
+        if (delErr) throw delErr;
+      }
 
       toast.success('อัปเดตข้อมูลพนักงานเรียบร้อย!');
       setEditingEmp(null);
@@ -482,15 +506,22 @@ export default function Operator() {
                     </td>
                     {skillDefs.map(sd => {
                       const skillObj = emp.employee_skills?.find(s => s.skill_name === sd.name);
-                      const score = skillObj?.score ?? 0;
+                      const hasRecord = skillObj !== undefined;
+                      const score = hasRecord ? skillObj.score : undefined;
                       const pending = skillObj?.pending_level ?? null;
-                      const lv = getLevel(score);
+                      const lv = hasRecord ? getLevel(score) : null;
                       return (
                         <td key={sd.name} style={{ textAlign: 'center' }}>
-                          <div style={{ fontWeight: 700, fontSize: 13, color: lv.color }}>{score}</div>
-                          <div style={{ fontSize: 9, background: lv.bg, color: lv.color, borderRadius: 4, padding: '1px 5px', marginTop: 2, whiteSpace: 'nowrap' }}>
-                            {lv.label}
-                          </div>
+                          {hasRecord ? (
+                            <>
+                              <div style={{ fontWeight: 700, fontSize: 13, color: lv.color }}>{score}</div>
+                              <div style={{ fontSize: 9, background: lv.bg, color: lv.color, borderRadius: 4, padding: '1px 5px', marginTop: 2, whiteSpace: 'nowrap' }}>
+                                {lv.label}
+                              </div>
+                            </>
+                          ) : (
+                            <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
+                          )}
                           {pending && (
                             <div style={{ fontSize: 8, color: '#f59e0b', fontWeight: 700, marginTop: 2, animation: 'pulse 1.5s infinite' }}>
                               ⏳ Lv.{pending}
@@ -930,27 +961,44 @@ export default function Operator() {
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))', gap: 8 }}>
                         {g.skills.map(sd => {
+                          const enabled = editingEmp.skillEnabled?.[sd.name] ?? false;
                           const score = Number(editingEmp.skillScores?.[sd.name] ?? 0);
-                          const lv = getLevel(score);
+                          const lv = enabled ? getLevel(score) : null;
                           const pending = editingEmp.employee_skills?.find(s => s.skill_name === sd.name)?.pending_level;
                           return (
-                            <div key={sd.name} style={{ background: 'var(--bg3)', borderRadius: 8, padding: '8px 10px', border: `1px solid ${pending ? '#f59e0b55' : 'var(--border)'}` }}>
-                              <div style={{ fontSize: 10, display: 'flex', justifyContent: 'space-between', marginBottom: 5, alignItems: 'center' }}>
-                                <span style={{ fontWeight: 600, color: sd.color, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <div key={sd.name} style={{ background: enabled ? 'var(--bg3)' : 'var(--bg2)', borderRadius: 8, padding: '8px 10px', border: `1px solid ${pending ? '#f59e0b55' : enabled ? 'var(--border)' : 'var(--border2)'}`, opacity: enabled ? 1 : 0.6 }}>
+                              {/* Toggle: มีทักษะนี้ */}
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5, cursor: 'pointer' }}>
+                                <input type="checkbox" checked={enabled}
+                                  onChange={e => setEditingEmp({
+                                    ...editingEmp,
+                                    skillEnabled: { ...editingEmp.skillEnabled, [sd.name]: e.target.checked },
+                                  })}
+                                  style={{ width: 14, height: 14, cursor: 'pointer' }} />
+                                <span style={{ fontSize: 10, fontWeight: 600, color: enabled ? sd.color : 'var(--muted)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {sd.label}
                                   {sd.scope_section && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {sd.scope_section}</span>}
                                 </span>
-                                <span style={{ background: lv.bg, color: lv.color, borderRadius: 4, padding: '1px 5px', fontSize: 8, fontWeight: 700, flexShrink: 0, marginLeft: 4 }}>
-                                  {lv.label}
-                                </span>
-                              </div>
-                              <input type="number" value={score}
-                                onChange={e => setEditingEmp({
-                                  ...editingEmp,
-                                  skillScores: { ...editingEmp.skillScores, [sd.name]: e.target.value },
-                                })}
-                                min={0} max={100}
-                                style={{ width: '100%', boxSizing: 'border-box' }} />
+                                {enabled && lv && (
+                                  <span style={{ background: lv.bg, color: lv.color, borderRadius: 4, padding: '1px 5px', fontSize: 8, fontWeight: 700, flexShrink: 0 }}>
+                                    {lv.label}
+                                  </span>
+                                )}
+                                {!enabled && (
+                                  <span style={{ fontSize: 8, color: 'var(--muted)', flexShrink: 0 }}>N/A</span>
+                                )}
+                              </label>
+                              {enabled ? (
+                                <input type="number" value={score}
+                                  onChange={e => setEditingEmp({
+                                    ...editingEmp,
+                                    skillScores: { ...editingEmp.skillScores, [sd.name]: e.target.value },
+                                  })}
+                                  min={0} max={100}
+                                  style={{ width: '100%', boxSizing: 'border-box' }} />
+                              ) : (
+                                <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center', padding: '4px 0' }}>ไม่เกี่ยวข้อง</div>
+                              )}
                               {pending && (
                                 <div style={{ fontSize: 8, color: '#f59e0b', fontWeight: 700, marginTop: 3 }}>⏳ รอ approve Lv.{pending}</div>
                               )}

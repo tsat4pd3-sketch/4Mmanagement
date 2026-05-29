@@ -190,7 +190,7 @@ function DailyTab() {
     if (dailySection && l.employees?.section !== dailySection) return false;
     if (dailyLine) {
       const lineObj = lines.find(ln => String(ln.id) === String(dailyLine));
-      if (lineObj && l.employees?.line_id !== lineObj.id) return false;
+      if (lineObj && String(l.employees?.line_id) !== String(lineObj.id)) return false;
     }
     if (dailyTeam && l.employees?.team !== dailyTeam) return false;
     return true;
@@ -214,10 +214,12 @@ function DailyTab() {
       <td style="border:1px solid #ccc;padding:3px 6px">${l.employees?.name || ''}</td>
       <td style="border:1px solid #ccc;padding:3px 6px">${l.employees?.department || ''}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.employees?.team || ''}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.is_present ? '✓' : '✗'}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_helmet ? '✓' : '✗'}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_boots ? '✓' : '✗'}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_gloves ? '✓' : '✗'}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_ot ? '✓' : ''}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.assigned_line ? (stationMap[String(l.assigned_line)] || l.assigned_line) : '—'}</td>
     </tr>`).join('');
     const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>รายวัน ${date}</title>
 <style>@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
@@ -233,10 +235,12 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">ชื่อ</th>
 <th style="border:1px solid #ccc;padding:4px">แผนก</th>
 <th style="border:1px solid #ccc;padding:4px">ทีม</th>
+<th style="border:1px solid #ccc;padding:4px">มาทำงาน</th>
 <th style="border:1px solid #ccc;padding:4px">หมวก</th>
 <th style="border:1px solid #ccc;padding:4px">รองเท้า</th>
 <th style="border:1px solid #ccc;padding:4px">ถุงมือ</th>
 <th style="border:1px solid #ccc;padding:4px">OT</th>
+<th style="border:1px solid #ccc;padding:4px">จุดงาน</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank'); w.document.write(html); w.document.close();
@@ -346,6 +350,14 @@ function PerEmployeeTab() {
     return true;
   }), [employees, empSection, empTeam]);
 
+  // Reset selected employee when filter changes and current selection is no longer in the list
+  useEffect(() => {
+    if (filteredEmployees.length === 0) { setSelected(''); return; }
+    if (!filteredEmployees.find(e => e.id === selected)) {
+      setSelected(filteredEmployees[0].id);
+    }
+  }, [filteredEmployees]);
+
   const handlePrintPerEmp = () => {
     const emp = employees.find(e => e.id === selected);
     const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
@@ -355,6 +367,7 @@ function PerEmployeeTab() {
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_helmet ? '✓' : '✗'}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_boots ? '✓' : '✗'}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_gloves ? '✓' : '✗'}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${l.assigned_line ? (stationMap[String(l.assigned_line)] || l.assigned_line) : '—'}</td>
     </tr>`).join('');
     const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>รายพนักงาน ${emp?.name || ''}</title>
 <style>@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
@@ -370,6 +383,7 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">หมวก</th>
 <th style="border:1px solid #ccc;padding:4px">รองเท้า</th>
 <th style="border:1px solid #ccc;padding:4px">ถุงมือ</th>
+<th style="border:1px solid #ccc;padding:4px">จุดงาน</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank'); w.document.write(html); w.document.close();
@@ -645,7 +659,7 @@ function RangeTab() {
     if (rangeSection && r.section !== rangeSection) return false;
     if (rangeLine) {
       const lineObj = lines.find(ln => String(ln.id) === String(rangeLine));
-      if (lineObj && r.lineId !== lineObj.id) return false;
+      if (lineObj && String(r.lineId) !== String(lineObj.id)) return false;
     }
     if (rangeTeam && r.team !== rangeTeam) return false;
     return true;
@@ -657,6 +671,8 @@ function RangeTab() {
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${i+1}</td>
       <td style="border:1px solid #ccc;padding:3px 6px">${r.code || ''}</td>
       <td style="border:1px solid #ccc;padding:3px 6px">${r.name || ''}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${r.section || ''}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${r.team || ''}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${r.present}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${r.total}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${r.total ? Math.round(r.present / r.total * 100) : 0}%</td>
@@ -673,9 +689,11 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">#</th>
 <th style="border:1px solid #ccc;padding:4px">รหัส</th>
 <th style="border:1px solid #ccc;padding:4px">ชื่อ</th>
+<th style="border:1px solid #ccc;padding:4px">ส่วนงาน</th>
+<th style="border:1px solid #ccc;padding:4px">Team</th>
 <th style="border:1px solid #ccc;padding:4px">มาทำงาน</th>
 <th style="border:1px solid #ccc;padding:4px">วันทั้งหมด</th>
-<th style="border:1px solid #ccc;padding:4px">%</th>
+<th style="border:1px solid #ccc;padding:4px">%การมาทำงาน</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank'); w.document.write(html); w.document.close();
@@ -943,8 +961,15 @@ function FourMTab() {
     setExporting(false);
   };
 
-  const kpi = Object.fromEntries(Object.keys(CAT_META).map(k => [k, logs.filter(l => l.category === k).length]));
-  const actionableCount = logs.filter(l => ['pending','pending_qa'].includes(l.status)).length;
+  // Filter logs by section: cross-reference line_name to lines array to get section
+  const fourMFilteredLogs = useMemo(() => {
+    if (!fourMSection) return logs;
+    const sectionLineNames = new Set(lines.filter(l => l.section === fourMSection).map(l => l.name));
+    return logs.filter(l => sectionLineNames.has(l.line_name));
+  }, [logs, fourMSection, lines]);
+
+  const kpi = Object.fromEntries(Object.keys(CAT_META).map(k => [k, fourMFilteredLogs.filter(l => l.category === k).length]));
+  const actionableCount = fourMFilteredLogs.filter(l => ['pending','pending_qa'].includes(l.status)).length;
 
   return (
     <div>
@@ -1109,7 +1134,7 @@ function FourMTab() {
               </tr>
             </thead>
             <tbody>
-              {logs.length === 0 ? <EmptyRow cols={7} /> : logs.map(l => {
+              {fourMFilteredLogs.length === 0 ? <EmptyRow cols={7} /> : fourMFilteredLogs.map(l => {
                 const m  = CAT_META[l.category] || {};
                 const sm = STATUS_META[l.status] || STATUS_META.pending;
                 const svName  = l.sv_approved_by ? (profileMap[l.sv_approved_by] || '...') : null;
@@ -1371,7 +1396,7 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
 }
 
 /* ── Shared Filter Bar for employee tabs ── */
-const selSt = { padding: '7px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)' };
+const selSt = { padding: '7px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', minWidth: 120 };
 
 function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilterLine, filterTeam, setFilterTeam }) {
   const sections = useMemo(() => [...new Set(lines.map(l => l.section).filter(Boolean))].sort(), [lines]);
