@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -53,6 +53,8 @@ export default function Operator() {
   const [tab, setTab] = useState(0);
   const [skillDefs, setSkillDefs] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const tableWrapRef = useRef(null);
+  const topScrollRef = useRef(null);
   const [inactiveEmployees, setInactiveEmployees] = useState([]);
   const [showInactive, setShowInactive] = useState(false);
   const [editingEmp, setEditingEmp] = useState(null);
@@ -341,6 +343,20 @@ export default function Operator() {
     })
   );
 
+  // Keep top mirror scrollbar width in sync with actual table scroll width
+  useEffect(() => {
+    const el = tableWrapRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(() => {
+      if (topScrollRef.current) {
+        const inner = topScrollRef.current.firstElementChild;
+        if (inner) inner.style.width = el.scrollWidth + 'px';
+      }
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [activeSkillDefs, displayed]);
+
   return (
     <div className="page-content">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
@@ -446,7 +462,15 @@ export default function Operator() {
             </button>
           </div>
 
-          <div className="card" style={{ overflowX: 'auto' }}>
+          {/* Top mirror scrollbar — synced with table */}
+          <div ref={topScrollRef}
+            onScroll={e => { if (tableWrapRef.current) tableWrapRef.current.scrollLeft = e.target.scrollLeft; }}
+            style={{ overflowX: 'auto', overflowY: 'hidden', marginBottom: 2, borderRadius: 6 }}>
+            <div style={{ height: 1, width: tableWrapRef.current?.scrollWidth || 2000 }} />
+          </div>
+          <div ref={tableWrapRef} className="card"
+            onScroll={e => { if (topScrollRef.current) topScrollRef.current.scrollLeft = e.target.scrollLeft; }}
+            style={{ overflowX: 'auto' }}>
             <table style={{ minWidth: 560, borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
