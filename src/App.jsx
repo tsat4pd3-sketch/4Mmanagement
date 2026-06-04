@@ -148,8 +148,8 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <img src={tsLogo} alt="Thai Summit Group" width={28} height={28} style={{ borderRadius: 3, flexShrink: 0 }} />
             <div>
-              <div style={{ fontSize: 8, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
-              <div style={{ fontSize: 7, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>4M · VX System</div>
+              <div style={{ fontSize: 10, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
+              <div style={{ fontSize: 9, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>4M · VX System</div>
             </div>
           </div>
         </div>
@@ -166,7 +166,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
                 : {}}
               onClick={() => isMobile && onClose()}
             >
-              <span style={{ fontSize: 15, flexShrink: 0 }}>{item.icon}</span>
+              <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
               <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
             </Link>
           ))}
@@ -206,15 +206,15 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
               {initials}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {userFullName || (userEmail?.split('@')[0]) || 'Unknown'}
               </div>
-              <div style={{ fontSize: 10, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {userEmail || ''}
               </div>
             </div>
             <div style={{
-              fontSize: 9, fontWeight: 700, padding: '2px 5px',
+              fontSize: 10, fontWeight: 700, padding: '2px 6px',
               borderRadius: 4, flexShrink: 0,
               background: userRole === 'admin' ? 'var(--accent-dim)' :
                           userRole === 'manager' ? 'var(--accent2-dim)' :
