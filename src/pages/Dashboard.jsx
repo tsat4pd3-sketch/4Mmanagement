@@ -130,6 +130,8 @@ export default function Dashboard() {
       { data: layoutData },
       { data: wsData },
       { data: hpData },
+      { data: stReqData },
+      { data: empSkillData },
     ] = await Promise.all([
       supabase.from('daily_production_logs')
         .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, shift, assigned_line, employees!inner(id, name, image_url, employee_id_code, line_id, team, is_active)')
@@ -143,6 +145,8 @@ export default function Dashboard() {
       supabase.from('line_layouts').select('line_name, image_url'),
       supabase.from('workstations').select('id, line_name, station_name, pos_top, pos_left'),
       supabase.from('employee_home_positions').select('employee_id, station_id, employees(id, name, image_url, position)'),
+      supabase.from('station_requirements').select('station_id, skill_name, min_score'),
+      supabase.from('employee_skills').select('employee_id, skill_name, score'),
     ]);
 
     // Build per-line day_team map
@@ -188,8 +192,30 @@ export default function Dashboard() {
     setEmpCounts(counts);
     setLayouts(layoutData || []);
     setWorkstations(wsData || []);
-    // Build stationEmpMap: station_id → employee + today's attendance
-    // Priority: assigned_line from today's log (matches Management page) → fallback to home positions
+
+    // Build skill lookup maps for fit computation
+    const stationReqMap = {};
+    (stReqData || []).forEach(r => {
+      const sid = String(r.station_id);
+      if (!stationReqMap[sid]) stationReqMap[sid] = [];
+      stationReqMap[sid].push(r);
+    });
+    const empSkillMap = {};
+    (empSkillData || []).forEach(s => {
+      if (!empSkillMap[s.employee_id]) empSkillMap[s.employee_id] = {};
+      empSkillMap[s.employee_id][s.skill_name] = s.score;
+    });
+
+    const computeFit = (empId, stationId) => {
+      const reqs = stationReqMap[String(stationId)];
+      if (!reqs || reqs.length === 0) return null;
+      const skills = empSkillMap[empId] || {};
+      const met = reqs.filter(r => (skills[r.skill_name] || 0) >= r.min_score).length;
+      return Math.round((met / reqs.length) * 100);
+    };
+
+    // Build stationEmpMap: station_id → employee + today's attendance + skill fit
+    // Only present employees will be shown on the floor map
     const attMap = {};
     enriched.forEach(l => { if (l.employees?.id) attMap[l.employees.id] = l; });
 
@@ -205,6 +231,7 @@ export default function Dashboard() {
         has_ot:          att?.has_ot          ?? false,
         has_extended_ot: att?.has_extended_ot ?? false,
         assignedShift:   att?.assignedShift   ?? null,
+        fitScore:        computeFit(hp.employee_id, hp.station_id),
       };
     });
 
@@ -221,6 +248,7 @@ export default function Dashboard() {
         has_ot:          l.has_ot          ?? false,
         has_extended_ot: l.has_extended_ot ?? false,
         assignedShift:   l.assignedShift   ?? null,
+        fitScore:        computeFit(l.employees.id, l.assigned_line),
       };
     });
     setStationEmpMap(semap);
@@ -512,10 +540,11 @@ export default function Dashboard() {
                           const emp = stationEmpMap[String(ws.id)];
                           if (!emp) return null;
                           if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
-                          // Use shiftLogs (same source as KPI cards) for attendance color
-                          const shiftLog = shiftLogs.find(l => l.employees?.id === emp.id);
-                          const isPresent = shiftLog ? shiftLog.is_present : null;
-                          const color = isPresent === true ? '#22c55e' : isPresent === false ? '#e74c3c' : '#aaa';
+                          // Only show employees who are present
+                          if (emp.is_present !== true) return null;
+                          // Color by skill fit: green≥80, amber 60-79, red<60, gray=no requirements
+                          const fit = emp.fitScore;
+                          const color = fit === null ? '#aaa' : fit >= 80 ? '#22c55e' : fit >= 60 ? '#f59e0b' : '#e74c3c';
                           return (
                             <div key={ws.id} style={{
                               position: 'absolute', top: ws.pos_top, left: ws.pos_left,
@@ -647,9 +676,11 @@ export default function Dashboard() {
                   const emp = stationEmpMap[String(ws.id)];
                   if (!emp) return null;
                   if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
-                  const shiftLog = shiftLogs.find(l => l.employees?.id === emp.id);
-                  const isPresent = shiftLog ? shiftLog.is_present : null;
-                  const color = isPresent === true ? '#22c55e' : isPresent === false ? '#e74c3c' : '#aaa';
+                  // Only show present employees on the map
+                  if (emp.is_present !== true) return null;
+                  // Color by skill fit
+                  const fit = emp.fitScore;
+                  const color = fit === null ? '#aaa' : fit >= 80 ? '#22c55e' : fit >= 60 ? '#f59e0b' : '#e74c3c';
                   const shortName = (emp.name || '').split(' ')[0];
                   return (
                     <div key={ws.id} style={{
@@ -675,6 +706,9 @@ export default function Dashboard() {
                         whiteSpace: 'nowrap', maxWidth: 60,
                         overflow: 'hidden', textOverflow: 'ellipsis',
                       }}>{shortName}</div>
+                      {fit !== null && (
+                        <div style={{ fontSize: 8, fontWeight: 800, color, background: `${color}25`, padding: '1px 4px', borderRadius: 3 }}>{fit}%</div>
+                      )}
                       {emp.has_extended_ot && (
                         <div style={{ fontSize: 8, fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: '1px 4px', borderRadius: 3 }}>OT+23</div>
                       )}
@@ -683,8 +717,9 @@ export default function Dashboard() {
                 })}
               </div>
               {/* Legend */}
-              <div style={{ display: 'flex', gap: 16, marginTop: 12, flexWrap: 'wrap' }}>
-                {[['#22c55e', 'มาทำงาน'], ['#e74c3c', 'ขาดงาน'], ['#aaa', 'ยังไม่เช็คชื่อ']].map(([c, l]) => (
+              <div style={{ display: 'flex', gap: 16, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Skill Fit:</span>
+                {[['#22c55e', '≥80% ชำนาญดี'], ['#f59e0b', '60–79% ระวัง'], ['#e74c3c', '<60% เฝ้าระวัง'], ['#aaa', 'ไม่มีข้อกำหนด']].map(([c, l]) => (
                   <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--muted)' }}>
                     <div style={{ width: 10, height: 10, borderRadius: '50%', background: c, boxShadow: `0 0 5px ${c}` }} />
                     {l}
