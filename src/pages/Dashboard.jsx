@@ -139,11 +139,9 @@ export default function Dashboard() {
       { data: layoutData },
       { data: wsData },
       { data: hpData },
-      { data: stReqData },
-      { data: empSkillData },
     ] = await Promise.all([
       supabase.from('daily_production_logs')
-        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, shift, assigned_line, employees!inner(id, name, image_url, employee_id_code, line_id, team, is_active)')
+        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, shift, assigned_line, employees!inner(id, name, image_url, employee_id_code, line_id, team, is_active, employee_skills(skill_name, score))')
         .eq('work_date', date)
         .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
@@ -152,10 +150,8 @@ export default function Dashboard() {
       supabase.from('shift_schedules').select('line_id, day_team').eq('work_date', date),
       supabase.from('shift_overrides').select('employee_id, shift').eq('work_date', date),
       supabase.from('line_layouts').select('line_name, image_url'),
-      supabase.from('workstations').select('id, line_name, station_name, pos_top, pos_left'),
-      supabase.from('employee_home_positions').select('employee_id, station_id, employees(id, name, image_url, position)'),
-      supabase.from('station_requirements').select('station_id, skill_name, min_score'),
-      supabase.from('employee_skills').select('employee_id, skill_name, score'),
+      supabase.from('workstations').select('id, line_name, station_name, pos_top, pos_left, station_requirements(skill_name, min_score)'),
+      supabase.from('employee_home_positions').select('employee_id, station_id, employees(id, name, image_url, position, employee_skills(skill_name, score))'),
     ]);
 
     // Build per-line day_team map
@@ -202,25 +198,31 @@ export default function Dashboard() {
     setLayouts(layoutData || []);
     setWorkstations(wsData || []);
 
-    // Build skill lookup maps for fit computation
+    // Build skill fit lookups from NESTED data (same source as Management page,
+    // avoids the 1000-row truncation that flat queries hit).
+    // station_id → [{ skill_name, min_score }] from nested workstations
     const stationReqMap = {};
-    (stReqData || []).forEach(r => {
-      const sid = String(r.station_id);
-      if (!stationReqMap[sid]) stationReqMap[sid] = [];
-      stationReqMap[sid].push(r);
+    (wsData || []).forEach(ws => {
+      stationReqMap[String(ws.id)] = ws.station_requirements || [];
     });
+    // employee_id → { skill_name: score } from nested employee_skills
     const empSkillMap = {};
-    (empSkillData || []).forEach(s => {
-      if (!empSkillMap[s.employee_id]) empSkillMap[s.employee_id] = {};
-      empSkillMap[s.employee_id][s.skill_name] = s.score;
-    });
+    const addSkills = (emp) => {
+      if (!emp?.id || empSkillMap[emp.id]) return;
+      const m = {};
+      (emp.employee_skills || []).forEach(s => { m[s.skill_name] = s.score; });
+      empSkillMap[emp.id] = m;
+    };
+    (logData || []).forEach(l => addSkills(l.employees));
+    (hpData || []).forEach(hp => addSkills(hp.employees));
 
+    // Identical formula to Management.jsx computeFit: passed / total * 100
     const computeFit = (empId, stationId) => {
       const reqs = stationReqMap[String(stationId)];
       if (!reqs || reqs.length === 0) return null;
       const skills = empSkillMap[empId] || {};
-      const met = reqs.filter(r => (skills[r.skill_name] || 0) >= r.min_score).length;
-      return Math.round((met / reqs.length) * 100);
+      const passed = reqs.filter(r => Number(skills[r.skill_name] ?? 0) >= r.min_score).length;
+      return Math.round((passed / reqs.length) * 100);
     };
 
     // Build stationEmpMap: station_id → employee + today's attendance + skill fit

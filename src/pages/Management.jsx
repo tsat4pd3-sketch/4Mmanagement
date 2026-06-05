@@ -44,17 +44,20 @@ function useWidth() {
 const LINE_4M_CATEGORIES = ['Machine', 'Material', 'Method'];
 const SPECIAL_TASKS = ['5ส', 'คัดงาน', 'แก้ไขปัญหาคุณภาพ', 'งานปรับปรุงไลน์', 'อื่นๆ'];
 
+// Aligned with SKILL_LEVELS scale used across Dashboard / Operator / Report
 const fitColor = (score) => {
-  if (score >= 80) return '#22c55e';
-  if (score >= 60) return '#84cc16';
-  if (score >= 40) return '#f59e0b';
+  if (score >= 100) return '#a855f7';
+  if (score >= 75)  return '#22c55e';
+  if (score >= 50)  return '#84cc16';
+  if (score >= 25)  return '#f59e0b';
   return '#ef4444';
 };
 const fitLabel = (score) => {
-  if (score >= 80) return 'ชำนาญ';
-  if (score >= 60) return 'ผ่านเกณฑ์';
-  if (score >= 40) return 'กำลังพัฒนา';
-  return 'ต่ำกว่าเกณฑ์';
+  if (score >= 100) return 'ผู้เชี่ยวชาญ';
+  if (score >= 75)  return 'แก้ปัญหาได้';
+  if (score >= 50)  return 'มาตรฐาน';
+  if (score >= 25)  return 'ต้องดูแล';
+  return 'ยังไม่ผ่าน OJT';
 };
 
 // Man 4M case classification
