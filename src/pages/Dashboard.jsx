@@ -67,6 +67,15 @@ function MiniBar({ value, max, color }) {
   );
 }
 
+const SKILL_LEVELS = [
+  { min: 100, label: 'ผู้เชี่ยวชาญ',   color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
+  { min: 75,  label: 'แก้ปัญหาได้',    color: '#22c55e', bg: 'rgba(34,197,94,0.15)'  },
+  { min: 50,  label: 'มาตรฐาน',        color: '#84cc16', bg: 'rgba(132,204,18,0.15)' },
+  { min: 25,  label: 'ต้องดูแล',       color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  { min: 0,   label: 'ยังไม่ผ่าน OJT', color: '#ef4444', bg: 'rgba(239,68,68,0.15)'  },
+];
+const getFitLevel = (fit) => fit === null ? null : SKILL_LEVELS.find(l => fit >= l.min) ?? SKILL_LEVELS[4];
+
 const CAT_META = {
   Man:      { color: '#4d9fff', icon: '👤', bg: 'rgba(77,159,255,0.12)' },
   Machine:  { color: '#f59e0b', icon: '⚙️', bg: 'rgba(245,158,11,0.12)' },
@@ -542,9 +551,9 @@ export default function Dashboard() {
                           if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
                           // Only show employees who are present
                           if (emp.is_present !== true) return null;
-                          // Color by skill fit: green≥80, amber 60-79, red<60, gray=no requirements
                           const fit = emp.fitScore;
-                          const color = fit === null ? '#aaa' : fit >= 80 ? '#22c55e' : fit >= 60 ? '#f59e0b' : '#e74c3c';
+                          const fitLv = getFitLevel(fit);
+                          const color = fitLv ? fitLv.color : '#aaa';
                           return (
                             <div key={ws.id} style={{
                               position: 'absolute', top: ws.pos_top, left: ws.pos_left,
@@ -678,9 +687,9 @@ export default function Dashboard() {
                   if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
                   // Only show present employees on the map
                   if (emp.is_present !== true) return null;
-                  // Color by skill fit
                   const fit = emp.fitScore;
-                  const color = fit === null ? '#aaa' : fit >= 80 ? '#22c55e' : fit >= 60 ? '#f59e0b' : '#e74c3c';
+                  const fitLv = getFitLevel(fit);
+                  const color = fitLv ? fitLv.color : '#aaa';
                   const shortName = (emp.name || '').split(' ')[0];
                   return (
                     <div key={ws.id} style={{
@@ -716,15 +725,20 @@ export default function Dashboard() {
                   );
                 })}
               </div>
-              {/* Legend */}
-              <div style={{ display: 'flex', gap: 16, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Skill Fit:</span>
-                {[['#22c55e', '≥80% ชำนาญดี'], ['#f59e0b', '60–79% ระวัง'], ['#e74c3c', '<60% เฝ้าระวัง'], ['#aaa', 'ไม่มีข้อกำหนด']].map(([c, l]) => (
-                  <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--muted)' }}>
-                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: c, boxShadow: `0 0 5px ${c}` }} />
-                    {l}
+              {/* Legend — same as skill matrix */}
+              <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 4 }}>Skill Fit:</span>
+                {SKILL_LEVELS.map(lv => (
+                  <div key={lv.min} style={{ display: 'flex', alignItems: 'center', gap: 5, background: lv.bg, borderRadius: 6, padding: '3px 8px' }}>
+                    <div style={{ width: 9, height: 9, borderRadius: '50%', background: lv.color, boxShadow: `0 0 4px ${lv.color}` }} />
+                    <span style={{ fontSize: 10, fontWeight: 700, color: lv.color }}>{lv.min}</span>
+                    <span style={{ fontSize: 10, color: 'var(--muted)' }}>{lv.label}</span>
                   </div>
                 ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, borderRadius: 6, padding: '3px 8px', background: 'rgba(128,128,128,0.1)' }}>
+                  <div style={{ width: 9, height: 9, borderRadius: '50%', background: '#aaa' }} />
+                  <span style={{ fontSize: 10, color: 'var(--muted)' }}>ไม่มีข้อกำหนด</span>
+                </div>
               </div>
             </div>
           </div>
