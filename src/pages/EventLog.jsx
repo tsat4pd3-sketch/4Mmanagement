@@ -5,9 +5,9 @@ import { toast } from '../components/Toast';
 
 /* ─── Constants ──────────────────────────────────────────────── */
 const CAT_META = {
-  A: { label: 'Normal Operations', labelTh: 'การดำเนินงานปกติ',         color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   icon: '🔄' },
-  B: { label: 'Intentional Interruption', labelTh: 'หยุดตามแผน',       color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', icon: '🔧' },
-  C: { label: 'Unintentional Interruption', labelTh: 'หยุดกระทันหัน',  color: '#ef4444', bg: 'rgba(239,68,68,0.12)',  icon: '🚨' },
+  A: { label: 'Normal Process',      labelTh: 'กระบวนการปกติ',            color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   icon: '🔄' },
+  B: { label: 'Planned Event',       labelTh: 'หยุดตามแผน / ควบคุมได้',  color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', icon: '🔧' },
+  C: { label: 'Unplanned / Accident',labelTh: 'อุบัติเหตุ / ไม่ได้วางแผน', color: '#ef4444', bg: 'rgba(239,68,68,0.12)',  icon: '🚨' },
 };
 
 const STATUS_META = {

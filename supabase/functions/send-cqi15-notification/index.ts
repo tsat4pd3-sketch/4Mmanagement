@@ -24,9 +24,9 @@ const ROLE_MAP: Record<string, string[]> = {
 
 // ─── Category metadata ───────────────────────────────────────────────────────
 const CAT_META: Record<string, { icon: string; label: string; urgent: boolean }> = {
-  A: { icon: '🔄', label: 'Normal Operations',          urgent: false },
-  B: { icon: '🔧', label: 'Intentional Interruption',   urgent: true  },
-  C: { icon: '🚨', label: 'Unintentional Interruption', urgent: true  },
+  A: { icon: '🔄', label: 'Normal Process',       urgent: false },
+  B: { icon: '🔧', label: 'Planned Event',        urgent: true  },
+  C: { icon: '🚨', label: 'Unplanned / Accident', urgent: true  },
 }
 
 // ─── Telegram helper ─────────────────────────────────────────────────────────
