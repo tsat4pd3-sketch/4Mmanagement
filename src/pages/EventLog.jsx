@@ -41,7 +41,8 @@ function toLocalDateStr(d = new Date()) {
 // Compute duration from event start (work_date + event_time) to approved_at
 function calcDuration(workDate, eventTime, approvedAt) {
   if (!approvedAt || !workDate) return null;
-  const start = new Date(`${workDate}T${eventTime || '00:00'}:00`);
+  const timeStr = (eventTime || '00:00').slice(0, 5); // ensure HH:MM only
+  const start = new Date(`${workDate}T${timeStr}:00`);
   const end = new Date(approvedAt);
   const diffMs = end - start;
   if (diffMs < 0) return null;
@@ -1010,6 +1011,25 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role, onClose, o
     });
   });
 
+  // Check if all checklist items for a role are done (ok/ng/na — not pending)
+  const isChecklistDone = (roleKey) => {
+    const items = checksByRole[roleKey] || [];
+    if (items.length === 0) return true;
+    return items.every(item => {
+      const comp = completions.find(c => c.check_no === item.check_no);
+      return comp && comp.result !== 'pending';
+    });
+  };
+
+  // Get final approved_at from fresh approvals state (not stale log prop)
+  const finalApprovedAt = (() => {
+    if (log.approved_at) return log.approved_at;
+    const allDone = approvals.length > 0 && approvals.every(a => a.status === 'approved');
+    if (!allDone) return null;
+    const times = approvals.filter(a => a.approved_at).map(a => a.approved_at);
+    return times.length > 0 ? times.reduce((a, b) => (a > b ? a : b)) : null;
+  })();
+
   return (
     <div className="overlay" onClick={onClose} style={{ zIndex: 2000, alignItems: 'flex-start', overflowY: 'auto', padding: '24px 16px' }}>
       <div onClick={e => e.stopPropagation()}
@@ -1026,7 +1046,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role, onClose, o
             <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>Event #{def?.event_no} · {def?.name_th}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{log.line_name} · {log.station_number || 'ไม่ระบุ Station'} · {log.work_date} {log.event_time || ''}</div>
             {(() => {
-              const approvedAt = getApprovedAt(log);
+              const approvedAt = finalApprovedAt;
               if (!approvedAt) return null;
               const dur = calcDuration(log.work_date, log.event_time, approvedAt);
               const approvedTime = new Date(approvedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
@@ -1079,6 +1099,12 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role, onClose, o
             {approvals.map(appr => {
               const rm = ROLE_META[appr.role_key] || { label: appr.role_key, color: '#aaa', bg: 'rgba(128,128,128,0.1)' };
               const canApprove = myApproveKeys.includes(appr.role_key) && appr.status === 'pending';
+              const checklistDone = isChecklistDone(appr.role_key);
+              const checklistItems = checksByRole[appr.role_key] || [];
+              const doneCount = checklistItems.filter(item => {
+                const comp = completions.find(c => c.check_no === item.check_no);
+                return comp && comp.result !== 'pending';
+              }).length;
               return (
                 <div key={appr.role_key} style={{ background: 'var(--card)', borderRadius: 10, padding: '14px 16px', border: `1px solid ${appr.status === 'approved' ? rm.color + '40' : appr.status === 'rejected' ? '#ef444440' : 'var(--border)'}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -1096,12 +1122,26 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role, onClose, o
                   {appr.notes && (
                     <div style={{ fontSize: 10, color: '#ef4444', marginBottom: 6, fontStyle: 'italic' }}>หมายเหตุ: {appr.notes}</div>
                   )}
+                  {/* Checklist progress for this role */}
+                  {canApprove && checklistItems.length > 0 && (
+                    <div style={{ fontSize: 10, marginBottom: 8, color: checklistDone ? '#22c55e' : '#f59e0b', fontWeight: 600 }}>
+                      {checklistDone
+                        ? `✓ Checklist ครบ (${doneCount}/${checklistItems.length})`
+                        : `⚠ ต้องทำ Checklist ก่อน (${doneCount}/${checklistItems.length} เสร็จ)`}
+                    </div>
+                  )}
                   {canApprove && (
                     <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                       <button
-                        disabled={approvingRole === appr.role_key}
+                        disabled={approvingRole === appr.role_key || !checklistDone}
                         onClick={() => handleApprove(appr.role_key, 'approved')}
-                        style={{ flex: 1, padding: '6px 0', borderRadius: 6, border: 'none', background: rm.bg, color: rm.color, fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
+                        title={!checklistDone ? 'ต้องทำ Checklist ให้ครบก่อนอนุมัติ' : ''}
+                        style={{ flex: 1, padding: '6px 0', borderRadius: 6, border: 'none',
+                          background: checklistDone ? rm.bg : 'var(--bg3)',
+                          color: checklistDone ? rm.color : 'var(--muted)',
+                          fontWeight: 700, fontSize: 11,
+                          cursor: checklistDone ? 'pointer' : 'not-allowed',
+                          opacity: checklistDone ? 1 : 0.5 }}>
                         ✓ อนุมัติ
                       </button>
                       <button
