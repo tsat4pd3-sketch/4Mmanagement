@@ -25,7 +25,7 @@ const ROLE_MAP: Record<string, string[]> = {
 // ─── Category metadata ───────────────────────────────────────────────────────
 const CAT_META: Record<string, { icon: string; label: string; urgent: boolean }> = {
   A: { icon: '🔄', label: 'Normal Process',       urgent: false },
-  B: { icon: '🔧', label: 'Planned Event',        urgent: true  },
+  B: { icon: '🔧', label: 'Intentional Stop',     urgent: true  },
   C: { icon: '🚨', label: 'Unplanned / Accident', urgent: true  },
 }
 
@@ -97,7 +97,7 @@ serve(async (req) => {
       if (cm.urgent) {
         const urgentTag = cat === 'C'
           ? '🚨 <b>แจ้งเตือนด่วน — หยุดกระทันหัน</b>'
-          : '🔧 <b>แจ้งเตือน — หยุดตามแผน</b>'
+          : '🔧 <b>แจ้งเตือน — หยุดโดยตัดสินใจก่อน (Intentional Stop)</b>'
 
         const msg = [
           urgentTag,
