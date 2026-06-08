@@ -50,6 +50,17 @@ function calcDuration(workDate, eventTime, approvedAt) {
   return h > 0 ? `${h} ชม. ${m} นาที` : `${m} นาที`;
 }
 
+// Get effective approved_at: from log field or fallback to max approval timestamp
+function getApprovedAt(log) {
+  if (log.approved_at) return log.approved_at;
+  if (log.overall_status !== 'approved') return null;
+  const approvals = log.cqi15_event_approvals || [];
+  const times = approvals
+    .filter(a => a.status === 'approved' && a.approved_at)
+    .map(a => a.approved_at);
+  return times.length > 0 ? times.reduce((a, b) => (a > b ? a : b)) : null;
+}
+
 /* ─── Main Component ─────────────────────────────────────────── */
 export default function EventLog() {
   const { role, fullName } = useContext(UserContext);
@@ -531,8 +542,9 @@ function EventList({ logs, loading, onSelect, role }) {
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{log.work_date}</div>
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{log.event_time || '—'}</div>
-                      {log.approved_at && (() => {
-                        const dur = calcDuration(log.work_date, log.event_time, log.approved_at);
+                      {(() => {
+                        const approvedAt = getApprovedAt(log);
+                        const dur = calcDuration(log.work_date, log.event_time, approvedAt);
                         return dur ? (
                           <div style={{ fontSize: 10, color: '#22c55e', fontWeight: 700, marginTop: 2 }}>⏱ {dur}</div>
                         ) : null;
@@ -712,9 +724,11 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role, onClose, o
             </div>
             <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>Event #{def?.event_no} · {def?.name_th}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{log.line_name} · {log.station_number || 'ไม่ระบุ Station'} · {log.work_date} {log.event_time || ''}</div>
-            {log.approved_at && (() => {
-              const dur = calcDuration(log.work_date, log.event_time, log.approved_at);
-              const approvedTime = new Date(log.approved_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+            {(() => {
+              const approvedAt = getApprovedAt(log);
+              if (!approvedAt) return null;
+              const dur = calcDuration(log.work_date, log.event_time, approvedAt);
+              const approvedTime = new Date(approvedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
               return (
                 <div style={{ display: 'flex', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, background: 'rgba(34,197,94,0.12)', padding: '3px 10px', borderRadius: 20 }}>
