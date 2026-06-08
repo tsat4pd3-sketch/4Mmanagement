@@ -83,7 +83,18 @@ function LiveTab({ role }) {
   const [qtyEdit, setQtyEdit]     = useState({ actual_qty: '', qty_ng_rh: '', qty_ng_lh: '' });
   const [savingQty, setSavingQty] = useState(false);
 
+  // Kanban
+  const [kanbanTargets, setKanbanTargets] = useState([]);
+  const [showAddTarget, setShowAddTarget] = useState(false);
+  const [targetForm, setTargetForm]       = useState({ mat_no: '', part_name: '', p_no: '', customer: '', qty_target: '' });
+  const [savingTarget, setSavingTarget]   = useState(false);
+  const [showScan, setShowScan]           = useState(false);
+  const [scanTarget, setScanTarget]       = useState(null);
+  const [scanForm, setScanForm]           = useState({ scanned_value: '', qty: '' });
+  const [savingScan, setSavingScan]       = useState(false);
+
   const canManage = ['admin', 'manager', 'supervisor'].includes(role);
+  const canScan   = ['admin', 'manager', 'supervisor', 'leader'].includes(role);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -117,19 +128,39 @@ function LiveTab({ role }) {
     setDtLogs(data || []);
   }, []);
 
+  const loadKanban = useCallback(async (sessionId) => {
+    if (!sessionId) return;
+    const { data } = await supabaseDR.from('kanban_targets')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('created_at');
+    setKanbanTargets(data || []);
+  }, []);
+
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { if (selSession) loadDT(selSession.id); }, [selSession, loadDT]);
+  useEffect(() => {
+    if (selSession) {
+      loadDT(selSession.id);
+      loadKanban(selSession.id);
+    }
+  }, [selSession, loadDT, loadKanban]);
 
   // Realtime via DR project
   useEffect(() => {
-    const ch = supabaseDR.channel('live-downtime')
+    const ch = supabaseDR.channel('live-dr')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' }, () => {
         if (selSession) loadDT(selSession.id);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_targets' }, () => {
+        if (selSession) loadKanban(selSession.id);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_scans' }, () => {
+        if (selSession) loadKanban(selSession.id);
+      })
       .subscribe();
     return () => supabaseDR.removeChannel(ch);
-  }, [selSession, load, loadDT]);
+  }, [selSession, load, loadDT, loadKanban]);
 
   const handleOpenSession = async () => {
     if (!openForm.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
@@ -195,6 +226,65 @@ function LiveTab({ role }) {
     setShowDT(false);
     setDtForm({ downtime_type_id: '', started_at: '', ended_at: '', duration_min: '', machine_no: '', description: '' });
     loadDT(selSession.id);
+  };
+
+  const handleAddTarget = async () => {
+    if (!targetForm.mat_no) { toast.error('กรอก MAT.NO ก่อน'); return; }
+    if (!targetForm.qty_target) { toast.error('กรอกจำนวนเป้าหมาย'); return; }
+    setSavingTarget(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabaseDR.from('kanban_targets').insert({
+      session_id:  selSession.id,
+      mat_no:      targetForm.mat_no.trim(),
+      part_name:   targetForm.part_name.trim() || null,
+      p_no:        targetForm.p_no.trim() || null,
+      customer:    targetForm.customer.trim() || null,
+      qty_target:  parseInt(targetForm.qty_target) || 0,
+      created_by:  fullName,
+    });
+    setSavingTarget(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success('เพิ่มเป้าหมาย Kanban แล้ว');
+    setShowAddTarget(false);
+    setTargetForm({ mat_no: '', part_name: '', p_no: '', customer: '', qty_target: '' });
+    loadKanban(selSession.id);
+  };
+
+  const handleDeleteTarget = async (id) => {
+    if (!window.confirm('ลบเป้าหมายนี้? (จะลบ scan logs ทั้งหมดด้วย)')) return;
+    const { error } = await supabaseDR.from('kanban_targets').delete().eq('id', id);
+    if (error) { toast.error(error.message); return; }
+    loadKanban(selSession.id);
+  };
+
+  const openScan = (target) => {
+    setScanTarget(target);
+    setScanForm({ scanned_value: '', qty: target.qty_target - target.qty_confirmed });
+    setShowScan(true);
+  };
+
+  const handleScan = async () => {
+    if (!scanForm.scanned_value.trim()) { toast.error('กรอกหรือสแกน Barcode ก่อน'); return; }
+    setSavingScan(true);
+    const qty = parseInt(scanForm.qty) || 0;
+    const { error: e1 } = await supabaseDR.from('kanban_scans').insert({
+      target_id:     scanTarget.id,
+      session_id:    selSession.id,
+      scanned_value: scanForm.scanned_value.trim(),
+      mat_no:        scanTarget.mat_no,
+      qty,
+      scanned_by:    fullName,
+    });
+    if (e1) { setSavingScan(false); toast.error(e1.message); return; }
+    const newConfirmed = scanTarget.qty_confirmed + qty;
+    const { error: e2 } = await supabaseDR.from('kanban_targets')
+      .update({ qty_confirmed: newConfirmed })
+      .eq('id', scanTarget.id);
+    setSavingScan(false);
+    if (e2) { toast.error(e2.message); return; }
+    toast.success(`Confirm ${qty} ชิ้น ✓`);
+    setShowScan(false);
+    loadKanban(selSession.id);
   };
 
   const handleCloseSession = async () => {
@@ -323,6 +413,65 @@ function LiveTab({ role }) {
               </div>
             </div>
 
+            {/* Kanban Targets */}
+            <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>📦 เป้าหมาย Kanban ({kanbanTargets.length} รายการ)</div>
+                {canManage && (
+                  <button onClick={() => setShowAddTarget(true)}
+                    style={{ background: '#0ea5e9', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                    + เพิ่มเป้าหมาย
+                  </button>
+                )}
+              </div>
+              {kanbanTargets.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '16px', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีเป้าหมาย Kanban — กด "+ เพิ่มเป้าหมาย" เพื่อระบุ</div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {kanbanTargets.map(t => {
+                  const pct     = t.qty_target > 0 ? Math.min(100, Math.round((t.qty_confirmed / t.qty_target) * 100)) : 0;
+                  const done    = t.qty_confirmed >= t.qty_target && t.qty_target > 0;
+                  const barClr  = done ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#0ea5e9';
+                  return (
+                    <div key={t.id} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '10px 14px', border: `1px solid ${done ? '#22c55e40' : 'var(--border)'}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{t.mat_no}</span>
+                            {t.part_name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{t.part_name}</span>}
+                            {t.customer && <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>{t.customer}</span>}
+                            {done && <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 20, background: 'rgba(34,197,94,0.15)', color: '#22c55e', fontWeight: 700 }}>✓ ครบแล้ว</span>}
+                          </div>
+                          {t.p_no && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>P.NO: {t.p_no}</div>}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: barClr, lineHeight: 1 }}>{t.qty_confirmed}</div>
+                            <div style={{ fontSize: 10, color: 'var(--muted)' }}>/ {t.qty_target} ชิ้น</div>
+                          </div>
+                          {canScan && !done && (
+                            <button onClick={() => openScan(t)}
+                              style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                              📷 Scan Confirm
+                            </button>
+                          )}
+                          {canManage && (
+                            <button onClick={() => handleDeleteTarget(t.id)}
+                              style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
+                          )}
+                        </div>
+                      </div>
+                      {/* Progress bar */}
+                      <div style={{ height: 6, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: barClr, borderRadius: 99, transition: 'width 0.4s ease' }} />
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3, textAlign: 'right' }}>{pct}%</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Downtime list */}
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -404,6 +553,77 @@ function LiveTab({ role }) {
                 <button onClick={() => setShowOpen(false)} style={cancelBtnStyle}>ยกเลิก</button>
                 <button onClick={handleOpenSession} disabled={!openForm.line_name}
                   style={{ ...saveBtnStyle, opacity: !openForm.line_name ? 0.5 : 1 }}>เปิดกะ</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Add Kanban target modal */}
+        {showAddTarget && (
+          <div className="overlay" onClick={() => setShowAddTarget(false)} style={{ zIndex: 2000 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>📦 เพิ่มเป้าหมาย Kanban</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <Field label="MAT.NO *">
+                    <input autoFocus value={targetForm.mat_no} onChange={e => setTargetForm(f => ({ ...f, mat_no: e.target.value }))} placeholder="เช่น 10100335" style={inputStyle} />
+                  </Field>
+                  <Field label="จำนวนเป้าหมาย (ชิ้น) *">
+                    <input type="number" min="1" value={targetForm.qty_target} onChange={e => setTargetForm(f => ({ ...f, qty_target: e.target.value }))} placeholder="0" style={inputStyle} />
+                  </Field>
+                </div>
+                <Field label="ชื่อชิ้นงาน / Part Name">
+                  <input value={targetForm.part_name} onChange={e => setTargetForm(f => ({ ...f, part_name: e.target.value }))} placeholder="เช่น RB3B 16E061 BA" style={inputStyle} />
+                </Field>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <Field label="P.NO">
+                    <input value={targetForm.p_no} onChange={e => setTargetForm(f => ({ ...f, p_no: e.target.value }))} placeholder="เช่น RB3B16E061BA" style={inputStyle} />
+                  </Field>
+                  <Field label="Customer">
+                    <input value={targetForm.customer} onChange={e => setTargetForm(f => ({ ...f, customer: e.target.value }))} placeholder="เช่น FORD" style={inputStyle} />
+                  </Field>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowAddTarget(false)} style={cancelBtnStyle}>ยกเลิก</button>
+                <button onClick={handleAddTarget} disabled={savingTarget || !targetForm.mat_no || !targetForm.qty_target}
+                  style={{ ...saveBtnStyle, background: '#0ea5e9', opacity: (savingTarget || !targetForm.mat_no || !targetForm.qty_target) ? 0.5 : 1 }}>
+                  {savingTarget ? '...' : '+ เพิ่มเป้าหมาย'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Scan confirm modal */}
+        {showScan && scanTarget && (
+          <div className="overlay" onClick={() => setShowScan(false)} style={{ zIndex: 2000 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,420px)' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: 'var(--text)' }}>📷 Scan Confirm</div>
+              <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>
+                {scanTarget.mat_no}{scanTarget.part_name ? ` · ${scanTarget.part_name}` : ''} — เหลือ {scanTarget.qty_target - scanTarget.qty_confirmed} ชิ้น
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <Field label="สแกน Barcode (Tag Card)">
+                  <input autoFocus value={scanForm.scanned_value}
+                    onChange={e => setScanForm(f => ({ ...f, scanned_value: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter' && scanForm.scanned_value) document.getElementById('scan-qty-input')?.focus(); }}
+                    placeholder="วาง cursor ที่นี่แล้วสแกน..."
+                    style={{ ...inputStyle, fontSize: 14, fontFamily: 'monospace' }} />
+                </Field>
+                <Field label="จำนวน (ชิ้น)">
+                  <input id="scan-qty-input" type="number" min="1" value={scanForm.qty}
+                    onChange={e => setScanForm(f => ({ ...f, qty: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter') handleScan(); }}
+                    style={{ ...inputStyle, fontSize: 18, fontWeight: 800, textAlign: 'center' }} />
+                </Field>
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowScan(false)} style={cancelBtnStyle}>ยกเลิก</button>
+                <button onClick={handleScan} disabled={savingScan || !scanForm.scanned_value || !scanForm.qty}
+                  style={{ ...saveBtnStyle, background: '#22c55e', opacity: (savingScan || !scanForm.scanned_value || !scanForm.qty) ? 0.5 : 1 }}>
+                  {savingScan ? '...' : '✓ Confirm'}
+                </button>
               </div>
             </div>
           </div>
