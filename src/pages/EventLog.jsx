@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useCallback } from 'react';
+import * as XLSX from 'xlsx';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -267,6 +268,7 @@ export default function EventLog() {
           logs={logs} loading={loading}
           onSelect={setSelectedLog}
           role={role}
+          eventDefs={eventDefs}
         />
       )}
 
@@ -461,8 +463,291 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
   );
 }
 
+/* ─── Dept mapping ───────────────────────────────────────────── */
+const ROLE_TO_DEPT = { O: 'PD', ME: 'MTN', JME: 'JIG MTN', QT: 'QA' };
+const DEPT_ORDER   = ['O', 'ME', 'JME', 'QT'];
+
+function fmtTime(isoOrTime) {
+  if (!isoOrTime) return '';
+  // If it's an ISO string (contains 'T'), parse as date
+  if (isoOrTime.includes('T')) {
+    return new Date(isoOrTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+  // Otherwise it's already HH:MM
+  return isoOrTime.slice(0, 5);
+}
+
+/* ─── Excel Export ───────────────────────────────────────────── */
+function exportExcel(logs) {
+  if (!logs.length) { toast.info('ไม่มีข้อมูลที่จะส่งออก'); return; }
+
+  const today = new Date().toISOString().split('T')[0];
+  // 21 columns: A–U
+  const COL_COUNT = 21;
+
+  const rows = [];   // array of arrays
+  const merges = []; // { s: {r,c}, e: {r,c} }
+
+  // ── Title row ──
+  rows.push(['Event Log Sheet', ...Array(COL_COUNT - 1).fill('')]);
+  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: COL_COUNT - 1 } });
+
+  // ── Header row 1 ──
+  rows.push([
+    'Date', 'Start Time', 'Operator', 'Weld cell Operator', 'Station Number',
+    'Issue', 'Event (A)', 'Event (B)', 'Event (C)', 'Event ID', '',
+    'ส่วนงาน', 'รายละเอียดงานซ่อม', "Product Q'ty", "OK Q'ty", "NG Q'ty",
+    "Rework(OK) Q'ty", "Scrap Q'ty", 'Approved by (Leader up)',
+    'End Time before Start Production (QA)', 'Remark'
+  ]);
+  // ── Header row 2 ──
+  rows.push([
+    '', '', '', '', '', '', 'A', 'B', 'C', '', '',
+    'รายละเอียดงาน', '', '', '', '', '', '', '', '', ''
+  ]);
+  // merge header cols that span 2 rows
+  [0,1,2,3,4,5,9,10,11,12,13,14,15,16,17,18,19,20].forEach(c => {
+    merges.push({ s: { r: 1, c }, e: { r: 2, c } });
+  });
+
+  let rowIdx = 3; // next row to write
+
+  logs.forEach(log => {
+    const def       = log.cqi15_event_definitions;
+    const cat       = def?.category;
+    const approvals = log.cqi15_event_approvals || [];
+    const reporter  = log.profiles?.full_name || '';
+
+    // helper: get approver name for a role key
+    const approverName = (rk) => {
+      const a = approvals.find(x => x.role_key === rk && x.status === 'approved');
+      return a?.profiles?.full_name || '';
+    };
+
+    // Get QA approved_at for End Time
+    const qaApproval = approvals.find(x => x.role_key === 'QT' && x.status === 'approved');
+    const endTime    = qaApproval?.approved_at ? fmtTime(qaApproval.approved_at) : '';
+
+    // Determine which roles are present in approvals
+    const rolesPresent = DEPT_ORDER.filter(rk => approvals.some(a => a.role_key === rk));
+    const depts = rolesPresent.length > 0 ? rolesPresent : ['O'];
+
+    const eventStartRow = rowIdx;
+    const numSubRows    = depts.length;
+
+    depts.forEach((rk, i) => {
+      const dept    = ROLE_TO_DEPT[rk] || rk;
+      const isFirst = i === 0;
+      const isQA    = rk === 'QT';
+
+      // detail text per dept
+      let detail = '';
+      if (isQA) detail = 'ตรวจสอบก่อนเริ่มผลิต';
+      else if (isFirst) detail = def?.name_th || def?.name_en || '';
+
+      const row = [
+        isFirst ? log.work_date    : '',
+        isFirst ? fmtTime(log.event_time) : '',
+        isFirst ? reporter          : '',
+        isFirst ? (log.weld_cell_operator || '') : '',
+        isFirst ? (log.station_number || '') : '',
+        isFirst ? (log.issue_description || '') : '',
+        isFirst ? (cat === 'A' ? '/' : '') : '',  // Cat A
+        isFirst ? (cat === 'B' ? '/' : '') : '',  // Cat B
+        isFirst ? (cat === 'C' ? '/' : '') : '',  // Cat C
+        isFirst ? (def?.event_no != null ? `#${def.event_no}` : '') : '',
+        '',   // blank col K
+        dept,
+        detail,
+        isFirst ? (log.qty_total  ?? '') : '',
+        isFirst ? (log.qty_ok     ?? '') : '',
+        isFirst ? (log.qty_ng     ?? '') : '',
+        isFirst ? (log.qty_rework ?? '') : '',
+        isFirst ? (log.qty_scrap  ?? '') : '',
+        approverName(rk),   // Approved by for this dept
+        isQA ? endTime : '',
+        isFirst ? (log.remark || '') : '',
+      ];
+      rows.push(row);
+      rowIdx++;
+    });
+
+    // Merge first-column cells across sub-rows for this event
+    if (numSubRows > 1) {
+      [0,1,2,3,4,5,6,7,8,9,13,14,15,16,17,20].forEach(c => {
+        merges.push({ s: { r: eventStartRow, c }, e: { r: eventStartRow + numSubRows - 1, c } });
+      });
+    }
+  });
+
+  // ── Footer ──
+  rows.push(['หมายเหตุ: ในการเช็คย้อนกลับยึดตาม หัว/กลาง/ท้าย', ...Array(COL_COUNT - 1).fill('')]);
+  merges.push({ s: { r: rowIdx, c: 0 }, e: { r: rowIdx, c: COL_COUNT - 1 } });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!merges'] = merges;
+
+  // Column widths
+  ws['!cols'] = [
+    { wch: 12 }, { wch: 10 }, { wch: 16 }, { wch: 18 }, { wch: 14 },
+    { wch: 28 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 10 }, { wch: 4 },
+    { wch: 10 }, { wch: 28 }, { wch: 12 }, { wch: 8 }, { wch: 8 },
+    { wch: 12 }, { wch: 10 }, { wch: 20 }, { wch: 14 }, { wch: 20 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Event Log');
+  XLSX.writeFile(wb, `CQI15_EventLog_${today}.xlsx`);
+}
+
+/* ─── PDF Export ─────────────────────────────────────────────── */
+function exportPDF(logs) {
+  if (!logs.length) { toast.info('ไม่มีข้อมูลที่จะส่งออก'); return; }
+
+  const buildRows = () => {
+    return logs.map(log => {
+      const def       = log.cqi15_event_definitions;
+      const cat       = def?.category;
+      const approvals = log.cqi15_event_approvals || [];
+      const reporter  = log.profiles?.full_name || '—';
+
+      const approverName = (rk) => {
+        const a = approvals.find(x => x.role_key === rk && x.status === 'approved');
+        return a?.profiles?.full_name || '';
+      };
+
+      const qaApproval = approvals.find(x => x.role_key === 'QT' && x.status === 'approved');
+      const endTime    = qaApproval?.approved_at ? fmtTime(qaApproval.approved_at) : '';
+      const rolesPresent = DEPT_ORDER.filter(rk => approvals.some(a => a.role_key === rk));
+      const depts = rolesPresent.length > 0 ? rolesPresent : ['O'];
+      const numSubRows = depts.length;
+
+      return depts.map((rk, i) => {
+        const dept    = ROLE_TO_DEPT[rk] || rk;
+        const isFirst = i === 0;
+        const isQA    = rk === 'QT';
+        let detail = '';
+        if (isQA) detail = 'ตรวจสอบก่อนเริ่มผลิต';
+        else if (isFirst) detail = def?.name_th || def?.name_en || '';
+
+        return {
+          isFirst, numSubRows, dept, detail, isQA, endTime,
+          date:      log.work_date,
+          startTime: fmtTime(log.event_time),
+          reporter,
+          weldCellOp: log.weld_cell_operator || '',
+          station:   log.station_number || '',
+          issue:     log.issue_description || '',
+          catA: cat === 'A' ? '/' : '',
+          catB: cat === 'B' ? '/' : '',
+          catC: cat === 'C' ? '/' : '',
+          eventId: def?.event_no != null ? `#${def.event_no}` : '',
+          qtyTotal:  log.qty_total ?? '',
+          qtyOk:     log.qty_ok ?? '',
+          qtyNg:     log.qty_ng ?? '',
+          qtyRework: log.qty_rework ?? '',
+          qtyScrap:  log.qty_scrap ?? '',
+          approved:  approverName(rk),
+          remark:    log.remark || '',
+        };
+      });
+    });
+  };
+
+  const allSubRows = buildRows();
+
+  const rowsHtml = allSubRows.map(subRows => {
+    return subRows.map((r, i) => {
+      const rs = r.numSubRows;
+      const rowspan = rs > 1 ? `rowspan="${rs}"` : '';
+      const firstCells = r.isFirst ? `
+        <td ${rowspan}>${r.date}</td>
+        <td ${rowspan}>${r.startTime}</td>
+        <td ${rowspan}>${r.reporter}</td>
+        <td ${rowspan}>${r.weldCellOp}</td>
+        <td ${rowspan}>${r.station}</td>
+        <td ${rowspan} style="max-width:120px;word-wrap:break-word">${r.issue}</td>
+        <td ${rowspan} style="text-align:center">${r.catA}</td>
+        <td ${rowspan} style="text-align:center">${r.catB}</td>
+        <td ${rowspan} style="text-align:center">${r.catC}</td>
+        <td ${rowspan}>${r.eventId}</td>
+        <td ${rowspan}></td>
+      ` : '';
+      const lastCells = r.isFirst ? `
+        <td ${rowspan} style="text-align:center">${r.qtyTotal}</td>
+        <td ${rowspan} style="text-align:center">${r.qtyOk}</td>
+        <td ${rowspan} style="text-align:center">${r.qtyNg}</td>
+        <td ${rowspan} style="text-align:center">${r.qtyRework}</td>
+        <td ${rowspan} style="text-align:center">${r.qtyScrap}</td>
+      ` : '';
+      return `<tr>
+        ${firstCells}
+        <td>${r.dept}</td>
+        <td style="max-width:140px;word-wrap:break-word">${r.detail}</td>
+        ${lastCells}
+        <td>${r.approved}</td>
+        <td>${r.isQA ? r.endTime : ''}</td>
+        ${r.isFirst ? `<td ${rowspan}>${r.remark}</td>` : ''}
+      </tr>`;
+    }).join('');
+  }).join('');
+
+  const html = `<!DOCTYPE html><html><head>
+  <meta charset="utf-8">
+  <title>CQI-15 Event Log Sheet</title>
+  <style>
+    body { font-family: 'Sarabun', Tahoma, sans-serif; font-size: 9pt; margin: 10px; }
+    h2 { text-align: center; margin: 4px 0; font-size: 12pt; }
+    table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+    th, td { border: 1px solid #333; padding: 3px 5px; vertical-align: top; font-size: 8pt; word-break: break-word; }
+    th { background: #d0d8e8; text-align: center; font-size: 8pt; }
+    .footer { margin-top: 8px; font-size: 8pt; }
+    @media print { body { margin: 5mm; } @page { size: A3 landscape; margin: 8mm; } }
+  </style>
+  </head><body>
+  <h2>Event Log Sheet</h2>
+  <table>
+    <thead>
+      <tr>
+        <th rowspan="2" style="width:60px">Date</th>
+        <th rowspan="2" style="width:44px">Start Time</th>
+        <th rowspan="2" style="width:70px">Operator</th>
+        <th rowspan="2" style="width:75px">Weld Cell Operator</th>
+        <th rowspan="2" style="width:55px">Station Number</th>
+        <th rowspan="2" style="width:110px">Issue</th>
+        <th colspan="3">Event</th>
+        <th rowspan="2" style="width:40px">Event ID</th>
+        <th rowspan="2" style="width:18px"></th>
+        <th rowspan="2" style="width:46px">ส่วนงาน</th>
+        <th rowspan="2" style="width:110px">รายละเอียดงาน</th>
+        <th rowspan="2" style="width:40px">Product Q'ty</th>
+        <th rowspan="2" style="width:32px">OK Q'ty</th>
+        <th rowspan="2" style="width:32px">NG Q'ty</th>
+        <th rowspan="2" style="width:42px">Rework Q'ty</th>
+        <th rowspan="2" style="width:38px">Scrap Q'ty</th>
+        <th rowspan="2" style="width:80px">Approved by</th>
+        <th rowspan="2" style="width:52px">End Time (QA)</th>
+        <th rowspan="2" style="width:80px">Remark</th>
+      </tr>
+      <tr>
+        <th style="width:20px">A</th>
+        <th style="width:20px">B</th>
+        <th style="width:20px">C</th>
+      </tr>
+    </thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+  <div class="footer">หมายเหตุ: ในการเช็คย้อนกลับยึดตาม หัว/กลาง/ท้าย</div>
+  <script>window.onload = function(){ window.print(); }</script>
+  </body></html>`;
+
+  const win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
+}
+
 /* ─── Event List ─────────────────────────────────────────────── */
-function EventList({ logs, loading, onSelect, role }) {
+function EventList({ logs, loading, onSelect, role, eventDefs }) {
   const [filterCat, setFilterCat] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterDate, setFilterDate] = useState('');
@@ -506,6 +791,22 @@ function EventList({ logs, loading, onSelect, role }) {
           <button onClick={() => setFilterDate('')} style={{ padding: '4px 10px', fontSize: 11, borderRadius: 6, border: 'none', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
         )}
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>{filtered.length} รายการ</span>
+        {filtered.length > 0 && (
+          <>
+            <button
+              onClick={() => exportExcel(filtered)}
+              title="Export Excel"
+              style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #22c55e40', background: 'rgba(34,197,94,0.1)', color: '#22c55e', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              📥 Export Excel
+            </button>
+            <button
+              onClick={() => exportPDF(filtered)}
+              title="Export PDF / Print"
+              style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #4d9fff40', background: 'rgba(77,159,255,0.1)', color: '#4d9fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              🖨️ Export PDF
+            </button>
+          </>
+        )}
       </div>
 
       {loading ? (
