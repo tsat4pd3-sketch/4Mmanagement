@@ -236,7 +236,7 @@ export default function EventLog() {
         </div>
         <button
           onClick={() => setTab(tab === 'create' ? 'list' : 'create')}
-          style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'create' ? 'var(--bg3)' : 'var(--accent)', color: tab === 'create' ? 'var(--text2)' : '#000', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+          style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'create' ? 'var(--bg3)' : '#16a34a', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
           {tab === 'create' ? '← กลับรายการ' : '+ บันทึก Event ใหม่'}
         </button>
       </div>
