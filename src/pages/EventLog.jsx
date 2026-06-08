@@ -913,8 +913,9 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
 }
 
 /* ─── Event Detail Modal ─────────────────────────────────────── */
-function EventDetailModal({ log, matrix, checkItems, eventDefs, role, onClose, onRefresh }) {
-  const { fullName } = useContext(UserContext);
+function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, onClose, onRefresh }) {
+  const { fullName, role: roleCtx } = useContext(UserContext);
+  const role = roleCtx || roleProp;
   const [approvals, setApprovals]       = useState(log.cqi15_event_approvals || []);
   const [completions, setCompletions]   = useState([]);
   const [loadingChecks, setLoadingChecks] = useState(true);
