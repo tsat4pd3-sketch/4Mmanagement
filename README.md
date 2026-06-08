@@ -1,16 +1,73 @@
-# React + Vite
+# ESM — Enterprise Shopfloor Management
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+ระบบบริหารจัดการโรงงานครบวงจร สำหรับ **Thai Summit Group**
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Modules
 
-## React Compiler
+| Module | สถานะ | คำอธิบาย |
+|--------|--------|---------|
+| 4M Change Management | ✅ Live | บันทึก/อนุมัติการเปลี่ยนแปลง Man · Machine · Material · Method |
+| CQI-15 Welding Event Log | ✅ Live | บันทึก Welding Event (Cat A/B/C) + Approval Workflow 4 แผนก + Telegram |
+| Attendance & PPE | ✅ Live | เช็คชื่อ + PPE รายวัน + ลางาน (กะเช้า/กะดึก) |
+| Employee Management | ✅ Live | ฐานข้อมูลพนักงาน, Skills Matrix, Station Assignment |
+| Shift Management | ✅ Live | ตารางกะ A/B/C + Override + Merge |
+| Reports & Export | ✅ Live | 10 tabs, CSV, PDF, Excel (attendance form, CQI-15) |
+| Daily Production Report | 🔜 Planned | แทน AppSheet — บันทึก Output/Defect/Downtime รายกะ |
+| Downtime Tracking | 🔜 Planned | บันทึกและวิเคราะห์ Downtime รายไลน์/เครื่องจักร |
+| Production Target vs Actual | 🔜 Planned | เปรียบ Target/Actual รายวัน + กราฟแนวโน้ม |
+| PM Checker | 🔜 Planned | แผน Preventive Maintenance + Approval + ประวัติ |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## Tech Stack
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 19 + Vite |
+| Routing | React Router DOM 7 |
+| Database | Supabase (PostgreSQL) |
+| Auth | Supabase Auth |
+| Realtime | Supabase Realtime |
+| Edge Functions | Deno (Supabase) |
+| Notification | Telegram Bot API |
+| Charts | Recharts |
+| Export | SheetJS (xlsx) |
+| Deploy | Render.com (Static Site) |
+
+---
+
+## Quick Start
+
+```bash
+npm install
+npm run dev
+```
+
+Environment variables (`.env.local`):
+```
+VITE_SUPABASE_URL=https://ewhdfqwfwofivojtsizn.supabase.co
+VITE_SUPABASE_ANON_KEY=<key>
+```
+
+---
+
+## Role System
+
+| Role | สิทธิ์ |
+|------|--------|
+| `admin` | ทุกอย่าง |
+| `manager` | ดู/แก้ไขทุกหน้า ยกเว้น Add User |
+| `supervisor` | จัดการไลน์ตัวเอง, Register พนักงาน, อนุมัติ 4M/CQI-15 |
+| `leader` | เห็นเฉพาะ line/team ของตัวเอง |
+| `qa` | Dashboard + Report + อนุมัติ CQI-15 QT role |
+
+---
+
+## Deploy
+
+- **Platform:** Render.com (Static Site)
+- **Build:** `npm run build` → `./dist`
+- **Branch:** `main` (production), `claude/awesome-gauss-Sflxt` (development)
+- **Supabase Project:** `ewhdfqwfwofivojtsizn`
