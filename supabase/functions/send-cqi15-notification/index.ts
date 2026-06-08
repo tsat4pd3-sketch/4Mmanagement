@@ -69,8 +69,19 @@ function buildDeptActionLines(
   return lines
 }
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
 serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: CORS_HEADERS })
+  }
+
   try {
     const body = await req.json()
     const { event, log, event_def, roles_needed, log_id, role_key, status, approver } = body
@@ -257,10 +268,13 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
     })
   } catch (err) {
     console.error('send-cqi15-notification error:', err)
-    return new Response(JSON.stringify({ error: String(err) }), { status: 500 })
+    return new Response(JSON.stringify({ error: String(err) }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+    })
   }
 })
