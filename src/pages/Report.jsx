@@ -2903,6 +2903,7 @@ function AttendanceFormTab() {
   const [period,  setPeriod]  = useState(2); // 1=1-15, 2=16-end
   const [line,    setLine]    = useState('');
   const [dept,    setDept]    = useState('');
+  const [formNo,  setFormNo]  = useState('F-HR-001');
   const [lines,   setLines]   = useState([]);
   const [empRows, setEmpRows] = useState([]); // [{emp, byDay:{d:{present,ot,leave}}}]
   const [loading, setLoading] = useState(false);
@@ -3055,6 +3056,7 @@ function AttendanceFormTab() {
         </tr>`;
     }).join('');
 
+    const formNoStr = formNo || '';
     const html = `<!DOCTYPE html>
 <html lang="th">
 <head>
@@ -3084,11 +3086,16 @@ function AttendanceFormTab() {
     </td>
     <td style="vertical-align:middle;padding:2px 8px">
       <div style="font-size:11px;font-weight:bold;text-align:center">บริษัท ไทยซัมมิท โอโตโมทีฟ จำกัด</div>
-      <div style="font-size:10px;font-weight:bold;text-align:center;margin-top:2px">ใบบันทึกการมาทำงาน - การหยุดงานของพนักงาน</div>
+      <div style="font-size:10px;font-weight:bold;text-align:center;margin-top:2px">ใบบันทึกการมาทำงาน - กราฟแรงงานของพนักงาน</div>
       <div style="font-size:10px;text-align:center;margin-top:2px">${deptLabel}</div>
     </td>
-    <td style="width:38%;vertical-align:top;padding:0">
+    <td style="width:42%;vertical-align:top;padding:0">
       <table style="width:100%;border-collapse:collapse;font-size:9px">
+        <tr>
+          <td colspan="3" style="border:1px solid #000;padding:1px 6px;text-align:right;font-size:8px;font-weight:bold">
+            เลขที่เอกสาร: ${formNoStr}
+          </td>
+        </tr>
         <tr>
           <td style="border:1px solid #000;padding:2px 6px;text-align:center">เดือน ${THAI_MONTHS[month]} ${year+543}</td>
           <td style="border:1px solid #000;padding:2px 6px;text-align:center">งวด วันที่ ${dStr}</td>
@@ -3208,6 +3215,16 @@ function AttendanceFormTab() {
             </select>
           </div>
         )}
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>เลขที่เอกสาร</div>
+          <input
+            type="text"
+            value={formNo}
+            onChange={e => setFormNo(e.target.value)}
+            placeholder="เช่น F-HR-001"
+            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 110 }}
+          />
+        </div>
         <button onClick={load} disabled={loading}
           style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
           {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
