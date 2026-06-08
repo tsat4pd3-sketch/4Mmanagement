@@ -3030,19 +3030,20 @@ function AttendanceFormTab() {
     };
 
     // Row 2: show actual OT hours
-    // day shift OT: 18:00-20:00 = 2 hrs  | extended: +1 hr = 3 hrs total
-    // night shift OT: 20:00-22:00 = 2 hrs | extended: +0.5 hr = 2.5 hrs total
+    // Weekday day shift OT:  18:00-20:00 = 2 hrs
+    //   + extended OT:       20:00-23:00 = 3 hrs more → total 5 hrs (day only, no night shift)
+    // Weekday night shift OT: 20:00-22:00 = 2 hrs  (no extended OT on night)
     const makeDayRow2 = (d, r) => {
-      const sun  = isSunday(d);
+      const sun   = isSunday(d);
       const sunBg = sun ? 'background:#fff8d0;' : '';
       const info  = r.byDay[d];
       let otHr = '';
       if (info?.ot) {
         const isNight = info.shift === 'night';
-        if (info.extOt) {
-          otHr = isNight ? '2.5' : '3';
+        if (isNight) {
+          otHr = '2';                         // night: 20:00-22:00 = 2 hrs always
         } else {
-          otHr = '2';
+          otHr = info.extOt ? '5' : '2';     // day: 18:00-20:00=2 + extended 20:00-23:00=3 → 5
         }
       }
       return `<td style="${tdOTStyle}${sunBg}"></td><td style="${tdOTStyle}${sunBg}"></td><td style="${tdOTStyle}${sunBg}">${otHr}</td>`;
@@ -3068,11 +3069,12 @@ function AttendanceFormTab() {
       const cntVacation = days.filter(d => r.byDay[d]?.leave === 'ลาพักร้อน').length;
       const cntAbsent   = days.filter(d => { const b=r.byDay[d]; return b && !b.present && !b.leave; }).length;
       // OT total hours
+      // night: always 2 hrs | day: 2 hrs (+ 3 more if extended = 5 total)
       const totalOTHrs = days.reduce((sum, d) => {
         const b = r.byDay[d];
         if (!b?.ot) return sum;
         const isNight = b.shift === 'night';
-        return sum + (b.extOt ? (isNight ? 2.5 : 3) : 2);
+        return sum + (isNight ? 2 : (b.extOt ? 5 : 2));
       }, 0);
       const fmt = v => v > 0 ? String(v) : '';
 
