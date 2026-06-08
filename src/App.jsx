@@ -17,6 +17,7 @@ const AddUser      = lazy(() => import('./pages/AddUser'));
 const Report       = lazy(() => import('./pages/Report'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
+const DailyReport   = lazy(() => import('./pages/DailyReport'));
 
 /* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null, signatureUrl: null, fullName: null });
@@ -39,6 +40,7 @@ const NAV_ITEMS = [
   { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager', 'supervisor', 'leader'] },
   { to: '/report',        icon: '📋', label: 'รายงาน',            roles: null },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         roles: ['admin', 'manager', 'supervisor'] },
+  { to: '/daily-report',   icon: '📊', label: 'Daily Report',      roles: null },
   { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', roles: ['admin', 'manager', 'supervisor', 'leader', 'qa'] },
 ];
 
@@ -549,6 +551,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/shift-organize" element={
                 <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}><ShiftOrganize /></RoleRoute>
               } />
+              <Route path="/daily-report" element={<DailyReport />} />
               <Route path="/event-log" element={<EventLog />} />
             </Routes>
           </Suspense>
