@@ -921,6 +921,8 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role, onClose, o
   const [approvingRole, setApprovingRole] = useState(null);
   const [rejectNote, setRejectNote]     = useState('');
   const [showReject, setShowReject]     = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting]         = useState(false);
 
   const def  = log.cqi15_event_definitions;
   const cat  = def?.category;
@@ -942,6 +944,20 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role, onClose, o
     };
     loadData();
   }, [log.id]);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      const { error } = await supabase.from('cqi15_event_logs').delete().eq('id', log.id);
+      if (error) throw error;
+      toast.success('ลบ Event Log สำเร็จ');
+      onRefresh();
+    } catch (err) {
+      toast.error('ลบไม่สำเร็จ: ' + err.message);
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  };
 
   const handleApprove = async (roleKey, status) => {
     setApprovingRole(roleKey);
@@ -1064,7 +1080,28 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role, onClose, o
               );
             })()}
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--muted)', padding: '0 4px' }}>✕</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {role === 'admin' && !confirmDelete && (
+              <button onClick={() => setConfirmDelete(true)}
+                style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                🗑 ลบ
+              </button>
+            )}
+            {role === 'admin' && confirmDelete && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>ยืนยันลบ?</span>
+                <button onClick={handleDelete} disabled={deleting}
+                  style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}>
+                  {deleting ? '...' : 'ยืนยัน'}
+                </button>
+                <button onClick={() => setConfirmDelete(false)}
+                  style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 7, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
+                  ยกเลิก
+                </button>
+              </div>
+            )}
+            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--muted)', padding: '0 4px' }}>✕</button>
+          </div>
         </div>
 
         {/* Info row */}
