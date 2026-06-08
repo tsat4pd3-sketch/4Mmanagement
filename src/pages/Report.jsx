@@ -2933,7 +2933,7 @@ function AttendanceFormTab() {
 
     let q = supabase
       .from('daily_production_logs')
-      .select('work_date, employee_id, is_present, has_ot, leave_type, leave_duration, leave_period, employees(name, employee_id_code, section, team, line_id)')
+      .select('work_date, employee_id, is_present, has_ot, has_extended_ot, shift, leave_type, leave_duration, leave_period, employees(name, employee_id_code, section, team, line_id)')
       .gte('work_date', startDate)
       .lte('work_date', endDate);
 
@@ -2952,10 +2952,13 @@ function AttendanceFormTab() {
       const day = parseInt(log.work_date.split('-')[2]);
       if (!empMap[id]) empMap[id] = { emp, byDay: {} };
       empMap[id].byDay[day] = {
-        present: log.is_present,
-        ot:      log.has_ot,
-        leave:   log.leave_type || null,
-        leaveDur: log.leave_duration || null,
+        present:     log.is_present,
+        ot:          log.has_ot,
+        extOt:       log.has_extended_ot,
+        shift:       log.shift || 'day',
+        leave:       log.leave_type || null,
+        leaveDur:    log.leave_duration || null,
+        leavePeriod: log.leave_period || null,  // 'morning' | 'afternoon' | null
       };
     });
 
@@ -2980,26 +2983,68 @@ function AttendanceFormTab() {
     const tdOTStyle = 'border:1px solid #000;text-align:center;font-size:8px;padding:0;height:12px;';
 
     const leaveCode = {'ลากิจ':'ก', 'ลาป่วย':'ป', 'ลาพักร้อน':'พง'};
+    const slash = `<span style="font-size:12px;line-height:1">╱</span>`;
 
+    // ช = first 4 hrs  (day 08:00-12:00 / night 22:30-02:30)
+    // บ = second 4 hrs (day 13:00-17:30 / night 03:30-08:00)
+    // อ = OT           (day 18:00-20:00 / night 20:00-22:00)
+    //
+    // leave_period: 'morning' = took leave in morning half (ช missing)
+    //               'afternoon' = took leave in afternoon half (บ missing)
+    //               null = full day leave or full day present
     const makeDayRow1 = (d, r) => {
-      const sun = isSunday(d);
+      const sun  = isSunday(d);
       const sunBg = sun ? 'background:#fff8d0;' : '';
-      const info = r.byDay[d];
+      const info  = r.byDay[d];
+      if (!info) return `<td style="${tdStyle}${sunBg}"></td><td style="${tdStyle}${sunBg}"></td><td style="${tdStyle}${sunBg}"></td>`;
+
+      const lc = info.leave ? (leaveCode[info.leave] || info.leave) : null;
+      const leaveMark = lc ? `<span style="font-size:8px;color:#b00;font-weight:bold">${lc}</span>` : '';
+
       let markCh = '', markB = '', markO = '';
-      if (info?.leave) {
-        markCh = `<span style="font-size:8px;color:#b00">${leaveCode[info.leave] || info.leave}</span>`;
-      } else if (info?.present) {
-        markCh = `<span style="font-size:11px;line-height:1">╱</span>`;
+
+      if (info.present) {
+        // Full present — both halves get slash
+        // If half-day leave, one half gets leave code instead
+        if (info.leave && info.leaveDur <= 0.5) {
+          if (info.leavePeriod === 'morning') {
+            markCh = leaveMark;   // morning half: on leave
+            markB  = slash;       // afternoon half: worked
+          } else if (info.leavePeriod === 'afternoon') {
+            markCh = slash;       // morning half: worked
+            markB  = leaveMark;   // afternoon half: on leave
+          } else {
+            markCh = slash; markB = slash;
+          }
+        } else {
+          markCh = slash; markB = slash;
+        }
+      } else if (info.leave) {
+        // Full-day absence with leave code
+        markCh = leaveMark; markB = leaveMark;
       }
-      if (info?.ot) markO = `<span style="font-size:11px;line-height:1">╱</span>`;
+      // OT mark
+      if (info.ot) markO = slash;
+
       return `<td style="${tdStyle}${sunBg}">${markCh}</td><td style="${tdStyle}${sunBg}">${markB}</td><td style="${tdStyle}${sunBg}">${markO}</td>`;
     };
 
+    // Row 2: show actual OT hours
+    // day shift OT: 18:00-20:00 = 2 hrs  | extended: +1 hr = 3 hrs total
+    // night shift OT: 20:00-22:00 = 2 hrs | extended: +0.5 hr = 2.5 hrs total
     const makeDayRow2 = (d, r) => {
-      const sun = isSunday(d);
+      const sun  = isSunday(d);
       const sunBg = sun ? 'background:#fff8d0;' : '';
-      const info = r.byDay[d];
-      const otHr = info?.ot ? '2' : '';
+      const info  = r.byDay[d];
+      let otHr = '';
+      if (info?.ot) {
+        const isNight = info.shift === 'night';
+        if (info.extOt) {
+          otHr = isNight ? '2.5' : '3';
+        } else {
+          otHr = '2';
+        }
+      }
       return `<td style="${tdOTStyle}${sunBg}"></td><td style="${tdOTStyle}${sunBg}"></td><td style="${tdOTStyle}${sunBg}">${otHr}</td>`;
     };
 
@@ -3022,7 +3067,13 @@ function AttendanceFormTab() {
       const cntPersonal = days.filter(d => r.byDay[d]?.leave === 'ลากิจ').length;
       const cntVacation = days.filter(d => r.byDay[d]?.leave === 'ลาพักร้อน').length;
       const cntAbsent   = days.filter(d => { const b=r.byDay[d]; return b && !b.present && !b.leave; }).length;
-      const cntOT       = days.filter(d => r.byDay[d]?.ot).length;
+      // OT total hours
+      const totalOTHrs = days.reduce((sum, d) => {
+        const b = r.byDay[d];
+        if (!b?.ot) return sum;
+        const isNight = b.shift === 'night';
+        return sum + (b.extOt ? (isNight ? 2.5 : 3) : 2);
+      }, 0);
       const fmt = v => v > 0 ? String(v) : '';
 
       return `
@@ -3039,12 +3090,12 @@ function AttendanceFormTab() {
           <td style="${tdStyle}">${fmt(0)}</td>
           <td style="${tdStyle}">${fmt(cntAbsent)}</td>
           <td style="${tdStyle}">${fmt(0)}</td>
-          <td style="${tdStyle}">${fmt(cntOT)}</td>
+          <td style="${tdStyle}">${totalOTHrs > 0 ? totalOTHrs : ''}</td>
         </tr>
         <tr>
           <td colspan="3" style="border:1px solid #000;font-size:8px;text-align:left;padding:0 3px;height:12px">→ จำนวน ช.ม ที่ทำ OT</td>
           ${days.slice(1).map(d => makeDayRow2(d, r)).join('')}
-          <td style="${tdOTStyle}">${fmt(cntOT)}</td>
+          <td style="${tdOTStyle}">${totalOTHrs > 0 ? totalOTHrs : ''}</td>
           <td style="${tdOTStyle}"></td>
           <td style="${tdOTStyle}"></td>
           <td style="${tdOTStyle}"></td>
