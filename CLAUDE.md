@@ -1,7 +1,9 @@
-# 4M Management System — Project Knowledge Base
+# ESM — Enterprise Shopfloor Management · Project Knowledge Base
 
-ระบบจัดการสายผลิต **4M (Man, Machine, Material, Method)** สำหรับโรงงาน Thai Summit Group  
-ติดตามพนักงาน, เช็คชื่อ-PPE รายวัน, จัดการสถานีงาน, และบันทึกการเปลี่ยนแปลงกระบวนการผลิต
+ระบบบริหารจัดการโรงงานครบวงจร สำหรับ **Thai Summit Group**  
+ครอบคลุม 4M Change Management, CQI-15 Welding Event Log, การเช็คชื่อ-PPE รายวัน, Daily Production Report, Employee Skills Matrix, Shift Management และ Approval Workflow
+
+> ชื่อเดิม: 4M Management System (ยกระดับเป็น Enterprise Shopfloor Management)
 
 ---
 
@@ -90,6 +92,11 @@
 | `/` | Dashboard | ทุก role | KPI cards, line status, floor maps, 4M activity feed |
 | `/management` | Management | ทุก role | Drag-drop station assignment, skill fit scoring, 4M logging |
 | `/checkin` | Checkin | ทุก role | เช็คชื่อ + PPE + ลางาน รายวัน |
+| `/event-log` | EventLog | ทุก role | CQI-15 Welding Event Log + Approval Workflow (4 roles) |
+| `/daily-report` | DailyReport | ทุก role | **[PLANNED]** บันทึก Daily Production Report แทน AppSheet |
+| `/downtime` | Downtime | Admin/Manager/SV | **[PLANNED]** บันทึกและวิเคราะห์ Downtime รายไลน์ |
+| `/production-target` | ProductionTarget | Admin/Manager | **[PLANNED]** Target vs Actual รายวัน/รายเดือน + กราฟ |
+| `/pm-checker` | PMChecker | Admin/Manager/SV | **[PLANNED]** ระบบแผน PM เครื่องจักร + Approval |
 | `/linesetup` | LineSetup | Admin/Manager/SV | ตั้งค่าไลน์, อัปโหลด layout, เพิ่ม workstations |
 | `/register` | Register | Admin/SV | เพิ่มพนักงานใหม่พร้อมรูปและข้อมูล |
 | `/operator` | Operator | Admin/Manager/SV/Leader | ฐานข้อมูลพนักงาน + skill matrix |

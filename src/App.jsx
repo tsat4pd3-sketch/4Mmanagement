@@ -57,6 +57,7 @@ function SplashScreen({ onDone }) {
   useEffect(() => {
     setTimeout(() => document.getElementById('splash-logo')?.classList.add('up'), 100);
     setTimeout(() => document.getElementById('splash-title')?.classList.add('up'), 300);
+    setTimeout(() => document.getElementById('splash-subtitle')?.classList.add('up'), 420);
     setTimeout(() => document.getElementById('splash-sub')?.classList.add('up'), 500);
 
     let w = 0;
@@ -100,8 +101,14 @@ function SplashScreen({ onDone }) {
         fontSize: 'clamp(2.5rem,8vw,5rem)', letterSpacing: '-1px',
         color: 'var(--accent)', lineHeight: 1,
       }}>
-        4M System
+        ESM
       </div>
+      <div style={{
+        opacity: 0, transform: 'translateY(10px)',
+        transition: 'opacity 0.5s ease 0.25s, transform 0.5s ease 0.25s',
+        fontSize: 'clamp(0.85rem,2vw,1.1rem)', color: 'var(--muted)', fontWeight: 500,
+        letterSpacing: '0.5px', marginTop: 4,
+      }} id="splash-subtitle">Enterprise Shopfloor Management</div>
 
       <div className="splash-sub" id="splash-sub">Zero defect is possible</div>
 
@@ -151,7 +158,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             <img src={tsLogo} alt="Thai Summit Group" width={28} height={28} style={{ borderRadius: 3, flexShrink: 0 }} />
             <div>
               <div style={{ fontSize: 10, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
-              <div style={{ fontSize: 9, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>4M · VX System</div>
+              <div style={{ fontSize: 9, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>ESM · Shopfloor</div>
             </div>
           </div>
         </div>
