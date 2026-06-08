@@ -416,16 +416,31 @@ function LiveTab({ role }) {
               <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>⏱ บันทึก Downtime</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <Field label="ประเภท Downtime *">
-                  <select value={dtForm.downtime_type_id} onChange={e => setDtForm(f => ({ ...f, downtime_type_id: e.target.value }))} style={inputStyle}>
-                    <option value="">เลือกประเภท...</option>
-                    {['unplanned', 'planned'].map(cat => (
-                      <optgroup key={cat} label={cat === 'unplanned' ? '⚠ นอกแผน (Unplanned)' : '📋 ในแผน (Planned)'}>
-                        {dtTypes.filter(t => t.category === cat).map(t => (
-                          <option key={t.id} value={t.id}>{t.name_th}</option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
+                  {(() => {
+                    const pt = selSession?.dr_products?.process_type || 'welding_assembly';
+                    const filtered = dtTypes.filter(t =>
+                      t.process_type === pt || t.process_type === 'common'
+                    );
+                    const ptLabel = pt === 'metal_forming' ? 'Metal Forming' : 'Welding / Assembly';
+                    return (
+                      <>
+                        <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 6 }}>
+                          แสดงประเภทสำหรับ: <b style={{ color: 'var(--accent)' }}>{ptLabel}</b>
+                          {!selSession?.product_id && ' (ไม่ได้เลือกสินค้า — แสดงแบบ Welding/Assembly)'}
+                        </div>
+                        <select value={dtForm.downtime_type_id} onChange={e => setDtForm(f => ({ ...f, downtime_type_id: e.target.value }))} style={inputStyle}>
+                          <option value="">เลือกประเภท...</option>
+                          {['unplanned', 'planned'].map(cat => (
+                            <optgroup key={cat} label={cat === 'unplanned' ? '⚠ นอกแผน (Unplanned)' : '📋 ในแผน (Planned)'}>
+                              {filtered.filter(t => t.category === cat).map(t => (
+                                <option key={t.id} value={t.id}>{t.name_th}</option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                      </>
+                    );
+                  })()}
                 </Field>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <Field label="เวลาเริ่มหยุด">
@@ -618,8 +633,8 @@ function ProductSetup({ role }) {
   const openEdit = (item = null) => {
     setEditing(item?.id || 'new');
     setForm(item
-      ? { name: item.name, code: item.code || '', line_name: item.line_name || '', cycle_time_sec: item.cycle_time_sec || '', target_per_shift: item.target_per_shift || '', is_active: item.is_active }
-      : { name: '', code: '', line_name: '', cycle_time_sec: '', target_per_shift: '', is_active: true });
+      ? { name: item.name, code: item.code || '', line_name: item.line_name || '', cycle_time_sec: item.cycle_time_sec || '', target_per_shift: item.target_per_shift || '', process_type: item.process_type || 'welding_assembly', is_active: item.is_active }
+      : { name: '', code: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', is_active: true });
   };
 
   const handleSave = async () => {
@@ -629,6 +644,7 @@ function ProductSetup({ role }) {
       name: form.name, code: form.code || null, line_name: form.line_name || null,
       cycle_time_sec: form.cycle_time_sec ? parseFloat(form.cycle_time_sec) : null,
       target_per_shift: form.target_per_shift ? parseInt(form.target_per_shift) : null,
+      process_type: form.process_type || 'welding_assembly',
       is_active: form.is_active,
     };
     const { error } = editing === 'new'
@@ -661,7 +677,14 @@ function ProductSetup({ role }) {
           <div key={item.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', opacity: item.is_active ? 1 : 0.5 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{item.name}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{item.name}</div>
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20,
+                    background: item.process_type === 'metal_forming' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.12)',
+                    color: item.process_type === 'metal_forming' ? '#fbbf24' : '#22c55e' }}>
+                    {item.process_type === 'metal_forming' ? '⚙ Metal Forming' : '🔥 Welding/Assy'}
+                  </span>
+                </div>
                 {item.code && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{item.code}</div>}
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
                   {item.line_name && `📍 ${item.line_name}`}
@@ -687,6 +710,12 @@ function ProductSetup({ role }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Field label="ชื่อสินค้า / Model *"><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inputStyle} /></Field>
               <Field label="รหัสสินค้า (Code)"><input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="เช่น HDF-001" style={inputStyle} /></Field>
+              <Field label="ประเภทกระบวนการ *">
+                <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inputStyle}>
+                  <option value="welding_assembly">🔥 Welding / Assembly</option>
+                  <option value="metal_forming">⚙ Metal Forming</option>
+                </select>
+              </Field>
               <Field label="ไลน์ผลิตหลัก">
                 <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inputStyle}>
                   <option value="">ไม่ระบุ</option>
@@ -717,7 +746,7 @@ function ProductSetup({ role }) {
 function DowntimeTypeSetup({ role }) {
   const [items, setItems]   = useState([]);
   const [editing, setEditing] = useState(null);
-  const [form, setForm]     = useState({ name_th: '', name_en: '', category: 'unplanned', color: '#ef4444', sort_order: 0, is_active: true });
+  const [form, setForm]     = useState({ name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: '#ef4444', sort_order: 0, is_active: true });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -730,8 +759,8 @@ function DowntimeTypeSetup({ role }) {
   const openEdit = (item = null) => {
     setEditing(item?.id || 'new');
     setForm(item
-      ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, color: item.color, sort_order: item.sort_order, is_active: item.is_active }
-      : { name_th: '', name_en: '', category: 'unplanned', color: '#ef4444', sort_order: items.length + 1, is_active: true });
+      ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, process_type: item.process_type || 'welding_assembly', color: item.color, sort_order: item.sort_order, is_active: item.is_active }
+      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: '#ef4444', sort_order: items.length + 1, is_active: true });
   };
 
   const handleSave = async () => {
@@ -755,8 +784,34 @@ function DowntimeTypeSetup({ role }) {
   };
 
   const canEdit = ['admin', 'manager'].includes(role);
-  const unplanned = items.filter(i => i.category === 'unplanned');
-  const planned   = items.filter(i => i.category === 'planned');
+
+  const processGroups = [
+    { key: 'welding_assembly', label: '🔥 Welding / Assembly', color: '#f97316' },
+    { key: 'metal_forming',   label: '⚙ Metal Forming',       color: '#3b82f6' },
+    { key: 'common',          label: '🔗 Common (ทุกประเภท)', color: '#6b7280' },
+  ];
+
+  function DowntimeRow({ item }) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 14px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, borderLeft: `4px solid ${item.color}`, opacity: item.is_active ? 1 : 0.5 }}>
+        <div style={{ width: 12, height: 12, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{item.name_th}</div>
+          {item.name_en && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{item.name_en}</div>}
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--muted)', background: item.category === 'unplanned' ? 'rgba(239,68,68,0.12)' : 'rgba(59,130,246,0.12)', borderRadius: 4, padding: '2px 6px' }}>
+          {item.category === 'unplanned' ? '⚠ นอกแผน' : '📋 ในแผน'}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--muted)' }}>#{item.sort_order}</div>
+        {canEdit && (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+            <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -765,29 +820,35 @@ function DowntimeTypeSetup({ role }) {
         {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มประเภท</button>}
       </div>
 
-      {[{ label: '⚠ นอกแผน (Unplanned)', items: unplanned }, { label: '📋 ในแผน (Planned)', items: planned }].map(group => (
-        <div key={group.label} style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 8 }}>{group.label}</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {group.items.map(item => (
-              <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, borderLeft: `4px solid ${item.color}`, opacity: item.is_active ? 1 : 0.5 }}>
-                <div style={{ width: 14, height: 14, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{item.name_th}</div>
-                  {item.name_en && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{item.name_en}</div>}
+      {processGroups.map(pg => {
+        const pgItems = items.filter(i => i.process_type === pg.key);
+        if (pgItems.length === 0) return null;
+        const upItems = pgItems.filter(i => i.category === 'unplanned');
+        const plItems = pgItems.filter(i => i.category === 'planned');
+        return (
+          <div key={pg.key} style={{ marginBottom: 24, border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+            <div style={{ padding: '10px 16px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: pg.color }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{pg.label}</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>{pgItems.length} รายการ</span>
+            </div>
+            <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {upItems.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#ef4444', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>⚠ นอกแผน ({upItems.length})</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>{upItems.map(i => <DowntimeRow key={i.id} item={i} />)}</div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--muted)' }}>#{item.sort_order}</div>
-                {canEdit && (
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                    <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>
-                  </div>
-                )}
-              </div>
-            ))}
+              )}
+              {plItems.length > 0 && (
+                <div style={{ marginTop: upItems.length > 0 ? 10 : 0 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>📋 ในแผน ({plItems.length})</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>{plItems.map(i => <DowntimeRow key={i.id} item={i} />)}</div>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {editing && (
         <div className="overlay" onClick={() => setEditing(null)} style={{ zIndex: 2000 }}>
@@ -796,6 +857,13 @@ function DowntimeTypeSetup({ role }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Field label="ชื่อไทย *"><input value={form.name_th} onChange={e => setForm(f => ({ ...f, name_th: e.target.value }))} style={inputStyle} /></Field>
               <Field label="ชื่ออังกฤษ"><input value={form.name_en} onChange={e => setForm(f => ({ ...f, name_en: e.target.value }))} style={inputStyle} /></Field>
+              <Field label="กระบวนการ">
+                <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inputStyle}>
+                  <option value="welding_assembly">🔥 Welding / Assembly</option>
+                  <option value="metal_forming">⚙ Metal Forming</option>
+                  <option value="common">🔗 Common (ทุกกระบวนการ)</option>
+                </select>
+              </Field>
               <Field label="หมวดหมู่">
                 <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={inputStyle}>
                   <option value="unplanned">⚠ นอกแผน (Unplanned)</option>
