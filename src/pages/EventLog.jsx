@@ -37,6 +37,19 @@ function toLocalDateStr(d = new Date()) {
   return d.toLocaleDateString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
+// Compute duration from event start (work_date + event_time) to approved_at
+function calcDuration(workDate, eventTime, approvedAt) {
+  if (!approvedAt || !workDate) return null;
+  const start = new Date(`${workDate}T${eventTime || '00:00'}:00`);
+  const end = new Date(approvedAt);
+  const diffMs = end - start;
+  if (diffMs < 0) return null;
+  const totalMin = Math.round(diffMs / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h > 0 ? `${h} ชม. ${m} นาที` : `${m} นาที`;
+}
+
 /* ─── Main Component ─────────────────────────────────────────── */
 export default function EventLog() {
   const { role, fullName } = useContext(UserContext);
@@ -518,6 +531,12 @@ function EventList({ logs, loading, onSelect, role }) {
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>{log.work_date}</div>
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{log.event_time || '—'}</div>
+                      {log.approved_at && (() => {
+                        const dur = calcDuration(log.work_date, log.event_time, log.approved_at);
+                        return dur ? (
+                          <div style={{ fontSize: 10, color: '#22c55e', fontWeight: 700, marginTop: 2 }}>⏱ {dur}</div>
+                        ) : null;
+                      })()}
                     </td>
                     <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{log.line_name}</td>
                     <td style={{ fontSize: 12, color: 'var(--muted)' }}>{log.station_number || '—'}</td>
@@ -630,8 +649,10 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role, onClose, o
       const allApproved = all.length > 0 && all.every(a => a.status === 'approved');
       const anyRejected = all.some(a => a.status === 'rejected');
       if (allApproved || anyRejected) {
+        const finalUpdate = { overall_status: anyRejected ? 'rejected' : 'approved' };
+        if (allApproved) finalUpdate.approved_at = new Date().toISOString();
         await supabase.from('cqi15_event_logs')
-          .update({ overall_status: anyRejected ? 'rejected' : 'approved' })
+          .update(finalUpdate)
           .eq('id', log.id);
         // Notify via edge function
         try {
@@ -691,6 +712,22 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role, onClose, o
             </div>
             <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>Event #{def?.event_no} · {def?.name_th}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{log.line_name} · {log.station_number || 'ไม่ระบุ Station'} · {log.work_date} {log.event_time || ''}</div>
+            {log.approved_at && (() => {
+              const dur = calcDuration(log.work_date, log.event_time, log.approved_at);
+              const approvedTime = new Date(log.approved_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+              return (
+                <div style={{ display: 'flex', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, background: 'rgba(34,197,94,0.12)', padding: '3px 10px', borderRadius: 20 }}>
+                    ✓ อนุมัติสำเร็จ {approvedTime} น.
+                  </span>
+                  {dur && (
+                    <span style={{ fontSize: 11, color: '#4d9fff', fontWeight: 700, background: 'rgba(77,159,255,0.12)', padding: '3px 10px', borderRadius: 20 }}>
+                      ⏱ รวมเวลา {dur}
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--muted)', padding: '0 4px' }}>✕</button>
         </div>
