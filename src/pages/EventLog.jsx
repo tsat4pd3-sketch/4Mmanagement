@@ -408,7 +408,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
         <button
           onClick={onSubmit}
           disabled={submitting || !form.line_name || !form.event_no}
-          style={{ padding: '12px 0', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#000', fontWeight: 800, fontSize: 15, cursor: 'pointer', marginTop: 4 }}>
+          style={{ padding: '12px 0', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 800, fontSize: 15, cursor: 'pointer', marginTop: 4 }}>
           {submitting ? 'กำลังบันทึก...' : '✓ บันทึก Event & ส่ง Notification'}
         </button>
       </div>
