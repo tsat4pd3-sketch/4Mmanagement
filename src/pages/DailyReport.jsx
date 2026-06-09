@@ -1109,15 +1109,19 @@ function ProductSetup({ role }) {
   const openEdit = (item = null) => {
     setEditing(item?.id || 'new');
     setForm(item
-      ? { name: item.name, code: item.code || '', line_name: item.line_name || '', cycle_time_sec: item.cycle_time_sec || '', target_per_shift: item.target_per_shift || '', process_type: item.process_type || 'welding_assembly', is_active: item.is_active }
-      : { name: '', code: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', is_active: true });
+      ? { name: item.name, code: item.code || '', mat_no: item.mat_no || '', p_no: item.p_no || '', customer: item.customer || '', line_name: item.line_name || '', cycle_time_sec: item.cycle_time_sec || '', target_per_shift: item.target_per_shift || '', process_type: item.process_type || 'welding_assembly', is_active: item.is_active }
+      : { name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', is_active: true });
   };
 
   const handleSave = async () => {
     if (!form.name) { toast.error('กรอกชื่อสินค้า'); return; }
     setSaving(true);
     const payload = {
-      name: form.name, code: form.code || null, line_name: form.line_name || null,
+      name: form.name, code: form.code || null,
+      mat_no: form.mat_no.trim().toUpperCase() || null,
+      p_no: form.p_no.trim() || null,
+      customer: form.customer.trim() || null,
+      line_name: form.line_name || null,
       cycle_time_sec: form.cycle_time_sec ? parseFloat(form.cycle_time_sec) : null,
       target_per_shift: form.target_per_shift ? parseInt(form.target_per_shift) : null,
       process_type: form.process_type || 'welding_assembly',
@@ -1161,11 +1165,14 @@ function ProductSetup({ role }) {
                     {item.process_type === 'metal_forming' ? '⚙ Metal Forming' : '🔥 Welding/Assy'}
                   </span>
                 </div>
-                {item.code && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{item.code}</div>}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
+                  {item.mat_no && <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{item.mat_no}</span>}
+                  {item.customer && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', color: '#60a5fa' }}>{item.customer}</span>}
+                </div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
                   {item.line_name && `📍 ${item.line_name}`}
                   {item.cycle_time_sec && ` · CT ${item.cycle_time_sec}s`}
-                  {item.target_per_shift && ` · Target ${item.target_per_shift} ชิ้น/กะ`}
+                  {item.target_per_shift && ` · Target ${item.target_per_shift}/กะ`}
                 </div>
               </div>
               {canEdit && (
@@ -1184,8 +1191,15 @@ function ProductSetup({ role }) {
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>{editing === 'new' ? '+ เพิ่มสินค้า' : 'แก้ไขสินค้า'}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <Field label="ชื่อสินค้า / Model *"><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inputStyle} /></Field>
-              <Field label="รหัสสินค้า (Code)"><input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="เช่น HDF-001" style={inputStyle} /></Field>
+              <Field label="ชื่อสินค้า / Model *"><input autoFocus value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inputStyle} /></Field>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <Field label="MAT.NO (SAP)"><input value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder="เช่น 10100335" style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700 }} /></Field>
+                <Field label="P.NO"><input value={form.p_no} onChange={e => setForm(f => ({ ...f, p_no: e.target.value }))} placeholder="เช่น RB3B16E061BA" style={inputStyle} /></Field>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <Field label="Customer"><input value={form.customer} onChange={e => setForm(f => ({ ...f, customer: e.target.value }))} placeholder="เช่น FORD" style={inputStyle} /></Field>
+                <Field label="รหัสสินค้า (Code)"><input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="เช่น HDF-001" style={inputStyle} /></Field>
+              </div>
               <Field label="ประเภทกระบวนการ *">
                 <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inputStyle}>
                   <option value="welding_assembly">🔥 Welding / Assembly</option>
@@ -1376,15 +1390,20 @@ function DowntimeTypeSetup({ role }) {
    KANBAN STANDARD SETUP
 ═══════════════════════════════════════════════════════════════ */
 function KanbanStandardSetup({ role }) {
-  const [items, setItems]     = useState([]);
-  const [editing, setEditing] = useState(null);
-  const [form, setForm]       = useState({ mat_no: '', part_name: '', p_no: '', customer: '', qty_per_kanban: 1, is_active: true });
-  const [saving, setSaving]   = useState(false);
-  const [search, setSearch]   = useState('');
+  const [items, setItems]       = useState([]);
+  const [products, setProducts] = useState([]);
+  const [editing, setEditing]   = useState(null);
+  const [form, setForm]         = useState({ product_id: '', mat_no: '', qty_per_kanban: 1, is_active: true });
+  const [saving, setSaving]     = useState(false);
+  const [search, setSearch]     = useState('');
 
   const load = useCallback(async () => {
-    const { data } = await supabaseDR.from('kanban_standards').select('*').order('mat_no');
-    setItems(data || []);
+    const [{ data: stds }, { data: prods }] = await Promise.all([
+      supabaseDR.from('kanban_standards').select('*, dr_products(id,name,code,mat_no,p_no,customer)').order('mat_no'),
+      supabaseDR.from('dr_products').select('id,name,code,mat_no,p_no,customer').eq('is_active', true).order('name'),
+    ]);
+    setItems(stds || []);
+    setProducts(prods || []);
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -1392,15 +1411,30 @@ function KanbanStandardSetup({ role }) {
   const openEdit = (item = null) => {
     setEditing(item?.id || 'new');
     setForm(item
-      ? { mat_no: item.mat_no, part_name: item.part_name || '', p_no: item.p_no || '', customer: item.customer || '', qty_per_kanban: item.qty_per_kanban, is_active: item.is_active }
-      : { mat_no: '', part_name: '', p_no: '', customer: '', qty_per_kanban: 1, is_active: true });
+      ? { product_id: item.product_id || '', mat_no: item.mat_no || '', qty_per_kanban: item.qty_per_kanban, is_active: item.is_active }
+      : { product_id: '', mat_no: '', qty_per_kanban: 1, is_active: true });
+  };
+
+  const handleProductChange = (productId) => {
+    const prod = products.find(p => p.id === productId);
+    setForm(f => ({
+      ...f,
+      product_id: productId,
+      mat_no: prod?.mat_no || prod?.code || f.mat_no,
+    }));
   };
 
   const handleSave = async () => {
     if (!form.mat_no) { toast.error('กรอก MAT.NO ก่อน'); return; }
     if (!form.qty_per_kanban || form.qty_per_kanban < 1) { toast.error('Qty/Kanban ต้องมากกว่า 0'); return; }
     setSaving(true);
-    const payload = { ...form, mat_no: form.mat_no.trim().toUpperCase(), qty_per_kanban: parseInt(form.qty_per_kanban), updated_at: new Date().toISOString() };
+    const payload = {
+      product_id: form.product_id || null,
+      mat_no: form.mat_no.trim().toUpperCase(),
+      qty_per_kanban: parseInt(form.qty_per_kanban),
+      is_active: form.is_active,
+      updated_at: new Date().toISOString(),
+    };
     const { error } = editing === 'new'
       ? await supabaseDR.from('kanban_standards').insert(payload)
       : await supabaseDR.from('kanban_standards').update(payload).eq('id', editing);
@@ -1419,12 +1453,27 @@ function KanbanStandardSetup({ role }) {
   };
 
   const canEdit = ['admin', 'manager'].includes(role);
-  const filtered = items.filter(i =>
-    !search ||
-    i.mat_no.toLowerCase().includes(search.toLowerCase()) ||
-    (i.part_name || '').toLowerCase().includes(search.toLowerCase()) ||
-    (i.customer  || '').toLowerCase().includes(search.toLowerCase())
-  );
+
+  const getItemDisplay = (item) => {
+    const prod = item.dr_products;
+    return {
+      name: prod?.name || item.part_name || '-',
+      customer: prod?.customer || item.customer || '',
+      pno: prod?.p_no || item.p_no || '',
+      matno: item.mat_no,
+    };
+  };
+
+  const filtered = items.filter(i => {
+    if (!search) return true;
+    const s = search.toLowerCase();
+    const d = getItemDisplay(i);
+    return (i.mat_no || '').toLowerCase().includes(s)
+      || d.name.toLowerCase().includes(s)
+      || d.customer.toLowerCase().includes(s);
+  });
+
+  const selectedProduct = products.find(p => p.id === form.product_id);
 
   return (
     <div>
@@ -1437,38 +1486,43 @@ function KanbanStandardSetup({ role }) {
         {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่ม Standard</button>}
       </div>
 
-      {/* Info banner */}
       <div style={{ background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.3)', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#38bdf8' }}>
         📌 ตั้งค่า Qty/Kanban ของแต่ละ MAT.NO ไว้ที่นี่ — เมื่อหัวหน้าเพิ่มเป้าหมาย ระบบจะดึงข้อมูลมาอัตโนมัติ ลด Human Error
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {filtered.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีข้อมูล</div>}
-        {filtered.map(item => (
-          <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 9, opacity: item.is_active ? 1 : 0.5 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'monospace' }}>{item.mat_no}</span>
-                {item.part_name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{item.part_name}</span>}
-                {item.customer && (
-                  <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>{item.customer}</span>
-                )}
-                {!item.is_active && <span style={{ fontSize: 10, color: '#ef4444' }}>(ปิดใช้งาน)</span>}
+        {filtered.map(item => {
+          const d = getItemDisplay(item);
+          return (
+            <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 9, opacity: item.is_active ? 1 : 0.5 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'monospace' }}>{d.matno}</span>
+                  {item.dr_products && (
+                    <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: '#34d399', fontWeight: 700 }}>🔗 linked</span>
+                  )}
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>{d.name}</span>
+                  {d.customer && (
+                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>{d.customer}</span>
+                  )}
+                  {!item.is_active && <span style={{ fontSize: 10, color: '#ef4444' }}>(ปิดใช้งาน)</span>}
+                </div>
+                {d.pno && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>P.NO: {d.pno}</div>}
               </div>
-              {item.p_no && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>P.NO: {item.p_no}</div>}
-            </div>
-            <div style={{ textAlign: 'center', minWidth: 80 }}>
-              <div style={{ fontSize: 22, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>{item.qty_per_kanban}</div>
-              <div style={{ fontSize: 10, color: 'var(--muted)' }}>ชิ้น / Kanban</div>
-            </div>
-            {canEdit && (
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
+              <div style={{ textAlign: 'center', minWidth: 80 }}>
+                <div style={{ fontSize: 22, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>{item.qty_per_kanban}</div>
+                <div style={{ fontSize: 10, color: 'var(--muted)' }}>ชิ้น / Kanban</div>
               </div>
-            )}
-          </div>
-        ))}
+              {canEdit && (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+                  <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {editing && (
@@ -1478,26 +1532,31 @@ function KanbanStandardSetup({ role }) {
               {editing === 'new' ? '+ เพิ่ม Kanban Standard' : 'แก้ไข Kanban Standard'}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Field label="เชื่อมกับ Product (ไม่บังคับ)">
+                <select value={form.product_id} onChange={e => handleProductChange(e.target.value)} style={inputStyle}>
+                  <option value="">— ไม่ระบุ Product —</option>
+                  {products.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}{p.mat_no ? ` [${p.mat_no}]` : ''}{p.customer ? ` · ${p.customer}` : ''}</option>
+                  ))}
+                </select>
+              </Field>
+              {selectedProduct && (
+                <div style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 8, padding: '8px 12px', fontSize: 12 }}>
+                  <div style={{ color: '#34d399', fontWeight: 700, marginBottom: 4 }}>🔗 Product ที่เชื่อมอยู่</div>
+                  <div style={{ color: 'var(--text)' }}>{selectedProduct.name}</div>
+                  {selectedProduct.mat_no && <div style={{ color: 'var(--muted)' }}>MAT.NO: {selectedProduct.mat_no}</div>}
+                  {selectedProduct.p_no && <div style={{ color: 'var(--muted)' }}>P.NO: {selectedProduct.p_no}</div>}
+                  {selectedProduct.customer && <div style={{ color: 'var(--muted)' }}>Customer: {selectedProduct.customer}</div>}
+                </div>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="MAT.NO *">
                   <input autoFocus value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value }))}
-                    placeholder="เช่น 10100335" style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700 }}
-                    disabled={editing !== 'new'} />
+                    placeholder="เช่น 10100335" style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700 }} />
                 </Field>
                 <Field label="Qty / Kanban Card *">
                   <input type="number" min="1" value={form.qty_per_kanban} onChange={e => setForm(f => ({ ...f, qty_per_kanban: e.target.value }))}
                     style={{ ...inputStyle, fontSize: 18, fontWeight: 800, textAlign: 'center' }} />
-                </Field>
-              </div>
-              <Field label="ชื่อชิ้นงาน / Part Name">
-                <input value={form.part_name} onChange={e => setForm(f => ({ ...f, part_name: e.target.value }))} placeholder="เช่น RB3B 16E061 BA" style={inputStyle} />
-              </Field>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="P.NO">
-                  <input value={form.p_no} onChange={e => setForm(f => ({ ...f, p_no: e.target.value }))} placeholder="เช่น RB3B16E061BA" style={inputStyle} />
-                </Field>
-                <Field label="Customer">
-                  <input value={form.customer} onChange={e => setForm(f => ({ ...f, customer: e.target.value }))} placeholder="เช่น FORD" style={inputStyle} />
                 </Field>
               </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
