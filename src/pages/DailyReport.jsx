@@ -102,6 +102,7 @@ function LiveTab({ role }) {
   const [showCloseShift, setShowCloseShift] = useState(false);
   const [closeNg, setCloseNg]               = useState('0');
   const [savingClose, setSavingClose]       = useState(false);
+  const [breakPolicies, setBreakPolicies]   = useState([]);
 
   const canManage     = ['admin', 'manager', 'supervisor'].includes(role);
   const canCloseShift = ['admin', 'manager', 'supervisor'].includes(role);
@@ -109,11 +110,12 @@ function LiveTab({ role }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: ln }, { data: pr }, { data: dt }, { data: ks }] = await Promise.all([
+    const [{ data: ln }, { data: pr }, { data: dt }, { data: ks }, { data: bp }] = await Promise.all([
       supabase.from('production_lines').select('id, name, section').order('name'),
       supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name'),
       supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('kanban_standards').select('*').eq('is_active', true).order('mat_no'),
+      supabaseDR.from('break_policies').select('*').eq('is_active', true).order('sort_order'),
     ]);
 
     const lm = {};
@@ -123,6 +125,7 @@ function LiveTab({ role }) {
     setProducts(pr || []);
     setDtTypes(dt || []);
     setKanbanStds(ks || []);
+    setBreakPolicies(bp || []);
 
     // Filter available lines for open-session form
     // Fetch sessions — filter by role
@@ -346,27 +349,52 @@ function LiveTab({ role }) {
     loadProdOrders(selSession.id);
   };
 
+  const computePolicyBreakMin = (openedAt, closedAt, sessionShift, processType) => {
+    if (!openedAt) return 0;
+    const matchShift = (p) => p.shift === 'both' || p.shift === sessionShift;
+    const matchProc  = (p) => p.process_type === 'common' || p.process_type === processType;
+    return breakPolicies.filter(p => matchShift(p) && matchProc(p)).reduce((sum, p) => {
+      // Build policy window anchored to the session's work date
+      const workDate = selSession?.work_date || openedAt.toISOString().split('T')[0];
+      const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
+      let pStart = new Date(`${workDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`);
+      const pEnd = new Date(pStart.getTime() + p.duration_min * 60000);
+      // For night shift break that crosses midnight, shift forward a day if before session start
+      if (pStart < openedAt && pEnd < openedAt) pStart = new Date(pStart.getTime() + 86400000);
+      const overlapStart = Math.max(pStart.getTime(), openedAt.getTime());
+      const overlapEnd   = Math.min(pEnd.getTime(), closedAt.getTime());
+      const overlapMin   = Math.max(0, (overlapEnd - overlapStart) / 60000);
+      return sum + overlapMin;
+    }, 0);
+  };
+
   const computeOEE = (ngQty) => {
     const totalProduced  = prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
     const openedAt  = selSession?.created_at ? new Date(selSession.created_at) : null;
     const closedAt  = new Date();
     const shiftMin  = openedAt ? Math.round((closedAt - openedAt) / 60000) : 0;
-    const plannedDT = dtLogs.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
-    const unplannedDT = totalDT - plannedDT;
-    const runMin    = Math.max(0, shiftMin - unplannedDT);
-    const ctSec     = selSession?.dr_products?.cycle_time_sec || 0;
+    const loggedPlannedDT  = dtLogs.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
+    const loggedUnplannedDT = dtLogs.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
+    const sessionShift  = selSession?.shift || 'day';
+    const processType   = selSession?.dr_products?.process_type || 'common';
+    const policyBreakMin = computePolicyBreakMin(openedAt, closedAt, sessionShift, processType);
+    // Net available = shift - policy breaks - logged planned; run = net available - unplanned
+    const plannedDT   = loggedPlannedDT + policyBreakMin;
+    const netAvail    = Math.max(0, shiftMin - plannedDT);
+    const runMin      = Math.max(0, netAvail - loggedUnplannedDT);
+    const ctSec       = selSession?.dr_products?.cycle_time_sec || 0;
 
-    const A = shiftMin > 0 ? Math.min(1, runMin / shiftMin) : 0;
+    const A = netAvail > 0 ? Math.min(1, runMin / netAvail) : 0;
     const P = (runMin > 0 && ctSec > 0) ? Math.min(1, (totalProduced * ctSec / 60) / runMin) : (runMin > 0 ? 1 : 0);
     const Q = totalProduced > 0 ? Math.max(0, (totalProduced - ngQty) / totalProduced) : 1;
-    return { A, P, Q, oee: A * P * Q, shiftMin, runMin, totalProduced, ngQty };
+    return { A, P, Q, oee: A * P * Q, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty };
   };
 
   const handleCloseSession = async () => {
     if (!selSession) return;
     setSavingClose(true);
     const ng = parseInt(closeNg) || 0;
-    const { A, P, Q, oee, shiftMin, totalProduced } = computeOEE(ng);
+    const { A, P, Q, oee, shiftMin, netAvail, policyBreakMin, totalProduced } = computeOEE(ng);
     const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabaseDR.from('production_sessions').update({
       status:          'closed',
@@ -665,7 +693,7 @@ function LiveTab({ role }) {
         {/* ── CLOSE SHIFT / OEE modal ─────────────────────────── */}
         {showCloseShift && selSession && (() => {
           const ng = parseInt(closeNg) || 0;
-          const { A, P, Q, oee, shiftMin, runMin, totalProduced } = computeOEE(ng);
+          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced } = computeOEE(ng);
           const oeeColor = oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
           return (
             <div className="overlay" onClick={() => setShowCloseShift(false)} style={{ zIndex: 2000 }}>
@@ -676,11 +704,13 @@ function LiveTab({ role }) {
                 </div>
 
                 {/* Summary stats */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(90px,1fr))', gap: 10, marginBottom: 16 }}>
                   {[
-                    { label: 'เวลากะ',      value: fmtMin(shiftMin),    color: 'var(--text)' },
-                    { label: 'Run Time',     value: fmtMin(runMin),      color: '#4d9fff' },
-                    { label: 'Downtime รวม', value: fmtMin(totalDT),     color: '#ef4444' },
+                    { label: 'เวลากะ',       value: fmtMin(shiftMin),        color: 'var(--text)' },
+                    { label: 'หยุดนโยบาย',   value: fmtMin(Math.round(policyBreakMin)), color: '#22c55e' },
+                    { label: 'เวลาที่พร้อม',  value: fmtMin(netAvail),        color: '#a78bfa' },
+                    { label: 'Downtime',      value: fmtMin(totalDT),         color: '#ef4444' },
+                    { label: 'Run Time',      value: fmtMin(runMin),          color: '#4d9fff' },
                     { label: 'Order ที่ปิด', value: `${prodOrders.filter(o => o.status === 'confirmed').length} ใบ`, color: '#22c55e' },
                     { label: 'ผลิตได้',     value: `${totalProduced} ชิ้น`, color: '#22c55e' },
                     { label: 'NG',           value: `${ng} ชิ้น`,        color: '#f97316' },
@@ -1071,6 +1101,7 @@ function SetupTab({ role }) {
           { key: 'products',  label: '🔩 สินค้า / Model' },
           { key: 'kanban',    label: '📦 Kanban Standard' },
           { key: 'downtime',  label: '⏱ ประเภท Downtime' },
+          { key: 'breaks',    label: '☕ นโยบายหยุดพัก' },
         ].map(t => (
           <button key={t.key} onClick={() => setSubTab(t.key)}
             style={{ padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
@@ -1083,6 +1114,141 @@ function SetupTab({ role }) {
       {subTab === 'products' && <ProductSetup role={role} />}
       {subTab === 'kanban'   && <KanbanStandardSetup role={role} />}
       {subTab === 'downtime' && <DowntimeTypeSetup role={role} />}
+      {subTab === 'breaks'   && <BreakPolicySetup role={role} />}
+    </div>
+  );
+}
+
+/* ── Break Policy Setup ── */
+function BreakPolicySetup({ role }) {
+  const canEdit = ['admin', 'manager'].includes(role);
+  const [items, setItems]   = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const emptyForm = { name_th: '', name_en: '', shift: 'both', start_time: '08:00', duration_min: 10, process_type: 'common', sort_order: 0, is_active: true };
+  const [form, setForm] = useState(emptyForm);
+
+  const load = useCallback(async () => {
+    const { data } = await supabaseDR.from('break_policies').select('*').order('sort_order');
+    setItems(data || []);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const openEdit = (item = null) => {
+    setEditing(item?.id || 'new');
+    setForm(item
+      ? { name_th: item.name_th, name_en: item.name_en || '', shift: item.shift, start_time: (item.start_time || '08:00').slice(0,5), duration_min: item.duration_min, process_type: item.process_type, sort_order: item.sort_order, is_active: item.is_active }
+      : { ...emptyForm, sort_order: items.length + 1 });
+  };
+
+  const handleSave = async () => {
+    if (!form.name_th) { toast.error('กรอกชื่อ'); return; }
+    if (!form.duration_min || form.duration_min < 1) { toast.error('ระยะเวลาต้องมากกว่า 0'); return; }
+    setSaving(true);
+    const payload = { ...form, duration_min: parseInt(form.duration_min), sort_order: parseInt(form.sort_order) || 0, updated_at: new Date().toISOString() };
+    const { error } = editing === 'new'
+      ? await supabaseDR.from('break_policies').insert(payload)
+      : await supabaseDR.from('break_policies').update(payload).eq('id', editing);
+    setSaving(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success('บันทึกสำเร็จ');
+    setEditing(null);
+    load();
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('ลบนโยบายนี้?')) return;
+    const { error } = await supabaseDR.from('break_policies').delete().eq('id', id);
+    if (error) { toast.error(error.message); return; }
+    load();
+  };
+
+  const SHIFT_LABEL = { day: '☀️ กะเช้า', night: '🌙 กะดึก', both: '⏰ ทั้งสองกะ' };
+  const PROC_LABEL  = { welding_assembly: '🔥 Welding/Assembly', metal_forming: '⚙ Metal Forming', common: '🔗 ทุกกระบวนการ' };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ fontSize: 13, color: 'var(--muted)' }}>{items.length} นโยบาย</div>
+        {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มนโยบาย</button>}
+      </div>
+
+      <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#34d399' }}>
+        ☕ นโยบายหยุดพักเหล่านี้จะถูก<strong>หักออกจากเวลากะอัตโนมัติ</strong>เมื่อคำนวณ OEE — ช่วยให้ค่า Availability สะท้อนเวลาทำงานจริง ไม่รวมเวลาพักที่วางแผนไว้
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {items.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีนโยบาย</div>}
+        {items.map(item => (
+          <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 9, opacity: item.is_active ? 1 : 0.45 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{item.name_th}</span>
+                {item.name_en && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{item.name_en}</span>}
+                <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', fontWeight: 700 }}>{SHIFT_LABEL[item.shift]}</span>
+                <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, background: 'rgba(99,102,241,0.15)', color: '#a78bfa', fontWeight: 700 }}>{PROC_LABEL[item.process_type]}</span>
+                {!item.is_active && <span style={{ fontSize: 10, color: '#ef4444' }}>(ปิดใช้)</span>}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
+                เริ่ม {(item.start_time || '').slice(0,5)} น. · <strong style={{ color: '#22c55e' }}>{item.duration_min} นาที</strong>
+              </div>
+            </div>
+            {canEdit && (
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+                <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {editing && (
+        <div className="overlay" onClick={() => setEditing(null)} style={{ zIndex: 2000 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,440px)' }}>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>
+              {editing === 'new' ? '+ เพิ่มนโยบายหยุดพัก' : 'แก้ไขนโยบาย'}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Field label="ชื่อภาษาไทย *"><input autoFocus value={form.name_th} onChange={e => setForm(f => ({ ...f, name_th: e.target.value }))} placeholder="เช่น พักกินข้าว" style={inputStyle} /></Field>
+              <Field label="ชื่อภาษาอังกฤษ"><input value={form.name_en} onChange={e => setForm(f => ({ ...f, name_en: e.target.value }))} placeholder="เช่น Lunch Break" style={inputStyle} /></Field>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <Field label="เวลาเริ่ม (HH:MM)">
+                  <input type="time" value={form.start_time} onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))} style={inputStyle} />
+                </Field>
+                <Field label="ระยะเวลา (นาที)">
+                  <input type="number" min="1" value={form.duration_min} onChange={e => setForm(f => ({ ...f, duration_min: e.target.value }))} style={{ ...inputStyle, fontWeight: 800, fontSize: 16, textAlign: 'center' }} />
+                </Field>
+              </div>
+              <Field label="ใช้กับกะ">
+                <select value={form.shift} onChange={e => setForm(f => ({ ...f, shift: e.target.value }))} style={inputStyle}>
+                  <option value="both">⏰ ทั้งสองกะ</option>
+                  <option value="day">☀️ กะเช้าเท่านั้น</option>
+                  <option value="night">🌙 กะดึกเท่านั้น</option>
+                </select>
+              </Field>
+              <Field label="ใช้กับกระบวนการ">
+                <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inputStyle}>
+                  <option value="common">🔗 ทุกกระบวนการ</option>
+                  <option value="welding_assembly">🔥 Welding / Assembly เท่านั้น</option>
+                  <option value="metal_forming">⚙ Metal Forming เท่านั้น</option>
+                </select>
+              </Field>
+              <Field label="ลำดับ">
+                <input type="number" min="0" value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: e.target.value }))} style={inputStyle} />
+              </Field>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
+                <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
+              </label>
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
+              <button onClick={() => setEditing(null)} style={cancelBtnStyle}>ยกเลิก</button>
+              <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : 'บันทึก'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../supabaseClient';
+import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
@@ -126,6 +126,7 @@ export default function Dashboard() {
   const [workstations,  setWorkstations]  = useState([]);
   const [stationEmpMap, setStationEmpMap] = useState({});
   const [expandedLine,  setExpandedLine]  = useState(null);
+  const [prodStatus,    setProdStatus]    = useState([]);
 
   const fetchAll = useCallback(async (date) => {
     setLoading(true);
@@ -264,6 +265,33 @@ export default function Dashboard() {
     });
     setStationEmpMap(semap);
     setLoading(false);
+
+    // Fetch today's production sessions + orders from DR project (non-blocking)
+    const todayStr = getWorkDateStr(new Date());
+    const { data: sessions } = await supabaseDR
+      .from('production_sessions')
+      .select('id, line_name, shift, status, work_date, dr_products(name, target_per_shift)')
+      .eq('work_date', todayStr);
+    const sessionIds = (sessions || []).map(s => s.id);
+    let ordersBySession = {};
+    if (sessionIds.length > 0) {
+      const { data: orders } = await supabaseDR
+        .from('prod_orders')
+        .select('session_id, status, qty')
+        .in('session_id', sessionIds);
+      (orders || []).forEach(o => {
+        if (!ordersBySession[o.session_id]) ordersBySession[o.session_id] = [];
+        ordersBySession[o.session_id].push(o);
+      });
+    }
+    const ps = (sessions || []).map(s => {
+      const orders = ordersBySession[s.id] || [];
+      const demand   = orders.reduce((sum, o) => sum + (o.qty || 0), 0);
+      const actual   = orders.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty || 0), 0);
+      const target   = s.dr_products?.target_per_shift || 0;
+      return { ...s, demand, actual, target };
+    });
+    setProdStatus(ps);
   }, []);
 
   useEffect(() => { fetchAll(selectedDate); }, [selectedDate]);
@@ -510,6 +538,61 @@ export default function Dashboard() {
           })}
         </div>
       </motion.div>
+
+      {/* ── Production Status ─────────────────────────── */}
+      {prodStatus.length > 0 && (
+        <motion.div {...stagger(8)} style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
+            📊 สถานะการผลิตวันนี้ (Kanban)
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: isUltra ? 'repeat(auto-fill,minmax(260px,1fr))' : isWide ? 'repeat(auto-fill,minmax(240px,1fr))' : 'repeat(auto-fill,minmax(200px,1fr))', gap: isMobile ? 10 : 14 }}>
+            {prodStatus.map((s, i) => {
+              const pct = s.demand > 0 ? Math.min((s.actual / s.demand) * 100, 100) : 0;
+              const tpct = s.target > 0 ? Math.min((s.actual / s.target) * 100, 100) : 0;
+              const barColor = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
+              const isOpen = s.status === 'open';
+              return (
+                <motion.div key={s.id} {...stagger(9 + i)}>
+                  <div style={{ background: 'var(--card)', border: `1px solid ${isOpen ? 'rgba(34,197,94,0.35)' : 'var(--border2)'}`, borderRadius: 12, padding: isWide ? '16px 18px' : '12px 14px', boxShadow: 'var(--shadow-sm)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{s.line_name}</div>
+                        {s.dr_products?.name && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>{s.dr_products.name}</div>}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+                        <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, fontWeight: 700,
+                          background: isOpen ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.15)',
+                          color: isOpen ? '#22c55e' : '#888' }}>
+                          {isOpen ? '● Live' : '✓ ปิดแล้ว'}
+                        </span>
+                        <span style={{ fontSize: 10, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ เช้า' : '🌙 ดึก'}</span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                      <div>
+                        <span style={{ fontSize: 26, fontWeight: 900, color: barColor, lineHeight: 1 }}>{s.actual}</span>
+                        <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 4 }}>/ {s.demand} ชิ้น</span>
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: barColor }}>{pct.toFixed(0)}%</span>
+                    </div>
+                    {/* Demand progress bar */}
+                    <div style={{ height: 6, borderRadius: 3, background: 'var(--border2)', overflow: 'hidden', marginBottom: 4 }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 3, transition: 'width 0.7s ease' }} />
+                    </div>
+                    {s.target > 0 && (
+                      <div style={{ fontSize: 10, color: 'var(--muted)', display: 'flex', justifyContent: 'space-between' }}>
+                        <span>เป้ากะ: {s.target} ชิ้น</span>
+                        <span style={{ color: tpct >= 100 ? '#22c55e' : '#888' }}>{tpct.toFixed(0)}% ของเป้า</span>
+                      </div>
+                    )}
+                    {s.demand === 0 && <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', paddingTop: 4 }}>ยังไม่มี Kanban เปิด</div>}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
 
       {/* ── Bottom Grid ─────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isUltra ? 'minmax(0,3fr) minmax(0,1fr)' : 'minmax(0,2fr) minmax(0,1fr)', gap: isWide ? 20 : 16 }}>
