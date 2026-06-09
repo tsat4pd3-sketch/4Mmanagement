@@ -114,7 +114,7 @@ function LiveTab({ role }) {
       supabase.from('production_lines').select('id, name, section').order('name'),
       supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name'),
       supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
-      supabaseDR.from('kanban_standards').select('*').eq('is_active', true).order('mat_no'),
+      supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name)').eq('is_active', true).order('mat_no'),
       supabaseDR.from('break_policies').select('*').eq('is_active', true).order('sort_order'),
     ]);
 
@@ -783,31 +783,35 @@ function LiveTab({ role }) {
                     style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }} />
                 </Field>
 
-                <Field label="MAT.NO (สแกน barcode MAT.NO บน Tag Card) *">
-                  <div style={{ position: 'relative' }}>
-                    <input id="open-mat-input" value={openProdForm.mat_no}
-                      onChange={e => handleOpenProdMatNoChange(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter' && openProdForm.mat_no) document.getElementById('open-qty-input')?.focus(); }}
-                      placeholder="สแกน MAT.NO..."
-                      style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15, paddingRight: 120 }} />
-                    {openProdStd && (
-                      <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, background: 'rgba(34,197,94,0.15)', color: '#22c55e', borderRadius: 20, padding: '2px 8px', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                        ✓ {openProdStd.qty_per_kanban} ชิ้น/ใบ
-                      </span>
-                    )}
-                    {openProdForm.mat_no && !openProdStd && (
-                      <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', borderRadius: 20, padding: '2px 8px', fontWeight: 700 }}>
-                        ⚠ ไม่มีใน Std
-                      </span>
-                    )}
-                  </div>
-                </Field>
+                {(() => {
+                  const lineName = selSession?.line_name;
+                  const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === lineName);
+                  const displayStds = lineStds.length > 0 ? lineStds : kanbanStds;
+                  const isFiltered = lineStds.length > 0;
+                  return (
+                    <Field label={`MAT.NO${isFiltered ? ` (${displayStds.length} รายการของไลน์นี้)` : ' (ทุกรายการ)'} *`}>
+                      <select
+                        value={openProdForm.mat_no}
+                        onChange={e => handleOpenProdMatNoChange(e.target.value)}
+                        style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}
+                      >
+                        <option value="">— เลือก MAT.NO —</option>
+                        {displayStds.map(s => (
+                          <option key={s.id} value={s.mat_no}>
+                            {s.mat_no}{s.dr_products?.name ? ` · ${s.dr_products.name}` : s.part_name ? ` · ${s.part_name}` : ''} ({s.qty_per_kanban} ชิ้น/ใบ)
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  );
+                })()}
 
                 {openProdStd && (
                   <div style={{ padding: '8px 12px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8, fontSize: 12, color: 'var(--muted)' }}>
-                    {openProdStd.part_name && <span style={{ color: 'var(--text)', fontWeight: 600 }}>{openProdStd.part_name} </span>}
-                    {openProdStd.customer && <span>· {openProdStd.customer} </span>}
-                    {openProdStd.p_no && <span>· P.NO: {openProdStd.p_no}</span>}
+                    <span style={{ color: '#22c55e', fontWeight: 700 }}>✓ {openProdStd.qty_per_kanban} ชิ้น / Kanban ใบ </span>
+                    {(openProdStd.dr_products?.name || openProdStd.part_name) && <span style={{ color: 'var(--text)', fontWeight: 600 }}> · {openProdStd.dr_products?.name || openProdStd.part_name}</span>}
+                    {openProdStd.customer && <span> · {openProdStd.customer}</span>}
+                    {openProdStd.p_no && <span> · P.NO: {openProdStd.p_no}</span>}
                   </div>
                 )}
 
