@@ -64,26 +64,25 @@ export default function DailyReport() {
    LIVE TAB
 ═══════════════════════════════════════════════════════════════ */
 function LiveTab({ role }) {
-  const { fullName } = useContext(UserContext);
+  const { fullName, section: userSection, lineId: userLineId } = useContext(UserContext);
   const [lines, setLines]           = useState([]);
+  const [lineMap, setLineMap]       = useState({});
   const [products, setProducts]     = useState([]);
   const [dtTypes, setDtTypes]       = useState([]);
   const [sessions, setSessions]     = useState([]);
+  const [overdueAlert, setOverdueAlert] = useState([]);
   const [dtLogs, setDtLogs]         = useState([]);
   const [selSession, setSelSession] = useState(null);
   const [loading, setLoading]       = useState(true);
 
   const [showOpen, setShowOpen] = useState(false);
-  const [openForm, setOpenForm] = useState({ work_date: today(), line_name: '', shift: 'day', product_id: '', target_qty: '', start_time: nowTime() });
+  const [openForm, setOpenForm] = useState({ work_date: today(), line_name: '', shift: 'day', product_id: '', start_time: nowTime() });
 
   const [showDT, setShowDT]   = useState(false);
   const [dtForm, setDtForm]   = useState({ downtime_type_id: '', started_at: '', ended_at: '', duration_min: '', machine_no: '', description: '' });
   const [savingDT, setSavingDT] = useState(false);
 
-  const [qtyEdit, setQtyEdit]     = useState({ actual_qty: '', qty_ng_rh: '', qty_ng_lh: '' });
-  const [savingQty, setSavingQty] = useState(false);
-
-  // Prod Orders (replaces kanban targets/scans)
+  // Prod Orders
   const [prodOrders, setProdOrders]   = useState([]);
   const [kanbanStds, setKanbanStds]   = useState([]);
 
@@ -96,36 +95,74 @@ function LiveTab({ role }) {
   // Scan Close modal
   const [showScanClose, setShowScanClose] = useState(false);
   const [closeProdNo, setCloseProdNo]     = useState('');
-  const [closeMatch, setCloseMatch]       = useState(null); // found open order
+  const [closeMatch, setCloseMatch]       = useState(null);
   const [savingProdClose, setSavingProdClose] = useState(false);
 
-  const canManage = ['admin', 'manager', 'supervisor'].includes(role);
-  const canScan   = ['admin', 'manager', 'supervisor', 'leader'].includes(role);
+  // Close Shift modal (OEE)
+  const [showCloseShift, setShowCloseShift] = useState(false);
+  const [closeNg, setCloseNg]               = useState('0');
+  const [savingClose, setSavingClose]       = useState(false);
+
+  const canManage     = ['admin', 'manager', 'supervisor'].includes(role);
+  const canCloseShift = ['admin', 'manager', 'supervisor'].includes(role);
+  const canScan       = ['admin', 'manager', 'supervisor', 'leader'].includes(role);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: ln }, { data: pr }, { data: dt }, { data: ss }, { data: ks }] = await Promise.all([
-      supabase.from('production_lines').select('id, name').order('name'),
+    const [{ data: ln }, { data: pr }, { data: dt }, { data: ks }] = await Promise.all([
+      supabase.from('production_lines').select('id, name, section').order('name'),
       supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name'),
       supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
-      supabaseDR.from('production_sessions')
-        .select('*, dr_products(name, cycle_time_sec, target_per_shift, process_type)')
-        .eq('status', 'open')
-        .order('created_at', { ascending: false }),
       supabaseDR.from('kanban_standards').select('*').eq('is_active', true).order('mat_no'),
     ]);
+
+    const lm = {};
+    (ln || []).forEach(l => { lm[l.name] = l; });
     setLines(ln || []);
+    setLineMap(lm);
     setProducts(pr || []);
     setDtTypes(dt || []);
-    setSessions(ss || []);
     setKanbanStds(ks || []);
+
+    // Filter available lines for open-session form
+    // Fetch sessions — filter by role
+    let sq = supabaseDR.from('production_sessions')
+      .select('*, dr_products(name, cycle_time_sec, target_per_shift, process_type)')
+      .eq('status', 'open')
+      .order('created_at', { ascending: false });
+
+    if (role === 'leader' && userLineId) {
+      const myLine = (ln || []).find(l => l.id === userLineId);
+      if (myLine) sq = sq.eq('line_name', myLine.name);
+    } else if (role === 'supervisor' && userSection) {
+      sq = sq.eq('section', userSection);
+    }
+
+    const { data: ss } = await sq;
+
+    // Check overdue: open sessions from previous dates
+    const { data: overdue } = await supabaseDR.from('production_sessions')
+      .select('id, line_name, shift, work_date, section')
+      .eq('status', 'open')
+      .lt('work_date', today());
+    setOverdueAlert((overdue || []).filter(o => {
+      if (role === 'admin' || role === 'manager') return true;
+      if (role === 'supervisor') return !userSection || o.section === userSection;
+      if (role === 'leader') {
+        const myLine = (ln || []).find(l => l.id === userLineId);
+        return myLine && o.line_name === myLine.name;
+      }
+      return false;
+    }));
+
+    setSessions(ss || []);
     if (ss?.length) {
-      const first = ss[0];
-      setSelSession(first);
-      setQtyEdit({ actual_qty: first.actual_qty ?? '', qty_ng_rh: first.qty_ng_rh ?? '', qty_ng_lh: first.qty_ng_lh ?? '' });
+      setSelSession(s => s?.id ? (ss.find(x => x.id === s.id) || ss[0]) : ss[0]);
+    } else {
+      setSelSession(null);
     }
     setLoading(false);
-  }, []);
+  }, [role, userSection, userLineId]);
 
   const loadDT = useCallback(async (sessionId) => {
     if (!sessionId) return;
@@ -166,24 +203,25 @@ function LiveTab({ role }) {
   const handleOpenSession = async () => {
     if (!openForm.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
     const { data: { user } } = await supabase.auth.getUser();
+    const lineSection = lineMap[openForm.line_name]?.section || null;
     const { data, error } = await supabaseDR.from('production_sessions').insert({
       work_date:      openForm.work_date,
       line_name:      openForm.line_name,
+      section:        lineSection,
       shift:          openForm.shift,
       product_id:     openForm.product_id || null,
-      target_qty:     parseInt(openForm.target_qty) || 0,
       start_time:     openForm.start_time,
       opened_by_name: fullName,
       opened_by_uid:  user?.id,
       status:         'open',
-    }).select('*, dr_products(name, cycle_time_sec, target_per_shift)').single();
+    }).select('*, dr_products(name, cycle_time_sec, target_per_shift, process_type)').single();
     if (error) { toast.error('เปิดกะไม่สำเร็จ: ' + error.message); return; }
     toast.success('เปิดกะสำเร็จ');
     setShowOpen(false);
     setSessions(s => [data, ...s]);
     setSelSession(data);
-    setQtyEdit({ actual_qty: 0, qty_ng_rh: 0, qty_ng_lh: 0 });
     setDtLogs([]);
+    setProdOrders([]);
   };
 
   const handleSaveQty = async () => {
@@ -308,22 +346,50 @@ function LiveTab({ role }) {
     loadProdOrders(selSession.id);
   };
 
+  const computeOEE = (ngQty) => {
+    const totalProduced  = prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
+    const openedAt  = selSession?.created_at ? new Date(selSession.created_at) : null;
+    const closedAt  = new Date();
+    const shiftMin  = openedAt ? Math.round((closedAt - openedAt) / 60000) : 0;
+    const plannedDT = dtLogs.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
+    const unplannedDT = totalDT - plannedDT;
+    const runMin    = Math.max(0, shiftMin - unplannedDT);
+    const ctSec     = selSession?.dr_products?.cycle_time_sec || 0;
+
+    const A = shiftMin > 0 ? Math.min(1, runMin / shiftMin) : 0;
+    const P = (runMin > 0 && ctSec > 0) ? Math.min(1, (totalProduced * ctSec / 60) / runMin) : (runMin > 0 ? 1 : 0);
+    const Q = totalProduced > 0 ? Math.max(0, (totalProduced - ngQty) / totalProduced) : 1;
+    return { A, P, Q, oee: A * P * Q, shiftMin, runMin, totalProduced, ngQty };
+  };
+
   const handleCloseSession = async () => {
     if (!selSession) return;
-    if (!window.confirm('ปิดกะนี้? จะไม่สามารถเพิ่ม Downtime ได้อีก')) return;
+    setSavingClose(true);
+    const ng = parseInt(closeNg) || 0;
+    const { A, P, Q, oee, shiftMin, totalProduced } = computeOEE(ng);
     const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabaseDR.from('production_sessions').update({
-      status:         'closed',
-      closed_by_name: fullName,
-      closed_by_uid:  user?.id,
-      closed_at:      new Date().toISOString(),
-      end_time:       nowTime(),
+      status:          'closed',
+      closed_by_name:  fullName,
+      closed_by_uid:   user?.id,
+      closed_at:       new Date().toISOString(),
+      end_time:        nowTime(),
+      ng_qty:          ng,
+      actual_qty:      totalProduced,
+      shift_min:       shiftMin,
+      oee_a:           parseFloat((A * 100).toFixed(2)),
+      oee_p:           parseFloat((P * 100).toFixed(2)),
+      oee_q:           parseFloat((Q * 100).toFixed(2)),
+      oee:             parseFloat((oee * 100).toFixed(2)),
     }).eq('id', selSession.id);
+    setSavingClose(false);
     if (error) { toast.error(error.message); return; }
-    toast.success('ปิดกะสำเร็จ');
+    toast.success(`ปิดกะสำเร็จ · OEE ${(oee * 100).toFixed(1)}%`);
+    setShowCloseShift(false);
     load();
     setSelSession(null);
     setDtLogs([]);
+    setProdOrders([]);
   };
 
   const handleDeleteDT = async (id) => {
@@ -344,7 +410,7 @@ function LiveTab({ role }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>กะที่เปิดอยู่</div>
           {sessions.map(s => (
-            <button key={s.id} onClick={() => { setSelSession(s); setQtyEdit({ actual_qty: s.actual_qty, qty_ng_rh: s.qty_ng_rh, qty_ng_lh: s.qty_ng_lh }); }}
+            <button key={s.id} onClick={() => { setSelSession(s); }}
               style={{ padding: '10px 12px', borderRadius: 8, border: `2px solid ${selSession?.id === s.id ? 'var(--accent)' : 'var(--border)'}`,
                 background: selSession?.id === s.id ? 'var(--accent-dim)' : 'var(--card)', cursor: 'pointer', textAlign: 'left' }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{s.line_name}</div>
@@ -355,6 +421,19 @@ function LiveTab({ role }) {
       )}
 
       <div>
+        {/* Overdue alert */}
+        {overdueAlert.length > 0 && (
+          <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 10, padding: '12px 16px', marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#ef4444', marginBottom: 6 }}>⚠ มีกะที่ยังไม่ปิด ({overdueAlert.length} กะ)</div>
+            {overdueAlert.map(o => (
+              <div key={o.id} style={{ fontSize: 12, color: 'var(--text)', marginBottom: 2 }}>
+                • {o.line_name} · {o.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · วันที่ {o.work_date}
+              </div>
+            ))}
+            <div style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>กรุณา SV ทำการปิดกะให้ครบก่อนเริ่มกะใหม่</div>
+          </div>
+        )}
+
         {sessions.length === 0 && (
           <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--muted)' }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>🏭</div>
@@ -386,10 +465,13 @@ function LiveTab({ role }) {
                     </div>
                   )}
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {canManage && <button onClick={() => setShowOpen(true)} style={saveBtnStyle}>+ เปิดกะใหม่</button>}
-                  {canManage && (
-                    <button onClick={handleCloseSession} style={cancelBtnStyle}>🔒 ปิดกะ</button>
+                  {canCloseShift && (
+                    <button onClick={() => { setCloseNg('0'); setShowCloseShift(true); }}
+                      style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
+                      🔒 ปิดกะ
+                    </button>
                   )}
                 </div>
               </div>
@@ -567,9 +649,6 @@ function LiveTab({ role }) {
                     {products.map(p => <option key={p.id} value={p.id}>{p.name}{p.code ? ` (${p.code})` : ''}</option>)}
                   </select>
                 </Field>
-                <Field label="เป้าหมาย (ชิ้น)">
-                  <input type="number" min="0" value={openForm.target_qty} onChange={e => setOpenForm(f => ({ ...f, target_qty: e.target.value }))} placeholder="0" style={inputStyle} />
-                </Field>
                 <Field label="เวลาเริ่มต้น">
                   <input type="time" value={openForm.start_time} onChange={e => setOpenForm(f => ({ ...f, start_time: e.target.value }))} style={inputStyle} />
                 </Field>
@@ -582,6 +661,81 @@ function LiveTab({ role }) {
             </div>
           </div>
         )}
+
+        {/* ── CLOSE SHIFT / OEE modal ─────────────────────────── */}
+        {showCloseShift && selSession && (() => {
+          const ng = parseInt(closeNg) || 0;
+          const { A, P, Q, oee, shiftMin, runMin, totalProduced } = computeOEE(ng);
+          const oeeColor = oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
+          return (
+            <div className="overlay" onClick={() => setShowCloseShift(false)} style={{ zIndex: 2000 }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,480px)' }}>
+                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#ef4444' }}>🔒 ปิดกะ — สรุปผลและ OEE</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
+                  {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {selSession.work_date}
+                </div>
+
+                {/* Summary stats */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 16 }}>
+                  {[
+                    { label: 'เวลากะ',      value: fmtMin(shiftMin),    color: 'var(--text)' },
+                    { label: 'Run Time',     value: fmtMin(runMin),      color: '#4d9fff' },
+                    { label: 'Downtime รวม', value: fmtMin(totalDT),     color: '#ef4444' },
+                    { label: 'Order ที่ปิด', value: `${prodOrders.filter(o => o.status === 'confirmed').length} ใบ`, color: '#22c55e' },
+                    { label: 'ผลิตได้',     value: `${totalProduced} ชิ้น`, color: '#22c55e' },
+                    { label: 'NG',           value: `${ng} ชิ้น`,        color: '#f97316' },
+                  ].map(k => (
+                    <div key={k.label} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{k.label}</div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: k.color, marginTop: 2 }}>{k.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* NG input */}
+                <Field label="จำนวน NG (ชิ้นเสีย) ทั้งกะ">
+                  <input autoFocus type="number" min="0" value={closeNg}
+                    onChange={e => setCloseNg(e.target.value)}
+                    style={{ ...inputStyle, fontSize: 18, fontWeight: 800, textAlign: 'center' }} />
+                </Field>
+
+                {/* OEE live preview */}
+                <div style={{ marginTop: 16, padding: '14px 16px', background: `${oeeColor}18`, border: `1px solid ${oeeColor}40`, borderRadius: 10 }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, fontWeight: 700 }}>OEE PREVIEW (APQ)</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 16 }}>
+                      {[
+                        { label: 'A (Avail.)', value: `${(A * 100).toFixed(1)}%` },
+                        { label: 'P (Perf.)',  value: `${(P * 100).toFixed(1)}%` },
+                        { label: 'Q (Qual.)',  value: `${(Q * 100).toFixed(1)}%` },
+                      ].map(k => (
+                        <div key={k.label} style={{ textAlign: 'center' }}>
+                          <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>{k.label}</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{k.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>OEE รวม</div>
+                      <div style={{ fontSize: 36, fontWeight: 900, color: oeeColor, lineHeight: 1 }}>{(oee * 100).toFixed(1)}%</div>
+                    </div>
+                  </div>
+                  {!selSession.dr_products?.cycle_time_sec && (
+                    <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ ไม่มี Cycle Time — P คำนวณเป็น 100% (ตั้งค่าใน Setup → สินค้า)</div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
+                  <button onClick={() => setShowCloseShift(false)} style={cancelBtnStyle}>ยกเลิก</button>
+                  <button onClick={handleCloseSession} disabled={savingClose}
+                    style={{ ...saveBtnStyle, background: '#ef4444', opacity: savingClose ? 0.6 : 1 }}>
+                    {savingClose ? '...' : '🔒 ยืนยันปิดกะ'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── SCAN OPEN modal ─────────────────────────────────── */}
         {showScanOpen && (
