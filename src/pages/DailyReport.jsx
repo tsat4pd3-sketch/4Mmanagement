@@ -83,8 +83,9 @@ function LiveTab({ role }) {
   const [savingDT, setSavingDT] = useState(false);
 
   // Prod Orders
-  const [prodOrders, setProdOrders]   = useState([]);
-  const [kanbanStds, setKanbanStds]   = useState([]);
+  const [prodOrders, setProdOrders]       = useState([]);
+  const [carryOrders, setCarryOrders]     = useState([]); // pending carry-over from prev session
+  const [kanbanStds, setKanbanStds]       = useState([]);
 
   // Scan Open modal
   const [showScanOpen, setShowScanOpen]   = useState(false);
@@ -97,12 +98,15 @@ function LiveTab({ role }) {
   const [closeProdNo, setCloseProdNo]     = useState('');
   const [closeMatch, setCloseMatch]       = useState(null);
   const [savingProdClose, setSavingProdClose] = useState(false);
+  const [closeQty, setCloseQty]           = useState({ qty_ng: '0', qty_suspect: '0', qty_repair: '0' });
 
   // Close Shift modal (OEE)
   const [showCloseShift, setShowCloseShift] = useState(false);
   const [closeNg, setCloseNg]               = useState('0');
   const [savingClose, setSavingClose]       = useState(false);
   const [breakPolicies, setBreakPolicies]   = useState([]);
+  // Carry-over step: map of prod_order.id → 'carry' | 'cancel' | null
+  const [carryOverDecisions, setCarryOverDecisions] = useState({});
 
   const canManage     = ['admin', 'manager', 'supervisor'].includes(role);
   const canCloseShift = ['admin', 'manager', 'supervisor'].includes(role);
@@ -176,20 +180,43 @@ function LiveTab({ role }) {
     setDtLogs(data || []);
   }, []);
 
-  const loadProdOrders = useCallback(async (sessionId) => {
+  const loadProdOrders = useCallback(async (sessionId, lineName) => {
     if (!sessionId) return;
+    // Current session orders
     const { data } = await supabaseDR.from('prod_orders')
       .select('*')
       .eq('session_id', sessionId)
       .order('opened_at');
     setProdOrders(data || []);
+
+    // Fetch carry-over orders from previous sessions of same line (not yet imported)
+    if (lineName) {
+      const { data: prevSessions } = await supabaseDR.from('production_sessions')
+        .select('id')
+        .eq('line_name', lineName)
+        .eq('status', 'closed')
+        .neq('id', sessionId)
+        .order('closed_at', { ascending: false })
+        .limit(5);
+      if (prevSessions?.length) {
+        const prevIds = prevSessions.map(s => s.id);
+        const { data: carried } = await supabaseDR.from('prod_orders')
+          .select('*')
+          .in('session_id', prevIds)
+          .eq('status', 'carry_over')
+          .order('opened_at');
+        setCarryOrders(carried || []);
+      } else {
+        setCarryOrders([]);
+      }
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     if (selSession) {
       loadDT(selSession.id);
-      loadProdOrders(selSession.id);
+      loadProdOrders(selSession.id, selSession.line_name);
     }
   }, [selSession, loadDT, loadProdOrders]);
 
@@ -198,7 +225,7 @@ function LiveTab({ role }) {
     const ch = supabaseDR.channel('live-dr')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       () => { if (selSession) loadDT(selSession.id); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         () => { if (selSession) loadProdOrders(selSession.id); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         () => { if (selSession) loadProdOrders(selSession.id, selSession.line_name); })
       .subscribe();
     return () => supabaseDR.removeChannel(ch);
   }, [selSession, load, loadDT, loadProdOrders]);
@@ -314,7 +341,7 @@ function LiveTab({ role }) {
     toast.success(`เปิด Order ${prodNo} · ${matNo} · ${openProdForm.qty} ชิ้น ✓`);
     // keep modal open for fast multi-scan
     setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty }));
-    loadProdOrders(selSession.id);
+    loadProdOrders(selSession.id, selSession.line_name);
   };
 
   // ── Scan CLOSE handler ─────────────────────────────────────────
@@ -323,30 +350,70 @@ function LiveTab({ role }) {
     setCloseProdNo(v);
     const found = prodOrders.find(o => o.prod_no === v && o.status === 'open');
     setCloseMatch(found || null);
+    if (found) setCloseQty({ qty_ng: '0', qty_suspect: '0', qty_repair: '0' });
   };
 
   const handleScanClose = async () => {
     if (!closeMatch) { toast.error('ไม่พบ PROD.NO นี้ หรือปิดไปแล้ว'); return; }
+    const ng      = parseInt(closeQty.qty_ng)      || 0;
+    const suspect = parseInt(closeQty.qty_suspect)  || 0;
+    const repair  = parseInt(closeQty.qty_repair)   || 0;
+    const ok      = Math.max(0, closeMatch.qty - ng - suspect - repair);
+    if (ng + suspect + repair > closeMatch.qty) {
+      toast.error(`ยอดเสีย+สงสัย+ซ่อม (${ng + suspect + repair}) มากกว่ายอดผลิต (${closeMatch.qty})`);
+      return;
+    }
     setSavingProdClose(true);
     const { error } = await supabaseDR.from('prod_orders').update({
       status:       'confirmed',
       confirmed_by: fullName,
       confirmed_at: new Date().toISOString(),
+      qty_ok:       ok,
+      qty_ng:       ng,
+      qty_suspect:  suspect,
+      qty_repair:   repair,
     }).eq('id', closeMatch.id);
     setSavingProdClose(false);
     if (error) { toast.error(error.message); return; }
-    toast.success(`ปิด Order ${closeMatch.prod_no} · ${closeMatch.qty} ชิ้น ✓`);
-    // keep modal open for fast multi-scan — clear input
+    const qLabel = [ng ? `NG ${ng}` : '', suspect ? `สงสัย ${suspect}` : '', repair ? `ซ่อม ${repair}` : ''].filter(Boolean).join(' · ');
+    toast.success(`ปิด Order ${closeMatch.prod_no} · ดี ${ok} ชิ้น${qLabel ? ' · ' + qLabel : ''} ✓`);
     setCloseProdNo('');
     setCloseMatch(null);
-    loadProdOrders(selSession.id);
+    setCloseQty({ qty_ng: '0', qty_suspect: '0', qty_repair: '0' });
+    loadProdOrders(selSession.id, selSession.line_name);
   };
 
   const handleDeleteProdOrder = async (id) => {
     if (!window.confirm('ลบ Prod Order นี้?')) return;
     const { error } = await supabaseDR.from('prod_orders').delete().eq('id', id);
     if (error) { toast.error(error.message); return; }
-    loadProdOrders(selSession.id);
+    loadProdOrders(selSession.id, selSession.line_name);
+  };
+
+  // Import carry-over orders into current session
+  const handleImportCarryOrders = async () => {
+    if (!selSession || !carryOrders.length) return;
+    let imported = 0;
+    for (const o of carryOrders) {
+      const dup = prodOrders.find(p => p.prod_no === o.prod_no);
+      if (dup) continue;
+      const { error } = await supabaseDR.from('prod_orders').insert({
+        session_id:   selSession.id,
+        prod_no:      o.prod_no,
+        mat_no:       o.mat_no,
+        part_name:    o.part_name,
+        p_no:         o.p_no,
+        customer:     o.customer,
+        qty:          o.qty,
+        status:       'open',
+        opened_by:    fullName,
+        carry_over_from_session_id: o.session_id,
+        carry_over_note: o.carry_over_note,
+      });
+      if (!error) imported++;
+    }
+    toast.success(`รับยอดค้างมาแล้ว ${imported} Order`);
+    loadProdOrders(selSession.id, selSession.line_name);
   };
 
   const computePolicyBreakMin = (openedAt, closedAt, sessionShift, processType) => {
@@ -392,18 +459,54 @@ function LiveTab({ role }) {
 
   const handleCloseSession = async () => {
     if (!selSession) return;
+
+    // Check open orders that haven't been decided yet
+    const openOrders = prodOrders.filter(o => o.status === 'open');
+    const undecided  = openOrders.filter(o => !carryOverDecisions[o.id]);
+    if (undecided.length > 0) {
+      toast.error(`มี ${undecided.length} Order ที่ยังไม่ได้ตัดสินใจ (Carry Over / ยกเลิก)`);
+      return;
+    }
+
     setSavingClose(true);
-    const ng = parseInt(closeNg) || 0;
-    const { A, P, Q, oee, shiftMin, netAvail, policyBreakMin, totalProduced } = computeOEE(ng);
+
+    // Process carry-over decisions
     const { data: { user } } = await supabase.auth.getUser();
+    for (const order of openOrders) {
+      const decision = carryOverDecisions[order.id];
+      if (decision === 'carry') {
+        // Mark as carry_over — will be re-opened in next session
+        await supabaseDR.from('prod_orders').update({
+          status: 'carry_over',
+          carry_over_from_session_id: selSession.id,
+          carry_over_note: `ยกยอดข้ามกะจาก ${selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} ${selSession.work_date}`,
+        }).eq('id', order.id);
+      } else if (decision === 'cancel') {
+        await supabaseDR.from('prod_orders').update({ status: 'cancelled' }).eq('id', order.id);
+      }
+    }
+
+    // Quality totals from confirmed orders
+    const confirmed = prodOrders.filter(o => o.status === 'confirmed');
+    const totalQtyOk      = confirmed.reduce((s, o) => s + (o.qty_ok      ?? o.qty), 0);
+    const totalQtyNg      = confirmed.reduce((s, o) => s + (o.qty_ng      || 0), 0);
+    const totalQtySuspect = confirmed.reduce((s, o) => s + (o.qty_suspect || 0), 0);
+    const totalQtyRepair  = confirmed.reduce((s, o) => s + (o.qty_repair  || 0), 0);
+    const totalProducedFinal = confirmed.reduce((s, o) => s + o.qty, 0);
+
+    const { A, P, Q, oee, shiftMin } = computeOEE(totalQtyNg + totalQtySuspect);
     const { error } = await supabaseDR.from('production_sessions').update({
       status:          'closed',
       closed_by_name:  fullName,
       closed_by_uid:   user?.id,
       closed_at:       new Date().toISOString(),
       end_time:        nowTime(),
-      ng_qty:          ng,
-      actual_qty:      totalProduced,
+      ng_qty:          totalQtyNg,
+      actual_qty:      totalProducedFinal,
+      qty_ok:          totalQtyOk,
+      qty_ng:          totalQtyNg,
+      qty_suspect:     totalQtySuspect,
+      qty_repair:      totalQtyRepair,
       shift_min:       shiftMin,
       oee_a:           parseFloat((A * 100).toFixed(2)),
       oee_p:           parseFloat((P * 100).toFixed(2)),
@@ -412,8 +515,11 @@ function LiveTab({ role }) {
     }).eq('id', selSession.id);
     setSavingClose(false);
     if (error) { toast.error(error.message); return; }
-    toast.success(`ปิดกะสำเร็จ · OEE ${(oee * 100).toFixed(1)}%`);
+
+    // Create carry-over orders in next session placeholder (just mark, next SV opens session and picks up)
+    toast.success(`ปิดกะสำเร็จ · OEE ${(oee * 100).toFixed(1)}% · ดี ${totalQtyOk} / NG ${totalQtyNg} / สงสัย ${totalQtySuspect}`);
     setShowCloseShift(false);
+    setCarryOverDecisions({});
     load();
     setSelSession(null);
     setDtLogs([]);
@@ -563,7 +669,23 @@ function LiveTab({ role }) {
                 )}
               </div>
 
-              {prodOrders.length === 0 && (
+              {/* Carry-over banner */}
+              {carryOrders.length > 0 && canScan && (
+                <div style={{ marginBottom: 10, padding: '10px 14px', background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.4)', borderRadius: 9 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>➡ มียอดค้างจากกะก่อน {carryOrders.length} Order ({carryOrders.reduce((s,o) => s+o.qty,0)} ชิ้น)</div>
+                      <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{carryOrders.map(o => o.prod_no).join(', ')}</div>
+                    </div>
+                    <button onClick={handleImportCarryOrders}
+                      style={{ background: '#a78bfa', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      📥 รับยอดต่อ
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {prodOrders.length === 0 && carryOrders.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '24px 16px', color: 'var(--muted)', fontSize: 13 }}>
                   ยังไม่มี Prod Order — กด <b>📥 Scan เปิด Order</b> เพื่อเริ่มสแกน Tag Card
                 </div>
@@ -571,33 +693,45 @@ function LiveTab({ role }) {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {prodOrders.map(o => {
-                  const confirmed = o.status === 'confirmed';
+                  const confirmed   = o.status === 'confirmed';
+                  const carryOver   = o.status === 'carry_over';
+                  const cancelled   = o.status === 'cancelled';
+                  const isCarried   = !!o.carry_over_from_session_id;
+                  const statusColor = confirmed ? '#22c55e' : carryOver ? '#a78bfa' : cancelled ? '#666' : '#f59e0b';
+                  const statusLabel = confirmed ? '✓ ปิดแล้ว' : carryOver ? '➡ ยกยอด' : cancelled ? '✕ ยกเลิก' : '● ผลิต';
+                  const hasQuality  = confirmed && (o.qty_ng > 0 || o.qty_suspect > 0 || o.qty_repair > 0);
                   return (
                     <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'var(--bg2)', borderRadius: 8,
-                      border: `1px solid ${confirmed ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
-                      borderLeft: `4px solid ${confirmed ? '#22c55e' : '#f59e0b'}` }}>
+                      border: `1px solid ${statusColor}40`, borderLeft: `4px solid ${statusColor}`,
+                      opacity: cancelled ? 0.45 : 1 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{o.prod_no}</span>
                           <span style={{ fontSize: 12, color: 'var(--muted)' }}>{o.mat_no}</span>
                           {o.part_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {o.part_name}</span>}
                           {o.customer && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>{o.customer}</span>}
-                          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700,
-                            background: confirmed ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)',
-                            color: confirmed ? '#22c55e' : '#f59e0b' }}>
-                            {confirmed ? '✓ ปิดแล้ว' : '● กำลังผลิต'}
+                          {isCarried && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(167,139,250,0.15)', color: '#a78bfa', fontWeight: 700 }}>ยกยอดมา</span>}
+                          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: `${statusColor}20`, color: statusColor }}>
+                            {statusLabel}
                           </span>
                         </div>
                         <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
                           เปิด {new Date(o.opened_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} {o.opened_by && `· ${o.opened_by}`}
                           {confirmed && o.confirmed_at && ` · ปิด ${new Date(o.confirmed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} · ${o.confirmed_by}`}
                         </div>
+                        {hasQuality && (
+                          <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                            {o.qty_ng      > 0 && <span style={{ fontSize: 10, color: '#ef4444', fontWeight: 700 }}>🔴 NG: {o.qty_ng}</span>}
+                            {o.qty_suspect > 0 && <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700 }}>🟡 สงสัย: {o.qty_suspect}</span>}
+                            {o.qty_repair  > 0 && <span style={{ fontSize: 10, color: '#a78bfa', fontWeight: 700 }}>🔧 ซ่อม: {o.qty_repair}</span>}
+                          </div>
+                        )}
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                        <div style={{ fontSize: 20, fontWeight: 900, color: confirmed ? '#22c55e' : '#f59e0b', lineHeight: 1 }}>{o.qty}</div>
+                        <div style={{ fontSize: 20, fontWeight: 900, color: statusColor, lineHeight: 1 }}>{o.qty}</div>
                         <div style={{ fontSize: 9, color: 'var(--muted)' }}>ชิ้น</div>
                       </div>
-                      {canManage && (
+                      {canManage && !confirmed && !carryOver && (
                         <button onClick={() => handleDeleteProdOrder(o.id)}
                           style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 2px' }}>✕</button>
                       )}
@@ -722,15 +856,73 @@ function LiveTab({ role }) {
                   ))}
                 </div>
 
-                {/* NG input */}
-                <Field label="จำนวน NG (ชิ้นเสีย) ทั้งกะ">
-                  <input autoFocus type="number" min="0" value={closeNg}
-                    onChange={e => setCloseNg(e.target.value)}
-                    style={{ ...inputStyle, fontSize: 18, fontWeight: 800, textAlign: 'center' }} />
-                </Field>
+                {/* Quality summary from confirmed orders */}
+                {(() => {
+                  const conf = prodOrders.filter(o => o.status === 'confirmed');
+                  const tng  = conf.reduce((s,o) => s+(o.qty_ng||0), 0);
+                  const tsus = conf.reduce((s,o) => s+(o.qty_suspect||0), 0);
+                  const trep = conf.reduce((s,o) => s+(o.qty_repair||0), 0);
+                  const tok  = conf.reduce((s,o) => s+(o.qty_ok ?? o.qty), 0);
+                  if (!conf.length) return null;
+                  return (
+                    <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>📋 สรุปคุณภาพจาก Order ที่ปิดแล้ว</div>
+                      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }}>✅ ดี: {tok}</span>
+                        {tng  > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#ef4444' }}>🔴 NG: {tng}</span>}
+                        {tsus > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>🟡 สงสัย: {tsus}</span>}
+                        {trep > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#a78bfa' }}>🔧 ซ่อม: {trep}</span>}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Carry-over: handle open orders */}
+                {(() => {
+                  const openOrders = prodOrders.filter(o => o.status === 'open');
+                  if (!openOrders.length) return null;
+                  const allDecided = openOrders.every(o => carryOverDecisions[o.id]);
+                  return (
+                    <div style={{ marginBottom: 14, padding: '12px 14px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', marginBottom: 10 }}>
+                        ⚠ มี {openOrders.length} Order ที่ยังไม่ปิด — ต้องตัดสินใจก่อนปิดกะ
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {openOrders.map(o => {
+                          const dec = carryOverDecisions[o.id];
+                          return (
+                            <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'var(--bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--text)' }}>{o.prod_no}</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.mat_no} · {o.qty} ชิ้น</div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button
+                                  onClick={() => setCarryOverDecisions(d => ({ ...d, [o.id]: 'carry' }))}
+                                  style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'carry' ? '#22c55e' : 'var(--border)'}`, background: dec === 'carry' ? 'rgba(34,197,94,0.2)' : 'var(--bg2)', color: dec === 'carry' ? '#22c55e' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                                  ➡ ยกยอดต่อ
+                                </button>
+                                <button
+                                  onClick={() => setCarryOverDecisions(d => ({ ...d, [o.id]: 'cancel' }))}
+                                  style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'cancel' ? '#ef4444' : 'var(--border)'}`, background: dec === 'cancel' ? 'rgba(239,68,68,0.15)' : 'var(--bg2)', color: dec === 'cancel' ? '#ef4444' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                                  ✕ ยกเลิก
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {!allDecided && (
+                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 8 }}>
+                          ⚠ ต้องเลือก "ยกยอดต่อ" หรือ "ยกเลิก" ทุก Order ก่อนปิดกะ
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* OEE live preview */}
-                <div style={{ marginTop: 16, padding: '14px 16px', background: `${oeeColor}18`, border: `1px solid ${oeeColor}40`, borderRadius: 10 }}>
+                <div style={{ padding: '14px 16px', background: `${oeeColor}18`, border: `1px solid ${oeeColor}40`, borderRadius: 10 }}>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, fontWeight: 700 }}>OEE PREVIEW (APQ)</div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                     <div style={{ display: 'flex', gap: 16 }}>
@@ -751,14 +943,15 @@ function LiveTab({ role }) {
                     </div>
                   </div>
                   {!selSession.dr_products?.cycle_time_sec && (
-                    <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ ไม่มี Cycle Time — P คำนวณเป็น 100% (ตั้งค่าใน Setup → สินค้า)</div>
+                    <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ ไม่มี Cycle Time — P คำนวณเป็น 100%</div>
                   )}
                 </div>
 
                 <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
-                  <button onClick={() => setShowCloseShift(false)} style={cancelBtnStyle}>ยกเลิก</button>
-                  <button onClick={handleCloseSession} disabled={savingClose}
-                    style={{ ...saveBtnStyle, background: '#ef4444', opacity: savingClose ? 0.6 : 1 }}>
+                  <button onClick={() => { setShowCloseShift(false); setCarryOverDecisions({}); }} style={cancelBtnStyle}>ยกเลิก</button>
+                  <button onClick={handleCloseSession} disabled={savingClose || prodOrders.filter(o => o.status === 'open').some(o => !carryOverDecisions[o.id])}
+                    style={{ ...saveBtnStyle, background: '#ef4444',
+                      opacity: (savingClose || prodOrders.filter(o => o.status === 'open').some(o => !carryOverDecisions[o.id])) ? 0.5 : 1 }}>
                     {savingClose ? '...' : '🔒 ยืนยันปิดกะ'}
                   </button>
                 </div>
@@ -855,14 +1048,13 @@ function LiveTab({ role }) {
         {/* ── SCAN CLOSE modal ────────────────────────────────── */}
         {showScanClose && (
           <div className="overlay" style={{ zIndex: 2000 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(34,197,94,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,420px)' }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(34,197,94,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
               <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#22c55e' }}>📤 Scan ปิด / Confirm</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>สแกน PROD.NO ทีละใบ — Modal จะไม่ปิดเพื่อสแกนต่อได้เลย</div>
 
               <Field label="PROD.NO (สแกน barcode PROD.NO บน Tag Card)">
                 <input autoFocus value={closeProdNo}
                   onChange={e => handleCloseProdNoChange(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && closeMatch) handleScanClose(); }}
                   placeholder="สแกน PROD.NO..."
                   style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }} />
               </Field>
@@ -874,16 +1066,46 @@ function LiveTab({ role }) {
                   border: `1px solid ${closeMatch ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
                   {closeMatch ? (
                     <>
-                      <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginBottom: 6 }}>✓ พบ Order — กด Enter หรือปุ่มด้านล่างเพื่อปิด</div>
-                      <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                      <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginBottom: 8 }}>✓ พบ Order</div>
+                      <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 12 }}>
                         <div>
                           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{closeMatch.mat_no}</div>
                           {closeMatch.part_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{closeMatch.part_name}</div>}
                         </div>
                         <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
                           <div style={{ fontSize: 28, fontWeight: 900, color: '#22c55e', lineHeight: 1 }}>{closeMatch.qty}</div>
-                          <div style={{ fontSize: 10, color: 'var(--muted)' }}>ชิ้น</div>
+                          <div style={{ fontSize: 10, color: 'var(--muted)' }}>ชิ้นรวม</div>
                         </div>
+                      </div>
+                      {/* Quality breakdown */}
+                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>📋 คุณภาพงาน (กรอกเฉพาะที่มี)</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+                          {[
+                            { key: 'qty_ng',      label: '🔴 NG / เสีย',     color: '#ef4444' },
+                            { key: 'qty_suspect',  label: '🟡 ต้องสงสัย',    color: '#f59e0b' },
+                            { key: 'qty_repair',   label: '🔧 ซ่อม/Rework',  color: '#a78bfa' },
+                          ].map(q => (
+                            <div key={q.key}>
+                              <div style={{ fontSize: 9, color: q.color, fontWeight: 700, marginBottom: 3 }}>{q.label}</div>
+                              <input type="number" min="0" max={closeMatch.qty} value={closeQty[q.key]}
+                                onChange={e => setCloseQty(f => ({ ...f, [q.key]: e.target.value }))}
+                                style={{ ...inputStyle, textAlign: 'center', fontWeight: 800, fontSize: 16,
+                                  borderColor: parseInt(closeQty[q.key]) > 0 ? q.color : 'var(--border)',
+                                  color: parseInt(closeQty[q.key]) > 0 ? q.color : 'var(--text)' }} />
+                            </div>
+                          ))}
+                        </div>
+                        {(() => {
+                          const ng = parseInt(closeQty.qty_ng)||0, sus = parseInt(closeQty.qty_suspect)||0, rep = parseInt(closeQty.qty_repair)||0;
+                          const ok = closeMatch.qty - ng - sus - rep;
+                          return (
+                            <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                              <span style={{ color: ok >= 0 ? '#22c55e' : '#ef4444', fontWeight: 700 }}>✅ ดี: {Math.max(0, ok)} ชิ้น</span>
+                              {ok < 0 && <span style={{ color: '#ef4444', fontWeight: 700 }}>⚠ เกินยอดผลิต!</span>}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </>
                   ) : (
@@ -898,8 +1120,24 @@ function LiveTab({ role }) {
 
               {/* Running count */}
               {prodOrders.filter(o => o.status === 'confirmed').length > 0 && (
-                <div style={{ marginTop: 12, padding: '6px 12px', background: 'rgba(34,197,94,0.1)', borderRadius: 8, fontSize: 12, color: '#22c55e', fontWeight: 700 }}>
-                  ปิดในกะนี้แล้ว {prodOrders.filter(o => o.status === 'confirmed').length} ใบ · {prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)} ชิ้น
+                <div style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(34,197,94,0.1)', borderRadius: 8, fontSize: 12 }}>
+                  <div style={{ color: '#22c55e', fontWeight: 700 }}>
+                    ปิดแล้ว {prodOrders.filter(o => o.status === 'confirmed').length} ใบ · {prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)} ชิ้น
+                  </div>
+                  {(() => {
+                    const conf = prodOrders.filter(o => o.status === 'confirmed');
+                    const tng  = conf.reduce((s,o) => s+(o.qty_ng||0), 0);
+                    const tsus = conf.reduce((s,o) => s+(o.qty_suspect||0), 0);
+                    const trep = conf.reduce((s,o) => s+(o.qty_repair||0), 0);
+                    if (!tng && !tsus && !trep) return null;
+                    return (
+                      <div style={{ color: 'var(--muted)', marginTop: 3 }}>
+                        {tng > 0 && <span>NG {tng} </span>}
+                        {tsus > 0 && <span>· สงสัย {tsus} </span>}
+                        {trep > 0 && <span>· ซ่อม {trep} </span>}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
