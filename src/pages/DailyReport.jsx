@@ -652,7 +652,7 @@ function LiveTab({ role }) {
 
         {/* Open session modal */}
         {showOpen && (
-          <div className="overlay" onClick={() => setShowOpen(false)} style={{ zIndex: 2000 }}>
+          <div className="overlay" style={{ zIndex: 2000 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,480px)' }}>
               <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>🏭 เปิดกะผลิตใหม่</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -696,7 +696,7 @@ function LiveTab({ role }) {
           const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced } = computeOEE(ng);
           const oeeColor = oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
           return (
-            <div className="overlay" onClick={() => setShowCloseShift(false)} style={{ zIndex: 2000 }}>
+            <div className="overlay" style={{ zIndex: 2000 }}>
               <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,480px)' }}>
                 <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#ef4444' }}>🔒 ปิดกะ — สรุปผลและ OEE</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
@@ -769,7 +769,7 @@ function LiveTab({ role }) {
 
         {/* ── SCAN OPEN modal ─────────────────────────────────── */}
         {showScanOpen && (
-          <div className="overlay" onClick={() => setShowScanOpen(false)} style={{ zIndex: 2000 }}>
+          <div className="overlay" style={{ zIndex: 2000 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
               <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#f59e0b' }}>📥 Scan เปิด Prod Order</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>สแกนทีละใบ — Modal จะไม่ปิดเพื่อสแกนต่อได้เลย</div>
@@ -850,7 +850,7 @@ function LiveTab({ role }) {
 
         {/* ── SCAN CLOSE modal ────────────────────────────────── */}
         {showScanClose && (
-          <div className="overlay" onClick={() => setShowScanClose(false)} style={{ zIndex: 2000 }}>
+          <div className="overlay" style={{ zIndex: 2000 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(34,197,94,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,420px)' }}>
               <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#22c55e' }}>📤 Scan ปิด / Confirm</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>สแกน PROD.NO ทีละใบ — Modal จะไม่ปิดเพื่อสแกนต่อได้เลย</div>
@@ -912,7 +912,7 @@ function LiveTab({ role }) {
 
         {/* Add downtime modal */}
         {showDT && (
-          <div className="overlay" onClick={() => setShowDT(false)} style={{ zIndex: 2000 }}>
+          <div className="overlay" style={{ zIndex: 2000 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,500px)' }}>
               <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>⏱ บันทึก Downtime</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1204,7 +1204,7 @@ function BreakPolicySetup({ role }) {
       </div>
 
       {editing && (
-        <div className="overlay" onClick={() => setEditing(null)} style={{ zIndex: 2000 }}>
+        <div className="overlay" style={{ zIndex: 2000 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,440px)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>
               {editing === 'new' ? '+ เพิ่มนโยบายหยุดพัก' : 'แก้ไขนโยบาย'}
@@ -1353,7 +1353,7 @@ function ProductSetup({ role }) {
       </div>
 
       {editing && (
-        <div className="overlay" onClick={() => setEditing(null)} style={{ zIndex: 2000 }}>
+        <div className="overlay" style={{ zIndex: 2000 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>{editing === 'new' ? '+ เพิ่มสินค้า' : 'แก้ไขสินค้า'}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1507,7 +1507,7 @@ function DowntimeTypeSetup({ role }) {
       })}
 
       {editing && (
-        <div className="overlay" onClick={() => setEditing(null)} style={{ zIndex: 2000 }}>
+        <div className="overlay" style={{ zIndex: 2000 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,440px)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>{editing === 'new' ? '+ เพิ่มประเภท Downtime' : 'แก้ไขประเภท'}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1692,7 +1692,7 @@ function KanbanStandardSetup({ role }) {
       </div>
 
       {editing && (
-        <div className="overlay" onClick={() => setEditing(null)} style={{ zIndex: 2000 }}>
+        <div className="overlay" style={{ zIndex: 2000 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>
               {editing === 'new' ? '+ เพิ่ม Kanban Standard' : 'แก้ไข Kanban Standard'}
