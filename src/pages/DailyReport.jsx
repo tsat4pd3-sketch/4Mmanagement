@@ -83,18 +83,21 @@ function LiveTab({ role }) {
   const [qtyEdit, setQtyEdit]     = useState({ actual_qty: '', qty_ng_rh: '', qty_ng_lh: '' });
   const [savingQty, setSavingQty] = useState(false);
 
-  // Kanban
-  const [kanbanTargets, setKanbanTargets] = useState([]);
-  const [kanbanStds, setKanbanStds]       = useState([]);   // standards master
-  const [showAddTarget, setShowAddTarget] = useState(false);
-  const [targetForm, setTargetForm]       = useState({ mat_no: '', part_name: '', p_no: '', customer: '', qty_target: '', num_kanbans: 1 });
-  const [targetStdMatch, setTargetStdMatch] = useState(null); // matched standard
-  const [savingTarget, setSavingTarget]   = useState(false);
-  const [showScan, setShowScan]           = useState(false);
-  const [scanTarget, setScanTarget]       = useState(null);
-  const [scanForm, setScanForm]           = useState({ scanned_value: '', qty: '' });
-  const [scanStdQty, setScanStdQty]       = useState(null);  // qty from standard
-  const [savingScan, setSavingScan]       = useState(false);
+  // Prod Orders (replaces kanban targets/scans)
+  const [prodOrders, setProdOrders]   = useState([]);
+  const [kanbanStds, setKanbanStds]   = useState([]);
+
+  // Scan Open modal
+  const [showScanOpen, setShowScanOpen]   = useState(false);
+  const [openProdForm, setOpenProdForm]   = useState({ prod_no: '', mat_no: '', qty: '' });
+  const [openProdStd, setOpenProdStd]     = useState(null);
+  const [savingProdOpen, setSavingProdOpen] = useState(false);
+
+  // Scan Close modal
+  const [showScanClose, setShowScanClose] = useState(false);
+  const [closeProdNo, setCloseProdNo]     = useState('');
+  const [closeMatch, setCloseMatch]       = useState(null); // found open order
+  const [savingProdClose, setSavingProdClose] = useState(false);
 
   const canManage = ['admin', 'manager', 'supervisor'].includes(role);
   const canScan   = ['admin', 'manager', 'supervisor', 'leader'].includes(role);
@@ -106,7 +109,7 @@ function LiveTab({ role }) {
       supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name'),
       supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('production_sessions')
-        .select('*, dr_products(name, cycle_time_sec, target_per_shift)')
+        .select('*, dr_products(name, cycle_time_sec, target_per_shift, process_type)')
         .eq('status', 'open')
         .order('created_at', { ascending: false }),
       supabaseDR.from('kanban_standards').select('*').eq('is_active', true).order('mat_no'),
@@ -133,39 +136,32 @@ function LiveTab({ role }) {
     setDtLogs(data || []);
   }, []);
 
-  const loadKanban = useCallback(async (sessionId) => {
+  const loadProdOrders = useCallback(async (sessionId) => {
     if (!sessionId) return;
-    const { data } = await supabaseDR.from('kanban_targets')
+    const { data } = await supabaseDR.from('prod_orders')
       .select('*')
       .eq('session_id', sessionId)
-      .order('created_at');
-    setKanbanTargets(data || []);
+      .order('opened_at');
+    setProdOrders(data || []);
   }, []);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     if (selSession) {
       loadDT(selSession.id);
-      loadKanban(selSession.id);
+      loadProdOrders(selSession.id);
     }
-  }, [selSession, loadDT, loadKanban]);
+  }, [selSession, loadDT, loadProdOrders]);
 
-  // Realtime via DR project
+  // Realtime
   useEffect(() => {
     const ch = supabaseDR.channel('live-dr')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' }, () => {
-        if (selSession) loadDT(selSession.id);
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       () => { if (selSession) loadDT(selSession.id); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_targets' }, () => {
-        if (selSession) loadKanban(selSession.id);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'kanban_scans' }, () => {
-        if (selSession) loadKanban(selSession.id);
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         () => { if (selSession) loadProdOrders(selSession.id); })
       .subscribe();
     return () => supabaseDR.removeChannel(ch);
-  }, [selSession, load, loadDT, loadKanban]);
+  }, [selSession, load, loadDT, loadProdOrders]);
 
   const handleOpenSession = async () => {
     if (!openForm.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
@@ -233,90 +229,83 @@ function LiveTab({ role }) {
     loadDT(selSession.id);
   };
 
-  const handleTargetMatNoChange = (val) => {
+  // ── Scan OPEN handler ──────────────────────────────────────────
+  const handleOpenProdMatNoChange = (val) => {
     const upper = val.toUpperCase();
     const std = kanbanStds.find(s => s.mat_no === upper) || null;
-    setTargetStdMatch(std);
-    const num = parseInt(targetForm.num_kanbans) || 1;
-    setTargetForm(f => ({
+    setOpenProdStd(std);
+    setOpenProdForm(f => ({
       ...f,
-      mat_no:      upper,
-      part_name:   std ? (std.part_name || '') : f.part_name,
-      p_no:        std ? (std.p_no || '')      : f.p_no,
-      customer:    std ? (std.customer || '')  : f.customer,
-      qty_target:  std ? String(std.qty_per_kanban * num) : f.qty_target,
+      mat_no: upper,
+      qty:    std ? String(std.qty_per_kanban) : f.qty,
     }));
   };
 
-  const handleTargetNumKanbanChange = (val) => {
-    const num = parseInt(val) || 1;
-    setTargetForm(f => ({
-      ...f,
-      num_kanbans: num,
-      qty_target:  targetStdMatch ? String(targetStdMatch.qty_per_kanban * num) : f.qty_target,
-    }));
-  };
+  const handleScanOpen = async () => {
+    const prodNo = openProdForm.prod_no.trim();
+    const matNo  = openProdForm.mat_no.trim();
+    if (!prodNo) { toast.error('สแกนหรือกรอก PROD.NO ก่อน'); return; }
+    if (!matNo)  { toast.error('สแกนหรือกรอก MAT.NO ก่อน');  return; }
+    if (!openProdForm.qty || parseInt(openProdForm.qty) < 1) { toast.error('ระบุจำนวนชิ้น'); return; }
 
-  const handleAddTarget = async () => {
-    if (!targetForm.mat_no) { toast.error('กรอก MAT.NO ก่อน'); return; }
-    if (!targetForm.qty_target || parseInt(targetForm.qty_target) < 1) { toast.error('กรอกจำนวนเป้าหมาย'); return; }
-    setSavingTarget(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabaseDR.from('kanban_targets').insert({
+    // ตรวจว่า PROD.NO นี้เปิดซ้ำในกะไม่
+    const dup = prodOrders.find(o => o.prod_no === prodNo);
+    if (dup) {
+      toast.error(`PROD.NO ${prodNo} เปิดไปแล้วในกะนี้ (${dup.status === 'confirmed' ? 'ปิดแล้ว' : 'กำลังผลิต'})`);
+      return;
+    }
+
+    setSavingProdOpen(true);
+    const std = kanbanStds.find(s => s.mat_no === matNo);
+    const { error } = await supabaseDR.from('prod_orders').insert({
       session_id:  selSession.id,
-      mat_no:      targetForm.mat_no.trim(),
-      part_name:   targetForm.part_name.trim() || null,
-      p_no:        targetForm.p_no.trim() || null,
-      customer:    targetForm.customer.trim() || null,
-      qty_target:  parseInt(targetForm.qty_target) || 0,
-      created_by:  fullName,
+      prod_no:     prodNo,
+      mat_no:      matNo,
+      part_name:   std?.part_name || openProdStd?.part_name || null,
+      p_no:        std?.p_no      || openProdStd?.p_no      || null,
+      customer:    std?.customer  || openProdStd?.customer  || null,
+      qty:         parseInt(openProdForm.qty),
+      status:      'open',
+      opened_by:   fullName,
     });
-    setSavingTarget(false);
+    setSavingProdOpen(false);
     if (error) { toast.error(error.message); return; }
-    toast.success('เพิ่มเป้าหมาย Kanban แล้ว');
-    setShowAddTarget(false);
-    setTargetForm({ mat_no: '', part_name: '', p_no: '', customer: '', qty_target: '', num_kanbans: 1 });
-    setTargetStdMatch(null);
-    loadKanban(selSession.id);
+    toast.success(`เปิด Order ${prodNo} · ${matNo} · ${openProdForm.qty} ชิ้น ✓`);
+    // keep modal open for fast multi-scan
+    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty }));
+    loadProdOrders(selSession.id);
   };
 
-  const handleDeleteTarget = async (id) => {
-    if (!window.confirm('ลบเป้าหมายนี้? (จะลบ scan logs ทั้งหมดด้วย)')) return;
-    const { error } = await supabaseDR.from('kanban_targets').delete().eq('id', id);
+  // ── Scan CLOSE handler ─────────────────────────────────────────
+  const handleCloseProdNoChange = (val) => {
+    const v = val.trim();
+    setCloseProdNo(v);
+    const found = prodOrders.find(o => o.prod_no === v && o.status === 'open');
+    setCloseMatch(found || null);
+  };
+
+  const handleScanClose = async () => {
+    if (!closeMatch) { toast.error('ไม่พบ PROD.NO นี้ หรือปิดไปแล้ว'); return; }
+    setSavingProdClose(true);
+    const { error } = await supabaseDR.from('prod_orders').update({
+      status:       'confirmed',
+      confirmed_by: fullName,
+      confirmed_at: new Date().toISOString(),
+    }).eq('id', closeMatch.id);
+    setSavingProdClose(false);
     if (error) { toast.error(error.message); return; }
-    loadKanban(selSession.id);
+    toast.success(`ปิด Order ${closeMatch.prod_no} · ${closeMatch.qty} ชิ้น ✓`);
+    // keep modal open for fast multi-scan — clear input
+    setCloseProdNo('');
+    setCloseMatch(null);
+    loadProdOrders(selSession.id);
   };
 
-  const openScan = (target) => {
-    const std = kanbanStds.find(s => s.mat_no === target.mat_no);
-    setScanTarget(target);
-    setScanStdQty(std?.qty_per_kanban || null);
-    setScanForm({ scanned_value: '', qty: std?.qty_per_kanban || (target.qty_target - target.qty_confirmed) });
-    setShowScan(true);
-  };
-
-  const handleScan = async () => {
-    if (!scanForm.scanned_value.trim()) { toast.error('กรอกหรือสแกน Barcode ก่อน'); return; }
-    setSavingScan(true);
-    const qty = parseInt(scanForm.qty) || 0;
-    const { error: e1 } = await supabaseDR.from('kanban_scans').insert({
-      target_id:     scanTarget.id,
-      session_id:    selSession.id,
-      scanned_value: scanForm.scanned_value.trim(),
-      mat_no:        scanTarget.mat_no,
-      qty,
-      scanned_by:    fullName,
-    });
-    if (e1) { setSavingScan(false); toast.error(e1.message); return; }
-    const newConfirmed = scanTarget.qty_confirmed + qty;
-    const { error: e2 } = await supabaseDR.from('kanban_targets')
-      .update({ qty_confirmed: newConfirmed })
-      .eq('id', scanTarget.id);
-    setSavingScan(false);
-    if (e2) { toast.error(e2.message); return; }
-    toast.success(`Confirm ${qty} ชิ้น ✓`);
-    setShowScan(false);
-    loadKanban(selSession.id);
+  const handleDeleteProdOrder = async (id) => {
+    if (!window.confirm('ลบ Prod Order นี้?')) return;
+    const { error } = await supabaseDR.from('prod_orders').delete().eq('id', id);
+    if (error) { toast.error(error.message); return; }
+    loadProdOrders(selSession.id);
   };
 
   const handleCloseSession = async () => {
@@ -406,98 +395,102 @@ function LiveTab({ role }) {
               </div>
             </div>
 
-            {/* KPI cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))', gap: 12, marginBottom: 16 }}>
-              {[
-                { label: 'ผลิตจริง', value: selSession.actual_qty, color: '#4d9fff', target: selSession.target_qty },
-                { label: 'เป้าหมาย', value: selSession.target_qty, color: '#22c55e' },
-                { label: 'NG (RH)',  value: selSession.qty_ng_rh, color: '#ef4444' },
-                { label: 'NG (LH)',  value: selSession.qty_ng_lh, color: '#f97316' },
-                { label: 'Downtime รวม', value: fmtMin(totalDT), color: '#a855f7', small: true },
-                { label: 'นอกแผน', value: fmtMin(unplannedDT), color: '#ef4444', small: true },
-              ].map(k => (
-                <div key={k.label} style={{ background: 'var(--card)', border: `1px solid ${k.color}25`, borderRadius: 10, padding: '12px 14px', textAlign: 'center' }}>
-                  <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{k.label}</div>
-                  <div style={{ fontSize: k.small ? 14 : 24, fontWeight: 800, color: k.color }}>{k.value ?? 0}</div>
-                  {k.target > 0 && (
-                    <div style={{ fontSize: 10, color: selSession.actual_qty >= k.target ? '#22c55e' : '#f59e0b', marginTop: 2 }}>
-                      {selSession.actual_qty >= k.target ? '✓ ถึงเป้า' : `${Math.round((selSession.actual_qty / k.target) * 100)}%`}
+            {/* KPI summary from prod_orders */}
+            {(() => {
+              const totalTarget    = prodOrders.reduce((s, o) => s + o.qty, 0);
+              const totalConfirmed = prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
+              const pct = totalTarget > 0 ? Math.min(100, Math.round((totalConfirmed / totalTarget) * 100)) : 0;
+              const barClr = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#4d9fff';
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 12, marginBottom: 16 }}>
+                  {[
+                    { label: 'เปิด Order', value: prodOrders.filter(o => o.status === 'open').length, unit: 'ใบ', color: '#f59e0b' },
+                    { label: 'ปิดแล้ว',   value: prodOrders.filter(o => o.status === 'confirmed').length, unit: 'ใบ', color: '#22c55e' },
+                    { label: 'เป้ารวม',   value: totalTarget,    unit: 'ชิ้น', color: '#4d9fff' },
+                    { label: 'ผลิตได้',   value: totalConfirmed, unit: 'ชิ้น', color: '#22c55e' },
+                    { label: 'Downtime',  value: fmtMin(totalDT), unit: '',    color: '#a855f7', small: true },
+                    { label: 'นอกแผน',   value: fmtMin(unplannedDT), unit: '', color: '#ef4444', small: true },
+                  ].map(k => (
+                    <div key={k.label} style={{ background: 'var(--card)', border: `1px solid ${k.color}25`, borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{k.label}</div>
+                      <div style={{ fontSize: k.small ? 13 : 22, fontWeight: 800, color: k.color, lineHeight: 1 }}>{k.value ?? 0}</div>
+                      {k.unit && <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>{k.unit}</div>}
+                    </div>
+                  ))}
+                  {/* Overall progress bar */}
+                  {prodOrders.length > 0 && (
+                    <div style={{ gridColumn: '1/-1', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12 }}>
+                        <span style={{ color: 'var(--muted)' }}>ความคืบหน้ากะนี้</span>
+                        <span style={{ fontWeight: 800, color: barClr }}>{totalConfirmed} / {totalTarget} ชิ้น ({pct}%)</span>
+                      </div>
+                      <div style={{ height: 10, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: barClr, borderRadius: 99, transition: 'width 0.5s ease' }} />
+                      </div>
                     </div>
                   )}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
 
-            {/* Qty update */}
+            {/* Prod Orders panel */}
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 10 }}>อัปเดตยอดผลิต</div>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                {[{ key: 'actual_qty', label: 'ผลิตจริง (ชิ้น)' }, { key: 'qty_ng_rh', label: 'NG-RH' }, { key: 'qty_ng_lh', label: 'NG-LH' }].map(f => (
-                  <div key={f.key}>
-                    <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{f.label}</label>
-                    <input type="number" min="0" value={qtyEdit[f.key]}
-                      onChange={e => setQtyEdit(q => ({ ...q, [f.key]: e.target.value }))}
-                      style={{ width: 100, padding: '7px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 15, fontWeight: 700 }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+                  📦 Prod Orders ({prodOrders.length} ใบ)
+                </div>
+                {canScan && (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => { setShowScanOpen(true); setOpenProdForm({ prod_no: '', mat_no: '', qty: '' }); setOpenProdStd(null); }}
+                      style={{ background: '#f59e0b', color: '#000', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                      📥 Scan เปิด Order
+                    </button>
+                    <button onClick={() => { setShowScanClose(true); setCloseProdNo(''); setCloseMatch(null); }}
+                      style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                      📤 Scan ปิด / Confirm
+                    </button>
                   </div>
-                ))}
-                <button onClick={handleSaveQty} disabled={savingQty}
-                  style={{ ...saveBtnStyle, opacity: savingQty ? 0.6 : 1 }}>{savingQty ? '...' : 'บันทึก'}</button>
-              </div>
-            </div>
-
-            {/* Kanban Targets */}
-            <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>📦 เป้าหมาย Kanban ({kanbanTargets.length} รายการ)</div>
-                {canManage && (
-                  <button onClick={() => setShowAddTarget(true)}
-                    style={{ background: '#0ea5e9', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                    + เพิ่มเป้าหมาย
-                  </button>
                 )}
               </div>
-              {kanbanTargets.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '16px', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีเป้าหมาย Kanban — กด "+ เพิ่มเป้าหมาย" เพื่อระบุ</div>
+
+              {prodOrders.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '24px 16px', color: 'var(--muted)', fontSize: 13 }}>
+                  ยังไม่มี Prod Order — กด <b>📥 Scan เปิด Order</b> เพื่อเริ่มสแกน Tag Card
+                </div>
               )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {kanbanTargets.map(t => {
-                  const pct     = t.qty_target > 0 ? Math.min(100, Math.round((t.qty_confirmed / t.qty_target) * 100)) : 0;
-                  const done    = t.qty_confirmed >= t.qty_target && t.qty_target > 0;
-                  const barClr  = done ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#0ea5e9';
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {prodOrders.map(o => {
+                  const confirmed = o.status === 'confirmed';
                   return (
-                    <div key={t.id} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '10px 14px', border: `1px solid ${done ? '#22c55e40' : 'var(--border)'}` }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{t.mat_no}</span>
-                            {t.part_name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{t.part_name}</span>}
-                            {t.customer && <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>{t.customer}</span>}
-                            {done && <span style={{ fontSize: 10, padding: '1px 8px', borderRadius: 20, background: 'rgba(34,197,94,0.15)', color: '#22c55e', fontWeight: 700 }}>✓ ครบแล้ว</span>}
-                          </div>
-                          {t.p_no && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>P.NO: {t.p_no}</div>}
+                    <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'var(--bg2)', borderRadius: 8,
+                      border: `1px solid ${confirmed ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
+                      borderLeft: `4px solid ${confirmed ? '#22c55e' : '#f59e0b'}` }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{o.prod_no}</span>
+                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{o.mat_no}</span>
+                          {o.part_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {o.part_name}</span>}
+                          {o.customer && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>{o.customer}</span>}
+                          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700,
+                            background: confirmed ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)',
+                            color: confirmed ? '#22c55e' : '#f59e0b' }}>
+                            {confirmed ? '✓ ปิดแล้ว' : '● กำลังผลิต'}
+                          </span>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: 18, fontWeight: 800, color: barClr, lineHeight: 1 }}>{t.qty_confirmed}</div>
-                            <div style={{ fontSize: 10, color: 'var(--muted)' }}>/ {t.qty_target} ชิ้น</div>
-                          </div>
-                          {canScan && !done && (
-                            <button onClick={() => openScan(t)}
-                              style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                              📷 Scan Confirm
-                            </button>
-                          )}
-                          {canManage && (
-                            <button onClick={() => handleDeleteTarget(t.id)}
-                              style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
-                          )}
+                        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                          เปิด {new Date(o.opened_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} {o.opened_by && `· ${o.opened_by}`}
+                          {confirmed && o.confirmed_at && ` · ปิด ${new Date(o.confirmed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} · ${o.confirmed_by}`}
                         </div>
                       </div>
-                      {/* Progress bar */}
-                      <div style={{ height: 6, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${pct}%`, background: barClr, borderRadius: 99, transition: 'width 0.4s ease' }} />
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontSize: 20, fontWeight: 900, color: confirmed ? '#22c55e' : '#f59e0b', lineHeight: 1 }}>{o.qty}</div>
+                        <div style={{ fontSize: 9, color: 'var(--muted)' }}>ชิ้น</div>
                       </div>
-                      <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3, textAlign: 'right' }}>{pct}%</div>
+                      {canManage && (
+                        <button onClick={() => handleDeleteProdOrder(o.id)}
+                          style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 2px' }}>✕</button>
+                      )}
                     </div>
                   );
                 })}
@@ -590,164 +583,143 @@ function LiveTab({ role }) {
           </div>
         )}
 
-        {/* Add Kanban target modal */}
-        {showAddTarget && (
-          <div className="overlay" onClick={() => { setShowAddTarget(false); setTargetStdMatch(null); }} style={{ zIndex: 2000 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,480px)' }}>
-              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: 'var(--text)' }}>📦 เพิ่มเป้าหมาย Kanban</div>
-              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>พิมพ์หรือสแกน MAT.NO — ระบบจะดึงข้อมูลจาก Standard อัตโนมัติ</div>
+        {/* ── SCAN OPEN modal ─────────────────────────────────── */}
+        {showScanOpen && (
+          <div className="overlay" onClick={() => setShowScanOpen(false)} style={{ zIndex: 2000 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#f59e0b' }}>📥 Scan เปิด Prod Order</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>สแกนทีละใบ — Modal จะไม่ปิดเพื่อสแกนต่อได้เลย</div>
 
-              {/* MAT.NO input with standard indicator */}
-              <Field label="MAT.NO *">
-                <div style={{ position: 'relative' }}>
-                  <input autoFocus value={targetForm.mat_no}
-                    onChange={e => handleTargetMatNoChange(e.target.value)}
-                    placeholder="พิมพ์หรือสแกน MAT.NO..."
-                    style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, paddingRight: targetStdMatch ? 110 : 10 }} />
-                  {targetStdMatch && (
-                    <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, background: 'rgba(34,197,94,0.15)', color: '#22c55e', borderRadius: 20, padding: '2px 8px', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                      ✓ พบใน Standard
-                    </span>
-                  )}
-                  {targetForm.mat_no && !targetStdMatch && (
-                    <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', borderRadius: 20, padding: '2px 8px', fontWeight: 700 }}>
-                      ⚠ ไม่มีใน Standard
-                    </span>
-                  )}
-                </div>
-              </Field>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <Field label="PROD.NO (สแกน barcode PROD.NO บน Tag Card) *">
+                  <input autoFocus value={openProdForm.prod_no}
+                    onChange={e => setOpenProdForm(f => ({ ...f, prod_no: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter' && openProdForm.prod_no) document.getElementById('open-mat-input')?.focus(); }}
+                    placeholder="สแกน PROD.NO..."
+                    style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }} />
+                </Field>
 
-              {/* Standard info box */}
-              {targetStdMatch && (
-                <div style={{ margin: '10px 0', padding: '10px 14px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8 }}>
-                  <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginBottom: 4 }}>📋 ข้อมูลจาก Kanban Standard</div>
-                  <div style={{ fontSize: 13, color: 'var(--text)' }}>{targetStdMatch.part_name || '—'}</div>
-                  <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>P.NO: {targetStdMatch.p_no || '—'}</span>
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>Customer: {targetStdMatch.customer || '—'}</span>
-                    <span style={{ fontSize: 11, color: '#0ea5e9', fontWeight: 700 }}>{targetStdMatch.qty_per_kanban} ชิ้น/Kanban</span>
+                <Field label="MAT.NO (สแกน barcode MAT.NO บน Tag Card) *">
+                  <div style={{ position: 'relative' }}>
+                    <input id="open-mat-input" value={openProdForm.mat_no}
+                      onChange={e => handleOpenProdMatNoChange(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' && openProdForm.mat_no) document.getElementById('open-qty-input')?.focus(); }}
+                      placeholder="สแกน MAT.NO..."
+                      style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15, paddingRight: 120 }} />
+                    {openProdStd && (
+                      <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, background: 'rgba(34,197,94,0.15)', color: '#22c55e', borderRadius: 20, padding: '2px 8px', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        ✓ {openProdStd.qty_per_kanban} ชิ้น/ใบ
+                      </span>
+                    )}
+                    {openProdForm.mat_no && !openProdStd && (
+                      <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', borderRadius: 20, padding: '2px 8px', fontWeight: 700 }}>
+                        ⚠ ไม่มีใน Std
+                      </span>
+                    )}
                   </div>
-                </div>
-              )}
+                </Field>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
-                {/* Kanban count + auto total */}
-                {targetStdMatch ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <Field label="จำนวน Kanban Card (ใบ)">
-                      <input type="number" min="1" value={targetForm.num_kanbans}
-                        onChange={e => handleTargetNumKanbanChange(e.target.value)}
-                        style={{ ...inputStyle, fontSize: 18, fontWeight: 800, textAlign: 'center' }} />
-                    </Field>
-                    <Field label="เป้าหมายรวม (ชิ้น) — คำนวณอัตโนมัติ">
-                      <div style={{ ...inputStyle, fontSize: 20, fontWeight: 900, textAlign: 'center', color: '#0ea5e9', background: 'var(--bg2)' }}>
-                        {targetForm.qty_target || 0}
-                      </div>
-                    </Field>
+                {openProdStd && (
+                  <div style={{ padding: '8px 12px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8, fontSize: 12, color: 'var(--muted)' }}>
+                    {openProdStd.part_name && <span style={{ color: 'var(--text)', fontWeight: 600 }}>{openProdStd.part_name} </span>}
+                    {openProdStd.customer && <span>· {openProdStd.customer} </span>}
+                    {openProdStd.p_no && <span>· P.NO: {openProdStd.p_no}</span>}
                   </div>
-                ) : (
-                  <Field label="จำนวนเป้าหมาย (ชิ้น) *">
-                    <input type="number" min="1" value={targetForm.qty_target}
-                      onChange={e => setTargetForm(f => ({ ...f, qty_target: e.target.value }))}
-                      placeholder="0" style={{ ...inputStyle, fontSize: 18, fontWeight: 800, textAlign: 'center' }} />
-                  </Field>
                 )}
 
-                {/* Manual fields (shown only if no standard match) */}
-                {!targetStdMatch && (
-                  <>
-                    <Field label="ชื่อชิ้นงาน / Part Name">
-                      <input value={targetForm.part_name} onChange={e => setTargetForm(f => ({ ...f, part_name: e.target.value }))} placeholder="เช่น RB3B 16E061 BA" style={inputStyle} />
-                    </Field>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <Field label="P.NO">
-                        <input value={targetForm.p_no} onChange={e => setTargetForm(f => ({ ...f, p_no: e.target.value }))} placeholder="เช่น RB3B16E061BA" style={inputStyle} />
-                      </Field>
-                      <Field label="Customer">
-                        <input value={targetForm.customer} onChange={e => setTargetForm(f => ({ ...f, customer: e.target.value }))} placeholder="เช่น FORD" style={inputStyle} />
-                      </Field>
-                    </div>
-                  </>
+                <Field label={openProdStd ? `Qty (auto จาก Standard: ${openProdStd.qty_per_kanban} ชิ้น)` : 'Qty ต่อ Tag Card (ชิ้น) *'}>
+                  <input id="open-qty-input" type="number" min="1" value={openProdForm.qty}
+                    onChange={e => setOpenProdForm(f => ({ ...f, qty: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter') handleScanOpen(); }}
+                    style={{ ...inputStyle, fontSize: 22, fontWeight: 900, textAlign: 'center',
+                      background: openProdStd ? 'rgba(34,197,94,0.08)' : 'var(--bg)',
+                      color: openProdStd ? '#22c55e' : 'var(--text)' }} />
+                </Field>
+
+                {/* Duplicate warning */}
+                {openProdForm.prod_no && prodOrders.find(o => o.prod_no === openProdForm.prod_no) && (
+                  <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 12, color: '#ef4444', fontWeight: 600 }}>
+                    ⚠ PROD.NO นี้เปิดไปแล้วในกะนี้
+                  </div>
                 )}
               </div>
 
-              <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-                <button onClick={() => { setShowAddTarget(false); setTargetStdMatch(null); }} style={cancelBtnStyle}>ยกเลิก</button>
-                <button onClick={handleAddTarget} disabled={savingTarget || !targetForm.mat_no || !targetForm.qty_target}
-                  style={{ ...saveBtnStyle, background: '#0ea5e9', opacity: (savingTarget || !targetForm.mat_no || !targetForm.qty_target) ? 0.5 : 1 }}>
-                  {savingTarget ? '...' : '+ เพิ่มเป้าหมาย'}
+              {/* Running count */}
+              {prodOrders.filter(o => o.status === 'open').length > 0 && (
+                <div style={{ marginTop: 12, padding: '6px 12px', background: 'rgba(245,158,11,0.1)', borderRadius: 8, fontSize: 12, color: '#f59e0b', fontWeight: 700 }}>
+                  เปิดในกะนี้แล้ว {prodOrders.filter(o => o.status === 'open').length} ใบ · {prodOrders.filter(o => o.status === 'open').reduce((s, o) => s + o.qty, 0)} ชิ้น
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowScanOpen(false)} style={cancelBtnStyle}>ปิด</button>
+                <button onClick={handleScanOpen}
+                  disabled={savingProdOpen || !openProdForm.prod_no || !openProdForm.mat_no || !openProdForm.qty || !!prodOrders.find(o => o.prod_no === openProdForm.prod_no)}
+                  style={{ ...saveBtnStyle, background: '#f59e0b', color: '#000', fontSize: 14,
+                    opacity: (savingProdOpen || !openProdForm.prod_no || !openProdForm.mat_no || !openProdForm.qty) ? 0.5 : 1 }}>
+                  {savingProdOpen ? '...' : '📥 เปิด Order'}
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Scan confirm modal */}
-        {showScan && scanTarget && (
-          <div className="overlay" onClick={() => setShowScan(false)} style={{ zIndex: 2000 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,420px)' }}>
-              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: 'var(--text)' }}>📷 Scan Confirm</div>
-              <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>
-                <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{scanTarget.mat_no}</span>
-                {scanTarget.part_name && ` · ${scanTarget.part_name}`}
-              </div>
+        {/* ── SCAN CLOSE modal ────────────────────────────────── */}
+        {showScanClose && (
+          <div className="overlay" onClick={() => setShowScanClose(false)} style={{ zIndex: 2000 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(34,197,94,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,420px)' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#22c55e' }}>📤 Scan ปิด / Confirm</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>สแกน PROD.NO ทีละใบ — Modal จะไม่ปิดเพื่อสแกนต่อได้เลย</div>
 
-              {/* Progress info */}
-              <div style={{ display: 'flex', gap: 16, marginBottom: 16, padding: '8px 12px', background: 'var(--bg2)', borderRadius: 8 }}>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>ยืนยันแล้ว</div>
-                  <div style={{ fontSize: 20, fontWeight: 900, color: '#22c55e' }}>{scanTarget.qty_confirmed}</div>
+              <Field label="PROD.NO (สแกน barcode PROD.NO บน Tag Card)">
+                <input autoFocus value={closeProdNo}
+                  onChange={e => handleCloseProdNoChange(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && closeMatch) handleScanClose(); }}
+                  placeholder="สแกน PROD.NO..."
+                  style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }} />
+              </Field>
+
+              {/* Match preview */}
+              {closeProdNo && (
+                <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 8,
+                  background: closeMatch ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                  border: `1px solid ${closeMatch ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}` }}>
+                  {closeMatch ? (
+                    <>
+                      <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginBottom: 6 }}>✓ พบ Order — กด Enter หรือปุ่มด้านล่างเพื่อปิด</div>
+                      <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{closeMatch.mat_no}</div>
+                          {closeMatch.part_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{closeMatch.part_name}</div>}
+                        </div>
+                        <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                          <div style={{ fontSize: 28, fontWeight: 900, color: '#22c55e', lineHeight: 1 }}>{closeMatch.qty}</div>
+                          <div style={{ fontSize: 10, color: 'var(--muted)' }}>ชิ้น</div>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 600 }}>
+                      {prodOrders.find(o => o.prod_no === closeProdNo && o.status === 'confirmed')
+                        ? '⚠ PROD.NO นี้ปิดไปแล้ว'
+                        : '✕ ไม่พบ PROD.NO นี้ในกะปัจจุบัน'}
+                    </div>
+                  )}
                 </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>เป้าหมาย</div>
-                  <div style={{ fontSize: 20, fontWeight: 900, color: '#0ea5e9' }}>{scanTarget.qty_target}</div>
+              )}
+
+              {/* Running count */}
+              {prodOrders.filter(o => o.status === 'confirmed').length > 0 && (
+                <div style={{ marginTop: 12, padding: '6px 12px', background: 'rgba(34,197,94,0.1)', borderRadius: 8, fontSize: 12, color: '#22c55e', fontWeight: 700 }}>
+                  ปิดในกะนี้แล้ว {prodOrders.filter(o => o.status === 'confirmed').length} ใบ · {prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)} ชิ้น
                 </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>คงเหลือ</div>
-                  <div style={{ fontSize: 20, fontWeight: 900, color: '#f59e0b' }}>{scanTarget.qty_target - scanTarget.qty_confirmed}</div>
-                </div>
-                {scanStdQty && (
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>Std / Kanban</div>
-                    <div style={{ fontSize: 20, fontWeight: 900, color: '#a855f7' }}>{scanStdQty}</div>
-                  </div>
-                )}
-              </div>
+              )}
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <Field label="สแกน Barcode บน Tag Card">
-                  <input autoFocus value={scanForm.scanned_value}
-                    onChange={e => setScanForm(f => ({ ...f, scanned_value: e.target.value }))}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && scanForm.scanned_value) {
-                        if (scanStdQty) handleScan();  // qty from standard → confirm immediately
-                        else document.getElementById('scan-qty-input')?.focus();
-                      }
-                    }}
-                    placeholder="วาง cursor ที่นี่แล้วสแกน..."
-                    style={{ ...inputStyle, fontSize: 15, fontFamily: 'monospace', letterSpacing: '0.5px' }} />
-                </Field>
-
-                {scanStdQty ? (
-                  <div style={{ padding: '12px 16px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, textAlign: 'center' }}>
-                    <div style={{ fontSize: 11, color: '#22c55e', marginBottom: 4 }}>✓ ใช้ Qty จาก Standard — กด Enter หลังสแกน Barcode เพื่อ Confirm ได้เลย</div>
-                    <div style={{ fontSize: 28, fontWeight: 900, color: '#22c55e' }}>{scanStdQty} ชิ้น / Kanban</div>
-                  </div>
-                ) : (
-                  <Field label="จำนวน (ชิ้น) — กรอกเองเพราะไม่มีใน Standard">
-                    <input id="scan-qty-input" type="number" min="1" value={scanForm.qty}
-                      onChange={e => setScanForm(f => ({ ...f, qty: e.target.value }))}
-                      onKeyDown={e => { if (e.key === 'Enter') handleScan(); }}
-                      style={{ ...inputStyle, fontSize: 20, fontWeight: 800, textAlign: 'center' }} />
-                  </Field>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowScan(false)} style={cancelBtnStyle}>ยกเลิก</button>
-                <button onClick={handleScan} disabled={savingScan || !scanForm.scanned_value || !scanForm.qty}
-                  style={{ ...saveBtnStyle, background: '#22c55e', fontSize: 15, opacity: (savingScan || !scanForm.scanned_value || !scanForm.qty) ? 0.5 : 1 }}>
-                  {savingScan ? '...' : '✓ Confirm'}
+              <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowScanClose(false)} style={cancelBtnStyle}>ปิด</button>
+                <button onClick={handleScanClose} disabled={savingProdClose || !closeMatch}
+                  style={{ ...saveBtnStyle, background: '#22c55e', fontSize: 14, opacity: (!closeMatch || savingProdClose) ? 0.5 : 1 }}>
+                  {savingProdClose ? '...' : '📤 Confirm ปิด Order'}
                 </button>
               </div>
             </div>
