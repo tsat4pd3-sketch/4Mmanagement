@@ -100,17 +100,17 @@ function SplashScreen({ onDone }) {
         opacity: 0, transform: 'translateY(16px)',
         transition: 'opacity 0.5s ease 0.15s, transform 0.5s ease 0.15s',
         fontFamily: 'var(--font-display)', fontWeight: 700,
-        fontSize: 'clamp(2.5rem,8vw,5rem)', letterSpacing: '-1px',
+        fontSize: 'clamp(1.2rem,3.5vw,2.4rem)', letterSpacing: '0.5px',
         color: 'var(--accent)', lineHeight: 1,
       }}>
-        ESM
+        ENTERPRISE SHOPFLOOR MANAGEMENT
       </div>
       <div style={{
         opacity: 0, transform: 'translateY(10px)',
         transition: 'opacity 0.5s ease 0.25s, transform 0.5s ease 0.25s',
-        fontSize: 'clamp(0.85rem,2vw,1.1rem)', color: 'var(--muted)', fontWeight: 500,
+        fontSize: 'clamp(0.75rem,1.8vw,0.95rem)', color: 'var(--muted)', fontWeight: 500,
         letterSpacing: '0.5px', marginTop: 4,
-      }} id="splash-subtitle">Enterprise Shopfloor Management</div>
+      }} id="splash-subtitle">Thai Summit Group · ESM</div>
 
       <div className="splash-sub" id="splash-sub">Zero defect is possible</div>
 
