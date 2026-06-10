@@ -665,20 +665,21 @@ export default function Management() {
           </div>
         )}
 
-        {/* Canvas: when layout exists, inline-block wrapper hugs img → no letterbox → % coords work perfectly */}
+        {/* Canvas */}
         <div style={{
           width: '100%', height: '100%',
           overflow: 'auto',
-          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
           backgroundColor: lineLayout ? 'transparent' : 'var(--bg3)', borderRadius: 12,
           border: lineLayout ? 'none' : '1px solid var(--border)',
         }}>
           {lineLayout ? (
-            <div style={{ position: 'relative', display: 'inline-block', lineHeight: 0 }}>
+            /* position:relative + width:100% so img fills container width with auto height →
+               no letterbox ever, station % coords are correct at every screen size */
+            <div style={{ position: 'relative', width: '100%', lineHeight: 0 }}>
               <img
                 src={lineLayout}
                 alt="line map"
-                style={{ display: 'block', maxWidth: '100%', height: 'auto', minWidth: isMobile ? 900 : undefined, borderRadius: 12, userSelect: 'none' }}
+                style={{ display: 'block', width: '100%', height: 'auto', borderRadius: 12, userSelect: 'none' }}
                 draggable={false}
               />
               <style>{`
