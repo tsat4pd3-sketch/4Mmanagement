@@ -36,7 +36,8 @@ function getCurrentShift() {
 }
 
 const CARD_W = 104;
-const CARD_H = 92; // fixed height for ALL station cards — keeps translate(-50%,-50%) anchor consistent
+const CARD_H = 92;
+const PHOTO_SZ = 52; // photo size in station cards — dominates the card area
 
 function useWidth() {
   const [w, setW] = useState(() => window.innerWidth);
@@ -482,53 +483,40 @@ export default function Management() {
         onClick={() => handlePoolTap(worker)}
         style={{
           position: 'relative',
-          width: '100%',
-          padding: '6px 8px',
-          background: isSelected ? 'rgba(77,159,255,0.2)' : 'rgba(77,159,255,0.08)',
-          border: isSelected ? '2px solid #4d9fff' : '1.5px solid rgba(77,159,255,0.35)',
-          borderRadius: 8,
+          width: CARD_W, height: CARD_H,
+          padding: '4px 4px 2px',
+          background: isSelected ? 'rgba(77,159,255,0.22)' : 'rgba(8,8,14,0.88)',
+          border: isSelected ? '2px solid #4d9fff' : '1.5px solid rgba(77,159,255,0.45)',
+          borderLeft: isSelected ? '4px solid #4d9fff' : '4px solid rgba(77,159,255,0.55)',
+          borderRadius: 8, overflow: 'hidden',
           cursor: isMobile ? 'pointer' : 'grab',
-          display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8,
-          boxShadow: isSelected ? '0 0 0 3px rgba(77,159,255,0.3), 0 2px 8px rgba(0,0,0,0.4)' : '0 1px 4px rgba(0,0,0,0.3)',
-          userSelect: 'none',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+          boxShadow: isSelected ? '0 0 0 3px rgba(77,159,255,0.3), 0 2px 8px rgba(0,0,0,0.5)' : '0 2px 8px rgba(0,0,0,0.5)',
+          userSelect: 'none', backdropFilter: 'blur(3px)',
           transition: 'all 0.15s',
-          transform: isSelected ? 'scale(1.02)' : 'scale(1)',
+          transform: isSelected ? 'scale(1.04)' : 'scale(1)',
         }}
       >
-        {worker.employees?.image_url
-          ? <img src={worker.employees.image_url} style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${isSelected ? '#4d9fff' : 'rgba(77,159,255,0.6)'}`, flexShrink: 0 }} />
-          : <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(77,159,255,0.15)', border: '2px solid rgba(77,159,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>👤</div>
-        }
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {worker.employees?.name?.split(' ')[0] ?? '?'}
-          </div>
-          <div style={{ display: 'flex', gap: 3, marginTop: 2, flexWrap: 'wrap' }}>
-            {worker.employees?.team && (
-              <span style={{ fontSize: 8, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', borderRadius: 3, padding: '1px 4px' }}>
-                T{worker.employees.team}
-              </span>
-            )}
-            {worker.employees?.section && (
-              <span style={{ fontSize: 7, color: '#a78bfa', background: 'rgba(167,139,250,0.12)', borderRadius: 3, padding: '1px 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 60 }}>
-                {worker.employees.section}
-              </span>
-            )}
-          </div>
+        {/* header: name */}
+        <div style={{ width: '100%', fontSize: 9, fontWeight: 700, color: isSelected ? '#4d9fff' : '#c8c8d0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>
+          {worker.employees?.name?.split(' ')[0] ?? '?'}
         </div>
-        {/* radar chart button (mobile) */}
-        {isMobile && (
-          <button onClick={(e) => { e.stopPropagation(); setRadarWorker(worker); }}
-            title="ดูทักษะ"
-            style={{ position: 'absolute', top: 3, right: 3, width: 22, height: 22, borderRadius: '50%', background: 'rgba(61,214,92,0.85)', border: 'none', color: '#fff', fontSize: 10, lineHeight: '22px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
-            📊
-          </button>
+        {/* photo */}
+        {worker.employees?.image_url
+          ? <img src={worker.employees.image_url} style={{ width: PHOTO_SZ, height: PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `3px solid ${isSelected ? '#4d9fff' : 'rgba(77,159,255,0.7)'}`, boxShadow: isSelected ? '0 0 10px rgba(77,159,255,0.5)' : 'none', flexShrink: 0 }} />
+          : <div style={{ width: PHOTO_SZ, height: PHOTO_SZ, borderRadius: '50%', background: 'rgba(77,159,255,0.15)', border: '3px solid rgba(77,159,255,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
+        }
+        {/* team badge */}
+        {worker.employees?.team && (
+          <div style={{ fontSize: 8, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.18)', borderRadius: 3, padding: '1px 5px', flexShrink: 0 }}>
+            Team {worker.employees.team}
+          </div>
         )}
-        {/* assign to special task — leader+ */}
+        {/* assign to special task */}
         {['admin','manager','supervisor','leader'].includes(role) && (
           <button onClick={(e) => { e.stopPropagation(); setSpecialModal(worker); setSpecialTaskType('5ส'); }}
             title="กำหนดงานนอกไลน์"
-            style={{ position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: '50%', background: 'rgba(245,158,11,0.85)', border: 'none', color: '#fff', fontSize: 9, lineHeight: '18px', textAlign: 'center', cursor: 'pointer', padding: 0, display: isMobile ? 'none' : 'block' }}>
+            style={{ position: 'absolute', top: 2, right: 2, width: 16, height: 16, borderRadius: '50%', background: 'rgba(245,158,11,0.85)', border: 'none', color: '#fff', fontSize: 8, lineHeight: '16px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
             🏷
           </button>
         )}
@@ -549,13 +537,13 @@ export default function Management() {
         style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: isMobile ? 'pointer' : 'grab', userSelect: 'none' }}
       >
         {worker.employees?.image_url
-          ? <img src={worker.employees.image_url} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `3px solid ${fc}`, boxShadow: `0 0 8px ${fc}88`, flexShrink: 0 }} />
-          : <div style={{ width: 40, height: 40, borderRadius: '50%', background: `${fc}22`, border: `3px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
+          ? <img src={worker.employees.image_url} style={{ width: PHOTO_SZ, height: PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `3px solid ${fc}`, boxShadow: `0 0 10px ${fc}88`, flexShrink: 0 }} />
+          : <div style={{ width: PHOTO_SZ, height: PHOTO_SZ, borderRadius: '50%', background: `${fc}22`, border: `3px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
         }
-        <div style={{ background: fc, color: '#fff', fontSize: 13, fontWeight: 900, padding: '1px 0', width: 40, textAlign: 'center', borderRadius: 4, boxShadow: `0 1px 4px ${fc}99`, pointerEvents: 'none' }}>
+        <div style={{ background: fc, color: '#fff', fontSize: 12, fontWeight: 900, padding: '1px 0', width: PHOTO_SZ, textAlign: 'center', borderRadius: 4, boxShadow: `0 1px 4px ${fc}99`, pointerEvents: 'none' }}>
           {fit.score}
         </div>
-        <div style={{ fontSize: 9, fontWeight: 700, color: fc, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', textAlign: 'center', pointerEvents: 'none' }}>
+        <div style={{ fontSize: 8, fontWeight: 700, color: fc, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', textAlign: 'center', pointerEvents: 'none' }}>
           {worker.employees?.name?.split(' ')[0] ?? '?'}
         </div>
       </div>
@@ -690,7 +678,7 @@ export default function Management() {
       </div>
 
       {/* ── Canvas Area ── */}
-      <div style={{ flex: 1, position: 'relative', padding: 10, overflow: 'auto' }}>
+      <div style={{ flex: 1, minWidth: 0, position: 'relative', padding: 10, overflow: 'auto' }}>
         {autoManAlert && (
           <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', background: 'rgba(77,159,255,0.95)', color: '#fff', padding: '8px 18px', borderRadius: 10, fontSize: 12, fontWeight: 600, zIndex: 200, boxShadow: '0 4px 16px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>
             🆕 Man Change: {autoManAlert.name} — ประจำ {autoManAlert.station} เป็นครั้งแรก
@@ -946,7 +934,7 @@ export default function Management() {
                   backdropFilter: 'blur(3px)',
                   animation: isPulse ? 'pulse-ring 1.4s ease-in-out infinite' : 'none',
                   display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  padding: '5px 4px 4px',
+                  padding: '4px 4px 2px',
                   transition: 'background-color 0.18s, border-color 0.18s',
                 }}>
                   <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3, flexShrink: 0 }}>
