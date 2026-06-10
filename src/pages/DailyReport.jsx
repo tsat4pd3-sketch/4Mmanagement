@@ -213,7 +213,8 @@ function LiveTab({ role }) {
         .limit(5);
       if (prevSessions?.length) {
         const prevIds = prevSessions.map(s => s.id);
-        // Also pick up 'open' orders left in closed sessions (closed with old code or forced-close)
+        // Also pick up 'open' orders left in closed sessions (old-code sessions)
+        // 'imported' is excluded because it's not in the in() list
         const { data: carried } = await supabaseDR.from('prod_orders')
           .select('*')
           .in('session_id', prevIds)
@@ -486,7 +487,11 @@ function LiveTab({ role }) {
         carry_over_from_session_id: o.session_id,
         carry_over_note: o.carry_over_note || `ค้างจากกะก่อน (ทำได้ ${o.qty_actual || 0}/${o.qty} ชิ้น)`,
       });
-      if (!error) imported++;
+      if (!error) {
+        imported++;
+        // Mark original order as 'imported' so it won't appear in carry-over banner again
+        await supabaseDR.from('prod_orders').update({ status: 'imported' }).eq('id', o.id);
+      }
     }
     toast.success(`รับยอดค้างมาแล้ว ${imported} Order`);
     loadProdOrders(selSession.id, selSession.line_name);
@@ -946,10 +951,23 @@ function LiveTab({ role }) {
                   </select>
                 </Field>
                 <Field label="สินค้า / Model">
-                  <select value={openForm.product_id} onChange={e => setOpenForm(f => ({ ...f, product_id: e.target.value }))} style={inputStyle}>
-                    <option value="">เลือกสินค้า...</option>
-                    {products.map(p => <option key={p.id} value={p.id}>{p.name}{p.code ? ` (${p.code})` : ''}</option>)}
-                  </select>
+                  {(() => {
+                    const lineProds = openForm.line_name
+                      ? products.filter(p => !p.line_name || p.line_name === openForm.line_name)
+                      : products;
+                    return (
+                      <select value={openForm.product_id}
+                        onChange={e => setOpenForm(f => ({ ...f, product_id: e.target.value }))}
+                        style={inputStyle}>
+                        <option value="">เลือกสินค้า...</option>
+                        {lineProds.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}{p.code ? ` (${p.code})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    );
+                  })()}
                 </Field>
                 <Field label="เวลาเริ่มต้น">
                   <input type="time" value={openForm.start_time} onChange={e => setOpenForm(f => ({ ...f, start_time: e.target.value }))} style={inputStyle} />
