@@ -601,12 +601,9 @@ export default function Dashboard() {
       {/* ── Heijunka Timeline Board ───────────────────── */}
       {prodStatus.length > 0 && (() => {
         const HOURS        = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
-        const MIN_SLOT_W   = 38;   // minimum px per hour column (for scroll on tiny screens)
+        const MIN_SLOT_W   = 38;
         const LEFT_W       = 136;
         const TOTAL_GRID_MS = 24 * 3600000;
-        // percentage helpers — order blocks use % so they fill available width naturally
-        const toPct = (ms) => `${((ms - gridStartMs) / TOTAL_GRID_MS * 100).toFixed(4)}%`;
-        const durPct = (ms) => `${(ms / TOTAL_GRID_MS * 100).toFixed(4)}%`;
         const nowMs   = now.getTime();
 
         const wd = prodStatus[0]?.work_date || new Date().toISOString().slice(0, 10);
