@@ -703,79 +703,69 @@ export default function Dashboard() {
                         })}
                       </div>
 
-                      {/* One compact row per session */}
-                      {sessions.map((s) => {
-                        const ctSec = s.dr_products?.cycle_time_sec || 0;
-                        const sessionStartMs = s.created_at ? new Date(s.created_at).getTime() : null;
-                        const sorted = [...s.orders].sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
-                        const isOpen = s.status === 'open';
-
-                        let cumSec = 0;
-                        const cardTimings = sorted.map(o => {
-                          const startSec = cumSec;
-                          cumSec += (o.qty || 0) * ctSec;
-                          const orderStartMs = sessionStartMs && ctSec > 0 ? sessionStartMs + startSec * 1000 : null;
-                          const orderEndMs   = sessionStartMs && ctSec > 0 ? sessionStartMs + cumSec * 1000 : null;
-                          const isDone    = o.status === 'confirmed';
-                          const isCarry   = o.status === 'carry_over';
-                          const isDelayed = !isDone && !isCarry && !!orderEndMs && nowMs > orderEndMs;
-                          return { ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed };
-                        });
-
-                        const delayedCount = cardTimings.filter(o => o.isDelayed).length;
-                        const doneCount    = cardTimings.filter(o => o.isDone).length;
-                        const pct = s.demand > 0 ? Math.min((s.actual / s.demand) * 100, 100) : 0;
-                        const barColor = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
-                        const shiftColor = s.shift === 'day' ? '#f59e0b' : '#818cf8';
-
-                        // Build per-cell blocks: for each hour slot collect all order fragments
-                        // We'll render absolutely-positioned blocks over a relative timeline container
-                        // Grid total width = SLOT_W * 24, gridStartMs already defined
-                        const gridTotalMs = SLOT_W * 24; // px, 1px ≠ 1ms; use ratio
-                        // ratio: px per ms = (SLOT_W * 24) / (24 * 3600000)
+                      {/* One row for the entire line — all sessions' orders on same timeline */}
+                      {(() => {
                         const pxPerMs = SLOT_W / 3600000;
 
-                        return (
-                          <div key={s.id} style={{ display: 'flex', borderBottom: '1px solid var(--border)', minHeight: 44 }}>
+                        // Compute cardTimings for ALL sessions combined
+                        const allCards = [];
+                        sessions.forEach(s => {
+                          const ctSec = s.dr_products?.cycle_time_sec || 0;
+                          const sessionStartMs = s.created_at ? new Date(s.created_at).getTime() : null;
+                          const sorted = [...s.orders].sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
+                          let cumSec = 0;
+                          sorted.forEach(o => {
+                            const startSec = cumSec;
+                            cumSec += (o.qty || 0) * ctSec;
+                            const orderStartMs = sessionStartMs && ctSec > 0 ? sessionStartMs + startSec * 1000 : null;
+                            const orderEndMs   = sessionStartMs && ctSec > 0 ? sessionStartMs + cumSec * 1000 : null;
+                            const isDone    = o.status === 'confirmed';
+                            const isCarry   = o.status === 'carry_over';
+                            const isDelayed = !isDone && !isCarry && !!orderEndMs && nowMs > orderEndMs;
+                            allCards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, shift: s.shift });
+                          });
+                        });
 
-                            {/* Left: session summary */}
+                        const totalActual  = sessions.reduce((a, s) => a + (s.actual || 0), 0);
+                        const totalDemand  = sessions.reduce((a, s) => a + (s.demand || 0), 0);
+                        const totalOrders  = allCards.length;
+                        const doneCount    = allCards.filter(o => o.isDone).length;
+                        const delayedCount = allCards.filter(o => o.isDelayed).length;
+                        const hasOpen      = sessions.some(s => s.status === 'open');
+                        const pct          = totalDemand > 0 ? Math.min((totalActual / totalDemand) * 100, 100) : 0;
+                        const barColor     = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
+                        const shiftLabels  = sessions.map(s => s.shift === 'day' ? '☀️' : '🌙').join(' ');
+
+                        return (
+                          <div style={{ display: 'flex', minHeight: 52 }}>
+
+                            {/* Left: line summary */}
                             <div style={{
                               width: LEFT_W, flexShrink: 0,
                               padding: '5px 8px',
                               borderRight: '1px solid var(--border2)',
                               display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2,
                             }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                <span style={{ fontSize: 9, fontWeight: 700, color: shiftColor }}>
-                                  {s.shift === 'day' ? '☀️' : '🌙'}
-                                </span>
-                                <span style={{ fontSize: 9, fontWeight: 700, color: shiftColor }}>
-                                  {s.shift === 'day' ? 'กะเช้า' : 'กะดึก'}
-                                </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: 9, color: 'var(--muted)' }}>{shiftLabels}</span>
                                 {delayedCount > 0 && (
-                                  <span style={{ fontSize: 8, color: '#ef4444', fontWeight: 700 }}>⚠️{delayedCount}</span>
+                                  <span style={{ fontSize: 8, color: '#ef4444', fontWeight: 700 }}>⚠️{delayedCount}ใบ</span>
                                 )}
-                                {isOpen && delayedCount === 0 && (
+                                {hasOpen && delayedCount === 0 && (
                                   <span style={{ fontSize: 7, color: '#22c55e', fontWeight: 700 }}>● Live</span>
                                 )}
                               </div>
-                              {s.dr_products?.name && (
-                                <div style={{ fontSize: 8, color: '#4d9fff', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {s.dr_products.name}
-                                </div>
-                              )}
                               <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
-                                <span style={{ fontSize: 13, fontWeight: 900, color: barColor, lineHeight: 1 }}>{s.actual}</span>
-                                <span style={{ fontSize: 8, color: 'var(--muted)' }}>/{s.demand} ชิ้น</span>
-                                <span style={{ fontSize: 8, color: 'var(--muted)' }}>{doneCount}/{sorted.length}ใบ</span>
+                                <span style={{ fontSize: 14, fontWeight: 900, color: barColor, lineHeight: 1 }}>{totalActual}</span>
+                                <span style={{ fontSize: 8, color: 'var(--muted)' }}>/{totalDemand} ชิ้น</span>
+                                <span style={{ fontSize: 8, color: 'var(--muted)' }}>{doneCount}/{totalOrders}ใบ</span>
                               </div>
-                              {/* mini progress bar */}
                               <div style={{ height: 3, borderRadius: 2, background: 'var(--border2)', overflow: 'hidden' }}>
                                 <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 2, transition: 'width 0.6s ease' }} />
                               </div>
                             </div>
 
-                            {/* Timeline: relative container, all order blocks absolutely positioned */}
+                            {/* Timeline */}
                             <div style={{ flex: 1, position: 'relative', display: 'flex' }}>
 
                               {/* Hour grid lines */}
@@ -793,7 +783,7 @@ export default function Dashboard() {
                               })}
 
                               {/* Order blocks overlaid */}
-                              {cardTimings.map((o, oi) => {
+                              {allCards.map((o, oi) => {
                                 if (!o.orderStartMs || !o.orderEndMs) return null;
                                 const statusColor = o.isDone ? '#22c55e' : o.isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
                                 const icon = o.isDone ? '✓' : o.isDelayed ? '!' : o.isCarry ? '↷' : '▶';
@@ -861,7 +851,7 @@ export default function Dashboard() {
                             </div>
                           </div>
                         );
-                      })}
+                      })()}
                     </div>
                   </div>
 
