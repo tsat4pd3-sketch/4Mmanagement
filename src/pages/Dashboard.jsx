@@ -620,20 +620,26 @@ export default function Dashboard() {
                 new Date(a.opened_at || 0) - new Date(b.opened_at || 0)
               );
 
-              // Delay calculation per card:
-              // expectedFinish = opened_at + (qty × cycle_time_sec)
+              // Sequential cumulative delay:
+              // ไลน์ผลิตทีละใบตามลำดับ → expected finish ของแต่ละใบ =
+              // session_start + sum(qty ใบก่อนหน้าทั้งหมด + qty ใบนี้) × cycle_time
               const nowMs = now.getTime();
               const fmtTime = (ms) => {
                 const d = new Date(ms);
                 return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
               };
 
-              // Count delayed open cards for session header badge
-              const delayedCount = isOpen && ctSec > 0 ? sorted.filter(o => {
-                if (o.status !== 'open' || !o.opened_at) return false;
-                const exp = new Date(o.opened_at).getTime() + o.qty * ctSec * 1000;
-                return nowMs > exp;
-              }).length : 0;
+              const sessionStartMs = s.created_at ? new Date(s.created_at).getTime() : null;
+              let cumSec = 0;
+              const cardTimings = sorted.map(o => {
+                cumSec += (o.qty || 0) * ctSec;
+                const expectedFinishMs = sessionStartMs && ctSec > 0 ? sessionStartMs + cumSec * 1000 : null;
+                return { ...o, expectedFinishMs };
+              });
+
+              const delayedCount = isOpen && ctSec > 0 ? cardTimings.filter(o =>
+                o.status === 'open' && o.expectedFinishMs && nowMs > o.expectedFinishMs
+              ).length : 0;
 
               return (
                 <motion.div key={s.id} {...stagger(9 + si)} style={{ flex: '1 1 340px', maxWidth: 480 }}>
@@ -673,19 +679,14 @@ export default function Dashboard() {
                         </div>
                       ) : (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-                          {sorted.map((o) => {
+                          {cardTimings.map((o) => {
                             const isDone  = o.status === 'confirmed';
                             const isCarry = o.status === 'carry_over';
 
-                            // Delay logic (only for open cards with cycle time)
-                            let isDelayed = false, delayMin = 0, expectedFinishMs = null;
-                            if (!isDone && !isCarry && o.opened_at && ctSec > 0) {
-                              expectedFinishMs = new Date(o.opened_at).getTime() + o.qty * ctSec * 1000;
-                              if (nowMs > expectedFinishMs) {
-                                isDelayed = true;
-                                delayMin  = Math.round((nowMs - expectedFinishMs) / 60000);
-                              }
-                            }
+                            // Sequential delay: delayed only if now > cumulative expected finish
+                            const { expectedFinishMs } = o;
+                            const isDelayed = !isDone && !isCarry && !!expectedFinishMs && nowMs > expectedFinishMs;
+                            const delayMin  = isDelayed ? Math.round((nowMs - expectedFinishMs) / 60000) : 0;
 
                             const cardColor = isDone ? '#22c55e' : isDelayed ? '#ef4444' : isCarry ? '#f59e0b' : '#4d9fff';
                             const cardBg    = isDone ? 'rgba(34,197,94,0.10)' : isDelayed ? 'rgba(239,68,68,0.10)' : isCarry ? 'rgba(245,158,11,0.10)' : 'rgba(77,159,255,0.08)';
@@ -734,7 +735,7 @@ export default function Dashboard() {
                                 </div>
 
                                 {/* expected finish time or delay */}
-                                {!isDone && !isCarry && ctSec > 0 && o.opened_at && (
+                                {!isDone && !isCarry && expectedFinishMs && (
                                   <div style={{ fontSize: 8, fontWeight: 700, color: isDelayed ? '#ef4444' : 'var(--muted)', lineHeight: 1.3, marginTop: 1 }}>
                                     {isDelayed
                                       ? `⏰ ช้า ${delayMin} นาที`
