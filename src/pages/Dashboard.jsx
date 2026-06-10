@@ -337,6 +337,12 @@ export default function Dashboard() {
 
   useEffect(() => { fetchAll(selectedDate); }, [selectedDate, fetchAll]);
 
+  // Auto-refresh ข้อมูลหลักทุก 5 นาที (พนักงาน/กะ/ทักษะเปลี่ยนไม่บ่อย)
+  useEffect(() => {
+    const t = setInterval(() => fetchAll(selectedDate), 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [selectedDate, fetchAll]);
+
   // Realtime refresh เฉพาะข้อมูลผลิต — debounce 1.5s กัน event รัวๆ ตอนสแกนหลายใบติดกัน
   useEffect(() => {
     let timer = null;
