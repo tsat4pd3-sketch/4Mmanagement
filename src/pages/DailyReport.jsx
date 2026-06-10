@@ -1190,6 +1190,9 @@ function LiveTab({ role }) {
             { key: 'end_dur',   label: 'จบ + นาที',     desc: 'กรอกเวลากลับมา + จำนวนนาที → คำนวณเวลาเริ่มหยุด' },
           ];
           const fmtTime = (dt) => dt ? dt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '—';
+          const fmtDate = (dt) => dt ? dt.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) : '';
+          const workDate = new Date(`${selSession.work_date}T12:00:00`);
+          const isNextDay = (dt) => dt && dt.toDateString() !== workDate.toDateString();
           return (
             <div className="overlay" style={{ zIndex: 2000 }}>
               <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,500px)' }}>
@@ -1267,20 +1270,29 @@ function LiveTab({ role }) {
 
                   {/* Auto-calculated result preview */}
                   {hasResult && (
-                    <div style={{ padding: '10px 14px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 9, display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>เริ่มหยุด</div>
-                        <div style={{ fontSize: 18, fontWeight: 900, color: '#ef4444' }}>{fmtTime(startedAt)}</div>
+                    <div style={{ padding: '10px 14px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 9 }}>
+                      <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ textAlign: 'center' }}>
+                          <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>🔴 เริ่มหยุด</div>
+                          <div style={{ fontSize: 18, fontWeight: 900, color: '#ef4444', lineHeight: 1.1 }}>{fmtTime(startedAt)}</div>
+                          {isNextDay(startedAt) && <div style={{ fontSize: 9, color: '#f59e0b', fontWeight: 700 }}>+1 วัน · {fmtDate(startedAt)}</div>}
+                        </div>
+                        <div style={{ fontSize: 18, color: 'var(--muted)' }}>→</div>
+                        <div style={{ textAlign: 'center' }}>
+                          <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>🟢 กลับมา</div>
+                          <div style={{ fontSize: 18, fontWeight: 900, color: '#22c55e', lineHeight: 1.1 }}>{fmtTime(endedAt)}</div>
+                          {isNextDay(endedAt) && <div style={{ fontSize: 9, color: '#f59e0b', fontWeight: 700 }}>+1 วัน · {fmtDate(endedAt)}</div>}
+                        </div>
+                        <div style={{ marginLeft: 'auto', textAlign: 'center' }}>
+                          <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>รวม</div>
+                          <div style={{ fontSize: 22, fontWeight: 900, color: '#f59e0b' }}>{durMin ? `${Math.round(durMin * 10) / 10} นาที` : '—'}</div>
+                        </div>
                       </div>
-                      <div style={{ fontSize: 18, color: 'var(--muted)' }}>→</div>
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>กลับมา</div>
-                        <div style={{ fontSize: 18, fontWeight: 900, color: '#22c55e' }}>{fmtTime(endedAt)}</div>
-                      </div>
-                      <div style={{ marginLeft: 'auto', textAlign: 'center' }}>
-                        <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>รวม</div>
-                        <div style={{ fontSize: 22, fontWeight: 900, color: '#f59e0b' }}>{durMin ? `${Math.round(durMin * 10) / 10} นาที` : '—'}</div>
-                      </div>
+                      {(isNextDay(startedAt) || isNextDay(endedAt)) && (
+                        <div style={{ marginTop: 8, fontSize: 10, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', borderRadius: 6, padding: '4px 8px' }}>
+                          ⚠ เวลาข้ามคืน — บันทึกเป็นวันถัดไปอัตโนมัติ (กะดึกเริ่ม {selSession.work_date})
+                        </div>
+                      )}
                     </div>
                   )}
 
