@@ -30,6 +30,11 @@ function getWorkDate() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
+function getCurrentShift() {
+  const h = new Date().getHours();
+  return (h >= 8 && h < 20) ? 'day' : 'night';
+}
+
 const CARD_W = 104;
 
 function useWidth() {
@@ -185,7 +190,7 @@ export default function Management() {
     const { data: workerData } = await supabase
       .from('daily_production_logs')
       .select('id, assigned_line, employee_id, employees(id, employee_id_code, name, image_url, team, section, line_id, employee_skills(skill_name, score))')
-      .eq('work_date', today).eq('is_present', true).eq('has_helmet', true).eq('has_boots', true).eq('has_gloves', true);
+      .eq('work_date', today).eq('shift', getCurrentShift()).eq('is_present', true).eq('has_helmet', true).eq('has_boots', true).eq('has_gloves', true);
     const { data: mData } = await supabase.from('four_m_logs').select('*').eq('work_date', today);
     const { data: homeData } = await supabase.from('employee_home_positions').select('employee_id, station_id');
     const { data: stData } = await supabase.from('operator_special_tasks').select('*').eq('work_date', today);
