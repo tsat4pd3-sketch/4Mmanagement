@@ -30,7 +30,7 @@ function getWorkDate() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
-const CARD_W = 82;
+const CARD_W = 104;
 
 function useWidth() {
   const [w, setW] = useState(() => window.innerWidth);
@@ -110,6 +110,7 @@ export default function Management() {
   const [specialTaskType,setSpecialTaskType]= useState('5ส');
   const [pendingDocModal, setPendingDocModal] = useState(null); // { log: {...} }
   const [docImageFile,    setDocImageFile]    = useState(null);
+  const [panelCollapsed,  setPanelCollapsed]  = useState(false);
   const [docImagePreview, setDocImagePreview] = useState(null);
   const [isSavingDoc,     setIsSavingDoc]     = useState(false);
   const hoverTimer = useRef(null);
@@ -516,13 +517,13 @@ export default function Management() {
         style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: isMobile ? 'pointer' : 'grab', userSelect: 'none' }}
       >
         {worker.employees?.image_url
-          ? <img src={worker.employees.image_url} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', pointerEvents: 'none', border: `3px solid ${fc}`, boxShadow: `0 0 8px ${fc}88`, flexShrink: 0 }} />
-          : <div style={{ width: 42, height: 42, borderRadius: '50%', background: `${fc}22`, border: `3px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
+          ? <img src={worker.employees.image_url} style={{ width: 56, height: 56, borderRadius: '50%', objectFit: 'cover', pointerEvents: 'none', border: `3px solid ${fc}`, boxShadow: `0 0 10px ${fc}88`, flexShrink: 0 }} />
+          : <div style={{ width: 56, height: 56, borderRadius: '50%', background: `${fc}22`, border: `3px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>👤</div>
         }
-        <div style={{ background: fc, color: '#fff', fontSize: 12, fontWeight: 900, padding: '2px 0', width: 44, textAlign: 'center', borderRadius: 5, boxShadow: `0 1px 5px ${fc}99`, pointerEvents: 'none' }}>
+        <div style={{ background: fc, color: '#fff', fontSize: 15, fontWeight: 900, padding: '2px 0', width: 56, textAlign: 'center', borderRadius: 5, boxShadow: `0 1px 5px ${fc}99`, pointerEvents: 'none' }}>
           {fit.score}
         </div>
-        <div style={{ fontSize: 9, fontWeight: 700, color: fc, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', textAlign: 'center', pointerEvents: 'none' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: fc, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', textAlign: 'center', pointerEvents: 'none' }}>
           {worker.employees?.name?.split(' ')[0] ?? '?'}
         </div>
       </div>
@@ -539,16 +540,26 @@ export default function Management() {
   }
 
   /* ── Layout ── */
-  const poolW = isMobile ? '100%' : isUltra ? 280 : isWide ? 248 : 210;
+  const poolW = isMobile ? '100%' : panelCollapsed ? 44 : isUltra ? 280 : isWide ? 248 : 220;
   const poolStyle = isMobile
     ? { width: '100%', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '10px 12px', flexShrink: 0, maxHeight: '42vh', display: 'flex', flexDirection: 'column' }
-    : { width: poolW, background: 'var(--bg2)', borderRight: '1px solid var(--border)', padding: isWide ? '18px 12px' : '15px 10px', display: 'flex', flexDirection: 'column', flexShrink: 0, overflowY: 'auto' };
+    : { width: poolW, minWidth: poolW, background: 'var(--bg2)', borderRight: '1px solid var(--border)', padding: panelCollapsed ? '12px 6px' : isWide ? '18px 12px' : '15px 10px', display: 'flex', flexDirection: 'column', flexShrink: 0, overflowY: panelCollapsed ? 'hidden' : 'auto', transition: 'width 0.25s ease, min-width 0.25s ease' };
 
   return (
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: 'calc(100vh - 80px)', background: 'var(--bg)', overflow: 'hidden' }}>
 
       {/* ── Pool Panel ── */}
       <div style={poolStyle}>
+        {/* Collapse toggle (desktop only) */}
+        {!isMobile && (
+          <button
+            onClick={() => setPanelCollapsed(c => !c)}
+            title={panelCollapsed ? 'ขยาย panel' : 'ย่อ panel'}
+            style={{ alignSelf: panelCollapsed ? 'center' : 'flex-end', marginBottom: panelCollapsed ? 8 : 6, flexShrink: 0, width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {panelCollapsed ? '▶' : '◀'}
+          </button>
+        )}
+        {!panelCollapsed && (<>
         <div style={{ marginBottom: 10, flexShrink: 0 }}>
           <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.08em' }}>ไลน์ผลิต</div>
           <select value={selectedLine} onChange={(e) => !isLeader && setSelectedLine(e.target.value)} disabled={isLeader}
@@ -643,6 +654,7 @@ export default function Management() {
             ))}
           </div>
         )}
+        </>)} {/* /panelCollapsed */}
       </div>
 
       {/* ── Canvas Area ── */}
@@ -656,9 +668,7 @@ export default function Management() {
         <div style={{
           position: 'relative',
           width: isMobile ? 900 : '100%', minWidth: isMobile ? 900 : undefined,
-          maxWidth: isMobile ? undefined : 1200,
           height: isMobile ? 600 : '100%', minHeight: isMobile ? 600 : undefined,
-          margin: isMobile ? undefined : '0 auto',
           backgroundImage: lineLayout ? `url('${lineLayout}')` : 'none',
           backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center',
           backgroundColor: lineLayout ? 'transparent' : 'var(--bg3)', borderRadius: 12,
