@@ -79,7 +79,7 @@ function LiveTab({ role }) {
   const [openForm, setOpenForm] = useState({ work_date: today(), line_name: '', shift: 'day', product_id: '', start_time: nowTime() });
 
   const [showDT, setShowDT]   = useState(false);
-  const [dtForm, setDtForm]   = useState({ downtime_type_id: '', started_at: '', ended_at: '', duration_min: '', machine_no: '', description: '' });
+  const [dtForm, setDtForm]   = useState({ downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', description: '' });
   const [savingDT, setSavingDT] = useState(false);
 
   // Prod Orders
@@ -268,21 +268,49 @@ function LiveTab({ role }) {
     setSelSession(s => ({ ...s, ...qtyEdit }));
   };
 
+  // Build datetime string from session work_date + HH:MM time, handling overnight (night shift)
+  const buildDT = (timeStr) => {
+    if (!timeStr || !selSession) return null;
+    const workDate = selSession.work_date;
+    const dt = new Date(`${workDate}T${timeStr}:00`);
+    // If session is night shift and time < 08:00, it's next day
+    if (selSession.shift === 'night' && parseInt(timeStr.split(':')[0]) < 8) {
+      dt.setDate(dt.getDate() + 1);
+    }
+    return dt;
+  };
+
+  const computeDtTimes = () => {
+    const { mode, start_time, end_time, duration_min } = dtForm;
+    const dur = parseFloat(duration_min);
+    if (mode === 'start_end') {
+      const s = buildDT(start_time);
+      const e = buildDT(end_time);
+      if (s && e && e > s) return { startedAt: s, endedAt: e, durMin: (e - s) / 60000 };
+      if (s) return { startedAt: s, endedAt: null, durMin: null };
+    } else if (mode === 'start_dur') {
+      const s = buildDT(start_time);
+      if (s && dur > 0) return { startedAt: s, endedAt: new Date(s.getTime() + dur * 60000), durMin: dur };
+      if (s) return { startedAt: s, endedAt: null, durMin: null };
+    } else { // end_dur
+      const e = buildDT(end_time);
+      if (e && dur > 0) return { startedAt: new Date(e.getTime() - dur * 60000), endedAt: e, durMin: dur };
+    }
+    return { startedAt: null, endedAt: null, durMin: dur > 0 ? dur : null };
+  };
+
   const handleAddDT = async () => {
     if (!selSession || !dtForm.downtime_type_id) { toast.error('เลือกประเภท Downtime'); return; }
+    const { startedAt, endedAt, durMin } = computeDtTimes();
+    if (!startedAt && !durMin) { toast.error('กรอกเวลาหรือระยะเวลาอย่างน้อย 1 อย่าง'); return; }
     setSavingDT(true);
     const { data: { user } } = await supabase.auth.getUser();
-    const startedAt = dtForm.started_at ? new Date(dtForm.started_at).toISOString() : new Date().toISOString();
-    const endedAt   = dtForm.ended_at   ? new Date(dtForm.ended_at).toISOString()   : null;
-    const durMin    = dtForm.duration_min
-      ? parseFloat(dtForm.duration_min)
-      : (endedAt ? (new Date(endedAt) - new Date(startedAt)) / 60000 : null);
 
     const { error } = await supabaseDR.from('downtime_logs').insert({
       session_id:       selSession.id,
       downtime_type_id: dtForm.downtime_type_id,
-      started_at:       startedAt,
-      ended_at:         endedAt,
+      started_at:       startedAt?.toISOString() || null,
+      ended_at:         endedAt?.toISOString()   || null,
       duration_min:     durMin,
       machine_no:       dtForm.machine_no || null,
       description:      dtForm.description || null,
@@ -293,7 +321,7 @@ function LiveTab({ role }) {
     if (error) { toast.error(error.message); return; }
     toast.success('บันทึก Downtime แล้ว');
     setShowDT(false);
-    setDtForm({ downtime_type_id: '', started_at: '', ended_at: '', duration_min: '', machine_no: '', description: '' });
+    setDtForm({ downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', description: '' });
     loadDT(selSession.id);
   };
 
@@ -745,7 +773,7 @@ function LiveTab({ role }) {
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>⏱ Downtime ({dtLogs.length} รายการ)</div>
-                <button onClick={() => { setShowDT(true); setDtForm({ downtime_type_id: '', started_at: '', ended_at: '', duration_min: '', machine_no: '', description: '' }); }}
+                <button onClick={() => { setShowDT(true); setDtForm({ downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', description: '' }); }}
                   style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                   + บันทึก Downtime
                 </button>
@@ -1153,66 +1181,130 @@ function LiveTab({ role }) {
         )}
 
         {/* Add downtime modal */}
-        {showDT && (
-          <div className="overlay" style={{ zIndex: 2000 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,500px)' }}>
-              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>⏱ บันทึก Downtime</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <Field label="ประเภท Downtime *">
-                  {(() => {
-                    const pt = selSession?.dr_products?.process_type || 'welding_assembly';
-                    const filtered = dtTypes.filter(t =>
-                      t.process_type === pt || t.process_type === 'common'
-                    );
-                    const ptLabel = pt === 'metal_forming' ? 'Metal Forming' : 'Welding / Assembly';
-                    return (
-                      <>
-                        <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 6 }}>
-                          แสดงประเภทสำหรับ: <b style={{ color: 'var(--accent)' }}>{ptLabel}</b>
-                          {!selSession?.product_id && ' (ไม่ได้เลือกสินค้า — แสดงแบบ Welding/Assembly)'}
-                        </div>
-                        <select value={dtForm.downtime_type_id} onChange={e => setDtForm(f => ({ ...f, downtime_type_id: e.target.value }))} style={inputStyle}>
+        {showDT && selSession && (() => {
+          const { startedAt, endedAt, durMin } = computeDtTimes();
+          const hasResult = startedAt || durMin;
+          const MODES = [
+            { key: 'start_end', label: 'เริ่ม → จบ',   desc: 'กรอกเวลาเริ่มหยุด + เวลากลับมา → คำนวณนาทีอัตโนมัติ' },
+            { key: 'start_dur', label: 'เริ่ม + นาที',  desc: 'กรอกเวลาเริ่มหยุด + จำนวนนาที → คำนวณเวลากลับมา' },
+            { key: 'end_dur',   label: 'จบ + นาที',     desc: 'กรอกเวลากลับมา + จำนวนนาที → คำนวณเวลาเริ่มหยุด' },
+          ];
+          const fmtTime = (dt) => dt ? dt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '—';
+          return (
+            <div className="overlay" style={{ zIndex: 2000 }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,500px)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>⏱ บันทึก Downtime</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}>
+                    <div style={{ color: '#4d9fff', fontWeight: 700 }}>{selSession.line_name}</div>
+                    <div>{selSession.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {selSession.work_date}</div>
+                  </div>
+                </div>
+
+                {/* Mode selector */}
+                <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 16 }}>
+                  {MODES.map(m => (
+                    <button key={m.key} onClick={() => setDtForm(f => ({ ...f, mode: m.key }))}
+                      style={{ flex: 1, padding: '6px 4px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                        background: dtForm.mode === m.key ? '#ef4444' : 'transparent',
+                        color: dtForm.mode === m.key ? '#fff' : 'var(--muted)' }}>
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14 }}>
+                  {MODES.find(m => m.key === dtForm.mode)?.desc}
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* Downtime type */}
+                  <Field label="ประเภท Downtime *">
+                    {(() => {
+                      const pt = selSession?.dr_products?.process_type || 'welding_assembly';
+                      const filtered = dtTypes.filter(t => t.process_type === pt || t.process_type === 'common');
+                      return (
+                        <select autoFocus value={dtForm.downtime_type_id} onChange={e => setDtForm(f => ({ ...f, downtime_type_id: e.target.value }))} style={inputStyle}>
                           <option value="">เลือกประเภท...</option>
                           {['unplanned', 'planned'].map(cat => (
-                            <optgroup key={cat} label={cat === 'unplanned' ? '⚠ นอกแผน (Unplanned)' : '📋 ในแผน (Planned)'}>
+                            <optgroup key={cat} label={cat === 'unplanned' ? '⚠ นอกแผน' : '📋 ในแผน'}>
                               {filtered.filter(t => t.category === cat).map(t => (
                                 <option key={t.id} value={t.id}>{t.name_th}</option>
                               ))}
                             </optgroup>
                           ))}
                         </select>
-                      </>
-                    );
-                  })()}
-                </Field>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <Field label="เวลาเริ่มหยุด">
-                    <input type="datetime-local" value={dtForm.started_at} onChange={e => setDtForm(f => ({ ...f, started_at: e.target.value }))} style={inputStyle} />
+                      );
+                    })()}
                   </Field>
-                  <Field label="เวลาเริ่มเดิน">
-                    <input type="datetime-local" value={dtForm.ended_at} onChange={e => setDtForm(f => ({ ...f, ended_at: e.target.value }))} style={inputStyle} />
-                  </Field>
+
+                  {/* Time inputs depending on mode */}
+                  <div style={{ display: 'grid', gridTemplateColumns: dtForm.mode === 'start_end' ? '1fr 1fr' : '1fr 1fr', gap: 10 }}>
+                    {/* Start time — shown in start_end and start_dur modes */}
+                    {(dtForm.mode === 'start_end' || dtForm.mode === 'start_dur') && (
+                      <Field label="🔴 เวลาเริ่มหยุด">
+                        <input type="time" value={dtForm.start_time}
+                          onChange={e => setDtForm(f => ({ ...f, start_time: e.target.value }))}
+                          style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 18, textAlign: 'center' }} />
+                      </Field>
+                    )}
+                    {/* End time — shown in start_end and end_dur modes */}
+                    {(dtForm.mode === 'start_end' || dtForm.mode === 'end_dur') && (
+                      <Field label="🟢 เวลากลับมาทำงาน">
+                        <input type="time" value={dtForm.end_time}
+                          onChange={e => setDtForm(f => ({ ...f, end_time: e.target.value }))}
+                          style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 18, textAlign: 'center' }} />
+                      </Field>
+                    )}
+                    {/* Duration — shown in start_dur and end_dur modes */}
+                    {(dtForm.mode === 'start_dur' || dtForm.mode === 'end_dur') && (
+                      <Field label="⏱ จำนวนนาที">
+                        <input type="number" min="0.5" step="0.5" value={dtForm.duration_min}
+                          onChange={e => setDtForm(f => ({ ...f, duration_min: e.target.value }))}
+                          placeholder="เช่น 30" style={{ ...inputStyle, fontSize: 18, fontWeight: 800, textAlign: 'center' }} />
+                      </Field>
+                    )}
+                  </div>
+
+                  {/* Auto-calculated result preview */}
+                  {hasResult && (
+                    <div style={{ padding: '10px 14px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 9, display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>เริ่มหยุด</div>
+                        <div style={{ fontSize: 18, fontWeight: 900, color: '#ef4444' }}>{fmtTime(startedAt)}</div>
+                      </div>
+                      <div style={{ fontSize: 18, color: 'var(--muted)' }}>→</div>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>กลับมา</div>
+                        <div style={{ fontSize: 18, fontWeight: 900, color: '#22c55e' }}>{fmtTime(endedAt)}</div>
+                      </div>
+                      <div style={{ marginLeft: 'auto', textAlign: 'center' }}>
+                        <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>รวม</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: '#f59e0b' }}>{durMin ? `${Math.round(durMin * 10) / 10} นาที` : '—'}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <Field label="หมายเลขเครื่อง">
+                      <input type="text" value={dtForm.machine_no} onChange={e => setDtForm(f => ({ ...f, machine_no: e.target.value }))} placeholder="เช่น MC-01" style={inputStyle} />
+                    </Field>
+                    <Field label="รายละเอียด">
+                      <input type="text" value={dtForm.description} onChange={e => setDtForm(f => ({ ...f, description: e.target.value }))} placeholder="สาเหตุ..." style={inputStyle} />
+                    </Field>
+                  </div>
                 </div>
-                <Field label="ระยะเวลา (นาที) — กรอกถ้าไม่ได้ใส่เวลาเริ่ม/สิ้นสุด">
-                  <input type="number" min="0" step="0.5" value={dtForm.duration_min} onChange={e => setDtForm(f => ({ ...f, duration_min: e.target.value }))} placeholder="เช่น 30" style={inputStyle} />
-                </Field>
-                <Field label="หมายเลขเครื่อง">
-                  <input type="text" value={dtForm.machine_no} onChange={e => setDtForm(f => ({ ...f, machine_no: e.target.value }))} placeholder="เช่น MC-01" style={inputStyle} />
-                </Field>
-                <Field label="รายละเอียด">
-                  <textarea value={dtForm.description} onChange={e => setDtForm(f => ({ ...f, description: e.target.value }))} rows={2} placeholder="อธิบายสาเหตุ..." style={{ ...inputStyle, resize: 'vertical' }} />
-                </Field>
-              </div>
-              <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowDT(false)} style={cancelBtnStyle}>ยกเลิก</button>
-                <button onClick={handleAddDT} disabled={savingDT || !dtForm.downtime_type_id}
-                  style={{ ...saveBtnStyle, background: '#ef4444', opacity: (!dtForm.downtime_type_id || savingDT) ? 0.5 : 1 }}>
-                  {savingDT ? '...' : 'บันทึก Downtime'}
-                </button>
+
+                <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
+                  <button onClick={() => setShowDT(false)} style={cancelBtnStyle}>ยกเลิก</button>
+                  <button onClick={handleAddDT} disabled={savingDT || !dtForm.downtime_type_id || !hasResult}
+                    style={{ ...saveBtnStyle, background: '#ef4444', opacity: (!dtForm.downtime_type_id || !hasResult || savingDT) ? 0.5 : 1 }}>
+                    {savingDT ? '...' : 'บันทึก Downtime'}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );
