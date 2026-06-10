@@ -682,7 +682,7 @@ export default function Dashboard() {
                       {/* Hour header */}
                       <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
                         <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '5px 8px', fontSize: 9, fontWeight: 700, color: 'var(--muted)' }}>
-                          Order / Part
+                          กะ / ผลิต
                         </div>
                         {HOURS.map((h, i) => {
                           const isNow = i === nowHourIdx;
@@ -703,11 +703,12 @@ export default function Dashboard() {
                         })}
                       </div>
 
-                      {/* Session rows */}
+                      {/* One compact row per session */}
                       {sessions.map((s) => {
                         const ctSec = s.dr_products?.cycle_time_sec || 0;
                         const sessionStartMs = s.created_at ? new Date(s.created_at).getTime() : null;
                         const sorted = [...s.orders].sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
+                        const isOpen = s.status === 'open';
 
                         let cumSec = 0;
                         const cardTimings = sorted.map(o => {
@@ -715,129 +716,149 @@ export default function Dashboard() {
                           cumSec += (o.qty || 0) * ctSec;
                           const orderStartMs = sessionStartMs && ctSec > 0 ? sessionStartMs + startSec * 1000 : null;
                           const orderEndMs   = sessionStartMs && ctSec > 0 ? sessionStartMs + cumSec * 1000 : null;
-                          return { ...o, orderStartMs, orderEndMs };
+                          const isDone    = o.status === 'confirmed';
+                          const isCarry   = o.status === 'carry_over';
+                          const isDelayed = !isDone && !isCarry && !!orderEndMs && nowMs > orderEndMs;
+                          return { ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed };
                         });
 
+                        const delayedCount = cardTimings.filter(o => o.isDelayed).length;
+                        const doneCount    = cardTimings.filter(o => o.isDone).length;
+                        const pct = s.demand > 0 ? Math.min((s.actual / s.demand) * 100, 100) : 0;
+                        const barColor = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
+                        const shiftColor = s.shift === 'day' ? '#f59e0b' : '#818cf8';
+
+                        // Build per-cell blocks: for each hour slot collect all order fragments
+                        // We'll render absolutely-positioned blocks over a relative timeline container
+                        // Grid total width = SLOT_W * 24, gridStartMs already defined
+                        const gridTotalMs = SLOT_W * 24; // px, 1px ≠ 1ms; use ratio
+                        // ratio: px per ms = (SLOT_W * 24) / (24 * 3600000)
+                        const pxPerMs = SLOT_W / 3600000;
+
                         return (
-                          <div key={s.id}>
-                            {/* Shift label row */}
-                            <div style={{ display: 'flex', background: 'var(--bg3)', borderBottom: '1px solid var(--border)' }}>
-                              <div style={{
-                                width: LEFT_W, flexShrink: 0,
-                                padding: '3px 8px',
-                                fontSize: 9, fontWeight: 700,
-                                color: s.shift === 'day' ? '#f59e0b' : '#818cf8',
-                                borderRight: '1px solid var(--border2)',
-                              }}>
-                                {s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'}
-                                {s.dr_products?.name && <span style={{ marginLeft: 4, color: '#4d9fff', fontWeight: 600 }}>{s.dr_products.name}</span>}
+                          <div key={s.id} style={{ display: 'flex', borderBottom: '1px solid var(--border)', minHeight: 44 }}>
+
+                            {/* Left: session summary */}
+                            <div style={{
+                              width: LEFT_W, flexShrink: 0,
+                              padding: '5px 8px',
+                              borderRight: '1px solid var(--border2)',
+                              display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2,
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <span style={{ fontSize: 9, fontWeight: 700, color: shiftColor }}>
+                                  {s.shift === 'day' ? '☀️' : '🌙'}
+                                </span>
+                                <span style={{ fontSize: 9, fontWeight: 700, color: shiftColor }}>
+                                  {s.shift === 'day' ? 'กะเช้า' : 'กะดึก'}
+                                </span>
+                                {delayedCount > 0 && (
+                                  <span style={{ fontSize: 8, color: '#ef4444', fontWeight: 700 }}>⚠️{delayedCount}</span>
+                                )}
+                                {isOpen && delayedCount === 0 && (
+                                  <span style={{ fontSize: 7, color: '#22c55e', fontWeight: 700 }}>● Live</span>
+                                )}
                               </div>
+                              {s.dr_products?.name && (
+                                <div style={{ fontSize: 8, color: '#4d9fff', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {s.dr_products.name}
+                                </div>
+                              )}
+                              <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+                                <span style={{ fontSize: 13, fontWeight: 900, color: barColor, lineHeight: 1 }}>{s.actual}</span>
+                                <span style={{ fontSize: 8, color: 'var(--muted)' }}>/{s.demand} ชิ้น</span>
+                                <span style={{ fontSize: 8, color: 'var(--muted)' }}>{doneCount}/{sorted.length}ใบ</span>
+                              </div>
+                              {/* mini progress bar */}
+                              <div style={{ height: 3, borderRadius: 2, background: 'var(--border2)', overflow: 'hidden' }}>
+                                <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 2, transition: 'width 0.6s ease' }} />
+                              </div>
+                            </div>
+
+                            {/* Timeline: relative container, all order blocks absolutely positioned */}
+                            <div style={{ flex: 1, position: 'relative', display: 'flex' }}>
+
+                              {/* Hour grid lines */}
                               {HOURS.map((h, i) => {
                                 const isNow = i === nowHourIdx;
                                 const isShiftBound = h === 8 || h === 20;
                                 return (
                                   <div key={i} style={{
-                                    width: SLOT_W, flexShrink: 0, height: 14,
+                                    width: SLOT_W, flexShrink: 0, height: '100%',
                                     borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
-                                    background: isNow ? 'rgba(77,159,255,0.08)' : 'transparent',
+                                    background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent',
+                                    boxSizing: 'border-box',
                                   }} />
                                 );
                               })}
-                            </div>
 
-                            {/* Order rows */}
-                            {cardTimings.length === 0 ? (
-                              <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
-                                <div style={{ width: LEFT_W, flexShrink: 0, padding: '10px 8px', fontSize: 10, color: 'var(--muted)', borderRight: '1px solid var(--border2)' }}>
-                                  ยังไม่มี Kanban — รอสแกน
-                                </div>
-                                {HOURS.map((_, i) => <div key={i} style={{ width: SLOT_W, flexShrink: 0, borderRight: '1px solid var(--border)' }} />)}
-                              </div>
-                            ) : cardTimings.map((o, oi) => {
-                              const isDone   = o.status === 'confirmed';
-                              const isCarry  = o.status === 'carry_over';
-                              const isDelayed = !isDone && !isCarry && !!o.orderEndMs && nowMs > o.orderEndMs;
-                              const statusColor = isDone ? '#22c55e' : isDelayed ? '#ef4444' : isCarry ? '#f59e0b' : '#4d9fff';
-                              const icon = isDone ? '✅' : isDelayed ? '⚠️' : isCarry ? '⏳' : '⚡';
-                              const delayMin = isDelayed ? Math.round((nowMs - o.orderEndMs) / 60000) : 0;
-                              const doneQty  = isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
-                              const pctDone  = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (isDone ? 100 : 0);
+                              {/* Order blocks overlaid */}
+                              {cardTimings.map((o, oi) => {
+                                if (!o.orderStartMs || !o.orderEndMs) return null;
+                                const statusColor = o.isDone ? '#22c55e' : o.isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
+                                const icon = o.isDone ? '✓' : o.isDelayed ? '!' : o.isCarry ? '↷' : '▶';
 
-                              return (
-                                <div key={o.prod_no || oi} style={{ display: 'flex', borderBottom: '1px solid var(--border)', minHeight: 36 }}>
-                                  {/* Left info column */}
-                                  <div style={{
-                                    width: LEFT_W, flexShrink: 0,
-                                    padding: '4px 8px',
-                                    borderRight: '1px solid var(--border2)',
-                                    display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1,
-                                    position: 'relative', overflow: 'hidden',
-                                  }}>
-                                    {/* progress fill behind */}
-                                    <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctDone}%`, background: `${statusColor}18`, transition: 'width 0.6s ease', zIndex: 0 }} />
-                                    <div style={{ position: 'relative', zIndex: 1 }}>
-                                      <div style={{ fontSize: 9, fontWeight: 700, color: statusColor, lineHeight: 1.3 }}>
-                                        {icon} {o.prod_no || '—'}
-                                      </div>
-                                      {(o.mat_no || o.part_name) && (
-                                        <div style={{ fontSize: 8, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
-                                          {o.mat_no || o.part_name}
-                                        </div>
-                                      )}
-                                      <div style={{ fontSize: 11, fontWeight: 900, color: statusColor, lineHeight: 1.1 }}>
-                                        {isDone ? (o.qty_ok ?? o.qty) : o.qty}
-                                        <span style={{ fontSize: 8, fontWeight: 400, color: 'var(--muted)', marginLeft: 2 }}>ชิ้น</span>
-                                        {isDelayed && <span style={{ fontSize: 8, marginLeft: 4, color: '#ef4444' }}>⏰{delayMin}ม.</span>}
-                                        {!isDone && !isCarry && o.orderEndMs && !isDelayed && (
-                                          <span style={{ fontSize: 8, marginLeft: 4, color: 'var(--muted)' }}>→{fmtMs(o.orderEndMs)}</span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
+                                // pixel position within the 24h grid
+                                const leftPx  = Math.max(0, (o.orderStartMs - gridStartMs) * pxPerMs);
+                                const rightPx = Math.min(SLOT_W * 24, (o.orderEndMs - gridStartMs) * pxPerMs);
+                                const widthPx = Math.max(3, rightPx - leftPx);
+                                if (leftPx >= SLOT_W * 24) return null; // off-screen right
 
-                                  {/* Hour cells */}
-                                  {HOURS.map((h, i) => {
-                                    const slotStart = gridStartMs + i * 3600000;
-                                    const slotEnd   = slotStart + 3600000;
-                                    const isNow     = i === nowHourIdx;
-                                    const isShiftBound = h === 8 || h === 20;
+                                const doneQty = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
+                                const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
 
-                                    let leftPct = 0, widthPct = 0;
-                                    if (o.orderStartMs && o.orderEndMs) {
-                                      const ov0 = Math.max(o.orderStartMs, slotStart);
-                                      const ov1 = Math.min(o.orderEndMs, slotEnd);
-                                      if (ov1 > ov0) {
-                                        leftPct  = ((ov0 - slotStart) / 3600000) * 100;
-                                        widthPct = ((ov1 - ov0) / 3600000) * 100;
-                                      }
-                                    }
-                                    const hasFill = widthPct > 0;
-
-                                    return (
-                                      <div key={i} style={{
-                                        width: SLOT_W, flexShrink: 0, position: 'relative',
-                                        borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
-                                        background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent',
+                                return (
+                                  <div key={o.prod_no || oi} title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.isDelayed ? ` ⚠️ช้า${Math.round((nowMs-o.orderEndMs)/60000)}ม.` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(o.orderEndMs)}`}`}
+                                    style={{
+                                      position: 'absolute',
+                                      top: 6, bottom: 6,
+                                      left: leftPx,
+                                      width: widthPx,
+                                      background: `${statusColor}28`,
+                                      border: `1.5px solid ${statusColor}${o.isDone ? 'cc' : o.isDelayed ? 'dd' : '88'}`,
+                                      borderRadius: 4,
+                                      overflow: 'hidden',
+                                      boxShadow: o.isDelayed ? `0 0 6px ${statusColor}44` : 'none',
+                                      cursor: 'default',
+                                      zIndex: 1,
+                                    }}>
+                                    {/* progress fill */}
+                                    <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`, background: `${statusColor}22`, transition: 'width 0.5s ease' }} />
+                                    {/* label (only if wide enough) */}
+                                    {widthPx >= 22 && (
+                                      <div style={{
+                                        position: 'absolute', inset: 0,
+                                        display: 'flex', flexDirection: 'column', justifyContent: 'center',
+                                        padding: '0 3px', overflow: 'hidden',
                                       }}>
-                                        {hasFill && (
-                                          <div style={{
-                                            position: 'absolute',
-                                            top: 5, bottom: 5,
-                                            left: `${leftPct}%`,
-                                            width: `${widthPct}%`,
-                                            background: isDone ? `${statusColor}40` : `${statusColor}30`,
-                                            border: `1.5px solid ${statusColor}${isDone ? 'cc' : '88'}`,
-                                            borderRadius: 3,
-                                            boxShadow: isDelayed ? `0 0 6px ${statusColor}55` : 'none',
-                                            minWidth: 3,
-                                          }} />
+                                        <div style={{ fontSize: 8, fontWeight: 800, color: statusColor, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                          {icon} {o.prod_no || (oi + 1)}
+                                        </div>
+                                        {widthPx >= 48 && (
+                                          <div style={{ fontSize: 7, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {o.qty}ชิ้น
+                                          </div>
                                         )}
                                       </div>
-                                    );
-                                  })}
-                                </div>
-                              );
-                            })}
+                                    )}
+                                  </div>
+                                );
+                              })}
+
+                              {/* Now marker line */}
+                              {nowHourIdx >= 0 && (() => {
+                                const nowPx = (nowMs - gridStartMs) * pxPerMs;
+                                if (nowPx < 0 || nowPx > SLOT_W * 24) return null;
+                                return (
+                                  <div style={{
+                                    position: 'absolute', top: 0, bottom: 0,
+                                    left: nowPx, width: 1.5,
+                                    background: 'rgba(77,159,255,0.7)',
+                                    zIndex: 2, pointerEvents: 'none',
+                                  }} />
+                                );
+                              })()}
+                            </div>
                           </div>
                         );
                       })}
