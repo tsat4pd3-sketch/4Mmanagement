@@ -54,7 +54,7 @@ export default function DailyReport() {
       </div>
 
       {tab === 'live'    && <LiveTab role={role} />}
-      {tab === 'history' && <HistoryTab />}
+      {tab === 'history' && <HistoryTab role={role} />}
       {tab === 'setup'   && canSetup && <SetupTab role={role} />}
     </div>
   );
@@ -1527,7 +1527,7 @@ function LiveTab({ role }) {
 /* ═══════════════════════════════════════════════════════════════
    HISTORY TAB
 ═══════════════════════════════════════════════════════════════ */
-function HistoryTab() {
+function HistoryTab({ role }) {
   const [sessions, setSessions]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState({ date: '', line_name: '' });
@@ -1535,6 +1535,19 @@ function HistoryTab() {
   const [expanded, setExpanded]   = useState(null);
   const [dtMap, setDtMap]         = useState({});
   const [defectMap, setDefectMap] = useState({});
+  const [deleting, setDeleting]   = useState(null);
+
+  const isAdmin = role === 'admin';
+
+  const handleDelete = async (s) => {
+    if (!window.confirm(`ลบกะ ${s.line_name} ${s.shift === 'day' ? 'กะเช้า' : 'กะดึก'} วันที่ ${s.work_date} ?\n(ข้อมูล Order, Downtime, Defect จะถูกลบทั้งหมด)`)) return;
+    setDeleting(s.id);
+    const { error } = await supabaseDR.from('production_sessions').delete().eq('id', s.id);
+    setDeleting(null);
+    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
+    toast.success('ลบกะเรียบร้อย');
+    setSessions(prev => prev.filter(x => x.id !== s.id));
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1622,6 +1635,14 @@ function HistoryTab() {
                     </div>
                   )}
                   <span style={{ color: 'var(--muted)', fontSize: 16 }}>{expanded === s.id ? '▲' : '▼'}</span>
+                  {isAdmin && (
+                    <button
+                      onClick={e => { e.stopPropagation(); handleDelete(s); }}
+                      disabled={deleting === s.id}
+                      style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 700, opacity: deleting === s.id ? 0.5 : 1 }}>
+                      {deleting === s.id ? '...' : 'ลบ'}
+                    </button>
+                  )}
                 </div>
               </div>
               {expanded === s.id && (
