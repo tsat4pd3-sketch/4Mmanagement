@@ -37,7 +37,7 @@ function getCurrentShift() {
 
 const CARD_W = 104;
 const CARD_H = 92;
-const PHOTO_SZ = 52; // photo size in station cards — dominates the card area
+const PHOTO_SZ = 64; // photo size in station cards — dominates the card area
 
 function useWidth() {
   const [w, setW] = useState(() => window.innerWidth);
@@ -503,8 +503,8 @@ export default function Management() {
         </div>
         {/* photo */}
         {worker.employees?.image_url
-          ? <img src={worker.employees.image_url} style={{ width: PHOTO_SZ, height: PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `3px solid ${isSelected ? '#4d9fff' : 'rgba(77,159,255,0.7)'}`, boxShadow: isSelected ? '0 0 10px rgba(77,159,255,0.5)' : 'none', flexShrink: 0 }} />
-          : <div style={{ width: PHOTO_SZ, height: PHOTO_SZ, borderRadius: '50%', background: 'rgba(77,159,255,0.15)', border: '3px solid rgba(77,159,255,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
+          ? <img src={worker.employees.image_url} style={{ width: PHOTO_SZ, height: PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `3px solid ${isSelected ? '#4d9fff' : 'rgba(77,159,255,0.7)'}`, boxShadow: isSelected ? '0 0 10px rgba(77,159,255,0.5)' : 'none', flexShrink: 0, display: 'block' }} />
+          : <div style={{ width: PHOTO_SZ, height: PHOTO_SZ, borderRadius: '50%', background: 'rgba(77,159,255,0.15)', border: '3px solid rgba(77,159,255,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>👤</div>
         }
         {/* team badge */}
         {worker.employees?.team && (
@@ -536,12 +536,20 @@ export default function Management() {
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
         style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: isMobile ? 'pointer' : 'grab', userSelect: 'none' }}
       >
-        {worker.employees?.image_url
-          ? <img src={worker.employees.image_url} style={{ width: PHOTO_SZ, height: PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `3px solid ${fc}`, boxShadow: `0 0 10px ${fc}88`, flexShrink: 0 }} />
-          : <div style={{ width: PHOTO_SZ, height: PHOTO_SZ, borderRadius: '50%', background: `${fc}22`, border: `3px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
-        }
-        <div style={{ background: fc, color: '#fff', fontSize: 12, fontWeight: 900, padding: '1px 0', width: PHOTO_SZ, textAlign: 'center', borderRadius: 4, boxShadow: `0 1px 4px ${fc}99`, pointerEvents: 'none' }}>
-          {fit.score}
+        {/* photo with score overlaid at bottom of circle */}
+        <div style={{ position: 'relative', width: PHOTO_SZ, height: PHOTO_SZ, flexShrink: 0 }}>
+          {worker.employees?.image_url
+            ? <img src={worker.employees.image_url} style={{ width: PHOTO_SZ, height: PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `3px solid ${fc}`, boxShadow: `0 0 10px ${fc}88`, display: 'block' }} />
+            : <div style={{ width: PHOTO_SZ, height: PHOTO_SZ, borderRadius: '50%', background: `${fc}22`, border: `3px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>👤</div>
+          }
+          <div style={{
+            position: 'absolute', bottom: 1, left: 0, right: 0,
+            background: `${fc}e0`, color: '#fff', fontSize: 13, fontWeight: 900,
+            textAlign: 'center', borderRadius: '0 0 50px 50px', padding: '1px 0 2px',
+            lineHeight: 1, pointerEvents: 'none',
+          }}>
+            {fit.score}
+          </div>
         </div>
         <div style={{ fontSize: 8, fontWeight: 700, color: fc, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', textAlign: 'center', pointerEvents: 'none' }}>
           {worker.employees?.name?.split(' ')[0] ?? '?'}
