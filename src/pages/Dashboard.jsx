@@ -128,6 +128,71 @@ export default function Dashboard() {
   const [expandedLine,  setExpandedLine]  = useState(null);
   const [prodStatus,    setProdStatus]    = useState([]);
 
+  // โหลดเฉพาะข้อมูลผลิต/OEE จาก DR — เบากว่า fetchAll มาก ใช้กับ realtime
+  const fetchProdStatus = useCallback(async () => {
+    const todayStr = getWorkDateStr(new Date());
+    const [{ data: sessions }, { data: breakPolicies }] = await Promise.all([
+      supabaseDR
+        .from('production_sessions')
+        .select('id, line_name, shift, status, work_date, created_at, dr_products(name, target_per_shift, cycle_time_sec, process_type)')
+        .eq('work_date', todayStr),
+      supabaseDR.from('break_policies').select('*').eq('is_active', true),
+    ]);
+    const sessionIds = (sessions || []).map(s => s.id);
+    let ordersBySession = {}, dtBySession = {}, defectBySession = {};
+    if (sessionIds.length > 0) {
+      const [{ data: orders }, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
+        supabaseDR.from('prod_orders').select('session_id, status, qty').in('session_id', sessionIds),
+        supabaseDR.from('downtime_logs').select('session_id, duration_min, dr_downtime_types(category)').in('session_id', sessionIds),
+        supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessionIds),
+      ]);
+      (orders     || []).forEach(o => { (ordersBySession[o.session_id]  ||= []).push(o); });
+      (dtLogs     || []).forEach(d => { (dtBySession[d.session_id]      ||= []).push(d); });
+      (defectLogs || []).forEach(d => { (defectBySession[d.session_id]  ||= []).push(d); });
+    }
+
+    const computeSessionOEE = (s) => {
+      const openedAt  = s.created_at ? new Date(s.created_at) : null;
+      const closedAt  = new Date();
+      if (!openedAt) return null;
+      const shiftMin  = Math.round((closedAt - openedAt) / 60000);
+      const dts       = dtBySession[s.id] || [];
+      const plannedDT = dts.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
+      const unplannedDT = dts.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
+      // Policy breaks overlap
+      const wDate = s.work_date;
+      const policyBreak = (breakPolicies || [])
+        .filter(p => p.shift === 'both' || p.shift === s.shift)
+        .filter(p => p.process_type === 'common' || p.process_type === s.dr_products?.process_type)
+        .reduce((sum, p) => {
+          const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
+          let pStart = new Date(`${wDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`);
+          const pEnd = new Date(pStart.getTime() + p.duration_min * 60000);
+          if (pStart < openedAt && pEnd < openedAt) pStart = new Date(pStart.getTime() + 86400000);
+          return sum + Math.max(0, (Math.min(pEnd, closedAt) - Math.max(pStart, openedAt)) / 60000);
+        }, 0);
+      const netAvail = Math.max(0, shiftMin - plannedDT - policyBreak);
+      const runMin   = Math.max(0, netAvail - unplannedDT);
+      const ctSec    = s.dr_products?.cycle_time_sec || 0;
+      const produced = (ordersBySession[s.id] || []).filter(o => o.status === 'confirmed').reduce((a, o) => a + o.qty, 0);
+      const ngQty    = (defectBySession[s.id] || []).reduce((a, d) => a + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
+      const A = netAvail > 0 ? Math.min(1, runMin / netAvail) : 0;
+      const P = (runMin > 0 && ctSec > 0) ? Math.min(1, (produced * ctSec / 60) / runMin) : (runMin > 0 ? 1 : 0);
+      const Q = produced > 0 ? Math.max(0, (produced - ngQty) / produced) : 1;
+      return { A, P, Q, oee: A * P * Q, runMin, netAvail, shiftMin };
+    };
+
+    const ps = (sessions || []).map(s => {
+      const orders = ordersBySession[s.id] || [];
+      const demand   = orders.reduce((sum, o) => sum + (o.qty || 0), 0);
+      const actual   = orders.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty || 0), 0);
+      const target   = s.dr_products?.target_per_shift || 0;
+      const oeeData  = s.status === 'open' ? computeSessionOEE(s) : null;
+      return { ...s, demand, actual, target, oeeData };
+    });
+    setProdStatus(ps);
+  }, []);
+
   const fetchAll = useCallback(async (date) => {
     setLoading(true);
     const [
@@ -266,82 +331,27 @@ export default function Dashboard() {
     setStationEmpMap(semap);
     setLoading(false);
 
-    // Fetch today's production sessions + OEE data from DR project (non-blocking)
-    const todayStr = getWorkDateStr(new Date());
-    const [{ data: sessions }, { data: breakPolicies }] = await Promise.all([
-      supabaseDR
-        .from('production_sessions')
-        .select('id, line_name, shift, status, work_date, created_at, dr_products(name, target_per_shift, cycle_time_sec, process_type)')
-        .eq('work_date', todayStr),
-      supabaseDR.from('break_policies').select('*').eq('is_active', true),
-    ]);
-    const sessionIds = (sessions || []).map(s => s.id);
-    let ordersBySession = {}, dtBySession = {}, defectBySession = {};
-    if (sessionIds.length > 0) {
-      const [{ data: orders }, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
-        supabaseDR.from('prod_orders').select('session_id, status, qty').in('session_id', sessionIds),
-        supabaseDR.from('downtime_logs').select('session_id, duration_min, dr_downtime_types(category)').in('session_id', sessionIds),
-        supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessionIds),
-      ]);
-      (orders     || []).forEach(o => { (ordersBySession[o.session_id]  ||= []).push(o); });
-      (dtLogs     || []).forEach(d => { (dtBySession[d.session_id]      ||= []).push(d); });
-      (defectLogs || []).forEach(d => { (defectBySession[d.session_id]  ||= []).push(d); });
-    }
-
-    const computeSessionOEE = (s) => {
-      const openedAt  = s.created_at ? new Date(s.created_at) : null;
-      const closedAt  = new Date();
-      if (!openedAt) return null;
-      const shiftMin  = Math.round((closedAt - openedAt) / 60000);
-      const dts       = dtBySession[s.id] || [];
-      const plannedDT = dts.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
-      const unplannedDT = dts.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
-      // Policy breaks overlap
-      const wDate = s.work_date;
-      const policyBreak = (breakPolicies || [])
-        .filter(p => p.shift === 'both' || p.shift === s.shift)
-        .filter(p => p.process_type === 'common' || p.process_type === s.dr_products?.process_type)
-        .reduce((sum, p) => {
-          const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
-          let pStart = new Date(`${wDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`);
-          const pEnd = new Date(pStart.getTime() + p.duration_min * 60000);
-          if (pStart < openedAt && pEnd < openedAt) pStart = new Date(pStart.getTime() + 86400000);
-          return sum + Math.max(0, (Math.min(pEnd, closedAt) - Math.max(pStart, openedAt)) / 60000);
-        }, 0);
-      const netAvail = Math.max(0, shiftMin - plannedDT - policyBreak);
-      const runMin   = Math.max(0, netAvail - unplannedDT);
-      const ctSec    = s.dr_products?.cycle_time_sec || 0;
-      const produced = (ordersBySession[s.id] || []).filter(o => o.status === 'confirmed').reduce((a, o) => a + o.qty, 0);
-      const ngQty    = (defectBySession[s.id] || []).reduce((a, d) => a + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
-      const A = netAvail > 0 ? Math.min(1, runMin / netAvail) : 0;
-      const P = (runMin > 0 && ctSec > 0) ? Math.min(1, (produced * ctSec / 60) / runMin) : (runMin > 0 ? 1 : 0);
-      const Q = produced > 0 ? Math.max(0, (produced - ngQty) / produced) : 1;
-      return { A, P, Q, oee: A * P * Q, runMin, netAvail, shiftMin };
-    };
-
-    const ps = (sessions || []).map(s => {
-      const orders = ordersBySession[s.id] || [];
-      const demand   = orders.reduce((sum, o) => sum + (o.qty || 0), 0);
-      const actual   = orders.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty || 0), 0);
-      const target   = s.dr_products?.target_per_shift || 0;
-      const oeeData  = s.status === 'open' ? computeSessionOEE(s) : null;
-      return { ...s, demand, actual, target, oeeData };
-    });
-    setProdStatus(ps);
-  }, []);
+    // ข้อมูลผลิต/OEE โหลดแยก (เบากว่า) — realtime จะอัปเดตเฉพาะส่วนนี้
+    fetchProdStatus();
+  }, [fetchProdStatus]);
 
   useEffect(() => { fetchAll(selectedDate); }, [selectedDate, fetchAll]);
 
-  // Realtime refresh for live production data
+  // Realtime refresh เฉพาะข้อมูลผลิต — debounce 1.5s กัน event รัวๆ ตอนสแกนหลายใบติดกัน
   useEffect(() => {
+    let timer = null;
+    const refresh = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => fetchProdStatus(), 1500);
+    };
     const ch = supabaseDR.channel('dash-dr')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },     () => fetchAll(selectedDate))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },   () => fetchAll(selectedDate))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },     () => fetchAll(selectedDate))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, () => fetchAll(selectedDate))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, refresh)
       .subscribe();
-    return () => supabaseDR.removeChannel(ch);
-  }, [selectedDate, fetchAll]);
+    return () => { clearTimeout(timer); supabaseDR.removeChannel(ch); };
+  }, [fetchProdStatus]);
 
   /* Filter by assignedShift — computed per-employee based on their line's shift_schedules.
      This correctly handles lines where day_team differs (e.g. line A: Team A=day, line B: Team B=day) */
