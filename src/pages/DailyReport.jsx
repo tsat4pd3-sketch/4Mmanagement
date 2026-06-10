@@ -98,7 +98,13 @@ function LiveTab({ role }) {
   const [closeProdNo, setCloseProdNo]     = useState('');
   const [closeMatch, setCloseMatch]       = useState(null);
   const [savingProdClose, setSavingProdClose] = useState(false);
-  const [closeQty, setCloseQty]           = useState({ qty_ng: '0', qty_suspect: '0', qty_repair: '0' });
+
+  // Defect log
+  const [defectTypes, setDefectTypes]   = useState([]);
+  const [defectLogs, setDefectLogs]     = useState([]);
+  const [showDefect, setShowDefect]     = useState(false);
+  const [defectForm, setDefectForm]     = useState({ prod_order_id: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+  const [savingDefect, setSavingDefect] = useState(false);
 
   // Close Shift modal (OEE)
   const [showCloseShift, setShowCloseShift] = useState(false);
@@ -108,6 +114,8 @@ function LiveTab({ role }) {
   const [machines, setMachines]             = useState([]);
   // Carry-over step: map of prod_order.id → 'carry' | 'cancel' | null
   const [carryOverDecisions, setCarryOverDecisions] = useState({});
+  // qty_actual produced this shift for each open order (before carry-over)
+  const [carryQtyActual, setCarryQtyActual] = useState({});
 
   const canManage     = ['admin', 'manager', 'supervisor'].includes(role);
   const canCloseShift = ['admin', 'manager', 'supervisor'].includes(role);
@@ -115,13 +123,14 @@ function LiveTab({ role }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: ln }, { data: pr }, { data: dt }, { data: ks }, { data: bp }, { data: mc }] = await Promise.all([
+    const [{ data: ln }, { data: pr }, { data: dt }, { data: ks }, { data: bp }, { data: mc }, { data: dft }] = await Promise.all([
       supabase.from('production_lines').select('id, name, section').order('name'),
       supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name'),
       supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name)').eq('is_active', true).order('mat_no'),
       supabaseDR.from('break_policies').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('machines').select('*').eq('is_active', true).order('line_name').order('sort_order'),
+      supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
     ]);
 
     const lm = {};
@@ -133,6 +142,7 @@ function LiveTab({ role }) {
     setKanbanStds(ks || []);
     setBreakPolicies(bp || []);
     setMachines(mc || []);
+    setDefectTypes(dft || []);
 
     // Filter available lines for open-session form
     // Fetch sessions — filter by role
@@ -215,13 +225,23 @@ function LiveTab({ role }) {
     }
   }, []);
 
+  const loadDefectLogs = useCallback(async (sessionId) => {
+    if (!sessionId) return;
+    const { data } = await supabaseDR.from('defect_logs')
+      .select('*, dr_defect_types(name_th, color), prod_orders(prod_no, mat_no)')
+      .eq('session_id', sessionId)
+      .order('logged_at', { ascending: false });
+    setDefectLogs(data || []);
+  }, []);
+
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     if (selSession) {
       loadDT(selSession.id);
       loadProdOrders(selSession.id, selSession.line_name);
+      loadDefectLogs(selSession.id);
     }
-  }, [selSession, loadDT, loadProdOrders]);
+  }, [selSession, loadDT, loadProdOrders, loadDefectLogs]);
 
   // Realtime
   useEffect(() => {
@@ -229,9 +249,10 @@ function LiveTab({ role }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       () => { if (selSession) loadDT(selSession.id); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         () => { if (selSession) loadProdOrders(selSession.id, selSession.line_name); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         () => { if (selSession) loadDefectLogs(selSession.id); })
       .subscribe();
     return () => supabaseDR.removeChannel(ch);
-  }, [selSession, load, loadDT, loadProdOrders]);
+  }, [selSession, load, loadDT, loadProdOrders, loadDefectLogs]);
 
   const handleOpenSession = async () => {
     if (!openForm.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
@@ -381,37 +402,59 @@ function LiveTab({ role }) {
     setCloseProdNo(v);
     const found = prodOrders.find(o => o.prod_no === v && o.status === 'open');
     setCloseMatch(found || null);
-    if (found) setCloseQty({ qty_ng: '0', qty_suspect: '0', qty_repair: '0' });
   };
 
   const handleScanClose = async () => {
     if (!closeMatch) { toast.error('ไม่พบ PROD.NO นี้ หรือปิดไปแล้ว'); return; }
-    const ng      = parseInt(closeQty.qty_ng)      || 0;
-    const suspect = parseInt(closeQty.qty_suspect)  || 0;
-    const repair  = parseInt(closeQty.qty_repair)   || 0;
-    const ok      = Math.max(0, closeMatch.qty - ng - suspect - repair);
-    if (ng + suspect + repair > closeMatch.qty) {
-      toast.error(`ยอดเสีย+สงสัย+ซ่อม (${ng + suspect + repair}) มากกว่ายอดผลิต (${closeMatch.qty})`);
-      return;
-    }
     setSavingProdClose(true);
     const { error } = await supabaseDR.from('prod_orders').update({
       status:       'confirmed',
       confirmed_by: fullName,
       confirmed_at: new Date().toISOString(),
-      qty_ok:       ok,
-      qty_ng:       ng,
-      qty_suspect:  suspect,
-      qty_repair:   repair,
+      qty_ok:       closeMatch.qty,
     }).eq('id', closeMatch.id);
     setSavingProdClose(false);
     if (error) { toast.error(error.message); return; }
-    const qLabel = [ng ? `NG ${ng}` : '', suspect ? `สงสัย ${suspect}` : '', repair ? `ซ่อม ${repair}` : ''].filter(Boolean).join(' · ');
-    toast.success(`ปิด Order ${closeMatch.prod_no} · ดี ${ok} ชิ้น${qLabel ? ' · ' + qLabel : ''} ✓`);
+    toast.success(`ปิด Order ${closeMatch.prod_no} · ${closeMatch.qty} ชิ้น ✓`);
     setCloseProdNo('');
     setCloseMatch(null);
-    setCloseQty({ qty_ng: '0', qty_suspect: '0', qty_repair: '0' });
     loadProdOrders(selSession.id, selSession.line_name);
+  };
+
+  // ── บันทึกงานเสีย handler ──────────────────────────────────────
+  const handleAddDefectLog = async () => {
+    if (!selSession || !defectForm.defect_type_id) { toast.error('เลือกประเภทงานเสีย'); return; }
+    const ng      = parseInt(defectForm.qty_ng)      || 0;
+    const suspect = parseInt(defectForm.qty_suspect) || 0;
+    const repair  = parseInt(defectForm.qty_repair)  || 0;
+    if (ng + suspect + repair === 0) { toast.error('กรอกจำนวนงานเสียอย่างน้อย 1 ช่อง'); return; }
+    setSavingDefect(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabaseDR.from('defect_logs').insert({
+      session_id:       selSession.id,
+      prod_order_id:    defectForm.prod_order_id || null,
+      defect_type_id:   defectForm.defect_type_id,
+      qty_ng:           ng,
+      qty_suspect:      suspect,
+      qty_repair:       repair,
+      description:      defectForm.description || null,
+      reported_by_name: fullName,
+      reported_by_uid:  user?.id,
+    });
+    setSavingDefect(false);
+    if (error) { toast.error(error.message); return; }
+    const label = [ng ? `NG ${ng}` : '', suspect ? `สงสัย ${suspect}` : '', repair ? `ซ่อม ${repair}` : ''].filter(Boolean).join(' · ');
+    toast.success(`บันทึกงานเสีย: ${label} ✓`);
+    setShowDefect(false);
+    setDefectForm({ prod_order_id: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+    loadDefectLogs(selSession.id);
+  };
+
+  const handleDeleteDefectLog = async (id) => {
+    if (!window.confirm('ลบรายการงานเสียนี้?')) return;
+    const { error } = await supabaseDR.from('defect_logs').delete().eq('id', id);
+    if (error) { toast.error(error.message); return; }
+    loadDefectLogs(selSession.id);
   };
 
   const handleDeleteProdOrder = async (id) => {
@@ -428,6 +471,7 @@ function LiveTab({ role }) {
     for (const o of carryOrders) {
       const dup = prodOrders.find(p => p.prod_no === o.prod_no);
       if (dup) continue;
+      const remainQty = Math.max(1, o.qty - (o.qty_actual || 0));
       const { error } = await supabaseDR.from('prod_orders').insert({
         session_id:   selSession.id,
         prod_no:      o.prod_no,
@@ -435,11 +479,11 @@ function LiveTab({ role }) {
         part_name:    o.part_name,
         p_no:         o.p_no,
         customer:     o.customer,
-        qty:          o.qty,
+        qty:          remainQty,
         status:       'open',
         opened_by:    fullName,
         carry_over_from_session_id: o.session_id,
-        carry_over_note: o.carry_over_note,
+        carry_over_note: o.carry_over_note || `ค้างจากกะก่อน (ทำได้ ${o.qty_actual || 0}/${o.qty} ชิ้น)`,
       });
       if (!error) imported++;
     }
@@ -466,8 +510,13 @@ function LiveTab({ role }) {
     }, 0);
   };
 
-  const computeOEE = (ngQty) => {
-    const totalProduced  = prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
+  const computeOEE = (ngQtyOverride) => {
+    const confirmedQty = prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
+    // Also count qty_actual from open orders being carried over
+    const carryActualQty = prodOrders.filter(o => o.status === 'open').reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || 0), 0);
+    const totalProduced  = confirmedQty + carryActualQty;
+    const ngQty = ngQtyOverride !== undefined ? ngQtyOverride
+      : defectLogs.reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
     const openedAt  = selSession?.created_at ? new Date(selSession.created_at) : null;
     const closedAt  = new Date();
     const shiftMin  = openedAt ? Math.round((closedAt - openedAt) / 60000) : 0;
@@ -504,26 +553,28 @@ function LiveTab({ role }) {
     // Process carry-over decisions
     const { data: { user } } = await supabase.auth.getUser();
     for (const order of openOrders) {
-      const decision = carryOverDecisions[order.id];
+      const decision  = carryOverDecisions[order.id];
+      const qActual   = parseInt(carryQtyActual[order.id]) || 0;
       if (decision === 'carry') {
-        // Mark as carry_over — will be re-opened in next session
         await supabaseDR.from('prod_orders').update({
-          status: 'carry_over',
+          status:      'carry_over',
+          qty_actual:  qActual,
           carry_over_from_session_id: selSession.id,
-          carry_over_note: `ยกยอดข้ามกะจาก ${selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} ${selSession.work_date}`,
+          carry_over_note: `ยกยอด: ทำได้ ${qActual}/${order.qty} ชิ้น จาก${selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} ${selSession.work_date}`,
         }).eq('id', order.id);
       } else if (decision === 'cancel') {
-        await supabaseDR.from('prod_orders').update({ status: 'cancelled' }).eq('id', order.id);
+        await supabaseDR.from('prod_orders').update({ status: 'cancelled', qty_actual: qActual }).eq('id', order.id);
       }
     }
 
-    // Quality totals from confirmed orders
-    const confirmed = prodOrders.filter(o => o.status === 'confirmed');
-    const totalQtyOk      = confirmed.reduce((s, o) => s + (o.qty_ok      ?? o.qty), 0);
-    const totalQtyNg      = confirmed.reduce((s, o) => s + (o.qty_ng      || 0), 0);
-    const totalQtySuspect = confirmed.reduce((s, o) => s + (o.qty_suspect || 0), 0);
-    const totalQtyRepair  = confirmed.reduce((s, o) => s + (o.qty_repair  || 0), 0);
-    const totalProducedFinal = confirmed.reduce((s, o) => s + o.qty, 0);
+    // Quality totals from defect_logs
+    const totalQtyNg      = defectLogs.reduce((s, d) => s + (d.qty_ng      || 0), 0);
+    const totalQtySuspect = defectLogs.reduce((s, d) => s + (d.qty_suspect || 0), 0);
+    const totalQtyRepair  = defectLogs.reduce((s, d) => s + (d.qty_repair  || 0), 0);
+    const confirmed       = prodOrders.filter(o => o.status === 'confirmed');
+    const carryActual     = openOrders.reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || 0), 0);
+    const totalProducedFinal = confirmed.reduce((s, o) => s + o.qty, 0) + carryActual;
+    const totalQtyOk      = Math.max(0, totalProducedFinal - totalQtyNg - totalQtySuspect - totalQtyRepair);
 
     const { A, P, Q, oee, shiftMin } = computeOEE(totalQtyNg + totalQtySuspect);
     const { error } = await supabaseDR.from('production_sessions').update({
@@ -551,6 +602,7 @@ function LiveTab({ role }) {
     toast.success(`ปิดกะสำเร็จ · OEE ${(oee * 100).toFixed(1)}% · ดี ${totalQtyOk} / NG ${totalQtyNg} / สงสัย ${totalQtySuspect}`);
     setShowCloseShift(false);
     setCarryOverDecisions({});
+    setCarryQtyActual({});
     load();
     setSelSession(null);
     setDtLogs([]);
@@ -687,7 +739,7 @@ function LiveTab({ role }) {
                   📦 Prod Orders ({prodOrders.length} ใบ)
                 </div>
                 {canScan && (
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <button onClick={() => { setShowScanOpen(true); setOpenProdForm({ prod_no: '', mat_no: '', qty: '' }); setOpenProdStd(null); }}
                       style={{ background: '#f59e0b', color: '#000', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       📥 Scan เปิด Order
@@ -695,6 +747,10 @@ function LiveTab({ role }) {
                     <button onClick={() => { setShowScanClose(true); setCloseProdNo(''); setCloseMatch(null); }}
                       style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       📤 Scan ปิด / Confirm
+                    </button>
+                    <button onClick={() => { setShowDefect(true); setDefectForm({ prod_order_id: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' }); }}
+                      style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                      🔴 บันทึกงานเสีย
                     </button>
                   </div>
                 )}
@@ -730,7 +786,11 @@ function LiveTab({ role }) {
                   const isCarried   = !!o.carry_over_from_session_id;
                   const statusColor = confirmed ? '#22c55e' : carryOver ? '#a78bfa' : cancelled ? '#666' : '#f59e0b';
                   const statusLabel = confirmed ? '✓ ปิดแล้ว' : carryOver ? '➡ ยกยอด' : cancelled ? '✕ ยกเลิก' : '● ผลิต';
-                  const hasQuality  = confirmed && (o.qty_ng > 0 || o.qty_suspect > 0 || o.qty_repair > 0);
+                  const orderDefects = defectLogs.filter(d => d.prod_order_id === o.id);
+                  const dNg  = orderDefects.reduce((s,d) => s+(d.qty_ng||0), 0);
+                  const dSus = orderDefects.reduce((s,d) => s+(d.qty_suspect||0), 0);
+                  const dRep = orderDefects.reduce((s,d) => s+(d.qty_repair||0), 0);
+                  const hasQuality  = dNg > 0 || dSus > 0 || dRep > 0;
                   return (
                     <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'var(--bg2)', borderRadius: 8,
                       border: `1px solid ${statusColor}40`, borderLeft: `4px solid ${statusColor}`,
@@ -741,7 +801,12 @@ function LiveTab({ role }) {
                           <span style={{ fontSize: 12, color: 'var(--muted)' }}>{o.mat_no}</span>
                           {o.part_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {o.part_name}</span>}
                           {o.customer && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>{o.customer}</span>}
-                          {isCarried && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(167,139,250,0.15)', color: '#a78bfa', fontWeight: 700 }}>ยกยอดมา</span>}
+                          {isCarried && (
+                            <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(167,139,250,0.15)', color: '#a78bfa', fontWeight: 700 }}
+                              title={o.carry_over_note || 'ยกยอดมาจากกะก่อน'}>
+                              ➡ ยกยอดมา {o.carry_over_note ? `(${o.carry_over_note.match(/\d+\/\d+/)?.[0] || ''})` : ''}
+                            </span>
+                          )}
                           <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: `${statusColor}20`, color: statusColor }}>
                             {statusLabel}
                           </span>
@@ -752,9 +817,10 @@ function LiveTab({ role }) {
                         </div>
                         {hasQuality && (
                           <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
-                            {o.qty_ng      > 0 && <span style={{ fontSize: 10, color: '#ef4444', fontWeight: 700 }}>🔴 NG: {o.qty_ng}</span>}
-                            {o.qty_suspect > 0 && <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700 }}>🟡 สงสัย: {o.qty_suspect}</span>}
-                            {o.qty_repair  > 0 && <span style={{ fontSize: 10, color: '#a78bfa', fontWeight: 700 }}>🔧 ซ่อม: {o.qty_repair}</span>}
+                            {dNg  > 0 && <span style={{ fontSize: 10, color: '#ef4444', fontWeight: 700 }}>🔴 NG: {dNg}</span>}
+                            {dSus > 0 && <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700 }}>🟡 สงสัย: {dSus}</span>}
+                            {dRep > 0 && <span style={{ fontSize: 10, color: '#a78bfa', fontWeight: 700 }}>🔧 ซ่อม: {dRep}</span>}
+                            <span style={{ fontSize: 10, color: 'var(--muted)' }}>({orderDefects.length} รายการ)</span>
                           </div>
                         )}
                       </div>
@@ -771,6 +837,48 @@ function LiveTab({ role }) {
                 })}
               </div>
             </div>
+
+            {/* Defect Logs panel */}
+            {defectLogs.length > 0 && (
+              <div style={{ background: 'var(--card)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#ef4444' }}>
+                    🔴 บันทึกงานเสีย ({defectLogs.length} รายการ)
+                    <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>
+                      NG: {defectLogs.reduce((s,d)=>s+(d.qty_ng||0),0)} · สงสัย: {defectLogs.reduce((s,d)=>s+(d.qty_suspect||0),0)} · ซ่อม: {defectLogs.reduce((s,d)=>s+(d.qty_repair||0),0)}
+                    </span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {defectLogs.map(d => (
+                    <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${d.dr_defect_types?.color || '#ef4444'}` }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{d.dr_defect_types?.name_th || '—'}</span>
+                          {d.prod_orders?.prod_no && (
+                            <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(74,222,128,0.1)', color: '#22c55e', fontWeight: 700, fontFamily: 'monospace' }}>
+                              {d.prod_orders.prod_no}
+                            </span>
+                          )}
+                          {d.qty_ng     > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>NG {d.qty_ng}</span>}
+                          {d.qty_suspect > 0 && <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>สงสัย {d.qty_suspect}</span>}
+                          {d.qty_repair  > 0 && <span style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700 }}>ซ่อม {d.qty_repair}</span>}
+                        </div>
+                        {d.description && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.description}</div>}
+                        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>
+                          {new Date(d.logged_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                          {d.reported_by_name && ` · ${d.reported_by_name}`}
+                        </div>
+                      </div>
+                      {canManage && (
+                        <button onClick={() => handleDeleteDefectLog(d.id)}
+                          style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Downtime list */}
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
@@ -887,22 +995,22 @@ function LiveTab({ role }) {
                   ))}
                 </div>
 
-                {/* Quality summary from confirmed orders */}
+                {/* Quality summary from defect_logs */}
                 {(() => {
-                  const conf = prodOrders.filter(o => o.status === 'confirmed');
-                  const tng  = conf.reduce((s,o) => s+(o.qty_ng||0), 0);
-                  const tsus = conf.reduce((s,o) => s+(o.qty_suspect||0), 0);
-                  const trep = conf.reduce((s,o) => s+(o.qty_repair||0), 0);
-                  const tok  = conf.reduce((s,o) => s+(o.qty_ok ?? o.qty), 0);
-                  if (!conf.length) return null;
+                  const tng  = defectLogs.reduce((s,d) => s+(d.qty_ng||0), 0);
+                  const tsus = defectLogs.reduce((s,d) => s+(d.qty_suspect||0), 0);
+                  const trep = defectLogs.reduce((s,d) => s+(d.qty_repair||0), 0);
+                  if (!defectLogs.length) return null;
+                  const prod  = prodOrders.filter(o => o.status === 'confirmed').reduce((s,o) => s+o.qty, 0);
+                  const tok   = Math.max(0, prod - tng - tsus - trep);
                   return (
                     <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>📋 สรุปคุณภาพจาก Order ที่ปิดแล้ว</div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>🔴 สรุปงานเสีย ({defectLogs.length} รายการ)</div>
                       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }}>✅ ดี: {tok}</span>
                         {tng  > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#ef4444' }}>🔴 NG: {tng}</span>}
                         {tsus > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>🟡 สงสัย: {tsus}</span>}
                         {trep > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#a78bfa' }}>🔧 ซ่อม: {trep}</span>}
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }}>✅ ดี (ประมาณ): {tok}</span>
                       </div>
                     </div>
                   );
@@ -920,25 +1028,49 @@ function LiveTab({ role }) {
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {openOrders.map(o => {
-                          const dec = carryOverDecisions[o.id];
+                          const dec     = carryOverDecisions[o.id];
+                          const qActual = carryQtyActual[o.id] ?? '';
+                          const qA      = parseInt(qActual) || 0;
+                          const remaining = Math.max(0, o.qty - qA);
                           return (
-                            <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'var(--bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--text)' }}>{o.prod_no}</div>
-                                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.mat_no} · {o.qty} ชิ้น</div>
+                            <div key={o.id} style={{ padding: '10px 12px', background: 'var(--bg)', borderRadius: 8, border: `1px solid ${dec ? (dec === 'carry' ? 'rgba(34,197,94,0.4)' : 'rgba(239,68,68,0.3)') : 'var(--border)'}` }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--text)' }}>{o.prod_no}</div>
+                                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.mat_no} · เป้า {o.qty} ชิ้น</div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                  <button onClick={() => setCarryOverDecisions(d => ({ ...d, [o.id]: 'carry' }))}
+                                    style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'carry' ? '#22c55e' : 'var(--border)'}`, background: dec === 'carry' ? 'rgba(34,197,94,0.2)' : 'var(--bg2)', color: dec === 'carry' ? '#22c55e' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                                    ➡ ยกยอดต่อ
+                                  </button>
+                                  <button onClick={() => setCarryOverDecisions(d => ({ ...d, [o.id]: 'cancel' }))}
+                                    style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'cancel' ? '#ef4444' : 'var(--border)'}`, background: dec === 'cancel' ? 'rgba(239,68,68,0.15)' : 'var(--bg2)', color: dec === 'cancel' ? '#ef4444' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                                    ✕ ยกเลิก
+                                  </button>
+                                </div>
                               </div>
-                              <div style={{ display: 'flex', gap: 6 }}>
-                                <button
-                                  onClick={() => setCarryOverDecisions(d => ({ ...d, [o.id]: 'carry' }))}
-                                  style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'carry' ? '#22c55e' : 'var(--border)'}`, background: dec === 'carry' ? 'rgba(34,197,94,0.2)' : 'var(--bg2)', color: dec === 'carry' ? '#22c55e' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                                  ➡ ยกยอดต่อ
-                                </button>
-                                <button
-                                  onClick={() => setCarryOverDecisions(d => ({ ...d, [o.id]: 'cancel' }))}
-                                  style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'cancel' ? '#ef4444' : 'var(--border)'}`, background: dec === 'cancel' ? 'rgba(239,68,68,0.15)' : 'var(--bg2)', color: dec === 'cancel' ? '#ef4444' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                                  ✕ ยกเลิก
-                                </button>
-                              </div>
+                              {/* qty_actual input — show when carry or cancel (always need to know what was done this shift) */}
+                              {dec && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                                  <div style={{ flex: 1 }}>
+                                    <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, marginBottom: 3 }}>
+                                      ✏️ ยอดที่ทำได้ในกะนี้ (ชิ้น)
+                                    </div>
+                                    <input type="number" min="0" max={o.qty} value={qActual}
+                                      placeholder="0"
+                                      onChange={e => setCarryQtyActual(m => ({ ...m, [o.id]: e.target.value }))}
+                                      style={{ ...inputStyle, fontSize: 16, fontWeight: 800, textAlign: 'center', width: 100,
+                                        borderColor: qA > 0 ? '#22c55e' : 'var(--border)',
+                                        color:       qA > 0 ? '#22c55e' : 'var(--text)' }} />
+                                  </div>
+                                  {dec === 'carry' && qA >= 0 && (
+                                    <div style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700 }}>
+                                      → กะหน้ารับต่อ <strong>{remaining}</strong> ชิ้น
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -1098,45 +1230,19 @@ function LiveTab({ role }) {
                   {closeMatch ? (
                     <>
                       <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginBottom: 8 }}>✓ พบ Order</div>
-                      <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 12 }}>
+                      <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                         <div>
                           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{closeMatch.mat_no}</div>
                           {closeMatch.part_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{closeMatch.part_name}</div>}
                         </div>
                         <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
                           <div style={{ fontSize: 28, fontWeight: 900, color: '#22c55e', lineHeight: 1 }}>{closeMatch.qty}</div>
-                          <div style={{ fontSize: 10, color: 'var(--muted)' }}>ชิ้นรวม</div>
+                          <div style={{ fontSize: 10, color: 'var(--muted)' }}>ชิ้น</div>
                         </div>
                       </div>
-                      {/* Quality breakdown */}
-                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>📋 คุณภาพงาน (กรอกเฉพาะที่มี)</div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
-                          {[
-                            { key: 'qty_ng',      label: '🔴 NG / เสีย',     color: '#ef4444' },
-                            { key: 'qty_suspect',  label: '🟡 ต้องสงสัย',    color: '#f59e0b' },
-                            { key: 'qty_repair',   label: '🔧 ซ่อม/Rework',  color: '#a78bfa' },
-                          ].map(q => (
-                            <div key={q.key}>
-                              <div style={{ fontSize: 9, color: q.color, fontWeight: 700, marginBottom: 3 }}>{q.label}</div>
-                              <input type="number" min="0" max={closeMatch.qty} value={closeQty[q.key]}
-                                onChange={e => setCloseQty(f => ({ ...f, [q.key]: e.target.value }))}
-                                style={{ ...inputStyle, textAlign: 'center', fontWeight: 800, fontSize: 16,
-                                  borderColor: parseInt(closeQty[q.key]) > 0 ? q.color : 'var(--border)',
-                                  color: parseInt(closeQty[q.key]) > 0 ? q.color : 'var(--text)' }} />
-                            </div>
-                          ))}
-                        </div>
-                        {(() => {
-                          const ng = parseInt(closeQty.qty_ng)||0, sus = parseInt(closeQty.qty_suspect)||0, rep = parseInt(closeQty.qty_repair)||0;
-                          const ok = closeMatch.qty - ng - sus - rep;
-                          return (
-                            <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-                              <span style={{ color: ok >= 0 ? '#22c55e' : '#ef4444', fontWeight: 700 }}>✅ ดี: {Math.max(0, ok)} ชิ้น</span>
-                              {ok < 0 && <span style={{ color: '#ef4444', fontWeight: 700 }}>⚠ เกินยอดผลิต!</span>}
-                            </div>
-                          );
-                        })()}
+                      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)', background: 'rgba(34,197,94,0.06)', borderRadius: 6, padding: '6px 10px' }}>
+                        ✅ ยืนยัน <strong style={{ color: '#22c55e' }}>{closeMatch.qty} ชิ้น</strong> เป็น OK ทั้งหมด
+                        · หากมีงานเสียให้กด <strong>🔴 บันทึกงานเสีย</strong> แยกต่างหาก
                       </div>
                     </>
                   ) : (
@@ -1155,20 +1261,6 @@ function LiveTab({ role }) {
                   <div style={{ color: '#22c55e', fontWeight: 700 }}>
                     ปิดแล้ว {prodOrders.filter(o => o.status === 'confirmed').length} ใบ · {prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)} ชิ้น
                   </div>
-                  {(() => {
-                    const conf = prodOrders.filter(o => o.status === 'confirmed');
-                    const tng  = conf.reduce((s,o) => s+(o.qty_ng||0), 0);
-                    const tsus = conf.reduce((s,o) => s+(o.qty_suspect||0), 0);
-                    const trep = conf.reduce((s,o) => s+(o.qty_repair||0), 0);
-                    if (!tng && !tsus && !trep) return null;
-                    return (
-                      <div style={{ color: 'var(--muted)', marginTop: 3 }}>
-                        {tng > 0 && <span>NG {tng} </span>}
-                        {tsus > 0 && <span>· สงสัย {tsus} </span>}
-                        {trep > 0 && <span>· ซ่อม {trep} </span>}
-                      </div>
-                    );
-                  })()}
                 </div>
               )}
 
@@ -1177,6 +1269,75 @@ function LiveTab({ role }) {
                 <button onClick={handleScanClose} disabled={savingProdClose || !closeMatch}
                   style={{ ...saveBtnStyle, background: '#22c55e', fontSize: 14, opacity: (!closeMatch || savingProdClose) ? 0.5 : 1 }}>
                   {savingProdClose ? '...' : '📤 Confirm ปิด Order'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── DEFECT LOG MODAL ─────────────────────────────────── */}
+        {showDefect && selSession && (
+          <div className="overlay" style={{ zIndex: 2000 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,480px)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#ef4444' }}>🔴 บันทึกงานเสีย</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}>
+                  <div style={{ color: '#4d9fff', fontWeight: 700 }}>{selSession.line_name}</div>
+                  <div>{selSession.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {selSession.work_date}</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
+                บันทึกได้ตลอดเวลา แยกตาม Prod Order และประเภทของเสีย
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <Field label="ประเภทงานเสีย *">
+                  <select autoFocus value={defectForm.defect_type_id} onChange={e => setDefectForm(f => ({ ...f, defect_type_id: e.target.value }))} style={inputStyle}>
+                    <option value="">เลือกประเภท...</option>
+                    {defectTypes.map(t => (
+                      <option key={t.id} value={t.id}>{t.name_th}</option>
+                    ))}
+                  </select>
+                </Field>
+
+                <Field label="Prod Order (ถ้าระบุได้)">
+                  <select value={defectForm.prod_order_id} onChange={e => setDefectForm(f => ({ ...f, prod_order_id: e.target.value }))} style={inputStyle}>
+                    <option value="">— ไม่ระบุ Order —</option>
+                    {prodOrders.filter(o => o.status === 'open' || o.status === 'confirmed').map(o => (
+                      <option key={o.id} value={o.id}>
+                        {o.prod_no} · {o.mat_no}{o.part_name ? ` · ${o.part_name}` : ''} ({o.qty} ชิ้น)
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+                  {[
+                    { key: 'qty_ng',      label: '🔴 NG / เสีย',    color: '#ef4444' },
+                    { key: 'qty_suspect', label: '🟡 ต้องสงสัย',    color: '#f59e0b' },
+                    { key: 'qty_repair',  label: '🔧 ซ่อม/Rework',  color: '#a78bfa' },
+                  ].map(q => (
+                    <div key={q.key}>
+                      <div style={{ fontSize: 9, color: q.color, fontWeight: 700, marginBottom: 3 }}>{q.label}</div>
+                      <input type="number" min="0" value={defectForm[q.key]}
+                        onChange={e => setDefectForm(f => ({ ...f, [q.key]: e.target.value }))}
+                        style={{ ...inputStyle, textAlign: 'center', fontWeight: 800, fontSize: 18,
+                          borderColor: parseInt(defectForm[q.key]) > 0 ? q.color : 'var(--border)',
+                          color:       parseInt(defectForm[q.key]) > 0 ? q.color : 'var(--text)' }} />
+                    </div>
+                  ))}
+                </div>
+
+                <Field label="รายละเอียด / สาเหตุ">
+                  <input type="text" value={defectForm.description} onChange={e => setDefectForm(f => ({ ...f, description: e.target.value }))} placeholder="เช่น มิติไม่ได้เพราะแม่พิมพ์สึก..." style={inputStyle} />
+                </Field>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowDefect(false)} style={cancelBtnStyle}>ยกเลิก</button>
+                <button onClick={handleAddDefectLog} disabled={savingDefect || !defectForm.defect_type_id}
+                  style={{ ...saveBtnStyle, background: '#ef4444', opacity: (!defectForm.defect_type_id || savingDefect) ? 0.5 : 1 }}>
+                  {savingDefect ? '...' : 'บันทึกงานเสีย'}
                 </button>
               </div>
             </div>
@@ -1466,6 +1627,7 @@ function SetupTab({ role }) {
           { key: 'kanban',    label: '📦 Kanban Standard' },
           { key: 'machines',  label: '⚙️ เครื่องจักร' },
           { key: 'downtime',  label: '⏱ ประเภท Downtime' },
+          { key: 'defects',   label: '🔴 ประเภทงานเสีย' },
           { key: 'breaks',    label: '☕ นโยบายหยุดพัก' },
         ].map(t => (
           <button key={t.key} onClick={() => setSubTab(t.key)}
@@ -1480,6 +1642,7 @@ function SetupTab({ role }) {
       {subTab === 'kanban'   && <KanbanStandardSetup role={role} />}
       {subTab === 'machines' && <MachineSetup role={role} />}
       {subTab === 'downtime' && <DowntimeTypeSetup role={role} />}
+      {subTab === 'defects'  && <DefectTypeSetup role={role} />}
       {subTab === 'breaks'   && <BreakPolicySetup role={role} />}
     </div>
   );
@@ -1635,6 +1798,116 @@ function MachineSetup({ role }) {
                   </label>
                 </div>
               </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
+              <button onClick={() => setEditing(null)} style={cancelBtnStyle}>ยกเลิก</button>
+              <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : 'บันทึก'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Defect Type Setup ── */
+function DefectTypeSetup({ role }) {
+  const canEdit = ['admin', 'manager'].includes(role);
+  const [items, setItems]     = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [saving, setSaving]   = useState(false);
+  const emptyForm = { name_th: '', color: '#ef4444', sort_order: 0, is_active: true };
+  const [form, setForm]       = useState(emptyForm);
+
+  const load = useCallback(async () => {
+    const { data } = await supabaseDR.from('dr_defect_types').select('*').order('sort_order');
+    setItems(data || []);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const openEdit = (item = null) => {
+    setEditing(item?.id || 'new');
+    setForm(item
+      ? { name_th: item.name_th, color: item.color, sort_order: item.sort_order, is_active: item.is_active }
+      : { ...emptyForm, sort_order: items.length + 1 });
+  };
+
+  const handleSave = async () => {
+    if (!form.name_th) { toast.error('กรอกชื่อประเภท'); return; }
+    setSaving(true);
+    const payload = { ...form, sort_order: parseInt(form.sort_order) || 0 };
+    const { error } = editing === 'new'
+      ? await supabaseDR.from('dr_defect_types').insert(payload)
+      : await supabaseDR.from('dr_defect_types').update(payload).eq('id', editing);
+    setSaving(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success('บันทึกสำเร็จ');
+    setEditing(null);
+    load();
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('ลบประเภทนี้?')) return;
+    const { error } = await supabaseDR.from('dr_defect_types').delete().eq('id', id);
+    if (error) { toast.error(error.message); return; }
+    load();
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ fontSize: 13, color: 'var(--muted)' }}>{items.length} ประเภท</div>
+        {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มประเภทงานเสีย</button>}
+      </div>
+
+      <div style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#f87171' }}>
+        🔴 ประเภทงานเสียนี้จะใช้เมื่อกด <strong>บันทึกงานเสีย</strong> ในหน้า Live — แยกจาก Downtime เพื่อให้ติดตามคุณภาพได้ละเอียด
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {items.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีประเภทงานเสีย</div>}
+        {items.map(item => (
+          <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 9, borderLeft: `4px solid ${item.color}`, opacity: item.is_active ? 1 : 0.45 }}>
+            <div style={{ width: 12, height: 12, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{item.name_th}</div>
+              {!item.is_active && <div style={{ fontSize: 10, color: '#ef4444' }}>(ปิดใช้)</div>}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)' }}>#{item.sort_order}</div>
+            {canEdit && (
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+                <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {editing && (
+        <div className="overlay" style={{ zIndex: 2000 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,380px)' }}>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>
+              {editing === 'new' ? '+ เพิ่มประเภทงานเสีย' : 'แก้ไขประเภทงานเสีย'}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Field label="ชื่อประเภท *">
+                <input autoFocus value={form.name_th} onChange={e => setForm(f => ({ ...f, name_th: e.target.value }))} placeholder="เช่น มิติไม่ได้" style={inputStyle} />
+              </Field>
+              <Field label="สี">
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input type="color" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))}
+                    style={{ width: 44, height: 36, borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer', background: 'none' }} />
+                  <input value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} placeholder="#ef4444" style={{ ...inputStyle, flex: 1 }} />
+                </div>
+              </Field>
+              <Field label="ลำดับ">
+                <input type="number" min="0" value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: e.target.value }))} style={inputStyle} />
+              </Field>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
+                <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
+              </label>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
               <button onClick={() => setEditing(null)} style={cancelBtnStyle}>ยกเลิก</button>
