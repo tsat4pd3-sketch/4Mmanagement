@@ -115,7 +115,8 @@ create table if not exists prod_orders (
   qty          integer not null default 0,    -- จำนวนตามแผน
   qty_ok       integer,                       -- จำนวนที่ confirm ตอนปิด order
   qty_actual   integer,                       -- จำนวนที่ทำได้จริงก่อนยกยอด (carry-over)
-  status       text not null default 'open',  -- open / confirmed / carry_over / imported / cancelled
+  status       text not null default 'open'
+               check (status in ('open', 'confirmed', 'carry_over', 'imported', 'cancelled')),
   opened_by    text,
   opened_at    timestamptz default now(),
   confirmed_by text,
