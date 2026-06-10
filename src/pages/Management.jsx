@@ -36,6 +36,7 @@ function getCurrentShift() {
 }
 
 const CARD_W = 104;
+const CARD_H = 100; // fixed height for ALL station cards — keeps translate(-50%,-50%) anchor consistent
 
 function useWidth() {
   const [w, setW] = useState(() => window.innerWidth);
@@ -498,8 +499,8 @@ export default function Management() {
         }}
       >
         {worker.employees?.image_url
-          ? <img src={worker.employees.image_url} style={{ width: isMobile ? 52 : 50, height: isMobile ? 52 : 50, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${isSelected ? '#4d9fff' : 'rgba(77,159,255,0.6)'}`, flexShrink: 0 }} />
-          : <div style={{ width: isMobile ? 52 : 50, height: isMobile ? 52 : 50, borderRadius: '50%', background: 'rgba(77,159,255,0.15)', border: '2px solid rgba(77,159,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
+          ? <img src={worker.employees.image_url} style={{ width: isMobile ? 52 : 36, height: isMobile ? 52 : 36, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${isSelected ? '#4d9fff' : 'rgba(77,159,255,0.6)'}`, flexShrink: 0 }} />
+          : <div style={{ width: isMobile ? 52 : 36, height: isMobile ? 52 : 36, borderRadius: '50%', background: 'rgba(77,159,255,0.15)', border: '2px solid rgba(77,159,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>👤</div>
         }
         <div style={{ flex: isMobile ? 1 : undefined, minWidth: 0 }}>
           <div style={{ fontSize: isMobile ? 14 : 10, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: isMobile ? 'left' : 'center' }}>
@@ -550,16 +551,16 @@ export default function Management() {
         onDragEnd={!isMobile ? handleDragEnd : undefined}
         onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker, fit) : undefined}
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
-        style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: isMobile ? 'pointer' : 'grab', userSelect: 'none' }}
+        style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: isMobile ? 'pointer' : 'grab', userSelect: 'none' }}
       >
         {worker.employees?.image_url
-          ? <img src={worker.employees.image_url} style={{ width: 56, height: 56, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `3px solid ${fc}`, boxShadow: `0 0 10px ${fc}88`, flexShrink: 0 }} />
-          : <div style={{ width: 56, height: 56, borderRadius: '50%', background: `${fc}22`, border: `3px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>👤</div>
+          ? <img src={worker.employees.image_url} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `3px solid ${fc}`, boxShadow: `0 0 8px ${fc}88`, flexShrink: 0 }} />
+          : <div style={{ width: 40, height: 40, borderRadius: '50%', background: `${fc}22`, border: `3px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
         }
-        <div style={{ background: fc, color: '#fff', fontSize: 15, fontWeight: 900, padding: '2px 0', width: 56, textAlign: 'center', borderRadius: 5, boxShadow: `0 1px 5px ${fc}99`, pointerEvents: 'none' }}>
+        <div style={{ background: fc, color: '#fff', fontSize: 13, fontWeight: 900, padding: '1px 0', width: 40, textAlign: 'center', borderRadius: 4, boxShadow: `0 1px 4px ${fc}99`, pointerEvents: 'none' }}>
           {fit.score}
         </div>
-        <div style={{ fontSize: 11, fontWeight: 700, color: fc, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', textAlign: 'center', pointerEvents: 'none' }}>
+        <div style={{ fontSize: 9, fontWeight: 700, color: fc, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', textAlign: 'center', pointerEvents: 'none' }}>
           {worker.employees?.name?.split(' ')[0] ?? '?'}
         </div>
       </div>
@@ -930,9 +931,17 @@ export default function Management() {
                 onDragLeave={!isMobile ? (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOverStation(null); } : undefined}
                 onDrop={!isMobile ? (e) => handleDrop(e, st.id) : undefined}
                 onClick={() => handleStationClick(st)}
+                /* outer: anchor point only — fixed size so translate(-50%,-50%) is always consistent */
                 style={{
                   position: 'absolute', top: st.pos_top, left: st.pos_left, transform: 'translate(-50%, -50%)',
-                  width: CARD_W,
+                  width: CARD_W, height: CARD_H,
+                  cursor: isMobile ? 'pointer' : 'default',
+                  zIndex: isOver ? 20 : 5,
+                }}
+              >
+                {/* inner: visual card — clips content to fixed height */}
+                <div style={{
+                  width: '100%', height: '100%', overflow: 'hidden',
                   borderTop:    `1px solid ${activeFc ? `${activeFc}55` : 'rgba(255,255,255,0.18)'}`,
                   borderRight:  `1px solid ${activeFc ? `${activeFc}55` : 'rgba(255,255,255,0.18)'}`,
                   borderBottom: `1px solid ${activeFc ? `${activeFc}55` : 'rgba(255,255,255,0.18)'}`,
@@ -942,81 +951,78 @@ export default function Management() {
                   backdropFilter: 'blur(3px)',
                   animation: isPulse ? 'pulse-ring 1.4s ease-in-out infinite' : 'none',
                   display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  padding: '5px 4px 6px',
-                  cursor: isMobile ? 'pointer' : 'default',
+                  padding: '5px 4px 4px',
                   transition: 'background-color 0.18s, border-color 0.18s',
-                  zIndex: isOver ? 20 : 5,
-                }}
-              >
-                <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                  <span style={{ fontSize: isWide ? 10 : 9, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: activeFc || '#c8c8d0' }}>
-                    {st.station_name}
-                  </span>
-                  <div style={{ display: 'flex', gap: 1, flexShrink: 0, alignItems: 'center' }}>
-                    {workerAtStation?.employee_id && homePositions[workerAtStation.employee_id] === String(st.id) && (
-                      <span style={{ fontSize: 8, lineHeight: 1 }} title="ตำแหน่งประจำ">🏠</span>
-                    )}
-                    {hasMan && <span style={{ background: '#4d9fff', color: '#fff', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800 }}>MAN</span>}
-                    {has4M  && <span style={{ background: '#e74c3c', color: '#fff', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800 }}>4M</span>}
-                    {/* pending_doc badge — worker at station */}
-                    {(pendingDocByLine[st.line_name]?.length > 0) && (() => {
-                      const workerEmpId = workerAtStation?.employee_id;
-                      const isHomeStation = workerEmpId && homePositions[workerEmpId] === String(st.id);
-                      const logsForLine = pendingDocByLine[st.line_name] ?? [];
-                      const relevantLog = logsForLine.find(l =>
-                        workerAtStation && l.description?.includes(workerAtStation.employees?.name)
-                      ) || (isHomeStation && logsForLine[0]);
-                      if (!relevantLog) return null;
-                      return (
-                        <span
-                          key="pending-doc-badge"
-                          onClick={(e) => { e.stopPropagation(); setPendingDocModal({ log: relevantLog }); setDocImageFile(null); setDocImagePreview(null); }}
-                          title="ค้างแนบเอกสาร OJT — คลิกเพื่อแนบ"
-                          style={{ background: '#f59e0b', color: '#000', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800, cursor: 'pointer' }}
-                        >⚠️DOC</span>
-                      );
-                    })()}
-                    {/* pending_doc badge — home station, worker away */}
-                    {!workerAtStation && (() => {
-                      const logsForLine = pendingDocByLine[st.line_name] ?? [];
-                      if (!logsForLine.length) return null;
-                      const homeWorker = workers.find(w => w.employee_id && homePositions[w.employee_id] === String(st.id));
-                      if (!homeWorker) return null;
-                      const relevantLog = logsForLine.find(l => l.description?.includes(homeWorker.employees?.name));
-                      if (!relevantLog) return null;
-                      return (
-                        <span
-                          key="pending-doc-home-badge"
-                          onClick={(e) => { e.stopPropagation(); setPendingDocModal({ log: relevantLog }); setDocImageFile(null); setDocImagePreview(null); }}
-                          title="ค้างแนบเอกสาร OJT — คลิกเพื่อแนบ"
-                          style={{ background: '#f59e0b', color: '#000', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800, cursor: 'pointer' }}
-                        >⚠️DOC</span>
-                      );
-                    })()}
-                    {!isMobile && (
-                      <button onClick={(e) => { e.stopPropagation(); setShow4MModal({ stationId: st.id, lineName: st.line_name }); setLog4MForm({ category: 'Man', description: '' }); }}
-                        style={{ background: 'rgba(255,255,255,0.12)', border: 'none', borderRadius: 2, color: 'white', fontSize: 5, cursor: 'pointer', padding: '1px 2px', lineHeight: 1 }}>+4M</button>
-                    )}
+                }}>
+                  <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3, flexShrink: 0 }}>
+                    <span style={{ fontSize: isWide ? 10 : 9, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: activeFc || '#c8c8d0' }}>
+                      {st.station_name}
+                    </span>
+                    <div style={{ display: 'flex', gap: 1, flexShrink: 0, alignItems: 'center' }}>
+                      {workerAtStation?.employee_id && homePositions[workerAtStation.employee_id] === String(st.id) && (
+                        <span style={{ fontSize: 8, lineHeight: 1 }} title="ตำแหน่งประจำ">🏠</span>
+                      )}
+                      {hasMan && <span style={{ background: '#4d9fff', color: '#fff', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800 }}>MAN</span>}
+                      {has4M  && <span style={{ background: '#e74c3c', color: '#fff', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800 }}>4M</span>}
+                      {(pendingDocByLine[st.line_name]?.length > 0) && (() => {
+                        const workerEmpId = workerAtStation?.employee_id;
+                        const isHomeStation = workerEmpId && homePositions[workerEmpId] === String(st.id);
+                        const logsForLine = pendingDocByLine[st.line_name] ?? [];
+                        const relevantLog = logsForLine.find(l =>
+                          workerAtStation && l.description?.includes(workerAtStation.employees?.name)
+                        ) || (isHomeStation && logsForLine[0]);
+                        if (!relevantLog) return null;
+                        return (
+                          <span key="pending-doc-badge"
+                            onClick={(e) => { e.stopPropagation(); setPendingDocModal({ log: relevantLog }); setDocImageFile(null); setDocImagePreview(null); }}
+                            title="ค้างแนบเอกสาร OJT — คลิกเพื่อแนบ"
+                            style={{ background: '#f59e0b', color: '#000', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800, cursor: 'pointer' }}
+                          >⚠️DOC</span>
+                        );
+                      })()}
+                      {!workerAtStation && (() => {
+                        const logsForLine = pendingDocByLine[st.line_name] ?? [];
+                        if (!logsForLine.length) return null;
+                        const homeWorker = workers.find(w => w.employee_id && homePositions[w.employee_id] === String(st.id));
+                        if (!homeWorker) return null;
+                        const relevantLog = logsForLine.find(l => l.description?.includes(homeWorker.employees?.name));
+                        if (!relevantLog) return null;
+                        return (
+                          <span key="pending-doc-home-badge"
+                            onClick={(e) => { e.stopPropagation(); setPendingDocModal({ log: relevantLog }); setDocImageFile(null); setDocImagePreview(null); }}
+                            title="ค้างแนบเอกสาร OJT — คลิกเพื่อแนบ"
+                            style={{ background: '#f59e0b', color: '#000', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800, cursor: 'pointer' }}
+                          >⚠️DOC</span>
+                        );
+                      })()}
+                      {!isMobile && (
+                        <button onClick={(e) => { e.stopPropagation(); setShow4MModal({ stationId: st.id, lineName: st.line_name }); setLog4MForm({ category: 'Man', description: '' }); }}
+                          style={{ background: 'rgba(255,255,255,0.12)', border: 'none', borderRadius: 2, color: 'white', fontSize: 5, cursor: 'pointer', padding: '1px 2px', lineHeight: 1 }}>+4M</button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* content — centered in remaining space */}
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+                    {workerAtStation
+                      ? <StationWorker worker={workerAtStation} fit={workerFit} />
+                      : isPulse
+                        ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                            <div style={{ fontSize: 18, opacity: 0.7 }}>👆</div>
+                            {touchPreviewFit && (
+                              <div style={{ background: fitColor(touchPreviewFit.score), color: '#fff', fontSize: 10, fontWeight: 900, padding: '1px 6px', borderRadius: 4 }}>
+                                {touchPreviewFit.score}
+                              </div>
+                            )}
+                          </div>
+                        )
+                        : <div style={{ color: isOver ? activeFc : 'rgba(255,255,255,0.22)', fontSize: 20 }}>+</div>
+                    }
                   </div>
                 </div>
 
-                {workerAtStation
-                  ? <StationWorker worker={workerAtStation} fit={workerFit} />
-                  : isPulse
-                    ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        <div style={{ fontSize: 18, opacity: 0.7 }}>👆</div>
-                        {touchPreviewFit && (
-                          <div style={{ background: fitColor(touchPreviewFit.score), color: '#fff', fontSize: 10, fontWeight: 900, padding: '1px 6px', borderRadius: 4 }}>
-                            {touchPreviewFit.score}
-                          </div>
-                        )}
-                      </div>
-                    )
-                    : <div style={{ color: isOver ? activeFc : 'rgba(255,255,255,0.22)', fontSize: 20, lineHeight: '28px' }}>+</div>
-                }
-
-                {/* Desktop drag-preview fit popup */}
+                {/* Desktop drag-preview fit popup — outside inner div so overflow:hidden doesn't clip it */}
                 {previewFit && !isMobile && (
                   <div style={{
                     position: 'absolute', top: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)',
