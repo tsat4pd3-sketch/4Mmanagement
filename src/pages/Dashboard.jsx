@@ -934,7 +934,7 @@ export default function Dashboard() {
                           const color = fitLv ? fitLv.color : '#aaa';
                           return (
                             <div key={ws.id} style={{
-                              position: 'absolute', top: ws.pos_top, left: ws.pos_left,
+                              position: 'absolute', top: `${ws.pos_top}%`, left: `${ws.pos_left}%`,
                               transform: 'translate(-50%, -50%)',
                               zIndex: 2,
                             }}>
@@ -1071,7 +1071,7 @@ export default function Dashboard() {
                   const shortName = (emp.name || '').split(' ')[0];
                   return (
                     <div key={ws.id} style={{
-                      position: 'absolute', top: ws.pos_top, left: ws.pos_left,
+                      position: 'absolute', top: `${ws.pos_top}%`, left: `${ws.pos_left}%`,
                       transform: 'translate(-50%, -50%)',
                       zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
                     }}>
