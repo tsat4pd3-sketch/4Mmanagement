@@ -696,7 +696,7 @@ export default function Dashboard() {
                               borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
                               background: isNow ? 'rgba(77,159,255,0.12)' : 'transparent',
                             }}>
-                              {String(h).padStart(2,'0')}
+                              {String(h).padStart(2,'0')}:00
                               {isNow && <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#4d9fff', margin: '2px auto 0' }} />}
                             </div>
                           );
