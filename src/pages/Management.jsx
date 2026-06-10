@@ -665,73 +665,30 @@ export default function Management() {
           </div>
         )}
 
+        {/* Canvas: when layout exists, inline-block wrapper hugs img → no letterbox → % coords work perfectly */}
         <div style={{
-          position: 'relative',
-          width: isMobile ? 900 : '100%', minWidth: isMobile ? 900 : undefined,
-          height: isMobile ? 600 : '100%', minHeight: isMobile ? 600 : undefined,
-          backgroundImage: lineLayout ? `url('${lineLayout}')` : 'none',
-          backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center',
+          width: '100%', height: '100%',
+          overflow: 'auto',
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
           backgroundColor: lineLayout ? 'transparent' : 'var(--bg3)', borderRadius: 12,
           border: lineLayout ? 'none' : '1px solid var(--border)',
         }}>
-          {!lineLayout && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 24, padding: 32 }}>
-              <div style={{ fontSize: 48, opacity: 0.25 }}>🏭</div>
-              <div style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>
-                ยังไม่มีผังไลน์ —{' '}
-                <span style={{ color: 'var(--accent)', fontWeight: 600, cursor: 'default' }}>ตั้งค่าที่หน้า ตั้งค่าผังไลน์</span>
-              </div>
-              {/* Worker summary cards */}
-              {workers.length > 0 && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, width: '100%', maxWidth: 700 }}>
-                  {[
-                    { label: 'พร้อมทำงาน', count: poolWorkers.length, color: '#4d9fff', icon: '🔵' },
-                    { label: 'ประจำสถานี', count: workers.filter(w => w.assigned_line).length, color: 'var(--accent)', icon: '✅' },
-                    { label: 'งานนอกไลน์', count: specialWorkers.length, color: '#f59e0b', icon: '🟡' },
-                  ].map(s => (
-                    <div key={s.label} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '16px 20px', textAlign: 'center' }}>
-                      <div style={{ fontSize: 24, marginBottom: 4 }}>{s.icon}</div>
-                      <div style={{ fontSize: 28, fontWeight: 800, fontFamily: 'var(--font-display)', color: s.color }}>{s.count}</div>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{s.label}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {/* Worker list */}
-              {workers.length > 0 && (
-                <div style={{ width: '100%', maxWidth: 700 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>รายชื่อพนักงานวันนี้</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
-                    {workers.map(w => (
-                      <div key={w.id} style={{
-                        display: 'flex', alignItems: 'center', gap: 8,
-                        background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px',
-                      }}>
-                        {w.employees?.image_url
-                          ? <img src={w.employees.image_url} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-                          : <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>👤</div>
-                        }
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.employees?.name?.split(' ')[0] || '?'}</div>
-                          <div style={{ fontSize: 9, color: 'var(--muted)' }}>{w.employees?.team ? `Team ${w.employees.team}` : ''}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          <style>{`
-            @keyframes pulse-ring {
-              0%   { box-shadow: 0 0 0 0 rgba(77,159,255,0.6), 0 2px 8px rgba(0,0,0,0.6); }
-              70%  { box-shadow: 0 0 0 8px rgba(77,159,255,0), 0 2px 8px rgba(0,0,0,0.6); }
-              100% { box-shadow: 0 0 0 0 rgba(77,159,255,0), 0 2px 8px rgba(0,0,0,0.6); }
-            }
-          `}</style>
-
-          {dynamicStations.map(st => {
+          {lineLayout ? (
+            <div style={{ position: 'relative', display: 'inline-block', lineHeight: 0 }}>
+              <img
+                src={lineLayout}
+                alt="line map"
+                style={{ display: 'block', maxWidth: '100%', height: 'auto', minWidth: isMobile ? 900 : undefined, borderRadius: 12, userSelect: 'none' }}
+                draggable={false}
+              />
+              <style>{`
+                @keyframes pulse-ring {
+                  0%   { box-shadow: 0 0 0 0 rgba(77,159,255,0.6), 0 2px 8px rgba(0,0,0,0.6); }
+                  70%  { box-shadow: 0 0 0 8px rgba(77,159,255,0), 0 2px 8px rgba(0,0,0,0.6); }
+                  100% { box-shadow: 0 0 0 0 rgba(77,159,255,0), 0 2px 8px rgba(0,0,0,0.6); }
+                }
+              `}</style>
+              {dynamicStations.map(st => {
             const workerAtStation = workers.find(w => String(w.assigned_line) === String(st.id));
             const workerFit       = workerAtStation ? computeFit(workerAtStation, st) : null;
             const hasMan  = fourMLogs.some(m => m.line_name === st.line_name && m.category === 'Man');
@@ -870,6 +827,50 @@ export default function Management() {
               </div>
             );
           })}
+            </div>
+          ) : (
+            <div style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 32 }}>
+              <div style={{ fontSize: 48, opacity: 0.25 }}>🏭</div>
+              <div style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>
+                ยังไม่มีผังไลน์ —{' '}
+                <span style={{ color: 'var(--accent)', fontWeight: 600, cursor: 'default' }}>ตั้งค่าที่หน้า ตั้งค่าผังไลน์</span>
+              </div>
+              {workers.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, width: '100%', maxWidth: 700 }}>
+                  {[
+                    { label: 'พร้อมทำงาน', count: poolWorkers.length, color: '#4d9fff', icon: '🔵' },
+                    { label: 'ประจำสถานี', count: workers.filter(w => w.assigned_line).length, color: 'var(--accent)', icon: '✅' },
+                    { label: 'งานนอกไลน์', count: specialWorkers.length, color: '#f59e0b', icon: '🟡' },
+                  ].map(s => (
+                    <div key={s.label} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '16px 20px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 24, marginBottom: 4 }}>{s.icon}</div>
+                      <div style={{ fontSize: 28, fontWeight: 800, fontFamily: 'var(--font-display)', color: s.color }}>{s.count}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {workers.length > 0 && (
+                <div style={{ width: '100%', maxWidth: 700 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>รายชื่อพนักงานวันนี้</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
+                    {workers.map(w => (
+                      <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+                        {w.employees?.image_url
+                          ? <img src={w.employees.image_url} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                          : <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>👤</div>
+                        }
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.employees?.name?.split(' ')[0] || '?'}</div>
+                          <div style={{ fontSize: 9, color: 'var(--muted)' }}>{w.employees?.team ? `Team ${w.employees.team}` : ''}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
