@@ -76,7 +76,7 @@ function LiveTab({ role }) {
   const [loading, setLoading]       = useState(true);
 
   const [showOpen, setShowOpen] = useState(false);
-  const [openForm, setOpenForm] = useState({ work_date: today(), line_name: '', shift: 'day', product_id: '', start_time: nowTime() });
+  const [openForm, setOpenForm] = useState({ work_date: today(), line_name: '', shift: new Date().getHours() >= 20 || new Date().getHours() < 8 ? 'night' : 'day', product_id: '', start_time: nowTime() });
 
   const [showDT, setShowDT]   = useState(false);
   const [dtForm, setDtForm]   = useState({ downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', description: '' });
@@ -763,7 +763,7 @@ function LiveTab({ role }) {
             <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>ยังไม่มีกะที่เปิดอยู่</div>
             <div style={{ fontSize: 13, marginBottom: 24 }}>เปิดกะเพื่อเริ่มบันทึกผลผลิตและ Downtime</div>
             {canManage && (
-              <button onClick={() => setShowOpen(true)} style={saveBtnStyle}>+ เปิดกะใหม่</button>
+              <button onClick={() => { const h = new Date().getHours(); setOpenForm(f => ({ ...f, shift: h >= 20 || h < 8 ? 'night' : 'day', start_time: nowTime() })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>
             )}
           </div>
         )}
@@ -789,7 +789,7 @@ function LiveTab({ role }) {
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {canManage && <button onClick={() => setShowOpen(true)} style={saveBtnStyle}>+ เปิดกะใหม่</button>}
+                  {canManage && <button onClick={() => { const h = new Date().getHours(); setOpenForm(f => ({ ...f, shift: h >= 20 || h < 8 ? 'night' : 'day', start_time: nowTime() })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>}
                   {canCloseShift && (
                     <button onClick={() => { setCloseNg('0'); setShowCloseShift(true); }}
                       style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
