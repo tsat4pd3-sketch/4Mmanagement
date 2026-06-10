@@ -219,8 +219,18 @@ function LiveTab({ role }) {
           .select('*')
           .in('session_id', prevIds)
           .in('status', ['carry_over', 'open'])
-          .order('opened_at');
-        setCarryOrders(carried || []);
+          .order('opened_at', { ascending: false });
+        // Dedupe: order เดิมอาจถูกยกยอดต่อกันหลายกะ → เอาเฉพาะใบล่าสุดต่อ prod_no
+        // และตัดใบที่ถูกรับเข้ากะนี้แล้วออก
+        const currentProdNos = new Set((data || []).map(o => o.prod_no));
+        const seen = new Set();
+        const deduped = (carried || []).filter(o => {
+          if (currentProdNos.has(o.prod_no)) return false;
+          if (seen.has(o.prod_no)) return false;
+          seen.add(o.prod_no);
+          return true;
+        });
+        setCarryOrders(deduped);
       } else {
         setCarryOrders([]);
       }
@@ -471,7 +481,12 @@ function LiveTab({ role }) {
     let imported = 0;
     for (const o of carryOrders) {
       const dup = prodOrders.find(p => p.prod_no === o.prod_no);
-      if (dup) continue;
+      if (dup) {
+        // มีในกะนี้แล้ว — mark ต้นทางทุกใบ (รวมใบซ้ำในกะเก่าๆ) เป็น imported เพื่อให้ banner เคลียร์ออก
+        await supabaseDR.from('prod_orders').update({ status: 'imported' })
+          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id);
+        continue;
+      }
       const remainQty = Math.max(1, o.qty - (o.qty_actual || 0));
       const { error } = await supabaseDR.from('prod_orders').insert({
         session_id:   selSession.id,
@@ -488,8 +503,9 @@ function LiveTab({ role }) {
       });
       if (!error) {
         imported++;
-        // Mark original order as 'imported' so it won't appear in carry-over banner again
-        await supabaseDR.from('prod_orders').update({ status: 'imported' }).eq('id', o.id);
+        // Mark original orders (ทุกใบที่ prod_no ตรงกันในกะเก่า) as 'imported'
+        await supabaseDR.from('prod_orders').update({ status: 'imported' })
+          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id);
       }
     }
     toast.success(`รับยอดค้างมาแล้ว ${imported} Order`);
@@ -766,7 +782,7 @@ function LiveTab({ role }) {
                 <div style={{ marginBottom: 10, padding: '10px 14px', background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.4)', borderRadius: 9 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>➡ มียอดค้างจากกะก่อน {carryOrders.length} Order ({carryOrders.reduce((s,o) => s+o.qty,0)} ชิ้น)</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>➡ มียอดค้างจากกะก่อน {carryOrders.length} Order (เหลือ {carryOrders.reduce((s,o) => s + Math.max(0, o.qty - (o.qty_actual || 0)), 0)} ชิ้น)</div>
                       <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{carryOrders.map(o => o.prod_no).join(', ')}</div>
                     </div>
                     <button onClick={handleImportCarryOrders}
