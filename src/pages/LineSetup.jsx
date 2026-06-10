@@ -274,7 +274,7 @@ export default function LineSetup() {
                     key={st.id}
                     onClick={(e) => { e.stopPropagation(); editStation(st); }}
                     style={{
-                      position: 'absolute', top: `${st.pos_top}%`, left: `${st.pos_left}%`, transform: 'translate(-50%, -50%)',
+                      position: 'absolute', top: st.pos_top, left: st.pos_left, transform: 'translate(-50%, -50%)',
                       width: CARD_W, minHeight: 30,
                       border: isSelected ? '2px solid var(--green)' : '2px solid rgba(255,255,255,0.75)',
                       borderRadius: 8,

@@ -1,7 +1,6 @@
-import { useState, useEffect, useContext, useRef, useCallback } from 'react';
+import { useState, useEffect, useContext, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../supabaseClient';
-import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
@@ -86,7 +85,6 @@ export default function Management() {
   const [lineLayout,     setLineLayout]     = useState(null);
   const [draggingWorker, setDraggingWorker] = useState(null);
   const [selectedLine,   setSelectedLine]   = useState('');
-  const [lineProdStatus, setLineProdStatus] = useState([]);
   const [lines,          setLines]          = useState([]);
   const [show4MModal,    setShow4MModal]    = useState(null);
   const [log4MForm,      setLog4MForm]      = useState({ category: 'Man', description: '', moveType: 'same', skillOk: false, hasHistory: false, subtype: 'change' });
@@ -139,26 +137,6 @@ export default function Management() {
     if (!selectedLine) return;
     fetchData();
     fetchSetup();
-  }, [selectedLine]);
-
-  // Fetch today's production sessions for the selected line
-  useEffect(() => {
-    if (!selectedLine) { setLineProdStatus([]); return; }
-    const fetchLineProd = async () => {
-      const today = (() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); })();
-      const { data: sessions } = await supabaseDR
-        .from('production_sessions')
-        .select('id, line_name, shift, status, work_date, created_at, dr_products(name, cycle_time_sec)')
-        .eq('work_date', today).eq('line_name', selectedLine);
-      if (!sessions?.length) { setLineProdStatus([]); return; }
-      const { data: orders } = await supabaseDR
-        .from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, prod_no, mat_no, opened_at')
-        .in('session_id', sessions.map(s => s.id));
-      const bySession = {};
-      (orders || []).forEach(o => { (bySession[o.session_id] ||= []).push(o); });
-      setLineProdStatus(sessions.map(s => ({ ...s, orders: (bySession[s.id] || []).filter(o => !['cancelled','imported'].includes(o.status)) })));
-    };
-    fetchLineProd();
   }, [selectedLine]);
 
   const fetchSetup = async () => {
@@ -659,68 +637,6 @@ export default function Management() {
           </div>
         </div>
 
-        {/* Mini Heijunka board for selected line */}
-        {lineProdStatus.length > 0 && !isMobile && (() => {
-          const HOURS = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
-          const nowMs = new Date().getTime();
-          const wd = lineProdStatus[0]?.work_date || new Date().toISOString().slice(0,10);
-          const gridStartMs = new Date(`${wd}T08:00:00`).getTime();
-          const TOTAL_MS = 24 * 3600000;
-          const nowHourIdx = HOURS.findIndex((_, i) => { const s = gridStartMs + i*3600000; return nowMs >= s && nowMs < s+3600000; });
-
-          return (
-            <div style={{ paddingTop: 10, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
-              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>📊 Timeline วันนี้</div>
-              {lineProdStatus.map(s => {
-                const ctSec = s.dr_products?.cycle_time_sec || 0;
-                const startMs = s.created_at ? new Date(s.created_at).getTime() : null;
-                const sorted = [...s.orders].sort((a,b) => new Date(a.opened_at||0) - new Date(b.opened_at||0));
-                let cum = 0;
-                const cards = sorted.map(o => {
-                  const os = startMs && ctSec > 0 ? startMs + cum*1000 : null;
-                  cum += (o.qty||0)*ctSec;
-                  const oe = startMs && ctSec > 0 ? startMs + cum*1000 : null;
-                  const isDone = o.status==='confirmed', isCarry = o.status==='carry_over';
-                  const isDelayed = !isDone && !isCarry && oe && nowMs > oe;
-                  return { ...o, os, oe, isDone, isCarry, isDelayed };
-                });
-                const actual = s.orders.filter(o=>o.status==='confirmed').reduce((a,o)=>a+(o.qty_ok??o.qty??0),0);
-                const demand = s.orders.reduce((a,o)=>a+(o.qty||0),0);
-                const pct = demand>0 ? Math.min(actual/demand*100,100) : 0;
-                const barC = pct>=100?'#22c55e':pct>=60?'#f59e0b':'#ef4444';
-                const delayed = cards.filter(o=>o.isDelayed).length;
-                return (
-                  <div key={s.id} style={{ marginBottom: 8, background: 'var(--bg3)', borderRadius: 6, padding: '5px 6px', border: `1px solid ${delayed>0?'rgba(239,68,68,0.4)':s.status==='open'?'rgba(34,197,94,0.3)':'var(--border)'}` }}>
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 3 }}>
-                      <span style={{ fontSize: 9, fontWeight:700, color: s.shift==='day'?'#f59e0b':'#818cf8' }}>{s.shift==='day'?'☀️':'🌙'} {s.dr_products?.name||''}</span>
-                      <span style={{ fontSize: 8, color: barC, fontWeight:700 }}>{pct.toFixed(0)}%</span>
-                    </div>
-                    {/* timeline mini bar */}
-                    <div style={{ position:'relative', height: 16, background: 'var(--bg2)', borderRadius: 3, overflow:'hidden' }}>
-                      {HOURS.map((_,i) => {
-                        const isNow = i===nowHourIdx;
-                        return <div key={i} style={{ position:'absolute', top:0, bottom:0, left:`${i/24*100}%`, width:`${1/24*100}%`, borderRight: i===7||i===11?'1px solid var(--border2)':'none', background: isNow?'rgba(77,159,255,0.15)':'transparent' }} />;
-                      })}
-                      {cards.map((o,oi) => {
-                        if (!o.os||!o.oe) return null;
-                        const l = Math.max(0,(o.os-gridStartMs)/TOTAL_MS*100);
-                        const w = Math.max(0.5,(Math.min(o.oe,gridStartMs+TOTAL_MS)-Math.max(o.os,gridStartMs))/TOTAL_MS*100);
-                        if (l>=100) return null;
-                        const c = o.isDone?'#22c55e':o.isDelayed?'#ef4444':o.isCarry?'#f59e0b':'#4d9fff';
-                        return <div key={oi} style={{ position:'absolute', top:2, bottom:2, left:`${l}%`, width:`${w}%`, background:`${c}55`, border:`1px solid ${c}99`, borderRadius:2, minWidth:2 }} />;
-                      })}
-                      {nowMs>=gridStartMs && nowMs<gridStartMs+TOTAL_MS && (
-                        <div style={{ position:'absolute', top:0, bottom:0, left:`${(nowMs-gridStartMs)/TOTAL_MS*100}%`, width:1.5, background:'rgba(77,159,255,0.8)', zIndex:2 }} />
-                      )}
-                    </div>
-                    {delayed>0 && <div style={{ fontSize:8, color:'#ef4444', marginTop:2, fontWeight:700 }}>⚠️ ดีเลย์ {delayed} ใบ</div>}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()}
-
         {/* 4M buttons — desktop only in sidebar */}
         {selectedLine && !isMobile && (
           <div style={{ paddingTop: 12, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
@@ -753,17 +669,11 @@ export default function Management() {
           position: 'relative',
           width: isMobile ? 900 : '100%', minWidth: isMobile ? 900 : undefined,
           height: isMobile ? 600 : '100%', minHeight: isMobile ? 600 : undefined,
+          backgroundImage: lineLayout ? `url('${lineLayout}')` : 'none',
+          backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center',
           backgroundColor: lineLayout ? 'transparent' : 'var(--bg3)', borderRadius: 12,
           border: lineLayout ? 'none' : '1px solid var(--border)',
         }}>
-          {/* Map image — station cards use % coords relative to this */}
-          {lineLayout && (
-            <img
-              src={lineLayout}
-              alt="line layout"
-              style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'center', display: 'block', borderRadius: 12, pointerEvents: 'none', userSelect: 'none' }}
-            />
-          )}
           {!lineLayout && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 24, padding: 32 }}>
               <div style={{ fontSize: 48, opacity: 0.25 }}>🏭</div>
@@ -843,7 +753,7 @@ export default function Management() {
                 onDrop={!isMobile ? (e) => handleDrop(e, st.id) : undefined}
                 onClick={() => handleStationClick(st)}
                 style={{
-                  position: 'absolute', top: `${st.pos_top}%`, left: `${st.pos_left}%`, transform: 'translate(-50%, -50%)',
+                  position: 'absolute', top: st.pos_top, left: st.pos_left, transform: 'translate(-50%, -50%)',
                   width: CARD_W,
                   borderTop:    `1px solid ${activeFc ? `${activeFc}55` : 'rgba(255,255,255,0.18)'}`,
                   borderRight:  `1px solid ${activeFc ? `${activeFc}55` : 'rgba(255,255,255,0.18)'}`,
