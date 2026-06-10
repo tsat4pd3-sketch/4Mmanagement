@@ -92,6 +92,8 @@ function LiveTab({ role }) {
   const [openProdForm, setOpenProdForm]   = useState({ prod_no: '', mat_no: '', qty: '' });
   const [openProdStd, setOpenProdStd]     = useState(null);
   const [savingProdOpen, setSavingProdOpen] = useState(false);
+  // Overflow confirmation modal
+  const [overflowInfo, setOverflowInfo]   = useState(null); // { prodNo, matNo, qty, std, overMin, remainMin, newOrderMin }
 
   // Scan Close modal
   const [showScanClose, setShowScanClose] = useState(false);
@@ -378,22 +380,39 @@ function LiveTab({ role }) {
     }));
   };
 
-  const handleScanOpen = async () => {
-    const prodNo = openProdForm.prod_no.trim();
-    const matNo  = openProdForm.mat_no.trim();
-    if (!prodNo) { toast.error('สแกนหรือกรอก PROD.NO ก่อน'); return; }
-    if (!matNo)  { toast.error('สแกนหรือกรอก MAT.NO ก่อน');  return; }
-    if (!openProdForm.qty || parseInt(openProdForm.qty) < 1) { toast.error('ระบุจำนวนชิ้น'); return; }
+  // คำนวณ net available time ของกะ (นาที) หลังหักพักเบรค
+  const calcNetAvailMin = () => {
+    if (!selSession?.start_time) return null;
+    const SHIFT_MIN = 720; // 12 ชั่วโมงต่อกะ (default)
+    const wDate = selSession.work_date;
+    const [sh, sm] = selSession.start_time.split(':').map(Number);
+    const shiftStartMs = new Date(`${wDate}T${String(sh).padStart(2,'0')}:${String(sm).padStart(2,'0')}:00`).getTime();
+    const breakMin = breakPolicies
+      .filter(p => p.shift === 'both' || p.shift === selSession.shift)
+      .filter(p => p.process_type === 'common' || p.process_type === selSession.dr_products?.process_type)
+      .reduce((sum, p) => {
+        const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
+        let pStartMs = new Date(`${wDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`).getTime();
+        // ถ้าพักก่อนกะเริ่ม (กะดึกข้ามวัน) เลื่อนวันถัดไป
+        if (pStartMs < shiftStartMs) pStartMs += 86400000;
+        const pEndMs = pStartMs + p.duration_min * 60000;
+        const shiftEndMs = shiftStartMs + SHIFT_MIN * 60000;
+        return sum + Math.max(0, (Math.min(pEndMs, shiftEndMs) - Math.max(pStartMs, shiftStartMs)) / 60000);
+      }, 0);
+    return SHIFT_MIN - breakMin;
+  };
 
-    // ตรวจว่า PROD.NO นี้เปิดซ้ำในกะไม่
-    const dup = prodOrders.find(o => o.prod_no === prodNo);
-    if (dup) {
-      toast.error(`PROD.NO ${prodNo} เปิดไปแล้วในกะนี้ (${dup.status === 'confirmed' ? 'ปิดแล้ว' : 'กำลังผลิต'})`);
-      return;
-    }
+  // คำนวณเวลาที่ commit ไปแล้วในกะนี้ (นาที) จากทุก order ที่ยังไม่ cancelled
+  const calcCommittedMin = () => {
+    const ctSec = selSession?.dr_products?.cycle_time_sec || 0;
+    if (!ctSec) return 0;
+    return prodOrders
+      .filter(o => !['cancelled', 'imported'].includes(o.status))
+      .reduce((sum, o) => sum + (o.qty || 0) * ctSec / 60, 0);
+  };
 
-    setSavingProdOpen(true);
-    const std = kanbanStds.find(s => s.mat_no === matNo);
+  // insert จริง (ใช้ทั้งจาก handleScanOpen และ handleOverflowForce)
+  const doInsertProdOrder = async (prodNo, matNo, qty, std, status = 'open') => {
     const { error } = await supabaseDR.from('prod_orders').insert({
       session_id:  selSession.id,
       prod_no:     prodNo,
@@ -401,14 +420,75 @@ function LiveTab({ role }) {
       part_name:   std?.part_name || openProdStd?.part_name || null,
       p_no:        std?.p_no      || openProdStd?.p_no      || null,
       customer:    std?.customer  || openProdStd?.customer  || null,
-      qty:         parseInt(openProdForm.qty),
-      status:      'open',
+      qty,
+      status,
       opened_by:   fullName,
     });
+    return error;
+  };
+
+  const handleScanOpen = async () => {
+    const prodNo = openProdForm.prod_no.trim();
+    const matNo  = openProdForm.mat_no.trim();
+    if (!prodNo) { toast.error('สแกนหรือกรอก PROD.NO ก่อน'); return; }
+    if (!matNo)  { toast.error('สแกนหรือกรอก MAT.NO ก่อน');  return; }
+    if (!openProdForm.qty || parseInt(openProdForm.qty) < 1) { toast.error('ระบุจำนวนชิ้น'); return; }
+
+    const dup = prodOrders.find(o => o.prod_no === prodNo);
+    if (dup) {
+      toast.error(`PROD.NO ${prodNo} เปิดไปแล้วในกะนี้ (${dup.status === 'confirmed' ? 'ปิดแล้ว' : 'กำลังผลิต'})`);
+      return;
+    }
+
+    const qty    = parseInt(openProdForm.qty);
+    const ctSec  = selSession?.dr_products?.cycle_time_sec || 0;
+    const std    = kanbanStds.find(s => s.mat_no === matNo);
+
+    // ── Capacity check ──────────────────────────────────────────────
+    if (ctSec > 0) {
+      const netAvailMin   = calcNetAvailMin();
+      const committedMin  = calcCommittedMin();
+      const newOrderMin   = qty * ctSec / 60;
+      if (netAvailMin !== null && (committedMin + newOrderMin) > netAvailMin) {
+        const remainMin = Math.max(0, netAvailMin - committedMin);
+        setOverflowInfo({ prodNo, matNo, qty, std, overMin: Math.round(committedMin + newOrderMin - netAvailMin), remainMin: Math.round(remainMin), newOrderMin: Math.round(newOrderMin) });
+        return; // หยุดรอ user เลือก
+      }
+    }
+
+    setSavingProdOpen(true);
+    const error = await doInsertProdOrder(prodNo, matNo, qty, std, 'open');
     setSavingProdOpen(false);
     if (error) { toast.error(error.message); return; }
-    toast.success(`เปิด Order ${prodNo} · ${matNo} · ${openProdForm.qty} ชิ้น ✓`);
-    // keep modal open for fast multi-scan
+    toast.success(`เปิด Order ${prodNo} · ${matNo} · ${qty} ชิ้น ✓`);
+    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty }));
+    loadProdOrders(selSession.id, selSession.line_name);
+  };
+
+  // ผู้ใช้เลือก "ส่งกะถัดไป" — save เป็น carry_over ทันที
+  const handleOverflowNextShift = async () => {
+    if (!overflowInfo) return;
+    const { prodNo, matNo, qty, std } = overflowInfo;
+    setSavingProdOpen(true);
+    const error = await doInsertProdOrder(prodNo, matNo, qty, std, 'carry_over');
+    setSavingProdOpen(false);
+    setOverflowInfo(null);
+    if (error) { toast.error(error.message); return; }
+    toast.info(`บันทึก ${prodNo} เป็นยอดค้างกะถัดไป ✓`);
+    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty }));
+    loadProdOrders(selSession.id, selSession.line_name);
+  };
+
+  // ผู้ใช้เลือก "เปิดกะนี้ต่อ" — force open ปกติ
+  const handleOverflowForce = async () => {
+    if (!overflowInfo) return;
+    const { prodNo, matNo, qty, std } = overflowInfo;
+    setSavingProdOpen(true);
+    const error = await doInsertProdOrder(prodNo, matNo, qty, std, 'open');
+    setSavingProdOpen(false);
+    setOverflowInfo(null);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`เปิด Order ${prodNo} · ${qty} ชิ้น ✓ (เกินเวลากะ)`);
     setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty }));
     loadProdOrders(selSession.id, selSession.line_name);
   };
@@ -1161,6 +1241,47 @@ function LiveTab({ role }) {
             </div>
           );
         })()}
+
+        {/* ── OVERFLOW CONFIRMATION modal ─────────────────────── */}
+        {overflowInfo && (
+          <div className="overlay" style={{ zIndex: 2100 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.5)', borderRadius: 14, padding: 28, width: 'min(95vw,420px)', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#ef4444' }}>⚠️ คิวผลิตเกินเวลากะนี้</div>
+              <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 700 }}>
+                  {overflowInfo.prodNo} · {overflowInfo.qty} ชิ้น
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  ใบนี้ต้องใช้เวลา <b style={{ color: 'var(--text)' }}>{overflowInfo.newOrderMin} นาที</b>
+                  {' '}แต่กะนี้เหลือความจุอีก <b style={{ color: '#f59e0b' }}>{overflowInfo.remainMin} นาที</b>
+                </div>
+                <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>
+                  จะเกินเวลาไป {overflowInfo.overMin} นาที
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                ต้องการทำอย่างไรกับ Order นี้?
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  onClick={handleOverflowNextShift}
+                  disabled={savingProdOpen}
+                  style={{ flex: 1, padding: '12px 8px', borderRadius: 10, border: '2px solid rgba(77,159,255,0.5)', background: 'rgba(77,159,255,0.1)', color: '#4d9fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                  📦 ส่งเป็นยอดค้างกะถัดไป
+                </button>
+                <button
+                  onClick={handleOverflowForce}
+                  disabled={savingProdOpen}
+                  style={{ flex: 1, padding: '12px 8px', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                  ⚡ เปิดกะนี้ต่อ (OT)
+                </button>
+              </div>
+              <button onClick={() => setOverflowInfo(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ── SCAN OPEN modal ─────────────────────────────────── */}
         {showScanOpen && (
