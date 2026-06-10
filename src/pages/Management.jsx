@@ -36,7 +36,7 @@ function getCurrentShift() {
 }
 
 const CARD_W = 104;
-const CARD_H = 100; // fixed height for ALL station cards — keeps translate(-50%,-50%) anchor consistent
+const CARD_H = 92; // fixed height for ALL station cards — keeps translate(-50%,-50%) anchor consistent
 
 function useWidth() {
   const [w, setW] = useState(() => window.innerWidth);
@@ -483,44 +483,39 @@ export default function Management() {
         style={{
           position: 'relative',
           width: '100%',
-          padding: isMobile ? '10px 8px' : '6px 5px 6px',
+          padding: '6px 8px',
           background: isSelected ? 'rgba(77,159,255,0.2)' : 'rgba(77,159,255,0.08)',
           border: isSelected ? '2px solid #4d9fff' : '1.5px solid rgba(77,159,255,0.35)',
-          borderRadius: 10,
+          borderRadius: 8,
           cursor: isMobile ? 'pointer' : 'grab',
-          display: 'flex',
-          flexDirection: isMobile ? 'row' : 'column',
-          alignItems: 'center',
-          gap: isMobile ? 10 : 5,
-          boxShadow: isSelected ? '0 0 0 3px rgba(77,159,255,0.3), 0 4px 14px rgba(0,0,0,0.4)' : '0 2px 8px rgba(0,0,0,0.35)',
+          display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8,
+          boxShadow: isSelected ? '0 0 0 3px rgba(77,159,255,0.3), 0 2px 8px rgba(0,0,0,0.4)' : '0 1px 4px rgba(0,0,0,0.3)',
           userSelect: 'none',
           transition: 'all 0.15s',
-          transform: isSelected ? 'scale(1.03)' : 'scale(1)',
+          transform: isSelected ? 'scale(1.02)' : 'scale(1)',
         }}
       >
         {worker.employees?.image_url
-          ? <img src={worker.employees.image_url} style={{ width: isMobile ? 52 : 36, height: isMobile ? 52 : 36, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${isSelected ? '#4d9fff' : 'rgba(77,159,255,0.6)'}`, flexShrink: 0 }} />
-          : <div style={{ width: isMobile ? 52 : 36, height: isMobile ? 52 : 36, borderRadius: '50%', background: 'rgba(77,159,255,0.15)', border: '2px solid rgba(77,159,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>👤</div>
+          ? <img src={worker.employees.image_url} style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${isSelected ? '#4d9fff' : 'rgba(77,159,255,0.6)'}`, flexShrink: 0 }} />
+          : <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(77,159,255,0.15)', border: '2px solid rgba(77,159,255,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>👤</div>
         }
-        <div style={{ flex: isMobile ? 1 : undefined, minWidth: 0 }}>
-          <div style={{ fontSize: isMobile ? 14 : 10, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: isMobile ? 'left' : 'center' }}>
-            {isMobile ? (worker.employees?.name ?? '?') : (worker.employees?.name?.split(' ')[0] ?? '?')}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {worker.employees?.name?.split(' ')[0] ?? '?'}
           </div>
-          {isMobile && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{worker.employees?.employee_id_code}</div>}
-          {worker.employees?.team && (
-            <div style={{ fontSize: isMobile ? 11 : 8, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', borderRadius: 3, padding: isMobile ? '2px 7px' : '1px 5px', marginTop: 3, display: 'inline-block' }}>
-              Team {worker.employees.team}
-            </div>
-          )}
-          {worker.employees?.section && (
-            <div style={{ fontSize: isMobile ? 11 : 7, color: '#a78bfa', background: 'rgba(167,139,250,0.12)', borderRadius: 3, padding: isMobile ? '2px 7px' : '1px 4px', marginTop: 2, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 160 : 72, whiteSpace: 'nowrap' }}>
-              📍 {worker.employees.section}
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: 3, marginTop: 2, flexWrap: 'wrap' }}>
+            {worker.employees?.team && (
+              <span style={{ fontSize: 8, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', borderRadius: 3, padding: '1px 4px' }}>
+                T{worker.employees.team}
+              </span>
+            )}
+            {worker.employees?.section && (
+              <span style={{ fontSize: 7, color: '#a78bfa', background: 'rgba(167,139,250,0.12)', borderRadius: 3, padding: '1px 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 60 }}>
+                {worker.employees.section}
+              </span>
+            )}
+          </div>
         </div>
-        {isMobile && isSelected && (
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', borderRadius: 6, padding: '4px 8px', flexShrink: 0 }}>เลือกแล้ว ✓</div>
-        )}
         {/* radar chart button (mobile) */}
         {isMobile && (
           <button onClick={(e) => { e.stopPropagation(); setRadarWorker(worker); }}
@@ -1002,24 +997,22 @@ export default function Management() {
                     </div>
                   </div>
 
-                  {/* content — centered in remaining space */}
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
-                    {workerAtStation
-                      ? <StationWorker worker={workerAtStation} fit={workerFit} />
-                      : isPulse
-                        ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                            <div style={{ fontSize: 18, opacity: 0.7 }}>👆</div>
-                            {touchPreviewFit && (
-                              <div style={{ background: fitColor(touchPreviewFit.score), color: '#fff', fontSize: 10, fontWeight: 900, padding: '1px 6px', borderRadius: 4 }}>
-                                {touchPreviewFit.score}
-                              </div>
-                            )}
-                          </div>
-                        )
-                        : <div style={{ color: isOver ? activeFc : 'rgba(255,255,255,0.22)', fontSize: 20 }}>+</div>
-                    }
-                  </div>
+                  {/* content — worker fills top-down; empty + centered */}
+                  {workerAtStation
+                    ? <StationWorker worker={workerAtStation} fit={workerFit} />
+                    : isPulse
+                      ? (
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+                          <div style={{ fontSize: 18, opacity: 0.7 }}>👆</div>
+                          {touchPreviewFit && (
+                            <div style={{ background: fitColor(touchPreviewFit.score), color: '#fff', fontSize: 10, fontWeight: 900, padding: '1px 6px', borderRadius: 4 }}>
+                              {touchPreviewFit.score}
+                            </div>
+                          )}
+                        </div>
+                      )
+                      : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: isOver ? activeFc : 'rgba(255,255,255,0.22)', fontSize: 20 }}>+</div>
+                  }
                 </div>
 
                 {/* Desktop drag-preview fit popup — outside inner div so overflow:hidden doesn't clip it */}
