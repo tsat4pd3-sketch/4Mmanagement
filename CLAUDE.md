@@ -194,10 +194,32 @@ const { role, lineId, team, section, fullName } = useContext(UserContext)
 ```
 
 ### Date/Time Utilities
+
+> ⚠️ **กฎสำคัญ — ห้ามใช้ `new Date().toISOString()` เพื่อหาวันที่งาน**  
+> `toISOString()` คืนค่า UTC ซึ่งต่างจากเวลาไทย (UTC+7) ทำให้วันที่คลาดเคลื่อน  
+> ให้ใช้ฟังก์ชันด้านล่างเท่านั้น และต้องใช้เหมือนกันทุกหน้า
+
 ```js
-getWorkDate()       // ก่อน 08:00 = นับเป็นวันก่อนหน้า
-toLocalDateStr()    // YYYY-MM-DD
-getShiftInfo()      // กะเช้า 08:00-20:00 / กะดึก 20:00-08:00
+// ✅ ใช้ทุกครั้งที่ต้องการ work_date สำหรับ query DB
+getWorkDate()
+// → คืน "YYYY-MM-DD" แบบ local time
+// → ถ้าเวลาปัจจุบัน < 08:00 ให้นับเป็นวันก่อนหน้า (งานกะดึกข้ามวัน)
+
+// ✅ ใช้ detect กะปัจจุบัน
+getCurrentShift()
+// → "day"   เมื่อ 08:00–19:59
+// → "night" เมื่อ 20:00–07:59
+
+// ✅ ใช้แสดงผลเวลา (ไม่ใช่สำหรับ query)
+new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })
+
+// ❌ ห้ามใช้เพื่อหาวันที่งาน
+new Date().toISOString()          // UTC — ผิดสำหรับไทย
+new Date().toISOString().slice(0,10)  // อาจได้วันที่ผิด
+```
+
+```js
+getShiftInfo()  // object { shift, label } — กะเช้า 08:00-20:00 / กะดึก 20:00-08:00
 ```
 
 ### Skill Fit Scoring
