@@ -213,10 +213,11 @@ function LiveTab({ role }) {
         .limit(5);
       if (prevSessions?.length) {
         const prevIds = prevSessions.map(s => s.id);
+        // Also pick up 'open' orders left in closed sessions (closed with old code or forced-close)
         const { data: carried } = await supabaseDR.from('prod_orders')
           .select('*')
           .in('session_id', prevIds)
-          .eq('status', 'carry_over')
+          .in('status', ['carry_over', 'open'])
           .order('opened_at');
         setCarryOrders(carried || []);
       } else {
