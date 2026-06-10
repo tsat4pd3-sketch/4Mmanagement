@@ -598,206 +598,303 @@ export default function Dashboard() {
         </div>
       </motion.div>
 
-      {/* ── e-Kanban Board ────────────────────────────── */}
-      {prodStatus.length > 0 && (
-        <motion.div {...stagger(8)} style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
-            📦 e-Kanban Post — สถานะการผลิตวันนี้
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-            {prodStatus.map((s, si) => {
-              const isOpen    = s.status === 'open';
-              const oee       = s.oeeData;
-              const oeeColor  = !oee ? '#888' : oee.oee >= 0.85 ? '#22c55e' : oee.oee >= 0.65 ? '#f59e0b' : '#ef4444';
-              const doneCount = s.orders.filter(o => o.status === 'confirmed').length;
-              const pct       = s.demand > 0 ? Math.min((s.actual / s.demand) * 100, 100) : 0;
-              const tpct      = s.target > 0 ? Math.min((s.actual / s.target) * 100, 100) : 0;
-              const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
-              const ctSec     = s.dr_products?.cycle_time_sec || 0;
+      {/* ── Heijunka Timeline Board ───────────────────── */}
+      {prodStatus.length > 0 && (() => {
+        const HOURS   = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
+        const SLOT_W  = 40;
+        const LEFT_W  = 136;
+        const nowMs   = now.getTime();
 
-              // Sort by opened_at ASC (scan order = rail order, oldest card on the left)
-              const sorted = [...s.orders].sort((a, b) =>
-                new Date(a.opened_at || 0) - new Date(b.opened_at || 0)
-              );
+        const wd = prodStatus[0]?.work_date || new Date().toISOString().slice(0, 10);
+        const gridStartMs = new Date(`${wd}T08:00:00`).getTime();
 
-              // Sequential cumulative delay:
-              // ไลน์ผลิตทีละใบตามลำดับ → expected finish ของแต่ละใบ =
-              // session_start + sum(qty ใบก่อนหน้าทั้งหมด + qty ใบนี้) × cycle_time
-              const nowMs = now.getTime();
-              const fmtTime = (ms) => {
-                const d = new Date(ms);
-                return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-              };
+        const nowHourIdx = HOURS.findIndex((_, i) => {
+          const s = gridStartMs + i * 3600000;
+          return nowMs >= s && nowMs < s + 3600000;
+        });
 
-              const sessionStartMs = s.created_at ? new Date(s.created_at).getTime() : null;
-              let cumSec = 0;
-              const cardTimings = sorted.map(o => {
-                cumSec += (o.qty || 0) * ctSec;
-                const expectedFinishMs = sessionStartMs && ctSec > 0 ? sessionStartMs + cumSec * 1000 : null;
-                return { ...o, expectedFinishMs };
-              });
+        const fmtMs = (ms) => {
+          const d = new Date(ms);
+          return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+        };
 
-              const delayedCount = isOpen && ctSec > 0 ? cardTimings.filter(o =>
-                o.status === 'open' && o.expectedFinishMs && nowMs > o.expectedFinishMs
-              ).length : 0;
+        // group sessions by line
+        const byLine = {};
+        prodStatus.forEach(s => {
+          (byLine[s.line_name] = byLine[s.line_name] || []).push(s);
+        });
+
+        return (
+          <motion.div {...stagger(8)} style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
+              📊 Heijunka Board — ไทม์ไลน์การผลิต
+            </div>
+
+            {Object.entries(byLine).map(([lineName, sessions]) => {
+              const hasOpen = sessions.some(s => s.status === 'open');
+              const totalDelayed = sessions.reduce((acc, s) => {
+                const ctSec = s.dr_products?.cycle_time_sec || 0;
+                if (!ctSec || s.status !== 'open') return acc;
+                const startMs = s.created_at ? new Date(s.created_at).getTime() : null;
+                if (!startMs) return acc;
+                let cum = 0;
+                s.orders.forEach(o => {
+                  cum += (o.qty || 0) * ctSec;
+                  if (o.status === 'open' && nowMs > startMs + cum * 1000) acc++;
+                });
+                return acc;
+              }, 0);
 
               return (
-                <motion.div key={s.id} {...stagger(9 + si)} style={{ flex: '1 1 340px', maxWidth: 480 }}>
-                  <div style={{
-                    background: 'var(--card)',
-                    border: `1px solid ${delayedCount > 0 ? 'rgba(239,68,68,0.5)' : isOpen ? 'rgba(34,197,94,0.4)' : 'var(--border2)'}`,
-                    borderRadius: 14, overflow: 'hidden',
-                    boxShadow: delayedCount > 0 ? '0 0 0 1px rgba(239,68,68,0.15), var(--shadow-sm)' : isOpen ? '0 0 0 1px rgba(34,197,94,0.1), var(--shadow-sm)' : 'var(--shadow-sm)',
-                  }}>
+                <div key={lineName} style={{
+                  marginBottom: 16,
+                  background: 'var(--card)',
+                  border: `1px solid ${totalDelayed > 0 ? 'rgba(239,68,68,0.45)' : hasOpen ? 'rgba(34,197,94,0.35)' : 'var(--border2)'}`,
+                  borderRadius: 12, overflow: 'hidden',
+                  boxShadow: totalDelayed > 0 ? '0 0 0 1px rgba(239,68,68,0.12)' : hasOpen ? '0 0 0 1px rgba(34,197,94,0.08)' : 'none',
+                }}>
 
-                    {/* ── Header ── */}
-                    <div style={{ padding: '10px 14px 9px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.3px' }}>{s.line_name}</div>
-                        {s.dr_products?.name && <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 1, fontWeight: 600 }}>{s.dr_products.name}</div>}
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3, flexShrink: 0 }}>
-                        {delayedCount > 0 && (
-                          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
-                            ⚠️ ดีเลย์ {delayedCount} ใบ
-                          </span>
-                        )}
-                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700,
-                          background: isOpen ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.12)',
-                          color: isOpen ? '#22c55e' : '#888' }}>
-                          {isOpen ? '● Live' : '✓ ปิดแล้ว'}
+                  {/* ── Line header ── */}
+                  <div style={{ padding: '9px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{lineName}</span>
+                      {totalDelayed > 0 && (
+                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
+                          ⚠️ ดีเลย์ {totalDelayed} ใบ
                         </span>
-                        <span style={{ fontSize: 10, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ เช้า' : '🌙 ดึก'}</span>
-                      </div>
-                    </div>
-
-                    {/* ── Kanban slots (rail) ── */}
-                    <div style={{ padding: '10px 12px 8px' }}>
-                      {sorted.length === 0 ? (
-                        <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--muted)', fontSize: 11 }}>
-                          ยังไม่มี Kanban เปิด — รอสแกน
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-                          {cardTimings.map((o) => {
-                            const isDone  = o.status === 'confirmed';
-                            const isCarry = o.status === 'carry_over';
-
-                            // Sequential delay: delayed only if now > cumulative expected finish
-                            const { expectedFinishMs } = o;
-                            const isDelayed = !isDone && !isCarry && !!expectedFinishMs && nowMs > expectedFinishMs;
-                            const delayMin  = isDelayed ? Math.round((nowMs - expectedFinishMs) / 60000) : 0;
-
-                            const cardColor = isDone ? '#22c55e' : isDelayed ? '#ef4444' : isCarry ? '#f59e0b' : '#4d9fff';
-                            const cardBg    = isDone ? 'rgba(34,197,94,0.10)' : isDelayed ? 'rgba(239,68,68,0.10)' : isCarry ? 'rgba(245,158,11,0.10)' : 'rgba(77,159,255,0.08)';
-                            const doneQty   = isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
-                            const totalQty  = o.qty ?? 0;
-                            const slotPct   = totalQty > 0 ? Math.min((doneQty / totalQty) * 100, 100) : (isDone ? 100 : 0);
-
-                            return (
-                              <div key={o.prod_no || Math.random()} style={{
-                                width: 84, background: cardBg,
-                                border: `1.5px solid ${cardColor}${isDelayed ? 'cc' : '55'}`,
-                                borderRadius: 9, padding: '7px 7px 6px',
-                                display: 'flex', flexDirection: 'column', gap: 3,
-                                position: 'relative', overflow: 'hidden',
-                                boxShadow: isDelayed ? `0 0 8px ${cardColor}44` : 'none',
-                              }}>
-                                {/* progress fill bar at bottom */}
-                                <div style={{ position: 'absolute', bottom: 0, left: 0, height: 3, width: `${slotPct}%`, background: cardColor, transition: 'width 0.6s ease' }} />
-
-                                {/* top row: icon + % */}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                  <span style={{ fontSize: 9, lineHeight: 1 }}>
-                                    {isDone ? '✅' : isDelayed ? '⚠️' : isCarry ? '⏳' : '⚡'}
-                                  </span>
-                                  <span style={{ fontSize: 8, color: cardColor, fontWeight: 700 }}>
-                                    {isDone ? '100%' : slotPct > 0 ? `${slotPct.toFixed(0)}%` : ''}
-                                  </span>
-                                </div>
-
-                                {/* prod_no */}
-                                <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
-                                  {o.prod_no || '—'}
-                                </div>
-
-                                {/* mat_no / part_name */}
-                                {(o.mat_no || o.part_name) && (
-                                  <div style={{ fontSize: 8, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
-                                    {o.mat_no || o.part_name}
-                                  </div>
-                                )}
-
-                                {/* qty */}
-                                <div style={{ fontSize: 15, fontWeight: 900, color: cardColor, lineHeight: 1, marginTop: 1 }}>
-                                  {isDone ? (o.qty_ok ?? totalQty) : totalQty}
-                                  <span style={{ fontSize: 9, fontWeight: 500, color: 'var(--muted)', marginLeft: 2 }}>ชิ้น</span>
-                                </div>
-
-                                {/* expected finish time or delay */}
-                                {!isDone && !isCarry && expectedFinishMs && (
-                                  <div style={{ fontSize: 8, fontWeight: 700, color: isDelayed ? '#ef4444' : 'var(--muted)', lineHeight: 1.3, marginTop: 1 }}>
-                                    {isDelayed
-                                      ? `⏰ ช้า ${delayMin} นาที`
-                                      : `ควรเสร็จ ${fmtTime(expectedFinishMs)}`
-                                    }
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
                       )}
                     </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {sessions.map(s => (
+                        <span key={s.id} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700,
+                          background: s.status === 'open' ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.12)',
+                          color: s.status === 'open' ? '#22c55e' : '#888' }}>
+                          {s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} {s.status === 'open' ? '● Live' : '✓ ปิดแล้ว'}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
 
-                    {/* ── Progress footer ── */}
-                    <div style={{ padding: '7px 14px 11px', borderTop: '1px solid var(--border2)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-                        <div style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
-                          <span>
-                            <span style={{ fontSize: 22, fontWeight: 900, color: barColor, lineHeight: 1 }}>{s.actual}</span>
-                            <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 4 }}>/ {s.demand} ชิ้น</span>
-                          </span>
-                          <span style={{ fontSize: 10, color: 'var(--muted)' }}>{doneCount}/{s.orders.length} ใบ</span>
+                  {/* ── Timeline grid ── */}
+                  <div style={{ overflowX: 'auto' }}>
+                    <div style={{ minWidth: LEFT_W + SLOT_W * 24, fontSize: 0 }}>
+
+                      {/* Hour header */}
+                      <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+                        <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '5px 8px', fontSize: 9, fontWeight: 700, color: 'var(--muted)' }}>
+                          Order / Part
                         </div>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          {s.target > 0 && <span style={{ fontSize: 10, color: tpct >= 100 ? '#22c55e' : 'var(--muted)' }}>เป้า {tpct.toFixed(0)}%</span>}
-                          <span style={{ fontSize: 13, fontWeight: 800, color: barColor }}>{pct.toFixed(0)}%</span>
-                        </div>
-                      </div>
-                      <div style={{ height: 5, borderRadius: 3, background: 'var(--border2)', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 3, transition: 'width 0.7s ease' }} />
+                        {HOURS.map((h, i) => {
+                          const isNow = i === nowHourIdx;
+                          const isShiftBound = h === 8 || h === 20;
+                          return (
+                            <div key={i} style={{
+                              width: SLOT_W, flexShrink: 0, textAlign: 'center',
+                              fontSize: 9, fontWeight: isNow ? 800 : isShiftBound ? 600 : 400,
+                              color: isNow ? '#4d9fff' : isShiftBound ? 'var(--text2)' : 'var(--muted)',
+                              padding: '5px 0', lineHeight: 1,
+                              borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
+                              background: isNow ? 'rgba(77,159,255,0.12)' : 'transparent',
+                            }}>
+                              {String(h).padStart(2,'0')}
+                              {isNow && <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#4d9fff', margin: '2px auto 0' }} />}
+                            </div>
+                          );
+                        })}
                       </div>
 
-                      {/* OEE row */}
-                      {isOpen && oee && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 9, paddingTop: 8, borderTop: '1px solid var(--border2)' }}>
-                          <div style={{ display: 'flex', gap: 12 }}>
-                            {[{ label: 'A', value: oee.A, title: 'Availability' }, { label: 'P', value: oee.P, title: 'Performance' }, { label: 'Q', value: oee.Q, title: 'Quality' }].map(k => {
-                              const c = k.value >= 0.85 ? '#22c55e' : k.value >= 0.65 ? '#f59e0b' : '#ef4444';
+                      {/* Session rows */}
+                      {sessions.map((s) => {
+                        const ctSec = s.dr_products?.cycle_time_sec || 0;
+                        const sessionStartMs = s.created_at ? new Date(s.created_at).getTime() : null;
+                        const sorted = [...s.orders].sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
+
+                        let cumSec = 0;
+                        const cardTimings = sorted.map(o => {
+                          const startSec = cumSec;
+                          cumSec += (o.qty || 0) * ctSec;
+                          const orderStartMs = sessionStartMs && ctSec > 0 ? sessionStartMs + startSec * 1000 : null;
+                          const orderEndMs   = sessionStartMs && ctSec > 0 ? sessionStartMs + cumSec * 1000 : null;
+                          return { ...o, orderStartMs, orderEndMs };
+                        });
+
+                        return (
+                          <div key={s.id}>
+                            {/* Shift label row */}
+                            <div style={{ display: 'flex', background: 'var(--bg3)', borderBottom: '1px solid var(--border)' }}>
+                              <div style={{
+                                width: LEFT_W, flexShrink: 0,
+                                padding: '3px 8px',
+                                fontSize: 9, fontWeight: 700,
+                                color: s.shift === 'day' ? '#f59e0b' : '#818cf8',
+                                borderRight: '1px solid var(--border2)',
+                              }}>
+                                {s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'}
+                                {s.dr_products?.name && <span style={{ marginLeft: 4, color: '#4d9fff', fontWeight: 600 }}>{s.dr_products.name}</span>}
+                              </div>
+                              {HOURS.map((h, i) => {
+                                const isNow = i === nowHourIdx;
+                                const isShiftBound = h === 8 || h === 20;
+                                return (
+                                  <div key={i} style={{
+                                    width: SLOT_W, flexShrink: 0, height: 14,
+                                    borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
+                                    background: isNow ? 'rgba(77,159,255,0.08)' : 'transparent',
+                                  }} />
+                                );
+                              })}
+                            </div>
+
+                            {/* Order rows */}
+                            {cardTimings.length === 0 ? (
+                              <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
+                                <div style={{ width: LEFT_W, flexShrink: 0, padding: '10px 8px', fontSize: 10, color: 'var(--muted)', borderRight: '1px solid var(--border2)' }}>
+                                  ยังไม่มี Kanban — รอสแกน
+                                </div>
+                                {HOURS.map((_, i) => <div key={i} style={{ width: SLOT_W, flexShrink: 0, borderRight: '1px solid var(--border)' }} />)}
+                              </div>
+                            ) : cardTimings.map((o, oi) => {
+                              const isDone   = o.status === 'confirmed';
+                              const isCarry  = o.status === 'carry_over';
+                              const isDelayed = !isDone && !isCarry && !!o.orderEndMs && nowMs > o.orderEndMs;
+                              const statusColor = isDone ? '#22c55e' : isDelayed ? '#ef4444' : isCarry ? '#f59e0b' : '#4d9fff';
+                              const icon = isDone ? '✅' : isDelayed ? '⚠️' : isCarry ? '⏳' : '⚡';
+                              const delayMin = isDelayed ? Math.round((nowMs - o.orderEndMs) / 60000) : 0;
+                              const doneQty  = isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
+                              const pctDone  = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (isDone ? 100 : 0);
+
                               return (
-                                <div key={k.label} title={k.title} style={{ textAlign: 'center' }}>
-                                  <div style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 700 }}>{k.label}</div>
-                                  <div style={{ fontSize: 14, fontWeight: 800, color: c, lineHeight: 1.1 }}>{(k.value * 100).toFixed(0)}%</div>
+                                <div key={o.prod_no || oi} style={{ display: 'flex', borderBottom: '1px solid var(--border)', minHeight: 36 }}>
+                                  {/* Left info column */}
+                                  <div style={{
+                                    width: LEFT_W, flexShrink: 0,
+                                    padding: '4px 8px',
+                                    borderRight: '1px solid var(--border2)',
+                                    display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1,
+                                    position: 'relative', overflow: 'hidden',
+                                  }}>
+                                    {/* progress fill behind */}
+                                    <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctDone}%`, background: `${statusColor}18`, transition: 'width 0.6s ease', zIndex: 0 }} />
+                                    <div style={{ position: 'relative', zIndex: 1 }}>
+                                      <div style={{ fontSize: 9, fontWeight: 700, color: statusColor, lineHeight: 1.3 }}>
+                                        {icon} {o.prod_no || '—'}
+                                      </div>
+                                      {(o.mat_no || o.part_name) && (
+                                        <div style={{ fontSize: 8, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+                                          {o.mat_no || o.part_name}
+                                        </div>
+                                      )}
+                                      <div style={{ fontSize: 11, fontWeight: 900, color: statusColor, lineHeight: 1.1 }}>
+                                        {isDone ? (o.qty_ok ?? o.qty) : o.qty}
+                                        <span style={{ fontSize: 8, fontWeight: 400, color: 'var(--muted)', marginLeft: 2 }}>ชิ้น</span>
+                                        {isDelayed && <span style={{ fontSize: 8, marginLeft: 4, color: '#ef4444' }}>⏰{delayMin}ม.</span>}
+                                        {!isDone && !isCarry && o.orderEndMs && !isDelayed && (
+                                          <span style={{ fontSize: 8, marginLeft: 4, color: 'var(--muted)' }}>→{fmtMs(o.orderEndMs)}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Hour cells */}
+                                  {HOURS.map((h, i) => {
+                                    const slotStart = gridStartMs + i * 3600000;
+                                    const slotEnd   = slotStart + 3600000;
+                                    const isNow     = i === nowHourIdx;
+                                    const isShiftBound = h === 8 || h === 20;
+
+                                    let leftPct = 0, widthPct = 0;
+                                    if (o.orderStartMs && o.orderEndMs) {
+                                      const ov0 = Math.max(o.orderStartMs, slotStart);
+                                      const ov1 = Math.min(o.orderEndMs, slotEnd);
+                                      if (ov1 > ov0) {
+                                        leftPct  = ((ov0 - slotStart) / 3600000) * 100;
+                                        widthPct = ((ov1 - ov0) / 3600000) * 100;
+                                      }
+                                    }
+                                    const hasFill = widthPct > 0;
+
+                                    return (
+                                      <div key={i} style={{
+                                        width: SLOT_W, flexShrink: 0, position: 'relative',
+                                        borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
+                                        background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent',
+                                      }}>
+                                        {hasFill && (
+                                          <div style={{
+                                            position: 'absolute',
+                                            top: 5, bottom: 5,
+                                            left: `${leftPct}%`,
+                                            width: `${widthPct}%`,
+                                            background: isDone ? `${statusColor}40` : `${statusColor}30`,
+                                            border: `1.5px solid ${statusColor}${isDone ? 'cc' : '88'}`,
+                                            borderRadius: 3,
+                                            boxShadow: isDelayed ? `0 0 6px ${statusColor}55` : 'none',
+                                            minWidth: 3,
+                                          }} />
+                                        )}
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               );
                             })}
                           </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 700 }}>OEE</div>
-                            <div style={{ fontSize: 24, fontWeight: 900, color: oeeColor, lineHeight: 1 }}>{(oee.oee * 100).toFixed(1)}%</div>
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })}
                     </div>
-
                   </div>
-                </motion.div>
+
+                  {/* ── Footer: per-session progress + OEE ── */}
+                  <div style={{ padding: '8px 14px 10px', borderTop: '1px solid var(--border2)', display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+                    {sessions.map(s => {
+                      const pct      = s.demand > 0 ? Math.min((s.actual / s.demand) * 100, 100) : 0;
+                      const tpct     = s.target > 0 ? Math.min((s.actual / s.target) * 100, 100) : 0;
+                      const barColor = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
+                      const oee      = s.oeeData;
+                      const oeeColor = !oee ? '#888' : oee.oee >= 0.85 ? '#22c55e' : oee.oee >= 0.65 ? '#f59e0b' : '#ef4444';
+                      const doneCount = s.orders.filter(o => o.status === 'confirmed').length;
+
+                      return (
+                        <div key={s.id} style={{ flex: '1 1 200px', minWidth: 180 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                              <span style={{ fontSize: 10, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'}</span>
+                              <span style={{ fontSize: 20, fontWeight: 900, color: barColor, lineHeight: 1 }}>{s.actual}</span>
+                              <span style={{ fontSize: 11, color: 'var(--muted)' }}>/ {s.demand} ชิ้น</span>
+                              <span style={{ fontSize: 10, color: 'var(--muted)' }}>{doneCount}/{s.orders.length} ใบ</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                              {s.target > 0 && <span style={{ fontSize: 10, color: tpct >= 100 ? '#22c55e' : 'var(--muted)' }}>เป้า {tpct.toFixed(0)}%</span>}
+                              <span style={{ fontSize: 13, fontWeight: 800, color: barColor }}>{pct.toFixed(0)}%</span>
+                              {oee && <span style={{ fontSize: 13, fontWeight: 800, color: oeeColor }}>OEE {(oee.oee * 100).toFixed(0)}%</span>}
+                            </div>
+                          </div>
+                          <div style={{ height: 5, borderRadius: 3, background: 'var(--border2)', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 3, transition: 'width 0.7s ease' }} />
+                          </div>
+                          {oee && s.status === 'open' && (
+                            <div style={{ display: 'flex', gap: 10, marginTop: 5 }}>
+                              {[{ l: 'A', v: oee.A, t: 'Availability' }, { l: 'P', v: oee.P, t: 'Performance' }, { l: 'Q', v: oee.Q, t: 'Quality' }].map(k => {
+                                const c = k.v >= 0.85 ? '#22c55e' : k.v >= 0.65 ? '#f59e0b' : '#ef4444';
+                                return (
+                                  <span key={k.l} title={k.t} style={{ fontSize: 10, color: c, fontWeight: 700 }}>
+                                    {k.l} {(k.v * 100).toFixed(0)}%
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                </div>
               );
             })}
-          </div>
-        </motion.div>
-      )}
+          </motion.div>
+        );
+      })()}
 
       {/* ── Bottom Grid ─────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isUltra ? 'minmax(0,3fr) minmax(0,1fr)' : 'minmax(0,2fr) minmax(0,1fr)', gap: isWide ? 20 : 16 }}>
