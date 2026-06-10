@@ -128,10 +128,7 @@ export default function Management() {
 
   const fetchLineProd = useCallback(async (lineName) => {
     if (!lineName) { setLineProdData(null); return; }
-    const todayStr = (() => {
-      const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1);
-      return d.toISOString().slice(0, 10);
-    })();
+    const todayStr = getWorkDate();
     const { data: sessions } = await supabaseDR
       .from('production_sessions')
       .select('id, line_name, shift, status, work_date, created_at, dr_products(name, target_per_shift, cycle_time_sec)')
