@@ -103,7 +103,7 @@ function LiveTab({ role }) {
   const [defectTypes, setDefectTypes]   = useState([]);
   const [defectLogs, setDefectLogs]     = useState([]);
   const [showDefect, setShowDefect]     = useState(false);
-  const [defectForm, setDefectForm]     = useState({ prod_order_id: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+  const [defectForm, setDefectForm]     = useState({ defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
   const [savingDefect, setSavingDefect] = useState(false);
 
   // Close Shift modal (OEE)
@@ -434,7 +434,6 @@ function LiveTab({ role }) {
     const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabaseDR.from('defect_logs').insert({
       session_id:       selSession.id,
-      prod_order_id:    defectForm.prod_order_id || null,
       defect_type_id:   defectForm.defect_type_id,
       qty_ng:           ng,
       qty_suspect:      suspect,
@@ -448,7 +447,7 @@ function LiveTab({ role }) {
     const label = [ng ? `NG ${ng}` : '', suspect ? `สงสัย ${suspect}` : '', repair ? `ซ่อม ${repair}` : ''].filter(Boolean).join(' · ');
     toast.success(`บันทึกงานเสีย: ${label} ✓`);
     setShowDefect(false);
-    setDefectForm({ prod_order_id: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+    setDefectForm({ defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
     loadDefectLogs(selSession.id);
   };
 
@@ -1306,7 +1305,7 @@ function LiveTab({ role }) {
                 </div>
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
-                บันทึกได้ตลอดเวลา แยกตาม Prod Order และประเภทของเสีย
+                บันทึกได้ตลอดเวลา แยกตามประเภทของเสีย
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1315,17 +1314,6 @@ function LiveTab({ role }) {
                     <option value="">เลือกประเภท...</option>
                     {defectTypes.map(t => (
                       <option key={t.id} value={t.id}>{t.name_th}</option>
-                    ))}
-                  </select>
-                </Field>
-
-                <Field label="Prod Order (ถ้าระบุได้)">
-                  <select value={defectForm.prod_order_id} onChange={e => setDefectForm(f => ({ ...f, prod_order_id: e.target.value }))} style={inputStyle}>
-                    <option value="">— ไม่ระบุ Order —</option>
-                    {prodOrders.filter(o => o.status === 'open' || o.status === 'confirmed').map(o => (
-                      <option key={o.id} value={o.id}>
-                        {o.prod_no} · {o.mat_no}{o.part_name ? ` · ${o.part_name}` : ''} ({o.qty} ชิ้น)
-                      </option>
                     ))}
                   </select>
                 </Field>
@@ -1524,12 +1512,13 @@ function LiveTab({ role }) {
    HISTORY TAB
 ═══════════════════════════════════════════════════════════════ */
 function HistoryTab() {
-  const [sessions, setSessions] = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [filter, setFilter]     = useState({ date: '', line_name: '' });
+  const [sessions, setSessions]   = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [filter, setFilter]       = useState({ date: '', line_name: '' });
   const [lineNames, setLineNames] = useState([]);
-  const [expanded, setExpanded] = useState(null);
-  const [dtMap, setDtMap]       = useState({});
+  const [expanded, setExpanded]   = useState(null);
+  const [dtMap, setDtMap]         = useState({});
+  const [defectMap, setDefectMap] = useState({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1551,19 +1540,24 @@ function HistoryTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  const loadDT = async (sessionId) => {
-    if (dtMap[sessionId]) return;
-    const { data } = await supabaseDR.from('downtime_logs')
-      .select('*, dr_downtime_types(name_th, color, category)')
-      .eq('session_id', sessionId)
-      .order('started_at');
-    setDtMap(m => ({ ...m, [sessionId]: data || [] }));
+  const loadDetail = async (sessionId) => {
+    if (dtMap[sessionId]) return; // already loaded
+    const [{ data: dts }, { data: defects }] = await Promise.all([
+      supabaseDR.from('downtime_logs')
+        .select('*, dr_downtime_types(name_th, color, category)')
+        .eq('session_id', sessionId).order('started_at'),
+      supabaseDR.from('defect_logs')
+        .select('*, dr_defect_types(name_th, color)')
+        .eq('session_id', sessionId).order('logged_at'),
+    ]);
+    setDtMap(m     => ({ ...m,      [sessionId]: dts     || [] }));
+    setDefectMap(m => ({ ...m,      [sessionId]: defects || [] }));
   };
 
   const handleExpand = (id) => {
     if (expanded === id) { setExpanded(null); return; }
     setExpanded(id);
-    loadDT(id);
+    loadDetail(id);
   };
 
   if (loading) return <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>กำลังโหลด...</div>;
@@ -1583,46 +1577,101 @@ function HistoryTab() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {sessions.map(s => {
-          const dts = dtMap[s.id] || [];
+          const dts      = dtMap[s.id]     || [];
+          const defects  = defectMap[s.id] || [];
           const totalDT  = dts.reduce((acc, d) => acc + (d.duration_min || 0), 0);
-          const ngTotal  = (s.qty_ng_rh || 0) + (s.qty_ng_lh || 0);
-          const defRate  = s.actual_qty > 0 ? ((ngTotal / s.actual_qty) * 100).toFixed(1) : 0;
+          // NG% from qty_ng saved at close (from defect_logs total)
+          const ngQty    = s.qty_ng || 0;
+          const defRate  = s.actual_qty > 0 ? ((ngQty / s.actual_qty) * 100).toFixed(1) : '0.0';
+          const oeeVal   = s.oee;
+          const oeeColor = oeeVal >= 85 ? '#22c55e' : oeeVal >= 65 ? '#f59e0b' : '#ef4444';
           return (
             <div key={s.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
               <div onClick={() => handleExpand(s.id)} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 16px', cursor: 'pointer' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{s.line_name}</span>
                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {s.work_date}</span>
                     {s.dr_products?.name && <span style={{ fontSize: 11, color: '#4d9fff' }}>· {s.dr_products.name}</span>}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexShrink: 0 }}>
-                  <Stat label="ผลิต" value={s.actual_qty} color="#4d9fff" />
-                  <Stat label="NG%" value={`${defRate}%`} color={defRate > 1 ? '#ef4444' : '#22c55e'} />
-                  <Stat label="DT" value={fmtMin(totalDT)} color="#a855f7" small />
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' }}>
+                  <Stat label="ผลิต"  value={s.actual_qty || 0}    color="#4d9fff" />
+                  <Stat label="NG%"   value={`${defRate}%`}         color={parseFloat(defRate) > 1 ? '#ef4444' : '#22c55e'} />
+                  <Stat label="DT"    value={fmtMin(totalDT)}       color="#a855f7" small />
+                  {oeeVal != null && (
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>OEE</div>
+                      <div style={{ fontSize: 15, fontWeight: 900, color: oeeColor }}>{oeeVal.toFixed(1)}%</div>
+                    </div>
+                  )}
                   <span style={{ color: 'var(--muted)', fontSize: 16 }}>{expanded === s.id ? '▲' : '▼'}</span>
                 </div>
               </div>
               {expanded === s.id && (
-                <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px', background: 'var(--bg2)' }}>
-                  {dts.length === 0 ? (
-                    <div style={{ color: 'var(--muted)', fontSize: 13 }}>ไม่มี Downtime ในกะนี้</div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {dts.map(d => {
-                        const cat = CAT_META[d.dr_downtime_types?.category] || CAT_META.unplanned;
+                <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px', background: 'var(--bg2)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* OEE detail row */}
+                  {s.oee != null && (
+                    <div style={{ display: 'flex', gap: 20, padding: '8px 12px', background: `${oeeColor}10`, borderRadius: 8, border: `1px solid ${oeeColor}30`, flexWrap: 'wrap' }}>
+                      {[
+                        { label: 'Availability', value: s.oee_a },
+                        { label: 'Performance',  value: s.oee_p },
+                        { label: 'Quality',      value: s.oee_q },
+                      ].map(k => {
+                        const c = (k.value||0) >= 85 ? '#22c55e' : (k.value||0) >= 65 ? '#f59e0b' : '#ef4444';
                         return (
-                          <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, borderLeft: `3px solid ${d.dr_downtime_types?.color || '#aaa'}` }}>
-                            <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: cat.bg, color: cat.color, fontWeight: 700 }}>{cat.label}</span>
-                            <span style={{ fontSize: 13, color: 'var(--text)', flex: 1 }}>{d.dr_downtime_types?.name_th}</span>
-                            {d.description && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{d.description}</span>}
-                            <span style={{ fontSize: 13, fontWeight: 700, color: d.dr_downtime_types?.color || '#aaa' }}>{fmtMin(d.duration_min)}</span>
+                          <div key={k.label} style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>{k.label}</div>
+                            <div style={{ fontSize: 16, fontWeight: 800, color: c }}>{k.value != null ? `${k.value.toFixed(1)}%` : '—'}</div>
                           </div>
                         );
                       })}
+                      <div style={{ textAlign: 'center', marginLeft: 'auto' }}>
+                        <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>OEE</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: oeeColor }}>{s.oee.toFixed(1)}%</div>
+                      </div>
                     </div>
                   )}
+
+                  {/* Defect logs */}
+                  {defects.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#ef4444', marginBottom: 6 }}>🔴 งานเสีย ({defects.length} รายการ)</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {defects.map(d => (
+                          <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, borderLeft: `3px solid ${d.dr_defect_types?.color || '#ef4444'}` }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', flex: 1 }}>{d.dr_defect_types?.name_th || '—'}</span>
+                            {d.qty_ng      > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>NG {d.qty_ng}</span>}
+                            {d.qty_suspect > 0 && <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>สงสัย {d.qty_suspect}</span>}
+                            {d.qty_repair  > 0 && <span style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700 }}>ซ่อม {d.qty_repair}</span>}
+                            {d.description && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{d.description}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Downtime logs */}
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>⏱ Downtime ({dts.length} รายการ)</div>
+                    {dts.length === 0 ? (
+                      <div style={{ color: 'var(--muted)', fontSize: 12 }}>ไม่มี Downtime</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {dts.map(d => {
+                          const cat = CAT_META[d.dr_downtime_types?.category] || CAT_META.unplanned;
+                          return (
+                            <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, borderLeft: `3px solid ${d.dr_downtime_types?.color || '#aaa'}` }}>
+                              <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: cat.bg, color: cat.color, fontWeight: 700 }}>{cat.label}</span>
+                              <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{d.dr_downtime_types?.name_th}</span>
+                              {d.description && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{d.description}</span>}
+                              <span style={{ fontSize: 12, fontWeight: 700, color: d.dr_downtime_types?.color || '#aaa' }}>{fmtMin(d.duration_min)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
