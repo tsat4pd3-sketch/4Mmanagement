@@ -709,8 +709,6 @@ export default function Dashboard() {
 
                       {/* One row for the entire line — all sessions' orders on same timeline */}
                       {(() => {
-                        const pxPerMs = SLOT_W / 3600000;
-
                         // Compute cardTimings for ALL sessions combined
                         const allCards = [];
                         sessions.forEach(s => {
