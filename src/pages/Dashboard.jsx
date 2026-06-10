@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -353,56 +353,51 @@ export default function Dashboard() {
     return () => { clearTimeout(timer); supabaseDR.removeChannel(ch); };
   }, [fetchProdStatus]);
 
-  /* Filter by assignedShift — computed per-employee based on their line's shift_schedules.
-     This correctly handles lines where day_team differs (e.g. line A: Team A=day, line B: Team B=day) */
-  const shiftLogs = selectedShift === 'all' ? logs : logs.filter(l => l.assignedShift === selectedShift);
-
-  const present = shiftLogs.filter(l => l.is_present);
-  const absent  = shiftLogs.filter(l => !l.is_present);
-  const ppeReady = present.filter(l => l.has_helmet && l.has_boots && l.has_gloves);
-  const otCount  = present.filter(l => l.has_ot).length;
-
-  const shiftKey     = selectedShift === 'all' ? 'all' : selectedShift;
-
   // Determine OT windows based on current time (for live "today" view)
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  // Day OT window: 17:30–20:00 (1050–1200)
   const inDayOTWindow      = nowMin >= 17 * 60 + 30 && nowMin < 20 * 60;
-  // Extended OT window: 20:00–23:00 (1200–1380)
   const inExtendedOTWindow = nowMin >= 20 * 60 && nowMin < 23 * 60;
 
-  // Set of employee IDs to show on floor map:
-  // - Always: employees matching the selected shift
-  // - If viewing today & night shift: also include day-shift employees still on OT
-  const shiftEmpIds = selectedShift === 'all'
-    ? null
-    : (() => {
-        const ids = new Set(shiftLogs.map(l => l.employees?.id).filter(Boolean));
-        // During extended OT window (20:00–23:00): day-shift employees with has_extended_ot stay visible
-        if (selectedDate === workDateStr && selectedShift === 'night' && inExtendedOTWindow) {
-          logs.filter(l => l.assignedShift === 'day' && l.has_extended_ot && l.is_present)
-              .forEach(l => { if (l.employees?.id) ids.add(l.employees.id); });
-        }
-        return ids;
-      })();
+  /* Filter by assignedShift — memoized so the 1s clock tick doesn't re-filter all logs */
+  const shiftLogs = useMemo(
+    () => selectedShift === 'all' ? logs : logs.filter(l => l.assignedShift === selectedShift),
+    [logs, selectedShift],
+  );
 
-  const lineStats = lines.map(line => {
+  const present  = useMemo(() => shiftLogs.filter(l =>  l.is_present), [shiftLogs]);
+  const absent   = useMemo(() => shiftLogs.filter(l => !l.is_present), [shiftLogs]);
+  const ppeReady = useMemo(() => present.filter(l => l.has_helmet && l.has_boots && l.has_gloves), [present]);
+  const otCount  = useMemo(() => present.filter(l => l.has_ot).length, [present]);
+
+  const shiftKey = selectedShift === 'all' ? 'all' : selectedShift;
+
+  // Set of employee IDs to show on floor map — memoized, depends on logs/shift not clock
+  const shiftEmpIds = useMemo(() => {
+    if (selectedShift === 'all') return null;
+    const ids = new Set(shiftLogs.map(l => l.employees?.id).filter(Boolean));
+    if (selectedDate === workDateStr && selectedShift === 'night' && inExtendedOTWindow) {
+      logs.filter(l => l.assignedShift === 'day' && l.has_extended_ot && l.is_present)
+          .forEach(l => { if (l.employees?.id) ids.add(l.employees.id); });
+    }
+    return ids;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shiftLogs, logs, selectedShift, selectedDate, workDateStr, inExtendedOTWindow]);
+
+  const lineStats = useMemo(() => lines.map(line => {
     const lineLogs    = shiftLogs.filter(l => l.employees?.line_id === line.id);
     const linePresent = lineLogs.filter(l => l.is_present).length;
-    // Use standard manpower if set, fallback to actual employee count
     const stdTotal = selectedShift === 'day'  ? (line.std_day_shift   || 0)
                    : selectedShift === 'night' ? (line.std_night_shift || 0)
                    : (line.std_day_shift || 0) + (line.std_night_shift || 0);
     const lineTotal = stdTotal > 0 ? stdTotal : (empCounts[line.id]?.[shiftKey] ?? lineLogs.length);
-    const lineAlerts  = fourMLogs.filter(f => f.line_name === line.name).length;
+    const lineAlerts = fourMLogs.filter(f => f.line_name === line.name).length;
     const rate = lineTotal > 0 ? Math.round((linePresent / lineTotal) * 100) : 0;
     return { ...line, linePresent, lineTotal, lineAlerts, rate };
-  });
+  }), [lines, shiftLogs, selectedShift, empCounts, shiftKey, fourMLogs]);
 
-  const totalCapacity = lineStats.reduce((s, l) => s + l.lineTotal, 0) || shiftLogs.length;
-
-  const attendRate = totalCapacity > 0 ? Math.round((present.length / totalCapacity) * 100) : 0;
-  const ppeRate    = present.length > 0 ? Math.round((ppeReady.length / present.length) * 100) : 0;
+  const totalCapacity = useMemo(() => lineStats.reduce((s, l) => s + l.lineTotal, 0) || shiftLogs.length, [lineStats, shiftLogs]);
+  const attendRate    = useMemo(() => totalCapacity > 0 ? Math.round((present.length / totalCapacity) * 100) : 0, [totalCapacity, present]);
+  const ppeRate       = useMemo(() => present.length > 0 ? Math.round((ppeReady.length / present.length) * 100) : 0, [present, ppeReady]);
 
   const isToday = selectedDate === workDateStr;
 

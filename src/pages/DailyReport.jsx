@@ -240,7 +240,7 @@ function LiveTab({ role }) {
   const loadDefectLogs = useCallback(async (sessionId) => {
     if (!sessionId) return;
     const { data } = await supabaseDR.from('defect_logs')
-      .select('*, dr_defect_types(name_th, color), prod_orders(prod_no, mat_no)')
+      .select('*, dr_defect_types(name_th, color)')
       .eq('session_id', sessionId)
       .order('logged_at', { ascending: false });
     setDefectLogs(data || []);
@@ -255,15 +255,20 @@ function LiveTab({ role }) {
     }
   }, [selSession, loadDT, loadProdOrders, loadDefectLogs]);
 
-  // Realtime
+  // Realtime — debounce 600ms to avoid burst fetches during rapid barcode scanning
   useEffect(() => {
+    const timers = {};
+    const debounce = (key, fn, ms = 600) => {
+      clearTimeout(timers[key]);
+      timers[key] = setTimeout(fn, ms);
+    };
     const ch = supabaseDR.channel('live-dr')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       () => { if (selSession) loadDT(selSession.id); })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         () => { if (selSession) loadProdOrders(selSession.id, selSession.line_name); })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         () => { if (selSession) loadDefectLogs(selSession.id); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, () => debounce('sess', () => load()))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         () => debounce('ord',  () => { if (selSession) loadProdOrders(selSession.id, selSession.line_name); }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       () => debounce('dt',   () => { if (selSession) loadDT(selSession.id); }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         () => debounce('def',  () => { if (selSession) loadDefectLogs(selSession.id); }))
       .subscribe();
-    return () => supabaseDR.removeChannel(ch);
+    return () => { Object.values(timers).forEach(clearTimeout); supabaseDR.removeChannel(ch); };
   }, [selSession, load, loadDT, loadProdOrders, loadDefectLogs]);
 
   const handleOpenSession = async () => {

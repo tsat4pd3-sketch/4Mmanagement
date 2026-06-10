@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useRef } from 'react';
+import { useState, useEffect, useContext, useRef, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -186,8 +186,19 @@ export default function Operator() {
     setInactiveEmployees(inactive || []);
   };
 
+  // Pre-build skill lookup map per employee so render table is O(1) per cell
+  const empSkillMapById = useMemo(() => {
+    const out = {};
+    [...employees, ...inactiveEmployees].forEach(emp => {
+      const m = {};
+      (emp.employee_skills || []).forEach(s => { m[s.skill_name] = s; });
+      out[emp.id] = m;
+    });
+    return out;
+  }, [employees, inactiveEmployees]);
+
   const getEmpSkill = (emp, skillName) => {
-    const rec = emp.employee_skills?.find(s => s.skill_name === skillName);
+    const rec = empSkillMapById[emp.id]?.[skillName];
     return rec !== undefined ? rec.score : undefined;
   };
 
@@ -572,7 +583,7 @@ export default function Operator() {
                       {emp.start_date ? emp.start_date : '—'}
                     </td>
                     {activeSkillDefs.map(sd => {
-                      const skillObj = emp.employee_skills?.find(s => s.skill_name === sd.name);
+                      const skillObj = empSkillMapById[emp.id]?.[sd.name];
                       const hasRecord = skillObj !== undefined && skillObj.score > 0;
                       const score = hasRecord ? skillObj.score : undefined;
                       const pending = skillObj?.pending_level ?? null;
