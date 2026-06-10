@@ -142,7 +142,7 @@ export default function Dashboard() {
     let ordersBySession = {}, dtBySession = {}, defectBySession = {};
     if (sessionIds.length > 0) {
       const [{ data: orders }, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
-        supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, prod_no, part_name, mat_no').in('session_id', sessionIds),
+        supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, prod_no, part_name, mat_no, opened_at').in('session_id', sessionIds),
         supabaseDR.from('downtime_logs').select('session_id, duration_min, dr_downtime_types(category)').in('session_id', sessionIds),
         supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessionIds),
       ]);
@@ -602,91 +602,146 @@ export default function Dashboard() {
       {prodStatus.length > 0 && (
         <motion.div {...stagger(8)} style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
-            📦 e-Kanban — สถานะการผลิตวันนี้
+            📦 e-Kanban Post — สถานะการผลิตวันนี้
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
-            {prodStatus.map((s, i) => {
-              const isOpen   = s.status === 'open';
-              const oee      = s.oeeData;
-              const oeeColor = !oee ? '#888' : oee.oee >= 0.85 ? '#22c55e' : oee.oee >= 0.65 ? '#f59e0b' : '#ef4444';
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+            {prodStatus.map((s, si) => {
+              const isOpen    = s.status === 'open';
+              const oee       = s.oeeData;
+              const oeeColor  = !oee ? '#888' : oee.oee >= 0.85 ? '#22c55e' : oee.oee >= 0.65 ? '#f59e0b' : '#ef4444';
               const doneCount = s.orders.filter(o => o.status === 'confirmed').length;
-              const totalCount = s.orders.length;
-              const pct = s.demand > 0 ? Math.min((s.actual / s.demand) * 100, 100) : 0;
-              const tpct = s.target > 0 ? Math.min((s.actual / s.target) * 100, 100) : 0;
-              const barColor = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
+              const pct       = s.demand > 0 ? Math.min((s.actual / s.demand) * 100, 100) : 0;
+              const tpct      = s.target > 0 ? Math.min((s.actual / s.target) * 100, 100) : 0;
+              const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
+              const ctSec     = s.dr_products?.cycle_time_sec || 0;
 
-              // Sort: confirmed last (visually at bottom), open first
-              const sorted = [...s.orders].sort((a, b) => {
-                const rank = { open: 0, carry_over: 1, confirmed: 2 };
-                return (rank[a.status] ?? 1) - (rank[b.status] ?? 1);
-              });
+              // Sort by opened_at ASC (scan order = rail order, oldest card on the left)
+              const sorted = [...s.orders].sort((a, b) =>
+                new Date(a.opened_at || 0) - new Date(b.opened_at || 0)
+              );
+
+              // Delay calculation per card:
+              // expectedFinish = opened_at + (qty × cycle_time_sec)
+              const nowMs = now.getTime();
+              const fmtTime = (ms) => {
+                const d = new Date(ms);
+                return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+              };
+
+              // Count delayed open cards for session header badge
+              const delayedCount = isOpen && ctSec > 0 ? sorted.filter(o => {
+                if (o.status !== 'open' || !o.opened_at) return false;
+                const exp = new Date(o.opened_at).getTime() + o.qty * ctSec * 1000;
+                return nowMs > exp;
+              }).length : 0;
 
               return (
-                <motion.div key={s.id} {...stagger(9 + i)} style={{ flex: '1 1 300px', maxWidth: 420 }}>
+                <motion.div key={s.id} {...stagger(9 + si)} style={{ flex: '1 1 340px', maxWidth: 480 }}>
                   <div style={{
                     background: 'var(--card)',
-                    border: `1px solid ${isOpen ? 'rgba(34,197,94,0.4)' : 'var(--border2)'}`,
-                    borderRadius: 14,
-                    overflow: 'hidden',
-                    boxShadow: isOpen ? '0 0 0 1px rgba(34,197,94,0.12), var(--shadow-sm)' : 'var(--shadow-sm)',
+                    border: `1px solid ${delayedCount > 0 ? 'rgba(239,68,68,0.5)' : isOpen ? 'rgba(34,197,94,0.4)' : 'var(--border2)'}`,
+                    borderRadius: 14, overflow: 'hidden',
+                    boxShadow: delayedCount > 0 ? '0 0 0 1px rgba(239,68,68,0.15), var(--shadow-sm)' : isOpen ? '0 0 0 1px rgba(34,197,94,0.1), var(--shadow-sm)' : 'var(--shadow-sm)',
                   }}>
 
-                    {/* ── Session header ── */}
-                    <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.3px' }}>{s.line_name}</div>
+                    {/* ── Header ── */}
+                    <div style={{ padding: '10px 14px 9px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.3px' }}>{s.line_name}</div>
                         {s.dr_products?.name && <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 1, fontWeight: 600 }}>{s.dr_products.name}</div>}
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3, flexShrink: 0 }}>
+                        {delayedCount > 0 && (
+                          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
+                            ⚠️ ดีเลย์ {delayedCount} ใบ
+                          </span>
+                        )}
                         <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700,
                           background: isOpen ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.12)',
-                          color: isOpen ? '#22c55e' : '#888',
-                          animation: isOpen ? 'none' : 'none',
-                        }}>
+                          color: isOpen ? '#22c55e' : '#888' }}>
                           {isOpen ? '● Live' : '✓ ปิดแล้ว'}
                         </span>
                         <span style={{ fontSize: 10, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ เช้า' : '🌙 ดึก'}</span>
                       </div>
                     </div>
 
-                    {/* ── Kanban card slots ── */}
+                    {/* ── Kanban slots (rail) ── */}
                     <div style={{ padding: '10px 12px 8px' }}>
                       {sorted.length === 0 ? (
-                        <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--muted)', fontSize: 11 }}>ยังไม่มี Kanban เปิด</div>
+                        <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--muted)', fontSize: 11 }}>
+                          ยังไม่มี Kanban เปิด — รอสแกน
+                        </div>
                       ) : (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          {sorted.map(o => {
-                            const isDone    = o.status === 'confirmed';
-                            const isCarry   = o.status === 'carry_over';
-                            const cardColor = isDone ? '#22c55e' : isCarry ? '#f59e0b' : '#4d9fff';
-                            const cardBg    = isDone ? 'rgba(34,197,94,0.12)' : isCarry ? 'rgba(245,158,11,0.10)' : 'rgba(77,159,255,0.10)';
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                          {sorted.map((o) => {
+                            const isDone  = o.status === 'confirmed';
+                            const isCarry = o.status === 'carry_over';
+
+                            // Delay logic (only for open cards with cycle time)
+                            let isDelayed = false, delayMin = 0, expectedFinishMs = null;
+                            if (!isDone && !isCarry && o.opened_at && ctSec > 0) {
+                              expectedFinishMs = new Date(o.opened_at).getTime() + o.qty * ctSec * 1000;
+                              if (nowMs > expectedFinishMs) {
+                                isDelayed = true;
+                                delayMin  = Math.round((nowMs - expectedFinishMs) / 60000);
+                              }
+                            }
+
+                            const cardColor = isDone ? '#22c55e' : isDelayed ? '#ef4444' : isCarry ? '#f59e0b' : '#4d9fff';
+                            const cardBg    = isDone ? 'rgba(34,197,94,0.10)' : isDelayed ? 'rgba(239,68,68,0.10)' : isCarry ? 'rgba(245,158,11,0.10)' : 'rgba(77,159,255,0.08)';
                             const doneQty   = isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
                             const totalQty  = o.qty ?? 0;
                             const slotPct   = totalQty > 0 ? Math.min((doneQty / totalQty) * 100, 100) : (isDone ? 100 : 0);
+
                             return (
-                              <div key={o.prod_no || o.id} style={{
-                                width: 72, background: cardBg,
-                                border: `1.5px solid ${cardColor}55`,
-                                borderRadius: 8, padding: '6px 6px 5px',
+                              <div key={o.prod_no || Math.random()} style={{
+                                width: 84, background: cardBg,
+                                border: `1.5px solid ${cardColor}${isDelayed ? 'cc' : '55'}`,
+                                borderRadius: 9, padding: '7px 7px 6px',
                                 display: 'flex', flexDirection: 'column', gap: 3,
                                 position: 'relative', overflow: 'hidden',
+                                boxShadow: isDelayed ? `0 0 8px ${cardColor}44` : 'none',
                               }}>
-                                {/* fill bar at bottom */}
-                                <div style={{ position: 'absolute', bottom: 0, left: 0, width: `${slotPct}%`, height: 3, background: cardColor, borderRadius: '0 2px 2px 0', transition: 'width 0.6s ease' }} />
-                                {/* status dot */}
+                                {/* progress fill bar at bottom */}
+                                <div style={{ position: 'absolute', bottom: 0, left: 0, height: 3, width: `${slotPct}%`, background: cardColor, transition: 'width 0.6s ease' }} />
+
+                                {/* top row: icon + % */}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                  <span style={{ fontSize: 8, lineHeight: 1 }}>{isDone ? '✅' : isCarry ? '⏳' : '⚡'}</span>
-                                  <span style={{ fontSize: 8, color: cardColor, fontWeight: 700 }}>{slotPct.toFixed(0)}%</span>
+                                  <span style={{ fontSize: 9, lineHeight: 1 }}>
+                                    {isDone ? '✅' : isDelayed ? '⚠️' : isCarry ? '⏳' : '⚡'}
+                                  </span>
+                                  <span style={{ fontSize: 8, color: cardColor, fontWeight: 700 }}>
+                                    {isDone ? '100%' : slotPct > 0 ? `${slotPct.toFixed(0)}%` : ''}
+                                  </span>
                                 </div>
+
                                 {/* prod_no */}
                                 <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
-                                  {o.prod_no || (o.part_name?.slice(0, 8)) || '—'}
+                                  {o.prod_no || '—'}
                                 </div>
+
+                                {/* mat_no / part_name */}
+                                {(o.mat_no || o.part_name) && (
+                                  <div style={{ fontSize: 8, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+                                    {o.mat_no || o.part_name}
+                                  </div>
+                                )}
+
                                 {/* qty */}
-                                <div style={{ fontSize: 13, fontWeight: 900, color: cardColor, lineHeight: 1 }}>
-                                  {isDone ? (o.qty_ok ?? o.qty ?? 0) : totalQty}
+                                <div style={{ fontSize: 15, fontWeight: 900, color: cardColor, lineHeight: 1, marginTop: 1 }}>
+                                  {isDone ? (o.qty_ok ?? totalQty) : totalQty}
                                   <span style={{ fontSize: 9, fontWeight: 500, color: 'var(--muted)', marginLeft: 2 }}>ชิ้น</span>
                                 </div>
+
+                                {/* expected finish time or delay */}
+                                {!isDone && !isCarry && ctSec > 0 && o.opened_at && (
+                                  <div style={{ fontSize: 8, fontWeight: 700, color: isDelayed ? '#ef4444' : 'var(--muted)', lineHeight: 1.3, marginTop: 1 }}>
+                                    {isDelayed
+                                      ? `⏰ ช้า ${delayMin} นาที`
+                                      : `ควรเสร็จ ${fmtTime(expectedFinishMs)}`
+                                    }
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -694,19 +749,19 @@ export default function Dashboard() {
                       )}
                     </div>
 
-                    {/* ── Progress summary ── */}
-                    <div style={{ padding: '6px 14px 10px', borderTop: '1px solid var(--border2)' }}>
+                    {/* ── Progress footer ── */}
+                    <div style={{ padding: '7px 14px 11px', borderTop: '1px solid var(--border2)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-                        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                          <span style={{ fontSize: 10, color: 'var(--muted)' }}>
-                            <span style={{ fontSize: 20, fontWeight: 900, color: barColor, marginRight: 2 }}>{s.actual}</span>
-                            / {s.demand} ชิ้น
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
+                          <span>
+                            <span style={{ fontSize: 22, fontWeight: 900, color: barColor, lineHeight: 1 }}>{s.actual}</span>
+                            <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 4 }}>/ {s.demand} ชิ้น</span>
                           </span>
-                          <span style={{ fontSize: 10, color: 'var(--muted)' }}>{doneCount}/{totalCount} ใบ</span>
+                          <span style={{ fontSize: 10, color: 'var(--muted)' }}>{doneCount}/{s.orders.length} ใบ</span>
                         </div>
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                           {s.target > 0 && <span style={{ fontSize: 10, color: tpct >= 100 ? '#22c55e' : 'var(--muted)' }}>เป้า {tpct.toFixed(0)}%</span>}
-                          <span style={{ fontSize: 12, fontWeight: 800, color: barColor }}>{pct.toFixed(0)}%</span>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: barColor }}>{pct.toFixed(0)}%</span>
                         </div>
                       </div>
                       <div style={{ height: 5, borderRadius: 3, background: 'var(--border2)', overflow: 'hidden' }}>
@@ -715,13 +770,9 @@ export default function Dashboard() {
 
                       {/* OEE row */}
                       {isOpen && oee && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 7, borderTop: '1px solid var(--border2)' }}>
-                          <div style={{ display: 'flex', gap: 10 }}>
-                            {[
-                              { label: 'A', value: oee.A, title: 'Availability' },
-                              { label: 'P', value: oee.P, title: 'Performance' },
-                              { label: 'Q', value: oee.Q, title: 'Quality' },
-                            ].map(k => {
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 9, paddingTop: 8, borderTop: '1px solid var(--border2)' }}>
+                          <div style={{ display: 'flex', gap: 12 }}>
+                            {[{ label: 'A', value: oee.A, title: 'Availability' }, { label: 'P', value: oee.P, title: 'Performance' }, { label: 'Q', value: oee.Q, title: 'Quality' }].map(k => {
                               const c = k.value >= 0.85 ? '#22c55e' : k.value >= 0.65 ? '#f59e0b' : '#ef4444';
                               return (
                                 <div key={k.label} title={k.title} style={{ textAlign: 'center' }}>
@@ -733,7 +784,7 @@ export default function Dashboard() {
                           </div>
                           <div style={{ textAlign: 'right' }}>
                             <div style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 700 }}>OEE</div>
-                            <div style={{ fontSize: 22, fontWeight: 900, color: oeeColor, lineHeight: 1 }}>{(oee.oee * 100).toFixed(1)}%</div>
+                            <div style={{ fontSize: 24, fontWeight: 900, color: oeeColor, lineHeight: 1 }}>{(oee.oee * 100).toFixed(1)}%</div>
                           </div>
                         </div>
                       )}
