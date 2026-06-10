@@ -600,9 +600,13 @@ export default function Dashboard() {
 
       {/* ── Heijunka Timeline Board ───────────────────── */}
       {prodStatus.length > 0 && (() => {
-        const HOURS   = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
-        const SLOT_W  = 40;
-        const LEFT_W  = 136;
+        const HOURS        = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
+        const MIN_SLOT_W   = 38;   // minimum px per hour column (for scroll on tiny screens)
+        const LEFT_W       = 136;
+        const TOTAL_GRID_MS = 24 * 3600000;
+        // percentage helpers — order blocks use % so they fill available width naturally
+        const toPct = (ms) => `${((ms - gridStartMs) / TOTAL_GRID_MS * 100).toFixed(4)}%`;
+        const durPct = (ms) => `${(ms / TOTAL_GRID_MS * 100).toFixed(4)}%`;
         const nowMs   = now.getTime();
 
         const wd = prodStatus[0]?.work_date || new Date().toISOString().slice(0, 10);
@@ -677,30 +681,33 @@ export default function Dashboard() {
 
                   {/* ── Timeline grid ── */}
                   <div style={{ overflowX: 'auto' }}>
-                    <div style={{ minWidth: LEFT_W + SLOT_W * 24, fontSize: 0 }}>
+                    <div style={{ minWidth: LEFT_W + MIN_SLOT_W * 24, fontSize: 0 }}>
 
                       {/* Hour header */}
                       <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
                         <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '5px 8px', fontSize: 9, fontWeight: 700, color: 'var(--muted)' }}>
                           กะ / ผลิต
                         </div>
-                        {HOURS.map((h, i) => {
-                          const isNow = i === nowHourIdx;
-                          const isShiftBound = h === 8 || h === 20;
-                          return (
-                            <div key={i} style={{
-                              width: SLOT_W, flexShrink: 0, textAlign: 'center',
-                              fontSize: 9, fontWeight: isNow ? 800 : isShiftBound ? 600 : 400,
-                              color: isNow ? '#4d9fff' : isShiftBound ? 'var(--text2)' : 'var(--muted)',
-                              padding: '5px 0', lineHeight: 1,
-                              borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
-                              background: isNow ? 'rgba(77,159,255,0.12)' : 'transparent',
-                            }}>
-                              {String(h).padStart(2,'0')}:00
-                              {isNow && <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#4d9fff', margin: '2px auto 0' }} />}
-                            </div>
-                          );
-                        })}
+                        <div style={{ flex: 1, display: 'flex', minWidth: MIN_SLOT_W * 24 }}>
+                          {HOURS.map((h, i) => {
+                            const isNow = i === nowHourIdx;
+                            const isShiftBound = h === 8 || h === 20;
+                            return (
+                              <div key={i} style={{
+                                flex: 1, minWidth: MIN_SLOT_W, textAlign: 'center',
+                                fontSize: 9, fontWeight: isNow ? 800 : isShiftBound ? 600 : 400,
+                                color: isNow ? '#4d9fff' : isShiftBound ? 'var(--text2)' : 'var(--muted)',
+                                padding: '5px 2px', lineHeight: 1,
+                                borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
+                                background: isNow ? 'rgba(77,159,255,0.12)' : 'transparent',
+                                overflow: 'hidden',
+                              }}>
+                                {String(h).padStart(2,'0')}:00
+                                {isNow && <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#4d9fff', margin: '2px auto 0' }} />}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
 
                       {/* One row for the entire line — all sessions' orders on same timeline */}
@@ -766,15 +773,15 @@ export default function Dashboard() {
                             </div>
 
                             {/* Timeline */}
-                            <div style={{ flex: 1, position: 'relative', display: 'flex' }}>
+                            <div style={{ flex: 1, position: 'relative', display: 'flex', minWidth: MIN_SLOT_W * 24 }}>
 
-                              {/* Hour grid lines */}
+                              {/* Hour grid lines — flex fills available width */}
                               {HOURS.map((h, i) => {
                                 const isNow = i === nowHourIdx;
                                 const isShiftBound = h === 8 || h === 20;
                                 return (
                                   <div key={i} style={{
-                                    width: SLOT_W, flexShrink: 0, height: '100%',
+                                    flex: 1, minWidth: MIN_SLOT_W, height: '100%',
                                     borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
                                     background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent',
                                     boxSizing: 'border-box',
@@ -782,19 +789,19 @@ export default function Dashboard() {
                                 );
                               })}
 
-                              {/* Order blocks overlaid */}
+                              {/* Order blocks — percentage positioned so they fill available width */}
                               {allCards.map((o, oi) => {
                                 if (!o.orderStartMs || !o.orderEndMs) return null;
+                                const clampedStart = Math.max(o.orderStartMs, gridStartMs);
+                                const clampedEnd   = Math.min(o.orderEndMs, gridStartMs + TOTAL_GRID_MS);
+                                if (clampedStart >= clampedEnd) return null;
+
                                 const statusColor = o.isDone ? '#22c55e' : o.isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
                                 const icon = o.isDone ? '✓' : o.isDelayed ? '!' : o.isCarry ? '↷' : '▶';
+                                const leftPct  = ((clampedStart - gridStartMs) / TOTAL_GRID_MS * 100).toFixed(3);
+                                const widthPct = ((clampedEnd - clampedStart) / TOTAL_GRID_MS * 100).toFixed(3);
 
-                                // pixel position within the 24h grid
-                                const leftPx  = Math.max(0, (o.orderStartMs - gridStartMs) * pxPerMs);
-                                const rightPx = Math.min(SLOT_W * 24, (o.orderEndMs - gridStartMs) * pxPerMs);
-                                const widthPx = Math.max(3, rightPx - leftPx);
-                                if (leftPx >= SLOT_W * 24) return null; // off-screen right
-
-                                const doneQty = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
+                                const doneQty  = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
                                 const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
 
                                 return (
@@ -802,8 +809,8 @@ export default function Dashboard() {
                                     style={{
                                       position: 'absolute',
                                       top: 6, bottom: 6,
-                                      left: leftPx,
-                                      width: widthPx,
+                                      left: `${leftPct}%`,
+                                      width: `max(3px, ${widthPct}%)`,
                                       background: `${statusColor}28`,
                                       border: `1.5px solid ${statusColor}${o.isDone ? 'cc' : o.isDelayed ? 'dd' : '88'}`,
                                       borderRadius: 4,
@@ -812,42 +819,29 @@ export default function Dashboard() {
                                       cursor: 'default',
                                       zIndex: 1,
                                     }}>
-                                    {/* progress fill */}
                                     <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`, background: `${statusColor}22`, transition: 'width 0.5s ease' }} />
-                                    {/* label (only if wide enough) */}
-                                    {widthPx >= 22 && (
-                                      <div style={{
-                                        position: 'absolute', inset: 0,
-                                        display: 'flex', flexDirection: 'column', justifyContent: 'center',
-                                        padding: '0 3px', overflow: 'hidden',
-                                      }}>
-                                        <div style={{ fontSize: 8, fontWeight: 800, color: statusColor, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                          {icon} {o.prod_no || (oi + 1)}
-                                        </div>
-                                        {widthPx >= 48 && (
-                                          <div style={{ fontSize: 7, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                            {o.qty}ชิ้น
-                                          </div>
-                                        )}
+                                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 3px', overflow: 'hidden' }}>
+                                      <div style={{ fontSize: 8, fontWeight: 800, color: statusColor, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {icon} {o.prod_no || (oi + 1)}
                                       </div>
-                                    )}
+                                      <div style={{ fontSize: 7, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {o.qty}ชิ้น
+                                      </div>
+                                    </div>
                                   </div>
                                 );
                               })}
 
                               {/* Now marker line */}
-                              {nowHourIdx >= 0 && (() => {
-                                const nowPx = (nowMs - gridStartMs) * pxPerMs;
-                                if (nowPx < 0 || nowPx > SLOT_W * 24) return null;
-                                return (
-                                  <div style={{
-                                    position: 'absolute', top: 0, bottom: 0,
-                                    left: nowPx, width: 1.5,
-                                    background: 'rgba(77,159,255,0.7)',
-                                    zIndex: 2, pointerEvents: 'none',
-                                  }} />
-                                );
-                              })()}
+                              {nowMs >= gridStartMs && nowMs < gridStartMs + TOTAL_GRID_MS && (
+                                <div style={{
+                                  position: 'absolute', top: 0, bottom: 0,
+                                  left: `${((nowMs - gridStartMs) / TOTAL_GRID_MS * 100).toFixed(3)}%`,
+                                  width: 1.5,
+                                  background: 'rgba(77,159,255,0.7)',
+                                  zIndex: 2, pointerEvents: 'none',
+                                }} />
+                              )}
                             </div>
                           </div>
                         );
