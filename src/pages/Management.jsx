@@ -121,6 +121,24 @@ export default function Management() {
   const [docImagePreview, setDocImagePreview] = useState(null);
   const [isSavingDoc,     setIsSavingDoc]     = useState(false);
   const [lineProdData,    setLineProdData]    = useState(null); // heijunka data for selected line
+  const [imgBox,         setImgBox]         = useState(null); // actual rendered image bounds inside objectFit:contain
+  const imgRef = useRef(null);
+  const recalcImgBox = useCallback(() => {
+    const img = imgRef.current;
+    if (!img || !img.naturalWidth) return;
+    const { naturalWidth: nw, naturalHeight: nh, clientWidth: cw, clientHeight: ch } = img;
+    const scale = Math.min(cw / nw, ch / nh);
+    const rw = nw * scale, rh = nh * scale;
+    const offsetX = (cw - rw) / 2, offsetY = (ch - rh) / 2;
+    setImgBox({ offsetX, offsetY, rw, rh });
+  }, []);
+  useEffect(() => {
+    window.addEventListener('resize', recalcImgBox);
+    return () => window.removeEventListener('resize', recalcImgBox);
+  }, [recalcImgBox]);
+  // reset imgBox when layout changes
+  useEffect(() => { setImgBox(null); }, [lineLayout]);
+
   const hoverTimer = useRef(null);
   const nowForBoard = useRef(new Date());
   useEffect(() => {
@@ -686,7 +704,7 @@ export default function Management() {
       </div>
 
       {/* ── Canvas Area ── */}
-      <div style={{ flex: 1, minWidth: 0, position: 'relative', padding: 10, overflow: 'auto' }}>
+      <div style={{ flex: 1, minWidth: 0, position: 'relative', padding: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {autoManAlert && (
           <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', background: 'rgba(77,159,255,0.95)', color: '#fff', padding: '8px 18px', borderRadius: 10, fontSize: 12, fontWeight: 600, zIndex: 200, boxShadow: '0 4px 16px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>
             🆕 Man Change: {autoManAlert.name} — ประจำ {autoManAlert.station} เป็นครั้งแรก
@@ -879,19 +897,21 @@ export default function Management() {
 
         {/* Canvas */}
         <div style={{
-          width: '100%', height: '100%',
-          overflow: 'auto',
+          width: '100%', flex: 1, minHeight: 0,
+          overflow: 'hidden',
+          display: 'flex', flexDirection: 'column',
           backgroundColor: lineLayout ? 'transparent' : 'var(--bg3)', borderRadius: 12,
           border: lineLayout ? 'none' : '1px solid var(--border)',
         }}>
           {lineLayout ? (
-            /* position:relative + width:100% so img fills container width with auto height →
-               no letterbox ever, station % coords are correct at every screen size */
-            <div style={{ position: 'relative', width: '100%', lineHeight: 0 }}>
+            /* objectFit:contain keeps image within bounds — use JS imgBox to map % → px for stations */
+            <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
               <img
+                ref={imgRef}
                 src={lineLayout}
                 alt="line map"
-                style={{ display: 'block', width: '100%', height: 'auto', borderRadius: 12, userSelect: 'none' }}
+                onLoad={recalcImgBox}
+                style={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain', borderRadius: 12, userSelect: 'none' }}
                 draggable={false}
               />
               <style>{`
@@ -901,7 +921,9 @@ export default function Management() {
                   100% { box-shadow: 0 0 0 0 rgba(77,159,255,0), 0 2px 8px rgba(0,0,0,0.6); }
                 }
               `}</style>
-              {dynamicStations.map(st => {
+              {imgBox && dynamicStations.map(st => {
+            const stTop  = imgBox.offsetY + (parseFloat(st.pos_top)  / 100) * imgBox.rh;
+            const stLeft = imgBox.offsetX + (parseFloat(st.pos_left) / 100) * imgBox.rw;
             const workerAtStation = workers.find(w => String(w.assigned_line) === String(st.id));
             const workerFit       = workerAtStation ? computeFit(workerAtStation, st) : null;
             const hasMan  = fourMLogs.some(m => m.line_name === st.line_name && m.category === 'Man');
@@ -924,7 +946,7 @@ export default function Management() {
                 onClick={() => handleStationClick(st)}
                 /* outer: anchor point only — fixed size so translate(-50%,-50%) is always consistent */
                 style={{
-                  position: 'absolute', top: st.pos_top, left: st.pos_left, transform: 'translate(-50%, -50%)',
+                  position: 'absolute', top: stTop, left: stLeft, transform: 'translate(-50%, -50%)',
                   width: CARD_W, height: CARD_H,
                   cursor: isMobile ? 'pointer' : 'default',
                   zIndex: isOver ? 20 : 5,
