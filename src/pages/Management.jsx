@@ -822,14 +822,12 @@ export default function Management() {
             const cards = [];
             sessList.forEach(s => {
               const ctSec = s.dr_products?.cycle_time_sec || 0;
-              const sessionStartMs = s.created_at ? new Date(s.created_at).getTime() : null;
               const sorted = [...s.orders].sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
-              let cumSec = 0;
               sorted.forEach(o => {
-                const startSec = cumSec;
-                cumSec += (o.qty || 0) * ctSec;
-                const orderStartMs = sessionStartMs && ctSec > 0 ? sessionStartMs + startSec * 1000 : null;
-                const orderEndMs   = sessionStartMs && ctSec > 0 ? sessionStartMs + cumSec * 1000 : null;
+                // ใช้ opened_at เป็น start จริง — ไม่ accumulate จาก session start
+                // เพื่อไม่ให้ order ที่ยิงตอนบ่ายกลายเป็น delay ทันที
+                const orderStartMs = o.opened_at ? new Date(o.opened_at).getTime() : null;
+                const orderEndMs   = orderStartMs && ctSec > 0 ? orderStartMs + (o.qty || 0) * ctSec * 1000 : null;
                 const isDone    = o.status === 'confirmed';
                 const isCarry   = o.status === 'carry_over';
                 const isDelayed = !isDone && !isCarry && !!orderEndMs && nowMs > orderEndMs;
@@ -842,12 +840,10 @@ export default function Management() {
           const totalDelayed = sessions.reduce((acc, s) => {
             const ctSec = s.dr_products?.cycle_time_sec || 0;
             if (!ctSec || s.status !== 'open') return acc;
-            const startMs = s.created_at ? new Date(s.created_at).getTime() : null;
-            if (!startMs) return acc;
-            let cum = 0;
             s.orders.forEach(o => {
-              cum += (o.qty || 0) * ctSec;
-              if (o.status === 'open' && nowMs > startMs + cum * 1000) acc++;
+              if (o.status !== 'open' || !o.opened_at) return;
+              const endMs = new Date(o.opened_at).getTime() + (o.qty || 0) * ctSec * 1000;
+              if (nowMs > endMs) acc++;
             });
             return acc;
           }, 0);
