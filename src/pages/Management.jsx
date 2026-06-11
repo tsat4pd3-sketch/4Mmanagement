@@ -793,6 +793,7 @@ export default function Management() {
           </div>
         )}
 
+
         {/* ── Mini Heijunka board ── */}
         {lineProdData && (() => {
           const HOURS = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
@@ -830,7 +831,7 @@ export default function Management() {
                 const orderEndMs   = orderStartMs && ctSec > 0 ? orderStartMs + (o.qty || 0) * ctSec * 1000 : null;
                 const isDone    = o.status === 'confirmed';
                 const isCarry   = o.status === 'carry_over';
-                const isDelayed = !isDone && !isCarry && !!orderEndMs && nowMs > orderEndMs;
+                const isDelayed = !isDone && !isCarry && !o.is_backfill && !!orderEndMs && nowMs > orderEndMs;
                 cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed });
               });
             });
@@ -841,7 +842,7 @@ export default function Management() {
             const ctSec = s.dr_products?.cycle_time_sec || 0;
             if (!ctSec || s.status !== 'open') return acc;
             s.orders.forEach(o => {
-              if (o.status !== 'open' || !o.opened_at) return;
+              if (o.status !== 'open' || !o.opened_at || o.is_backfill) return;
               const endMs = new Date(o.opened_at).getTime() + (o.qty || 0) * ctSec * 1000;
               if (nowMs > endMs) acc++;
             });
@@ -928,8 +929,8 @@ export default function Management() {
                           })}
                           {cards.map((o, oi) => {
                             if (!o.orderStartMs || !o.orderEndMs) return null;
-                            const sc = o.isDone ? '#22c55e' : o.isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
-                            const icon = o.isDone ? '✓' : o.isDelayed ? '!' : o.isCarry ? '↷' : '▶';
+                            const sc = o.isDone ? '#22c55e' : o.isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : o.is_backfill ? '#6b7280' : '#4d9fff';
+                            const icon = o.isDone ? '✓' : o.isDelayed ? '!' : o.isCarry ? '↷' : o.is_backfill ? '⏪' : '▶';
                             const leftPx  = Math.max(0, (o.orderStartMs - gridStartMs) * pxPerMs);
                             const rightPx = Math.min(SLOT_W * 24, (o.orderEndMs - gridStartMs) * pxPerMs);
                             const widthPx = Math.max(3, rightPx - leftPx);
@@ -938,7 +939,7 @@ export default function Management() {
                             const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
                             return (
                               <div key={o.prod_no || oi}
-                                title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.isDelayed ? ` ⚠️ช้า${Math.round((nowMs - o.orderEndMs) / 60000)}ม.` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(o.orderEndMs)}`}`}
+                                title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : o.isDelayed ? ` ⚠️ช้า${Math.round((nowMs - o.orderEndMs) / 60000)}ม.` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(o.orderEndMs)}`}`}
                                 style={{
                                   position: 'absolute', top: 5, bottom: 5, left: leftPx, width: widthPx,
                                   background: `${sc}28`, border: `1.5px solid ${sc}${o.isDone ? 'cc' : o.isDelayed ? 'dd' : '88'}`,

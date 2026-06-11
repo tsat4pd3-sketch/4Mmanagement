@@ -4,6 +4,31 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 
+/* ─── TimeInput24 — always 24h regardless of OS locale ─────── */
+function TimeInput24({ value = '', onChange, style = {} }) {
+  const [h, m] = (value || '--:--').split(':');
+  const hv = h === '--' ? '' : h;
+  const mv = m === '--' ? '' : m;
+  const emit = (newH, newM) => {
+    const hh = String(Math.min(23, Math.max(0, +newH || 0))).padStart(2, '0');
+    const mm = String(Math.min(59, Math.max(0, +newM || 0))).padStart(2, '0');
+    onChange?.({ target: { value: `${hh}:${mm}` } });
+  };
+  const ns = { width: 44, textAlign: 'center', fontFamily: 'monospace', fontWeight: 700,
+    fontSize: 14, background: 'var(--bg)', color: 'var(--text)',
+    border: '1px solid var(--border)', borderRadius: 6, padding: '5px 0',
+    MozAppearance: 'textfield', ...style };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <input type="number" min="0" max="23" value={hv} placeholder="--"
+        onChange={e => emit(e.target.value, mv)} onBlur={e => { if (e.target.value !== '') emit(e.target.value, mv); }} style={ns} />
+      <span style={{ fontWeight: 900, color: 'var(--text)' }}>:</span>
+      <input type="number" min="0" max="59" value={mv} placeholder="--"
+        onChange={e => emit(hv, e.target.value)} onBlur={e => { if (e.target.value !== '') emit(hv, e.target.value); }} style={ns} />
+    </div>
+  );
+}
+
 /* ─── Constants ──────────────────────────────────────────────── */
 const CAT_META = {
   A: { label: 'Normal Process',      labelTh: 'กระบวนการปกติ',            color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   icon: '🔄' },
@@ -323,7 +348,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
           </div>
           <div>
             <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>เวลา</label>
-            <input type="time" value={form.event_time} onChange={e => f('event_time', e.target.value)} />
+            <TimeInput24 value={form.event_time} onChange={e => f('event_time', e.target.value)} />
           </div>
         </div>
 

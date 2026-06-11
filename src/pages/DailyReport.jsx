@@ -3,6 +3,40 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 
+/* ─── TimeInput24 — always 24h regardless of OS locale ─────── */
+function TimeInput24({ value = '', onChange, style = {} }) {
+  const [h, m] = (value || '--:--').split(':');
+  const hv = h === '--' ? '' : h;
+  const mv = m === '--' ? '' : m;
+
+  const emit = (newH, newM) => {
+    const hh = String(Math.min(23, Math.max(0, +newH || 0))).padStart(2, '0');
+    const mm = String(Math.min(59, Math.max(0, +newM || 0))).padStart(2, '0');
+    onChange?.({ target: { value: `${hh}:${mm}` } });
+  };
+
+  const numStyle = {
+    width: 44, textAlign: 'center', fontFamily: 'monospace', fontWeight: 700,
+    fontSize: style.fontSize || 18, background: 'var(--bg)', color: 'var(--text)',
+    border: '1px solid var(--border)', borderRadius: 6, padding: '6px 0',
+    MozAppearance: 'textfield', ...style,
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, ...style }}>
+      <input type="number" min="0" max="23" value={hv} placeholder="--"
+        onChange={e => emit(e.target.value, mv)}
+        onBlur={e => { if (e.target.value !== '') emit(e.target.value, mv); }}
+        style={numStyle} />
+      <span style={{ fontWeight: 900, color: 'var(--text)', fontSize: style.fontSize || 18 }}>:</span>
+      <input type="number" min="0" max="59" value={mv} placeholder="--"
+        onChange={e => emit(hv, e.target.value)}
+        onBlur={e => { if (e.target.value !== '') emit(hv, e.target.value); }}
+        style={numStyle} />
+    </div>
+  );
+}
+
 /* ─── Helpers ────────────────────────────────────────────────── */
 // ✅ local Thai date — never toISOString() which returns UTC
 const today = () => {
@@ -96,7 +130,7 @@ function LiveTab({ role }) {
 
   // Scan Open modal
   const [showScanOpen, setShowScanOpen]   = useState(false);
-  const [openProdForm, setOpenProdForm]   = useState({ prod_no: '', mat_no: '', qty: '' });
+  const [openProdForm, setOpenProdForm]   = useState({ prod_no: '', mat_no: '', qty: '', is_backfill: false });
   const [openProdStd, setOpenProdStd]     = useState(null);
   const [savingProdOpen, setSavingProdOpen] = useState(false);
   // Overflow confirmation modal
@@ -429,6 +463,7 @@ function LiveTab({ role }) {
       customer:    std?.customer  || openProdStd?.customer  || null,
       qty,
       status,
+      is_backfill: openProdForm.is_backfill,
       opened_by:   fullName,
     });
     return error;
@@ -468,7 +503,7 @@ function LiveTab({ role }) {
     setSavingProdOpen(false);
     if (error) { toast.error(error.message); return; }
     toast.success(`เปิด Order ${prodNo} · ${matNo} · ${qty} ชิ้น ✓`);
-    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty }));
+    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false }));
     loadProdOrders(selSession.id, selSession.line_name);
   };
 
@@ -482,7 +517,7 @@ function LiveTab({ role }) {
     setOverflowInfo(null);
     if (error) { toast.error(error.message); return; }
     toast.info(`บันทึก ${prodNo} เป็นยอดค้างกะถัดไป ✓`);
-    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty }));
+    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false }));
     loadProdOrders(selSession.id, selSession.line_name);
   };
 
@@ -496,7 +531,7 @@ function LiveTab({ role }) {
     setOverflowInfo(null);
     if (error) { toast.error(error.message); return; }
     toast.success(`เปิด Order ${prodNo} · ${qty} ชิ้น ✓ (เกินเวลากะ)`);
-    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty }));
+    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false }));
     loadProdOrders(selSession.id, selSession.line_name);
   };
 
@@ -1077,7 +1112,7 @@ function LiveTab({ role }) {
                   })()}
                 </Field>
                 <Field label="เวลาเริ่มต้น">
-                  <input type="time" value={openForm.start_time} onChange={e => setOpenForm(f => ({ ...f, start_time: e.target.value }))} style={inputStyle} />
+                  <TimeInput24 value={openForm.start_time} onChange={e => setOpenForm(f => ({ ...f, start_time: e.target.value }))} style={{ fontSize: 16 }} />
                 </Field>
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
@@ -1355,6 +1390,17 @@ function LiveTab({ role }) {
                 )}
               </div>
 
+              {/* Backfill toggle */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', marginTop: 10, background: openProdForm.is_backfill ? 'rgba(107,114,128,0.15)' : 'rgba(107,114,128,0.06)', border: `1px solid ${openProdForm.is_backfill ? 'rgba(107,114,128,0.5)' : 'rgba(107,114,128,0.2)'}`, borderRadius: 8 }}>
+                <input type="checkbox" checked={openProdForm.is_backfill}
+                  onChange={e => setOpenProdForm(f => ({ ...f, is_backfill: e.target.checked }))}
+                  style={{ width: 16, height: 16, cursor: 'pointer' }} />
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>ยิงย้อนหลัง / เติมข้อมูล</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>order นี้ผลิตไปแล้ว — ไม่นับ delay บน Heijunka</div>
+                </div>
+              </label>
+
               {/* Running count */}
               {prodOrders.filter(o => o.status === 'open').length > 0 && (
                 <div style={{ marginTop: 12, padding: '6px 12px', background: 'rgba(245,158,11,0.1)', borderRadius: 8, fontSize: 12, color: '#f59e0b', fontWeight: 700 }}>
@@ -1565,17 +1611,17 @@ function LiveTab({ role }) {
                     {/* Start time — shown in start_end and start_dur modes */}
                     {(dtForm.mode === 'start_end' || dtForm.mode === 'start_dur') && (
                       <Field label="🔴 เวลาเริ่มหยุด">
-                        <input type="time" value={dtForm.start_time}
+                        <TimeInput24 value={dtForm.start_time}
                           onChange={e => setDtForm(f => ({ ...f, start_time: e.target.value }))}
-                          style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 18, textAlign: 'center' }} />
+                          style={{ fontSize: 18 }} />
                       </Field>
                     )}
                     {/* End time — shown in start_end and end_dur modes */}
                     {(dtForm.mode === 'start_end' || dtForm.mode === 'end_dur') && (
                       <Field label="🟢 เวลากลับมาทำงาน">
-                        <input type="time" value={dtForm.end_time}
+                        <TimeInput24 value={dtForm.end_time}
                           onChange={e => setDtForm(f => ({ ...f, end_time: e.target.value }))}
-                          style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 18, textAlign: 'center' }} />
+                          style={{ fontSize: 18 }} />
                       </Field>
                     )}
                     {/* Duration — shown in start_dur and end_dur modes */}
@@ -2048,7 +2094,7 @@ function MachineSetup({ role }) {
 
 /* ── Defect Type Setup ── */
 function DefectTypeSetup({ role }) {
-  const canEdit = ['admin', 'manager'].includes(role);
+  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
   const [items, setItems]     = useState([]);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving]   = useState(false);
@@ -2158,7 +2204,7 @@ function DefectTypeSetup({ role }) {
 
 /* ── Break Policy Setup ── */
 function BreakPolicySetup({ role }) {
-  const canEdit = ['admin', 'manager'].includes(role);
+  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
   const [items, setItems]   = useState([]);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -2251,7 +2297,7 @@ function BreakPolicySetup({ role }) {
               <Field label="ชื่อภาษาอังกฤษ"><input value={form.name_en} onChange={e => setForm(f => ({ ...f, name_en: e.target.value }))} placeholder="เช่น Lunch Break" style={inputStyle} /></Field>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="เวลาเริ่ม (HH:MM)">
-                  <input type="time" value={form.start_time} onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))} style={inputStyle} />
+                  <TimeInput24 value={form.start_time} onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))} style={{ fontSize: 16 }} />
                 </Field>
                 <Field label="ระยะเวลา (นาที)">
                   <input type="number" min="1" value={form.duration_min} onChange={e => setForm(f => ({ ...f, duration_min: e.target.value }))} style={{ ...inputStyle, fontWeight: 800, fontSize: 16, textAlign: 'center' }} />
@@ -2400,7 +2446,7 @@ function ProductSetup({ role }) {
     load();
   };
 
-  const canEdit = ['admin', 'manager'].includes(role);
+  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
 
   // ── Kanban CRUD ──────────────────────────────────────────────
   const openKanbanEdit = (std = null, defaultProductId = '') => {
@@ -2743,7 +2789,7 @@ function DowntimeTypeSetup({ role }) {
     load();
   };
 
-  const canEdit = ['admin', 'manager'].includes(role);
+  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
 
   const processGroups = [
     { key: 'welding_assembly', label: '🔥 Welding / Assembly', color: '#f97316' },
@@ -2920,7 +2966,7 @@ function _KanbanStandardSetup_REMOVED({ role }) {
     load();
   };
 
-  const canEdit = ['admin', 'manager'].includes(role);
+  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
 
   const getItemDisplay = (item) => {
     const prod = item.dr_products;
