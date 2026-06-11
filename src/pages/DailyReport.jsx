@@ -165,9 +165,10 @@ function LiveTab({ role }) {
   // qty_actual produced this shift for each open order (before carry-over)
   const [carryQtyActual, setCarryQtyActual] = useState({});
 
-  const canManage     = ['admin', 'manager', 'supervisor'].includes(role);
-  const canCloseShift = ['admin', 'manager', 'supervisor'].includes(role);
-  const canScan       = ['admin', 'manager', 'supervisor', 'leader'].includes(role);
+  const canManage        = ['admin', 'manager', 'supervisor'].includes(role);
+  const canRequestClose  = ['admin', 'manager', 'supervisor', 'leader'].includes(role); // request or direct-close
+  const canApproveClose  = ['admin', 'manager', 'supervisor'].includes(role);           // approve pending_close
+  const canScan          = ['admin', 'manager', 'supervisor', 'leader'].includes(role);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -196,7 +197,7 @@ function LiveTab({ role }) {
     // Fetch sessions — filter by role
     let sq = supabaseDR.from('production_sessions')
       .select('*, dr_products(name, cycle_time_sec, target_per_shift, process_type)')
-      .eq('status', 'open')
+      .in('status', ['open', 'pending_close'])
       .order('created_at', { ascending: false });
 
     if (role === 'leader' && userLineId) {
@@ -208,10 +209,10 @@ function LiveTab({ role }) {
 
     const { data: ss } = await sq;
 
-    // Check overdue: open sessions from previous dates
+    // Check overdue: open/pending_close sessions from previous dates
     const { data: overdue } = await supabaseDR.from('production_sessions')
       .select('id, line_name, shift, work_date, section')
-      .eq('status', 'open')
+      .in('status', ['open', 'pending_close'])
       .lt('work_date', today());
     setOverdueAlert((overdue || []).filter(o => {
       if (role === 'admin' || role === 'manager') return true;
@@ -768,7 +769,26 @@ function LiveTab({ role }) {
     const totalQtyOk      = Math.max(0, totalProducedFinal - totalQtyNg - totalQtySuspect - totalQtyRepair);
 
     const { A, P, Q, oee, shiftMin } = computeOEE(totalQtyNg + totalQtySuspect);
-    const { error } = await supabaseDR.from('production_sessions').update({
+    // Leader → request close (pending_close), SV+ → close directly
+    const isLeaderRequest = role === 'leader';
+    const payload = isLeaderRequest ? {
+      status:                  'pending_close',
+      close_requested_by_name: fullName,
+      close_requested_by_uid:  user?.id,
+      close_requested_at:      new Date().toISOString(),
+      end_time:                nowTime(),
+      ng_qty:                  totalQtyNg,
+      actual_qty:              totalProducedFinal,
+      qty_ok:                  totalQtyOk,
+      qty_ng:                  totalQtyNg,
+      qty_suspect:             totalQtySuspect,
+      qty_repair:              totalQtyRepair,
+      shift_min:               shiftMin,
+      oee_a:                   parseFloat((A * 100).toFixed(2)),
+      oee_p:                   parseFloat((P * 100).toFixed(2)),
+      oee_q:                   parseFloat((Q * 100).toFixed(2)),
+      oee:                     parseFloat((oee * 100).toFixed(2)),
+    } : {
       status:          'closed',
       closed_by_name:  fullName,
       closed_by_uid:   user?.id,
@@ -785,12 +805,17 @@ function LiveTab({ role }) {
       oee_p:           parseFloat((P * 100).toFixed(2)),
       oee_q:           parseFloat((Q * 100).toFixed(2)),
       oee:             parseFloat((oee * 100).toFixed(2)),
-    }).eq('id', selSession.id);
+    };
+
+    const { error } = await supabaseDR.from('production_sessions').update(payload).eq('id', selSession.id);
     setSavingClose(false);
     if (error) { toast.error(error.message); return; }
 
-    // Create carry-over orders in next session placeholder (just mark, next SV opens session and picks up)
-    toast.success(`ปิดกะสำเร็จ · OEE ${(oee * 100).toFixed(1)}% · ดี ${totalQtyOk} / NG ${totalQtyNg} / สงสัย ${totalQtySuspect}`);
+    if (isLeaderRequest) {
+      toast.info(`ส่งคำขอปิดกะแล้ว — รอ SV อนุมัติ · OEE Preview ${(oee * 100).toFixed(1)}%`);
+    } else {
+      toast.success(`ปิดกะสำเร็จ · OEE ${(oee * 100).toFixed(1)}% · ดี ${totalQtyOk} / NG ${totalQtyNg} / สงสัย ${totalQtySuspect}`);
+    }
     setShowCloseShift(false);
     setCarryOverDecisions({});
     setCarryQtyActual({});
@@ -798,6 +823,43 @@ function LiveTab({ role }) {
     setSelSession(null);
     setDtLogs([]);
     setProdOrders([]);
+  };
+
+  // SV approves pending_close → finalize to 'closed'
+  const handleApproveClose = async () => {
+    if (!selSession || selSession.status !== 'pending_close') return;
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabaseDR.from('production_sessions').update({
+      status:         'closed',
+      closed_by_name: fullName,
+      closed_by_uid:  user?.id,
+      closed_at:      new Date().toISOString(),
+    }).eq('id', selSession.id);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`อนุมัติปิดกะแล้ว ✓ (ขอโดย ${selSession.close_requested_by_name || '—'})`);
+    load();
+    setSelSession(null);
+    setDtLogs([]);
+    setProdOrders([]);
+  };
+
+  // SV rejects pending_close → revert to 'open'
+  const handleRejectClose = async () => {
+    if (!selSession || selSession.status !== 'pending_close') return;
+    if (!window.confirm('ปฏิเสธคำขอปิดกะ? กะจะกลับสู่สถานะ "กำลังผลิต"')) return;
+    const { error } = await supabaseDR.from('production_sessions').update({
+      status:                  'open',
+      close_requested_by_name: null,
+      close_requested_by_uid:  null,
+      close_requested_at:      null,
+      end_time:                null,
+      actual_qty:              0, qty_ok: 0, qty_ng: 0, qty_suspect: 0, qty_repair: 0, ng_qty: 0,
+      oee_a: null, oee_p: null, oee_q: null, oee: null,
+    }).eq('id', selSession.id);
+    if (error) { toast.error(error.message); return; }
+    toast.info('ปฏิเสธคำขอปิดกะ — กะกลับสู่ "กำลังผลิต"');
+    load();
+    setSelSession(prev => ({ ...prev, status: 'open', close_requested_by_name: null }));
   };
 
   const handleDeleteDT = async (id) => {
@@ -821,7 +883,10 @@ function LiveTab({ role }) {
             <button key={s.id} onClick={() => { setSelSession(s); }}
               style={{ padding: '10px 12px', borderRadius: 8, border: `2px solid ${selSession?.id === s.id ? 'var(--accent)' : 'var(--border)'}`,
                 background: selSession?.id === s.id ? 'var(--accent-dim)' : 'var(--card)', cursor: 'pointer', textAlign: 'left' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{s.line_name}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{s.line_name}</div>
+                {s.status === 'pending_close' && <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 10, background: 'rgba(245,158,11,0.2)', color: '#f59e0b' }}>⏳ รออนุมัติ</span>}
+              </div>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(s.work_date)}</div>
             </button>
           ))}
@@ -860,7 +925,11 @@ function LiveTab({ role }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                    <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>● LIVE</span>
+                    {selSession.status === 'pending_close' ? (
+                      <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', animation: 'pulse 2s infinite' }}>⏳ รออนุมัติปิดกะ</span>
+                    ) : (
+                      <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>● LIVE</span>
+                    )}
                     <span style={{ fontSize: 12, color: 'var(--muted)' }}>
                       {selSession.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(selSession.work_date)} · เริ่ม {selSession.start_time}
                     </span>
@@ -873,12 +942,40 @@ function LiveTab({ role }) {
                     </div>
                   )}
                 </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {canManage && <button onClick={() => { const s = currentShift(); setOpenForm(f => ({ ...f, shift: s, start_time: shiftStart(s) })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>}
-                  {canCloseShift && (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {canManage && selSession.status === 'open' && (
+                    <button onClick={() => { const s = currentShift(); setOpenForm(f => ({ ...f, shift: s, start_time: shiftStart(s) })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>
+                  )}
+
+                  {/* pending_close — SV sees approve/reject */}
+                  {selSession.status === 'pending_close' && canApproveClose && (
+                    <>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 6, padding: '4px 10px' }}>
+                        ⏳ รออนุมัติปิดกะ · ขอโดย {selSession.close_requested_by_name || '—'}
+                      </div>
+                      <button onClick={handleApproveClose}
+                        style={{ ...saveBtnStyle, background: '#22c55e', fontWeight: 700 }}>
+                        ✅ อนุมัติปิดกะ
+                      </button>
+                      <button onClick={handleRejectClose}
+                        style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
+                        ✕ ปฏิเสธ
+                      </button>
+                    </>
+                  )}
+
+                  {/* pending_close — leader sees waiting status */}
+                  {selSession.status === 'pending_close' && !canApproveClose && (
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 6, padding: '4px 10px' }}>
+                      ⏳ รอ SV อนุมัติปิดกะ...
+                    </div>
+                  )}
+
+                  {/* open — request/direct close button */}
+                  {selSession.status === 'open' && canRequestClose && (
                     <button onClick={() => { setCloseNg('0'); setShowCloseShift(true); }}
                       style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
-                      🔒 ปิดกะ
+                      {role === 'leader' ? '📋 ขอปิดกะ' : '🔒 ปิดกะ'}
                     </button>
                   )}
                 </div>
@@ -1175,7 +1272,14 @@ function LiveTab({ role }) {
           return (
             <div className="overlay" style={{ zIndex: 2000 }}>
               <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,480px)' }}>
-                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#ef4444' }}>🔒 ปิดกะ — สรุปผลและ OEE</div>
+                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#ef4444' }}>
+                  {role === 'leader' ? '📋 ขอปิดกะ — สรุปผลและ OEE' : '🔒 ปิดกะ — สรุปผลและ OEE'}
+                </div>
+                {role === 'leader' && (
+                  <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600, marginBottom: 4 }}>
+                    ⚠ กรอกข้อมูลให้ครบแล้วกด "ส่งขอปิดกะ" — SV จะอนุมัติขั้นสุดท้าย
+                  </div>
+                )}
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
                   {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)}
                 </div>
@@ -1319,7 +1423,7 @@ function LiveTab({ role }) {
                   <button onClick={handleCloseSession} disabled={savingClose || prodOrders.filter(o => o.status === 'open').some(o => !carryOverDecisions[o.id])}
                     style={{ ...saveBtnStyle, background: '#ef4444',
                       opacity: (savingClose || prodOrders.filter(o => o.status === 'open').some(o => !carryOverDecisions[o.id])) ? 0.5 : 1 }}>
-                    {savingClose ? '...' : '🔒 ยืนยันปิดกะ'}
+                    {savingClose ? '...' : role === 'leader' ? '📋 ส่งขอปิดกะ' : '🔒 ยืนยันปิดกะ'}
                   </button>
                 </div>
               </div>
