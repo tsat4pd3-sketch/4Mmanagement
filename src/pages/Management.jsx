@@ -165,13 +165,17 @@ export default function Management() {
   const [imgBox,         setImgBox]         = useState(null); // actual rendered image bounds inside objectFit:contain
   const imgRef = useRef(null);
   const recalcImgBox = useCallback(() => {
-    const img = imgRef.current;
-    if (!img || !img.naturalWidth) return;
-    const { naturalWidth: nw, naturalHeight: nh, clientWidth: cw, clientHeight: ch } = img;
-    const scale = Math.min(cw / nw, ch / nh);
-    const rw = nw * scale, rh = nh * scale;
-    const offsetX = (cw - rw) / 2, offsetY = (ch - rh) / 2;
-    setImgBox({ offsetX, offsetY, rw, rh });
+    // rAF ensures CSS layout has settled before reading dimensions
+    requestAnimationFrame(() => {
+      const img = imgRef.current;
+      if (!img || !img.naturalWidth) return;
+      const { naturalWidth: nw, naturalHeight: nh } = img;
+      const { width: cw, height: ch } = img.getBoundingClientRect();
+      if (!cw || !ch) return;
+      const scale = Math.min(cw / nw, ch / nh);
+      const rw = nw * scale, rh = nh * scale;
+      setImgBox({ offsetX: (cw - rw) / 2, offsetY: (ch - rh) / 2, rw, rh });
+    });
   }, []);
   useEffect(() => {
     window.addEventListener('resize', recalcImgBox);
