@@ -1855,7 +1855,6 @@ function SetupTab({ role }) {
       <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 20, width: 'fit-content', flexWrap: 'wrap' }}>
         {[
           { key: 'products',  label: '🔩 สินค้า / Model' },
-          { key: 'kanban',    label: '📦 Kanban Standard' },
           { key: 'machines',  label: '⚙️ เครื่องจักร' },
           { key: 'downtime',  label: '⏱ ประเภท Downtime' },
           { key: 'defects',   label: '🔴 ประเภทงานเสีย' },
@@ -1870,7 +1869,6 @@ function SetupTab({ role }) {
         ))}
       </div>
       {subTab === 'products' && <ProductSetup role={role} />}
-      {subTab === 'kanban'   && <KanbanStandardSetup role={role} />}
       {subTab === 'machines' && <MachineSetup role={role} />}
       {subTab === 'downtime' && <DowntimeTypeSetup role={role} />}
       {subTab === 'defects'  && <DefectTypeSetup role={role} />}
@@ -2285,7 +2283,7 @@ function BreakPolicySetup({ role }) {
   );
 }
 
-/* ── Product Setup ── */
+/* ── Product Setup (includes inline Kanban Standards) ── */
 function ProductSetup({ role }) {
   const [items, setItems]     = useState([]);
   const [lines, setLines]     = useState([]);
@@ -2293,20 +2291,28 @@ function ProductSetup({ role }) {
   const [ecSource, setEcSource] = useState(null); // product being EC'd
   const [form, setForm]       = useState({});
   const [saving, setSaving]   = useState(false);
-  const [showHistory, setShowHistory] = useState(false); // show inactive/superseded
-  const [familyTotals, setFamilyTotals] = useState({}); // family_id → total qty_ok
+  const [showHistory, setShowHistory] = useState(false);
+  const [familyTotals, setFamilyTotals] = useState({});
+  // kanban state
+  const [kanbanStds, setKanbanStds]       = useState([]);   // all kanban_standards
+  const [kanbanEditing, setKanbanEditing] = useState(null); // std id | 'new'
+  const [kanbanForm, setKanbanForm]       = useState({ product_id: '', mat_no: '', qty_per_kanban: 1, is_active: true });
+  const [kanbanSaving, setKanbanSaving]   = useState(false);
+  const [expandedFamilies, setExpandedFamilies] = useState({}); // family_id → bool
 
   const blankForm = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', is_active: true, effective_from: '' });
 
   const load = useCallback(async () => {
-    const [{ data: pr }, { data: ln }] = await Promise.all([
+    const [{ data: pr }, { data: ln }, { data: stds }] = await Promise.all([
       supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
       supabase.from('production_lines').select('id, name').order('name'),
+      supabaseDR.from('kanban_standards').select('*').order('mat_no'),
     ]);
     setItems(pr || []);
     setLines(ln || []);
+    setKanbanStds(stds || []);
 
-    // fetch cumulative qty_ok per family across all sessions
+    // cumulative qty_ok per family across all sessions
     const { data: sessions } = await supabaseDR
       .from('production_sessions')
       .select('product_id, qty_ok, dr_products(family_id)');
@@ -2388,6 +2394,41 @@ function ProductSetup({ role }) {
   };
 
   const canEdit = ['admin', 'manager'].includes(role);
+
+  // ── Kanban CRUD ──────────────────────────────────────────────
+  const openKanbanEdit = (std = null, defaultProductId = '') => {
+    setKanbanEditing(std?.id || 'new');
+    setKanbanForm(std
+      ? { product_id: std.product_id || '', mat_no: std.mat_no || '', qty_per_kanban: std.qty_per_kanban || 1, is_active: std.is_active }
+      : { product_id: defaultProductId, mat_no: '', qty_per_kanban: 1, is_active: true });
+  };
+
+  const handleKanbanSave = async () => {
+    if (!kanbanForm.mat_no.trim()) { toast.error('กรอก MAT.NO ก่อน'); return; }
+    if (!kanbanForm.qty_per_kanban || Number(kanbanForm.qty_per_kanban) < 1) { toast.error('Qty ต้องมากกว่า 0'); return; }
+    setKanbanSaving(true);
+    const payload = {
+      product_id: kanbanForm.product_id || null,
+      mat_no: kanbanForm.mat_no.trim().toUpperCase(),
+      qty_per_kanban: parseInt(kanbanForm.qty_per_kanban),
+      is_active: kanbanForm.is_active,
+    };
+    const { error } = kanbanEditing === 'new'
+      ? await supabaseDR.from('kanban_standards').insert(payload)
+      : await supabaseDR.from('kanban_standards').update(payload).eq('id', kanbanEditing);
+    setKanbanSaving(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success('บันทึกสำเร็จ');
+    setKanbanEditing(null);
+    load();
+  };
+
+  const handleKanbanDelete = async (id) => {
+    if (!window.confirm('ลบ Kanban Standard นี้?')) return;
+    const { error } = await supabaseDR.from('kanban_standards').delete().eq('id', id);
+    if (error) { toast.error(error.message); return; }
+    load();
+  };
 
   // Group by family_id
   const families = [];
@@ -2484,14 +2525,68 @@ function ProductSetup({ role }) {
                     <div key={rev.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, color: 'var(--muted)', opacity: 0.75 }}>
                       <span style={{ fontFamily: 'monospace', color: '#64748b' }}>{rev.mat_no || '—'}</span>
                       {rev.p_no && <span style={{ color: '#475569' }}>P.NO: {rev.p_no}</span>}
-                      <span style={{ color: '#374151' }}>
-                        {rev.effective_from || '?'} → {rev.superseded_at || '?'}
-                      </span>
+                      <span style={{ color: '#374151' }}>{rev.effective_from || '?'} → {rev.superseded_at || '?'}</span>
                       <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.15)', color: '#6b7280' }}>superseded</span>
                     </div>
                   ))}
                 </div>
               )}
+
+              {/* ── Kanban Standards (inline) ── */}
+              {(() => {
+                const familyProductIds = new Set(members.map(m => m.id));
+                const stds = kanbanStds.filter(s => s.product_id && familyProductIds.has(s.product_id));
+                const isExpanded = expandedFamilies[family_id] !== false; // default open
+                return (
+                  <div style={{ borderTop: '1px solid var(--border)' }}>
+                    <button
+                      onClick={() => setExpandedFamilies(prev => ({ ...prev, [family_id]: !isExpanded }))}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'var(--bg2)', border: 'none', cursor: 'pointer', color: 'var(--text2)', fontSize: 12, fontWeight: 700 }}>
+                      <span>📦 Kanban Standards ({stds.length})</span>
+                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>{isExpanded ? '▲' : '▼'}</span>
+                    </button>
+                    {isExpanded && (
+                      <div style={{ padding: '8px 12px', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                        {stds.length === 0 && (
+                          <div style={{ fontSize: 12, color: 'var(--muted)', padding: '6px 4px' }}>ยังไม่มี Kanban Standard</div>
+                        )}
+                        {stds.map(std => {
+                          const linkedProd = members.find(m => m.id === std.product_id);
+                          const isOldRev = linkedProd && !linkedProd.is_active;
+                          return (
+                            <div key={std.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 7, opacity: std.is_active ? 1 : 0.5 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: isOldRev ? 'var(--muted)' : '#0ea5e9' }}>{std.mat_no}</span>
+                                  {isOldRev && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.12)', color: '#6b7280' }}>rev เก่า</span>}
+                                  {!std.is_active && <span style={{ fontSize: 9, color: '#ef4444' }}>ปิด</span>}
+                                </div>
+                              </div>
+                              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                <span style={{ fontSize: 18, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>{std.qty_per_kanban}</span>
+                                <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 3 }}>ชิ้น/ใบ</span>
+                              </div>
+                              {canEdit && (
+                                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                                  <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+                                  <button onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {canEdit && (
+                          <button
+                            onClick={() => openKanbanEdit(null, active?.id || members[0]?.id || '')}
+                            style={{ alignSelf: 'flex-start', marginTop: 2, background: 'rgba(14,165,233,0.08)', border: '1px dashed rgba(14,165,233,0.4)', borderRadius: 6, padding: '4px 12px', fontSize: 11, color: '#0ea5e9', cursor: 'pointer', fontWeight: 700 }}>
+                            + เพิ่ม MAT.NO
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
@@ -2556,6 +2651,41 @@ function ProductSetup({ role }) {
               <button onClick={() => { setEditing(null); setEcSource(null); }} style={cancelBtnStyle}>ยกเลิก</button>
               <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1, background: ecSource ? '#7c3aed' : undefined }}>
                 {saving ? '...' : ecSource ? '🔄 บันทึก EC' : 'บันทึก'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Kanban Standard modal ── */}
+      {kanbanEditing && (
+        <div className="overlay" style={{ zIndex: 2100 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid rgba(14,165,233,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,380px)' }}>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>
+              {kanbanEditing === 'new' ? '+ เพิ่ม MAT.NO / Kanban Standard' : 'แก้ไข Kanban Standard'}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <Field label="MAT.NO *">
+                  <input autoFocus value={kanbanForm.mat_no} onChange={e => setKanbanForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))}
+                    placeholder="เช่น 10100335" style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700 }} />
+                </Field>
+                <Field label="Qty / Kanban Card *">
+                  <input type="number" min="1" value={kanbanForm.qty_per_kanban}
+                    onChange={e => setKanbanForm(f => ({ ...f, qty_per_kanban: e.target.value }))}
+                    style={{ ...inputStyle, fontSize: 18, fontWeight: 800, textAlign: 'center' }} />
+                </Field>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input type="checkbox" checked={kanbanForm.is_active} onChange={e => setKanbanForm(f => ({ ...f, is_active: e.target.checked }))} />
+                <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
+              </label>
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
+              <button onClick={() => setKanbanEditing(null)} style={cancelBtnStyle}>ยกเลิก</button>
+              <button onClick={handleKanbanSave} disabled={kanbanSaving || !kanbanForm.mat_no}
+                style={{ ...saveBtnStyle, opacity: (kanbanSaving || !kanbanForm.mat_no) ? 0.5 : 1 }}>
+                {kanbanSaving ? '...' : 'บันทึก'}
               </button>
             </div>
           </div>
@@ -2719,10 +2849,8 @@ function DowntimeTypeSetup({ role }) {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   KANBAN STANDARD SETUP
-═══════════════════════════════════════════════════════════════ */
-function KanbanStandardSetup({ role }) {
+/* ─── (KanbanStandardSetup merged into ProductSetup) ─── */
+function _KanbanStandardSetup_REMOVED({ role }) {
   const [items, setItems]       = useState([]);
   const [products, setProducts] = useState([]);
   const [editing, setEditing]   = useState(null);
