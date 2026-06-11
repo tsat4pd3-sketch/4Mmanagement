@@ -82,6 +82,7 @@ export default function DailyReport() {
           {[
             { key: 'live',    label: '⚡ Live กะนี้' },
             { key: 'history', label: '📋 ประวัติ' },
+            { key: 'export',  label: '📤 Export' },
             ...(canSetup ? [{ key: 'setup', label: '⚙️ ตั้งค่า' }] : []),
           ].map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
@@ -96,6 +97,7 @@ export default function DailyReport() {
 
       {tab === 'live'    && <LiveTab role={role} />}
       {tab === 'history' && <HistoryTab role={role} />}
+      {tab === 'export'  && <ExportTab />}
       {tab === 'setup'   && canSetup && <SetupTab role={role} />}
     </div>
   );
@@ -1947,6 +1949,343 @@ function HistoryTab({ role }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   EXPORT TAB
+═══════════════════════════════════════════════════════════════ */
+function ExportTab() {
+  const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+  const firstOfMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; };
+
+  const [filter, setFilter]       = useState({ date_from: firstOfMonth(), date_to: today(), line_name: '' });
+  const [lineNames, setLineNames] = useState([]);
+  const [loading, setLoading]     = useState(false);
+  const [preview, setPreview]     = useState(null); // { type, rows, cols }
+
+  useEffect(() => {
+    supabase.from('production_lines').select('name').order('name')
+      .then(({ data }) => setLineNames((data || []).map(l => l.name)));
+  }, []);
+
+  // ── fetch all raw data ──────────────────────────────────────────
+  const fetchData = async () => {
+    setLoading(true);
+    let q = supabaseDR.from('production_sessions')
+      .select(`*, dr_products(name, cycle_time_sec, target_per_shift),
+               prod_orders(*),
+               downtime_logs(*, dr_downtime_types(name_th, category)),
+               defect_logs(*, dr_defect_types(name_th))`)
+      .eq('status', 'closed')
+      .gte('work_date', filter.date_from)
+      .lte('work_date', filter.date_to)
+      .order('work_date', { ascending: true })
+      .order('shift', { ascending: true });
+    if (filter.line_name) q = q.eq('line_name', filter.line_name);
+    const { data, error } = await q;
+    setLoading(false);
+    if (error) { toast.error(error.message); return null; }
+    return data || [];
+  };
+
+  // ── build datasets ─────────────────────────────────────────────
+  const buildKanban = (sessions) => sessions.flatMap(s =>
+    (s.prod_orders || []).map(o => ({
+      'วันที่': s.work_date,
+      'ไลน์': s.line_name,
+      'กะ': s.shift === 'day' ? 'เช้า' : 'ดึก',
+      'PROD.NO': o.prod_no || '',
+      'MAT.NO': o.mat_no || '',
+      'Part Name': o.part_name || '',
+      'P.NO': o.p_no || '',
+      'Customer': o.customer || '',
+      'Qty แผน': o.qty || 0,
+      'Qty OK': o.qty_ok ?? '',
+      'สถานะ': o.status === 'confirmed' ? 'ปิดแล้ว' : o.status === 'carry_over' ? 'ยกยอด' : o.status === 'open' ? 'กำลังผลิต' : o.status,
+      'ยิงย้อนหลัง': o.is_backfill ? 'ใช่' : '',
+      'เปิดโดย': o.opened_by || '',
+      'เวลาเปิด': o.opened_at ? new Date(o.opened_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : '',
+      'เวลาปิด': o.confirmed_at ? new Date(o.confirmed_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : '',
+    }))
+  );
+
+  const buildOutput = (sessions) => sessions.map(s => {
+    const totalDT     = (s.downtime_logs || []).reduce((a, d) => a + (d.duration_min || 0), 0);
+    const unplanDT    = (s.downtime_logs || []).filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
+    const planDT      = totalDT - unplanDT;
+    const ngQty       = (s.defect_logs || []).reduce((a, d) => a + (d.qty_ng || 0), 0) + (s.qty_ng || 0);
+    const okQty       = s.qty_ok || Math.max(0, (s.actual_qty || 0) - ngQty);
+    return {
+      'วันที่': s.work_date,
+      'ไลน์': s.line_name,
+      'กะ': s.shift === 'day' ? 'เช้า' : 'ดึก',
+      'สินค้า': s.dr_products?.name || '',
+      'เวลาเริ่ม': s.start_time || '',
+      'เวลาสิ้นสุด': s.end_time || '',
+      'ยอดผลิตรวม': s.actual_qty || 0,
+      'ยอดดี (OK)': okQty,
+      'ยอดเสีย (NG)': ngQty,
+      'Downtime รวม (นาที)': +totalDT.toFixed(1),
+      'Unplanned DT (นาที)': +unplanDT.toFixed(1),
+      'Planned DT (นาที)': +planDT.toFixed(1),
+      'OEE (%)': s.oee != null ? +Number(s.oee).toFixed(1) : '',
+      'A (%)': s.oee_a != null ? +Number(s.oee_a).toFixed(1) : '',
+      'P (%)': s.oee_p != null ? +Number(s.oee_p).toFixed(1) : '',
+      'Q (%)': s.oee_q != null ? +Number(s.oee_q).toFixed(1) : '',
+      'เปิดกะโดย': s.opened_by_name || '',
+      'ปิดกะโดย': s.closed_by_name || '',
+    };
+  });
+
+  const buildOEE = (sessions) => {
+    const rows = [];
+    for (const s of sessions) {
+      const dts = s.downtime_logs || [];
+      const unplanDT = dts.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
+      const planDT   = dts.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
+      const SHIFT_MIN = 720;
+      const loadMin  = SHIFT_MIN - planDT;
+      const opMin    = Math.max(0, loadMin - unplanDT);
+      const ctSec    = s.dr_products?.cycle_time_sec || 0;
+      const calcA    = loadMin > 0 ? +(opMin / loadMin * 100).toFixed(1) : null;
+      const calcP    = ctSec > 0 && opMin > 0 && s.actual_qty ? +((s.actual_qty * ctSec / 60) / opMin * 100).toFixed(1) : null;
+      const ngQty    = (s.defect_logs || []).reduce((a, d) => a + (d.qty_ng || 0), 0) + (s.qty_ng || 0);
+      const totalQty = s.actual_qty || 0;
+      const calcQ    = totalQty > 0 ? +(Math.max(0, totalQty - ngQty) / totalQty * 100).toFixed(1) : null;
+      const calcOEE  = calcA && calcP && calcQ ? +((calcA/100)*(calcP/100)*(calcQ/100)*100).toFixed(1) : null;
+
+      // Main OEE row
+      rows.push({
+        'วันที่': s.work_date,
+        'ไลน์': s.line_name,
+        'กะ': s.shift === 'day' ? 'เช้า' : 'ดึก',
+        'สินค้า': s.dr_products?.name || '',
+        'Cycle Time (วิ)': ctSec || '',
+        'AT (นาที)': +loadMin.toFixed(1),
+        'Unplanned DT (นาที)': +unplanDT.toFixed(1),
+        'Planned DT (นาที)': +planDT.toFixed(1),
+        'Operating Time (นาที)': +opMin.toFixed(1),
+        'ยอดผลิต': totalQty,
+        'NG': ngQty,
+        'A (%)': calcA ?? (s.oee_a != null ? +Number(s.oee_a).toFixed(1) : ''),
+        'P (%)': calcP ?? (s.oee_p != null ? +Number(s.oee_p).toFixed(1) : ''),
+        'Q (%)': calcQ ?? (s.oee_q != null ? +Number(s.oee_q).toFixed(1) : ''),
+        'OEE (%)': calcOEE ?? (s.oee != null ? +Number(s.oee).toFixed(1) : ''),
+      });
+
+      // Downtime detail rows (indented)
+      for (const d of dts) {
+        rows.push({
+          'วันที่': '',
+          'ไลน์': '',
+          'กะ': '  └ DT',
+          'สินค้า': d.dr_downtime_types?.name_th || 'ไม่ระบุ',
+          'Cycle Time (วิ)': d.dr_downtime_types?.category === 'planned' ? 'Planned' : 'Unplanned',
+          'AT (นาที)': '',
+          'Unplanned DT (นาที)': '',
+          'Planned DT (นาที)': '',
+          'Operating Time (นาที)': '',
+          'ยอดผลิต': '',
+          'NG': '',
+          'A (%)': '',
+          'P (%)': '',
+          'Q (%)': d.duration_min != null ? +Number(d.duration_min).toFixed(1) + ' นาที' : '',
+          'OEE (%)': d.description || '',
+        });
+      }
+    }
+    return rows;
+  };
+
+  const buildDowntime = (sessions) => sessions.flatMap(s =>
+    (s.downtime_logs || []).map(d => ({
+      'วันที่': s.work_date,
+      'ไลน์': s.line_name,
+      'กะ': s.shift === 'day' ? 'เช้า' : 'ดึก',
+      'ประเภท': d.dr_downtime_types?.name_th || 'ไม่ระบุ',
+      'หมวด': d.dr_downtime_types?.category === 'planned' ? 'ในแผน' : 'นอกแผน',
+      'ระยะเวลา (นาที)': d.duration_min != null ? +Number(d.duration_min).toFixed(1) : '',
+      'เครื่องจักร': d.machine_no || '',
+      'รายละเอียด': d.description || '',
+      'เวลาเริ่ม': d.started_at ? new Date(d.started_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : '',
+      'เวลาสิ้นสุด': d.ended_at   ? new Date(d.ended_at).toLocaleString('th-TH',   { timeZone: 'Asia/Bangkok' }) : '',
+    }))
+  );
+
+  // ── CSV export ─────────────────────────────────────────────────
+  const exportCSV = (rows, filename) => {
+    if (!rows.length) { toast.error('ไม่มีข้อมูล'); return; }
+    const headers = Object.keys(rows[0]);
+    const lines   = [headers.join(','), ...rows.map(r =>
+      headers.map(h => {
+        const v = r[h] ?? '';
+        return String(v).includes(',') || String(v).includes('"') || String(v).includes('\n')
+          ? `"${String(v).replace(/"/g, '""')}"` : String(v);
+      }).join(',')
+    )];
+    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = filename + '.csv';
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  // ── PDF export via jsPDF + autoTable ──────────────────────────
+  const exportPDF = async (rows, title, filename) => {
+    if (!rows.length) { toast.error('ไม่มีข้อมูล'); return; }
+    const { default: jsPDF } = await import('jspdf');
+    const { default: autoTable } = await import('jspdf-autotable');
+
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const headers = Object.keys(rows[0]);
+
+    // Title
+    doc.setFontSize(14);
+    doc.text(title, 14, 14);
+    doc.setFontSize(9);
+    doc.text(`ช่วงวันที่: ${filter.date_from} ถึง ${filter.date_to}${filter.line_name ? '  ไลน์: ' + filter.line_name : ''}`, 14, 21);
+    doc.text(`Export: ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}`, 14, 27);
+
+    autoTable(doc, {
+      startY: 32,
+      head: [headers],
+      body: rows.map(r => headers.map(h => r[h] ?? '')),
+      styles: { fontSize: 7, cellPadding: 1.5, overflow: 'linebreak' },
+      headStyles: { fillColor: [30, 60, 40], textColor: 255, fontStyle: 'bold', fontSize: 7 },
+      alternateRowStyles: { fillColor: [245, 248, 245] },
+      margin: { left: 10, right: 10 },
+    });
+
+    doc.save(filename + '.pdf');
+  };
+
+  // ── preview data ───────────────────────────────────────────────
+  const handlePreview = async (type) => {
+    const sessions = await fetchData();
+    if (!sessions) return;
+    const builders = { kanban: buildKanban, output: buildOutput, oee: buildOEE, downtime: buildDowntime };
+    const rows = builders[type](sessions);
+    setPreview({ type, rows, cols: rows.length ? Object.keys(rows[0]) : [] });
+  };
+
+  const REPORT_TYPES = [
+    { key: 'kanban',   icon: '🏷',  label: 'Kanban Records',        desc: 'PROD.NO · MAT.NO · Qty · สถานะทุกใบ' },
+    { key: 'output',   icon: '📦',  label: 'Output / ผลผลิต',       desc: 'ยอดผลิต · NG · Downtime สรุปรายกะ' },
+    { key: 'oee',      icon: '📈',  label: 'OEE รายละเอียด',        desc: 'A · P · Q · OEE% + รายละเอียด Downtime แต่ละกะ' },
+    { key: 'downtime', icon: '⏱',  label: 'Downtime Log',           desc: 'ประเภท · ระยะเวลา · เครื่องจักร · รายละเอียด' },
+  ];
+
+  const labelFor = key => REPORT_TYPES.find(r => r.key === key)?.label || key;
+
+  const sel = { background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--text)', fontSize: 13 };
+  const btnSm = (color) => ({ padding: '7px 14px', borderRadius: 7, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 12, background: color, color: '#fff' });
+
+  return (
+    <div style={{ maxWidth: 900 }}>
+      {/* Filters */}
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px', marginBottom: 20 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12, color: 'var(--text)' }}>📤 Export ข้อมูล Daily Report</div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>วันที่เริ่ม</div>
+            <input type="date" value={filter.date_from} onChange={e => setFilter(f => ({ ...f, date_from: e.target.value }))} style={sel} />
+          </div>
+          <div style={{ paddingTop: 18, color: 'var(--muted)' }}>—</div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>วันที่สิ้นสุด</div>
+            <input type="date" value={filter.date_to} onChange={e => setFilter(f => ({ ...f, date_to: e.target.value }))} style={sel} />
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์</div>
+            <select value={filter.line_name} onChange={e => setFilter(f => ({ ...f, line_name: e.target.value }))} style={{ ...sel, minWidth: 160 }}>
+              <option value="">ทุกไลน์</option>
+              {lineNames.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+          {loading && <div style={{ paddingTop: 18, fontSize: 12, color: 'var(--muted)' }}>⏳ กำลังโหลด...</div>}
+        </div>
+      </div>
+
+      {/* Report type cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(210px,1fr))', gap: 14, marginBottom: 24 }}>
+        {REPORT_TYPES.map(r => (
+          <div key={r.key} style={{ background: 'var(--card)', border: `1px solid ${preview?.type === r.key ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 12, padding: '16px 18px' }}>
+            <div style={{ fontSize: 22, marginBottom: 6 }}>{r.icon}</div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>{r.label}</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>{r.desc}</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button style={btnSm('#6b7280')} onClick={() => handlePreview(r.key)} disabled={loading}>
+                👁 ดูตัวอย่าง
+              </button>
+              <button style={btnSm('#16a34a')} onClick={async () => {
+                const sessions = await fetchData();
+                if (!sessions) return;
+                const rows = { kanban: buildKanban, output: buildOutput, oee: buildOEE, downtime: buildDowntime }[r.key](sessions);
+                const fn = `${r.key}_${filter.date_from}_${filter.date_to}${filter.line_name ? '_' + filter.line_name : ''}`;
+                exportCSV(rows, fn);
+              }} disabled={loading}>⬇ CSV</button>
+              <button style={btnSm('#dc2626')} onClick={async () => {
+                const sessions = await fetchData();
+                if (!sessions) return;
+                const rows = { kanban: buildKanban, output: buildOutput, oee: buildOEE, downtime: buildDowntime }[r.key](sessions);
+                const fn = `${r.key}_${filter.date_from}_${filter.date_to}${filter.line_name ? '_' + filter.line_name : ''}`;
+                await exportPDF(rows, r.label + ` (${filter.date_from} – ${filter.date_to})`, fn);
+              }} disabled={loading}>⬇ PDF</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Preview table */}
+      {preview && (
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div>
+              <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>ตัวอย่าง — {labelFor(preview.type)}</span>
+              <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 10 }}>{preview.rows.length} แถว</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button style={btnSm('#16a34a')} onClick={() => {
+                const fn = `${preview.type}_${filter.date_from}_${filter.date_to}`;
+                exportCSV(preview.rows, fn);
+              }}>⬇ CSV</button>
+              <button style={btnSm('#dc2626')} onClick={async () => {
+                const fn = `${preview.type}_${filter.date_from}_${filter.date_to}`;
+                await exportPDF(preview.rows, labelFor(preview.type), fn);
+              }}>⬇ PDF</button>
+              <button style={{ ...btnSm('#374151'), background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)' }} onClick={() => setPreview(null)}>✕</button>
+            </div>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+              <thead>
+                <tr>
+                  {preview.cols.map(c => (
+                    <th key={c} style={{ padding: '6px 8px', textAlign: 'left', background: 'var(--bg2)', borderBottom: '2px solid var(--border)', color: 'var(--text)', fontWeight: 700, whiteSpace: 'nowrap', fontSize: 11 }}>{c}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {preview.rows.slice(0, 50).map((row, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid var(--border)', background: i % 2 ? 'var(--bg2)' : 'transparent' }}>
+                    {preview.cols.map(c => (
+                      <td key={c} style={{ padding: '5px 8px', color: 'var(--text)', whiteSpace: 'nowrap', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {String(row[c] ?? '')}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {preview.rows.length > 50 && (
+              <div style={{ textAlign: 'center', padding: 10, fontSize: 12, color: 'var(--muted)' }}>
+                แสดง 50 แถวแรก จาก {preview.rows.length} แถว — Export CSV/PDF เพื่อดูทั้งหมด
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
