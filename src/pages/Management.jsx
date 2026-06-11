@@ -35,6 +35,47 @@ function getCurrentShift() {
   return (h >= 8 && h < 20) ? 'day' : 'night';
 }
 
+// Period boundaries — เวลาที่ใช้บันทึก started_at ไม่ใช่เวลาที่ลาก
+// กะเช้า: เช้า 08:00 / บ่าย 12:00 / OT 17:30
+// กะดึก: OT 20:00 / ปกติ 22:30 / ใกล้เช้า 03:00 (วันถัดไป)
+const SHIFT_PERIODS = {
+  day: [
+    { key: 'morning',      label: 'ช่วงเช้า',    start: '08:00', h: 8,  m: 0  },
+    { key: 'afternoon',    label: 'ช่วงบ่าย',    start: '12:00', h: 12, m: 0  },
+    { key: 'ot',           label: 'OT',           start: '17:30', h: 17, m: 30 },
+  ],
+  night: [
+    { key: 'night_ot',     label: 'OT กะดึก',    start: '20:00', h: 20, m: 0  },
+    { key: 'night_normal', label: 'กะดึกปกติ',   start: '22:30', h: 22, m: 30 },
+    { key: 'night_late',   label: 'ใกล้เช้า',    start: '03:00', h: 3,  m: 0  },
+  ],
+};
+
+function getCurrentPeriod(shift) {
+  const now = new Date();
+  const nowTotalMin = now.getHours() * 60 + now.getMinutes();
+  // สำหรับกะดึก: 03:00 อยู่หลัง 20:00 → บวก 24h ให้กับชั่วโมงที่น้อยกว่า 8
+  const toAdj = (h, m) => {
+    const base = h * 60 + m;
+    return (shift === 'night' && h < 8) ? base + 1440 : base;
+  };
+  const nowAdj = (shift === 'night' && now.getHours() < 8) ? nowTotalMin + 1440 : nowTotalMin;
+  const periods = SHIFT_PERIODS[shift];
+  let current = periods[0];
+  for (const p of periods) {
+    if (nowAdj >= toAdj(p.h, p.m)) current = p;
+  }
+  return current;
+}
+
+// คืน Date object ของต้นช่วง (snapped) — ใช้เป็น started_at / ended_at
+function getPeriodStartDate(period, workDate) {
+  const d = new Date(`${workDate}T${period.start}:00`);
+  // ช่วง night_late (03:00) ข้ามวัน → วันถัดจาก workDate
+  if (period.h < 8) d.setDate(d.getDate() + 1);
+  return d;
+}
+
 const CARD_W = 104;
 const CARD_H = 92;
 const PHOTO_SZ = 64; // photo size in station cards — dominates the card area
@@ -83,7 +124,7 @@ const MAN_CASE_META = {
 };
 
 export default function Management() {
-  const { role, lineId: userLineId, team: userTeam } = useContext(UserContext);
+  const { role, lineId: userLineId, team: userTeam, fullName, user } = useContext(UserContext);
   const isLeader = role === 'leader';
 
   const [workers,        setWorkers]        = useState([]);
@@ -240,6 +281,43 @@ export default function Management() {
     setWorkers(prev => prev.map(w => w.id === logId ? { ...w, assigned_line: finalAssign } : w));
     setSelectedWorker(null);
     await supabase.from('daily_production_logs').update({ assigned_line: finalAssign }).eq('id', logId);
+
+    // ── Station assignment log (period-snapped) ──────────────────
+    if (droppedWorker?.employee_id) {
+      const workDate = getWorkDate();
+      const shift    = getCurrentShift();
+      const period   = getCurrentPeriod(shift);
+      const periodStart = getPeriodStartDate(period, workDate);
+
+      // ปิด record เดิมที่ยังเปิดอยู่ของพนักงานคนนี้
+      await supabase
+        .from('station_assignment_logs')
+        .update({ ended_at: periodStart.toISOString() })
+        .eq('employee_id', droppedWorker.employee_id)
+        .eq('work_date', workDate)
+        .eq('shift', shift)
+        .is('ended_at', null);
+
+      // สร้าง record ใหม่เฉพาะเมื่อย้ายไปสถานี (ไม่สร้างตอนย้ายกลับ pool)
+      if (finalAssign) {
+        const station = dynamicStations.find(s => String(s.id) === String(finalAssign));
+        await supabase.from('station_assignment_logs').insert({
+          employee_id:      droppedWorker.employee_id,
+          station_id:       finalAssign,
+          station_name:     station?.station_name || null,
+          line_name:        station?.line_name || selectedLine,
+          work_date:        workDate,
+          shift,
+          period:           period.key,
+          period_start:     period.start,
+          started_at:       periodStart.toISOString(),
+          ended_at:         null,
+          assigned_by_uid:  user?.id || null,
+          assigned_by_name: fullName || null,
+        });
+      }
+    }
+
     // ถ้า assign ไปสถานีผลิต → ล้าง special task อัตโนมัติ
     if (finalAssign && droppedWorker?.employee_id) {
       const today = getWorkDate();
