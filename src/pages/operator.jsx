@@ -2,6 +2,7 @@ import { useState, useEffect, useContext, useRef, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { fmtDateMedium } from '../utils/dateFormat';
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
   return new Promise((resolve) => {
@@ -880,7 +881,7 @@ export default function Operator() {
                         <span style={{ color: toLv?.color, fontWeight: 800 }}>Level {req.to_level} ({toLv?.label})</span>
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                        ขอเมื่อ {new Date(req.requested_at).toLocaleDateString('th-TH', { dateStyle: 'medium' })}
+                        ขอเมื่อ {fmtDateMedium(req.requested_at)}
                       </div>
 
                       {/* Doc upload for level 100 */}

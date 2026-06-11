@@ -1,4 +1,5 @@
 import { createContext, useState, useEffect, useRef, lazy, Suspense, useCallback } from 'react';
+import { fmtDateTime } from './utils/dateFormat';
 import tsLogo from './assets/TS logo.png';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from './supabaseClient';
@@ -439,7 +440,7 @@ function NotificationBell({ userId }) {
                     <div style={{ fontSize: 12, fontWeight: n.is_read ? 400 : 700, color: 'var(--text)', lineHeight: 1.4 }}>{n.title}</div>
                     {n.body && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.body}</div>}
                     <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>
-                      {new Date(n.created_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}
+                      {fmtDateTime(n.created_at)}
                     </div>
                   </div>
                 </div>

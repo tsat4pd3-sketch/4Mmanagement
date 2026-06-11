@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext, useCallback, useRef } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
 import { toast } from '../components/Toast';
 
 /* ─── TimeInput24 — always 24h regardless of OS locale ─────── */
@@ -750,7 +751,7 @@ function LiveTab({ role }) {
           status:      'carry_over',
           qty_actual:  qActual,
           carry_over_from_session_id: selSession.id,
-          carry_over_note: `ยกยอด: ทำได้ ${qActual}/${order.qty} ชิ้น จาก${selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} ${selSession.work_date}`,
+          carry_over_note: `ยกยอด: ทำได้ ${qActual}/${order.qty} ชิ้น จาก${selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} ${fmtDate(selSession.work_date)}`,
         }).eq('id', order.id);
       } else if (decision === 'cancel') {
         await supabaseDR.from('prod_orders').update({ status: 'cancelled', qty_actual: qActual }).eq('id', order.id);
@@ -821,7 +822,7 @@ function LiveTab({ role }) {
               style={{ padding: '10px 12px', borderRadius: 8, border: `2px solid ${selSession?.id === s.id ? 'var(--accent)' : 'var(--border)'}`,
                 background: selSession?.id === s.id ? 'var(--accent-dim)' : 'var(--card)', cursor: 'pointer', textAlign: 'left' }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{s.line_name}</div>
-              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {s.work_date}</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(s.work_date)}</div>
             </button>
           ))}
         </div>
@@ -834,7 +835,7 @@ function LiveTab({ role }) {
             <div style={{ fontSize: 13, fontWeight: 800, color: '#ef4444', marginBottom: 6 }}>⚠ มีกะที่ยังไม่ปิด ({overdueAlert.length} กะ)</div>
             {overdueAlert.map(o => (
               <div key={o.id} style={{ fontSize: 12, color: 'var(--text)', marginBottom: 2 }}>
-                • {o.line_name} · {o.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · วันที่ {o.work_date}
+                • {o.line_name} · {o.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · วันที่ {fmtDate(o.work_date)}
               </div>
             ))}
             <div style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>กรุณา SV ทำการปิดกะให้ครบก่อนเริ่มกะใหม่</div>
@@ -861,7 +862,7 @@ function LiveTab({ role }) {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
                     <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>● LIVE</span>
                     <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-                      {selSession.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {selSession.work_date} · เริ่ม {selSession.start_time}
+                      {selSession.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(selSession.work_date)} · เริ่ม {selSession.start_time}
                     </span>
                   </div>
                   <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>{selSession.line_name}</div>
@@ -1002,8 +1003,8 @@ function LiveTab({ role }) {
                           </span>
                         </div>
                         <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
-                          เปิด {new Date(o.opened_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} {o.opened_by && `· ${o.opened_by}`}
-                          {confirmed && o.confirmed_at && ` · ปิด ${new Date(o.confirmed_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} · ${o.confirmed_by}`}
+                          เปิด {fmtTime(new Date(o.opened_at))} {o.opened_by && `· ${o.opened_by}`}
+                          {confirmed && o.confirmed_at && ` · ปิด ${fmtTime(new Date(o.confirmed_at))} · ${o.confirmed_by}`}
                         </div>
                         {hasQuality && (
                           <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
@@ -1056,7 +1057,7 @@ function LiveTab({ role }) {
                         </div>
                         {d.description && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.description}</div>}
                         <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>
-                          {new Date(d.logged_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                          {fmtTime(new Date(d.logged_at))}
                           {d.reported_by_name && ` · ${d.reported_by_name}`}
                         </div>
                       </div>
@@ -1093,8 +1094,8 @@ function LiveTab({ role }) {
                         </div>
                         {d.description && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{d.description}</div>}
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                          {new Date(d.started_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                          {d.ended_at && ` – ${new Date(d.ended_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`}
+                          {fmtTime(new Date(d.started_at))}
+                          {d.ended_at && ` – ${fmtTime(new Date(d.ended_at))}`}
                           {d.reported_by_name && ` · ${d.reported_by_name}`}
                         </div>
                       </div>
@@ -1176,7 +1177,7 @@ function LiveTab({ role }) {
               <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,480px)' }}>
                 <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#ef4444' }}>🔒 ปิดกะ — สรุปผลและ OEE</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
-                  {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {selSession.work_date}
+                  {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)}
                 </div>
 
                 {/* Summary stats */}
@@ -1551,7 +1552,7 @@ function LiveTab({ role }) {
                 <div style={{ fontSize: 16, fontWeight: 800, color: '#ef4444' }}>🔴 บันทึกงานเสีย</div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}>
                   <div style={{ color: '#4d9fff', fontWeight: 700 }}>{selSession.line_name}</div>
-                  <div>{selSession.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {selSession.work_date}</div>
+                  <div>{selSession.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(selSession.work_date)}</div>
                 </div>
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
@@ -1610,9 +1611,9 @@ function LiveTab({ role }) {
             { key: 'start_dur', label: 'เริ่ม + นาที',  desc: 'กรอกเวลาเริ่มหยุด + จำนวนนาที → คำนวณเวลากลับมา' },
             { key: 'end_dur',   label: 'จบ + นาที',     desc: 'กรอกเวลากลับมา + จำนวนนาที → คำนวณเวลาเริ่มหยุด' },
           ];
-          const fmtTime = (dt) => dt ? dt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '—';
-          const fmtDate = (dt) => dt ? dt.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) : '';
-          const workDate = new Date(`${selSession.work_date}T12:00:00`);
+          const fmtTimeLocal = (dt) => dt ? fmtTime(dt) : '—';
+          const fmtDateLabel = (dt) => { if (!dt) return ''; return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}`; };
+          const workDate = new Date(`${fmtDate(selSession.work_date)}T12:00:00`);
           const isNextDay = (dt) => dt && dt.toDateString() !== workDate.toDateString();
           return (
             <div className="overlay" style={{ zIndex: 2000 }}>
@@ -1621,7 +1622,7 @@ function LiveTab({ role }) {
                   <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>⏱ บันทึก Downtime</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}>
                     <div style={{ color: '#4d9fff', fontWeight: 700 }}>{selSession.line_name}</div>
-                    <div>{selSession.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {selSession.work_date}</div>
+                    <div>{selSession.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(selSession.work_date)}</div>
                   </div>
                 </div>
 
@@ -1711,7 +1712,7 @@ function LiveTab({ role }) {
                       </div>
                       {(isNextDay(startedAt) || isNextDay(endedAt)) && (
                         <div style={{ marginTop: 8, fontSize: 10, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', borderRadius: 6, padding: '4px 8px' }}>
-                          ⚠ เวลาข้ามคืน — บันทึกเป็นวันถัดไปอัตโนมัติ (กะดึกเริ่ม {selSession.work_date})
+                          ⚠ เวลาข้ามคืน — บันทึกเป็นวันถัดไปอัตโนมัติ (กะดึกเริ่ม {fmtDate(selSession.work_date)})
                         </div>
                       )}
                     </div>
@@ -1774,7 +1775,7 @@ function HistoryTab({ role }) {
   const isAdmin = role === 'admin';
 
   const handleDelete = async (s) => {
-    if (!window.confirm(`ลบกะ ${s.line_name} ${s.shift === 'day' ? 'กะเช้า' : 'กะดึก'} วันที่ ${s.work_date} ?\n(ข้อมูล Order, Downtime, Defect จะถูกลบทั้งหมด)`)) return;
+    if (!window.confirm(`ลบกะ ${s.line_name} ${s.shift === 'day' ? 'กะเช้า' : 'กะดึก'} วันที่ ${fmtDate(s.work_date)} ?\n(ข้อมูล Order, Downtime, Defect จะถูกลบทั้งหมด)`)) return;
     setDeleting(s.id);
     const { error } = await supabaseDR.from('production_sessions').delete().eq('id', s.id);
     setDeleting(null);
@@ -1854,7 +1855,7 @@ function HistoryTab({ role }) {
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{s.line_name}</span>
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {s.work_date}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(s.work_date)}</span>
                     {s.dr_products?.name && <span style={{ fontSize: 11, color: '#4d9fff' }}>· {s.dr_products.name}</span>}
                   </div>
                 </div>
@@ -1993,7 +1994,7 @@ function ExportTab() {
   // ── build datasets ─────────────────────────────────────────────
   const buildKanban = (sessions) => sessions.flatMap(s =>
     (s.prod_orders || []).map(o => ({
-      'วันที่': s.work_date,
+      'วันที่': fmtDate(s.work_date),
       'ไลน์': s.line_name,
       'กะ': s.shift === 'day' ? 'เช้า' : 'ดึก',
       'PROD.NO': o.prod_no || '',
@@ -2006,8 +2007,8 @@ function ExportTab() {
       'สถานะ': o.status === 'confirmed' ? 'ปิดแล้ว' : o.status === 'carry_over' ? 'ยกยอด' : o.status === 'open' ? 'กำลังผลิต' : o.status,
       'ยิงย้อนหลัง': o.is_backfill ? 'ใช่' : '',
       'เปิดโดย': o.opened_by || '',
-      'เวลาเปิด': o.opened_at ? new Date(o.opened_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : '',
-      'เวลาปิด': o.confirmed_at ? new Date(o.confirmed_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : '',
+      'เวลาเปิด': o.opened_at ? fmtDateTimeFull(new Date(o.opened_at)) : '',
+      'เวลาปิด': o.confirmed_at ? fmtDateTimeFull(new Date(o.confirmed_at)) : '',
     }))
   );
 
@@ -2018,7 +2019,7 @@ function ExportTab() {
     const ngQty       = (s.defect_logs || []).reduce((a, d) => a + (d.qty_ng || 0), 0) + (s.qty_ng || 0);
     const okQty       = s.qty_ok || Math.max(0, (s.actual_qty || 0) - ngQty);
     return {
-      'วันที่': s.work_date,
+      'วันที่': fmtDate(s.work_date),
       'ไลน์': s.line_name,
       'กะ': s.shift === 'day' ? 'เช้า' : 'ดึก',
       'สินค้า': s.dr_products?.name || '',
@@ -2058,7 +2059,7 @@ function ExportTab() {
 
       // Main OEE row
       rows.push({
-        'วันที่': s.work_date,
+        'วันที่': fmtDate(s.work_date),
         'ไลน์': s.line_name,
         'กะ': s.shift === 'day' ? 'เช้า' : 'ดึก',
         'สินค้า': s.dr_products?.name || '',
@@ -2101,7 +2102,7 @@ function ExportTab() {
 
   const buildDowntime = (sessions) => sessions.flatMap(s =>
     (s.downtime_logs || []).map(d => ({
-      'วันที่': s.work_date,
+      'วันที่': fmtDate(s.work_date),
       'ไลน์': s.line_name,
       'กะ': s.shift === 'day' ? 'เช้า' : 'ดึก',
       'ประเภท': d.dr_downtime_types?.name_th || 'ไม่ระบุ',
@@ -2109,8 +2110,8 @@ function ExportTab() {
       'ระยะเวลา (นาที)': d.duration_min != null ? +Number(d.duration_min).toFixed(1) : '',
       'เครื่องจักร': d.machine_no || '',
       'รายละเอียด': d.description || '',
-      'เวลาเริ่ม': d.started_at ? new Date(d.started_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : '',
-      'เวลาสิ้นสุด': d.ended_at   ? new Date(d.ended_at).toLocaleString('th-TH',   { timeZone: 'Asia/Bangkok' }) : '',
+      'เวลาเริ่ม': d.started_at ? fmtDateTimeFull(new Date(d.started_at)) : '',
+      'เวลาสิ้นสุด': d.ended_at   ? fmtDateTimeFull(new Date(d.ended_at)) : '',
     }))
   );
 
@@ -2145,7 +2146,7 @@ function ExportTab() {
     doc.text(title, 14, 14);
     doc.setFontSize(9);
     doc.text(`ช่วงวันที่: ${filter.date_from} ถึง ${filter.date_to}${filter.line_name ? '  ไลน์: ' + filter.line_name : ''}`, 14, 21);
-    doc.text(`Export: ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}`, 14, 27);
+    doc.text(`Export: ${fmtDateTimeFull(new Date())}`, 14, 27);
 
     autoTable(doc, {
       startY: 32,

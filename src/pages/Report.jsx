@@ -6,6 +6,7 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, Tooltip,
 } from 'recharts';
+import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 
 function useWidth() {
   const [w, setW] = useState(() => window.innerWidth);
@@ -372,7 +373,7 @@ function PerEmployeeTab() {
     const emp = employees.find(e => e.id === selected);
     const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
     const rowsHtml = logs.map((l, i) => `<tr>
-      <td style="border:1px solid #ccc;padding:3px 6px">${l.work_date}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${fmtDate(l.work_date)}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.is_present ? '✓' : '✗'}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_helmet ? '✓' : '✗'}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_boots ? '✓' : '✗'}</td>
@@ -436,7 +437,7 @@ table{border-collapse:collapse;width:100%}
             <tbody>
               {logs.length === 0 ? <EmptyRow cols={3} /> : logs.map((l, i) => (
                 <tr key={i}>
-                  <td style={{ fontWeight: 600 }}>{l.work_date}</td>
+                  <td style={{ fontWeight: 600 }}>{fmtDate(l.work_date)}</td>
                   <td>
                     <StatusBadge ok={l.has_helmet} label="หมวก" />
                     <StatusBadge ok={l.has_boots} label="รองเท้า" />
@@ -512,7 +513,7 @@ function StationLogTab() {
     const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
     const rowsHtml = filteredRows.map((r, i) => `<tr>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${i+1}</td>
-      <td style="border:1px solid #ccc;padding:3px 6px">${r.work_date}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${fmtDate(r.work_date)}</td>
       <td style="border:1px solid #ccc;padding:3px 6px">${r.employees?.employee_id_code || ''}</td>
       <td style="border:1px solid #ccc;padding:3px 6px">${r.employees?.name || ''}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${r.employees?.team || ''}</td>
@@ -602,7 +603,7 @@ table{border-collapse:collapse;width:100%}
             <tbody>
               {filteredRows.length === 0 ? <EmptyRow cols={7} /> : filteredRows.map((r, i) => (
                 <tr key={i}>
-                  <td style={{ fontWeight: 600, fontSize: 12 }}>{r.work_date}</td>
+                  <td style={{ fontWeight: 600, fontSize: 12 }}>{fmtDate(r.work_date)}</td>
                   <td><Thumb src={r.employees?.image_url} /></td>
                   <td style={{ color: 'var(--blue)', fontWeight: 700 }}>{r.employees?.employee_id_code}</td>
                   <td style={{ fontWeight: 600 }}>{r.employees?.name}</td>
@@ -924,7 +925,7 @@ function FourMTab() {
       const needsQA     = l.requires_qa !== false;
       return `<tr>
         <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;white-space:nowrap">${i+1}</td>
-        <td style="border:1px solid #ccc;padding:4px 6px;white-space:nowrap">${l.work_date}</td>
+        <td style="border:1px solid #ccc;padding:4px 6px;white-space:nowrap">${fmtDate(l.work_date)}</td>
         <td style="border:1px solid #ccc;padding:4px 6px">${l.line_name}</td>
         <td style="border:1px solid #ccc;padding:4px 6px;color:${m.color || '#000'}">${l.category}</td>
         <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px">${l.description}</td>
@@ -1128,7 +1129,7 @@ function FourMTab() {
         <CsvBtn onClick={() => downloadCSV(
           `4m_changes_${from}_${to}.csv`,
           ['วันที่', 'ไลน์', 'ประเภท', 'ประเภทย่อย', 'รายละเอียด', 'สถานะ', 'เวลาสร้าง'],
-          logs.map(l => [l.work_date, l.line_name, l.category, l.change_subtype || '', l.description, l.status, l.created_at ? new Date(l.created_at).toLocaleString('th-TH') : ''])
+          logs.map(l => [l.work_date, l.line_name, l.category, l.change_subtype || '', l.description, l.status, l.created_at ? fmtDateTime(l.created_at) : ''])
         )} />
       </div>
 
@@ -1154,7 +1155,7 @@ function FourMTab() {
                 const isActionable = ['pending','pending_qa'].includes(l.status);
                 return (
                   <tr key={l.id}>
-                    <td style={{ fontWeight: 600, whiteSpace: 'nowrap', fontSize: 12 }}>{l.work_date}</td>
+                    <td style={{ fontWeight: 600, whiteSpace: 'nowrap', fontSize: 12 }}>{fmtDate(l.work_date)}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.line_name}</td>
                     <td><span style={{ background: m.bg, color: m.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{m.icon} {l.category}</span></td>
                     <td style={{ fontSize: 13 }}>

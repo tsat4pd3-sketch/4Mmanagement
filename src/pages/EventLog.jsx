@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { fmtDate } from '../utils/dateFormat';
 
 /* ─── TimeInput24 — always 24h regardless of OS locale ─────── */
 function TimeInput24({ value = '', onChange, style = {} }) {
@@ -60,7 +61,7 @@ const ROLE_CAN_APPROVE = {
 };
 
 function toLocalDateStr(d = new Date()) {
-  return d.toLocaleDateString('th-TH', { year: 'numeric', month: '2-digit', day: '2-digit' });
+  return fmtDate(d);
 }
 
 // Compute duration from event start (work_date + event_time) to approved_at
@@ -497,7 +498,7 @@ function fmtTime(isoOrTime) {
   if (!isoOrTime) return '';
   // If it's an ISO string (contains 'T'), parse as date
   if (isoOrTime.includes('T')) {
-    return new Date(isoOrTime).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return fmtTime(new Date(isoOrTime));
   }
   // Otherwise it's already HH:MM
   return isoOrTime.slice(0, 5);
@@ -867,7 +868,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
                 return (
                   <tr key={log.id} onClick={() => onSelect(log)} style={{ cursor: 'pointer' }}>
                     <td style={{ whiteSpace: 'nowrap' }}>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{log.work_date}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{fmtDate(log.work_date)}</div>
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{log.event_time || '—'}</div>
                       {(() => {
                         const approvedAt = getApprovedAt(log);
@@ -1086,12 +1087,12 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
               <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: sm.bg, color: sm.color }}>{sm.label}</span>
             </div>
             <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>Event #{def?.event_no} · {def?.name_th}</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{log.line_name} · {log.station_number || 'ไม่ระบุ Station'} · {log.work_date} {log.event_time || ''}</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{log.line_name} · {log.station_number || 'ไม่ระบุ Station'} · {fmtDate(log.work_date)} {log.event_time || ''}</div>
             {(() => {
               const approvedAt = finalApprovedAt;
               if (!approvedAt) return null;
               const dur = calcDuration(log.work_date, log.event_time, approvedAt);
-              const approvedTime = new Date(approvedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+              const approvedTime = fmtTime(new Date(approvedAt));
               return (
                 <div style={{ display: 'flex', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, background: 'rgba(34,197,94,0.12)', padding: '3px 10px', borderRadius: 20 }}>
