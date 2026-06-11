@@ -4,8 +4,15 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 
 /* ─── Helpers ────────────────────────────────────────────────── */
-const today = () => new Date().toISOString().split('T')[0];
+// ✅ local Thai date — never toISOString() which returns UTC
+const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+};
 const nowTime = () => new Date().toTimeString().slice(0, 5);
+// กะเช้าเริ่ม 08:00, กะดึกเริ่ม 20:00 — ใช้เป็น default start_time เสมอ
+const shiftStart = (shift) => shift === 'night' ? '20:00' : '08:00';
+const currentShift = () => { const h = new Date().getHours(); return (h >= 20 || h < 8) ? 'night' : 'day'; };
 const fmtMin = (min) => {
   if (!min && min !== 0) return '—';
   const m = Math.round(min);
@@ -76,7 +83,7 @@ function LiveTab({ role }) {
   const [loading, setLoading]       = useState(true);
 
   const [showOpen, setShowOpen] = useState(false);
-  const [openForm, setOpenForm] = useState({ work_date: today(), line_name: '', shift: new Date().getHours() >= 20 || new Date().getHours() < 8 ? 'night' : 'day', product_id: '', start_time: nowTime() });
+  const [openForm, setOpenForm] = useState(() => { const s = currentShift(); return { work_date: today(), line_name: '', shift: s, product_id: '', start_time: shiftStart(s) }; });
 
   const [showDT, setShowDT]   = useState(false);
   const [dtForm, setDtForm]   = useState({ downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', description: '' });
@@ -763,7 +770,7 @@ function LiveTab({ role }) {
             <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>ยังไม่มีกะที่เปิดอยู่</div>
             <div style={{ fontSize: 13, marginBottom: 24 }}>เปิดกะเพื่อเริ่มบันทึกผลผลิตและ Downtime</div>
             {canManage && (
-              <button onClick={() => { const h = new Date().getHours(); setOpenForm(f => ({ ...f, shift: h >= 20 || h < 8 ? 'night' : 'day', start_time: nowTime() })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>
+              <button onClick={() => { const s = currentShift(); setOpenForm(f => ({ ...f, shift: s, start_time: shiftStart(s) })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>
             )}
           </div>
         )}
@@ -789,7 +796,7 @@ function LiveTab({ role }) {
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {canManage && <button onClick={() => { const h = new Date().getHours(); setOpenForm(f => ({ ...f, shift: h >= 20 || h < 8 ? 'night' : 'day', start_time: nowTime() })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>}
+                  {canManage && <button onClick={() => { const s = currentShift(); setOpenForm(f => ({ ...f, shift: s, start_time: shiftStart(s) })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>}
                   {canCloseShift && (
                     <button onClick={() => { setCloseNg('0'); setShowCloseShift(true); }}
                       style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
@@ -1045,7 +1052,7 @@ function LiveTab({ role }) {
                   </select>
                 </Field>
                 <Field label="กะทำงาน">
-                  <select value={openForm.shift} onChange={e => setOpenForm(f => ({ ...f, shift: e.target.value }))} style={inputStyle}>
+                  <select value={openForm.shift} onChange={e => setOpenForm(f => ({ ...f, shift: e.target.value, start_time: shiftStart(e.target.value) }))} style={inputStyle}>
                     <option value="day">☀️ กะเช้า (08:00–20:00)</option>
                     <option value="night">🌙 กะดึก (20:00–08:00)</option>
                   </select>
