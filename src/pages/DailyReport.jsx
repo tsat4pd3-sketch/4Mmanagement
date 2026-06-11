@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useCallback } from 'react';
+import { useState, useEffect, useContext, useCallback, useRef } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -132,6 +132,8 @@ function LiveTab({ role }) {
   const [showScanOpen, setShowScanOpen]   = useState(false);
   const [openProdForm, setOpenProdForm]   = useState({ prod_no: '', mat_no: '', qty: '', is_backfill: false });
   const [openProdStd, setOpenProdStd]     = useState(null);
+  const openProdInputRef = useRef(null);
+  const closeProdInputRef = useRef(null);
   const [savingProdOpen, setSavingProdOpen] = useState(false);
   // Overflow confirmation modal
   const [overflowInfo, setOverflowInfo]   = useState(null); // { prodNo, matNo, qty, std, overMin, remainMin, newOrderMin }
@@ -421,6 +423,18 @@ function LiveTab({ role }) {
     }));
   };
 
+  // Auto-select MAT.NO when scan modal opens — if line has only 1 option
+  useEffect(() => {
+    if (!showScanOpen || !selSession || kanbanStds.length === 0) return;
+    const lineName = selSession.line_name;
+    const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === lineName);
+    const opts = lineStds.length > 0 ? lineStds : kanbanStds;
+    if (opts.length === 1 && !openProdForm.mat_no) {
+      handleOpenProdMatNoChange(opts[0].mat_no);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showScanOpen, kanbanStds, selSession]);
+
   // คำนวณ net available time ของกะ (นาที) หลังหักพักเบรค
   const calcNetAvailMin = () => {
     if (!selSession?.start_time) return null;
@@ -505,6 +519,7 @@ function LiveTab({ role }) {
     toast.success(`เปิด Order ${prodNo} · ${matNo} · ${qty} ชิ้น ✓`);
     setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false }));
     loadProdOrders(selSession.id, selSession.line_name);
+    setTimeout(() => openProdInputRef.current?.focus(), 80);
   };
 
   // ผู้ใช้เลือก "ส่งกะถัดไป" — save เป็น carry_over ทันที
@@ -537,10 +552,34 @@ function LiveTab({ role }) {
 
   // ── Scan CLOSE handler ─────────────────────────────────────────
   const handleCloseProdNoChange = (val) => {
-    const v = val.trim();
+    // barcode scanner appends \n — strip and auto-confirm
+    const hasEnter = val.includes('\n') || val.includes('\r');
+    const v = val.replace(/[\r\n]/g, '').trim();
     setCloseProdNo(v);
     const found = prodOrders.find(o => o.prod_no === v && o.status === 'open');
     setCloseMatch(found || null);
+    if (hasEnter && found) {
+      // slight delay to let state settle before calling confirm
+      setTimeout(() => handleScanCloseImmediate(found), 30);
+    }
+  };
+
+  const handleScanCloseImmediate = async (match) => {
+    if (!match) return;
+    setSavingProdClose(true);
+    const { error } = await supabaseDR.from('prod_orders').update({
+      status:       'confirmed',
+      confirmed_by: fullName,
+      confirmed_at: new Date().toISOString(),
+      qty_ok:       match.qty,
+    }).eq('id', match.id);
+    setSavingProdClose(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`ปิด Order ${match.prod_no} · ${match.qty} ชิ้น ✓`);
+    setCloseProdNo('');
+    setCloseMatch(null);
+    loadProdOrders(selSession.id, selSession.line_name);
+    setTimeout(() => closeProdInputRef.current?.focus(), 80);
   };
 
   const handleScanClose = async () => {
@@ -558,6 +597,7 @@ function LiveTab({ role }) {
     setCloseProdNo('');
     setCloseMatch(null);
     loadProdOrders(selSession.id, selSession.line_name);
+    setTimeout(() => closeProdInputRef.current?.focus(), 80);
   };
 
   // ── บันทึกงานเสีย handler ──────────────────────────────────────
@@ -1330,13 +1370,22 @@ function LiveTab({ role }) {
           <div className="overlay" style={{ zIndex: 2000 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
               <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#f59e0b' }}>📥 Scan เปิด Prod Order</div>
-              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>สแกนทีละใบ — Modal จะไม่ปิดเพื่อสแกนต่อได้เลย</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
+                สแกน PROD.NO → กด Enter → บันทึกอัตโนมัติ — ไม่ต้องคลิกปุ่ม
+              </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <Field label="PROD.NO (สแกน barcode PROD.NO บน Tag Card) *">
-                  <input autoFocus value={openProdForm.prod_no}
+                  <input ref={openProdInputRef} autoFocus value={openProdForm.prod_no}
                     onChange={e => setOpenProdForm(f => ({ ...f, prod_no: e.target.value }))}
-                    onKeyDown={e => { if (e.key === 'Enter' && openProdForm.prod_no) document.getElementById('open-mat-input')?.focus(); }}
+                    onKeyDown={e => {
+                      if (e.key !== 'Enter') return;
+                      if (openProdForm.mat_no && openProdForm.qty && openProdForm.prod_no && !prodOrders.find(o => o.prod_no === openProdForm.prod_no.trim())) {
+                        handleScanOpen();
+                      } else {
+                        document.getElementById('open-mat-select')?.focus();
+                      }
+                    }}
                     placeholder="สแกน PROD.NO..."
                     style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }} />
                 </Field>
@@ -1349,6 +1398,7 @@ function LiveTab({ role }) {
                   return (
                     <Field label={`MAT.NO${isFiltered ? ` (${displayStds.length} รายการของไลน์นี้)` : ' (ทุกรายการ)'} *`}>
                       <select
+                        id="open-mat-select"
                         value={openProdForm.mat_no}
                         onChange={e => handleOpenProdMatNoChange(e.target.value)}
                         style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}
@@ -1426,11 +1476,14 @@ function LiveTab({ role }) {
           <div className="overlay" style={{ zIndex: 2000 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(34,197,94,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
               <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#22c55e' }}>📤 Scan ปิด / Confirm</div>
-              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>สแกน PROD.NO ทีละใบ — Modal จะไม่ปิดเพื่อสแกนต่อได้เลย</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
+                สแกน PROD.NO → Confirm อัตโนมัติทันที — ไม่ต้องคลิกปุ่ม
+              </div>
 
               <Field label="PROD.NO (สแกน barcode PROD.NO บน Tag Card)">
-                <input autoFocus value={closeProdNo}
+                <input ref={closeProdInputRef} autoFocus value={closeProdNo}
                   onChange={e => handleCloseProdNoChange(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && closeMatch) handleScanCloseImmediate(closeMatch); }}
                   placeholder="สแกน PROD.NO..."
                   style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }} />
               </Field>
