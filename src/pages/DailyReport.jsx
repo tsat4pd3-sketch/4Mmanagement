@@ -89,7 +89,7 @@ function LiveTab({ role }) {
 
   // Scan Open modal
   const [showScanOpen, setShowScanOpen]   = useState(false);
-  const [openProdForm, setOpenProdForm]   = useState({ prod_no: '', mat_no: '', qty: '' });
+  const [openProdForm, setOpenProdForm]   = useState({ prod_no: '', mat_no: '', qty: '', is_backfill: false });
   const [openProdStd, setOpenProdStd]     = useState(null);
   const [savingProdOpen, setSavingProdOpen] = useState(false);
   // Overflow confirmation modal
@@ -422,6 +422,7 @@ function LiveTab({ role }) {
       customer:    std?.customer  || openProdStd?.customer  || null,
       qty,
       status,
+      is_backfill: openProdForm.is_backfill,
       opened_by:   fullName,
     });
     return error;
@@ -461,7 +462,7 @@ function LiveTab({ role }) {
     setSavingProdOpen(false);
     if (error) { toast.error(error.message); return; }
     toast.success(`เปิด Order ${prodNo} · ${matNo} · ${qty} ชิ้น ✓`);
-    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty }));
+    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false }));
     loadProdOrders(selSession.id, selSession.line_name);
   };
 
@@ -475,7 +476,7 @@ function LiveTab({ role }) {
     setOverflowInfo(null);
     if (error) { toast.error(error.message); return; }
     toast.info(`บันทึก ${prodNo} เป็นยอดค้างกะถัดไป ✓`);
-    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty }));
+    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false }));
     loadProdOrders(selSession.id, selSession.line_name);
   };
 
@@ -489,7 +490,7 @@ function LiveTab({ role }) {
     setOverflowInfo(null);
     if (error) { toast.error(error.message); return; }
     toast.success(`เปิด Order ${prodNo} · ${qty} ชิ้น ✓ (เกินเวลากะ)`);
-    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty }));
+    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false }));
     loadProdOrders(selSession.id, selSession.line_name);
   };
 
@@ -1347,6 +1348,17 @@ function LiveTab({ role }) {
                   </div>
                 )}
               </div>
+
+              {/* Backfill toggle */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', marginTop: 10, background: openProdForm.is_backfill ? 'rgba(107,114,128,0.15)' : 'rgba(107,114,128,0.06)', border: `1px solid ${openProdForm.is_backfill ? 'rgba(107,114,128,0.5)' : 'rgba(107,114,128,0.2)'}`, borderRadius: 8 }}>
+                <input type="checkbox" checked={openProdForm.is_backfill}
+                  onChange={e => setOpenProdForm(f => ({ ...f, is_backfill: e.target.checked }))}
+                  style={{ width: 16, height: 16, cursor: 'pointer' }} />
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>ยิงย้อนหลัง / เติมข้อมูล</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>order นี้ผลิตไปแล้ว — ไม่นับ delay บน Heijunka</div>
+                </div>
+              </label>
 
               {/* Running count */}
               {prodOrders.filter(o => o.status === 'open').length > 0 && (
