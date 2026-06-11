@@ -2287,35 +2287,63 @@ function BreakPolicySetup({ role }) {
 
 /* ── Product Setup ── */
 function ProductSetup({ role }) {
-  const [items, setItems]   = useState([]);
-  const [lines, setLines]   = useState([]);
-  const [editing, setEditing] = useState(null);
-  const [form, setForm]     = useState({ name: '', code: '', line_name: '', cycle_time_sec: '', target_per_shift: '', is_active: true });
-  const [saving, setSaving] = useState(false);
+  const [items, setItems]     = useState([]);
+  const [lines, setLines]     = useState([]);
+  const [editing, setEditing] = useState(null);   // product id | 'new'
+  const [ecSource, setEcSource] = useState(null); // product being EC'd
+  const [form, setForm]       = useState({});
+  const [saving, setSaving]   = useState(false);
+  const [showHistory, setShowHistory] = useState(false); // show inactive/superseded
+  const [familyTotals, setFamilyTotals] = useState({}); // family_id → total qty_ok
+
+  const blankForm = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', is_active: true, effective_from: '' });
 
   const load = useCallback(async () => {
     const [{ data: pr }, { data: ln }] = await Promise.all([
-      supabaseDR.from('dr_products').select('*').order('name'),
+      supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
       supabase.from('production_lines').select('id, name').order('name'),
     ]);
     setItems(pr || []);
     setLines(ln || []);
+
+    // fetch cumulative qty_ok per family across all sessions
+    const { data: sessions } = await supabaseDR
+      .from('production_sessions')
+      .select('product_id, qty_ok, dr_products(family_id)');
+    if (sessions) {
+      const totals = {};
+      sessions.forEach(s => {
+        const fid = s.dr_products?.family_id;
+        if (!fid) return;
+        totals[fid] = (totals[fid] || 0) + (s.qty_ok || 0);
+      });
+      setFamilyTotals(totals);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
   const openEdit = (item = null) => {
+    setEcSource(null);
     setEditing(item?.id || 'new');
     setForm(item
-      ? { name: item.name, code: item.code || '', mat_no: item.mat_no || '', p_no: item.p_no || '', customer: item.customer || '', line_name: item.line_name || '', cycle_time_sec: item.cycle_time_sec || '', target_per_shift: item.target_per_shift || '', process_type: item.process_type || 'welding_assembly', is_active: item.is_active }
-      : { name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', is_active: true });
+      ? { name: item.name, code: item.code || '', mat_no: item.mat_no || '', p_no: item.p_no || '', customer: item.customer || '', line_name: item.line_name || '', cycle_time_sec: item.cycle_time_sec || '', target_per_shift: item.target_per_shift || '', process_type: item.process_type || 'welding_assembly', is_active: item.is_active, effective_from: item.effective_from || '' }
+      : blankForm());
+  };
+
+  // Open EC modal: inherit everything from source, clear MAT/PNO for new revision
+  const openEC = (item) => {
+    setEcSource(item);
+    setEditing('new');
+    setForm({ name: item.name, code: item.code || '', mat_no: '', p_no: '', customer: item.customer || '', line_name: item.line_name || '', cycle_time_sec: item.cycle_time_sec || '', target_per_shift: item.target_per_shift || '', process_type: item.process_type || 'welding_assembly', is_active: true, effective_from: new Date().toISOString().slice(0, 10) });
   };
 
   const handleSave = async () => {
     if (!form.name) { toast.error('กรอกชื่อสินค้า'); return; }
     setSaving(true);
     const payload = {
-      name: form.name, code: form.code || null,
+      name: form.name.trim(),
+      code: form.code.trim() || null,
       mat_no: form.mat_no.trim().toUpperCase() || null,
       p_no: form.p_no.trim() || null,
       customer: form.customer.trim() || null,
@@ -2324,14 +2352,31 @@ function ProductSetup({ role }) {
       target_per_shift: form.target_per_shift ? parseInt(form.target_per_shift) : null,
       process_type: form.process_type || 'welding_assembly',
       is_active: form.is_active,
+      effective_from: form.effective_from || null,
     };
-    const { error } = editing === 'new'
-      ? await supabaseDR.from('dr_products').insert(payload)
-      : await supabaseDR.from('dr_products').update(payload).eq('id', editing);
+
+    if (editing === 'new') {
+      // If this is an EC, inherit family_id from source; otherwise new family
+      if (ecSource) payload.family_id = ecSource.family_id;
+      const { data: inserted, error } = await supabaseDR.from('dr_products').insert(payload).select().single();
+      if (error) { setSaving(false); toast.error(error.message); return; }
+      // Mark old product as superseded
+      if (ecSource) {
+        await supabaseDR.from('dr_products').update({
+          is_active: false,
+          superseded_at: form.effective_from || new Date().toISOString().slice(0, 10),
+          superseded_by: inserted.id,
+        }).eq('id', ecSource.id);
+      }
+    } else {
+      const { error } = await supabaseDR.from('dr_products').update(payload).eq('id', editing);
+      if (error) { setSaving(false); toast.error(error.message); return; }
+    }
+
     setSaving(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success('บันทึกสำเร็จ');
+    toast.success(ecSource ? '🔄 Engineering Change บันทึกสำเร็จ' : 'บันทึกสำเร็จ');
     setEditing(null);
+    setEcSource(null);
     load();
   };
 
@@ -2344,56 +2389,142 @@ function ProductSetup({ role }) {
 
   const canEdit = ['admin', 'manager'].includes(role);
 
+  // Group by family_id
+  const families = [];
+  const seen = new Set();
+  const sorted = [...items].sort((a, b) => a.name.localeCompare(b.name, 'th'));
+  sorted.forEach(item => {
+    if (!seen.has(item.family_id)) {
+      seen.add(item.family_id);
+      families.push({ family_id: item.family_id, members: [] });
+    }
+    families.find(f => f.family_id === item.family_id).members.push(item);
+  });
+  // Each family: sort by effective_from desc (latest first)
+  families.forEach(f => f.members.sort((a, b) => (b.effective_from || '0000') > (a.effective_from || '0000') ? 1 : -1));
+
+  const visibleFamilies = showHistory ? families : families.filter(f => f.members.some(m => m.is_active));
+
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ fontSize: 14, color: 'var(--muted)' }}>{items.length} สินค้า</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ fontSize: 14, color: 'var(--muted)' }}>{families.length} รายการ ({items.filter(i => i.is_active).length} ใช้งาน)</div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--muted)' }}>
+            <input type="checkbox" checked={showHistory} onChange={e => setShowHistory(e.target.checked)} />
+            แสดงประวัติ EC
+          </label>
+        </div>
         {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มสินค้า</button>}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 12 }}>
-        {items.map(item => (
-          <div key={item.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', opacity: item.is_active ? 1 : 0.5 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{item.name}</div>
-                  <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20,
-                    background: item.process_type === 'metal_forming' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.12)',
-                    color: item.process_type === 'metal_forming' ? '#fbbf24' : '#22c55e' }}>
-                    {item.process_type === 'metal_forming' ? '⚙ Metal Forming' : '🔥 Welding/Assy'}
-                  </span>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {visibleFamilies.map(({ family_id, members }) => {
+          const active   = members.find(m => m.is_active && !m.superseded_by);
+          const archived = members.filter(m => !m.is_active || m.superseded_by);
+          const totalQty = familyTotals[family_id] || 0;
+          const item = active || members[0];
+          return (
+            <div key={family_id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+              {/* Active revision header */}
+              <div style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{item.name}</div>
+                    <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20,
+                      background: item.process_type === 'metal_forming' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.12)',
+                      color: item.process_type === 'metal_forming' ? '#fbbf24' : '#22c55e' }}>
+                      {item.process_type === 'metal_forming' ? '⚙ Metal Forming' : '🔥 Welding/Assy'}
+                    </span>
+                    {members.length > 1 && (
+                      <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>
+                        🔄 {members.length} revisions
+                      </span>
+                    )}
+                    {!active && <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(107,114,128,0.15)', color: '#6b7280', fontWeight: 700 }}>ปิดใช้งาน</span>}
+                  </div>
+
+                  {/* Current MAT.NO / P.NO */}
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 4 }}>
+                    {item.mat_no && <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{item.mat_no}</span>}
+                    {item.p_no   && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {item.p_no}</span>}
+                    {item.customer && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', color: '#60a5fa' }}>{item.customer}</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                    {item.line_name && `📍 ${item.line_name}`}
+                    {item.cycle_time_sec && ` · CT ${item.cycle_time_sec}s`}
+                    {item.target_per_shift && ` · Target ${item.target_per_shift}/กะ`}
+                    {item.effective_from && ` · ใช้ตั้งแต่ ${item.effective_from}`}
+                  </div>
+
+                  {/* Family cumulative total */}
+                  {totalQty > 0 && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: '#22c55e', fontWeight: 700 }}>
+                      📦 ยอดสะสมทั้ง family: {totalQty.toLocaleString()} ชิ้น
+                    </div>
+                  )}
                 </div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
-                  {item.mat_no && <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{item.mat_no}</span>}
-                  {item.customer && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', color: '#60a5fa' }}>{item.customer}</span>}
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-                  {item.line_name && `📍 ${item.line_name}`}
-                  {item.cycle_time_sec && ` · CT ${item.cycle_time_sec}s`}
-                  {item.target_per_shift && ` · Target ${item.target_per_shift}/กะ`}
-                </div>
+
+                {canEdit && (
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    {active && (
+                      <button onClick={() => openEC(active)} title="Engineering Change — สร้าง revision ใหม่" style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#a855f7', fontWeight: 700 }}>🔄 EC</button>
+                    )}
+                    <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+                    <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>
+                  </div>
+                )}
               </div>
-              {canEdit && (
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                  <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>
+
+              {/* Revision history (archived) */}
+              {showHistory && archived.length > 0 && (
+                <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg2)', padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>📋 ประวัติ Revision</div>
+                  {archived.map(rev => (
+                    <div key={rev.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, color: 'var(--muted)', opacity: 0.75 }}>
+                      <span style={{ fontFamily: 'monospace', color: '#64748b' }}>{rev.mat_no || '—'}</span>
+                      {rev.p_no && <span style={{ color: '#475569' }}>P.NO: {rev.p_no}</span>}
+                      <span style={{ color: '#374151' }}>
+                        {rev.effective_from || '?'} → {rev.superseded_at || '?'}
+                      </span>
+                      <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.15)', color: '#6b7280' }}>superseded</span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
+      {/* Add / Edit / EC modal */}
       {editing && (
         <div className="overlay" style={{ zIndex: 2000 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
-            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>{editing === 'new' ? '+ เพิ่มสินค้า' : 'แก้ไขสินค้า'}</div>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: `1px solid ${ecSource ? 'rgba(168,85,247,0.5)' : 'var(--border2)'}`, borderRadius: 14, padding: 24, width: 'min(95vw,480px)', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: 'var(--text)' }}>
+              {ecSource ? '🔄 Engineering Change' : editing === 'new' ? '+ เพิ่มสินค้า' : 'แก้ไขสินค้า'}
+            </div>
+            {ecSource && (
+              <div style={{ fontSize: 12, color: '#a855f7', marginBottom: 16, padding: '8px 12px', background: 'rgba(168,85,247,0.08)', borderRadius: 8, border: '1px solid rgba(168,85,247,0.2)' }}>
+                ต่อจาก: <strong>{ecSource.mat_no}</strong> {ecSource.p_no && `/ ${ecSource.p_no}`}<br/>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>MAT.NO เดิมจะถูก mark เป็น superseded อัตโนมัติ</span>
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Field label="ชื่อสินค้า / Model *"><input autoFocus value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inputStyle} /></Field>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="MAT.NO (SAP)"><input value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder="เช่น 10100335" style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700 }} /></Field>
-                <Field label="P.NO"><input value={form.p_no} onChange={e => setForm(f => ({ ...f, p_no: e.target.value }))} placeholder="เช่น RB3B16E061BA" style={inputStyle} /></Field>
+                <Field label={ecSource ? 'MAT.NO ใหม่ (SAP) *' : 'MAT.NO (SAP)'}>
+                  <input value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder="เช่น 10100399" style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, borderColor: ecSource ? 'rgba(168,85,247,0.5)' : undefined }} />
+                </Field>
+                <Field label={ecSource ? 'P.NO ใหม่ *' : 'P.NO'}>
+                  <input value={form.p_no} onChange={e => setForm(f => ({ ...f, p_no: e.target.value }))} placeholder="เช่น RC3B16E061BB" style={{ ...inputStyle, borderColor: ecSource ? 'rgba(168,85,247,0.5)' : undefined }} />
+                </Field>
               </div>
+              {ecSource && (
+                <Field label="วันที่มีผล (effective_from) *">
+                  <input type="date" value={form.effective_from} onChange={e => setForm(f => ({ ...f, effective_from: e.target.value }))} style={inputStyle} />
+                </Field>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="Customer"><input value={form.customer} onChange={e => setForm(f => ({ ...f, customer: e.target.value }))} placeholder="เช่น FORD" style={inputStyle} /></Field>
                 <Field label="รหัสสินค้า (Code)"><input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="เช่น HDF-001" style={inputStyle} /></Field>
@@ -2414,14 +2545,18 @@ function ProductSetup({ role }) {
                 <Field label="Cycle Time (วินาที)"><input type="number" min="0" step="0.1" value={form.cycle_time_sec} onChange={e => setForm(f => ({ ...f, cycle_time_sec: e.target.value }))} placeholder="เช่น 45.5" style={inputStyle} /></Field>
                 <Field label="Target ต่อกะ (ชิ้น)"><input type="number" min="0" value={form.target_per_shift} onChange={e => setForm(f => ({ ...f, target_per_shift: e.target.value }))} placeholder="เช่น 500" style={inputStyle} /></Field>
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
-                <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
-              </label>
+              {!ecSource && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
+                  <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
+                </label>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-              <button onClick={() => setEditing(null)} style={cancelBtnStyle}>ยกเลิก</button>
-              <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : 'บันทึก'}</button>
+              <button onClick={() => { setEditing(null); setEcSource(null); }} style={cancelBtnStyle}>ยกเลิก</button>
+              <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1, background: ecSource ? '#7c3aed' : undefined }}>
+                {saving ? '...' : ecSource ? '🔄 บันทึก EC' : 'บันทึก'}
+              </button>
             </div>
           </div>
         </div>

@@ -13,7 +13,12 @@ create table if not exists dr_products (
   target_per_shift integer default 0,         -- เป้าผลิตต่อกะ
   process_type     text default 'common',     -- common / welding / assembly ฯลฯ (ใช้จับคู่ break policy)
   is_active        boolean default true,
-  created_at       timestamptz default now()
+  created_at       timestamptz default now(),
+  -- Engineering Change / Revision traceability
+  family_id        uuid not null default gen_random_uuid(), -- แชร์ข้ามทุก revision ของ part เดียวกัน
+  effective_from   date,                       -- วันที่เริ่มใช้ revision นี้
+  superseded_at    date,                       -- วันที่ถูกแทนที่ (null = ใช้งานอยู่)
+  superseded_by    uuid references dr_products(id) on delete set null -- FK → revision ใหม่
 );
 
 -- ─── 2. Kanban Standard (Master ของ Tag Card) ───────────────────
