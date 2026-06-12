@@ -125,7 +125,15 @@ const DEPTS = [
   },
 ];
 
-export default function DeptHub() {
+const ROLE_LABELS = {
+  admin:      '👑 Admin',
+  manager:    '🏢 Manager',
+  supervisor: '🎯 Supervisor',
+  leader:     '⭐ Leader',
+  qa:         '🔍 QA',
+};
+
+export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, userRole }) {
   const navigate = useNavigate();
 
   return (
@@ -139,6 +147,58 @@ export default function DeptHub() {
       padding: 'clamp(24px, 5vw, 60px) clamp(16px, 4vw, 40px)',
     }}>
       <style>{DEPT_CSS}</style>
+
+      {/* Top bar — user info + theme toggle + logout */}
+      <div style={{
+        position: 'absolute', top: 'clamp(16px, 3vw, 28px)', right: 'clamp(16px, 4vw, 40px)',
+        display: 'flex', alignItems: 'center', gap: 10,
+        animation: 'hub-fade-up 0.5s ease both',
+      }}>
+        {userFullName && (
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
+            marginRight: 4, lineHeight: 1.3,
+          }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-body)' }}>
+              {userFullName}
+            </span>
+            {userRole && (
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                {ROLE_LABELS[userRole] ?? userRole}
+              </span>
+            )}
+          </div>
+        )}
+        {onToggleTheme && (
+          <button
+            onClick={onToggleTheme}
+            title="สลับธีม"
+            style={{
+              width: 38, height: 38, borderRadius: 10,
+              background: 'var(--card)', border: '1px solid var(--border)',
+              color: 'var(--text)', cursor: 'pointer', fontSize: 16,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
+        )}
+        {onLogout && (
+          <button
+            onClick={onLogout}
+            title="ออกจากระบบ"
+            style={{
+              height: 38, padding: '0 16px', borderRadius: 10,
+              background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+              color: '#ef4444', cursor: 'pointer', fontSize: 13, fontWeight: 700,
+              display: 'flex', alignItems: 'center', gap: 6,
+              fontFamily: 'var(--font-body)',
+            }}
+          >
+            🚪 ออกจากระบบ
+          </button>
+        )}
+      </div>
 
       {/* Header */}
       <div style={{

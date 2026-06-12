@@ -485,6 +485,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
   const [isOpen, setIsOpen] = useState(!isMobile);
   const navigate = useNavigate();
+  const location = useLocation();
   const userId = session?.user?.id ?? null;
 
   useEffect(() => {
@@ -506,6 +507,17 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   const sidebarPx  = isTV ? 280 : 240;
   const marginLeft = (!isMobile && isOpen) ? sidebarPx : 0;
   const role       = userRole ?? 'admin';
+
+  // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
+  if (location.pathname === '/') {
+    return (
+      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
+        <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
+          <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} />
+        </Suspense>
+      </UserContext.Provider>
+    );
+  }
 
   return (
     <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
@@ -537,7 +549,6 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
         }}>
           <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
             <Routes>
-              <Route path="/"           element={<DeptHub />} />
               <Route path="/dashboard"  element={<Dashboard />} />
               <Route path="/management" element={<Management />} />
               <Route path="/checkin"    element={<Checkin />} />
