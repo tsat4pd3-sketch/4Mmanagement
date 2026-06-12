@@ -20,6 +20,7 @@ const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
 const DailyReport   = lazy(() => import('./pages/DailyReport'));
 const OEEAnalytics  = lazy(() => import('./pages/OEEAnalytics'));
+const DeptHub       = lazy(() => import('./pages/DeptHub'));
 
 /* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null, signatureUrl: null, fullName: null });
@@ -34,9 +35,10 @@ const ROLE_LABELS = {
 
 // null roles = accessible to every role
 const NAV_ITEMS = [
-  { to: '/',           icon: '📊', label: 'Dashboard',          roles: null },
-  { to: '/management', icon: '🔄', label: 'จัดการสายผลิต',     roles: null },
-  { to: '/checkin',    icon: '📝', label: 'เช็คชื่อ & PPE',    roles: null },
+  { to: '/',            icon: '🏠', label: 'หน้าหลัก',           roles: null },
+  { to: '/dashboard',   icon: '📊', label: 'Dashboard',           roles: null },
+  { to: '/management',  icon: '🔄', label: 'จัดการสายผลิต',      roles: null },
+  { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     roles: null },
   { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   roles: ['admin', 'manager', 'supervisor'] },
   { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      roles: ['admin', 'manager', 'supervisor'] },
   { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager', 'supervisor', 'leader'] },
@@ -535,7 +537,8 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
         }}>
           <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
             <Routes>
-              <Route path="/"           element={<Dashboard />} />
+              <Route path="/"           element={<DeptHub />} />
+              <Route path="/dashboard"  element={<Dashboard />} />
               <Route path="/management" element={<Management />} />
               <Route path="/checkin"    element={<Checkin />} />
               <Route path="/report"     element={<Report />} />
