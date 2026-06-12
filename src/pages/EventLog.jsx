@@ -1011,17 +1011,17 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
         await supabase.from('cqi15_event_logs')
           .update(finalUpdate)
           .eq('id', log.id);
-        // Notify via edge function
-        try {
-          await supabase.functions.invoke('send-cqi15-notification', {
-            body: { event: 'approval_update', log_id: log.id, role_key: roleKey, status, approver: fullName },
-          });
-        } catch (_) {}
         toast.success(status === 'approved' ? 'อนุมัติสำเร็จ' : 'ปฏิเสธแล้ว');
         onRefresh();
       } else {
         toast.success(status === 'approved' ? `อนุมัติ [${roleKey}] สำเร็จ` : `ปฏิเสธ [${roleKey}]`);
       }
+      // Send Telegram + in-app notification for every approval action (partial or final)
+      try {
+        await supabase.functions.invoke('send-cqi15-notification', {
+          body: { event: 'approval_update', log_id: log.id, role_key: roleKey, status, approver: fullName },
+        });
+      } catch (_) {}
       setShowReject(null);
       setRejectNote('');
     } catch (e) {

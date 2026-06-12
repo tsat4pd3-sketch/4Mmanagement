@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useRef, useMemo } from 'react';
+import { useState, useEffect, useContext, useRef, useMemo, useTransition, startTransition } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -79,15 +79,17 @@ export default function Operator() {
   const [runningWeekly,   setRunningWeekly]   = useState(false);
 
   useEffect(() => {
+    let alive = true;
     fetchSkillDefs();
     fetchEmployees();
     fetchLevelUpRequests();
     supabase.from('production_lines').select('id, name, section').order('name')
-      .then(({ data }) => setLines(data || []));
+      .then(({ data }) => { if (alive) setLines(data || []); });
     if (isLeader && userLineId) {
       supabase.from('production_lines').select('name').eq('id', userLineId).single()
-        .then(({ data }) => setMyLineName(data?.name ?? ''));
+        .then(({ data }) => { if (alive) setMyLineName(data?.name ?? ''); });
     }
+    return () => { alive = false; };
   }, []);
 
   const fetchLevelUpRequests = async () => {
@@ -183,8 +185,11 @@ export default function Operator() {
       makeBase().eq('is_active', true).order('employee_id_code'),
       makeBase().eq('is_active', false).order('employee_id_code'),
     ]);
-    setEmployees(active || []);
-    setInactiveEmployees(inactive || []);
+    // startTransition defers the heavy table re-render so navigation stays responsive
+    startTransition(() => {
+      setEmployees(active || []);
+      setInactiveEmployees(inactive || []);
+    });
   };
 
   // Pre-build skill lookup map per employee so render table is O(1) per cell
