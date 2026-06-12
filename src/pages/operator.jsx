@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useRef, useMemo, useTransition, startTransition } from 'react';
+import { useState, useEffect, useContext, useRef, useMemo, startTransition } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -342,24 +342,26 @@ export default function Operator() {
     fetchEmployees();
   };
 
-  const allEmps = [...employees, ...inactiveEmployees];
-  const sectionOpts = [...new Set(allEmps.map(e => e.section).filter(Boolean))].sort();
-  const groupOpts   = [...new Set(allEmps.map(e => e.group_name).filter(Boolean))].sort();
-  const teamOpts    = [...new Set(allEmps.map(e => e.team).filter(Boolean))].sort();
+  const allEmps = useMemo(() => [...employees, ...inactiveEmployees], [employees, inactiveEmployees]);
+  const sectionOpts = useMemo(() => [...new Set(allEmps.map(e => e.section).filter(Boolean))].sort(), [allEmps]);
+  const groupOpts   = useMemo(() => [...new Set(allEmps.map(e => e.group_name).filter(Boolean))].sort(), [allEmps]);
+  const teamOpts    = useMemo(() => [...new Set(allEmps.map(e => e.team).filter(Boolean))].sort(), [allEmps]);
 
-  const displayed = (showInactive ? inactiveEmployees : employees)
+  const displayed = useMemo(() => (showInactive ? inactiveEmployees : employees)
     .filter(emp => !filterSection || emp.section    === filterSection)
     .filter(emp => !filterGroup   || emp.group_name === filterGroup)
     .filter(emp => !filterTeam    || emp.team       === filterTeam)
-    .filter(emp => !filterGrade   || getEmpGrade(emp.employee_id_code) === EMP_GRADES[filterGrade]);
+    .filter(emp => !filterGrade   || getEmpGrade(emp.employee_id_code) === EMP_GRADES[filterGrade]),
+  [employees, inactiveEmployees, showInactive, filterSection, filterGroup, filterTeam, filterGrade]);
 
   // Only show skill columns where at least one displayed employee has score > 0
-  const activeSkillDefs = skillDefs.filter(sd =>
+  // Must be useMemo — stable reference prevents ResizeObserver useEffect from looping
+  const activeSkillDefs = useMemo(() => skillDefs.filter(sd =>
     displayed.some(emp => {
       const s = emp.employee_skills?.find(es => es.skill_name === sd.name);
       return s && s.score > 0;
     })
-  );
+  ), [skillDefs, displayed]);
 
   // Keep top mirror scrollbar width in sync + track scroll shadow state
   useEffect(() => {
