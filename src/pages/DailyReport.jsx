@@ -166,6 +166,7 @@ function LiveTab({ role }) {
   const [carryQtyActual, setCarryQtyActual] = useState({});
 
   const canManage        = ['admin', 'manager', 'supervisor'].includes(role);
+  const canOpen          = ['admin', 'manager', 'supervisor', 'leader'].includes(role); // open new shift
   const canRequestClose  = ['admin', 'manager', 'supervisor', 'leader'].includes(role); // request or direct-close
   const canApproveClose  = ['admin', 'manager', 'supervisor'].includes(role);           // approve pending_close
   const canScan          = ['admin', 'manager', 'supervisor', 'leader'].includes(role);
@@ -912,7 +913,7 @@ function LiveTab({ role }) {
             <div style={{ fontSize: 48, marginBottom: 16 }}>🏭</div>
             <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>ยังไม่มีกะที่เปิดอยู่</div>
             <div style={{ fontSize: 13, marginBottom: 24 }}>เปิดกะเพื่อเริ่มบันทึกผลผลิตและ Downtime</div>
-            {canManage && (
+            {canOpen && (
               <button onClick={() => { const s = currentShift(); setOpenForm(f => ({ ...f, shift: s, start_time: shiftStart(s) })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>
             )}
           </div>
@@ -943,7 +944,7 @@ function LiveTab({ role }) {
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  {canManage && selSession.status === 'open' && (
+                  {canOpen && selSession.status === 'open' && (
                     <button onClick={() => { const s = currentShift(); setOpenForm(f => ({ ...f, shift: s, start_time: shiftStart(s) })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>
                   )}
 
