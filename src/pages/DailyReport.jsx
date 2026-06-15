@@ -1234,25 +1234,7 @@ function LiveTab({ role }) {
                     <option value="night">🌙 กะดึก (20:00–08:00)</option>
                   </select>
                 </Field>
-                <Field label="สินค้า / Model">
-                  {(() => {
-                    const lineProds = openForm.line_name
-                      ? products.filter(p => !p.line_name || p.line_name === openForm.line_name)
-                      : products;
-                    return (
-                      <select value={openForm.product_id}
-                        onChange={e => setOpenForm(f => ({ ...f, product_id: e.target.value }))}
-                        style={inputStyle}>
-                        <option value="">เลือกสินค้า...</option>
-                        {lineProds.map(p => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}{p.code ? ` (${p.code})` : ''}
-                          </option>
-                        ))}
-                      </select>
-                    );
-                  })()}
-                </Field>
+
                 <Field label="เวลาเริ่มต้น">
                   <TimeInput24 value={openForm.start_time} onChange={e => setOpenForm(f => ({ ...f, start_time: e.target.value }))} style={{ fontSize: 16 }} />
                 </Field>
