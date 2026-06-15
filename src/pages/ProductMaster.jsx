@@ -73,6 +73,7 @@ export default function ProductMaster() {
   const [lineFilter,  setLineFilter]  = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const [expandedFamilies, setExpandedFamilies] = useState({});
+  const [expandedNameGroups, setExpandedNameGroups] = useState({});
   const [csvImporting, setCsvImporting] = useState(false);
   const csvInputRef = useRef(null);
 
@@ -229,6 +230,18 @@ export default function ProductMaster() {
   const activeCount = items.filter(i => i.is_active).length;
   const uniqueLines = [...new Set(items.map(i => i.line_name).filter(Boolean))].sort();
 
+  /* ── group visibleFamilies by part name to collapse same-name/diff-customer ── */
+  const visibleGroups = useMemo(() => {
+    const map = new Map();
+    visibleFamilies.forEach(fam => {
+      const rep = fam.members.find(m => m.is_active && !m.superseded_by) || fam.members[0];
+      const key = rep?.name?.trim().toUpperCase() || fam.family_id;
+      if (!map.has(key)) map.set(key, { key, name: rep?.name || '', families: [] });
+      map.get(key).families.push(fam);
+    });
+    return [...map.values()];
+  }, [visibleFamilies]);
+
   /* ── CSV helpers ── */
   const PRODUCT_CSV_COLS = ['name','code','mat_no','p_no','customer','line_name','cycle_time_sec','target_per_shift','process_type'];
   const PRODUCT_CSV_HEADER = 'name,code,mat_no,p_no,customer,line_name,cycle_time_sec,target_per_shift,process_type';
@@ -332,7 +345,7 @@ export default function ProductMaster() {
           แสดงประวัติ EC
         </label>
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 13, color: 'var(--muted)' }}>{families.length} model · {activeCount} ใช้งาน</span>
+        <span style={{ fontSize: 13, color: 'var(--muted)' }}>{visibleGroups.length} part · {visibleFamilies.length} variant · {activeCount} ใช้งาน</span>
         {canEdit && <>
           <button onClick={downloadProductTemplate} style={{ ...btnSecondary, fontSize: 12 }}>⬇️ CSV Template</button>
           <button onClick={() => csvInputRef.current?.click()} disabled={csvImporting}
@@ -344,140 +357,179 @@ export default function ProductMaster() {
         {canEdit && <button onClick={() => openEdit()} style={btnPrimary}>+ เพิ่มสินค้า</button>}
       </div>
 
-      {/* ── Family cards ── */}
+      {/* ── Name Groups → Family cards ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {visibleFamilies.length === 0 && (
+        {visibleGroups.length === 0 && (
           <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 14, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 }}>
             ไม่พบ product ที่ตรงเงื่อนไข
           </div>
         )}
-        {visibleFamilies.map(({ family_id, members }) => {
-          const active   = members.find(m => m.is_active && !m.superseded_by);
-          const archived = members.filter(m => !m.is_active || m.superseded_by);
-          const item     = active || members[0];
-          const totalQty = familyTotals[family_id] || 0;
-          const isExpandedKanban = expandedFamilies[family_id] !== false;
+        {visibleGroups.map(({ key: nameKey, name: partName, families: nameFamilies }) => {
+          const isMulti   = nameFamilies.length > 1;
+          const isExpGroupExpanded = expandedNameGroups[nameKey] !== false;
+          const repItem   = (nameFamilies[0].members.find(m => m.is_active && !m.superseded_by) || nameFamilies[0].members[0]);
+          const totalBomAll = isMulti ? nameFamilies.reduce((s, fam) => s + fam.members.reduce((ss, m) => ss + (bomCounts[m.id] || 0), 0), 0) : 0;
 
-          const familyProductIds = new Set(members.map(m => m.id));
-          const stds = kanbanStds.filter(s => s.product_id && familyProductIds.has(s.product_id));
-          const totalBom = members.reduce((s, m) => s + (bomCounts[m.id] || 0), 0);
-
-          return (
-            <div key={family_id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-              {/* Active revision row */}
-              <div style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{item.name}</span>
-                    <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20,
-                      background: item.process_type === 'metal_forming' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.12)',
-                      color: item.process_type === 'metal_forming' ? '#fbbf24' : '#22c55e' }}>
-                      {item.process_type === 'metal_forming' ? '⚙ Metal Forming' : '🔥 Welding/Assy'}
-                    </span>
-                    {members.length > 1 && <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {members.length} revisions</span>}
-                    {!active && <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(107,114,128,0.15)', color: '#6b7280', fontWeight: 700 }}>ปิดใช้งาน</span>}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 4 }}>
-                    {item.mat_no && <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{item.mat_no}</span>}
-                    {item.p_no   && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {item.p_no}</span>}
-                    {item.customer && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', color: '#60a5fa' }}>{item.customer}</span>}
-                    {item.code && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--muted)' }}>{item.code}</span>}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                    {[
-                      item.line_name && `📍 ${item.line_name}`,
-                      item.cycle_time_sec && `CT ${item.cycle_time_sec}s`,
-                      item.target_per_shift && `Target ${item.target_per_shift}/กะ`,
-                      item.effective_from && `ใช้ตั้งแต่ ${item.effective_from}`,
-                    ].filter(Boolean).join(' · ')}
-                  </div>
-
-                  {/* Cross-module indicators */}
-                  <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                    {totalQty > 0 && <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>📦 ยอดสะสม {totalQty.toLocaleString()} ชิ้น</span>}
-                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: totalBom > 0 ? 'rgba(61,214,92,0.1)' : 'rgba(107,114,128,0.08)', color: totalBom > 0 ? 'var(--accent)' : 'var(--muted)', fontWeight: 700 }}>
-                      📦 BOM: {totalBom > 0 ? `${totalBom} พาร์ท` : 'ยังไม่มี'}
-                    </span>
-                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: stds.filter(s => s.is_active).length > 0 ? 'rgba(245,158,11,0.1)' : 'rgba(107,114,128,0.08)', color: stds.filter(s => s.is_active).length > 0 ? '#f59e0b' : 'var(--muted)', fontWeight: 700 }}>
-                      🎴 Kanban: {stds.filter(s => s.is_active).length > 0 ? `${stds.filter(s => s.is_active).length} mat` : 'ยังไม่มี'}
-                    </span>
-                  </div>
-                  <RelatedLinks matNo={item.mat_no} productId={item.id} />
-                </div>
-
-                {canEdit && (
-                  <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'flex-start' }}>
-                    {active && (
-                      <button onClick={() => openEC(active)} title="Engineering Change — สร้าง revision ใหม่" style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#a855f7', fontWeight: 700 }}>🔄 EC</button>
+          /* helper — renders one family's detail card */
+          const FamilyCard = ({ family_id, members, indented }) => {
+            const active   = members.find(m => m.is_active && !m.superseded_by);
+            const archived = members.filter(m => !m.is_active || m.superseded_by);
+            const item     = active || members[0];
+            const totalQty = familyTotals[family_id] || 0;
+            const isExpandedKanban = expandedFamilies[family_id] !== false;
+            const familyProductIds = new Set(members.map(m => m.id));
+            const stds = kanbanStds.filter(s => s.product_id && familyProductIds.has(s.product_id));
+            const totalBom = members.reduce((s, m) => s + (bomCounts[m.id] || 0), 0);
+            return (
+              <div style={{ background: 'var(--card)', border: `1px solid var(--border)`, borderRadius: indented ? 8 : 12, overflow: 'hidden', marginLeft: indented ? 16 : 0, marginRight: indented ? 16 : 0, marginBottom: indented ? 8 : 0 }}>
+                <div style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {!indented && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{item.name}</span>
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: item.process_type === 'metal_forming' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.12)', color: item.process_type === 'metal_forming' ? '#fbbf24' : '#22c55e' }}>
+                          {item.process_type === 'metal_forming' ? '⚙ Metal Forming' : '🔥 Welding/Assy'}
+                        </span>
+                        {members.length > 1 && <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {members.length} revisions</span>}
+                        {!active && <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(107,114,128,0.15)', color: '#6b7280', fontWeight: 700 }}>ปิดใช้งาน</span>}
+                      </div>
                     )}
-                    <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                    <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>
-                  </div>
-                )}
-              </div>
-
-              {/* Revision history */}
-              {showHistory && archived.length > 0 && (
-                <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg2)', padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>📋 ประวัติ Revision</div>
-                  {archived.map(rev => (
-                    <div key={rev.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, color: 'var(--muted)', opacity: 0.75 }}>
-                      <span style={{ fontFamily: 'monospace', color: '#64748b' }}>{rev.mat_no || '—'}</span>
-                      {rev.p_no && <span style={{ color: '#475569' }}>P.NO: {rev.p_no}</span>}
-                      <span>{rev.effective_from || '?'} → {rev.superseded_at || '?'}</span>
-                      <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.15)', color: '#6b7280' }}>superseded</span>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 4 }}>
+                      {item.mat_no && <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{item.mat_no}</span>}
+                      {item.p_no   && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {item.p_no}</span>}
+                      {item.customer && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', color: '#60a5fa' }}>{item.customer}</span>}
+                      {item.code && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--muted)' }}>{item.code}</span>}
+                      {members.length > 1 && indented && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {members.length} rev</span>}
                     </div>
-                  ))}
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                      {[item.line_name && `📍 ${item.line_name}`, item.cycle_time_sec && `CT ${item.cycle_time_sec}s`, item.target_per_shift && `Target ${item.target_per_shift}/กะ`, !indented && item.effective_from && `ใช้ตั้งแต่ ${item.effective_from}`].filter(Boolean).join(' · ')}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {totalQty > 0 && <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>📦 ยอดสะสม {totalQty.toLocaleString()} ชิ้น</span>}
+                      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: totalBom > 0 ? 'rgba(61,214,92,0.1)' : 'rgba(107,114,128,0.08)', color: totalBom > 0 ? 'var(--accent)' : 'var(--muted)', fontWeight: 700 }}>📦 BOM: {totalBom > 0 ? `${totalBom} พาร์ท` : 'ยังไม่มี'}</span>
+                      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: stds.filter(s => s.is_active).length > 0 ? 'rgba(245,158,11,0.1)' : 'rgba(107,114,128,0.08)', color: stds.filter(s => s.is_active).length > 0 ? '#f59e0b' : 'var(--muted)', fontWeight: 700 }}>🎴 Kanban: {stds.filter(s => s.is_active).length > 0 ? `${stds.filter(s => s.is_active).length} mat` : 'ยังไม่มี'}</span>
+                    </div>
+                    <RelatedLinks matNo={item.mat_no} productId={item.id} />
+                  </div>
+                  {canEdit && (
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'flex-start' }}>
+                      {active && <button onClick={() => openEC(active)} title="Engineering Change" style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#a855f7', fontWeight: 700 }}>🔄 EC</button>}
+                      <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+                      <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>
+                    </div>
+                  )}
                 </div>
-              )}
+                {showHistory && archived.length > 0 && (
+                  <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg2)', padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>📋 ประวัติ Revision</div>
+                    {archived.map(rev => (
+                      <div key={rev.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, color: 'var(--muted)', opacity: 0.75 }}>
+                        <span style={{ fontFamily: 'monospace', color: '#64748b' }}>{rev.mat_no || '—'}</span>
+                        {rev.p_no && <span style={{ color: '#475569' }}>P.NO: {rev.p_no}</span>}
+                        <span>{rev.effective_from || '?'} → {rev.superseded_at || '?'}</span>
+                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.15)', color: '#6b7280' }}>superseded</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ borderTop: '1px solid var(--border)' }}>
+                  <button onClick={() => setExpandedFamilies(prev => ({ ...prev, [family_id]: !isExpandedKanban }))}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'var(--bg2)', border: 'none', cursor: 'pointer', color: 'var(--text2)', fontSize: 12, fontWeight: 700 }}>
+                    <span>🎴 Kanban Standards ({stds.length})</span>
+                    <span style={{ fontSize: 10, color: 'var(--muted)' }}>{isExpandedKanban ? '▲' : '▼'}</span>
+                  </button>
+                  {isExpandedKanban && (
+                    <div style={{ padding: '8px 12px', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      {stds.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)', padding: '6px 4px' }}>ยังไม่มี Kanban Standard</div>}
+                      {stds.map(std => {
+                        const linkedProd = members.find(m => m.id === std.product_id);
+                        const isOldRev   = linkedProd && !linkedProd.is_active;
+                        return (
+                          <div key={std.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 7, opacity: std.is_active ? 1 : 0.5 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: isOldRev ? 'var(--muted)' : '#0ea5e9' }}>{std.mat_no}</span>
+                                {isOldRev && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.12)', color: '#6b7280' }}>rev เก่า</span>}
+                                {!std.is_active && <span style={{ fontSize: 9, color: '#ef4444' }}>ปิด</span>}
+                              </div>
+                            </div>
+                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                              <span style={{ fontSize: 18, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>{std.qty_per_kanban}</span>
+                              <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 3 }}>ชิ้น/ใบ</span>
+                            </div>
+                            {canEdit && (
+                              <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                                <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+                                <button onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {canEdit && (
+                        <button onClick={() => openKanbanEdit(null, active?.id || members[0]?.id || '')}
+                          style={{ alignSelf: 'flex-start', marginTop: 2, background: 'rgba(14,165,233,0.08)', border: '1px dashed rgba(14,165,233,0.4)', borderRadius: 6, padding: '4px 12px', fontSize: 11, color: '#0ea5e9', cursor: 'pointer', fontWeight: 700 }}>
+                          + เพิ่ม MAT.NO
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          };
 
-              {/* Kanban Standards inline */}
-              <div style={{ borderTop: '1px solid var(--border)' }}>
-                <button
-                  onClick={() => setExpandedFamilies(prev => ({ ...prev, [family_id]: !isExpandedKanban }))}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'var(--bg2)', border: 'none', cursor: 'pointer', color: 'var(--text2)', fontSize: 12, fontWeight: 700 }}>
-                  <span>🎴 Kanban Standards ({stds.length})</span>
-                  <span style={{ fontSize: 10, color: 'var(--muted)' }}>{isExpandedKanban ? '▲' : '▼'}</span>
-                </button>
-                {isExpandedKanban && (
-                  <div style={{ padding: '8px 12px', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    {stds.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)', padding: '6px 4px' }}>ยังไม่มี Kanban Standard</div>}
-                    {stds.map(std => {
-                      const linkedProd = members.find(m => m.id === std.product_id);
-                      const isOldRev   = linkedProd && !linkedProd.is_active;
-                      return (
-                        <div key={std.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 7, opacity: std.is_active ? 1 : 0.5 }}>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: isOldRev ? 'var(--muted)' : '#0ea5e9' }}>{std.mat_no}</span>
-                              {isOldRev && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.12)', color: '#6b7280' }}>rev เก่า</span>}
-                              {!std.is_active && <span style={{ fontSize: 9, color: '#ef4444' }}>ปิด</span>}
-                            </div>
-                          </div>
-                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                            <span style={{ fontSize: 18, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>{std.qty_per_kanban}</span>
-                            <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 3 }}>ชิ้น/ใบ</span>
-                          </div>
-                          {canEdit && (
-                            <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                              <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                              <button onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {canEdit && (
-                      <button onClick={() => openKanbanEdit(null, active?.id || members[0]?.id || '')}
-                        style={{ alignSelf: 'flex-start', marginTop: 2, background: 'rgba(14,165,233,0.08)', border: '1px dashed rgba(14,165,233,0.4)', borderRadius: 6, padding: '4px 12px', fontSize: 11, color: '#0ea5e9', cursor: 'pointer', fontWeight: 700 }}>
-                        + เพิ่ม MAT.NO
-                      </button>
-                    )}
+          /* ── multi-customer group card ── */
+          if (isMulti) {
+            const allVariants = nameFamilies.map(fam => {
+              const m = fam.members.find(x => x.is_active && !x.superseded_by) || fam.members[0];
+              return { ...m, family_id: fam.family_id };
+            });
+            return (
+              <div key={nameKey} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+                {/* Compact group header */}
+                <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+                      <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{partName}</span>
+                      <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: repItem.process_type === 'metal_forming' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.12)', color: repItem.process_type === 'metal_forming' ? '#fbbf24' : '#22c55e' }}>
+                        {repItem.process_type === 'metal_forming' ? '⚙ Metal Forming' : '🔥 Welding/Assy'}
+                      </span>
+                      <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>👥 {nameFamilies.length} ลูกค้า</span>
+                      {totalBomAll > 0 && <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(61,214,92,0.1)', color: 'var(--accent)', fontWeight: 700 }}>📦 BOM: {totalBomAll}</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
+                      {[repItem.line_name && `📍 ${repItem.line_name}`, repItem.cycle_time_sec && `CT ${repItem.cycle_time_sec}s`, repItem.target_per_shift && `Target ${repItem.target_per_shift}/กะ`].filter(Boolean).join(' · ')}
+                    </div>
+                    {/* Customer variant chips */}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {allVariants.map(v => (
+                        <span key={v.family_id} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', color: '#60a5fa', fontWeight: 700 }}>
+                          {v.customer || '—'} · <span style={{ color: '#0ea5e9', fontFamily: 'monospace' }}>{v.mat_no}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <button onClick={() => setExpandedNameGroups(p => ({ ...p, [nameKey]: !isExpGroupExpanded }))}
+                    style={{ ...btnSecondary, fontSize: 11, padding: '4px 10px', flexShrink: 0 }}>
+                    {isExpGroupExpanded ? '▲ ย่อ' : '▼ ขยาย'}
+                  </button>
+                </div>
+                {/* Expanded: individual variant cards */}
+                {isExpGroupExpanded && (
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8, paddingBottom: 8 }}>
+                    {nameFamilies.map(({ family_id, members }) => (
+                      <FamilyCard key={family_id} family_id={family_id} members={members} indented={true} />
+                    ))}
                   </div>
                 )}
               </div>
-            </div>
-          );
+            );
+          }
+
+          /* ── single customer — render full card directly ── */
+          const { family_id, members } = nameFamilies[0];
+          return <FamilyCard key={family_id} family_id={family_id} members={members} indented={false} />;
         })}
       </div>
 
