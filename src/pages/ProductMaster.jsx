@@ -862,19 +862,26 @@ function BOMPanel({ canEdit, fullName }) {
     const invalid = pickerSel.find(x => !parseFloat(x.qty_per_unit) || parseFloat(x.qty_per_unit) <= 0);
     if (invalid) { toast.error(`QTY ของ ${invalid.part.part_name} ต้องมากกว่า 0`); return; }
     setSaving(true);
-    const rows = pickerSel.map(x => ({
-      product_id:   selProduct.id,
-      mat_no:       x.part.mat_no,
-      part_name:    x.part.part_name,
-      part_no:      x.part.part_no || null,
-      qty_per_unit: parseFloat(x.qty_per_unit),
-      qty_per_pkg:  x.part.qty_per_pkg || null,
-      uom:          x.part.uom || 'pcs',
-      supplier:     x.part.supplier || null,
-      created_by:   fullName,
-      updated_at:   new Date().toISOString(),
-    }));
-    const { error } = await supabaseDR.from('bom_items').upsert(rows, { onConflict: 'product_id,mat_no', ignoreDuplicates: true });
+    // re-fetch existing mat_nos to avoid stale state duplicates
+    const { data: existing } = await supabaseDR.from('bom_items')
+      .select('mat_no').eq('product_id', selProduct.id).eq('is_active', true);
+    const usedMats = new Set((existing || []).map(r => r.mat_no));
+    const rows = pickerSel
+      .filter(x => !usedMats.has(x.part.mat_no))
+      .map(x => ({
+        product_id:   selProduct.id,
+        mat_no:       x.part.mat_no,
+        part_name:    x.part.part_name,
+        part_no:      x.part.part_no || null,
+        qty_per_unit: parseFloat(x.qty_per_unit),
+        qty_per_pkg:  x.part.qty_per_pkg || null,
+        uom:          x.part.uom || 'pcs',
+        supplier:     x.part.supplier || null,
+        created_by:   fullName,
+        updated_at:   new Date().toISOString(),
+      }));
+    if (!rows.length) { setSaving(false); toast.info('พาร์ทที่เลือกมีอยู่ใน BOM แล้วทั้งหมด'); return; }
+    const { error } = await supabaseDR.from('bom_items').insert(rows);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success(`เพิ่ม ${rows.length} พาร์ทใน BOM แล้ว`);
