@@ -231,7 +231,7 @@ export default function ProductMaster() {
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 1200, margin: '0 auto' }}>
       {/* ── Main Tab Bar ── */}
       <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 20, width: 'fit-content' }}>
-        {[{ key:'products', label:'🔩 Products' }, { key:'bom', label:'📦 BOM' }].map(t => (
+        {[{ key:'products', label:'🔩 Products' }, { key:'bom', label:'📦 BOM' }, { key:'parts', label:'🗂 Parts Master' }].map(t => (
           <button key={t.key} onClick={() => setMainTab(t.key)}
             style={{ padding:'6px 18px', borderRadius:6, border:'none', cursor:'pointer', fontSize:13, fontWeight:600,
               background: mainTab===t.key ? 'var(--accent)' : 'transparent',
@@ -512,15 +512,18 @@ export default function ProductMaster() {
       )}
       </>)}
 
-      {mainTab === 'bom' && <BOMPanel canEdit={canEdit} fullName={fullName} />}
+      {mainTab === 'bom'   && <BOMPanel canEdit={canEdit} fullName={fullName} />}
+      {mainTab === 'parts' && <PartsMasterPanel canEdit={canEdit} fullName={fullName} />}
     </div>
   );
 }
 
 /* ═══════════════════════════════════════════════════════════════
    BOM PANEL — ฝัง tab ใน Product Master
+   Add mode: picker จาก parts_master → กรอกแค่ qty_per_unit
+   Edit mode: แก้ qty_per_unit / qty_per_pkg ของ bom row
 ═══════════════════════════════════════════════════════════════ */
-const EMPTY_BOM = { part_name: '', part_no: '', mat_no: '', qty_per_unit: 1, qty_per_pkg: '', uom: 'pcs', supplier: '', note: '' };
+const EMPTY_BOM = { qty_per_unit: 1, qty_per_pkg: '', note: '' };
 
 const TH = ({ children, w }) => (
   <th style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap', width: w }}>{children}</th>
@@ -530,23 +533,29 @@ const TD = ({ children, style }) => (
 );
 
 function BOMPanel({ canEdit, fullName }) {
-  const [products, setProducts] = useState([]);
+  const [products, setProducts]     = useState([]);
   const [selProduct, setSelProduct] = useState(null);
-  const [items, setItems] = useState([]);
-  const [counts, setCounts] = useState({});
-  const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [editItem, setEditItem] = useState(null);
-  const [form, setForm] = useState(EMPTY_BOM);
-  const [saving, setSaving] = useState(false);
+  const [items, setItems]           = useState([]);
+  const [counts, setCounts]         = useState({});
+  const [partsMaster, setPartsMaster] = useState([]);   // catalog กลาง
+  const [search, setSearch]         = useState('');
+  const [loading, setLoading]       = useState(false);
+  const [showPicker, setShowPicker] = useState(false);  // modal เลือกพาร์ท
+  const [pickerQ, setPickerQ]       = useState('');     // ค้นหาใน picker
+  const [pickerSel, setPickerSel]   = useState([]);     // รายการที่เลือก [{part, qty_per_unit}]
+  const [showEdit, setShowEdit]     = useState(false);  // modal แก้ไข bom row
+  const [editItem, setEditItem]     = useState(null);
+  const [form, setForm]             = useState(EMPTY_BOM);
+  const [saving, setSaving]         = useState(false);
 
-  const loadProducts = useCallback(async () => {
-    const [{ data: prods }, { data: boms }] = await Promise.all([
+  const loadAll = useCallback(async () => {
+    const [{ data: prods }, { data: boms }, { data: parts }] = await Promise.all([
       supabaseDR.from('dr_products').select('id, name, code, mat_no, p_no, customer, line_name').eq('is_active', true).order('line_name').order('name'),
       supabaseDR.from('bom_items').select('product_id').eq('is_active', true),
+      supabaseDR.from('parts_master').select('*').eq('is_active', true).order('part_name'),
     ]);
     setProducts(prods || []);
+    setPartsMaster(parts || []);
     const c = {};
     (boms || []).forEach(b => { c[b.product_id] = (c[b.product_id] || 0) + 1; });
     setCounts(c);
@@ -562,27 +571,72 @@ function BOMPanel({ canEdit, fullName }) {
     setItems(data || []);
   }, []);
 
-  useEffect(() => { loadProducts(); }, [loadProducts]);
+  useEffect(() => { loadAll(); }, [loadAll]);
   useEffect(() => { loadItems(selProduct?.id); }, [selProduct, loadItems]);
 
-  const openAdd  = () => { setEditItem(null); setForm(EMPTY_BOM); setShowForm(true); };
-  const openEdit = (it) => { setEditItem(it); setForm({ part_name: it.part_name, part_no: it.part_no || '', mat_no: it.mat_no, qty_per_unit: it.qty_per_unit, qty_per_pkg: it.qty_per_pkg || '', uom: it.uom, supplier: it.supplier || '', note: it.note || '' }); setShowForm(true); };
+  // picker: filter parts_master
+  const pickerFiltered = useMemo(() => {
+    const q = pickerQ.trim().toLowerCase();
+    const usedMats = new Set(items.map(i => i.mat_no));
+    const base = partsMaster.filter(p => !usedMats.has(p.mat_no));   // ซ่อนที่มีใน BOM แล้ว
+    if (!q) return base;
+    return base.filter(p =>
+      p.mat_no.toLowerCase().includes(q) ||
+      p.part_name.toLowerCase().includes(q) ||
+      (p.part_no || '').toLowerCase().includes(q) ||
+      (p.supplier || '').toLowerCase().includes(q));
+  }, [partsMaster, pickerQ, items]);
 
-  const handleSave = async () => {
-    if (!form.mat_no.trim() || !form.part_name.trim()) { toast.error('กรอก Mat No. และชื่อพาร์ทก่อน'); return; }
-    const qty = parseFloat(form.qty_per_unit);
-    if (!qty || qty <= 0) { toast.error('จำนวนใช้ต่อชิ้นต้องมากกว่า 0'); return; }
+  const togglePick = (part) => setPickerSel(prev => {
+    const has = prev.find(x => x.part.id === part.id);
+    return has ? prev.filter(x => x.part.id !== part.id) : [...prev, { part, qty_per_unit: 1 }];
+  });
+  const setPickQty = (partId, qty) => setPickerSel(prev => prev.map(x => x.part.id === partId ? { ...x, qty_per_unit: qty } : x));
+
+  const openPicker = () => { setPickerQ(''); setPickerSel([]); setShowPicker(true); };
+  const openEdit_  = (it) => { setEditItem(it); setForm({ qty_per_unit: it.qty_per_unit, qty_per_pkg: it.qty_per_pkg || '', note: it.note || '' }); setShowEdit(true); };
+
+  const handlePickerSave = async () => {
+    if (!pickerSel.length) { toast.error('เลือกพาร์ทอย่างน้อย 1 รายการ'); return; }
+    const invalid = pickerSel.find(x => !parseFloat(x.qty_per_unit) || parseFloat(x.qty_per_unit) <= 0);
+    if (invalid) { toast.error(`QTY ของ ${invalid.part.part_name} ต้องมากกว่า 0`); return; }
     setSaving(true);
-    const payload = { part_name: form.part_name.trim(), part_no: form.part_no.trim() || null, mat_no: form.mat_no.trim(), qty_per_unit: qty, qty_per_pkg: form.qty_per_pkg ? parseFloat(form.qty_per_pkg) : null, uom: form.uom.trim() || 'pcs', supplier: form.supplier.trim() || null, note: form.note.trim() || null, updated_at: new Date().toISOString() };
-    const { error } = editItem
-      ? await supabaseDR.from('bom_items').update(payload).eq('id', editItem.id)
-      : await supabaseDR.from('bom_items').insert({ ...payload, product_id: selProduct.id, created_by: fullName });
+    const rows = pickerSel.map(x => ({
+      product_id:   selProduct.id,
+      mat_no:       x.part.mat_no,
+      part_name:    x.part.part_name,
+      part_no:      x.part.part_no || null,
+      qty_per_unit: parseFloat(x.qty_per_unit),
+      qty_per_pkg:  x.part.qty_per_pkg || null,
+      uom:          x.part.uom || 'pcs',
+      supplier:     x.part.supplier || null,
+      created_by:   fullName,
+      updated_at:   new Date().toISOString(),
+    }));
+    const { error } = await supabaseDR.from('bom_items').insert(rows);
     setSaving(false);
-    if (error) { toast.error(error.code === '23505' ? `Mat No. ${form.mat_no} มีใน BOM นี้แล้ว` : error.message); return; }
-    toast.success(editItem ? 'แก้ไขพาร์ทแล้ว' : 'เพิ่มพาร์ทใน BOM แล้ว');
-    setShowForm(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`เพิ่ม ${rows.length} พาร์ทใน BOM แล้ว`);
+    setShowPicker(false);
     loadItems(selProduct.id);
-    loadProducts();
+    loadAll();
+  };
+
+  const handleEditSave = async () => {
+    const qty = parseFloat(form.qty_per_unit);
+    if (!qty || qty <= 0) { toast.error('QTY ต้องมากกว่า 0'); return; }
+    setSaving(true);
+    const { error } = await supabaseDR.from('bom_items').update({
+      qty_per_unit: qty,
+      qty_per_pkg:  form.qty_per_pkg ? parseFloat(form.qty_per_pkg) : null,
+      note:         form.note.trim() || null,
+      updated_at:   new Date().toISOString(),
+    }).eq('id', editItem.id);
+    setSaving(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success('แก้ไขแล้ว');
+    setShowEdit(false);
+    loadItems(selProduct.id);
   };
 
   const handleDelete = async (it) => {
@@ -591,7 +645,7 @@ function BOMPanel({ canEdit, fullName }) {
     if (error) { toast.error(error.message); return; }
     toast.success('ลบพาร์ทแล้ว');
     loadItems(selProduct.id);
-    loadProducts();
+    loadAll();
   };
 
   const filtered = useMemo(() => {
@@ -639,7 +693,7 @@ function BOMPanel({ canEdit, fullName }) {
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{[selProduct.mat_no && `Mat: ${selProduct.mat_no}`, selProduct.p_no && `P/No: ${selProduct.p_no}`, selProduct.line_name, selProduct.customer].filter(Boolean).join(' · ')}</div>
               </div>
               {canEdit && (
-                <button onClick={openAdd} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>+ เพิ่มพาร์ทย่อย</button>
+                <button onClick={openPicker} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>+ เพิ่มพาร์ทย่อย</button>
               )}
             </div>
             {loading ? (
@@ -670,7 +724,7 @@ function BOMPanel({ canEdit, fullName }) {
                         {canEdit && (
                           <TD>
                             <div style={{ display: 'flex', gap: 6 }}>
-                              <button onClick={() => openEdit(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>
+                              <button onClick={() => openEdit_(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>
                               <button onClick={() => handleDelete(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#ef4444', cursor: 'pointer', fontSize: 12 }}>🗑</button>
                             </div>
                           </TD>
@@ -685,48 +739,370 @@ function BOMPanel({ canEdit, fullName }) {
         )}
       </div>
 
-      {/* Add/Edit BOM item modal */}
-      {showForm && (
+      {/* ══ PICKER MODAL — เลือกพาร์ทจาก Parts Master ══ */}
+      {showPicker && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, width: 'min(700px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
+            {/* header */}
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 2 }}>➕ เพิ่มพาร์ทย่อยใน BOM</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>{selProduct?.name} · เลือกหลายรายการได้ แล้วกรอก QTY ก่อนกด "เพิ่ม"</div>
+            </div>
+
+            {/* search */}
+            <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <input autoFocus style={{ ...inputSt, background: 'var(--bg2)' }} placeholder="🔍 ค้นหา Part Name / Mat SAP / Part No. / Supplier..." value={pickerQ} onChange={e => setPickerQ(e.target.value)} />
+            </div>
+
+            {/* list */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {pickerFiltered.length === 0 && (
+                <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                  {partsMaster.length === 0 ? 'ยังไม่มีพาร์ทใน Parts Master — ไปเพิ่มที่ tab 🗂 Parts Master ก่อน' : 'ไม่พบพาร์ทที่ตรงเงื่อนไข'}
+                </div>
+              )}
+              {pickerFiltered.map(p => {
+                const sel = pickerSel.find(x => x.part.id === p.id);
+                return (
+                  <div key={p.id} onClick={() => togglePick(p)} style={{
+                    padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
+                    background: sel ? 'rgba(61,214,92,0.08)' : 'var(--bg2)',
+                    border: `1px solid ${sel ? 'rgba(61,214,92,0.45)' : 'var(--border)'}`,
+                    display: 'flex', alignItems: 'center', gap: 12,
+                  }}>
+                    <div style={{ width: 20, height: 20, borderRadius: 4, border: `2px solid ${sel ? 'var(--accent)' : 'var(--border)'}`, background: sel ? 'var(--accent)' : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: '#08130a' }}>{sel ? '✓' : ''}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{p.part_name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
+                        <span style={{ fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700 }}>{p.mat_no}</span>
+                        {p.part_no && <span> · {p.part_no}</span>}
+                        {p.supplier && <span> · {p.supplier}</span>}
+                        <span> · {p.uom}</span>
+                        {p.qty_per_pkg && <span> · {p.qty_per_pkg}/pkg</span>}
+                      </div>
+                    </div>
+                    {sel && (
+                      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        <label style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap' }}>QTY/ชิ้น</label>
+                        <input type="number" min="0.001" step="any" value={sel.qty_per_unit}
+                          onChange={e => setPickQty(p.id, e.target.value)}
+                          style={{ ...inputSt, width: 72, textAlign: 'center', fontSize: 14, fontWeight: 800, padding: '4px 8px', background: 'var(--bg)' }} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* selected summary + action */}
+            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                {pickerSel.length > 0
+                  ? <span style={{ color: 'var(--accent)', fontWeight: 700 }}>✓ เลือกแล้ว {pickerSel.length} รายการ</span>
+                  : 'คลิกพาร์ทเพื่อเลือก'}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setShowPicker(false)} style={btnSecondary}>ยกเลิก</button>
+                <button onClick={handlePickerSave} disabled={saving || !pickerSel.length}
+                  style={{ ...btnPrimary, opacity: (saving || !pickerSel.length) ? 0.5 : 1 }}>
+                  {saving ? '...' : `เพิ่ม ${pickerSel.length || ''} พาร์ท`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ EDIT MODAL — แก้ QTY ของ BOM row ══ */}
+      {showEdit && editItem && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(480px, 100%)', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>{editItem ? '✏️ แก้ไขพาร์ทย่อย' : '➕ เพิ่มพาร์ทย่อย'}</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>{selProduct?.name}</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>PART NAME *</label>
-                <input autoFocus style={inputSt} value={form.part_name} onChange={e => setForm(f => ({ ...f, part_name: e.target.value }))} placeholder="เช่น BOLT HEX M8, FLANGE WASHER" />
-              </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>PART NO.</label>
-                <input style={{ ...inputSt, fontFamily: 'monospace' }} value={form.part_no} onChange={e => setForm(f => ({ ...f, part_no: e.target.value }))} placeholder="เช่น DRW-0012-A" />
-              </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>MAT SAP *</label>
-                <input style={{ ...inputSt, fontFamily: 'monospace', fontWeight: 700 }} value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value }))} placeholder="เช่น 90119-T0335" disabled={!!editItem} />
-              </div>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(380px,100%)' }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 2 }}>✏️ แก้ไข BOM</div>
+            <div style={{ fontSize: 12, color: '#0ea5e9', fontFamily: 'monospace', fontWeight: 700, marginBottom: 4 }}>{editItem.mat_no}</div>
+            <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 16 }}>{editItem.part_name}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>QTY / ชิ้นงาน *</label>
-                <input style={inputSt} type="number" min="0.001" step="any" value={form.qty_per_unit} onChange={e => setForm(f => ({ ...f, qty_per_unit: e.target.value }))} />
+                <input autoFocus type="number" min="0.001" step="any" style={{ ...inputSt, fontSize: 22, fontWeight: 900, textAlign: 'center' }} value={form.qty_per_unit} onChange={e => setForm(f => ({ ...f, qty_per_unit: e.target.value }))} />
               </div>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>QTY / Packaging</label>
-                <input style={inputSt} type="number" min="1" step="any" value={form.qty_per_pkg} onChange={e => setForm(f => ({ ...f, qty_per_pkg: e.target.value }))} placeholder="จำนวนต่อกล่อง/แพ็ค" />
+                <input type="number" min="1" step="any" style={inputSt} value={form.qty_per_pkg} onChange={e => setForm(f => ({ ...f, qty_per_pkg: e.target.value }))} placeholder="จำนวนต่อกล่อง/แพ็ค" />
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>หน่วย</label>
-                <input style={inputSt} value={form.uom} onChange={e => setForm(f => ({ ...f, uom: e.target.value }))} placeholder="pcs" />
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>SUPPLIER</label>
-                <input style={inputSt} value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))} />
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>
                 <input style={inputSt} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-              <button onClick={() => setShowForm(false)} style={btnSecondary}>ยกเลิก</button>
+              <button onClick={() => setShowEdit(false)} style={btnSecondary}>ยกเลิก</button>
+              <button onClick={handleEditSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : '💾 บันทึก'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PARTS MASTER PANEL — ฐานข้อมูลกลางของพาร์ทย่อย
+   mat_no prefix:
+     100xxxxx = FG (ส่งลูกค้า)
+     200xxxxx = child part ผลิตในบริษัท
+     300xxxxx = child part ซื้อนอก
+     500xxxxx = raw material
+═══════════════════════════════════════════════════════════════ */
+const EMPTY_PART = {
+  mat_no: '', part_name: '', part_no: '', uom: 'EA',
+  qty_per_pkg: '', supplier: '', note: '', is_active: true,
+};
+
+const MAT_PREFIXES = [
+  { prefix: '100', label: '100xxxxx — FG (ส่งลูกค้า)', color: '#22c55e' },
+  { prefix: '200', label: '200xxxxx — Child Part (ผลิตเอง)', color: '#3b82f6' },
+  { prefix: '300', label: '300xxxxx — Child Part (ซื้อนอก)', color: '#f59e0b' },
+  { prefix: '500', label: '500xxxxx — Raw Material', color: '#a78bfa' },
+];
+
+function matColor(mat_no = '') {
+  if (mat_no.startsWith('1')) return '#22c55e';
+  if (mat_no.startsWith('2')) return '#3b82f6';
+  if (mat_no.startsWith('3')) return '#f59e0b';
+  if (mat_no.startsWith('5')) return '#a78bfa';
+  return 'var(--muted)';
+}
+
+function matTypeLabel(mat_no = '') {
+  if (mat_no.startsWith('1')) return 'FG';
+  if (mat_no.startsWith('2')) return 'Child (ผลิต)';
+  if (mat_no.startsWith('3')) return 'Child (ซื้อ)';
+  if (mat_no.startsWith('5')) return 'Raw Mat';
+  return '';
+}
+
+function PartsMasterPanel({ canEdit, fullName }) {
+  const [parts, setParts]         = useState([]);
+  const [search, setSearch]       = useState('');
+  const [prefixFilter, setPFilter] = useState('');
+  const [loading, setLoading]     = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [editPart, setEditPart]   = useState(null);   // null=new, obj=edit
+  const [form, setForm]           = useState(EMPTY_PART);
+  const [saving, setSaving]       = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabaseDR.from('parts_master').select('*').order('mat_no');
+    setParts(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = useMemo(() => {
+    let r = parts;
+    if (prefixFilter) r = r.filter(p => p.mat_no?.startsWith(prefixFilter));
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      r = r.filter(p =>
+        p.part_name?.toLowerCase().includes(q) ||
+        p.mat_no?.toLowerCase().includes(q) ||
+        p.part_no?.toLowerCase().includes(q) ||
+        p.supplier?.toLowerCase().includes(q)
+      );
+    }
+    return r;
+  }, [parts, search, prefixFilter]);
+
+  function openNew() { setEditPart(null); setForm(EMPTY_PART); setShowModal(true); }
+  function openEdit(p) { setEditPart(p); setForm({ ...EMPTY_PART, ...p }); setShowModal(true); }
+
+  async function handleSave() {
+    if (!form.mat_no.trim() || !form.part_name.trim()) { toast.error('กรอก Mat SAP และ Part Name'); return; }
+    setSaving(true);
+    const payload = {
+      mat_no: form.mat_no.trim(), part_name: form.part_name.trim(),
+      part_no: form.part_no.trim() || null, uom: form.uom.trim() || 'EA',
+      qty_per_pkg: form.qty_per_pkg !== '' ? Number(form.qty_per_pkg) : null,
+      supplier: form.supplier.trim() || null, note: form.note.trim() || null,
+      is_active: form.is_active,
+    };
+    let err;
+    if (editPart) {
+      ({ error: err } = await supabaseDR.from('parts_master').update(payload).eq('id', editPart.id));
+    } else {
+      ({ error: err } = await supabaseDR.from('parts_master').insert(payload));
+    }
+    setSaving(false);
+    if (err) { toast.error(err.message); return; }
+    toast.success(editPart ? 'อัปเดตสำเร็จ' : 'เพิ่มพาร์ทสำเร็จ');
+    setShowModal(false);
+    load();
+  }
+
+  async function toggleActive(p) {
+    await supabaseDR.from('parts_master').update({ is_active: !p.is_active }).eq('id', p.id);
+    load();
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* legend */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)', fontSize: 11 }}>
+        {MAT_PREFIXES.map(m => (
+          <span key={m.prefix} style={{ padding: '2px 10px', borderRadius: 12, background: `${m.color}22`, color: m.color, fontWeight: 700, fontFamily: 'monospace' }}>{m.label}</span>
+        ))}
+      </div>
+
+      {/* toolbar */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input style={{ ...inputSt, flex: 1, minWidth: 200, background: 'var(--bg2)' }}
+          placeholder="🔍 ค้นหา Part Name / Mat SAP / Part No. / Supplier..."
+          value={search} onChange={e => setSearch(e.target.value)} />
+        <select style={{ ...inputSt, width: 'auto', background: 'var(--bg2)' }}
+          value={prefixFilter} onChange={e => setPFilter(e.target.value)}>
+          <option value="">ทุกประเภท</option>
+          {MAT_PREFIXES.map(m => <option key={m.prefix} value={m.prefix}>{m.prefix}xxxxx</option>)}
+        </select>
+        {canEdit && <button onClick={openNew} style={btnPrimary}>➕ เพิ่มพาร์ท</button>}
+      </div>
+
+      {loading && <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 30 }}>⏳ กำลังโหลด...</div>}
+
+      {/* table */}
+      {!loading && (
+        <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid var(--border)' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
+            <thead style={{ background: 'var(--bg2)' }}>
+              <tr>
+                <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' }}>Mat SAP</th>
+                <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>ชื่อพาร์ท</th>
+                <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>Part No.</th>
+                <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>UOM</th>
+                <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right' }}>Qty/Pkg</th>
+                <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>Supplier</th>
+                <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'center' }}>สถานะ</th>
+                {canEdit && <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)' }}></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 && (
+                <tr><td colSpan={canEdit ? 8 : 7} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                  {parts.length === 0 ? 'ยังไม่มีข้อมูล — กด ➕ เพิ่มพาร์ท เพื่อเริ่มต้น' : 'ไม่พบรายการที่ตรงเงื่อนไข'}
+                </td></tr>
+              )}
+              {filtered.map(p => (
+                <tr key={p.id} style={{ opacity: p.is_active ? 1 : 0.45, background: 'var(--card)' }}>
+                  <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 800, color: matColor(p.mat_no) }}>{p.mat_no}</span>
+                      {matTypeLabel(p.mat_no) && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: `${matColor(p.mat_no)}22`, color: matColor(p.mat_no), fontWeight: 700 }}>{matTypeLabel(p.mat_no)}</span>}
+                    </div>
+                  </td>
+                  <td style={{ padding: '8px 12px', fontSize: 13, color: 'var(--text)', fontWeight: 600, borderTop: '1px solid var(--border)' }}>{p.part_name}</td>
+                  <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text2)', fontFamily: 'monospace', borderTop: '1px solid var(--border)' }}>{p.part_no || '-'}</td>
+                  <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--muted)', borderTop: '1px solid var(--border)' }}>{p.uom}</td>
+                  <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text2)', textAlign: 'right', fontFamily: 'monospace', borderTop: '1px solid var(--border)' }}>{p.qty_per_pkg ?? '-'}</td>
+                  <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text2)', borderTop: '1px solid var(--border)' }}>{p.supplier || '-'}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'center', borderTop: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 8, fontWeight: 700, background: p.is_active ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)', color: p.is_active ? '#22c55e' : '#ef4444' }}>
+                      {p.is_active ? 'ใช้งาน' : 'ปิดใช้'}
+                    </span>
+                  </td>
+                  {canEdit && (
+                    <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => openEdit(p)} style={{ ...btnSecondary, padding: '4px 10px', fontSize: 12 }}>✏️</button>
+                        <button onClick={() => toggleActive(p)} title={p.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
+                          style={{ ...btnSecondary, padding: '4px 10px', fontSize: 12, color: p.is_active ? '#ef4444' : '#22c55e' }}>
+                          {p.is_active ? '🚫' : '✅'}
+                        </button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}>
+        แสดง {filtered.length} / {parts.length} รายการ
+      </div>
+
+      {/* ══ ADD / EDIT MODAL ══ */}
+      {showModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(480px,100%)', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
+              {editPart ? '✏️ แก้ไขพาร์ท' : '➕ เพิ่มพาร์ทใหม่'}
+            </div>
+
+            {/* prefix hint */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+              {MAT_PREFIXES.map(m => (
+                <button key={m.prefix} onClick={() => setForm(f => ({ ...f, mat_no: f.mat_no.startsWith(m.prefix) ? f.mat_no : m.prefix }))}
+                  style={{ fontSize: 10, padding: '2px 10px', borderRadius: 10, border: `1px solid ${m.color}`, background: form.mat_no.startsWith(m.prefix) ? `${m.color}22` : 'transparent', color: m.color, cursor: 'pointer', fontWeight: 700 }}>
+                  {m.prefix}…
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Mat SAP *</label>
+                  <input style={{ ...inputSt, fontFamily: 'monospace', color: matColor(form.mat_no) }}
+                    value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value }))}
+                    placeholder="เช่น 300001234" />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Part No.</label>
+                  <input style={{ ...inputSt, fontFamily: 'monospace' }}
+                    value={form.part_no} onChange={e => setForm(f => ({ ...f, part_no: e.target.value }))}
+                    placeholder="Drawing / Internal No." />
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Part Name *</label>
+                <input autoFocus={!editPart} style={inputSt}
+                  value={form.part_name} onChange={e => setForm(f => ({ ...f, part_name: e.target.value }))}
+                  placeholder="ชื่อพาร์ท" />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>UOM</label>
+                  <select style={inputSt} value={form.uom} onChange={e => setForm(f => ({ ...f, uom: e.target.value }))}>
+                    {['EA', 'PC', 'KG', 'M', 'SET', 'BOX', 'ROLL'].map(u => <option key={u}>{u}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Qty / Packaging</label>
+                  <input type="number" min="1" step="any" style={inputSt}
+                    value={form.qty_per_pkg} onChange={e => setForm(f => ({ ...f, qty_per_pkg: e.target.value }))}
+                    placeholder="จำนวนต่อกล่อง" />
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Supplier</label>
+                <input style={inputSt}
+                  value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))}
+                  placeholder="ชื่อ Supplier / ผู้ผลิต" />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>
+                <input style={inputSt}
+                  value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
+                เปิดใช้งาน
+              </label>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+              <button onClick={() => setShowModal(false)} style={btnSecondary}>ยกเลิก</button>
               <button onClick={handleSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : '💾 บันทึก'}</button>
             </div>
           </div>
