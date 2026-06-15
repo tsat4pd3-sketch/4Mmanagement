@@ -522,7 +522,7 @@ export default function ProductMaster() {
 /* ═══════════════════════════════════════════════════════════════
    BOM PANEL — ฝัง tab ใน Product Master
 ═══════════════════════════════════════════════════════════════ */
-const EMPTY_BOM = { mat_no: '', part_name: '', qty_per_unit: 1, uom: 'pcs', supplier: '', note: '' };
+const EMPTY_BOM = { part_name: '', part_no: '', mat_no: '', qty_per_unit: 1, qty_per_pkg: '', uom: 'pcs', supplier: '', note: '' };
 
 const TH = ({ children, w }) => (
   <th style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap', width: w }}>{children}</th>
@@ -568,14 +568,14 @@ function BOMPanel({ canEdit, fullName }) {
   useEffect(() => { loadItems(selProduct?.id); }, [selProduct, loadItems]);
 
   const openAdd  = () => { setEditItem(null); setForm(EMPTY_BOM); setShowForm(true); };
-  const openEdit = (it) => { setEditItem(it); setForm({ mat_no: it.mat_no, part_name: it.part_name, qty_per_unit: it.qty_per_unit, uom: it.uom, supplier: it.supplier || '', note: it.note || '' }); setShowForm(true); };
+  const openEdit = (it) => { setEditItem(it); setForm({ part_name: it.part_name, part_no: it.part_no || '', mat_no: it.mat_no, qty_per_unit: it.qty_per_unit, qty_per_pkg: it.qty_per_pkg || '', uom: it.uom, supplier: it.supplier || '', note: it.note || '' }); setShowForm(true); };
 
   const handleSave = async () => {
     if (!form.mat_no.trim() || !form.part_name.trim()) { toast.error('กรอก Mat No. และชื่อพาร์ทก่อน'); return; }
     const qty = parseFloat(form.qty_per_unit);
     if (!qty || qty <= 0) { toast.error('จำนวนใช้ต่อชิ้นต้องมากกว่า 0'); return; }
     setSaving(true);
-    const payload = { mat_no: form.mat_no.trim(), part_name: form.part_name.trim(), qty_per_unit: qty, uom: form.uom.trim() || 'pcs', supplier: form.supplier.trim() || null, note: form.note.trim() || null, updated_at: new Date().toISOString() };
+    const payload = { part_name: form.part_name.trim(), part_no: form.part_no.trim() || null, mat_no: form.mat_no.trim(), qty_per_unit: qty, qty_per_pkg: form.qty_per_pkg ? parseFloat(form.qty_per_pkg) : null, uom: form.uom.trim() || 'pcs', supplier: form.supplier.trim() || null, note: form.note.trim() || null, updated_at: new Date().toISOString() };
     const { error } = editItem
       ? await supabaseDR.from('bom_items').update(payload).eq('id', editItem.id)
       : await supabaseDR.from('bom_items').insert({ ...payload, product_id: selProduct.id, created_by: fullName });
@@ -655,19 +655,20 @@ function BOMPanel({ canEdit, fullName }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: 'var(--bg2)' }}>
-                      <TH>Mat No.</TH><TH>ชื่อพาร์ท</TH><TH w={110}>ใช้ / 1 ชิ้น</TH><TH w={70}>หน่วย</TH><TH>Supplier</TH><TH>หมายเหตุ</TH>
-                      {canEdit && <TH w={100}> </TH>}
+                      <TH>Part Name</TH><TH>Part No.</TH><TH>Mat SAP</TH><TH w={90}>ใช้/ชิ้น</TH><TH w={90}>Qty/Pkg</TH><TH w={60}>หน่วย</TH><TH>Supplier</TH>
+                      {canEdit && <TH w={90}> </TH>}
                     </tr>
                   </thead>
                   <tbody>
                     {items.map(it => (
                       <tr key={it.id}>
-                        <TD style={{ fontWeight: 700, fontFamily: 'monospace' }}>{it.mat_no}</TD>
-                        <TD>{it.part_name}</TD>
-                        <TD style={{ fontWeight: 800, color: 'var(--accent)' }}>{Number(it.qty_per_unit)}</TD>
+                        <TD style={{ fontWeight: 600 }}>{it.part_name}</TD>
+                        <TD style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text2)' }}>{it.part_no || '—'}</TD>
+                        <TD style={{ fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{it.mat_no}</TD>
+                        <TD style={{ fontWeight: 800, color: 'var(--accent)', textAlign: 'right' }}>{Number(it.qty_per_unit)}</TD>
+                        <TD style={{ fontWeight: 700, color: '#f59e0b', textAlign: 'right' }}>{it.qty_per_pkg ? Number(it.qty_per_pkg) : '—'}</TD>
                         <TD style={{ color: 'var(--muted)' }}>{it.uom}</TD>
-                        <TD style={{ color: 'var(--muted)' }}>{it.supplier || '—'}</TD>
-                        <TD style={{ color: 'var(--muted)', fontSize: 12 }}>{it.note || '—'}</TD>
+                        <TD style={{ color: 'var(--muted)', fontSize: 12 }}>{it.supplier || '—'}</TD>
                         {canEdit && (
                           <TD>
                             <div style={{ display: 'flex', gap: 6 }}>
@@ -694,16 +695,24 @@ function BOMPanel({ canEdit, fullName }) {
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>{selProduct?.name}</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div style={{ gridColumn: '1 / -1' }}>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>MAT NO. *</label>
-                <input style={inputSt} value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value }))} placeholder="เช่น 90119-T0335" disabled={!!editItem} />
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ชื่อพาร์ท *</label>
-                <input style={inputSt} value={form.part_name} onChange={e => setForm(f => ({ ...f, part_name: e.target.value }))} placeholder="เช่น BOLT, FLANGE" />
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>PART NAME *</label>
+                <input autoFocus style={inputSt} value={form.part_name} onChange={e => setForm(f => ({ ...f, part_name: e.target.value }))} placeholder="เช่น BOLT HEX M8, FLANGE WASHER" />
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ใช้ต่อ 1 ชิ้นงาน *</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>PART NO.</label>
+                <input style={{ ...inputSt, fontFamily: 'monospace' }} value={form.part_no} onChange={e => setForm(f => ({ ...f, part_no: e.target.value }))} placeholder="เช่น DRW-0012-A" />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>MAT SAP *</label>
+                <input style={{ ...inputSt, fontFamily: 'monospace', fontWeight: 700 }} value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value }))} placeholder="เช่น 90119-T0335" disabled={!!editItem} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>QTY / ชิ้นงาน *</label>
                 <input style={inputSt} type="number" min="0.001" step="any" value={form.qty_per_unit} onChange={e => setForm(f => ({ ...f, qty_per_unit: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>QTY / Packaging</label>
+                <input style={inputSt} type="number" min="1" step="any" value={form.qty_per_pkg} onChange={e => setForm(f => ({ ...f, qty_per_pkg: e.target.value }))} placeholder="จำนวนต่อกล่อง/แพ็ค" />
               </div>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>หน่วย</label>
