@@ -910,7 +910,7 @@ function BOMPanel({ canEdit, fullName }) {
 
   const handleDelete = async (it) => {
     if (!window.confirm(`ลบ ${it.mat_no} · ${it.part_name} ออกจาก BOM?`)) return;
-    const { error } = await supabaseDR.from('bom_items').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', it.id);
+    const { error } = await supabaseDR.from('bom_items').delete().eq('id', it.id);
     if (error) { toast.error(error.message); return; }
     toast.success('ลบพาร์ทแล้ว');
     loadItems(selProduct.id);
