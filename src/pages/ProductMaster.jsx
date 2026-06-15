@@ -76,6 +76,9 @@ export default function ProductMaster() {
   const [expandedNameGroups, setExpandedNameGroups] = useState({});
   const [csvImporting, setCsvImporting] = useState(false);
   const csvInputRef = useRef(null);
+  const [csvPreview, setCsvPreview] = useState(null);
+  const [partsReloadKey, setPartsReloadKey] = useState(0);
+  // { type: 'products'|'parts', newRows: [], dupRows: [{row, existing, include}], invalidRows: [], overwriteAll: false }
 
   /* ── load ── */
   const load = useCallback(async () => {
@@ -262,37 +265,71 @@ export default function ProductMaster() {
     if (!file) return;
     setCsvImporting(true);
     const text = await file.text();
-    const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim());
-    const header = lines[0].split(',').map(h => h.trim().replace(/^﻿/, ''));
-    const rows = lines.slice(1).map(line => {
+    const rawLines = text.replace(/\r/g, '').split('\n').filter(l => l.trim());
+    const header = rawLines[0].split(',').map(h => h.trim().replace(/^﻿/, ''));
+    const allRows = rawLines.slice(1).map(line => {
       const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
       const obj = {};
       header.forEach((h, i) => { obj[h] = vals[i] ?? ''; });
       return obj;
-    }).filter(r => r.name && r.mat_no);
-
-    if (!rows.length) { toast.error('ไม่พบข้อมูลในไฟล์ หรือ format ไม่ถูกต้อง'); setCsvImporting(false); return; }
-
-    const payload = rows.map(r => ({
-      name: r.name, code: r.code || null, mat_no: r.mat_no || null,
-      p_no: r.p_no || null, customer: r.customer || null, line_name: r.line_name || null,
-      cycle_time_sec: r.cycle_time_sec ? Number(r.cycle_time_sec) : null,
-      target_per_shift: r.target_per_shift ? Number(r.target_per_shift) : null,
-      process_type: r.process_type || 'welding_assembly', is_active: true,
-    }));
-
-    const { error } = await supabaseDR.from('dr_products').upsert(payload, { onConflict: 'mat_no', ignoreDuplicates: false });
+    });
     setCsvImporting(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success(`นำเข้า ${payload.length} รายการสำเร็จ`);
+
+    if (!allRows.length) { toast.error('ไม่พบข้อมูลในไฟล์ หรือ format ไม่ถูกต้อง'); return; }
+
+    const existingMatNos = new Set(items.map(i => i.mat_no).filter(Boolean));
+    const newRows = [], dupRows = [], invalidRows = [];
+    allRows.forEach(r => {
+      if (!r.name || !r.mat_no) { invalidRows.push(r); return; }
+      if (existingMatNos.has(r.mat_no)) {
+        const existing = items.find(i => i.mat_no === r.mat_no);
+        dupRows.push({ row: r, existing, include: true });
+      } else {
+        newRows.push(r);
+      }
+    });
+    setCsvPreview({ type: 'products', newRows, dupRows, invalidRows, overwriteAll: false });
+  };
+
+  const confirmCsvImport = async () => {
+    if (!csvPreview) return;
+    const { type, newRows, dupRows, invalidRows: _iv, overwriteAll } = csvPreview;
+    const selectedDups = dupRows.filter(d => overwriteAll || d.include).map(d => d.row);
+    const toImport = [...newRows, ...selectedDups];
+    if (!toImport.length) { toast.error('ไม่มีรายการที่จะนำเข้า'); return; }
+
+    if (type === 'products') {
+      const payload = toImport.map(r => ({
+        name: r.name, code: r.code || null, mat_no: r.mat_no || null,
+        p_no: r.p_no || null, customer: r.customer || null, line_name: r.line_name || null,
+        cycle_time_sec: r.cycle_time_sec ? Number(r.cycle_time_sec) : null,
+        target_per_shift: r.target_per_shift ? Number(r.target_per_shift) : null,
+        process_type: r.process_type || 'welding_assembly', is_active: true,
+      }));
+      const { error } = await supabaseDR.from('dr_products').upsert(payload, { onConflict: 'mat_no', ignoreDuplicates: false });
+      if (error) { toast.error(error.message); return; }
+      toast.success(`นำเข้า ${payload.length} รายการสำเร็จ`);
+    } else {
+      const payload = toImport.map(r => ({
+        mat_no: r.mat_no, part_name: r.part_name,
+        part_no: r.part_no || null, uom: r.uom || 'EA',
+        qty_per_pkg: r.qty_per_pkg ? Number(r.qty_per_pkg) : null,
+        supplier: r.supplier || null, note: r.note || null, is_active: true,
+      }));
+      const { error } = await supabaseDR.from('parts_master').upsert(payload, { onConflict: 'mat_no', ignoreDuplicates: false });
+      if (error) { toast.error(error.message); return; }
+      toast.success(`นำเข้า ${payload.length} รายการสำเร็จ`);
+    }
+    setCsvPreview(null);
     load();
+    if (type === 'parts') setPartsReloadKey(k => k + 1);
   };
 
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 1200, margin: '0 auto' }}>
       {/* ── Main Tab Bar ── */}
       <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 20, width: 'fit-content' }}>
-        {[{ key:'products', label:'🔩 Products' }, { key:'bom', label:'📦 BOM' }, { key:'parts', label:'🗂 Parts Master' }].map(t => (
+        {[{ key:'products', label:'🔩 Products' }, { key:'bom', label:'📦 BOM' }, { key:'parts', label:'🗂 Parts Master' }, { key:'export', label:'📤 Export' }].map(t => (
           <button key={t.key} onClick={() => setMainTab(t.key)}
             style={{ padding:'6px 18px', borderRadius:6, border:'none', cursor:'pointer', fontSize:13, fontWeight:600,
               background: mainTab===t.key ? 'var(--accent)' : 'transparent',
@@ -633,7 +670,108 @@ export default function ProductMaster() {
       </>)}
 
       {mainTab === 'bom'   && <BOMPanel canEdit={canEdit} fullName={fullName} />}
-      {mainTab === 'parts' && <PartsMasterPanel canEdit={canEdit} fullName={fullName} />}
+      {mainTab === 'parts' && <PartsMasterPanel canEdit={canEdit} fullName={fullName} setCsvPreview={setCsvPreview} reloadKey={partsReloadKey} />}
+      {mainTab === 'export' && <ExportPanel items={items} kanbanStds={kanbanStds} bomCounts={bomCounts} />}
+
+      {/* ════ CSV Preview / Duplicate Detection Modal ════ */}
+      {csvPreview && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, width: 'min(600px,100%)', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+            {/* header */}
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 8 }}>
+                📋 ตรวจสอบข้อมูลก่อนนำเข้า
+              </div>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>
+                  ✅ ใหม่ {csvPreview.newRows.length} รายการ
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
+                  ⚠️ ซ้ำ {csvPreview.dupRows.length} รายการ
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>
+                  ❌ ไม่สมบูรณ์ {csvPreview.invalidRows.length} รายการ
+                </span>
+              </div>
+            </div>
+
+            {/* overwrite toggle */}
+            {csvPreview.dupRows.length > 0 && (
+              <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                  <input type="checkbox" checked={csvPreview.overwriteAll}
+                    onChange={e => setCsvPreview(p => ({ ...p, overwriteAll: e.target.checked }))} />
+                  <span style={{ color: 'var(--text)', fontWeight: 600 }}>เขียนทับรายการซ้ำทั้งหมด</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>(ถ้าปิด จะข้ามรายการซ้ำ เว้นแต่เลือกแต่ละรายการด้านล่าง)</span>
+                </label>
+              </div>
+            )}
+
+            {/* scrollable body */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* new rows */}
+              {csvPreview.newRows.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#22c55e', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>ใหม่ — จะ INSERT</div>
+                  {csvPreview.newRows.map((r, i) => (
+                    <div key={i} style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', marginBottom: 4, fontSize: 12 }}>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{r.mat_no}</span>
+                      <span style={{ color: 'var(--text2)', marginLeft: 8 }}>{r.name || r.part_name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* dup rows */}
+              {csvPreview.dupRows.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>ซ้ำ — จะ UPDATE ถ้าเลือก</div>
+                  {csvPreview.dupRows.map((d, i) => (
+                    <div key={i} style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', marginBottom: 4 }}>
+                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={d.include}
+                          onChange={e => setCsvPreview(p => ({ ...p, dupRows: p.dupRows.map((x, xi) => xi === i ? { ...x, include: e.target.checked } : x) }))}
+                          style={{ marginTop: 2, flexShrink: 0 }} />
+                        <div>
+                          <div style={{ fontSize: 12 }}>
+                            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{d.row.mat_no}</span>
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                            ปัจจุบัน: <span style={{ color: 'var(--text2)' }}>{d.existing?.name || d.existing?.part_name || '—'}</span>
+                            {' '}→ ใหม่: <span style={{ color: '#f59e0b' }}>{d.row.name || d.row.part_name}</span>
+                          </div>
+                        </div>
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* invalid rows */}
+              {csvPreview.invalidRows.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#ef4444', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>ไม่สมบูรณ์ — จะถูกข้าม</div>
+                  {csvPreview.invalidRows.map((r, i) => (
+                    <div key={i} style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', marginBottom: 4, fontSize: 12, color: 'var(--muted)' }}>
+                      {r.mat_no || '(ไม่มี mat_no)'} — {r.name || r.part_name || '(ไม่มีชื่อ)'}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* footer */}
+            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', flexShrink: 0, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button onClick={() => setCsvPreview(null)} style={btnSecondary}>ยกเลิก</button>
+              <button onClick={confirmCsvImport} style={btnPrimary}>
+                {(() => {
+                  const selectedDups = csvPreview.dupRows.filter(d => csvPreview.overwriteAll || d.include).length;
+                  const total = csvPreview.newRows.length + selectedDups;
+                  return `นำเข้า ${total} รายการ`;
+                })()}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -965,6 +1103,73 @@ function BOMPanel({ canEdit, fullName }) {
   );
 }
 
+/* ─── CSV download helper ─────────────────────────────────────── */
+function downloadCsv(filename, headers, rows) {
+  const lines = [headers.join(','), ...rows.map(r => headers.map(h => {
+    const v = String(r[h] ?? '');
+    return v.includes(',') || v.includes('"') || v.includes('\n') ? `"${v.replace(/"/g, '""')}"` : v;
+  }).join(','))];
+  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   EXPORT PANEL
+═══════════════════════════════════════════════════════════════ */
+function ExportPanel({ items, kanbanStds, bomCounts }) {
+  const [parts, setParts] = useState([]);
+  const [partsLoaded, setPartsLoaded] = useState(false);
+
+  useEffect(() => {
+    supabaseDR.from('parts_master').select('*').order('mat_no').then(({ data }) => {
+      setParts(data || []);
+      setPartsLoaded(true);
+    });
+  }, []);
+
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' }).replace(/-/g, '');
+
+  const exportProducts = () => {
+    const headers = ['name','code','mat_no','p_no','customer','line_name','cycle_time_sec','target_per_shift','process_type','is_active'];
+    downloadCsv(`products_${today}.csv`, headers, items);
+  };
+
+  const exportParts = () => {
+    const headers = ['mat_no','part_name','part_no','uom','qty_per_pkg','supplier','note','is_active'];
+    downloadCsv(`parts_master_${today}.csv`, headers, parts);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>📤 Export ข้อมูล</div>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        {/* Products card */}
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, flex: '1 1 240px', minWidth: 240 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>🔩 Product List</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
+            ส่งออก dr_products ทั้งหมด {items.length} รายการ<br />
+            Columns: name, code, mat_no, p_no, customer, line_name, cycle_time_sec, target_per_shift, process_type, is_active
+          </div>
+          <button onClick={exportProducts} style={{ ...btnPrimary, width: '100%', textAlign: 'center' }}>
+            ⬇️ ดาวน์โหลด Products.csv
+          </button>
+        </div>
+        {/* Parts card */}
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, flex: '1 1 240px', minWidth: 240 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>🗂 Parts Master</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
+            ส่งออก parts_master {partsLoaded ? `${parts.length} รายการ` : '(กำลังโหลด...)'}<br />
+            Columns: mat_no, part_name, part_no, uom, qty_per_pkg, supplier, note, is_active
+          </div>
+          <button onClick={exportParts} disabled={!partsLoaded} style={{ ...btnPrimary, width: '100%', textAlign: 'center', opacity: partsLoaded ? 1 : 0.6 }}>
+            ⬇️ ดาวน์โหลด Parts.csv
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════
    PARTS MASTER PANEL — ฐานข้อมูลกลางของพาร์ทย่อย
    mat_no prefix:
@@ -1001,7 +1206,7 @@ function matTypeLabel(mat_no = '') {
   return '';
 }
 
-function PartsMasterPanel({ canEdit, fullName }) {
+function PartsMasterPanel({ canEdit, fullName, setCsvPreview, reloadKey }) {
   const [parts, setParts]         = useState([]);
   const [search, setSearch]       = useState('');
   const [prefixFilter, setPFilter] = useState('');
@@ -1033,27 +1238,28 @@ function PartsMasterPanel({ canEdit, fullName }) {
     const text = await file.text();
     const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim());
     const header = lines[0].split(',').map(h => h.trim().replace(/^﻿/, ''));
-    const rows = lines.slice(1).map(line => {
+    const allRows = lines.slice(1).map(line => {
       const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
       const obj = {};
       header.forEach((h, i) => { obj[h] = vals[i] ?? ''; });
       return obj;
-    }).filter(r => r.mat_no && r.part_name);
-
-    if (!rows.length) { toast.error('ไม่พบข้อมูลในไฟล์ หรือ format ไม่ถูกต้อง'); setCsvImporting(false); return; }
-
-    const payload = rows.map(r => ({
-      mat_no: r.mat_no, part_name: r.part_name,
-      part_no: r.part_no || null, uom: r.uom || 'EA',
-      qty_per_pkg: r.qty_per_pkg ? Number(r.qty_per_pkg) : null,
-      supplier: r.supplier || null, note: r.note || null, is_active: true,
-    }));
-
-    const { error } = await supabaseDR.from('parts_master').upsert(payload, { onConflict: 'mat_no', ignoreDuplicates: false });
+    });
     setCsvImporting(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success(`นำเข้า ${payload.length} รายการสำเร็จ`);
-    load();
+
+    if (!allRows.length) { toast.error('ไม่พบข้อมูลในไฟล์ หรือ format ไม่ถูกต้อง'); return; }
+
+    const existingMatNos = new Set(parts.map(p => p.mat_no).filter(Boolean));
+    const newRows = [], dupRows = [], invalidRows = [];
+    allRows.forEach(r => {
+      if (!r.part_name || !r.mat_no) { invalidRows.push(r); return; }
+      if (existingMatNos.has(r.mat_no)) {
+        const existing = parts.find(p => p.mat_no === r.mat_no);
+        dupRows.push({ row: r, existing, include: true });
+      } else {
+        newRows.push(r);
+      }
+    });
+    setCsvPreview({ type: 'parts', newRows, dupRows, invalidRows, overwriteAll: false });
   };
 
   const load = useCallback(async () => {
