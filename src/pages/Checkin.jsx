@@ -1,5 +1,5 @@
 import { useState, useEffect, useContext } from 'react';
-import { supabase } from '../supabaseClient';
+import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 
@@ -60,7 +60,7 @@ const STATUS_META = {
 };
 
 export default function Checkin() {
-  const { role, lineId, team } = useContext(UserContext);
+  const { role, lineId, team, fullName } = useContext(UserContext);
 
   const [employees,      setEmployees]      = useState([]);
   const [lines,          setLines]          = useState([]);
@@ -268,6 +268,59 @@ export default function Checkin() {
     } catch (_) { /* skill farming errors are non-critical */ }
 
     toast.success('บันทึกข้อมูลสำเร็จ!');
+
+    /* ── Auto-open production session + Telegram notification ── */
+    try {
+      const lineName = lines.find(l => l.id === Number(selLine))?.name;
+      const now = new Date();
+      const totalMins = now.getHours() * 60 + now.getMinutes();
+      const isNight = shiftInfo.shift === 'night';
+      const startTime = !isNight ? '08:00' : totalMins < 22 * 60 + 30 ? '20:00' : '22:30';
+      const hasOtNight = isNight && totalMins < 22 * 60 + 30;
+
+      if (lineName) {
+        // open session ถ้ายังไม่มี
+        const { data: exist } = await supabaseDR
+          .from('production_sessions').select('id')
+          .eq('work_date', workDateStr).eq('line_name', lineName).eq('shift', shiftInfo.shift)
+          .maybeSingle();
+        if (!exist) {
+          await supabaseDR.from('production_sessions').insert({
+            work_date: workDateStr, line_name: lineName,
+            shift: shiftInfo.shift, start_time: startTime,
+            status: 'open', opened_by_name: fullName || 'SV',
+            notes: hasOtNight ? 'OT กะดึก (Auto จากเช็คชื่อ)' : null,
+          });
+        }
+      }
+
+      // summary สำหรับ Telegram
+      const shown = employees.filter(emp => !selLine || emp.line_id === Number(selLine));
+      const present = shown.filter(e => attendance[e.id]?.is_present).length;
+      const absent  = shown.filter(e => attendance[e.id] && !attendance[e.id].is_present && !attendance[e.id].leave_type).length;
+      const leave   = shown.filter(e => attendance[e.id]?.leave_type).length;
+      const ot      = shown.filter(e => attendance[e.id]?.has_ot).length;
+
+      await fetch(`https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-notification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+        body: JSON.stringify({
+          event: 'checkin_summary',
+          summary: {
+            line_name:   lineName || (selSection ? `Section: ${selSection}` : 'ทุกไลน์'),
+            shift:       shiftInfo.shift,
+            shift_label: shiftInfo.label,
+            work_date:   workDateStr,
+            start_time:  startTime,
+            has_ot_night: hasOtNight,
+            total:   shown.length,
+            present, absent, leave, ot,
+            checked_by: fullName || 'SV',
+          },
+        }),
+      }).catch(() => {}); // fire-and-forget, ไม่บล็อก
+    } catch (_) { /* non-critical */ }
+
     setIsSaving(false);
   };
 
