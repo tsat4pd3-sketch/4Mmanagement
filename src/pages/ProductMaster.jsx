@@ -676,7 +676,7 @@ export default function ProductMaster() {
       {/* ════ CSV Preview / Duplicate Detection Modal ════ */}
       {csvPreview && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, width: 'min(600px,100%)', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, width: 'min(580px,calc(100vw - 32px))', maxHeight: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             {/* header */}
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 8 }}>
@@ -708,15 +708,15 @@ export default function ProductMaster() {
             )}
 
             {/* scrollable body */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
               {/* new rows */}
               {csvPreview.newRows.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#22c55e', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>ใหม่ — จะ INSERT</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#22c55e', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>✅ ใหม่ — จะ INSERT ({csvPreview.newRows.length})</div>
                   {csvPreview.newRows.map((r, i) => (
-                    <div key={i} style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', marginBottom: 4, fontSize: 12 }}>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{r.mat_no}</span>
-                      <span style={{ color: 'var(--text2)', marginLeft: 8 }}>{r.name || r.part_name}</span>
+                    <div key={i} style={{ padding: '7px 12px', borderRadius: 8, background: 'rgba(34,197,94,0.07)', border: '1px solid rgba(34,197,94,0.2)', marginBottom: 4, fontSize: 12, display: 'flex', gap: 8, alignItems: 'baseline', overflow: 'hidden' }}>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', flexShrink: 0 }}>{r.mat_no}</span>
+                      <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name || r.part_name}</span>
                     </div>
                   ))}
                 </div>
@@ -724,24 +724,22 @@ export default function ProductMaster() {
               {/* dup rows */}
               {csvPreview.dupRows.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>ซ้ำ — จะ UPDATE ถ้าเลือก</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>⚠️ ซ้ำ — เลือกที่ต้องการ UPDATE ({csvPreview.dupRows.length})</div>
                   {csvPreview.dupRows.map((d, i) => (
-                    <div key={i} style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', marginBottom: 4 }}>
-                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
-                        <input type="checkbox" checked={d.include}
-                          onChange={e => setCsvPreview(p => ({ ...p, dupRows: p.dupRows.map((x, xi) => xi === i ? { ...x, include: e.target.checked } : x) }))}
-                          style={{ marginTop: 2, flexShrink: 0 }} />
-                        <div>
-                          <div style={{ fontSize: 12 }}>
-                            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{d.row.mat_no}</span>
-                          </div>
-                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                            ปัจจุบัน: <span style={{ color: 'var(--text2)' }}>{d.existing?.name || d.existing?.part_name || '—'}</span>
-                            {' '}→ ใหม่: <span style={{ color: '#f59e0b' }}>{d.row.name || d.row.part_name}</span>
-                          </div>
+                    <label key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', padding: '8px 12px', borderRadius: 8, background: d.include ? 'rgba(245,158,11,0.1)' : 'transparent', border: `1px solid ${d.include ? 'rgba(245,158,11,0.4)' : 'rgba(245,158,11,0.2)'}`, marginBottom: 4, overflow: 'hidden' }}>
+                      <input type="checkbox" checked={d.include}
+                        onChange={e => setCsvPreview(p => ({ ...p, dupRows: p.dupRows.map((x, xi) => xi === i ? { ...x, include: e.target.checked } : x) }))}
+                        style={{ marginTop: 3, flexShrink: 0 }} />
+                      <div style={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
+                        <div style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: '#f59e0b' }}>{d.row.mat_no}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          เดิม: <span style={{ color: 'var(--text2)' }}>{d.existing?.name || d.existing?.part_name || '—'}</span>
                         </div>
-                      </label>
-                    </div>
+                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          ใหม่: {d.row.name || d.row.part_name}
+                        </div>
+                      </div>
+                    </label>
                   ))}
                 </div>
               )}
