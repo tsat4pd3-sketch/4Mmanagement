@@ -1086,24 +1086,31 @@ function PartsMasterPanel({ canEdit, fullName }) {
   async function handleSave() {
     if (!form.mat_no.trim() || !form.part_name.trim()) { toast.error('กรอก Mat SAP และ Part Name'); return; }
     setSaving(true);
-    const payload = {
-      mat_no: form.mat_no.trim(), part_name: form.part_name.trim(),
-      part_no: form.part_no.trim() || null, uom: form.uom.trim() || 'EA',
-      qty_per_pkg: form.qty_per_pkg !== '' ? Number(form.qty_per_pkg) : null,
-      supplier: form.supplier.trim() || null, note: form.note.trim() || null,
-      is_active: form.is_active,
-    };
-    let err;
-    if (editPart) {
-      ({ error: err } = await supabaseDR.from('parts_master').update(payload).eq('id', editPart.id));
-    } else {
-      ({ error: err } = await supabaseDR.from('parts_master').insert(payload));
+    try {
+      const payload = {
+        part_name: form.part_name.trim(),
+        part_no: form.part_no?.trim() || null,
+        uom: form.uom?.trim() || 'EA',
+        qty_per_pkg: form.qty_per_pkg !== '' && form.qty_per_pkg != null ? Number(form.qty_per_pkg) : null,
+        supplier: form.supplier?.trim() || null,
+        note: form.note?.trim() || null,
+        is_active: form.is_active,
+      };
+      let err;
+      if (editPart) {
+        ({ error: err } = await supabaseDR.from('parts_master').update(payload).eq('id', editPart.id));
+      } else {
+        ({ error: err } = await supabaseDR.from('parts_master').insert({ ...payload, mat_no: form.mat_no.trim() }));
+      }
+      if (err) { toast.error(err.message); return; }
+      toast.success(editPart ? 'อัปเดตสำเร็จ' : 'เพิ่มพาร์ทสำเร็จ');
+      setShowModal(false);
+      load();
+    } catch (e) {
+      toast.error(e?.message || 'เกิดข้อผิดพลาด');
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
-    if (err) { toast.error(err.message); return; }
-    toast.success(editPart ? 'อัปเดตสำเร็จ' : 'เพิ่มพาร์ทสำเร็จ');
-    setShowModal(false);
-    load();
   }
 
   async function toggleActive(p) {
