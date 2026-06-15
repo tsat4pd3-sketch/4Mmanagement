@@ -2383,12 +2383,11 @@ function ExportTab() {
    SETUP TAB
 ═══════════════════════════════════════════════════════════════ */
 function SetupTab({ role }) {
-  const [subTab, setSubTab] = useState('products');
+  const [subTab, setSubTab] = useState('machines');
   return (
     <div>
       <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 20, width: 'fit-content', flexWrap: 'wrap' }}>
         {[
-          { key: 'products',  label: '🔩 สินค้า / Model' },
           { key: 'machines',  label: '⚙️ เครื่องจักร' },
           { key: 'downtime',  label: '⏱ ประเภท Downtime' },
           { key: 'defects',   label: '🔴 ประเภทงานเสีย' },
@@ -2402,16 +2401,6 @@ function SetupTab({ role }) {
           </button>
         ))}
       </div>
-      {subTab === 'products' && (
-        <div style={{ padding: '32px 20px', textAlign: 'center', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 }}>
-          <div style={{ fontSize: 32, marginBottom: 10 }}>🔩</div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', marginBottom: 6, fontFamily: 'var(--font-display)' }}>Product Master ย้ายไปอยู่หน้าแยกแล้ว</div>
-          <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16 }}>เพื่อให้ทุกโมดูล (BOM, Heijunka, OEE) เข้าถึงจากที่เดียวกันได้</div>
-          <Link to="/products" style={{ display: 'inline-block', padding: '10px 24px', background: 'var(--accent)', color: '#08130a', borderRadius: 8, fontWeight: 800, fontSize: 14, textDecoration: 'none', fontFamily: 'var(--font-body)' }}>
-            ไปหน้า Product Master →
-          </Link>
-        </div>
-      )}
       {subTab === 'machines' && <MachineSetup role={role} />}
       {subTab === 'downtime' && <DowntimeTypeSetup role={role} />}
       {subTab === 'defects'  && <DefectTypeSetup role={role} />}
