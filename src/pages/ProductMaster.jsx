@@ -805,6 +805,9 @@ function BOMPanel({ canEdit, fullName }) {
   const [editItem, setEditItem]     = useState(null);
   const [form, setForm]             = useState(EMPTY_BOM);
   const [saving, setSaving]         = useState(false);
+  const [showCopyBom, setShowCopyBom] = useState(false);
+  const [copySource, setCopySource]   = useState('');
+  const [copying, setCopying]         = useState(false);
 
   const loadAll = useCallback(async () => {
     const [{ data: prods }, { data: boms }, { data: parts }] = await Promise.all([
@@ -906,6 +909,35 @@ function BOMPanel({ canEdit, fullName }) {
     loadAll();
   };
 
+  const handleCopyBom = async () => {
+    if (!copySource) { toast.error('เลือก product ต้นฉบับก่อน'); return; }
+    setCopying(true);
+    try {
+      const { data: srcItems, error: e1 } = await supabaseDR.from('bom_items')
+        .select('*').eq('product_id', copySource).eq('is_active', true);
+      if (e1) throw e1;
+      if (!srcItems || srcItems.length === 0) { toast.error('Product ต้นฉบับไม่มีพาร์ทใน BOM'); return; }
+      const usedMats = new Set(items.map(i => i.mat_no));
+      const toInsert = srcItems
+        .filter(i => !usedMats.has(i.mat_no))
+        .map(({ id, created_at, ...rest }) => ({
+          ...rest,
+          product_id: selProduct.id,
+          created_by: fullName,
+          updated_at: new Date().toISOString(),
+        }));
+      if (toInsert.length === 0) { toast.info('ทุกพาร์ทมีอยู่ใน BOM นี้แล้ว'); return; }
+      const { error: e2 } = await supabaseDR.from('bom_items').insert(toInsert);
+      if (e2) throw e2;
+      toast.success(`คัดลอก ${toInsert.length} พาร์ทเข้า BOM แล้ว`);
+      setShowCopyBom(false);
+      setCopySource('');
+      loadItems(selProduct.id);
+      loadAll();
+    } catch(e) { toast.error(e?.message || 'เกิดข้อผิดพลาด'); }
+    finally { setCopying(false); }
+  };
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return products;
@@ -951,7 +983,10 @@ function BOMPanel({ canEdit, fullName }) {
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{[selProduct.mat_no && `Mat: ${selProduct.mat_no}`, selProduct.p_no && `P/No: ${selProduct.p_no}`, selProduct.line_name, selProduct.customer].filter(Boolean).join(' · ')}</div>
               </div>
               {canEdit && (
-                <button onClick={openPicker} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>+ เพิ่มพาร์ทย่อย</button>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button onClick={openPicker} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>+ เพิ่มพาร์ทย่อย</button>
+                  <button onClick={() => { setCopySource(''); setShowCopyBom(true); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>📋 คัดลอก BOM จาก...</button>
+                </div>
               )}
             </div>
             {loading ? (
@@ -1095,6 +1130,36 @@ function BOMPanel({ canEdit, fullName }) {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
               <button onClick={() => setShowEdit(false)} style={btnSecondary}>ยกเลิก</button>
               <button onClick={handleEditSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : '💾 บันทึก'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ COPY BOM MODAL ══ */}
+      {showCopyBom && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)' }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 4 }}>📋 คัดลอก BOM จาก Product อื่น</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
+              คัดลอกพาร์ทจาก BOM ของ product ที่เลือก เข้ามาใน <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{selProduct?.name}</span>
+              <br/>(พาร์ทที่มีอยู่แล้วจะถูกข้าม)
+            </div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>เลือก Product ต้นฉบับ</label>
+            <select style={{ ...inputSt, marginBottom: 20 }} value={copySource} onChange={e => setCopySource(e.target.value)}>
+              <option value="">— เลือก product —</option>
+              {products
+                .filter(p => p.id !== selProduct?.id && (counts[p.id] || 0) > 0)
+                .map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}{p.customer ? ` [${p.customer}]` : ''}{p.line_name ? ` · ${p.line_name}` : ''} — {counts[p.id]} พาร์ท
+                  </option>
+                ))}
+            </select>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={() => setShowCopyBom(false)} style={btnSecondary}>ยกเลิก</button>
+              <button onClick={handleCopyBom} disabled={copying || !copySource} style={{ ...btnPrimary, opacity: (copying || !copySource) ? 0.5 : 1 }}>
+                {copying ? '...' : '📋 คัดลอก BOM'}
+              </button>
             </div>
           </div>
         </div>
