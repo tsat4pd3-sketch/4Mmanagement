@@ -879,6 +879,7 @@ function BOMPanel({ canEdit, fullName }) {
         supplier:     x.part.supplier || null,
         created_by:   fullName,
         updated_at:   new Date().toISOString(),
+        is_active:    true,
       }));
     if (!rows.length) { setSaving(false); toast.info('พาร์ทที่เลือกมีอยู่ใน BOM แล้วทั้งหมด'); return; }
     const { error } = await supabaseDR.from('bom_items').insert(rows);
