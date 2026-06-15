@@ -250,10 +250,22 @@ export default function ProductMaster() {
         <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
           ฐานข้อมูลกลาง Product/Model · เชื่อมกับ{' '}
           <Link to="/daily-report" style={{ color: 'var(--accent)', textDecoration: 'none' }}>Daily Report</Link>,{' '}
-          <Link to="/bom" style={{ color: 'var(--accent)', textDecoration: 'none' }}>BOM</Link>,{' '}
           <Link to="/heijunka" style={{ color: 'var(--accent)', textDecoration: 'none' }}>Heijunka Kanban</Link> และ{' '}
           <Link to="/oee-analytics" style={{ color: 'var(--accent)', textDecoration: 'none' }}>OEE Analytics</Link>
         </p>
+      </div>
+
+      {/* ── Callout: แนะนำ Parts Master สำหรับ 300/500 ── */}
+      <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 13, color: 'var(--text2)', flex: 1 }}>
+          <span style={{ fontWeight: 700, color: '#f59e0b' }}>📦 ชิ้นส่วนที่ซื้อจาก Supplier</span>
+          {' '}(300xxxxx · 500xxxxx) เพิ่มได้ที่ tab{' '}
+          <strong style={{ color: 'var(--text)' }}>🗂 Parts Master</strong>
+          {' '}— หน้านี้รองรับเฉพาะ <strong>100xxxxx</strong> (FG ส่งลูกค้า) และ <strong>200xxxxx</strong> (Child Part ผลิตเอง)
+        </div>
+        <button onClick={() => setMainTab('parts')} style={{ ...btnPrimary, background: '#f59e0b', fontSize: 12, padding: '6px 14px', whiteSpace: 'nowrap' }}>
+          ไปที่ Parts Master →
+        </button>
       </div>
 
       {/* ── Toolbar ── */}
