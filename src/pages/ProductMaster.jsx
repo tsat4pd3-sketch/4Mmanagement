@@ -73,6 +73,8 @@ export default function ProductMaster() {
   const [lineFilter,  setLineFilter]  = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const [expandedFamilies, setExpandedFamilies] = useState({});
+  const [csvImporting, setCsvImporting] = useState(false);
+  const csvInputRef = useRef(null);
 
   /* ── load ── */
   const load = useCallback(async () => {
@@ -227,6 +229,52 @@ export default function ProductMaster() {
   const activeCount = items.filter(i => i.is_active).length;
   const uniqueLines = [...new Set(items.map(i => i.line_name).filter(Boolean))].sort();
 
+  /* ── CSV helpers ── */
+  const PRODUCT_CSV_COLS = ['name','code','mat_no','p_no','customer','line_name','cycle_time_sec','target_per_shift','process_type'];
+  const PRODUCT_CSV_HEADER = 'name,code,mat_no,p_no,customer,line_name,cycle_time_sec,target_per_shift,process_type';
+  const PRODUCT_CSV_EXAMPLE = [
+    'REINF FRT SD BDY INR RH,RH-001,10100384,RB3B-16E060-BA,FORD,LINE APRON ASSY,45,800,welding_assembly',
+    'REINF FRT SD BDY INR LH,LH-001,10100335,RB3B-16E061-BA,FORD,LINE APRON ASSY,45,800,welding_assembly',
+  ].join('\n');
+
+  const downloadProductTemplate = () => {
+    const bom = `﻿${PRODUCT_CSV_HEADER}\n${PRODUCT_CSV_EXAMPLE}`;
+    const blob = new Blob([bom], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'product_template.csv'; a.click();
+  };
+
+  const handleProductCsvUpload = async (e) => {
+    const file = e.target.files?.[0]; e.target.value = '';
+    if (!file) return;
+    setCsvImporting(true);
+    const text = await file.text();
+    const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim());
+    const header = lines[0].split(',').map(h => h.trim().replace(/^﻿/, ''));
+    const rows = lines.slice(1).map(line => {
+      const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+      const obj = {};
+      header.forEach((h, i) => { obj[h] = vals[i] ?? ''; });
+      return obj;
+    }).filter(r => r.name && r.mat_no);
+
+    if (!rows.length) { toast.error('ไม่พบข้อมูลในไฟล์ หรือ format ไม่ถูกต้อง'); setCsvImporting(false); return; }
+
+    const payload = rows.map(r => ({
+      name: r.name, code: r.code || null, mat_no: r.mat_no || null,
+      p_no: r.p_no || null, customer: r.customer || null, line_name: r.line_name || null,
+      cycle_time_sec: r.cycle_time_sec ? Number(r.cycle_time_sec) : null,
+      target_per_shift: r.target_per_shift ? Number(r.target_per_shift) : null,
+      process_type: r.process_type || 'welding_assembly', is_active: true,
+    }));
+
+    const { error } = await supabaseDR.from('dr_products').upsert(payload, { onConflict: 'mat_no', ignoreDuplicates: false });
+    setCsvImporting(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`นำเข้า ${payload.length} รายการสำเร็จ`);
+    load();
+  };
+
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 1200, margin: '0 auto' }}>
       {/* ── Main Tab Bar ── */}
@@ -285,6 +333,14 @@ export default function ProductMaster() {
         </label>
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 13, color: 'var(--muted)' }}>{families.length} model · {activeCount} ใช้งาน</span>
+        {canEdit && <>
+          <button onClick={downloadProductTemplate} style={{ ...btnSecondary, fontSize: 12 }}>⬇️ CSV Template</button>
+          <button onClick={() => csvInputRef.current?.click()} disabled={csvImporting}
+            style={{ ...btnSecondary, fontSize: 12, opacity: csvImporting ? 0.6 : 1 }}>
+            {csvImporting ? '⏳ กำลังนำเข้า...' : '⬆️ นำเข้า CSV'}
+          </button>
+          <input ref={csvInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleProductCsvUpload} />
+        </>}
         {canEdit && <button onClick={() => openEdit()} style={btnPrimary}>+ เพิ่มสินค้า</button>}
       </div>
 
@@ -899,9 +955,54 @@ function PartsMasterPanel({ canEdit, fullName }) {
   const [prefixFilter, setPFilter] = useState('');
   const [loading, setLoading]     = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [editPart, setEditPart]   = useState(null);   // null=new, obj=edit
+  const [editPart, setEditPart]   = useState(null);
   const [form, setForm]           = useState(EMPTY_PART);
   const [saving, setSaving]       = useState(false);
+  const [csvImporting, setCsvImporting] = useState(false);
+  const csvRef = useRef(null);
+
+  const PARTS_CSV_HEADER = 'mat_no,part_name,part_no,uom,qty_per_pkg,supplier,note';
+  const PARTS_CSV_EXAMPLE = [
+    '300001234,NUT WELD M8,NW-M8-001,EA,500,THAI SUMMIT PARTS,สำหรับ APRON ASSY',
+    '500009876,STEEL PLATE 1.0MM,SP-1.0-A,KG,,ABC STEEL,',
+  ].join('\n');
+
+  const downloadPartsTemplate = () => {
+    const content = `﻿${PARTS_CSV_HEADER}\n${PARTS_CSV_EXAMPLE}`;
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'parts_master_template.csv'; a.click();
+  };
+
+  const handlePartsCsvUpload = async (e) => {
+    const file = e.target.files?.[0]; e.target.value = '';
+    if (!file) return;
+    setCsvImporting(true);
+    const text = await file.text();
+    const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim());
+    const header = lines[0].split(',').map(h => h.trim().replace(/^﻿/, ''));
+    const rows = lines.slice(1).map(line => {
+      const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+      const obj = {};
+      header.forEach((h, i) => { obj[h] = vals[i] ?? ''; });
+      return obj;
+    }).filter(r => r.mat_no && r.part_name);
+
+    if (!rows.length) { toast.error('ไม่พบข้อมูลในไฟล์ หรือ format ไม่ถูกต้อง'); setCsvImporting(false); return; }
+
+    const payload = rows.map(r => ({
+      mat_no: r.mat_no, part_name: r.part_name,
+      part_no: r.part_no || null, uom: r.uom || 'EA',
+      qty_per_pkg: r.qty_per_pkg ? Number(r.qty_per_pkg) : null,
+      supplier: r.supplier || null, note: r.note || null, is_active: true,
+    }));
+
+    const { error } = await supabaseDR.from('parts_master').upsert(payload, { onConflict: 'mat_no', ignoreDuplicates: false });
+    setCsvImporting(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`นำเข้า ${payload.length} รายการสำเร็จ`);
+    load();
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -977,7 +1078,15 @@ function PartsMasterPanel({ canEdit, fullName }) {
           <option value="">ทุกประเภท</option>
           {MAT_PREFIXES.map(m => <option key={m.prefix} value={m.prefix}>{m.prefix}xxxxx</option>)}
         </select>
-        {canEdit && <button onClick={openNew} style={btnPrimary}>➕ เพิ่มพาร์ท</button>}
+        {canEdit && <>
+          <button onClick={downloadPartsTemplate} style={{ ...btnSecondary, fontSize: 12 }}>⬇️ CSV Template</button>
+          <button onClick={() => csvRef.current?.click()} disabled={csvImporting}
+            style={{ ...btnSecondary, fontSize: 12, opacity: csvImporting ? 0.6 : 1 }}>
+            {csvImporting ? '⏳ กำลังนำเข้า...' : '⬆️ นำเข้า CSV'}
+          </button>
+          <input ref={csvRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handlePartsCsvUpload} />
+          <button onClick={openNew} style={btnPrimary}>➕ เพิ่มพาร์ท</button>
+        </>}
       </div>
 
       {loading && <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 30 }}>⏳ กำลังโหลด...</div>}
