@@ -864,7 +864,7 @@ function BOMPanel({ canEdit, fullName }) {
     setSaving(true);
     // re-fetch existing mat_nos to avoid stale state duplicates
     const { data: existing } = await supabaseDR.from('bom_items')
-      .select('mat_no').eq('product_id', selProduct.id).eq('is_active', true);
+      .select('mat_no').eq('product_id', selProduct.id);
     const usedMats = new Set((existing || []).map(r => r.mat_no));
     const rows = pickerSel
       .filter(x => !usedMats.has(x.part.mat_no))
