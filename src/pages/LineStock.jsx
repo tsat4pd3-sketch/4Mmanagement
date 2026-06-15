@@ -558,7 +558,14 @@ function KanbanStdTab({ canEdit, fullName }) {
    TAB: รอบจัดส่ง (Delivery Rounds)
    ───────────────────────────────────────────────────────────────────────────── */
 const SHIFT_LABELS = { day:'☀️ กะเช้า', night:'🌙 กะดึก', all:'🔄 ทุกกะ' };
-const EMPTY_RND = { line_name:'', shift:'day', round_no:'', prep_start:'', delivery_time:'', note:'' };
+const EMPTY_RND = { line_name:'', shift:'day', round_no:'', cutoff_time:'', prep_minutes:'60', delivery_time:'', points_count:'1', time_per_point_min:'10', note:'' };
+
+function addMins(timeStr, mins) {
+  if (!timeStr || !mins) return '';
+  const [h, m] = timeStr.split(':').map(Number);
+  const total = h * 60 + m + parseInt(mins || 0);
+  return `${String(Math.floor(total/60)%24).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`;
+}
 
 function DeliveryRoundsTab({ canEdit, fullName }) {
   const [rounds,     setRounds]     = useState([]);
@@ -601,9 +608,12 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
       line_name:     r.line_name,
       shift:         r.shift,
       round_no:      String(r.round_no),
-      prep_start:    r.prep_start || '',
-      delivery_time: r.delivery_time || '',
-      note:          r.note || '',
+      cutoff_time:        r.cutoff_time || '',
+      prep_minutes:       String(r.prep_minutes ?? 60),
+      delivery_time:      r.delivery_time || '',
+      points_count:       String(r.points_count ?? 1),
+      time_per_point_min: String(r.time_per_point_min ?? 10),
+      note:               r.note || '',
     });
     setShowModal(true);
   };
@@ -617,9 +627,12 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
       line_name:     form.line_name.trim(),
       shift:         form.shift,
       round_no:      parseInt(form.round_no),
-      prep_start:    form.prep_start || null,
-      delivery_time: form.delivery_time,
-      note:          form.note.trim() || null,
+      cutoff_time:        form.cutoff_time || null,
+      prep_minutes:       parseInt(form.prep_minutes) || 60,
+      delivery_time:      form.delivery_time,
+      points_count:       parseInt(form.points_count) || 1,
+      time_per_point_min: parseInt(form.time_per_point_min) || 10,
+      note:               form.note.trim() || null,
       is_active:     true,
       created_by:    fullName,
     };
@@ -686,7 +699,7 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
                 <table style={{ width:'100%', borderCollapse:'collapse' }}>
                   <thead>
                     <tr style={{ background:'var(--bg2)' }}>
-                      {['กะ','รอบที่','เวลาเตรียม','เวลาจัดส่ง','หมายเหตุ'].map(h => (
+                      {['กะ','รอบที่','ตัดยอด','เตรียม','ส่ง','จุด','เสร็จ~','หมายเหตุ'].map(h => (
                         <th key={h} style={{ padding:'8px 14px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
                       ))}
                       {canEdit && <th style={{ padding:'8px 14px', width:100 }}></th>}
@@ -705,11 +718,20 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
                         <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontWeight:900, fontSize:16, color:'#0ea5e9' }}>
                           #{r.round_no}
                         </td>
-                        <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:14, color:'var(--text2)' }}>
-                          {r.prep_start || '—'}
+                        <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:13, color:'var(--text2)' }}>
+                          {r.cutoff_time?.slice(0,5) || '—'}
+                        </td>
+                        <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontSize:13, color:'var(--muted)' }}>
+                          {r.prep_minutes || 60} น.
                         </td>
                         <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:14, fontWeight:700, color:'var(--accent)' }}>
-                          {r.delivery_time}
+                          {r.delivery_time?.slice(0,5) || '—'}
+                        </td>
+                        <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontSize:13, color:'var(--text2)', textAlign:'center' }}>
+                          {r.points_count || 1}×{r.time_per_point_min || 10}น.
+                        </td>
+                        <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:13, color:'#f59e0b', fontWeight:700 }}>
+                          {addMins(r.delivery_time?.slice(0,5), (r.points_count||1)*(r.time_per_point_min||10))}
                         </td>
                         <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)' }}>
                           {r.note || '—'}
@@ -788,21 +810,62 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
                 </div>
               </div>
 
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-                <div>
-                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>เวลาเตรียม (prep_start)</label>
-                  <input type="time" style={{ ...inputSt, fontFamily:'monospace' }}
-                    value={form.prep_start}
-                    onChange={e => setForm(f => ({ ...f, prep_start: e.target.value }))}
-                  />
+              {/* Shipping time chart */}
+              <div style={{ background:'var(--bg2)', borderRadius:8, padding:12, border:'1px solid var(--border)', display:'flex', flexDirection:'column', gap:10 }}>
+                <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.05em' }}>⏰ Shipping Time Chart</div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                  <div>
+                    <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>ตัดยอดรับออเดอร์</label>
+                    <input type="time" style={{ ...inputSt, fontFamily:'monospace' }}
+                      value={form.cutoff_time}
+                      onChange={e => {
+                        const ct = e.target.value;
+                        const dt = addMins(ct, form.prep_minutes);
+                        setForm(f => ({ ...f, cutoff_time: ct, delivery_time: dt || f.delivery_time }));
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>เวลาเตรียมของ (นาที)</label>
+                    <input type="number" min="1" style={{ ...inputSt, textAlign:'center' }}
+                      value={form.prep_minutes}
+                      onChange={e => {
+                        const pm = e.target.value;
+                        const dt = addMins(form.cutoff_time, pm);
+                        setForm(f => ({ ...f, prep_minutes: pm, delivery_time: dt || f.delivery_time }));
+                      }}
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>เวลาจัดส่ง *</label>
-                  <input type="time" style={{ ...inputSt, fontFamily:'monospace', fontWeight:700 }}
-                    value={form.delivery_time}
-                    onChange={e => setForm(f => ({ ...f, delivery_time: e.target.value }))}
-                  />
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10 }}>
+                  <div>
+                    <label style={{ fontSize:11, fontWeight:700, color:'var(--accent)', display:'block', marginBottom:4 }}>เวลาเริ่มส่ง *</label>
+                    <input type="time" style={{ ...inputSt, fontFamily:'monospace', fontWeight:800, color:'var(--accent)' }}
+                      value={form.delivery_time}
+                      onChange={e => setForm(f => ({ ...f, delivery_time: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>จำนวนจุดส่ง</label>
+                    <input type="number" min="1" style={{ ...inputSt, textAlign:'center' }}
+                      value={form.points_count}
+                      onChange={e => setForm(f => ({ ...f, points_count: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>นาที/จุด</label>
+                    <input type="number" min="1" style={{ ...inputSt, textAlign:'center' }}
+                      value={form.time_per_point_min}
+                      onChange={e => setForm(f => ({ ...f, time_per_point_min: e.target.value }))}
+                    />
+                  </div>
                 </div>
+                {form.delivery_time && (
+                  <div style={{ fontSize:12, color:'#f59e0b', fontWeight:700 }}>
+                    🏁 เสร็จประมาณ {addMins(form.delivery_time, (parseInt(form.points_count)||1)*(parseInt(form.time_per_point_min)||10))}
+                    {' '}({form.points_count||1} จุด × {form.time_per_point_min||10} น.)
+                  </div>
+                )}
               </div>
 
               <div>

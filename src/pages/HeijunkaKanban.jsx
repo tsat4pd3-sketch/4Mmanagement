@@ -26,24 +26,34 @@ const chip = (bg, color) => ({
 
 const SHIFT_LABEL = { day: '☀️ กะเช้า', night: '🌙 กะดึก' };
 
-/* ─── Delivery Rounds Panel ─────────────────────────────────────────────── */
-function DeliveryRoundsPanel({ workDate }) {
-  const { fullName } = useContext(UserContext);
-  const [rounds, setRounds] = useState([]);
-  const [deliveries, setDeliveries] = useState([]);
-  const [collapsed, setCollapsed] = useState(false);
-  const [confirming, setConfirming] = useState(null);
+/* ─── helpers ───────────────────────────────────────────────────────────── */
+function addMinutes(timeStr, mins) {
+  if (!timeStr) return '—';
+  const [h, m] = timeStr.slice(0, 5).split(':').map(Number);
+  const total = h * 60 + m + (mins || 0);
+  return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+function nowHHMM() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+function getRoundStatus(r, confirmedSet) {
+  if (confirmedSet.has(`${r.line_name}|${r.shift}|${r.round_no}`))
+    return { label: '✅ ส่งแล้ว', color: '#22c55e', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.3)', top: '#22c55e' };
+  const now = nowHHMM();
+  const cutoff   = (r.cutoff_time   || '').slice(0, 5);
+  const delivery = (r.delivery_time || '').slice(0, 5);
+  const finish   = addMinutes(delivery, (r.points_count || 1) * (r.time_per_point_min || 10));
+  if (delivery && now >= finish)
+    return { label: '🔴 ค้างส่ง',      color: '#ef4444', bg: 'rgba(239,68,68,0.08)',   border: 'rgba(239,68,68,0.3)',   top: '#ef4444' };
+  if (cutoff && delivery && now >= cutoff && now < delivery)
+    return { label: '⏳ กำลังเตรียม', color: '#0ea5e9', bg: 'rgba(14,165,233,0.08)',  border: 'rgba(14,165,233,0.3)',  top: '#0ea5e9' };
+  return { label: '⬜ รอ', color: 'var(--muted)', bg: 'var(--bg2)', border: 'var(--border)', top: 'var(--border2)' };
+}
 
-  const loadRounds = useCallback(async () => {
-    const [{ data: rds }, { data: dlvs }] = await Promise.all([
-      supabaseDR.from('kanban_delivery_rounds').select('*').eq('is_active', true).order('line_name').order('round_no'),
-      supabaseDR.from('kanban_deliveries').select('*').eq('work_date', workDate),
-    ]);
-    setRounds(rds || []);
-    setDeliveries(dlvs || []);
-  }, [workDate]);
-
-  useEffect(() => { loadRounds(); }, [loadRounds]);
+/* ─── Store Board View ───────────────────────────────────────────────────── */
+function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confirming, fmt }) {
+  const [expanded, setExpanded] = useState(null);
 
   const confirmedSet = useMemo(() => {
     const s = new Set();
@@ -51,28 +61,128 @@ function DeliveryRoundsPanel({ workDate }) {
     return s;
   }, [deliveries]);
 
-  const isConfirmed = (r) => confirmedSet.has(`${r.line_name}|${r.shift}|${r.round_no}`);
+  const byLine = useMemo(() => {
+    const m = {};
+    rounds.forEach(r => { (m[r.line_name] = m[r.line_name] || []).push(r); });
+    return m;
+  }, [rounds]);
 
-  const confirmRound = async (r) => {
-    if (confirming) return;
-    setConfirming(r.id);
-    try {
-      const { error } = await supabaseDR.from('kanban_deliveries').upsert({
-        work_date: workDate,
-        line_name: r.line_name,
-        shift: r.shift,
-        round_no: r.round_no,
-        confirmed_at: new Date().toISOString(),
-        confirmed_by: fullName || 'unknown',
-      }, { onConflict: 'work_date,line_name,shift,round_no', ignoreDuplicates: false });
-      if (error) throw error;
-      toast.success(`ยืนยันส่งแล้ว: ${r.line_name} รอบ ${r.round_no}`);
-      await loadRounds();
-    } catch (err) {
-      toast.error('ยืนยันไม่สำเร็จ: ' + err.message);
-    }
-    setConfirming(null);
-  };
+  // demand per line: parts + kanban cards needed
+  const demandByLine = useMemo(() => {
+    const lineToColIds = {};
+    view.cols.forEach(c => { (lineToColIds[c.line] = lineToColIds[c.line] || []).push(c.id); });
+    const res = {};
+    Object.keys(lineToColIds).forEach(lineName => {
+      const colIdSet = new Set(lineToColIds[lineName]);
+      const partsForLine = view.rowList.filter(r =>
+        Object.entries(r.perCol).some(([cid, v]) => colIdSet.has(cid) && v > 0)
+      );
+      const totalKanban = partsForLine.reduce((s, r) => {
+        const per = kanbanStd[r.mat_no];
+        return s + (per ? Math.ceil(r.netTotal / per) : 0);
+      }, 0);
+      res[lineName] = { parts: partsForLine, totalKanban };
+    });
+    return res;
+  }, [view.cols, view.rowList, kanbanStd]);
+
+  if (!rounds.length) return (
+    <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+      ยังไม่มีรอบจัดส่ง — ตั้งค่าที่ 📦 Line Stock → ⏰ รอบจัดส่ง
+    </div>
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, padding: 16 }}>
+      {Object.keys(byLine).sort().map(lineName => {
+        const lineRounds = byLine[lineName];
+        const demand = demandByLine[lineName] || { parts: [], totalKanban: 0 };
+        return (
+          <div key={lineName}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+              🏭 {lineName}
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>
+                {demand.parts.length} พาร์ท · {demand.totalKanban} การ์ด
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              {lineRounds.map(r => {
+                const status = getRoundStatus(r, confirmedSet);
+                const isConf = confirmedSet.has(`${r.line_name}|${r.shift}|${r.round_no}`);
+                const needAction = !isConf && (status.label === '⏳ กำลังเตรียม' || status.label === '🔴 ค้างส่ง');
+                const finishTime = addMinutes(r.delivery_time?.slice(0, 5), (r.points_count || 1) * (r.time_per_point_min || 10));
+                const expandKey = `${lineName}|${r.round_no}`;
+                const isExpanded = expanded === expandKey;
+                const confirmedBy = deliveries.find(d => d.line_name === r.line_name && d.shift === r.shift && d.round_no === r.round_no)?.confirmed_by;
+                return (
+                  <div key={r.id} style={{ minWidth: 200, maxWidth: 260, flexShrink: 0, background: status.bg, border: `1px solid ${status.border}`, borderRadius: 12, overflow: 'hidden', cursor: 'pointer', transition: 'transform 0.15s' }}
+                    onClick={() => setExpanded(isExpanded ? null : expandKey)}
+                  >
+                    <div style={{ height: 4, background: status.top }} />
+                    <div style={{ padding: '10px 14px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>รอบ {r.round_no}</span>
+                        <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: status.color }}>{status.label}</span>
+                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)', marginBottom: 4 }}>
+                        📦 ส่ง {r.delivery_time?.slice(0, 5) || '—'}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.7 }}>
+                        ตัดยอด {r.cutoff_time?.slice(0, 5) || '—'} · เตรียม {r.prep_minutes || 60} น.<br />
+                        {r.points_count || 1} จุด × {r.time_per_point_min || 10} น. · เสร็จ ~{finishTime}
+                      </div>
+                      <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(128,128,128,0.15)', fontSize: 12 }}>
+                        🔩 {demand.parts.length} พาร์ท · 🎴 <span style={{ fontWeight: 900, color: '#f59e0b' }}>{demand.totalKanban}</span> การ์ด
+                      </div>
+                      {confirmedBy && (
+                        <div style={{ fontSize: 10, color: '#22c55e', marginTop: 4 }}>✓ {confirmedBy}</div>
+                      )}
+                      {needAction && (
+                        <button onClick={e => { e.stopPropagation(); onConfirm(r); }} disabled={confirming === r.id}
+                          style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
+                          {confirming === r.id ? '...' : '✅ ยืนยันส่งแล้ว'}
+                        </button>
+                      )}
+                    </div>
+                    {isExpanded && demand.parts.length > 0 && (
+                      <div style={{ borderTop: '1px solid rgba(128,128,128,0.15)', padding: '8px 14px', maxHeight: 220, overflowY: 'auto' }}>
+                        {demand.parts.map(p => {
+                          const per = kanbanStd[p.mat_no];
+                          return (
+                            <div key={p.mat_no} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: '1px solid rgba(128,128,128,0.1)', fontSize: 11 }}>
+                              <div style={{ overflow: 'hidden' }}>
+                                <div style={{ fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700 }}>{p.mat_no}</div>
+                                <div style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130 }}>{p.part_name}</div>
+                              </div>
+                              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                <div style={{ fontWeight: 800, color: '#f59e0b' }}>{per ? `${Math.ceil(p.netTotal / per)} ใบ` : `${fmt(p.netTotal)} ${p.uom}`}</div>
+                                {per && <div style={{ color: 'var(--muted)', fontSize: 10 }}>NET {fmt(p.netTotal)}</div>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── Delivery Rounds Panel (compact, for cards/table views) ─────────────── */
+function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming }) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  const confirmedSet = useMemo(() => {
+    const s = new Set();
+    deliveries.forEach(d => s.add(`${d.line_name}|${d.shift}|${d.round_no}`));
+    return s;
+  }, [deliveries]);
 
   const byLine = useMemo(() => {
     const m = {};
@@ -80,29 +190,12 @@ function DeliveryRoundsPanel({ workDate }) {
     return m;
   }, [rounds]);
 
-  const lineNames = Object.keys(byLine).sort();
-
-  const getRoundStatus = (r) => {
-    if (isConfirmed(r)) return { label: '✅ ส่งแล้ว', color: '#22c55e', bg: 'rgba(34,197,94,0.1)' };
-    const now = new Date();
-    const [prepH, prepM] = (r.prep_start || '').split(':').map(Number);
-    const [delH, delM] = (r.delivery_time || '').split(':').map(Number);
-    if (!isNaN(prepH) && !isNaN(delH)) {
-      const nowMins = now.getHours() * 60 + now.getMinutes();
-      if (nowMins >= prepH * 60 + prepM && nowMins < delH * 60 + delM)
-        return { label: '⏳ กำลังเตรียม', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)' };
-    }
-    return { label: '🟡 รอส่ง', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' };
-  };
-
   if (rounds.length === 0) return null;
 
   return (
     <div style={{ ...card, marginTop: 16 }}>
-      <div
-        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: collapsed ? 0 : 16 }}
-        onClick={() => setCollapsed(v => !v)}
-      >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: collapsed ? 0 : 16 }}
+        onClick={() => setCollapsed(v => !v)}>
         <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
           ⏰ รอบจัดส่งวันนี้ <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>({rounds.length} รอบ)</span>
         </div>
@@ -110,49 +203,31 @@ function DeliveryRoundsPanel({ workDate }) {
       </div>
       {!collapsed && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
-          {lineNames.map(lineName => (
+          {Object.keys(byLine).sort().map(lineName => (
             <div key={lineName} style={{ background: 'var(--bg2)', borderRadius: 8, padding: 12, border: '1px solid var(--border2)' }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 8, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
                 🏭 {lineName}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {byLine[lineName].map(r => {
-                  const status = getRoundStatus(r);
-                  const confirmed = isConfirmed(r);
+                  const status = getRoundStatus(r, confirmedSet);
+                  const isConf = confirmedSet.has(`${r.line_name}|${r.shift}|${r.round_no}`);
+                  const confirmedBy = deliveries.find(d => d.line_name === r.line_name && d.shift === r.shift && d.round_no === r.round_no)?.confirmed_by;
                   return (
-                    <div key={r.id} style={{
-                      background: 'var(--card)', borderRadius: 6, padding: '8px 10px',
-                      border: `1px solid ${confirmed ? 'rgba(34,197,94,0.3)' : 'var(--border)'}`,
-                      opacity: confirmed ? 0.8 : 1,
-                    }}>
+                    <div key={r.id} style={{ background: 'var(--card)', borderRadius: 6, padding: '8px 10px', border: `1px solid ${status.border}`, opacity: isConf ? 0.8 : 1 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>
-                          รอบที่ {r.round_no} · {SHIFT_LABEL[r.shift] || r.shift}
-                        </div>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>รอบ {r.round_no}</div>
                         <span style={chip(status.bg, status.color)}>{status.label}</span>
                       </div>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: r.note ? 4 : 0 }}>
-                        🕐 เตรียม {r.prep_start} → ส่ง {r.delivery_time}
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                        ตัดยอด {r.cutoff_time?.slice(0,5) || '—'} → ส่ง {r.delivery_time?.slice(0,5) || '—'}
                       </div>
-                      {r.note && <div style={{ fontSize: 11, color: 'var(--text2)', fontStyle: 'italic', marginBottom: 4 }}>{r.note}</div>}
-                      {!confirmed && (
-                        <button
-                          onClick={() => confirmRound(r)}
-                          disabled={confirming === r.id}
-                          style={{
-                            marginTop: 6, width: '100%', padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
-                            cursor: confirming === r.id ? 'not-allowed' : 'pointer',
-                            background: 'rgba(34,197,94,0.1)', color: '#22c55e',
-                            border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)',
-                          }}
-                        >
-                          {confirming === r.id ? '⏳ กำลังบันทึก...' : '✅ ยืนยันส่งแล้ว'}
+                      {confirmedBy && <div style={{ fontSize: 10, color: '#22c55e', marginTop: 3 }}>✓ {confirmedBy}</div>}
+                      {!isConf && (
+                        <button onClick={() => onConfirm(r)} disabled={confirming === r.id}
+                          style={{ marginTop: 6, width: '100%', padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
+                          {confirming === r.id ? '...' : '✅ ยืนยันส่งแล้ว'}
                         </button>
-                      )}
-                      {confirmed && (
-                        <div style={{ fontSize: 10, color: '#22c55e', marginTop: 4 }}>
-                          ✓ ยืนยันโดย {deliveries.find(d => d.line_name === r.line_name && d.shift === r.shift && d.round_no === r.round_no)?.confirmed_by || ''}
-                        </div>
                       )}
                     </div>
                   );
@@ -234,15 +309,19 @@ function KanbanCardGrid({ rowList, kanbanStd, fmt }) {
 }
 
 export default function HeijunkaKanban() {
+  const { fullName } = useContext(UserContext);
   const [workDate, setWorkDate]   = useState(getWorkDate());
-  const [shiftFilter, setShiftFilter] = useState('all');     // all | day | night
-  const [viewMode, setViewMode]   = useState('cards');       // 'cards' | 'table'
+  const [shiftFilter, setShiftFilter] = useState('all');
+  const [viewMode, setViewMode]   = useState('board');       // 'board' | 'cards' | 'table'
   const [loading, setLoading]     = useState(false);
   const [sessions, setSessions]   = useState([]);
-  const [demands, setDemands]     = useState([]);            // { session_id, product, qty } — demand ระดับ parent
-  const [bomMap, setBomMap]       = useState({});            // product_id → [bom_items]
-  const [kanbanStd, setKanbanStd] = useState({});            // child mat_no → qty_per_kanban
-  const [lineStock, setLineStock] = useState({});            // `${line_name}|${mat_no}` → qty_on_hand
+  const [demands, setDemands]     = useState([]);
+  const [bomMap, setBomMap]       = useState({});
+  const [kanbanStd, setKanbanStd] = useState({});
+  const [lineStock, setLineStock] = useState({});
+  const [rounds, setRounds]       = useState([]);
+  const [deliveries, setDeliveries] = useState([]);
+  const [confirming, setConfirming] = useState(null);
 
   /* ── load & explode ── */
   const load = useCallback(async () => {
@@ -310,6 +389,32 @@ export default function HeijunkaKanban() {
   }, [workDate]);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadDeliveries = useCallback(async () => {
+    const [{ data: rds }, { data: dlvs }] = await Promise.all([
+      supabaseDR.from('kanban_delivery_rounds').select('*').eq('is_active', true).order('line_name').order('round_no'),
+      supabaseDR.from('kanban_deliveries').select('*').eq('work_date', workDate),
+    ]);
+    setRounds(rds || []);
+    setDeliveries(dlvs || []);
+  }, [workDate]);
+
+  useEffect(() => { loadDeliveries(); }, [loadDeliveries]);
+
+  const confirmRound = async (r) => {
+    if (confirming) return;
+    setConfirming(r.id);
+    try {
+      const { error } = await supabaseDR.from('kanban_deliveries').upsert({
+        work_date: workDate, line_name: r.line_name, shift: r.shift, round_no: r.round_no,
+        confirmed_at: new Date().toISOString(), confirmed_by: fullName || 'Store',
+      }, { onConflict: 'work_date,line_name,shift,round_no', ignoreDuplicates: false });
+      if (error) throw error;
+      toast.success(`✅ ยืนยันส่งแล้ว: ${r.line_name} รอบ ${r.round_no}`);
+      await loadDeliveries();
+    } catch (err) { toast.error(err.message); }
+    setConfirming(null);
+  };
 
   /* ── explode เป็น demand พาร์ทย่อย ── */
   const view = useMemo(() => {
@@ -445,7 +550,7 @@ export default function HeijunkaKanban() {
 
       {/* View mode toggle */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-        {[{ id: 'cards', label: '🎴 การ์ด' }, { id: 'table', label: '📋 ตาราง' }].map(v => (
+        {[{ id: 'board', label: '🏪 Store Board' }, { id: 'cards', label: '🎴 การ์ด' }, { id: 'table', label: '📋 ตาราง' }].map(v => (
           <button key={v.id} onClick={() => setViewMode(v.id)} style={{
             padding: '7px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
             background: viewMode === v.id ? 'var(--accent)' : 'var(--bg2)',
@@ -460,6 +565,11 @@ export default function HeijunkaKanban() {
       <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
+        ) : viewMode === 'board' ? (
+          <StoreBoardView
+            rounds={rounds} deliveries={deliveries} view={view}
+            kanbanStd={kanbanStd} onConfirm={confirmRound} confirming={confirming} fmt={fmt}
+          />
         ) : view.cols.length === 0 ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีกะ/แผนผลิตในวันที่ {workDate}</div>
         ) : view.rowList.length === 0 ? (
@@ -527,8 +637,10 @@ export default function HeijunkaKanban() {
         )}
       </div>
 
-      {/* Delivery Rounds Panel */}
-      <DeliveryRoundsPanel workDate={workDate} />
+      {/* Delivery Rounds Panel — only for cards/table view, board has it built-in */}
+      {viewMode !== 'board' && (
+        <DeliveryRoundsPanel rounds={rounds} deliveries={deliveries} onConfirm={confirmRound} confirming={confirming} />
+      )}
     </div>
   );
 }
