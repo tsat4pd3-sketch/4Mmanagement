@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabaseDR } from '../supabaseClient';
+import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 
 /* ─── HEIJUNKA KANBAN — Subcomponent Part Demand ──────────────────────────
@@ -25,9 +26,217 @@ const chip = (bg, color) => ({
 
 const SHIFT_LABEL = { day: '☀️ กะเช้า', night: '🌙 กะดึก' };
 
+/* ─── Delivery Rounds Panel ─────────────────────────────────────────────── */
+function DeliveryRoundsPanel({ workDate }) {
+  const { fullName } = useContext(UserContext);
+  const [rounds, setRounds] = useState([]);
+  const [deliveries, setDeliveries] = useState([]);
+  const [collapsed, setCollapsed] = useState(false);
+  const [confirming, setConfirming] = useState(null);
+
+  const loadRounds = useCallback(async () => {
+    const [{ data: rds }, { data: dlvs }] = await Promise.all([
+      supabaseDR.from('kanban_delivery_rounds').select('*').eq('is_active', true).order('line_name').order('round_no'),
+      supabaseDR.from('kanban_deliveries').select('*').eq('work_date', workDate),
+    ]);
+    setRounds(rds || []);
+    setDeliveries(dlvs || []);
+  }, [workDate]);
+
+  useEffect(() => { loadRounds(); }, [loadRounds]);
+
+  const confirmedSet = useMemo(() => {
+    const s = new Set();
+    deliveries.forEach(d => s.add(`${d.line_name}|${d.shift}|${d.round_no}`));
+    return s;
+  }, [deliveries]);
+
+  const isConfirmed = (r) => confirmedSet.has(`${r.line_name}|${r.shift}|${r.round_no}`);
+
+  const confirmRound = async (r) => {
+    if (confirming) return;
+    setConfirming(r.id);
+    try {
+      const { error } = await supabaseDR.from('kanban_deliveries').upsert({
+        work_date: workDate,
+        line_name: r.line_name,
+        shift: r.shift,
+        round_no: r.round_no,
+        confirmed_at: new Date().toISOString(),
+        confirmed_by: fullName || 'unknown',
+      }, { onConflict: 'work_date,line_name,shift,round_no', ignoreDuplicates: false });
+      if (error) throw error;
+      toast.success(`ยืนยันส่งแล้ว: ${r.line_name} รอบ ${r.round_no}`);
+      await loadRounds();
+    } catch (err) {
+      toast.error('ยืนยันไม่สำเร็จ: ' + err.message);
+    }
+    setConfirming(null);
+  };
+
+  const byLine = useMemo(() => {
+    const m = {};
+    rounds.forEach(r => { (m[r.line_name] = m[r.line_name] || []).push(r); });
+    return m;
+  }, [rounds]);
+
+  const lineNames = Object.keys(byLine).sort();
+
+  const getRoundStatus = (r) => {
+    if (isConfirmed(r)) return { label: '✅ ส่งแล้ว', color: '#22c55e', bg: 'rgba(34,197,94,0.1)' };
+    const now = new Date();
+    const [prepH, prepM] = (r.prep_start || '').split(':').map(Number);
+    const [delH, delM] = (r.delivery_time || '').split(':').map(Number);
+    if (!isNaN(prepH) && !isNaN(delH)) {
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+      if (nowMins >= prepH * 60 + prepM && nowMins < delH * 60 + delM)
+        return { label: '⏳ กำลังเตรียม', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)' };
+    }
+    return { label: '🟡 รอส่ง', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' };
+  };
+
+  if (rounds.length === 0) return null;
+
+  return (
+    <div style={{ ...card, marginTop: 16 }}>
+      <div
+        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: collapsed ? 0 : 16 }}
+        onClick={() => setCollapsed(v => !v)}
+      >
+        <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
+          ⏰ รอบจัดส่งวันนี้ <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>({rounds.length} รอบ)</span>
+        </div>
+        <span style={{ color: 'var(--muted)', fontSize: 14 }}>{collapsed ? '▶' : '▼'}</span>
+      </div>
+      {!collapsed && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+          {lineNames.map(lineName => (
+            <div key={lineName} style={{ background: 'var(--bg2)', borderRadius: 8, padding: 12, border: '1px solid var(--border2)' }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 8, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
+                🏭 {lineName}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {byLine[lineName].map(r => {
+                  const status = getRoundStatus(r);
+                  const confirmed = isConfirmed(r);
+                  return (
+                    <div key={r.id} style={{
+                      background: 'var(--card)', borderRadius: 6, padding: '8px 10px',
+                      border: `1px solid ${confirmed ? 'rgba(34,197,94,0.3)' : 'var(--border)'}`,
+                      opacity: confirmed ? 0.8 : 1,
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>
+                          รอบที่ {r.round_no} · {SHIFT_LABEL[r.shift] || r.shift}
+                        </div>
+                        <span style={chip(status.bg, status.color)}>{status.label}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: r.note ? 4 : 0 }}>
+                        🕐 เตรียม {r.prep_start} → ส่ง {r.delivery_time}
+                      </div>
+                      {r.note && <div style={{ fontSize: 11, color: 'var(--text2)', fontStyle: 'italic', marginBottom: 4 }}>{r.note}</div>}
+                      {!confirmed && (
+                        <button
+                          onClick={() => confirmRound(r)}
+                          disabled={confirming === r.id}
+                          style={{
+                            marginTop: 6, width: '100%', padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                            cursor: confirming === r.id ? 'not-allowed' : 'pointer',
+                            background: 'rgba(34,197,94,0.1)', color: '#22c55e',
+                            border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)',
+                          }}
+                        >
+                          {confirming === r.id ? '⏳ กำลังบันทึก...' : '✅ ยืนยันส่งแล้ว'}
+                        </button>
+                      )}
+                      {confirmed && (
+                        <div style={{ fontSize: 10, color: '#22c55e', marginTop: 4 }}>
+                          ✓ ยืนยันโดย {deliveries.find(d => d.line_name === r.line_name && d.shift === r.shift && d.round_no === r.round_no)?.confirmed_by || ''}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Kanban Card Grid ──────────────────────────────────────────────────── */
+function KanbanCardGrid({ rowList, kanbanStd, fmt }) {
+  if (!rowList.length) return null;
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12, padding: 16 }}>
+      {rowList.map(r => {
+        const per = kanbanStd[r.mat_no];
+        const stockCovered = r.netTotal === 0;
+        const borderColor = stockCovered ? '#22c55e' : per ? '#f59e0b' : '#ef4444';
+        return (
+          <div key={r.mat_no} style={{
+            background: 'var(--bg2)', border: '1px solid var(--border)',
+            borderLeft: `4px solid ${borderColor}`, borderRadius: 8, padding: 12,
+            position: 'relative', opacity: stockCovered ? 0.5 : 1,
+            display: 'flex', flexDirection: 'column', gap: 6,
+          }}>
+            {stockCovered && (
+              <div style={{
+                position: 'absolute', top: 8, right: 8,
+                background: 'rgba(34,197,94,0.15)', color: '#22c55e',
+                borderRadius: 10, fontSize: 10, fontWeight: 800, padding: '2px 7px',
+              }}>✓ stock พอ</div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', letterSpacing: 0.5 }}>
+                {r.mat_no}
+              </span>
+              {r.supplier && (
+                <span style={{ fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 6, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
+                  {r.supplier}
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', lineHeight: 1.3, fontFamily: 'var(--font-body)' }}>
+              {r.part_name}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+              <span style={{ color: 'var(--muted)', fontWeight: 600 }}>{fmt(r.grossTotal)}</span>
+              <span style={{ color: 'var(--muted)' }}>→</span>
+              <span style={{ fontSize: 18, fontWeight: 900, fontFamily: 'var(--font-display)', color: stockCovered ? '#22c55e' : borderColor }}>
+                {stockCovered ? '✓ พอ' : fmt(r.netTotal)}
+              </span>
+              <span style={{ fontSize: 10, color: 'var(--muted)' }}>{r.uom}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
+              {r.totalStock > 0 && (
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>
+                  📦 {fmt(r.totalStock)}
+                </span>
+              )}
+              {!stockCovered && (
+                per
+                  ? <span style={{ fontSize: 13, fontWeight: 900, padding: '3px 10px', borderRadius: 12, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>
+                      🎴 {Math.ceil(r.netTotal / per)} ใบ × {per}
+                    </span>
+                  : <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)' }}>
+                      ไม่มี std
+                    </span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function HeijunkaKanban() {
   const [workDate, setWorkDate]   = useState(getWorkDate());
   const [shiftFilter, setShiftFilter] = useState('all');     // all | day | night
+  const [viewMode, setViewMode]   = useState('cards');       // 'cards' | 'table'
   const [loading, setLoading]     = useState(false);
   const [sessions, setSessions]   = useState([]);
   const [demands, setDemands]     = useState([]);            // { session_id, product, qty } — demand ระดับ parent
@@ -234,6 +443,19 @@ export default function HeijunkaKanban() {
         </div>
       )}
 
+      {/* View mode toggle */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+        {[{ id: 'cards', label: '🎴 การ์ด' }, { id: 'table', label: '📋 ตาราง' }].map(v => (
+          <button key={v.id} onClick={() => setViewMode(v.id)} style={{
+            padding: '7px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+            background: viewMode === v.id ? 'var(--accent)' : 'var(--bg2)',
+            color: viewMode === v.id ? '#08130a' : 'var(--text2)',
+            border: `1px solid ${viewMode === v.id ? 'var(--accent)' : 'var(--border)'}`,
+            transition: 'all 0.15s',
+          }}>{v.label}</button>
+        ))}
+      </div>
+
       {/* Demand board */}
       <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
         {loading ? (
@@ -244,6 +466,8 @@ export default function HeijunkaKanban() {
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
             ยังไม่มี demand พาร์ทย่อย — ตรวจว่าไลน์เปิด order แล้ว และ product มี BOM
           </div>
+        ) : viewMode === 'cards' ? (
+          <KanbanCardGrid rowList={view.rowList} kanbanStd={kanbanStd} fmt={fmt} />
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
@@ -302,6 +526,9 @@ export default function HeijunkaKanban() {
           </div>
         )}
       </div>
+
+      {/* Delivery Rounds Panel */}
+      <DeliveryRoundsPanel workDate={workDate} />
     </div>
   );
 }
