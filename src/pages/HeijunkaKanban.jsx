@@ -33,6 +33,7 @@ export default function HeijunkaKanban() {
   const [demands, setDemands]     = useState([]);            // { session_id, product, qty } — demand ระดับ parent
   const [bomMap, setBomMap]       = useState({});            // product_id → [bom_items]
   const [kanbanStd, setKanbanStd] = useState({});            // child mat_no → qty_per_kanban
+  const [lineStock, setLineStock] = useState({});            // `${line_name}|${mat_no}` → qty_on_hand
 
   /* ── load & explode ── */
   const load = useCallback(async () => {
@@ -80,13 +81,19 @@ export default function HeijunkaKanban() {
       setBomMap(bm);
 
       const childMats = [...new Set((boms || []).map(b => b.mat_no))];
+      const lineNames = [...new Set((sess || []).map(s => s.line_name))];
       if (childMats.length) {
-        const { data: stds } = await supabaseDR.from('kanban_standards')
-          .select('mat_no, qty_per_kanban').in('mat_no', childMats).eq('is_active', true);
+        const [{ data: stds }, { data: stockRows }] = await Promise.all([
+          supabaseDR.from('kanban_standards').select('mat_no, qty_per_kanban').in('mat_no', childMats).eq('is_active', true),
+          supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand').in('mat_no', childMats).in('line_name', lineNames),
+        ]);
         const ks = {};
         (stds || []).forEach(s => { ks[s.mat_no] = s.qty_per_kanban; });
         setKanbanStd(ks);
-      } else setKanbanStd({});
+        const ls = {};
+        (stockRows || []).forEach(r => { ls[`${r.line_name}|${r.mat_no}`] = parseFloat(r.qty_on_hand) || 0; });
+        setLineStock(ls);
+      } else { setKanbanStd({}); setLineStock({}); }
     } catch (err) {
       toast.error('โหลดข้อมูลไม่สำเร็จ: ' + err.message);
     }
@@ -104,11 +111,12 @@ export default function HeijunkaKanban() {
     // columns = ไลน์·กะ ที่มี demand
     const cols = visibleSessions.map(s => ({ id: s.id, line: s.line_name, shift: s.shift, status: s.status }));
 
-    // rows: child mat_no → { part_name, uom, perCol: {session_id: qty}, total, noBomParents }
+    // rows: child mat_no → gross demand ต่อ col + stock ต่อไลน์ → net demand
     const rows = {};
-    const noBom = new Map();   // parent ที่ยังไม่มี BOM → demand รวม
+    const noBom = new Map();
     demands.forEach(d => {
       if (!visibleIds.has(d.session_id)) return;
+      const sess = sessions.find(s => s.id === d.session_id);
       const bomItems = d.product ? bomMap[d.product.id] : null;
       if (!bomItems?.length) {
         const key = d.mat_no || d.part_name;
@@ -116,30 +124,45 @@ export default function HeijunkaKanban() {
         return;
       }
       bomItems.forEach(b => {
-        const r = rows[b.mat_no] = rows[b.mat_no] || { mat_no: b.mat_no, part_name: b.part_name, uom: b.uom, supplier: b.supplier, perCol: {}, total: 0 };
+        const r = rows[b.mat_no] = rows[b.mat_no] || {
+          mat_no: b.mat_no, part_name: b.part_name, uom: b.uom, supplier: b.supplier,
+          perCol: {}, grossTotal: 0,
+          stockPerLine: {},    // line_name → stock qty_on_hand (เก็บไว้แสดง)
+        };
         const need = d.qty * Number(b.qty_per_unit);
         r.perCol[d.session_id] = (r.perCol[d.session_id] || 0) + need;
-        r.total += need;
+        r.grossTotal += need;
+        // เก็บ stock per line (สำหรับแสดงใน tooltip / column)
+        if (sess) {
+          const stockKey = `${sess.line_name}|${b.mat_no}`;
+          r.stockPerLine[sess.line_name] = lineStock[stockKey] || 0;
+        }
       });
     });
 
-    const rowList = Object.values(rows).sort((a, b) => a.mat_no.localeCompare(b.mat_no));
+    // คำนวณ net = gross - total stock ที่มีในทุกไลน์ที่เกี่ยวข้อง
+    const rowList = Object.values(rows).map(r => {
+      const totalStock = Object.values(r.stockPerLine).reduce((s, v) => s + v, 0);
+      const netTotal   = Math.max(0, r.grossTotal - totalStock);
+      return { ...r, totalStock, netTotal };
+    }).sort((a, b) => a.mat_no.localeCompare(b.mat_no));
+
     const totalKanban = rowList.reduce((s, r) => {
       const per = kanbanStd[r.mat_no];
-      return s + (per ? Math.ceil(r.total / per) : 0);
+      return s + (per ? Math.ceil(r.netTotal / per) : 0);
     }, 0);
     return { cols, rowList, noBom: [...noBom.values()], sessById, totalKanban };
-  }, [sessions, demands, bomMap, kanbanStd, shiftFilter]);
+  }, [sessions, demands, bomMap, kanbanStd, lineStock, shiftFilter]);
 
   const fmt = (n) => Number.isInteger(n) ? n.toLocaleString() : n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
   /* ── CSV export ── */
   const exportCSV = () => {
     if (!view.rowList.length) { toast.info('ไม่มีข้อมูลให้ export'); return; }
-    const head = ['Mat No.', 'Part Name', 'UOM', 'Supplier', ...view.cols.map(c => `${c.line} (${c.shift})`), 'Total', 'Qty/Kanban', 'Kanban'];
+    const head = ['Mat No.', 'Part Name', 'UOM', 'Supplier', ...view.cols.map(c => `${c.line} (${c.shift})`), 'Gross', 'Stock in Line', 'Net', 'Qty/Kanban', 'Kanban'];
     const lines = view.rowList.map(r => {
       const per = kanbanStd[r.mat_no];
-      return [r.mat_no, `"${r.part_name}"`, r.uom, r.supplier || '', ...view.cols.map(c => r.perCol[c.id] || 0), r.total, per || '', per ? Math.ceil(r.total / per) : ''].join(',');
+      return [r.mat_no, `"${r.part_name}"`, r.uom, r.supplier || '', ...view.cols.map(c => r.perCol[c.id] || 0), r.grossTotal, r.totalStock, r.netTotal, per || '', per ? Math.ceil(r.netTotal / per) : ''].join(',');
     });
     const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
@@ -186,7 +209,7 @@ export default function HeijunkaKanban() {
         {[
           { label: 'ไลน์ที่มีแผนผลิต', value: view.cols.length, icon: '🏭' },
           { label: 'พาร์ทย่อยที่ต้องใช้', value: view.rowList.length, icon: '🔩' },
-          { label: 'รวม Kanban ที่ต้องเตรียม', value: view.totalKanban, icon: '🎴' },
+          { label: 'Kanban NET ที่ต้องเตรียม', value: view.totalKanban, icon: '🎴' },
           { label: 'Product ไม่มี BOM', value: view.noBom.length, icon: '⚠️', warn: view.noBom.length > 0 },
         ].map(c => (
           <div key={c.label} style={{ ...card, padding: '12px 16px', borderColor: c.warn ? 'rgba(245,158,11,0.4)' : 'var(--border)' }}>
@@ -233,31 +256,43 @@ export default function HeijunkaKanban() {
                       <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600 }}>{SHIFT_LABEL[c.shift] || c.shift}</span>
                     </th>
                   ))}
-                  <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: 'var(--accent)', textAlign: 'right' }}>รวม</th>
+                  <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right' }}>Gross</th>
+                  <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: '#22c55e', textAlign: 'right' }}>📦 Stock</th>
+                  <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: 'var(--accent)', textAlign: 'right' }}>NET</th>
                   <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: '#f59e0b', textAlign: 'right' }}>🎴 KANBAN</th>
                 </tr>
               </thead>
               <tbody>
                 {view.rowList.map(r => {
                   const per = kanbanStd[r.mat_no];
+                  const stockCovered = r.netTotal === 0;
                   return (
-                    <tr key={r.mat_no}>
+                    <tr key={r.mat_no} style={{ opacity: stockCovered ? 0.55 : 1 }}>
                       <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', position: 'sticky', left: 0, background: 'var(--card)', zIndex: 1 }}>
                         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', fontFamily: 'monospace' }}>{r.mat_no}</div>
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.part_name}{r.supplier ? ` · ${r.supplier}` : ''}</div>
+                        {stockCovered && <div style={{ fontSize: 10, color: '#22c55e', fontWeight: 700 }}>✓ stock พอ</div>}
                       </td>
                       {view.cols.map(c => (
                         <td key={c.id} style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', textAlign: 'center', fontSize: 13, color: r.perCol[c.id] ? 'var(--text)' : 'var(--muted)', fontWeight: r.perCol[c.id] ? 700 : 400 }}>
                           {r.perCol[c.id] ? fmt(r.perCol[c.id]) : '—'}
                         </td>
                       ))}
-                      <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', textAlign: 'right', fontSize: 14, fontWeight: 900, color: 'var(--accent)' }}>
-                        {fmt(r.total)} <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600 }}>{r.uom}</span>
+                      <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', textAlign: 'right', fontSize: 13, color: 'var(--muted)' }}>
+                        {fmt(r.grossTotal)}
+                      </td>
+                      <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#22c55e' }}>
+                        {r.totalStock > 0 ? fmt(r.totalStock) : '—'}
+                      </td>
+                      <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', textAlign: 'right', fontSize: 15, fontWeight: 900, color: stockCovered ? '#22c55e' : 'var(--accent)' }}>
+                        {stockCovered ? '✓ พอ' : fmt(r.netTotal)} <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600 }}>{r.uom}</span>
                       </td>
                       <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', textAlign: 'right' }}>
-                        {per
-                          ? <span style={chip('rgba(245,158,11,0.12)', '#f59e0b')}>{Math.ceil(r.total / per)} ใบ × {per}</span>
-                          : <span style={{ fontSize: 10, color: 'var(--muted)' }}>ไม่มี std</span>}
+                        {stockCovered
+                          ? <span style={chip('rgba(34,197,94,0.1)', '#22c55e')}>ไม่ต้องเบิก</span>
+                          : per
+                            ? <span style={chip('rgba(245,158,11,0.12)', '#f59e0b')}>{Math.ceil(r.netTotal / per)} ใบ × {per}</span>
+                            : <span style={{ fontSize: 10, color: 'var(--muted)' }}>ไม่มี std</span>}
                       </td>
                     </tr>
                   );

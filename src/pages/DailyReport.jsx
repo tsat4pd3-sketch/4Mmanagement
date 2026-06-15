@@ -813,6 +813,29 @@ function LiveTab({ role }) {
     setSavingClose(false);
     if (error) { toast.error(error.message); return; }
 
+    // ── Auto-consume Line Stock ────────────────────────────────────────────
+    // เมื่อปิดกะจริง (SV+ close โดยตรง) ให้หัก stock พาร์ทย่อยตาม BOM × qty_ok
+    if (!isLeaderRequest && totalQtyOk > 0 && selSession.product_id) {
+      const { data: bomItems } = await supabaseDR
+        .from('bom_items').select('mat_no, part_name, qty_per_unit')
+        .eq('product_id', selSession.product_id).eq('is_active', true);
+      if (bomItems?.length) {
+        const consumeRows = bomItems.map(b => ({
+          line_name:      selSession.line_name,
+          mat_no:         b.mat_no,
+          part_name:      b.part_name,
+          qty:            parseFloat((totalQtyOk * Number(b.qty_per_unit)).toFixed(4)),
+          type:           'consume',
+          ref_session_id: selSession.id,
+          work_date:      selSession.work_date,
+          note:           `Auto: close กะ ${selSession.shift === 'day' ? 'เช้า' : 'ดึก'} qty_ok=${totalQtyOk}`,
+          created_by:     fullName,
+        }));
+        await supabaseDR.from('line_stock_transactions').insert(consumeRows);
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     if (isLeaderRequest) {
       toast.info(`ส่งคำขอปิดกะแล้ว — รอ SV อนุมัติ · OEE Preview ${(oee * 100).toFixed(1)}%`);
     } else {
@@ -838,6 +861,26 @@ function LiveTab({ role }) {
       closed_at:      new Date().toISOString(),
     }).eq('id', selSession.id);
     if (error) { toast.error(error.message); return; }
+
+    // Auto-consume เมื่อ SV approve close
+    const qtyOk = selSession.qty_ok || 0;
+    if (qtyOk > 0 && selSession.product_id) {
+      const { data: bomItems } = await supabaseDR
+        .from('bom_items').select('mat_no, part_name, qty_per_unit')
+        .eq('product_id', selSession.product_id).eq('is_active', true);
+      if (bomItems?.length) {
+        await supabaseDR.from('line_stock_transactions').insert(
+          bomItems.map(b => ({
+            line_name: selSession.line_name, mat_no: b.mat_no, part_name: b.part_name,
+            qty: parseFloat((qtyOk * Number(b.qty_per_unit)).toFixed(4)),
+            type: 'consume', ref_session_id: selSession.id,
+            work_date: selSession.work_date,
+            note: `Auto: SV อนุมัติปิดกะ qty_ok=${qtyOk}`, created_by: fullName,
+          }))
+        );
+      }
+    }
+
     toast.success(`อนุมัติปิดกะแล้ว ✓ (ขอโดย ${selSession.close_requested_by_name || '—'})`);
     load();
     setSelSession(null);

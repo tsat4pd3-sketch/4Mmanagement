@@ -23,6 +23,7 @@ const OEEAnalytics  = lazy(() => import('./pages/OEEAnalytics'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
+const LineStock      = lazy(() => import('./pages/LineStock'));
 
 /* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null, signatureUrl: null, fullName: null });
@@ -50,6 +51,7 @@ const NAV_ITEMS = [
   { to: '/oee-analytics',  icon: '📈', label: 'OEE Analytics',      roles: null },
   { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', roles: ['admin', 'manager', 'supervisor', 'leader', 'qa'] },
   { to: '/products',        icon: '🔩', label: 'Product Master',    roles: null },
+  { to: '/line-stock',      icon: '📦', label: 'Line Stock',         roles: null },
   { to: '/heijunka',       icon: '🎴', label: 'Heijunka Kanban',   roles: null },
 ];
 
@@ -575,8 +577,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/daily-report"  element={<DailyReport />} />
               <Route path="/oee-analytics" element={<OEEAnalytics />} />
               <Route path="/event-log" element={<EventLog />} />
-              <Route path="/products"  element={<ProductMaster />} />
-              <Route path="/heijunka" element={<HeijunkaKanban />} />
+              <Route path="/products"   element={<ProductMaster />} />
+              <Route path="/line-stock" element={<LineStock />} />
+              <Route path="/heijunka"  element={<HeijunkaKanban />} />
             </Routes>
           </Suspense>
         </main>
