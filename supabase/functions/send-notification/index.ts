@@ -87,7 +87,33 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' } });
 
   try {
-    const { event, log } = await req.json();
+    const body = await req.json();
+    const { event } = body;
+
+    /* ── Checkin Summary ─────────────────────────── */
+    if (event === 'checkin_summary') {
+      const s = body.summary;
+      if (!s) return new Response('missing summary', { status: 400 });
+      const otNote = s.has_ot_night ? `\n⏰ เปิด OT กะดึก (${s.start_time} น.)` : `\n🕗 เวลาเริ่ม: ${s.start_time} น.`;
+      const message = [
+        `✅ <b>เช็คชื่อเสร็จแล้ว</b>`,
+        ``,
+        `🏭 ไลน์: <b>${s.line_name}</b> · ${s.shift_label}`,
+        `📅 วันที่: ${s.work_date}${otNote}`,
+        ``,
+        `👥 เข้างาน: <b>${s.present}/${s.total}</b>`,
+        `⏰ OT: ${s.ot}`,
+        `🏖️ ลา: ${s.leave}`,
+        `❌ ขาด: ${s.absent}`,
+        ``,
+        `✍️ ตรวจโดย: ${s.checked_by}`,
+        `— 4M Management System`,
+      ].join('\n');
+      await sendTelegram(message).catch(console.error);
+      return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
+    }
+
+    const { log } = body;
     if (!log) return new Response('missing log', { status: 400 });
 
     const status: string = log.status;
@@ -124,12 +150,12 @@ Deno.serve(async (req) => {
     const title = event === 'status_change'
       ? `4M ${log.category} · ${log.line_name} → ${statusLabel(status)}`
       : `4M แจ้งเตือน · ${log.line_name}`;
-    const body = `${log.work_date} · ${log.description}`;
+    const notifBody = `${log.work_date} · ${log.description}`;
 
     /* In-app notifications */
     await Promise.allSettled(unique.map(async (t) => {
       await supabase.from('notifications').insert({
-        user_id: t.userId, title, body,
+        user_id: t.userId, title, body: notifBody,
         type: status === 'rejected' ? 'error' : status === 'approved' ? 'success' : 'info',
         ref_table: 'four_m_logs', ref_id: log.id,
       });
