@@ -26,23 +26,25 @@ const TYPE_COLOR = { issue:'#22c55e', consume:'#94a3b8', return:'#f59e0b', adjus
 
 const EMPTY_FORM = { line_name:'', mat_no:'', part_name:'', qty:'', type:'issue', note:'', work_date: getToday() };
 
-export default function LineStock() {
-  const { role, fullName } = useContext(UserContext);
+/* ─────────────────────────────────────────────────────────────────────────────
+   TAB: STOCK (existing content)
+   ───────────────────────────────────────────────────────────────────────────── */
+function StockTab({ role }) {
+  const { fullName } = useContext(UserContext);
   const canIssue = ['admin','manager','supervisor','leader'].includes(role);
 
   const [lines,   setLines]   = useState([]);
-  const [stock,   setStock]   = useState([]);   // line_stock_summary rows
-  const [txns,    setTxns]    = useState([]);   // recent transactions
-  const [bomMap,  setBomMap]  = useState({});   // mat_no → part_name (from bom_items)
+  const [stock,   setStock]   = useState([]);
+  const [txns,    setTxns]    = useState([]);
+  const [bomMap,  setBomMap]  = useState({});
 
   const [lineFilter, setLineFilter] = useState('');
-  const [showTxn,    setShowTxn]    = useState(false);  // history panel
+  const [showTxn,    setShowTxn]    = useState(false);
   const [showForm,   setShowForm]   = useState(false);
   const [form,       setForm]       = useState(EMPTY_FORM);
   const [saving,     setSaving]     = useState(false);
-  const [matSearch,  setMatSearch]  = useState('');     // autocomplete
+  const [matSearch,  setMatSearch]  = useState('');
 
-  /* ── load ── */
   const load = useCallback(async () => {
     const [{ data: ln }, { data: stk }, { data: boms }] = await Promise.all([
       supabase.from('production_lines').select('name').order('name'),
@@ -66,7 +68,6 @@ export default function LineStock() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (showTxn) loadTxns(); }, [showTxn, loadTxns, lineFilter]);
 
-  /* ── save transaction ── */
   const handleSave = async () => {
     if (!form.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
     if (!form.mat_no.trim()) { toast.error('กรอก Mat No.'); return; }
@@ -92,19 +93,16 @@ export default function LineStock() {
     if (showTxn) loadTxns();
   };
 
-  /* ── mat_no autocomplete ── */
   const matOptions = useMemo(() => {
     const q = matSearch.trim().toUpperCase();
     if (!q) return [];
     return Object.entries(bomMap).filter(([m]) => m.includes(q)).slice(0, 8);
   }, [matSearch, bomMap]);
 
-  /* ── filtered stock ── */
   const filteredStock = useMemo(() => {
     return lineFilter ? stock.filter(s => s.line_name === lineFilter) : stock;
   }, [stock, lineFilter]);
 
-  /* ── group stock by line ── */
   const stockByLine = useMemo(() => {
     const map = {};
     filteredStock.forEach(s => {
@@ -116,7 +114,7 @@ export default function LineStock() {
   const totalLow = filteredStock.filter(s => (s.qty_on_hand || 0) <= 0).length;
 
   return (
-    <div style={{ padding:'clamp(12px,2vw,24px)', maxWidth:1300, margin:'0 auto' }}>
+    <>
       {/* Header */}
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', gap:12, flexWrap:'wrap', marginBottom:18 }}>
         <div>
@@ -364,6 +362,517 @@ export default function LineStock() {
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TAB: KANBAN STD
+   ───────────────────────────────────────────────────────────────────────────── */
+const EMPTY_KBS = { mat_no:'', qty_per_kanban:'', uom:'' };
+
+function KanbanStdTab({ canEdit, fullName }) {
+  const [parts,     setParts]     = useState([]);
+  const [standards, setStandards] = useState([]);
+  const [search,    setSearch]    = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [form,      setForm]      = useState(EMPTY_KBS);
+  const [saving,    setSaving]    = useState(false);
+
+  const load = useCallback(async () => {
+    const [{ data: pm }, { data: ks }] = await Promise.all([
+      supabaseDR.from('parts_master').select('mat_no, part_name, uom, supplier').eq('is_active', true).order('mat_no'),
+      supabaseDR.from('kanban_standards').select('*').eq('is_active', true),
+    ]);
+    setParts(pm || []);
+    setStandards(ks || []);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const merged = useMemo(() => {
+    const ksMap = {};
+    standards.forEach(s => { ksMap[s.mat_no] = s; });
+    return parts.map(p => ({ ...p, ks: ksMap[p.mat_no] || null }));
+  }, [parts, standards]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toUpperCase();
+    if (!q) return merged;
+    return merged.filter(r => r.mat_no.includes(q) || (r.part_name || '').toUpperCase().includes(q) || (r.supplier || '').toUpperCase().includes(q));
+  }, [merged, search]);
+
+  const openEdit = (row) => {
+    setForm({
+      mat_no:        row.mat_no,
+      qty_per_kanban: row.ks ? String(row.ks.qty_per_kanban) : '',
+      uom:           row.ks ? (row.ks.uom || '') : (row.uom || ''),
+    });
+    setShowModal(true);
+  };
+
+  const openNew = () => {
+    setForm(EMPTY_KBS);
+    setShowModal(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.mat_no.trim()) { toast.error('กรอก Mat No.'); return; }
+    const qty = parseFloat(form.qty_per_kanban);
+    if (!qty || qty <= 0) { toast.error('กรอก Qty/Kanban ให้ถูกต้อง'); return; }
+    setSaving(true);
+    const { error } = await supabaseDR.from('kanban_standards').upsert({
+      mat_no:         form.mat_no.trim().toUpperCase(),
+      qty_per_kanban: qty,
+      uom:            form.uom.trim() || null,
+      is_active:      true,
+      updated_by:     fullName,
+      updated_at:     new Date().toISOString(),
+    }, { onConflict: 'mat_no' });
+    setSaving(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success('บันทึก Kanban Std แล้ว');
+    setShowModal(false);
+    load();
+  };
+
+  return (
+    <>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap', marginBottom:16 }}>
+        <div>
+          <h2 style={{ margin:0, fontSize:'clamp(16px,2vw,20px)', fontWeight:900, fontFamily:'var(--font-display)', color:'var(--text)' }}>
+            🎴 Kanban Std — มาตรฐาน Qty/Kanban รายพาร์ท
+          </h2>
+          <p style={{ margin:'4px 0 0', fontSize:13, color:'var(--muted)' }}>ตั้งค่าจำนวนชิ้นต่อ 1 ใบ Kanban สำหรับแต่ละ Mat No.</p>
+        </div>
+        <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+          <input
+            style={{ ...inputSt, width:220 }}
+            placeholder="ค้นหา Mat No. / Part Name..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          {canEdit && (
+            <button onClick={openNew} style={btn('#7c3aed')}>+ เพิ่ม Kanban Std</button>
+          )}
+        </div>
+      </div>
+
+      <div style={{ ...card, padding:0, overflow:'hidden' }}>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+            <thead>
+              <tr style={{ background:'var(--bg2)' }}>
+                {['Mat No.','Part Name','Supplier','UOM','Qty/Kanban','อัปเดต'].map(h => (
+                  <th key={h} style={{ padding:'9px 14px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
+                ))}
+                {canEdit && <th style={{ padding:'9px 14px', width:80 }}></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 && (
+                <tr><td colSpan={canEdit ? 7 : 6} style={{ padding:30, textAlign:'center', color:'var(--muted)', fontSize:13 }}>ไม่พบข้อมูล</td></tr>
+              )}
+              {filtered.map(row => (
+                <tr key={row.mat_no} style={{ opacity: row.ks ? 1 : 0.55 }}>
+                  <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontWeight:700, color:'#0ea5e9', fontSize:13 }}>{row.mat_no}</td>
+                  <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontSize:13, color:'var(--text)' }}>{row.part_name || '—'}</td>
+                  <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--text2)' }}>{row.supplier || '—'}</td>
+                  <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)' }}>{row.ks ? (row.ks.uom || '—') : (row.uom || '—')}</td>
+                  <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontWeight:900, fontSize:15, color: row.ks ? 'var(--accent)' : 'var(--muted)' }}>
+                    {row.ks ? row.ks.qty_per_kanban.toLocaleString() : '—'}
+                  </td>
+                  <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontSize:11, color:'var(--muted)' }}>
+                    {row.ks ? (
+                      <span title={row.ks.updated_by || ''}>
+                        {row.ks.updated_at ? new Date(row.ks.updated_at).toLocaleDateString('th-TH') : '—'}
+                        {row.ks.updated_by ? <span style={{ display:'block', fontSize:10 }}>{row.ks.updated_by}</span> : null}
+                      </span>
+                    ) : '—'}
+                  </td>
+                  {canEdit && (
+                    <td style={{ padding:'8px 14px', borderTop:'1px solid var(--border)' }}>
+                      <button onClick={() => openEdit(row)}
+                        style={{ ...btn('rgba(124,58,237,0.1)', '#7c3aed'), padding:'4px 10px', fontSize:11, border:'1px solid rgba(124,58,237,0.3)' }}>
+                        ✏️ แก้ไข
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Modal */}
+      {showModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(420px,100%)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:16, fontFamily:'var(--font-display)' }}>
+              🎴 {form.mat_no ? `แก้ไข Kanban Std — ${form.mat_no}` : 'เพิ่ม Kanban Std ใหม่'}
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              <div>
+                <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>Mat No. *</label>
+                <input style={{ ...inputSt, fontFamily:'monospace', fontWeight:700 }}
+                  value={form.mat_no}
+                  onChange={e => setForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))}
+                  placeholder="เช่น 1234567890"
+                />
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:10 }}>
+                <div>
+                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>Qty / Kanban *</label>
+                  <input type="number" min="1" step="1"
+                    style={{ ...inputSt, fontSize:18, fontWeight:900, textAlign:'center' }}
+                    value={form.qty_per_kanban}
+                    onChange={e => setForm(f => ({ ...f, qty_per_kanban: e.target.value }))}
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>UOM</label>
+                  <input style={inputSt}
+                    value={form.uom}
+                    onChange={e => setForm(f => ({ ...f, uom: e.target.value }))}
+                    placeholder="PCS"
+                  />
+                </div>
+              </div>
+            </div>
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
+              <button onClick={() => setShowModal(false)} style={{ ...btn('var(--bg2)', 'var(--text)'), border:'1px solid var(--border)' }}>ยกเลิก</button>
+              <button onClick={handleSave} disabled={saving} style={{ ...btn('#7c3aed'), opacity:saving ? 0.6 : 1 }}>
+                {saving ? '...' : '💾 บันทึก'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TAB: รอบจัดส่ง (Delivery Rounds)
+   ───────────────────────────────────────────────────────────────────────────── */
+const SHIFT_LABELS = { day:'☀️ กะเช้า', night:'🌙 กะดึก', all:'🔄 ทุกกะ' };
+const EMPTY_RND = { line_name:'', shift:'day', round_no:'', prep_start:'', delivery_time:'', note:'' };
+
+function DeliveryRoundsTab({ canEdit, fullName }) {
+  const [rounds,     setRounds]     = useState([]);
+  const [lines,      setLines]      = useState([]);
+  const [lineFilter, setLineFilter] = useState('');
+  const [showModal,  setShowModal]  = useState(false);
+  const [form,       setForm]       = useState(EMPTY_RND);
+  const [editId,     setEditId]     = useState(null);
+  const [saving,     setSaving]     = useState(false);
+
+  const load = useCallback(async () => {
+    const [{ data: rnd }, { data: ln }] = await Promise.all([
+      supabaseDR.from('kanban_delivery_rounds').select('*').eq('is_active', true).order('line_name').order('shift').order('round_no'),
+      supabase.from('production_lines').select('name').order('name'),
+    ]);
+    setRounds(rnd || []);
+    setLines(ln || []);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const grouped = useMemo(() => {
+    const filtered = lineFilter ? rounds.filter(r => r.line_name === lineFilter) : rounds;
+    const map = {};
+    filtered.forEach(r => {
+      (map[r.line_name] = map[r.line_name] || []).push(r);
+    });
+    return map;
+  }, [rounds, lineFilter]);
+
+  const openNew = () => {
+    setEditId(null);
+    setForm({ ...EMPTY_RND, line_name: lineFilter || '' });
+    setShowModal(true);
+  };
+
+  const openEdit = (r) => {
+    setEditId(r.id);
+    setForm({
+      line_name:     r.line_name,
+      shift:         r.shift,
+      round_no:      String(r.round_no),
+      prep_start:    r.prep_start || '',
+      delivery_time: r.delivery_time || '',
+      note:          r.note || '',
+    });
+    setShowModal(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.line_name.trim()) { toast.error('กรอกชื่อไลน์'); return; }
+    if (!form.round_no || parseInt(form.round_no) < 1) { toast.error('กรอก Round No.'); return; }
+    if (!form.delivery_time) { toast.error('กรอกเวลาจัดส่ง'); return; }
+    setSaving(true);
+    const payload = {
+      line_name:     form.line_name.trim(),
+      shift:         form.shift,
+      round_no:      parseInt(form.round_no),
+      prep_start:    form.prep_start || null,
+      delivery_time: form.delivery_time,
+      note:          form.note.trim() || null,
+      is_active:     true,
+      created_by:    fullName,
+    };
+    let error;
+    if (editId) {
+      ({ error } = await supabaseDR.from('kanban_delivery_rounds').update(payload).eq('id', editId));
+    } else {
+      ({ error } = await supabaseDR.from('kanban_delivery_rounds').insert(payload));
+    }
+    setSaving(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(editId ? 'แก้ไขรอบจัดส่งแล้ว' : 'เพิ่มรอบจัดส่งแล้ว');
+    setShowModal(false);
+    load();
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('ยืนยันลบรอบจัดส่งนี้?')) return;
+    const { error } = await supabaseDR.from('kanban_delivery_rounds').update({ is_active: false }).eq('id', id);
+    if (error) { toast.error(error.message); return; }
+    toast.success('ลบรอบจัดส่งแล้ว');
+    load();
+  };
+
+  const suggestRound = useCallback(() => {
+    const existing = rounds.filter(r => r.line_name === form.line_name && r.shift === form.shift);
+    const maxRound = existing.reduce((m, r) => Math.max(m, r.round_no || 0), 0);
+    setForm(f => ({ ...f, round_no: String(maxRound + 1) }));
+  }, [rounds, form.line_name, form.shift]);
+
+  return (
+    <>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap', marginBottom:16 }}>
+        <div>
+          <h2 style={{ margin:0, fontSize:'clamp(16px,2vw,20px)', fontWeight:900, fontFamily:'var(--font-display)', color:'var(--text)' }}>
+            ⏰ รอบจัดส่ง — Kanban Delivery Rounds
+          </h2>
+          <p style={{ margin:'4px 0 0', fontSize:13, color:'var(--muted)' }}>ตั้งค่าเวลาเตรียมและเวลาจัดส่งพาร์ทแต่ละรอบตามไลน์และกะ</p>
+        </div>
+        <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+          <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, width:180 }}>
+            <option value="">ทุกไลน์</option>
+            {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+          </select>
+          {canEdit && (
+            <button onClick={openNew} style={btn('#0284c7')}>+ เพิ่มรอบจัดส่ง</button>
+          )}
+        </div>
+      </div>
+
+      {Object.keys(grouped).length === 0 ? (
+        <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
+          ยังไม่มีรอบจัดส่ง{lineFilter ? ` สำหรับไลน์ ${lineFilter}` : ''} — กด "+ เพิ่มรอบจัดส่ง" เพื่อเริ่ม
+        </div>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          {Object.entries(grouped).map(([lineName, rndList]) => (
+            <div key={lineName} style={{ ...card, padding:0, overflow:'hidden' }}>
+              <div style={{ padding:'12px 16px', background:'var(--bg2)', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <div style={{ fontWeight:800, fontSize:15, fontFamily:'var(--font-display)', color:'var(--text)' }}>📍 {lineName}</div>
+                <span style={{ fontSize:11, color:'var(--muted)' }}>{rndList.length} รอบ</span>
+              </div>
+              <div style={{ overflowX:'auto' }}>
+                <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                  <thead>
+                    <tr style={{ background:'var(--bg2)' }}>
+                      {['กะ','รอบที่','เวลาเตรียม','เวลาจัดส่ง','หมายเหตุ'].map(h => (
+                        <th key={h} style={{ padding:'8px 14px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
+                      ))}
+                      {canEdit && <th style={{ padding:'8px 14px', width:100 }}></th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rndList.map(r => (
+                      <tr key={r.id}>
+                        <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)' }}>
+                          <span style={{ fontSize:11, padding:'2px 9px', borderRadius:10, fontWeight:700,
+                            background: r.shift==='day' ? 'rgba(234,179,8,0.12)' : r.shift==='night' ? 'rgba(99,102,241,0.12)' : 'rgba(34,197,94,0.1)',
+                            color: r.shift==='day' ? '#ca8a04' : r.shift==='night' ? '#818cf8' : '#22c55e' }}>
+                            {SHIFT_LABELS[r.shift] || r.shift}
+                          </span>
+                        </td>
+                        <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontWeight:900, fontSize:16, color:'#0ea5e9' }}>
+                          #{r.round_no}
+                        </td>
+                        <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:14, color:'var(--text2)' }}>
+                          {r.prep_start || '—'}
+                        </td>
+                        <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:14, fontWeight:700, color:'var(--accent)' }}>
+                          {r.delivery_time}
+                        </td>
+                        <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)' }}>
+                          {r.note || '—'}
+                        </td>
+                        {canEdit && (
+                          <td style={{ padding:'8px 14px', borderTop:'1px solid var(--border)' }}>
+                            <div style={{ display:'flex', gap:6 }}>
+                              <button onClick={() => openEdit(r)}
+                                style={{ ...btn('rgba(2,132,199,0.1)', '#0284c7'), padding:'4px 8px', fontSize:11, border:'1px solid rgba(2,132,199,0.3)' }}>
+                                ✏️
+                              </button>
+                              <button onClick={() => handleDelete(r.id)}
+                                style={{ ...btn('rgba(239,68,68,0.1)', '#ef4444'), padding:'4px 8px', fontSize:11, border:'1px solid rgba(239,68,68,0.3)' }}>
+                                🗑️
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Modal */}
+      {showModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(460px,100%)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:16, fontFamily:'var(--font-display)' }}>
+              ⏰ {editId ? 'แก้ไขรอบจัดส่ง' : 'เพิ่มรอบจัดส่งใหม่'}
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              <div>
+                <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>ไลน์การผลิต *</label>
+                <input
+                  list="dl-lines"
+                  style={inputSt}
+                  value={form.line_name}
+                  onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))}
+                  placeholder="เลือกหรือพิมพ์ชื่อไลน์..."
+                />
+                <datalist id="dl-lines">
+                  {lines.map(l => <option key={l.name} value={l.name} />)}
+                </datalist>
+              </div>
+
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                <div>
+                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>กะ *</label>
+                  <select value={form.shift} onChange={e => setForm(f => ({ ...f, shift: e.target.value }))} style={inputSt}>
+                    <option value="day">☀️ กะเช้า (day)</option>
+                    <option value="night">🌙 กะดึก (night)</option>
+                    <option value="all">🔄 ทุกกะ (all)</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>รอบที่ *</label>
+                  <div style={{ display:'flex', gap:6 }}>
+                    <input type="number" min="1" step="1"
+                      style={{ ...inputSt, textAlign:'center', fontWeight:900 }}
+                      value={form.round_no}
+                      onChange={e => setForm(f => ({ ...f, round_no: e.target.value }))}
+                      placeholder="1"
+                    />
+                    {form.line_name && (
+                      <button onClick={suggestRound} title="แนะนำรอบถัดไป"
+                        style={{ ...btn('var(--bg2)', 'var(--text)'), border:'1px solid var(--border)', padding:'6px 10px', fontSize:12, flexShrink:0 }}>
+                        +1
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                <div>
+                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>เวลาเตรียม (prep_start)</label>
+                  <input type="time" style={{ ...inputSt, fontFamily:'monospace' }}
+                    value={form.prep_start}
+                    onChange={e => setForm(f => ({ ...f, prep_start: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>เวลาจัดส่ง *</label>
+                  <input type="time" style={{ ...inputSt, fontFamily:'monospace', fontWeight:700 }}
+                    value={form.delivery_time}
+                    onChange={e => setForm(f => ({ ...f, delivery_time: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>หมายเหตุ</label>
+                <input style={inputSt}
+                  value={form.note}
+                  onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
+                  placeholder="เช่น รอบก่อนปิดกะ, เร่งด่วน..."
+                />
+              </div>
+            </div>
+
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
+              <button onClick={() => setShowModal(false)} style={{ ...btn('var(--bg2)', 'var(--text)'), border:'1px solid var(--border)' }}>ยกเลิก</button>
+              <button onClick={handleSave} disabled={saving} style={{ ...btn('#0284c7'), opacity:saving ? 0.6 : 1 }}>
+                {saving ? '...' : '💾 บันทึก'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MAIN EXPORT
+   ───────────────────────────────────────────────────────────────────────────── */
+const TABS = [
+  { key:'stock',    label:'📦 Stock' },
+  { key:'kanban',   label:'🎴 Kanban Std' },
+  { key:'delivery', label:'⏰ รอบจัดส่ง' },
+];
+
+export default function LineStock() {
+  const { role, fullName } = useContext(UserContext);
+  const canEdit = ['admin','manager','supervisor'].includes(role);
+  const [activeTab, setActiveTab] = useState('stock');
+
+  return (
+    <div style={{ padding:'clamp(12px,2vw,24px)', maxWidth:1300, margin:'0 auto' }}>
+      {/* Tab bar */}
+      <div style={{ display:'flex', gap:4, marginBottom:20, borderBottom:'2px solid var(--border)', paddingBottom:0 }}>
+        {TABS.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setActiveTab(t.key)}
+            style={{
+              padding:'9px 20px',
+              fontSize:13,
+              fontWeight:700,
+              fontFamily:'var(--font-body)',
+              border:'none',
+              borderBottom: activeTab === t.key ? '2px solid var(--accent)' : '2px solid transparent',
+              marginBottom:-2,
+              cursor:'pointer',
+              borderRadius:'8px 8px 0 0',
+              background: activeTab === t.key ? 'var(--bg2)' : 'transparent',
+              color: activeTab === t.key ? 'var(--text)' : 'var(--muted)',
+              transition:'color 0.15s, background 0.15s',
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'stock'    && <StockTab role={role} />}
+      {activeTab === 'kanban'   && <KanbanStdTab canEdit={canEdit} fullName={fullName} />}
+      {activeTab === 'delivery' && <DeliveryRoundsTab canEdit={canEdit} fullName={fullName} />}
     </div>
   );
 }
