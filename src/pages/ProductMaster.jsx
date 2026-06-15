@@ -874,7 +874,7 @@ function BOMPanel({ canEdit, fullName }) {
       created_by:   fullName,
       updated_at:   new Date().toISOString(),
     }));
-    const { error } = await supabaseDR.from('bom_items').insert(rows);
+    const { error } = await supabaseDR.from('bom_items').upsert(rows, { onConflict: 'product_id,mat_no', ignoreDuplicates: true });
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success(`เพิ่ม ${rows.length} พาร์ทใน BOM แล้ว`);
