@@ -2699,7 +2699,7 @@ function SkillAllowanceTab() {
   @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Sarabun', sans-serif; font-size: 13px; background: #fff; color: #000; }
-  .page { padding: 12mm 10mm; width: 297mm; min-height: 210mm; }
+  .page { width: 100%; }
   table { border-collapse: collapse; width: 100%; font-size: 11px; }
   th { border: 1px solid #333; background: #f0f0f0; text-align: center; padding: 3px 2px; font-size: 11px; }
   td { border: 1px solid #333; padding: 2px 2px; font-size: 11px; }
