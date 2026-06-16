@@ -109,6 +109,17 @@ export default function Dashboard() {
   const [selectedDate,  setSelectedDate]  = useState(workDateStr);
   const [selectedShift, setSelectedShift] = useState(shiftInfo.isDay ? 'day' : 'night');
 
+  // Section filter — เหมาะกับจอ TV ที่ตั้งไว้ดูเฉพาะส่วนงานตัวเอง
+  // จำค่าไว้ใน URL (?section=...) เพื่อให้ bookmark จอ TV ได้ตรงส่วนงานทุกครั้งที่เปิด
+  const [selectedSection, setSelectedSection] = useState(() => new URLSearchParams(window.location.search).get('section') || 'all');
+  const changeSection = (sec) => {
+    setSelectedSection(sec);
+    const params = new URLSearchParams(window.location.search);
+    if (sec === 'all') params.delete('section'); else params.set('section', sec);
+    const qs = params.toString();
+    window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
+  };
+
   // Auto-sync shift when day→night boundary crosses (20:00) while viewing today
   useEffect(() => {
     if (selectedDate === workDateStr) {
@@ -365,10 +376,34 @@ export default function Dashboard() {
   const inDayOTWindow      = nowMin >= 17 * 60 + 30 && nowMin < 20 * 60;
   const inExtendedOTWindow = nowMin >= 20 * 60 && nowMin < 23 * 60;
 
+  const sections = useMemo(() => [...new Set(lines.map(l => l.section).filter(Boolean))].sort(), [lines]);
+  const visibleLines = useMemo(
+    () => selectedSection === 'all' ? lines : lines.filter(l => l.section === selectedSection),
+    [lines, selectedSection],
+  );
+  const visibleLineNames = useMemo(() => new Set(visibleLines.map(l => l.name)), [visibleLines]);
+  const visibleLineIds   = useMemo(() => new Set(visibleLines.map(l => l.id)), [visibleLines]);
+
+  const visibleFourMLogs = useMemo(
+    () => selectedSection === 'all' ? fourMLogs : fourMLogs.filter(f => visibleLineNames.has(f.line_name)),
+    [fourMLogs, selectedSection, visibleLineNames],
+  );
+  const visibleProdStatus = useMemo(
+    () => selectedSection === 'all' ? prodStatus : prodStatus.filter(s => visibleLineNames.has(s.line_name)),
+    [prodStatus, selectedSection, visibleLineNames],
+  );
+  const visibleLayouts = useMemo(
+    () => selectedSection === 'all' ? layouts : layouts.filter(l => visibleLineNames.has(l.line_name)),
+    [layouts, selectedSection, visibleLineNames],
+  );
+
   /* Filter by assignedShift — memoized so the 1s clock tick doesn't re-filter all logs */
   const shiftLogs = useMemo(
-    () => selectedShift === 'all' ? logs : logs.filter(l => l.assignedShift === selectedShift),
-    [logs, selectedShift],
+    () => {
+      const base = selectedShift === 'all' ? logs : logs.filter(l => l.assignedShift === selectedShift);
+      return selectedSection === 'all' ? base : base.filter(l => visibleLineIds.has(l.employees?.line_id));
+    },
+    [logs, selectedShift, selectedSection, visibleLineIds],
   );
 
   const present  = useMemo(() => shiftLogs.filter(l =>  l.is_present), [shiftLogs]);
@@ -390,7 +425,7 @@ export default function Dashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shiftLogs, logs, selectedShift, selectedDate, workDateStr, inExtendedOTWindow]);
 
-  const lineStats = useMemo(() => lines.map(line => {
+  const lineStats = useMemo(() => visibleLines.map(line => {
     const lineLogs    = shiftLogs.filter(l => l.employees?.line_id === line.id);
     const linePresent = lineLogs.filter(l => l.is_present).length;
     const stdTotal = selectedShift === 'day'  ? (line.std_day_shift   || 0)
@@ -400,7 +435,7 @@ export default function Dashboard() {
     const lineAlerts = fourMLogs.filter(f => f.line_name === line.name).length;
     const rate = lineTotal > 0 ? Math.round((linePresent / lineTotal) * 100) : 0;
     return { ...line, linePresent, lineTotal, lineAlerts, rate };
-  }), [lines, shiftLogs, selectedShift, empCounts, shiftKey, fourMLogs]);
+  }), [visibleLines, shiftLogs, selectedShift, empCounts, shiftKey, fourMLogs]);
 
   const totalCapacity = useMemo(() => lineStats.reduce((s, l) => s + l.lineTotal, 0) || shiftLogs.length, [lineStats, shiftLogs]);
   const attendRate    = useMemo(() => totalCapacity > 0 ? Math.round((present.length / totalCapacity) * 100) : 0, [totalCapacity, present]);
@@ -438,6 +473,20 @@ export default function Dashboard() {
         </motion.div>
 
         <motion.div {...stagger(1)} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Section filter — สำหรับจอ TV ดูเฉพาะส่วนงานตัวเอง */}
+          {sections.length > 1 && (
+            <select
+              value={selectedSection}
+              onChange={e => changeSection(e.target.value)}
+              style={{
+                background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10,
+                padding: '7px 12px', fontSize: 12, fontWeight: 700, color: 'var(--text)',
+                cursor: 'pointer', outline: 'none',
+              }}>
+              <option value="all">🏭 ทุกส่วนงาน</option>
+              {sections.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
           {/* Shift toggle */}
           <div style={{ display: 'flex', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 3, gap: 2 }}>
             {[
@@ -496,9 +545,9 @@ export default function Dashboard() {
             accent: '#f59e0b', icon: '⏰', radial: null,
           },
           {
-            label: '4M Alerts', value: fourMLogs.length, unit: 'รายการ',
-            sub: fourMLogs.length > 0 ? `${[...new Set(fourMLogs.map(f => f.line_name))].length} ไลน์ได้รับผลกระทบ` : 'ไม่มีการแจ้งเตือน',
-            accent: fourMLogs.length > 0 ? '#e74c3c' : '#22c55e', icon: '🚨', radial: null,
+            label: '4M Alerts', value: visibleFourMLogs.length, unit: 'รายการ',
+            sub: visibleFourMLogs.length > 0 ? `${[...new Set(visibleFourMLogs.map(f => f.line_name))].length} ไลน์ได้รับผลกระทบ` : 'ไม่มีการแจ้งเตือน',
+            accent: visibleFourMLogs.length > 0 ? '#e74c3c' : '#22c55e', icon: '🚨', radial: null,
           },
         ].map((kpi, i) => (
           <motion.div key={kpi.label} {...stagger(i + 2)}>
@@ -599,13 +648,13 @@ export default function Dashboard() {
       </motion.div>
 
       {/* ── Heijunka Timeline Board ───────────────────── */}
-      {prodStatus.length > 0 && (() => {
+      {visibleProdStatus.length > 0 && (() => {
         const HOURS   = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
         const SLOT_W  = isUltra ? 68 : isWide ? 56 : 44;
         const LEFT_W  = 136;
         const nowMs   = now.getTime();
 
-        const wd = prodStatus[0]?.work_date || new Date().toISOString().slice(0, 10);
+        const wd = visibleProdStatus[0]?.work_date || new Date().toISOString().slice(0, 10);
         const gridStartMs = new Date(`${wd}T08:00:00`).getTime();
 
         const nowHourIdx = HOURS.findIndex((_, i) => {
@@ -620,7 +669,7 @@ export default function Dashboard() {
 
         // group sessions by line
         const byLine = {};
-        prodStatus.forEach(s => {
+        visibleProdStatus.forEach(s => {
           (byLine[s.line_name] = byLine[s.line_name] || []).push(s);
         });
 
@@ -896,13 +945,13 @@ export default function Dashboard() {
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
               🏭 Line Floor Maps
             </div>
-            {layouts.length === 0 ? (
+            {visibleLayouts.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 13 }}>
                 ยังไม่มีผัง — ไปตั้งค่าที่หน้า <strong>ตั้งค่าผังไลน์</strong>
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
-                {layouts.map(layout => {
+                {visibleLayouts.map(layout => {
                   const lineWs = workstations.filter(w => w.line_name === layout.line_name);
                   const lineStaff = lineWs.map(ws => stationEmpMap[String(ws.id)]).filter(e => e && (!shiftEmpIds || shiftEmpIds.has(e.id)));
                   // Use lineStats (same source as KPI cards) for the footer counts
@@ -980,13 +1029,13 @@ export default function Dashboard() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: isWide ? 600 : 420, overflowY: 'auto' }}>
               <AnimatePresence>
-                {fourMLogs.length === 0 ? (
+                {visibleFourMLogs.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '48px 20px' }}>
                     <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
                     <div style={{ fontSize: 13, color: 'var(--muted)' }}>ไม่มีการแจ้งเตือน 4M</div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, opacity: 0.6 }}>สถานะปกติ</div>
                   </div>
-                ) : fourMLogs.map((log, i) => {
+                ) : visibleFourMLogs.map((log, i) => {
                   const meta = getCatMeta(log.category);
                   return (
                     <motion.div key={log.id} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}>
