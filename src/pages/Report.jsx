@@ -2585,6 +2585,12 @@ const KpiSmall = ({ value, label }) => (
 const THAI_MONTHS = ['', 'มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
   'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 
+const WORK_TYPES = ['งานเชื่อม', 'งานขับรถฟอล์คลิฟท์', 'งานขับเครน'];
+const SHIFT_DEFS = [
+  { key: 'day',   label: '01' },
+  { key: 'night', label: '02' },
+];
+
 function SkillAllowanceTab() {
   const today = new Date();
   const [year,   setYear]   = useState(today.getFullYear());
@@ -2594,8 +2600,17 @@ function SkillAllowanceTab() {
   const [section, setSection] = useState('');
   const [team,   setTeam]   = useState('');
   const [lines,  setLines]  = useState([]);
-  const [rows,   setRows]   = useState([]); // [{emp, days:{1:true,...}, total}]
+  const [rows,   setRows]   = useState([]); // [{emp, shifts:{day:{},night:{}}}]
   const [loading, setLoading] = useState(false);
+
+  const [workType,   setWorkType]   = useState(WORK_TYPES[0]);
+  const [costCenter, setCostCenter] = useState('');
+  const [rightsDay,   setRightsDay]   = useState('');
+  const [rightsNight, setRightsNight] = useState('');
+  const [signerHead,    setSignerHead]    = useState('');
+  const [signerManager, setSignerManager] = useState('');
+  const [signerTA,       setSignerTA]      = useState('');
+  const [signerHRM,      setSignerHRM]     = useState('');
 
   useEffect(() => {
     supabase.from('production_lines').select('name, section').order('name')
@@ -2626,7 +2641,7 @@ function SkillAllowanceTab() {
     // logs ที่ qualify
     const { data: logs } = await supabase
       .from('daily_production_logs')
-      .select('work_date, employee_id, assigned_line, employees(employee_id_code, name, section, team)')
+      .select('work_date, employee_id, assigned_line, shift, employees(employee_id_code, name, section, team)')
       .gte('work_date', startDate)
       .lte('work_date', endDate)
       .eq('is_present', true)
@@ -2635,13 +2650,14 @@ function SkillAllowanceTab() {
       .eq('has_gloves', true)
       .in('assigned_line', stationIds);
 
-    // group by employee
+    // group by employee, แยกตามกะ (day=กะ01 / night=กะ02)
     const empMap = {};
     (logs || []).forEach(log => {
       const empId = log.employee_id;
       const day   = parseInt(log.work_date.split('-')[2]);
-      if (!empMap[empId]) empMap[empId] = { emp: log.employees, days: {} };
-      empMap[empId].days[day] = true;
+      const shift = log.shift === 'night' ? 'night' : 'day';
+      if (!empMap[empId]) empMap[empId] = { emp: log.employees, shifts: { day: {}, night: {} } };
+      empMap[empId].shifts[shift][day] = true;
     });
 
     const result = Object.values(empMap)
@@ -2653,48 +2669,47 @@ function SkillAllowanceTab() {
     setLoading(false);
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     const days = periodDays();
     const dStr = `${days[0]}-${days[days.length-1]}`;
     const sectionLabel = section || (line ? `ไลน์ ${line}` : 'ทุกไลน์');
+    const logoDataUrl = await getTsLogoDataUrl();
 
-    const tableRows = rows.map((r, i) => {
+    const tableRows = rows.map((r, i) => SHIFT_DEFS.map((sd, si) => {
       const dayCells = days.map(d =>
-        `<td style="text-align:center;border:1px solid #333;font-size:13px">${r.days[d] ? '✓' : ''}</td>`
+        `<td style="text-align:center;border:1px solid #333;font-size:13px">${r.shifts[sd.key][d] ? '1' : ''}</td>`
       ).join('');
-      const total = Object.keys(r.days).length;
+      const total = Object.keys(r.shifts[sd.key]).length;
       return `
         <tr>
-          <td style="text-align:center;border:1px solid #333">${i+1}</td>
-          <td style="border:1px solid #333;white-space:nowrap;padding:0 4px">${r.emp?.employee_id_code || ''}</td>
-          <td style="border:1px solid #333;padding:0 4px">${r.emp?.name || ''}</td>
+          ${si === 0 ? `
+          <td rowspan="2" style="text-align:center;border:1px solid #333">${i+1}</td>
+          <td rowspan="2" style="border:1px solid #333;white-space:nowrap;padding:0 4px">${r.emp?.employee_id_code || ''}</td>
+          <td rowspan="2" style="border:1px solid #333;padding:0 4px">${r.emp?.name || ''}</td>` : ''}
+          <td style="text-align:center;border:1px solid #333">${sd.label}</td>
           ${dayCells}
           <td style="text-align:center;border:1px solid #333;font-weight:bold">${total}</td>
-          <td style="border:1px solid #333;width:70px"></td>
-          <td style="border:1px solid #333;width:80px"></td>
-          <td style="border:1px solid #333;width:70px"></td>
-          <td style="border:1px solid #333"></td>
+          ${si === 0 ? `
+          <td rowspan="2" style="border:1px solid #333;width:70px"></td>
+          <td rowspan="2" style="border:1px solid #333;width:80px"></td>
+          <td rowspan="2" style="border:1px solid #333;width:70px"></td>
+          <td rowspan="2" style="border:1px solid #333"></td>` : ''}
         </tr>`;
-    }).join('');
+    }).join('')).join('');
 
-    // แถวว่างเพิ่มเติม (รวม 10 แถว)
-    const extraRows = Math.max(0, 10 - rows.length);
-    const emptyRows = Array.from({ length: extraRows }, (_, i) => `
-      <tr style="height:28px">
-        <td style="text-align:center;border:1px solid #333">${rows.length + i + 1}</td>
-        <td style="border:1px solid #333"></td>
-        <td style="border:1px solid #333"></td>
-        ${days.map(() => '<td style="border:1px solid #333"></td>').join('')}
-        <td style="border:1px solid #333"></td>
-        <td style="border:1px solid #333"></td>
-        <td style="border:1px solid #333"></td>
-        <td style="border:1px solid #333"></td>
-        <td style="border:1px solid #333"></td>
-      </tr>`).join('');
-
-    const daySumRow = days.map(d => {
-      const cnt = rows.filter(r => r.days[d]).length;
-      return `<td style="text-align:center;border:1px solid #333;font-size:12px">${cnt || 0}</td>`;
+    const sumRows = SHIFT_DEFS.map((sd, si) => {
+      const daySumRow = days.map(d => {
+        const cnt = rows.filter(r => r.shifts[sd.key][d]).length;
+        return `<td style="text-align:center;border:1px solid #333;font-size:12px">${cnt || 0}</td>`;
+      }).join('');
+      const total = rows.reduce((s,r) => s + Object.keys(r.shifts[sd.key]).length, 0);
+      return `
+        <tr style="background:#f0f0f0;font-weight:bold">
+          ${si === 0 ? '<td rowspan="2" colspan="3" style="text-align:center;border:1px solid #333">รวม</td>' : ''}
+          <td style="text-align:center;border:1px solid #333">${sd.label}</td>
+          ${daySumRow}
+          <td style="text-align:center;border:1px solid #333">${total}</td>
+        </tr>`;
     }).join('');
 
     const html = `<!DOCTYPE html>
@@ -2718,21 +2733,34 @@ function SkillAllowanceTab() {
 </head>
 <body>
 <div class="page">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-    <div style="flex:1;text-align:center">
-      <div style="font-size:16px;font-weight:bold">ใบสรุปการปฏิบัติงานค่าฝีมือ</div>
-    </div>
-    <div style="font-size:12px;white-space:nowrap">ฟอร์ม SA-01</div>
+  <div style="text-align:right;font-size:12px;margin-bottom:2px">ฟอร์ม 2</div>
+  <table style="border:none;margin-bottom:6px">
+    <tr>
+      <td style="border:1px solid #333;width:230px;padding:6px;vertical-align:middle">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:44px;flex-shrink:0">${logoDataUrl ? `<img src="${logoDataUrl}" style="width:40px;height:auto"/>` : ''}</div>
+          <div style="font-size:12px;font-weight:bold">บริษัทไทยซัมมิทโอโตโมทีฟ จำกัด</div>
+        </div>
+      </td>
+      <td style="border:none;text-align:center">
+        <div style="font-size:16px;font-weight:bold">ใบสรุปการปฏิบัติงานค่าฝีมือประเภท${workType}</div>
+      </td>
+    </tr>
+  </table>
+  <div style="margin-bottom:2px;text-align:center">ประจำงวด วันที่ ${dStr} เดือน ${THAI_MONTHS[month]} ปี ${year + 543}</div>
+  <div style="margin-bottom:8px;text-align:center">ส่วนงาน ${sectionLabel} Cost Center ${costCenter}</div>
+  <div style="margin-bottom:8px;font-size:12px;line-height:1.6">
+    สิทธิ์ที่ได้รับ &nbsp; กะ 01 &nbsp;&nbsp; ${rightsDay || '   '} &nbsp;&nbsp; คน<br/>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; กะ 02 &nbsp;&nbsp; ${rightsNight || '   '} &nbsp;&nbsp; คน
   </div>
-  <div style="margin-bottom:2px">ประจำงวด วันที่ ${dStr} เดือน ${THAI_MONTHS[month]} ปี ${year + 543}</div>
-  <div style="margin-bottom:8px">ส่วนงาน ${sectionLabel}</div>
   <table>
     <thead>
       <tr>
         <th rowspan="2" style="width:28px">ลำดับ</th>
         <th rowspan="2" style="width:70px">เลขที่บัตรพนักงาน</th>
         <th rowspan="2" style="min-width:100px">ชื่อ - สกุล</th>
-        <th colspan="${days.length}">เดือน ${THAI_MONTHS[month]} ${year + 543}</th>
+        <th rowspan="2" style="width:24px">กะ</th>
+        <th colspan="${days.length}">เดือน ${THAI_MONTHS[month]}</th>
         <th rowspan="2" style="width:30px">รวม</th>
         <th rowspan="2" style="width:70px">ลายเซ็นพนักงาน</th>
         <th rowspan="2" style="width:80px">TA ตรวจสอบการทำงาน</th>
@@ -2745,13 +2773,7 @@ function SkillAllowanceTab() {
     </thead>
     <tbody>
       ${tableRows}
-      ${emptyRows}
-      <tr style="background:#f0f0f0;font-weight:bold">
-        <td colspan="3" style="text-align:center;border:1px solid #333">รวม</td>
-        ${daySumRow}
-        <td style="text-align:center;border:1px solid #333">${rows.reduce((s,r)=>s+Object.keys(r.days).length,0)}</td>
-        <td style="border:1px solid #333" colspan="4"></td>
-      </tr>
+      ${sumRows}
     </tbody>
   </table>
   <div style="margin-top:10px;font-size:11px;line-height:1.8">
@@ -2762,6 +2784,22 @@ function SkillAllowanceTab() {
     4. พนักงานมีสิทธิ์ได้รับค่าฝีมือต้องปฏิบัติงานครบ 8 ชั่วโมง / วัน<br/>
     5. หลักเกณฑ์การจ่ายค่าฝีมือ ตามประกาศที่ SVP.051/2566
   </div>
+  <table style="margin-top:24px;width:100%">
+    <tr>
+      ${[
+        ['หัวหน้างาน', signerHead],
+        ['ผู้จัดการต้นสังกัด', signerManager],
+        ['เจ้าหน้าที่ TA', signerTA],
+        ['ผู้จัดการส่วน HRM', signerHRM],
+      ].map(([label, name]) => `
+        <td style="border:1px solid #333;width:25%;text-align:center;padding:10px 4px;vertical-align:bottom">
+          <div style="font-size:11px;margin-bottom:2px">บันทึกโดย</div>
+          <div style="border-bottom:1px dotted #333;height:30px;margin-bottom:4px"></div>
+          <div style="font-size:11px">${name ? `(${name})` : '( &nbsp; )'}</div>
+          <div style="font-size:10px;color:#555">${label}</div>
+        </td>`).join('')}
+    </tr>
+  </table>
 </div>
 <script>window.onload = () => { window.print(); }</script>
 </body>
@@ -2825,20 +2863,72 @@ function SkillAllowanceTab() {
         {rows.length > 0 && (
           <CsvBtn onClick={() => {
             const daysArr = periodDays();
+            const csvRows = [];
+            rows.forEach(r => {
+              SHIFT_DEFS.forEach(sd => {
+                csvRows.push([
+                  r.emp?.employee_id_code || '',
+                  r.emp?.name || '',
+                  r.emp?.section || '',
+                  r.emp?.team || '',
+                  sd.label,
+                  ...daysArr.map(d => r.shifts[sd.key][d] ? '1' : ''),
+                  Object.keys(r.shifts[sd.key]).length,
+                ]);
+              });
+            });
             downloadCSV(
               `skill_allowance_${year}_${String(month).padStart(2,'0')}_p${period}.csv`,
-              ['รหัสพนักงาน', 'ชื่อ', 'ส่วนงาน', 'Team', ...daysArr.map(d => String(d)), 'รวมวัน'],
-              rows.map(r => [
-                r.emp?.employee_id_code || '',
-                r.emp?.name || '',
-                r.emp?.section || '',
-                r.emp?.team || '',
-                ...daysArr.map(d => r.days[d] ? '✓' : ''),
-                Object.keys(r.days).length,
-              ])
+              ['รหัสพนักงาน', 'ชื่อ', 'ส่วนงาน', 'Team', 'กะ', ...daysArr.map(d => String(d)), 'รวมวัน'],
+              csvRows
             );
           }} />
         )}
+      </div>
+
+      {/* รายละเอียดเอกสาร */}
+      <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ประเภทงาน</div>
+          <select value={workType} onChange={e => setWorkType(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            {WORK_TYPES.map(w => <option key={w} value={w}>{w}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Cost Center</div>
+          <input value={costCenter} onChange={e => setCostCenter(e.target.value)} placeholder="เช่น 2140662201"
+            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 130 }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>สิทธิ์ที่ได้รับ กะ 01 (คน)</div>
+          <input value={rightsDay} onChange={e => setRightsDay(e.target.value)} placeholder="-"
+            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 70 }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>สิทธิ์ที่ได้รับ กะ 02 (คน)</div>
+          <input value={rightsNight} onChange={e => setRightsNight(e.target.value)} placeholder="-"
+            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 70 }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (หัวหน้างาน)</div>
+          <input value={signerHead} onChange={e => setSignerHead(e.target.value)}
+            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 140 }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (ผู้จัดการต้นสังกัด)</div>
+          <input value={signerManager} onChange={e => setSignerManager(e.target.value)}
+            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 140 }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (เจ้าหน้าที่ TA)</div>
+          <input value={signerTA} onChange={e => setSignerTA(e.target.value)}
+            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 140 }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (ผู้จัดการส่วน HRM)</div>
+          <input value={signerHRM} onChange={e => setSignerHRM(e.target.value)}
+            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 140 }} />
+        </div>
       </div>
 
       {/* Preview table */}
@@ -2866,6 +2956,7 @@ function SkillAllowanceTab() {
                 <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', whiteSpace: 'nowrap' }}>ลำดับ</th>
                 <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', whiteSpace: 'nowrap' }}>รหัส</th>
                 <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120 }}>ชื่อ - สกุล</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)' }}>กะ</th>
                 {days.map(d => (
                   <th key={d} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 24, textAlign: 'center', fontSize: 10 }}>{d}</th>
                 ))}
@@ -2873,32 +2964,36 @@ function SkillAllowanceTab() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
-                <tr key={i}>
-                  <td style={{ border: '1px solid var(--border2)', padding: '3px 6px', textAlign: 'center' }}>{i+1}</td>
-                  <td style={{ border: '1px solid var(--border2)', padding: '3px 6px', whiteSpace: 'nowrap' }}>{r.emp?.employee_id_code}</td>
-                  <td style={{ border: '1px solid var(--border2)', padding: '3px 6px' }}>{r.emp?.name}</td>
+              {rows.map((r, i) => SHIFT_DEFS.map((sd, si) => (
+                <tr key={`${i}-${sd.key}`}>
+                  {si === 0 && <td rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '3px 6px', textAlign: 'center' }}>{i+1}</td>}
+                  {si === 0 && <td rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '3px 6px', whiteSpace: 'nowrap' }}>{r.emp?.employee_id_code}</td>}
+                  {si === 0 && <td rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '3px 6px' }}>{r.emp?.name}</td>}
+                  <td style={{ border: '1px solid var(--border2)', padding: '3px 6px', textAlign: 'center' }}>{sd.label}</td>
                   {days.map(d => (
                     <td key={d} style={{ border: '1px solid var(--border2)', textAlign: 'center', color: '#22c55e', fontWeight: 700 }}>
-                      {r.days[d] ? '✓' : ''}
+                      {r.shifts[sd.key][d] ? '1' : ''}
                     </td>
                   ))}
                   <td style={{ border: '1px solid var(--border2)', textAlign: 'center', fontWeight: 700, color: 'var(--accent)' }}>
-                    {Object.keys(r.days).length}
+                    {Object.keys(r.shifts[sd.key]).length}
+                  </td>
+                </tr>
+              )))}
+              {SHIFT_DEFS.map((sd, si) => (
+                <tr key={`sum-${sd.key}`} style={{ background: 'var(--bg3)', fontWeight: 700 }}>
+                  {si === 0 && <td rowSpan={2} colSpan={3} style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '3px 6px' }}>รวม</td>}
+                  <td style={{ border: '1px solid var(--border2)', textAlign: 'center' }}>{sd.label}</td>
+                  {days.map(d => (
+                    <td key={d} style={{ border: '1px solid var(--border2)', textAlign: 'center', fontSize: 11 }}>
+                      {rows.filter(r => r.shifts[sd.key][d]).length || ''}
+                    </td>
+                  ))}
+                  <td style={{ border: '1px solid var(--border2)', textAlign: 'center' }}>
+                    {rows.reduce((s,r) => s + Object.keys(r.shifts[sd.key]).length, 0)}
                   </td>
                 </tr>
               ))}
-              <tr style={{ background: 'var(--bg3)', fontWeight: 700 }}>
-                <td colSpan={3} style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '3px 6px' }}>รวม</td>
-                {days.map(d => (
-                  <td key={d} style={{ border: '1px solid var(--border2)', textAlign: 'center', fontSize: 11 }}>
-                    {rows.filter(r => r.days[d]).length || ''}
-                  </td>
-                ))}
-                <td style={{ border: '1px solid var(--border2)', textAlign: 'center' }}>
-                  {rows.reduce((s,r) => s + Object.keys(r.days).length, 0)}
-                </td>
-              </tr>
             </tbody>
           </table>
         </div>
