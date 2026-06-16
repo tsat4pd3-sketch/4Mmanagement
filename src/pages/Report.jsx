@@ -2636,8 +2636,10 @@ function SkillAllowanceTab() {
     const startDate = `${year}-${String(month).padStart(2,'0')}-${String(days[0]).padStart(2,'0')}`;
     const endDate   = `${year}-${String(month).padStart(2,'0')}-${String(days[days.length-1]).padStart(2,'0')}`;
 
-    // หา station ที่มี skill_allowance=true
-    let stQ = supabase.from('workstations').select('id, station_name, line_name').eq('skill_allowance', true);
+    // หา station ที่มี skill_allowance=true และตรงกับประเภทค่าฝีมือที่เลือก
+    let stQ = supabase.from('workstations').select('id, station_name, line_name')
+      .eq('skill_allowance', true)
+      .eq('skill_allowance_type', workType);
     if (line) stQ = stQ.eq('line_name', line);
     const { data: stations } = await stQ;
     if (!stations?.length) { setRows([]); setLoading(false); return; }

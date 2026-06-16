@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 
+const SKILL_ALLOWANCE_TYPES = ['งานเชื่อม', 'งานขับรถฟอล์คลิฟท์', 'งานขับเครน'];
+
 const SKILL_CAT_META = {
   hard_skill:    { label: 'Hard Skill',    color: '#ef4444', icon: '🔧', desc: 'ทักษะการทำงานรูปแบบต่างๆ' },
   machine_skill: { label: 'Machine Skill', color: '#f97316', icon: '⚙️', desc: 'ใช้ ปรับตั้ง ควบคุมเครื่องจักร' },
@@ -20,7 +22,7 @@ export default function LineSetup() {
   const [stations, setStations] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [tempPos, setTempPos] = useState(null);
-  const [formData, setFormData] = useState({ id: null, name: '', requirements: {}, skill_allowance: false });
+  const [formData, setFormData] = useState({ id: null, name: '', requirements: {}, skill_allowance: false, skill_allowance_type: '' });
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [collisionWarn, setCollisionWarn] = useState(false);
   const [skillDefs, setSkillDefs] = useState([]);
@@ -184,6 +186,7 @@ export default function LineSetup() {
       pos_top: tempPos ? tempPos.top : existingStation?.pos_top,
       pos_left: tempPos ? tempPos.left : existingStation?.pos_left,
       skill_allowance: formData.skill_allowance,
+      skill_allowance_type: formData.skill_allowance ? (formData.skill_allowance_type || null) : null,
     };
     let stationId = formData.id;
     if (stationId) {
@@ -207,7 +210,7 @@ export default function LineSetup() {
 
     fetchLineData();
     setTempPos(null);
-    setFormData({ id: null, name: '', requirements: {} });
+    setFormData({ id: null, name: '', requirements: {}, skill_allowance: false, skill_allowance_type: '' });
   };
 
   const deleteStation = async (id) => {
@@ -221,7 +224,7 @@ export default function LineSetup() {
     setTempPos(null);
     const reqMap = {};
     (st.station_requirements || []).forEach(r => { reqMap[r.skill_name] = r.min_score; });
-    setFormData({ id: st.id, name: st.station_name, requirements: reqMap, skill_allowance: st.skill_allowance || false });
+    setFormData({ id: st.id, name: st.station_name, requirements: reqMap, skill_allowance: st.skill_allowance || false, skill_allowance_type: st.skill_allowance_type || '' });
   };
 
   return (
@@ -465,11 +468,22 @@ export default function LineSetup() {
                     <div style={{ fontSize: 10, color: 'var(--muted)' }}>พนักงานที่ถูก assign จุดนี้จะได้ค่าฝีมือรายวัน</div>
                   </div>
                 </label>
+                {formData.skill_allowance && (
+                  <div style={{ marginTop: 8 }}>
+                    <label style={labelSt}>ประเภทค่าฝีมือ</label>
+                    <select value={formData.skill_allowance_type}
+                      onChange={e => setFormData({ ...formData, skill_allowance_type: e.target.value })}
+                      style={{ marginTop: 4, width: '100%' }}>
+                      <option value="">-- เลือกประเภท --</option>
+                      {SKILL_ALLOWANCE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                   <button onClick={handleSaveStation} style={{ flex: 1, padding: '9px', background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700 }}>
                     {formData.id ? 'บันทึก' : 'เพิ่ม'}
                   </button>
-                  <button onClick={() => { setTempPos(null); setFormData({ id: null, name: '', requirements: {}, skill_allowance: false }); }}
+                  <button onClick={() => { setTempPos(null); setFormData({ id: null, name: '', requirements: {}, skill_allowance: false, skill_allowance_type: '' }); }}
                     style={{ padding: '9px 14px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 7 }}>
                     ยกเลิก
                   </button>
@@ -493,7 +507,7 @@ export default function LineSetup() {
                   <div onClick={() => editStation(st)} style={{ cursor: 'pointer', flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 5 }}>
                       {st.station_name}
-                      {st.skill_allowance && <span style={{ fontSize: 10, background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>💰 ค่าฝีมือ</span>}
+                      {st.skill_allowance && <span style={{ fontSize: 10, background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>💰 ค่าฝีมือ{st.skill_allowance_type ? ` (${st.skill_allowance_type})` : ''}</span>}
                     </div>
                     <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
                       {reqs.length > 0
