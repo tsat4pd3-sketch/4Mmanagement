@@ -7,6 +7,13 @@ import {
   ResponsiveContainer, Tooltip,
 } from 'recharts';
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
+import tsLogoUrl from '../assets/TS logo.png';
+
+let tsLogoDataUrlPromise = null;
+function getTsLogoDataUrl() {
+  if (!tsLogoDataUrlPromise) tsLogoDataUrlPromise = urlToDataUrl(tsLogoUrl);
+  return tsLogoDataUrlPromise;
+}
 
 function useWidth() {
   const [w, setW] = useState(() => window.innerWidth);
@@ -2991,6 +2998,7 @@ function AttendanceFormTab() {
     const { data: { user } } = await supabase.auth.getUser();
     const { data: prof } = await supabase.from('profiles').select('signature_url').eq('id', user.id).single();
     const sigDataUrl = prof?.signature_url ? await urlToDataUrl(prof.signature_url) : null;
+    const logoDataUrl = await getTsLogoDataUrl();
 
     const thStyle = 'border:1px solid #000;background:#e8e8e8;text-align:center;font-size:8px;padding:1px 0;';
     const tdStyle = 'border:1px solid #000;text-align:center;font-size:9px;padding:0;height:14px;';
@@ -3142,39 +3150,34 @@ function AttendanceFormTab() {
 <!-- HEADER TABLE -->
 <table style="width:100%;border-collapse:collapse;margin-bottom:3px">
   <tr>
-    <td style="width:70px;vertical-align:middle;padding:2px 4px;text-align:center">
-      <svg width="55" height="42" viewBox="0 0 55 42">
-        <rect x="1" y="1" width="53" height="40" rx="3" fill="#fff" stroke="#c00" stroke-width="1.5"/>
-        <text x="8" y="28" font-family="Arial Black,sans-serif" font-size="22" font-weight="900" fill="#c00">S</text>
-        <text x="26" y="28" font-family="Arial Black,sans-serif" font-size="16" font-weight="900" fill="#c00">T</text>
-        <text x="36" y="28" font-family="Arial Black,sans-serif" font-size="14" font-weight="900" fill="#c00">S</text>
-        <text x="5" y="38" font-family="Arial,sans-serif" font-size="5" letter-spacing="1" fill="#333">AUTOMOTIVE</text>
-      </svg>
+    <td style="width:60px;vertical-align:middle;padding:2px 4px;text-align:center">
+      ${logoDataUrl ? `<img src="${logoDataUrl}" style="width:42px;height:auto;display:block;margin:0 auto"/>` : ''}
     </td>
     <td style="vertical-align:middle;padding:2px 8px">
       <div style="font-size:11px;font-weight:bold;text-align:center">บริษัท ไทยซัมมิท โอโตโมทีฟ จำกัด</div>
       <div style="font-size:10px;font-weight:bold;text-align:center;margin-top:2px">ใบบันทึกการมาทำงาน - กราฟแรงงานของพนักงาน</div>
       <div style="font-size:10px;text-align:center;margin-top:2px">${deptLabel}</div>
     </td>
-    <td style="width:42%;vertical-align:top;padding:0">
+    <td style="width:48%;vertical-align:top;padding:0">
       <table style="width:100%;border-collapse:collapse;font-size:9px">
         <tr>
-          <td colspan="3" style="border:1px solid #000;padding:1px 6px;text-align:right;font-size:8px;font-weight:bold">
+          <td colspan="4" style="border:1px solid #000;padding:1px 6px;text-align:right;font-size:8px;font-weight:bold">
             เลขที่เอกสาร: ${formNoStr}
           </td>
         </tr>
         <tr>
           <td style="border:1px solid #000;padding:2px 6px;text-align:center">เดือน ${THAI_MONTHS[month]} ${year+543}</td>
           <td style="border:1px solid #000;padding:2px 6px;text-align:center">งวด วันที่ ${dStr}</td>
-          <td style="border:1px solid #000;padding:2px 6px;text-align:center">จำนวนพนักงาน <b>${totalEmp}</b> คน</td>
+          <td colspan="2" style="border:1px solid #000;padding:2px 6px;text-align:center">จำนวนพนักงาน <b>${totalEmp}</b> คน</td>
         </tr>
         <tr>
-          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:top;padding-top:2px;font-size:8px">
-            ${sigDataUrl ? `<img src="${sigDataUrl}" style="max-height:40px;max-width:90px;object-fit:contain;display:block;margin:0 auto 2px"/>` : '<div style="height:40px"></div>'}
-            หัวหน้าแผนก
+          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:top;padding-top:2px;font-size:7px">
+            ${sigDataUrl ? `<img src="${sigDataUrl}" style="max-height:36px;max-width:70px;object-fit:contain;display:block;margin:0 auto 2px"/>` : '<div style="height:36px"></div>'}
+            ผู้บันทึก<br/>(หัวหน้างาน)
           </td>
-          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:8px">หัวหน้าส่วน</td>
-          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:8px">ผู้จัดการ</td>
+          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:7px">ผู้จัดการสายงาน</td>
+          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:7px">เจ้าหน้าที่ TA</td>
+          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:7px">ผู้อำนวยการ<br/>ฝ่ายบุคคล (HRM)</td>
         </tr>
       </table>
     </td>
