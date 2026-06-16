@@ -24,6 +24,7 @@ const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
 const LineStock      = lazy(() => import('./pages/LineStock'));
+const CompanyCalendar = lazy(() => import('./pages/CompanyCalendar'));
 
 /* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null, signatureUrl: null, fullName: null });
@@ -53,6 +54,7 @@ const NAV_ITEMS = [
   { to: '/products',        icon: '🔩', label: 'Product Master',    roles: null },
   { to: '/line-stock',      icon: '📦', label: 'Line Stock',         roles: null },
   { to: '/heijunka',       icon: '🎴', label: 'Heijunka Kanban',   roles: null },
+  { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    roles: null },
 ];
 
 const canAccess = (role, roles) => !roles || roles.includes(role ?? 'admin');
@@ -580,6 +582,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/products"   element={<ProductMaster />} />
               <Route path="/line-stock" element={<LineStock />} />
               <Route path="/heijunka"  element={<HeijunkaKanban />} />
+              <Route path="/company-calendar" element={<CompanyCalendar />} />
             </Routes>
           </Suspense>
         </main>
