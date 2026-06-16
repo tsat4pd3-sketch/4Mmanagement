@@ -2317,6 +2317,161 @@ function ExportTab() {
     doc.save(filename + '.pdf');
   };
 
+  // ── Shift Report Form PDF — one page per session, mimics paper DPR form ──
+  // เผื่อยังไม่มีไฟล์ฟอร์มจริงอ้างอิง ใช้ layout มาตรฐานโรงงานไปก่อน (หัวกระดาษ/กรอบข้อมูล/ตาราง/ช่องเซ็นชื่อ)
+  // ปรับ layout ตรงนี้ได้ทันทีที่ได้รับไฟล์ฟอร์มจริง
+  const exportShiftFormPDF = async (sessions) => {
+    if (!sessions.length) { toast.error('ไม่มีข้อมูล'); return; }
+    const { default: jsPDF } = await import('jspdf');
+    const { default: autoTable } = await import('jspdf-autotable');
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const PAGE_W = 210, MARGIN = 12, CONTENT_W = PAGE_W - MARGIN * 2;
+
+    sessions.forEach((s, idx) => {
+      if (idx > 0) doc.addPage();
+      let y = MARGIN;
+
+      // ── Header ──────────────────────────────────────────────
+      doc.setFontSize(13).setFont(undefined, 'bold');
+      doc.text('Thai Summit Group', MARGIN, y);
+      doc.setFontSize(15);
+      doc.text('DAILY PRODUCTION REPORT', PAGE_W / 2, y, { align: 'center' });
+      doc.setFontSize(9).setFont(undefined, 'normal');
+      doc.text(`ใบรายงานการผลิตประจำกะ`, PAGE_W / 2, y + 5, { align: 'center' });
+      y += 11;
+      doc.setLineWidth(0.5);
+      doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+      y += 5;
+
+      // ── Info grid (ไลน์ / วันที่ / กะ / สินค้า / เวลา / ผู้เปิด-ปิด) ──
+      const shiftLabel = s.shift === 'day' ? 'กะเช้า (Day)' : 'กะดึก (Night)';
+      const ngQty = (s.defect_logs || []).reduce((a, d) => a + (d.qty_ng || 0), 0) + (s.qty_ng || 0);
+      const okQty = s.qty_ok || Math.max(0, (s.actual_qty || 0) - ngQty);
+      autoTable(doc, {
+        startY: y,
+        theme: 'grid',
+        styles: { fontSize: 9, cellPadding: 2 },
+        body: [
+          ['ไลน์ผลิต',        s.line_name || '-',          'วันที่',         fmtDate(s.work_date)],
+          ['กะ',              shiftLabel,                    'สินค้า',        s.dr_products?.name || '-'],
+          ['เวลาเริ่มกะ',      s.start_time || '-',          'เวลาสิ้นสุดกะ',  s.end_time || '-'],
+          ['ผู้เปิดกะ',        s.opened_by_name || '-',      'ผู้ปิดกะ',       s.closed_by_name || '-'],
+        ],
+        columnStyles: {
+          0: { fontStyle: 'bold', fillColor: [240,240,240], cellWidth: 28 },
+          1: { cellWidth: 67 },
+          2: { fontStyle: 'bold', fillColor: [240,240,240], cellWidth: 28 },
+          3: { cellWidth: 'auto' },
+        },
+        margin: { left: MARGIN, right: MARGIN },
+      });
+      y = doc.lastAutoTable.finalY + 6;
+
+      // ── ยอดผลิต / OEE summary box ──────────────────────────
+      doc.setFontSize(10).setFont(undefined, 'bold');
+      doc.text('สรุปยอดผลิตและ OEE', MARGIN, y);
+      y += 3;
+      autoTable(doc, {
+        startY: y,
+        theme: 'grid',
+        styles: { fontSize: 9, cellPadding: 2.5, halign: 'center' },
+        head: [['ยอดผลิตรวม', 'ดี (OK)', 'เสีย (NG)', 'A (%)', 'P (%)', 'Q (%)', 'OEE (%)']],
+        body: [[
+          s.actual_qty || 0, okQty, ngQty,
+          s.oee_a != null ? Number(s.oee_a).toFixed(1) : '-',
+          s.oee_p != null ? Number(s.oee_p).toFixed(1) : '-',
+          s.oee_q != null ? Number(s.oee_q).toFixed(1) : '-',
+          s.oee   != null ? Number(s.oee).toFixed(1)   : '-',
+        ]],
+        headStyles: { fillColor: [30,60,40], textColor: 255, fontStyle: 'bold' },
+        margin: { left: MARGIN, right: MARGIN },
+      });
+      y = doc.lastAutoTable.finalY + 6;
+
+      // ── Kanban / PROD.NO records ──────────────────────────
+      const orders = s.prod_orders || [];
+      doc.setFontSize(10).setFont(undefined, 'bold');
+      doc.text('รายการผลิต (Kanban / PROD.NO)', MARGIN, y);
+      y += 3;
+      autoTable(doc, {
+        startY: y,
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 1.8 },
+        head: [['PROD.NO', 'MAT.NO', 'Part Name', 'Qty แผน', 'Qty OK', 'สถานะ']],
+        body: orders.length ? orders.map(o => [
+          o.prod_no || '-', o.mat_no || '-', o.part_name || '-', o.qty || 0, o.qty_ok ?? '-',
+          o.status === 'confirmed' ? 'ปิดแล้ว' : o.status === 'carry_over' ? 'ยกยอด' : o.status === 'open' ? 'กำลังผลิต' : o.status,
+        ]) : [['-', '-', 'ไม่มีรายการ', '-', '-', '-']],
+        headStyles: { fillColor: [60,60,60], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+        margin: { left: MARGIN, right: MARGIN },
+      });
+      y = doc.lastAutoTable.finalY + 6;
+
+      // ── Downtime ─────────────────────────────────────────
+      const dts = s.downtime_logs || [];
+      if (y > 230) { doc.addPage(); y = MARGIN; }
+      doc.setFontSize(10).setFont(undefined, 'bold');
+      doc.text('Downtime', MARGIN, y);
+      y += 3;
+      autoTable(doc, {
+        startY: y,
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 1.8 },
+        head: [['ประเภท', 'หมวด', 'ระยะเวลา (นาที)', 'เครื่องจักร', 'รายละเอียด']],
+        body: dts.length ? dts.map(d => [
+          d.dr_downtime_types?.name_th || '-',
+          d.dr_downtime_types?.category === 'planned' ? 'ในแผน' : 'นอกแผน',
+          d.duration_min != null ? Number(d.duration_min).toFixed(1) : '-',
+          d.machine_no || '-', d.description || '-',
+        ]) : [['-', '-', '-', '-', 'ไม่มี Downtime']],
+        headStyles: { fillColor: [60,60,60], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+        margin: { left: MARGIN, right: MARGIN },
+      });
+      y = doc.lastAutoTable.finalY + 6;
+
+      // ── Defects ───────────────────────────────────────────
+      const defs = s.defect_logs || [];
+      if (y > 230) { doc.addPage(); y = MARGIN; }
+      doc.setFontSize(10).setFont(undefined, 'bold');
+      doc.text('งานเสีย / NG', MARGIN, y);
+      y += 3;
+      autoTable(doc, {
+        startY: y,
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 1.8 },
+        head: [['ประเภท NG', 'จำนวน NG', 'สงสัย', 'ซ่อมได้']],
+        body: defs.length ? defs.map(d => [
+          d.dr_defect_types?.name_th || '-', d.qty_ng || 0, d.qty_suspect || 0, d.qty_repair || 0,
+        ]) : [['-', '-', '-', 'ไม่มีงานเสีย']],
+        headStyles: { fillColor: [60,60,60], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+        margin: { left: MARGIN, right: MARGIN },
+      });
+      y = doc.lastAutoTable.finalY + 14;
+
+      // ── Signature row ─────────────────────────────────────
+      if (y > 255) { doc.addPage(); y = MARGIN; }
+      const sigCols = [
+        { role: 'ผู้ผลิต (Operator)', name: s.opened_by_name || '' },
+        { role: 'หัวหน้างาน (Supervisor)', name: s.closed_by_name || s.close_requested_by_name || '' },
+        { role: 'QA / ผู้ตรวจสอบ', name: '' },
+      ];
+      const colW = CONTENT_W / 3;
+      doc.setFontSize(9).setFont(undefined, 'normal');
+      sigCols.forEach((c, i) => {
+        const x0 = MARGIN + i * colW;
+        doc.line(x0 + 6, y + 12, x0 + colW - 6, y + 12);
+        doc.text('ลงชื่อ ____________________', x0 + 4, y + 12, { baseline: 'bottom' });
+        doc.text(`(${c.name || '............................'})`, x0 + colW / 2, y + 18, { align: 'center' });
+        doc.text(c.role, x0 + colW / 2, y + 23, { align: 'center' });
+      });
+
+      doc.setFontSize(7);
+      doc.text(`พิมพ์เมื่อ: ${fmtDateTimeFull(new Date())}`, MARGIN, 290);
+    });
+
+    doc.save(`shift_form_${filter.date_from}_${filter.date_to}${filter.line_name ? '_' + filter.line_name : ''}.pdf`);
+  };
+
   // ── preview data ───────────────────────────────────────────────
   const handlePreview = async (type) => {
     const sessions = await fetchData();
@@ -2332,6 +2487,13 @@ function ExportTab() {
     { key: 'oee',      icon: '📈',  label: 'OEE รายละเอียด',        desc: 'A · P · Q · OEE% + รายละเอียด Downtime แต่ละกะ' },
     { key: 'downtime', icon: '⏱',  label: 'Downtime Log',           desc: 'ประเภท · ระยะเวลา · เครื่องจักร · รายละเอียด' },
   ];
+
+  // ใบรายงานการผลิตประจำกะ — ฟอร์ม PDF แยกพิเศษ (1 หน้า/กะ พร้อมช่องเซ็นชื่อ)
+  const handleExportShiftForm = async () => {
+    const sessions = await fetchData();
+    if (!sessions) return;
+    await exportShiftFormPDF(sessions);
+  };
 
   const labelFor = key => REPORT_TYPES.find(r => r.key === key)?.label || key;
 
@@ -2392,6 +2554,16 @@ function ExportTab() {
             </div>
           </div>
         ))}
+
+        {/* ใบรายงานการผลิตประจำกะ — ฟอร์มจริง 1 หน้า/กะ พร้อมช่องเซ็นชื่อ */}
+        <div style={{ background: 'var(--card)', border: '1px solid var(--accent)', borderRadius: 12, padding: '16px 18px' }}>
+          <div style={{ fontSize: 22, marginBottom: 6 }}>📄</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>ใบรายงานการผลิตประจำกะ (Form)</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>
+            1 หน้า/กะ — หัวกระดาษ, ยอดผลิต+OEE, Kanban, Downtime, NG, ช่องเซ็นชื่อ
+          </div>
+          <button style={btnSm('#dc2626')} onClick={handleExportShiftForm} disabled={loading}>⬇ PDF ฟอร์ม</button>
+        </div>
       </div>
 
       {/* Preview table */}
