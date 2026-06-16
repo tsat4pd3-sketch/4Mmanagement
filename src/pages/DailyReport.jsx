@@ -146,6 +146,8 @@ function LiveTab({ role }) {
   const [prodOrders, setProdOrders]       = useState([]);
   const [carryOrders, setCarryOrders]     = useState([]); // pending carry-over from prev session
   const [kanbanStds, setKanbanStds]       = useState([]);
+  const [prodOrdersOpen, setProdOrdersOpen] = useState(true); // minimize/expand ทั้ง board
+  const [showClosedOrders, setShowClosedOrders] = useState(false); // แยกซ่อน/แสดง order ที่ปิดแล้ว/ยกเลิก
 
   // Scan Open modal
   const [showScanOpen, setShowScanOpen]   = useState(false);
@@ -1099,11 +1101,12 @@ function LiveTab({ role }) {
 
             {/* Prod Orders panel */}
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: prodOrdersOpen ? 12 : 0, flexWrap: 'wrap', gap: 8 }}>
+                <div onClick={() => setProdOrdersOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--text)', cursor: 'pointer', userSelect: 'none' }}>
+                  <span style={{ fontSize: 11, color: 'var(--muted)', transform: prodOrdersOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
                   📦 Prod Orders ({prodOrders.length} ใบ)
                 </div>
-                {canScan && (
+                {canScan && prodOrdersOpen && (
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <button onClick={() => { setShowScanOpen(true); setOpenProdForm({ prod_no: '', mat_no: '', qty: '' }); setOpenProdStd(null); }}
                       style={{ background: '#f59e0b', color: '#000', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
@@ -1121,6 +1124,7 @@ function LiveTab({ role }) {
                 )}
               </div>
 
+              {prodOrdersOpen && (<>
               {/* Carry-over banner */}
               {carryOrders.length > 0 && canScan && (
                 <div style={{ marginBottom: 10, padding: '10px 14px', background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.4)', borderRadius: 9 }}>
@@ -1143,8 +1147,8 @@ function LiveTab({ role }) {
                 </div>
               )}
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {prodOrders.map(o => {
+              {(() => {
+                const renderOrderRow = (o) => {
                   const confirmed   = o.status === 'confirmed';
                   const carryOver   = o.status === 'carry_over';
                   const cancelled   = o.status === 'cancelled';
@@ -1199,8 +1203,35 @@ function LiveTab({ role }) {
                       )}
                     </div>
                   );
-                })}
-              </div>
+                };
+
+                const activeOrders = prodOrders.filter(o => o.status === 'open');
+                const closedOrders = prodOrders.filter(o => o.status !== 'open');
+
+                return (
+                  <>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {activeOrders.map(renderOrderRow)}
+                    </div>
+
+                    {closedOrders.length > 0 && (
+                      <div style={{ marginTop: activeOrders.length > 0 ? 10 : 0 }}>
+                        <div onClick={() => setShowClosedOrders(s => !s)}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 4px', cursor: 'pointer', userSelect: 'none', fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>
+                          <span style={{ fontSize: 10, transform: showClosedOrders ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
+                          ปิดแล้ว / ยกเลิก ({closedOrders.length} ใบ)
+                        </div>
+                        {showClosedOrders && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {closedOrders.map(renderOrderRow)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+              </>)}
             </div>
 
             {/* Defect Logs panel */}

@@ -38,24 +38,30 @@ const ROLE_LABELS = {
 };
 
 // null roles = accessible to every role
+// group ใช้จัดหมวดหมู่ในแถบ sidebar (มี minimize/expand ต่อหมวด)
 const NAV_ITEMS = [
-  { to: '/',            icon: '🏠', label: 'หน้าหลัก',           roles: null },
-  { to: '/dashboard',   icon: '📊', label: 'Dashboard',           roles: null },
-  { to: '/management',  icon: '🔄', label: 'จัดการสายผลิต',      roles: null },
-  { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     roles: null },
-  { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   roles: ['admin', 'manager', 'supervisor'] },
-  { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      roles: ['admin', 'manager', 'supervisor'] },
-  { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager', 'supervisor', 'leader'] },
-  { to: '/report',        icon: '📋', label: 'รายงาน',            roles: null },
-  { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         roles: ['admin', 'manager', 'supervisor'] },
-  { to: '/daily-report',   icon: '📊', label: 'Daily Report',      roles: null },
-  { to: '/oee-analytics',  icon: '📈', label: 'OEE Analytics',      roles: null },
-  { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', roles: ['admin', 'manager', 'supervisor', 'leader', 'qa'] },
-  { to: '/products',        icon: '🔩', label: 'Product Master',    roles: null },
-  { to: '/line-stock',      icon: '📦', label: 'Line Stock',         roles: null },
-  { to: '/heijunka',       icon: '🎴', label: 'Heijunka Kanban',   roles: null },
-  { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    roles: null },
+  { to: '/',            icon: '🏠', label: 'หน้าหลัก',           roles: null, group: 'ภาพรวม' },
+  { to: '/dashboard',   icon: '📊', label: 'Dashboard',           roles: null, group: 'ภาพรวม' },
+
+  { to: '/management',  icon: '🔄', label: 'จัดการสายผลิต',      roles: null, group: 'การผลิต' },
+  { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     roles: null, group: 'การผลิต' },
+  { to: '/daily-report',   icon: '📊', label: 'Daily Report',      roles: null, group: 'การผลิต' },
+  { to: '/oee-analytics',  icon: '📈', label: 'OEE Analytics',      roles: null, group: 'การผลิต' },
+  { to: '/products',        icon: '🔩', label: 'Product Master',    roles: null, group: 'การผลิต' },
+  { to: '/line-stock',      icon: '📦', label: 'Line Stock',         roles: null, group: 'การผลิต' },
+  { to: '/heijunka',       icon: '🎴', label: 'Heijunka Kanban',   roles: null, group: 'การผลิต' },
+
+  { to: '/report',        icon: '📋', label: 'รายงาน',            roles: null, group: 'รายงาน/คุณภาพ' },
+  { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', roles: ['admin', 'manager', 'supervisor', 'leader', 'qa'], group: 'รายงาน/คุณภาพ' },
+
+  { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
+  { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
+  { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager', 'supervisor', 'leader'], group: 'บริหารจัดการ' },
+  { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
+  { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    roles: null, group: 'บริหารจัดการ' },
 ];
+
+const NAV_GROUP_ORDER = ['ภาพรวม', 'การผลิต', 'รายงาน/คุณภาพ', 'บริหารจัดการ'];
 
 const canAccess = (role, roles) => !roles || roles.includes(role ?? 'admin');
 
@@ -141,10 +147,24 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
   const [sigUrl,        setSigUrl]        = useState(userSignatureUrl);
   const [pwdModalOpen,  setPwdModalOpen]  = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('nav_collapsed_groups') || '{}'); } catch { return {}; }
+  });
 
   useEffect(() => { setSigUrl(userSignatureUrl); }, [userSignatureUrl]);
 
+  const toggleGroup = (g) => {
+    setCollapsedGroups(prev => {
+      const next = { ...prev, [g]: !prev[g] };
+      localStorage.setItem('nav_collapsed_groups', JSON.stringify(next));
+      return next;
+    });
+  };
+
   const visibleItems = NAV_ITEMS.filter(item => canAccess(userRole, item.roles));
+  const groupedItems = NAV_GROUP_ORDER
+    .map(g => ({ group: g, items: visibleItems.filter(i => i.group === g) }))
+    .filter(g => g.items.length > 0);
   const displayName = userFullName || userEmail || '';
   const initials = displayName
     ? displayName.split(/[\s@]/)[0].slice(0, 2).toUpperCase()
@@ -179,21 +199,41 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
         </div>
 
         {/* Links */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {visibleItems.map(item => (
-            <Link
-              key={item.to}
-              to={item.to}
-              className="nav-link"
-              style={location.pathname === item.to
-                ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
-                : {}}
-              onClick={() => isMobile && onClose()}
-            >
-              <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
-              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
-            </Link>
-          ))}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto', minHeight: 0 }}>
+          {groupedItems.map(({ group, items }) => {
+            const collapsed = !!collapsedGroups[group];
+            const groupHasActive = items.some(i => location.pathname === i.to);
+            return (
+              <div key={group} style={{ marginBottom: 2 }}>
+                <button
+                  onClick={() => toggleGroup(group)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
+                    background: 'none', border: 'none', cursor: 'pointer', padding: '8px 10px 4px',
+                    color: groupHasActive ? 'var(--accent)' : 'var(--muted)',
+                    fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase',
+                  }}
+                >
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</span>
+                  <span style={{ fontSize: 10, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
+                </button>
+                {!collapsed && items.map(item => (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className="nav-link"
+                    style={location.pathname === item.to
+                      ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
+                      : {}}
+                    onClick={() => isMobile && onClose()}
+                  >
+                    <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+                  </Link>
+                ))}
+              </div>
+            );
+          })}
 
           {canAccess(userRole, ['admin']) && (
             <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6 }}>
