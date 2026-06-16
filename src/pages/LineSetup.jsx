@@ -28,6 +28,7 @@ export default function LineSetup() {
   // Standard manpower
   const [stdDay,   setStdDay]   = useState(0);
   const [stdNight, setStdNight] = useState(0);
+  const [costCenter, setCostCenter] = useState('');
   const [mpSaving, setMpSaving] = useState(false);
 
   useEffect(() => {
@@ -37,7 +38,7 @@ export default function LineSetup() {
   }, []);
 
   const fetchLines = async () => {
-    const { data } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift').order('name');
+    const { data } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center').order('name');
     setLines(data || []);
     if (data?.length > 0 && !selectedLine) setSelectedLine(data[0].name);
   };
@@ -60,6 +61,7 @@ export default function LineSetup() {
     if (lineObj) {
       setStdDay(lineObj.std_day_shift ?? 0);
       setStdNight(lineObj.std_night_shift ?? 0);
+      setCostCenter(lineObj.cost_center ?? '');
     }
   };
 
@@ -69,7 +71,7 @@ export default function LineSetup() {
     setMpSaving(true);
     const { error } = await supabase
       .from('production_lines')
-      .update({ std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0 })
+      .update({ std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0, cost_center: costCenter || null })
       .eq('id', lineObj.id);
     if (error) alert('Error: ' + error.message);
     else await fetchLines();
@@ -527,6 +529,13 @@ export default function LineSetup() {
                   onChange={e => setStdNight(e.target.value)}
                   style={{ marginTop: 4, fontSize: 18, fontWeight: 700, textAlign: 'center' }} />
               </div>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelSt}>🏷️ Cost Center</label>
+              <input type="text" value={costCenter}
+                onChange={e => setCostCenter(e.target.value)}
+                placeholder="เช่น 2140662201"
+                style={{ marginTop: 4, fontSize: 14, fontWeight: 600 }} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>

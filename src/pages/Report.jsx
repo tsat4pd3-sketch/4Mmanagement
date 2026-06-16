@@ -2613,9 +2613,15 @@ function SkillAllowanceTab() {
   const [signerHRM,      setSignerHRM]     = useState('');
 
   useEffect(() => {
-    supabase.from('production_lines').select('name, section').order('name')
+    supabase.from('production_lines').select('name, section, cost_center').order('name')
       .then(({ data }) => setLines(data || []));
   }, []);
+
+  // ดึง Cost Center จากไลน์ที่เลือกอัตโนมัติ (ยังแก้ไขเองได้ถ้าต้องการ)
+  useEffect(() => {
+    const lineObj = lines.find(l => l.name === line);
+    setCostCenter(lineObj?.cost_center || '');
+  }, [line, lines]);
 
   // ช่วงวันตามงวด
   const periodDays = () => {
@@ -2675,24 +2681,53 @@ function SkillAllowanceTab() {
     const sectionLabel = section || (line ? `ไลน์ ${line}` : 'ทุกไลน์');
     const logoDataUrl = await getTsLogoDataUrl();
 
+    // จำนวนแถวทั้งหมด เทียบกับความสูงที่ 1 หน้า A4 แนวนอนรับได้
+    // ถ้าเกินไม่มาก (<=25%) ให้ย่อขนาดตัวอักษร/ระยะห่างเพื่อให้พอดี 1 หน้า
+    // ถ้าเกินมากกว่า 25% ปล่อยให้ไหลไปหน้า 2 ตามธรรมชาติ (thead/tfoot จะพิมพ์ซ้ำทุกหน้า)
+    const rowCount = rows.length * SHIFT_DEFS.length + SHIFT_DEFS.length;
+    const baseRows = 30;
+    let scale = 1;
+    if (rowCount > baseRows) {
+      const overflowRatio = rowCount / baseRows;
+      scale = overflowRatio <= 1.25 ? baseRows / rowCount : 0.8;
+    }
+    const fz   = (px) => `${Math.round(px * scale * 10) / 10}px`;
+    const padV = (px) => `${Math.round(px * scale * 10) / 10}px`;
+
+    const totalCols = 9 + days.length;
+    const fixedColPct = { no: 3, idCard: 7, name: 14, shift: 3, total: 4, sigEmp: 8, taCheck: 9, sigTA: 7, note: 6 };
+    const dayColPct = (100 - Object.values(fixedColPct).reduce((a,b)=>a+b,0)) / days.length;
+
+    const colgroup = `
+      <col style="width:${fixedColPct.no}%"/>
+      <col style="width:${fixedColPct.idCard}%"/>
+      <col style="width:${fixedColPct.name}%"/>
+      <col style="width:${fixedColPct.shift}%"/>
+      ${days.map(() => `<col style="width:${dayColPct}%"/>`).join('')}
+      <col style="width:${fixedColPct.total}%"/>
+      <col style="width:${fixedColPct.sigEmp}%"/>
+      <col style="width:${fixedColPct.taCheck}%"/>
+      <col style="width:${fixedColPct.sigTA}%"/>
+      <col style="width:${fixedColPct.note}%"/>`;
+
     const tableRows = rows.map((r, i) => SHIFT_DEFS.map((sd, si) => {
       const dayCells = days.map(d =>
-        `<td style="text-align:center;border:1px solid #333;font-size:13px">${r.shifts[sd.key][d] ? '1' : ''}</td>`
+        `<td style="text-align:center;border:1px solid #333;font-size:${fz(11)};padding:${padV(2)} 2px">${r.shifts[sd.key][d] ? '1' : ''}</td>`
       ).join('');
       const total = Object.keys(r.shifts[sd.key]).length;
       return `
         <tr>
           ${si === 0 ? `
-          <td rowspan="2" style="text-align:center;border:1px solid #333">${i+1}</td>
-          <td rowspan="2" style="border:1px solid #333;white-space:nowrap;padding:0 4px">${r.emp?.employee_id_code || ''}</td>
-          <td rowspan="2" style="border:1px solid #333;padding:0 4px">${r.emp?.name || ''}</td>` : ''}
-          <td style="text-align:center;border:1px solid #333">${sd.label}</td>
+          <td rowspan="2" style="text-align:center;border:1px solid #333;font-size:${fz(11)};padding:${padV(2)} 2px">${i+1}</td>
+          <td rowspan="2" style="border:1px solid #333;white-space:nowrap;padding:${padV(2)} 4px;font-size:${fz(11)}">${r.emp?.employee_id_code || ''}</td>
+          <td rowspan="2" style="border:1px solid #333;padding:${padV(2)} 4px;font-size:${fz(11)};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.emp?.name || ''}</td>` : ''}
+          <td style="text-align:center;border:1px solid #333;font-size:${fz(11)};padding:${padV(2)} 2px">${sd.label}</td>
           ${dayCells}
-          <td style="text-align:center;border:1px solid #333;font-weight:bold">${total}</td>
+          <td style="text-align:center;border:1px solid #333;font-weight:bold;font-size:${fz(11)};padding:${padV(2)} 2px">${total}</td>
           ${si === 0 ? `
-          <td rowspan="2" style="border:1px solid #333;width:70px"></td>
-          <td rowspan="2" style="border:1px solid #333;width:80px"></td>
-          <td rowspan="2" style="border:1px solid #333;width:70px"></td>
+          <td rowspan="2" style="border:1px solid #333"></td>
+          <td rowspan="2" style="border:1px solid #333"></td>
+          <td rowspan="2" style="border:1px solid #333"></td>
           <td rowspan="2" style="border:1px solid #333"></td>` : ''}
         </tr>`;
     }).join('')).join('');
@@ -2700,17 +2735,65 @@ function SkillAllowanceTab() {
     const sumRows = SHIFT_DEFS.map((sd, si) => {
       const daySumRow = days.map(d => {
         const cnt = rows.filter(r => r.shifts[sd.key][d]).length;
-        return `<td style="text-align:center;border:1px solid #333;font-size:12px">${cnt || 0}</td>`;
+        return `<td style="text-align:center;border:1px solid #333;font-size:${fz(11)};padding:${padV(2)} 2px">${cnt || 0}</td>`;
       }).join('');
       const total = rows.reduce((s,r) => s + Object.keys(r.shifts[sd.key]).length, 0);
       return `
         <tr style="background:#f0f0f0;font-weight:bold">
-          ${si === 0 ? '<td rowspan="2" colspan="3" style="text-align:center;border:1px solid #333">รวม</td>' : ''}
-          <td style="text-align:center;border:1px solid #333">${sd.label}</td>
+          ${si === 0 ? `<td rowspan="2" colspan="3" style="text-align:center;border:1px solid #333;font-size:${fz(11)};padding:${padV(2)} 2px">รวม</td>` : ''}
+          <td style="text-align:center;border:1px solid #333;font-size:${fz(11)};padding:${padV(2)} 2px">${sd.label}</td>
           ${daySumRow}
-          <td style="text-align:center;border:1px solid #333">${total}</td>
+          <td style="text-align:center;border:1px solid #333;font-size:${fz(11)};padding:${padV(2)} 2px">${total}</td>
         </tr>`;
     }).join('');
+
+    const headerBlock = `
+      <div style="text-align:right;font-size:${fz(12)};margin-bottom:2px">ฟอร์ม 2</div>
+      <table style="border:none;margin-bottom:${padV(6)};width:100%">
+        <tr>
+          <td style="border:1px solid #333;width:230px;padding:${padV(6)};vertical-align:middle">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:${Math.round(44*scale)}px;flex-shrink:0">${logoDataUrl ? `<img src="${logoDataUrl}" style="width:${Math.round(40*scale)}px;height:auto"/>` : ''}</div>
+              <div style="font-size:${fz(12)};font-weight:bold">บริษัทไทยซัมมิทโอโตโมทีฟ จำกัด</div>
+            </div>
+          </td>
+          <td style="border:none;text-align:center">
+            <div style="font-size:${fz(16)};font-weight:bold">ใบสรุปการปฏิบัติงานค่าฝีมือประเภท${workType}</div>
+          </td>
+        </tr>
+      </table>
+      <div style="margin-bottom:2px;text-align:center;font-size:${fz(13)}">ประจำงวด วันที่ ${dStr} เดือน ${THAI_MONTHS[month]} ปี ${year + 543}</div>
+      <div style="margin-bottom:${padV(8)};text-align:center;font-size:${fz(13)}">ส่วนงาน ${sectionLabel} Cost Center ${costCenter}</div>
+      <div style="margin-bottom:${padV(8)};font-size:${fz(12)};line-height:1.6">
+        สิทธิ์ที่ได้รับ &nbsp; กะ 01 &nbsp;&nbsp; ${rightsDay || '   '} &nbsp;&nbsp; คน<br/>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; กะ 02 &nbsp;&nbsp; ${rightsNight || '   '} &nbsp;&nbsp; คน
+      </div>`;
+
+    const footerBlock = `
+      <div style="margin-top:${padV(10)};font-size:${fz(11)};line-height:1.6">
+        <strong>หมายเหตุ :</strong><br/>
+        1. วันที่ 1-15 จะจ่ายในงวดวันที่ 22 ของทุกเดือน<br/>
+        2. วันที่ 16-31 จะจ่ายในงวดวันที่ 7 ของทุกเดือน<br/>
+        3. กรณีใบ Certification ขาดอายุจะถูกระงับการจ่ายค่าฝีมือ<br/>
+        4. พนักงานมีสิทธิ์ได้รับค่าฝีมือต้องปฏิบัติงานครบ 8 ชั่วโมง / วัน<br/>
+        5. หลักเกณฑ์การจ่ายค่าฝีมือ ตามประกาศที่ SVP.051/2566
+      </div>
+      <table style="margin-top:${padV(16)};width:100%">
+        <tr>
+          ${[
+            ['หัวหน้างาน', signerHead],
+            ['ผู้จัดการต้นสังกัด', signerManager],
+            ['เจ้าหน้าที่ TA', signerTA],
+            ['ผู้จัดการส่วน HRM', signerHRM],
+          ].map(([label, name]) => `
+            <td style="border:1px solid #333;width:25%;text-align:center;padding:${padV(8)} 4px;vertical-align:bottom">
+              <div style="font-size:${fz(11)};margin-bottom:2px">บันทึกโดย</div>
+              <div style="border-bottom:1px dotted #333;height:${Math.round(24*scale)}px;margin-bottom:4px"></div>
+              <div style="font-size:${fz(11)}">${name ? `(${name})` : '( &nbsp; )'}</div>
+              <div style="font-size:${fz(10)};color:#555">${label}</div>
+            </td>`).join('')}
+        </tr>
+      </table>`;
 
     const html = `<!DOCTYPE html>
 <html lang="th">
@@ -2720,87 +2803,44 @@ function SkillAllowanceTab() {
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Sarabun', sans-serif; font-size: 13px; background: #fff; color: #000; }
-  .page { width: 100%; }
-  table { border-collapse: collapse; width: 100%; font-size: 11px; }
-  th { border: 1px solid #333; background: #f0f0f0; text-align: center; padding: 3px 2px; font-size: 11px; }
-  td { border: 1px solid #333; padding: 2px 2px; font-size: 11px; }
+  body { font-family: 'Sarabun', sans-serif; font-size: ${fz(13)}; background: #fff; color: #000; }
+  table.main { border-collapse: collapse; width: 100%; table-layout: fixed; }
+  th { border: 1px solid #333; background: #f0f0f0; text-align: center; padding: ${padV(3)} 2px; font-size: ${fz(11)}; }
   @media print {
-    @page { size: A4 landscape; margin: 8mm; }
+    @page { size: A4 landscape; margin: 6mm; }
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style>
 </head>
 <body>
-<div class="page">
-  <div style="text-align:right;font-size:12px;margin-bottom:2px">ฟอร์ม 2</div>
-  <table style="border:none;margin-bottom:6px">
+<table class="main">
+  <colgroup>${colgroup}</colgroup>
+  <thead>
+    <tr><th colspan="${totalCols}" style="border:none;background:#fff;padding:0;text-align:left">${headerBlock}</th></tr>
     <tr>
-      <td style="border:1px solid #333;width:230px;padding:6px;vertical-align:middle">
-        <div style="display:flex;align-items:center;gap:8px">
-          <div style="width:44px;flex-shrink:0">${logoDataUrl ? `<img src="${logoDataUrl}" style="width:40px;height:auto"/>` : ''}</div>
-          <div style="font-size:12px;font-weight:bold">บริษัทไทยซัมมิทโอโตโมทีฟ จำกัด</div>
-        </div>
-      </td>
-      <td style="border:none;text-align:center">
-        <div style="font-size:16px;font-weight:bold">ใบสรุปการปฏิบัติงานค่าฝีมือประเภท${workType}</div>
-      </td>
+      <th rowspan="2">ลำดับ</th>
+      <th rowspan="2">เลขที่บัตรพนักงาน</th>
+      <th rowspan="2">ชื่อ - สกุล</th>
+      <th rowspan="2">กะ</th>
+      <th colspan="${days.length}">เดือน ${THAI_MONTHS[month]}</th>
+      <th rowspan="2">รวม</th>
+      <th rowspan="2">ลายเซ็นพนักงาน</th>
+      <th rowspan="2">TA ตรวจสอบการทำงาน</th>
+      <th rowspan="2">ลายเซ็น TA</th>
+      <th rowspan="2">หมายเหตุ</th>
     </tr>
-  </table>
-  <div style="margin-bottom:2px;text-align:center">ประจำงวด วันที่ ${dStr} เดือน ${THAI_MONTHS[month]} ปี ${year + 543}</div>
-  <div style="margin-bottom:8px;text-align:center">ส่วนงาน ${sectionLabel} Cost Center ${costCenter}</div>
-  <div style="margin-bottom:8px;font-size:12px;line-height:1.6">
-    สิทธิ์ที่ได้รับ &nbsp; กะ 01 &nbsp;&nbsp; ${rightsDay || '   '} &nbsp;&nbsp; คน<br/>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; กะ 02 &nbsp;&nbsp; ${rightsNight || '   '} &nbsp;&nbsp; คน
-  </div>
-  <table>
-    <thead>
-      <tr>
-        <th rowspan="2" style="width:28px">ลำดับ</th>
-        <th rowspan="2" style="width:70px">เลขที่บัตรพนักงาน</th>
-        <th rowspan="2" style="min-width:100px">ชื่อ - สกุล</th>
-        <th rowspan="2" style="width:24px">กะ</th>
-        <th colspan="${days.length}">เดือน ${THAI_MONTHS[month]}</th>
-        <th rowspan="2" style="width:30px">รวม</th>
-        <th rowspan="2" style="width:70px">ลายเซ็นพนักงาน</th>
-        <th rowspan="2" style="width:80px">TA ตรวจสอบการทำงาน</th>
-        <th rowspan="2" style="width:70px">ลายเซ็น TA</th>
-        <th rowspan="2" style="width:50px">หมายเหตุ</th>
-      </tr>
-      <tr>
-        ${days.map(d => `<th style="width:22px">${d}</th>`).join('')}
-      </tr>
-    </thead>
-    <tbody>
-      ${tableRows}
-      ${sumRows}
-    </tbody>
-  </table>
-  <div style="margin-top:10px;font-size:11px;line-height:1.8">
-    <strong>หมายเหตุ :</strong><br/>
-    1. วันที่ 1-15 จะจ่ายในงวดวันที่ 22 ของทุกเดือน<br/>
-    2. วันที่ 16-31 จะจ่ายในงวดวันที่ 7 ของทุกเดือน<br/>
-    3. กรณีใบ Certification ขาดอายุจะถูกระงับการจ่ายค่าฝีมือ<br/>
-    4. พนักงานมีสิทธิ์ได้รับค่าฝีมือต้องปฏิบัติงานครบ 8 ชั่วโมง / วัน<br/>
-    5. หลักเกณฑ์การจ่ายค่าฝีมือ ตามประกาศที่ SVP.051/2566
-  </div>
-  <table style="margin-top:24px;width:100%">
     <tr>
-      ${[
-        ['หัวหน้างาน', signerHead],
-        ['ผู้จัดการต้นสังกัด', signerManager],
-        ['เจ้าหน้าที่ TA', signerTA],
-        ['ผู้จัดการส่วน HRM', signerHRM],
-      ].map(([label, name]) => `
-        <td style="border:1px solid #333;width:25%;text-align:center;padding:10px 4px;vertical-align:bottom">
-          <div style="font-size:11px;margin-bottom:2px">บันทึกโดย</div>
-          <div style="border-bottom:1px dotted #333;height:30px;margin-bottom:4px"></div>
-          <div style="font-size:11px">${name ? `(${name})` : '( &nbsp; )'}</div>
-          <div style="font-size:10px;color:#555">${label}</div>
-        </td>`).join('')}
+      ${days.map(d => `<th>${d}</th>`).join('')}
     </tr>
-  </table>
-</div>
+  </thead>
+  <tfoot>
+    <tr><td colspan="${totalCols}" style="border:none;padding:0">${footerBlock}</td></tr>
+  </tfoot>
+  <tbody>
+    ${tableRows}
+    ${sumRows}
+  </tbody>
+</table>
 <script>window.onload = () => { window.print(); }</script>
 </body>
 </html>`;
