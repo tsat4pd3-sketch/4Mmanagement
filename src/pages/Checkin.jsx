@@ -271,22 +271,26 @@ export default function Checkin() {
 
     /* ── Auto-open production session + Telegram notification ── */
     try {
-      const lineName = lines.find(l => l.id === Number(selLine))?.name;
       const now = new Date();
       const totalMins = now.getHours() * 60 + now.getMinutes();
       const isNight = shiftInfo.shift === 'night';
       const startTime = !isNight ? '08:00' : totalMins < 22 * 60 + 30 ? '20:00' : '22:30';
       const hasOtNight = isNight && totalMins < 22 * 60 + 30;
 
-      if (lineName) {
-        // open session ถ้ายังไม่มี
+      // ไลน์ที่ถูกเช็คจริง (อาจมีหลายไลน์ถ้าเลือกทั้ง section)
+      const checkedLineIds = [...new Set(displayed.map(emp => emp.line_id).filter(Boolean))];
+      const checkedLines = lines.filter(l => checkedLineIds.includes(l.id));
+      const lineNamesText = checkedLines.map(l => l.name).join(', ') || (selSection ? `Section: ${selSection}` : 'ทุกไลน์');
+
+      // เปิด session ทุกไลน์ที่ถูกเช็ค (ถ้ายังไม่มี)
+      for (const ln of checkedLines) {
         const { data: exist } = await supabaseDR
           .from('production_sessions').select('id')
-          .eq('work_date', workDateStr).eq('line_name', lineName).eq('shift', shiftInfo.shift)
+          .eq('work_date', workDateStr).eq('line_name', ln.name).eq('shift', shiftInfo.shift)
           .maybeSingle();
         if (!exist) {
           await supabaseDR.from('production_sessions').insert({
-            work_date: workDateStr, line_name: lineName,
+            work_date: workDateStr, line_name: ln.name,
             shift: shiftInfo.shift, start_time: startTime,
             status: 'open', opened_by_name: fullName || 'SV',
             notes: hasOtNight ? 'OT กะดึก (Auto จากเช็คชื่อ)' : null,
@@ -295,7 +299,7 @@ export default function Checkin() {
       }
 
       // summary สำหรับ Telegram
-      const shown = employees.filter(emp => !selLine || emp.line_id === Number(selLine));
+      const shown = displayed;
       const present = shown.filter(e => attendance[e.id]?.is_present).length;
       const absent  = shown.filter(e => attendance[e.id] && !attendance[e.id].is_present && !attendance[e.id].leave_type).length;
       const leave   = shown.filter(e => attendance[e.id]?.leave_type).length;
@@ -307,7 +311,7 @@ export default function Checkin() {
         body: JSON.stringify({
           event: 'checkin_summary',
           summary: {
-            line_name:   lineName || (selSection ? `Section: ${selSection}` : 'ทุกไลน์'),
+            line_name:   lineNamesText,
             shift:       shiftInfo.shift,
             shift_label: shiftInfo.label,
             work_date:   workDateStr,
