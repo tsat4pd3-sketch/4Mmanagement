@@ -318,30 +318,23 @@ export default function LineSetup() {
                     style={{
                       position: 'absolute', top: st.pos_top, left: st.pos_left, transform: 'translate(-50%, -50%)',
                       width: CARD_W, height: CARD_H,
-                      border: isSelected ? '1px dashed var(--green)' : '1px dashed rgba(255,255,255,0.3)',
-                      borderRadius: 8,
-                      cursor: 'pointer', display: 'flex',
-                      alignItems: 'center', justifyContent: 'center',
-                      zIndex: 5,
-                    }}
-                    title="พื้นที่นี้เท่ากับขนาด card พนักงานจริงในหน้าจัดการสายผลิต"
-                  >
-                    <div style={{
-                      width: 60, minHeight: 30,
                       border: isSelected ? '2px solid var(--green)' : '2px solid rgba(255,255,255,0.75)',
-                      borderRadius: 8,
+                      borderRadius: 10,
                       backgroundColor: isSelected ? 'rgba(34,197,94,0.18)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
                       boxShadow: isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
-                      display: 'flex', flexDirection: 'column',
+                      cursor: 'pointer', display: 'flex', flexDirection: 'column',
                       alignItems: 'center', justifyContent: 'center',
-                      padding: '3px 2px',
-                    }}>
-                      <div style={{ fontSize: 9, fontWeight: 700, color: isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {st.station_name}
-                      </div>
-                      {st.skill_allowance && <div style={{ fontSize: 6, color: '#22c55e', fontWeight: 800, lineHeight: '10px' }}>💰</div>}
-                      <div style={{ color: isSelected ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.25)', fontSize: 14, lineHeight: '18px' }}>+</div>
+                      padding: '4px 4px 2px', zIndex: 5,
+                    }}
+                    title="ขนาดเท่ากับ card พนักงานจริงในหน้าจัดการสายผลิต"
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 700, color: isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {st.station_name}
+                    </div>
+                    {st.skill_allowance && <div style={{ fontSize: 9, color: '#22c55e', fontWeight: 800, lineHeight: '14px', textAlign: 'center' }}>💰 {st.skill_allowance_type || ''}</div>}
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+                      <div style={{ color: isSelected ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.25)', fontSize: 20, lineHeight: '24px' }}>+</div>
                     </div>
                   </div>
                 );
