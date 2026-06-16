@@ -341,6 +341,21 @@ function LiveTab({ role }) {
 
   const handleOpenSession = async () => {
     if (!openForm.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
+
+    // กันเปิดกะซ้ำ: ถ้าไลน์/กะ/วันที่นี้มี session ที่ยังไม่ปิดอยู่แล้ว ห้ามเปิดใหม่ทับ
+    // (สาเหตุที่บอร์ด Heijunka/Dashboard มีแถว "Live" ค้างซ้ำกันจนล้น)
+    const { data: dup } = await supabaseDR.from('production_sessions')
+      .select('id, opened_by_name')
+      .eq('work_date', openForm.work_date)
+      .eq('line_name', openForm.line_name)
+      .eq('shift', openForm.shift)
+      .in('status', ['open', 'pending_close'])
+      .limit(1);
+    if (dup?.length) {
+      toast.error(`ไลน์นี้มีกะ${openForm.shift === 'day' ? 'เช้า' : 'ดึก'}เปิดอยู่แล้ว (เปิดโดย ${dup[0].opened_by_name || '-'}) — กรุณาปิดกะเดิมก่อน`);
+      return;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     const lineSection = lineMap[openForm.line_name]?.section || null;
     const { data, error } = await supabaseDR.from('production_sessions').insert({

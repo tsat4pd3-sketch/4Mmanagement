@@ -356,7 +356,7 @@ export default function Checkin() {
 
       const { data: logData } = await supabase
         .from('daily_production_logs')
-        .select('employee_id, work_date, is_present, has_ot, has_extended_ot, leave_type')
+        .select('employee_id, work_date, is_present, has_ot, has_extended_ot, leave_type, shift')
         .gte('work_date', dateFrom).lte('work_date', dateTo)
         .in('employee_id', scopedEmp.map(e => e.id));
 
@@ -391,7 +391,8 @@ export default function Checkin() {
           const dateStr = `${exportMonth}-${String(d).padStart(2, '0')}`;
           const log = logs[dateStr];
           if (!log) return '';
-          const hrs = log.has_extended_ot ? 2 : log.has_ot ? 1 : 0;
+          // สูตรเดียวกับ Report.jsx: กะดึก OT = 2 ชม.เสมอ / กะเช้า OT = 2 ชม. (หรือ 5 ชม.ถ้ามี extended OT)
+          const hrs = !log.has_ot ? 0 : (log.shift === 'night' ? 2 : (log.has_extended_ot ? 5 : 2));
           total += hrs;
           return hrs ? String(hrs) : '';
         });

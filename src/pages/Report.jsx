@@ -488,12 +488,14 @@ function StationLogTab() {
   const [loading, setLoading] = useState(false);
   const [stationTeam, setStationTeam] = useState('');
   const [stationShift, setStationShift] = useState('');
+  const [calLoaded, setCalLoaded] = useState(false);
 
   useEffect(() => {
     supabase.from('workstations').select('id, station_name, line_name').order('line_name').order('station_name').then(({ data }) => {
       setStations(data || []);
       if (data?.length) setSelectedStation(String(data[0].id));
     });
+    loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
 
   useEffect(() => { if (selectedStation) load(); }, [selectedStation, from, to]);
@@ -535,16 +537,20 @@ function StationLogTab() {
 
   const handlePrintStation = () => {
     const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
-    const rowsHtml = filteredRows.map((r, i) => `<tr>
+    const rowsHtml = filteredRows.map((r, i) => {
+      const dt = DAY_TYPE_META[getDayType(r.work_date)];
+      return `<tr style="${dt.label !== DAY_TYPE_META.working.label ? `background:${dt.color}22` : ''}">
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${i+1}</td>
       <td style="border:1px solid #ccc;padding:3px 6px">${fmtDate(r.work_date)}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center;color:${dt.color}">${dt.label}</td>
       <td style="border:1px solid #ccc;padding:3px 6px">${r.employees?.employee_id_code || ''}</td>
       <td style="border:1px solid #ccc;padding:3px 6px">${r.employees?.name || ''}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${r.employees?.team || ''}</td>
       <td style="border:1px solid #ccc;padding:3px 6px">${r.shift || ''}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${r.is_present ? '✓' : '✗'}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${(r.has_helmet && r.has_boots && r.has_gloves) ? '✓' : '✗'}</td>
-    </tr>`).join('');
+    </tr>`;
+    }).join('');
     const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>Log จุดงาน ${station?.station_name || ''}</title>
 <style>@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
 body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
@@ -556,6 +562,7 @@ table{border-collapse:collapse;width:100%}
 <table><thead><tr style="background:#f3f4f6">
 <th style="border:1px solid #ccc;padding:4px">#</th>
 <th style="border:1px solid #ccc;padding:4px">วันที่</th>
+<th style="border:1px solid #ccc;padding:4px">ประเภทวัน</th>
 <th style="border:1px solid #ccc;padding:4px">รหัส</th>
 <th style="border:1px solid #ccc;padding:4px">ชื่อ</th>
 <th style="border:1px solid #ccc;padding:4px">ทีม</th>
@@ -598,8 +605,8 @@ table{border-collapse:collapse;width:100%}
         </button>
         <CsvBtn onClick={() => downloadCSV(
           `station_${station?.station_name || selectedStation}_${from}_${to}.csv`,
-          ['วันที่', 'รหัส', 'ชื่อ', 'ทีม', 'กะ', 'สังกัด', 'มาทำงาน', 'PPE ครบ'],
-          filteredRows.map(r => [r.work_date, r.employees?.employee_id_code, r.employees?.name, r.employees?.team || '', r.shift || '', r.employees?.section || '', r.is_present ? '✓' : '✗', (r.has_helmet && r.has_boots && r.has_gloves) ? '✓' : '✗'])
+          ['วันที่', 'ประเภทวัน', 'รหัส', 'ชื่อ', 'ทีม', 'กะ', 'สังกัด', 'มาทำงาน', 'PPE ครบ'],
+          filteredRows.map(r => [r.work_date, DAY_TYPE_META[getDayType(r.work_date)].label, r.employees?.employee_id_code, r.employees?.name, r.employees?.team || '', r.shift || '', r.employees?.section || '', r.is_present ? '✓' : '✗', (r.has_helmet && r.has_boots && r.has_gloves) ? '✓' : '✗'])
         )} />
       </div>
 
@@ -834,6 +841,7 @@ function FourMTab() {
 
   useEffect(() => {
     supabase.from('production_lines').select('name, section').order('name').then(({ data }) => setLines(data || []));
+    loadCompanyCalendar();
   }, []);
 
   useEffect(() => { load(); }, [from, to, line, cat, statusFilter]);
@@ -947,9 +955,11 @@ function FourMTab() {
       const svApprover  = l.sv_approved_by ? sigMap[l.sv_approved_by] : null;
       const qaApprover  = l.approved_by    ? sigMap[l.approved_by]    : null;
       const needsQA     = l.requires_qa !== false;
+      const dt = DAY_TYPE_META[getDayType(l.work_date)];
       return `<tr>
         <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;white-space:nowrap">${i+1}</td>
         <td style="border:1px solid #ccc;padding:4px 6px;white-space:nowrap">${fmtDate(l.work_date)}</td>
+        <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;white-space:nowrap;color:${dt.color}">${dt.label}</td>
         <td style="border:1px solid #ccc;padding:4px 6px">${l.line_name}</td>
         <td style="border:1px solid #ccc;padding:4px 6px;color:${m.color || '#000'}">${l.category}</td>
         <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px">${l.description}</td>
@@ -978,6 +988,7 @@ function FourMTab() {
     <thead><tr style="background:#f3f4f6">
       <th style="border:1px solid #ccc;padding:4px;text-align:center">#</th>
       <th style="border:1px solid #ccc;padding:4px">วันที่</th>
+      <th style="border:1px solid #ccc;padding:4px">ประเภทวัน</th>
       <th style="border:1px solid #ccc;padding:4px">ไลน์</th>
       <th style="border:1px solid #ccc;padding:4px">ประเภท</th>
       <th style="border:1px solid #ccc;padding:4px">รายละเอียด</th>
@@ -1152,8 +1163,8 @@ function FourMTab() {
         </button>
         <CsvBtn onClick={() => downloadCSV(
           `4m_changes_${from}_${to}.csv`,
-          ['วันที่', 'ไลน์', 'ประเภท', 'ประเภทย่อย', 'รายละเอียด', 'สถานะ', 'เวลาสร้าง'],
-          logs.map(l => [l.work_date, l.line_name, l.category, l.change_subtype || '', l.description, l.status, l.created_at ? fmtDateTime(l.created_at) : ''])
+          ['วันที่', 'ประเภทวัน', 'ไลน์', 'ประเภท', 'ประเภทย่อย', 'รายละเอียด', 'สถานะ', 'เวลาสร้าง'],
+          logs.map(l => [l.work_date, DAY_TYPE_META[getDayType(l.work_date)].label, l.line_name, l.category, l.change_subtype || '', l.description, l.status, l.created_at ? fmtDateTime(l.created_at) : ''])
         )} />
       </div>
 
@@ -3140,6 +3151,23 @@ function AttendanceFormTab() {
     return new Date(year, month - 1, day).getDay() === 0;
   };
 
+  // ชั่วโมง OT จริงต่อวัน (ไม่ใช่การนับจำนวนวัน)
+  // - วันทำงานปกติ: คิดเฉพาะช่วงเลย OT ต่อจากเวลางานปกติ — กะดึก 2 ชม. เสมอ, กะเช้า 2 ชม. (+3 ถ้ามี extended OT = 5)
+  // - วันหยุด (company_calendar = ot15/ot2): มาทำงานทั้งวัน = OT ทั้งกะ 8 ชม. (หรือ 10.5 ชม. ถ้าทำ extended OT ต่อ)
+  const otHoursForDay = (info, day) => {
+    if (!info) return 0;
+    const holiday = calLoaded && getDayType(dayDateStr(day)) !== 'working';
+    if (holiday) {
+      if (!info.present) return 0;
+      return info.extOt ? 10.5 : 8;
+    }
+    if (!info.ot) return 0;
+    const isNight = info.shift === 'night';
+    return isNight ? 2 : (info.extOt ? 5 : 2);
+  };
+  // ชั่วโมง OT รวมทั้งช่วง สำหรับพนักงาน 1 คน
+  const sumOtHours = (r, daysArr) => daysArr.reduce((sum, d) => sum + otHoursForDay(r.byDay[d], d), 0);
+
   const load = async () => {
     setLoading(true);
     const days = periodDays();
@@ -3247,24 +3275,13 @@ function AttendanceFormTab() {
       return `<td style="${tdStyle}${sunBg}">${markCh}</td><td style="${tdStyle}${sunBg}">${markB}</td><td style="${tdStyle}${sunBg}">${markO}</td>`;
     };
 
-    // Row 2: show actual OT hours
-    // Weekday day shift OT:  18:00-20:00 = 2 hrs
-    //   + extended OT:       20:00-23:00 = 3 hrs more → total 5 hrs (day only, no night shift)
-    // Weekday night shift OT: 20:00-22:00 = 2 hrs  (no extended OT on night)
+    // Row 2: show actual OT hours (otHoursForDay — กะดึก 2 ชม. เสมอ / กะเช้า 2 ชม. หรือ 5 ชม.ถ้ามี extended OT)
     const makeDayRow2 = (d, r) => {
       const sun   = isSunday(d);
       const sunBg = sun ? 'background:#fff8d0;' : '';
       const info  = r.byDay[d];
-      let otHr = '';
-      if (info?.ot) {
-        const isNight = info.shift === 'night';
-        if (isNight) {
-          otHr = '2';                         // night: 20:00-22:00 = 2 hrs always
-        } else {
-          otHr = info.extOt ? '5' : '2';     // day: 18:00-20:00=2 + extended 20:00-23:00=3 → 5
-        }
-      }
-      return `<td style="${tdOTStyle}${sunBg}"></td><td style="${tdOTStyle}${sunBg}"></td><td style="${tdOTStyle}${sunBg}">${otHr}</td>`;
+      const hrs   = otHoursForDay(info, d);
+      return `<td style="${tdOTStyle}${sunBg}"></td><td style="${tdOTStyle}${sunBg}"></td><td style="${tdOTStyle}${sunBg}">${hrs > 0 ? hrs : ''}</td>`;
     };
 
     const dayHeaderRow1 = days.map(d => {
@@ -3286,14 +3303,7 @@ function AttendanceFormTab() {
       const cntPersonal = days.filter(d => r.byDay[d]?.leave === 'ลากิจ').length;
       const cntVacation = days.filter(d => r.byDay[d]?.leave === 'ลาพักร้อน').length;
       const cntAbsent   = days.filter(d => { const b=r.byDay[d]; return b && !b.present && !b.leave; }).length;
-      // OT total hours
-      // night: always 2 hrs | day: 2 hrs (+ 3 more if extended = 5 total)
-      const totalOTHrs = days.reduce((sum, d) => {
-        const b = r.byDay[d];
-        if (!b?.ot) return sum;
-        const isNight = b.shift === 'night';
-        return sum + (isNight ? 2 : (b.extOt ? 5 : 2));
-      }, 0);
+      const totalOTHrs = sumOtHours(r, days);
       const fmt = v => v > 0 ? String(v) : '';
 
       return `
@@ -3511,10 +3521,10 @@ function AttendanceFormTab() {
             const daysArr = periodDays();
             downloadCSV(
               `attendance_${year}_${String(month).padStart(2,'0')}_p${period}.csv`,
-              ['รหัสพนักงาน', 'ชื่อ', 'ส่วนงาน', 'Team', ...daysArr.map(d => isSunday(d) ? `${d}(หยุด)` : String(d)), 'รวมวัน', 'OT'],
+              ['รหัสพนักงาน', 'ชื่อ', 'ส่วนงาน', 'Team', ...daysArr.map(d => isSunday(d) ? `${d}(หยุด)` : String(d)), 'รวมวัน', 'OT (ชม.)'],
               empRows.map(r => {
                 const totalP  = daysArr.filter(d => r.byDay[d]?.present).length;
-                const totalOT = daysArr.filter(d => r.byDay[d]?.ot).length;
+                const totalOT = sumOtHours(r, daysArr);
                 return [
                   r.emp.employee_id_code || '',
                   r.emp.name || '',
@@ -3559,13 +3569,13 @@ function AttendanceFormTab() {
                   <th key={d} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: isSunday(d) ? 'rgba(245,200,50,0.35)' : 'var(--bg3)', width: 22, textAlign: 'center', fontSize: 10 }}>{d}</th>
                 ))}
                 <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', textAlign: 'center' }}>รวม</th>
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'rgba(255,150,50,0.15)', textAlign: 'center', color: '#c05000' }}>OT</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'rgba(255,150,50,0.15)', textAlign: 'center', color: '#c05000' }}>OT (ชม.)</th>
               </tr>
             </thead>
             <tbody>
               {empRows.map((r, i) => {
                 const totalP = days.filter(d => r.byDay[d]?.present).length;
-                const totalOT = days.filter(d => r.byDay[d]?.ot).length;
+                const totalOT = sumOtHours(r, days);
                 return (
                   <tr key={i}>
                     <td style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '3px 4px' }}>{i+1}</td>
