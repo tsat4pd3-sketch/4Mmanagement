@@ -51,7 +51,7 @@ export default function LineSetup() {
   }, []);
 
   const fetchLines = async () => {
-    const { data } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center').order('name');
+    const { data } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name').order('name');
     setLines(data || []);
     if (data?.length > 0 && !selectedLine) setSelectedLine(data[0].name);
   };
@@ -75,14 +75,14 @@ export default function LineSetup() {
       setStdDay(lineObj.std_day_shift ?? 0);
       setStdNight(lineObj.std_night_shift ?? 0);
       setCostCenter(lineObj.cost_center ?? '');
+      setSignerHead(lineObj.head_name ?? '');
       if (lineObj.section) {
         const { data: signers } = await supabase.from('section_signers').select('*').eq('section', lineObj.section).maybeSingle();
-        setSignerHead(signers?.head_name || '');
         setSignerManager(signers?.manager_name || '');
         setSignerTA(signers?.ta_name || '');
         setSignerHRM(signers?.hrm_name || '');
       } else {
-        setSignerHead(''); setSignerManager(''); setSignerTA(''); setSignerHRM('');
+        setSignerManager(''); setSignerTA(''); setSignerHRM('');
       }
     }
   };
@@ -93,7 +93,6 @@ export default function LineSetup() {
     setSignersSaving(true);
     const { error } = await supabase.from('section_signers').upsert({
       section: lineObj.section,
-      head_name: signerHead || null,
       manager_name: signerManager || null,
       ta_name: signerTA || null,
       hrm_name: signerHRM || null,
@@ -109,7 +108,7 @@ export default function LineSetup() {
     setMpSaving(true);
     const { error } = await supabase
       .from('production_lines')
-      .update({ std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0, cost_center: costCenter || null })
+      .update({ std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0, cost_center: costCenter || null, head_name: signerHead || null })
       .eq('id', lineObj.id);
     if (error) alert('Error: ' + error.message);
     else await fetchLines();
@@ -600,6 +599,13 @@ export default function LineSetup() {
                 placeholder="เช่น 2140662201"
                 style={{ marginTop: 4, fontSize: 14, fontWeight: 600 }} />
             </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelSt}>👨‍🔧 หัวหน้างาน (ประจำไลน์นี้)</label>
+              <input type="text" value={signerHead}
+                onChange={e => setSignerHead(e.target.value)}
+                placeholder="เช่น คุณสุวิทชัย ดีทั่ว"
+                style={{ marginTop: 4 }} />
+            </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                 รวม <strong style={{ color: 'var(--text)' }}>{(parseInt(stdDay) || 0) + (parseInt(stdNight) || 0)}</strong> คน
@@ -615,18 +621,14 @@ export default function LineSetup() {
           {/* ── ผู้บันทึก/อนุมัติ ประจำส่วนงาน ─────────────────── */}
           <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />
           <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
-            ✍️ ผู้บันทึก/อนุมัติ ประจำส่วนงาน {lines.find(l => l.name === selectedLine)?.section ? `(${lines.find(l => l.name === selectedLine)?.section})` : ''}
+            ✍️ ผู้อนุมัติ ประจำส่วนงาน {lines.find(l => l.name === selectedLine)?.section ? `(${lines.find(l => l.name === selectedLine)?.section})` : ''}
           </h4>
           {lines.find(l => l.name === selectedLine)?.section ? (
             <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 14 }}>
               <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 10 }}>
-                ใช้ดึงอัตโนมัติเป็นชื่อผู้บันทึกในใบสรุปค่าฝีมือ — กรอกครั้งเดียวต่อส่วนงาน ไม่ต้องพิมพ์ซ้ำทุกครั้งที่ export
+                ใช้ดึงอัตโนมัติในใบสรุปค่าฝีมือ — กรอกครั้งเดียวต่อส่วนงาน ใช้ร่วมกันทุกไลน์ในส่วนนี้ (หัวหน้างานแยกตามไลน์ ตั้งค่าด้านบนในช่อง Standard Manpower)
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
-                <div>
-                  <label style={labelSt}>หัวหน้างาน</label>
-                  <input type="text" value={signerHead} onChange={e => setSignerHead(e.target.value)} style={{ marginTop: 4 }} />
-                </div>
                 <div>
                   <label style={labelSt}>ผู้จัดการต้นสังกัด</label>
                   <input type="text" value={signerManager} onChange={e => setSignerManager(e.target.value)} style={{ marginTop: 4 }} />

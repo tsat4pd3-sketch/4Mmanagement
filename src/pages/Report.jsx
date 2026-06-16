@@ -2613,27 +2613,27 @@ function SkillAllowanceTab() {
   const [signerHRM,      setSignerHRM]     = useState('');
 
   useEffect(() => {
-    supabase.from('production_lines').select('name, section, cost_center').order('name')
+    supabase.from('production_lines').select('name, section, cost_center, head_name').order('name')
       .then(({ data }) => setLines(data || []));
   }, []);
 
-  // ดึง Cost Center จากไลน์ที่เลือกอัตโนมัติ (ยังแก้ไขเองได้ถ้าต้องการ)
+  // ดึง Cost Center และหัวหน้างาน จากไลน์ที่เลือกอัตโนมัติ (ยังแก้ไขเองได้ถ้าต้องการ)
   useEffect(() => {
     const lineObj = lines.find(l => l.name === line);
     setCostCenter(lineObj?.cost_center || '');
+    setSignerHead(lineObj?.head_name || '');
   }, [line, lines]);
 
-  // ดึงชื่อผู้บันทึก/อนุมัติ ประจำส่วนงานอัตโนมัติ (ยังแก้ไขเองได้ถ้าต้องการ)
+  // ดึงชื่อผู้อนุมัติ ประจำส่วนงานอัตโนมัติ (ยังแก้ไขเองได้ถ้าต้องการ)
   useEffect(() => {
     const lineObj = lines.find(l => l.name === line);
     const sec = lineObj?.section;
     if (!sec) {
-      setSignerHead(''); setSignerManager(''); setSignerTA(''); setSignerHRM('');
+      setSignerManager(''); setSignerTA(''); setSignerHRM('');
       return;
     }
     supabase.from('section_signers').select('*').eq('section', sec).maybeSingle()
       .then(({ data }) => {
-        setSignerHead(data?.head_name || '');
         setSignerManager(data?.manager_name || '');
         setSignerTA(data?.ta_name || '');
         setSignerHRM(data?.hrm_name || '');
