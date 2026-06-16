@@ -37,9 +37,16 @@ function nowHHMM() {
   const d = new Date();
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
-function getRoundStatus(r, confirmedSet) {
-  if (confirmedSet.has(`${r.line_name}|${r.shift}|${r.round_no}`))
-    return { label: '✅ ส่งแล้ว', color: '#22c55e', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.3)', top: '#22c55e' };
+function getRoundStatus(r, confirmedSet, receivedMap) {
+  const key = `${r.line_name}|${r.shift}|${r.round_no}`;
+  if (confirmedSet.has(key)) {
+    const recv = receivedMap?.[key];
+    if (recv?.received_status === 'full')
+      return { label: '✔️ รับครบแล้ว', color: '#22c55e', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.3)', top: '#22c55e' };
+    if (recv?.received_status === 'partial')
+      return { label: '⚠️ รับไม่ครบ', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)', top: '#f59e0b' };
+    return { label: '📦 ส่งแล้ว · รอรับ', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', border: 'rgba(14,165,233,0.3)', top: '#0ea5e9' };
+  }
   const now = nowHHMM();
   const cutoff   = (r.cutoff_time   || '').slice(0, 5);
   const delivery = (r.delivery_time || '').slice(0, 5);
@@ -52,13 +59,19 @@ function getRoundStatus(r, confirmedSet) {
 }
 
 /* ─── Store Board View ───────────────────────────────────────────────────── */
-function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confirming, fmt }) {
+function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confirming, onReceive, fmt }) {
   const [expanded, setExpanded] = useState(null);
 
   const confirmedSet = useMemo(() => {
     const s = new Set();
     deliveries.forEach(d => s.add(`${d.line_name}|${d.shift}|${d.round_no}`));
     return s;
+  }, [deliveries]);
+
+  const receivedMap = useMemo(() => {
+    const m = {};
+    deliveries.forEach(d => { m[`${d.line_name}|${d.shift}|${d.round_no}`] = d; });
+    return m;
   }, [deliveries]);
 
   const byLine = useMemo(() => {
@@ -107,8 +120,10 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
             </div>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               {lineRounds.map(r => {
-                const status = getRoundStatus(r, confirmedSet);
-                const isConf = confirmedSet.has(`${r.line_name}|${r.shift}|${r.round_no}`);
+                const key = `${r.line_name}|${r.shift}|${r.round_no}`;
+                const status = getRoundStatus(r, confirmedSet, receivedMap);
+                const isConf = confirmedSet.has(key);
+                const isReceived = !!receivedMap[key]?.received_status;
                 const needAction = !isConf && (status.label === '⏳ กำลังเตรียม' || status.label === '🔴 ค้างส่ง');
                 const finishTime = addMinutes(r.delivery_time?.slice(0, 5), (r.points_count || 1) * (r.time_per_point_min || 10));
                 const expandKey = `${lineName}|${r.round_no}`;
@@ -138,10 +153,28 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
                         <div style={{ fontSize: 10, color: '#22c55e', marginTop: 4 }}>✓ {confirmedBy}</div>
                       )}
                       {needAction && (
-                        <button onClick={e => { e.stopPropagation(); onConfirm(r); }} disabled={confirming === r.id}
+                        <button onClick={e => { e.stopPropagation(); onConfirm(r, demand.parts); }} disabled={confirming === r.id}
                           style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
                           {confirming === r.id ? '...' : '✅ ยืนยันส่งแล้ว'}
                         </button>
+                      )}
+                      {isConf && !isReceived && (
+                        <div style={{ display: 'flex', gap: 6, marginTop: 8 }} onClick={e => e.stopPropagation()}>
+                          <button onClick={() => onReceive(r, demand.parts, 'full')}
+                            style={{ flex: 1, padding: '6px 4px', borderRadius: 8, fontSize: 10, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
+                            ✔️ รับครบ
+                          </button>
+                          <button onClick={() => onReceive(r, demand.parts, 'partial')}
+                            style={{ flex: 1, padding: '6px 4px', borderRadius: 8, fontSize: 10, fontWeight: 800, cursor: 'pointer', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', fontFamily: 'var(--font-body)' }}>
+                            ⚠️ รับไม่ครบ
+                          </button>
+                        </div>
+                      )}
+                      {isReceived && (
+                        <div style={{ fontSize: 10, color: receivedMap[key].received_status === 'full' ? '#22c55e' : '#f59e0b', marginTop: 4 }}>
+                          {receivedMap[key].received_status === 'full' ? '✔️' : '⚠️'} {receivedMap[key].received_by} รับของแล้ว
+                          {receivedMap[key].received_note ? ` — ${receivedMap[key].received_note}` : ''}
+                        </div>
                       )}
                     </div>
                     {isExpanded && demand.parts.length > 0 && (
@@ -175,13 +208,19 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
 }
 
 /* ─── Delivery Rounds Panel (compact, for cards/table views) ─────────────── */
-function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming }) {
+function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onReceive, demandByLine }) {
   const [collapsed, setCollapsed] = useState(false);
 
   const confirmedSet = useMemo(() => {
     const s = new Set();
     deliveries.forEach(d => s.add(`${d.line_name}|${d.shift}|${d.round_no}`));
     return s;
+  }, [deliveries]);
+
+  const receivedMap = useMemo(() => {
+    const m = {};
+    deliveries.forEach(d => { m[`${d.line_name}|${d.shift}|${d.round_no}`] = d; });
+    return m;
   }, [deliveries]);
 
   const byLine = useMemo(() => {
@@ -210,9 +249,12 @@ function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming }) {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {byLine[lineName].map(r => {
-                  const status = getRoundStatus(r, confirmedSet);
-                  const isConf = confirmedSet.has(`${r.line_name}|${r.shift}|${r.round_no}`);
+                  const key = `${r.line_name}|${r.shift}|${r.round_no}`;
+                  const status = getRoundStatus(r, confirmedSet, receivedMap);
+                  const isConf = confirmedSet.has(key);
+                  const isReceived = !!receivedMap[key]?.received_status;
                   const confirmedBy = deliveries.find(d => d.line_name === r.line_name && d.shift === r.shift && d.round_no === r.round_no)?.confirmed_by;
+                  const parts = demandByLine?.[lineName]?.parts || [];
                   return (
                     <div key={r.id} style={{ background: 'var(--card)', borderRadius: 6, padding: '8px 10px', border: `1px solid ${status.border}`, opacity: isConf ? 0.8 : 1 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -224,10 +266,27 @@ function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming }) {
                       </div>
                       {confirmedBy && <div style={{ fontSize: 10, color: '#22c55e', marginTop: 3 }}>✓ {confirmedBy}</div>}
                       {!isConf && (
-                        <button onClick={() => onConfirm(r)} disabled={confirming === r.id}
+                        <button onClick={() => onConfirm(r, parts)} disabled={confirming === r.id}
                           style={{ marginTop: 6, width: '100%', padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
                           {confirming === r.id ? '...' : '✅ ยืนยันส่งแล้ว'}
                         </button>
+                      )}
+                      {isConf && !isReceived && (
+                        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                          <button onClick={() => onReceive(r, parts, 'full')}
+                            style={{ flex: 1, padding: '5px 4px', borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: 'pointer', background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
+                            ✔️ รับครบ
+                          </button>
+                          <button onClick={() => onReceive(r, parts, 'partial')}
+                            style={{ flex: 1, padding: '5px 4px', borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: 'pointer', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', fontFamily: 'var(--font-body)' }}>
+                            ⚠️ ไม่ครบ
+                          </button>
+                        </div>
+                      )}
+                      {isReceived && (
+                        <div style={{ fontSize: 10, color: receivedMap[key].received_status === 'full' ? '#22c55e' : '#f59e0b', marginTop: 3 }}>
+                          {receivedMap[key].received_status === 'full' ? '✔️' : '⚠️'} {receivedMap[key].received_by} รับของแล้ว
+                        </div>
                       )}
                     </div>
                   );
@@ -322,6 +381,8 @@ export default function HeijunkaKanban() {
   const [rounds, setRounds]       = useState([]);
   const [deliveries, setDeliveries] = useState([]);
   const [confirming, setConfirming] = useState(null);
+  const [receiveModal, setReceiveModal] = useState(null); // { round, parts, mode }
+  const [receiving, setReceiving] = useState(false);
 
   /* ── load & explode ── */
   const load = useCallback(async () => {
@@ -401,7 +462,7 @@ export default function HeijunkaKanban() {
 
   useEffect(() => { loadDeliveries(); }, [loadDeliveries]);
 
-  const confirmRound = async (r) => {
+  const confirmRound = async (r, parts) => {
     if (confirming) return;
     setConfirming(r.id);
     try {
@@ -410,10 +471,60 @@ export default function HeijunkaKanban() {
         confirmed_at: new Date().toISOString(), confirmed_by: fullName || 'Store',
       }, { onConflict: 'work_date,line_name,shift,round_no', ignoreDuplicates: false });
       if (error) throw error;
+      // เข้าสต็อกในไลน์ทันที (รอผลิตกด confirm รับของอีกที)
+      const issueRows = (parts || []).filter(p => p.netTotal > 0).map(p => ({
+        line_name: r.line_name, mat_no: p.mat_no, part_name: p.part_name, qty: p.netTotal,
+        type: 'issue', work_date: workDate,
+        note: `Kanban ${r.line_name} รอบ ${r.round_no} (รอผลิตยืนยันรับ)`,
+        created_by: fullName || 'Store',
+      }));
+      if (issueRows.length) {
+        const { error: e2 } = await supabaseDR.from('line_stock_transactions').insert(issueRows);
+        if (e2) throw e2;
+      }
       toast.success(`✅ ยืนยันส่งแล้ว: ${r.line_name} รอบ ${r.round_no}`);
       await loadDeliveries();
     } catch (err) { toast.error(err.message); }
     setConfirming(null);
+  };
+
+  const openReceive = (round, parts, mode) => setReceiveModal({ round, parts, mode });
+
+  const submitReceive = async (actualQtyByMat) => {
+    const { round, parts, mode } = receiveModal;
+    setReceiving(true);
+    try {
+      let shortageNote = '';
+      if (mode === 'partial') {
+        const shortRows = [];
+        parts.filter(p => p.netTotal > 0).forEach(p => {
+          const actual = actualQtyByMat[p.mat_no] ?? p.netTotal;
+          const shortfall = p.netTotal - actual;
+          if (shortfall > 0) {
+            shortRows.push({
+              line_name: round.line_name, mat_no: p.mat_no, part_name: p.part_name, qty: shortfall,
+              type: 'consume', work_date: workDate,
+              note: `รับไม่ครบ — Kanban ${round.line_name} รอบ ${round.round_no} (ปรับยอดตามจริง)`,
+              created_by: fullName || 'ผลิต',
+            });
+          }
+        });
+        if (shortRows.length) {
+          const { error } = await supabaseDR.from('line_stock_transactions').insert(shortRows);
+          if (error) throw error;
+        }
+        shortageNote = shortRows.map(s => `${s.mat_no} ขาด ${s.qty}`).join(', ');
+      }
+      const { error } = await supabaseDR.from('kanban_deliveries').update({
+        received_at: new Date().toISOString(), received_by: fullName || 'ผลิต',
+        received_status: mode, received_note: shortageNote || null,
+      }).match({ work_date: workDate, line_name: round.line_name, shift: round.shift, round_no: round.round_no });
+      if (error) throw error;
+      toast.success(mode === 'full' ? '✔️ ยืนยันรับครบแล้ว' : '⚠️ บันทึกรับไม่ครบแล้ว');
+      setReceiveModal(null);
+      await loadDeliveries();
+    } catch (err) { toast.error(err.message); }
+    setReceiving(false);
   };
 
   /* ── explode เป็น demand พาร์ทย่อย ── */
@@ -469,6 +580,21 @@ export default function HeijunkaKanban() {
   }, [sessions, demands, bomMap, kanbanStd, lineStock, shiftFilter]);
 
   const fmt = (n) => Number.isInteger(n) ? n.toLocaleString() : n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+  // demand แยกตามไลน์ — ใช้ทั้งกำหนดยอดที่จะเข้าสต็อกตอนยืนยันส่ง และแสดงในแผง compact
+  const demandByLine = useMemo(() => {
+    const lineToColIds = {};
+    view.cols.forEach(c => { (lineToColIds[c.line] = lineToColIds[c.line] || []).push(c.id); });
+    const res = {};
+    Object.keys(lineToColIds).forEach(lineName => {
+      const colIdSet = new Set(lineToColIds[lineName]);
+      const partsForLine = view.rowList.filter(r =>
+        Object.entries(r.perCol).some(([cid, v]) => colIdSet.has(cid) && v > 0)
+      );
+      res[lineName] = { parts: partsForLine };
+    });
+    return res;
+  }, [view.cols, view.rowList]);
 
   /* ── CSV export ── */
   const exportCSV = () => {
@@ -568,7 +694,8 @@ export default function HeijunkaKanban() {
         ) : viewMode === 'board' ? (
           <StoreBoardView
             rounds={rounds} deliveries={deliveries} view={view}
-            kanbanStd={kanbanStd} onConfirm={confirmRound} confirming={confirming} fmt={fmt}
+            kanbanStd={kanbanStd} onConfirm={confirmRound} confirming={confirming}
+            onReceive={openReceive} fmt={fmt}
           />
         ) : view.cols.length === 0 ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีกะ/แผนผลิตในวันที่ {workDate}</div>
@@ -639,8 +766,66 @@ export default function HeijunkaKanban() {
 
       {/* Delivery Rounds Panel — only for cards/table view, board has it built-in */}
       {viewMode !== 'board' && (
-        <DeliveryRoundsPanel rounds={rounds} deliveries={deliveries} onConfirm={confirmRound} confirming={confirming} />
+        <DeliveryRoundsPanel rounds={rounds} deliveries={deliveries} onConfirm={confirmRound} confirming={confirming}
+          onReceive={openReceive} demandByLine={demandByLine} />
       )}
+
+      {receiveModal && (
+        <ReceiveModal
+          round={receiveModal.round} parts={receiveModal.parts} mode={receiveModal.mode}
+          fmt={fmt} saving={receiving}
+          onCancel={() => setReceiveModal(null)}
+          onSubmit={submitReceive}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ─── Receive Modal — ฝ่ายผลิตยืนยันรับของจาก Store ──────────────────────── */
+function ReceiveModal({ round, parts, mode, fmt, saving, onCancel, onSubmit }) {
+  const netParts = parts.filter(p => p.netTotal > 0);
+  const [actual, setActual] = useState(() => Object.fromEntries(netParts.map(p => [p.mat_no, p.netTotal])));
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onCancel}>
+      <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(440px,100%)', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>
+          {mode === 'full' ? '✔️ ยืนยันรับของครบ' : '⚠️ บันทึกรับของไม่ครบ'}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>{round.line_name} · รอบ {round.round_no}</div>
+
+        {mode === 'full' ? (
+          <div style={{ fontSize: 13, color: 'var(--text2)' }}>
+            ยืนยันว่าได้รับพาร์ททั้งหมด {netParts.length} รายการ ตามจำนวนที่ Store แจ้งครบถูกต้อง
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)' }}>กรอกจำนวนที่ได้รับจริงต่อพาร์ท (ค่าเริ่มต้น = จำนวนที่ Store แจ้งส่ง)</div>
+            {netParts.map(p => (
+              <div key={p.mat_no} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1, overflow: 'hidden' }}>
+                  <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#0ea5e9', fontWeight: 700 }}>{p.mat_no}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.part_name} · แจ้งส่ง {fmt(p.netTotal)} {p.uom}</div>
+                </div>
+                <input type="number" min="0" step="any"
+                  value={actual[p.mat_no]}
+                  onChange={e => setActual(a => ({ ...a, [p.mat_no]: e.target.value === '' ? '' : parseFloat(e.target.value) }))}
+                  style={{ width: 90, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontWeight: 700, textAlign: 'center' }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+          <button onClick={onCancel} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>ยกเลิก</button>
+          <button onClick={() => onSubmit(actual)} disabled={saving}
+            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: mode === 'full' ? '#22c55e' : '#f59e0b', color: '#08130a', cursor: 'pointer', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
+            {saving ? '...' : mode === 'full' ? '✔️ ยืนยันรับครบ' : '⚠️ บันทึกรับไม่ครบ'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
