@@ -7,6 +7,7 @@ import {
   ResponsiveContainer, Tooltip,
 } from 'recharts';
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
+import { loadCompanyCalendar, getDayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import tsLogoUrl from '../assets/TS logo.png';
 
 let tsLogoDataUrlPromise = null;
@@ -168,6 +169,7 @@ function DailyTab() {
   const [dailySection, setDailySection] = useState('');
   const [dailyLine, setDailyLine] = useState('');
   const [dailyTeam, setDailyTeam] = useState('');
+  const [calLoaded, setCalLoaded] = useState(false);
 
   useEffect(() => {
     supabase.from('workstations').select('id, station_name').then(({ data }) => {
@@ -176,9 +178,12 @@ function DailyTab() {
       setStationMap(m);
     });
     supabase.from('production_lines').select('id, name, section').order('name').then(({ data }) => setLines(data || []));
+    loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
 
   useEffect(() => { load(); }, [date, shift]);
+
+  const dayTypeLabel = calLoaded ? DAY_TYPE_META[getDayType(date)].label : '';
 
   const load = async () => {
     setLoading(true);
@@ -246,7 +251,7 @@ table{border-collapse:collapse;width:100%}
 @media print{@page{size:A4 landscape;margin:10mm}body{-webkit-print-color-adjust:exact}}</style>
 </head><body style="padding:10mm">
 <h2 style="margin:0 0 4px;font-size:16px">รายงานเช็คชื่อประจำวัน</h2>
-<p style="color:#666;margin:0 0 12px;font-size:10px">วันที่: ${date} · กะ: ${shift === 'day' ? 'เช้า' : shift === 'night' ? 'ดึก' : 'ทั้งหมด'} · พิมพ์วันที่: ${todayStr} · รวม ${filteredLogs.length} คน</p>
+<p style="color:#666;margin:0 0 12px;font-size:10px">วันที่: ${date} (${dayTypeLabel}) · กะ: ${shift === 'day' ? 'เช้า' : shift === 'night' ? 'ดึก' : 'ทั้งหมด'} · พิมพ์วันที่: ${todayStr} · รวม ${filteredLogs.length} คน</p>
 <table><thead><tr style="background:#f3f4f6">
 <th style="border:1px solid #ccc;padding:4px">#</th>
 <th style="border:1px solid #ccc;padding:4px">รหัส</th>
@@ -289,13 +294,18 @@ table{border-collapse:collapse;width:100%}
           <option value="C">Team C</option>
         </select>
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>รวม {filteredLogs.length} คน</span>
+        {calLoaded && (
+          <span style={{ fontSize: 12, fontWeight: 700, color: DAY_TYPE_META[getDayType(date)].color }}>
+            {DAY_TYPE_META[getDayType(date)].label}
+          </span>
+        )}
         <button onClick={handlePrintDaily} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
           🖨️ PDF
         </button>
         <CsvBtn onClick={() => downloadCSV(
           `daily_${date}_${shift}.csv`,
-          ['วันที่', 'กะ', 'รหัสพนักงาน', 'ชื่อ', 'แผนก', 'ทีม', 'หมวก', 'รองเท้า', 'ถุงมือ', 'OT'],
-          filteredLogs.map(l => [date, l.shift || (l.employees?.team === 'A' ? 'day' : l.employees?.team === 'B' ? 'night' : ''), l.employees?.employee_id_code, l.employees?.name, l.employees?.department || '', l.employees?.team || '', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.has_ot ? '✓' : ''])
+          ['วันที่', 'ประเภทวัน', 'กะ', 'รหัสพนักงาน', 'ชื่อ', 'แผนก', 'ทีม', 'หมวก', 'รองเท้า', 'ถุงมือ', 'OT'],
+          filteredLogs.map(l => [date, DAY_TYPE_META[getDayType(date)].label, l.shift || (l.employees?.team === 'A' ? 'day' : l.employees?.team === 'B' ? 'night' : ''), l.employees?.employee_id_code, l.employees?.name, l.employees?.department || '', l.employees?.team || '', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.has_ot ? '✓' : ''])
         )} />
       </div>
       {loading ? <Loader /> : (
@@ -334,6 +344,7 @@ function PerEmployeeTab() {
   const [stationMap, setStationMap] = useState({});
   const [empSection, setEmpSection] = useState('');
   const [empTeam, setEmpTeam] = useState('');
+  const [calLoaded, setCalLoaded] = useState(false);
 
   useEffect(() => {
     supabase.from('workstations').select('id, station_name').then(({ data }) => {
@@ -345,6 +356,7 @@ function PerEmployeeTab() {
       setEmployees(data || []);
       if (data?.length) setSelected(data[0].id);
     });
+    loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
 
   useEffect(() => { if (selected) load(); }, [selected, month]);
@@ -379,14 +391,18 @@ function PerEmployeeTab() {
   const handlePrintPerEmp = () => {
     const emp = employees.find(e => e.id === selected);
     const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
-    const rowsHtml = logs.map((l, i) => `<tr>
+    const rowsHtml = logs.map((l, i) => {
+      const dt = DAY_TYPE_META[getDayType(l.work_date)];
+      return `<tr style="${dt.label !== DAY_TYPE_META.working.label ? `background:${dt.color}22` : ''}">
       <td style="border:1px solid #ccc;padding:3px 6px">${fmtDate(l.work_date)}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center;color:${dt.color}">${dt.label}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.is_present ? '✓' : '✗'}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_helmet ? '✓' : '✗'}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_boots ? '✓' : '✗'}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.has_gloves ? '✓' : '✗'}</td>
       <td style="border:1px solid #ccc;padding:3px 6px">${l.assigned_line ? (stationMap[String(l.assigned_line)] || l.assigned_line) : '—'}</td>
-    </tr>`).join('');
+    </tr>`;
+    }).join('');
     const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>รายพนักงาน ${emp?.name || ''}</title>
 <style>@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
 body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
@@ -397,6 +413,7 @@ table{border-collapse:collapse;width:100%}
 <p style="color:#666;margin:0 0 12px;font-size:10px">${emp?.employee_id_code || ''} — ${emp?.name || ''} · เดือน: ${month} · พิมพ์วันที่: ${todayStr}</p>
 <table><thead><tr style="background:#f3f4f6">
 <th style="border:1px solid #ccc;padding:4px">วันที่</th>
+<th style="border:1px solid #ccc;padding:4px">ประเภทวัน</th>
 <th style="border:1px solid #ccc;padding:4px">มาทำงาน</th>
 <th style="border:1px solid #ccc;padding:4px">หมวก</th>
 <th style="border:1px solid #ccc;padding:4px">รองเท้า</th>
@@ -432,8 +449,8 @@ table{border-collapse:collapse;width:100%}
           const emp = employees.find(e => e.id === selected);
           downloadCSV(
             `employee_${emp?.employee_id_code || selected}_${month}.csv`,
-            ['วันที่', 'มาทำงาน', 'หมวก', 'รองเท้า', 'ถุงมือ', 'จุดงาน'],
-            logs.map(l => [l.work_date, l.is_present ? '✓' : '✗', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.assigned_line || ''])
+            ['วันที่', 'ประเภทวัน', 'มาทำงาน', 'หมวก', 'รองเท้า', 'ถุงมือ', 'จุดงาน'],
+            logs.map(l => [l.work_date, DAY_TYPE_META[getDayType(l.work_date)].label, l.is_present ? '✓' : '✗', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.assigned_line || ''])
           );
         }} />
       </div>
@@ -3101,10 +3118,12 @@ function AttendanceFormTab() {
   const [lines,   setLines]   = useState([]);
   const [empRows, setEmpRows] = useState([]); // [{emp, byDay:{d:{present,ot,leave}}}]
   const [loading, setLoading] = useState(false);
+  const [calLoaded, setCalLoaded] = useState(false);
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name, section').order('name')
       .then(({ data }) => setLines(data || []));
+    loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
 
   const periodDays = () => {
@@ -3113,9 +3132,12 @@ function AttendanceFormTab() {
     return Array.from({ length: dim - 15 }, (_, i) => i + 16);
   };
 
+  const dayDateStr = (day) => `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+  // ถือว่าเป็น "วันหยุด" (เน้นสี) เมื่อ company_calendar ระบุ ot15/ot2 หรือเป็นวันอาทิตย์ (กรณียังไม่ตั้งค่าปฏิทิน)
   const isSunday = (day) => {
-    const d = new Date(year, month - 1, day);
-    return d.getDay() === 0;
+    if (calLoaded) return getDayType(dayDateStr(day)) !== 'working';
+    return new Date(year, month - 1, day).getDay() === 0;
   };
 
   const load = async () => {
@@ -3489,7 +3511,7 @@ function AttendanceFormTab() {
             const daysArr = periodDays();
             downloadCSV(
               `attendance_${year}_${String(month).padStart(2,'0')}_p${period}.csv`,
-              ['รหัสพนักงาน', 'ชื่อ', 'ส่วนงาน', 'Team', ...daysArr.map(d => String(d)), 'รวมวัน', 'OT'],
+              ['รหัสพนักงาน', 'ชื่อ', 'ส่วนงาน', 'Team', ...daysArr.map(d => isSunday(d) ? `${d}(หยุด)` : String(d)), 'รวมวัน', 'OT'],
               empRows.map(r => {
                 const totalP  = daysArr.filter(d => r.byDay[d]?.present).length;
                 const totalOT = daysArr.filter(d => r.byDay[d]?.ot).length;
