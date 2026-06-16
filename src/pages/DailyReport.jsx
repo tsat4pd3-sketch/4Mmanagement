@@ -4,6 +4,23 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
 import { toast } from '../components/Toast';
+import tsLogoUrl from '../assets/TS logo.png';
+
+// โหลดโลโก้บริษัท (เหมือนหน้าเว็บ) เป็น base64 ครั้งเดียวสำหรับฝัง PDF
+let tsLogoDataUrlPromise = null;
+function getTsLogoDataUrl() {
+  if (!tsLogoDataUrlPromise) {
+    tsLogoDataUrlPromise = fetch(tsLogoUrl)
+      .then(r => r.blob())
+      .then(blob => new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+      }))
+      .catch(() => null);
+  }
+  return tsLogoDataUrlPromise;
+}
 
 function notifyProdClose(payload) {
   fetch(`https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-notification`, {
@@ -2316,19 +2333,21 @@ function ExportTab() {
     const { default: autoTable } = await import('jspdf-autotable');
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const PAGE_W = 210, MARGIN = 12, CONTENT_W = PAGE_W - MARGIN * 2;
+    const logoDataUrl = await getTsLogoDataUrl();
 
     sessions.forEach((s, idx) => {
       if (idx > 0) doc.addPage();
       let y = MARGIN;
 
-      // ── Header ──────────────────────────────────────────────
+      // ── Header (โลโก้บริษัทเดียวกับหน้าเว็บ) ──────────────────
+      if (logoDataUrl) doc.addImage(logoDataUrl, 'PNG', MARGIN, y - 2, 10, 11.6);
       doc.setFontSize(13).setFont(undefined, 'bold');
-      doc.text('Thai Summit Group', MARGIN, y);
+      doc.text('Thai Summit Group', MARGIN + (logoDataUrl ? 13 : 0), y + 4);
       doc.setFontSize(15);
-      doc.text('DAILY PRODUCTION REPORT', PAGE_W / 2, y, { align: 'center' });
+      doc.text('DAILY PRODUCTION REPORT', PAGE_W / 2, y + 4, { align: 'center' });
       doc.setFontSize(9).setFont(undefined, 'normal');
-      doc.text(`ใบรายงานการผลิตประจำกะ`, PAGE_W / 2, y + 5, { align: 'center' });
-      y += 11;
+      doc.text(`ใบรายงานการผลิตประจำกะ`, PAGE_W / 2, y + 9, { align: 'center' });
+      y += 15;
       doc.setLineWidth(0.5);
       doc.line(MARGIN, y, PAGE_W - MARGIN, y);
       y += 5;
