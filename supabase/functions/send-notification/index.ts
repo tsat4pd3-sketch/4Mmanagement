@@ -113,6 +113,31 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
     }
 
+    /* ── Production session close workflow ───────── */
+    if (event === 'prod_close') {
+      const s = body.session;
+      if (!s) return new Response('missing session', { status: 400 });
+      const shiftLabel = s.shift === 'day' ? 'กะเช้า' : 'กะดึก';
+      const map = {
+        pending_close:    { title: '🟡 ขอปิดกะ — รอ SV อนุมัติ', extra: '' },
+        closed:           { title: '✅ ปิดกะสำเร็จ', extra: '' },
+        closed_approved:  { title: '✅ SV อนุมัติปิดกะแล้ว', extra: `\n🙋 ผู้ขอปิดกะ: ${s.requested_by || '-'}` },
+        closed_rejected:  { title: '❌ SV ปฏิเสธคำขอปิดกะ', extra: `\n🙋 ผู้ขอปิดกะ: ${s.requested_by || '-'}` },
+      };
+      const m = map[s.status] ?? { title: `🔔 Production · ${s.status}`, extra: '' };
+      const lines = [
+        `<b>${m.title}</b>`,
+        ``,
+        `🏭 ไลน์: ${s.line_name} · ${shiftLabel}`,
+        `📅 วันที่: ${s.work_date}`,
+      ];
+      if (s.qty_ok != null) lines.push(`✅ ดี: ${s.qty_ok}  ❌ NG: ${s.qty_ng ?? 0}${s.qty_suspect ? `  ⚠️ สงสัย: ${s.qty_suspect}` : ''}`);
+      if (s.oee != null)    lines.push(`📊 OEE: ${s.oee}%`);
+      lines.push(`${m.extra}`, ``, `👤 ผู้ดำเนินการ: ${s.actor}`, `— Production System`);
+      await sendTelegram(lines.join('\n')).catch(console.error);
+      return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
+    }
+
     const { log } = body;
     if (!log) return new Response('missing log', { status: 400 });
 

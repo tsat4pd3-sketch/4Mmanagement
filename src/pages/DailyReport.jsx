@@ -5,6 +5,14 @@ import { UserContext } from '../App';
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
 import { toast } from '../components/Toast';
 
+function notifyProdClose(payload) {
+  fetch(`https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-notification`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+    body: JSON.stringify({ event: 'prod_close', session: payload }),
+  }).catch(() => {});
+}
+
 /* ─── TimeInput24 — always 24h regardless of OS locale ─────── */
 function TimeInput24({ value = '', onChange, style = {} }) {
   const [h, m] = (value || '--:--').split(':');
@@ -841,6 +849,12 @@ function LiveTab({ role }) {
     } else {
       toast.success(`ปิดกะสำเร็จ · OEE ${(oee * 100).toFixed(1)}% · ดี ${totalQtyOk} / NG ${totalQtyNg} / สงสัย ${totalQtySuspect}`);
     }
+    notifyProdClose({
+      status: isLeaderRequest ? 'pending_close' : 'closed',
+      line_name: selSession.line_name, shift: selSession.shift, work_date: selSession.work_date,
+      actor: fullName, qty_ok: totalQtyOk, qty_ng: totalQtyNg, qty_suspect: totalQtySuspect,
+      oee: parseFloat((oee * 100).toFixed(1)),
+    });
     setShowCloseShift(false);
     setCarryOverDecisions({});
     setCarryQtyActual({});
@@ -882,6 +896,12 @@ function LiveTab({ role }) {
     }
 
     toast.success(`อนุมัติปิดกะแล้ว ✓ (ขอโดย ${selSession.close_requested_by_name || '—'})`);
+    notifyProdClose({
+      status: 'closed_approved', line_name: selSession.line_name, shift: selSession.shift,
+      work_date: selSession.work_date, actor: fullName,
+      requested_by: selSession.close_requested_by_name,
+      qty_ok: selSession.qty_ok, qty_ng: selSession.qty_ng, oee: selSession.oee,
+    });
     load();
     setSelSession(null);
     setDtLogs([]);
@@ -903,6 +923,11 @@ function LiveTab({ role }) {
     }).eq('id', selSession.id);
     if (error) { toast.error(error.message); return; }
     toast.info('ปฏิเสธคำขอปิดกะ — กะกลับสู่ "กำลังผลิต"');
+    notifyProdClose({
+      status: 'closed_rejected', line_name: selSession.line_name, shift: selSession.shift,
+      work_date: selSession.work_date, actor: fullName,
+      requested_by: selSession.close_requested_by_name,
+    });
     load();
     setSelSession(prev => ({ ...prev, status: 'open', close_requested_by_name: null }));
   };
