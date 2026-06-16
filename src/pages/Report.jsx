@@ -3178,7 +3178,7 @@ function AttendanceFormTab() {
     const tdStyle = 'border:1px solid #000;text-align:center;font-size:9px;padding:0;height:14px;';
     const tdOTStyle = 'border:1px solid #000;text-align:center;font-size:8px;padding:0;height:12px;';
 
-    const leaveCode = {'ลากิจ':'ก', 'ลาป่วย':'ป', 'ลาพักร้อน':'พง'};
+    const leaveCode = {'ลากิจ':'ก', 'ลาป่วย':'ป', 'ลาพักร้อน':'พ'};
     const slash = `<span style="font-size:12px;line-height:1">╱</span>`;
 
     // ช = first 4 hrs  (day 08:00-12:00 / night 22:30-02:30)
@@ -3329,29 +3329,28 @@ function AttendanceFormTab() {
     </td>
     <td style="vertical-align:middle;padding:2px 8px">
       <div style="font-size:11px;font-weight:bold;text-align:center">บริษัท ไทยซัมมิท โอโตโมทีฟ จำกัด</div>
-      <div style="font-size:10px;font-weight:bold;text-align:center;margin-top:2px">ใบบันทึกการมาทำงาน - กราฟแรงงานของพนักงาน</div>
+      <div style="font-size:10px;font-weight:bold;text-align:center;margin-top:2px">ใบบันทึกการมาทำงาน - การหยุดงานของพนักงาน</div>
       <div style="font-size:10px;text-align:center;margin-top:2px">${deptLabel}</div>
     </td>
     <td style="width:48%;vertical-align:top;padding:0">
       <table style="width:100%;border-collapse:collapse;font-size:9px">
         <tr>
-          <td colspan="4" style="border:1px solid #000;padding:1px 6px;text-align:right;font-size:8px;font-weight:bold">
+          <td colspan="3" style="border:1px solid #000;padding:1px 6px;text-align:right;font-size:8px;font-weight:bold">
             เลขที่เอกสาร: ${formNoStr}
           </td>
         </tr>
         <tr>
           <td style="border:1px solid #000;padding:2px 6px;text-align:center">เดือน ${THAI_MONTHS[month]} ${year+543}</td>
           <td style="border:1px solid #000;padding:2px 6px;text-align:center">งวด วันที่ ${dStr}</td>
-          <td colspan="2" style="border:1px solid #000;padding:2px 6px;text-align:center">จำนวนพนักงาน <b>${totalEmp}</b> คน</td>
+          <td style="border:1px solid #000;padding:2px 6px;text-align:center">จำนวนพนักงาน <b>${totalEmp}</b> คน</td>
         </tr>
         <tr>
-          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:top;padding-top:2px;font-size:7px">
+          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:7px">
             ${sigDataUrl ? `<img src="${sigDataUrl}" style="max-height:36px;max-width:70px;object-fit:contain;display:block;margin:0 auto 2px"/>` : '<div style="height:36px"></div>'}
-            ผู้บันทึก<br/>(หัวหน้างาน)
+            หัวหน้าแผนก
           </td>
-          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:7px">ผู้จัดการสายงาน</td>
-          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:7px">เจ้าหน้าที่ TA</td>
-          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:7px">ผู้อำนวยการ<br/>ฝ่ายบุคคล (HRM)</td>
+          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:7px">หัวหน้าส่วน</td>
+          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:7px">ผู้จัดการ</td>
         </tr>
       </table>
     </td>
@@ -3384,11 +3383,11 @@ function AttendanceFormTab() {
       <th rowspan="2" style="${thStyle}width:13px">ส</th>
       <th rowspan="2" style="${thStyle}width:13px">ป</th>
       <th rowspan="2" style="${thStyle}width:13px">ก</th>
-      <th rowspan="2" style="${thStyle}width:14px">พง</th>
+      <th rowspan="2" style="${thStyle}width:14px">พ</th>
       <th rowspan="2" style="${thStyle}width:14px">กธ</th>
-      <th rowspan="2" style="${thStyle}width:14px">บป</th>
+      <th rowspan="2" style="${thStyle}width:14px">บ</th>
       <th rowspan="2" style="${thStyle}width:13px">ข</th>
-      <th rowspan="2" style="${thStyle}width:14px">มต</th>
+      <th rowspan="2" style="${thStyle}width:14px">พง</th>
       <th rowspan="2" style="${thStyle}width:16px">OT</th>
     </tr>
     <tr>
@@ -3402,8 +3401,8 @@ function AttendanceFormTab() {
 
 <!-- FOOTER -->
 <div style="margin-top:4px;font-size:8px;line-height:1.7;border-top:1px solid #666;padding-top:3px">
-  หมายเหตุ * ส=มาสาย &nbsp; ป=ลาป่วย &nbsp; ก=ลากิจ &nbsp; พง=พักผ่อนประจำปี &nbsp; กธ=กิจธุระอันจำเป็น &nbsp; บป=ลาอุปสมบท &nbsp; ข=ขาดงาน &nbsp; พง=พักงาน<br/>
-  * ช = ช่วงเช้า, บ = ช่วงบ่าย, อ = ช่วงโอที, มต = ไม่มา Meeting<br/>
+  หมายเหตุ * ส=มาสาย &nbsp; ป=ลาป่วย &nbsp; ก=ลากิจ &nbsp; พ=พักผ่อนประจำปี &nbsp; กธ=ลากิจธุระอันจำเป็น &nbsp; บ=ลาอุปสมบท &nbsp; ข=ขาดงาน &nbsp; พง=พักงาน<br/>
+  * ช = ช่วงเช้า, บ = ช่วงบ่าย, อ = ช่วงโอที, มด = ไม่มา Meeting<br/>
   * ลา 2 ชั่วโมง = 0.2, ลาครึ่งวัน = 0.5
 </div>
 
