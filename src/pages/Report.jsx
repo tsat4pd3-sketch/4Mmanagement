@@ -2585,6 +2585,7 @@ function SkillAllowanceTab() {
   const [period, setPeriod] = useState(1); // 1=วันที่ 1-15, 2=วันที่ 16-31
   const [line,   setLine]   = useState('');
   const [section, setSection] = useState('');
+  const [team,   setTeam]   = useState('');
   const [lines,  setLines]  = useState([]);
   const [rows,   setRows]   = useState([]); // [{emp, days:{1:true,...}, total}]
   const [loading, setLoading] = useState(false);
@@ -2638,6 +2639,7 @@ function SkillAllowanceTab() {
 
     const result = Object.values(empMap)
       .filter(r => section ? r.emp?.section === section : true)
+      .filter(r => team ? r.emp?.team === team : true)
       .sort((a, b) => (a.emp?.name || '').localeCompare(b.emp?.name || '', 'th'));
 
     setRows(result);
@@ -2797,6 +2799,15 @@ function SkillAllowanceTab() {
             {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
           </select>
         </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Team</div>
+          <select value={team} onChange={e => setTeam(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            <option value="">ทุก Team</option>
+            <option value="A">Team A</option>
+            <option value="B">Team B</option>
+            <option value="C">Team C</option>
+          </select>
+        </div>
         <button onClick={load} disabled={loading}
           style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
           {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
@@ -2904,6 +2915,7 @@ function AttendanceFormTab() {
   const [period,  setPeriod]  = useState(2); // 1=1-15, 2=16-end
   const [line,    setLine]    = useState('');
   const [dept,    setDept]    = useState('');
+  const [team,    setTeam]    = useState('');
   const [formNo,  setFormNo]  = useState('F-HR-001');
   const [lines,   setLines]   = useState([]);
   const [empRows, setEmpRows] = useState([]); // [{emp, byDay:{d:{present,ot,leave}}}]
@@ -2948,6 +2960,7 @@ function AttendanceFormTab() {
       if (!emp) return;
       if (selectedLineId && emp.line_id !== selectedLineId) return;
       if (dept && emp.section !== dept) return;
+      if (team && emp.team !== team) return;
 
       const id  = log.employee_id;
       const day = parseInt(log.work_date.split('-')[2]);
@@ -3269,6 +3282,15 @@ function AttendanceFormTab() {
             </select>
           </div>
         )}
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Team</div>
+          <select value={team} onChange={e => setTeam(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            <option value="">ทุก Team</option>
+            <option value="A">Team A</option>
+            <option value="B">Team B</option>
+            <option value="C">Team C</option>
+          </select>
+        </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>เลขที่เอกสาร</div>
           <input
