@@ -2623,6 +2623,23 @@ function SkillAllowanceTab() {
     setCostCenter(lineObj?.cost_center || '');
   }, [line, lines]);
 
+  // ดึงชื่อผู้บันทึก/อนุมัติ ประจำส่วนงานอัตโนมัติ (ยังแก้ไขเองได้ถ้าต้องการ)
+  useEffect(() => {
+    const lineObj = lines.find(l => l.name === line);
+    const sec = lineObj?.section;
+    if (!sec) {
+      setSignerHead(''); setSignerManager(''); setSignerTA(''); setSignerHRM('');
+      return;
+    }
+    supabase.from('section_signers').select('*').eq('section', sec).maybeSingle()
+      .then(({ data }) => {
+        setSignerHead(data?.head_name || '');
+        setSignerManager(data?.manager_name || '');
+        setSignerTA(data?.ta_name || '');
+        setSignerHRM(data?.hrm_name || '');
+      });
+  }, [line, lines]);
+
   // ช่วงวันตามงวด
   const periodDays = () => {
     const daysInMonth = new Date(year, month, 0).getDate();

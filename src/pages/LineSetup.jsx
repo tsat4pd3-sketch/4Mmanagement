@@ -33,6 +33,13 @@ export default function LineSetup() {
   const [costCenter, setCostCenter] = useState('');
   const [mpSaving, setMpSaving] = useState(false);
 
+  // ผู้บันทึก/อนุมัติ ประจำส่วนงาน (ใช้ดึงอัตโนมัติในใบค่าฝีมือ)
+  const [signerHead,    setSignerHead]    = useState('');
+  const [signerManager, setSignerManager] = useState('');
+  const [signerTA,       setSignerTA]      = useState('');
+  const [signerHRM,      setSignerHRM]     = useState('');
+  const [signersSaving, setSignersSaving] = useState(false);
+
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 768);
     window.addEventListener('resize', handler);
@@ -64,7 +71,32 @@ export default function LineSetup() {
       setStdDay(lineObj.std_day_shift ?? 0);
       setStdNight(lineObj.std_night_shift ?? 0);
       setCostCenter(lineObj.cost_center ?? '');
+      if (lineObj.section) {
+        const { data: signers } = await supabase.from('section_signers').select('*').eq('section', lineObj.section).maybeSingle();
+        setSignerHead(signers?.head_name || '');
+        setSignerManager(signers?.manager_name || '');
+        setSignerTA(signers?.ta_name || '');
+        setSignerHRM(signers?.hrm_name || '');
+      } else {
+        setSignerHead(''); setSignerManager(''); setSignerTA(''); setSignerHRM('');
+      }
     }
+  };
+
+  const handleSaveSigners = async () => {
+    const lineObj = lines.find(l => l.name === selectedLine);
+    if (!lineObj?.section) return alert('ไลน์นี้ยังไม่ได้กำหนดส่วนงาน (section)');
+    setSignersSaving(true);
+    const { error } = await supabase.from('section_signers').upsert({
+      section: lineObj.section,
+      head_name: signerHead || null,
+      manager_name: signerManager || null,
+      ta_name: signerTA || null,
+      hrm_name: signerHRM || null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'section' });
+    if (error) alert('Error: ' + error.message);
+    setSignersSaving(false);
   };
 
   const handleSaveStdManpower = async () => {
@@ -561,6 +593,47 @@ export default function LineSetup() {
               </button>
             </div>
           </div>
+
+          {/* ── ผู้บันทึก/อนุมัติ ประจำส่วนงาน ─────────────────── */}
+          <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />
+          <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
+            ✍️ ผู้บันทึก/อนุมัติ ประจำส่วนงาน {lines.find(l => l.name === selectedLine)?.section ? `(${lines.find(l => l.name === selectedLine)?.section})` : ''}
+          </h4>
+          {lines.find(l => l.name === selectedLine)?.section ? (
+            <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 14 }}>
+              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 10 }}>
+                ใช้ดึงอัตโนมัติเป็นชื่อผู้บันทึกในใบสรุปค่าฝีมือ — กรอกครั้งเดียวต่อส่วนงาน ไม่ต้องพิมพ์ซ้ำทุกครั้งที่ export
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
+                <div>
+                  <label style={labelSt}>หัวหน้างาน</label>
+                  <input type="text" value={signerHead} onChange={e => setSignerHead(e.target.value)} style={{ marginTop: 4 }} />
+                </div>
+                <div>
+                  <label style={labelSt}>ผู้จัดการต้นสังกัด</label>
+                  <input type="text" value={signerManager} onChange={e => setSignerManager(e.target.value)} style={{ marginTop: 4 }} />
+                </div>
+                <div>
+                  <label style={labelSt}>เจ้าหน้าที่ TA</label>
+                  <input type="text" value={signerTA} onChange={e => setSignerTA(e.target.value)} style={{ marginTop: 4 }} />
+                </div>
+                <div>
+                  <label style={labelSt}>ผู้จัดการส่วน HRM</label>
+                  <input type="text" value={signerHRM} onChange={e => setSignerHRM(e.target.value)} style={{ marginTop: 4 }} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={handleSaveSigners} disabled={signersSaving}
+                  style={{ padding: '7px 18px', background: signersSaving ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                  {signersSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ fontSize: 11, color: 'var(--muted)', padding: '8px 0' }}>
+              ไลน์นี้ยังไม่ได้กำหนดส่วนงาน (section) — กำหนดในหน้ารายการไลน์ก่อนเพื่อบันทึกผู้อนุมัติ
+            </div>
+          )}
 
         </>}
       </div>
