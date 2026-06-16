@@ -7,6 +7,7 @@ const ROLES = [
   { value: 'supervisor', label: 'Supervisor', color: '#4d9fff', desc: 'ภาพรวม + Cross Line + ตั้งค่าไลน์ + เช็คชื่อ' },
   { value: 'leader',     label: 'Leader',     color: '#22c55e', desc: 'ภาพรวม + ไลน์ตัวเอง + พนักงานในไลน์' },
   { value: 'qa',         label: 'QA',         color: '#c084fc', desc: 'Approve/Reject 4M Changes + ดูรายงาน' },
+  { value: 'document_control', label: 'Document Control', color: '#fb923c', desc: 'ดูแลปฏิทินบริษัท + เอกสารควบคุม (วันทำงาน/วันหยุด/กะ)' },
 ];
 const SECTIONS = ['PD1', 'PD2', 'PD3', 'PD4'];
 const TEAMS    = ['A', 'B'];
