@@ -70,6 +70,11 @@ export default function Checkin() {
   const [noSchedule,     setNoSchedule]     = useState(false);
   const [selSection,     setSelSection]     = useState('');
   const [selLine,        setSelLine]        = useState('');
+  const [showExport,     setShowExport]     = useState(false);
+  const [exportMonth,    setExportMonth]    = useState(() => toLocalDateStr(new Date()).slice(0, 7));
+  const [exportHalf,     setExportHalf]     = useState('1-15');
+  const [exportSection,  setExportSection]  = useState('');
+  const [exporting,      setExporting]      = useState(false);
 
   const shiftInfo = getShiftInfo();
 
@@ -328,6 +333,159 @@ export default function Checkin() {
     setIsSaving(false);
   };
 
+  /* ── Export: ฟอร์มกระดาษจริง (ใบขออนุมัติ OT + บันทึกการมาทำงาน) ─── */
+  const ATT_CODE = { 'ลากิจ': 'ก', 'ลาป่วย': 'ป', 'ลาพักร้อน': 'ส' };
+
+  const handleExportForms = async () => {
+    setExporting(true);
+    try {
+      const [y, m] = exportMonth.split('-').map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+      const dayFrom = exportHalf === '1-15' ? 1 : 16;
+      const dayTo   = exportHalf === '1-15' ? 15 : lastDay;
+      const dateFrom = `${exportMonth}-${String(dayFrom).padStart(2, '0')}`;
+      const dateTo   = `${exportMonth}-${String(dayTo).padStart(2, '0')}`;
+      const days = [];
+      for (let d = dayFrom; d <= dayTo; d++) days.push(d);
+
+      let empQ = supabase.from('employees').select('id, employee_id_code, name, position, line_id').eq('is_active', true).order('employee_id_code');
+      const { data: empData } = await empQ;
+      const lineIds = exportSection ? lines.filter(l => l.section === exportSection).map(l => l.id) : null;
+      const scopedEmp = (empData || []).filter(e => !lineIds || lineIds.includes(e.line_id));
+      if (!scopedEmp.length) { toast.error('ไม่พบพนักงานในส่วนงานนี้'); setExporting(false); return; }
+
+      const { data: logData } = await supabase
+        .from('daily_production_logs')
+        .select('employee_id, work_date, is_present, has_ot, has_extended_ot, leave_type')
+        .gte('work_date', dateFrom).lte('work_date', dateTo)
+        .in('employee_id', scopedEmp.map(e => e.id));
+
+      const logsByEmp = {};
+      (logData || []).forEach(l => {
+        if (!logsByEmp[l.employee_id]) logsByEmp[l.employee_id] = {};
+        logsByEmp[l.employee_id][l.work_date] = l;
+      });
+
+      const { default: jsPDF } = await import('jspdf');
+      const { default: autoTable } = await import('jspdf-autotable');
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const deptLabel = exportSection || 'ทุกส่วนงาน';
+
+      /* ── Form 1: ใบรายงานการปฏิบัติงานชดเชย/ทำ OT (ฟอร์ม 2) ───── */
+      let y0 = 10;
+      doc.setFontSize(11); doc.setFont(undefined, 'bold');
+      doc.text('บริษัท ไทยซัมมิทออโตพาร์ท จำกัด', 14, y0);
+      doc.setFontSize(13);
+      doc.text('ใบรายงานการปฏิบัติงานชดเชย / ทำ OT', 148, y0, { align: 'center' });
+      y0 += 6;
+      doc.setFontSize(9); doc.setFont(undefined, 'normal');
+      doc.text(`แผนก/ส่วนงาน: ${deptLabel}`, 14, y0);
+      doc.text(`เดือน: ${m}  ปี ${y + 543}   ช่วงวันที่ ${dayFrom}-${dayTo}`, 148, y0, { align: 'center' });
+      doc.text(`ชุดที่ 02`, 270, y0, { align: 'right' });
+
+      const otHead = [['ลำดับ', 'เลขที่พนักงาน', 'ชื่อ-สกุล', ...days.map(String), 'รวม (ชม.)']];
+      const otRows = scopedEmp.map((e, i) => {
+        const logs = logsByEmp[e.id] || {};
+        let total = 0;
+        const cells = days.map(d => {
+          const dateStr = `${exportMonth}-${String(d).padStart(2, '0')}`;
+          const log = logs[dateStr];
+          if (!log) return '';
+          const hrs = log.has_extended_ot ? 2 : log.has_ot ? 1 : 0;
+          total += hrs;
+          return hrs ? String(hrs) : '';
+        });
+        return [i + 1, e.employee_id_code, e.name, ...cells, total || ''];
+      });
+
+      autoTable(doc, {
+        head: otHead, body: otRows, startY: y0 + 4,
+        styles: { fontSize: 6.5, halign: 'center', cellPadding: 1 },
+        headStyles: { fillColor: [40, 60, 90], fontSize: 6.5 },
+        columnStyles: { 2: { halign: 'left', cellWidth: 32 } },
+        margin: { left: 14, right: 14 },
+      });
+
+      let yAfter = doc.lastAutoTable.finalY + 6;
+      doc.setFontSize(7.5);
+      [
+        'หมายเหตุ:',
+        '1. วันที่ 1-15 อยู่ในรอบจ่ายค่าตอบแทนวันที่ 22 ของเดือน',
+        '2. วันที่ 16-สิ้นเดือน อยู่ในรอบจ่ายค่าตอบแทนวันที่ 7 ของเดือนถัดไป',
+        '3. กรณีลา/ฝึกอบรมข้ามวัน ให้บันทึกในวันที่เกิดขึ้นจริง',
+        '4. ชั่วโมง OT นับเฉพาะที่ได้รับอนุมัติให้ปฏิบัติงานจริง',
+      ].forEach((t, i) => { doc.text(t, 14, yAfter + i * 4); });
+
+      const sigY = yAfter + 26;
+      const sigBoxes = ['ผู้บันทึก', 'ผู้ตรวจสอบ', 'ผู้อนุมัติแผนก', 'ผู้อนุมัติฝ่าย HRM'];
+      sigBoxes.forEach((label, i) => {
+        const x = 14 + i * 68;
+        doc.rect(x, sigY, 60, 22);
+        doc.setFontSize(7.5);
+        doc.text(label, x + 30, sigY + 18, { align: 'center' });
+        doc.text('ลงชื่อ ......................................', x + 30, sigY + 8, { align: 'center' });
+      });
+
+      /* ── Form 2: บันทึกการมาทำงาน (รายเดือน) ───────────────────── */
+      doc.addPage();
+      let y1 = 10;
+      doc.setFontSize(11); doc.setFont(undefined, 'bold');
+      doc.text('บริษัท ไทยซัมมิทออโตพาร์ท จำกัด', 14, y1);
+      doc.setFontSize(13);
+      doc.text('บันทึกการมาทำงาน', 148, y1, { align: 'center' });
+      y1 += 6;
+      doc.setFontSize(9); doc.setFont(undefined, 'normal');
+      doc.text(`แผนก: ${deptLabel}`, 14, y1);
+      doc.text(`เดือน ${m} ปี ${y + 543}   วันที่ ${dayFrom}-${dayTo}`, 148, y1, { align: 'center' });
+
+      const attHead = [['ลำดับ', 'เลขที่พนักงาน', 'ชื่อ-สกุล', ...days.map(String)]];
+      const attRows = scopedEmp.map((e, i) => {
+        const logs = logsByEmp[e.id] || {};
+        const cells = days.map(d => {
+          const dateStr = `${exportMonth}-${String(d).padStart(2, '0')}`;
+          const log = logs[dateStr];
+          if (!log) return '';
+          if (log.leave_type) return ATT_CODE[log.leave_type] || 'ล';
+          if (!log.is_present) return 'ขาด';
+          if (log.has_extended_ot) return '/OT+';
+          if (log.has_ot) return '/OT';
+          return '/';
+        });
+        return [i + 1, e.employee_id_code, e.name, ...cells];
+      });
+
+      autoTable(doc, {
+        head: attHead, body: attRows, startY: y1 + 4,
+        styles: { fontSize: 6.5, halign: 'center', cellPadding: 1 },
+        headStyles: { fillColor: [40, 60, 90], fontSize: 6.5 },
+        columnStyles: { 2: { halign: 'left', cellWidth: 32 } },
+        margin: { left: 14, right: 14 },
+      });
+
+      const legendY = doc.lastAutoTable.finalY + 6;
+      doc.setFontSize(7.5);
+      doc.text('สัญลักษณ์ :  / = มาทำงาน   ขาด = ขาดงาน   ก = ลากิจ   ป = ลาป่วย   ส = ลาพักร้อน   /OT = ทำ OT ปกติ   /OT+ = ทำ OT ขยาย (23:00 น.)', 14, legendY);
+
+      const sigY2 = legendY + 16;
+      ['ผู้บังคับบัญชา / หัวหน้างาน', 'ผู้ตรวจสอบ (HRM)'].forEach((label, i) => {
+        const x = 14 + i * 100;
+        doc.rect(x, sigY2, 90, 22);
+        doc.setFontSize(7.5);
+        doc.text(label, x + 45, sigY2 + 18, { align: 'center' });
+        doc.text('ลงชื่อ ......................................', x + 45, sigY2 + 8, { align: 'center' });
+      });
+
+      doc.save(`attendance_forms_${exportMonth}_${exportHalf}${exportSection ? '_' + exportSection : ''}.pdf`);
+      toast.success('สร้างไฟล์ PDF สำเร็จ');
+      setShowExport(false);
+    } catch (err) {
+      console.error(err);
+      toast.error('สร้าง PDF ไม่สำเร็จ: ' + err.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const sections = [...new Set(lines.map(l => l.section))].sort();
   const linesForSection = selSection ? lines.filter(l => l.section === selSection) : lines;
 
@@ -378,6 +536,16 @@ export default function Checkin() {
             }}
           >
             {filterShift ? '👁 เฉพาะกะนี้' : '👥 ทุกคน'}
+          </button>
+          <button
+            onClick={() => { setExportSection(selSection || ''); setShowExport(true); }}
+            style={{
+              padding: '8px 14px', borderRadius: 8,
+              border: '1px solid var(--border2)', fontSize: 12, cursor: 'pointer',
+              background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 600,
+            }}
+          >
+            📄 ส่งออกฟอร์ม
           </button>
           <button
             onClick={handleSave}
@@ -689,6 +857,44 @@ export default function Checkin() {
           </tbody>
         </table>
       </div>
+
+      {/* Export forms modal */}
+      {showExport && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'var(--card)', borderRadius: 12, padding: 22, width: 380, border: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 14, color: 'var(--text)' }}>📄 ส่งออกฟอร์มกระดาษ (PDF)</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>
+              สร้างฟอร์ม 2 หน้า ตามฟอร์มกระดาษจริงที่ใช้หน้างาน:<br />
+              1) ใบรายงานการปฏิบัติงานชดเชย/ทำ OT &nbsp; 2) บันทึกการมาทำงาน
+            </div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>เดือน</label>
+            <input type="month" value={exportMonth} onChange={e => setExportMonth(e.target.value)}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', marginBottom: 12, background: 'var(--bg)', color: 'var(--text)' }} />
+
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>ช่วงครึ่งเดือน</label>
+            <select value={exportHalf} onChange={e => setExportHalf(e.target.value)}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', marginBottom: 12, background: 'var(--bg)', color: 'var(--text)' }}>
+              <option value="1-15">วันที่ 1-15</option>
+              <option value="16-end">วันที่ 16-สิ้นเดือน</option>
+            </select>
+
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>ส่วนงาน</label>
+            <select value={exportSection} onChange={e => setExportSection(e.target.value)}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', marginBottom: 18, background: 'var(--bg)', color: 'var(--text)' }}>
+              <option value="">— ทุกส่วนงาน —</option>
+              {sections.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowExport(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
+              <button onClick={handleExportForms} disabled={exporting}
+                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                {exporting ? '⏳ กำลังสร้าง...' : '⬇ สร้าง PDF'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
