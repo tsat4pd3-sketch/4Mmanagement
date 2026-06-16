@@ -13,36 +13,26 @@ function notifyProdClose(payload) {
   }).catch(() => {});
 }
 
-/* ─── TimeInput24 — always 24h regardless of OS locale ─────── */
+/* ─── TimeInput24 — native time picker (spinner arrows + clock UI) ───
+   พนักงานคลิกลูกศรขึ้น/ลงข้างตัวเลข หรือคลิกไอคอนนาฬิกาเพื่อเลือกเวลา
+   ปุ่ม "ตอนนี้" เติมเวลาปัจจุบันให้ทันที ───────────────────────── */
 function TimeInput24({ value = '', onChange, style = {} }) {
-  const [h, m] = (value || '--:--').split(':');
-  const hv = h === '--' ? '' : h;
-  const mv = m === '--' ? '' : m;
-
-  const emit = (newH, newM) => {
-    const hh = String(Math.min(23, Math.max(0, +newH || 0))).padStart(2, '0');
-    const mm = String(Math.min(59, Math.max(0, +newM || 0))).padStart(2, '0');
-    onChange?.({ target: { value: `${hh}:${mm}` } });
-  };
-
-  const numStyle = {
-    width: 44, textAlign: 'center', fontFamily: 'monospace', fontWeight: 700,
-    fontSize: style.fontSize || 18, background: 'var(--bg)', color: 'var(--text)',
-    border: '1px solid var(--border)', borderRadius: 6, padding: '6px 0',
-    MozAppearance: 'textfield', ...style,
+  const inputStyleLocal = {
+    fontFamily: 'monospace', fontWeight: 700, fontSize: style.fontSize || 18,
+    background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)',
+    borderRadius: 6, padding: '6px 8px', colorScheme: 'dark', ...style,
   };
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4, ...style }}>
-      <input type="number" min="0" max="23" value={hv} placeholder="--"
-        onChange={e => emit(e.target.value, mv)}
-        onBlur={e => { if (e.target.value !== '') emit(e.target.value, mv); }}
-        style={numStyle} />
-      <span style={{ fontWeight: 900, color: 'var(--text)', fontSize: style.fontSize || 18 }}>:</span>
-      <input type="number" min="0" max="59" value={mv} placeholder="--"
-        onChange={e => emit(hv, e.target.value)}
-        onBlur={e => { if (e.target.value !== '') emit(hv, e.target.value); }}
-        style={numStyle} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <input type="time" value={value || ''} step="60"
+        onChange={e => onChange?.({ target: { value: e.target.value } })}
+        style={inputStyleLocal} />
+      <button type="button" title="ใช้เวลาปัจจุบัน"
+        onClick={() => onChange?.({ target: { value: nowTime() } })}
+        style={{ fontSize: 12, fontWeight: 700, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        🕐 ตอนนี้
+      </button>
     </div>
   );
 }
