@@ -10,7 +10,10 @@ const SKILL_CAT_META = {
   soft_skill:    { label: 'Soft Skill',    color: '#a855f7', icon: '🧠', desc: 'หลักการคิด ระบบการทำงาน' },
 };
 
-const CARD_W = 60;
+// ขนาดเท่ากับ card พนักงานในหน้าจัดการสายผลิต (Management.jsx CARD_W/CARD_H)
+// เพื่อให้ระยะห่างที่ตั้งค่าตรงนี้ไม่ทับกันตอนแสดงพนักงานจริง
+const CARD_W = 104;
+const CARD_H = 92;
 
 export default function LineSetup() {
   const [lines, setLines] = useState([]);
@@ -25,6 +28,7 @@ export default function LineSetup() {
   const [formData, setFormData] = useState({ id: null, name: '', requirements: {}, skill_allowance: false, skill_allowance_type: '' });
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [collisionWarn, setCollisionWarn] = useState(false);
+  const [showManpower, setShowManpower] = useState(false);
   const [skillDefs, setSkillDefs] = useState([]);
 
   // Standard manpower
@@ -171,12 +175,13 @@ export default function LineSetup() {
 
     const newXpx = (x / 100) * rect.width;
     const newYpx = (y / 100) * rect.height;
-    const PAD = CARD_W + 8;
+    const PAD_X = CARD_W + 8;
+    const PAD_Y = CARD_H + 8;
 
     const collision = stations.some(st => {
       const stX = (parseFloat(st.pos_left) / 100) * rect.width;
       const stY = (parseFloat(st.pos_top) / 100) * rect.height;
-      return Math.abs(newXpx - stX) < PAD && Math.abs(newYpx - stY) < PAD * 1.5;
+      return Math.abs(newXpx - stX) < PAD_X && Math.abs(newYpx - stY) < PAD_Y;
     });
 
     if (collision) {
@@ -312,31 +317,40 @@ export default function LineSetup() {
                     onClick={(e) => { e.stopPropagation(); editStation(st); }}
                     style={{
                       position: 'absolute', top: st.pos_top, left: st.pos_left, transform: 'translate(-50%, -50%)',
-                      width: CARD_W, minHeight: 30,
+                      width: CARD_W, height: CARD_H,
+                      border: isSelected ? '1px dashed var(--green)' : '1px dashed rgba(255,255,255,0.3)',
+                      borderRadius: 8,
+                      cursor: 'pointer', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center',
+                      zIndex: 5,
+                    }}
+                    title="พื้นที่นี้เท่ากับขนาด card พนักงานจริงในหน้าจัดการสายผลิต"
+                  >
+                    <div style={{
+                      width: 60, minHeight: 30,
                       border: isSelected ? '2px solid var(--green)' : '2px solid rgba(255,255,255,0.75)',
                       borderRadius: 8,
                       backgroundColor: isSelected ? 'rgba(34,197,94,0.18)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
                       boxShadow: isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
-                      cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                      display: 'flex', flexDirection: 'column',
                       alignItems: 'center', justifyContent: 'center',
-                      padding: '3px 2px', zIndex: 5,
-                    }}
-                  >
-                    <div style={{ fontSize: 9, fontWeight: 700, color: isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {st.station_name}
+                      padding: '3px 2px',
+                    }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {st.station_name}
+                      </div>
+                      {st.skill_allowance && <div style={{ fontSize: 6, color: '#22c55e', fontWeight: 800, lineHeight: '10px' }}>💰</div>}
+                      <div style={{ color: isSelected ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.25)', fontSize: 14, lineHeight: '18px' }}>+</div>
                     </div>
-                    {st.skill_allowance && <div style={{ fontSize: 6, color: '#22c55e', fontWeight: 800, lineHeight: '10px' }}>💰</div>}
-                    <div style={{ color: isSelected ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.25)', fontSize: 14, lineHeight: '18px' }}>+</div>
                   </div>
                 );
               })}
               {tempPos && (
                 <div style={{
                   position: 'absolute', top: tempPos.top, left: tempPos.left, transform: 'translate(-50%, -50%)',
-                  width: CARD_W, minHeight: 30,
-                  border: '2px solid var(--accent)', backgroundColor: 'rgba(61,214,92,0.18)',
-                  backdropFilter: 'blur(2px)',
+                  width: CARD_W, height: CARD_H,
+                  border: '1px dashed var(--accent)', backgroundColor: 'rgba(61,214,92,0.1)',
                   zIndex: 10, pointerEvents: 'none', borderRadius: 8,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
@@ -531,7 +545,7 @@ export default function LineSetup() {
           <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
             รายการจุดงาน ({stations.length})
           </h4>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div style={{ flex: 1, minHeight: showManpower ? 120 : 260, overflowY: 'auto' }}>
             {stations.map(st => {
               const reqs = st.station_requirements || [];
               return (
@@ -558,9 +572,19 @@ export default function LineSetup() {
 
           {/* ── Standard Manpower ─────────────────────────── */}
           <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />
-          <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
-            👥 Standard Manpower
-          </h4>
+          <button
+            onClick={() => setShowManpower(v => !v)}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
+              background: 'none', border: 'none', padding: 0, marginBottom: showManpower ? 10 : 0, cursor: 'pointer',
+            }}
+          >
+            <h4 style={{ margin: 0, color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
+              👥 Standard Manpower
+            </h4>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{showManpower ? '▲ ซ่อน' : '▼ แสดง'}</span>
+          </button>
+          {showManpower && (
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 14 }}>
             <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
               <div style={{ flex: 1 }}>
@@ -593,6 +617,7 @@ export default function LineSetup() {
               </button>
             </div>
           </div>
+          )}
 
           {/* ── ผู้บันทึก/อนุมัติ ประจำส่วนงาน ─────────────────── */}
           <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />
