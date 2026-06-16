@@ -2663,6 +2663,24 @@ function SkillAllowanceTab() {
 
     const stationIds = stations.map(s => String(s.id));
 
+    // หาใบเซอร์ค่าฝีมือที่ผูกกับประเภทงานนี้ และพนักงานที่มีใบเซอร์นั้น (score > 0 = มี)
+    const { data: certSkills } = await supabase
+      .from('skill_definitions')
+      .select('name')
+      .eq('category', 'allowance_skill')
+      .eq('allowance_type', workType);
+    const certNames = (certSkills || []).map(s => s.name);
+
+    let certifiedEmpIds = null; // null = ไม่มีใบเซอร์ผูกไว้ → ไม่กรอง (รองรับข้อมูลก่อนมีระบบใบเซอร์)
+    if (certNames.length > 0) {
+      const { data: certHolders } = await supabase
+        .from('employee_skills')
+        .select('employee_id')
+        .in('skill_name', certNames)
+        .gt('score', 0);
+      certifiedEmpIds = new Set((certHolders || []).map(c => c.employee_id));
+    }
+
     // logs ที่ qualify
     const { data: logs } = await supabase
       .from('daily_production_logs')
@@ -2685,7 +2703,9 @@ function SkillAllowanceTab() {
       empMap[empId].shifts[shift][day] = true;
     });
 
-    const result = Object.values(empMap)
+    const result = Object.entries(empMap)
+      .filter(([empId]) => certifiedEmpIds === null || certifiedEmpIds.has(empId))
+      .map(([, r]) => r)
       .filter(r => section ? r.emp?.section === section : true)
       .filter(r => team ? r.emp?.team === team : true)
       .sort((a, b) => (a.emp?.name || '').localeCompare(b.emp?.name || '', 'th'));

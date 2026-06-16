@@ -4,6 +4,8 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { fmtDateMedium } from '../utils/dateFormat';
 
+const WORK_TYPES = ['งานเชื่อม', 'งานขับรถฟอล์คลิฟท์', 'งานขับเครน'];
+
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -61,7 +63,7 @@ export default function Operator() {
   const [showInactive, setShowInactive] = useState(false);
   const [editingEmp, setEditingEmp] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff', category: 'hard_skill', scope_section: '' });
+  const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff', category: 'hard_skill', scope_section: '', allowance_type: '' });
   const [isAddingSkill, setIsAddingSkill] = useState(false);
   const [editingSkill, setEditingSkill] = useState(null); // skill being edited inline
   const [myLineName, setMyLineName] = useState('');
@@ -272,7 +274,7 @@ export default function Operator() {
         const upserts = enabledSkills.map(sd => ({
           employee_id: editingEmp.id,
           skill_name: sd.name,
-          score: Number(editingEmp.skillScores?.[sd.name] ?? 0),
+          score: sd.category === 'allowance_skill' ? 100 : Number(editingEmp.skillScores?.[sd.name] ?? 0),
           updated_at: new Date().toISOString(),
         }));
         const { error: skillErr } = await supabase.from('employee_skills')
@@ -311,10 +313,11 @@ export default function Operator() {
       color: newSkill.color,
       category: newSkill.category,
       scope_section: newSkill.scope_section.trim() || null,
+      allowance_type: newSkill.category === 'allowance_skill' ? (newSkill.allowance_type || null) : null,
       sort_order: skillDefs.length + 1,
     }]);
     if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
-    else { setNewSkill({ label: '', color: '#4d9fff', category: 'hard_skill', scope_section: '' }); fetchSkillDefs(); }
+    else { setNewSkill({ label: '', color: '#4d9fff', category: 'hard_skill', scope_section: '', allowance_type: '' }); fetchSkillDefs(); }
     setIsAddingSkill(false);
   };
 
@@ -330,10 +333,11 @@ export default function Operator() {
   const handleUpdateSkill = async () => {
     if (!editingSkill?.label?.trim()) { toast.error('กรุณาระบุชื่อสกิล'); return; }
     const { error } = await supabase.from('skill_definitions').update({
-      label:         editingSkill.label.trim(),
-      color:         editingSkill.color,
-      category:      editingSkill.category,
-      scope_section: editingSkill.scope_section || null,
+      label:          editingSkill.label.trim(),
+      color:          editingSkill.color,
+      category:       editingSkill.category,
+      scope_section:  editingSkill.scope_section || null,
+      allowance_type: editingSkill.category === 'allowance_skill' ? (editingSkill.allowance_type || null) : null,
     }).eq('id', editingSkill.id);
     if (error) { toast.error('แก้ไขไม่สำเร็จ: ' + error.message); return; }
     toast.success('บันทึกสำเร็จ');
@@ -666,10 +670,11 @@ export default function Operator() {
 
       {tab === 1 && (() => {
         const CAT_META = {
-          hard_skill:    { label: 'Hard Skill',    color: '#ef4444', icon: '🔧', desc: 'ทักษะการทำงานรูปแบบต่างๆ' },
-          machine_skill: { label: 'Machine Skill', color: '#f97316', icon: '⚙️', desc: 'ใช้ ปรับตั้ง ควบคุมเครื่องจักร' },
-          product_skill: { label: 'Product Skill', color: '#3b82f6', icon: '📦', desc: 'คุณภาพกระบวนการผลิต' },
-          soft_skill:    { label: 'Soft Skill',    color: '#a855f7', icon: '🧠', desc: 'หลักการคิด ระบบการทำงาน' },
+          hard_skill:      { label: 'Hard Skill',    color: '#ef4444', icon: '🔧', desc: 'ทักษะการทำงานรูปแบบต่างๆ' },
+          machine_skill:   { label: 'Machine Skill', color: '#f97316', icon: '⚙️', desc: 'ใช้ ปรับตั้ง ควบคุมเครื่องจักร' },
+          product_skill:   { label: 'Product Skill', color: '#3b82f6', icon: '📦', desc: 'คุณภาพกระบวนการผลิต' },
+          soft_skill:      { label: 'Soft Skill',    color: '#a855f7', icon: '🧠', desc: 'หลักการคิด ระบบการทำงาน' },
+          allowance_skill: { label: 'ใบเซอร์ค่าฝีมือ', color: '#22c55e', icon: '🎫', desc: 'มี/ไม่มี — ใช้ตัดสินสิทธิ์ค่าฝีมือ' },
         };
         const grouped = Object.entries(CAT_META).map(([k, m]) => ({
           key: k, ...m, skills: skillDefs.filter(sd => (sd.category || 'hard_skill') === k),
@@ -695,6 +700,11 @@ export default function Operator() {
                             {sd.scope_section && (
                               <span style={{ fontSize: 9, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
                                 📍 {sd.scope_section}
+                              </span>
+                            )}
+                            {sd.allowance_type && (
+                              <span style={{ fontSize: 9, background: 'rgba(34,197,94,0.12)', color: '#22c55e', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
+                                💰 {sd.allowance_type}
                               </span>
                             )}
                             <span style={{ fontSize: 9, color: 'var(--muted)' }}>{sd.name}</span>
@@ -742,6 +752,15 @@ export default function Operator() {
                     {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
+                {newSkill.category === 'allowance_skill' && (
+                  <div>
+                    <label style={labelSt}>ประเภทค่าฝีมือที่ผูก</label>
+                    <select value={newSkill.allowance_type} onChange={e => setNewSkill({ ...newSkill, allowance_type: e.target.value })}>
+                      <option value="">— เลือกประเภท —</option>
+                      {WORK_TYPES.map(w => <option key={w} value={w}>{w}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div>
                   <label style={labelSt}>สีแสดงผล</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -796,6 +815,7 @@ export default function Operator() {
                         <option value="machine_skill">⚙️ Machine Skill</option>
                         <option value="product_skill">📦 Product Skill</option>
                         <option value="soft_skill">🧠 Soft Skill</option>
+                        <option value="allowance_skill">🎫 ใบเซอร์ค่าฝีมือ</option>
                       </select>
                     </div>
                     <div>
@@ -806,6 +826,16 @@ export default function Operator() {
                         {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
+                    {editingSkill.category === 'allowance_skill' && (
+                      <div style={{ gridColumn: '1/-1' }}>
+                        <label style={labelSt}>ประเภทค่าฝีมือที่ผูก</label>
+                        <select value={editingSkill.allowance_type || ''}
+                          onChange={e => setEditingSkill({ ...editingSkill, allowance_type: e.target.value })}>
+                          <option value="">— เลือกประเภท —</option>
+                          {WORK_TYPES.map(w => <option key={w} value={w}>{w}</option>)}
+                        </select>
+                      </div>
+                    )}
                     <div style={{ gridColumn: '1/-1', display: 'flex', alignItems: 'center', gap: 10 }}>
                       <label style={{ ...labelSt, marginBottom: 0 }}>สีแสดงผล</label>
                       <input type="color" value={editingSkill.color}
@@ -1053,10 +1083,11 @@ export default function Operator() {
                 <label style={{ ...labelSt, marginBottom: 12, display: 'block' }}>📊 ระดับทักษะ</label>
                 {(() => {
                   const CAT_META = {
-                    hard_skill:    { label: 'Hard Skill',    color: '#ef4444', icon: '🔧' },
-                    machine_skill: { label: 'Machine Skill', color: '#f97316', icon: '⚙️' },
-                    product_skill: { label: 'Product Skill', color: '#3b82f6', icon: '📦' },
-                    soft_skill:    { label: 'Soft Skill',    color: '#a855f7', icon: '🧠' },
+                    hard_skill:      { label: 'Hard Skill',    color: '#ef4444', icon: '🔧' },
+                    machine_skill:   { label: 'Machine Skill', color: '#f97316', icon: '⚙️' },
+                    product_skill:   { label: 'Product Skill', color: '#3b82f6', icon: '📦' },
+                    soft_skill:      { label: 'Soft Skill',    color: '#a855f7', icon: '🧠' },
+                    allowance_skill: { label: 'ใบเซอร์ค่าฝีมือ', color: '#22c55e', icon: '🎫' },
                   };
                   const grouped = Object.entries(CAT_META).map(([k, m]) => ({
                     key: k, ...m, skills: skillDefs.filter(sd => (sd.category || 'hard_skill') === k),
@@ -1096,7 +1127,9 @@ export default function Operator() {
                                   <span style={{ fontSize: 8, color: 'var(--muted)', flexShrink: 0 }}>N/A</span>
                                 )}
                               </label>
-                              {enabled ? (
+                              {enabled && g.key === 'allowance_skill' ? (
+                                <div style={{ fontSize: 10, color: '#22c55e', fontWeight: 700, textAlign: 'center', padding: '4px 0' }}>✓ มีใบเซอร์</div>
+                              ) : enabled ? (
                                 <input type="number" value={score}
                                   onChange={e => setEditingEmp({
                                     ...editingEmp,
