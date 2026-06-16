@@ -3151,14 +3151,22 @@ function AttendanceFormTab() {
     return new Date(year, month - 1, day).getDay() === 0;
   };
 
-  // ชั่วโมง OT จริงต่อวัน (ไม่ใช่การนับจำนวนวัน) — กะดึก 2 ชม. เสมอ, กะเช้า 2 ชม. (+3 ถ้ามี extended OT = 5)
-  const otHoursForDay = (info) => {
-    if (!info?.ot) return 0;
+  // ชั่วโมง OT จริงต่อวัน (ไม่ใช่การนับจำนวนวัน)
+  // - วันทำงานปกติ: คิดเฉพาะช่วงเลย OT ต่อจากเวลางานปกติ — กะดึก 2 ชม. เสมอ, กะเช้า 2 ชม. (+3 ถ้ามี extended OT = 5)
+  // - วันหยุด (company_calendar = ot15/ot2): มาทำงานทั้งวัน = OT ทั้งกะ 8 ชม. (หรือ 10.5 ชม. ถ้าทำ extended OT ต่อ)
+  const otHoursForDay = (info, day) => {
+    if (!info) return 0;
+    const holiday = calLoaded && getDayType(dayDateStr(day)) !== 'working';
+    if (holiday) {
+      if (!info.present) return 0;
+      return info.extOt ? 10.5 : 8;
+    }
+    if (!info.ot) return 0;
     const isNight = info.shift === 'night';
     return isNight ? 2 : (info.extOt ? 5 : 2);
   };
   // ชั่วโมง OT รวมทั้งช่วง สำหรับพนักงาน 1 คน
-  const sumOtHours = (r, daysArr) => daysArr.reduce((sum, d) => sum + otHoursForDay(r.byDay[d]), 0);
+  const sumOtHours = (r, daysArr) => daysArr.reduce((sum, d) => sum + otHoursForDay(r.byDay[d], d), 0);
 
   const load = async () => {
     setLoading(true);
@@ -3272,7 +3280,7 @@ function AttendanceFormTab() {
       const sun   = isSunday(d);
       const sunBg = sun ? 'background:#fff8d0;' : '';
       const info  = r.byDay[d];
-      const hrs   = otHoursForDay(info);
+      const hrs   = otHoursForDay(info, d);
       return `<td style="${tdOTStyle}${sunBg}"></td><td style="${tdOTStyle}${sunBg}"></td><td style="${tdOTStyle}${sunBg}">${hrs > 0 ? hrs : ''}</td>`;
     };
 
