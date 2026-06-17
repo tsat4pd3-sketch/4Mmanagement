@@ -726,21 +726,19 @@ export default function ProductMaster() {
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>ซ้ำ — จะ UPDATE ถ้าเลือก</div>
                   {csvPreview.dupRows.map((d, i) => (
-                    <div key={i} style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', marginBottom: 6 }}>
-                      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer' }}>
-                        <input type="checkbox" checked={d.include}
-                          onChange={e => setCsvPreview(p => ({ ...p, dupRows: p.dupRows.map((x, xi) => xi === i ? { ...x, include: e.target.checked } : x) }))}
-                          style={{ marginTop: 2, flexShrink: 0 }} />
-                        <div style={{ minWidth: 0, flex: 1 }}>
-                          <div style={{ fontSize: 12, marginBottom: 4 }}>
-                            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{d.row.mat_no}</span>
-                          </div>
-                          <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6, wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-                            <div>ปัจจุบัน: <span style={{ color: 'var(--text2)' }}>{d.existing?.name || d.existing?.part_name || '—'}</span></div>
-                            <div>ใหม่: <span style={{ color: '#f59e0b' }}>{d.row.name || d.row.part_name}</span></div>
-                          </div>
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '20px 1fr', columnGap: 8, width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', marginBottom: 6 }}>
+                      <input type="checkbox" checked={d.include}
+                        onChange={e => setCsvPreview(p => ({ ...p, dupRows: p.dupRows.map((x, xi) => xi === i ? { ...x, include: e.target.checked } : x) }))}
+                        style={{ marginTop: 2, cursor: 'pointer' }} />
+                      <div style={{ width: '100%', overflow: 'hidden' }}>
+                        <div style={{ fontSize: 12, marginBottom: 4 }}>
+                          <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{d.row.mat_no}</span>
                         </div>
-                      </label>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6, wordBreak: 'break-word' }}>
+                          <div>ปัจจุบัน: <span style={{ color: 'var(--text2)' }}>{d.existing?.name || d.existing?.part_name || '—'}</span></div>
+                          <div>ใหม่: <span style={{ color: '#f59e0b' }}>{d.row.name || d.row.part_name}</span></div>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
