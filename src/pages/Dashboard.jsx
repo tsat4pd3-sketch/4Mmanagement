@@ -138,17 +138,24 @@ export default function Dashboard() {
   const [stationEmpMap, setStationEmpMap] = useState({});
   const [expandedLine,  setExpandedLine]  = useState(null);
   const [prodStatus,    setProdStatus]    = useState([]);
+  const [ctByMatNo,     setCtByMatNo]     = useState({});
 
   // โหลดเฉพาะข้อมูลผลิต/OEE จาก DR — เบากว่า fetchAll มาก ใช้กับ realtime
   const fetchProdStatus = useCallback(async () => {
     const todayStr = getWorkDateStr(new Date());
-    const [{ data: sessions }, { data: breakPolicies }] = await Promise.all([
+    const [{ data: sessions }, { data: breakPolicies }, { data: products }] = await Promise.all([
       supabaseDR
         .from('production_sessions')
         .select('id, line_name, shift, status, work_date, created_at, dr_products(name, target_per_shift, cycle_time_sec, process_type)')
         .eq('work_date', todayStr),
       supabaseDR.from('break_policies').select('*').eq('is_active', true),
+      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec').not('mat_no', 'is', null),
     ]);
+    // production_sessions.product_id ไม่ได้ตั้งค่าเสมอ (กะนึงมีได้หลาย mat_no) — ใช้ map นี้
+    // เป็น fallback หา cycle_time_sec รายออเดอร์จาก mat_no ตรง ๆ แทนการพึ่ง session.dr_products
+    const ctMap = {};
+    (products || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; });
+    setCtByMatNo(ctMap);
     const sessionIds = (sessions || []).map(s => s.id);
     let ordersBySession = {}, dtBySession = {}, defectBySession = {};
     if (sessionIds.length > 0) {
@@ -765,15 +772,24 @@ export default function Dashboard() {
                         const buildCards = (sessList) => {
                           const cards = [];
                           sessList.forEach(s => {
-                            const ctSec = s.dr_products?.cycle_time_sec || 0;
+                            const sessionCtSec = s.dr_products?.cycle_time_sec || 0;
                             const sessionStartMs = s.created_at ? new Date(s.created_at).getTime() : null;
                             const sorted = [...s.orders].sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
                             let cumSec = 0;
-                            sorted.forEach(o => {
+                            sorted.forEach((o, oi) => {
+                              // session.dr_products มาจาก product_id ที่อาจไม่ถูกตั้งค่า (กะนึงมีได้หลาย mat_no)
+                              // จึง fallback ไปหา cycle_time_sec ตรงจาก mat_no ของออเดอร์เอง
+                              const ctSec = ctByMatNo[o.mat_no] || sessionCtSec || 0;
+                              // ถ้ามี opened_at ใช้เวลาจริงเป็น start แทนการสะสมจาก session start
+                              const openedMs = o.opened_at ? new Date(o.opened_at).getTime() : null;
                               const startSec = cumSec;
                               cumSec += (o.qty || 0) * ctSec;
-                              const orderStartMs = sessionStartMs && ctSec > 0 ? sessionStartMs + startSec * 1000 : null;
-                              const orderEndMs   = sessionStartMs && ctSec > 0 ? sessionStartMs + cumSec * 1000 : null;
+                              let orderStartMs = openedMs || (sessionStartMs && ctSec > 0 ? sessionStartMs + startSec * 1000 : null);
+                              let orderEndMs   = orderStartMs && ctSec > 0 ? orderStartMs + (o.qty || 0) * ctSec * 1000 : null;
+                              if (orderStartMs && !orderEndMs) {
+                                // ไม่รู้ cycle time จริง ๆ — ให้แสดงเป็นแท่งบาง ๆ แทนการซ่อนไปเลย
+                                orderEndMs = orderStartMs + 5 * 60000;
+                              }
                               const isDone    = o.status === 'confirmed';
                               const isCarry   = o.status === 'carry_over';
                               const isDelayed = !isDone && !isCarry && !!orderEndMs && nowMs > orderEndMs;
@@ -807,7 +823,7 @@ export default function Dashboard() {
                               if (!o.orderStartMs || !o.orderEndMs) return null;
                               const statusColor = o.isDone ? '#22c55e' : o.isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
                               const icon = o.isDone ? '✓' : o.isDelayed ? '!' : o.isCarry ? '↷' : '▶';
-                              const leftPx  = Math.max(0, (o.orderStartMs - gridStartMs) * pxPerMs);
+                              const leftPx  = Math.max(0, (o.orderStartMs - gridStartMs) * pxPerMs) + oi * 3;
                               const rightPx = Math.min(SLOT_W * 24, (o.orderEndMs - gridStartMs) * pxPerMs);
                               const widthPx = Math.max(26, rightPx - leftPx);
                               if (leftPx >= SLOT_W * 24) return null;

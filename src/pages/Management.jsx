@@ -205,10 +205,21 @@ export default function Management() {
       .from('prod_orders')
       .select('session_id, status, qty, qty_ok, qty_actual, prod_no, mat_no, opened_at')
       .in('session_id', sessionIds);
+    // production_sessions.product_id ไม่ได้ตั้งค่าเสมอ (กะนึงมีได้หลาย mat_no)
+    // จึง fallback ไปหา cycle_time_sec ตรงจาก mat_no ของออเดอร์เอง
+    const matNos = [...new Set((orders || []).map(o => o.mat_no).filter(Boolean))];
+    const ctMap = {};
+    if (matNos.length) {
+      const { data: products } = await supabaseDR
+        .from('dr_products')
+        .select('mat_no, cycle_time_sec')
+        .in('mat_no', matNos);
+      (products || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; });
+    }
     const ordersBySession = {};
     (orders || []).forEach(o => { (ordersBySession[o.session_id] ||= []).push(o); });
     const enriched = sessions.map(s => ({ ...s, orders: ordersBySession[s.id] || [] }));
-    setLineProdData({ sessions: enriched, workDate: todayStr });
+    setLineProdData({ sessions: enriched, workDate: todayStr, ctByMatNo: ctMap });
   }, []);
 
   useEffect(() => {
@@ -819,16 +830,19 @@ export default function Management() {
             ? sessions.map(s => ({ sessions: [s], label: `${s.shift === 'day' ? '☀️' : '🌙'} ${s.dr_products?.name || (s.shift === 'day' ? 'กะเช้า' : 'กะดึก')}`, isOpen: s.status === 'open' }))
             : [{ sessions, label: sessions.map(s => s.shift === 'day' ? '☀️' : '🌙').join(' '), isOpen: sessions.some(s => s.status === 'open') }];
 
+          const ctByMatNo = lineProdData.ctByMatNo || {};
           const buildCards = (sessList) => {
             const cards = [];
             sessList.forEach(s => {
-              const ctSec = s.dr_products?.cycle_time_sec || 0;
+              const sessionCtSec = s.dr_products?.cycle_time_sec || 0;
               const sorted = [...s.orders].sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
-              sorted.forEach(o => {
+              sorted.forEach((o, oi) => {
+                const ctSec = ctByMatNo[o.mat_no] || sessionCtSec || 0;
                 // ใช้ opened_at เป็น start จริง — ไม่ accumulate จาก session start
                 // เพื่อไม่ให้ order ที่ยิงตอนบ่ายกลายเป็น delay ทันที
                 const orderStartMs = o.opened_at ? new Date(o.opened_at).getTime() : null;
-                const orderEndMs   = orderStartMs && ctSec > 0 ? orderStartMs + (o.qty || 0) * ctSec * 1000 : null;
+                let orderEndMs   = orderStartMs && ctSec > 0 ? orderStartMs + (o.qty || 0) * ctSec * 1000 : null;
+                if (orderStartMs && !orderEndMs) orderEndMs = orderStartMs + 5 * 60000;
                 const isDone    = o.status === 'confirmed';
                 const isCarry   = o.status === 'carry_over';
                 const isDelayed = !isDone && !isCarry && !o.is_backfill && !!orderEndMs && nowMs > orderEndMs;
@@ -839,10 +853,11 @@ export default function Management() {
           };
 
           const totalDelayed = sessions.reduce((acc, s) => {
-            const ctSec = s.dr_products?.cycle_time_sec || 0;
-            if (!ctSec || s.status !== 'open') return acc;
+            const sessionCtSec = s.dr_products?.cycle_time_sec || 0;
             s.orders.forEach(o => {
               if (o.status !== 'open' || !o.opened_at || o.is_backfill) return;
+              const ctSec = ctByMatNo[o.mat_no] || sessionCtSec || 0;
+              if (!ctSec) return;
               const endMs = new Date(o.opened_at).getTime() + (o.qty || 0) * ctSec * 1000;
               if (nowMs > endMs) acc++;
             });

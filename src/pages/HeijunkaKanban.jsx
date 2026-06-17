@@ -207,6 +207,183 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
   );
 }
 
+/* ─── Delivery Timeline Board — 24h heijunka-style view of delivery rounds ── */
+function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt }) {
+  const [expanded, setExpanded] = useState(null);
+  const HOURS  = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
+  const SLOT_W = 44;
+  const LEFT_W = 130;
+  const now = new Date();
+  const gridStartMs = new Date(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}T08:00:00`).getTime();
+  const nowMs = now.getTime();
+  const pxPerMs = SLOT_W / 3600000;
+  const nowHourIdx = HOURS.findIndex((_, i) => {
+    const s = gridStartMs + i * 3600000;
+    return nowMs >= s && nowMs < s + 3600000;
+  });
+
+  const confirmedSet = useMemo(() => {
+    const s = new Set();
+    deliveries.forEach(d => s.add(`${d.line_name}|${d.shift}|${d.round_no}`));
+    return s;
+  }, [deliveries]);
+  const receivedMap = useMemo(() => {
+    const m = {};
+    deliveries.forEach(d => { m[`${d.line_name}|${d.shift}|${d.round_no}`] = d; });
+    return m;
+  }, [deliveries]);
+  const byLine = useMemo(() => {
+    const m = {};
+    rounds.forEach(r => { (m[r.line_name] = m[r.line_name] || []).push(r); });
+    return m;
+  }, [rounds]);
+  const demandByLine = useMemo(() => {
+    const lineToColIds = {};
+    view.cols.forEach(c => { (lineToColIds[c.line] = lineToColIds[c.line] || []).push(c.id); });
+    const res = {};
+    Object.keys(lineToColIds).forEach(lineName => {
+      const colIdSet = new Set(lineToColIds[lineName]);
+      const partsForLine = view.rowList.filter(r =>
+        Object.entries(r.perCol).some(([cid, v]) => colIdSet.has(cid) && v > 0)
+      );
+      const totalKanban = partsForLine.reduce((s, r) => {
+        const per = kanbanStd[r.mat_no];
+        return s + (per ? Math.ceil(r.netTotal / per) : 0);
+      }, 0);
+      res[lineName] = { parts: partsForLine, totalKanban };
+    });
+    return res;
+  }, [view.cols, view.rowList, kanbanStd]);
+
+  const timeToMs = (t) => {
+    if (!t) return null;
+    const [h, m] = t.slice(0, 5).split(':').map(Number);
+    let ms = gridStartMs + h * 3600000 + m * 60000;
+    if (h < 8) ms += 24 * 3600000; // wrap past midnight into next-day slot of the 08:00→08:00 grid
+    return ms;
+  };
+
+  if (!rounds.length) return (
+    <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+      ยังไม่มีรอบจัดส่ง — ตั้งค่าที่ 📦 Line Stock → ⏰ รอบจัดส่ง
+    </div>
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: 16 }}>
+      {Object.keys(byLine).sort().map(lineName => {
+        const lineRounds = byLine[lineName];
+        const demand = demandByLine[lineName] || { parts: [], totalKanban: 0 };
+        return (
+          <div key={lineName} style={{ border: '1px solid var(--border2)', borderRadius: 10, overflow: 'hidden' }}>
+            <div style={{ padding: '8px 14px', background: 'var(--bg2)', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>🏭 {lineName}</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{demand.parts.length} พาร์ท · 🎴 {demand.totalKanban} การ์ด</span>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <div style={{ minWidth: LEFT_W + SLOT_W * 24, fontSize: 0 }}>
+                {/* hour header */}
+                <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+                  <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 8, fontWeight: 700, color: 'var(--muted)' }}>รอบจัดส่ง</div>
+                  {HOURS.map((h, i) => {
+                    const isNow = i === nowHourIdx;
+                    const isShiftBound = h === 8 || h === 20;
+                    return (
+                      <div key={i} style={{
+                        width: SLOT_W, flexShrink: 0, textAlign: 'center', fontSize: 8,
+                        fontWeight: isNow ? 800 : isShiftBound ? 600 : 400,
+                        color: isNow ? '#4d9fff' : isShiftBound ? 'var(--text2)' : 'var(--muted)',
+                        padding: '4px 0', lineHeight: 1,
+                        borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
+                        background: isNow ? 'rgba(77,159,255,0.12)' : 'transparent',
+                      }}>
+                        {String(h).padStart(2,'0')}:00
+                        {isNow && <div style={{ width: 3, height: 3, borderRadius: '50%', background: '#4d9fff', margin: '1px auto 0' }} />}
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* row */}
+                <div style={{ display: 'flex', minHeight: 48 }}>
+                  <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', alignItems: 'center', fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>
+                    {lineRounds.length} รอบ
+                  </div>
+                  <div style={{ flex: 1, position: 'relative', display: 'flex' }}>
+                    {HOURS.map((h, i) => {
+                      const isNow = i === nowHourIdx;
+                      const isShiftBound = h === 8 || h === 20;
+                      return <div key={i} style={{ width: SLOT_W, flexShrink: 0, height: '100%', borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`, background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent' }} />;
+                    })}
+                    {lineRounds.map((r, oi) => {
+                      const startMs = timeToMs((r.delivery_time || '').slice(0, 5));
+                      if (startMs == null) return null;
+                      const finishMin = (r.points_count || 1) * (r.time_per_point_min || 10);
+                      const endMs = startMs + finishMin * 60000;
+                      const status = getRoundStatus(r, confirmedSet, receivedMap);
+                      const leftPx  = Math.max(0, (startMs - gridStartMs) * pxPerMs) + oi * 3;
+                      const rightPx = Math.min(SLOT_W * 24, (endMs - gridStartMs) * pxPerMs);
+                      const widthPx = Math.max(26, rightPx - leftPx);
+                      if (leftPx >= SLOT_W * 24) return null;
+                      const expandKey = `${lineName}|${r.round_no}`;
+                      return (
+                        <div key={r.id} title={`รอบ ${r.round_no} · ส่ง ${(r.delivery_time||'').slice(0,5)} · ${status.label}`}
+                          onClick={() => setExpanded(expanded === expandKey ? null : expandKey)}
+                          style={{
+                            position: 'absolute', top: 6, bottom: 6, left: leftPx, width: widthPx,
+                            background: `${status.top}28`, border: `1.5px solid ${status.top}cc`,
+                            borderRadius: 4, overflow: 'hidden', cursor: 'pointer', zIndex: 1,
+                            display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 3px',
+                          }}>
+                          {widthPx >= 22 && (
+                            <div style={{ fontSize: 8, fontWeight: 800, color: status.top, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              🎴 รอบ {r.round_no}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {nowHourIdx >= 0 && (() => {
+                      const nowPx = (nowMs - gridStartMs) * pxPerMs;
+                      if (nowPx < 0 || nowPx > SLOT_W * 24) return null;
+                      return <div style={{ position: 'absolute', top: 0, bottom: 0, left: nowPx, width: 1.5, background: 'rgba(77,159,255,0.7)', zIndex: 2, pointerEvents: 'none' }} />;
+                    })()}
+                  </div>
+                </div>
+              </div>
+            </div>
+            {/* expanded round detail */}
+            {lineRounds.map(r => {
+              const expandKey = `${lineName}|${r.round_no}`;
+              if (expanded !== expandKey) return null;
+              return (
+                <div key={r.round_no} style={{ borderTop: '1px solid var(--border2)', padding: '10px 14px', background: 'var(--bg)' }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>
+                    รอบ {r.round_no} — ส่ง {(r.delivery_time||'').slice(0,5)} · {getRoundStatus(r, confirmedSet, receivedMap).label}
+                  </div>
+                  {demand.parts.length === 0 ? (
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>ไม่มี demand พาร์ทย่อยสำหรับไลน์นี้</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {demand.parts.map(p => {
+                        const per = kanbanStd[p.mat_no];
+                        return (
+                          <span key={p.mat_no} style={chip('var(--bg2)', 'var(--text2)')}>
+                            <span style={{ fontFamily: 'monospace', color: '#0ea5e9' }}>{p.mat_no}</span> · {per ? `${Math.ceil(p.netTotal / per)} ใบ` : `${fmt(p.netTotal)} ${p.uom}`}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ─── Delivery Rounds Panel (compact, for cards/table views) ─────────────── */
 function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onReceive, demandByLine }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -676,7 +853,7 @@ export default function HeijunkaKanban() {
 
       {/* View mode toggle */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-        {[{ id: 'board', label: '🏪 Store Board' }, { id: 'cards', label: '🎴 การ์ด' }, { id: 'table', label: '📋 ตาราง' }].map(v => (
+        {[{ id: 'board', label: '🏪 Store Board' }, { id: 'timeline', label: '📊 Heijunka Board' }, { id: 'cards', label: '🎴 การ์ด' }, { id: 'table', label: '📋 ตาราง' }].map(v => (
           <button key={v.id} onClick={() => setViewMode(v.id)} style={{
             padding: '7px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
             background: viewMode === v.id ? 'var(--accent)' : 'var(--bg2)',
@@ -696,6 +873,10 @@ export default function HeijunkaKanban() {
             rounds={rounds} deliveries={deliveries} view={view}
             kanbanStd={kanbanStd} onConfirm={confirmRound} confirming={confirming}
             onReceive={openReceive} fmt={fmt}
+          />
+        ) : viewMode === 'timeline' ? (
+          <DeliveryTimelineBoard
+            rounds={rounds} deliveries={deliveries} view={view} kanbanStd={kanbanStd} fmt={fmt}
           />
         ) : view.cols.length === 0 ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีกะ/แผนผลิตในวันที่ {workDate}</div>
