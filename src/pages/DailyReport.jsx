@@ -466,9 +466,8 @@ function LiveTab({ role }) {
     if (!showScanOpen || !selSession || kanbanStds.length === 0) return;
     const lineName = selSession.line_name;
     const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === lineName);
-    const opts = lineStds.length > 0 ? lineStds : kanbanStds;
-    if (opts.length === 1 && !openProdForm.mat_no) {
-      handleOpenProdMatNoChange(opts[0].mat_no);
+    if (lineStds.length === 1 && !openProdForm.mat_no) {
+      handleOpenProdMatNoChange(lineStds[0].mat_no);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showScanOpen, kanbanStds, selSession]);
@@ -1605,10 +1604,15 @@ function LiveTab({ role }) {
                 {(() => {
                   const lineName = selSession?.line_name;
                   const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === lineName);
-                  const displayStds = lineStds.length > 0 ? lineStds : kanbanStds;
-                  const isFiltered = lineStds.length > 0;
+                  if (lineStds.length === 0) {
+                    return (
+                      <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 12, color: '#ef4444', fontWeight: 600 }}>
+                        ⚠ ไลน์นี้ ({lineName}) ยังไม่มี Kanban Standard ผูกไว้เลย — ไปเพิ่มที่ Product Setup ก่อน
+                      </div>
+                    );
+                  }
                   return (
-                    <Field label={`MAT.NO${isFiltered ? ` (${displayStds.length} รายการของไลน์นี้)` : ' (ทุกรายการ)'} *`}>
+                    <Field label={`MAT.NO (${lineStds.length} รายการของไลน์นี้) *`}>
                       <select
                         id="open-mat-select"
                         value={openProdForm.mat_no}
@@ -1616,7 +1620,7 @@ function LiveTab({ role }) {
                         style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}
                       >
                         <option value="">— เลือก MAT.NO —</option>
-                        {displayStds.map(s => (
+                        {lineStds.map(s => (
                           <option key={s.id} value={s.mat_no}>
                             {s.mat_no}{s.dr_products?.name ? ` · ${s.dr_products.name}` : s.part_name ? ` · ${s.part_name}` : ''} ({s.qty_per_kanban} ชิ้น/ใบ)
                           </option>
