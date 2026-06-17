@@ -139,6 +139,7 @@ export default function Dashboard() {
   const [expandedLine,  setExpandedLine]  = useState(null);
   const [prodStatus,    setProdStatus]    = useState([]);
   const [ctByMatNo,     setCtByMatNo]     = useState({});
+  const [nameByMatNo,   setNameByMatNo]   = useState({});
 
   // โหลดเฉพาะข้อมูลผลิต/OEE จาก DR — เบากว่า fetchAll มาก ใช้กับ realtime
   const fetchProdStatus = useCallback(async () => {
@@ -149,13 +150,15 @@ export default function Dashboard() {
         .select('id, line_name, shift, status, work_date, created_at, dr_products(name, target_per_shift, cycle_time_sec, process_type)')
         .eq('work_date', todayStr),
       supabaseDR.from('break_policies').select('*').eq('is_active', true),
-      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec').not('mat_no', 'is', null),
+      supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec').not('mat_no', 'is', null),
     ]);
     // production_sessions.product_id ไม่ได้ตั้งค่าเสมอ (กะนึงมีได้หลาย mat_no) — ใช้ map นี้
     // เป็น fallback หา cycle_time_sec รายออเดอร์จาก mat_no ตรง ๆ แทนการพึ่ง session.dr_products
     const ctMap = {};
-    (products || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; });
+    const nameMap = {};
+    (products || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; nameMap[p.mat_no] = p.name || ''; });
     setCtByMatNo(ctMap);
+    setNameByMatNo(nameMap);
     const sessionIds = (sessions || []).map(s => s.id);
     let ordersBySession = {}, dtBySession = {}, defectBySession = {};
     if (sessionIds.length > 0) {
@@ -657,17 +660,11 @@ export default function Dashboard() {
       {/* ── Heijunka Timeline Board ───────────────────── */}
       {visibleProdStatus.length > 0 && (() => {
         const HOURS   = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
-        const SLOT_W  = isUltra ? 68 : isWide ? 56 : 44;
         const LEFT_W  = 136;
         const nowMs   = now.getTime();
 
         const wd = visibleProdStatus[0]?.work_date || new Date().toISOString().slice(0, 10);
         const gridStartMs = new Date(`${wd}T08:00:00`).getTime();
-
-        const nowHourIdx = HOURS.findIndex((_, i) => {
-          const s = gridStartMs + i * 3600000;
-          return nowMs >= s && nowMs < s + 3600000;
-        });
 
         const fmtMs = (ms) => {
           const d = new Date(ms);
@@ -731,21 +728,69 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {/* ── Timeline grid ── */}
-                  <div style={{ overflowX: 'auto' }}>
-                    <div style={{ minWidth: LEFT_W + SLOT_W * 24, fontSize: 0 }}>
+                  {/* ── Timeline grid: split 24h → 2 rows × 12h, แยกแถวตาม product ── */}
+                  {(() => {
+                    const HALF_SLOT_W = isUltra ? 100 : isWide ? 84 : 64;
+                    const pxPerMs = HALF_SLOT_W / 3600000;
+                    const HALVES = [
+                      { key: 'am', hours: HOURS.slice(0, 12), startMs: gridStartMs },
+                      { key: 'pm', hours: HOURS.slice(12), startMs: gridStartMs + 12 * 3600000 },
+                    ];
 
-                      {/* Hour header */}
+                    // flatten ทุกออเดอร์ของทุก session ในไลน์ พร้อม timing + product key
+                    const buildCards = (sessList) => {
+                      const cards = [];
+                      sessList.forEach(s => {
+                        const sessionCtSec = s.dr_products?.cycle_time_sec || 0;
+                        const sessionStartMs = s.created_at ? new Date(s.created_at).getTime() : null;
+                        const sorted = [...s.orders].sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
+                        let cumSec = 0;
+                        sorted.forEach(o => {
+                          // session.dr_products มาจาก product_id ที่อาจไม่ถูกตั้งค่า (กะนึงมีได้หลาย mat_no)
+                          // จึง fallback ไปหา cycle_time_sec ตรงจาก mat_no ของออเดอร์เอง
+                          const ctSec = ctByMatNo[o.mat_no] || sessionCtSec || 0;
+                          // ถ้ามี opened_at ใช้เวลาจริงเป็น start แทนการสะสมจาก session start
+                          const openedMs = o.opened_at ? new Date(o.opened_at).getTime() : null;
+                          const startSec = cumSec;
+                          cumSec += (o.qty || 0) * ctSec;
+                          let orderStartMs = openedMs || (sessionStartMs && ctSec > 0 ? sessionStartMs + startSec * 1000 : null);
+                          let orderEndMs   = orderStartMs && ctSec > 0 ? orderStartMs + (o.qty || 0) * ctSec * 1000 : null;
+                          if (orderStartMs && !orderEndMs) {
+                            // ไม่รู้ cycle time จริง ๆ — ให้แสดงเป็นแท่งบาง ๆ แทนการซ่อนไปเลย
+                            orderEndMs = orderStartMs + 5 * 60000;
+                          }
+                          const isDone    = o.status === 'confirmed';
+                          const isCarry   = o.status === 'carry_over';
+                          const isDelayed = !isDone && !isCarry && !!orderEndMs && nowMs > orderEndMs;
+                          const productKey = o.mat_no || s.dr_products?.name || 'unknown';
+                          const productLabel = nameByMatNo[o.mat_no] || s.dr_products?.name || o.mat_no || 'ไม่ทราบ P/N';
+                          cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, shift: s.shift, sessionOpen: s.status === 'open' });
+                        });
+                      });
+                      return cards;
+                    };
+
+                    const allCards = buildCards(sessions);
+
+                    // แยกแถวตาม mat_no/product — เพื่อไม่ให้ product ต่างกัน (เช่น RH60 / LH61) ปนแถวเดียวกัน
+                    const groups = {};
+                    allCards.forEach(c => {
+                      (groups[c.productKey] = groups[c.productKey] || { key: c.productKey, label: c.productLabel, cards: [] }).cards.push(c);
+                    });
+                    const productRows = Object.values(groups).sort((a, b) => a.label.localeCompare(b.label));
+
+                    const hourHeader = (hours, halfStartMs) => (
                       <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
                         <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '5px 8px', fontSize: 9, fontWeight: 700, color: 'var(--muted)' }}>
                           กะ / ผลิต
                         </div>
-                        {HOURS.map((h, i) => {
-                          const isNow = i === nowHourIdx;
+                        {hours.map((h, i) => {
+                          const slotMs = halfStartMs + i * 3600000;
+                          const isNow = nowMs >= slotMs && nowMs < slotMs + 3600000;
                           const isShiftBound = h === 8 || h === 20;
                           return (
                             <div key={i} style={{
-                              width: SLOT_W, flexShrink: 0, textAlign: 'center',
+                              width: HALF_SLOT_W, flexShrink: 0, textAlign: 'center',
                               fontSize: 9, fontWeight: isNow ? 800 : isShiftBound ? 600 : 400,
                               color: isNow ? '#4d9fff' : isShiftBound ? 'var(--text2)' : 'var(--muted)',
                               padding: '5px 0', lineHeight: 1,
@@ -758,147 +803,109 @@ export default function Dashboard() {
                           );
                         })}
                       </div>
+                    );
 
-                      {/* Rows: parallel lines → 1 row per session, sequential → 1 row combined */}
-                      {(() => {
-                        const pxPerMs = SLOT_W / 3600000;
-
-                        // detect parallel: same shift has 2+ sessions
-                        const shiftCount = {};
-                        sessions.forEach(s => { shiftCount[s.shift] = (shiftCount[s.shift] || 0) + 1; });
-                        const isParallel = Object.values(shiftCount).some(c => c > 1);
-
-                        // build cardTimings for a list of sessions (combined or single)
-                        const buildCards = (sessList) => {
-                          const cards = [];
-                          sessList.forEach(s => {
-                            const sessionCtSec = s.dr_products?.cycle_time_sec || 0;
-                            const sessionStartMs = s.created_at ? new Date(s.created_at).getTime() : null;
-                            const sorted = [...s.orders].sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
-                            let cumSec = 0;
-                            sorted.forEach((o, oi) => {
-                              // session.dr_products มาจาก product_id ที่อาจไม่ถูกตั้งค่า (กะนึงมีได้หลาย mat_no)
-                              // จึง fallback ไปหา cycle_time_sec ตรงจาก mat_no ของออเดอร์เอง
-                              const ctSec = ctByMatNo[o.mat_no] || sessionCtSec || 0;
-                              // ถ้ามี opened_at ใช้เวลาจริงเป็น start แทนการสะสมจาก session start
-                              const openedMs = o.opened_at ? new Date(o.opened_at).getTime() : null;
-                              const startSec = cumSec;
-                              cumSec += (o.qty || 0) * ctSec;
-                              let orderStartMs = openedMs || (sessionStartMs && ctSec > 0 ? sessionStartMs + startSec * 1000 : null);
-                              let orderEndMs   = orderStartMs && ctSec > 0 ? orderStartMs + (o.qty || 0) * ctSec * 1000 : null;
-                              if (orderStartMs && !orderEndMs) {
-                                // ไม่รู้ cycle time จริง ๆ — ให้แสดงเป็นแท่งบาง ๆ แทนการซ่อนไปเลย
-                                orderEndMs = orderStartMs + 5 * 60000;
-                              }
-                              const isDone    = o.status === 'confirmed';
-                              const isCarry   = o.status === 'carry_over';
-                              const isDelayed = !isDone && !isCarry && !!orderEndMs && nowMs > orderEndMs;
-                              cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed });
-                            });
-                          });
-                          return cards;
-                        };
-
-                        // rows to render: parallel = one per session, sequential = one combined
-                        const rows = isParallel
-                          ? sessions.map(s => ({ sessions: [s], label: `${s.shift === 'day' ? '☀️' : '🌙'} ${s.dr_products?.name || (s.shift === 'day' ? 'กะเช้า' : 'กะดึก')}`, isOpen: s.status === 'open' }))
-                          : [{ sessions, label: sessions.map(s => s.shift === 'day' ? '☀️' : '🌙').join(' '), isOpen: sessions.some(s => s.status === 'open') }];
-
-                        // shared timeline renderer
-                        const renderTimeline = (cards, rowKey) => (
-                          <div key={rowKey} style={{ flex: 1, position: 'relative', display: 'flex' }}>
-                            {HOURS.map((h, i) => {
-                              const isNow = i === nowHourIdx;
-                              const isShiftBound = h === 8 || h === 20;
-                              return (
-                                <div key={i} style={{
-                                  width: SLOT_W, flexShrink: 0, height: '100%',
-                                  borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
-                                  background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent',
-                                  boxSizing: 'border-box',
-                                }} />
-                              );
-                            })}
-                            {cards.map((o, oi) => {
-                              if (!o.orderStartMs || !o.orderEndMs) return null;
-                              const statusColor = o.isDone ? '#22c55e' : o.isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
-                              const icon = o.isDone ? '✓' : o.isDelayed ? '!' : o.isCarry ? '↷' : '▶';
-                              const leftPx  = Math.max(0, (o.orderStartMs - gridStartMs) * pxPerMs) + oi * 3;
-                              const rightPx = Math.min(SLOT_W * 24, (o.orderEndMs - gridStartMs) * pxPerMs);
-                              const widthPx = Math.max(26, rightPx - leftPx);
-                              if (leftPx >= SLOT_W * 24) return null;
-                              const doneQty  = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
-                              const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
-                              return (
-                                <div key={o.prod_no || oi} title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.isDelayed ? ` ⚠️ช้า${Math.round((nowMs-o.orderEndMs)/60000)}ม.` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(o.orderEndMs)}`}`}
-                                  style={{
-                                    position: 'absolute', top: 6, bottom: 6,
-                                    left: leftPx, width: widthPx,
-                                    background: `${statusColor}28`,
-                                    border: `1.5px solid ${statusColor}${o.isDone ? 'cc' : o.isDelayed ? 'dd' : '88'}`,
-                                    borderRadius: 4, overflow: 'hidden',
-                                    boxShadow: o.isDelayed ? `0 0 6px ${statusColor}44` : 'none',
-                                    cursor: 'default', zIndex: 1,
-                                  }}>
-                                  <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`, background: `${statusColor}22`, transition: 'width 0.5s ease' }} />
-                                  {widthPx >= 22 && (
-                                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 3px', overflow: 'hidden' }}>
-                                      <div style={{ fontSize: 8, fontWeight: 800, color: statusColor, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                        {icon} {o.prod_no || (oi + 1)}
-                                      </div>
-                                      {widthPx >= 48 && (
-                                        <div style={{ fontSize: 7, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                          {o.qty}ชิ้น
-                                        </div>
-                                      )}
+                    const renderTimeline = (cards, half, rowKey) => (
+                      <div key={rowKey} style={{ flex: 1, position: 'relative', display: 'flex' }}>
+                        {half.hours.map((h, i) => {
+                          const slotMs = half.startMs + i * 3600000;
+                          const isNow = nowMs >= slotMs && nowMs < slotMs + 3600000;
+                          const isShiftBound = h === 8 || h === 20;
+                          return (
+                            <div key={i} style={{
+                              width: HALF_SLOT_W, flexShrink: 0, height: '100%',
+                              borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
+                              background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent',
+                              boxSizing: 'border-box',
+                            }} />
+                          );
+                        })}
+                        {cards.map((o, oi) => {
+                          if (!o.orderStartMs || !o.orderEndMs) return null;
+                          if (o.orderEndMs <= half.startMs || o.orderStartMs >= half.startMs + 12 * 3600000) return null;
+                          const statusColor = o.isDone ? '#22c55e' : o.isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
+                          const icon = o.isDone ? '✓' : o.isDelayed ? '!' : o.isCarry ? '↷' : '▶';
+                          const leftPx  = Math.max(0, (o.orderStartMs - half.startMs) * pxPerMs) + oi * 3;
+                          const rightPx = Math.min(HALF_SLOT_W * 12, (o.orderEndMs - half.startMs) * pxPerMs);
+                          const widthPx = Math.max(26, rightPx - leftPx);
+                          if (leftPx >= HALF_SLOT_W * 12) return null;
+                          const doneQty  = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
+                          const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
+                          return (
+                            <div key={o.prod_no || oi} title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.isDelayed ? ` ⚠️ช้า${Math.round((nowMs-o.orderEndMs)/60000)}ม.` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(o.orderEndMs)}`}`}
+                              style={{
+                                position: 'absolute', top: 6, bottom: 6,
+                                left: leftPx, width: widthPx,
+                                background: `${statusColor}28`,
+                                border: `1.5px solid ${statusColor}${o.isDone ? 'cc' : o.isDelayed ? 'dd' : '88'}`,
+                                borderRadius: 4, overflow: 'hidden',
+                                boxShadow: o.isDelayed ? `0 0 6px ${statusColor}44` : 'none',
+                                cursor: 'default', zIndex: 1,
+                              }}>
+                              <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`, background: `${statusColor}22`, transition: 'width 0.5s ease' }} />
+                              {widthPx >= 22 && (
+                                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 3px', overflow: 'hidden' }}>
+                                  <div style={{ fontSize: 8, fontWeight: 800, color: statusColor, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {icon} {o.prod_no || (oi + 1)}
+                                  </div>
+                                  {widthPx >= 48 && (
+                                    <div style={{ fontSize: 7, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {o.qty}ชิ้น
                                     </div>
                                   )}
                                 </div>
-                              );
-                            })}
-                            {/* Now marker */}
-                            {nowHourIdx >= 0 && (() => {
-                              const nowPx = (nowMs - gridStartMs) * pxPerMs;
-                              if (nowPx < 0 || nowPx > SLOT_W * 24) return null;
-                              return <div style={{ position: 'absolute', top: 0, bottom: 0, left: nowPx, width: 1.5, background: 'rgba(77,159,255,0.7)', zIndex: 2, pointerEvents: 'none' }} />;
-                            })()}
-                          </div>
-                        );
-
-                        return rows.map((row, ri) => {
-                          const cards = buildCards(row.sessions);
-                          const rowActual  = row.sessions.reduce((a, s) => a + (s.actual || 0), 0);
-                          const rowDemand  = row.sessions.reduce((a, s) => a + (s.demand || 0), 0);
-                          const doneCount  = cards.filter(o => o.isDone).length;
-                          const delayed    = cards.filter(o => o.isDelayed).length;
-                          const pct        = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
-                          const barColor   = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
-
-                          return (
-                            <div key={ri} style={{ display: 'flex', minHeight: 52, borderTop: ri > 0 ? '1px solid var(--border2)' : 'none' }}>
-                              {/* Left summary */}
-                              <div style={{ width: LEFT_W, flexShrink: 0, padding: '5px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                                  <span style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 600 }}>{row.label}</span>
-                                  {delayed > 0 && <span style={{ fontSize: 8, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}ใบ</span>}
-                                  {row.isOpen && delayed === 0 && <span style={{ fontSize: 7, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
-                                  <span style={{ fontSize: 14, fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
-                                  <span style={{ fontSize: 8, color: 'var(--muted)' }}>/{rowDemand} ชิ้น</span>
-                                  <span style={{ fontSize: 8, color: 'var(--muted)' }}>{doneCount}/{cards.length}ใบ</span>
-                                </div>
-                                <div style={{ height: 3, borderRadius: 2, background: 'var(--border2)', overflow: 'hidden' }}>
-                                  <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 2, transition: 'width 0.6s ease' }} />
-                                </div>
-                              </div>
-                              {renderTimeline(cards, ri)}
+                              )}
                             </div>
                           );
-                        });
-                      })()}
-                    </div>
-                  </div>
+                        })}
+                        {/* Now marker */}
+                        {nowMs >= half.startMs && nowMs < half.startMs + 12 * 3600000 && (() => {
+                          const nowPx = (nowMs - half.startMs) * pxPerMs;
+                          return <div style={{ position: 'absolute', top: 0, bottom: 0, left: nowPx, width: 1.5, background: 'rgba(77,159,255,0.7)', zIndex: 2, pointerEvents: 'none' }} />;
+                        })()}
+                      </div>
+                    );
+
+                    return HALVES.map(half => (
+                      <div key={half.key} style={{ overflowX: 'auto', borderTop: half.key === 'pm' ? '2px solid var(--border2)' : 'none' }}>
+                        <div style={{ minWidth: LEFT_W + HALF_SLOT_W * 12, fontSize: 0 }}>
+                          {hourHeader(half.hours, half.startMs)}
+                          {productRows.map((row, ri) => {
+                            const cards = row.cards.filter(c => c.orderEndMs > half.startMs && c.orderStartMs < half.startMs + 12 * 3600000);
+                            const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
+                            const rowDemand = row.cards.reduce((a, c) => a + (c.qty || 0), 0);
+                            const doneCount = row.cards.filter(c => c.isDone).length;
+                            const delayed   = cards.filter(c => c.isDelayed).length;
+                            const isOpen    = row.cards.some(c => c.sessionOpen);
+                            const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
+                            const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
+
+                            return (
+                              <div key={row.key} style={{ display: 'flex', minHeight: 52, borderTop: ri > 0 ? '1px solid var(--border2)' : 'none' }}>
+                                {/* Left summary */}
+                                <div style={{ width: LEFT_W, flexShrink: 0, padding: '5px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: LEFT_W - 16 }}>{row.label}</span>
+                                    {delayed > 0 && <span style={{ fontSize: 8, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}ใบ</span>}
+                                    {isOpen && delayed === 0 && <span style={{ fontSize: 7, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+                                    <span style={{ fontSize: 14, fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
+                                    <span style={{ fontSize: 8, color: 'var(--muted)' }}>/{rowDemand} ชิ้น</span>
+                                    <span style={{ fontSize: 8, color: 'var(--muted)' }}>{doneCount}/{row.cards.length}ใบ</span>
+                                  </div>
+                                  <div style={{ height: 3, borderRadius: 2, background: 'var(--border2)', overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 2, transition: 'width 0.6s ease' }} />
+                                  </div>
+                                </div>
+                                {renderTimeline(cards, half, `${half.key}-${ri}`)}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ));
+                  })()}
 
                   {/* ── Footer: per-session progress + OEE ── */}
                   <div style={{ padding: '8px 14px 10px', borderTop: '1px solid var(--border2)', display: 'flex', flexWrap: 'wrap', gap: 14 }}>
