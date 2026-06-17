@@ -36,7 +36,7 @@ const btnSecondary = {
   borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)',
 };
 
-const BLANK = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', is_active: true, effective_from: '' });
+const BLANK = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', is_active: true, effective_from: '', image_url: '' });
 
 /* ── Quick-link chips to connected modules ── */
 function RelatedLinks({ matNo, productId }) {
@@ -64,6 +64,8 @@ export default function ProductMaster() {
   const [ecSource, setEcSource] = useState(null);
   const [form,     setForm]     = useState(BLANK());
   const [saving,   setSaving]   = useState(false);
+  const [imageFile, setImageFile] = useState(null);
+  const [imageUploading, setImageUploading] = useState(false);
 
   const [kanbanEditing, setKanbanEditing] = useState(null);
   const [kanbanForm,    setKanbanForm]    = useState({ product_id: '', mat_no: '', qty_per_kanban: 1, is_active: true });
@@ -112,29 +114,44 @@ export default function ProductMaster() {
   const openEdit = (item = null) => {
     setEcSource(null);
     setEditing(item?.id || 'new');
+    setImageFile(null);
     setForm(item ? {
       name: item.name, code: item.code || '', mat_no: item.mat_no || '', p_no: item.p_no || '',
       customer: item.customer || '', line_name: item.line_name || '',
       cycle_time_sec: item.cycle_time_sec || '', target_per_shift: item.target_per_shift || '',
       process_type: item.process_type || 'welding_assembly', is_active: item.is_active, effective_from: item.effective_from || '',
+      image_url: item.image_url || '',
     } : BLANK());
   };
 
   const openEC = (item) => {
     setEcSource(item);
     setEditing('new');
+    setImageFile(null);
     setForm({
       name: item.name, code: item.code || '', mat_no: '', p_no: '',
       customer: item.customer || '', line_name: item.line_name || '',
       cycle_time_sec: item.cycle_time_sec || '', target_per_shift: item.target_per_shift || '',
       process_type: item.process_type || 'welding_assembly', is_active: true,
       effective_from: new Date().toISOString().slice(0, 10),
+      image_url: item.image_url || '',
     });
   };
 
   const handleSave = async () => {
     if (!form.name) { toast.error('กรอกชื่อสินค้า'); return; }
     setSaving(true);
+    let imageUrl = form.image_url || null;
+    if (imageFile) {
+      setImageUploading(true);
+      const fileExt = imageFile.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile);
+      setImageUploading(false);
+      if (uploadError) { setSaving(false); toast.error(`อัปโหลดรูปไม่สำเร็จ: ${uploadError.message}`); return; }
+      const { data: pub } = supabaseDR.storage.from('product-images').getPublicUrl(fileName);
+      imageUrl = pub.publicUrl;
+    }
     const payload = {
       name: form.name.trim(), code: form.code.trim() || null,
       mat_no: form.mat_no.trim().toUpperCase() || null, p_no: form.p_no.trim() || null,
@@ -144,6 +161,7 @@ export default function ProductMaster() {
       process_type: form.process_type || 'welding_assembly',
       is_active: form.is_active,
       effective_from: form.effective_from || null,
+      image_url: imageUrl,
     };
     if (editing === 'new') {
       if (ecSource) payload.family_id = ecSource.family_id;
@@ -438,6 +456,9 @@ export default function ProductMaster() {
             return (
               <div style={{ background: 'var(--card)', border: `1px solid var(--border)`, borderRadius: indented ? 8 : 12, overflow: 'hidden', marginLeft: indented ? 16 : 0, marginRight: indented ? 16 : 0, marginBottom: indented ? 8 : 0 }}>
                 <div style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                  {item.image_url && (
+                    <img src={item.image_url} alt="" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', flexShrink: 0 }} />
+                  )}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {!indented && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
@@ -638,6 +659,14 @@ export default function ProductMaster() {
                 <Field label="Cycle Time (วินาที)"><input type="number" min="0" step="0.1" value={form.cycle_time_sec} onChange={e => setForm(f => ({ ...f, cycle_time_sec: e.target.value }))} placeholder="เช่น 45.5" style={inputSt} /></Field>
                 <Field label="Target ต่อกะ (ชิ้น)"><input type="number" min="0" value={form.target_per_shift} onChange={e => setForm(f => ({ ...f, target_per_shift: e.target.value }))} placeholder="เช่น 500" style={inputSt} /></Field>
               </div>
+              <Field label="รูปภาพ Product (แสดงที่ตู้ Kanban)">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {(imageFile ? URL.createObjectURL(imageFile) : form.image_url) && (
+                    <img src={imageFile ? URL.createObjectURL(imageFile) : form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
+                  )}
+                  <input type="file" accept="image/*" onChange={e => setImageFile(e.target.files?.[0] || null)} style={{ fontSize: 12, color: 'var(--text2)' }} />
+                </div>
+              </Field>
               {!ecSource && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
@@ -648,7 +677,7 @@ export default function ProductMaster() {
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
               <button onClick={() => { setEditing(null); setEcSource(null); }} style={btnSecondary}>ยกเลิก</button>
               <button onClick={handleSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1, background: ecSource ? '#7c3aed' : undefined }}>
-                {saving ? '...' : ecSource ? '🔄 บันทึก EC' : 'บันทึก'}
+                {saving ? (imageUploading ? 'กำลังอัปโหลดรูป...' : '...') : ecSource ? '🔄 บันทึก EC' : 'บันทึก'}
               </button>
             </div>
           </div>

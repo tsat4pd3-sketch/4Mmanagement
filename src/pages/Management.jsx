@@ -210,17 +210,18 @@ export default function Management() {
     const matNos = [...new Set((orders || []).map(o => o.mat_no).filter(Boolean))];
     const ctMap = {};
     const nameMap = {};
+    const imgMap = {};
     if (matNos.length) {
       const { data: products } = await supabaseDR
         .from('dr_products')
-        .select('mat_no, name, cycle_time_sec')
+        .select('mat_no, name, cycle_time_sec, image_url')
         .in('mat_no', matNos);
-      (products || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; nameMap[p.mat_no] = p.name || ''; });
+      (products || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; nameMap[p.mat_no] = p.name || ''; imgMap[p.mat_no] = p.image_url || ''; });
     }
     const ordersBySession = {};
     (orders || []).forEach(o => { (ordersBySession[o.session_id] ||= []).push(o); });
     const enriched = sessions.map(s => ({ ...s, orders: ordersBySession[s.id] || [] }));
-    setLineProdData({ sessions: enriched, workDate: todayStr, ctByMatNo: ctMap, nameByMatNo: nameMap });
+    setLineProdData({ sessions: enriched, workDate: todayStr, ctByMatNo: ctMap, nameByMatNo: nameMap, imgByMatNo: imgMap });
   }, []);
 
   useEffect(() => {
@@ -825,6 +826,7 @@ export default function Management() {
           const { sessions } = lineProdData;
           const ctByMatNo = lineProdData.ctByMatNo || {};
           const nameByMatNo = lineProdData.nameByMatNo || {};
+          const imgByMatNo = lineProdData.imgByMatNo || {};
 
           const buildCards = (sessList) => {
             const cards = [];
@@ -843,7 +845,8 @@ export default function Management() {
                 const isDelayed = !isDone && !isCarry && !o.is_backfill && !!orderEndMs && nowMs > orderEndMs;
                 const productKey = o.mat_no || s.dr_products?.name || 'unknown';
                 const productLabel = nameByMatNo[o.mat_no] || s.dr_products?.name || o.mat_no || 'ไม่ทราบ P/N';
-                cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, sessionOpen: s.status === 'open' });
+                const productImg = imgByMatNo[o.mat_no] || '';
+                cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, productImg, sessionOpen: s.status === 'open' });
               });
             });
             return cards;
@@ -853,7 +856,7 @@ export default function Management() {
           // แยกแถวตาม mat_no/product — ไม่ให้ product ต่างกัน (เช่น RH/LH) ปนแถวเดียวกัน
           const groups = {};
           allCards.forEach(c => {
-            (groups[c.productKey] = groups[c.productKey] || { key: c.productKey, label: c.productLabel, cards: [] }).cards.push(c);
+            (groups[c.productKey] = groups[c.productKey] || { key: c.productKey, label: c.productLabel, img: c.productImg, cards: [] }).cards.push(c);
           });
           const productRows = Object.values(groups).sort((a, b) => a.label.localeCompare(b.label));
 
@@ -945,7 +948,9 @@ export default function Management() {
                     const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
                     return (
                       <div key={row.key} style={{ display: 'flex', minHeight: 32, borderTop: ri > 0 ? '1px solid var(--border2)' : 'none' }}>
-                        <div style={{ width: LEFT_W, flexShrink: 0, padding: '3px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1 }}>
+                        <div style={{ width: LEFT_W, flexShrink: 0, padding: '3px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                          {row.img && <img src={row.img} alt="" style={{ width: 20, height: 20, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />}
+                          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             <span style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: LEFT_W - 16 }}>{row.label}</span>
                             {delayed > 0 && <span style={{ fontSize: 7, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}</span>}
@@ -954,6 +959,7 @@ export default function Management() {
                           <div style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
                             <span style={{ fontSize: 11, fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
                             <span style={{ fontSize: 7, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
+                          </div>
                           </div>
                         </div>
                         {/* Timeline cells + order blocks */}
