@@ -249,8 +249,8 @@ export default function ProductMaster() {
   const PRODUCT_CSV_COLS = ['name','code','mat_no','p_no','customer','line_name','cycle_time_sec','target_per_shift','process_type','qty_per_kanban'];
   const PRODUCT_CSV_HEADER = 'name,code,mat_no,p_no,customer,line_name,cycle_time_sec,target_per_shift,process_type,qty_per_kanban';
   const PRODUCT_CSV_EXAMPLE = [
-    'REINF FRT SD BDY INR RH,RH-001,10100384,RB3B-16E060-BA,FORD,LINE APRON ASSY,45,800,welding_assembly,20',
-    'REINF FRT SD BDY INR LH,LH-001,10100335,RB3B-16E061-BA,FORD,LINE APRON ASSY,45,800,welding_assembly,20',
+    '[ตัวอย่าง-ลบแถวนี้ก่อนนำเข้าจริง] REINF FRT SD BDY INR RH,RH-001,EXAMPLE-10100384,RB3B-16E060-BA,FORD,LINE APRON ASSY,45,800,welding_assembly,20',
+    '[ตัวอย่าง-ลบแถวนี้ก่อนนำเข้าจริง] REINF FRT SD BDY INR LH,LH-001,EXAMPLE-10100335,RB3B-16E061-BA,FORD,LINE APRON ASSY,45,800,welding_assembly,20',
   ].join('\n');
 
   const downloadProductTemplate = () => {
@@ -277,9 +277,14 @@ export default function ProductMaster() {
 
     if (!allRows.length) { toast.error('ไม่พบข้อมูลในไฟล์ หรือ format ไม่ถูกต้อง'); return; }
 
+    const exampleCount = allRows.filter(r => r.mat_no?.startsWith('EXAMPLE-')).length;
+    const rows = allRows.filter(r => !r.mat_no?.startsWith('EXAMPLE-'));
+    if (exampleCount) toast.info(`ข้ามแถวตัวอย่าง ${exampleCount} รายการอัตโนมัติ`);
+    if (!rows.length) { toast.error('ไม่พบข้อมูลจริงในไฟล์ (มีแต่แถวตัวอย่าง)'); return; }
+
     const existingMatNos = new Set(items.map(i => i.mat_no).filter(Boolean));
     const newRows = [], dupRows = [], invalidRows = [];
-    allRows.forEach(r => {
+    rows.forEach(r => {
       if (!r.name || !r.mat_no) { invalidRows.push(r); return; }
       if (existingMatNos.has(r.mat_no)) {
         const existing = items.find(i => i.mat_no === r.mat_no);
@@ -1304,8 +1309,8 @@ function PartsMasterPanel({ canEdit, fullName, setCsvPreview, reloadKey }) {
 
   const PARTS_CSV_HEADER = 'mat_no,part_name,part_no,uom,qty_per_pkg,supplier,note';
   const PARTS_CSV_EXAMPLE = [
-    '300001234,NUT WELD M8,NW-M8-001,EA,500,THAI SUMMIT PARTS,สำหรับ APRON ASSY',
-    '500009876,STEEL PLATE 1.0MM,SP-1.0-A,KG,,ABC STEEL,',
+    'EXAMPLE-300001234,[ตัวอย่าง-ลบแถวนี้ก่อนนำเข้าจริง] NUT WELD M8,NW-M8-001,EA,500,THAI SUMMIT PARTS,สำหรับ APRON ASSY',
+    'EXAMPLE-500009876,[ตัวอย่าง-ลบแถวนี้ก่อนนำเข้าจริง] STEEL PLATE 1.0MM,SP-1.0-A,KG,,ABC STEEL,',
   ].join('\n');
 
   const downloadPartsTemplate = () => {
@@ -1332,9 +1337,14 @@ function PartsMasterPanel({ canEdit, fullName, setCsvPreview, reloadKey }) {
 
     if (!allRows.length) { toast.error('ไม่พบข้อมูลในไฟล์ หรือ format ไม่ถูกต้อง'); return; }
 
+    const exampleCount = allRows.filter(r => r.mat_no?.startsWith('EXAMPLE-')).length;
+    const rows = allRows.filter(r => !r.mat_no?.startsWith('EXAMPLE-'));
+    if (exampleCount) toast.info(`ข้ามแถวตัวอย่าง ${exampleCount} รายการอัตโนมัติ`);
+    if (!rows.length) { toast.error('ไม่พบข้อมูลจริงในไฟล์ (มีแต่แถวตัวอย่าง)'); return; }
+
     const existingMatNos = new Set(parts.map(p => p.mat_no).filter(Boolean));
     const newRows = [], dupRows = [], invalidRows = [];
-    allRows.forEach(r => {
+    rows.forEach(r => {
       if (!r.part_name || !r.mat_no) { invalidRows.push(r); return; }
       if (existingMatNos.has(r.mat_no)) {
         const existing = parts.find(p => p.mat_no === r.mat_no);
