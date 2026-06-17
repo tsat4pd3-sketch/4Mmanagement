@@ -246,11 +246,11 @@ export default function ProductMaster() {
   }, [visibleFamilies]);
 
   /* ── CSV helpers ── */
-  const PRODUCT_CSV_COLS = ['name','code','mat_no','p_no','customer','line_name','cycle_time_sec','target_per_shift','process_type'];
-  const PRODUCT_CSV_HEADER = 'name,code,mat_no,p_no,customer,line_name,cycle_time_sec,target_per_shift,process_type';
+  const PRODUCT_CSV_COLS = ['name','code','mat_no','p_no','customer','line_name','cycle_time_sec','target_per_shift','process_type','qty_per_kanban'];
+  const PRODUCT_CSV_HEADER = 'name,code,mat_no,p_no,customer,line_name,cycle_time_sec,target_per_shift,process_type,qty_per_kanban';
   const PRODUCT_CSV_EXAMPLE = [
-    'REINF FRT SD BDY INR RH,RH-001,10100384,RB3B-16E060-BA,FORD,LINE APRON ASSY,45,800,welding_assembly',
-    'REINF FRT SD BDY INR LH,LH-001,10100335,RB3B-16E061-BA,FORD,LINE APRON ASSY,45,800,welding_assembly',
+    'REINF FRT SD BDY INR RH,RH-001,10100384,RB3B-16E060-BA,FORD,LINE APRON ASSY,45,800,welding_assembly,20',
+    'REINF FRT SD BDY INR LH,LH-001,10100335,RB3B-16E061-BA,FORD,LINE APRON ASSY,45,800,welding_assembly,20',
   ].join('\n');
 
   const downloadProductTemplate = () => {
@@ -306,8 +306,21 @@ export default function ProductMaster() {
         target_per_shift: r.target_per_shift ? Number(r.target_per_shift) : null,
         process_type: r.process_type || 'welding_assembly', is_active: true,
       }));
-      const { error } = await supabaseDR.from('dr_products').upsert(payload, { onConflict: 'mat_no', ignoreDuplicates: false });
+      const { data: savedProducts, error } = await supabaseDR.from('dr_products')
+        .upsert(payload, { onConflict: 'mat_no', ignoreDuplicates: false }).select('id, mat_no');
       if (error) { toast.error(error.message); return; }
+
+      const kanbanRows = toImport.filter(r => r.qty_per_kanban && Number(r.qty_per_kanban) > 0);
+      if (kanbanRows.length) {
+        const idByMatNo = new Map((savedProducts || []).map(p => [p.mat_no, p.id]));
+        const kanbanPayload = kanbanRows.map(r => ({
+          product_id: idByMatNo.get(r.mat_no) || null,
+          mat_no: r.mat_no, qty_per_kanban: Math.trunc(Number(r.qty_per_kanban)), is_active: true,
+        }));
+        const { error: kanbanError } = await supabaseDR.from('kanban_standards')
+          .upsert(kanbanPayload, { onConflict: 'mat_no', ignoreDuplicates: false });
+        if (kanbanError) { toast.error(`บันทึก Kanban Standard ไม่สำเร็จ: ${kanbanError.message}`); }
+      }
       toast.success(`นำเข้า ${payload.length} รายการสำเร็จ`);
     } else {
       const payload = toImport.map(r => ({
