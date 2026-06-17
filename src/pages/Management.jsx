@@ -970,21 +970,34 @@ export default function Management() {
                             const isShiftBound = h === 8 || h === 20;
                             return <div key={i} style={{ flex: 1, minWidth: 0, height: '100%', borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`, background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent' }} />;
                           })}
-                          {cards.map((o, oi) => {
-                            if (!o.orderStartMs || !o.orderEndMs) return null;
+                          {(() => {
+                            // จัดเรียงตามเวลาเริ่ม แล้วดันการ์ดที่ทับเวลากันออกไปทางขวาต่อจากใบก่อนหน้า
+                            // เพื่อไม่ให้การ์ดซ้อนทับกันเลย (ไม่พึ่งแค่ offset เล็ก ๆ แบบเดิม)
+                            const GAP_PCT = 0.5, MIN_W_PCT = 2.2;
+                            const sorted = cards
+                              .filter(o => o.orderStartMs && o.orderEndMs)
+                              .sort((a, b) => a.orderStartMs - b.orderStartMs);
+                            let lastRightPct = 0;
+                            const positioned = sorted.map(o => {
+                              const timeLeftPct = Math.max(0, (o.orderStartMs - half.startMs) * pctPerMs);
+                              const rightPct = Math.min(100, (o.orderEndMs - half.startMs) * pctPerMs);
+                              const timeWidthPct = Math.max(MIN_W_PCT, rightPct - timeLeftPct);
+                              const leftPct = Math.max(timeLeftPct, lastRightPct);
+                              const widthPct = timeWidthPct;
+                              lastRightPct = leftPct + widthPct + GAP_PCT;
+                              return { o, leftPct, widthPct };
+                            });
+                            return positioned.map(({ o, leftPct, widthPct }, oi) => {
+                            if (leftPct >= 100) return null;
                             const sc = o.isDone ? '#22c55e' : o.isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : o.is_backfill ? '#6b7280' : '#4d9fff';
                             const icon = o.isDone ? '✓' : o.isDelayed ? '!' : o.isCarry ? '↷' : o.is_backfill ? '⏪' : '▶';
-                            const leftPct  = Math.max(0, (o.orderStartMs - half.startMs) * pctPerMs) + oi * 0.6;
-                            const rightPct = Math.min(100, (o.orderEndMs - half.startMs) * pctPerMs);
-                            const widthPct = Math.max(0.8, rightPct - leftPct);
-                            if (leftPct >= 100) return null;
                             const doneQty = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
                             const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
                             return (
                               <div key={o.prod_no || oi}
                                 title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : o.isDelayed ? ` ⚠️ช้า${Math.round((nowMs - o.orderEndMs) / 60000)}ม.` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(o.orderEndMs)}`}`}
                                 style={{
-                                  position: 'absolute', top: 3, bottom: 3, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 28,
+                                  position: 'absolute', top: 3, bottom: 3, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 22,
                                   background: `${sc}28`, border: `1.5px solid ${sc}${o.isDone ? 'cc' : o.isDelayed ? 'dd' : '88'}`,
                                   borderRadius: 4, overflow: 'hidden', cursor: 'default', zIndex: 1,
                                   boxShadow: o.isDelayed ? `0 0 6px ${sc}44` : 'none',
@@ -998,7 +1011,8 @@ export default function Management() {
                                 </div>
                               </div>
                             );
-                          })}
+                            });
+                          })()}
                           {/* Now marker */}
                           {nowMs >= half.startMs && nowMs < half.startMs + 12 * 3600000 && (() => {
                             const nowPct = (nowMs - half.startMs) * pctPerMs;
