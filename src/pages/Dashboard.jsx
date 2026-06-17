@@ -809,7 +809,7 @@ export default function Dashboard() {
                               const icon = o.isDone ? '✓' : o.isDelayed ? '!' : o.isCarry ? '↷' : '▶';
                               const leftPx  = Math.max(0, (o.orderStartMs - gridStartMs) * pxPerMs);
                               const rightPx = Math.min(SLOT_W * 24, (o.orderEndMs - gridStartMs) * pxPerMs);
-                              const widthPx = Math.max(3, rightPx - leftPx);
+                              const widthPx = Math.max(26, rightPx - leftPx);
                               if (leftPx >= SLOT_W * 24) return null;
                               const doneQty  = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
                               const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);

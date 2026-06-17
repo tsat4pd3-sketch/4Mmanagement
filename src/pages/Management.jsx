@@ -850,6 +850,12 @@ export default function Management() {
           }, 0);
           const hasOpen = sessions.some(s => s.status === 'open');
 
+          const openByMatNo = {};
+          sessions.forEach(s => s.orders.forEach(o => {
+            if (o.status === 'open') openByMatNo[o.mat_no] = (openByMatNo[o.mat_no] || 0) + 1;
+          }));
+          const matNoChips = Object.entries(openByMatNo);
+
           return (
             <div style={{
               marginBottom: 10,
@@ -871,6 +877,17 @@ export default function Management() {
                   ))}
                 </div>
               </div>
+              {/* Kanban ที่เปิดอยู่ ต่อ MAT.NO */}
+              {matNoChips.length > 0 && (
+                <div style={{ padding: '6px 12px', borderBottom: '1px solid var(--border2)', display: 'flex', gap: 6, flexWrap: 'wrap', background: 'var(--bg)' }}>
+                  <span style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>🎴 Kanban เปิดอยู่:</span>
+                  {matNoChips.map(([matNo, count]) => (
+                    <span key={matNo} style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, fontWeight: 700, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', fontFamily: 'monospace' }}>
+                      {matNo} · {count} ใบ
+                    </span>
+                  ))}
+                </div>
+              )}
               {/* Timeline */}
               <div style={{ overflowX: 'auto' }}>
                 <div style={{ minWidth: LEFT_W + SLOT_W * 24, fontSize: 0 }}>
@@ -931,9 +948,9 @@ export default function Management() {
                             if (!o.orderStartMs || !o.orderEndMs) return null;
                             const sc = o.isDone ? '#22c55e' : o.isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : o.is_backfill ? '#6b7280' : '#4d9fff';
                             const icon = o.isDone ? '✓' : o.isDelayed ? '!' : o.isCarry ? '↷' : o.is_backfill ? '⏪' : '▶';
-                            const leftPx  = Math.max(0, (o.orderStartMs - gridStartMs) * pxPerMs);
+                            const leftPx  = Math.max(0, (o.orderStartMs - gridStartMs) * pxPerMs) + oi * 3;
                             const rightPx = Math.min(SLOT_W * 24, (o.orderEndMs - gridStartMs) * pxPerMs);
-                            const widthPx = Math.max(3, rightPx - leftPx);
+                            const widthPx = Math.max(26, rightPx - leftPx);
                             if (leftPx >= SLOT_W * 24) return null;
                             const doneQty = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
                             const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
