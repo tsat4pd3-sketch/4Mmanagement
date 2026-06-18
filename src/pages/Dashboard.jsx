@@ -168,7 +168,7 @@ export default function Dashboard() {
     let ordersBySession = {}, dtBySession = {}, defectBySession = {};
     if (sessionIds.length > 0) {
       const [{ data: orders }, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
-        supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, prod_no, part_name, mat_no, opened_at').in('session_id', sessionIds),
+        supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, prod_no, part_name, mat_no, opened_at, confirmed_at').in('session_id', sessionIds),
         supabaseDR.from('downtime_logs').select('session_id, duration_min, dr_downtime_types(category)').in('session_id', sessionIds),
         supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessionIds),
       ]);
@@ -691,6 +691,7 @@ export default function Dashboard() {
               {[
                 { c: '#4d9fff', icon: '▶', label: 'กำลังผลิต' },
                 { c: '#22c55e', icon: '✓', label: 'เสร็จแล้ว' },
+                { c: '#f97316', icon: '✓!', label: 'เสร็จ (ปิดช้ากว่ากำหนด)' },
                 { c: '#ef4444', icon: '!', label: 'ล่าช้า' },
                 { c: '#f59e0b', icon: '↷', label: 'ยกยอดข้ามกะ' },
                 { c: '#6b7280', icon: '⏪', label: 'ยิงย้อนหลัง (backfill)' },
@@ -868,7 +869,9 @@ export default function Dashboard() {
                         const rightPct = Math.min(100, (endMs - half.startMs) * pctPerMs);
                         const widthPct = Math.max(MIN_W_PCT, rightPct - leftPct);
                         const isDelayed = !o.isDone && !o.isCarry && endMs < nowMs;
-                        return { o, leftPct, widthPct, realEndMs: endMs, isDelayed };
+                        // เสร็จแล้วแต่ปิดจบช้ากว่าคิวที่ควรจะเสร็จ — ไม่ควรเขียวเหมือนผลิตจบปกติ
+                        const isLateDone = o.isDone && !!o.confirmed_at && new Date(o.confirmed_at).getTime() > endMs;
+                        return { o, leftPct, widthPct, realEndMs: endMs, isDelayed, isLateDone };
                       });
                     };
 
@@ -920,21 +923,21 @@ export default function Dashboard() {
                         })()}
                         {(() => {
                           const positioned = computeQueuedPositions(cards, half);
-                          return positioned.map(({ o, leftPct, widthPct, realEndMs, isDelayed }, oi) => {
+                          return positioned.map(({ o, leftPct, widthPct, realEndMs, isDelayed, isLateDone }, oi) => {
                           if (leftPct >= 100) return null;
-                          const statusColor = o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
-                          const icon = o.isDone ? '✓' : isDelayed ? '!' : o.isCarry ? '↷' : '▶';
+                          const statusColor = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
+                          const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : '▶';
                           const doneQty  = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
                           const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
                           return (
-                            <div key={o.prod_no || oi} title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${isDelayed ? ` ⚠️ช้า${Math.round((nowMs-realEndMs)/60000)}ม.` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}`}
+                            <div key={o.prod_no || oi} title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}ม.)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs-realEndMs)/60000)}ม.` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}`}
                               style={{
                                 position: 'absolute', top: 4, bottom: 4,
                                 left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 24,
                                 background: `${statusColor}28`,
-                                border: `1.5px solid ${statusColor}${o.isDone ? 'cc' : isDelayed ? 'dd' : '88'}`,
+                                border: `1.5px solid ${statusColor}${o.isDone && !isLateDone ? 'cc' : (isDelayed || isLateDone) ? 'dd' : '88'}`,
                                 borderRadius: 4, overflow: 'hidden',
-                                boxShadow: isDelayed ? `0 0 6px ${statusColor}44` : 'none',
+                                boxShadow: (isDelayed || isLateDone) ? `0 0 6px ${statusColor}44` : 'none',
                                 cursor: 'default', zIndex: 1,
                               }}>
                               <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`, background: `${statusColor}22`, transition: 'width 0.5s ease' }} />
@@ -1200,8 +1203,9 @@ export default function Dashboard() {
                 background: 'var(--card)',
                 borderRadius: 14,
                 padding: 20,
-                width: 'min(90vw, 900px)',
-                maxHeight: '90vh',
+                width: '96vw',
+                maxWidth: '96vw',
+                maxHeight: '96vh',
                 overflow: 'auto',
                 boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
               }}
