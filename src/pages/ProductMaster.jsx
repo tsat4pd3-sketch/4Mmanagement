@@ -147,54 +147,60 @@ export default function ProductMaster() {
   const handleSave = async () => {
     if (!form.name) { toast.error('กรอกชื่อสินค้า'); return; }
     setSaving(true);
-    let imageUrl = form.image_url || null;
-    if (imageFile) {
-      setImageUploading(true);
-      const fileExt = imageFile.name.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
-      const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile);
-      setImageUploading(false);
-      if (uploadError) { setSaving(false); toast.error(`อัปโหลดรูปไม่สำเร็จ: ${uploadError.message}`); return; }
-      const { data: pub } = supabaseDR.storage.from('product-images').getPublicUrl(fileName);
-      imageUrl = pub.publicUrl;
-    }
-    const payload = {
-      name: form.name.trim(), code: form.code.trim() || null,
-      mat_no: form.mat_no.trim().toUpperCase() || null, p_no: form.p_no.trim() || null,
-      customer: form.customer.trim() || null, line_name: form.line_name || null,
-      cycle_time_sec: form.cycle_time_sec ? parseFloat(form.cycle_time_sec) : null,
-      target_per_shift: form.target_per_shift ? parseInt(form.target_per_shift) : null,
-      process_type: form.process_type || 'welding_assembly',
-      is_active: form.is_active,
-      effective_from: form.effective_from || null,
-      image_url: imageUrl,
-    };
-    let savedId = editing;
-    if (editing === 'new') {
-      if (ecSource) payload.family_id = ecSource.family_id;
-      const { data: inserted, error } = await supabaseDR.from('dr_products').insert(payload).select().single();
-      if (error) { setSaving(false); toast.error(error.message); return; }
-      savedId = inserted.id;
-      if (ecSource) {
-        await supabaseDR.from('dr_products').update({
-          is_active: false,
-          superseded_at: form.effective_from || new Date().toISOString().slice(0, 10),
-          superseded_by: inserted.id,
-        }).eq('id', ecSource.id);
+    try {
+      let imageUrl = form.image_url || null;
+      if (imageFile) {
+        setImageUploading(true);
+        const fileExt = imageFile.name.split('.').pop();
+        const fileName = `${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile);
+        setImageUploading(false);
+        if (uploadError) { toast.error(`อัปโหลดรูปไม่สำเร็จ: ${uploadError.message}`); return; }
+        const { data: pub } = supabaseDR.storage.from('product-images').getPublicUrl(fileName);
+        imageUrl = pub.publicUrl;
       }
-    } else {
-      const { error } = await supabaseDR.from('dr_products').update(payload).eq('id', editing);
-      if (error) { setSaving(false); toast.error(error.message); return; }
+      const payload = {
+        name: form.name.trim(), code: (form.code || '').trim() || null,
+        mat_no: (form.mat_no || '').trim().toUpperCase() || null, p_no: (form.p_no || '').trim() || null,
+        customer: (form.customer || '').trim() || null, line_name: form.line_name || null,
+        cycle_time_sec: form.cycle_time_sec ? parseFloat(form.cycle_time_sec) : null,
+        target_per_shift: form.target_per_shift ? parseInt(form.target_per_shift) : null,
+        process_type: form.process_type || 'welding_assembly',
+        is_active: form.is_active,
+        effective_from: form.effective_from || null,
+        image_url: imageUrl,
+      };
+      let savedId = editing;
+      if (editing === 'new') {
+        if (ecSource) payload.family_id = ecSource.family_id;
+        const { data: inserted, error } = await supabaseDR.from('dr_products').insert(payload).select().single();
+        if (error) { toast.error(error.message); return; }
+        savedId = inserted.id;
+        if (ecSource) {
+          await supabaseDR.from('dr_products').update({
+            is_active: false,
+            superseded_at: form.effective_from || new Date().toISOString().slice(0, 10),
+            superseded_by: inserted.id,
+          }).eq('id', ecSource.id);
+        }
+      } else {
+        const { error } = await supabaseDR.from('dr_products').update(payload).eq('id', editing);
+        if (error) { toast.error(error.message); return; }
+      }
+      // ชิ้นงานเดียวกัน (ชื่อตรงกัน) ต่างแค่ customer/mat — sync รูปให้ทุก variant อัตโนมัติ
+      if (imageFile && payload.name) {
+        await supabaseDR.from('dr_products').update({ image_url: imageUrl })
+          .ilike('name', payload.name).neq('id', savedId);
+      }
+      toast.success(ecSource ? '🔄 Engineering Change บันทึกสำเร็จ' : 'บันทึกสำเร็จ');
+      setEditing(null); setEcSource(null);
+      load();
+    } catch (err) {
+      toast.error('เกิดข้อผิดพลาด: ' + err.message);
+    } finally {
+      setSaving(false);
+      setImageUploading(false);
     }
-    // ชิ้นงานเดียวกัน (ชื่อตรงกัน) ต่างแค่ customer/mat — sync รูปให้ทุก variant อัตโนมัติ
-    if (imageFile && payload.name) {
-      await supabaseDR.from('dr_products').update({ image_url: imageUrl })
-        .ilike('name', payload.name).neq('id', savedId);
-    }
-    setSaving(false);
-    toast.success(ecSource ? '🔄 Engineering Change บันทึกสำเร็จ' : 'บันทึกสำเร็จ');
-    setEditing(null); setEcSource(null);
-    load();
   };
 
   const handleDelete = async (id) => {
@@ -1441,35 +1447,41 @@ function PartsMasterPanel({ canEdit, fullName, setCsvPreview, reloadKey }) {
   async function handleSave() {
     if (!form.mat_no.trim() || !form.part_name.trim()) { toast.error('กรอก Mat SAP และ Part Name'); return; }
     setSaving(true);
-    let imageUrl = form.image_url || null;
-    if (imageFile) {
-      setImageUploading(true);
-      const fileExt = imageFile.name.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
-      const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile);
+    try {
+      let imageUrl = form.image_url || null;
+      if (imageFile) {
+        setImageUploading(true);
+        const fileExt = imageFile.name.split('.').pop();
+        const fileName = `${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile);
+        setImageUploading(false);
+        if (uploadError) { toast.error(`อัปโหลดรูปไม่สำเร็จ: ${uploadError.message}`); return; }
+        const { data: pub } = supabaseDR.storage.from('product-images').getPublicUrl(fileName);
+        imageUrl = pub.publicUrl;
+      }
+      const payload = {
+        mat_no: form.mat_no.trim(), part_name: form.part_name.trim(),
+        part_no: (form.part_no || '').trim() || null, uom: (form.uom || '').trim() || 'EA',
+        qty_per_pkg: form.qty_per_pkg !== '' ? Number(form.qty_per_pkg) : null,
+        supplier: (form.supplier || '').trim() || null, note: (form.note || '').trim() || null,
+        is_active: form.is_active, image_url: imageUrl,
+      };
+      let err;
+      if (editPart) {
+        ({ error: err } = await supabaseDR.from('parts_master').update(payload).eq('id', editPart.id));
+      } else {
+        ({ error: err } = await supabaseDR.from('parts_master').insert(payload));
+      }
+      if (err) { toast.error(err.message); return; }
+      toast.success(editPart ? 'อัปเดตสำเร็จ' : 'เพิ่มพาร์ทสำเร็จ');
+      setShowModal(false);
+      load();
+    } catch (err) {
+      toast.error('เกิดข้อผิดพลาด: ' + err.message);
+    } finally {
+      setSaving(false);
       setImageUploading(false);
-      if (uploadError) { setSaving(false); toast.error(`อัปโหลดรูปไม่สำเร็จ: ${uploadError.message}`); return; }
-      const { data: pub } = supabaseDR.storage.from('product-images').getPublicUrl(fileName);
-      imageUrl = pub.publicUrl;
     }
-    const payload = {
-      mat_no: form.mat_no.trim(), part_name: form.part_name.trim(),
-      part_no: form.part_no.trim() || null, uom: form.uom.trim() || 'EA',
-      qty_per_pkg: form.qty_per_pkg !== '' ? Number(form.qty_per_pkg) : null,
-      supplier: form.supplier.trim() || null, note: form.note.trim() || null,
-      is_active: form.is_active, image_url: imageUrl,
-    };
-    let err;
-    if (editPart) {
-      ({ error: err } = await supabaseDR.from('parts_master').update(payload).eq('id', editPart.id));
-    } else {
-      ({ error: err } = await supabaseDR.from('parts_master').insert(payload));
-    }
-    setSaving(false);
-    if (err) { toast.error(err.message); return; }
-    toast.success(editPart ? 'อัปเดตสำเร็จ' : 'เพิ่มพาร์ทสำเร็จ');
-    setShowModal(false);
-    load();
   }
 
   async function toggleActive(p) {
