@@ -889,7 +889,7 @@ export default function Management() {
                 const isDone    = o.status === 'confirmed';
                 const isCarry   = o.status === 'carry_over';
                 const isDelayed = !isDone && !isCarry && !o.is_backfill && !!orderEndMs && nowMs > orderEndMs;
-                const productKey = o.mat_no || s.dr_products?.name || 'unknown';
+                const productKey = (nameByMatNo[o.mat_no] || s.dr_products?.name || '').trim().toUpperCase() || o.mat_no || 'unknown';
                 const productLabel = nameByMatNo[o.mat_no] || s.dr_products?.name || o.mat_no || 'ไม่ทราบ P/N';
                 const productImg = imgByMatNo[o.mat_no] || '';
                 cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, productImg, sessionOpen: s.status === 'open' });
