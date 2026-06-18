@@ -1203,9 +1203,9 @@ export default function Dashboard() {
                 background: 'var(--card)',
                 borderRadius: 14,
                 padding: 20,
-                width: '96vw',
-                maxWidth: '96vw',
-                maxHeight: '96vh',
+                width: 'min(80vw, 1200px)',
+                maxWidth: '80vw',
+                maxHeight: '88vh',
                 overflow: 'auto',
                 boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
               }}
@@ -1242,28 +1242,28 @@ export default function Dashboard() {
                       zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
                     }}>
                       <div style={{
-                        width: 'clamp(32px, 3.6vw, 58px)', height: 'clamp(32px, 3.6vw, 58px)', borderRadius: '50%',
-                        border: `clamp(2px, 0.24vw, 3px) solid ${color}`,
+                        width: 'clamp(48px, 6vw, 84px)', height: 'clamp(48px, 6vw, 84px)', borderRadius: '50%',
+                        border: `clamp(3px, 0.4vw, 5px) solid ${color}`,
                         boxShadow: `0 0 10px ${color}99`,
                         overflow: 'hidden', background: '#1a1a1a',
                       }}>
                         {emp.image_url
                           ? <img src={emp.image_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'clamp(10px, 1.1vw, 18px)', fontWeight: 800, color }}>{(emp.name || '?')[0]}</div>
+                          : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'clamp(14px, 1.8vw, 26px)', fontWeight: 800, color }}>{(emp.name || '?')[0]}</div>
                         }
                       </div>
                       <div style={{
                         background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
-                        borderRadius: 4, padding: 'clamp(1px, 0.16vw, 2.4px) clamp(4px, 0.48vw, 8px)',
-                        fontSize: 'clamp(7px, 0.8vw, 12px)', fontWeight: 700, color: '#fff',
-                        whiteSpace: 'nowrap', maxWidth: 'clamp(48px, 5.6vw, 88px)',
+                        borderRadius: 4, padding: 'clamp(1px, 0.3vw, 4px) clamp(6px, 0.8vw, 12px)',
+                        fontSize: 'clamp(10px, 1.3vw, 17px)', fontWeight: 700, color: '#fff',
+                        whiteSpace: 'nowrap', maxWidth: 'clamp(70px, 9vw, 130px)',
                         overflow: 'hidden', textOverflow: 'ellipsis',
                       }}>{shortName}</div>
                       {fit !== null && (
-                        <div style={{ fontSize: 'clamp(6px, 0.72vw, 10px)', fontWeight: 800, color, background: `${color}25`, padding: 'clamp(1px, 0.16vw, 2.4px) clamp(3px, 0.4vw, 6px)', borderRadius: 3 }}>{fit}%</div>
+                        <div style={{ fontSize: 'clamp(9px, 1.1vw, 15px)', fontWeight: 800, color, background: `${color}25`, padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3 }}>{fit}%</div>
                       )}
                       {emp.has_extended_ot && (
-                        <div style={{ fontSize: 'clamp(6px, 0.72vw, 10px)', fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: 'clamp(1px, 0.16vw, 2.4px) clamp(3px, 0.4vw, 6px)', borderRadius: 3 }}>OT+23</div>
+                        <div style={{ fontSize: 'clamp(9px, 1.1vw, 15px)', fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3 }}>OT+23</div>
                       )}
                     </div>
                   );
