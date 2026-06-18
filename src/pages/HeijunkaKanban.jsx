@@ -26,6 +26,17 @@ const chip = (bg, color) => ({
 
 const SHIFT_LABEL = { day: '☀️ กะเช้า', night: '🌙 กะดึก' };
 
+/* mat_no prefix → ประเภทพาร์ท (ใช้กรอง view เดียวกันได้ทั้งฝั่งผลิตและฝั่ง store) */
+const MAT_PREFIXES = [
+  { prefix: '200', label: 'Child (ผลิต)', color: '#3b82f6' },
+  { prefix: '300', label: 'Child (ซื้อ)',  color: '#f59e0b' },
+  { prefix: '500', label: 'Raw Mat',       color: '#a78bfa' },
+];
+function matColor(mat_no = '') {
+  const m = MAT_PREFIXES.find(p => mat_no.startsWith(p.prefix));
+  return m ? m.color : 'var(--muted)';
+}
+
 /* ─── helpers ───────────────────────────────────────────────────────────── */
 function addMinutes(timeStr, mins) {
   if (!timeStr) return '—';
@@ -637,6 +648,7 @@ export default function HeijunkaKanban() {
   const { fullName } = useContext(UserContext);
   const [workDate, setWorkDate]   = useState(getWorkDate());
   const [shiftFilter, setShiftFilter] = useState('all');
+  const [matFilter, setMatFilter] = useState('');            // '' | '200' | '300' | '500' — กรอง view เดียวกันทั้งฝั่งผลิต/store
   const [viewMode, setViewMode]   = useState('board');       // 'board' | 'cards' | 'table'
   const [loading, setLoading]     = useState(false);
   const [sessions, setSessions]   = useState([]);
@@ -832,18 +844,21 @@ export default function HeijunkaKanban() {
     });
 
     // คำนวณ net = gross - total stock ที่มีในทุกไลน์ที่เกี่ยวข้อง
-    const rowList = Object.values(rows).map(r => {
+    let rowList = Object.values(rows).map(r => {
       const totalStock = Object.values(r.stockPerLine).reduce((s, v) => s + v, 0);
       const netTotal   = Math.max(0, r.grossTotal - totalStock);
       return { ...r, totalStock, netTotal };
     }).sort((a, b) => a.mat_no.localeCompare(b.mat_no));
+
+    // กรองตามประเภทพาร์ท (mat_no prefix) — ใช้ view เดียวกันทั้งฝั่งผลิตและฝั่ง store
+    if (matFilter) rowList = rowList.filter(r => r.mat_no.startsWith(matFilter));
 
     const totalKanban = rowList.reduce((s, r) => {
       const per = kanbanStd[r.mat_no];
       return s + (per ? Math.ceil(r.netTotal / per) : 0);
     }, 0);
     return { cols, rowList, noBom: [...noBom.values()], sessById, totalKanban };
-  }, [sessions, demands, bomMap, kanbanStd, lineStock, shiftFilter]);
+  }, [sessions, demands, bomMap, kanbanStd, lineStock, shiftFilter, matFilter]);
 
   const fmt = (n) => Number.isInteger(n) ? n.toLocaleString() : n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
@@ -873,7 +888,7 @@ export default function HeijunkaKanban() {
     const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `heijunka_kanban_${workDate}${shiftFilter !== 'all' ? '_' + shiftFilter : ''}.csv`;
+    a.download = `heijunka_kanban_${workDate}${shiftFilter !== 'all' ? '_' + shiftFilter : ''}${matFilter ? '_' + matFilter : ''}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -902,6 +917,21 @@ export default function HeijunkaKanban() {
               color: shiftFilter === s ? '#08130a' : 'var(--text2)',
               border: `1px solid ${shiftFilter === s ? 'var(--accent)' : 'var(--border)'}`,
             }}>{s === 'all' ? 'ทุกกะ' : SHIFT_LABEL[s]}</button>
+          ))}
+          <span style={{ width: 1, height: 22, background: 'var(--border)' }} />
+          <button onClick={() => setMatFilter('')} style={{
+            padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+            background: matFilter === '' ? 'var(--accent)' : 'var(--bg2)',
+            color: matFilter === '' ? '#08130a' : 'var(--text2)',
+            border: `1px solid ${matFilter === '' ? 'var(--accent)' : 'var(--border)'}`,
+          }}>ทุกประเภท</button>
+          {MAT_PREFIXES.map(m => (
+            <button key={m.prefix} onClick={() => setMatFilter(matFilter === m.prefix ? '' : m.prefix)} style={{
+              padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+              background: matFilter === m.prefix ? `${m.color}28` : 'var(--bg2)',
+              color: matFilter === m.prefix ? m.color : 'var(--text2)',
+              border: `1px solid ${matFilter === m.prefix ? m.color : 'var(--border)'}`,
+            }}>{m.label}</button>
           ))}
           <button onClick={exportCSV} style={{
             padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700,
@@ -1000,7 +1030,7 @@ export default function HeijunkaKanban() {
                   return (
                     <tr key={r.mat_no} style={{ opacity: stockCovered ? 0.55 : 1 }}>
                       <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', position: 'sticky', left: 0, background: 'var(--card)', zIndex: 1 }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', fontFamily: 'monospace' }}>{r.mat_no}</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: matColor(r.mat_no), fontFamily: 'monospace' }}>{r.mat_no}</div>
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.part_name}{r.supplier ? ` · ${r.supplier}` : ''}</div>
                         {stockCovered && <div style={{ fontSize: 10, color: '#22c55e', fontWeight: 700 }}>✓ stock พอ</div>}
                       </td>
