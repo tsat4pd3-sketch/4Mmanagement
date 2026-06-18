@@ -533,11 +533,14 @@ function KanbanStdTab({ canEdit, fullName }) {
                 </div>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>UOM</label>
-                  <input style={inputSt}
+                  <select style={inputSt}
                     value={form.uom}
                     onChange={e => setForm(f => ({ ...f, uom: e.target.value }))}
-                    placeholder="PCS"
-                  />
+                  >
+                    <option value="">— เลือก —</option>
+                    <option value="pcs">pcs</option>
+                    <option value="kgs">kgs</option>
+                  </select>
                 </div>
               </div>
             </div>

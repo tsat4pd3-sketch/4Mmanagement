@@ -946,22 +946,8 @@ export default function Management() {
                     const isOpen    = row.cards.some(c => c.sessionOpen);
                     const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
                     const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
-                    // จัดเลนแนวตั้งให้การ์ดที่เวลาทับกันจริง ๆ แทนที่จะดันออกทางขวา (ทำให้ตำแหน่งเพี้ยนจากสเกลเวลาจริง)
-                    const visibleCards = cards.filter(o => o.orderStartMs && o.orderEndMs);
-                    const sortedForLanes = [...visibleCards].sort((a, b) => a.orderStartMs - b.orderStartMs);
-                    const laneEnds = [];
-                    const laneOf = new Map();
-                    sortedForLanes.forEach(o => {
-                      let placed = false;
-                      for (let i = 0; i < laneEnds.length; i++) {
-                        if (o.orderStartMs >= laneEnds[i]) { laneEnds[i] = o.orderEndMs; laneOf.set(o, i); placed = true; break; }
-                      }
-                      if (!placed) { laneEnds.push(o.orderEndMs); laneOf.set(o, laneEnds.length - 1); }
-                    });
-                    const laneCount = laneEnds.length || 1;
-                    const rowH = Math.max(32, laneCount * 20 + 6);
                     return (
-                      <div key={row.key} style={{ display: 'flex', minHeight: rowH, borderTop: ri > 0 ? '1px solid var(--border2)' : 'none' }}>
+                      <div key={row.key} style={{ display: 'flex', minHeight: 32, borderTop: ri > 0 ? '1px solid var(--border2)' : 'none' }}>
                         <div style={{ width: LEFT_W, flexShrink: 0, padding: '3px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                           {row.img && <img src={row.img} alt="" style={{ width: 20, height: 20, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />}
                           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, minWidth: 0 }}>
@@ -985,16 +971,22 @@ export default function Management() {
                             return <div key={i} style={{ flex: 1, minWidth: 0, height: '100%', borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`, background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent' }} />;
                           })}
                           {(() => {
+                            // เรียงตามเวลาเริ่มจริง แล้วต่อคิวในแถวเดียวกัน (1 ไลน์ผลิตได้ทีละใบ)
                             const MIN_W_PCT = 1.5;
-                            const laneH = (rowH - 6) / laneCount;
-                            return visibleCards.map((o, oi) => {
-                            // ตำแหน่ง/ความกว้างคำนวณจากเวลาจริงเสมอ ไม่มีการดันออกนอกตำแหน่งเวลา
-                            const timeLeftPct = Math.max(0, (o.orderStartMs - half.startMs) * pctPerMs);
-                            const rightPct = Math.min(100, (o.orderEndMs - half.startMs) * pctPerMs);
-                            const widthPct = Math.max(MIN_W_PCT, rightPct - timeLeftPct);
-                            const leftPct = timeLeftPct;
+                            const sorted = cards.filter(o => o.orderStartMs && o.orderEndMs).sort((a, b) => a.orderStartMs - b.orderStartMs);
+                            let queueEndMs = -Infinity;
+                            const positioned = sorted.map(o => {
+                              const durationMs = Math.max(o.orderEndMs - o.orderStartMs, 0);
+                              const startMs = Math.max(o.orderStartMs, queueEndMs);
+                              const endMs = startMs + durationMs;
+                              queueEndMs = endMs;
+                              const leftPct = Math.max(0, (startMs - half.startMs) * pctPerMs);
+                              const rightPct = Math.min(100, (endMs - half.startMs) * pctPerMs);
+                              const widthPct = Math.max(MIN_W_PCT, rightPct - leftPct);
+                              return { o, leftPct, widthPct };
+                            });
+                            return positioned.map(({ o, leftPct, widthPct }, oi) => {
                             if (leftPct >= 100) return null;
-                            const lane = laneOf.get(o) || 0;
                             const sc = o.isDone ? '#22c55e' : o.isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : o.is_backfill ? '#6b7280' : '#4d9fff';
                             const icon = o.isDone ? '✓' : o.isDelayed ? '!' : o.isCarry ? '↷' : o.is_backfill ? '⏪' : '▶';
                             const doneQty = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
@@ -1003,7 +995,7 @@ export default function Management() {
                               <div key={o.prod_no || oi}
                                 title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : o.isDelayed ? ` ⚠️ช้า${Math.round((nowMs - o.orderEndMs) / 60000)}ม.` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(o.orderEndMs)}`}`}
                                 style={{
-                                  position: 'absolute', top: 3 + lane * laneH, height: laneH - 2, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 22,
+                                  position: 'absolute', top: 3, bottom: 3, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 22,
                                   background: `${sc}28`, border: `1.5px solid ${sc}${o.isDone ? 'cc' : o.isDelayed ? 'dd' : '88'}`,
                                   borderRadius: 4, overflow: 'hidden', cursor: 'default', zIndex: 1,
                                   boxShadow: o.isDelayed ? `0 0 6px ${sc}44` : 'none',
