@@ -808,7 +808,22 @@ export default function Dashboard() {
                       </div>
                     );
 
-                    const renderTimeline = (cards, half, rowKey) => (
+                    // จัดเลนแนวตั้งให้การ์ดที่เวลาทับกันจริง ๆ แทนที่จะดันออกทางขวา (ซึ่งทำให้ตำแหน่งเพี้ยนจากสเกลเวลาจริง)
+                    const assignLanes = (items) => {
+                      const sorted = [...items].sort((a, b) => a.orderStartMs - b.orderStartMs);
+                      const laneEnds = [];
+                      const laneOf = new Map();
+                      sorted.forEach(o => {
+                        let placed = false;
+                        for (let i = 0; i < laneEnds.length; i++) {
+                          if (o.orderStartMs >= laneEnds[i]) { laneEnds[i] = o.orderEndMs; laneOf.set(o, i); placed = true; break; }
+                        }
+                        if (!placed) { laneEnds.push(o.orderEndMs); laneOf.set(o, laneEnds.length - 1); }
+                      });
+                      return { laneOf, laneCount: laneEnds.length || 1 };
+                    };
+
+                    const renderTimeline = (cards, half, rowKey, laneOf, laneCount, rowH) => (
                       <div key={rowKey} style={{ flex: 1, position: 'relative', display: 'flex' }}>
                         {half.hours.map((h, i) => {
                           const slotMs = half.startMs + i * 3600000;
@@ -824,24 +839,17 @@ export default function Dashboard() {
                           );
                         })}
                         {(() => {
-                          // จัดเรียงตามเวลาเริ่ม แล้วดันการ์ดที่ทับเวลากันออกไปทางขวาต่อจากใบก่อนหน้า
-                          // เพื่อไม่ให้การ์ดซ้อนทับกันเลย (ไม่พึ่งแค่ offset เล็ก ๆ แบบเดิม)
-                          const GAP_PCT = 0.5, MIN_W_PCT = 2.2;
-                          const sorted = cards
-                            .filter(o => o.orderStartMs && o.orderEndMs && o.orderEndMs > half.startMs && o.orderStartMs < half.startMs + 12 * 3600000)
-                            .sort((a, b) => a.orderStartMs - b.orderStartMs);
-                          let lastRightPct = 0;
-                          const positioned = sorted.map(o => {
-                            const timeLeftPct = Math.max(0, (o.orderStartMs - half.startMs) * pctPerMs);
-                            const rightPct = Math.min(100, (o.orderEndMs - half.startMs) * pctPerMs);
-                            const timeWidthPct = Math.max(MIN_W_PCT, rightPct - timeLeftPct);
-                            const leftPct = Math.max(timeLeftPct, lastRightPct);
-                            const widthPct = timeWidthPct;
-                            lastRightPct = leftPct + widthPct + GAP_PCT;
-                            return { o, leftPct, widthPct };
-                          });
-                          return positioned.map(({ o, leftPct, widthPct }, oi) => {
+                          const MIN_W_PCT = 1.5;
+                          const visible = cards.filter(o => o.orderStartMs && o.orderEndMs && o.orderEndMs > half.startMs && o.orderStartMs < half.startMs + 12 * 3600000);
+                          const laneH = (rowH - 8) / laneCount;
+                          return visible.map((o, oi) => {
+                          // ตำแหน่ง/ความกว้างคำนวณจากเวลาจริงเสมอ ไม่มีการดันออกนอกตำแหน่งเวลา
+                          const timeLeftPct = Math.max(0, (o.orderStartMs - half.startMs) * pctPerMs);
+                          const rightPct = Math.min(100, (o.orderEndMs - half.startMs) * pctPerMs);
+                          const widthPct = Math.max(MIN_W_PCT, rightPct - timeLeftPct);
+                          const leftPct = timeLeftPct;
                           if (leftPct >= 100) return null;
+                          const lane = laneOf.get(o) || 0;
                           const statusColor = o.isDone ? '#22c55e' : o.isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
                           const icon = o.isDone ? '✓' : o.isDelayed ? '!' : o.isCarry ? '↷' : '▶';
                           const doneQty  = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
@@ -849,7 +857,7 @@ export default function Dashboard() {
                           return (
                             <div key={o.prod_no || oi} title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.isDelayed ? ` ⚠️ช้า${Math.round((nowMs-o.orderEndMs)/60000)}ม.` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(o.orderEndMs)}`}`}
                               style={{
-                                position: 'absolute', top: 4, bottom: 4,
+                                position: 'absolute', top: 4 + lane * laneH, height: laneH - 2,
                                 left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 24,
                                 background: `${statusColor}28`,
                                 border: `1.5px solid ${statusColor}${o.isDone ? 'cc' : o.isDelayed ? 'dd' : '88'}`,
@@ -891,8 +899,11 @@ export default function Dashboard() {
                           const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
                           const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
 
+                          const visibleCards = cards.filter(o => o.orderStartMs && o.orderEndMs && o.orderEndMs > half.startMs && o.orderStartMs < half.startMs + 12 * 3600000);
+                          const { laneOf, laneCount } = assignLanes(visibleCards);
+                          const rowH = Math.max(36, laneCount * 22 + 8);
                           return (
-                            <div key={row.key} style={{ display: 'flex', minHeight: 36, borderTop: ri > 0 ? '1px solid var(--border2)' : 'none' }}>
+                            <div key={row.key} style={{ display: 'flex', minHeight: rowH, borderTop: ri > 0 ? '1px solid var(--border2)' : 'none' }}>
                               {/* Left summary */}
                               <div style={{ width: LEFT_W, flexShrink: 0, padding: '3px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                                 {row.img && <img src={row.img} alt="" style={{ width: 24, height: 24, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />}
@@ -909,7 +920,7 @@ export default function Dashboard() {
                                 </div>
                                 </div>
                               </div>
-                              {renderTimeline(cards, half, `${half.key}-${ri}`)}
+                              {renderTimeline(cards, half, `${half.key}-${ri}`, laneOf, laneCount, rowH)}
                             </div>
                           );
                         })}
