@@ -210,6 +210,11 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
 /* ─── Delivery Timeline Board — 24h heijunka-style view of delivery rounds ── */
 function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt }) {
   const [expanded, setExpanded] = useState(null);
+  const [breakPolicies, setBreakPolicies] = useState([]);
+  useEffect(() => {
+    supabaseDR.from('break_policies').select('*').eq('is_active', true)
+      .then(({ data }) => setBreakPolicies(data || []));
+  }, []);
   const HOURS  = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
   const LEFT_W = 130;
   const now = new Date();
@@ -292,7 +297,21 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt }) {
     </div>
   );
 
-  // เรียงรอบตามเวลาเริ่มจริง แล้วต่อคิวในแถวเดียวกัน (ไม่ดันออกทางขวาเกินเวลาจริง ไม่สร้างแถวใหม่)
+  // ช่วง break_policies ที่ตรงกับ half นี้ (เป็น [startMs, endMs]) — ใช้ทั้งวาดแถบและกันรอบจัดส่งวางทับเวลาพัก
+  const getBreakIntervals = (half) => breakPolicies
+    .filter(p => p.shift === 'both' || (p.shift === 'day' && half.key === 'am') || (p.shift === 'night' && half.key === 'pm'))
+    .map(p => {
+      const idx = half.hours.indexOf(Number(String(p.start_time).slice(0,2)));
+      if (idx < 0) return null;
+      const mins = Number(String(p.start_time).slice(3,5)) || 0;
+      const s = half.startMs + idx * 3600000 + mins * 60000;
+      const e = s + (p.duration_min || 0) * 60000;
+      return [s, e];
+    })
+    .filter(Boolean)
+    .sort((a, b) => a[0] - b[0]);
+
+  // เรียงรอบตามเวลาเริ่มจริง แล้วต่อคิวในแถวเดียวกัน (ไม่ดันออกทางขวาเกินเวลาจริง ไม่สร้างแถวใหม่) และหลบช่วงเวลาพัก
   const renderTimeline = (lineRounds, half, rowKey) => (
     <div key={rowKey} style={{ flex: 1, position: 'relative', display: 'flex' }}>
       {half.hours.map((h, i) => {
@@ -302,7 +321,32 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt }) {
         return <div key={i} style={{ flex: 1, minWidth: 0, height: '100%', borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`, background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent' }} />;
       })}
       {(() => {
+        const breaks = getBreakIntervals(half);
+        return breaks.map(([bs, be], pi) => {
+          const leftPct = Math.max(0, (bs - half.startMs) * pctPerMs);
+          const widthPct = Math.min(100 - leftPct, (be - bs) * pctPerMs);
+          if (widthPct <= 0) return null;
+          const p = breakPolicies.find(bp => {
+            const idx = half.hours.indexOf(Number(String(bp.start_time).slice(0,2)));
+            if (idx < 0) return false;
+            const mins = Number(String(bp.start_time).slice(3,5)) || 0;
+            return half.startMs + idx * 3600000 + mins * 60000 === bs;
+          }) || {};
+          return (
+            <div key={`brk-${pi}`} title={`${p.name_th || p.name_en} — ไลน์ไม่รองรับ KANBAN`}
+              style={{
+                position: 'absolute', top: 0, bottom: 0, left: `${leftPct}%`, width: `${widthPct}%`,
+                background: 'repeating-linear-gradient(45deg, rgba(148,163,184,0.18) 0px, rgba(148,163,184,0.18) 4px, transparent 4px, transparent 8px)',
+                borderLeft: '1px dashed rgba(148,163,184,0.6)', borderRight: '1px dashed rgba(148,163,184,0.6)',
+                zIndex: 0, pointerEvents: 'none',
+              }}
+            />
+          );
+        });
+      })()}
+      {(() => {
         const MIN_W_PCT = 1.5;
+        const breaks = getBreakIntervals(half);
         const items = lineRounds.map(r => {
           const startMs = timeToMs((r.delivery_time || '').slice(0, 5));
           if (startMs == null) return null;
@@ -314,8 +358,19 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt }) {
         let queueEndMs = -Infinity;
         const positioned = items.map(({ r, startMs, endMs }) => {
           const durationMs = Math.max(endMs - startMs, 0);
-          const realStartMs = Math.max(startMs, queueEndMs);
-          const realEndMs = realStartMs + durationMs;
+          let realStartMs = Math.max(startMs, queueEndMs);
+          let realEndMs = realStartMs + durationMs;
+          let pushed = true;
+          while (pushed) {
+            pushed = false;
+            for (const [bs, be] of breaks) {
+              if (realStartMs < be && realEndMs > bs) {
+                realStartMs = be;
+                realEndMs = realStartMs + durationMs;
+                pushed = true;
+              }
+            }
+          }
           queueEndMs = realEndMs;
           const leftPct = Math.max(0, (realStartMs - half.startMs) * pctPerMs);
           const rightPct = Math.min(100, (realEndMs - half.startMs) * pctPerMs);
