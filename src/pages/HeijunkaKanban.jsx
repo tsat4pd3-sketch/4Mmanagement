@@ -211,16 +211,15 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
 function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt }) {
   const [expanded, setExpanded] = useState(null);
   const HOURS  = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
-  const SLOT_W = 44;
   const LEFT_W = 130;
   const now = new Date();
   const gridStartMs = new Date(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}T08:00:00`).getTime();
   const nowMs = now.getTime();
-  const pxPerMs = SLOT_W / 3600000;
-  const nowHourIdx = HOURS.findIndex((_, i) => {
-    const s = gridStartMs + i * 3600000;
-    return nowMs >= s && nowMs < s + 3600000;
-  });
+  const pctPerMs = 100 / (12 * 3600000);
+  const HALVES = [
+    { key: 'am', hours: HOURS.slice(0, 12), startMs: gridStartMs },
+    { key: 'pm', hours: HOURS.slice(12), startMs: gridStartMs + 12 * 3600000 },
+  ];
 
   const confirmedSet = useMemo(() => {
     const s = new Set();
@@ -269,6 +268,86 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt }) {
     </div>
   );
 
+  const hourHeader = (hours, halfStartMs) => (
+    <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+      <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 8, fontWeight: 700, color: 'var(--muted)' }}>รอบจัดส่ง</div>
+      {hours.map((h, i) => {
+        const slotMs = halfStartMs + i * 3600000;
+        const isNow = nowMs >= slotMs && nowMs < slotMs + 3600000;
+        const isShiftBound = h === 8 || h === 20;
+        return (
+          <div key={i} style={{
+            flex: 1, minWidth: 0, textAlign: 'center', fontSize: 8,
+            fontWeight: isNow ? 800 : isShiftBound ? 600 : 400,
+            color: isNow ? '#4d9fff' : isShiftBound ? 'var(--text2)' : 'var(--muted)',
+            padding: '4px 0', lineHeight: 1,
+            borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
+            background: isNow ? 'rgba(77,159,255,0.12)' : 'transparent',
+          }}>
+            {String(h).padStart(2,'0')}:00
+            {isNow && <div style={{ width: 3, height: 3, borderRadius: '50%', background: '#4d9fff', margin: '1px auto 0' }} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const renderTimeline = (lineRounds, half, rowKey) => (
+    <div key={rowKey} style={{ flex: 1, position: 'relative', display: 'flex' }}>
+      {half.hours.map((h, i) => {
+        const slotMs = half.startMs + i * 3600000;
+        const isNow = nowMs >= slotMs && nowMs < slotMs + 3600000;
+        const isShiftBound = h === 8 || h === 20;
+        return <div key={i} style={{ flex: 1, minWidth: 0, height: '100%', borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`, background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent' }} />;
+      })}
+      {(() => {
+        // จัดเรียงตามเวลาเริ่ม แล้วดันรอบที่ทับเวลากันออกไปทางขวาต่อจากใบก่อนหน้า ไม่ให้ซ้อนทับกัน
+        const GAP_PCT = 0.5, MIN_W_PCT = 2.2;
+        const items = lineRounds.map(r => {
+          const startMs = timeToMs((r.delivery_time || '').slice(0, 5));
+          if (startMs == null) return null;
+          const finishMin = (r.points_count || 1) * (r.time_per_point_min || 10);
+          const endMs = startMs + finishMin * 60000;
+          if (endMs <= half.startMs || startMs >= half.startMs + 12 * 3600000) return null;
+          return { r, startMs, endMs };
+        }).filter(Boolean).sort((a, b) => a.startMs - b.startMs);
+        let lastRightPct = 0;
+        const positioned = items.map(({ r, startMs, endMs }) => {
+          const timeLeftPct = Math.max(0, (startMs - half.startMs) * pctPerMs);
+          const rightPct = Math.min(100, (endMs - half.startMs) * pctPerMs);
+          const timeWidthPct = Math.max(MIN_W_PCT, rightPct - timeLeftPct);
+          const leftPct = Math.max(timeLeftPct, lastRightPct);
+          const widthPct = timeWidthPct;
+          lastRightPct = leftPct + widthPct + GAP_PCT;
+          return { r, leftPct, widthPct };
+        });
+        return positioned.map(({ r, leftPct, widthPct }) => {
+          if (leftPct >= 100) return null;
+          const status = getRoundStatus(r, confirmedSet, receivedMap);
+          const expandKey = `${r.line_name}|${r.round_no}`;
+          return (
+            <div key={r.id} title={`รอบ ${r.round_no} · ส่ง ${(r.delivery_time||'').slice(0,5)} · ${status.label}`}
+              onClick={() => setExpanded(expanded === expandKey ? null : expandKey)}
+              style={{
+                position: 'absolute', top: 4, bottom: 4, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 22,
+                background: `${status.top}28`, border: `1.5px solid ${status.top}cc`,
+                borderRadius: 4, overflow: 'hidden', cursor: 'pointer', zIndex: 1,
+                display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 3px',
+              }}>
+              <div style={{ fontSize: 8, fontWeight: 800, color: status.top, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                🎴 รอบ {r.round_no}
+              </div>
+            </div>
+          );
+        });
+      })()}
+      {nowMs >= half.startMs && nowMs < half.startMs + 12 * 3600000 && (() => {
+        const nowPct = (nowMs - half.startMs) * pctPerMs;
+        return <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${nowPct}%`, width: 1.5, background: 'rgba(77,159,255,0.7)', zIndex: 2, pointerEvents: 'none' }} />;
+      })()}
+    </div>
+  );
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: 16 }}>
       {Object.keys(byLine).sort().map(lineName => {
@@ -280,77 +359,17 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt }) {
               <span style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>🏭 {lineName}</span>
               <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{demand.parts.length} พาร์ท · 🎴 {demand.totalKanban} การ์ด</span>
             </div>
-            <div style={{ overflowX: 'auto' }}>
-              <div style={{ minWidth: LEFT_W + SLOT_W * 24, fontSize: 0 }}>
-                {/* hour header */}
-                <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
-                  <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 8, fontWeight: 700, color: 'var(--muted)' }}>รอบจัดส่ง</div>
-                  {HOURS.map((h, i) => {
-                    const isNow = i === nowHourIdx;
-                    const isShiftBound = h === 8 || h === 20;
-                    return (
-                      <div key={i} style={{
-                        width: SLOT_W, flexShrink: 0, textAlign: 'center', fontSize: 8,
-                        fontWeight: isNow ? 800 : isShiftBound ? 600 : 400,
-                        color: isNow ? '#4d9fff' : isShiftBound ? 'var(--text2)' : 'var(--muted)',
-                        padding: '4px 0', lineHeight: 1,
-                        borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
-                        background: isNow ? 'rgba(77,159,255,0.12)' : 'transparent',
-                      }}>
-                        {String(h).padStart(2,'0')}:00
-                        {isNow && <div style={{ width: 3, height: 3, borderRadius: '50%', background: '#4d9fff', margin: '1px auto 0' }} />}
-                      </div>
-                    );
-                  })}
-                </div>
-                {/* row */}
-                <div style={{ display: 'flex', minHeight: 48 }}>
+            {HALVES.map(half => (
+              <div key={half.key} style={{ borderTop: half.key === 'pm' ? '2px solid var(--border2)' : 'none' }}>
+                {hourHeader(half.hours, half.startMs)}
+                <div style={{ display: 'flex', minHeight: 36 }}>
                   <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', alignItems: 'center', fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>
                     {lineRounds.length} รอบ
                   </div>
-                  <div style={{ flex: 1, position: 'relative', display: 'flex' }}>
-                    {HOURS.map((h, i) => {
-                      const isNow = i === nowHourIdx;
-                      const isShiftBound = h === 8 || h === 20;
-                      return <div key={i} style={{ width: SLOT_W, flexShrink: 0, height: '100%', borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`, background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent' }} />;
-                    })}
-                    {lineRounds.map((r, oi) => {
-                      const startMs = timeToMs((r.delivery_time || '').slice(0, 5));
-                      if (startMs == null) return null;
-                      const finishMin = (r.points_count || 1) * (r.time_per_point_min || 10);
-                      const endMs = startMs + finishMin * 60000;
-                      const status = getRoundStatus(r, confirmedSet, receivedMap);
-                      const leftPx  = Math.max(0, (startMs - gridStartMs) * pxPerMs) + oi * 3;
-                      const rightPx = Math.min(SLOT_W * 24, (endMs - gridStartMs) * pxPerMs);
-                      const widthPx = Math.max(26, rightPx - leftPx);
-                      if (leftPx >= SLOT_W * 24) return null;
-                      const expandKey = `${lineName}|${r.round_no}`;
-                      return (
-                        <div key={r.id} title={`รอบ ${r.round_no} · ส่ง ${(r.delivery_time||'').slice(0,5)} · ${status.label}`}
-                          onClick={() => setExpanded(expanded === expandKey ? null : expandKey)}
-                          style={{
-                            position: 'absolute', top: 6, bottom: 6, left: leftPx, width: widthPx,
-                            background: `${status.top}28`, border: `1.5px solid ${status.top}cc`,
-                            borderRadius: 4, overflow: 'hidden', cursor: 'pointer', zIndex: 1,
-                            display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 3px',
-                          }}>
-                          {widthPx >= 22 && (
-                            <div style={{ fontSize: 8, fontWeight: 800, color: status.top, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              🎴 รอบ {r.round_no}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {nowHourIdx >= 0 && (() => {
-                      const nowPx = (nowMs - gridStartMs) * pxPerMs;
-                      if (nowPx < 0 || nowPx > SLOT_W * 24) return null;
-                      return <div style={{ position: 'absolute', top: 0, bottom: 0, left: nowPx, width: 1.5, background: 'rgba(77,159,255,0.7)', zIndex: 2, pointerEvents: 'none' }} />;
-                    })()}
-                  </div>
+                  {renderTimeline(lineRounds, half, `${lineName}-${half.key}`)}
                 </div>
               </div>
-            </div>
+            ))}
             {/* expanded round detail */}
             {lineRounds.map(r => {
               const expandKey = `${lineName}|${r.round_no}`;
