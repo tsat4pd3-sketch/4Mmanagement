@@ -1255,7 +1255,7 @@ export default function Dashboard() {
                   // กันการ์ดซ้อนทับกัน: ผลักออกจากกันใน "พิกเซลจริง" ของภาพที่ render
                   // (แปลง % เป็น px ตามขนาดจริงของ mapBox ก่อนคำนวณ แล้วแปลงกลับเป็น % ตอน render)
                   const boxW = mapBox.w || 800, boxH = mapBox.h || 450;
-                  const MIN_PX_X = 72, MIN_PX_Y = 118; // ระยะห่างขั้นต่ำ: ความกว้าง/ความสูงรวม nametag+badge ของ card
+                  const MIN_PX_X = 72, MIN_PX_Y = 96; // ระยะห่างขั้นต่ำ: ความกว้าง/ความสูงรวม nametag+badge ของ card (ตัวการ์ดเอง overlap กันเองได้นิดหน่อย)
                   const pxMarkers = markers.map(m => ({ ...m, px: m.left / 100 * boxW, py: m.top / 100 * boxH, dox: 0, doy: 0 }));
                   for (let pass = 0; pass < 60; pass++) {
                     let moved = false;
@@ -1311,7 +1311,7 @@ export default function Dashboard() {
                             style={{
                               position: 'absolute', top: `${top + oy}%`, left: `${left + ox}%`,
                               transform: 'translate(-50%, -50%)',
-                              zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                              zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0,
                               transition: 'z-index 0s',
                             }}>
                             <div style={{
@@ -1331,12 +1331,13 @@ export default function Dashboard() {
                               fontSize: 'clamp(10px, 1.3vw, 17px)', fontWeight: 700, color: '#fff',
                               whiteSpace: 'nowrap', maxWidth: 'clamp(70px, 9vw, 130px)',
                               overflow: 'hidden', textOverflow: 'ellipsis',
+                              marginTop: 'clamp(-6px, -0.5vw, -3px)', position: 'relative', zIndex: 1,
                             }}>{shortName}</div>
                             {fit !== null && (
-                              <div style={{ fontSize: 'clamp(9px, 1.1vw, 15px)', fontWeight: 800, color, background: `${color}25`, padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3 }}>{fit}%</div>
+                              <div style={{ fontSize: 'clamp(9px, 1.1vw, 15px)', fontWeight: 800, color, background: `${color}25`, padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>{fit}%</div>
                             )}
                             {emp.has_extended_ot && (
-                              <div style={{ fontSize: 'clamp(9px, 1.1vw, 15px)', fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3 }}>OT+23</div>
+                              <div style={{ fontSize: 'clamp(9px, 1.1vw, 15px)', fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>OT+23</div>
                             )}
                           </div>
                         );
