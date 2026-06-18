@@ -1225,49 +1225,106 @@ export default function Dashboard() {
                   alt={expandedLine}
                   style={{ width: '100%', display: 'block', opacity: 0.7 }}
                 />
-                {lineWs.map(ws => {
-                  const emp = stationEmpMap[String(ws.id)];
-                  if (!emp) return null;
-                  if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
-                  // Only show present employees on the map
-                  if (emp.is_present !== true) return null;
-                  const fit = emp.fitScore;
-                  const fitLv = getFitLevel(fit);
-                  const color = fitLv ? fitLv.color : '#aaa';
-                  const shortName = (emp.name || '').split(' ')[0];
-                  return (
-                    <div key={ws.id} style={{
-                      position: 'absolute', top: ws.pos_top, left: ws.pos_left,
-                      transform: 'translate(-50%, -50%)',
-                      zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-                    }}>
-                      <div style={{
-                        width: 'clamp(48px, 6vw, 84px)', height: 'clamp(48px, 6vw, 84px)', borderRadius: '50%',
-                        border: `clamp(3px, 0.4vw, 5px) solid ${color}`,
-                        boxShadow: `0 0 10px ${color}99`,
-                        overflow: 'hidden', background: '#1a1a1a',
-                      }}>
-                        {emp.image_url
-                          ? <img src={emp.image_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'clamp(14px, 1.8vw, 26px)', fontWeight: 800, color }}>{(emp.name || '?')[0]}</div>
+                {(() => {
+                  // เก็บ marker ที่จะแสดง + ตำแหน่งจริง (anchor) จาก pos_top/pos_left
+                  const markers = lineWs.map(ws => {
+                    const emp = stationEmpMap[String(ws.id)];
+                    if (!emp) return null;
+                    if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
+                    if (emp.is_present !== true) return null;
+                    return {
+                      ws, emp,
+                      top: parseFloat(ws.pos_top) || 0, left: parseFloat(ws.pos_left) || 0,
+                      ox: 0, oy: 0,
+                    };
+                  }).filter(Boolean);
+
+                  // กันการ์ดซ้อนทับกัน: ผลักออกจากกันแบบ force-relax ใน % space
+                  // (anisotropic — แกน Y ต้องการระยะห่างมากกว่า X เพราะการ์ดเป็นแนวตั้ง)
+                  const MIN_DX = 7, MIN_DY = 10;
+                  for (let pass = 0; pass < 40; pass++) {
+                    let moved = false;
+                    for (let i = 0; i < markers.length; i++) {
+                      for (let j = i + 1; j < markers.length; j++) {
+                        const a = markers[i], b = markers[j];
+                        const dx = (b.left + b.ox) - (a.left + a.ox);
+                        const dy = (b.top + b.oy) - (a.top + a.oy);
+                        const ndx = dx / MIN_DX, ndy = dy / MIN_DY;
+                        const dist = Math.sqrt(ndx * ndx + ndy * ndy) || 0.0001;
+                        if (dist < 1) {
+                          const overlap = (1 - dist) / 2;
+                          const pushX = (ndx / dist) * overlap * MIN_DX;
+                          const pushY = (ndy / dist) * overlap * MIN_DY;
+                          a.ox -= pushX; a.oy -= pushY;
+                          b.ox += pushX; b.oy += pushY;
+                          moved = true;
                         }
-                      </div>
-                      <div style={{
-                        background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
-                        borderRadius: 4, padding: 'clamp(1px, 0.3vw, 4px) clamp(6px, 0.8vw, 12px)',
-                        fontSize: 'clamp(10px, 1.3vw, 17px)', fontWeight: 700, color: '#fff',
-                        whiteSpace: 'nowrap', maxWidth: 'clamp(70px, 9vw, 130px)',
-                        overflow: 'hidden', textOverflow: 'ellipsis',
-                      }}>{shortName}</div>
-                      {fit !== null && (
-                        <div style={{ fontSize: 'clamp(9px, 1.1vw, 15px)', fontWeight: 800, color, background: `${color}25`, padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3 }}>{fit}%</div>
-                      )}
-                      {emp.has_extended_ot && (
-                        <div style={{ fontSize: 'clamp(9px, 1.1vw, 15px)', fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3 }}>OT+23</div>
-                      )}
-                    </div>
+                      }
+                    }
+                    if (!moved) break;
+                  }
+
+                  return (
+                    <>
+                      {/* เส้นโยงกลับไปตำแหน่งจริง สำหรับการ์ดที่ถูกผลักออก */}
+                      <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 1, pointerEvents: 'none' }}
+                        viewBox="0 0 100 100" preserveAspectRatio="none">
+                        {markers.map(({ ws, top, left, ox, oy }) => {
+                          if (Math.abs(ox) < 0.3 && Math.abs(oy) < 0.3) return null;
+                          return (
+                            <g key={`ln-${ws.id}`}>
+                              <line x1={left} y1={top} x2={left + ox} y2={top + oy}
+                                stroke="rgba(255,255,255,0.5)" strokeWidth={0.25} strokeDasharray="1.2 1" vectorEffect="non-scaling-stroke" />
+                              <circle cx={left} cy={top} r={0.8} fill="rgba(255,255,255,0.7)" />
+                            </g>
+                          );
+                        })}
+                      </svg>
+                      {markers.map(({ ws, emp, top, left, ox, oy }) => {
+                        const fit = emp.fitScore;
+                        const fitLv = getFitLevel(fit);
+                        const color = fitLv ? fitLv.color : '#aaa';
+                        const shortName = (emp.name || '').split(' ')[0];
+                        return (
+                          <div key={ws.id}
+                            onMouseEnter={e => { e.currentTarget.style.zIndex = 50; }}
+                            onMouseLeave={e => { e.currentTarget.style.zIndex = 2; }}
+                            style={{
+                              position: 'absolute', top: `${top + oy}%`, left: `${left + ox}%`,
+                              transform: 'translate(-50%, -50%)',
+                              zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                              transition: 'z-index 0s',
+                            }}>
+                            <div style={{
+                              width: 'clamp(48px, 6vw, 84px)', height: 'clamp(48px, 6vw, 84px)', borderRadius: '50%',
+                              border: `clamp(3px, 0.4vw, 5px) solid ${color}`,
+                              boxShadow: `0 0 10px ${color}99`,
+                              overflow: 'hidden', background: '#1a1a1a',
+                            }}>
+                              {emp.image_url
+                                ? <img src={emp.image_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'clamp(14px, 1.8vw, 26px)', fontWeight: 800, color }}>{(emp.name || '?')[0]}</div>
+                              }
+                            </div>
+                            <div style={{
+                              background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
+                              borderRadius: 4, padding: 'clamp(1px, 0.3vw, 4px) clamp(6px, 0.8vw, 12px)',
+                              fontSize: 'clamp(10px, 1.3vw, 17px)', fontWeight: 700, color: '#fff',
+                              whiteSpace: 'nowrap', maxWidth: 'clamp(70px, 9vw, 130px)',
+                              overflow: 'hidden', textOverflow: 'ellipsis',
+                            }}>{shortName}</div>
+                            {fit !== null && (
+                              <div style={{ fontSize: 'clamp(9px, 1.1vw, 15px)', fontWeight: 800, color, background: `${color}25`, padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3 }}>{fit}%</div>
+                            )}
+                            {emp.has_extended_ot && (
+                              <div style={{ fontSize: 'clamp(9px, 1.1vw, 15px)', fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3 }}>OT+23</div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </>
                   );
-                })}
+                })()}
               </div>
               {/* Legend — same as skill matrix */}
               <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
