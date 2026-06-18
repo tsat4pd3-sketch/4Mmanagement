@@ -842,6 +842,37 @@ export default function Management() {
             .filter(Boolean)
             .sort((a, b) => a[0] - b[0]);
 
+          // ต่อคิวในแถวเดียวกัน + หลบเวลาพัก แล้วคืนตำแหน่งจริงพร้อม isDelayed ที่คำนวณจากเวลาจบ "จริง" หลังต่อคิว
+          // (ไม่ใช้ o.isDelayed แบบ naive จาก opened_at + cycle time เพราะการ์ดที่ถูกต่อคิว/เลื่อนหลบเบรคจะขึ้นแดงทั้งที่ยังไม่ถึงคิวจริง)
+          const computeQueuedPositions = (cards, half) => {
+            const MIN_W_PCT = 1.5;
+            const breaks = getBreakIntervals(half);
+            const sorted = cards.filter(o => o.orderStartMs && o.orderEndMs).sort((a, b) => a.orderStartMs - b.orderStartMs);
+            let queueEndMs = -Infinity;
+            return sorted.map(o => {
+              const durationMs = Math.max(o.orderEndMs - o.orderStartMs, 0);
+              let startMs = Math.max(o.orderStartMs, queueEndMs);
+              let endMs = startMs + durationMs;
+              let pushed = true;
+              while (pushed) {
+                pushed = false;
+                for (const [bs, be] of breaks) {
+                  if (startMs < be && endMs > bs) {
+                    startMs = be;
+                    endMs = startMs + durationMs;
+                    pushed = true;
+                  }
+                }
+              }
+              queueEndMs = endMs;
+              const leftPct = Math.max(0, (startMs - half.startMs) * pctPerMs);
+              const rightPct = Math.min(100, (endMs - half.startMs) * pctPerMs);
+              const widthPct = Math.max(MIN_W_PCT, rightPct - leftPct);
+              const isDelayed = !o.isDone && !o.isCarry && !o.is_backfill && endMs < nowMs;
+              return { o, leftPct, widthPct, realEndMs: endMs, isDelayed };
+            });
+          };
+
           const buildCards = (sessList) => {
             const cards = [];
             sessList.forEach(s => {
@@ -874,17 +905,10 @@ export default function Management() {
           });
           const productRows = Object.values(groups).sort((a, b) => a.label.localeCompare(b.label));
 
-          const totalDelayed = sessions.reduce((acc, s) => {
-            const sessionCtSec = s.dr_products?.cycle_time_sec || 0;
-            s.orders.forEach(o => {
-              if (o.status !== 'open' || !o.opened_at || o.is_backfill) return;
-              const ctSec = ctByMatNo[o.mat_no] || sessionCtSec || 0;
-              if (!ctSec) return;
-              const endMs = new Date(o.opened_at).getTime() + (o.qty || 0) * ctSec * 1000;
-              if (nowMs > endMs) acc++;
-            });
-            return acc;
-          }, 0);
+          const totalDelayed = HALVES.reduce((sum, half) => sum + productRows.reduce((s2, row) => {
+            const halfCards = row.cards.filter(c => c.orderEndMs > half.startMs && c.orderStartMs < half.startMs + 12 * 3600000);
+            return s2 + computeQueuedPositions(halfCards, half).filter(p => p.isDelayed).length;
+          }, 0), 0);
           const hasOpen = sessions.some(s => s.status === 'open');
 
           const openByMatNo = {};
@@ -971,7 +995,7 @@ export default function Management() {
                     const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
                     const rowDemand = row.cards.reduce((a, c) => a + (c.qty || 0), 0);
                     const doneCount = row.cards.filter(c => c.isDone).length;
-                    const delayed   = cards.filter(c => c.isDelayed).length;
+                    const delayed   = computeQueuedPositions(cards, half).filter(p => p.isDelayed).length;
                     const isOpen    = row.cards.some(c => c.sessionOpen);
                     const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
                     const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
@@ -1024,46 +1048,21 @@ export default function Management() {
                               });
                           })()}
                           {(() => {
-                            // เรียงตามเวลาเริ่มจริง แล้วต่อคิวในแถวเดียวกัน (1 ไลน์ผลิตได้ทีละใบ) และหลบช่วงเวลาพัก (break_policies)
-                            const MIN_W_PCT = 1.5;
-                            const breaks = getBreakIntervals(half);
-                            const sorted = cards.filter(o => o.orderStartMs && o.orderEndMs).sort((a, b) => a.orderStartMs - b.orderStartMs);
-                            let queueEndMs = -Infinity;
-                            const positioned = sorted.map(o => {
-                              const durationMs = Math.max(o.orderEndMs - o.orderStartMs, 0);
-                              let startMs = Math.max(o.orderStartMs, queueEndMs);
-                              let endMs = startMs + durationMs;
-                              let pushed = true;
-                              while (pushed) {
-                                pushed = false;
-                                for (const [bs, be] of breaks) {
-                                  if (startMs < be && endMs > bs) {
-                                    startMs = be;
-                                    endMs = startMs + durationMs;
-                                    pushed = true;
-                                  }
-                                }
-                              }
-                              queueEndMs = endMs;
-                              const leftPct = Math.max(0, (startMs - half.startMs) * pctPerMs);
-                              const rightPct = Math.min(100, (endMs - half.startMs) * pctPerMs);
-                              const widthPct = Math.max(MIN_W_PCT, rightPct - leftPct);
-                              return { o, leftPct, widthPct };
-                            });
-                            return positioned.map(({ o, leftPct, widthPct }, oi) => {
+                            const positioned = computeQueuedPositions(cards, half);
+                            return positioned.map(({ o, leftPct, widthPct, realEndMs, isDelayed }, oi) => {
                             if (leftPct >= 100) return null;
-                            const sc = o.isDone ? '#22c55e' : o.isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : o.is_backfill ? '#6b7280' : '#4d9fff';
-                            const icon = o.isDone ? '✓' : o.isDelayed ? '!' : o.isCarry ? '↷' : o.is_backfill ? '⏪' : '▶';
+                            const sc = o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : o.is_backfill ? '#6b7280' : '#4d9fff';
+                            const icon = o.isDone ? '✓' : isDelayed ? '!' : o.isCarry ? '↷' : o.is_backfill ? '⏪' : '▶';
                             const doneQty = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
                             const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
                             return (
                               <div key={o.prod_no || oi}
-                                title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : o.isDelayed ? ` ⚠️ช้า${Math.round((nowMs - o.orderEndMs) / 60000)}ม.` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(o.orderEndMs)}`}`}
+                                title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : isDelayed ? ` ⚠️ช้า${Math.round((nowMs - realEndMs) / 60000)}ม.` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}`}
                                 style={{
                                   position: 'absolute', top: 3, bottom: 3, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 22,
-                                  background: `${sc}28`, border: `1.5px solid ${sc}${o.isDone ? 'cc' : o.isDelayed ? 'dd' : '88'}`,
+                                  background: `${sc}28`, border: `1.5px solid ${sc}${o.isDone ? 'cc' : isDelayed ? 'dd' : '88'}`,
                                   borderRadius: 4, overflow: 'hidden', cursor: 'default', zIndex: 1,
-                                  boxShadow: o.isDelayed ? `0 0 6px ${sc}44` : 'none',
+                                  boxShadow: isDelayed ? `0 0 6px ${sc}44` : 'none',
                                 }}>
                                 <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`, background: `${sc}22` }} />
                                 <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 2px', overflow: 'hidden' }}>
