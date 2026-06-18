@@ -829,6 +829,18 @@ export default function Management() {
           const nameByMatNo = lineProdData.nameByMatNo || {};
           const imgByMatNo = lineProdData.imgByMatNo || {};
           const breakPolicies = lineProdData.breakPolicies || [];
+          const getBreakIntervals = (half) => breakPolicies
+            .filter(p => p.shift === 'both' || (p.shift === 'day' && half.key === 'am') || (p.shift === 'night' && half.key === 'pm'))
+            .map(p => {
+              const idx = half.hours.indexOf(Number(String(p.start_time).slice(0,2)));
+              if (idx < 0) return null;
+              const mins = Number(String(p.start_time).slice(3,5)) || 0;
+              const s = half.startMs + idx * 3600000 + mins * 60000;
+              const e = s + (p.duration_min || 0) * 60000;
+              return [s, e];
+            })
+            .filter(Boolean)
+            .sort((a, b) => a[0] - b[0]);
 
           const buildCards = (sessList) => {
             const cards = [];
@@ -988,16 +1000,17 @@ export default function Management() {
                             return <div key={i} style={{ flex: 1, minWidth: 0, height: '100%', borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`, background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent' }} />;
                           })}
                           {(() => {
-                            return breakPolicies
-                              .filter(p => p.shift === 'both' || (p.shift === 'day' && half.key === 'am') || (p.shift === 'night' && half.key === 'pm'))
-                              .map((p, pi) => {
-                                const idx = half.hours.indexOf(Number(String(p.start_time).slice(0,2)));
-                                if (idx < 0) return null;
-                                const mins = Number(String(p.start_time).slice(3,5)) || 0;
-                                const breakStartMs = half.startMs + idx * 3600000 + mins * 60000;
-                                const leftPct = Math.max(0, (breakStartMs - half.startMs) * pctPerMs);
-                                const widthPct = Math.min(100 - leftPct, (p.duration_min || 0) * 60000 * pctPerMs);
+                            const breaks = getBreakIntervals(half);
+                            return breaks.map(([bs, be], pi) => {
+                                const leftPct = Math.max(0, (bs - half.startMs) * pctPerMs);
+                                const widthPct = Math.min(100 - leftPct, (be - bs) * pctPerMs);
                                 if (widthPct <= 0) return null;
+                                const p = breakPolicies.find(bp => {
+                                  const idx = half.hours.indexOf(Number(String(bp.start_time).slice(0,2)));
+                                  if (idx < 0) return false;
+                                  const mins = Number(String(bp.start_time).slice(3,5)) || 0;
+                                  return half.startMs + idx * 3600000 + mins * 60000 === bs;
+                                }) || {};
                                 return (
                                   <div key={`brk-${pi}`} title={`${p.name_th || p.name_en} — ไลน์ไม่รองรับ KANBAN`}
                                     style={{
@@ -1011,14 +1024,26 @@ export default function Management() {
                               });
                           })()}
                           {(() => {
-                            // เรียงตามเวลาเริ่มจริง แล้วต่อคิวในแถวเดียวกัน (1 ไลน์ผลิตได้ทีละใบ)
+                            // เรียงตามเวลาเริ่มจริง แล้วต่อคิวในแถวเดียวกัน (1 ไลน์ผลิตได้ทีละใบ) และหลบช่วงเวลาพัก (break_policies)
                             const MIN_W_PCT = 1.5;
+                            const breaks = getBreakIntervals(half);
                             const sorted = cards.filter(o => o.orderStartMs && o.orderEndMs).sort((a, b) => a.orderStartMs - b.orderStartMs);
                             let queueEndMs = -Infinity;
                             const positioned = sorted.map(o => {
                               const durationMs = Math.max(o.orderEndMs - o.orderStartMs, 0);
-                              const startMs = Math.max(o.orderStartMs, queueEndMs);
-                              const endMs = startMs + durationMs;
+                              let startMs = Math.max(o.orderStartMs, queueEndMs);
+                              let endMs = startMs + durationMs;
+                              let pushed = true;
+                              while (pushed) {
+                                pushed = false;
+                                for (const [bs, be] of breaks) {
+                                  if (startMs < be && endMs > bs) {
+                                    startMs = be;
+                                    endMs = startMs + durationMs;
+                                    pushed = true;
+                                  }
+                                }
+                              }
                               queueEndMs = endMs;
                               const leftPct = Math.max(0, (startMs - half.startMs) * pctPerMs);
                               const rightPct = Math.min(100, (endMs - half.startMs) * pctPerMs);
