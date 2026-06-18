@@ -1242,28 +1242,28 @@ export default function Dashboard() {
                       zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
                     }}>
                       <div style={{
-                        width: 'clamp(40px, 4.5vw, 72px)', height: 'clamp(40px, 4.5vw, 72px)', borderRadius: '50%',
-                        border: `clamp(2.5px, 0.3vw, 4px) solid ${color}`,
+                        width: 'clamp(32px, 3.6vw, 58px)', height: 'clamp(32px, 3.6vw, 58px)', borderRadius: '50%',
+                        border: `clamp(2px, 0.24vw, 3px) solid ${color}`,
                         boxShadow: `0 0 10px ${color}99`,
                         overflow: 'hidden', background: '#1a1a1a',
                       }}>
                         {emp.image_url
                           ? <img src={emp.image_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'clamp(12px, 1.4vw, 22px)', fontWeight: 800, color }}>{(emp.name || '?')[0]}</div>
+                          : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'clamp(10px, 1.1vw, 18px)', fontWeight: 800, color }}>{(emp.name || '?')[0]}</div>
                         }
                       </div>
                       <div style={{
                         background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
-                        borderRadius: 4, padding: 'clamp(1px, 0.2vw, 3px) clamp(5px, 0.6vw, 10px)',
-                        fontSize: 'clamp(9px, 1vw, 15px)', fontWeight: 700, color: '#fff',
-                        whiteSpace: 'nowrap', maxWidth: 'clamp(60px, 7vw, 110px)',
+                        borderRadius: 4, padding: 'clamp(1px, 0.16vw, 2.4px) clamp(4px, 0.48vw, 8px)',
+                        fontSize: 'clamp(7px, 0.8vw, 12px)', fontWeight: 700, color: '#fff',
+                        whiteSpace: 'nowrap', maxWidth: 'clamp(48px, 5.6vw, 88px)',
                         overflow: 'hidden', textOverflow: 'ellipsis',
                       }}>{shortName}</div>
                       {fit !== null && (
-                        <div style={{ fontSize: 'clamp(8px, 0.9vw, 13px)', fontWeight: 800, color, background: `${color}25`, padding: 'clamp(1px, 0.2vw, 3px) clamp(4px, 0.5vw, 8px)', borderRadius: 3 }}>{fit}%</div>
+                        <div style={{ fontSize: 'clamp(6px, 0.72vw, 10px)', fontWeight: 800, color, background: `${color}25`, padding: 'clamp(1px, 0.16vw, 2.4px) clamp(3px, 0.4vw, 6px)', borderRadius: 3 }}>{fit}%</div>
                       )}
                       {emp.has_extended_ot && (
-                        <div style={{ fontSize: 'clamp(8px, 0.9vw, 13px)', fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: 'clamp(1px, 0.2vw, 3px) clamp(4px, 0.5vw, 8px)', borderRadius: 3 }}>OT+23</div>
+                        <div style={{ fontSize: 'clamp(6px, 0.72vw, 10px)', fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: 'clamp(1px, 0.16vw, 2.4px) clamp(3px, 0.4vw, 6px)', borderRadius: 3 }}>OT+23</div>
                       )}
                     </div>
                   );
