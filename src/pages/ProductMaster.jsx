@@ -3,25 +3,7 @@ import { Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
-
-// ย่อรูปฝั่ง client ก่อนอัปโหลด เพื่อลดขนาด storage (max 1280px, JPEG q=0.85)
-function resizeImage(file, maxPx = 1280, quality = 0.85) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const { width: w, height: h } = img;
-      const scale = Math.min(1, maxPx / Math.max(w, h));
-      const canvas = document.createElement('canvas');
-      canvas.width  = Math.round(w * scale);
-      canvas.height = Math.round(h * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(blob => resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', quality);
-    };
-    img.src = url;
-  });
-}
+import ImageCropModal from '../components/ImageCropModal';
 
 /* ─── PRODUCT MASTER ─────────────────────────────────────────────────────────
    ฐานข้อมูลกลางของ Product/Model ที่ใช้ร่วมกันในทุกโมดูล
@@ -84,6 +66,7 @@ export default function ProductMaster() {
   const [form,     setForm]     = useState(BLANK());
   const [saving,   setSaving]   = useState(false);
   const [imageFile, setImageFile] = useState(null);
+  const [cropFile, setCropFile] = useState(null);
   const [imageUploading, setImageUploading] = useState(false);
 
   const [kanbanEditing, setKanbanEditing] = useState(null);
@@ -683,13 +666,19 @@ export default function ProductMaster() {
                   {(imageFile ? URL.createObjectURL(imageFile) : form.image_url) && (
                     <img src={imageFile ? URL.createObjectURL(imageFile) : form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                   )}
-                  <input type="file" accept="image/*" onChange={async e => {
+                  <input type="file" accept="image/*" onChange={e => {
                     const f = e.target.files?.[0];
-                    if (!f) { setImageFile(null); return; }
-                    setImageFile(await resizeImage(f));
+                    e.target.value = '';
+                    if (f) setCropFile(f);
                   }} style={{ fontSize: 12, color: 'var(--text2)' }} />
                 </div>
               </Field>
+              {cropFile && (
+                <ImageCropModal file={cropFile} aspect={1} shape="rect" outputSize={480}
+                  title="จัดตำแหน่งรูป Product ให้ตรงกรอบ"
+                  onCancel={() => setCropFile(null)}
+                  onConfirm={f => { setImageFile(f); setCropFile(null); }} />
+              )}
               {!ecSource && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
@@ -1357,6 +1346,7 @@ function PartsMasterPanel({ canEdit, fullName, setCsvPreview, reloadKey }) {
   const [form, setForm]           = useState(EMPTY_PART);
   const [saving, setSaving]       = useState(false);
   const [imageFile, setImageFile] = useState(null);
+  const [cropFile, setCropFile] = useState(null);
   const [imageUploading, setImageUploading] = useState(false);
   const [csvImporting, setCsvImporting] = useState(false);
   const csvRef = useRef(null);
@@ -1622,13 +1612,19 @@ function PartsMasterPanel({ canEdit, fullName, setCsvPreview, reloadKey }) {
                   {(imageFile ? URL.createObjectURL(imageFile) : form.image_url) && (
                     <img src={imageFile ? URL.createObjectURL(imageFile) : form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                   )}
-                  <input type="file" accept="image/*" onChange={async e => {
+                  <input type="file" accept="image/*" onChange={e => {
                     const f = e.target.files?.[0];
-                    if (!f) { setImageFile(null); return; }
-                    setImageFile(await resizeImage(f));
+                    e.target.value = '';
+                    if (f) setCropFile(f);
                   }} style={{ fontSize: 12, color: 'var(--text2)' }} />
                 </div>
               </div>
+              {cropFile && (
+                <ImageCropModal file={cropFile} aspect={1} shape="rect" outputSize={480}
+                  title="จัดตำแหน่งรูปพาร์ทให้ตรงกรอบ"
+                  onCancel={() => setCropFile(null)}
+                  onConfirm={f => { setImageFile(f); setCropFile(null); }} />
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>UOM</label>
