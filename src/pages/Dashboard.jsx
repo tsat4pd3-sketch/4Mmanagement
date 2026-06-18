@@ -141,6 +141,7 @@ export default function Dashboard() {
   const [ctByMatNo,     setCtByMatNo]     = useState({});
   const [nameByMatNo,   setNameByMatNo]   = useState({});
   const [imgByMatNo,    setImgByMatNo]    = useState({});
+  const [breakPolicies, setBreakPolicies] = useState([]);
 
   // โหลดเฉพาะข้อมูลผลิต/OEE จาก DR — เบากว่า fetchAll มาก ใช้กับ realtime
   const fetchProdStatus = useCallback(async () => {
@@ -162,6 +163,7 @@ export default function Dashboard() {
     setCtByMatNo(ctMap);
     setNameByMatNo(nameMap);
     setImgByMatNo(imgMap);
+    setBreakPolicies(breakPolicies || []);
     const sessionIds = (sessions || []).map(s => s.id);
     let ordersBySession = {}, dtBySession = {}, defectBySession = {};
     if (sessionIds.length > 0) {
@@ -839,6 +841,34 @@ export default function Dashboard() {
                             }} />
                           );
                         })}
+                        {(() => {
+                          return breakPolicies
+                            .filter(p => p.shift === 'both' || (p.shift === 'day' && half.key === 'am') || (p.shift === 'night' && half.key === 'pm'))
+                            .map((p, pi) => {
+                              const idx = half.hours.indexOf(Number(String(p.start_time).slice(0,2)));
+                              if (idx < 0) return null;
+                              const mins = Number(String(p.start_time).slice(3,5)) || 0;
+                              const breakStartMs = half.startMs + idx * 3600000 + mins * 60000;
+                              const leftPct = Math.max(0, (breakStartMs - half.startMs) * pctPerMs);
+                              const widthPct = Math.min(100 - leftPct, (p.duration_min || 0) * 60000 * pctPerMs);
+                              if (widthPct <= 0) return null;
+                              return (
+                                <div key={`brk-${pi}`} title={`${p.name_th || p.name_en} — ไลน์ไม่รองรับ KANBAN`}
+                                  style={{
+                                    position: 'absolute', top: 0, bottom: 0,
+                                    left: `${leftPct}%`, width: `${widthPct}%`,
+                                    background: 'repeating-linear-gradient(45deg, rgba(148,163,184,0.18) 0px, rgba(148,163,184,0.18) 4px, transparent 4px, transparent 8px)',
+                                    borderLeft: '1px dashed rgba(148,163,184,0.6)', borderRight: '1px dashed rgba(148,163,184,0.6)',
+                                    zIndex: 0, pointerEvents: 'none',
+                                    display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'hidden',
+                                  }}>
+                                  <span style={{ fontSize: 6, fontWeight: 700, color: 'var(--muted)', writingMode: widthPct < 3 ? 'vertical-rl' : 'horizontal-tb', whiteSpace: 'nowrap', marginBottom: 1 }}>
+                                    🚫{p.name_th || p.name_en}
+                                  </span>
+                                </div>
+                              );
+                            });
+                        })()}
                         {(() => {
                           const MIN_W_PCT = 1.5;
                           const sorted = cards
