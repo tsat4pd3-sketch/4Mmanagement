@@ -792,7 +792,7 @@ export default function Dashboard() {
                           const isDone    = o.status === 'confirmed';
                           const isCarry   = o.status === 'carry_over';
                           const isDelayed = !isDone && !isCarry && !!orderEndMs && nowMs > orderEndMs;
-                          const productKey = o.mat_no || s.dr_products?.name || 'unknown';
+                          const productKey = (nameByMatNo[o.mat_no] || s.dr_products?.name || '').trim().toUpperCase() || o.mat_no || 'unknown';
                           const productLabel = nameByMatNo[o.mat_no] || s.dr_products?.name || o.mat_no || 'ไม่ทราบ P/N';
                           const productImg = imgByMatNo[o.mat_no] || '';
                           cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, productImg, shift: s.shift, sessionOpen: s.status === 'open' });
@@ -803,7 +803,8 @@ export default function Dashboard() {
 
                     const allCards = buildCards(sessions);
 
-                    // แยกแถวตาม mat_no/product — เพื่อไม่ให้ product ต่างกัน (เช่น RH60 / LH61) ปนแถวเดียวกัน
+                    // แยกแถวตามชื่อ product (ไม่ใช่ mat_no) — เพื่อไม่ให้ product ต่างกัน (เช่น RH60 / LH61) ปนแถวเดียวกัน
+                    // แต่ part เดียวกันที่ต่าง mat_no/customer เท่านั้น (เช่น FVL/FTM/AAT) ให้รวมแถวเดียว
                     const groups = {};
                     allCards.forEach(c => {
                       (groups[c.productKey] = groups[c.productKey] || { key: c.productKey, label: c.productLabel, img: c.productImg, cards: [] }).cards.push(c);
