@@ -911,6 +911,21 @@ export default function Management() {
                   ))}
                 </div>
               )}
+              {/* Legend สีสถานะ kanban */}
+              <div style={{ padding: '4px 12px', borderBottom: '1px solid var(--border2)', display: 'flex', gap: 10, flexWrap: 'wrap', background: 'var(--bg)' }}>
+                {[
+                  { c: '#4d9fff', icon: '▶', label: 'กำลังผลิต' },
+                  { c: '#22c55e', icon: '✓', label: 'เสร็จแล้ว' },
+                  { c: '#ef4444', icon: '!', label: 'ล่าช้า' },
+                  { c: '#f59e0b', icon: '↷', label: 'ยกยอดข้ามกะ' },
+                  { c: '#6b7280', icon: '⏪', label: 'ยิงย้อนหลัง' },
+                ].map(item => (
+                  <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ width: 11, height: 11, borderRadius: 2, background: `${item.c}28`, border: `1.2px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 6, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
+                    <span style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
+                  </div>
+                ))}
+              </div>
               {/* Timeline: 2 แถว × 12 ชม. แยกแถวตาม product (mat_no) */}
               {HALVES.map(half => (
                 <div key={half.key} style={{ borderTop: half.key === 'pm' ? '2px solid var(--border2)' : 'none' }}>

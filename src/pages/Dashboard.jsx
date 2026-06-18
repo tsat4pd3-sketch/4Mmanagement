@@ -682,8 +682,22 @@ export default function Dashboard() {
 
         return (
           <motion.div {...stagger(8)} style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
               📊 Heijunka Board — ไทม์ไลน์การผลิต
+            </div>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 12, padding: '6px 10px', background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border2)' }}>
+              {[
+                { c: '#4d9fff', icon: '▶', label: 'กำลังผลิต' },
+                { c: '#22c55e', icon: '✓', label: 'เสร็จแล้ว' },
+                { c: '#ef4444', icon: '!', label: 'ล่าช้า' },
+                { c: '#f59e0b', icon: '↷', label: 'ยกยอดข้ามกะ' },
+                { c: '#6b7280', icon: '⏪', label: 'ยิงย้อนหลัง (backfill)' },
+              ].map(item => (
+                <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ width: 14, height: 14, borderRadius: 3, background: `${item.c}28`, border: `1.5px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
+                  <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
+                </div>
+              ))}
             </div>
 
             {Object.entries(byLine).map(([lineName, sessions]) => {
