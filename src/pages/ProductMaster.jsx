@@ -117,12 +117,16 @@ export default function ProductMaster() {
     setEcSource(null);
     setEditing(item?.id || 'new');
     setImageFile(null);
+    // ชิ้นงานเดียวกัน (ชื่อตรงกัน) ต่างแค่ customer/mat — ใช้รูปร่วมกัน ไม่ต้องอัปโหลดซ้ำ
+    const sharedImage = item && !item.image_url
+      ? items.find(i => i.id !== item.id && i.image_url && i.name?.trim().toUpperCase() === item.name?.trim().toUpperCase())?.image_url
+      : null;
     setForm(item ? {
       name: item.name, code: item.code || '', mat_no: item.mat_no || '', p_no: item.p_no || '',
       customer: item.customer || '', line_name: item.line_name || '',
       cycle_time_sec: item.cycle_time_sec || '', target_per_shift: item.target_per_shift || '',
       process_type: item.process_type || 'welding_assembly', is_active: item.is_active, effective_from: item.effective_from || '',
-      image_url: item.image_url || '',
+      image_url: item.image_url || sharedImage || '',
     } : BLANK());
   };
 
@@ -165,10 +169,12 @@ export default function ProductMaster() {
       effective_from: form.effective_from || null,
       image_url: imageUrl,
     };
+    let savedId = editing;
     if (editing === 'new') {
       if (ecSource) payload.family_id = ecSource.family_id;
       const { data: inserted, error } = await supabaseDR.from('dr_products').insert(payload).select().single();
       if (error) { setSaving(false); toast.error(error.message); return; }
+      savedId = inserted.id;
       if (ecSource) {
         await supabaseDR.from('dr_products').update({
           is_active: false,
@@ -179,6 +185,11 @@ export default function ProductMaster() {
     } else {
       const { error } = await supabaseDR.from('dr_products').update(payload).eq('id', editing);
       if (error) { setSaving(false); toast.error(error.message); return; }
+    }
+    // ชิ้นงานเดียวกัน (ชื่อตรงกัน) ต่างแค่ customer/mat — sync รูปให้ทุก variant อัตโนมัติ
+    if (imageFile && payload.name) {
+      await supabaseDR.from('dr_products').update({ image_url: imageUrl })
+        .ilike('name', payload.name).neq('id', savedId);
     }
     setSaving(false);
     toast.success(ecSource ? '🔄 Engineering Change บันทึกสำเร็จ' : 'บันทึกสำเร็จ');
