@@ -384,7 +384,7 @@ export default function ProductMaster() {
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 1200, margin: '0 auto' }}>
       {/* ── Main Tab Bar ── */}
       <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 20, width: 'fit-content' }}>
-        {[{ key:'products', label:'🔩 Products' }, { key:'bom', label:'📦 BOM' }, { key:'parts', label:'🗂 Parts Master' }, { key:'export', label:'📤 Export' }].map(t => (
+        {[{ key:'products', label:'🔩 Products' }, { key:'bom', label:'📦 BOM' }, { key:'parts', label:'🗂 Parts Master' }, { key:'kanban', label:'🎴 Kanban Std' }, { key:'export', label:'📤 Export' }].map(t => (
           <button key={t.key} onClick={() => setMainTab(t.key)}
             style={{ padding:'6px 18px', borderRadius:6, border:'none', cursor:'pointer', fontSize:13, fontWeight:600,
               background: mainTab===t.key ? 'var(--accent)' : 'transparent',
@@ -747,6 +747,7 @@ export default function ProductMaster() {
 
       {mainTab === 'bom'   && <BOMPanel canEdit={canEdit} fullName={fullName} />}
       {mainTab === 'parts' && <PartsMasterPanel canEdit={canEdit} fullName={fullName} setCsvPreview={setCsvPreview} reloadKey={partsReloadKey} />}
+      {mainTab === 'kanban' && <KanbanStdPanel canEdit={canEdit} fullName={fullName} />}
       {mainTab === 'export' && <ExportPanel items={items} kanbanStds={kanbanStds} bomCounts={bomCounts} />}
 
       {/* ════ CSV Preview / Duplicate Detection Modal ════ */}
@@ -1686,5 +1687,176 @@ function PartsMasterPanel({ canEdit, fullName, setCsvPreview, reloadKey }) {
         </div>
       )}
     </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PANEL: KANBAN STD
+   ใช้ parts_master เป็นแหล่งข้อมูลเดียวสำหรับ UOM (ไม่เก็บ uom ซ้ำใน kanban_standards)
+   qty_per_kanban เริ่มต้น = parts_master.qty_per_pkg (1 ใบ Kanban = 1 packaging)
+   ───────────────────────────────────────────────────────────────────────────── */
+const EMPTY_KBS = { mat_no: '', qty_per_kanban: '' };
+
+function KanbanStdPanel({ canEdit, fullName }) {
+  const [parts,     setParts]     = useState([]);
+  const [standards, setStandards] = useState([]);
+  const [search,    setSearch]    = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [form,      setForm]      = useState(EMPTY_KBS);
+  const [saving,    setSaving]    = useState(false);
+
+  const load = useCallback(async () => {
+    const [{ data: pm }, { data: ks }] = await Promise.all([
+      supabaseDR.from('parts_master').select('mat_no, part_name, uom, qty_per_pkg, supplier').eq('is_active', true).order('mat_no'),
+      supabaseDR.from('kanban_standards').select('*').eq('is_active', true),
+    ]);
+    setParts(pm || []);
+    setStandards(ks || []);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const merged = useMemo(() => {
+    const ksMap = {};
+    standards.forEach(s => { ksMap[s.mat_no] = s; });
+    return parts.map(p => ({ ...p, ks: ksMap[p.mat_no] || null }));
+  }, [parts, standards]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toUpperCase();
+    if (!q) return merged;
+    return merged.filter(r => r.mat_no.includes(q) || (r.part_name || '').toUpperCase().includes(q) || (r.supplier || '').toUpperCase().includes(q));
+  }, [merged, search]);
+
+  const openEdit = (row) => {
+    setForm({
+      mat_no: row.mat_no,
+      qty_per_kanban: row.ks ? String(row.ks.qty_per_kanban) : (row.qty_per_pkg != null ? String(row.qty_per_pkg) : ''),
+    });
+    setShowModal(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.mat_no.trim()) { toast.error('กรอก Mat No.'); return; }
+    const qty = parseFloat(form.qty_per_kanban);
+    if (!qty || qty <= 0) { toast.error('กรอก Qty/Kanban ให้ถูกต้อง'); return; }
+    setSaving(true);
+    const { error } = await supabaseDR.from('kanban_standards').upsert({
+      mat_no: form.mat_no.trim().toUpperCase(),
+      qty_per_kanban: qty,
+      is_active: true,
+      updated_by: fullName,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'mat_no' });
+    setSaving(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success('บันทึก Kanban Std แล้ว');
+    setShowModal(false);
+    load();
+  };
+
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 'clamp(16px,2vw,20px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
+            🎴 Kanban Std — มาตรฐาน Qty/Kanban รายพาร์ท
+          </h2>
+          <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
+            UOM และข้อมูลพาร์ทดึงจาก 🗂 Parts Master โดยตรง (ไม่เก็บซ้ำ) · Qty/Kanban ตั้งต้นจาก Qty/Pkg (1 ใบ Kanban = 1 packaging)
+          </p>
+        </div>
+        <input
+          style={{ ...inputSt, width: 220 }}
+          placeholder="ค้นหา Mat No. / Part Name..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+      </div>
+
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 0, overflow: 'hidden' }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'var(--bg2)' }}>
+                {['Mat No.', 'Part Name', 'Supplier', 'UOM', 'Qty/Pkg', 'Qty/Kanban', 'อัปเดต'].map(h => (
+                  <th key={h} style={{ padding: '9px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
+                ))}
+                {canEdit && <th style={{ padding: '9px 14px', width: 80 }}></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 && (
+                <tr><td colSpan={canEdit ? 8 : 7} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่พบข้อมูล — เพิ่มพาร์ทใน Parts Master ก่อน</td></tr>
+              )}
+              {filtered.map(row => {
+                const mismatch = row.ks && row.qty_per_pkg != null && Number(row.ks.qty_per_kanban) !== Number(row.qty_per_pkg);
+                return (
+                  <tr key={row.mat_no} style={{ opacity: row.ks ? 1 : 0.55 }}>
+                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', fontSize: 13 }}>{row.mat_no}</td>
+                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: 'var(--text)' }}>{row.part_name || '—'}</td>
+                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)' }}>{row.supplier || '—'}</td>
+                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--muted)' }}>{row.uom || '—'}</td>
+                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: 'var(--text2)' }}>{row.qty_per_pkg != null ? row.qty_per_pkg.toLocaleString() : '—'}</td>
+                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontWeight: 900, fontSize: 15, color: mismatch ? '#f59e0b' : row.ks ? 'var(--accent)' : 'var(--muted)' }}>
+                      {row.ks ? row.ks.qty_per_kanban.toLocaleString() : '—'}
+                      {mismatch && <span title="ไม่ตรงกับ Qty/Pkg ใน Parts Master" style={{ marginLeft: 4 }}>⚠️</span>}
+                    </td>
+                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)' }}>
+                      {row.ks ? (
+                        <span title={row.ks.updated_by || ''}>
+                          {row.ks.updated_at ? new Date(row.ks.updated_at).toLocaleDateString('th-TH') : '—'}
+                          {row.ks.updated_by ? <span style={{ display: 'block', fontSize: 10 }}>{row.ks.updated_by}</span> : null}
+                        </span>
+                      ) : '—'}
+                    </td>
+                    {canEdit && (
+                      <td style={{ padding: '8px 14px', borderTop: '1px solid var(--border)' }}>
+                        <button onClick={() => openEdit(row)}
+                          style={{ background: 'rgba(124,58,237,0.1)', color: '#7c3aed', padding: '4px 10px', fontSize: 11, border: '1px solid rgba(124,58,237,0.3)', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                          ✏️ แก้ไข
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Modal */}
+      {showModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setShowModal(false)}>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 16, fontFamily: 'var(--font-display)' }}>
+              🎴 แก้ไข Kanban Std — {form.mat_no}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Qty / Kanban *</label>
+                <input type="number" min="1" step="1"
+                  style={{ ...inputSt, fontSize: 18, fontWeight: 900, textAlign: 'center' }}
+                  value={form.qty_per_kanban}
+                  onChange={e => setForm(f => ({ ...f, qty_per_kanban: e.target.value }))}
+                  placeholder="0"
+                  autoFocus
+                />
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                UOM: <strong style={{ color: 'var(--text)' }}>{parts.find(p => p.mat_no === form.mat_no)?.uom || '—'}</strong> (จาก Parts Master)
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+              <button onClick={() => setShowModal(false)} style={btnSecondary}>ยกเลิก</button>
+              <button onClick={handleSave} disabled={saving} style={{ ...btnPrimary, background: '#7c3aed', opacity: saving ? 0.6 : 1 }}>
+                {saving ? '...' : '💾 บันทึก'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
