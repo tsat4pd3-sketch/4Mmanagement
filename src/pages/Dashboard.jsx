@@ -975,9 +975,9 @@ export default function Dashboard() {
                           const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
 
                           return (
-                            <div key={row.key} style={{ display: 'flex', minHeight: 36, borderTop: ri > 0 ? '1px solid var(--border2)' : 'none' }}>
+                            <div key={row.key} style={{ display: 'flex', height: 38, borderTop: ri > 0 ? '1px solid var(--border2)' : 'none', overflow: 'hidden' }}>
                               {/* Left summary */}
-                              <div style={{ width: LEFT_W, flexShrink: 0, padding: '3px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <div style={{ width: LEFT_W, flexShrink: 0, padding: '3px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
                                 {row.img && <img src={row.img} alt="" style={{ width: 24, height: 24, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />}
                                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, minWidth: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
