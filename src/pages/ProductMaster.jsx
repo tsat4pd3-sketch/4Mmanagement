@@ -4,6 +4,25 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 
+// ย่อรูปฝั่ง client ก่อนอัปโหลด เพื่อลดขนาด storage (max 1280px, JPEG q=0.85)
+function resizeImage(file, maxPx = 1280, quality = 0.85) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const { width: w, height: h } = img;
+      const scale = Math.min(1, maxPx / Math.max(w, h));
+      const canvas = document.createElement('canvas');
+      canvas.width  = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(blob => resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', quality);
+    };
+    img.src = url;
+  });
+}
+
 /* ─── PRODUCT MASTER ─────────────────────────────────────────────────────────
    ฐานข้อมูลกลางของ Product/Model ที่ใช้ร่วมกันในทุกโมดูล
    - Daily Report  → เลือก product ตอนเปิดกะ
@@ -664,7 +683,11 @@ export default function ProductMaster() {
                   {(imageFile ? URL.createObjectURL(imageFile) : form.image_url) && (
                     <img src={imageFile ? URL.createObjectURL(imageFile) : form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                   )}
-                  <input type="file" accept="image/*" onChange={e => setImageFile(e.target.files?.[0] || null)} style={{ fontSize: 12, color: 'var(--text2)' }} />
+                  <input type="file" accept="image/*" onChange={async e => {
+                    const f = e.target.files?.[0];
+                    if (!f) { setImageFile(null); return; }
+                    setImageFile(await resizeImage(f));
+                  }} style={{ fontSize: 12, color: 'var(--text2)' }} />
                 </div>
               </Field>
               {!ecSource && (
@@ -1298,7 +1321,7 @@ function ExportPanel({ items, kanbanStds, bomCounts }) {
 ═══════════════════════════════════════════════════════════════ */
 const EMPTY_PART = {
   mat_no: '', part_name: '', part_no: '', uom: 'EA',
-  qty_per_pkg: '', supplier: '', note: '', is_active: true,
+  qty_per_pkg: '', supplier: '', note: '', is_active: true, image_url: '',
 };
 
 const MAT_PREFIXES = [
@@ -1333,6 +1356,8 @@ function PartsMasterPanel({ canEdit, fullName, setCsvPreview, reloadKey }) {
   const [editPart, setEditPart]   = useState(null);
   const [form, setForm]           = useState(EMPTY_PART);
   const [saving, setSaving]       = useState(false);
+  const [imageFile, setImageFile] = useState(null);
+  const [imageUploading, setImageUploading] = useState(false);
   const [csvImporting, setCsvImporting] = useState(false);
   const csvRef = useRef(null);
 
@@ -1409,18 +1434,29 @@ function PartsMasterPanel({ canEdit, fullName, setCsvPreview, reloadKey }) {
     return r;
   }, [parts, search, prefixFilter]);
 
-  function openNew() { setEditPart(null); setForm(EMPTY_PART); setShowModal(true); }
-  function openEdit(p) { setEditPart(p); setForm({ ...EMPTY_PART, ...p }); setShowModal(true); }
+  function openNew() { setEditPart(null); setForm(EMPTY_PART); setImageFile(null); setShowModal(true); }
+  function openEdit(p) { setEditPart(p); setForm({ ...EMPTY_PART, ...p }); setImageFile(null); setShowModal(true); }
 
   async function handleSave() {
     if (!form.mat_no.trim() || !form.part_name.trim()) { toast.error('กรอก Mat SAP และ Part Name'); return; }
     setSaving(true);
+    let imageUrl = form.image_url || null;
+    if (imageFile) {
+      setImageUploading(true);
+      const fileExt = imageFile.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile);
+      setImageUploading(false);
+      if (uploadError) { setSaving(false); toast.error(`อัปโหลดรูปไม่สำเร็จ: ${uploadError.message}`); return; }
+      const { data: pub } = supabaseDR.storage.from('product-images').getPublicUrl(fileName);
+      imageUrl = pub.publicUrl;
+    }
     const payload = {
       mat_no: form.mat_no.trim(), part_name: form.part_name.trim(),
       part_no: form.part_no.trim() || null, uom: form.uom.trim() || 'EA',
       qty_per_pkg: form.qty_per_pkg !== '' ? Number(form.qty_per_pkg) : null,
       supplier: form.supplier.trim() || null, note: form.note.trim() || null,
-      is_active: form.is_active,
+      is_active: form.is_active, image_url: imageUrl,
     };
     let err;
     if (editPart) {
@@ -1478,6 +1514,7 @@ function PartsMasterPanel({ canEdit, fullName, setCsvPreview, reloadKey }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
             <thead style={{ background: 'var(--bg2)' }}>
               <tr>
+                <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}></th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' }}>Mat SAP</th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>ชื่อพาร์ท</th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>Part No.</th>
@@ -1490,12 +1527,18 @@ function PartsMasterPanel({ canEdit, fullName, setCsvPreview, reloadKey }) {
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={canEdit ? 8 : 7} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                <tr><td colSpan={canEdit ? 9 : 8} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
                   {parts.length === 0 ? 'ยังไม่มีข้อมูล — กด ➕ เพิ่มพาร์ท เพื่อเริ่มต้น' : 'ไม่พบรายการที่ตรงเงื่อนไข'}
                 </td></tr>
               )}
               {filtered.map(p => (
                 <tr key={p.id} style={{ opacity: p.is_active ? 1 : 0.45, background: 'var(--card)' }}>
+                  <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)' }}>
+                    {p.image_url
+                      ? <img src={p.image_url} alt="" style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)' }} />
+                      : <div style={{ width: 32, height: 32, borderRadius: 6, background: 'var(--bg2)', border: '1px solid var(--border)' }} />
+                    }
+                  </td>
                   <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 800, color: matColor(p.mat_no) }}>{p.mat_no}</span>
@@ -1573,6 +1616,19 @@ function PartsMasterPanel({ canEdit, fullName, setCsvPreview, reloadKey }) {
                   value={form.part_name} onChange={e => setForm(f => ({ ...f, part_name: e.target.value }))}
                   placeholder="ชื่อพาร์ท" />
               </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>รูปภาพพาร์ท</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {(imageFile ? URL.createObjectURL(imageFile) : form.image_url) && (
+                    <img src={imageFile ? URL.createObjectURL(imageFile) : form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
+                  )}
+                  <input type="file" accept="image/*" onChange={async e => {
+                    const f = e.target.files?.[0];
+                    if (!f) { setImageFile(null); return; }
+                    setImageFile(await resizeImage(f));
+                  }} style={{ fontSize: 12, color: 'var(--text2)' }} />
+                </div>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>UOM</label>
@@ -1605,7 +1661,7 @@ function PartsMasterPanel({ canEdit, fullName, setCsvPreview, reloadKey }) {
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
               <button onClick={() => setShowModal(false)} style={btnSecondary}>ยกเลิก</button>
-              <button onClick={handleSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : '💾 บันทึก'}</button>
+              <button onClick={handleSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? (imageUploading ? 'กำลังอัปโหลดรูป...' : '...') : '💾 บันทึก'}</button>
             </div>
           </div>
         </div>
