@@ -203,7 +203,7 @@ export default function Management() {
     const sessionIds = sessions.map(s => s.id);
     const { data: orders } = await supabaseDR
       .from('prod_orders')
-      .select('session_id, status, qty, qty_ok, qty_actual, prod_no, mat_no, opened_at')
+      .select('session_id, status, qty, qty_ok, qty_actual, prod_no, mat_no, opened_at, confirmed_at')
       .in('session_id', sessionIds);
     // production_sessions.product_id ไม่ได้ตั้งค่าเสมอ (กะนึงมีได้หลาย mat_no)
     // จึง fallback ไปหา cycle_time_sec ตรงจาก mat_no ของออเดอร์เอง
@@ -869,7 +869,8 @@ export default function Management() {
               const rightPct = Math.min(100, (endMs - half.startMs) * pctPerMs);
               const widthPct = Math.max(MIN_W_PCT, rightPct - leftPct);
               const isDelayed = !o.isDone && !o.isCarry && !o.is_backfill && endMs < nowMs;
-              return { o, leftPct, widthPct, realEndMs: endMs, isDelayed };
+              const isLateDone = o.isDone && !!o.confirmed_at && new Date(o.confirmed_at).getTime() > endMs;
+              return { o, leftPct, widthPct, realEndMs: endMs, isDelayed, isLateDone };
             });
           };
 
@@ -954,6 +955,7 @@ export default function Management() {
                 {[
                   { c: '#4d9fff', icon: '▶', label: 'กำลังผลิต' },
                   { c: '#22c55e', icon: '✓', label: 'เสร็จแล้ว' },
+                  { c: '#f97316', icon: '✓!', label: 'เสร็จ (ช้ากว่ากำหนด)' },
                   { c: '#ef4444', icon: '!', label: 'ล่าช้า' },
                   { c: '#f59e0b', icon: '↷', label: 'ยกยอดข้ามกะ' },
                   { c: '#6b7280', icon: '⏪', label: 'ยิงย้อนหลัง' },
@@ -1049,20 +1051,20 @@ export default function Management() {
                           })()}
                           {(() => {
                             const positioned = computeQueuedPositions(cards, half);
-                            return positioned.map(({ o, leftPct, widthPct, realEndMs, isDelayed }, oi) => {
+                            return positioned.map(({ o, leftPct, widthPct, realEndMs, isDelayed, isLateDone }, oi) => {
                             if (leftPct >= 100) return null;
-                            const sc = o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : o.is_backfill ? '#6b7280' : '#4d9fff';
-                            const icon = o.isDone ? '✓' : isDelayed ? '!' : o.isCarry ? '↷' : o.is_backfill ? '⏪' : '▶';
+                            const sc = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : o.is_backfill ? '#6b7280' : '#4d9fff';
+                            const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : o.is_backfill ? '⏪' : '▶';
                             const doneQty = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
                             const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
                             return (
                               <div key={o.prod_no || oi}
-                                title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : isDelayed ? ` ⚠️ช้า${Math.round((nowMs - realEndMs) / 60000)}ม.` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}`}
+                                title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}ม.)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs - realEndMs) / 60000)}ม.` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}`}
                                 style={{
                                   position: 'absolute', top: 3, bottom: 3, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 22,
-                                  background: `${sc}28`, border: `1.5px solid ${sc}${o.isDone ? 'cc' : isDelayed ? 'dd' : '88'}`,
+                                  background: `${sc}28`, border: `1.5px solid ${sc}${o.isDone && !isLateDone ? 'cc' : (isDelayed || isLateDone) ? 'dd' : '88'}`,
                                   borderRadius: 4, overflow: 'hidden', cursor: 'default', zIndex: 1,
-                                  boxShadow: isDelayed ? `0 0 6px ${sc}44` : 'none',
+                                  boxShadow: (isDelayed || isLateDone) ? `0 0 6px ${sc}44` : 'none',
                                 }}>
                                 <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`, background: `${sc}22` }} />
                                 <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 2px', overflow: 'hidden' }}>
