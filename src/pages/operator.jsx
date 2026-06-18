@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { fmtDateMedium } from '../utils/dateFormat';
+import ImageCropModal from '../components/ImageCropModal';
 
 const WORK_TYPES = ['งานเชื่อม', 'งานขับรถฟอล์คลิฟท์', 'งานขับเครน'];
 
@@ -62,6 +63,7 @@ export default function Operator() {
   const [inactiveEmployees, setInactiveEmployees] = useState([]);
   const [showInactive, setShowInactive] = useState(false);
   const [editingEmp, setEditingEmp] = useState(null);
+  const [empCropFile, setEmpCropFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff', category: 'hard_skill', scope_section: '', allowance_type: '' });
   const [isAddingSkill, setIsAddingSkill] = useState(false);
@@ -1155,8 +1157,18 @@ export default function Operator() {
               <div>
                 <label style={labelSt}>อัปเดตรูปถ่าย</label>
                 <input type="file" accept="image/*"
-                  onChange={e => setEditingEmp({ ...editingEmp, newPhoto: e.target.files[0] })} />
+                  onChange={e => {
+                    const f = e.target.files?.[0];
+                    e.target.value = '';
+                    if (f) setEmpCropFile(f);
+                  }} />
               </div>
+              {empCropFile && (
+                <ImageCropModal file={empCropFile} aspect={1} shape="circle" outputSize={480}
+                  title="จัดตำแหน่งรูปพนักงานให้ตรงกรอบ"
+                  onCancel={() => setEmpCropFile(null)}
+                  onConfirm={f => { setEditingEmp(prev => ({ ...prev, newPhoto: f })); setEmpCropFile(null); }} />
+              )}
 
               <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                 <button type="submit" disabled={isSaving}

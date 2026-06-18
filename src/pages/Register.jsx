@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
+import ImageCropModal from '../components/ImageCropModal';
 
 const SECTIONS = ['PD1', 'PD2', 'PD3', 'PD4'];
 const TEAMS    = ['A', 'B', 'C'];
@@ -18,6 +19,7 @@ export default function Register() {
   const [lineId,      setLineId]      = useState(null);
   const [team,        setTeam]        = useState('');
   const [photo,       setPhoto]       = useState(null);
+  const [cropFile,    setCropFile]    = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [lines,       setLines]       = useState([]);
 
@@ -171,8 +173,21 @@ export default function Register() {
 
           <div>
             <label style={labelSt}>รูปถ่าย (ถ้ามี)</label>
-            <input id="photo-upload" type="file" accept="image/*" onChange={e => setPhoto(e.target.files[0])} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {photo && <img src={URL.createObjectURL(photo)} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: '50%', border: '1px solid var(--border)' }} />}
+              <input id="photo-upload" type="file" accept="image/*" onChange={e => {
+                const f = e.target.files?.[0];
+                e.target.value = '';
+                if (f) setCropFile(f);
+              }} />
+            </div>
           </div>
+          {cropFile && (
+            <ImageCropModal file={cropFile} aspect={1} shape="circle" outputSize={480}
+              title="จัดตำแหน่งรูปพนักงานให้ตรงกรอบ"
+              onCancel={() => setCropFile(null)}
+              onConfirm={f => { setPhoto(f); setCropFile(null); }} />
+          )}
 
           <button
             type="submit"
