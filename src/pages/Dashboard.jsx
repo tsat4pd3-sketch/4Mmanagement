@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -137,6 +137,17 @@ export default function Dashboard() {
   const [workstations,  setWorkstations]  = useState([]);
   const [stationEmpMap, setStationEmpMap] = useState({});
   const [expandedLine,  setExpandedLine]  = useState(null);
+  const mapImgRef = useRef(null);
+  const [mapBox, setMapBox] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    if (!expandedLine) return;
+    const measure = () => {
+      if (mapImgRef.current) setMapBox({ w: mapImgRef.current.clientWidth, h: mapImgRef.current.clientHeight });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [expandedLine]);
   const [prodStatus,    setProdStatus]    = useState([]);
   const [ctByMatNo,     setCtByMatNo]     = useState({});
   const [nameByMatNo,   setNameByMatNo]   = useState({});
@@ -1221,12 +1232,14 @@ export default function Dashboard() {
               </div>
               <div style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', background: '#111' }}>
                 <img
+                  ref={mapImgRef}
                   src={layout.image_url}
                   alt={expandedLine}
+                  onLoad={e => setMapBox({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight })}
                   style={{ width: '100%', display: 'block', opacity: 0.7 }}
                 />
                 {(() => {
-                  // เก็บ marker ที่จะแสดง + ตำแหน่งจริง (anchor) จาก pos_top/pos_left
+                  // เก็บ marker ที่จะแสดง + ตำแหน่งจริง (anchor) จาก pos_top/pos_left (เป็น %)
                   const markers = lineWs.map(ws => {
                     const emp = stationEmpMap[String(ws.id)];
                     if (!emp) return null;
@@ -1239,29 +1252,35 @@ export default function Dashboard() {
                     };
                   }).filter(Boolean);
 
-                  // กันการ์ดซ้อนทับกัน: ผลักออกจากกันแบบ force-relax ใน % space
-                  // (anisotropic — แกน Y ต้องการระยะห่างมากกว่า X เพราะการ์ดเป็นแนวตั้ง)
-                  const MIN_DX = 7, MIN_DY = 10;
-                  for (let pass = 0; pass < 40; pass++) {
+                  // กันการ์ดซ้อนทับกัน: ผลักออกจากกันใน "พิกเซลจริง" ของภาพที่ render
+                  // (แปลง % เป็น px ตามขนาดจริงของ mapBox ก่อนคำนวณ แล้วแปลงกลับเป็น % ตอน render)
+                  const boxW = mapBox.w || 800, boxH = mapBox.h || 450;
+                  const MIN_PX_X = 72, MIN_PX_Y = 118; // ระยะห่างขั้นต่ำ: ความกว้าง/ความสูงรวม nametag+badge ของ card
+                  const pxMarkers = markers.map(m => ({ ...m, px: m.left / 100 * boxW, py: m.top / 100 * boxH, dox: 0, doy: 0 }));
+                  for (let pass = 0; pass < 60; pass++) {
                     let moved = false;
-                    for (let i = 0; i < markers.length; i++) {
-                      for (let j = i + 1; j < markers.length; j++) {
-                        const a = markers[i], b = markers[j];
-                        const dx = (b.left + b.ox) - (a.left + a.ox);
-                        const dy = (b.top + b.oy) - (a.top + a.oy);
-                        const ndx = dx / MIN_DX, ndy = dy / MIN_DY;
+                    for (let i = 0; i < pxMarkers.length; i++) {
+                      for (let j = i + 1; j < pxMarkers.length; j++) {
+                        const a = pxMarkers[i], b = pxMarkers[j];
+                        const dx = (b.px + b.dox) - (a.px + a.dox);
+                        const dy = (b.py + b.doy) - (a.py + a.doy);
+                        const ndx = dx / MIN_PX_X, ndy = dy / MIN_PX_Y;
                         const dist = Math.sqrt(ndx * ndx + ndy * ndy) || 0.0001;
                         if (dist < 1) {
                           const overlap = (1 - dist) / 2;
-                          const pushX = (ndx / dist) * overlap * MIN_DX;
-                          const pushY = (ndy / dist) * overlap * MIN_DY;
-                          a.ox -= pushX; a.oy -= pushY;
-                          b.ox += pushX; b.oy += pushY;
+                          const pushX = (ndx / dist) * overlap * MIN_PX_X;
+                          const pushY = (ndy / dist) * overlap * MIN_PX_Y;
+                          a.dox -= pushX; a.doy -= pushY;
+                          b.dox += pushX; b.doy += pushY;
                           moved = true;
                         }
                       }
                     }
                     if (!moved) break;
+                  }
+                  for (const m of pxMarkers) {
+                    m.ox = (m.dox / boxW) * 100;
+                    m.oy = (m.doy / boxH) * 100;
                   }
 
                   return (
@@ -1269,7 +1288,7 @@ export default function Dashboard() {
                       {/* เส้นโยงกลับไปตำแหน่งจริง สำหรับการ์ดที่ถูกผลักออก */}
                       <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 1, pointerEvents: 'none' }}
                         viewBox="0 0 100 100" preserveAspectRatio="none">
-                        {markers.map(({ ws, top, left, ox, oy }) => {
+                        {pxMarkers.map(({ ws, top, left, ox, oy }) => {
                           if (Math.abs(ox) < 0.3 && Math.abs(oy) < 0.3) return null;
                           return (
                             <g key={`ln-${ws.id}`}>
@@ -1280,7 +1299,7 @@ export default function Dashboard() {
                           );
                         })}
                       </svg>
-                      {markers.map(({ ws, emp, top, left, ox, oy }) => {
+                      {pxMarkers.map(({ ws, emp, top, left, ox, oy }) => {
                         const fit = emp.fitScore;
                         const fitLv = getFitLevel(fit);
                         const color = fitLv ? fitLv.color : '#aaa';
