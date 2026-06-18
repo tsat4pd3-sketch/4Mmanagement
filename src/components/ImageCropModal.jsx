@@ -118,7 +118,7 @@ export default function ImageCropModal({
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
           <span style={{ fontSize: 13 }}>🔍</span>
-          <input type="range" min={minScale} max={minScale * 4} step={0.01} value={scale}
+          <input type="range" min={minScale * 0.4} max={minScale * 4} step={0.01} value={scale}
             onChange={e => onScaleChange(Number(e.target.value))} style={{ flex: 1 }} />
         </div>
         <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center', marginTop: 6 }}>
