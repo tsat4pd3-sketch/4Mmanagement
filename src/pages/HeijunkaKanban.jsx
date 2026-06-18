@@ -351,6 +351,20 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: 16 }}>
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', padding: '6px 10px', background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border2)' }}>
+        {[
+          { c: 'var(--border2)', icon: '⬜', label: 'รอ' },
+          { c: '#0ea5e9', icon: '⏳', label: 'กำลังเตรียม / ส่งแล้วรอรับ' },
+          { c: '#22c55e', icon: '✔️', label: 'รับครบแล้ว' },
+          { c: '#f59e0b', icon: '⚠️', label: 'รับไม่ครบ' },
+          { c: '#ef4444', icon: '🔴', label: 'ค้างส่ง' },
+        ].map(item => (
+          <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 14, height: 14, borderRadius: 3, background: `${item.c}28`, border: `1.5px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, flexShrink: 0 }}>{item.icon}</span>
+            <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
+          </div>
+        ))}
+      </div>
       {Object.keys(byLine).sort().map(lineName => {
         const lineRounds = byLine[lineName];
         const demand = demandByLine[lineName] || { parts: [], totalKanban: 0 };
