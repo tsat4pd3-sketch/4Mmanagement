@@ -292,7 +292,29 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt }) {
     </div>
   );
 
-  const renderTimeline = (lineRounds, half, rowKey) => (
+  // คำนวณช่วงเวลาจริงของแต่ละรอบ + จัดเลนแนวตั้งให้รอบที่เวลาทับกัน (ไม่ดันออกทางขวาเพื่อคงตำแหน่งตรงกับสเกลเวลาจริง)
+  const computeItemsAndLanes = (lineRounds, half) => {
+    const items = lineRounds.map(r => {
+      const startMs = timeToMs((r.delivery_time || '').slice(0, 5));
+      if (startMs == null) return null;
+      const finishMin = (r.points_count || 1) * (r.time_per_point_min || 10);
+      const endMs = startMs + finishMin * 60000;
+      if (endMs <= half.startMs || startMs >= half.startMs + 12 * 3600000) return null;
+      return { r, startMs, endMs };
+    }).filter(Boolean).sort((a, b) => a.startMs - b.startMs);
+    const laneEnds = [];
+    const laneOf = new Map();
+    items.forEach(item => {
+      let placed = false;
+      for (let i = 0; i < laneEnds.length; i++) {
+        if (item.startMs >= laneEnds[i]) { laneEnds[i] = item.endMs; laneOf.set(item, i); placed = true; break; }
+      }
+      if (!placed) { laneEnds.push(item.endMs); laneOf.set(item, laneEnds.length - 1); }
+    });
+    return { items, laneOf, laneCount: laneEnds.length || 1 };
+  };
+
+  const renderTimeline = (items, laneOf, laneCount, half, rowKey, rowH) => (
     <div key={rowKey} style={{ flex: 1, position: 'relative', display: 'flex' }}>
       {half.hours.map((h, i) => {
         const slotMs = half.startMs + i * 3600000;
@@ -301,35 +323,23 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt }) {
         return <div key={i} style={{ flex: 1, minWidth: 0, height: '100%', borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`, background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent' }} />;
       })}
       {(() => {
-        // จัดเรียงตามเวลาเริ่ม แล้วดันรอบที่ทับเวลากันออกไปทางขวาต่อจากใบก่อนหน้า ไม่ให้ซ้อนทับกัน
-        const GAP_PCT = 0.5, MIN_W_PCT = 2.2;
-        const items = lineRounds.map(r => {
-          const startMs = timeToMs((r.delivery_time || '').slice(0, 5));
-          if (startMs == null) return null;
-          const finishMin = (r.points_count || 1) * (r.time_per_point_min || 10);
-          const endMs = startMs + finishMin * 60000;
-          if (endMs <= half.startMs || startMs >= half.startMs + 12 * 3600000) return null;
-          return { r, startMs, endMs };
-        }).filter(Boolean).sort((a, b) => a.startMs - b.startMs);
-        let lastRightPct = 0;
-        const positioned = items.map(({ r, startMs, endMs }) => {
+        const MIN_W_PCT = 1.5;
+        const laneH = (rowH - 8) / laneCount;
+        return items.map(item => {
+          const { r, startMs, endMs } = item;
           const timeLeftPct = Math.max(0, (startMs - half.startMs) * pctPerMs);
           const rightPct = Math.min(100, (endMs - half.startMs) * pctPerMs);
-          const timeWidthPct = Math.max(MIN_W_PCT, rightPct - timeLeftPct);
-          const leftPct = Math.max(timeLeftPct, lastRightPct);
-          const widthPct = timeWidthPct;
-          lastRightPct = leftPct + widthPct + GAP_PCT;
-          return { r, leftPct, widthPct };
-        });
-        return positioned.map(({ r, leftPct, widthPct }) => {
+          const widthPct = Math.max(MIN_W_PCT, rightPct - timeLeftPct);
+          const leftPct = timeLeftPct;
           if (leftPct >= 100) return null;
+          const lane = laneOf.get(item) ?? 0;
           const status = getRoundStatus(r, confirmedSet, receivedMap);
           const expandKey = `${r.line_name}|${r.round_no}`;
           return (
             <div key={r.id} title={`รอบ ${r.round_no} · ส่ง ${(r.delivery_time||'').slice(0,5)} · ${status.label}`}
               onClick={() => setExpanded(expanded === expandKey ? null : expandKey)}
               style={{
-                position: 'absolute', top: 4, bottom: 4, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 22,
+                position: 'absolute', top: 4 + lane * laneH, height: laneH - 2, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 22,
                 background: `${status.top}28`, border: `1.5px solid ${status.top}cc`,
                 borderRadius: 4, overflow: 'hidden', cursor: 'pointer', zIndex: 1,
                 display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 3px',
@@ -359,17 +369,21 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt }) {
               <span style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>🏭 {lineName}</span>
               <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{demand.parts.length} พาร์ท · 🎴 {demand.totalKanban} การ์ด</span>
             </div>
-            {HALVES.map(half => (
-              <div key={half.key} style={{ borderTop: half.key === 'pm' ? '2px solid var(--border2)' : 'none' }}>
-                {hourHeader(half.hours, half.startMs)}
-                <div style={{ display: 'flex', minHeight: 36 }}>
-                  <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', alignItems: 'center', fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>
-                    {lineRounds.length} รอบ
+            {HALVES.map(half => {
+              const { items, laneOf, laneCount } = computeItemsAndLanes(lineRounds, half);
+              const rowH = Math.max(36, laneCount * 22 + 8);
+              return (
+                <div key={half.key} style={{ borderTop: half.key === 'pm' ? '2px solid var(--border2)' : 'none' }}>
+                  {hourHeader(half.hours, half.startMs)}
+                  <div style={{ display: 'flex', minHeight: rowH }}>
+                    <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', alignItems: 'center', fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>
+                      {lineRounds.length} รอบ
+                    </div>
+                    {renderTimeline(items, laneOf, laneCount, half, `${lineName}-${half.key}`, rowH)}
                   </div>
-                  {renderTimeline(lineRounds, half, `${lineName}-${half.key}`)}
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {/* expanded round detail */}
             {lineRounds.map(r => {
               const expandKey = `${lineName}|${r.round_no}`;
