@@ -221,7 +221,8 @@ export default function Management() {
     const ordersBySession = {};
     (orders || []).forEach(o => { (ordersBySession[o.session_id] ||= []).push(o); });
     const enriched = sessions.map(s => ({ ...s, orders: ordersBySession[s.id] || [] }));
-    setLineProdData({ sessions: enriched, workDate: todayStr, ctByMatNo: ctMap, nameByMatNo: nameMap, imgByMatNo: imgMap });
+    const { data: breakPolicies } = await supabaseDR.from('break_policies').select('*').eq('is_active', true);
+    setLineProdData({ sessions: enriched, workDate: todayStr, ctByMatNo: ctMap, nameByMatNo: nameMap, imgByMatNo: imgMap, breakPolicies: breakPolicies || [] });
   }, []);
 
   useEffect(() => {
@@ -827,6 +828,7 @@ export default function Management() {
           const ctByMatNo = lineProdData.ctByMatNo || {};
           const nameByMatNo = lineProdData.nameByMatNo || {};
           const imgByMatNo = lineProdData.imgByMatNo || {};
+          const breakPolicies = lineProdData.breakPolicies || [];
 
           const buildCards = (sessList) => {
             const cards = [];
@@ -985,6 +987,29 @@ export default function Management() {
                             const isShiftBound = h === 8 || h === 20;
                             return <div key={i} style={{ flex: 1, minWidth: 0, height: '100%', borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`, background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent' }} />;
                           })}
+                          {(() => {
+                            return breakPolicies
+                              .filter(p => p.shift === 'both' || (p.shift === 'day' && half.key === 'am') || (p.shift === 'night' && half.key === 'pm'))
+                              .map((p, pi) => {
+                                const idx = half.hours.indexOf(Number(String(p.start_time).slice(0,2)));
+                                if (idx < 0) return null;
+                                const mins = Number(String(p.start_time).slice(3,5)) || 0;
+                                const breakStartMs = half.startMs + idx * 3600000 + mins * 60000;
+                                const leftPct = Math.max(0, (breakStartMs - half.startMs) * pctPerMs);
+                                const widthPct = Math.min(100 - leftPct, (p.duration_min || 0) * 60000 * pctPerMs);
+                                if (widthPct <= 0) return null;
+                                return (
+                                  <div key={`brk-${pi}`} title={`${p.name_th || p.name_en} — ไลน์ไม่รองรับ KANBAN`}
+                                    style={{
+                                      position: 'absolute', top: 0, bottom: 0, left: `${leftPct}%`, width: `${widthPct}%`,
+                                      background: 'repeating-linear-gradient(45deg, rgba(148,163,184,0.18) 0px, rgba(148,163,184,0.18) 4px, transparent 4px, transparent 8px)',
+                                      borderLeft: '1px dashed rgba(148,163,184,0.6)', borderRight: '1px dashed rgba(148,163,184,0.6)',
+                                      zIndex: 0, pointerEvents: 'none',
+                                    }}
+                                  />
+                                );
+                              });
+                          })()}
                           {(() => {
                             // เรียงตามเวลาเริ่มจริง แล้วต่อคิวในแถวเดียวกัน (1 ไลน์ผลิตได้ทีละใบ)
                             const MIN_W_PCT = 1.5;
