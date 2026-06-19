@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -894,7 +894,12 @@ export default function Dashboard() {
                         const isDelayed = !o.isDone && !o.isCarry && endMs < nowMs;
                         // เสร็จแล้วแต่ปิดจบช้ากว่าคิวที่ควรจะเสร็จ — ไม่ควรเขียวเหมือนผลิตจบปกติ
                         const isLateDone = o.isDone && !!o.confirmed_at && new Date(o.confirmed_at).getTime() > endMs;
-                        return { o, leftPct, widthPct, realEndMs: endMs, isDelayed, isLateDone };
+                        // หางเงาสีแดงต่อท้ายกล่องจริง แสดงว่าใบนี้ยังครองไลน์อยู่ (ยังไม่ปิด) ตั้งแต่เลยกำหนดจนถึงตอนนี้
+                        // เพื่อให้เห็นว่าทำไมใบถัดไปในคิวถึงถูกดันไปต่อท้าย ไม่ใช่ว่าหายไปเฉย ๆ
+                        const tailLeftPct  = isDelayed ? rightPct : 0;
+                        const tailRightPct = isDelayed ? Math.min(100, (occupiedEndMs - half.startMs) * pctPerMs) : 0;
+                        const tailWidthPct = isDelayed ? Math.max(0, tailRightPct - tailLeftPct) : 0;
+                        return { o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: endMs, isDelayed, isLateDone };
                       });
                     };
 
@@ -946,14 +951,15 @@ export default function Dashboard() {
                         })()}
                         {(() => {
                           const positioned = computeQueuedPositions(cards, half);
-                          return positioned.map(({ o, leftPct, widthPct, realEndMs, isDelayed, isLateDone }, oi) => {
+                          return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone }, oi) => {
                           if (leftPct >= 100) return null;
                           const statusColor = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
                           const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : '▶';
                           const doneQty  = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
                           const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
                           return (
-                            <div key={o.prod_no || oi} title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}ม.)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs-realEndMs)/60000)}ม.` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}`}
+                            <Fragment key={o.prod_no || oi}>
+                            <div title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}ม.)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs-realEndMs)/60000)}ม. ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}`}
                               style={{
                                 position: 'absolute', top: 4, bottom: 4,
                                 left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 24,
@@ -973,6 +979,18 @@ export default function Dashboard() {
                                 </div>
                               </div>
                             </div>
+                            {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
+                            {tailWidthPct > 0 && (
+                              <div title="ยังไม่ปิดงาน — ดีเลย์ยังดำเนินอยู่"
+                                style={{
+                                  position: 'absolute', top: 4, bottom: 4,
+                                  left: `${tailLeftPct}%`, width: `${tailWidthPct}%`,
+                                  background: 'repeating-linear-gradient(45deg, #ef444433 0px, #ef444433 4px, #ef444412 4px, #ef444412 8px)',
+                                  border: '1.5px dashed #ef4444aa', borderLeft: 'none',
+                                  borderRadius: '0 4px 4px 0', zIndex: 1, pointerEvents: 'none',
+                                }} />
+                            )}
+                            </Fragment>
                           );
                           });
                         })()}
