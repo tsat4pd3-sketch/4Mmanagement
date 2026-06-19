@@ -368,17 +368,19 @@ export default function Checkin() {
 
       const { default: jsPDF } = await import('jspdf');
       const { default: autoTable } = await import('jspdf-autotable');
+      const { registerThaiFont } = await import('../lib/pdfThaiFont');
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      registerThaiFont(doc);
       const deptLabel = exportSection || 'ทุกส่วนงาน';
 
       /* ── Form 1: ใบรายงานการปฏิบัติงานชดเชย/ทำ OT (ฟอร์ม 2) ───── */
       let y0 = 10;
-      doc.setFontSize(11); doc.setFont(undefined, 'bold');
+      doc.setFontSize(11); doc.setFont('Sarabun', 'bold');
       doc.text('บริษัท ไทยซัมมิทออโตพาร์ท จำกัด', 14, y0);
       doc.setFontSize(13);
       doc.text('ใบรายงานการปฏิบัติงานชดเชย / ทำ OT', 148, y0, { align: 'center' });
       y0 += 6;
-      doc.setFontSize(9); doc.setFont(undefined, 'normal');
+      doc.setFontSize(9); doc.setFont('Sarabun', 'normal');
       doc.text(`แผนก/ส่วนงาน: ${deptLabel}`, 14, y0);
       doc.text(`เดือน: ${m}  ปี ${y + 543}   ช่วงวันที่ ${dayFrom}-${dayTo}`, 148, y0, { align: 'center' });
       doc.text(`ชุดที่ 02`, 270, y0, { align: 'right' });
@@ -401,8 +403,8 @@ export default function Checkin() {
 
       autoTable(doc, {
         head: otHead, body: otRows, startY: y0 + 4,
-        styles: { fontSize: 6.5, halign: 'center', cellPadding: 1 },
-        headStyles: { fillColor: [40, 60, 90], fontSize: 6.5 },
+        styles: { font: 'Sarabun', fontSize: 6.5, halign: 'center', cellPadding: 1 },
+        headStyles: { font: 'Sarabun', fillColor: [40, 60, 90], fontSize: 6.5 },
         columnStyles: { 2: { halign: 'left', cellWidth: 32 } },
         margin: { left: 14, right: 14 },
       });
@@ -430,12 +432,12 @@ export default function Checkin() {
       /* ── Form 2: บันทึกการมาทำงาน (รายเดือน) ───────────────────── */
       doc.addPage();
       let y1 = 10;
-      doc.setFontSize(11); doc.setFont(undefined, 'bold');
+      doc.setFontSize(11); doc.setFont('Sarabun', 'bold');
       doc.text('บริษัท ไทยซัมมิทออโตพาร์ท จำกัด', 14, y1);
       doc.setFontSize(13);
       doc.text('บันทึกการมาทำงาน', 148, y1, { align: 'center' });
       y1 += 6;
-      doc.setFontSize(9); doc.setFont(undefined, 'normal');
+      doc.setFontSize(9); doc.setFont('Sarabun', 'normal');
       doc.text(`แผนก: ${deptLabel}`, 14, y1);
       doc.text(`เดือน ${m} ปี ${y + 543}   วันที่ ${dayFrom}-${dayTo}`, 148, y1, { align: 'center' });
 
@@ -457,8 +459,8 @@ export default function Checkin() {
 
       autoTable(doc, {
         head: attHead, body: attRows, startY: y1 + 4,
-        styles: { fontSize: 6.5, halign: 'center', cellPadding: 1 },
-        headStyles: { fillColor: [40, 60, 90], fontSize: 6.5 },
+        styles: { font: 'Sarabun', fontSize: 6.5, halign: 'center', cellPadding: 1 },
+        headStyles: { font: 'Sarabun', fillColor: [40, 60, 90], fontSize: 6.5 },
         columnStyles: { 2: { halign: 'left', cellWidth: 32 } },
         margin: { left: 14, right: 14 },
       });
