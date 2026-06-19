@@ -939,76 +939,6 @@ function FourMTab() {
     load();
   };
 
-  const [exporting, setExporting] = useState(false);
-
-  const handleExportPdf = async () => {
-    setExporting(true);
-    const allIds = [...new Set(logs.flatMap(l => [l.sv_approved_by, l.approved_by].filter(Boolean)))];
-    const { data: sigProfiles } = await supabase.from('profiles').select('id, full_name, signature_url').in('id', allIds.length ? allIds : ['__none__']);
-    const sigMap = {};
-    for (const p of (sigProfiles || [])) {
-      const sigUrl = p.signature_url ? await urlToDataUrl(p.signature_url) : null;
-      sigMap[p.id] = { name: p.full_name, sigUrl };
-    }
-
-    const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
-    const rowsHtml = logs.map((l, i) => {
-      const m = { Man: { icon: '👤', color: '#3b82f6' }, Machine: { icon: '⚙️', color: '#8b5cf6' }, Material: { icon: '📦', color: '#f59e0b' }, Method: { icon: '📋', color: '#22c55e' } }[l.category] || {};
-      const statusLabel = l.status === 'approved' ? '✅ Approved' : l.status === 'rejected' ? '❌ Rejected' : l.status === 'pending_qa' ? '🔍 รอ QA' : '⏳ Pending';
-      const svApprover  = l.sv_approved_by ? sigMap[l.sv_approved_by] : null;
-      const qaApprover  = l.approved_by    ? sigMap[l.approved_by]    : null;
-      const needsQA     = l.requires_qa !== false;
-      const dt = DAY_TYPE_META[getDayType(l.work_date)];
-      return `<tr>
-        <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;white-space:nowrap">${i+1}</td>
-        <td style="border:1px solid #ccc;padding:4px 6px;white-space:nowrap">${fmtDate(l.work_date)}</td>
-        <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;white-space:nowrap;color:${dt.color}">${dt.label}</td>
-        <td style="border:1px solid #ccc;padding:4px 6px">${l.line_name}</td>
-        <td style="border:1px solid #ccc;padding:4px 6px;color:${m.color || '#000'}">${l.category}</td>
-        <td style="border:1px solid #ccc;padding:4px 6px;font-size:11px">${l.description}</td>
-        <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;white-space:nowrap">${statusLabel}</td>
-        <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;min-width:80px">
-          ${svApprover?.sigUrl ? `<img src="${svApprover.sigUrl}" style="max-height:36px;max-width:72px;object-fit:contain"/>` : ''}
-          ${svApprover?.name ? `<div style="font-size:9px;color:#666;margin-top:2px">${svApprover.name}</div>` : ''}
-        </td>
-        <td style="border:1px solid #ccc;padding:4px 6px;text-align:center;min-width:80px">
-          ${!needsQA ? '<span style="color:#999;font-size:10px">-</span>' : qaApprover?.sigUrl ? `<img src="${qaApprover.sigUrl}" style="max-height:36px;max-width:72px;object-fit:contain"/>` : ''}
-          ${needsQA && qaApprover?.name ? `<div style="font-size:9px;color:#666;margin-top:2px">${qaApprover.name}</div>` : ''}
-        </td>
-      </tr>`;
-    }).join('');
-
-    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>4M Change Log</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
-  body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
-  table{border-collapse:collapse;width:100%}
-  @media print{@page{size:A4 landscape;margin:10mm}body{-webkit-print-color-adjust:exact}}
-</style></head><body style="padding:10mm">
-  <h2 style="margin:0 0 4px;font-size:16px">บันทึกการเปลี่ยนแปลง 4M</h2>
-  <p style="color:#666;margin:0 0 12px;font-size:10px">พิมพ์วันที่: ${todayStr} · รวม ${logs.length} รายการ</p>
-  <table>
-    <thead><tr style="background:#f3f4f6">
-      <th style="border:1px solid #ccc;padding:4px;text-align:center">#</th>
-      <th style="border:1px solid #ccc;padding:4px">วันที่</th>
-      <th style="border:1px solid #ccc;padding:4px">ประเภทวัน</th>
-      <th style="border:1px solid #ccc;padding:4px">ไลน์</th>
-      <th style="border:1px solid #ccc;padding:4px">ประเภท</th>
-      <th style="border:1px solid #ccc;padding:4px">รายละเอียด</th>
-      <th style="border:1px solid #ccc;padding:4px;text-align:center">สถานะ</th>
-      <th style="border:1px solid #ccc;padding:4px;text-align:center">ลายเซ็น SV</th>
-      <th style="border:1px solid #ccc;padding:4px;text-align:center">ลายเซ็น QA</th>
-    </tr></thead>
-    <tbody>${rowsHtml}</tbody>
-  </table>
-<script>window.onload = () => window.print();</script>
-</body></html>`;
-
-    const w = window.open('', '_blank');
-    w.document.write(html);
-    w.document.close();
-    setExporting(false);
-  };
 
   // ── Export "Changing Point Control Record" — ปฏิทินรายเดือน 11 หัวข้อ Man/Machine/Method/Material ──
   const handleExportChangePointPdf = async () => {
@@ -1021,18 +951,26 @@ function FourMTab() {
     const monthEnd   = `${cpcMonth}-${String(daysInMonth).padStart(2, '0')}`;
 
     const { data: monthLogs } = await supabase.from('four_m_logs')
-      .select('id, work_date, line_name, category, description, status, created_by, sv_approved_by, approved_by')
+      .select('id, work_date, line_name, category, description, status, created_at, created_by, sv_approved_by, approved_by')
       .eq('line_name', line).eq('status', 'approved')
       .gte('work_date', monthStart).lte('work_date', monthEnd);
 
-    // จัด log แต่ละตัวเข้า checklist item (keyword match) แล้วทำ map: itemId -> Set(day)
-    const dayMap = {}; // itemId -> { [day]: [logs] }
+    // กะถูก derive จากเวลาที่บันทึก (created_at) — ใช้กฎเดียวกับ getCurrentShift(): 08:00-19:59 = กะเช้า
+    const shiftOf = (l) => {
+      const h = l.created_at ? new Date(l.created_at).getHours() : 12;
+      return (h >= 8 && h < 20) ? 'day' : 'night';
+    };
+
+    // จัด log แต่ละตัวเข้า checklist item (keyword match) แล้วทำ map: itemId -> { day: { day: [...], night: [...] } }
+    const dayMap = {}; // itemId -> { [day]: { day: [logs], night: [logs] } }
     for (const l of (monthLogs || [])) {
       const item = matchChecklistItem(l);
       if (!item) continue;
       const day = parseInt(l.work_date.slice(8, 10));
+      const shift = shiftOf(l);
       (dayMap[item.id] ||= {});
-      (dayMap[item.id][day] ||= []).push(l);
+      (dayMap[item.id][day] ||= { day: [], night: [] });
+      dayMap[item.id][day][shift].push(l);
     }
 
     // ลายเซ็นผู้อนุมัติสำหรับตารางรายละเอียด
@@ -1044,15 +982,22 @@ function FourMTab() {
     }
 
     const thaiMonths = ['', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-    const beYear = y + 543;
     const todayDate = parseInt(today.slice(8, 10));
     const isCurrentMonth = today.slice(0, 7) === cpcMonth;
     const isFutureMonth = cpcMonth > today.slice(0, 7);
+
+    // แถวหัวตาราง 2 ชั้น: เลขวัน (colspan 2) แล้วแถวย่อย กะเช้า/กะดึก ต่อวัน
     const dayHeaderCells = Array.from({ length: daysInMonth }, (_, i) => {
       const d = i + 1;
       const dow = new Date(y, m - 1, d).getDay();
       const weekend = dow === 0 || dow === 6;
-      return `<th style="border:1px solid #999;padding:2px;font-size:8px;min-width:16px;${weekend ? 'background:#ddd' : ''}">${d}</th>`;
+      return `<th colspan="2" style="border:1px solid #999;padding:2px;font-size:8px;${weekend ? 'background:#ddd' : ''}">${d}</th>`;
+    }).join('');
+    const shiftHeaderCells = Array.from({ length: daysInMonth }, (_, i) => {
+      const d = i + 1;
+      const dow = new Date(y, m - 1, d).getDay();
+      const weekend = dow === 0 || dow === 6;
+      return `<th style="border:1px solid #999;padding:1px;font-size:7px;min-width:13px;${weekend ? 'background:#ddd' : ''}">เช้า</th><th style="border:1px solid #999;padding:1px;font-size:7px;min-width:13px;${weekend ? 'background:#ddd' : ''}">ดึก</th>`;
     }).join('');
 
     const gridRowsHtml = CHECKLIST_ITEMS.map((item, idx) => {
@@ -1063,10 +1008,12 @@ function FourMTab() {
         const d = i + 1;
         const dow = new Date(y, m - 1, d).getDay();
         const weekend = dow === 0 || dow === 6;
-        const hit = dayMap[item.id]?.[d];
         const isFuture = isFutureMonth || (isCurrentMonth && d > todayDate);
-        const mark = isFuture ? '' : (hit ? 'X' : 'O');
-        return `<td style="border:1px solid #999;text-align:center;font-size:9px;font-weight:700;${weekend ? 'background:#eee' : ''};${hit ? 'color:#d11;background:#fde2e2' : 'color:#333'}">${mark}</td>`;
+        return ['day', 'night'].map(shift => {
+          const hit = dayMap[item.id]?.[d]?.[shift]?.length > 0;
+          const mark = isFuture ? '' : (hit ? 'X' : 'O');
+          return `<td style="border:1px solid #999;text-align:center;font-size:9px;font-weight:700;${weekend ? 'background:#eee' : ''};${hit ? 'color:#d11;background:#fde2e2' : 'color:#333'}">${mark}</td>`;
+        }).join('');
       }).join('');
       return `<tr>
         ${isFirstOfCat ? `<td rowspan="${catRowSpan}" style="border:1px solid #999;background:${color};color:#fff;font-weight:700;text-align:center;font-size:10px;writing-mode:vertical-rl;padding:4px 2px">${item.category}</td>` : ''}
@@ -1079,11 +1026,13 @@ function FourMTab() {
     const detailLogs = (monthLogs || []).slice().sort((a, b) => a.work_date.localeCompare(b.work_date));
     const detailRowsHtml = detailLogs.map((l, i) => {
       const item = matchChecklistItem(l);
+      const shift = shiftOf(l);
       const svApprover = l.sv_approved_by ? sigMap[l.sv_approved_by] : null;
       const qaApprover = l.approved_by    ? sigMap[l.approved_by]    : null;
       return `<tr>
         <td style="border:1px solid #ccc;padding:3px 5px;text-align:center">${i + 1}</td>
         <td style="border:1px solid #ccc;padding:3px 5px;white-space:nowrap">${fmtDate(l.work_date)}</td>
+        <td style="border:1px solid #ccc;padding:3px 5px;text-align:center;white-space:nowrap">${shift === 'day' ? 'กะเช้า' : 'กะดึก'}</td>
         <td style="border:1px solid #ccc;padding:3px 5px;color:${CATEGORY_COLOR[l.category]}">${l.category}</td>
         <td style="border:1px solid #ccc;padding:3px 5px;font-size:9px">${item?.label || ''}</td>
         <td style="border:1px solid #ccc;padding:3px 5px;font-size:10px">${l.description}</td>
@@ -1098,7 +1047,9 @@ function FourMTab() {
       </tr>`;
     }).join('');
 
-    const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
+    // ใช้ปี ค.ศ. (Gregorian) เหมือนกับ fmtDate ที่ใช้ทั่วทั้งระบบ เพื่อไม่ให้ปีไม่ตรงกัน
+    const now = new Date();
+    const todayStr = `${now.getDate()} ${thaiMonths[now.getMonth() + 1]} ${now.getFullYear()}`;
     const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>Changing Point Control Record</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
@@ -1112,17 +1063,24 @@ function FourMTab() {
     </td>
     <td style="width:160px;border:1px solid #000;padding:4px;font-size:10px">
       <div>ไลน์: <b>${line}</b></div>
-      <div>เดือน: <b>${thaiMonths[m]} ${beYear}</b></div>
+      <div>เดือน: <b>${thaiMonths[m]} ${y}</b></div>
       <div>พิมพ์วันที่: ${todayStr}</div>
     </td>
   </tr></table>
 
   <table>
-    <thead><tr style="background:#f3f4f6">
-      <th style="border:1px solid #999"></th>
-      <th style="border:1px solid #999;padding:3px;font-size:9px">รายละเอียด (Detail)</th>
-      ${dayHeaderCells}
-    </tr></thead>
+    <thead>
+      <tr style="background:#f3f4f6">
+        <th style="border:1px solid #999"></th>
+        <th style="border:1px solid #999;padding:3px;font-size:9px">รายละเอียด (Detail)</th>
+        ${dayHeaderCells}
+      </tr>
+      <tr style="background:#f3f4f6">
+        <th style="border:1px solid #999"></th>
+        <th style="border:1px solid #999"></th>
+        ${shiftHeaderCells}
+      </tr>
+    </thead>
     <tbody>${gridRowsHtml}</tbody>
   </table>
 
@@ -1131,6 +1089,7 @@ function FourMTab() {
     <thead><tr style="background:#f3f4f6">
       <th style="border:1px solid #ccc;padding:3px">#</th>
       <th style="border:1px solid #ccc;padding:3px">วันที่</th>
+      <th style="border:1px solid #ccc;padding:3px">กะ</th>
       <th style="border:1px solid #ccc;padding:3px">4M</th>
       <th style="border:1px solid #ccc;padding:3px">หัวข้อ</th>
       <th style="border:1px solid #ccc;padding:3px">รายละเอียด</th>
@@ -1296,12 +1255,6 @@ function FourMTab() {
             ⏳ รอดำเนินการ {actionableCount} รายการ
           </span>
         )}
-        <button onClick={handleExportPdf} disabled={exporting || logs.length === 0}
-          style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)',
-            opacity: (exporting || logs.length === 0) ? 0.5 : 1 }}>
-          {exporting ? 'กำลังสร้าง...' : '🖨️ Export PDF'}
-        </button>
         <CsvBtn onClick={() => downloadCSV(
           `4m_changes_${from}_${to}.csv`,
           ['วันที่', 'ประเภทวัน', 'ไลน์', 'ประเภท', 'ประเภทย่อย', 'รายละเอียด', 'สถานะ', 'เวลาสร้าง'],
