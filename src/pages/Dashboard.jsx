@@ -854,6 +854,13 @@ export default function Dashboard() {
                     // ต่อคิวในแถวเดียวกัน + หลบเวลาพัก แล้วคืนตำแหน่งจริงพร้อม isDelayed ที่คำนวณจากเวลาจบ "จริง" หลังต่อคิว
                     // (ไม่ใช้ o.isDelayed ที่คำนวณแบบ naive จาก opened_at + cycle time เพราะการ์ดที่ถูกต่อคิวหรือเลื่อนหลบเบรค
                     //  จะมี orderEndMs เดิมที่ผ่านไปแล้วทั้งที่ยังไม่ถึงคิวจริง ทำให้ขึ้นแดงทั้งที่ยังไม่ถึงเวลา)
+                    // จัดกลุ่มการ์ดเป็น "รอบสแกน" ทุก 2 ชม. ตามเวลาเปิดจริง (ตายตัวทั้งกะเช้า/กะดึก)
+                    // เพื่อจำกัดผลของดีเลย์ให้อยู่แค่ในรอบของตัวเอง ไม่ลากคิวยาวไปทั้งกะ
+                    // (พนักงานสแกนปิดไม่เรียงเลขใบ แต่จะอยู่ในรอบเดียวกันเสมอ — ตัด FIFO ข้ามรอบออก)
+                    const ROUND_MS = 2 * 3600000;
+                    const roundIndexOf = (ms, half) => Math.floor((ms - half.startMs) / ROUND_MS);
+                    const roundStartOf = (idx, half) => half.startMs + idx * ROUND_MS;
+
                     const computeQueuedPositions = (cards, half) => {
                       const MIN_W_PCT = 1.5;
                       const breaks = getBreakIntervals(half);
@@ -861,7 +868,14 @@ export default function Dashboard() {
                         .filter(o => o.orderStartMs && o.orderEndMs && o.orderEndMs > half.startMs && o.orderStartMs < half.startMs + 12 * 3600000)
                         .sort((a, b) => a.orderStartMs - b.orderStartMs);
                       let queueEndMs = -Infinity;
+                      let curRoundIdx = null;
                       return sorted.map(o => {
+                        const roundIdx = roundIndexOf(o.orderStartMs, half);
+                        if (curRoundIdx === null || roundIdx !== curRoundIdx) {
+                          // ข้ามไปรอบใหม่ — เริ่มคิวใหม่จากต้นรอบเสมอ ไม่ลากดีเลย์ของรอบก่อนหน้ามาทับ
+                          curRoundIdx = roundIdx;
+                          queueEndMs = roundStartOf(roundIdx, half);
+                        }
                         const durationMs = Math.max(o.orderEndMs - o.orderStartMs, 0);
                         let startMs = Math.max(o.orderStartMs, queueEndMs);
                         let endMs = startMs + durationMs;
