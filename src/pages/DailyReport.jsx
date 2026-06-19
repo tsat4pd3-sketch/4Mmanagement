@@ -213,6 +213,11 @@ function LiveTab({ role }) {
 
     // Filter available lines for open-session form
     // Fetch sessions — filter by role
+    // หมายเหตุ: ไม่ filter section ที่ DB query เพราะ production_sessions.section เป็นค่าที่ copy ไว้ตอนเปิดกะ (denormalized)
+    // ถ้า production_lines.section เปลี่ยนทีหลัง หรือสะกด/เคสตัวอักษรต่างกันแม้แต่ตัวเดียว (เช่น "PD4" vs "Pd4 ")
+    // กะที่เปิดไว้จะหายไปจากสายตาหัวหน้างานทันทีแบบไม่มี error ให้เห็น — จึงเทียบแบบ normalize (trim+lowercase)
+    // และเทียบกับ section ปัจจุบันของไลน์ (lineMap) เป็นหลัก ไม่ใช่ค่าเก่าที่ค้างใน session
+    const normSection = (s) => (s || '').trim().toLowerCase();
     let sq = supabaseDR.from('production_sessions')
       .select('*, dr_products(name, cycle_time_sec, target_per_shift, process_type)')
       .in('status', ['open', 'pending_close'])
@@ -221,11 +226,15 @@ function LiveTab({ role }) {
     if (role === 'leader' && userLineId) {
       const myLine = (ln || []).find(l => l.id === userLineId);
       if (myLine) sq = sq.eq('line_name', myLine.name);
-    } else if (role === 'supervisor' && userSection) {
-      sq = sq.eq('section', userSection);
     }
 
-    const { data: ss } = await sq;
+    let { data: ss } = await sq;
+    if (role === 'supervisor' && userSection) {
+      ss = (ss || []).filter(s => {
+        const liveSection = lm[s.line_name]?.section;
+        return normSection(liveSection) === normSection(userSection) || normSection(s.section) === normSection(userSection);
+      });
+    }
 
     // Check overdue: open/pending_close sessions from previous dates
     const { data: overdue } = await supabaseDR.from('production_sessions')
@@ -234,7 +243,11 @@ function LiveTab({ role }) {
       .lt('work_date', today());
     setOverdueAlert((overdue || []).filter(o => {
       if (role === 'admin' || role === 'manager') return true;
-      if (role === 'supervisor') return !userSection || o.section === userSection;
+      if (role === 'supervisor') {
+        if (!userSection) return true;
+        const liveSection = lm[o.line_name]?.section;
+        return normSection(liveSection) === normSection(userSection) || normSection(o.section) === normSection(userSection);
+      }
       if (role === 'leader') {
         const myLine = (ln || []).find(l => l.id === userLineId);
         return myLine && o.line_name === myLine.name;
