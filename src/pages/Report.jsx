@@ -956,8 +956,10 @@ function FourMTab() {
       .gte('work_date', monthStart).lte('work_date', monthEnd);
 
     // กะถูก derive จากเวลาที่บันทึก (created_at) — ใช้กฎเดียวกับ getCurrentShift(): 08:00-19:59 = กะเช้า
+    // บังคับ timezone เป็น Asia/Bangkok เสมอ ไม่พึ่ง getHours() (ขึ้นกับ timezone ของเครื่อง ผิดได้ถ้าเครื่องตั้งเวลาไม่ตรง)
     const shiftOf = (l) => {
-      const h = l.created_at ? new Date(l.created_at).getHours() : 12;
+      if (!l.created_at) return 'day';
+      const h = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Bangkok', hour: 'numeric', hourCycle: 'h23' }).format(new Date(l.created_at)));
       return (h >= 8 && h < 20) ? 'day' : 'night';
     };
 
@@ -1047,9 +1049,10 @@ function FourMTab() {
       </tr>`;
     }).join('');
 
-    // ใช้ปี ค.ศ. (Gregorian) เหมือนกับ fmtDate ที่ใช้ทั่วทั้งระบบ เพื่อไม่ให้ปีไม่ตรงกัน
-    const now = new Date();
-    const todayStr = `${now.getDate()} ${thaiMonths[now.getMonth() + 1]} ${now.getFullYear()}`;
+    // ใช้ปี ค.ศ. (Gregorian) เหมือนกับ fmtDate ที่ใช้ทั่วทั้งระบบ + บังคับ timezone Asia/Bangkok เพื่อไม่ให้วันที่คลาดเคลื่อนตาม timezone เครื่อง
+    const nowParts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Bangkok', year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(new Date());
+    const nowMap = Object.fromEntries(nowParts.map(p => [p.type, p.value]));
+    const todayStr = `${nowMap.day} ${thaiMonths[Number(nowMap.month)]} ${nowMap.year}`;
     const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>Changing Point Control Record</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
