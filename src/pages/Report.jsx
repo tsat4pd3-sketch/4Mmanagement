@@ -1045,6 +1045,9 @@ function FourMTab() {
 
     const thaiMonths = ['', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
     const beYear = y + 543;
+    const todayDate = parseInt(today.slice(8, 10));
+    const isCurrentMonth = today.slice(0, 7) === cpcMonth;
+    const isFutureMonth = cpcMonth > today.slice(0, 7);
     const dayHeaderCells = Array.from({ length: daysInMonth }, (_, i) => {
       const d = i + 1;
       const dow = new Date(y, m - 1, d).getDay();
@@ -1061,7 +1064,9 @@ function FourMTab() {
         const dow = new Date(y, m - 1, d).getDay();
         const weekend = dow === 0 || dow === 6;
         const hit = dayMap[item.id]?.[d];
-        return `<td style="border:1px solid #999;text-align:center;font-size:9px;font-weight:700;${weekend ? 'background:#eee' : ''};${hit ? 'color:#d11;background:#fde2e2' : 'color:#333'}">${hit ? 'X' : 'O'}</td>`;
+        const isFuture = isFutureMonth || (isCurrentMonth && d > todayDate);
+        const mark = isFuture ? '' : (hit ? 'X' : 'O');
+        return `<td style="border:1px solid #999;text-align:center;font-size:9px;font-weight:700;${weekend ? 'background:#eee' : ''};${hit ? 'color:#d11;background:#fde2e2' : 'color:#333'}">${mark}</td>`;
       }).join('');
       return `<tr>
         ${isFirstOfCat ? `<td rowspan="${catRowSpan}" style="border:1px solid #999;background:${color};color:#fff;font-weight:700;text-align:center;font-size:10px;writing-mode:vertical-rl;padding:4px 2px">${item.category}</td>` : ''}
