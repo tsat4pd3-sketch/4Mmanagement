@@ -854,27 +854,32 @@ export default function Dashboard() {
                     // ต่อคิวในแถวเดียวกัน + หลบเวลาพัก แล้วคืนตำแหน่งจริงพร้อม isDelayed ที่คำนวณจากเวลาจบ "จริง" หลังต่อคิว
                     // (ไม่ใช้ o.isDelayed ที่คำนวณแบบ naive จาก opened_at + cycle time เพราะการ์ดที่ถูกต่อคิวหรือเลื่อนหลบเบรค
                     //  จะมี orderEndMs เดิมที่ผ่านไปแล้วทั้งที่ยังไม่ถึงคิวจริง ทำให้ขึ้นแดงทั้งที่ยังไม่ถึงเวลา)
-                    // จัดกลุ่มการ์ดเป็น "รอบสแกน" ทุก 2 ชม. ตามเวลาเปิดจริง (ตายตัวทั้งกะเช้า/กะดึก)
+                    // จัดกลุ่มการ์ดเป็น "รอบสแกน" ทุก 2 ชม. ตามเวลาเปิดจริง (ตายตัวทั้งกะเช้า/กะดึก) ต่อเนื่องตลอด 24 ชม.
                     // เพื่อจำกัดผลของดีเลย์ให้อยู่แค่ในรอบของตัวเอง ไม่ลากคิวยาวไปทั้งกะ
                     // (พนักงานสแกนปิดไม่เรียงเลขใบ แต่จะอยู่ในรอบเดียวกันเสมอ — ตัด FIFO ข้ามรอบออก)
                     const ROUND_MS = 2 * 3600000;
-                    const roundIndexOf = (ms, half) => Math.floor((ms - half.startMs) / ROUND_MS);
-                    const roundStartOf = (idx, half) => half.startMs + idx * ROUND_MS;
+                    const roundIndexOf = (ms) => Math.floor((ms - gridStartMs) / ROUND_MS);
+                    const roundStartOf = (idx) => gridStartMs + idx * ROUND_MS;
+                    const MIN_W_PCT = 1.5;
 
-                    const computeQueuedPositions = (cards, half) => {
-                      const MIN_W_PCT = 1.5;
-                      const breaks = getBreakIntervals(half);
+                    // รวมเวลาพักทั้งวัน (กะเช้า+กะดึก) เพื่อให้คิวต่อเนื่องข้ามกะได้ถ้าดีเลย์ล้นจากกะเช้าไปกะดึก
+                    const allBreaksOnce = () => [...getBreakIntervals(HALVES[0]), ...getBreakIntervals(HALVES[1])].sort((a, b) => a[0] - b[0]);
+
+                    // คำนวณคิวทั้งวัน (24 ชม.) ครั้งเดียวต่อแถว product แทนการตัดแยกทีละกะ
+                    // เพื่อให้การ์ดที่ดีเลย์ล้นข้ามกะ (เช่น ผลิตจากกะเช้าไปจบกะดึก) ต่อแถวเดิมได้ ไม่ถูกตัดทิ้งที่ขอบกะ
+                    const computeQueuedPositionsFull = (cards) => {
+                      const breaks = allBreaksOnce();
                       const sorted = cards
-                        .filter(o => o.orderStartMs && o.orderEndMs && o.orderEndMs > half.startMs && o.orderStartMs < half.startMs + 12 * 3600000)
+                        .filter(o => o.orderStartMs && o.orderEndMs)
                         .sort((a, b) => a.orderStartMs - b.orderStartMs);
                       let queueEndMs = -Infinity;
                       let curRoundIdx = null;
                       return sorted.map(o => {
-                        const roundIdx = roundIndexOf(o.orderStartMs, half);
+                        const roundIdx = roundIndexOf(o.orderStartMs);
                         if (curRoundIdx === null || roundIdx !== curRoundIdx) {
                           // ข้ามไปรอบใหม่ — เริ่มคิวใหม่จากต้นรอบเสมอ ไม่ลากดีเลย์ของรอบก่อนหน้ามาทับ
                           curRoundIdx = roundIdx;
-                          queueEndMs = roundStartOf(roundIdx, half);
+                          queueEndMs = roundStartOf(roundIdx);
                         }
                         const durationMs = Math.max(o.orderEndMs - o.orderStartMs, 0);
                         let startMs = Math.max(o.orderStartMs, queueEndMs);
@@ -890,33 +895,49 @@ export default function Dashboard() {
                             }
                           }
                         }
+                        // เสร็จแล้วแต่ปิดจบช้ากว่าคิวที่ควรจะเสร็จ — ไม่ควรเขียวเหมือนผลิตจบปกติ (เทียบกับ endMs ก่อนปรับ)
+                        const isLateDone = o.isDone && !!o.confirmed_at && new Date(o.confirmed_at).getTime() > endMs;
+                        // ใบที่ปิดงานแล้วต้องไม่ถูกวาดไปอยู่ "อนาคต" เกินเวลาที่ปิดจริง แม้คิวจะดันมาช้าเพราะใบก่อนหน้ายังไม่ปิด
+                        // เพราะความจริงใบนี้ปิดไปแล้วแน่นอนตาม confirmed_at — ใช้เวลาปิดจริงเป็นหลักเสมอ
+                        if (o.isDone && o.confirmed_at) {
+                          const confMs = new Date(o.confirmed_at).getTime();
+                          if (endMs > confMs) {
+                            endMs = confMs;
+                            startMs = Math.max(o.orderStartMs, endMs - durationMs);
+                          }
+                        }
                         // เวลาที่ "ครองไลน์" จริง สำหรับผลักคิวถัดไป (ไม่ใช่แค่เวลาจบตามแผน):
-                        // - ถ้าปิดงานแล้ว ใช้เวลาปิดจริง (confirmed_at) เผื่อพนักงานสแกนปิดช้ากว่าแผน
+                        // - ถ้าปิดงานแล้ว ใช้เวลาปิดจริง (confirmed_at) เสมอ
                         // - ถ้ายังไม่ปิดแต่เลยกำหนดจบไปแล้ว ถือว่ายังครองไลน์อยู่จนถึงเวลาปัจจุบัน
-                        // ผลคือถ้าใบไหนดีเลย์ ใบถัดไปในคิวจะถูกดันออกไปต่อท้ายเสมอ ไม่ทับซ้อนกันจนดูมั่ว
-                        // แม้พนักงานจะสแกนปิดไม่เรียงลำดับกับตอนเปิดก็ตาม
                         let occupiedEndMs = endMs;
                         if (o.isDone && o.confirmed_at) {
-                          occupiedEndMs = Math.max(endMs, new Date(o.confirmed_at).getTime());
+                          occupiedEndMs = new Date(o.confirmed_at).getTime();
                         } else if (!o.isDone && !o.isCarry && nowMs > endMs) {
                           occupiedEndMs = nowMs;
                         }
                         queueEndMs = occupiedEndMs;
-                        const leftPct = Math.max(0, (startMs - half.startMs) * pctPerMs);
-                        // เสร็จแล้วแต่ปิดจบช้ากว่าคิวที่ควรจะเสร็จ — ไม่ควรเขียวเหมือนผลิตจบปกติ
-                        const isLateDone = o.isDone && !!o.confirmed_at && new Date(o.confirmed_at).getTime() > endMs;
-                        // ใบที่ปิดช้า (isLateDone) รู้เวลาจริงที่ใช้แน่นอนแล้ว (confirmed_at) จึงวาดกล่องให้กว้างเท่าเวลาที่ใช้จริงไปเลย
-                        // ส่วนใบที่ยังไม่ปิด (isDelayed) เวลาจริงยังไม่แน่นอน จึงวาดกล่องตามแผนแล้วต่อหางเงาแยกแทน
-                        const rightPct = Math.min(100, ((isLateDone ? occupiedEndMs : endMs) - half.startMs) * pctPerMs);
-                        const widthPct = Math.max(MIN_W_PCT, rightPct - leftPct);
                         const isDelayed = !o.isDone && !o.isCarry && endMs < nowMs;
-                        // หางเงาสีแดงต่อท้ายกล่องจริง แสดงว่าใบนี้ยังครองไลน์อยู่ (ยังไม่ปิด) ตั้งแต่เลยกำหนดจนถึงตอนนี้
-                        // เพื่อให้เห็นว่าทำไมใบถัดไปในคิวถึงถูกดันไปต่อท้าย ไม่ใช่ว่าหายไปเฉย ๆ
-                        const tailLeftPct  = isDelayed ? rightPct : 0;
-                        const tailRightPct = isDelayed ? Math.min(100, (occupiedEndMs - half.startMs) * pctPerMs) : 0;
-                        const tailWidthPct = isDelayed ? Math.max(0, tailRightPct - tailLeftPct) : 0;
-                        return { o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: endMs, isDelayed, isLateDone };
+                        return { o, startMs, endMs, occupiedEndMs, isDelayed, isLateDone };
                       });
+                    };
+
+                    // ตัดผลคิวทั้งวัน (ms จริง) มาเป็น % สำหรับ "กะ" หนึ่ง ๆ — การ์ดเดียวกันแสดงต่อกันได้ทั้ง 2 กะ
+                    // ถ้าดีเลย์ล้นข้ามขอบกะ (เช่น ผลิตเลย 20:00) แทนที่จะถูกตัดทิ้งที่ขอบ
+                    const pctForHalf = (item, half) => {
+                      const hs = half.startMs, he = half.startMs + 12 * 3600000;
+                      const rightMs = item.isLateDone ? item.occupiedEndMs : item.endMs;
+                      if (rightMs <= hs || item.startMs >= he) return null; // ไม่อยู่ในกะนี้เลย
+                      const leftPct = Math.max(0, (item.startMs - hs) * pctPerMs);
+                      const rightPct = Math.max(0, Math.min(100, (rightMs - hs) * pctPerMs));
+                      const widthPct = Math.max(MIN_W_PCT, rightPct - leftPct);
+                      let tailLeftPct = 0, tailWidthPct = 0;
+                      if (item.isDelayed && item.occupiedEndMs > rightMs) {
+                        const tLeft  = Math.max(0, Math.min(100, (rightMs - hs) * pctPerMs));
+                        const tRight = Math.max(0, Math.min(100, (item.occupiedEndMs - hs) * pctPerMs));
+                        tailLeftPct = tLeft;
+                        tailWidthPct = Math.max(0, tRight - tLeft);
+                      }
+                      return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone };
                     };
 
                     // เรียงตามเวลาเริ่มจริง แล้วต่อคิวในแถวเดียวกัน (ไม่สร้างแถวใหม่) — แต่ละการ์ดเริ่มได้ไม่ก่อนการ์ดก่อนหน้าสิ้นสุด
@@ -966,7 +987,7 @@ export default function Dashboard() {
                             });
                         })()}
                         {(() => {
-                          const positioned = computeQueuedPositions(cards, half);
+                          const positioned = computeQueuedPositionsFull(cards).map(item => pctForHalf(item, half)).filter(Boolean);
                           return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone }, oi) => {
                           if (leftPct >= 100) return null;
                           const statusColor = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
@@ -1022,11 +1043,10 @@ export default function Dashboard() {
                       <div key={half.key} style={{ borderTop: half.key === 'pm' ? '2px solid var(--border2)' : 'none' }}>
                         {hourHeader(half.hours, half.startMs)}
                         {productRows.map((row, ri) => {
-                          const cards = row.cards.filter(c => c.orderEndMs > half.startMs && c.orderStartMs < half.startMs + 12 * 3600000);
                           const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
                           const rowDemand = row.cards.reduce((a, c) => a + (c.qty || 0), 0);
                           const doneCount = row.cards.filter(c => c.isDone).length;
-                          const delayed   = computeQueuedPositions(cards, half).filter(p => p.isDelayed).length;
+                          const delayed   = computeQueuedPositionsFull(row.cards).map(item => pctForHalf(item, half)).filter(p => p && p.isDelayed).length;
                           const isOpen    = row.cards.some(c => c.sessionOpen);
                           const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
                           const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
@@ -1049,7 +1069,7 @@ export default function Dashboard() {
                                 </div>
                                 </div>
                               </div>
-                              {renderTimeline(cards, half, `${half.key}-${ri}`)}
+                              {renderTimeline(row.cards, half, `${half.key}-${ri}`)}
                             </div>
                           );
                         })}
