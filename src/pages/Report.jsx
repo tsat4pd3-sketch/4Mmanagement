@@ -983,45 +983,55 @@ function FourMTab() {
       sigMap[p.id] = { name: p.full_name, sigUrl: p.signature_url ? await urlToDataUrl(p.signature_url) : null };
     }
 
+    // เอกสารควบคุม (เลขฟอร์ม/revision/effective date/legend/ผู้ออก-อนุมัติเอกสาร) — มาจาก document_controls
+    // ถ้ายังไม่มีตาราง/ยังไม่ตั้งค่า ให้ fallback เป็นค่าว่าง ไม่ให้ export ล้ม
+    let docCtrl = null;
+    try {
+      const { data } = await supabase.from('document_controls')
+        .select('doc_no, revision, effective_date, legend, issued:issued_by(full_name, signature_url), approved:approved_by(full_name, signature_url)')
+        .eq('doc_key', 'changing_point_control').maybeSingle();
+      docCtrl = data;
+    } catch { /* ตาราง document_controls อาจยังไม่ถูกสร้าง */ }
+    const issuedSig   = docCtrl?.issued?.signature_url   ? await urlToDataUrl(docCtrl.issued.signature_url)   : null;
+    const approvedSig = docCtrl?.approved?.signature_url ? await urlToDataUrl(docCtrl.approved.signature_url) : null;
+    const logoDataUrl = await getTsLogoDataUrl();
+
+    const lineSection = lines.find(li => li.name === line)?.section || '';
+
     const thaiMonths = ['', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
     const todayDate = parseInt(today.slice(8, 10));
     const isCurrentMonth = today.slice(0, 7) === cpcMonth;
     const isFutureMonth = cpcMonth > today.slice(0, 7);
 
-    // แถวหัวตาราง 2 ชั้น: เลขวัน (colspan 2) แล้วแถวย่อย กะเช้า/กะดึก ต่อวัน
     const dayHeaderCells = Array.from({ length: daysInMonth }, (_, i) => {
       const d = i + 1;
       const dow = new Date(y, m - 1, d).getDay();
       const weekend = dow === 0 || dow === 6;
-      return `<th colspan="2" style="border:1px solid #999;padding:2px;font-size:8px;${weekend ? 'background:#ddd' : ''}">${d}</th>`;
-    }).join('');
-    const shiftHeaderCells = Array.from({ length: daysInMonth }, (_, i) => {
-      const d = i + 1;
-      const dow = new Date(y, m - 1, d).getDay();
-      const weekend = dow === 0 || dow === 6;
-      return `<th style="border:1px solid #999;padding:1px;font-size:7px;min-width:13px;${weekend ? 'background:#ddd' : ''}">เช้า</th><th style="border:1px solid #999;padding:1px;font-size:7px;min-width:13px;${weekend ? 'background:#ddd' : ''}">ดึก</th>`;
+      return `<th style="border:1px solid #999;padding:2px;font-size:8px;min-width:15px;${weekend ? 'background:#ddd' : ''}">${d}</th>`;
     }).join('');
 
-    const gridRowsHtml = CHECKLIST_ITEMS.map((item, idx) => {
+    // แยก Day/Night เป็นแถว (ไม่ใช่คอลัมน์) — แต่ละ checklist item จะมี 2 แถว: กะเช้า / กะดึก
+    const gridRowsHtml = CHECKLIST_ITEMS.flatMap((item, idx) => {
       const color = CATEGORY_COLOR[item.category];
       const isFirstOfCat = idx === 0 || CHECKLIST_ITEMS[idx - 1].category !== item.category;
-      const catRowSpan = CHECKLIST_ITEMS.filter(it => it.category === item.category).length;
-      const cells = Array.from({ length: daysInMonth }, (_, i) => {
-        const d = i + 1;
-        const dow = new Date(y, m - 1, d).getDay();
-        const weekend = dow === 0 || dow === 6;
-        const isFuture = isFutureMonth || (isCurrentMonth && d > todayDate);
-        return ['day', 'night'].map(shift => {
+      const catRowSpan = CHECKLIST_ITEMS.filter(it => it.category === item.category).length * 2;
+      return ['day', 'night'].map((shift, shiftIdx) => {
+        const cells = Array.from({ length: daysInMonth }, (_, i) => {
+          const d = i + 1;
+          const dow = new Date(y, m - 1, d).getDay();
+          const weekend = dow === 0 || dow === 6;
+          const isFuture = isFutureMonth || (isCurrentMonth && d > todayDate);
           const hit = dayMap[item.id]?.[d]?.[shift]?.length > 0;
           const mark = isFuture ? '' : (hit ? 'X' : 'O');
           return `<td style="border:1px solid #999;text-align:center;font-size:9px;font-weight:700;${weekend ? 'background:#eee' : ''};${hit ? 'color:#d11;background:#fde2e2' : 'color:#333'}">${mark}</td>`;
         }).join('');
-      }).join('');
-      return `<tr>
-        ${isFirstOfCat ? `<td rowspan="${catRowSpan}" style="border:1px solid #999;background:${color};color:#fff;font-weight:700;text-align:center;font-size:10px;writing-mode:vertical-rl;padding:4px 2px">${item.category}</td>` : ''}
-        <td style="border:1px solid #999;padding:3px 6px;font-size:9px;white-space:nowrap">${item.label}</td>
-        ${cells}
-      </tr>`;
+        return `<tr>
+          ${(isFirstOfCat && shiftIdx === 0) ? `<td rowspan="${catRowSpan}" style="border:1px solid #999;background:${color};color:#fff;font-weight:700;text-align:center;font-size:10px;writing-mode:vertical-rl;padding:4px 2px">${item.category}</td>` : ''}
+          ${shiftIdx === 0 ? `<td rowspan="2" style="border:1px solid #999;padding:3px 6px;font-size:9px;white-space:nowrap">${item.label}</td>` : ''}
+          <td style="border:1px solid #999;padding:2px 5px;font-size:8px;white-space:nowrap;background:#f8f8f8">${shift === 'day' ? 'กะเช้า' : 'กะดึก'}</td>
+          ${cells}
+        </tr>`;
+      });
     }).join('');
 
     // ตารางรายละเอียด: เฉพาะวันที่มี log (X) เรียงตามวันที่
@@ -1053,6 +1063,11 @@ function FourMTab() {
     const nowParts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Bangkok', year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(new Date());
     const nowMap = Object.fromEntries(nowParts.map(p => [p.type, p.value]));
     const todayStr = `${nowMap.day} ${thaiMonths[Number(nowMap.month)]} ${nowMap.year}`;
+    const docNo = docCtrl?.doc_no || '-';
+    const revision = docCtrl?.revision || '0';
+    const effectiveDateStr = docCtrl?.effective_date ? fmtDate(docCtrl.effective_date) : '-';
+    const legendText = docCtrl?.legend || 'O = ไม่มีการเปลี่ยนแปลง   X = มีการเปลี่ยนแปลง (4M)';
+
     const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>Changing Point Control Record</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
@@ -1061,11 +1076,18 @@ function FourMTab() {
   @media print{@page{size:A3 landscape;margin:8mm}body{-webkit-print-color-adjust:exact}}
 </style></head><body style="padding:8mm">
   <table style="margin-bottom:8px"><tr>
+    <td style="width:90px;border:1px solid #000;padding:4px;text-align:center;vertical-align:middle">
+      ${logoDataUrl ? `<img src="${logoDataUrl}" style="max-width:80px;max-height:50px;object-fit:contain"/>` : ''}
+    </td>
     <td style="background:#fde047;padding:8px;text-align:center;font-weight:700;font-size:14px;border:1px solid #000">
       ใบบันทึกการเปลี่ยนแปลง<br/><span style="font-size:11px">Changing Point Control Record</span>
     </td>
-    <td style="width:160px;border:1px solid #000;padding:4px;font-size:10px">
-      <div>ไลน์: <b>${line}</b></div>
+    <td style="width:170px;border:1px solid #000;padding:4px;font-size:10px">
+      <div>ส่วน (Section): <b>${lineSection}</b></div>
+      <div>แผนก (Department): <b>${lineSection}</b></div>
+      <div>ไลน์ (Line): <b>${line}</b></div>
+    </td>
+    <td style="width:140px;border:1px solid #000;padding:4px;font-size:10px">
       <div>เดือน: <b>${thaiMonths[m]} ${y}</b></div>
       <div>พิมพ์วันที่: ${todayStr}</div>
     </td>
@@ -1076,16 +1098,21 @@ function FourMTab() {
       <tr style="background:#f3f4f6">
         <th style="border:1px solid #999"></th>
         <th style="border:1px solid #999;padding:3px;font-size:9px">รายละเอียด (Detail)</th>
+        <th style="border:1px solid #999;padding:3px;font-size:8px">กะ</th>
         ${dayHeaderCells}
-      </tr>
-      <tr style="background:#f3f4f6">
-        <th style="border:1px solid #999"></th>
-        <th style="border:1px solid #999"></th>
-        ${shiftHeaderCells}
       </tr>
     </thead>
     <tbody>${gridRowsHtml}</tbody>
   </table>
+
+  <table style="margin-top:6px"><tr>
+    <td style="border:1px solid #999;padding:5px;font-size:9px;width:55%">
+      <b>Legend:</b> ${legendText}
+    </td>
+    <td style="border:1px solid #999;padding:5px;font-size:9px">
+      <b>Revision:</b> ${revision}
+    </td>
+  </tr></table>
 
   <h3 style="margin:14px 0 4px;font-size:12px">รายละเอียดการเปลี่ยนแปลง (X) ในเดือนนี้ — รวม ${detailLogs.length} รายการ</h3>
   <table>
@@ -1101,6 +1128,25 @@ function FourMTab() {
     </tr></thead>
     <tbody>${detailRowsHtml}</tbody>
   </table>
+
+  <table style="margin-top:14px"><tr>
+    <td style="border:1px solid #000;padding:6px;width:25%;font-size:9px">
+      <div>เอกสารเลขที่ (Doc. No.): <b>${docNo}</b></div>
+    </td>
+    <td style="border:1px solid #000;padding:6px;width:25%;text-align:center;font-size:9px">
+      <div>จัดทำโดย (Issued by)</div>
+      ${issuedSig ? `<img src="${issuedSig}" style="max-height:32px;max-width:70px;object-fit:contain"/>` : '<div style="height:32px"></div>'}
+      <div>${docCtrl?.issued?.full_name || '-'}</div>
+    </td>
+    <td style="border:1px solid #000;padding:6px;width:25%;text-align:center;font-size:9px">
+      <div>อนุมัติโดย (Approved by)</div>
+      ${approvedSig ? `<img src="${approvedSig}" style="max-height:32px;max-width:70px;object-fit:contain"/>` : '<div style="height:32px"></div>'}
+      <div>${docCtrl?.approved?.full_name || '-'}</div>
+    </td>
+    <td style="border:1px solid #000;padding:6px;width:25%;font-size:9px">
+      <div>วันที่มีผลบังคับใช้ (Effective Date): <b>${effectiveDateStr}</b></div>
+    </td>
+  </tr></table>
 <script>window.onload = () => window.print();</script>
 </body></html>`;
 
