@@ -164,9 +164,6 @@ function LiveTab({ role }) {
   const [closeProdNo, setCloseProdNo]     = useState('');
   const [closeMatch, setCloseMatch]       = useState(null);
   const [savingProdClose, setSavingProdClose] = useState(false);
-  // คำเตือนปิดข้ามคิว — ใบที่เปิดก่อนหน้ายังไม่ปิด แล้วพนักงานสแกนปิดใบหลังก่อน
-  const [outOfOrderWarning, setOutOfOrderWarning] = useState(null); // { match, earlierOpens }
-
   // Defect log
   const [defectTypes, setDefectTypes]   = useState([]);
   const [defectLogs, setDefectLogs]     = useState([]);
@@ -603,11 +600,9 @@ function LiveTab({ role }) {
     }
   };
 
-  // ใบที่เปิดก่อนหน้า match แต่ยังไม่ปิด (status ยังเป็น open) — ไลน์ผลิตได้ทีละใบ
-  // ถ้ายังมีใบแบบนี้อยู่ แสดงว่าพนักงานสแกนปิดข้ามคิว ลำดับเปิด/ปิดจะไม่ตรงกันและ Dashboard จะแสดงผลมั่ว
-  const findEarlierOpenOrders = (match) =>
-    prodOrders.filter(o => o.status === 'open' && o.id !== match.id && o.opened_at && new Date(o.opened_at) < new Date(match.opened_at));
-
+  // หมายเหตุ: เคยมี guard เตือน "ปิดข้ามคิว" ถ้าใบที่เปิดก่อนหน้ายังไม่ปิด แต่ตัดออกแล้ว
+  // เพราะพนักงานมองงานเป็น lot/batch ไม่ได้ไล่ปิดทีละใบตามเลขที่เปิด — เปลี่ยนไปใช้การจัดกลุ่มเป็น "รอบ" (ทุก 2 ชม.)
+  // ในการแสดงผลที่ Dashboard แทน ไม่บังคับลำดับปิดในระดับใบย่อยอีกต่อไป
   const doConfirmCloseOrder = async (match) => {
     setSavingProdClose(true);
     const { error } = await supabaseDR.from('prod_orders').update({
@@ -621,36 +616,18 @@ function LiveTab({ role }) {
     toast.success(`ปิด Order ${match.prod_no} · ${match.qty} ชิ้น ✓`);
     setCloseProdNo('');
     setCloseMatch(null);
-    setOutOfOrderWarning(null);
     loadProdOrders(selSession.id, selSession.line_name);
     setTimeout(() => closeProdInputRef.current?.focus(), 80);
   };
 
   const handleScanCloseImmediate = async (match) => {
     if (!match) return;
-    const earlierOpens = findEarlierOpenOrders(match);
-    if (earlierOpens.length > 0) {
-      setOutOfOrderWarning({ match, earlierOpens });
-      setCloseProdNo('');
-      return;
-    }
     await doConfirmCloseOrder(match);
   };
 
   const handleScanClose = async () => {
     if (!closeMatch) { toast.error('ไม่พบ PROD.NO นี้ หรือปิดไปแล้ว'); return; }
-    const earlierOpens = findEarlierOpenOrders(closeMatch);
-    if (earlierOpens.length > 0) {
-      setOutOfOrderWarning({ match: closeMatch, earlierOpens });
-      return;
-    }
     await doConfirmCloseOrder(closeMatch);
-  };
-
-  // พนักงานยืนยันว่าจะปิดข้ามคิวจริง (เช่น มีการสลับงานจริงหน้าไลน์) — บันทึกตามที่สแกน
-  const handleConfirmOutOfOrderClose = () => {
-    if (!outOfOrderWarning) return;
-    doConfirmCloseOrder(outOfOrderWarning.match);
   };
 
   // ── บันทึกงานเสีย handler ──────────────────────────────────────
@@ -1591,42 +1568,6 @@ function LiveTab({ role }) {
               <button onClick={() => setOverflowInfo(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>
                 ยกเลิก
               </button>
-            </div>
-          </div>
-        )}
-
-        {/* ── OUT-OF-ORDER CLOSE warning modal ────────────────── */}
-        {outOfOrderWarning && (
-          <div className="overlay" style={{ zIndex: 2100 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.5)', borderRadius: 14, padding: 28, width: 'min(95vw,440px)', display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: '#ef4444' }}>⚠️ ปิดข้ามคิว</div>
-              <div style={{ fontSize: 13, color: 'var(--text)' }}>
-                กำลังจะปิด <b>{outOfOrderWarning.match.prod_no}</b> แต่ใบที่เปิดก่อนหน้ายังไม่ปิด:
-              </div>
-              <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 160, overflowY: 'auto' }}>
-                {outOfOrderWarning.earlierOpens.map(o => (
-                  <div key={o.id} style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>
-                    {o.prod_no} · {o.qty} ชิ้น · เปิด {fmtTime(new Date(o.opened_at))}
-                  </div>
-                ))}
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                ไลน์ผลิตได้ทีละใบ ถ้าปิดข้ามคิว ลำดับเปิด-ปิดจะไม่ตรงกัน และ Dashboard จะแสดงสถานะการ์ดไม่ตรงกับความเป็นจริง
-                แนะนำให้สแกนปิดใบที่เปิดก่อนให้ครบก่อน เว้นแต่หน้าไลน์สลับงานจริงตามนี้
-              </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button
-                  onClick={handleConfirmOutOfOrderClose}
-                  disabled={savingProdClose}
-                  style={{ flex: 1, padding: '12px 8px', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-                  ⚡ ปิดข้ามคิวจริง (ยืนยัน)
-                </button>
-                <button
-                  onClick={() => { setOutOfOrderWarning(null); setTimeout(() => closeProdInputRef.current?.focus(), 80); }}
-                  style={{ flex: 1, padding: '12px 8px', borderRadius: 10, border: '2px solid rgba(77,159,255,0.5)', background: 'rgba(77,159,255,0.1)', color: '#4d9fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-                  ยกเลิก ไปปิดใบก่อนหน้าก่อน
-                </button>
-              </div>
             </div>
           </div>
         )}
