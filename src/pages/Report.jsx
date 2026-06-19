@@ -9,6 +9,7 @@ import {
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 import { loadCompanyCalendar, getDayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import tsLogoUrl from '../assets/TS logo.png';
+import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/changePointChecklist';
 
 let tsLogoDataUrlPromise = null;
 function getTsLogoDataUrl() {
@@ -837,6 +838,8 @@ function FourMTab() {
   const [qaImageFile,     setQaImageFile]     = useState(null);
   const [qaImagePreview,  setQaImagePreview]  = useState(null);
   const [isApprovingSaving, setIsApprovingSaving] = useState(false);
+  const [cpcMonth, setCpcMonth] = useState(today.slice(0, 7)); // YYYY-MM สำหรับ Export Changing Point Control
+  const [cpcExporting, setCpcExporting] = useState(false);
   const [imageViewModal, setImageViewModal] = useState(null); // { url, title }
 
   useEffect(() => {
@@ -1007,6 +1010,139 @@ function FourMTab() {
     setExporting(false);
   };
 
+  // ── Export "Changing Point Control Record" — ปฏิทินรายเดือน 11 หัวข้อ Man/Machine/Method/Material ──
+  const handleExportChangePointPdf = async () => {
+    if (!line) { toast.error('เลือกไลน์ก่อน'); return; }
+    setCpcExporting(true);
+    const [yStr, mStr] = cpcMonth.split('-');
+    const y = parseInt(yStr), m = parseInt(mStr); // m: 1-12
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const monthStart = `${cpcMonth}-01`;
+    const monthEnd   = `${cpcMonth}-${String(daysInMonth).padStart(2, '0')}`;
+
+    const { data: monthLogs } = await supabase.from('four_m_logs')
+      .select('id, work_date, line_name, category, description, status, created_by, sv_approved_by, approved_by')
+      .eq('line_name', line).eq('status', 'approved')
+      .gte('work_date', monthStart).lte('work_date', monthEnd);
+
+    // จัด log แต่ละตัวเข้า checklist item (keyword match) แล้วทำ map: itemId -> Set(day)
+    const dayMap = {}; // itemId -> { [day]: [logs] }
+    for (const l of (monthLogs || [])) {
+      const item = matchChecklistItem(l);
+      if (!item) continue;
+      const day = parseInt(l.work_date.slice(8, 10));
+      (dayMap[item.id] ||= {});
+      (dayMap[item.id][day] ||= []).push(l);
+    }
+
+    // ลายเซ็นผู้อนุมัติสำหรับตารางรายละเอียด
+    const allIds = [...new Set((monthLogs || []).flatMap(l => [l.sv_approved_by, l.approved_by].filter(Boolean)))];
+    const { data: sigProfiles } = await supabase.from('profiles').select('id, full_name, signature_url').in('id', allIds.length ? allIds : ['__none__']);
+    const sigMap = {};
+    for (const p of (sigProfiles || [])) {
+      sigMap[p.id] = { name: p.full_name, sigUrl: p.signature_url ? await urlToDataUrl(p.signature_url) : null };
+    }
+
+    const thaiMonths = ['', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+    const beYear = y + 543;
+    const dayHeaderCells = Array.from({ length: daysInMonth }, (_, i) => {
+      const d = i + 1;
+      const dow = new Date(y, m - 1, d).getDay();
+      const weekend = dow === 0 || dow === 6;
+      return `<th style="border:1px solid #999;padding:2px;font-size:8px;min-width:16px;${weekend ? 'background:#ddd' : ''}">${d}</th>`;
+    }).join('');
+
+    const gridRowsHtml = CHECKLIST_ITEMS.map((item, idx) => {
+      const color = CATEGORY_COLOR[item.category];
+      const isFirstOfCat = idx === 0 || CHECKLIST_ITEMS[idx - 1].category !== item.category;
+      const catRowSpan = CHECKLIST_ITEMS.filter(it => it.category === item.category).length;
+      const cells = Array.from({ length: daysInMonth }, (_, i) => {
+        const d = i + 1;
+        const dow = new Date(y, m - 1, d).getDay();
+        const weekend = dow === 0 || dow === 6;
+        const hit = dayMap[item.id]?.[d];
+        return `<td style="border:1px solid #999;text-align:center;font-size:9px;font-weight:700;${weekend ? 'background:#eee' : ''};${hit ? 'color:#d11;background:#fde2e2' : 'color:#333'}">${hit ? 'X' : 'O'}</td>`;
+      }).join('');
+      return `<tr>
+        ${isFirstOfCat ? `<td rowspan="${catRowSpan}" style="border:1px solid #999;background:${color};color:#fff;font-weight:700;text-align:center;font-size:10px;writing-mode:vertical-rl;padding:4px 2px">${item.category}</td>` : ''}
+        <td style="border:1px solid #999;padding:3px 6px;font-size:9px;white-space:nowrap">${item.label}</td>
+        ${cells}
+      </tr>`;
+    }).join('');
+
+    // ตารางรายละเอียด: เฉพาะวันที่มี log (X) เรียงตามวันที่
+    const detailLogs = (monthLogs || []).slice().sort((a, b) => a.work_date.localeCompare(b.work_date));
+    const detailRowsHtml = detailLogs.map((l, i) => {
+      const item = matchChecklistItem(l);
+      const svApprover = l.sv_approved_by ? sigMap[l.sv_approved_by] : null;
+      const qaApprover = l.approved_by    ? sigMap[l.approved_by]    : null;
+      return `<tr>
+        <td style="border:1px solid #ccc;padding:3px 5px;text-align:center">${i + 1}</td>
+        <td style="border:1px solid #ccc;padding:3px 5px;white-space:nowrap">${fmtDate(l.work_date)}</td>
+        <td style="border:1px solid #ccc;padding:3px 5px;color:${CATEGORY_COLOR[l.category]}">${l.category}</td>
+        <td style="border:1px solid #ccc;padding:3px 5px;font-size:9px">${item?.label || ''}</td>
+        <td style="border:1px solid #ccc;padding:3px 5px;font-size:10px">${l.description}</td>
+        <td style="border:1px solid #ccc;padding:3px 5px;text-align:center;min-width:70px">
+          ${svApprover?.sigUrl ? `<img src="${svApprover.sigUrl}" style="max-height:30px;max-width:60px;object-fit:contain"/>` : ''}
+          ${svApprover?.name ? `<div style="font-size:8px;color:#666">${svApprover.name}</div>` : ''}
+        </td>
+        <td style="border:1px solid #ccc;padding:3px 5px;text-align:center;min-width:70px">
+          ${qaApprover?.sigUrl ? `<img src="${qaApprover.sigUrl}" style="max-height:30px;max-width:60px;object-fit:contain"/>` : ''}
+          ${qaApprover?.name ? `<div style="font-size:8px;color:#666">${qaApprover.name}</div>` : ''}
+        </td>
+      </tr>`;
+    }).join('');
+
+    const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
+    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>Changing Point Control Record</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+  body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
+  table{border-collapse:collapse;width:100%}
+  @media print{@page{size:A3 landscape;margin:8mm}body{-webkit-print-color-adjust:exact}}
+</style></head><body style="padding:8mm">
+  <table style="margin-bottom:8px"><tr>
+    <td style="background:#fde047;padding:8px;text-align:center;font-weight:700;font-size:14px;border:1px solid #000">
+      ใบบันทึกการเปลี่ยนแปลง<br/><span style="font-size:11px">Changing Point Control Record</span>
+    </td>
+    <td style="width:160px;border:1px solid #000;padding:4px;font-size:10px">
+      <div>ไลน์: <b>${line}</b></div>
+      <div>เดือน: <b>${thaiMonths[m]} ${beYear}</b></div>
+      <div>พิมพ์วันที่: ${todayStr}</div>
+    </td>
+  </tr></table>
+
+  <table>
+    <thead><tr style="background:#f3f4f6">
+      <th style="border:1px solid #999"></th>
+      <th style="border:1px solid #999;padding:3px;font-size:9px">รายละเอียด (Detail)</th>
+      ${dayHeaderCells}
+    </tr></thead>
+    <tbody>${gridRowsHtml}</tbody>
+  </table>
+
+  <h3 style="margin:14px 0 4px;font-size:12px">รายละเอียดการเปลี่ยนแปลง (X) ในเดือนนี้ — รวม ${detailLogs.length} รายการ</h3>
+  <table>
+    <thead><tr style="background:#f3f4f6">
+      <th style="border:1px solid #ccc;padding:3px">#</th>
+      <th style="border:1px solid #ccc;padding:3px">วันที่</th>
+      <th style="border:1px solid #ccc;padding:3px">4M</th>
+      <th style="border:1px solid #ccc;padding:3px">หัวข้อ</th>
+      <th style="border:1px solid #ccc;padding:3px">รายละเอียด</th>
+      <th style="border:1px solid #ccc;padding:3px">ลายเซ็น SV</th>
+      <th style="border:1px solid #ccc;padding:3px">ลายเซ็น QA</th>
+    </tr></thead>
+    <tbody>${detailRowsHtml}</tbody>
+  </table>
+<script>window.onload = () => window.print();</script>
+</body></html>`;
+
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+    setCpcExporting(false);
+  };
+
   // Filter logs by section: cross-reference line_name to lines array to get section
   const fourMFilteredLogs = useMemo(() => {
     if (!fourMSection) return logs;
@@ -1166,6 +1302,15 @@ function FourMTab() {
           ['วันที่', 'ประเภทวัน', 'ไลน์', 'ประเภท', 'ประเภทย่อย', 'รายละเอียด', 'สถานะ', 'เวลาสร้าง'],
           logs.map(l => [l.work_date, DAY_TYPE_META[getDayType(l.work_date)].label, l.line_name, l.category, l.change_subtype || '', l.description, l.status, l.created_at ? fmtDateTime(l.created_at) : ''])
         )} />
+        <span style={{ width: 1, alignSelf: 'stretch', background: 'var(--border)', margin: '0 2px' }} />
+        <input type="month" value={cpcMonth} onChange={e => setCpcMonth(e.target.value)} style={{ padding: '6px 8px', borderRadius: 7, fontSize: 12 }} />
+        <button onClick={handleExportChangePointPdf} disabled={cpcExporting || !line}
+          title={!line ? 'เลือกไลน์ก่อน' : 'Export ใบบันทึกการเปลี่ยนแปลง (Changing Point Control Record)'}
+          style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            background: 'rgba(234,179,8,0.15)', color: '#ca8a04', border: '1px solid rgba(234,179,8,0.4)',
+            opacity: (cpcExporting || !line) ? 0.5 : 1 }}>
+          {cpcExporting ? 'กำลังสร้าง...' : '📅 Export Changing Point'}
+        </button>
       </div>
 
       {loading ? <Loader /> : (
