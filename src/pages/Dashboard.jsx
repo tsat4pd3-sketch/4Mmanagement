@@ -889,11 +889,13 @@ export default function Dashboard() {
                         }
                         queueEndMs = occupiedEndMs;
                         const leftPct = Math.max(0, (startMs - half.startMs) * pctPerMs);
-                        const rightPct = Math.min(100, (endMs - half.startMs) * pctPerMs);
-                        const widthPct = Math.max(MIN_W_PCT, rightPct - leftPct);
-                        const isDelayed = !o.isDone && !o.isCarry && endMs < nowMs;
                         // เสร็จแล้วแต่ปิดจบช้ากว่าคิวที่ควรจะเสร็จ — ไม่ควรเขียวเหมือนผลิตจบปกติ
                         const isLateDone = o.isDone && !!o.confirmed_at && new Date(o.confirmed_at).getTime() > endMs;
+                        // ใบที่ปิดช้า (isLateDone) รู้เวลาจริงที่ใช้แน่นอนแล้ว (confirmed_at) จึงวาดกล่องให้กว้างเท่าเวลาที่ใช้จริงไปเลย
+                        // ส่วนใบที่ยังไม่ปิด (isDelayed) เวลาจริงยังไม่แน่นอน จึงวาดกล่องตามแผนแล้วต่อหางเงาแยกแทน
+                        const rightPct = Math.min(100, ((isLateDone ? occupiedEndMs : endMs) - half.startMs) * pctPerMs);
+                        const widthPct = Math.max(MIN_W_PCT, rightPct - leftPct);
+                        const isDelayed = !o.isDone && !o.isCarry && endMs < nowMs;
                         // หางเงาสีแดงต่อท้ายกล่องจริง แสดงว่าใบนี้ยังครองไลน์อยู่ (ยังไม่ปิด) ตั้งแต่เลยกำหนดจนถึงตอนนี้
                         // เพื่อให้เห็นว่าทำไมใบถัดไปในคิวถึงถูกดันไปต่อท้าย ไม่ใช่ว่าหายไปเฉย ๆ
                         const tailLeftPct  = isDelayed ? rightPct : 0;
