@@ -757,9 +757,11 @@ function LiveTab({ role }) {
     const ctSec       = selSession?.dr_products?.cycle_time_sec || 0;
 
     const A = netAvail > 0 ? Math.min(1, runMin / netAvail) : 0;
-    const P = (runMin > 0 && ctSec > 0) ? Math.min(1, (totalProduced * ctSec / 60) / runMin) : (runMin > 0 ? 1 : 0);
+    // ctSec=0 (cycle time ยังไม่ได้ตั้งค่าใน Product Master) → P คำนวณไม่ได้จริง ห้าม default เป็น 100%
+    const P = ctSec > 0 ? (runMin > 0 ? Math.min(1, (totalProduced * ctSec / 60) / runMin) : 0) : null;
     const Q = totalProduced > 0 ? Math.max(0, (totalProduced - ngQty) / totalProduced) : 1;
-    return { A, P, Q, oee: A * P * Q, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty };
+    const oee = P != null ? A * P * Q : null;
+    return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty };
   };
 
   const handleCloseSession = async () => {
@@ -818,9 +820,9 @@ function LiveTab({ role }) {
       qty_repair:              totalQtyRepair,
       shift_min:               shiftMin,
       oee_a:                   parseFloat((A * 100).toFixed(2)),
-      oee_p:                   parseFloat((P * 100).toFixed(2)),
+      oee_p:                   P != null ? parseFloat((P * 100).toFixed(2)) : null,
       oee_q:                   parseFloat((Q * 100).toFixed(2)),
-      oee:                     parseFloat((oee * 100).toFixed(2)),
+      oee:                     oee != null ? parseFloat((oee * 100).toFixed(2)) : null,
     } : {
       status:          'closed',
       closed_by_name:  fullName,
@@ -835,9 +837,9 @@ function LiveTab({ role }) {
       qty_repair:      totalQtyRepair,
       shift_min:       shiftMin,
       oee_a:           parseFloat((A * 100).toFixed(2)),
-      oee_p:           parseFloat((P * 100).toFixed(2)),
+      oee_p:           P != null ? parseFloat((P * 100).toFixed(2)) : null,
       oee_q:           parseFloat((Q * 100).toFixed(2)),
-      oee:             parseFloat((oee * 100).toFixed(2)),
+      oee:             oee != null ? parseFloat((oee * 100).toFixed(2)) : null,
     };
 
     const { error } = await supabaseDR.from('production_sessions').update(payload).eq('id', selSession.id);
@@ -867,16 +869,17 @@ function LiveTab({ role }) {
     }
     // ────────────────────────────────────────────────────────────────────────
 
+    const oeeLabel = oee != null ? `${(oee * 100).toFixed(1)}%` : 'N/A (ไม่มี Cycle Time)';
     if (isLeaderRequest) {
-      toast.info(`ส่งคำขอปิดกะแล้ว — รอ SV อนุมัติ · OEE Preview ${(oee * 100).toFixed(1)}%`);
+      toast.info(`ส่งคำขอปิดกะแล้ว — รอ SV อนุมัติ · OEE Preview ${oeeLabel}`);
     } else {
-      toast.success(`ปิดกะสำเร็จ · OEE ${(oee * 100).toFixed(1)}% · ดี ${totalQtyOk} / NG ${totalQtyNg} / สงสัย ${totalQtySuspect}`);
+      toast.success(`ปิดกะสำเร็จ · OEE ${oeeLabel} · ดี ${totalQtyOk} / NG ${totalQtyNg} / สงสัย ${totalQtySuspect}`);
     }
     notifyProdClose({
       status: isLeaderRequest ? 'pending_close' : 'closed',
       line_name: selSession.line_name, shift: selSession.shift, work_date: selSession.work_date,
       actor: fullName, qty_ok: totalQtyOk, qty_ng: totalQtyNg, qty_suspect: totalQtySuspect,
-      oee: parseFloat((oee * 100).toFixed(1)),
+      oee: oee != null ? parseFloat((oee * 100).toFixed(1)) : null,
     });
     setShowCloseShift(false);
     setCarryOverDecisions({});
@@ -1372,7 +1375,7 @@ function LiveTab({ role }) {
         {showCloseShift && selSession && (() => {
           const ng = parseInt(closeNg) || 0;
           const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced } = computeOEE(ng);
-          const oeeColor = oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
+          const oeeColor = oee == null ? 'var(--muted)' : oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
           return (
             <div className="overlay" style={{ zIndex: 2000 }}>
               <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,480px)' }}>
@@ -1503,7 +1506,7 @@ function LiveTab({ role }) {
                     <div style={{ display: 'flex', gap: 16 }}>
                       {[
                         { label: 'A (Avail.)', value: `${(A * 100).toFixed(1)}%` },
-                        { label: 'P (Perf.)',  value: `${(P * 100).toFixed(1)}%` },
+                        { label: 'P (Perf.)',  value: P != null ? `${(P * 100).toFixed(1)}%` : 'N/A' },
                         { label: 'Q (Qual.)',  value: `${(Q * 100).toFixed(1)}%` },
                       ].map(k => (
                         <div key={k.label} style={{ textAlign: 'center' }}>
@@ -1514,11 +1517,11 @@ function LiveTab({ role }) {
                     </div>
                     <div style={{ textAlign: 'center' }}>
                       <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>OEE รวม</div>
-                      <div style={{ fontSize: 36, fontWeight: 900, color: oeeColor, lineHeight: 1 }}>{(oee * 100).toFixed(1)}%</div>
+                      <div style={{ fontSize: 36, fontWeight: 900, color: oeeColor, lineHeight: 1 }}>{oee != null ? `${(oee * 100).toFixed(1)}%` : 'N/A'}</div>
                     </div>
                   </div>
                   {!selSession.dr_products?.cycle_time_sec && (
-                    <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ ไม่มี Cycle Time — P คำนวณเป็น 100%</div>
+                    <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ ไม่มี Cycle Time ใน Product Master — P/OEE คำนวณไม่ได้ (จะถูกบันทึกเป็น N/A ไม่ใช่ 100%)</div>
                   )}
                 </div>
 
@@ -2350,8 +2353,10 @@ function ExportTab() {
     if (!rows.length) { toast.error('ไม่มีข้อมูล'); return; }
     const { default: jsPDF } = await import('jspdf');
     const { default: autoTable } = await import('jspdf-autotable');
+    const { registerThaiFont } = await import('../lib/pdfThaiFont');
 
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    registerThaiFont(doc);
     const headers = Object.keys(rows[0]);
 
     // Title
@@ -2365,8 +2370,8 @@ function ExportTab() {
       startY: 32,
       head: [headers],
       body: rows.map(r => headers.map(h => r[h] ?? '')),
-      styles: { fontSize: 7, cellPadding: 1.5, overflow: 'linebreak' },
-      headStyles: { fillColor: [30, 60, 40], textColor: 255, fontStyle: 'bold', fontSize: 7 },
+      styles: { font: 'Sarabun', fontSize: 7, cellPadding: 1.5, overflow: 'linebreak' },
+      headStyles: { font: 'Sarabun', fillColor: [30, 60, 40], textColor: 255, fontStyle: 'bold', fontSize: 7 },
       alternateRowStyles: { fillColor: [245, 248, 245] },
       margin: { left: 10, right: 10 },
     });
@@ -2381,7 +2386,9 @@ function ExportTab() {
     if (!sessions.length) { toast.error('ไม่มีข้อมูล'); return; }
     const { default: jsPDF } = await import('jspdf');
     const { default: autoTable } = await import('jspdf-autotable');
+    const { registerThaiFont } = await import('../lib/pdfThaiFont');
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    registerThaiFont(doc);
     const PAGE_W = 210, MARGIN = 12, CONTENT_W = PAGE_W - MARGIN * 2;
     const logoDataUrl = await getTsLogoDataUrl();
 
@@ -2391,11 +2398,11 @@ function ExportTab() {
 
       // ── Header (โลโก้บริษัทเดียวกับหน้าเว็บ) ──────────────────
       if (logoDataUrl) doc.addImage(logoDataUrl, 'PNG', MARGIN, y - 2, 10, 11.6);
-      doc.setFontSize(13).setFont(undefined, 'bold');
+      doc.setFontSize(13).setFont('Sarabun', 'bold');
       doc.text('Thai Summit Group', MARGIN + (logoDataUrl ? 13 : 0), y + 4);
       doc.setFontSize(15);
       doc.text('DAILY PRODUCTION REPORT', PAGE_W / 2, y + 4, { align: 'center' });
-      doc.setFontSize(9).setFont(undefined, 'normal');
+      doc.setFontSize(9).setFont('Sarabun', 'normal');
       doc.text(`ใบรายงานการผลิตประจำกะ`, PAGE_W / 2, y + 9, { align: 'center' });
       y += 15;
       doc.setLineWidth(0.5);
@@ -2409,7 +2416,7 @@ function ExportTab() {
       autoTable(doc, {
         startY: y,
         theme: 'grid',
-        styles: { fontSize: 9, cellPadding: 2 },
+        styles: { font: 'Sarabun', fontSize: 9, cellPadding: 2 },
         body: [
           ['ไลน์ผลิต',        s.line_name || '-',          'วันที่',         fmtDate(s.work_date)],
           ['กะ',              shiftLabel,                    'สินค้า',        s.dr_products?.name || '-'],
@@ -2427,13 +2434,13 @@ function ExportTab() {
       y = doc.lastAutoTable.finalY + 6;
 
       // ── ยอดผลิต / OEE summary box ──────────────────────────
-      doc.setFontSize(10).setFont(undefined, 'bold');
+      doc.setFontSize(10).setFont('Sarabun', 'bold');
       doc.text('สรุปยอดผลิตและ OEE', MARGIN, y);
       y += 3;
       autoTable(doc, {
         startY: y,
         theme: 'grid',
-        styles: { fontSize: 9, cellPadding: 2.5, halign: 'center' },
+        styles: { font: 'Sarabun', fontSize: 9, cellPadding: 2.5, halign: 'center' },
         head: [['ยอดผลิตรวม', 'ดี (OK)', 'เสีย (NG)', 'A (%)', 'P (%)', 'Q (%)', 'OEE (%)']],
         body: [[
           s.actual_qty || 0, okQty, ngQty,
@@ -2442,26 +2449,26 @@ function ExportTab() {
           s.oee_q != null ? Number(s.oee_q).toFixed(1) : '-',
           s.oee   != null ? Number(s.oee).toFixed(1)   : '-',
         ]],
-        headStyles: { fillColor: [30,60,40], textColor: 255, fontStyle: 'bold' },
+        headStyles: { font: 'Sarabun', fillColor: [30,60,40], textColor: 255, fontStyle: 'bold' },
         margin: { left: MARGIN, right: MARGIN },
       });
       y = doc.lastAutoTable.finalY + 6;
 
       // ── Kanban / PROD.NO records ──────────────────────────
       const orders = s.prod_orders || [];
-      doc.setFontSize(10).setFont(undefined, 'bold');
+      doc.setFontSize(10).setFont('Sarabun', 'bold');
       doc.text('รายการผลิต (Kanban / PROD.NO)', MARGIN, y);
       y += 3;
       autoTable(doc, {
         startY: y,
         theme: 'grid',
-        styles: { fontSize: 8, cellPadding: 1.8 },
+        styles: { font: 'Sarabun', fontSize: 8, cellPadding: 1.8 },
         head: [['PROD.NO', 'MAT.NO', 'Part Name', 'Qty แผน', 'Qty OK', 'สถานะ']],
         body: orders.length ? orders.map(o => [
           o.prod_no || '-', o.mat_no || '-', o.part_name || '-', o.qty || 0, o.qty_ok ?? '-',
           o.status === 'confirmed' ? 'ปิดแล้ว' : o.status === 'carry_over' ? 'ยกยอด' : o.status === 'open' ? 'กำลังผลิต' : o.status,
         ]) : [['-', '-', 'ไม่มีรายการ', '-', '-', '-']],
-        headStyles: { fillColor: [60,60,60], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+        headStyles: { font: 'Sarabun', fillColor: [60,60,60], textColor: 255, fontStyle: 'bold', fontSize: 8 },
         margin: { left: MARGIN, right: MARGIN },
       });
       y = doc.lastAutoTable.finalY + 6;
@@ -2469,13 +2476,13 @@ function ExportTab() {
       // ── Downtime ─────────────────────────────────────────
       const dts = s.downtime_logs || [];
       if (y > 230) { doc.addPage(); y = MARGIN; }
-      doc.setFontSize(10).setFont(undefined, 'bold');
+      doc.setFontSize(10).setFont('Sarabun', 'bold');
       doc.text('Downtime', MARGIN, y);
       y += 3;
       autoTable(doc, {
         startY: y,
         theme: 'grid',
-        styles: { fontSize: 8, cellPadding: 1.8 },
+        styles: { font: 'Sarabun', fontSize: 8, cellPadding: 1.8 },
         head: [['ประเภท', 'หมวด', 'ระยะเวลา (นาที)', 'เครื่องจักร', 'รายละเอียด']],
         body: dts.length ? dts.map(d => [
           d.dr_downtime_types?.name_th || '-',
@@ -2483,7 +2490,7 @@ function ExportTab() {
           d.duration_min != null ? Number(d.duration_min).toFixed(1) : '-',
           d.machine_no || '-', d.description || '-',
         ]) : [['-', '-', '-', '-', 'ไม่มี Downtime']],
-        headStyles: { fillColor: [60,60,60], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+        headStyles: { font: 'Sarabun', fillColor: [60,60,60], textColor: 255, fontStyle: 'bold', fontSize: 8 },
         margin: { left: MARGIN, right: MARGIN },
       });
       y = doc.lastAutoTable.finalY + 6;
@@ -2491,18 +2498,18 @@ function ExportTab() {
       // ── Defects ───────────────────────────────────────────
       const defs = s.defect_logs || [];
       if (y > 230) { doc.addPage(); y = MARGIN; }
-      doc.setFontSize(10).setFont(undefined, 'bold');
+      doc.setFontSize(10).setFont('Sarabun', 'bold');
       doc.text('งานเสีย / NG', MARGIN, y);
       y += 3;
       autoTable(doc, {
         startY: y,
         theme: 'grid',
-        styles: { fontSize: 8, cellPadding: 1.8 },
+        styles: { font: 'Sarabun', fontSize: 8, cellPadding: 1.8 },
         head: [['ประเภท NG', 'จำนวน NG', 'สงสัย', 'ซ่อมได้']],
         body: defs.length ? defs.map(d => [
           d.dr_defect_types?.name_th || '-', d.qty_ng || 0, d.qty_suspect || 0, d.qty_repair || 0,
         ]) : [['-', '-', '-', 'ไม่มีงานเสีย']],
-        headStyles: { fillColor: [60,60,60], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+        headStyles: { font: 'Sarabun', fillColor: [60,60,60], textColor: 255, fontStyle: 'bold', fontSize: 8 },
         margin: { left: MARGIN, right: MARGIN },
       });
       y = doc.lastAutoTable.finalY + 14;
@@ -2515,7 +2522,7 @@ function ExportTab() {
         { role: 'QA / ผู้ตรวจสอบ', name: '' },
       ];
       const colW = CONTENT_W / 3;
-      doc.setFontSize(9).setFont(undefined, 'normal');
+      doc.setFontSize(9).setFont('Sarabun', 'normal');
       sigCols.forEach((c, i) => {
         const x0 = MARGIN + i * colW;
         doc.line(x0 + 6, y + 12, x0 + colW - 6, y + 12);
