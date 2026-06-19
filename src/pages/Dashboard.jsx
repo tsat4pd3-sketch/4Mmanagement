@@ -876,7 +876,18 @@ export default function Dashboard() {
                             }
                           }
                         }
-                        queueEndMs = endMs;
+                        // เวลาที่ "ครองไลน์" จริง สำหรับผลักคิวถัดไป (ไม่ใช่แค่เวลาจบตามแผน):
+                        // - ถ้าปิดงานแล้ว ใช้เวลาปิดจริง (confirmed_at) เผื่อพนักงานสแกนปิดช้ากว่าแผน
+                        // - ถ้ายังไม่ปิดแต่เลยกำหนดจบไปแล้ว ถือว่ายังครองไลน์อยู่จนถึงเวลาปัจจุบัน
+                        // ผลคือถ้าใบไหนดีเลย์ ใบถัดไปในคิวจะถูกดันออกไปต่อท้ายเสมอ ไม่ทับซ้อนกันจนดูมั่ว
+                        // แม้พนักงานจะสแกนปิดไม่เรียงลำดับกับตอนเปิดก็ตาม
+                        let occupiedEndMs = endMs;
+                        if (o.isDone && o.confirmed_at) {
+                          occupiedEndMs = Math.max(endMs, new Date(o.confirmed_at).getTime());
+                        } else if (!o.isDone && !o.isCarry && nowMs > endMs) {
+                          occupiedEndMs = nowMs;
+                        }
+                        queueEndMs = occupiedEndMs;
                         const leftPct = Math.max(0, (startMs - half.startMs) * pctPerMs);
                         const rightPct = Math.min(100, (endMs - half.startMs) * pctPerMs);
                         const widthPct = Math.max(MIN_W_PCT, rightPct - leftPct);
