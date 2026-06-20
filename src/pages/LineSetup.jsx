@@ -37,7 +37,7 @@ export default function LineSetup() {
   const [tempPos, setTempPos] = useState(null);
   const [formData, setFormData] = useState({ id: null, name: '', requirements: {}, skill_allowance: false, skill_allowance_type: '' });
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
-  const [collisionWarn, setCollisionWarn] = useState(false);
+  const [collisionWarn, setCollisionWarn] = useState(null); // string message หรือ null
   const [showManpower, setShowManpower] = useState(false);
   const [skillDefs, setSkillDefs] = useState([]);
   const [activeTab, setActiveTab] = useState('stations'); // 'stations' | 'wip' | 'machines'
@@ -196,7 +196,28 @@ export default function LineSetup() {
   };
 
   const handleImageClick = (e) => {
-    const rect = e.target.getBoundingClientRect();
+    const img = e.target;
+    const rect = img.getBoundingClientRect();
+
+    // object-fit: contain ทำให้มีพื้นที่ letterbox (แถบว่าง) รอบรูปจริง — ต้องคำนวณ
+    // กรอบของรูปที่แสดงผลจริง แล้วปฏิเสธคลิกที่อยู่นอกรูป ไม่ให้ set จุดนอกพื้นที่ที่เห็น
+    const naturalW = img.naturalWidth || rect.width;
+    const naturalH = img.naturalHeight || rect.height;
+    const scale = Math.min(rect.width / naturalW, rect.height / naturalH);
+    const renderedW = naturalW * scale;
+    const renderedH = naturalH * scale;
+    const offsetX = (rect.width - renderedW) / 2;
+    const offsetY = (rect.height - renderedH) / 2;
+
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    if (clickX < offsetX || clickX > offsetX + renderedW || clickY < offsetY || clickY > offsetY + renderedH) {
+      setCollisionWarn('⚠️ จุดนี้อยู่นอกพื้นที่รูปผังไลน์ — คลิกในรูปเท่านั้น');
+      setTimeout(() => setCollisionWarn(null), 2000);
+      return;
+    }
+
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
     const pos = { top: `${y.toFixed(2)}%`, left: `${x.toFixed(2)}%` };
@@ -215,34 +236,34 @@ export default function LineSetup() {
 
     if (activeTab === 'wip') {
       if (checkCollision(wipPoints, POINT_W, POINT_H)) {
-        setCollisionWarn(true);
-        setTimeout(() => setCollisionWarn(false), 2000);
+        setCollisionWarn('⚠️ ใกล้กับจุดอื่นเกินไป — คลิกในพื้นที่ว่าง');
+        setTimeout(() => setCollisionWarn(null), 2000);
         return;
       }
-      setCollisionWarn(false);
+      setCollisionWarn(null);
       setWipTempPos(pos);
       setWipForm({ id: null, point_name: '', mat_no: '', min_qty: 0, max_qty: 0, current_qty: 0 });
       return;
     }
     if (activeTab === 'machines') {
       if (checkCollision(machinePoints, POINT_W, POINT_H)) {
-        setCollisionWarn(true);
-        setTimeout(() => setCollisionWarn(false), 2000);
+        setCollisionWarn('⚠️ ใกล้กับจุดอื่นเกินไป — คลิกในพื้นที่ว่าง');
+        setTimeout(() => setCollisionWarn(null), 2000);
         return;
       }
-      setCollisionWarn(false);
+      setCollisionWarn(null);
       setMachineTempPos(pos);
       setMachineForm({ id: null, machine_no: '' });
       return;
     }
 
     if (checkCollision(stations, CARD_W, CARD_H)) {
-      setCollisionWarn(true);
-      setTimeout(() => setCollisionWarn(false), 2000);
+      setCollisionWarn('⚠️ ใกล้กับจุดงานอื่นเกินไป — คลิกในพื้นที่ว่าง');
+      setTimeout(() => setCollisionWarn(null), 2000);
       return;
     }
 
-    setCollisionWarn(false);
+    setCollisionWarn(null);
     setTempPos(pos);
     setFormData({ id: null, name: '', requirements: {} });
   };
@@ -434,7 +455,7 @@ export default function LineSetup() {
                   zIndex: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
                   whiteSpace: 'nowrap', pointerEvents: 'none',
                 }}>
-                  ⚠️ ใกล้กับจุดงานอื่นเกินไป — คลิกในพื้นที่ว่าง
+                  {collisionWarn}
                 </div>
               )}
               <img
