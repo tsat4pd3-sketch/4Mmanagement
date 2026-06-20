@@ -218,8 +218,15 @@ export default function LineSetup() {
       return;
     }
 
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    // กล่อง marker มีขนาดจริง (CARD_W/H หรือ POINT_W/H) — ต้อง clamp จุดศูนย์กลาง
+    // ไม่ให้กล่องล้นออกนอกขอบรูปที่แสดงผลจริง (ไม่ใช่แค่จุดคลิกอยู่ในรูป)
+    const boxW = activeTab === 'stations' ? CARD_W : POINT_W;
+    const boxH = activeTab === 'stations' ? CARD_H : POINT_H;
+    const clampedX = Math.min(Math.max(clickX, offsetX + boxW / 2), offsetX + renderedW - boxW / 2);
+    const clampedY = Math.min(Math.max(clickY, offsetY + boxH / 2), offsetY + renderedH - boxH / 2);
+
+    const x = (clampedX / rect.width) * 100;
+    const y = (clampedY / rect.height) * 100;
     const pos = { top: `${y.toFixed(2)}%`, left: `${x.toFixed(2)}%` };
     const newXpx = (x / 100) * rect.width;
     const newYpx = (y / 100) * rect.height;
