@@ -21,6 +21,10 @@ const SKILL_CAT_META = {
 const CARD_W = 104;
 const CARD_H = 92;
 
+// จุด WIP / เครื่องจักร ไม่ต้องเท่ากับ card พนักงาน — ใช้กล่องเล็กลง (~50%)
+const POINT_W = 54;
+const POINT_H = 46;
+
 export default function LineSetup() {
   const [lines, setLines] = useState([]);
   const [selectedLine, setSelectedLine] = useState('');
@@ -196,30 +200,43 @@ export default function LineSetup() {
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
     const pos = { top: `${y.toFixed(2)}%`, left: `${x.toFixed(2)}%` };
+    const newXpx = (x / 100) * rect.width;
+    const newYpx = (y / 100) * rect.height;
+
+    const checkCollision = (points, w, h) => {
+      const PAD_X = w + 8;
+      const PAD_Y = h + 8;
+      return points.some(p => {
+        const pX = (parseFloat(p.pos_left) / 100) * rect.width;
+        const pY = (parseFloat(p.pos_top) / 100) * rect.height;
+        return Math.abs(newXpx - pX) < PAD_X && Math.abs(newYpx - pY) < PAD_Y;
+      });
+    };
 
     if (activeTab === 'wip') {
+      if (checkCollision(wipPoints, POINT_W, POINT_H)) {
+        setCollisionWarn(true);
+        setTimeout(() => setCollisionWarn(false), 2000);
+        return;
+      }
+      setCollisionWarn(false);
       setWipTempPos(pos);
       setWipForm({ id: null, point_name: '', mat_no: '', min_qty: 0, max_qty: 0, current_qty: 0 });
       return;
     }
     if (activeTab === 'machines') {
+      if (checkCollision(machinePoints, POINT_W, POINT_H)) {
+        setCollisionWarn(true);
+        setTimeout(() => setCollisionWarn(false), 2000);
+        return;
+      }
+      setCollisionWarn(false);
       setMachineTempPos(pos);
       setMachineForm({ id: null, machine_no: '' });
       return;
     }
 
-    const newXpx = (x / 100) * rect.width;
-    const newYpx = (y / 100) * rect.height;
-    const PAD_X = CARD_W + 8;
-    const PAD_Y = CARD_H + 8;
-
-    const collision = stations.some(st => {
-      const stX = (parseFloat(st.pos_left) / 100) * rect.width;
-      const stY = (parseFloat(st.pos_top) / 100) * rect.height;
-      return Math.abs(newXpx - stX) < PAD_X && Math.abs(newYpx - stY) < PAD_Y;
-    });
-
-    if (collision) {
+    if (checkCollision(stations, CARD_W, CARD_H)) {
       setCollisionWarn(true);
       setTimeout(() => setCollisionWarn(false), 2000);
       return;
@@ -476,36 +493,36 @@ export default function LineSetup() {
                     onClick={(e) => { e.stopPropagation(); editWipPoint(p); }}
                     style={{
                       position: 'absolute', top: p.pos_top, left: p.pos_left, transform: 'translate(-50%, -50%)',
-                      width: CARD_W, height: CARD_H,
+                      width: POINT_W, height: POINT_H,
                       border: isSelected ? '2px solid var(--green)' : isLow ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.75)',
-                      borderRadius: 10,
+                      borderRadius: 7,
                       backgroundColor: isLow ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
                       boxShadow: isLow ? '0 0 8px rgba(239,68,68,0.6)' : '0 2px 6px rgba(0,0,0,0.6)',
                       cursor: 'pointer', display: 'flex', flexDirection: 'column',
                       alignItems: 'center', justifyContent: 'center',
-                      padding: '4px 4px 2px', zIndex: 5,
+                      padding: '2px 2px 1px', zIndex: 5,
                     }}
                   >
-                    <div style={{ fontSize: 11, fontWeight: 700, color: isLow ? '#fecaca' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ fontSize: 8, fontWeight: 700, color: isLow ? '#fecaca' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       📦 {p.point_name}
                     </div>
-                    <div style={{ fontSize: 10, color: isLow ? '#fca5a5' : '#a3a3a3', textAlign: 'center' }}>
-                      {p.current_qty ?? 0} / {p.min_qty ?? 0}–{p.max_qty ?? 0}
+                    <div style={{ fontSize: 7, color: isLow ? '#fca5a5' : '#a3a3a3', textAlign: 'center' }}>
+                      {p.current_qty ?? 0}/{p.min_qty ?? 0}–{p.max_qty ?? 0}
                     </div>
-                    {isLow && <div style={{ fontSize: 9, color: '#fca5a5', fontWeight: 800 }}>⚠️ ต่ำกว่า min</div>}
+                    {isLow && <div style={{ fontSize: 7, color: '#fca5a5', fontWeight: 800 }}>⚠️ ต่ำ</div>}
                   </div>
                 );
               })}
               {activeTab === 'wip' && wipTempPos && (
                 <div style={{
                   position: 'absolute', top: wipTempPos.top, left: wipTempPos.left, transform: 'translate(-50%, -50%)',
-                  width: CARD_W, height: CARD_H,
+                  width: POINT_W, height: POINT_H,
                   border: '1px dashed var(--accent)', backgroundColor: 'rgba(61,214,92,0.1)',
-                  zIndex: 10, pointerEvents: 'none', borderRadius: 8,
+                  zIndex: 10, pointerEvents: 'none', borderRadius: 6,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <div style={{ color: 'var(--accent)', fontSize: 14 }}>+</div>
+                  <div style={{ color: 'var(--accent)', fontSize: 12 }}>+</div>
                 </div>
               )}
 
@@ -518,21 +535,21 @@ export default function LineSetup() {
                     onClick={(e) => { e.stopPropagation(); editMachinePoint(p); }}
                     style={{
                       position: 'absolute', top: p.pos_top, left: p.pos_left, transform: 'translate(-50%, -50%)',
-                      width: CARD_W, height: CARD_H,
+                      width: POINT_W, height: POINT_H,
                       border: isSelected ? '2px solid var(--green)' : '2px solid rgba(255,255,255,0.75)',
-                      borderRadius: 10,
+                      borderRadius: 7,
                       backgroundColor: isSelected ? 'rgba(34,197,94,0.18)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
                       boxShadow: isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
                       cursor: 'pointer', display: 'flex', flexDirection: 'column',
                       alignItems: 'center', justifyContent: 'center',
-                      padding: '4px 4px 2px', zIndex: 5,
+                      padding: '2px 2px 1px', zIndex: 5,
                     }}
                   >
-                    <div style={{ fontSize: 11, fontWeight: 700, color: isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ fontSize: 8, fontWeight: 700, color: isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       ⚙️ {p.machine_no}
                     </div>
-                    <div style={{ fontSize: 9, color: '#a3a3a3', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div style={{ fontSize: 7, color: '#a3a3a3', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {mc?.machine_name || ''}
                     </div>
                   </div>
@@ -541,12 +558,12 @@ export default function LineSetup() {
               {activeTab === 'machines' && machineTempPos && (
                 <div style={{
                   position: 'absolute', top: machineTempPos.top, left: machineTempPos.left, transform: 'translate(-50%, -50%)',
-                  width: CARD_W, height: CARD_H,
+                  width: POINT_W, height: POINT_H,
                   border: '1px dashed var(--accent)', backgroundColor: 'rgba(61,214,92,0.1)',
-                  zIndex: 10, pointerEvents: 'none', borderRadius: 8,
+                  zIndex: 10, pointerEvents: 'none', borderRadius: 6,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  <div style={{ color: 'var(--accent)', fontSize: 14 }}>+</div>
+                  <div style={{ color: 'var(--accent)', fontSize: 12 }}>+</div>
                 </div>
               )}
             </div>
