@@ -1,5 +1,11 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../supabaseClient';
+import { supabase, supabaseDR } from '../supabaseClient';
+
+const TABS = [
+  { key: 'stations', label: '📍 จุดงาน' },
+  { key: 'wip',      label: '📦 จุด WIP' },
+  { key: 'machines', label: '⚙️ เครื่องจักร' },
+];
 
 const SKILL_ALLOWANCE_TYPES = ['งานเชื่อม', 'งานขับรถฟอล์คลิฟท์', 'งานขับเครน'];
 
@@ -30,6 +36,18 @@ export default function LineSetup() {
   const [collisionWarn, setCollisionWarn] = useState(false);
   const [showManpower, setShowManpower] = useState(false);
   const [skillDefs, setSkillDefs] = useState([]);
+  const [activeTab, setActiveTab] = useState('stations'); // 'stations' | 'wip' | 'machines'
+
+  // จุด WIP buffer (min/max ต่อจุด — แผนกที่เกี่ยวข้องเห็นเมื่อของต่ำกว่า min)
+  const [wipPoints, setWipPoints] = useState([]);
+  const [wipTempPos, setWipTempPos] = useState(null);
+  const [wipForm, setWipForm] = useState({ id: null, point_name: '', mat_no: '', min_qty: 0, max_qty: 0, current_qty: 0 });
+
+  // จุดเครื่องจักรบนผัง (ผูกกับตาราง machines ของ Daily Report โปรเจกต์ ด้วย machine_no)
+  const [machinePoints, setMachinePoints] = useState([]);
+  const [machineTempPos, setMachineTempPos] = useState(null);
+  const [machineForm, setMachineForm] = useState({ id: null, machine_no: '' });
+  const [drMachines, setDrMachines] = useState([]);
 
   // Standard manpower
   const [stdDay,   setStdDay]   = useState(0);
@@ -70,6 +88,12 @@ export default function LineSetup() {
     setLayoutImage(layoutData?.image_url || null);
     const { data: stationData } = await supabase.from('workstations').select('*, station_requirements(*)').eq('line_name', selectedLine);
     setStations(stationData || []);
+    const { data: wipData } = await supabase.from('wip_buffer_points').select('*').eq('line_name', selectedLine).order('point_name');
+    setWipPoints(wipData || []);
+    const { data: mpData } = await supabase.from('machine_points').select('*').eq('line_name', selectedLine);
+    setMachinePoints(mpData || []);
+    const { data: drMc } = await supabaseDR.from('machines').select('id, machine_no, machine_name').eq('line_name', selectedLine).eq('is_active', true).order('sort_order');
+    setDrMachines(drMc || []);
     const lineObj = lines.find(l => l.name === selectedLine);
     if (lineObj) {
       setStdDay(lineObj.std_day_shift ?? 0);
@@ -171,6 +195,18 @@ export default function LineSetup() {
     const rect = e.target.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
+    const pos = { top: `${y.toFixed(2)}%`, left: `${x.toFixed(2)}%` };
+
+    if (activeTab === 'wip') {
+      setWipTempPos(pos);
+      setWipForm({ id: null, point_name: '', mat_no: '', min_qty: 0, max_qty: 0, current_qty: 0 });
+      return;
+    }
+    if (activeTab === 'machines') {
+      setMachineTempPos(pos);
+      setMachineForm({ id: null, machine_no: '' });
+      return;
+    }
 
     const newXpx = (x / 100) * rect.width;
     const newYpx = (y / 100) * rect.height;
@@ -190,7 +226,7 @@ export default function LineSetup() {
     }
 
     setCollisionWarn(false);
-    setTempPos({ top: `${y.toFixed(2)}%`, left: `${x.toFixed(2)}%` });
+    setTempPos(pos);
     setFormData({ id: null, name: '', requirements: {} });
   };
 
@@ -263,14 +299,95 @@ export default function LineSetup() {
     setFormData({ id: st.id, name: st.station_name, requirements: reqMap, skill_allowance: st.skill_allowance || false, skill_allowance_type: st.skill_allowance_type || '' });
   };
 
+  /* ── จุด WIP buffer ── */
+  const editWipPoint = (p) => {
+    setWipTempPos(null);
+    setWipForm({ id: p.id, point_name: p.point_name, mat_no: p.mat_no || '', min_qty: p.min_qty ?? 0, max_qty: p.max_qty ?? 0, current_qty: p.current_qty ?? 0 });
+  };
+
+  const handleSaveWip = async () => {
+    if (!wipForm.point_name) return alert('กรุณาระบุชื่อจุด WIP');
+    const existing = wipPoints.find(p => p.id === wipForm.id);
+    const payload = {
+      line_name:   selectedLine,
+      point_name:  wipForm.point_name,
+      mat_no:      wipForm.mat_no || null,
+      pos_top:     wipTempPos ? wipTempPos.top : existing?.pos_top,
+      pos_left:    wipTempPos ? wipTempPos.left : existing?.pos_left,
+      min_qty:     parseFloat(wipForm.min_qty) || 0,
+      max_qty:     parseFloat(wipForm.max_qty) || 0,
+      current_qty: parseFloat(wipForm.current_qty) || 0,
+      updated_at:  new Date().toISOString(),
+    };
+    const { error } = wipForm.id
+      ? await supabase.from('wip_buffer_points').update(payload).eq('id', wipForm.id)
+      : await supabase.from('wip_buffer_points').insert([payload]);
+    if (error) return alert('Error: ' + error.message);
+    fetchLineData();
+    setWipTempPos(null);
+    setWipForm({ id: null, point_name: '', mat_no: '', min_qty: 0, max_qty: 0, current_qty: 0 });
+  };
+
+  const deleteWipPoint = async (id) => {
+    if (!window.confirm('ยืนยันการลบจุด WIP นี้?')) return;
+    const { error } = await supabase.from('wip_buffer_points').delete().eq('id', id);
+    if (!error) fetchLineData();
+  };
+
+  /* ── จุดเครื่องจักร ── */
+  const editMachinePoint = (p) => {
+    setMachineTempPos(null);
+    setMachineForm({ id: p.id, machine_no: p.machine_no });
+  };
+
+  const handleSaveMachine = async () => {
+    if (!machineForm.machine_no) return alert('กรุณาเลือกเครื่องจักร');
+    const existing = machinePoints.find(p => p.id === machineForm.id);
+    const payload = {
+      line_name:   selectedLine,
+      machine_no:  machineForm.machine_no,
+      pos_top:     machineTempPos ? machineTempPos.top : existing?.pos_top,
+      pos_left:    machineTempPos ? machineTempPos.left : existing?.pos_left,
+    };
+    const { error } = machineForm.id
+      ? await supabase.from('machine_points').update(payload).eq('id', machineForm.id)
+      : await supabase.from('machine_points').insert([payload]);
+    if (error) return alert('Error: ' + error.message);
+    fetchLineData();
+    setMachineTempPos(null);
+    setMachineForm({ id: null, machine_no: '' });
+  };
+
+  const deleteMachinePoint = async (id) => {
+    if (!window.confirm('ยืนยันการลบจุดเครื่องจักรนี้?')) return;
+    const { error } = await supabase.from('machine_points').delete().eq('id', id);
+    if (!error) fetchLineData();
+  };
+
   return (
+    <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12, height: isMobile ? 'auto' : 'calc(100vh - 40px)' }}>
+      {selectedLine && (
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          {TABS.map(t => (
+            <button key={t.key}
+              onClick={() => { setActiveTab(t.key); setTempPos(null); setWipTempPos(null); setMachineTempPos(null); }}
+              style={{
+                padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                border: `1px solid ${activeTab === t.key ? 'var(--accent)' : 'var(--border2)'}`,
+                background: activeTab === t.key ? 'var(--accent-dim)' : 'var(--bg2)',
+                color: activeTab === t.key ? 'var(--accent)' : 'var(--text2)',
+              }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
     <div style={{
-      padding: '16px',
       display: 'flex',
       flexDirection: isMobile ? 'column' : 'row',
       gap: 16,
-      height: isMobile ? 'auto' : 'calc(100vh - 40px)',
-      minHeight: isMobile ? 'calc(100vh - 40px)' : undefined,
+      flex: 1,
+      minHeight: 0,
       overflow: isMobile ? 'auto' : 'hidden',
     }}>
       <div style={{
@@ -308,7 +425,7 @@ export default function LineSetup() {
                 onClick={handleImageClick}
                 style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'crosshair', display: 'block' }}
               />
-              {stations.map(st => {
+              {activeTab === 'stations' && stations.map(st => {
                 const isSelected = formData.id === st.id;
                 return (
                   <div
@@ -338,9 +455,92 @@ export default function LineSetup() {
                   </div>
                 );
               })}
-              {tempPos && (
+              {activeTab === 'stations' && tempPos && (
                 <div style={{
                   position: 'absolute', top: tempPos.top, left: tempPos.left, transform: 'translate(-50%, -50%)',
+                  width: CARD_W, height: CARD_H,
+                  border: '1px dashed var(--accent)', backgroundColor: 'rgba(61,214,92,0.1)',
+                  zIndex: 10, pointerEvents: 'none', borderRadius: 8,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <div style={{ color: 'var(--accent)', fontSize: 14 }}>+</div>
+                </div>
+              )}
+
+              {activeTab === 'wip' && wipPoints.map(p => {
+                const isSelected = wipForm.id === p.id;
+                const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
+                return (
+                  <div
+                    key={p.id}
+                    onClick={(e) => { e.stopPropagation(); editWipPoint(p); }}
+                    style={{
+                      position: 'absolute', top: p.pos_top, left: p.pos_left, transform: 'translate(-50%, -50%)',
+                      width: CARD_W, height: CARD_H,
+                      border: isSelected ? '2px solid var(--green)' : isLow ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.75)',
+                      borderRadius: 10,
+                      backgroundColor: isLow ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.82)',
+                      backdropFilter: 'blur(2px)',
+                      boxShadow: isLow ? '0 0 8px rgba(239,68,68,0.6)' : '0 2px 6px rgba(0,0,0,0.6)',
+                      cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', justifyContent: 'center',
+                      padding: '4px 4px 2px', zIndex: 5,
+                    }}
+                  >
+                    <div style={{ fontSize: 11, fontWeight: 700, color: isLow ? '#fecaca' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      📦 {p.point_name}
+                    </div>
+                    <div style={{ fontSize: 10, color: isLow ? '#fca5a5' : '#a3a3a3', textAlign: 'center' }}>
+                      {p.current_qty ?? 0} / {p.min_qty ?? 0}–{p.max_qty ?? 0}
+                    </div>
+                    {isLow && <div style={{ fontSize: 9, color: '#fca5a5', fontWeight: 800 }}>⚠️ ต่ำกว่า min</div>}
+                  </div>
+                );
+              })}
+              {activeTab === 'wip' && wipTempPos && (
+                <div style={{
+                  position: 'absolute', top: wipTempPos.top, left: wipTempPos.left, transform: 'translate(-50%, -50%)',
+                  width: CARD_W, height: CARD_H,
+                  border: '1px dashed var(--accent)', backgroundColor: 'rgba(61,214,92,0.1)',
+                  zIndex: 10, pointerEvents: 'none', borderRadius: 8,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <div style={{ color: 'var(--accent)', fontSize: 14 }}>+</div>
+                </div>
+              )}
+
+              {activeTab === 'machines' && machinePoints.map(p => {
+                const isSelected = machineForm.id === p.id;
+                const mc = drMachines.find(m => m.machine_no === p.machine_no);
+                return (
+                  <div
+                    key={p.id}
+                    onClick={(e) => { e.stopPropagation(); editMachinePoint(p); }}
+                    style={{
+                      position: 'absolute', top: p.pos_top, left: p.pos_left, transform: 'translate(-50%, -50%)',
+                      width: CARD_W, height: CARD_H,
+                      border: isSelected ? '2px solid var(--green)' : '2px solid rgba(255,255,255,0.75)',
+                      borderRadius: 10,
+                      backgroundColor: isSelected ? 'rgba(34,197,94,0.18)' : 'rgba(0,0,0,0.82)',
+                      backdropFilter: 'blur(2px)',
+                      boxShadow: isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
+                      cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', justifyContent: 'center',
+                      padding: '4px 4px 2px', zIndex: 5,
+                    }}
+                  >
+                    <div style={{ fontSize: 11, fontWeight: 700, color: isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      ⚙️ {p.machine_no}
+                    </div>
+                    <div style={{ fontSize: 9, color: '#a3a3a3', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {mc?.machine_name || ''}
+                    </div>
+                  </div>
+                );
+              })}
+              {activeTab === 'machines' && machineTempPos && (
+                <div style={{
+                  position: 'absolute', top: machineTempPos.top, left: machineTempPos.left, transform: 'translate(-50%, -50%)',
                   width: CARD_W, height: CARD_H,
                   border: '1px dashed var(--accent)', backgroundColor: 'rgba(61,214,92,0.1)',
                   zIndex: 10, pointerEvents: 'none', borderRadius: 8,
@@ -432,6 +632,7 @@ export default function LineSetup() {
               <input type="file" hidden onChange={handleUploadImage} disabled={isUploading} />
             </label>
           )}
+          {activeTab === 'stations' && <>
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginBottom: 10 }}>
             <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
               {formData.id ? '📝 แก้ไขจุดงาน' : '📍 เพิ่มจุดงาน'}
@@ -561,6 +762,135 @@ export default function LineSetup() {
               );
             })}
           </div>
+          </>}
+
+          {activeTab === 'wip' && (
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginBottom: 10 }}>
+              <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
+                {wipForm.id ? '📝 แก้ไขจุด WIP' : '📦 เพิ่มจุด WIP'}
+              </h4>
+              {(wipTempPos || wipForm.id) ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 10, marginBottom: 14 }}>
+                  <input placeholder="ชื่อจุด WIP (เช่น บัฟเฟอร์ OP20)" value={wipForm.point_name}
+                    onChange={e => setWipForm({ ...wipForm, point_name: e.target.value })} />
+                  <input placeholder="เลขที่วัสดุ (mat no.)" value={wipForm.mat_no}
+                    onChange={e => setWipForm({ ...wipForm, mat_no: e.target.value })} />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={labelSt}>Min</label>
+                      <input type="number" value={wipForm.min_qty}
+                        onChange={e => setWipForm({ ...wipForm, min_qty: e.target.value })}
+                        style={{ marginTop: 4, textAlign: 'center' }} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={labelSt}>Max</label>
+                      <input type="number" value={wipForm.max_qty}
+                        onChange={e => setWipForm({ ...wipForm, max_qty: e.target.value })}
+                        style={{ marginTop: 4, textAlign: 'center' }} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={labelSt}>ปัจจุบัน</label>
+                      <input type="number" value={wipForm.current_qty}
+                        onChange={e => setWipForm({ ...wipForm, current_qty: e.target.value })}
+                        style={{ marginTop: 4, textAlign: 'center' }} />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <button onClick={handleSaveWip} style={{ flex: 1, padding: '9px', background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700 }}>
+                      {wipForm.id ? 'บันทึก' : 'เพิ่ม'}
+                    </button>
+                    <button onClick={() => { setWipTempPos(null); setWipForm({ id: null, point_name: '', mat_no: '', min_qty: 0, max_qty: 0, current_qty: 0 }); }}
+                      style={{ padding: '9px 14px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 7 }}>
+                      ยกเลิก
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '16px', border: '2px dashed var(--border)', color: 'var(--muted)', borderRadius: 10, fontSize: 12, marginBottom: 14 }}>
+                  คลิกบนรูปภาพเพื่อเพิ่มจุด WIP<br />หรือคลิกที่จุดเดิมเพื่อแก้ไข
+                </div>
+              )}
+              <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
+                รายการจุด WIP ({wipPoints.length})
+              </h4>
+              <div style={{ flex: 1, minHeight: 260, overflowY: 'auto' }}>
+                {wipPoints.map(p => {
+                  const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
+                  return (
+                    <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div onClick={() => editWipPoint(p)} style={{ cursor: 'pointer', flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
+                          {p.point_name} {isLow && <span style={{ fontSize: 10, background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>⚠️ ต่ำกว่า min</span>}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                          {p.mat_no ? `${p.mat_no} · ` : ''}คงเหลือ {p.current_qty ?? 0} (min {p.min_qty ?? 0} / max {p.max_qty ?? 0})
+                        </div>
+                      </div>
+                      <button onClick={() => deleteWipPoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>
+                    </div>
+                  );
+                })}
+                {wipPoints.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีจุด WIP</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'machines' && (
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginBottom: 10 }}>
+              <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
+                {machineForm.id ? '📝 แก้ไขจุดเครื่องจักร' : '⚙️ เพิ่มจุดเครื่องจักร'}
+              </h4>
+              {(machineTempPos || machineForm.id) ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 10, marginBottom: 14 }}>
+                  <select value={machineForm.machine_no}
+                    onChange={e => setMachineForm({ ...machineForm, machine_no: e.target.value })}>
+                    <option value="">-- เลือกเครื่องจักร --</option>
+                    {drMachines.map(m => (
+                      <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `- ${m.machine_name}` : ''}</option>
+                    ))}
+                  </select>
+                  {drMachines.length === 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>ไม่พบเครื่องจักรของไลน์นี้ใน Daily Report</div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <button onClick={handleSaveMachine} style={{ flex: 1, padding: '9px', background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700 }}>
+                      {machineForm.id ? 'บันทึก' : 'เพิ่ม'}
+                    </button>
+                    <button onClick={() => { setMachineTempPos(null); setMachineForm({ id: null, machine_no: '' }); }}
+                      style={{ padding: '9px 14px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 7 }}>
+                      ยกเลิก
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '16px', border: '2px dashed var(--border)', color: 'var(--muted)', borderRadius: 10, fontSize: 12, marginBottom: 14 }}>
+                  คลิกบนรูปภาพเพื่อเพิ่มจุดเครื่องจักร<br />หรือคลิกที่จุดเดิมเพื่อแก้ไข
+                </div>
+              )}
+              <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
+                รายการจุดเครื่องจักร ({machinePoints.length})
+              </h4>
+              <div style={{ flex: 1, minHeight: 260, overflowY: 'auto' }}>
+                {machinePoints.map(p => {
+                  const mc = drMachines.find(m => m.machine_no === p.machine_no);
+                  return (
+                    <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div onClick={() => editMachinePoint(p)} style={{ cursor: 'pointer', flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{p.machine_no}</div>
+                        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{mc?.machine_name || ''}</div>
+                      </div>
+                      <button onClick={() => deleteMachinePoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>
+                    </div>
+                  );
+                })}
+                {machinePoints.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีจุดเครื่องจักร</div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* ── Standard Manpower ─────────────────────────── */}
           <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />
@@ -657,6 +987,7 @@ export default function LineSetup() {
 
         </>}
       </div>
+    </div>
     </div>
   );
 }
