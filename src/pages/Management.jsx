@@ -1914,27 +1914,29 @@ function WorkerHoverCard({ card, skillDefs }) {
     <div ref={elRef} style={{ position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999, width: tooltipW, zIndex: 3000, pointerEvents: 'none', visibility: pos ? 'visible' : 'hidden', background: 'var(--card)', border: `1px solid ${fc}55`, borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: 14, animation: pos ? 'hoverIn 0.18s ease' : 'none' }}>
       <style>{`@keyframes hoverIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
 
-      {/* Header — big photo on the left, fit-score "rank" badge overlaid, info on the right */}
-      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 10 }}>
-        <div style={{ position: 'relative', flexShrink: 0 }}>
-          {emp?.image_url
-            ? <img src={emp.image_url} style={{ width: 88, height: 88, borderRadius: 12, objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, boxShadow: `0 0 14px ${fc}55` }} />
-            : <div style={{ width: 88, height: 88, borderRadius: 12, background: 'var(--bg3)', border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36 }}>👤</div>
-          }
-          {fit && (
-            <div style={{ position: 'absolute', top: -6, left: -6, background: fc, color: '#fff', fontSize: 15, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 8, padding: '3px 7px', boxShadow: '0 2px 6px rgba(0,0,0,0.5)' }}>
-              {fit.score}
-            </div>
-          )}
-        </div>
-        <div style={{ minWidth: 0, flex: 1, paddingTop: 2 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', lineHeight: 1.25 }}>{emp?.name || '—'}</div>
-          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{emp?.employee_id_code || ''}</div>
-          {fit && <div style={{ fontSize: 11, fontWeight: 700, color: fc, marginTop: 3 }}>{fitLabel(fit.score)}</div>}
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 5 }}>
-            {emp?.team && <span style={{ fontSize: 9, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
-            {emp?.section && <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
+      {/* Header — big portrait on top like a FIFA player card, rank badge overlaid on the corner */}
+      <div style={{ position: 'relative', marginBottom: 10 }}>
+        {emp?.image_url
+          ? <img src={emp.image_url} style={{ width: '100%', height: 200, borderRadius: 12, objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, boxShadow: `0 0 18px ${fc}55`, display: 'block' }} />
+          : <div style={{ width: '100%', height: 200, borderRadius: 12, background: 'var(--bg3)', border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 64 }}>👤</div>
+        }
+        {fit && (
+          <div style={{ position: 'absolute', top: 8, left: 8, background: fc, color: '#fff', fontSize: 22, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 8, padding: '4px 10px', boxShadow: '0 2px 8px rgba(0,0,0,0.6)' }}>
+            {fit.score}
           </div>
+        )}
+        {/* name plate over the bottom of the photo */}
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.85), transparent)', borderRadius: '0 0 12px 12px', padding: '18px 10px 8px' }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>{emp?.name || '—'}</div>
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>{emp?.employee_id_code || ''}</div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        {fit && <div style={{ fontSize: 11, fontWeight: 700, color: fc }}>{fitLabel(fit.score)}</div>}
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {emp?.team && <span style={{ fontSize: 9, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
+          {emp?.section && <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
         </div>
       </div>
 
