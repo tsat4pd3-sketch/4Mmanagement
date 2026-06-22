@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 
 const TABS = [
@@ -16,10 +16,10 @@ const SKILL_CAT_META = {
   soft_skill:    { label: 'Soft Skill',    color: '#a855f7', icon: '🧠', desc: 'หลักการคิด ระบบการทำงาน' },
 };
 
-// ขนาดเท่ากับ card พนักงานในหน้าจัดการสายผลิต (Management.jsx CARD_W/CARD_H)
-// เพื่อให้ระยะห่างที่ตั้งค่าตรงนี้ไม่ทับกันตอนแสดงพนักงานจริง
-const CARD_W = 104;
-const CARD_H = 92;
+// กล่องตำแหน่งในหน้า setup นี้เป็นแค่ "หมุด" บอกตำแหน่งจริงบนผัง ไม่ใช่ขนาดการ์ดที่ใช้แสดงผลจริง
+// การ์ดพนักงานขนาดเต็ม (104x92) จะถูกจัดการเรื่องเว้นระยะ/ทับกันแยกในหน้า Management.jsx เอง
+const CARD_W = 70;
+const CARD_H = 58;
 
 // จุด WIP / เครื่องจักร ไม่ต้องเท่ากับ card พนักงาน — ใช้กล่องเล็กลง (~50%)
 const POINT_W = 54;
@@ -41,6 +41,14 @@ export default function LineSetup() {
   const [showManpower, setShowManpower] = useState(false);
   const [skillDefs, setSkillDefs] = useState([]);
   const [activeTab, setActiveTab] = useState('stations'); // 'stations' | 'wip' | 'machines'
+
+  // ลากย้ายจุดที่มีอยู่แล้วได้ (ไม่ต้องลบสร้างใหม่) — drag เกินระยะนิดเดียวถือเป็นการลาก ไม่ใช่คลิกแก้ไข
+  const imgRef = useRef(null);
+  const [dragInfo, setDragInfo] = useState(null); // { kind: 'station'|'wip'|'machine', id }
+  const [dragPos, setDragPos] = useState(null);   // { top, left } พรีวิวระหว่างลาก
+  const dragMovedRef = useRef(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const dragPosRef = useRef(null);
 
   // จุด WIP buffer (min/max ต่อจุด — แผนกที่เกี่ยวข้องเห็นเมื่อของต่ำกว่า min)
   const [wipPoints, setWipPoints] = useState([]);
@@ -195,12 +203,11 @@ export default function LineSetup() {
     finally { setIsUploading(false); }
   };
 
-  const handleImageClick = (e) => {
-    const img = e.target;
+  // object-fit: contain ทำให้มีพื้นที่ letterbox (แถบว่าง) รอบรูปจริง — ต้องคำนวณ
+  // กรอบของรูปที่แสดงผลจริง เพื่อจำกัดไม่ให้วางจุดหรือลากจุดออกนอกรูปที่เห็น
+  const getImageGeom = (img) => {
+    if (!img) return null;
     const rect = img.getBoundingClientRect();
-
-    // object-fit: contain ทำให้มีพื้นที่ letterbox (แถบว่าง) รอบรูปจริง — ต้องคำนวณ
-    // กรอบของรูปที่แสดงผลจริง แล้วปฏิเสธคลิกที่อยู่นอกรูป ไม่ให้ set จุดนอกพื้นที่ที่เห็น
     const naturalW = img.naturalWidth || rect.width;
     const naturalH = img.naturalHeight || rect.height;
     const scale = Math.min(rect.width / naturalW, rect.height / naturalH);
@@ -208,6 +215,64 @@ export default function LineSetup() {
     const renderedH = naturalH * scale;
     const offsetX = (rect.width - renderedW) / 2;
     const offsetY = (rect.height - renderedH) / 2;
+    return { rect, offsetX, offsetY, renderedW, renderedH };
+  };
+
+  const startDrag = (e, kind, id) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    dragMovedRef.current = false;
+    dragPosRef.current = null;
+    setDragPos(null);
+    setDragInfo({ kind, id });
+  };
+
+  useEffect(() => {
+    if (!dragInfo) return;
+    const onMove = (e) => {
+      const geom = getImageGeom(imgRef.current);
+      if (!geom) return;
+      const { rect, offsetX, offsetY, renderedW, renderedH } = geom;
+      const boxW = dragInfo.kind === 'station' ? CARD_W : POINT_W;
+      const boxH = dragInfo.kind === 'station' ? CARD_H : POINT_H;
+      let x = e.clientX - rect.left;
+      let y = e.clientY - rect.top;
+      x = Math.min(Math.max(x, offsetX + boxW / 2), offsetX + renderedW - boxW / 2);
+      y = Math.min(Math.max(y, offsetY + boxH / 2), offsetY + renderedH - boxH / 2);
+      const dx = e.clientX - dragStartRef.current.x;
+      const dy = e.clientY - dragStartRef.current.y;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMovedRef.current = true;
+      const pos = { top: `${((y / rect.height) * 100).toFixed(2)}%`, left: `${((x / rect.width) * 100).toFixed(2)}%` };
+      dragPosRef.current = pos;
+      setDragPos(pos);
+    };
+    const onUp = async () => {
+      const { kind, id } = dragInfo;
+      if (dragMovedRef.current && dragPosRef.current) {
+        const table = kind === 'station' ? 'workstations' : kind === 'wip' ? 'wip_buffer_points' : 'machine_points';
+        await supabase.from(table).update({ pos_top: dragPosRef.current.top, pos_left: dragPosRef.current.left }).eq('id', id);
+        await fetchLineData();
+      } else {
+        if (kind === 'station') { const st = stations.find(s => s.id === id); if (st) editStation(st); }
+        if (kind === 'wip') { const p = wipPoints.find(s => s.id === id); if (p) editWipPoint(p); }
+        if (kind === 'machine') { const p = machinePoints.find(s => s.id === id); if (p) editMachinePoint(p); }
+      }
+      setDragInfo(null);
+      setDragPos(null);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [dragInfo]);
+
+  const handleImageClick = (e) => {
+    const img = e.target;
+    const geom = getImageGeom(img);
+    const { rect, offsetX, offsetY, renderedW, renderedH } = geom;
 
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
@@ -466,29 +531,34 @@ export default function LineSetup() {
                 </div>
               )}
               <img
+                ref={imgRef}
                 src={layoutImage}
                 onClick={handleImageClick}
+                draggable={false}
                 style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'crosshair', display: 'block' }}
               />
               {activeTab === 'stations' && stations.map(st => {
                 const isSelected = formData.id === st.id;
+                const isDragging = dragInfo?.kind === 'station' && dragInfo.id === st.id;
+                const top = isDragging && dragPos ? dragPos.top : st.pos_top;
+                const left = isDragging && dragPos ? dragPos.left : st.pos_left;
                 return (
                   <div
                     key={st.id}
-                    onClick={(e) => { e.stopPropagation(); editStation(st); }}
+                    onMouseDown={(e) => startDrag(e, 'station', st.id)}
                     style={{
-                      position: 'absolute', top: st.pos_top, left: st.pos_left, transform: 'translate(-50%, -50%)',
+                      position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
                       width: CARD_W, height: CARD_H,
                       border: isSelected ? '2px solid var(--green)' : '2px solid rgba(255,255,255,0.75)',
                       borderRadius: 10,
                       backgroundColor: isSelected ? 'rgba(34,197,94,0.18)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
-                      boxShadow: isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
-                      cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                      boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
+                      cursor: isDragging ? 'grabbing' : 'grab', display: 'flex', flexDirection: 'column',
                       alignItems: 'center', justifyContent: 'center',
-                      padding: '4px 4px 2px', zIndex: 5,
+                      padding: '4px 4px 2px', zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
-                    title="ขนาดเท่ากับ card พนักงานจริงในหน้าจัดการสายผลิต"
+                    title="คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง"
                   >
                     <div style={{ fontSize: 12, fontWeight: 700, color: isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {st.station_name}
@@ -515,21 +585,25 @@ export default function LineSetup() {
               {activeTab === 'wip' && wipPoints.map(p => {
                 const isSelected = wipForm.id === p.id;
                 const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
+                const isDragging = dragInfo?.kind === 'wip' && dragInfo.id === p.id;
+                const top = isDragging && dragPos ? dragPos.top : p.pos_top;
+                const left = isDragging && dragPos ? dragPos.left : p.pos_left;
                 return (
                   <div
                     key={p.id}
-                    onClick={(e) => { e.stopPropagation(); editWipPoint(p); }}
+                    onMouseDown={(e) => startDrag(e, 'wip', p.id)}
+                    title="คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง"
                     style={{
-                      position: 'absolute', top: p.pos_top, left: p.pos_left, transform: 'translate(-50%, -50%)',
+                      position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
                       width: POINT_W, height: POINT_H,
                       border: isSelected ? '2px solid var(--green)' : isLow ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.75)',
                       borderRadius: 7,
                       backgroundColor: isLow ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
-                      boxShadow: isLow ? '0 0 8px rgba(239,68,68,0.6)' : '0 2px 6px rgba(0,0,0,0.6)',
-                      cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                      boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isLow ? '0 0 8px rgba(239,68,68,0.6)' : '0 2px 6px rgba(0,0,0,0.6)',
+                      cursor: isDragging ? 'grabbing' : 'grab', display: 'flex', flexDirection: 'column',
                       alignItems: 'center', justifyContent: 'center',
-                      padding: '2px 2px 1px', zIndex: 5,
+                      padding: '2px 2px 1px', zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
                   >
                     <div style={{ fontSize: 8, fontWeight: 700, color: isLow ? '#fecaca' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -557,21 +631,25 @@ export default function LineSetup() {
               {activeTab === 'machines' && machinePoints.map(p => {
                 const isSelected = machineForm.id === p.id;
                 const mc = drMachines.find(m => m.machine_no === p.machine_no);
+                const isDragging = dragInfo?.kind === 'machine' && dragInfo.id === p.id;
+                const top = isDragging && dragPos ? dragPos.top : p.pos_top;
+                const left = isDragging && dragPos ? dragPos.left : p.pos_left;
                 return (
                   <div
                     key={p.id}
-                    onClick={(e) => { e.stopPropagation(); editMachinePoint(p); }}
+                    onMouseDown={(e) => startDrag(e, 'machine', p.id)}
+                    title="คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง"
                     style={{
-                      position: 'absolute', top: p.pos_top, left: p.pos_left, transform: 'translate(-50%, -50%)',
+                      position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
                       width: POINT_W, height: POINT_H,
                       border: isSelected ? '2px solid var(--green)' : '2px solid rgba(255,255,255,0.75)',
                       borderRadius: 7,
                       backgroundColor: isSelected ? 'rgba(34,197,94,0.18)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
-                      boxShadow: isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
-                      cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                      boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
+                      cursor: isDragging ? 'grabbing' : 'grab', display: 'flex', flexDirection: 'column',
                       alignItems: 'center', justifyContent: 'center',
-                      padding: '2px 2px 1px', zIndex: 5,
+                      padding: '2px 2px 1px', zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
                   >
                     <div style={{ fontSize: 8, fontWeight: 700, color: isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

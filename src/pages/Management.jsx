@@ -1118,9 +1118,56 @@ export default function Management() {
                   100% { box-shadow: 0 0 0 0 rgba(77,159,255,0), 0 2px 8px rgba(0,0,0,0.6); }
                 }
               `}</style>
-              {imgBox && dynamicStations.map(st => {
-            const stTop  = imgBox.offsetY + (parseFloat(st.pos_top)  / 100) * imgBox.rh;
-            const stLeft = imgBox.offsetX + (parseFloat(st.pos_left) / 100) * imgBox.rw;
+              {imgBox && (() => {
+                // จุดตั้งค่าในหน้า Line Setup เป็นแค่หมุดตำแหน่งจริง อาจอยู่ใกล้กันมากกว่าขนาดการ์ดจริง
+                // ที่นี่ต้องผลักการ์ดที่จะทับกัน (เต็มขนาด CARD_W x CARD_H) ออกจากกันในพิกเซลจริง
+                // แล้วโยงเส้นกลับไปยังตำแหน่งจริงที่ตั้งไว้ ไม่ขยับตำแหน่งจริงใน DB
+                const raw = dynamicStations.map(st => ({
+                  st,
+                  px: imgBox.offsetX + (parseFloat(st.pos_left) / 100) * imgBox.rw,
+                  py: imgBox.offsetY + (parseFloat(st.pos_top) / 100) * imgBox.rh,
+                  dox: 0, doy: 0,
+                }));
+                const MIN_PX_X = CARD_W, MIN_PX_Y = CARD_H;
+                for (let pass = 0; pass < 60; pass++) {
+                  let moved = false;
+                  for (let i = 0; i < raw.length; i++) {
+                    for (let j = i + 1; j < raw.length; j++) {
+                      const a = raw[i], b = raw[j];
+                      const dx = (b.px + b.dox) - (a.px + a.dox);
+                      const dy = (b.py + b.doy) - (a.py + a.doy);
+                      const ndx = dx / MIN_PX_X, ndy = dy / MIN_PX_Y;
+                      const dist = Math.sqrt(ndx * ndx + ndy * ndy) || 0.0001;
+                      if (dist < 1) {
+                        const overlap = (1 - dist) / 2;
+                        const pushX = (ndx / dist) * overlap * MIN_PX_X;
+                        const pushY = (ndy / dist) * overlap * MIN_PX_Y;
+                        a.dox -= pushX; a.doy -= pushY;
+                        b.dox += pushX; b.doy += pushY;
+                        moved = true;
+                      }
+                    }
+                  }
+                  if (!moved) break;
+                }
+
+                return (
+                  <>
+                    <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 1, pointerEvents: 'none' }}>
+                      {raw.map(({ st, px, py, dox, doy }) => {
+                        if (Math.abs(dox) < 2 && Math.abs(doy) < 2) return null;
+                        return (
+                          <g key={`ln-${st.id}`}>
+                            <line x1={px} y1={py} x2={px + dox} y2={py + doy}
+                              stroke="rgba(255,255,255,0.5)" strokeWidth={1} strokeDasharray="4 3" />
+                            <circle cx={px} cy={py} r={3} fill="rgba(255,255,255,0.7)" />
+                          </g>
+                        );
+                      })}
+                    </svg>
+                    {raw.map(({ st, px, py, dox, doy }) => {
+            const stTop  = py + doy;
+            const stLeft = px + dox;
             const workerAtStation = workers.find(w => String(w.assigned_line) === String(st.id));
             const workerFit       = workerAtStation ? computeFit(workerAtStation, st) : null;
             const hasMan  = fourMLogs.some(m => m.line_name === st.line_name && m.category === 'Man');
@@ -1262,6 +1309,9 @@ export default function Management() {
               </div>
             );
           })}
+                  </>
+                );
+              })()}
             </div>
           ) : (
             <div style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 32 }}>
