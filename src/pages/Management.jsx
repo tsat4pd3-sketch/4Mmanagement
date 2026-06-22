@@ -1924,9 +1924,9 @@ function WorkerHoverCard({ card, skillDefs }) {
                 <Radar name="ทักษะ" dataKey="score" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.22} strokeWidth={1.5} dot={{ r: 2, fill: 'var(--accent)' }} />
                 {fit && (
                   <Radar name="required" dataKey={() => null}
-                    data={skillDefs.map(sd => {
-                      const req = fit.details?.find(d => d.label === sd.label);
-                      return { skill: sd.label, score: req?.required ?? 0 };
+                    data={radarData.map(d => {
+                      const req = fit.details?.find(r => r.label === d.skill);
+                      return { skill: d.skill, score: req?.required ?? 0 };
                     })}
                     stroke="rgba(239,68,68,0.6)" fill="rgba(239,68,68,0.06)" strokeWidth={1} strokeDasharray="3 2"
                   />
