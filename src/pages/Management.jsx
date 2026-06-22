@@ -78,7 +78,8 @@ function getPeriodStartDate(period, workDate) {
 
 const CARD_W = 70;
 const CARD_H = 58;
-const PHOTO_SZ = 40; // photo size in station cards — scaled to match CARD_W/CARD_H
+const STATION_PHOTO_SZ = 30; // photo size inside the on-map mini card — must fit CARD_H alongside the header row
+const POOL_PHOTO_SZ = 44;    // photo size in sidebar pool/special-task cards — independent of map marker size
 
 function useWidth() {
   const [w, setW] = useState(() => window.innerWidth);
@@ -545,8 +546,8 @@ export default function Management() {
         onDragEnd={!isMobile ? handleDragEnd : undefined}
         onClick={() => canDrag && handlePoolTap(worker)}
         style={{
-          width: isMobile ? '100%' : CARD_W,
-          padding: isMobile ? '10px 8px' : '8px 5px 7px',
+          width: '100%',
+          padding: isMobile ? '10px 8px' : '8px 6px 7px',
           background: isSelected ? 'rgba(245,158,11,0.25)' : 'rgba(245,158,11,0.1)',
           border: isSelected ? '2px solid #f59e0b' : '1.5px solid rgba(245,158,11,0.4)',
           borderRadius: 10,
@@ -557,18 +558,18 @@ export default function Management() {
         }}
       >
         {worker.employees?.image_url
-          ? <img src={worker.employees.image_url} style={{ width: isMobile ? 44 : 42, height: isMobile ? 44 : 42, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid rgba(245,158,11,0.7)', flexShrink: 0 }} />
-          : <div style={{ width: isMobile ? 44 : 42, height: isMobile ? 44 : 42, borderRadius: '50%', background: 'rgba(245,158,11,0.15)', border: '2px solid rgba(245,158,11,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
+          ? <img src={worker.employees.image_url} style={{ width: isMobile ? 44 : POOL_PHOTO_SZ, height: isMobile ? 44 : POOL_PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid rgba(245,158,11,0.7)', flexShrink: 0 }} />
+          : <div style={{ width: isMobile ? 44 : POOL_PHOTO_SZ, height: isMobile ? 44 : POOL_PHOTO_SZ, borderRadius: '50%', background: 'rgba(245,158,11,0.15)', border: '2px solid rgba(245,158,11,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
         }
-        <div style={{ flex: isMobile ? 1 : undefined, minWidth: 0 }}>
-          <div style={{ fontSize: isMobile ? 13 : 10, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: isMobile ? 'left' : 'center' }}>
+        <div style={{ flex: isMobile ? 1 : undefined, minWidth: 0, width: isMobile ? undefined : '100%' }}>
+          <div style={{ fontSize: isMobile ? 13 : 11, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: isMobile ? 'left' : 'center' }}>
             {isMobile ? (worker.employees?.name ?? '?') : (worker.employees?.name?.split(' ')[0] ?? '?')}
           </div>
-          <div style={{ fontSize: isMobile ? 11 : 8, color: '#f59e0b', fontWeight: 700, background: 'rgba(245,158,11,0.15)', borderRadius: 3, padding: isMobile ? '2px 6px' : '1px 4px', marginTop: 2, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : 68, whiteSpace: 'nowrap' }}>
+          <div style={{ fontSize: isMobile ? 11 : 9, color: '#f59e0b', fontWeight: 700, background: 'rgba(245,158,11,0.15)', borderRadius: 3, padding: isMobile ? '2px 6px' : '1px 6px', marginTop: 2, display: isMobile ? 'inline-block' : 'block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : '100%', whiteSpace: 'nowrap', textAlign: 'center' }}>
             {task?.task_type || 'งานพิเศษ'}
           </div>
           {worker.employees?.section && (
-            <div style={{ fontSize: isMobile ? 10 : 7, color: '#a78bfa', background: 'rgba(167,139,250,0.12)', borderRadius: 3, padding: isMobile ? '1px 6px' : '1px 4px', marginTop: 2, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : 68, whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: isMobile ? 10 : 9, color: '#a78bfa', background: 'rgba(167,139,250,0.12)', borderRadius: 3, padding: isMobile ? '1px 6px' : '1px 6px', marginTop: 2, display: isMobile ? 'inline-block' : 'block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : '100%', whiteSpace: 'nowrap', textAlign: 'center' }}>
               📍 {worker.employees.section}
             </div>
           )}
@@ -576,7 +577,7 @@ export default function Management() {
         {/* remove button — leader+ */}
         {['admin','manager','supervisor','leader'].includes(role) && (
           <button onClick={(e) => { e.stopPropagation(); removeSpecialTask(worker); }}
-            style={{ position: 'absolute', top: 2, right: 2, width: 22, height: 22, borderRadius: '50%', background: 'rgba(239,68,68,0.85)', border: 'none', color: '#fff', fontSize: 11, lineHeight: '22px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
+            style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: '50%', background: 'rgba(239,68,68,0.85)', border: 'none', color: '#fff', fontSize: 11, lineHeight: '22px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
             ✕
           </button>
         )}
@@ -597,32 +598,32 @@ export default function Management() {
         onClick={() => handlePoolTap(worker)}
         style={{
           position: 'relative',
-          width: CARD_W, height: CARD_H,
-          padding: '4px 4px 2px',
+          width: '100%',
+          padding: '8px 6px 6px',
           background: isSelected ? 'rgba(77,159,255,0.22)' : 'rgba(8,8,14,0.88)',
           border: isSelected ? '2px solid #4d9fff' : '1.5px solid rgba(77,159,255,0.45)',
           borderLeft: isSelected ? '4px solid #4d9fff' : '4px solid rgba(77,159,255,0.55)',
-          borderRadius: 8, overflow: 'hidden',
+          borderRadius: 8,
           cursor: isMobile ? 'pointer' : 'grab',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
           boxShadow: isSelected ? '0 0 0 3px rgba(77,159,255,0.3), 0 2px 8px rgba(0,0,0,0.5)' : '0 2px 8px rgba(0,0,0,0.5)',
           userSelect: 'none', backdropFilter: 'blur(3px)',
           transition: 'all 0.15s',
           transform: isSelected ? 'scale(1.04)' : 'scale(1)',
         }}
       >
-        {/* header: name */}
-        <div style={{ width: '100%', fontSize: 9, fontWeight: 700, color: isSelected ? '#4d9fff' : '#c8c8d0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>
-          {worker.employees?.name?.split(' ')[0] ?? '?'}
-        </div>
         {/* photo */}
         {worker.employees?.image_url
-          ? <img src={worker.employees.image_url} style={{ width: PHOTO_SZ, height: PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `3px solid ${isSelected ? '#4d9fff' : 'rgba(77,159,255,0.7)'}`, boxShadow: isSelected ? '0 0 10px rgba(77,159,255,0.5)' : 'none', flexShrink: 0, display: 'block' }} />
-          : <div style={{ width: PHOTO_SZ, height: PHOTO_SZ, borderRadius: '50%', background: 'rgba(77,159,255,0.15)', border: '3px solid rgba(77,159,255,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>👤</div>
+          ? <img src={worker.employees.image_url} style={{ width: POOL_PHOTO_SZ, height: POOL_PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `3px solid ${isSelected ? '#4d9fff' : 'rgba(77,159,255,0.7)'}`, boxShadow: isSelected ? '0 0 10px rgba(77,159,255,0.5)' : 'none', flexShrink: 0, display: 'block' }} />
+          : <div style={{ width: POOL_PHOTO_SZ, height: POOL_PHOTO_SZ, borderRadius: '50%', background: 'rgba(77,159,255,0.15)', border: '3px solid rgba(77,159,255,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>👤</div>
         }
+        {/* header: name */}
+        <div style={{ width: '100%', fontSize: 11, fontWeight: 700, color: isSelected ? '#4d9fff' : '#c8c8d0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center', flexShrink: 0 }}>
+          {worker.employees?.name?.split(' ')[0] ?? '?'}
+        </div>
         {/* team badge */}
         {worker.employees?.team && (
-          <div style={{ fontSize: 8, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.18)', borderRadius: 3, padding: '1px 5px', flexShrink: 0 }}>
+          <div style={{ fontSize: 9, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.18)', borderRadius: 3, padding: '1px 6px', flexShrink: 0 }}>
             Team {worker.employees.team}
           </div>
         )}
@@ -630,7 +631,7 @@ export default function Management() {
         {['admin','manager','supervisor','leader'].includes(role) && (
           <button onClick={(e) => { e.stopPropagation(); setSpecialModal(worker); setSpecialTaskType('5ส'); }}
             title="กำหนดงานนอกไลน์"
-            style={{ position: 'absolute', top: 2, right: 2, width: 16, height: 16, borderRadius: '50%', background: 'rgba(245,158,11,0.85)', border: 'none', color: '#fff', fontSize: 8, lineHeight: '16px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
+            style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: '50%', background: 'rgba(245,158,11,0.9)', border: '1px solid rgba(0,0,0,0.3)', color: '#fff', fontSize: 11, lineHeight: '22px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
             🏷
           </button>
         )}
@@ -648,25 +649,23 @@ export default function Management() {
         onDragEnd={!isMobile ? handleDragEnd : undefined}
         onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker, fit) : undefined}
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
-        style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: isMobile ? 'pointer' : 'grab', userSelect: 'none' }}
+        style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isMobile ? 'pointer' : 'grab', userSelect: 'none' }}
+        title={`${worker.employees?.name ?? '?'} — Fit ${fit.score}`}
       >
-        {/* photo with score overlaid at bottom of circle */}
-        <div style={{ position: 'relative', width: PHOTO_SZ, height: PHOTO_SZ, flexShrink: 0 }}>
+        {/* photo with score overlaid at bottom of circle — name shown on hover card instead, no room to fit legibly here */}
+        <div style={{ position: 'relative', width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, flexShrink: 0 }}>
           {worker.employees?.image_url
-            ? <img src={worker.employees.image_url} style={{ width: PHOTO_SZ, height: PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `3px solid ${fc}`, boxShadow: `0 0 10px ${fc}88`, display: 'block' }} />
-            : <div style={{ width: PHOTO_SZ, height: PHOTO_SZ, borderRadius: '50%', background: `${fc}22`, border: `3px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>👤</div>
+            ? <img src={worker.employees.image_url} style={{ width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `2px solid ${fc}`, boxShadow: `0 0 8px ${fc}88`, display: 'block' }} />
+            : <div style={{ width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, borderRadius: '50%', background: `${fc}22`, border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>👤</div>
           }
           <div style={{
-            position: 'absolute', bottom: 1, left: 0, right: 0,
-            background: `${fc}e0`, color: '#fff', fontSize: 13, fontWeight: 900,
-            textAlign: 'center', borderRadius: '0 0 50px 50px', padding: '1px 0 2px',
-            lineHeight: 1, pointerEvents: 'none',
+            position: 'absolute', bottom: 0, left: 0, right: 0,
+            background: `${fc}e0`, color: '#fff', fontSize: 10, fontWeight: 900,
+            textAlign: 'center', borderRadius: '0 0 50px 50px', padding: '0 0 1px',
+            lineHeight: 1.4, pointerEvents: 'none',
           }}>
             {fit.score}
           </div>
-        </div>
-        <div style={{ fontSize: 8, fontWeight: 700, color: fc, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', textAlign: 'center', pointerEvents: 'none' }}>
-          {worker.employees?.name?.split(' ')[0] ?? '?'}
         </div>
       </div>
     );
@@ -1212,15 +1211,15 @@ export default function Management() {
                   transition: 'background-color 0.18s, border-color 0.18s',
                 }}>
                   <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3, flexShrink: 0 }}>
-                    <span style={{ fontSize: isWide ? 10 : 9, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: activeFc || '#c8c8d0' }}>
+                    <span title={st.station_name} style={{ fontSize: isWide ? 10 : 9, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: activeFc || '#c8c8d0' }}>
                       {st.station_name}
                     </span>
                     <div style={{ display: 'flex', gap: 1, flexShrink: 0, alignItems: 'center' }}>
                       {workerAtStation?.employee_id && homePositions[workerAtStation.employee_id] === String(st.id) && (
                         <span style={{ fontSize: 8, lineHeight: 1 }} title="ตำแหน่งประจำ">🏠</span>
                       )}
-                      {hasMan && <span style={{ background: '#4d9fff', color: '#fff', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800 }}>MAN</span>}
-                      {has4M  && <span style={{ background: '#e74c3c', color: '#fff', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800 }}>4M</span>}
+                      {hasMan && <span title="มีบันทึก 4M หมวด Man" style={{ width: 6, height: 6, borderRadius: '50%', background: '#4d9fff', display: 'inline-block', flexShrink: 0 }} />}
+                      {has4M  && <span title="มีบันทึก 4M" style={{ width: 6, height: 6, borderRadius: '50%', background: '#e74c3c', display: 'inline-block', flexShrink: 0 }} />}
                       {(pendingDocByLine[st.line_name]?.length > 0) && (() => {
                         const workerEmpId = workerAtStation?.employee_id;
                         const isHomeStation = workerEmpId && homePositions[workerEmpId] === String(st.id);
@@ -1233,8 +1232,8 @@ export default function Management() {
                           <span key="pending-doc-badge"
                             onClick={(e) => { e.stopPropagation(); setPendingDocModal({ log: relevantLog }); setDocImageFile(null); setDocImagePreview(null); }}
                             title="ค้างแนบเอกสาร OJT — คลิกเพื่อแนบ"
-                            style={{ background: '#f59e0b', color: '#000', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800, cursor: 'pointer' }}
-                          >⚠️DOC</span>
+                            style={{ fontSize: 9, cursor: 'pointer', lineHeight: 1 }}
+                          >⚠️</span>
                         );
                       })()}
                       {!workerAtStation && (() => {
@@ -1248,13 +1247,14 @@ export default function Management() {
                           <span key="pending-doc-home-badge"
                             onClick={(e) => { e.stopPropagation(); setPendingDocModal({ log: relevantLog }); setDocImageFile(null); setDocImagePreview(null); }}
                             title="ค้างแนบเอกสาร OJT — คลิกเพื่อแนบ"
-                            style={{ background: '#f59e0b', color: '#000', borderRadius: 2, padding: '0 2px', fontSize: 5, fontWeight: 800, cursor: 'pointer' }}
-                          >⚠️DOC</span>
+                            style={{ fontSize: 9, cursor: 'pointer', lineHeight: 1 }}
+                          >⚠️</span>
                         );
                       })()}
                       {!isMobile && (
                         <button onClick={(e) => { e.stopPropagation(); setShow4MModal({ stationId: st.id, lineName: st.line_name }); setLog4MForm({ category: 'Man', description: '' }); }}
-                          style={{ background: 'rgba(255,255,255,0.12)', border: 'none', borderRadius: 2, color: 'white', fontSize: 5, cursor: 'pointer', padding: '1px 2px', lineHeight: 1 }}>+4M</button>
+                          title="บันทึก 4M"
+                          style={{ width: 14, height: 14, background: 'rgba(255,255,255,0.12)', border: 'none', borderRadius: '50%', color: 'white', fontSize: 10, fontWeight: 700, cursor: 'pointer', padding: 0, lineHeight: '14px', textAlign: 'center' }}>+</button>
                       )}
                     </div>
                   </div>
