@@ -416,11 +416,11 @@ export default function Management() {
   const handleDrop      = (e, stationId) => { e.preventDefault(); assignWorker(e.dataTransfer.getData('logId'), stationId); setDraggingWorker(null); setDragOverStation(null); };
 
   /* ── Hover (desktop) ── */
-  const onHoverEnter = (e, worker, fit = null) => {
+  const onHoverEnter = (e, worker, fit = null, stationName = null) => {
     if (isMobile) return;
     clearTimeout(hoverTimer.current);
     const rect = e.currentTarget.getBoundingClientRect();
-    hoverTimer.current = setTimeout(() => setHoverCard({ worker, fit, rect }), 180);
+    hoverTimer.current = setTimeout(() => setHoverCard({ worker, fit, rect, stationName }), 180);
   };
   const onHoverLeave = () => { clearTimeout(hoverTimer.current); setHoverCard(null); };
 
@@ -652,31 +652,24 @@ export default function Management() {
   };
 
   /* ── Station worker ── */
-  const StationWorker = ({ worker, fit }) => {
+  const StationWorker = ({ worker, fit, stationName }) => {
     const fc = fitColor(fit.score);
     return (
       <div
         draggable={!isMobile}
         onDragStart={!isMobile ? (e) => handleDragStart(e, worker) : undefined}
         onDragEnd={!isMobile ? handleDragEnd : undefined}
-        onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker, fit) : undefined}
+        onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker, fit, stationName) : undefined}
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
         style={{ width: '100%', flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isMobile ? 'pointer' : 'grab', userSelect: 'none' }}
       >
-        {/* photo with score overlaid at bottom of circle — name shown on hover card instead, no room to fit legibly here */}
+        {/* photo only — score & name now live exclusively in the hover popup card so the
+            small on-map circle isn't cropped/obscured by an overlaid number */}
         <div style={{ position: 'relative', width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, flexShrink: 0 }}>
           {worker.employees?.image_url
             ? <img src={worker.employees.image_url} style={{ width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `2px solid ${fc}`, boxShadow: `0 0 8px ${fc}88`, display: 'block' }} />
             : <div style={{ width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, borderRadius: '50%', background: `${fc}22`, border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>👤</div>
           }
-          <div style={{
-            position: 'absolute', bottom: 0, left: 0, right: 0,
-            background: `${fc}e0`, color: '#fff', fontSize: 10, fontWeight: 900,
-            textAlign: 'center', borderRadius: '0 0 50px 50px', padding: '0 0 1px',
-            lineHeight: 1.4, pointerEvents: 'none',
-          }}>
-            {fit.score}
-          </div>
         </div>
       </div>
     );
@@ -1272,7 +1265,7 @@ export default function Management() {
 
                   {/* content — worker fills top-down; empty + centered */}
                   {workerAtStation
-                    ? <StationWorker worker={workerAtStation} fit={workerFit} />
+                    ? <StationWorker worker={workerAtStation} fit={workerFit} stationName={st.station_name} />
                     : isPulse
                       ? (
                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
@@ -1880,7 +1873,7 @@ export default function Management() {
 
 /* ── Desktop hover tooltip ── */
 function WorkerHoverCard({ card, skillDefs }) {
-  const { worker, fit, rect } = card;
+  const { worker, fit, rect, stationName } = card;
   const emp = worker.employees;
   const skills = emp?.employee_skills || [];
   const tooltipW = 300;
@@ -1911,54 +1904,74 @@ function WorkerHoverCard({ card, skillDefs }) {
   const fc = fit ? fitColor(fit.score) : 'var(--accent)';
 
   return (
-    <div ref={elRef} style={{ position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999, width: tooltipW, zIndex: 3000, pointerEvents: 'none', visibility: pos ? 'visible' : 'hidden', background: 'var(--card)', border: `1px solid ${fc}55`, borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: 14, animation: pos ? 'hoverIn 0.18s ease' : 'none' }}>
+    <div ref={elRef} style={{ position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999, width: tooltipW, maxHeight: 'calc(100vh - 16px)', overflowY: 'hidden', zIndex: 3000, pointerEvents: 'none', visibility: pos ? 'visible' : 'hidden', background: 'var(--card)', border: `1px solid ${fc}55`, borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: 14, animation: pos ? 'hoverIn 0.18s ease' : 'none' }}>
       <style>{`@keyframes hoverIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
 
-      {/* Header — big photo on the left, fit-score "rank" badge overlaid, info on the right */}
-      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 10 }}>
-        <div style={{ position: 'relative', flexShrink: 0 }}>
-          {emp?.image_url
-            ? <img src={emp.image_url} style={{ width: 88, height: 88, borderRadius: 12, objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, boxShadow: `0 0 14px ${fc}55` }} />
-            : <div style={{ width: 88, height: 88, borderRadius: 12, background: 'var(--bg3)', border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36 }}>👤</div>
-          }
-          {fit && (
-            <div style={{ position: 'absolute', top: -6, left: -6, background: fc, color: '#fff', fontSize: 15, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 8, padding: '3px 7px', boxShadow: '0 2px 6px rgba(0,0,0,0.5)' }}>
-              {fit.score}
-            </div>
-          )}
-        </div>
-        <div style={{ minWidth: 0, flex: 1, paddingTop: 2 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', lineHeight: 1.25 }}>{emp?.name || '—'}</div>
-          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{emp?.employee_id_code || ''}</div>
-          {fit && <div style={{ fontSize: 11, fontWeight: 700, color: fc, marginTop: 3 }}>{fitLabel(fit.score)}</div>}
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 5 }}>
-            {emp?.team && <span style={{ fontSize: 9, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
-            {emp?.section && <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
+      {/* Header — big portrait on top like a FIFA player card. Rank badge floats ABOVE the photo
+          (not overlaid on top of it) so it never covers the employee's face, regardless of how
+          each photo is framed/cropped. */}
+      <div style={{ position: 'relative', marginTop: 18, marginBottom: 10 }}>
+        {emp?.image_url
+          ? <img src={emp.image_url} style={{ width: '100%', height: 200, borderRadius: 12, objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, boxShadow: `0 0 18px ${fc}55`, display: 'block' }} />
+          : <div style={{ width: '100%', height: 200, borderRadius: 12, background: 'var(--bg3)', border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 64 }}>👤</div>
+        }
+        {fit && (
+          <div style={{ position: 'absolute', top: -16, left: 8, background: fc, color: '#fff', fontSize: 22, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 8, padding: '4px 10px', boxShadow: '0 2px 8px rgba(0,0,0,0.6)' }}>
+            {fit.score}
           </div>
+        )}
+        {/* name plate over the bottom of the photo */}
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.85), transparent)', borderRadius: '0 0 12px 12px', padding: '18px 10px 8px' }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>{emp?.name || '—'}</div>
+          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>{emp?.employee_id_code || ''}</div>
         </div>
       </div>
 
-      {/* Skill stat grid — like a player card's attribute boxes */}
+      {stationName && (
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>→ {stationName}</div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        {fit && <div style={{ fontSize: 11, fontWeight: 700, color: fc }}>{fitLabel(fit.score)}</div>}
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {emp?.team && <span style={{ fontSize: 9, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
+          {emp?.section && <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
+        </div>
+      </div>
+
+      {/* Skill stat grid — like a player card's attribute boxes.
+          Capped to a fixed row count (not CSS overflow) so the card height stays
+          consistent no matter how many skills an employee has — required skills for
+          this station are prioritized first, then highest score. */}
       {skillDefs.length > 0 && (() => {
-        const statRows = skillDefs
+        const MAX_STATS = 8;
+        const allStatRows = skillDefs
           .map(sd => ({ name: sd.name, label: sd.label, color: sd.color, score: skills.find(s => s.skill_name === sd.name)?.score ?? 0, req: fit?.details?.find(d => d.label === sd.label) }))
-          .filter(s => s.score > 0 || s.req);
-        if (statRows.length === 0) return null;
+          .filter(s => s.score > 0 || s.req)
+          .sort((a, b) => (b.req ? 1 : 0) - (a.req ? 1 : 0) || b.score - a.score);
+        if (allStatRows.length === 0) return null;
+        const statRows = allStatRows.slice(0, MAX_STATS);
+        const hiddenCount = allStatRows.length - statRows.length;
         return (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
-            {statRows.map(s => {
-              const pass = s.req ? s.req.pass : null;
-              const sc = pass === false ? '#ef4444' : pass === true ? 'var(--accent)' : 'var(--text2)';
-              return (
-                <div key={s.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', border: `1px solid ${sc}33`, borderRadius: 6, padding: '4px 7px' }}>
-                  <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 4 }}>{s.label}</span>
-                  <span style={{ fontSize: 12, fontWeight: 900, color: sc, fontFamily: 'var(--font-display)', flexShrink: 0 }}>
-                    {s.score > 0 ? s.score : '—'}{s.req ? <span style={{ fontSize: 9, opacity: 0.6 }}>/{s.req.required}</span> : ''}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+              {statRows.map(s => {
+                const pass = s.req ? s.req.pass : null;
+                const sc = pass === false ? '#ef4444' : pass === true ? 'var(--accent)' : 'var(--text2)';
+                return (
+                  <div key={s.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', border: `1px solid ${sc}33`, borderRadius: 6, padding: '4px 7px' }}>
+                    <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 4 }}>{s.label}</span>
+                    <span style={{ fontSize: 12, fontWeight: 900, color: sc, fontFamily: 'var(--font-display)', flexShrink: 0 }}>
+                      {s.score > 0 ? s.score : '—'}{s.req ? <span style={{ fontSize: 9, opacity: 0.6 }}>/{s.req.required}</span> : ''}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {hiddenCount > 0 && (
+              <div style={{ fontSize: 9, color: 'var(--muted)', textAlign: 'center', marginTop: 4 }}>+{hiddenCount} ทักษะอื่นๆ</div>
+            )}
+          </>
         );
       })()}
 
