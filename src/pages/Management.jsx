@@ -1876,7 +1876,7 @@ function WorkerHoverCard({ card, skillDefs }) {
   const { worker, fit, rect, stationName } = card;
   const emp = worker.employees;
   const skills = emp?.employee_skills || [];
-  const tooltipW = 340;
+  const tooltipW = 400;
   const photoW = 118;
 
   const elRef = useRef(null);
@@ -1919,36 +1919,36 @@ function WorkerHoverCard({ card, skillDefs }) {
     <div ref={elRef} style={{ position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999, width: tooltipW, maxHeight: 'calc(100vh - 16px)', overflowY: 'hidden', zIndex: 3000, pointerEvents: 'none', visibility: pos ? 'visible' : 'hidden', background: 'var(--card)', border: `1px solid ${fc}55`, borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: 14, animation: pos ? 'hoverIn 0.18s ease' : 'none' }}>
       <style>{`@keyframes hoverIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
 
-      {/* Header — portrait photo on the left (real portrait aspect ratio so the face
-          isn't cropped in half), name/badges/skill stats on the right. Rank badge
-          floats above the photo so it never covers the face. */}
-      <div style={{ display: 'flex', gap: 10, marginTop: 18, marginBottom: 10 }}>
-        <div style={{ position: 'relative', flexShrink: 0, width: photoW }}>
-          {emp?.image_url
-            ? <img src={emp.image_url} style={{ width: photoW, height: photoW * 1.35, borderRadius: 10, objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, boxShadow: `0 0 14px ${fc}55`, display: 'block' }} />
-            : <div style={{ width: photoW, height: photoW * 1.35, borderRadius: 10, background: 'var(--bg3)', border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 44 }}>👤</div>
-          }
-          {fit && (
-            <div style={{ position: 'absolute', top: -16, left: 4, background: fc, color: '#fff', fontSize: 18, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 7, padding: '3px 8px', boxShadow: '0 2px 8px rgba(0,0,0,0.6)' }}>
-              {fit.score}
-            </div>
-          )}
-        </div>
+      {/* Header — portrait photo + name/badges/station stacked in the left column,
+          skill stat list in the right column. Rank badge floats above the photo so
+          it never covers the face. */}
+      <div style={{ display: 'flex', gap: 12, marginTop: 18, marginBottom: 10 }}>
+        <div style={{ flexShrink: 0, width: photoW }}>
+          <div style={{ position: 'relative' }}>
+            {emp?.image_url
+              ? <img src={emp.image_url} style={{ width: photoW, height: photoW * 1.35, borderRadius: 10, objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, boxShadow: `0 0 14px ${fc}55`, display: 'block' }} />
+              : <div style={{ width: photoW, height: photoW * 1.35, borderRadius: 10, background: 'var(--bg3)', border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 44 }}>👤</div>
+            }
+            {fit && (
+              <div style={{ position: 'absolute', top: -16, left: 4, background: fc, color: '#fff', fontSize: 18, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 7, padding: '3px 8px', boxShadow: '0 2px 8px rgba(0,0,0,0.6)' }}>
+                {fit.score}
+              </div>
+            )}
+          </div>
 
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', lineHeight: 1.2 }}>{emp?.name || '—'}</div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', lineHeight: 1.2, marginTop: 6 }}>{emp?.name || '—'}</div>
           <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>{emp?.employee_id_code || ''}</div>
           {stationName && (
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', marginTop: 4 }}>→ {stationName}</div>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 5, marginBottom: 6 }}>
-            {fit && <div style={{ fontSize: 10, fontWeight: 700, color: fc }}>{fitLabel(fit.score)}</div>}
-            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-              {emp?.team && <span style={{ fontSize: 9, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
-              {emp?.section && <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
-            </div>
+          {fit && <div style={{ fontSize: 10, fontWeight: 700, color: fc, marginTop: 4 }}>{fitLabel(fit.score)}</div>}
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+            {emp?.team && <span style={{ fontSize: 9, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
+            {emp?.section && <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
           </div>
+        </div>
 
+        <div style={{ flex: 1, minWidth: 0 }}>
           {statRows.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               {statRows.map(s => {
@@ -1976,11 +1976,11 @@ function WorkerHoverCard({ card, skillDefs }) {
       {skillDefs.length > 0 && radarData.length > 0 && (
         <>
           <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginTop: 4, marginBottom: 2 }}>ภาพรวมทักษะ</div>
-          <div style={{ width: '100%', height: 190 }}>
+          <div style={{ width: '100%', height: 220 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={radarData} margin={{ top: 14, right: 46, bottom: 14, left: 46 }}>
+              <RadarChart data={radarData} margin={{ top: 16, right: 70, bottom: 16, left: 70 }}>
                 <PolarGrid stroke="var(--border2)" />
-                <PolarAngleAxis dataKey="skill" tick={{ fontSize: 7, fill: 'var(--muted)', fontWeight: 600 }} />
+                <PolarAngleAxis dataKey="skill" tick={{ fontSize: 10, fill: 'var(--muted)', fontWeight: 600 }} />
                 <Radar name="ทักษะ" dataKey="score" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.22} strokeWidth={1.5} dot={{ r: 2, fill: 'var(--accent)' }} />
                 {fit && (
                   <Radar name="required" dataKey={() => null}
