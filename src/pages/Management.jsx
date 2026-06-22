@@ -416,11 +416,11 @@ export default function Management() {
   const handleDrop      = (e, stationId) => { e.preventDefault(); assignWorker(e.dataTransfer.getData('logId'), stationId); setDraggingWorker(null); setDragOverStation(null); };
 
   /* ── Hover (desktop) ── */
-  const onHoverEnter = (e, worker, fit = null) => {
+  const onHoverEnter = (e, worker, fit = null, stationName = null) => {
     if (isMobile) return;
     clearTimeout(hoverTimer.current);
     const rect = e.currentTarget.getBoundingClientRect();
-    hoverTimer.current = setTimeout(() => setHoverCard({ worker, fit, rect }), 180);
+    hoverTimer.current = setTimeout(() => setHoverCard({ worker, fit, rect, stationName }), 180);
   };
   const onHoverLeave = () => { clearTimeout(hoverTimer.current); setHoverCard(null); };
 
@@ -652,31 +652,24 @@ export default function Management() {
   };
 
   /* ── Station worker ── */
-  const StationWorker = ({ worker, fit }) => {
+  const StationWorker = ({ worker, fit, stationName }) => {
     const fc = fitColor(fit.score);
     return (
       <div
         draggable={!isMobile}
         onDragStart={!isMobile ? (e) => handleDragStart(e, worker) : undefined}
         onDragEnd={!isMobile ? handleDragEnd : undefined}
-        onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker, fit) : undefined}
+        onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker, fit, stationName) : undefined}
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
         style={{ width: '100%', flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isMobile ? 'pointer' : 'grab', userSelect: 'none' }}
       >
-        {/* photo with score overlaid at bottom of circle — name shown on hover card instead, no room to fit legibly here */}
+        {/* photo only — score & name now live exclusively in the hover popup card so the
+            small on-map circle isn't cropped/obscured by an overlaid number */}
         <div style={{ position: 'relative', width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, flexShrink: 0 }}>
           {worker.employees?.image_url
             ? <img src={worker.employees.image_url} style={{ width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `2px solid ${fc}`, boxShadow: `0 0 8px ${fc}88`, display: 'block' }} />
             : <div style={{ width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, borderRadius: '50%', background: `${fc}22`, border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>👤</div>
           }
-          <div style={{
-            position: 'absolute', bottom: 0, left: 0, right: 0,
-            background: `${fc}e0`, color: '#fff', fontSize: 10, fontWeight: 900,
-            textAlign: 'center', borderRadius: '0 0 50px 50px', padding: '0 0 1px',
-            lineHeight: 1.4, pointerEvents: 'none',
-          }}>
-            {fit.score}
-          </div>
         </div>
       </div>
     );
@@ -1272,7 +1265,7 @@ export default function Management() {
 
                   {/* content — worker fills top-down; empty + centered */}
                   {workerAtStation
-                    ? <StationWorker worker={workerAtStation} fit={workerFit} />
+                    ? <StationWorker worker={workerAtStation} fit={workerFit} stationName={st.station_name} />
                     : isPulse
                       ? (
                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
@@ -1880,7 +1873,7 @@ export default function Management() {
 
 /* ── Desktop hover tooltip ── */
 function WorkerHoverCard({ card, skillDefs }) {
-  const { worker, fit, rect } = card;
+  const { worker, fit, rect, stationName } = card;
   const emp = worker.employees;
   const skills = emp?.employee_skills || [];
   const tooltipW = 300;
@@ -1933,6 +1926,10 @@ function WorkerHoverCard({ card, skillDefs }) {
           <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>{emp?.employee_id_code || ''}</div>
         </div>
       </div>
+
+      {stationName && (
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>→ {stationName}</div>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         {fit && <div style={{ fontSize: 11, fontWeight: 700, color: fc }}>{fitLabel(fit.score)}</div>}
