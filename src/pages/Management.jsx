@@ -1911,7 +1911,7 @@ function WorkerHoverCard({ card, skillDefs }) {
   const fc = fit ? fitColor(fit.score) : 'var(--accent)';
 
   return (
-    <div ref={elRef} style={{ position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999, width: tooltipW, zIndex: 3000, pointerEvents: 'none', visibility: pos ? 'visible' : 'hidden', background: 'var(--card)', border: `1px solid ${fc}55`, borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: 14, animation: pos ? 'hoverIn 0.18s ease' : 'none' }}>
+    <div ref={elRef} style={{ position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999, width: tooltipW, maxHeight: 'calc(100vh - 16px)', overflowY: 'hidden', zIndex: 3000, pointerEvents: 'none', visibility: pos ? 'visible' : 'hidden', background: 'var(--card)', border: `1px solid ${fc}55`, borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: 14, animation: pos ? 'hoverIn 0.18s ease' : 'none' }}>
       <style>{`@keyframes hoverIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
 
       {/* Header — big portrait on top like a FIFA player card, rank badge overlaid on the corner */}
@@ -1947,7 +1947,7 @@ function WorkerHoverCard({ card, skillDefs }) {
           .filter(s => s.score > 0 || s.req);
         if (statRows.length === 0) return null;
         return (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, maxHeight: 200, overflowY: 'auto', pointerEvents: 'auto', paddingRight: 2 }}>
             {statRows.map(s => {
               const pass = s.req ? s.req.pass : null;
               const sc = pass === false ? '#ef4444' : pass === true ? 'var(--accent)' : 'var(--text2)';
