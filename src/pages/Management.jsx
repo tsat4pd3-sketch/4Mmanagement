@@ -1884,11 +1884,11 @@ function WorkerHoverCard({ card, skillDefs }) {
   const { worker, fit, rect } = card;
   const emp = worker.employees;
   const skills = emp?.employee_skills || [];
-  const tooltipW = 260;
+  const tooltipW = 300;
   const gap = 10;
   let left = rect.right + gap;
   if (left + tooltipW > window.innerWidth - 12) left = rect.left - tooltipW - gap;
-  const top = Math.max(8, Math.min(rect.top - 20, window.innerHeight - 400));
+  const top = Math.max(8, Math.min(rect.top - 20, window.innerHeight - 440));
 
   const radarData = dedupeByLabel(
     skillDefs.map(sd => ({ skill: sd.label, score: skills.find(s => s.skill_name === sd.name)?.score ?? 0, fullMark: 100 })),
@@ -1897,42 +1897,65 @@ function WorkerHoverCard({ card, skillDefs }) {
     .filter(d => d.score > 0)
     .sort((a, b) => b.score - a.score);
 
+  const fc = fit ? fitColor(fit.score) : 'var(--accent)';
+
   return (
-    <div style={{ position: 'fixed', top, left, width: tooltipW, zIndex: 3000, pointerEvents: 'none', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: '14px 14px 10px', animation: 'hoverIn 0.18s ease' }}>
+    <div style={{ position: 'fixed', top, left, width: tooltipW, zIndex: 3000, pointerEvents: 'none', background: 'var(--card)', border: `1px solid ${fc}55`, borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: 14, animation: 'hoverIn 0.18s ease' }}>
       <style>{`@keyframes hoverIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
 
-      {/* Header */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10 }}>
-        {emp?.image_url
-          ? <img src={emp.image_url} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid var(--border2)', flexShrink: 0 }} />
-          : <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
-        }
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', lineHeight: 1.3 }}>{emp?.name || '—'}</div>
+      {/* Header — big photo on the left, fit-score "rank" badge overlaid, info on the right */}
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 10 }}>
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          {emp?.image_url
+            ? <img src={emp.image_url} style={{ width: 88, height: 88, borderRadius: 12, objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, boxShadow: `0 0 14px ${fc}55` }} />
+            : <div style={{ width: 88, height: 88, borderRadius: 12, background: 'var(--bg3)', border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36 }}>👤</div>
+          }
+          {fit && (
+            <div style={{ position: 'absolute', top: -6, left: -6, background: fc, color: '#fff', fontSize: 15, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 8, padding: '3px 7px', boxShadow: '0 2px 6px rgba(0,0,0,0.5)' }}>
+              {fit.score}
+            </div>
+          )}
+        </div>
+        <div style={{ minWidth: 0, flex: 1, paddingTop: 2 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', lineHeight: 1.25 }}>{emp?.name || '—'}</div>
           <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{emp?.employee_id_code || ''}</div>
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 3 }}>
+          {fit && <div style={{ fontSize: 11, fontWeight: 700, color: fc, marginTop: 3 }}>{fitLabel(fit.score)}</div>}
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 5 }}>
             {emp?.team && <span style={{ fontSize: 9, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
             {emp?.section && <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
           </div>
         </div>
       </div>
 
-      {/* Fit score badge */}
-      {fit && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, background: `${fitColor(fit.score)}15`, border: `1px solid ${fitColor(fit.score)}40`, borderRadius: 8, padding: '5px 10px' }}>
-          <div style={{ fontSize: 20, fontWeight: 900, color: fitColor(fit.score), fontFamily: 'var(--font-display)', lineHeight: 1 }}>{fit.score}</div>
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: fitColor(fit.score) }}>{fitLabel(fit.score)}</div>
-            <div style={{ fontSize: 9, color: 'var(--muted)' }}>Fit Score</div>
+      {/* Skill stat grid — like a player card's attribute boxes */}
+      {skillDefs.length > 0 && (() => {
+        const statRows = skillDefs
+          .map(sd => ({ name: sd.name, label: sd.label, color: sd.color, score: skills.find(s => s.skill_name === sd.name)?.score ?? 0, req: fit?.details?.find(d => d.label === sd.label) }))
+          .filter(s => s.score > 0 || s.req);
+        if (statRows.length === 0) return null;
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+            {statRows.map(s => {
+              const pass = s.req ? s.req.pass : null;
+              const sc = pass === false ? '#ef4444' : pass === true ? 'var(--accent)' : 'var(--text2)';
+              return (
+                <div key={s.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', border: `1px solid ${sc}33`, borderRadius: 6, padding: '4px 7px' }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 4 }}>{s.label}</span>
+                  <span style={{ fontSize: 12, fontWeight: 900, color: sc, fontFamily: 'var(--font-display)', flexShrink: 0 }}>
+                    {s.score > 0 ? s.score : '—'}{s.req ? <span style={{ fontSize: 9, opacity: 0.6 }}>/{s.req.required}</span> : ''}
+                  </span>
+                </div>
+              );
+            })}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Radar chart */}
-      {skillDefs.length > 0 && (
+      {skillDefs.length > 0 && radarData.length > 0 && (
         <>
-          <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 2 }}>ทักษะ</div>
-          <div style={{ width: '100%', height: 170 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginTop: 10, marginBottom: 2 }}>ภาพรวมทักษะ</div>
+          <div style={{ width: '100%', height: 150 }}>
             <ResponsiveContainer width="100%" height="100%">
               <RadarChart data={radarData} margin={{ top: 8, right: 20, bottom: 8, left: 20 }}>
                 <PolarGrid stroke="var(--border2)" />
@@ -1949,21 +1972,6 @@ function WorkerHoverCard({ card, skillDefs }) {
                 )}
               </RadarChart>
             </ResponsiveContainer>
-          </div>
-          {/* Score legend — only show skills with score > 0 */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 10px', marginTop: 2 }}>
-            {skillDefs.map(sd => {
-              const score = skills.find(s => s.skill_name === sd.name)?.score ?? 0;
-              const fitReq = fit?.details?.find(d => d.label === sd.label);
-              if (score === 0 && !fitReq) return null;
-              const pass = fitReq ? fitReq.pass : null;
-              return (
-                <span key={sd.name} style={{ fontSize: 9, color: pass === false ? '#ef4444' : pass === true ? 'var(--accent)' : 'var(--muted)' }}>
-                  <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: sd.color, marginRight: 3 }} />
-                  {sd.label} <strong>{score > 0 ? score : '—'}</strong>{fitReq ? `/${fitReq.required}` : ''}
-                </span>
-              );
-            })}
           </div>
         </>
       )}
