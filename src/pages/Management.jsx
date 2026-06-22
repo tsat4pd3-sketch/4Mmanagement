@@ -1914,14 +1914,16 @@ function WorkerHoverCard({ card, skillDefs }) {
     <div ref={elRef} style={{ position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999, width: tooltipW, maxHeight: 'calc(100vh - 16px)', overflowY: 'hidden', zIndex: 3000, pointerEvents: 'none', visibility: pos ? 'visible' : 'hidden', background: 'var(--card)', border: `1px solid ${fc}55`, borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: 14, animation: pos ? 'hoverIn 0.18s ease' : 'none' }}>
       <style>{`@keyframes hoverIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
 
-      {/* Header — big portrait on top like a FIFA player card, rank badge overlaid on the corner */}
-      <div style={{ position: 'relative', marginBottom: 10 }}>
+      {/* Header — big portrait on top like a FIFA player card. Rank badge floats ABOVE the photo
+          (not overlaid on top of it) so it never covers the employee's face, regardless of how
+          each photo is framed/cropped. */}
+      <div style={{ position: 'relative', marginTop: 18, marginBottom: 10 }}>
         {emp?.image_url
           ? <img src={emp.image_url} style={{ width: '100%', height: 200, borderRadius: 12, objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, boxShadow: `0 0 18px ${fc}55`, display: 'block' }} />
           : <div style={{ width: '100%', height: 200, borderRadius: 12, background: 'var(--bg3)', border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 64 }}>👤</div>
         }
         {fit && (
-          <div style={{ position: 'absolute', top: 8, left: 8, background: fc, color: '#fff', fontSize: 22, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 8, padding: '4px 10px', boxShadow: '0 2px 8px rgba(0,0,0,0.6)' }}>
+          <div style={{ position: 'absolute', top: -16, left: 8, background: fc, color: '#fff', fontSize: 22, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 8, padding: '4px 10px', boxShadow: '0 2px 8px rgba(0,0,0,0.6)' }}>
             {fit.score}
           </div>
         )}
@@ -1940,27 +1942,39 @@ function WorkerHoverCard({ card, skillDefs }) {
         </div>
       </div>
 
-      {/* Skill stat grid — like a player card's attribute boxes */}
+      {/* Skill stat grid — like a player card's attribute boxes.
+          Capped to a fixed row count (not CSS overflow) so the card height stays
+          consistent no matter how many skills an employee has — required skills for
+          this station are prioritized first, then highest score. */}
       {skillDefs.length > 0 && (() => {
-        const statRows = skillDefs
+        const MAX_STATS = 8;
+        const allStatRows = skillDefs
           .map(sd => ({ name: sd.name, label: sd.label, color: sd.color, score: skills.find(s => s.skill_name === sd.name)?.score ?? 0, req: fit?.details?.find(d => d.label === sd.label) }))
-          .filter(s => s.score > 0 || s.req);
-        if (statRows.length === 0) return null;
+          .filter(s => s.score > 0 || s.req)
+          .sort((a, b) => (b.req ? 1 : 0) - (a.req ? 1 : 0) || b.score - a.score);
+        if (allStatRows.length === 0) return null;
+        const statRows = allStatRows.slice(0, MAX_STATS);
+        const hiddenCount = allStatRows.length - statRows.length;
         return (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, maxHeight: 200, overflowY: 'auto', pointerEvents: 'auto', paddingRight: 2 }}>
-            {statRows.map(s => {
-              const pass = s.req ? s.req.pass : null;
-              const sc = pass === false ? '#ef4444' : pass === true ? 'var(--accent)' : 'var(--text2)';
-              return (
-                <div key={s.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', border: `1px solid ${sc}33`, borderRadius: 6, padding: '4px 7px' }}>
-                  <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 4 }}>{s.label}</span>
-                  <span style={{ fontSize: 12, fontWeight: 900, color: sc, fontFamily: 'var(--font-display)', flexShrink: 0 }}>
-                    {s.score > 0 ? s.score : '—'}{s.req ? <span style={{ fontSize: 9, opacity: 0.6 }}>/{s.req.required}</span> : ''}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+              {statRows.map(s => {
+                const pass = s.req ? s.req.pass : null;
+                const sc = pass === false ? '#ef4444' : pass === true ? 'var(--accent)' : 'var(--text2)';
+                return (
+                  <div key={s.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', border: `1px solid ${sc}33`, borderRadius: 6, padding: '4px 7px' }}>
+                    <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 4 }}>{s.label}</span>
+                    <span style={{ fontSize: 12, fontWeight: 900, color: sc, fontFamily: 'var(--font-display)', flexShrink: 0 }}>
+                      {s.score > 0 ? s.score : '—'}{s.req ? <span style={{ fontSize: 9, opacity: 0.6 }}>/{s.req.required}</span> : ''}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {hiddenCount > 0 && (
+              <div style={{ fontSize: 9, color: 'var(--muted)', textAlign: 'center', marginTop: 4 }}>+{hiddenCount} ทักษะอื่นๆ</div>
+            )}
+          </>
         );
       })()}
 
