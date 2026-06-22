@@ -1876,7 +1876,8 @@ function WorkerHoverCard({ card, skillDefs }) {
   const { worker, fit, rect, stationName } = card;
   const emp = worker.employees;
   const skills = emp?.employee_skills || [];
-  const tooltipW = 300;
+  const tooltipW = 340;
+  const photoW = 118;
 
   const elRef = useRef(null);
   const [pos, setPos] = useState(null);
@@ -1903,87 +1904,83 @@ function WorkerHoverCard({ card, skillDefs }) {
 
   const fc = fit ? fitColor(fit.score) : 'var(--accent)';
 
+  // Capped to a fixed row count (not CSS overflow) so the card height stays consistent
+  // no matter how many skills an employee has — required skills for this station are
+  // prioritized first, then highest score.
+  const MAX_STATS = 6;
+  const allStatRows = skillDefs
+    .map(sd => ({ name: sd.name, label: sd.label, color: sd.color, score: skills.find(s => s.skill_name === sd.name)?.score ?? 0, req: fit?.details?.find(d => d.label === sd.label) }))
+    .filter(s => s.score > 0 || s.req)
+    .sort((a, b) => (b.req ? 1 : 0) - (a.req ? 1 : 0) || b.score - a.score);
+  const statRows = allStatRows.slice(0, MAX_STATS);
+  const hiddenCount = allStatRows.length - statRows.length;
+
   return (
     <div ref={elRef} style={{ position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999, width: tooltipW, maxHeight: 'calc(100vh - 16px)', overflowY: 'hidden', zIndex: 3000, pointerEvents: 'none', visibility: pos ? 'visible' : 'hidden', background: 'var(--card)', border: `1px solid ${fc}55`, borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: 14, animation: pos ? 'hoverIn 0.18s ease' : 'none' }}>
       <style>{`@keyframes hoverIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
 
-      {/* Header — big portrait on top like a FIFA player card. Rank badge floats ABOVE the photo
-          (not overlaid on top of it) so it never covers the employee's face, regardless of how
-          each photo is framed/cropped. */}
-      <div style={{ position: 'relative', marginTop: 18, marginBottom: 10 }}>
-        {emp?.image_url
-          ? <img src={emp.image_url} style={{ width: '100%', height: 200, borderRadius: 12, objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, boxShadow: `0 0 18px ${fc}55`, display: 'block' }} />
-          : <div style={{ width: '100%', height: 200, borderRadius: 12, background: 'var(--bg3)', border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 64 }}>👤</div>
-        }
-        {fit && (
-          <div style={{ position: 'absolute', top: -16, left: 8, background: fc, color: '#fff', fontSize: 22, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 8, padding: '4px 10px', boxShadow: '0 2px 8px rgba(0,0,0,0.6)' }}>
-            {fit.score}
+      {/* Header — portrait photo on the left (real portrait aspect ratio so the face
+          isn't cropped in half), name/badges/skill stats on the right. Rank badge
+          floats above the photo so it never covers the face. */}
+      <div style={{ display: 'flex', gap: 10, marginTop: 18, marginBottom: 10 }}>
+        <div style={{ position: 'relative', flexShrink: 0, width: photoW }}>
+          {emp?.image_url
+            ? <img src={emp.image_url} style={{ width: photoW, height: photoW * 1.35, borderRadius: 10, objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, boxShadow: `0 0 14px ${fc}55`, display: 'block' }} />
+            : <div style={{ width: photoW, height: photoW * 1.35, borderRadius: 10, background: 'var(--bg3)', border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 44 }}>👤</div>
+          }
+          {fit && (
+            <div style={{ position: 'absolute', top: -16, left: 4, background: fc, color: '#fff', fontSize: 18, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 7, padding: '3px 8px', boxShadow: '0 2px 8px rgba(0,0,0,0.6)' }}>
+              {fit.score}
+            </div>
+          )}
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', lineHeight: 1.2 }}>{emp?.name || '—'}</div>
+          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>{emp?.employee_id_code || ''}</div>
+          {stationName && (
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', marginTop: 4 }}>→ {stationName}</div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 5, marginBottom: 6 }}>
+            {fit && <div style={{ fontSize: 10, fontWeight: 700, color: fc }}>{fitLabel(fit.score)}</div>}
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {emp?.team && <span style={{ fontSize: 9, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
+              {emp?.section && <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
+            </div>
           </div>
-        )}
-        {/* name plate over the bottom of the photo */}
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.85), transparent)', borderRadius: '0 0 12px 12px', padding: '18px 10px 8px' }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>{emp?.name || '—'}</div>
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>{emp?.employee_id_code || ''}</div>
-        </div>
-      </div>
 
-      {stationName && (
-        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>→ {stationName}</div>
-      )}
-
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        {fit && <div style={{ fontSize: 11, fontWeight: 700, color: fc }}>{fitLabel(fit.score)}</div>}
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {emp?.team && <span style={{ fontSize: 9, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
-          {emp?.section && <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
-        </div>
-      </div>
-
-      {/* Skill stat grid — like a player card's attribute boxes.
-          Capped to a fixed row count (not CSS overflow) so the card height stays
-          consistent no matter how many skills an employee has — required skills for
-          this station are prioritized first, then highest score. */}
-      {skillDefs.length > 0 && (() => {
-        const MAX_STATS = 8;
-        const allStatRows = skillDefs
-          .map(sd => ({ name: sd.name, label: sd.label, color: sd.color, score: skills.find(s => s.skill_name === sd.name)?.score ?? 0, req: fit?.details?.find(d => d.label === sd.label) }))
-          .filter(s => s.score > 0 || s.req)
-          .sort((a, b) => (b.req ? 1 : 0) - (a.req ? 1 : 0) || b.score - a.score);
-        if (allStatRows.length === 0) return null;
-        const statRows = allStatRows.slice(0, MAX_STATS);
-        const hiddenCount = allStatRows.length - statRows.length;
-        return (
-          <>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+          {statRows.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               {statRows.map(s => {
                 const pass = s.req ? s.req.pass : null;
                 const sc = pass === false ? '#ef4444' : pass === true ? 'var(--accent)' : 'var(--text2)';
                 return (
-                  <div key={s.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', border: `1px solid ${sc}33`, borderRadius: 6, padding: '4px 7px' }}>
+                  <div key={s.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', border: `1px solid ${sc}33`, borderRadius: 5, padding: '3px 6px' }}>
                     <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 4 }}>{s.label}</span>
-                    <span style={{ fontSize: 12, fontWeight: 900, color: sc, fontFamily: 'var(--font-display)', flexShrink: 0 }}>
+                    <span style={{ fontSize: 11, fontWeight: 900, color: sc, fontFamily: 'var(--font-display)', flexShrink: 0 }}>
                       {s.score > 0 ? s.score : '—'}{s.req ? <span style={{ fontSize: 9, opacity: 0.6 }}>/{s.req.required}</span> : ''}
                     </span>
                   </div>
                 );
               })}
+              {hiddenCount > 0 && (
+                <div style={{ fontSize: 9, color: 'var(--muted)', textAlign: 'center', marginTop: 1 }}>+{hiddenCount} ทักษะอื่นๆ</div>
+              )}
             </div>
-            {hiddenCount > 0 && (
-              <div style={{ fontSize: 9, color: 'var(--muted)', textAlign: 'center', marginTop: 4 }}>+{hiddenCount} ทักษะอื่นๆ</div>
-            )}
-          </>
-        );
-      })()}
+          )}
+        </div>
+      </div>
 
-      {/* Radar chart */}
+      {/* Radar chart — full width, below the header. Wide margins + small font so long
+          Thai skill labels don't clip past the card edges at high skill counts. */}
       {skillDefs.length > 0 && radarData.length > 0 && (
         <>
-          <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginTop: 10, marginBottom: 2 }}>ภาพรวมทักษะ</div>
-          <div style={{ width: '100%', height: 150 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginTop: 4, marginBottom: 2 }}>ภาพรวมทักษะ</div>
+          <div style={{ width: '100%', height: 190 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={radarData} margin={{ top: 8, right: 20, bottom: 8, left: 20 }}>
+              <RadarChart data={radarData} margin={{ top: 14, right: 46, bottom: 14, left: 46 }}>
                 <PolarGrid stroke="var(--border2)" />
-                <PolarAngleAxis dataKey="skill" tick={{ fontSize: 8, fill: 'var(--muted)', fontWeight: 600 }} />
+                <PolarAngleAxis dataKey="skill" tick={{ fontSize: 7, fill: 'var(--muted)', fontWeight: 600 }} />
                 <Radar name="ทักษะ" dataKey="score" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.22} strokeWidth={1.5} dot={{ r: 2, fill: 'var(--accent)' }} />
                 {fit && (
                   <Radar name="required" dataKey={() => null}
