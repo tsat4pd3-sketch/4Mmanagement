@@ -1876,7 +1876,7 @@ function WorkerHoverCard({ card, skillDefs }) {
   const { worker, fit, rect, stationName } = card;
   const emp = worker.employees;
   const skills = emp?.employee_skills || [];
-  const tooltipW = 340;
+  const tooltipW = 400;
   const photoW = 118;
 
   const elRef = useRef(null);
@@ -1976,11 +1976,11 @@ function WorkerHoverCard({ card, skillDefs }) {
       {skillDefs.length > 0 && radarData.length > 0 && (
         <>
           <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginTop: 4, marginBottom: 2 }}>ภาพรวมทักษะ</div>
-          <div style={{ width: '100%', height: 190 }}>
+          <div style={{ width: '100%', height: 220 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={radarData} margin={{ top: 14, right: 46, bottom: 14, left: 46 }}>
+              <RadarChart data={radarData} margin={{ top: 16, right: 70, bottom: 16, left: 70 }}>
                 <PolarGrid stroke="var(--border2)" />
-                <PolarAngleAxis dataKey="skill" tick={{ fontSize: 7, fill: 'var(--muted)', fontWeight: 600 }} />
+                <PolarAngleAxis dataKey="skill" tick={{ fontSize: 10, fill: 'var(--muted)', fontWeight: 600 }} />
                 <Radar name="ทักษะ" dataKey="score" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.22} strokeWidth={1.5} dot={{ r: 2, fill: 'var(--accent)' }} />
                 {fit && (
                   <Radar name="required" dataKey={() => null}
