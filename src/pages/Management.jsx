@@ -76,9 +76,9 @@ function getPeriodStartDate(period, workDate) {
   return d;
 }
 
-const CARD_W = 104;
-const CARD_H = 92;
-const PHOTO_SZ = 64; // photo size in station cards — dominates the card area
+const CARD_W = 70;
+const CARD_H = 58;
+const PHOTO_SZ = 40; // photo size in station cards — scaled to match CARD_W/CARD_H
 
 function useWidth() {
   const [w, setW] = useState(() => window.innerWidth);
@@ -1398,7 +1398,8 @@ export default function Management() {
               const workerSkills = radarWorker.employees?.employee_skills || [];
               const radarDataFiltered = skillDefs
                 .map(sd => ({ subject: sd.label, score: workerSkills.find(s => s.skill_name === sd.name)?.score ?? 0, fullMark: 100 }))
-                .filter(d => d.score > 0);
+                .filter(d => d.score > 0)
+                .sort((a, b) => b.score - a.score);
               if (radarDataFiltered.length === 0) return (
                 <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '20px 0' }}>ยังไม่มีข้อมูลทักษะ</div>
               );
@@ -1877,7 +1878,8 @@ function WorkerHoverCard({ card, skillDefs }) {
 
   const radarData = skillDefs
     .map(sd => ({ skill: sd.label, score: skills.find(s => s.skill_name === sd.name)?.score ?? 0, fullMark: 100 }))
-    .filter(d => d.score > 0);
+    .filter(d => d.score > 0)
+    .sort((a, b) => b.score - a.score);
 
   return (
     <div style={{ position: 'fixed', top, left, width: tooltipW, zIndex: 3000, pointerEvents: 'none', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: '14px 14px 10px', animation: 'hoverIn 0.18s ease' }}>
