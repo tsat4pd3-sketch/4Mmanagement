@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -662,7 +662,6 @@ export default function Management() {
         onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker, fit) : undefined}
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
         style={{ width: '100%', flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isMobile ? 'pointer' : 'grab', userSelect: 'none' }}
-        title={`${worker.employees?.name ?? '?'} — Fit ${fit.score}`}
       >
         {/* photo with score overlaid at bottom of circle — name shown on hover card instead, no room to fit legibly here */}
         <div style={{ position: 'relative', width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, flexShrink: 0 }}>
@@ -1885,10 +1884,22 @@ function WorkerHoverCard({ card, skillDefs }) {
   const emp = worker.employees;
   const skills = emp?.employee_skills || [];
   const tooltipW = 300;
-  const gap = 10;
-  let left = rect.right + gap;
-  if (left + tooltipW > window.innerWidth - 12) left = rect.left - tooltipW - gap;
-  const top = Math.max(8, Math.min(rect.top - 20, window.innerHeight - 440));
+
+  const elRef = useRef(null);
+  const [pos, setPos] = useState(null);
+
+  useLayoutEffect(() => {
+    const el = elRef.current;
+    if (!el) return;
+    const h = el.offsetHeight;
+    const gap = 10;
+    let left = rect.right + gap;
+    if (left + tooltipW > window.innerWidth - 8) left = rect.left - tooltipW - gap;
+    left = Math.max(8, Math.min(left, window.innerWidth - tooltipW - 8));
+    let top = rect.top - 20;
+    top = Math.max(8, Math.min(top, window.innerHeight - h - 8));
+    setPos({ top, left });
+  }, [rect, worker?.id, fit?.score]);
 
   const radarData = dedupeByLabel(
     skillDefs.map(sd => ({ skill: sd.label, score: skills.find(s => s.skill_name === sd.name)?.score ?? 0, fullMark: 100 })),
@@ -1900,7 +1911,7 @@ function WorkerHoverCard({ card, skillDefs }) {
   const fc = fit ? fitColor(fit.score) : 'var(--accent)';
 
   return (
-    <div style={{ position: 'fixed', top, left, width: tooltipW, zIndex: 3000, pointerEvents: 'none', background: 'var(--card)', border: `1px solid ${fc}55`, borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: 14, animation: 'hoverIn 0.18s ease' }}>
+    <div ref={elRef} style={{ position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999, width: tooltipW, zIndex: 3000, pointerEvents: 'none', visibility: pos ? 'visible' : 'hidden', background: 'var(--card)', border: `1px solid ${fc}55`, borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: 14, animation: pos ? 'hoverIn 0.18s ease' : 'none' }}>
       <style>{`@keyframes hoverIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
 
       {/* Header — big photo on the left, fit-score "rank" badge overlaid, info on the right */}
