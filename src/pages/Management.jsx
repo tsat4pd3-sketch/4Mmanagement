@@ -78,7 +78,7 @@ function getPeriodStartDate(period, workDate) {
 
 const CARD_W = 70;
 const CARD_H = 58;
-const STATION_PHOTO_SZ = 30; // photo size inside the on-map mini card — must fit CARD_H alongside the header row
+const STATION_PHOTO_SZ = 36; // photo size inside the on-map mini card — must fit CARD_H alongside the header row
 const POOL_PHOTO_SZ = 44;    // photo size in sidebar pool/special-task cards — independent of map marker size
 
 function useWidth() {
@@ -649,7 +649,7 @@ export default function Management() {
         onDragEnd={!isMobile ? handleDragEnd : undefined}
         onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker, fit) : undefined}
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
-        style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isMobile ? 'pointer' : 'grab', userSelect: 'none' }}
+        style={{ width: '100%', flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isMobile ? 'pointer' : 'grab', userSelect: 'none' }}
         title={`${worker.employees?.name ?? '?'} — Fit ${fit.score}`}
       >
         {/* photo with score overlaid at bottom of circle — name shown on hover card instead, no room to fit legibly here */}
@@ -1207,10 +1207,10 @@ export default function Management() {
                   backdropFilter: 'blur(3px)',
                   animation: isPulse ? 'pulse-ring 1.4s ease-in-out infinite' : 'none',
                   display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  padding: '4px 4px 2px',
+                  padding: '3px 3px 2px',
                   transition: 'background-color 0.18s, border-color 0.18s',
                 }}>
-                  <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3, flexShrink: 0 }}>
+                  <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2, flexShrink: 0 }}>
                     <span title={st.station_name} style={{ fontSize: isWide ? 10 : 9, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: activeFc || '#c8c8d0' }}>
                       {st.station_name}
                     </span>
