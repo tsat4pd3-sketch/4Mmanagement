@@ -81,6 +81,18 @@ const CARD_H = 58;
 const STATION_PHOTO_SZ = 36; // photo size inside the on-map mini card — must fit CARD_H alongside the header row
 const POOL_PHOTO_SZ = 44;    // photo size in sidebar pool/special-task cards — independent of map marker size
 
+// skill_definitions has rows that share the same display label under different skill_name keys
+// (data duplication) — without this, the radar chart's category axis collapses both entries onto
+// the same angle, which makes the polygon zigzag in/out and look like crossing lines
+function dedupeByLabel(items, labelKey) {
+  const byLabel = new Map();
+  for (const item of items) {
+    const existing = byLabel.get(item[labelKey]);
+    if (!existing || item.score > existing.score) byLabel.set(item[labelKey], item);
+  }
+  return [...byLabel.values()];
+}
+
 function useWidth() {
   const [w, setW] = useState(() => window.innerWidth);
   useEffect(() => {
@@ -1396,8 +1408,10 @@ export default function Management() {
             </div>
             {skillDefs.length > 0 ? (() => {
               const workerSkills = radarWorker.employees?.employee_skills || [];
-              const radarDataFiltered = skillDefs
-                .map(sd => ({ subject: sd.label, score: workerSkills.find(s => s.skill_name === sd.name)?.score ?? 0, fullMark: 100 }))
+              const radarDataFiltered = dedupeByLabel(
+                skillDefs.map(sd => ({ subject: sd.label, score: workerSkills.find(s => s.skill_name === sd.name)?.score ?? 0, fullMark: 100 })),
+                'subject'
+              )
                 .filter(d => d.score > 0)
                 .sort((a, b) => b.score - a.score);
               if (radarDataFiltered.length === 0) return (
@@ -1876,8 +1890,10 @@ function WorkerHoverCard({ card, skillDefs }) {
   if (left + tooltipW > window.innerWidth - 12) left = rect.left - tooltipW - gap;
   const top = Math.max(8, Math.min(rect.top - 20, window.innerHeight - 400));
 
-  const radarData = skillDefs
-    .map(sd => ({ skill: sd.label, score: skills.find(s => s.skill_name === sd.name)?.score ?? 0, fullMark: 100 }))
+  const radarData = dedupeByLabel(
+    skillDefs.map(sd => ({ skill: sd.label, score: skills.find(s => s.skill_name === sd.name)?.score ?? 0, fullMark: 100 })),
+    'skill'
+  )
     .filter(d => d.score > 0)
     .sort((a, b) => b.score - a.score);
 
