@@ -76,9 +76,9 @@ function getPeriodStartDate(period, workDate) {
   return d;
 }
 
-const CARD_W = 104;
-const CARD_H = 92;
-const PHOTO_SZ = 64; // photo size in station cards — dominates the card area
+const CARD_W = 70;
+const CARD_H = 58;
+const PHOTO_SZ = 40; // photo size in station cards — scaled to match CARD_W/CARD_H
 
 function useWidth() {
   const [w, setW] = useState(() => window.innerWidth);
