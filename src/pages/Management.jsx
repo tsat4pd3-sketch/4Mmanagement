@@ -172,7 +172,9 @@ export default function Management() {
   const [pendingDocModal, setPendingDocModal] = useState(null); // { log: {...} }
   const [docImageFile,    setDocImageFile]    = useState(null);
   const [panelCollapsed,  setPanelCollapsed]  = useState(false);
-  const [wipFilterOn,     setWipFilterOn]     = useState(false);
+  const [filterMan,       setFilterMan]       = useState(false);
+  const [filterMachine,   setFilterMachine]   = useState(false);
+  const [filterWip,       setFilterWip]       = useState(false);
   const [docImagePreview, setDocImagePreview] = useState(null);
   const [isSavingDoc,     setIsSavingDoc]     = useState(false);
   const [lineProdData,    setLineProdData]    = useState(null); // heijunka data for selected line
@@ -691,39 +693,54 @@ export default function Management() {
     ? { width: '100%', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '10px 12px', flexShrink: 0, maxHeight: '42vh', display: 'flex', flexDirection: 'column' }
     : { width: poolW, minWidth: poolW, background: 'var(--bg2)', borderRight: '1px solid var(--border)', padding: panelCollapsed ? '12px 6px' : isWide ? '18px 12px' : '15px 10px', display: 'flex', flexDirection: 'column', flexShrink: 0, overflowY: panelCollapsed ? 'hidden' : 'auto', transition: 'width 0.25s ease, min-width 0.25s ease' };
 
-  const machineIssueCount = fourMLogs.filter(m => m.category === 'Machine' && m.status !== 'approved' && m.status !== 'rejected').length;
+  const isOpenIssue = m => m.status !== 'approved' && m.status !== 'rejected';
+  const manCount     = fourMLogs.filter(m => m.category === 'Man').length;
+  const machineCount = fourMLogs.filter(m => m.category === 'Machine' && isOpenIssue(m)).length;
+  const wipCount      = fourMLogs.filter(m => m.category === 'Material' && isOpenIssue(m)).length;
+  const anyFilterOn   = filterMan || filterMachine || filterWip;
+
+  const STATUS_FILTERS = [
+    { key: 'man',     on: filterMan,     toggle: () => setFilterMan(v => !v),     label: 'MAN',     icon: '👤', color: '#4d9fff', count: manCount,     title: 'กรองเฉพาะไลน์ที่มีบันทึก 4M หมวด Man' },
+    { key: 'machine', on: filterMachine, toggle: () => setFilterMachine(v => !v), label: 'MACHINE', icon: '⚙️', color: '#f59e0b', count: machineCount, title: 'กรองเฉพาะไลน์ที่มีปัญหาเครื่องจักร (Machine)' },
+    { key: 'wip',     on: filterWip,     toggle: () => setFilterWip(v => !v),     label: 'WIP',     icon: '📦', color: '#22c55e', count: wipCount,     title: 'กรองเฉพาะไลน์ที่มีปัญหา Work In Process (Material)' },
+  ];
 
   return (
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: 'calc(100vh - 80px)', background: 'var(--bg)', overflow: 'hidden' }}>
 
-      {/* WIP / machine-status filter toggle — fixed, sits just left of the global notification bell */}
-      <button
-        onClick={() => setWipFilterOn(v => !v)}
-        title="กรองเฉพาะไลน์ที่มีปัญหาเครื่องจักร (WIP)"
-        style={{
-          position: 'fixed', top: 10, right: 58, zIndex: 1200,
-          width: 36, height: 36, borderRadius: 8,
-          background: wipFilterOn ? 'rgba(245,158,11,0.22)' : 'var(--bg3)',
-          border: wipFilterOn ? '1px solid #f59e0b' : '1px solid var(--border2)',
-          color: wipFilterOn ? '#f59e0b' : 'var(--text2)', fontSize: 16,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          cursor: 'pointer', boxShadow: 'var(--shadow-sm)',
-        }}
-      >
-        ⚙️
-        {machineIssueCount > 0 && (
-          <span style={{
-            position: 'absolute', top: -4, right: -4,
-            background: '#f59e0b', color: '#fff',
-            fontSize: 10, fontWeight: 800,
-            minWidth: 17, height: 17, borderRadius: 9,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '0 3px', lineHeight: 1,
-          }}>
-            {machineIssueCount > 99 ? '99+' : machineIssueCount}
-          </span>
-        )}
-      </button>
+      {/* MAN / MACHINE / WIP status filters — fixed, sit just left of the global notification bell */}
+      <div style={{ position: 'fixed', top: 10, right: 58, zIndex: 1200, display: 'flex', gap: 6 }}>
+        {STATUS_FILTERS.map(f => (
+          <button
+            key={f.key}
+            onClick={f.toggle}
+            title={f.title}
+            style={{
+              position: 'relative',
+              width: 36, height: 36, borderRadius: 8,
+              background: f.on ? `${f.color}38` : 'var(--bg3)',
+              border: f.on ? `1px solid ${f.color}` : '1px solid var(--border2)',
+              color: f.on ? f.color : 'var(--text2)', fontSize: 16,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', boxShadow: 'var(--shadow-sm)',
+            }}
+          >
+            {f.icon}
+            {f.count > 0 && (
+              <span style={{
+                position: 'absolute', top: -4, right: -4,
+                background: f.color, color: '#fff',
+                fontSize: 10, fontWeight: 800,
+                minWidth: 17, height: 17, borderRadius: 9,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '0 3px', lineHeight: 1,
+              }}>
+                {f.count > 99 ? '99+' : f.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
 
       {/* ── Pool Panel ── */}
       <div style={poolStyle}>
@@ -1207,8 +1224,11 @@ export default function Management() {
             const workerFit       = workerAtStation ? computeFit(workerAtStation, st) : null;
             const hasMan  = fourMLogs.some(m => m.line_name === st.line_name && m.category === 'Man');
             const has4M   = fourMLogs.some(m => m.line_name === st.line_name && m.category !== 'Man');
-            const hasMachineIssue = fourMLogs.some(m => m.line_name === st.line_name && m.category === 'Machine' && m.status !== 'approved' && m.status !== 'rejected');
-            const isDimmed = wipFilterOn && !hasMachineIssue;
+            const hasMachineIssue = fourMLogs.some(m => m.line_name === st.line_name && m.category === 'Machine' && isOpenIssue(m));
+            const hasWipIssue     = fourMLogs.some(m => m.line_name === st.line_name && m.category === 'Material' && isOpenIssue(m));
+            const matchesFilter = (filterMan && hasMan) || (filterMachine && hasMachineIssue) || (filterWip && hasWipIssue);
+            const isDimmed = anyFilterOn && !matchesFilter;
+            const highlightColor = hasMachineIssue && filterMachine ? '#f59e0b' : hasWipIssue && filterWip ? '#22c55e' : hasMan && filterMan ? '#4d9fff' : null;
             const isOver  = dragOverStation === st.id;
             const previewFit = isOver && draggingWorker ? computeFit(draggingWorker, st) : null;
             const touchPreviewFit = isMobile && selectedWorker && !workerAtStation ? computeFit(selectedWorker, st) : null;
@@ -1239,10 +1259,10 @@ export default function Management() {
                 {/* inner: visual card — clips content to fixed height */}
                 <div style={{
                   width: '100%', height: '100%', overflow: 'hidden',
-                  borderTop:    `1px solid ${hasMachineIssue && wipFilterOn ? '#f59e0b' : activeFc ? `${activeFc}55` : 'rgba(255,255,255,0.18)'}`,
-                  borderRight:  `1px solid ${hasMachineIssue && wipFilterOn ? '#f59e0b' : activeFc ? `${activeFc}55` : 'rgba(255,255,255,0.18)'}`,
-                  borderBottom: `1px solid ${hasMachineIssue && wipFilterOn ? '#f59e0b' : activeFc ? `${activeFc}55` : 'rgba(255,255,255,0.18)'}`,
-                  borderLeft:   `4px solid ${hasMachineIssue && wipFilterOn ? '#f59e0b' : activeFc || 'rgba(255,255,255,0.25)'}`,
+                  borderTop:    `1px solid ${highlightColor ? highlightColor : activeFc ? `${activeFc}55` : 'rgba(255,255,255,0.18)'}`,
+                  borderRight:  `1px solid ${highlightColor ? highlightColor : activeFc ? `${activeFc}55` : 'rgba(255,255,255,0.18)'}`,
+                  borderBottom: `1px solid ${highlightColor ? highlightColor : activeFc ? `${activeFc}55` : 'rgba(255,255,255,0.18)'}`,
+                  borderLeft:   `4px solid ${highlightColor ? highlightColor : activeFc || 'rgba(255,255,255,0.25)'}`,
                   borderRadius: 8,
                   backgroundColor: isOver || isPulse ? `${activeFc || '#4d9fff'}1a` : 'rgba(8,8,14,0.88)',
                   backdropFilter: 'blur(3px)',
