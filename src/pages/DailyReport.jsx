@@ -417,6 +417,19 @@ function LiveTab({ role }) {
     return dt;
   };
 
+  // เดาเวลาปิดกะที่ "น่าจะ" ถูก จากเวลาจริงตอนกดขอปิดกะ — เทียบกับเวลาเลิกงานมาตรฐาน
+  // ถ้ากดก่อนเวลาเลิกงานมาตรฐาน +1 ชม. → ไม่มี OT ใช้เวลาเลิกงานมาตรฐาน
+  // ถ้ากดช้ากว่านั้น → สันนิษฐานว่ามี OT ใช้เวลาสิ้นสุด OT มาตรฐาน (แก้ไขเองได้เสมอ)
+  const guessCloseEndTime = () => {
+    if (!selSession) return nowTime();
+    const std = selSession.shift === 'night' ? '08:00' : '17:30';
+    const ot  = selSession.shift === 'night' ? '10:30' : '20:00';
+    const stdDT = buildDT(std);
+    if (!stdDT) return nowTime();
+    const noOtCutoff = new Date(stdDT.getTime() + 60 * 60000);
+    return new Date() <= noOtCutoff ? std : ot;
+  };
+
   const computeDtTimes = () => {
     const { mode, start_time, end_time, duration_min } = dtForm;
     const dur = parseFloat(duration_min);
@@ -1147,7 +1160,7 @@ function LiveTab({ role }) {
 
                   {/* open — request/direct close button */}
                   {selSession.status === 'open' && canRequestClose && (
-                    <button onClick={() => { setCloseNg('0'); setCloseEndTime(nowTime()); setShowCloseShift(true); }}
+                    <button onClick={() => { setCloseNg('0'); setCloseEndTime(guessCloseEndTime()); setShowCloseShift(true); }}
                       style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
                       {role === 'leader' ? '📋 ขอปิดกะ' : '🔒 ปิดกะ'}
                     </button>
