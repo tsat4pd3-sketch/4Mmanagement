@@ -151,7 +151,7 @@ function LiveTab({ role }) {
 
   // Scan Open modal
   const [showScanOpen, setShowScanOpen]   = useState(false);
-  const [openProdForm, setOpenProdForm]   = useState({ prod_no: '', mat_no: '', qty: '', is_backfill: false });
+  const [openProdForm, setOpenProdForm]   = useState({ prod_no: '', mat_no: '', qty: '', is_backfill: false, backfill_time: '' });
   const [openProdStd, setOpenProdStd]     = useState(null);
   const openProdInputRef = useRef(null);
   const closeProdInputRef = useRef(null);
@@ -537,8 +537,20 @@ function LiveTab({ role }) {
       .reduce((sum, o) => sum + (o.qty || 0) * ctForMatNo(o.mat_no) / 60, 0);
   };
 
+  // หาเวลา opened_at จริงของ order ย้อนหลัง — anchor กับ work_date ของกะนี้ และเลื่อนวันถัดไปถ้าเป็นกะดึกที่ข้ามเที่ยงคืน
+  // (ไม่งั้นถ้าไม่ระบุเวลา DB จะ default เป็นเวลาปัจจุบัน ทำให้ Heijunka ขึ้นที่ "ตอนนี้" ไม่ใช่ตอนที่ผลิตจริง)
+  const backfillOpenedAt = () => {
+    if (!openProdForm.is_backfill || !openProdForm.backfill_time || !selSession) return null;
+    const workDate = selSession.work_date;
+    const [h, m] = openProdForm.backfill_time.split(':').map(Number);
+    let d = new Date(`${workDate}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`);
+    if (selSession.shift === 'night' && h < 8) d = new Date(d.getTime() + 86400000);
+    return d.toISOString();
+  };
+
   // insert จริง (ใช้ทั้งจาก handleScanOpen และ handleOverflowForce)
   const doInsertProdOrder = async (prodNo, matNo, qty, std, status = 'open') => {
+    const opened_at = backfillOpenedAt();
     const { error } = await supabaseDR.from('prod_orders').insert({
       session_id:  selSession.id,
       prod_no:     prodNo,
@@ -550,6 +562,7 @@ function LiveTab({ role }) {
       status,
       is_backfill: openProdForm.is_backfill,
       opened_by:   fullName,
+      ...(opened_at ? { opened_at } : {}),
     });
     return error;
   };
@@ -588,7 +601,7 @@ function LiveTab({ role }) {
     setSavingProdOpen(false);
     if (error) { toast.error(error.message); return; }
     toast.success(`เปิด Order ${prodNo} · ${matNo} · ${qty} ชิ้น ✓`);
-    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false }));
+    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false, backfill_time: '' }));
     loadProdOrders(selSession.id, selSession.line_name);
     setTimeout(() => openProdInputRef.current?.focus(), 80);
   };
@@ -603,7 +616,7 @@ function LiveTab({ role }) {
     setOverflowInfo(null);
     if (error) { toast.error(error.message); return; }
     toast.info(`บันทึก ${prodNo} เป็นยอดค้างกะถัดไป ✓`);
-    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false }));
+    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false, backfill_time: '' }));
     loadProdOrders(selSession.id, selSession.line_name);
   };
 
@@ -617,7 +630,7 @@ function LiveTab({ role }) {
     setOverflowInfo(null);
     if (error) { toast.error(error.message); return; }
     toast.success(`เปิด Order ${prodNo} · ${qty} ชิ้น ✓ (เกินเวลากะ)`);
-    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false }));
+    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false, backfill_time: '' }));
     loadProdOrders(selSession.id, selSession.line_name);
   };
 
@@ -1705,13 +1718,20 @@ function LiveTab({ role }) {
               {/* Backfill toggle */}
               <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', marginTop: 10, background: openProdForm.is_backfill ? 'rgba(107,114,128,0.15)' : 'rgba(107,114,128,0.06)', border: `1px solid ${openProdForm.is_backfill ? 'rgba(107,114,128,0.5)' : 'rgba(107,114,128,0.2)'}`, borderRadius: 8 }}>
                 <input type="checkbox" checked={openProdForm.is_backfill}
-                  onChange={e => setOpenProdForm(f => ({ ...f, is_backfill: e.target.checked }))}
+                  onChange={e => setOpenProdForm(f => ({ ...f, is_backfill: e.target.checked, backfill_time: e.target.checked ? f.backfill_time : '' }))}
                   style={{ width: 16, height: 16, cursor: 'pointer' }} />
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>ยิงย้อนหลัง / เติมข้อมูล</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>order นี้ผลิตไปแล้ว — ไม่นับ delay บน Heijunka</div>
                 </div>
               </label>
+              {openProdForm.is_backfill && (
+                <Field label="เวลาที่เริ่มผลิตจริง (ไม่ระบุ = ใช้เวลาตอนนี้)">
+                  <input type="time" value={openProdForm.backfill_time}
+                    onChange={e => setOpenProdForm(f => ({ ...f, backfill_time: e.target.value }))}
+                    style={inputStyle} />
+                </Field>
+              )}
 
               {/* Running count */}
               {prodOrders.filter(o => o.status === 'open').length > 0 && (
