@@ -143,6 +143,9 @@ export default function Management() {
   const [workers,        setWorkers]        = useState([]);
   const [fourMLogs,      setFourMLogs]      = useState([]);
   const [dynamicStations,setDynamicStations]= useState([]);
+  const [wipPoints,      setWipPoints]      = useState([]);
+  const [machinePoints,  setMachinePoints]  = useState([]);
+  const [drMachines,     setDrMachines]     = useState([]);
   const [lineLayout,     setLineLayout]     = useState(null);
   const [draggingWorker, setDraggingWorker] = useState(null);
   const [selectedLine,   setSelectedLine]   = useState('');
@@ -172,7 +175,7 @@ export default function Management() {
   const [pendingDocModal, setPendingDocModal] = useState(null); // { log: {...} }
   const [docImageFile,    setDocImageFile]    = useState(null);
   const [panelCollapsed,  setPanelCollapsed]  = useState(false);
-  const [filterMan,       setFilterMan]       = useState(false);
+  const [filterMan,       setFilterMan]       = useState(true);
   const [filterMachine,   setFilterMachine]   = useState(false);
   const [filterWip,       setFilterWip]       = useState(false);
   const [docImagePreview, setDocImagePreview] = useState(null);
@@ -279,6 +282,12 @@ export default function Management() {
     setLineLayout(layoutData?.image_url || null);
     const { data: stationData } = await supabase.from('workstations').select('*, station_requirements(*)').eq('line_name', selectedLine);
     setDynamicStations(stationData || []);
+    const { data: wipData } = await supabase.from('wip_buffer_points').select('*').eq('line_name', selectedLine);
+    setWipPoints(wipData || []);
+    const { data: mpData } = await supabase.from('machine_points').select('*').eq('line_name', selectedLine);
+    setMachinePoints(mpData || []);
+    const { data: drMc } = await supabaseDR.from('machines').select('id, machine_no, machine_name').eq('line_name', selectedLine).eq('is_active', true);
+    setDrMachines(drMc || []);
   };
 
   const fetchData = async () => {
@@ -698,15 +707,11 @@ export default function Management() {
     : { width: poolW, minWidth: poolW, background: 'var(--bg2)', borderRight: '1px solid var(--border)', padding: panelCollapsed ? '12px 6px' : isWide ? '18px 12px' : '15px 10px', display: 'flex', flexDirection: 'column', flexShrink: 0, overflowY: panelCollapsed ? 'hidden' : 'auto', transition: 'width 0.25s ease, min-width 0.25s ease' };
 
   const isOpenIssue = m => m.status !== 'approved' && m.status !== 'rejected';
-  const manCount     = fourMLogs.filter(m => m.category === 'Man').length;
-  const machineCount = fourMLogs.filter(m => m.category === 'Machine' && isOpenIssue(m)).length;
-  const wipCount      = fourMLogs.filter(m => m.category === 'Material' && isOpenIssue(m)).length;
-  const anyFilterOn   = filterMan || filterMachine || filterWip;
 
   const STATUS_FILTERS = [
-    { key: 'man',     on: filterMan,     toggle: () => setFilterMan(v => !v),     label: 'MAN',     icon: '👤', color: '#4d9fff', count: manCount,     title: 'กรองเฉพาะไลน์ที่มีบันทึก 4M หมวด Man' },
-    { key: 'machine', on: filterMachine, toggle: () => setFilterMachine(v => !v), label: 'MACHINE', icon: '⚙️', color: '#f59e0b', count: machineCount, title: 'กรองเฉพาะไลน์ที่มีปัญหาเครื่องจักร (Machine)' },
-    { key: 'wip',     on: filterWip,     toggle: () => setFilterWip(v => !v),     label: 'WIP',     icon: '📦', color: '#22c55e', count: wipCount,     title: 'กรองเฉพาะไลน์ที่มีปัญหา Work In Process (Material)' },
+    { key: 'man',     on: filterMan,     toggle: () => setFilterMan(v => !v),     label: 'MAN',     icon: '👤', color: '#4d9fff', count: dynamicStations.length, title: 'แสดง/ซ่อนจุดงาน (คน) บนผัง' },
+    { key: 'machine', on: filterMachine, toggle: () => setFilterMachine(v => !v), label: 'MACHINE', icon: '⚙️', color: '#f59e0b', count: machinePoints.length,   title: 'แสดง/ซ่อนจุดเครื่องจักรบนผัง' },
+    { key: 'wip',     on: filterWip,     toggle: () => setFilterWip(v => !v),     label: 'WIP',     icon: '📦', color: '#22c55e', count: wipPoints.length,       title: 'แสดง/ซ่อนจุด WIP (สต็อกงานในกระบวนการ) บนผัง' },
   ];
 
   return (
@@ -1261,7 +1266,7 @@ export default function Management() {
 
                 return (
                   <>
-                    <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 1, pointerEvents: 'none' }}>
+                    {filterMan && <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 1, pointerEvents: 'none' }}>
                       {raw.map(({ st, px, py, dox, doy }) => {
                         if (Math.abs(dox) < 2 && Math.abs(doy) < 2) return null;
                         return (
@@ -1272,8 +1277,8 @@ export default function Management() {
                           </g>
                         );
                       })}
-                    </svg>
-                    {raw.map(({ st, px, py, dox, doy }) => {
+                    </svg>}
+                    {filterMan && raw.map(({ st, px, py, dox, doy }) => {
             const stTop  = py + doy;
             const stLeft = px + dox;
             const workerAtStation = workers.find(w => String(w.assigned_line) === String(st.id));
@@ -1282,9 +1287,8 @@ export default function Management() {
             const has4M   = fourMLogs.some(m => m.line_name === st.line_name && m.category !== 'Man');
             const hasMachineIssue = fourMLogs.some(m => m.line_name === st.line_name && m.category === 'Machine' && isOpenIssue(m));
             const hasWipIssue     = fourMLogs.some(m => m.line_name === st.line_name && m.category === 'Material' && isOpenIssue(m));
-            const matchesFilter = (filterMan && hasMan) || (filterMachine && hasMachineIssue) || (filterWip && hasWipIssue);
-            const isDimmed = anyFilterOn && !matchesFilter;
-            const highlightColor = hasMachineIssue && filterMachine ? '#f59e0b' : hasWipIssue && filterWip ? '#22c55e' : hasMan && filterMan ? '#4d9fff' : null;
+            const isDimmed = false;
+            const highlightColor = hasMachineIssue ? '#f59e0b' : hasWipIssue ? '#22c55e' : hasMan ? '#4d9fff' : null;
             const isOver  = dragOverStation === st.id;
             const previewFit = isOver && draggingWorker ? computeFit(draggingWorker, st) : null;
             const touchPreviewFit = isMobile && selectedWorker && !workerAtStation ? computeFit(selectedWorker, st) : null;
@@ -1426,6 +1430,44 @@ export default function Management() {
               </div>
             );
           })}
+                    {filterWip && wipPoints.map(p => {
+                      const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
+                      const wTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
+                      const wLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
+                      return (
+                        <div key={`wip-${p.id}`} title={`📦 ${p.point_name} — ${p.current_qty ?? 0}/${p.min_qty ?? 0}–${p.max_qty ?? 0}`}
+                          style={{
+                            position: 'absolute', top: wTop, left: wLeft, transform: 'translate(-50%, -50%)',
+                            width: 54, height: 40, zIndex: 4,
+                            border: isLow ? '2px solid #ef4444' : '2px solid rgba(34,197,94,0.85)',
+                            borderRadius: 7, backgroundColor: isLow ? 'rgba(239,68,68,0.22)' : 'rgba(0,0,0,0.78)',
+                            backdropFilter: 'blur(2px)', display: 'flex', flexDirection: 'column',
+                            alignItems: 'center', justifyContent: 'center', padding: '2px 2px 1px',
+                          }}>
+                          <div style={{ fontSize: 8, fontWeight: 700, color: isLow ? '#fecaca' : '#e0e0e0', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📦 {p.point_name}</div>
+                          <div style={{ fontSize: 7, color: isLow ? '#fca5a5' : '#a3a3a3' }}>{p.current_qty ?? 0}/{p.min_qty ?? 0}–{p.max_qty ?? 0}</div>
+                        </div>
+                      );
+                    })}
+                    {filterMachine && machinePoints.map(p => {
+                      const mc = drMachines.find(m => m.machine_no === p.machine_no);
+                      const mTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
+                      const mLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
+                      return (
+                        <div key={`mc-${p.id}`} title={`⚙️ ${p.machine_no} ${mc?.machine_name || ''}`}
+                          style={{
+                            position: 'absolute', top: mTop, left: mLeft, transform: 'translate(-50%, -50%)',
+                            width: 54, height: 40, zIndex: 4,
+                            border: '2px solid rgba(245,158,11,0.85)', borderRadius: 7,
+                            backgroundColor: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(2px)',
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                            padding: '2px 2px 1px',
+                          }}>
+                          <div style={{ fontSize: 8, fontWeight: 700, color: '#e0e0e0', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>⚙️ {p.machine_no}</div>
+                          <div style={{ fontSize: 7, color: '#a3a3a3', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mc?.machine_name || ''}</div>
+                        </div>
+                      );
+                    })}
                   </>
                 );
               })()}
