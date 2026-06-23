@@ -766,9 +766,12 @@ function LiveTab({ role }) {
       const workDate = selSession?.work_date || openedAt.toISOString().split('T')[0];
       const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
       let pStart = new Date(`${workDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`);
-      const pEnd = new Date(pStart.getTime() + p.duration_min * 60000);
-      // For night shift break that crosses midnight, shift forward a day if before session start
-      if (pStart < openedAt && pEnd < openedAt) pStart = new Date(pStart.getTime() + 86400000);
+      let pEnd = new Date(pStart.getTime() + p.duration_min * 60000);
+      // For night shift break that crosses midnight, shift the whole window forward a day if it ended before session start
+      if (pEnd < openedAt) {
+        pStart = new Date(pStart.getTime() + 86400000);
+        pEnd   = new Date(pEnd.getTime() + 86400000);
+      }
       const overlapStart = Math.max(pStart.getTime(), openedAt.getTime());
       const overlapEnd   = Math.min(pEnd.getTime(), closedAt.getTime());
       const overlapMin   = Math.max(0, (overlapEnd - overlapStart) / 60000);
