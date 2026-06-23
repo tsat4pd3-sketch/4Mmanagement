@@ -139,7 +139,7 @@ function LiveTab({ role }) {
   const [openForm, setOpenForm] = useState(() => { const s = currentShift(); return { work_date: today(), line_name: '', shift: s, product_id: '', start_time: shiftStart(s) }; });
 
   const [showDT, setShowDT]   = useState(false);
-  const [dtForm, setDtForm]   = useState({ downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
+  const [dtForm, setDtForm]   = useState({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
   const [savingDT, setSavingDT] = useState(false);
 
   // Prod Orders
@@ -168,12 +168,13 @@ function LiveTab({ role }) {
   const [defectTypes, setDefectTypes]   = useState([]);
   const [defectLogs, setDefectLogs]     = useState([]);
   const [showDefect, setShowDefect]     = useState(false);
-  const [defectForm, setDefectForm]     = useState({ defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+  const [defectForm, setDefectForm]     = useState({ id: null, defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
   const [savingDefect, setSavingDefect] = useState(false);
 
   // Close Shift modal (OEE)
   const [showCloseShift, setShowCloseShift] = useState(false);
   const [closeNg, setCloseNg]               = useState('0');
+  const [closeEndTime, setCloseEndTime]     = useState(nowTime());
   const [savingClose, setSavingClose]       = useState(false);
   const [breakPolicies, setBreakPolicies]   = useState([]);
   const [machines, setMachines]             = useState([]);
@@ -416,6 +417,19 @@ function LiveTab({ role }) {
     return dt;
   };
 
+  // เดาเวลาปิดกะที่ "น่าจะ" ถูก จากเวลาจริงตอนกดขอปิดกะ — เทียบกับเวลาเลิกงานมาตรฐาน
+  // ถ้ากดก่อนเวลาเลิกงานมาตรฐาน +1 ชม. → ไม่มี OT ใช้เวลาเลิกงานมาตรฐาน
+  // ถ้ากดช้ากว่านั้น → สันนิษฐานว่ามี OT ใช้เวลาสิ้นสุด OT มาตรฐาน (แก้ไขเองได้เสมอ)
+  const guessCloseEndTime = () => {
+    if (!selSession) return nowTime();
+    const std = selSession.shift === 'night' ? '08:00' : '17:30';
+    const ot  = selSession.shift === 'night' ? '10:30' : '20:00';
+    const stdDT = buildDT(std);
+    if (!stdDT) return nowTime();
+    const noOtCutoff = new Date(stdDT.getTime() + 60 * 60000);
+    return new Date() <= noOtCutoff ? std : ot;
+  };
+
   const computeDtTimes = () => {
     const { mode, start_time, end_time, duration_min } = dtForm;
     const dur = parseFloat(duration_min);
@@ -445,8 +459,7 @@ function LiveTab({ role }) {
     setSavingDT(true);
     const { data: { user } } = await supabase.auth.getUser();
 
-    const { error } = await supabaseDR.from('downtime_logs').insert({
-      session_id:       selSession.id,
+    const payload = {
       downtime_type_id: dtForm.downtime_type_id,
       started_at:       startedAt?.toISOString() || null,
       ended_at:         endedAt?.toISOString()   || null,
@@ -454,14 +467,20 @@ function LiveTab({ role }) {
       machine_no:       dtForm.machine_no || null,
       mat_no:           dtForm.mat_no || null,
       description:      dtForm.description || null,
-      reported_by_name: fullName,
-      reported_by_uid:  user?.id,
-    });
+    };
+    const { error } = dtForm.id
+      ? await supabaseDR.from('downtime_logs').update(payload).eq('id', dtForm.id)
+      : await supabaseDR.from('downtime_logs').insert({
+          ...payload,
+          session_id:       selSession.id,
+          reported_by_name: fullName,
+          reported_by_uid:  user?.id,
+        });
     setSavingDT(false);
     if (error) { toast.error(error.message); return; }
-    toast.success('บันทึก Downtime แล้ว');
+    toast.success(dtForm.id ? 'แก้ไข Downtime แล้ว' : 'บันทึก Downtime แล้ว');
     setShowDT(false);
-    setDtForm({ downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
+    setDtForm({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
     loadDT(selSession.id);
   };
 
@@ -691,22 +710,27 @@ function LiveTab({ role }) {
     if (ng + suspect + repair === 0) { toast.error('กรอกจำนวนงานเสียอย่างน้อย 1 ช่อง'); return; }
     setSavingDefect(true);
     const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabaseDR.from('defect_logs').insert({
-      session_id:       selSession.id,
+    const payload = {
       defect_type_id:   defectForm.defect_type_id,
       qty_ng:           ng,
       qty_suspect:      suspect,
       qty_repair:       repair,
       description:      defectForm.description || null,
-      reported_by_name: fullName,
-      reported_by_uid:  user?.id,
-    });
+    };
+    const { error } = defectForm.id
+      ? await supabaseDR.from('defect_logs').update(payload).eq('id', defectForm.id)
+      : await supabaseDR.from('defect_logs').insert({
+          ...payload,
+          session_id:       selSession.id,
+          reported_by_name: fullName,
+          reported_by_uid:  user?.id,
+        });
     setSavingDefect(false);
     if (error) { toast.error(error.message); return; }
     const label = [ng ? `NG ${ng}` : '', suspect ? `สงสัย ${suspect}` : '', repair ? `ซ่อม ${repair}` : ''].filter(Boolean).join(' · ');
-    toast.success(`บันทึกงานเสีย: ${label} ✓`);
+    toast.success(defectForm.id ? `แก้ไขงานเสีย: ${label} ✓` : `บันทึกงานเสีย: ${label} ✓`);
     setShowDefect(false);
-    setDefectForm({ defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+    setDefectForm({ id: null, defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
     loadDefectLogs(selSession.id);
   };
 
@@ -783,15 +807,22 @@ function LiveTab({ role }) {
     }, 0);
   };
 
-  const computeOEE = (ngQtyOverride) => {
+  const computeOEE = (ngQtyOverride, endTimeOverride) => {
     const confirmedQty = prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
     // Also count qty_actual from open orders being carried over
     const carryActualQty = prodOrders.filter(o => o.status === 'open').reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || 0), 0);
     const totalProduced  = confirmedQty + carryActualQty;
     const ngQty = ngQtyOverride !== undefined ? ngQtyOverride
       : defectLogs.reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
-    const openedAt  = selSession?.created_at ? new Date(selSession.created_at) : null;
-    const closedAt  = new Date();
+    // ใช้ work_date + start_time (เวลาเริ่มกะที่ตั้งไว้จริง) เป็นจุดเริ่ม — ไม่ใช่ created_at ที่อาจคลาดเคลื่อนจากเวลาที่หัวหน้าเช็คชื่อ/เปิดระบบ
+    const workDate  = selSession?.work_date;
+    const openedAt  = (workDate && selSession?.start_time) ? new Date(`${workDate}T${selSession.start_time.slice(0,5)}:00`) : null;
+    // เวลาปิดกะใช้ "เวลาปิดกะจริง" ที่กรอกในฟอร์ม (endTimeOverride) แทนเวลาที่กดปุ่มจริง เพราะการขอ/อนุมัติปิดกะอาจทำย้อนหลังได้
+    let closedAt = new Date();
+    if (workDate && endTimeOverride) {
+      closedAt = new Date(`${workDate}T${endTimeOverride.slice(0,5)}:00`);
+      if (openedAt && closedAt < openedAt) closedAt = new Date(closedAt.getTime() + 86400000); // กะดึกข้ามวัน
+    }
     const shiftMin  = openedAt ? Math.round((closedAt - openedAt) / 60000) : 0;
     const loggedPlannedDT  = dtLogs.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
     const loggedUnplannedDT = dtLogs.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
@@ -863,7 +894,7 @@ function LiveTab({ role }) {
     const totalProducedFinal = confirmed.reduce((s, o) => s + o.qty, 0) + carryActual;
     const totalQtyOk      = Math.max(0, totalProducedFinal - totalQtyNg - totalQtySuspect - totalQtyRepair);
 
-    const { A, P, Q, oee, shiftMin } = computeOEE(totalQtyNg + totalQtySuspect);
+    const { A, P, Q, oee, shiftMin } = computeOEE(totalQtyNg + totalQtySuspect, closeEndTime);
     // Leader → request close (pending_close), SV+ → close directly
     const isLeaderRequest = role === 'leader';
     const payload = isLeaderRequest ? {
@@ -871,7 +902,7 @@ function LiveTab({ role }) {
       close_requested_by_name: fullName,
       close_requested_by_uid:  user?.id,
       close_requested_at:      new Date().toISOString(),
-      end_time:                nowTime(),
+      end_time:                closeEndTime || nowTime(),
       ng_qty:                  totalQtyNg,
       actual_qty:              totalProducedFinal,
       qty_ok:                  totalQtyOk,
@@ -888,7 +919,7 @@ function LiveTab({ role }) {
       closed_by_name:  fullName,
       closed_by_uid:   user?.id,
       closed_at:       new Date().toISOString(),
-      end_time:        nowTime(),
+      end_time:        closeEndTime || nowTime(),
       ng_qty:          totalQtyNg,
       actual_qty:      totalProducedFinal,
       qty_ok:          totalQtyOk,
@@ -1129,7 +1160,7 @@ function LiveTab({ role }) {
 
                   {/* open — request/direct close button */}
                   {selSession.status === 'open' && canRequestClose && (
-                    <button onClick={() => { setCloseNg('0'); setShowCloseShift(true); }}
+                    <button onClick={() => { setCloseNg('0'); setCloseEndTime(guessCloseEndTime()); setShowCloseShift(true); }}
                       style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
                       {role === 'leader' ? '📋 ขอปิดกะ' : '🔒 ปิดกะ'}
                     </button>
@@ -1193,7 +1224,7 @@ function LiveTab({ role }) {
                       style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       📤 Scan ปิด / Confirm
                     </button>
-                    <button onClick={() => { setShowDefect(true); setDefectForm({ prod_order_id: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' }); }}
+                    <button onClick={() => { setShowDefect(true); setDefectForm({ id: null, prod_order_id: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' }); }}
                       style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       🔴 บันทึกงานเสีย
                     </button>
@@ -1344,8 +1375,12 @@ function LiveTab({ role }) {
                         </div>
                       </div>
                       {canManage && (
-                        <button onClick={() => handleDeleteDefectLog(d.id)}
-                          style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button onClick={() => { setDefectForm({ id: d.id, defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '' }); setShowDefect(true); }}
+                            style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✎</button>
+                          <button onClick={() => handleDeleteDefectLog(d.id)}
+                            style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
+                        </div>
                       )}
                     </div>
                   ))}
@@ -1357,7 +1392,7 @@ function LiveTab({ role }) {
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>⏱ Downtime ({dtLogs.length} รายการ)</div>
-                <button onClick={() => { setShowDT(true); setDtForm({ downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' }); }}
+                <button onClick={() => { setShowDT(true); setDtForm({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' }); }}
                   style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                   + บันทึก Downtime
                 </button>
@@ -1386,8 +1421,27 @@ function LiveTab({ role }) {
                         {fmtMin(d.duration_min)}
                       </div>
                       {canManage && (
-                        <button onClick={() => handleDeleteDT(d.id)}
-                          style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button onClick={() => {
+                            const sAt = d.started_at ? new Date(d.started_at) : null;
+                            const eAt = d.ended_at ? new Date(d.ended_at) : null;
+                            setDtForm({
+                              id: d.id,
+                              downtime_type_id: d.downtime_type_id || '',
+                              mode: 'start_end',
+                              start_time: sAt ? sAt.toTimeString().slice(0,5) : '',
+                              end_time:   eAt ? eAt.toTimeString().slice(0,5) : '',
+                              duration_min: d.duration_min != null ? String(d.duration_min) : '',
+                              machine_no: d.machine_no || '',
+                              mat_no:     d.mat_no || '',
+                              description: d.description || '',
+                            });
+                            setShowDT(true);
+                          }}
+                            style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✎</button>
+                          <button onClick={() => handleDeleteDT(d.id)}
+                            style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
+                        </div>
                       )}
                     </div>
                   );
@@ -1435,7 +1489,7 @@ function LiveTab({ role }) {
         {/* ── CLOSE SHIFT / OEE modal ─────────────────────────── */}
         {showCloseShift && selSession && (() => {
           const ng = parseInt(closeNg) || 0;
-          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty } = computeOEE(ng);
+          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty } = computeOEE(ng, closeEndTime);
           const oeeColor = oee == null ? 'var(--muted)' : oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
           return (
             <div className="overlay" style={{ zIndex: 2000 }}>
@@ -1449,7 +1503,13 @@ function LiveTab({ role }) {
                   </div>
                 )}
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
-                  {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)}
+                  {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)} · เริ่ม {selSession.start_time}
+                </div>
+
+                <div style={{ marginBottom: 16 }}>
+                  <Field label="เวลาปิดกะจริง (ใช้คำนวณ OEE — แก้ได้ถ้าทำรายการย้อนหลัง)">
+                    <TimeInput24 value={closeEndTime} onChange={e => setCloseEndTime(e.target.value)} style={{ fontSize: 16 }} />
+                  </Field>
                 </div>
 
                 {/* Summary stats */}
@@ -1884,7 +1944,7 @@ function LiveTab({ role }) {
           <div className="overlay" style={{ zIndex: 2000 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,480px)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                <div style={{ fontSize: 16, fontWeight: 800, color: '#ef4444' }}>🔴 บันทึกงานเสีย</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#ef4444' }}>🔴 {defectForm.id ? 'แก้ไขงานเสีย' : 'บันทึกงานเสีย'}</div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}>
                   <div style={{ color: '#4d9fff', fontWeight: 700 }}>{selSession.line_name}</div>
                   <div>{selSession.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(selSession.work_date)}</div>
@@ -1936,7 +1996,7 @@ function LiveTab({ role }) {
                 <button onClick={() => setShowDefect(false)} style={cancelBtnStyle}>ยกเลิก</button>
                 <button onClick={handleAddDefectLog} disabled={savingDefect || !defectForm.defect_type_id}
                   style={{ ...saveBtnStyle, background: '#ef4444', opacity: (!defectForm.defect_type_id || savingDefect) ? 0.5 : 1 }}>
-                  {savingDefect ? '...' : 'บันทึกงานเสีย'}
+                  {savingDefect ? '...' : (defectForm.id ? 'บันทึกการแก้ไข' : 'บันทึกงานเสีย')}
                 </button>
               </div>
             </div>
@@ -1960,7 +2020,7 @@ function LiveTab({ role }) {
             <div className="overlay" style={{ zIndex: 2000 }}>
               <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,500px)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>⏱ บันทึก Downtime</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>⏱ {dtForm.id ? 'แก้ไข Downtime' : 'บันทึก Downtime'}</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}>
                     <div style={{ color: '#4d9fff', fontWeight: 700 }}>{selSession.line_name}</div>
                     <div>{selSession.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(selSession.work_date)}</div>
@@ -2108,7 +2168,7 @@ function LiveTab({ role }) {
                     return (
                       <button onClick={handleAddDT} disabled={savingDT || dtInvalid}
                         style={{ ...saveBtnStyle, background: '#ef4444', opacity: (dtInvalid || savingDT) ? 0.5 : 1 }}>
-                        {savingDT ? '...' : 'บันทึก Downtime'}
+                        {savingDT ? '...' : (dtForm.id ? 'บันทึกการแก้ไข' : 'บันทึก Downtime')}
                       </button>
                     );
                   })()}
@@ -2133,6 +2193,7 @@ function HistoryTab({ role }) {
   const [expanded, setExpanded]   = useState(null);
   const [dtMap, setDtMap]         = useState({});
   const [defectMap, setDefectMap] = useState({});
+  const [orderMap, setOrderMap]   = useState({});
   const [deleting, setDeleting]   = useState(null);
 
   const isAdmin = role === 'admin';
@@ -2169,16 +2230,20 @@ function HistoryTab({ role }) {
 
   const loadDetail = async (sessionId) => {
     if (dtMap[sessionId]) return; // already loaded
-    const [{ data: dts }, { data: defects }] = await Promise.all([
+    const [{ data: dts }, { data: defects }, { data: orders }] = await Promise.all([
       supabaseDR.from('downtime_logs')
         .select('*, dr_downtime_types(name_th, color, category)')
         .eq('session_id', sessionId).order('started_at'),
       supabaseDR.from('defect_logs')
-        .select('*, dr_defect_types(name_th, color)')
+        .select('*, dr_defect_types(name_th, color), prod_orders(prod_no)')
         .eq('session_id', sessionId).order('logged_at'),
+      supabaseDR.from('prod_orders')
+        .select('*')
+        .eq('session_id', sessionId).order('opened_at'),
     ]);
     setDtMap(m     => ({ ...m,      [sessionId]: dts     || [] }));
     setDefectMap(m => ({ ...m,      [sessionId]: defects || [] }));
+    setOrderMap(m  => ({ ...m,      [sessionId]: orders  || [] }));
   };
 
   const handleExpand = (id) => {
@@ -2206,6 +2271,7 @@ function HistoryTab({ role }) {
         {sessions.map(s => {
           const dts      = dtMap[s.id]     || [];
           const defects  = defectMap[s.id] || [];
+          const orders   = orderMap[s.id]  || [];
           const totalDT  = dts.reduce((acc, d) => acc + (d.duration_min || 0), 0);
           // NG% from qty_ng saved at close (from defect_logs total)
           const ngQty    = s.qty_ng || 0;
@@ -2268,18 +2334,82 @@ function HistoryTab({ role }) {
                     </div>
                   )}
 
+                  {/* Per-MAT.NO breakdown */}
+                  {(() => {
+                    const matNos = Array.from(new Set(orders.map(o => o.mat_no).filter(Boolean)));
+                    if (!matNos.length) return null;
+                    const rows = matNos.map(matNo => {
+                      const matOrders = orders.filter(o => o.mat_no === matNo);
+                      const qty = matOrders.filter(o => o.status === 'confirmed' || o.status === 'carry_over').reduce((sum, o) => sum + (o.qty_actual ?? o.qty ?? 0), 0);
+                      const orderIds = new Set(matOrders.map(o => o.id));
+                      const ng = defects.filter(d => orderIds.has(d.prod_order_id)).reduce((sum, d) => sum + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
+                      const dt = dts.filter(d => d.mat_no === matNo).reduce((sum, d) => sum + (d.duration_min || 0), 0);
+                      return { matNo, partName: matOrders[0]?.part_name, qty, ng, dt };
+                    }).sort((a, b) => b.qty - a.qty);
+                    return (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>📦 สรุปแยกตามชิ้นงาน ({rows.length} รายการ)</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {rows.map(r => (
+                            <div key={r.matNo} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', fontFamily: 'monospace' }}>{r.matNo}</span>
+                              {r.partName && <span style={{ fontSize: 11, color: 'var(--muted)', flex: 1 }}>{r.partName}</span>}
+                              {!r.partName && <span style={{ flex: 1 }} />}
+                              <span style={{ fontSize: 12, fontWeight: 700, color: '#22c55e' }}>ผลิต {r.qty}</span>
+                              {r.ng > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}>NG {r.ng}</span>}
+                              {r.dt > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#a855f7' }}>DT {fmtMin(r.dt)}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Prod orders */}
+                  {orders.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>📋 Prod Orders ({orders.length} ใบ)</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {orders.map(o => {
+                          const statusColor = o.status === 'confirmed' ? '#22c55e' : o.status === 'carry_over' ? '#a78bfa' : o.status === 'cancelled' ? '#666' : '#f59e0b';
+                          const statusLabel = o.status === 'confirmed' ? '✓ ปิดแล้ว' : o.status === 'carry_over' ? '➡ ยกยอด' : o.status === 'cancelled' ? '✕ ยกเลิก' : '● ผลิต';
+                          return (
+                            <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, borderLeft: `3px solid ${statusColor}`, opacity: o.status === 'cancelled' ? 0.5 : 1 }}>
+                              <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{o.prod_no}</span>
+                              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{o.mat_no}</span>
+                              {o.part_name && <span style={{ fontSize: 11, color: 'var(--muted)', flex: 1 }}>· {o.part_name}</span>}
+                              {!o.part_name && <span style={{ flex: 1 }} />}
+                              <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: `${statusColor}20`, color: statusColor, fontWeight: 700 }}>{statusLabel}</span>
+                              <span style={{ fontSize: 12, fontWeight: 800, color: statusColor, minWidth: 40, textAlign: 'right' }}>{o.qty}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Defect logs */}
                   {defects.length > 0 && (
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 700, color: '#ef4444', marginBottom: 6 }}>🔴 งานเสีย ({defects.length} รายการ)</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {defects.map(d => (
-                          <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, borderLeft: `3px solid ${d.dr_defect_types?.color || '#ef4444'}` }}>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', flex: 1 }}>{d.dr_defect_types?.name_th || '—'}</span>
-                            {d.qty_ng      > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>NG {d.qty_ng}</span>}
-                            {d.qty_suspect > 0 && <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>สงสัย {d.qty_suspect}</span>}
-                            {d.qty_repair  > 0 && <span style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700 }}>ซ่อม {d.qty_repair}</span>}
-                            {d.description && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{d.description}</span>}
+                          <div key={d.id} style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, borderLeft: `3px solid ${d.dr_defect_types?.color || '#ef4444'}` }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', flex: 1 }}>{d.dr_defect_types?.name_th || '—'}</span>
+                              {d.prod_orders?.prod_no && (
+                                <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(74,222,128,0.1)', color: '#22c55e', fontWeight: 700, fontFamily: 'monospace' }}>
+                                  {d.prod_orders.prod_no}
+                                </span>
+                              )}
+                              {d.qty_ng      > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>NG {d.qty_ng}</span>}
+                              {d.qty_suspect > 0 && <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>สงสัย {d.qty_suspect}</span>}
+                              {d.qty_repair  > 0 && <span style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700 }}>ซ่อม {d.qty_repair}</span>}
+                            </div>
+                            {d.description && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.description}</div>}
+                            <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+                              {fmtTime(new Date(d.logged_at))}{d.reported_by_name && ` · ${d.reported_by_name}`}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -2296,11 +2426,20 @@ function HistoryTab({ role }) {
                         {dts.map(d => {
                           const cat = CAT_META[d.dr_downtime_types?.category] || CAT_META.unplanned;
                           return (
-                            <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, borderLeft: `3px solid ${d.dr_downtime_types?.color || '#aaa'}` }}>
-                              <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: cat.bg, color: cat.color, fontWeight: 700 }}>{cat.label}</span>
-                              <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{d.dr_downtime_types?.name_th}</span>
-                              {d.description && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{d.description}</span>}
-                              <span style={{ fontSize: 12, fontWeight: 700, color: d.dr_downtime_types?.color || '#aaa' }}>{fmtMin(d.duration_min)}</span>
+                            <div key={d.id} style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, borderLeft: `3px solid ${d.dr_downtime_types?.color || '#aaa'}` }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: cat.bg, color: cat.color, fontWeight: 700 }}>{cat.label}</span>
+                                <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{d.dr_downtime_types?.name_th}</span>
+                                {d.machine_no && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {d.machine_no}</span>}
+                                {d.mat_no && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9' }}>{d.mat_no}</span>}
+                                <span style={{ fontSize: 12, fontWeight: 700, color: d.dr_downtime_types?.color || '#aaa' }}>{fmtMin(d.duration_min)}</span>
+                              </div>
+                              {d.description && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.description}</div>}
+                              <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+                                {d.started_at && fmtTime(new Date(d.started_at))}
+                                {d.ended_at && ` – ${fmtTime(new Date(d.ended_at))}`}
+                                {d.reported_by_name && ` · ${d.reported_by_name}`}
+                              </div>
                             </div>
                           );
                         })}
