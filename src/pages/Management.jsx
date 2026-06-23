@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -894,14 +894,28 @@ export default function Management() {
             .filter(Boolean)
             .sort((a, b) => a[0] - b[0]);
 
-          // ต่อคิวในแถวเดียวกัน + หลบเวลาพัก แล้วคืนตำแหน่งจริงพร้อม isDelayed ที่คำนวณจากเวลาจบ "จริง" หลังต่อคิว
-          // (ไม่ใช้ o.isDelayed แบบ naive จาก opened_at + cycle time เพราะการ์ดที่ถูกต่อคิว/เลื่อนหลบเบรคจะขึ้นแดงทั้งที่ยังไม่ถึงคิวจริง)
-          const computeQueuedPositions = (cards, half) => {
-            const MIN_W_PCT = 1.5;
-            const breaks = getBreakIntervals(half);
-            const sorted = cards.filter(o => o.orderStartMs && o.orderEndMs).sort((a, b) => a.orderStartMs - b.orderStartMs);
+          // คำนวณคิวทั้งวัน (24 ชม.) ครั้งเดียวต่อแถว product แทนการตัดแยกทีละกะ
+          // เพื่อให้การ์ดที่ดีเลย์ล้นข้ามกะ (เช่น ผลิตจากกะเช้าไปจบกะดึก) ต่อแถวเดิมได้ ไม่ถูกตัดทิ้งที่ขอบกะ
+          // (ใช้ logic เดียวกับ Dashboard.jsx เพื่อให้ตำแหน่ง/ความกว้างของการ์ดตรงกันทั้งสองหน้า)
+          const MIN_W_PCT = 1.5;
+          const ROUND_MS = 2 * 3600000;
+          const roundIndexOf = (ms) => Math.floor((ms - gridStartMs) / ROUND_MS);
+          const roundStartOf = (idx) => gridStartMs + idx * ROUND_MS;
+          const allBreaksOnce = () => [...getBreakIntervals(HALVES[0]), ...getBreakIntervals(HALVES[1])].sort((a, b) => a[0] - b[0]);
+
+          const computeQueuedPositionsFull = (cards) => {
+            const breaks = allBreaksOnce();
+            const sorted = cards
+              .filter(o => o.orderStartMs && o.orderEndMs)
+              .sort((a, b) => a.orderStartMs - b.orderStartMs);
             let queueEndMs = -Infinity;
+            let curRoundIdx = null;
             return sorted.map(o => {
+              const roundIdx = roundIndexOf(o.orderStartMs);
+              if (curRoundIdx === null || roundIdx !== curRoundIdx) {
+                curRoundIdx = roundIdx;
+                queueEndMs = roundStartOf(roundIdx);
+              }
               const durationMs = Math.max(o.orderEndMs - o.orderStartMs, 0);
               let startMs = Math.max(o.orderStartMs, queueEndMs);
               let endMs = startMs + durationMs;
@@ -916,14 +930,42 @@ export default function Management() {
                   }
                 }
               }
-              queueEndMs = endMs;
-              const leftPct = Math.max(0, (startMs - half.startMs) * pctPerMs);
-              const rightPct = Math.min(100, (endMs - half.startMs) * pctPerMs);
-              const widthPct = Math.max(MIN_W_PCT, rightPct - leftPct);
-              const isDelayed = !o.isDone && !o.isCarry && !o.is_backfill && endMs < nowMs;
               const isLateDone = o.isDone && !!o.confirmed_at && new Date(o.confirmed_at).getTime() > endMs;
-              return { o, leftPct, widthPct, realEndMs: endMs, isDelayed, isLateDone };
+              if (o.isDone && o.confirmed_at) {
+                const confMs = new Date(o.confirmed_at).getTime();
+                if (endMs > confMs) {
+                  endMs = confMs;
+                  startMs = Math.max(o.orderStartMs, endMs - durationMs);
+                }
+              }
+              let occupiedEndMs = endMs;
+              if (o.isDone && o.confirmed_at) {
+                occupiedEndMs = new Date(o.confirmed_at).getTime();
+              } else if (!o.isDone && !o.isCarry && nowMs > endMs) {
+                occupiedEndMs = nowMs;
+              }
+              queueEndMs = occupiedEndMs;
+              const isDelayed = !o.isDone && !o.isCarry && !o.is_backfill && endMs < nowMs;
+              return { o, startMs, endMs, occupiedEndMs, isDelayed, isLateDone };
             });
+          };
+
+          // ตัดผลคิวทั้งวัน (ms จริง) มาเป็น % สำหรับ "กะ" หนึ่ง ๆ — การ์ดเดียวกันแสดงต่อกันได้ทั้ง 2 กะ
+          const pctForHalf = (item, half) => {
+            const hs = half.startMs, he = half.startMs + 12 * 3600000;
+            const rightMs = item.isLateDone ? item.occupiedEndMs : item.endMs;
+            if (rightMs <= hs || item.startMs >= he) return null;
+            const leftPct = Math.max(0, (item.startMs - hs) * pctPerMs);
+            const rightPct = Math.max(0, Math.min(100, (rightMs - hs) * pctPerMs));
+            const widthPct = Math.max(MIN_W_PCT, rightPct - leftPct);
+            let tailLeftPct = 0, tailWidthPct = 0;
+            if (item.isDelayed && item.occupiedEndMs > rightMs) {
+              const tLeft  = Math.max(0, Math.min(100, (rightMs - hs) * pctPerMs));
+              const tRight = Math.max(0, Math.min(100, (item.occupiedEndMs - hs) * pctPerMs));
+              tailLeftPct = tLeft;
+              tailWidthPct = Math.max(0, tRight - tLeft);
+            }
+            return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone };
           };
 
           const buildCards = (sessList) => {
@@ -958,10 +1000,8 @@ export default function Management() {
           });
           const productRows = Object.values(groups).sort((a, b) => a.label.localeCompare(b.label));
 
-          const totalDelayed = HALVES.reduce((sum, half) => sum + productRows.reduce((s2, row) => {
-            const halfCards = row.cards.filter(c => c.orderEndMs > half.startMs && c.orderStartMs < half.startMs + 12 * 3600000);
-            return s2 + computeQueuedPositions(halfCards, half).filter(p => p.isDelayed).length;
-          }, 0), 0);
+          const totalDelayed = productRows.reduce((sum, row) =>
+            sum + computeQueuedPositionsFull(row.cards).filter(p => p.isDelayed).length, 0);
           const hasOpen = sessions.some(s => s.status === 'open');
 
           const openByMatNo = {};
@@ -1045,11 +1085,10 @@ export default function Management() {
                   </div>
                   {/* Rows ต่อ product */}
                   {productRows.map((row, ri) => {
-                    const cards = row.cards.filter(c => c.orderEndMs > half.startMs && c.orderStartMs < half.startMs + 12 * 3600000);
                     const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
                     const rowDemand = row.cards.reduce((a, c) => a + (c.qty || 0), 0);
                     const doneCount = row.cards.filter(c => c.isDone).length;
-                    const delayed   = computeQueuedPositions(cards, half).filter(p => p.isDelayed).length;
+                    const delayed   = computeQueuedPositionsFull(row.cards).map(item => pctForHalf(item, half)).filter(p => p && p.isDelayed).length;
                     const isOpen    = row.cards.some(c => c.sessionOpen);
                     const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
                     const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
@@ -1102,16 +1141,17 @@ export default function Management() {
                               });
                           })()}
                           {(() => {
-                            const positioned = computeQueuedPositions(cards, half);
-                            return positioned.map(({ o, leftPct, widthPct, realEndMs, isDelayed, isLateDone }, oi) => {
+                            const positioned = computeQueuedPositionsFull(row.cards).map(item => pctForHalf(item, half)).filter(Boolean);
+                            return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone }, oi) => {
                             if (leftPct >= 100) return null;
                             const sc = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : o.is_backfill ? '#6b7280' : '#4d9fff';
                             const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : o.is_backfill ? '⏪' : '▶';
                             const doneQty = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
                             const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
                             return (
-                              <div key={o.prod_no || oi}
-                                title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}ม.)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs - realEndMs) / 60000)}ม.` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}`}
+                              <Fragment key={o.prod_no || oi}>
+                              <div
+                                title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}ม.)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs - realEndMs) / 60000)}ม. ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}`}
                                 style={{
                                   position: 'absolute', top: 3, bottom: 3, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 22,
                                   background: `${sc}28`, border: `1.5px solid ${sc}${o.isDone && !isLateDone ? 'cc' : (isDelayed || isLateDone) ? 'dd' : '88'}`,
@@ -1126,6 +1166,18 @@ export default function Management() {
                                   <div style={{ fontSize: 6, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.qty}ชิ้น</div>
                                 </div>
                               </div>
+                              {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
+                              {tailWidthPct > 0 && (
+                                <div title="ยังไม่ปิดงาน — ดีเลย์ยังดำเนินอยู่"
+                                  style={{
+                                    position: 'absolute', top: 3, bottom: 3,
+                                    left: `${tailLeftPct}%`, width: `${tailWidthPct}%`,
+                                    background: 'repeating-linear-gradient(45deg, #ef444433 0px, #ef444433 4px, #ef444412 4px, #ef444412 8px)',
+                                    border: '1.5px dashed #ef4444aa', borderLeft: 'none',
+                                    borderRadius: '0 4px 4px 0', zIndex: 1, pointerEvents: 'none',
+                                  }} />
+                              )}
+                              </Fragment>
                             );
                           });
                           })()}
