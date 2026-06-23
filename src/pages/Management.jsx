@@ -1907,7 +1907,7 @@ function WorkerHoverCard({ card, skillDefs }) {
   // Capped to a fixed row count (not CSS overflow) so the card height stays consistent
   // no matter how many skills an employee has — required skills for this station are
   // prioritized first, then highest score.
-  const MAX_STATS = 6;
+  const MAX_STATS = 9;
   const allStatRows = skillDefs
     .map(sd => ({ name: sd.name, label: sd.label, color: sd.color, score: skills.find(s => s.skill_name === sd.name)?.score ?? 0, req: fit?.details?.find(d => d.label === sd.label) }))
     .filter(s => s.score > 0 || s.req)
@@ -1936,15 +1936,17 @@ function WorkerHoverCard({ card, skillDefs }) {
             )}
           </div>
 
-          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', lineHeight: 1.2, marginTop: 6 }}>{emp?.name || '—'}</div>
-          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>{emp?.employee_id_code || ''}</div>
-          {stationName && (
-            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', marginTop: 4 }}>→ {stationName}</div>
-          )}
-          {fit && <div style={{ fontSize: 10, fontWeight: 700, color: fc, marginTop: 4 }}>{fitLabel(fit.score)}</div>}
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
-            {emp?.team && <span style={{ fontSize: 9, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
-            {emp?.section && <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', lineHeight: 1.2 }}>{emp?.name || '—'}</div>
+            <div style={{ fontSize: 10, color: 'var(--muted)' }}>{emp?.employee_id_code || ''}</div>
+            {stationName && (
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)' }}>→ {stationName}</div>
+            )}
+            {fit && <div style={{ fontSize: 10, fontWeight: 700, color: fc }}>{fitLabel(fit.score)}</div>}
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {emp?.team && <span style={{ fontSize: 9, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
+              {emp?.section && <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
+            </div>
           </div>
         </div>
 
@@ -1975,7 +1977,7 @@ function WorkerHoverCard({ card, skillDefs }) {
           Thai skill labels don't clip past the card edges at high skill counts. */}
       {skillDefs.length > 0 && radarData.length > 0 && (
         <>
-          <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginTop: 4, marginBottom: 2 }}>ภาพรวมทักษะ</div>
+          <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', textAlign: 'center', marginTop: 4, marginBottom: 2 }}>ภาพรวมทักษะ</div>
           <div style={{ width: '100%', height: 220 }}>
             <ResponsiveContainer width="100%" height="100%">
               <RadarChart data={radarData} margin={{ top: 16, right: 70, bottom: 16, left: 70 }}>
