@@ -194,7 +194,7 @@ function LiveTab({ role }) {
       supabase.from('production_lines').select('id, name, section').order('name'),
       supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name'),
       supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
-      supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name)').eq('is_active', true).order('mat_no'),
+      supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type)').eq('is_active', true).order('mat_no'),
       supabaseDR.from('break_policies').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('machines').select('*').eq('is_active', true).order('line_name').order('sort_order'),
       supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
@@ -484,6 +484,22 @@ function LiveTab({ role }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showScanOpen, kanbanStds, selSession]);
 
+  // หา Cycle Time (วินาที) ของ MAT.NO หนึ่งใบ จาก Kanban Standard → Product Master
+  // ทำแบบ per-order เพราะกะเดียวอาจผลิตได้หลาย MAT.NO/สินค้า ไม่ใช่สินค้าเดียวตาม session.product_id
+  // (session.product_id ไม่ได้ถูกตั้งค่าจาก UI เปิดกะ เลยเป็น null เสมอ — ใช้ mat_no ของแต่ละใบงานแทน)
+  const ctForMatNo = (matNo) => kanbanStds.find(s => s.mat_no === matNo)?.dr_products?.cycle_time_sec || 0;
+
+  // หา process_type ที่ใช้บ่อยที่สุดในกะนี้ (จากใบงานที่เปิด) — ใช้กรอง break_policies ที่ตรงประเภทงาน
+  const sessionProcessType = () => {
+    const counts = {};
+    prodOrders.forEach(o => {
+      const pt = kanbanStds.find(s => s.mat_no === o.mat_no)?.dr_products?.process_type;
+      if (pt) counts[pt] = (counts[pt] || 0) + 1;
+    });
+    const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    return entries[0]?.[0] || selSession?.dr_products?.process_type || 'common';
+  };
+
   // คำนวณ net available time ของกะ (นาที) หลังหักพักเบรค
   const calcNetAvailMin = () => {
     if (!selSession?.start_time) return null;
@@ -493,7 +509,7 @@ function LiveTab({ role }) {
     const shiftStartMs = new Date(`${wDate}T${String(sh).padStart(2,'0')}:${String(sm).padStart(2,'0')}:00`).getTime();
     const breakMin = breakPolicies
       .filter(p => p.shift === 'both' || p.shift === selSession.shift)
-      .filter(p => p.process_type === 'common' || p.process_type === selSession.dr_products?.process_type)
+      .filter(p => p.process_type === 'common' || p.process_type === sessionProcessType())
       .reduce((sum, p) => {
         const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
         let pStartMs = new Date(`${wDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`).getTime();
@@ -506,13 +522,11 @@ function LiveTab({ role }) {
     return SHIFT_MIN - breakMin;
   };
 
-  // คำนวณเวลาที่ commit ไปแล้วในกะนี้ (นาที) จากทุก order ที่ยังไม่ cancelled
+  // คำนวณเวลาที่ commit ไปแล้วในกะนี้ (นาที) จากทุก order ที่ยังไม่ cancelled — ใช้ CT ของแต่ละ MAT.NO
   const calcCommittedMin = () => {
-    const ctSec = selSession?.dr_products?.cycle_time_sec || 0;
-    if (!ctSec) return 0;
     return prodOrders
       .filter(o => !['cancelled', 'imported'].includes(o.status))
-      .reduce((sum, o) => sum + (o.qty || 0) * ctSec / 60, 0);
+      .reduce((sum, o) => sum + (o.qty || 0) * ctForMatNo(o.mat_no) / 60, 0);
   };
 
   // insert จริง (ใช้ทั้งจาก handleScanOpen และ handleOverflowForce)
@@ -546,7 +560,7 @@ function LiveTab({ role }) {
     }
 
     const qty    = parseInt(openProdForm.qty);
-    const ctSec  = selSession?.dr_products?.cycle_time_sec || 0;
+    const ctSec  = ctForMatNo(matNo);
     const std    = kanbanStds.find(s => s.mat_no === matNo);
 
     // ── Capacity check ──────────────────────────────────────────────
@@ -754,20 +768,32 @@ function LiveTab({ role }) {
     const loggedPlannedDT  = dtLogs.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
     const loggedUnplannedDT = dtLogs.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
     const sessionShift  = selSession?.shift || 'day';
-    const processType   = selSession?.dr_products?.process_type || 'common';
+    const processType   = sessionProcessType();
     const policyBreakMin = computePolicyBreakMin(openedAt, closedAt, sessionShift, processType);
     // Net available = shift - policy breaks - logged planned; run = net available - unplanned
     const plannedDT   = loggedPlannedDT + policyBreakMin;
     const netAvail    = Math.max(0, shiftMin - plannedDT);
     const runMin      = Math.max(0, netAvail - loggedUnplannedDT);
-    const ctSec       = selSession?.dr_products?.cycle_time_sec || 0;
 
     const A = netAvail > 0 ? Math.min(1, runMin / netAvail) : 0;
-    // ctSec=0 (cycle time ยังไม่ได้ตั้งค่าใน Product Master) → P คำนวณไม่ได้จริง ห้าม default เป็น 100%
-    const P = ctSec > 0 ? (runMin > 0 ? Math.min(1, (totalProduced * ctSec / 60) / runMin) : 0) : null;
+
+    // Performance: คิดเป็นนาทีที่ "ควรใช้" ต่อใบงาน โดยใช้ CT ของ MAT.NO นั้นๆ (ไม่ใช่ CT เดียวของ session
+    // เพราะกะเดียวอาจผลิตหลาย MAT.NO) — รวมเฉพาะใบที่หา CT เจอ ใบที่ไม่มี CT จะถูกแยกนับเป็น unknownQty
+    let producedMin = 0, knownQty = 0, unknownQty = 0;
+    const tallyOrder = (matNo, qty) => {
+      if (!qty) return;
+      const ct = ctForMatNo(matNo);
+      if (ct > 0) { producedMin += qty * ct / 60; knownQty += qty; }
+      else unknownQty += qty;
+    };
+    prodOrders.filter(o => o.status === 'confirmed').forEach(o => tallyOrder(o.mat_no, o.qty));
+    prodOrders.filter(o => o.status === 'open').forEach(o => tallyOrder(o.mat_no, parseInt(carryQtyActual[o.id]) || 0));
+
+    // ctSec ไม่รู้เลยสักใบ (ไม่มี Cycle Time ใน Product Master ของทุก MAT.NO ที่ผลิต) → P คำนวณไม่ได้จริง ห้าม default เป็น 100%
+    const P = knownQty > 0 ? (runMin > 0 ? Math.min(1, producedMin / runMin) : 0) : null;
     const Q = totalProduced > 0 ? Math.max(0, (totalProduced - ngQty) / totalProduced) : 1;
     const oee = P != null ? A * P * Q : null;
-    return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty };
+    return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty, knownQty, unknownQty };
   };
 
   const handleCloseSession = async () => {
@@ -1380,7 +1406,7 @@ function LiveTab({ role }) {
         {/* ── CLOSE SHIFT / OEE modal ─────────────────────────── */}
         {showCloseShift && selSession && (() => {
           const ng = parseInt(closeNg) || 0;
-          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced } = computeOEE(ng);
+          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty } = computeOEE(ng);
           const oeeColor = oee == null ? 'var(--muted)' : oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
           return (
             <div className="overlay" style={{ zIndex: 2000 }}>
@@ -1526,8 +1552,11 @@ function LiveTab({ role }) {
                       <div style={{ fontSize: 36, fontWeight: 900, color: oeeColor, lineHeight: 1 }}>{oee != null ? `${(oee * 100).toFixed(1)}%` : 'N/A'}</div>
                     </div>
                   </div>
-                  {!selSession.dr_products?.cycle_time_sec && (
-                    <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ ไม่มี Cycle Time ใน Product Master — P/OEE คำนวณไม่ได้ (จะถูกบันทึกเป็น N/A ไม่ใช่ 100%)</div>
+                  {knownQty === 0 && unknownQty > 0 && (
+                    <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ ไม่มี Cycle Time ใน Product Master ของ MAT.NO ที่ผลิตในกะนี้เลย — P/OEE คำนวณไม่ได้ (จะถูกบันทึกเป็น N/A ไม่ใช่ 100%)</div>
+                  )}
+                  {knownQty > 0 && unknownQty > 0 && (
+                    <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ มี {unknownQty} ชิ้น จาก MAT.NO ที่ยังไม่ตั้ง Cycle Time ใน Product Master — P/OEE คำนวณจากเฉพาะ {knownQty} ชิ้นที่มี CT</div>
                   )}
                 </div>
 
@@ -1867,7 +1896,7 @@ function LiveTab({ role }) {
                   {/* Downtime type */}
                   <Field label="ประเภท Downtime *">
                     {(() => {
-                      const pt = selSession?.dr_products?.process_type || 'welding_assembly';
+                      const pt = sessionProcessType();
                       const filtered = dtTypes.filter(t => t.process_type === pt || t.process_type === 'common');
                       return (
                         <select autoFocus value={dtForm.downtime_type_id} onChange={e => setDtForm(f => ({ ...f, downtime_type_id: e.target.value }))} style={inputStyle}>
