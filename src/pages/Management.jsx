@@ -708,10 +708,14 @@ export default function Management() {
 
   const isOpenIssue = m => m.status !== 'approved' && m.status !== 'rejected';
 
+  // ตัวเลข badge บนปุ่ม toggle ต้องสื่อความหมาย "ผิดปกติ" ไม่ใช่แค่จำนวนจุดทั้งหมด
+  const vacantStationCount = dynamicStations.filter(st => !workers.some(w => String(w.assigned_line) === String(st.id))).length;
+  const lowWipCount = wipPoints.filter(p => (p.current_qty ?? 0) < (p.min_qty ?? 0)).length;
+
   const STATUS_FILTERS = [
-    { key: 'man',     on: filterMan,     toggle: () => setFilterMan(v => !v),     label: 'MAN',     icon: '👤', color: '#4d9fff', count: dynamicStations.length, title: 'แสดง/ซ่อนจุดงาน (คน) บนผัง' },
-    { key: 'machine', on: filterMachine, toggle: () => setFilterMachine(v => !v), label: 'MACHINE', icon: '⚙️', color: '#f59e0b', count: machinePoints.length,   title: 'แสดง/ซ่อนจุดเครื่องจักรบนผัง' },
-    { key: 'wip',     on: filterWip,     toggle: () => setFilterWip(v => !v),     label: 'WIP',     icon: '📦', color: '#22c55e', count: wipPoints.length,       title: 'แสดง/ซ่อนจุด WIP (สต็อกงานในกระบวนการ) บนผัง' },
+    { key: 'man',     on: filterMan,     toggle: () => setFilterMan(v => !v),     label: 'MAN',     icon: '👤', color: '#4d9fff', count: vacantStationCount, title: 'แสดง/ซ่อนจุดงาน (คน) บนผัง — ตัวเลข = จุดที่ยังไม่มีคนประจำ' },
+    { key: 'machine', on: filterMachine, toggle: () => setFilterMachine(v => !v), label: 'MACHINE', icon: '⚙️', color: '#f59e0b', count: 0,                  title: 'แสดง/ซ่อนจุดเครื่องจักรบนผัง' },
+    { key: 'wip',     on: filterWip,     toggle: () => setFilterWip(v => !v),     label: 'WIP',     icon: '📦', color: '#22c55e', count: lowWipCount,        title: 'แสดง/ซ่อนจุด WIP บนผัง — ตัวเลข = จุดที่ของต่ำกว่า min' },
   ];
 
   return (
@@ -1435,7 +1439,7 @@ export default function Management() {
                       const wTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const wLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
                       return (
-                        <div key={`wip-${p.id}`} title={`📦 ${p.point_name} — ${p.current_qty ?? 0}/${p.min_qty ?? 0}–${p.max_qty ?? 0}`}
+                        <div key={`wip-${p.id}`} title={`${p.point_type === 'packaging' ? '📦' : '🧱'} ${p.point_name}${p.point_type === 'packaging' ? (p.packaging_no ? ` (${p.packaging_no})` : '') : (p.mat_no ? ` (${p.mat_no})` : '')} — ${p.current_qty ?? 0}/${p.min_qty ?? 0}–${p.max_qty ?? 0}`}
                           style={{
                             position: 'absolute', top: wTop, left: wLeft, transform: 'translate(-50%, -50%)',
                             width: 54, height: 40, zIndex: 4,
@@ -1444,7 +1448,7 @@ export default function Management() {
                             backdropFilter: 'blur(2px)', display: 'flex', flexDirection: 'column',
                             alignItems: 'center', justifyContent: 'center', padding: '2px 2px 1px',
                           }}>
-                          <div style={{ fontSize: 8, fontWeight: 700, color: isLow ? '#fecaca' : '#e0e0e0', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📦 {p.point_name}</div>
+                          <div style={{ fontSize: 8, fontWeight: 700, color: isLow ? '#fecaca' : '#e0e0e0', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.point_type === 'packaging' ? '📦' : '🧱'} {p.point_name}</div>
                           <div style={{ fontSize: 7, color: isLow ? '#fca5a5' : '#a3a3a3' }}>{p.current_qty ?? 0}/{p.min_qty ?? 0}–{p.max_qty ?? 0}</div>
                         </div>
                       );

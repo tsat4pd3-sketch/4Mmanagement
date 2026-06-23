@@ -51,9 +51,13 @@ export default function LineSetup() {
   const dragPosRef = useRef(null);
 
   // จุด WIP buffer (min/max ต่อจุด — แผนกที่เกี่ยวข้องเห็นเมื่อของต่ำกว่า min)
+  // 2 ประเภท: material (เรียกงานจากสโตร์ ผูกกับ mat no. จาก Product Master) และ
+  // packaging (เรียกภาชนะเปล่าจาก Tact Center — rack/box/basket แยกด้วย packaging no.)
   const [wipPoints, setWipPoints] = useState([]);
   const [wipTempPos, setWipTempPos] = useState(null);
-  const [wipForm, setWipForm] = useState({ id: null, point_name: '', mat_no: '', min_qty: 0, max_qty: 0, current_qty: 0 });
+  const [drProducts, setDrProducts] = useState([]);
+  const emptyWipForm = { id: null, point_type: 'material', point_name: '', mat_no: '', material_category: '', packaging_no: '', packaging_type: '', min_qty: 0, max_qty: 0, current_qty: 0 };
+  const [wipForm, setWipForm] = useState(emptyWipForm);
 
   // จุดเครื่องจักรบนผัง (ผูกกับตาราง machines ของ Daily Report โปรเจกต์ ด้วย machine_no)
   const [machinePoints, setMachinePoints] = useState([]);
@@ -106,6 +110,8 @@ export default function LineSetup() {
     setMachinePoints(mpData || []);
     const { data: drMc } = await supabaseDR.from('machines').select('id, machine_no, machine_name').eq('line_name', selectedLine).eq('is_active', true).order('sort_order');
     setDrMachines(drMc || []);
+    const { data: drPd } = await supabaseDR.from('dr_products').select('mat_no, name').eq('line_name', selectedLine).eq('is_active', true).not('mat_no', 'is', null).order('mat_no');
+    setDrProducts(drPd || []);
     const lineObj = lines.find(l => l.name === selectedLine);
     if (lineObj) {
       setStdDay(lineObj.std_day_shift ?? 0);
@@ -314,7 +320,7 @@ export default function LineSetup() {
       }
       setCollisionWarn(null);
       setWipTempPos(pos);
-      setWipForm({ id: null, point_name: '', mat_no: '', min_qty: 0, max_qty: 0, current_qty: 0 });
+      setWipForm(emptyWipForm);
       return;
     }
     if (activeTab === 'machines') {
@@ -412,16 +418,26 @@ export default function LineSetup() {
   /* ── จุด WIP buffer ── */
   const editWipPoint = (p) => {
     setWipTempPos(null);
-    setWipForm({ id: p.id, point_name: p.point_name, mat_no: p.mat_no || '', min_qty: p.min_qty ?? 0, max_qty: p.max_qty ?? 0, current_qty: p.current_qty ?? 0 });
+    setWipForm({
+      id: p.id, point_type: p.point_type || 'material', point_name: p.point_name,
+      mat_no: p.mat_no || '', material_category: p.material_category || '',
+      packaging_no: p.packaging_no || '', packaging_type: p.packaging_type || '',
+      min_qty: p.min_qty ?? 0, max_qty: p.max_qty ?? 0, current_qty: p.current_qty ?? 0,
+    });
   };
 
   const handleSaveWip = async () => {
     if (!wipForm.point_name) return alert('กรุณาระบุชื่อจุด WIP');
     const existing = wipPoints.find(p => p.id === wipForm.id);
+    const isMaterial = wipForm.point_type === 'material';
     const payload = {
-      line_name:   selectedLine,
-      point_name:  wipForm.point_name,
-      mat_no:      wipForm.mat_no || null,
+      line_name:         selectedLine,
+      point_name:        wipForm.point_name,
+      point_type:        wipForm.point_type,
+      mat_no:             isMaterial ? (wipForm.mat_no || null) : null,
+      material_category:  isMaterial ? (wipForm.material_category || null) : null,
+      packaging_no:        !isMaterial ? (wipForm.packaging_no || null) : null,
+      packaging_type:      !isMaterial ? (wipForm.packaging_type || null) : null,
       pos_top:     wipTempPos ? wipTempPos.top : existing?.pos_top,
       pos_left:    wipTempPos ? wipTempPos.left : existing?.pos_left,
       min_qty:     parseFloat(wipForm.min_qty) || 0,
@@ -435,7 +451,7 @@ export default function LineSetup() {
     if (error) return alert('Error: ' + error.message);
     fetchLineData();
     setWipTempPos(null);
-    setWipForm({ id: null, point_name: '', mat_no: '', min_qty: 0, max_qty: 0, current_qty: 0 });
+    setWipForm(emptyWipForm);
   };
 
   const deleteWipPoint = async (id) => {
@@ -896,8 +912,52 @@ export default function LineSetup() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 10, marginBottom: 14 }}>
                   <input placeholder="ชื่อจุด WIP (เช่น บัฟเฟอร์ OP20)" value={wipForm.point_name}
                     onChange={e => setWipForm({ ...wipForm, point_name: e.target.value })} />
-                  <input placeholder="เลขที่วัสดุ (mat no.)" value={wipForm.mat_no}
-                    onChange={e => setWipForm({ ...wipForm, mat_no: e.target.value })} />
+
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {[{ key: 'material', label: '🧱 Material', desc: 'เรียกงานจากสโตร์' }, { key: 'packaging', label: '📦 Packaging', desc: 'เรียกภาชนะจาก Tact Center' }].map(t => (
+                      <button key={t.key} onClick={() => setWipForm({ ...wipForm, point_type: t.key })}
+                        title={t.desc}
+                        style={{
+                          flex: 1, padding: '8px 6px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                          background: wipForm.point_type === t.key ? 'rgba(61,214,92,0.18)' : 'var(--bg3)',
+                          border: wipForm.point_type === t.key ? '1px solid var(--green)' : '1px solid var(--border2)',
+                          color: wipForm.point_type === t.key ? 'var(--green)' : 'var(--text2)',
+                        }}>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {wipForm.point_type === 'material' ? (
+                    <>
+                      <select value={wipForm.material_category}
+                        onChange={e => setWipForm({ ...wipForm, material_category: e.target.value })}>
+                        <option value="">-- ประเภทวัสดุ (200/300/500) --</option>
+                        <option value="200">200</option>
+                        <option value="300">300</option>
+                        <option value="500">500</option>
+                      </select>
+                      <input list="dr-mat-no-list" placeholder="เลขที่วัสดุ (mat no.) — พิมพ์เพื่อค้นจาก Product Master" value={wipForm.mat_no}
+                        onChange={e => setWipForm({ ...wipForm, mat_no: e.target.value })} />
+                      <datalist id="dr-mat-no-list">
+                        {drProducts.map(p => (
+                          <option key={p.mat_no} value={p.mat_no}>{p.name}</option>
+                        ))}
+                      </datalist>
+                    </>
+                  ) : (
+                    <>
+                      <select value={wipForm.packaging_type}
+                        onChange={e => setWipForm({ ...wipForm, packaging_type: e.target.value })}>
+                        <option value="">-- ประเภทภาชนะ --</option>
+                        <option value="rack">Rack</option>
+                        <option value="box">Box</option>
+                        <option value="basket">Basket</option>
+                      </select>
+                      <input placeholder="packaging no." value={wipForm.packaging_no}
+                        onChange={e => setWipForm({ ...wipForm, packaging_no: e.target.value })} />
+                    </>
+                  )}
                   <div style={{ display: 'flex', gap: 8 }}>
                     <div style={{ flex: 1 }}>
                       <label style={labelSt}>Min</label>
@@ -922,7 +982,7 @@ export default function LineSetup() {
                     <button onClick={handleSaveWip} style={{ flex: 1, padding: '9px', background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700 }}>
                       {wipForm.id ? 'บันทึก' : 'เพิ่ม'}
                     </button>
-                    <button onClick={() => { setWipTempPos(null); setWipForm({ id: null, point_name: '', mat_no: '', min_qty: 0, max_qty: 0, current_qty: 0 }); }}
+                    <button onClick={() => { setWipTempPos(null); setWipForm(emptyWipForm); }}
                       style={{ padding: '9px 14px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 7 }}>
                       ยกเลิก
                     </button>
@@ -943,10 +1003,13 @@ export default function LineSetup() {
                     <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div onClick={() => editWipPoint(p)} style={{ cursor: 'pointer', flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
-                          {p.point_name} {isLow && <span style={{ fontSize: 10, background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>⚠️ ต่ำกว่า min</span>}
+                          {p.point_type === 'packaging' ? '📦' : '🧱'} {p.point_name} {isLow && <span style={{ fontSize: 10, background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>⚠️ ต่ำกว่า min</span>}
                         </div>
                         <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
-                          {p.mat_no ? `${p.mat_no} · ` : ''}คงเหลือ {p.current_qty ?? 0} (min {p.min_qty ?? 0} / max {p.max_qty ?? 0})
+                          {p.point_type === 'packaging'
+                            ? `${p.packaging_type ? `${p.packaging_type} · ` : ''}${p.packaging_no ? `${p.packaging_no} · ` : ''}`
+                            : `${p.material_category ? `cat.${p.material_category} · ` : ''}${p.mat_no ? `${p.mat_no} · ` : ''}`}
+                          คงเหลือ {p.current_qty ?? 0} (min {p.min_qty ?? 0} / max {p.max_qty ?? 0})
                         </div>
                       </div>
                       <button onClick={() => deleteWipPoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>
