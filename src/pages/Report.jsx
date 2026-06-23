@@ -100,7 +100,7 @@ const CAT_META = {
   Method:   { color: '#c084fc', bg: 'rgba(139,92,246,0.12)', label: 'Method',   icon: '📋' },
 };
 
-const TABS = ['รายวัน', 'รายพนักงาน', '📍 Log จุดงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '💰 ค่าฝีมือ', '📋 ใบบันทึก', '🏅 Multi-Skill Form'];
+const TABS = ['รายวัน', 'รายพนักงาน', '📍 Log จุดงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '💰 ค่าฝีมือ', '📋 ใบบันทึก', '🏅 Multi-Skill Form', '🚐 จองรถ OT พรุ่งนี้'];
 
 const SKILL_LEVELS = [
   { min: 100, label: 'ผู้เชี่ยวชาญ',   color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
@@ -154,6 +154,136 @@ export default function Report() {
       {activeTab === 6 && <SkillAllowanceTab />}
       {activeTab === 7 && <AttendanceFormTab />}
       {activeTab === 8 && <MultiSkillFormTab />}
+      {activeTab === 9 && <OtTransportBookingTab />}
+    </div>
+  );
+}
+
+function OtTransportBookingTab() {
+  const tomorrowStr = (() => {
+    const d = new Date();
+    if (d.getHours() < 8) d.setDate(d.getDate() - 1); // align กับ getWorkDate()
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  })();
+
+  const [date, setDate] = useState(tomorrowStr);
+  const [rows, setRows] = useState([]);
+  const [lines, setLines] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [section, setSection] = useState('');
+
+  useEffect(() => {
+    supabase.from('production_lines').select('id, name, section').then(({ data }) => setLines(data || []));
+  }, []);
+
+  useEffect(() => { load(); }, [date]);
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('ot_night_bookings')
+      .select('id, employee_id, created_at, employees(name, employee_id_code, line_id, section, department)')
+      .eq('work_date', date)
+      .order('created_at');
+    setRows(data || []);
+    setLoading(false);
+  };
+
+  const lineName = (lineId) => lines.find(l => String(l.id) === String(lineId))?.name || '';
+
+  const filteredRows = section
+    ? rows.filter(r => r.employees?.section === section)
+    : rows;
+
+  const sections = [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+
+  const handleExportCsv = () => {
+    downloadCSV(
+      `จองรถ_OT_${date}.csv`,
+      ['ลำดับ', 'รหัสพนักงาน', 'ชื่อ-สกุล', 'ไลน์/แผนก'],
+      filteredRows.map((r, i) => [
+        i + 1,
+        r.employees?.employee_id_code || '',
+        r.employees?.name || '',
+        lineName(r.employees?.line_id) || r.employees?.section || r.employees?.department || '',
+      ])
+    );
+  };
+
+  const handlePrint = () => {
+    const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
+    const rowsHtml = filteredRows.map((r, i) => `<tr>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${i + 1}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${r.employees?.employee_id_code || ''}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${r.employees?.name || ''}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${lineName(r.employees?.line_id) || r.employees?.section || r.employees?.department || ''}</td>
+    </tr>`).join('');
+    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>จองรถ OT ${date}</title>
+<style>@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
+table{border-collapse:collapse;width:100%}
+@media print{@page{size:A4 portrait;margin:10mm}body{-webkit-print-color-adjust:exact}}</style>
+</head><body style="padding:10mm">
+<h2 style="margin:0 0 4px;font-size:16px">รายชื่อพนักงานจองมาทำ OT (สำหรับจองรถรับส่ง)</h2>
+<p style="color:#666;margin:0 0 12px;font-size:10px">วันที่ทำ OT: ${date} · พิมพ์วันที่: ${todayStr} · รวม ${filteredRows.length} คน</p>
+<table><thead><tr style="background:#f3f4f6">
+<th style="border:1px solid #ccc;padding:4px">#</th>
+<th style="border:1px solid #ccc;padding:4px">รหัส</th>
+<th style="border:1px solid #ccc;padding:4px">ชื่อ</th>
+<th style="border:1px solid #ccc;padding:4px">ไลน์/แผนก</th>
+</tr></thead><tbody>${rowsHtml}</tbody></table>
+<script>window.onload = () => window.print();</script></body></html>`;
+    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
+        <label style={lbSt}>วันที่ทำ OT</label>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }} />
+        <select value={section} onChange={e => setSection(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <option value="">— ทุกส่วนงาน —</option>
+          {sections.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <CsvBtn onClick={handleExportCsv} />
+          <button onClick={handlePrint} style={{
+            padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)',
+          }}>🖨️ พิมพ์</button>
+        </div>
+      </div>
+
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
+        รายชื่อพนักงานที่จองว่าจะมาทำ OT คืนวันที่ {date} (จากหน้าเช็คชื่อ กะดึก) — ใช้สำหรับธุรการจองรถรับส่ง · รวม <strong style={{ color: 'var(--text)' }}>{filteredRows.length}</strong> คน
+      </div>
+
+      <div className="card" style={{ overflowX: 'auto' }}>
+        <table>
+          <thead>
+            <tr>
+              <th style={{ minWidth: 40 }}>#</th>
+              <th style={{ minWidth: 100 }}>รหัส</th>
+              <th style={{ minWidth: 180 }}>ชื่อ-สกุล</th>
+              <th style={{ minWidth: 140 }}>ไลน์/แผนก</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredRows.map((r, i) => (
+              <tr key={r.id}>
+                <td>{i + 1}</td>
+                <td>{r.employees?.employee_id_code}</td>
+                <td>{r.employees?.name}</td>
+                <td>{lineName(r.employees?.line_id) || r.employees?.section || r.employees?.department || '—'}</td>
+              </tr>
+            ))}
+            {!loading && filteredRows.length === 0 && (
+              <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>ไม่มีพนักงานจอง OT สำหรับวันนี้</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
