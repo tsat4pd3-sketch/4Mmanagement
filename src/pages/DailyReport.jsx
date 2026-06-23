@@ -489,8 +489,16 @@ function LiveTab({ role }) {
   // (session.product_id ไม่ได้ถูกตั้งค่าจาก UI เปิดกะ เลยเป็น null เสมอ — ใช้ mat_no ของแต่ละใบงานแทน)
   const ctForMatNo = (matNo) => kanbanStds.find(s => s.mat_no === matNo)?.dr_products?.cycle_time_sec || 0;
 
-  // หา process_type ที่ใช้บ่อยที่สุดในกะนี้ (จากใบงานที่เปิด) — ใช้กรอง break_policies ที่ตรงประเภทงาน
+  // หา process_type ของกะนี้ — อิงจากไลน์เป็นหลัก (เครื่องจักรของไลน์ HYDROFORM ถูก tag เป็น metal_forming ไว้แล้วใน
+  // ตั้งค่า > เครื่องจักร และไม่ขึ้นกับว่าเปิด Order ไปแล้วหรือยัง) ถ้าไลน์ไม่มีเครื่องจักร tag ไว้ ค่อย fallback ไปดูสินค้าที่กำลังผลิต
   const sessionProcessType = () => {
+    const lineMachines = machines.filter(m => m.line_name === selSession?.line_name && m.process_type);
+    if (lineMachines.length) {
+      const counts = {};
+      lineMachines.forEach(m => { counts[m.process_type] = (counts[m.process_type] || 0) + 1; });
+      const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+      if (top) return top[0];
+    }
     const counts = {};
     prodOrders.forEach(o => {
       const pt = kanbanStds.find(s => s.mat_no === o.mat_no)?.dr_products?.process_type;
@@ -2830,7 +2838,7 @@ function MachineSetup({ role }) {
             <div style={{ padding: '10px 16px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>⚙️ {lineName}</span>
               <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>{lineItems.length} เครื่อง</span>
-              {canEdit && (
+              {canEdit && !filterLine && (
                 <button onClick={() => { setFilterLine(lineName); openEdit({ line_name: lineName, machine_no: '', machine_name: '', process_type: 'welding_assembly', sort_order: lineItems.length + 1, is_active: true }); }}
                   style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 5, padding: '3px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                   + เพิ่ม
