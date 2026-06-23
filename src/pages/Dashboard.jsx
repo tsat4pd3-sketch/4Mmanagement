@@ -204,8 +204,11 @@ export default function Dashboard() {
         .reduce((sum, p) => {
           const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
           let pStart = new Date(`${wDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`);
-          const pEnd = new Date(pStart.getTime() + p.duration_min * 60000);
-          if (pStart < openedAt && pEnd < openedAt) pStart = new Date(pStart.getTime() + 86400000);
+          let pEnd = new Date(pStart.getTime() + p.duration_min * 60000);
+          if (pStart < openedAt && pEnd < openedAt) {
+            pStart = new Date(pStart.getTime() + 86400000);
+            pEnd   = new Date(pEnd.getTime() + 86400000);
+          }
           return sum + Math.max(0, (Math.min(pEnd, closedAt) - Math.max(pStart, openedAt)) / 60000);
         }, 0);
       const netAvail = Math.max(0, shiftMin - plannedDT - policyBreak);
@@ -773,7 +776,10 @@ export default function Dashboard() {
                       sessList.forEach(s => {
                         const sessionCtSec = s.dr_products?.cycle_time_sec || 0;
                         const sessionStartMs = s.created_at ? new Date(s.created_at).getTime() : null;
-                        const sorted = [...s.orders].sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
+                        // ใบที่ status = carry_over คือใบเดิมที่ถูกยกยอดไปต่อในกะถัดไปแล้ว (มีใบใหม่ status='open'
+                        // พร้อม carry_over_from_session_id ชี้กลับมา) — ถ้าแสดงทั้งสองใบจะเห็นเป็นกัมบังซ้ำกัน
+                        // ข้ามกะเช้า/กะดึก ทั้งที่เป็นงานเดียวกัน จึงตัดใบเดิม (carry_over) ออกจาก timeline
+                        const sorted = [...s.orders].filter(o => o.status !== 'carry_over').sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
                         let cumSec = 0;
                         sorted.forEach(o => {
                           // session.dr_products มาจาก product_id ที่อาจไม่ถูกตั้งค่า (กะนึงมีได้หลาย mat_no)
@@ -884,16 +890,21 @@ export default function Dashboard() {
                         const durationMs = Math.max(o.orderEndMs - o.orderStartMs, 0);
                         let startMs = Math.max(o.orderStartMs, queueEndMs);
                         let endMs = startMs + durationMs;
-                        let pushed = true;
-                        while (pushed) {
-                          pushed = false;
-                          for (const [bs, be] of breaks) {
-                            if (startMs < be && endMs > bs) {
-                              startMs = be;
-                              endMs = startMs + durationMs;
-                              pushed = true;
+                        // ถ้าช่วงเวลาผลิตของการ์ดนี้ทับเวลาพักเบรค ไม่เลื่อน startMs ไปหลังเบรค (เพราะจะทำให้
+                        // เวลาที่ "ว่าง" ก่อนเบรคเสียไปฟรี ๆ) แต่ให้ "ซอย" ทับเบรคแล้วยืดความยาวการ์ดออกแทน
+                        // เพราะช่วงเวลาที่ทับเบรคนั้นผลิตงานไม่ได้จริง ๆ ต้องนับเป็นเวลาที่ครองไลน์เพิ่ม
+                        const consumedBreaks = new Set();
+                        let extended = true;
+                        while (extended) {
+                          extended = false;
+                          breaks.forEach(([bs, be], i) => {
+                            if (consumedBreaks.has(i)) return;
+                            if (bs < endMs && be > startMs) {
+                              consumedBreaks.add(i);
+                              endMs += (be - bs);
+                              extended = true;
                             }
-                          }
+                          });
                         }
                         // เสร็จแล้วแต่ปิดจบช้ากว่าคิวที่ควรจะเสร็จ — ไม่ควรเขียวเหมือนผลิตจบปกติ (เทียบกับ endMs ก่อนปรับ)
                         const isLateDone = o.isDone && !!o.confirmed_at && new Date(o.confirmed_at).getTime() > endMs;

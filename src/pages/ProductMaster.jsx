@@ -211,11 +211,12 @@ export default function ProductMaster() {
   };
 
   /* ── kanban CRUD ── */
-  const openKanbanEdit = (std = null, defaultProductId = '') => {
+  const openKanbanEdit = (std = null, defaultProductId = '', defaultMatNo = '') => {
     setKanbanEditing(std?.id || 'new');
     setKanbanForm(std
       ? { product_id: std.product_id || '', mat_no: std.mat_no || '', qty_per_kanban: std.qty_per_kanban || 1, is_active: std.is_active }
-      : { product_id: defaultProductId, mat_no: '', qty_per_kanban: 1, is_active: true });
+      // ดึง MAT.NO มาจาก product เดิม (เลขเดียวกันอยู่แล้ว) กันพิมพ์ผิดซ้ำเวลาเพิ่ม kanban standard ใหม่
+      : { product_id: defaultProductId, mat_no: defaultMatNo || '', qty_per_kanban: 1, is_active: true });
   };
   const handleKanbanSave = async () => {
     if (!kanbanForm.mat_no.trim()) { toast.error('กรอก MAT.NO ก่อน'); return; }
@@ -562,7 +563,7 @@ export default function ProductMaster() {
                         );
                       })}
                       {canEdit && (
-                        <button onClick={() => openKanbanEdit(null, active?.id || members[0]?.id || '')}
+                        <button onClick={() => openKanbanEdit(null, active?.id || members[0]?.id || '', item.mat_no || '')}
                           style={{ alignSelf: 'flex-start', marginTop: 2, background: 'rgba(14,165,233,0.08)', border: '1px dashed rgba(14,165,233,0.4)', borderRadius: 6, padding: '4px 12px', fontSize: 11, color: '#0ea5e9', cursor: 'pointer', fontWeight: 700 }}>
                           + เพิ่ม MAT.NO
                         </button>
