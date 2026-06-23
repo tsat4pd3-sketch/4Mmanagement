@@ -575,12 +575,19 @@ export default function ProductMaster() {
             );
           };
 
-          /* ── multi-customer group card ── */
+          /* ── multi-customer group card ──
+             1 part = 1 การ์ด แม้จะแยก MAT.NO ตามลูกค้า (AAT/FTM/FVL) — ตัวแปรลูกค้าแสดงเป็นรายการ
+             ในรายละเอียดของการ์ดเดียว และ Kanban Standards รวมเป็นรายการเดียวแท็กลูกค้า ไม่แยกเป็นการ์ดย่อยซ้ำ */
           if (isMulti) {
             const allVariants = nameFamilies.map(fam => {
               const m = fam.members.find(x => x.is_active && !x.superseded_by) || fam.members[0];
-              return { ...m, family_id: fam.family_id };
+              const revCount = fam.members.length;
+              return { ...m, family_id: fam.family_id, revCount };
             });
+            const familyProductIds = new Set(nameFamilies.flatMap(fam => fam.members.map(m => m.id)));
+            const variantById = new Map(allVariants.map(v => [v.id, v]));
+            const stds = kanbanStds.filter(s => s.product_id && familyProductIds.has(s.product_id));
+            const isExpandedKanban = expandedFamilies[nameKey] !== false;
             return (
               <div key={nameKey} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
                 {/* Compact group header */}
@@ -593,32 +600,84 @@ export default function ProductMaster() {
                       </span>
                       <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>👥 {nameFamilies.length} ลูกค้า</span>
                       {totalBomAll > 0 && <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(61,214,92,0.1)', color: 'var(--accent)', fontWeight: 700 }}>📦 BOM: {totalBomAll}</span>}
+                      <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: stds.filter(s => s.is_active).length > 0 ? 'rgba(245,158,11,0.1)' : 'rgba(107,114,128,0.08)', color: stds.filter(s => s.is_active).length > 0 ? '#f59e0b' : 'var(--muted)', fontWeight: 700 }}>🎴 Kanban: {stds.filter(s => s.is_active).length > 0 ? `${stds.filter(s => s.is_active).length} mat` : 'ยังไม่มี'}</span>
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                       {[repItem.line_name && `📍 ${repItem.line_name}`, repItem.cycle_time_sec && `CT ${repItem.cycle_time_sec}s`, repItem.target_per_shift && `Target ${repItem.target_per_shift}/กะ`].filter(Boolean).join(' · ')}
                     </div>
-                    {/* Customer variant chips */}
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {allVariants.map(v => (
-                        <span key={v.family_id} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', color: '#60a5fa', fontWeight: 700 }}>
-                          {v.customer || '—'} · <span style={{ color: '#0ea5e9', fontFamily: 'monospace' }}>{v.mat_no}</span>
-                        </span>
-                      ))}
-                    </div>
+                    <RelatedLinks matNo={repItem.mat_no} productId={repItem.id} />
                   </div>
                   <button onClick={() => setExpandedNameGroups(p => ({ ...p, [nameKey]: !isExpGroupExpanded }))}
                     style={{ ...btnSecondary, fontSize: 11, padding: '4px 10px', flexShrink: 0 }}>
                     {isExpGroupExpanded ? '▲ ย่อ' : '▼ ขยาย'}
                   </button>
                 </div>
-                {/* Expanded: individual variant cards */}
-                {isExpGroupExpanded && (
-                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8, paddingBottom: 8 }}>
-                    {nameFamilies.map(({ family_id, members }) => (
-                      <FamilyCard key={family_id} family_id={family_id} members={members} indented={true} />
+
+                {isExpGroupExpanded && <>
+                  {/* ตัวแปรตามลูกค้า / MAT.NO — รายการเดียว ไม่ใช่การ์ดซ้อนการ์ด */}
+                  <div style={{ borderTop: '1px solid var(--border)', padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>👥 ตัวแปรตามลูกค้า / MAT.NO ({allVariants.length})</div>
+                    {allVariants.map(v => (
+                      <div key={v.family_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--bg)', borderRadius: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', color: '#60a5fa', fontWeight: 700, flexShrink: 0 }}>{v.customer || '—'}</span>
+                        <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: '#0ea5e9' }}>{v.mat_no}</span>
+                        {v.p_no && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {v.p_no}</span>}
+                        {v.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>📍 {v.line_name}</span>}
+                        {v.revCount > 1 && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {v.revCount} rev</span>}
+                        <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 10, background: (bomCounts[v.id] || 0) > 0 ? 'rgba(61,214,92,0.1)' : 'rgba(107,114,128,0.08)', color: (bomCounts[v.id] || 0) > 0 ? 'var(--accent)' : 'var(--muted)', fontWeight: 700 }}>📦 {(bomCounts[v.id] || 0) > 0 ? `${bomCounts[v.id]} พาร์ท` : 'ไม่มี BOM'}</span>
+                        {canEdit && (
+                          <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', flexShrink: 0 }}>
+                            <button onClick={() => openEC(v)} title="Engineering Change" style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: '#a855f7', fontWeight: 700 }}>🔄 EC</button>
+                            <button onClick={() => openEdit(v)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+                            <button onClick={() => handleDelete(v.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
-                )}
+
+                  {/* Kanban Standards รวมทุกลูกค้าไว้รายการเดียว แท็กลูกค้าต่อแถว */}
+                  <div style={{ borderTop: '1px solid var(--border)' }}>
+                    <button onClick={() => setExpandedFamilies(prev => ({ ...prev, [nameKey]: !isExpandedKanban }))}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'var(--bg2)', border: 'none', cursor: 'pointer', color: 'var(--text2)', fontSize: 12, fontWeight: 700 }}>
+                      <span>🎴 Kanban Standards ({stds.length})</span>
+                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>{isExpandedKanban ? '▲' : '▼'}</span>
+                    </button>
+                    {isExpandedKanban && (
+                      <div style={{ padding: '8px 12px', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                        {stds.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)', padding: '6px 4px' }}>ยังไม่มี Kanban Standard</div>}
+                        {stds.map(std => {
+                          const v = variantById.get(std.product_id);
+                          return (
+                            <div key={std.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 7, opacity: std.is_active ? 1 : 0.5 }}>
+                              {v?.customer && <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', color: '#60a5fa', fontWeight: 700, flexShrink: 0 }}>{v.customer}</span>}
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: '#0ea5e9' }}>{std.mat_no}</span>
+                                {!std.is_active && <span style={{ fontSize: 9, color: '#ef4444', marginLeft: 6 }}>ปิด</span>}
+                              </div>
+                              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                <span style={{ fontSize: 18, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>{std.qty_per_kanban}</span>
+                                <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 3 }}>ชิ้น/ใบ</span>
+                              </div>
+                              {canEdit && (
+                                <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                                  <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+                                  <button onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {canEdit && allVariants.filter(v => !stds.some(s => s.product_id === v.id)).map(v => (
+                          <button key={v.id} onClick={() => openKanbanEdit(null, v.id, v.mat_no)}
+                            style={{ alignSelf: 'flex-start', marginTop: 2, background: 'rgba(14,165,233,0.08)', border: '1px dashed rgba(14,165,233,0.4)', borderRadius: 6, padding: '4px 12px', fontSize: 11, color: '#0ea5e9', cursor: 'pointer', fontWeight: 700 }}>
+                            + เพิ่ม MAT.NO ({v.customer || v.mat_no})
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>}
               </div>
             );
           }
