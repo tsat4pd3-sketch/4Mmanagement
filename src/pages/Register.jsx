@@ -18,6 +18,7 @@ export default function Register() {
   const [groupName,   setGroupName]   = useState('');
   const [lineId,      setLineId]      = useState(null);
   const [team,        setTeam]        = useState('');
+  const [startDate,   setStartDate]   = useState('');
   const [photo,       setPhoto]       = useState(null);
   const [cropFile,    setCropFile]    = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -60,6 +61,7 @@ export default function Register() {
         group_name: groupName || null,
         team:       team      || null,
         line_id:    lineId    || null,
+        start_date: startDate || null,
         image_url:  photoUrl,
         created_by: userId,
       }]);
@@ -69,7 +71,7 @@ export default function Register() {
       setEmpCode(''); setName(''); setPosition(''); setDepartment('');
       setSection(isSupervisor && userSection ? userSection : '');
       setGroupName(''); setLineId(null);
-      setTeam(''); setPhoto(null);
+      setTeam(''); setStartDate(''); setPhoto(null);
       document.getElementById('photo-upload').value = '';
     } catch (err) {
       alert('เกิดข้อผิดพลาด: ' + err.message);
@@ -110,6 +112,11 @@ export default function Register() {
           <div>
             <label style={labelSt}>ชื่อ - นามสกุล</label>
             <input type="text" placeholder="ชื่อเต็มของพนักงาน" value={name} onChange={e => setName(e.target.value)} required />
+          </div>
+
+          <div>
+            <label style={labelSt}>วันเริ่มงาน</label>
+            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
