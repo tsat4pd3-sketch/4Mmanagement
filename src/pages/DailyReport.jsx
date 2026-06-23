@@ -437,6 +437,9 @@ function LiveTab({ role }) {
 
   const handleAddDT = async () => {
     if (!selSession || !dtForm.downtime_type_id) { toast.error('เลือกประเภท Downtime'); return; }
+    if (!dtForm.machine_no) { toast.error('เลือกเครื่องจักร'); return; }
+    const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === selSession.line_name);
+    if (lineStds.length && !dtForm.mat_no) { toast.error('เลือกชิ้นงาน'); return; }
     const { startedAt, endedAt, durMin } = computeDtTimes();
     if (!startedAt && !durMin) { toast.error('กรอกเวลาหรือระยะเวลาอย่างน้อย 1 อย่าง'); return; }
     setSavingDT(true);
@@ -2057,7 +2060,7 @@ function LiveTab({ role }) {
                   )}
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <Field label="เครื่องจักร">
+                    <Field label="เครื่องจักร *">
                       {(() => {
                         const lineMachines = machines.filter(m => m.line_name === selSession.line_name);
                         if (!lineMachines.length) {
@@ -2065,7 +2068,7 @@ function LiveTab({ role }) {
                         }
                         return (
                           <select value={dtForm.machine_no} onChange={e => setDtForm(f => ({ ...f, machine_no: e.target.value }))} style={inputStyle}>
-                            <option value="">— ไม่ระบุ —</option>
+                            <option value="">เลือกเครื่องจักร...</option>
                             {lineMachines.map(m => (
                               <option key={m.id} value={m.machine_no}>
                                 {m.machine_no}{m.machine_name ? ` · ${m.machine_name}` : ''}
@@ -2075,13 +2078,13 @@ function LiveTab({ role }) {
                         );
                       })()}
                     </Field>
-                    <Field label="ชิ้นงาน (แยก OEE/Downtime ตามชิ้นงาน)">
+                    <Field label="ชิ้นงาน (แยก OEE/Downtime ตามชิ้นงาน) *">
                       {(() => {
                         const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === selSession.line_name);
                         if (!lineStds.length) return <div style={{ ...inputStyle, color: 'var(--muted)', display: 'flex', alignItems: 'center' }}>— ไม่มีชิ้นงานในไลน์นี้ —</div>;
                         return (
                           <select value={dtForm.mat_no} onChange={e => setDtForm(f => ({ ...f, mat_no: e.target.value }))} style={inputStyle}>
-                            <option value="">— ทั้งไลน์ / ไม่ระบุ —</option>
+                            <option value="">เลือกชิ้นงาน...</option>
                             {lineStds.map(s => (
                               <option key={s.id} value={s.mat_no}>
                                 {s.mat_no}{s.dr_products?.name ? ` · ${s.dr_products.name}` : s.part_name ? ` · ${s.part_name}` : ''}
@@ -2099,10 +2102,16 @@ function LiveTab({ role }) {
 
                 <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
                   <button onClick={() => setShowDT(false)} style={cancelBtnStyle}>ยกเลิก</button>
-                  <button onClick={handleAddDT} disabled={savingDT || !dtForm.downtime_type_id || !hasResult}
-                    style={{ ...saveBtnStyle, background: '#ef4444', opacity: (!dtForm.downtime_type_id || !hasResult || savingDT) ? 0.5 : 1 }}>
-                    {savingDT ? '...' : 'บันทึก Downtime'}
-                  </button>
+                  {(() => {
+                    const lineStdsForBtn = kanbanStds.filter(s => s.dr_products?.line_name === selSession?.line_name);
+                    const dtInvalid = !dtForm.downtime_type_id || !hasResult || !dtForm.machine_no || (lineStdsForBtn.length > 0 && !dtForm.mat_no);
+                    return (
+                      <button onClick={handleAddDT} disabled={savingDT || dtInvalid}
+                        style={{ ...saveBtnStyle, background: '#ef4444', opacity: (dtInvalid || savingDT) ? 0.5 : 1 }}>
+                        {savingDT ? '...' : 'บันทึก Downtime'}
+                      </button>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
