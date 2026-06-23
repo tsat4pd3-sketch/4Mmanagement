@@ -1820,12 +1820,18 @@ function LiveTab({ role }) {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <Field label="ประเภทงานเสีย *">
-                  <select autoFocus value={defectForm.defect_type_id} onChange={e => setDefectForm(f => ({ ...f, defect_type_id: e.target.value }))} style={inputStyle}>
-                    <option value="">เลือกประเภท...</option>
-                    {defectTypes.map(t => (
-                      <option key={t.id} value={t.id}>{t.name_th}</option>
-                    ))}
-                  </select>
+                  {(() => {
+                    const pt = sessionProcessType();
+                    const filtered = defectTypes.filter(t => !t.process_type || t.process_type === pt || t.process_type === 'common');
+                    return (
+                      <select autoFocus value={defectForm.defect_type_id} onChange={e => setDefectForm(f => ({ ...f, defect_type_id: e.target.value }))} style={inputStyle}>
+                        <option value="">เลือกประเภท...</option>
+                        {filtered.map(t => (
+                          <option key={t.id} value={t.id}>{t.name_th}</option>
+                        ))}
+                      </select>
+                    );
+                  })()}
                 </Field>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
@@ -2926,7 +2932,7 @@ function DefectTypeSetup({ role }) {
   const [items, setItems]     = useState([]);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving]   = useState(false);
-  const emptyForm = { name_th: '', color: '#ef4444', sort_order: 0, is_active: true };
+  const emptyForm = { name_th: '', color: '#ef4444', process_type: '', sort_order: 0, is_active: true };
   const [form, setForm]       = useState(emptyForm);
 
   const load = useCallback(async () => {
@@ -2938,14 +2944,14 @@ function DefectTypeSetup({ role }) {
   const openEdit = (item = null) => {
     setEditing(item?.id || 'new');
     setForm(item
-      ? { name_th: item.name_th, color: item.color, sort_order: item.sort_order, is_active: item.is_active }
+      ? { name_th: item.name_th, color: item.color, process_type: item.process_type || '', sort_order: item.sort_order, is_active: item.is_active }
       : { ...emptyForm, sort_order: items.length + 1 });
   };
 
   const handleSave = async () => {
     if (!form.name_th) { toast.error('กรอกชื่อประเภท'); return; }
     setSaving(true);
-    const payload = { ...form, sort_order: parseInt(form.sort_order) || 0 };
+    const payload = { ...form, process_type: form.process_type || null, sort_order: parseInt(form.sort_order) || 0 };
     const { error } = editing === 'new'
       ? await supabaseDR.from('dr_defect_types').insert(payload)
       : await supabaseDR.from('dr_defect_types').update(payload).eq('id', editing);
@@ -2974,25 +2980,44 @@ function DefectTypeSetup({ role }) {
         🔴 ประเภทงานเสียนี้จะใช้เมื่อกด <strong>บันทึกงานเสีย</strong> ในหน้า Live — แยกจาก Downtime เพื่อให้ติดตามคุณภาพได้ละเอียด
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {items.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีประเภทงานเสีย</div>}
-        {items.map(item => (
-          <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 9, borderLeft: `4px solid ${item.color}`, opacity: item.is_active ? 1 : 0.45 }}>
-            <div style={{ width: 12, height: 12, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{item.name_th}</div>
-              {!item.is_active && <div style={{ fontSize: 10, color: '#ef4444' }}>(ปิดใช้)</div>}
+      {items.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีประเภทงานเสีย</div>}
+
+      {[
+        { key: 'welding_assembly', label: '🔥 Welding / Assembly', color: '#f97316' },
+        { key: 'metal_forming',   label: '⚙ Metal Forming',       color: '#3b82f6' },
+        { key: 'common',          label: '🔗 Common (ทุกกระบวนการ)', color: '#6b7280' },
+        { key: null,              label: '❔ ยังไม่กำหนดกระบวนการ',   color: '#9ca3af' },
+      ].map(pg => {
+        const pgItems = items.filter(i => (i.process_type || null) === pg.key);
+        if (pgItems.length === 0) return null;
+        return (
+          <div key={pg.key || 'none'} style={{ marginBottom: 16, border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+            <div style={{ padding: '8px 14px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: pg.color }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{pg.label}</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>{pgItems.length} รายการ</span>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--muted)' }}>#{item.sort_order}</div>
-            {canEdit && (
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
-              </div>
-            )}
+            <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {pgItems.map(item => (
+                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 9, borderLeft: `4px solid ${item.color}`, opacity: item.is_active ? 1 : 0.45 }}>
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{item.name_th}</div>
+                    {!item.is_active && <div style={{ fontSize: 10, color: '#ef4444' }}>(ปิดใช้)</div>}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>#{item.sort_order}</div>
+                  {canEdit && (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+                      <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-        ))}
-      </div>
+        );
+      })}
 
       {editing && (
         <div className="overlay" style={{ zIndex: 2000 }}>
@@ -3003,6 +3028,14 @@ function DefectTypeSetup({ role }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Field label="ชื่อประเภท *">
                 <input autoFocus value={form.name_th} onChange={e => setForm(f => ({ ...f, name_th: e.target.value }))} placeholder="เช่น มิติไม่ได้" style={inputStyle} />
+              </Field>
+              <Field label="กระบวนการ">
+                <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inputStyle}>
+                  <option value="">❔ ยังไม่กำหนด (แสดงทุกไลน์)</option>
+                  <option value="welding_assembly">🔥 Welding / Assembly</option>
+                  <option value="metal_forming">⚙ Metal Forming</option>
+                  <option value="common">🔗 Common (ทุกกระบวนการ)</option>
+                </select>
               </Field>
               <Field label="สี">
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
