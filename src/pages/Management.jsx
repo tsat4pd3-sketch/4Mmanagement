@@ -201,9 +201,11 @@ export default function Management() {
   useEffect(() => { setImgBox(null); }, [lineLayout]);
 
   const hoverTimer = useRef(null);
-  const nowForBoard = useRef(new Date());
+  const [nowForBoardState, setNowForBoard] = useState(new Date());
+  const nowForBoard = useRef(nowForBoardState);
+  nowForBoard.current = nowForBoardState;
   useEffect(() => {
-    const t = setInterval(() => { nowForBoard.current = new Date(); }, 30000);
+    const t = setInterval(() => setNowForBoard(new Date()), 30000);
     return () => clearInterval(t);
   }, []);
 
@@ -244,6 +246,8 @@ export default function Management() {
   useEffect(() => {
     if (!selectedLine) return;
     fetchLineProd(selectedLine);
+    const t = setInterval(() => fetchLineProd(selectedLine), 30000);
+    return () => clearInterval(t);
   }, [selectedLine, fetchLineProd]);
 
   useEffect(() => {
