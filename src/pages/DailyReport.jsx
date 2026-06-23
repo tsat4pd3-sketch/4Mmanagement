@@ -139,7 +139,7 @@ function LiveTab({ role }) {
   const [openForm, setOpenForm] = useState(() => { const s = currentShift(); return { work_date: today(), line_name: '', shift: s, product_id: '', start_time: shiftStart(s) }; });
 
   const [showDT, setShowDT]   = useState(false);
-  const [dtForm, setDtForm]   = useState({ downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', description: '' });
+  const [dtForm, setDtForm]   = useState({ downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
   const [savingDT, setSavingDT] = useState(false);
 
   // Prod Orders
@@ -449,6 +449,7 @@ function LiveTab({ role }) {
       ended_at:         endedAt?.toISOString()   || null,
       duration_min:     durMin,
       machine_no:       dtForm.machine_no || null,
+      mat_no:           dtForm.mat_no || null,
       description:      dtForm.description || null,
       reported_by_name: fullName,
       reported_by_uid:  user?.id,
@@ -457,7 +458,7 @@ function LiveTab({ role }) {
     if (error) { toast.error(error.message); return; }
     toast.success('บันทึก Downtime แล้ว');
     setShowDT(false);
-    setDtForm({ downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', description: '' });
+    setDtForm({ downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
     loadDT(selSession.id);
   };
 
@@ -1353,7 +1354,7 @@ function LiveTab({ role }) {
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>⏱ Downtime ({dtLogs.length} รายการ)</div>
-                <button onClick={() => { setShowDT(true); setDtForm({ downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', description: '' }); }}
+                <button onClick={() => { setShowDT(true); setDtForm({ downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' }); }}
                   style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                   + บันทึก Downtime
                 </button>
@@ -1369,6 +1370,7 @@ function LiveTab({ role }) {
                           <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: cat.bg, color: cat.color }}>{cat.label}</span>
                           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{d.dr_downtime_types?.name_th || '—'}</span>
                           {d.machine_no && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {d.machine_no}</span>}
+                          {d.mat_no && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9' }}>{d.mat_no}</span>}
                         </div>
                         {d.description && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{d.description}</div>}
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
@@ -1482,6 +1484,54 @@ function LiveTab({ role }) {
                         {tsus > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>🟡 สงสัย: {tsus}</span>}
                         {trep > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#a78bfa' }}>🔧 ซ่อม: {trep}</span>}
                         <span style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }}>✅ ดี (ประมาณ): {tok}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Per-product breakdown — separates shared lines (e.g. APRON ASSY) that run multiple MAT.NO at once */}
+                {(() => {
+                  const matNos = Array.from(new Set(prodOrders.filter(o => o.status === 'confirmed' || o.status === 'open').map(o => o.mat_no)));
+                  if (!matNos.length) return null;
+                  const rows = matNos.map(matNo => {
+                    const orders = prodOrders.filter(o => o.mat_no === matNo);
+                    const confirmedQty = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
+                    const openQty = orders.filter(o => o.status === 'open').reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || 0), 0);
+                    const orderIds = new Set(orders.map(o => o.id));
+                    const ng = defectLogs.filter(d => orderIds.has(d.prod_order_id)).reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
+                    const dt = dtLogs.filter(d => d.mat_no === matNo).reduce((s, d) => s + (d.duration_min || 0), 0);
+                    return { matNo, partName: orders[0]?.part_name, qty: confirmedQty + openQty, ng, dt };
+                  }).sort((a, b) => b.qty - a.qty);
+                  const dtNoMat = dtLogs.filter(d => !d.mat_no).reduce((s, d) => s + (d.duration_min || 0), 0);
+                  return (
+                    <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>📦 สรุปแยกตามชิ้นงาน ({rows.length} MAT.NO)</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {rows.map(r => (
+                          <div key={r.matNo} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--bg)', borderRadius: 8 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{r.matNo}</div>
+                              {r.partName && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.partName}</div>}
+                            </div>
+                            <div style={{ textAlign: 'center', minWidth: 50 }}>
+                              <div style={{ fontSize: 9, color: 'var(--muted)' }}>ผลิตได้</div>
+                              <div style={{ fontSize: 13, fontWeight: 800, color: '#22c55e' }}>{r.qty}</div>
+                            </div>
+                            <div style={{ textAlign: 'center', minWidth: 40 }}>
+                              <div style={{ fontSize: 9, color: 'var(--muted)' }}>NG</div>
+                              <div style={{ fontSize: 13, fontWeight: 800, color: r.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{r.ng}</div>
+                            </div>
+                            <div style={{ textAlign: 'center', minWidth: 60 }}>
+                              <div style={{ fontSize: 9, color: 'var(--muted)' }}>Downtime</div>
+                              <div style={{ fontSize: 13, fontWeight: 800, color: r.dt > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtMin(Math.round(r.dt))}</div>
+                            </div>
+                          </div>
+                        ))}
+                        {dtNoMat > 0 && (
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                            + Downtime ไม่ได้ระบุชิ้นงาน (ทั้งไลน์): {fmtMin(Math.round(dtNoMat))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -2025,10 +2075,26 @@ function LiveTab({ role }) {
                         );
                       })()}
                     </Field>
-                    <Field label="รายละเอียด">
-                      <input type="text" value={dtForm.description} onChange={e => setDtForm(f => ({ ...f, description: e.target.value }))} placeholder="สาเหตุ..." style={inputStyle} />
+                    <Field label="ชิ้นงาน (แยก OEE/Downtime ตามชิ้นงาน)">
+                      {(() => {
+                        const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === selSession.line_name);
+                        if (!lineStds.length) return <div style={{ ...inputStyle, color: 'var(--muted)', display: 'flex', alignItems: 'center' }}>— ไม่มีชิ้นงานในไลน์นี้ —</div>;
+                        return (
+                          <select value={dtForm.mat_no} onChange={e => setDtForm(f => ({ ...f, mat_no: e.target.value }))} style={inputStyle}>
+                            <option value="">— ทั้งไลน์ / ไม่ระบุ —</option>
+                            {lineStds.map(s => (
+                              <option key={s.id} value={s.mat_no}>
+                                {s.mat_no}{s.dr_products?.name ? ` · ${s.dr_products.name}` : s.part_name ? ` · ${s.part_name}` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        );
+                      })()}
                     </Field>
                   </div>
+                  <Field label="รายละเอียด">
+                    <input type="text" value={dtForm.description} onChange={e => setDtForm(f => ({ ...f, description: e.target.value }))} placeholder="สาเหตุ..." style={inputStyle} />
+                  </Field>
                 </div>
 
                 <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
