@@ -477,7 +477,7 @@ export default function ProductMaster() {
               <div style={{ background: 'var(--card)', border: `1px solid var(--border)`, borderRadius: indented ? 8 : 12, overflow: 'hidden', marginLeft: indented ? 16 : 0, marginRight: indented ? 16 : 0, marginBottom: indented ? 8 : 0 }}>
                 <div style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
                   {item.image_url && (
-                    <img src={item.image_url} alt="" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', flexShrink: 0 }} />
+                    <img src={item.image_url} alt="" loading="lazy" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', flexShrink: 0 }} />
                   )}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {!indented && (
@@ -588,10 +588,14 @@ export default function ProductMaster() {
             const variantById = new Map(allVariants.map(v => [v.id, v]));
             const stds = kanbanStds.filter(s => s.product_id && familyProductIds.has(s.product_id));
             const isExpandedKanban = expandedFamilies[nameKey] !== false;
+            const heroImage = repItem.image_url || allVariants.find(v => v.image_url)?.image_url;
             return (
               <div key={nameKey} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
                 {/* Compact group header */}
                 <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                  {heroImage && (
+                    <img src={heroImage} alt="" loading="lazy" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', flexShrink: 0 }} />
+                  )}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
                       <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{partName}</span>
@@ -620,7 +624,7 @@ export default function ProductMaster() {
                     {allVariants.map(v => (
                       <div key={v.family_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--bg)', borderRadius: 8, flexWrap: 'wrap' }}>
                         {v.image_url
-                          ? <img src={v.image_url} alt="" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', flexShrink: 0 }} />
+                          ? <img src={v.image_url} alt="" loading="lazy" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', flexShrink: 0 }} />
                           : <div style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }} />}
                         <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', color: '#60a5fa', fontWeight: 700, flexShrink: 0 }}>{v.customer || '—'}</span>
                         <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: '#0ea5e9' }}>{v.mat_no}</span>
@@ -1612,7 +1616,7 @@ function PartsMasterPanel({ canEdit, fullName, setCsvPreview, reloadKey }) {
                 <tr key={p.id} style={{ opacity: p.is_active ? 1 : 0.45, background: 'var(--card)' }}>
                   <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)' }}>
                     {p.image_url
-                      ? <img src={p.image_url} alt="" style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)' }} />
+                      ? <img src={p.image_url} alt="" loading="lazy" style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)' }} />
                       : <div style={{ width: 32, height: 32, borderRadius: 6, background: 'var(--bg2)', border: '1px solid var(--border)' }} />
                     }
                   </td>
