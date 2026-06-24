@@ -73,6 +73,8 @@ export default function Checkin() {
   const [lines,          setLines]          = useState([]);
   const [attendance,     setAttendance]     = useState({});
   const [otBookings,     setOtBookings]     = useState({});
+  const [otTasks,        setOtTasks]        = useState({});
+  const [taskTypes,      setTaskTypes]      = useState([]);
   const [isSaving,       setIsSaving]       = useState(false);
   const [filterShift,    setFilterShift]    = useState(true);
   const [noSchedule,     setNoSchedule]     = useState(false);
@@ -110,6 +112,7 @@ export default function Checkin() {
       { data: lineData },
       { data: mergeData },
       { data: bookingData },
+      { data: taskTypeData },
     ] = await Promise.all([
       empQ,
       supabase.from('daily_production_logs')
@@ -120,10 +123,12 @@ export default function Checkin() {
       supabase.from('production_lines').select('id, name, section').order('section').order('name'),
       supabase.from('shift_merge_events').select('*').lte('start_date', workDateStr).gte('end_date', workDateStr),
       shiftInfo.shift === 'night'
-        ? supabase.from('ot_night_bookings').select('employee_id').eq('work_date', nextDateStr)
-        : Promise.resolve({ data: [] }),
+        ? supabase.from('ot_night_bookings').select('employee_id, task_type_id').eq('work_date', nextDateStr).eq('shift', 'night')
+        : supabase.from('ot_night_bookings').select('employee_id, task_type_id').eq('work_date', workDateStr).eq('shift', 'day'),
+      supabase.from('ot_task_types').select('id, name').eq('is_active', true).order('sort_order'),
     ]);
     setLines(lineData || []);
+    setTaskTypes(taskTypeData || []);
 
     if (!empData) return;
 
@@ -183,14 +188,23 @@ export default function Checkin() {
     });
     setAttendance(init);
 
-    const bookingSet = new Set((bookingData || []).map(b => b.employee_id));
+    const bookingByEmp = {};
+    (bookingData || []).forEach(b => { bookingByEmp[b.employee_id] = b.task_type_id; });
     const bookInit = {};
-    enriched.forEach(emp => { bookInit[emp.id] = bookingSet.has(emp.id); });
+    const taskInit = {};
+    enriched.forEach(emp => {
+      bookInit[emp.id] = Object.prototype.hasOwnProperty.call(bookingByEmp, emp.id);
+      taskInit[emp.id] = bookingByEmp[emp.id] || '';
+    });
     setOtBookings(bookInit);
+    setOtTasks(taskInit);
   };
 
   const toggleOtBooking = (empId) =>
     setOtBookings(prev => ({ ...prev, [empId]: !prev[empId] }));
+
+  const setOtTask = (empId, taskTypeId) =>
+    setOtTasks(prev => ({ ...prev, [empId]: taskTypeId }));
 
   const toggle = (empId, field) =>
     setAttendance(prev => ({ ...prev, [empId]: { ...prev[empId], [field]: !prev[empId][field] } }));
@@ -259,27 +273,36 @@ export default function Checkin() {
 
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); setIsSaving(false); return; }
 
-    /* ── กะดึก: บันทึกการจอง OT วันถัดไป (สำหรับธุรการจองรถรับส่ง) ── */
-    if (shiftInfo.shift === 'night') {
-      const nextDateStr = addDaysToDateStr(workDateStr, 1);
-      const toBook   = displayed.filter(emp => otBookings[emp.id]).map(emp => emp.id);
-      const toUnbook = displayed.filter(emp => !otBookings[emp.id]).map(emp => emp.id);
+    /* ── บันทึกการจอง OT (สำหรับธุรการจองรถรับส่ง) ──
+       กะดึก: จองล่วงหน้าว่าจะมาทำ OT คืนวันถัดไป (checkbox 🚐 OT พรุ่งนี้) → work_date = วันถัดไป, shift='night'
+       กะเช้า: OT จริงของวันนี้ (has_ot) → work_date = วันนี้, shift='day' */
+    {
+      const isNightShift = shiftInfo.shift === 'night';
+      const bookDate = isNightShift ? addDaysToDateStr(workDateStr, 1) : workDateStr;
+      const otShift  = isNightShift ? 'night' : 'day';
+      const isBooked = emp => isNightShift ? !!otBookings[emp.id] : !!attendance[emp.id]?.has_ot;
+
+      const toBook   = displayed.filter(isBooked).map(emp => emp.id);
+      const toUnbook = displayed.filter(emp => !isBooked(emp)).map(emp => emp.id);
 
       if (toBook.length) {
         await supabase.from('ot_night_bookings').upsert(
           toBook.map(empId => ({
-            work_date:      nextDateStr,
+            work_date:      bookDate,
+            shift:          otShift,
             employee_id:    empId,
+            task_type_id:   otTasks[empId] || null,
             booked_by:      userData.user.id,
             booked_by_name: fullName || null,
           })),
-          { onConflict: 'employee_id,work_date' }
+          { onConflict: 'employee_id,work_date,shift' }
         );
       }
       if (toUnbook.length) {
         await supabase.from('ot_night_bookings')
           .delete()
-          .eq('work_date', nextDateStr)
+          .eq('work_date', bookDate)
+          .eq('shift', otShift)
           .in('employee_id', toUnbook);
       }
     }
@@ -721,15 +744,17 @@ export default function Checkin() {
         </div>
       )}
 
-      {shiftInfo.shift === 'night' && (
-        <div style={{
-          padding: '10px 14px', borderRadius: 8, marginBottom: 14,
-          background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.25)',
-          fontSize: 13, color: '#06b6d4', display: 'flex', alignItems: 'center', gap: 8,
-        }}>
-          🚐 <span>คอลัมน์ <strong>OT พรุ่งนี้</strong> = จองล่วงหน้าว่าจะมาทำ OT คืนวันที่ {addDaysToDateStr(shiftInfo.workDateStr, 1)} เพื่อใช้ออกรายงานให้ธุรการจองรถรับส่ง (ดูที่หน้า Report)</span>
-        </div>
-      )}
+      <div style={{
+        padding: '10px 14px', borderRadius: 8, marginBottom: 14,
+        background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.25)',
+        fontSize: 13, color: '#06b6d4', display: 'flex', alignItems: 'center', gap: 8,
+      }}>
+        🚐 <span>
+          {shiftInfo.shift === 'night'
+            ? <>คอลัมน์ <strong>จองรถ OT / งานที่ทำ</strong> = จองล่วงหน้าว่าจะมาทำ OT คืนวันที่ {addDaysToDateStr(shiftInfo.workDateStr, 1)} พร้อมระบุงานที่จะทำ เพื่อใช้ออกรายงานให้ธุรการจองรถรับส่ง (ดูที่หน้า Report)</>
+            : <>ติ๊ก <strong>OT</strong> แล้วเลือก <strong>งานที่ทำ</strong> ในคอลัมน์ขวา เพื่อใช้ออกรายงานให้ธุรการจองรถรับส่ง (ดูที่หน้า Report)</>}
+        </span>
+      </div>
 
       {noSchedule && (
         <div style={{
@@ -755,9 +780,7 @@ export default function Checkin() {
               <th style={{ minWidth: 220 }}>🏖️ การลา</th>
               <th style={{ minWidth: 140 }}>หมายเหตุ</th>
               <th style={{ textAlign: 'center', minWidth: 110 }}>สถานะ</th>
-              {shiftInfo.shift === 'night' && (
-                <th style={{ textAlign: 'center', minWidth: 90 }} title="จองมาทำ OT คืนพรุ่งนี้ — ใช้ออกรายงานให้ธุรการจองรถรับส่ง">🚐 OT พรุ่งนี้</th>
-              )}
+              <th style={{ textAlign: 'center', minWidth: 150 }} title="จองรถรับส่งสำหรับ OT พร้อมระบุงานที่ทำ — ใช้ออกรายงานให้ธุรการจองรถรับส่ง">🚐 จองรถ OT / งานที่ทำ</th>
             </tr>
           </thead>
           <tbody>
@@ -944,23 +967,46 @@ export default function Checkin() {
                       </div>
                     )}
                   </td>
-                  {shiftInfo.shift === 'night' && (
-                    <td style={{ textAlign: 'center' }}>
-                      <input
-                        type="checkbox"
-                        style={{ transform: 'scale(1.4)', accentColor: '#06b6d4', width: 'auto' }}
-                        checked={!!otBookings[emp.id]}
-                        onChange={() => toggleOtBooking(emp.id)}
-                      />
-                    </td>
-                  )}
+                  <td style={{ textAlign: 'center' }}>
+                    {shiftInfo.shift === 'night' ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                        <input
+                          type="checkbox"
+                          style={{ transform: 'scale(1.4)', accentColor: '#06b6d4', width: 'auto' }}
+                          checked={!!otBookings[emp.id]}
+                          onChange={() => toggleOtBooking(emp.id)}
+                        />
+                        {otBookings[emp.id] && (
+                          <select
+                            value={otTasks[emp.id] || ''}
+                            onChange={e => setOtTask(emp.id, e.target.value || null)}
+                            style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130 }}
+                          >
+                            <option value="">— งานที่ทำ —</option>
+                            {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          </select>
+                        )}
+                      </div>
+                    ) : rec.has_ot ? (
+                      <select
+                        value={otTasks[emp.id] || ''}
+                        onChange={e => setOtTask(emp.id, e.target.value || null)}
+                        style={{ fontSize: 11, padding: '2px 4px', maxWidth: 140 }}
+                      >
+                        <option value="">— งานที่ทำ —</option>
+                        {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                    ) : (
+                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
 
             {displayed.length === 0 && (
               <tr>
-                <td colSpan={shiftInfo.shift === 'night' ? 11 : 10} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>
+                <td colSpan={11} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>
                   ไม่มีพนักงานในกะนี้ — ลองกด 👥 ทุกคน
                 </td>
               </tr>
