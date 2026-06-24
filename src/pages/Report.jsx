@@ -160,18 +160,22 @@ export default function Report() {
 }
 
 function OtTransportBookingTab() {
-  const tomorrowStr = (() => {
+  const { role } = useContext(UserContext);
+  const canManageMaster = ['admin', 'manager', 'supervisor'].includes(role);
+
+  const todayStr = (() => {
     const d = new Date();
     if (d.getHours() < 8) d.setDate(d.getDate() - 1); // align กับ getWorkDate()
-    d.setDate(d.getDate() + 1);
     return d.toISOString().split('T')[0];
   })();
 
-  const [date, setDate] = useState(tomorrowStr);
+  const [date, setDate] = useState(todayStr);
+  const [shiftFilter, setShiftFilter] = useState('all'); // 'all' | 'day' | 'night'
   const [rows, setRows] = useState([]);
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(false);
   const [section, setSection] = useState('');
+  const [showMaster, setShowMaster] = useState(false);
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name, section').then(({ data }) => setLines(data || []));
@@ -183,7 +187,9 @@ function OtTransportBookingTab() {
     setLoading(true);
     const { data } = await supabase
       .from('ot_night_bookings')
-      .select('id, employee_id, created_at, employees(name, employee_id_code, line_id, section, department)')
+      .select(`id, employee_id, shift, created_at,
+        employees(name, employee_id_code, line_id, section, department, bus_routes(code, name)),
+        ot_task_types(name)`)
       .eq('work_date', date)
       .order('created_at');
     setRows(data || []);
@@ -191,33 +197,42 @@ function OtTransportBookingTab() {
   };
 
   const lineName = (lineId) => lines.find(l => String(l.id) === String(lineId))?.name || '';
+  const busRouteLabel = (r) => r.employees?.bus_routes ? `${r.employees.bus_routes.code} ${r.employees.bus_routes.name}` : '—';
+  const taskLabel = (r) => r.ot_task_types?.name || '—';
+  const shiftLabel = (s) => s === 'day' ? '☀️ เช้า' : s === 'night' ? '🌙 ดึก' : '—';
 
-  const filteredRows = section
-    ? rows.filter(r => r.employees?.section === section)
-    : rows;
+  const filteredRows = rows
+    .filter(r => !section || r.employees?.section === section)
+    .filter(r => shiftFilter === 'all' || r.shift === shiftFilter);
 
   const sections = [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
 
   const handleExportCsv = () => {
     downloadCSV(
       `จองรถ_OT_${date}.csv`,
-      ['ลำดับ', 'รหัสพนักงาน', 'ชื่อ-สกุล', 'ไลน์/แผนก'],
+      ['ลำดับ', 'รหัสพนักงาน', 'ชื่อ-สกุล', 'ไลน์/แผนก', 'กะ', 'สายรถ', 'งานที่ทำ'],
       filteredRows.map((r, i) => [
         i + 1,
         r.employees?.employee_id_code || '',
         r.employees?.name || '',
         lineName(r.employees?.line_id) || r.employees?.section || r.employees?.department || '',
+        shiftLabel(r.shift),
+        busRouteLabel(r),
+        taskLabel(r),
       ])
     );
   };
 
   const handlePrint = () => {
-    const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
+    const printedAt = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
     const rowsHtml = filteredRows.map((r, i) => `<tr>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${i + 1}</td>
       <td style="border:1px solid #ccc;padding:3px 6px">${r.employees?.employee_id_code || ''}</td>
       <td style="border:1px solid #ccc;padding:3px 6px">${r.employees?.name || ''}</td>
       <td style="border:1px solid #ccc;padding:3px 6px">${lineName(r.employees?.line_id) || r.employees?.section || r.employees?.department || ''}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${shiftLabel(r.shift)}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${busRouteLabel(r)}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px">${taskLabel(r)}</td>
     </tr>`).join('');
     const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>จองรถ OT ${date}</title>
 <style>@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
@@ -226,12 +241,15 @@ table{border-collapse:collapse;width:100%}
 @media print{@page{size:A4 portrait;margin:10mm}body{-webkit-print-color-adjust:exact}}</style>
 </head><body style="padding:10mm">
 <h2 style="margin:0 0 4px;font-size:16px">รายชื่อพนักงานจองมาทำ OT (สำหรับจองรถรับส่ง)</h2>
-<p style="color:#666;margin:0 0 12px;font-size:10px">วันที่ทำ OT: ${date} · พิมพ์วันที่: ${todayStr} · รวม ${filteredRows.length} คน</p>
+<p style="color:#666;margin:0 0 12px;font-size:10px">วันที่ทำ OT: ${date} · พิมพ์วันที่: ${printedAt} · รวม ${filteredRows.length} คน</p>
 <table><thead><tr style="background:#f3f4f6">
 <th style="border:1px solid #ccc;padding:4px">#</th>
 <th style="border:1px solid #ccc;padding:4px">รหัส</th>
 <th style="border:1px solid #ccc;padding:4px">ชื่อ</th>
 <th style="border:1px solid #ccc;padding:4px">ไลน์/แผนก</th>
+<th style="border:1px solid #ccc;padding:4px">กะ</th>
+<th style="border:1px solid #ccc;padding:4px">สายรถ</th>
+<th style="border:1px solid #ccc;padding:4px">งานที่ทำ</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank'); w.document.write(html); w.document.close();
@@ -242,11 +260,22 @@ table{border-collapse:collapse;width:100%}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
         <label style={lbSt}>วันที่ทำ OT</label>
         <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }} />
+        <select value={shiftFilter} onChange={e => setShiftFilter(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <option value="all">— ทุกกะ —</option>
+          <option value="day">☀️ กะเช้า</option>
+          <option value="night">🌙 กะดึก</option>
+        </select>
         <select value={section} onChange={e => setSection(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
           <option value="">— ทุกส่วนงาน —</option>
           {sections.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          {canManageMaster && (
+            <button onClick={() => setShowMaster(v => !v)} style={{
+              padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              background: showMaster ? 'rgba(245,158,11,0.18)' : 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)',
+            }}>⚙️ จัดการสายรถ/งาน OT</button>
+          )}
           <CsvBtn onClick={handleExportCsv} />
           <button onClick={handlePrint} style={{
             padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
@@ -255,8 +284,10 @@ table{border-collapse:collapse;width:100%}
         </div>
       </div>
 
+      {showMaster && canManageMaster && <OtMasterDataPanel />}
+
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
-        รายชื่อพนักงานที่จองว่าจะมาทำ OT คืนวันที่ {date} (จากหน้าเช็คชื่อ กะดึก) — ใช้สำหรับธุรการจองรถรับส่ง · รวม <strong style={{ color: 'var(--text)' }}>{filteredRows.length}</strong> คน
+        รายชื่อพนักงานที่จองว่าจะมาทำ OT วันที่ {date} (จากหน้าเช็คชื่อ ทั้งกะเช้า/กะดึก) — ใช้สำหรับธุรการจองรถรับส่ง · รวม <strong style={{ color: 'var(--text)' }}>{filteredRows.length}</strong> คน
       </div>
 
       <div className="card" style={{ overflowX: 'auto' }}>
@@ -267,6 +298,9 @@ table{border-collapse:collapse;width:100%}
               <th style={{ minWidth: 100 }}>รหัส</th>
               <th style={{ minWidth: 180 }}>ชื่อ-สกุล</th>
               <th style={{ minWidth: 140 }}>ไลน์/แผนก</th>
+              <th style={{ minWidth: 70, textAlign: 'center' }}>กะ</th>
+              <th style={{ minWidth: 160 }}>สายรถ</th>
+              <th style={{ minWidth: 160 }}>งานที่ทำ</th>
             </tr>
           </thead>
           <tbody>
@@ -276,13 +310,121 @@ table{border-collapse:collapse;width:100%}
                 <td>{r.employees?.employee_id_code}</td>
                 <td>{r.employees?.name}</td>
                 <td>{lineName(r.employees?.line_id) || r.employees?.section || r.employees?.department || '—'}</td>
+                <td style={{ textAlign: 'center' }}>{shiftLabel(r.shift)}</td>
+                <td>{busRouteLabel(r)}</td>
+                <td>{taskLabel(r)}</td>
               </tr>
             ))}
             {!loading && filteredRows.length === 0 && (
-              <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>ไม่มีพนักงานจอง OT สำหรับวันนี้</td></tr>
+              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>ไม่มีพนักงานจอง OT สำหรับวันนี้</td></tr>
             )}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+function OtMasterDataPanel() {
+  const [busRoutes, setBusRoutes] = useState([]);
+  const [taskTypes, setTaskTypes] = useState([]);
+  const [newRouteCode, setNewRouteCode] = useState('');
+  const [newRouteName, setNewRouteName] = useState('');
+  const [newTaskName, setNewTaskName] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const [{ data: rd }, { data: td }] = await Promise.all([
+      supabase.from('bus_routes').select('id, code, name, is_active, sort_order').order('sort_order'),
+      supabase.from('ot_task_types').select('id, name, is_active, sort_order').order('sort_order'),
+    ]);
+    setBusRoutes(rd || []);
+    setTaskTypes(td || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const addRoute = async () => {
+    if (!newRouteCode.trim() || !newRouteName.trim()) return;
+    const { error } = await supabase.from('bus_routes').insert([{
+      code: newRouteCode.trim(), name: newRouteName.trim(), sort_order: busRoutes.length,
+    }]);
+    if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
+    setNewRouteCode(''); setNewRouteName('');
+    load();
+  };
+
+  const addTask = async () => {
+    if (!newTaskName.trim()) return;
+    const { error } = await supabase.from('ot_task_types').insert([{
+      name: newTaskName.trim(), sort_order: taskTypes.length,
+    }]);
+    if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
+    setNewTaskName('');
+    load();
+  };
+
+  const toggleRouteActive = async (r) => {
+    await supabase.from('bus_routes').update({ is_active: !r.is_active }).eq('id', r.id);
+    load();
+  };
+
+  const toggleTaskActive = async (t) => {
+    await supabase.from('ot_task_types').update({ is_active: !t.is_active }).eq('id', t.id);
+    load();
+  };
+
+  const removeRoute = async (r) => {
+    if (!window.confirm(`ลบสายรถ "${r.code} ${r.name}"?`)) return;
+    await supabase.from('bus_routes').delete().eq('id', r.id);
+    load();
+  };
+
+  const removeTask = async (t) => {
+    if (!window.confirm(`ลบงาน "${t.name}"?`)) return;
+    await supabase.from('ot_task_types').delete().eq('id', t.id);
+    load();
+  };
+
+  return (
+    <div className="card" style={{ padding: 16, marginBottom: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      <div>
+        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>🚐 สายรถรับส่ง</div>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+          <input placeholder="รหัส เช่น A17" value={newRouteCode} onChange={e => setNewRouteCode(e.target.value)} style={{ width: 70, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
+          <input placeholder="ชื่อสาย เช่น มาบยางพร-ปลวกแดง" value={newRouteName} onChange={e => setNewRouteName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
+          <button onClick={addRoute} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none' }}>+ เพิ่ม</button>
+        </div>
+        <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {busRoutes.map(r => (
+            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
+              <span style={{ flex: 1 }}>{r.code} {r.name}</span>
+              <button onClick={() => toggleRouteActive(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
+              <button onClick={() => removeRoute(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444' }}>ลบ</button>
+            </div>
+          ))}
+          {!loading && busRoutes.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีสายรถ</div>}
+        </div>
+      </div>
+
+      <div>
+        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>🛠️ งานที่ทำ OT</div>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+          <input placeholder="ชื่องาน เช่น ผลิตตามแผน" value={newTaskName} onChange={e => setNewTaskName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
+          <button onClick={addTask} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none' }}>+ เพิ่ม</button>
+        </div>
+        <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {taskTypes.map(t => (
+            <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, background: t.is_active ? 'transparent' : 'var(--bg2)', opacity: t.is_active ? 1 : 0.5 }}>
+              <span style={{ flex: 1 }}>{t.name}</span>
+              <button onClick={() => toggleTaskActive(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{t.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
+              <button onClick={() => removeTask(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444' }}>ลบ</button>
+            </div>
+          ))}
+          {!loading && taskTypes.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีงาน</div>}
+        </div>
       </div>
     </div>
   );

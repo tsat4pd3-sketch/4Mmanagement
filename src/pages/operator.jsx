@@ -74,6 +74,7 @@ export default function Operator() {
   const [filterTeam,    setFilterTeam]    = useState('');
   const [filterGrade,   setFilterGrade]   = useState('');
   const [lines,           setLines]           = useState([]);
+  const [busRoutes,       setBusRoutes]       = useState([]);
   const [levelUpRequests, setLevelUpRequests] = useState([]);
   const [luDocFile,       setLuDocFile]       = useState(null);
   const [luDocPreview,    setLuDocPreview]    = useState(null);
@@ -89,6 +90,8 @@ export default function Operator() {
     fetchLevelUpRequests();
     supabase.from('production_lines').select('id, name, section').order('name')
       .then(({ data }) => { if (alive) setLines(data || []); });
+    supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
+      .then(({ data }) => { if (alive) setBusRoutes(data || []); });
     if (isLeader && userLineId) {
       supabase.from('production_lines').select('name').eq('id', userLineId).single()
         .then(({ data }) => { if (alive) setMyLineName(data?.name ?? ''); });
@@ -263,6 +266,7 @@ export default function Operator() {
         group_name: editingEmp.group_name || null,
         team:       editingEmp.team       || null,
         line_id:    editingEmp.line_id    || null,
+        bus_route_id: editingEmp.bus_route_id || null,
         image_url:  photoUrl,
         start_date: editingEmp.start_date || null,
       }).eq('id', editingEmp.id);
@@ -1079,6 +1083,14 @@ export default function Operator() {
                       .map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                   </select>
                 )}
+              </div>
+
+              <div>
+                <label style={labelSt}>🚐 สายรถรับส่ง (สำหรับจองรถ OT)</label>
+                <select value={editingEmp.bus_route_id || ''} onChange={e => setEditingEmp({ ...editingEmp, bus_route_id: e.target.value || null })}>
+                  <option value="">— ไม่ระบุ —</option>
+                  {busRoutes.map(r => <option key={r.id} value={r.id}>{r.code} {r.name}</option>)}
+                </select>
               </div>
 
               <div style={{ background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>

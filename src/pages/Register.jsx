@@ -23,6 +23,8 @@ export default function Register() {
   const [cropFile,    setCropFile]    = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [lines,       setLines]       = useState([]);
+  const [busRoutes,   setBusRoutes]   = useState([]);
+  const [busRouteId,  setBusRouteId]  = useState('');
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name, section').order('name')
@@ -32,6 +34,8 @@ export default function Register() {
           setSection(userSection);
         }
       });
+    supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
+      .then(({ data }) => setBusRoutes(data || []));
   }, []);
 
   const handleRegister = async (e) => {
@@ -61,6 +65,7 @@ export default function Register() {
         group_name: groupName || null,
         team:       team      || null,
         line_id:    lineId    || null,
+        bus_route_id: busRouteId || null,
         start_date: startDate || null,
         image_url:  photoUrl,
         created_by: userId,
@@ -70,7 +75,7 @@ export default function Register() {
       alert('เพิ่มพนักงานสำเร็จ!');
       setEmpCode(''); setName(''); setPosition(''); setDepartment('');
       setSection(isSupervisor && userSection ? userSection : '');
-      setGroupName(''); setLineId(null);
+      setGroupName(''); setLineId(null); setBusRouteId('');
       setTeam(''); setStartDate(''); setPhoto(null);
       document.getElementById('photo-upload').value = '';
     } catch (err) {
@@ -176,6 +181,14 @@ export default function Register() {
                 </select>
               );
             })()}
+          </div>
+
+          <div>
+            <label style={labelSt}>🚐 สายรถรับส่ง (สำหรับจองรถ OT)</label>
+            <select value={busRouteId} onChange={e => setBusRouteId(e.target.value)}>
+              <option value="">— ไม่ระบุ —</option>
+              {busRoutes.map(r => <option key={r.id} value={r.id}>{r.code} {r.name}</option>)}
+            </select>
           </div>
 
           <div>
