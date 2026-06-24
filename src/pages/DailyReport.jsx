@@ -175,6 +175,7 @@ function LiveTab({ role }) {
   const [showCloseShift, setShowCloseShift] = useState(false);
   const [closeNg, setCloseNg]               = useState('0');
   const [closeEndTime, setCloseEndTime]     = useState(nowTime());
+  const [closeStartTime, setCloseStartTime] = useState('');
   const [savingClose, setSavingClose]       = useState(false);
   const [breakPolicies, setBreakPolicies]   = useState([]);
   const [machines, setMachines]             = useState([]);
@@ -807,7 +808,7 @@ function LiveTab({ role }) {
     }, 0);
   };
 
-  const computeOEE = (ngQtyOverride, endTimeOverride) => {
+  const computeOEE = (ngQtyOverride, endTimeOverride, startTimeOverride) => {
     const confirmedQty = prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
     // Also count qty_actual from open orders being carried over
     const carryActualQty = prodOrders.filter(o => o.status === 'open').reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || 0), 0);
@@ -815,8 +816,10 @@ function LiveTab({ role }) {
     const ngQty = ngQtyOverride !== undefined ? ngQtyOverride
       : defectLogs.reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
     // ใช้ work_date + start_time (เวลาเริ่มกะที่ตั้งไว้จริง) เป็นจุดเริ่ม — ไม่ใช่ created_at ที่อาจคลาดเคลื่อนจากเวลาที่หัวหน้าเช็คชื่อ/เปิดระบบ
-    const workDate  = selSession?.work_date;
-    const openedAt  = (workDate && selSession?.start_time) ? new Date(`${workDate}T${selSession.start_time.slice(0,5)}:00`) : null;
+    // start_time แก้ได้ตอนปิดกะ (startTimeOverride) เผื่อตอนเปิดกะ/auto-open เดาเวลาผิด
+    const workDate    = selSession?.work_date;
+    const startTimeStr = startTimeOverride || selSession?.start_time;
+    const openedAt  = (workDate && startTimeStr) ? new Date(`${workDate}T${startTimeStr.slice(0,5)}:00`) : null;
     // เวลาปิดกะใช้ "เวลาปิดกะจริง" ที่กรอกในฟอร์ม (endTimeOverride) แทนเวลาที่กดปุ่มจริง เพราะการขอ/อนุมัติปิดกะอาจทำย้อนหลังได้
     let closedAt = new Date();
     if (workDate && endTimeOverride) {
@@ -894,7 +897,8 @@ function LiveTab({ role }) {
     const totalProducedFinal = confirmed.reduce((s, o) => s + o.qty, 0) + carryActual;
     const totalQtyOk      = Math.max(0, totalProducedFinal - totalQtyNg - totalQtySuspect - totalQtyRepair);
 
-    const { A, P, Q, oee, shiftMin } = computeOEE(totalQtyNg + totalQtySuspect, closeEndTime);
+    const { A, P, Q, oee, shiftMin } = computeOEE(totalQtyNg + totalQtySuspect, closeEndTime, closeStartTime);
+    const startTimeChanged = closeStartTime && closeStartTime !== selSession.start_time;
     // Leader → request close (pending_close), SV+ → close directly
     const isLeaderRequest = role === 'leader';
     const payload = isLeaderRequest ? {
@@ -903,6 +907,7 @@ function LiveTab({ role }) {
       close_requested_by_uid:  user?.id,
       close_requested_at:      new Date().toISOString(),
       end_time:                closeEndTime || nowTime(),
+      ...(startTimeChanged ? { start_time: closeStartTime } : {}),
       ng_qty:                  totalQtyNg,
       actual_qty:              totalProducedFinal,
       qty_ok:                  totalQtyOk,
@@ -920,6 +925,7 @@ function LiveTab({ role }) {
       closed_by_uid:   user?.id,
       closed_at:       new Date().toISOString(),
       end_time:        closeEndTime || nowTime(),
+      ...(startTimeChanged ? { start_time: closeStartTime } : {}),
       ng_qty:          totalQtyNg,
       actual_qty:      totalProducedFinal,
       qty_ok:          totalQtyOk,
@@ -1160,7 +1166,7 @@ function LiveTab({ role }) {
 
                   {/* open — request/direct close button */}
                   {selSession.status === 'open' && canRequestClose && (
-                    <button onClick={() => { setCloseNg('0'); setCloseEndTime(guessCloseEndTime()); setShowCloseShift(true); }}
+                    <button onClick={() => { setCloseNg('0'); setCloseEndTime(guessCloseEndTime()); setCloseStartTime(selSession.start_time || ''); setShowCloseShift(true); }}
                       style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
                       {role === 'leader' ? '📋 ขอปิดกะ' : '🔒 ปิดกะ'}
                     </button>
@@ -1489,7 +1495,7 @@ function LiveTab({ role }) {
         {/* ── CLOSE SHIFT / OEE modal ─────────────────────────── */}
         {showCloseShift && selSession && (() => {
           const ng = parseInt(closeNg) || 0;
-          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty } = computeOEE(ng, closeEndTime);
+          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty } = computeOEE(ng, closeEndTime, closeStartTime);
           const oeeColor = oee == null ? 'var(--muted)' : oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
           return (
             <div className="overlay" style={{ zIndex: 2000 }}>
@@ -1506,7 +1512,10 @@ function LiveTab({ role }) {
                   {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)} · เริ่ม {selSession.start_time}
                 </div>
 
-                <div style={{ marginBottom: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+                  <Field label="เวลาเริ่มกะจริง (แก้ได้ถ้าตอนเปิดกะ/auto-เดาเวลาผิด)">
+                    <TimeInput24 value={closeStartTime} onChange={e => setCloseStartTime(e.target.value)} style={{ fontSize: 16 }} />
+                  </Field>
                   <Field label="เวลาปิดกะจริง (ใช้คำนวณ OEE — แก้ได้ถ้าทำรายการย้อนหลัง)">
                     <TimeInput24 value={closeEndTime} onChange={e => setCloseEndTime(e.target.value)} style={{ fontSize: 16 }} />
                   </Field>
