@@ -932,16 +932,20 @@ export default function Management() {
               const durationMs = Math.max(o.orderEndMs - o.orderStartMs, 0);
               let startMs = Math.max(o.orderStartMs, queueEndMs);
               let endMs = startMs + durationMs;
-              let pushed = true;
-              while (pushed) {
-                pushed = false;
-                for (const [bs, be] of breaks) {
-                  if (startMs < be && endMs > bs) {
-                    startMs = be;
-                    endMs = startMs + durationMs;
-                    pushed = true;
+              // ถ้าช่วงเวลาผลิตของการ์ดนี้ทับเวลาพักเบรค ไม่เลื่อน startMs ไปหลังเบรค (เพราะจะทำให้
+              // เวลาที่ "ว่าง" ก่อนเบรคเสียไปฟรี ๆ) แต่ให้ "ซอย" ทับเบรคแล้วยืดความยาวการ์ดออกแทน
+              const consumedBreaks = new Set();
+              let extended = true;
+              while (extended) {
+                extended = false;
+                breaks.forEach(([bs, be], i) => {
+                  if (consumedBreaks.has(i)) return;
+                  if (bs < endMs && be > startMs) {
+                    consumedBreaks.add(i);
+                    endMs += (be - bs);
+                    extended = true;
                   }
-                }
+                });
               }
               const isLateDone = o.isDone && !!o.confirmed_at && new Date(o.confirmed_at).getTime() > endMs;
               if (o.isDone && o.confirmed_at) {
