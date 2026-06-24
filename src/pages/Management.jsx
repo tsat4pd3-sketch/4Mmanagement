@@ -985,7 +985,10 @@ export default function Management() {
             const cards = [];
             sessList.forEach(s => {
               const sessionCtSec = s.dr_products?.cycle_time_sec || 0;
-              const sorted = [...s.orders].sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
+              // ใบที่ status = carry_over คือใบเดิมที่ถูกยกยอดไปต่อในกะถัดไปแล้ว (มีใบใหม่ status='open'
+              // พร้อม carry_over_from_session_id ชี้กลับมา) — ถ้าแสดงทั้งสองใบจะเห็นเป็นกัมบังซ้อนทับกัน
+              // ข้ามกะเช้า/กะดึก ทั้งที่เป็นงานเดียวกัน จึงตัดใบเดิม (carry_over) ออกจาก timeline
+              const sorted = [...s.orders].filter(o => o.status !== 'carry_over').sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
               sorted.forEach(o => {
                 const ctSec = ctByMatNo[o.mat_no] || sessionCtSec || 0;
                 // ใช้ opened_at เป็น start จริง — ไม่ accumulate จาก session start
