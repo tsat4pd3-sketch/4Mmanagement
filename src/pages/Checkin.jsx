@@ -83,10 +83,14 @@ export default function Checkin() {
   const [exportHalf,     setExportHalf]     = useState('1-15');
   const [exportSection,  setExportSection]  = useState('');
   const [exporting,      setExporting]      = useState(false);
+  const [previewNight,   setPreviewNight]   = useState(false);
 
-  const shiftInfo = getShiftInfo();
+  const realShiftInfo = getShiftInfo();
+  const shiftInfo = previewNight
+    ? { ...realShiftInfo, shift: 'night', label: '🌙 กะดึก (Preview)' }
+    : realShiftInfo;
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [previewNight]);
 
   const fetchData = async () => {
     const { workDateStr } = shiftInfo;
@@ -574,6 +578,21 @@ export default function Checkin() {
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{shiftInfo.workDateStr}</span>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {realShiftInfo.shift === 'day' && (
+            <button
+              onClick={() => setPreviewNight(p => !p)}
+              title="ดูตัวอย่างหน้าจอกะดึก (รวมคอลัมน์ OT พรุ่งนี้) — ปิดปุ่มบันทึกอัตโนมัติระหว่าง preview"
+              style={{
+                padding: '8px 14px', borderRadius: 8,
+                border: '1px solid var(--border2)', fontSize: 12, cursor: 'pointer',
+                background: previewNight ? 'rgba(6,182,212,0.15)' : 'var(--bg3)',
+                color:      previewNight ? '#06b6d4'              : 'var(--text2)',
+                fontWeight: previewNight ? 700 : 400,
+              }}
+            >
+              {previewNight ? '👁 กำลัง Preview กะดึก' : '🌙 Preview กะดึก'}
+            </button>
+          )}
           <button
             onClick={() => setFilterShift(f => !f)}
             style={{
@@ -598,15 +617,17 @@ export default function Checkin() {
           </button>
           <button
             onClick={handleSave}
-            disabled={isSaving}
+            disabled={isSaving || previewNight}
+            title={previewNight ? 'ปิดโหมด Preview ก่อนบันทึก' : undefined}
             style={{
               padding: '10px 22px',
-              background: isSaving ? 'var(--muted)' : 'var(--accent)',
+              background: isSaving || previewNight ? 'var(--muted)' : 'var(--accent)',
               color: '#fff', border: 'none', borderRadius: 8,
               fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14,
+              cursor: previewNight ? 'not-allowed' : 'pointer',
             }}
           >
-            {isSaving ? '⏳ กำลังบันทึก...' : '💾 บันทึก'}
+            {isSaving ? '⏳ กำลังบันทึก...' : previewNight ? '🔒 ปิด Preview ก่อนบันทึก' : '💾 บันทึก'}
           </button>
         </div>
       </div>
@@ -681,6 +702,16 @@ export default function Checkin() {
         ) : null)}
         {role === 'leader' && <span style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0' }}>รวม {displayed.length} คน</span>}
       </div>
+
+      {previewNight && (
+        <div style={{
+          padding: '10px 14px', borderRadius: 8, marginBottom: 14,
+          background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)',
+          fontSize: 13, color: '#ef4444', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600,
+        }}>
+          🔒 <span>โหมด Preview กะดึก — เวลาจริงยังเป็นกะเช้า ปุ่มบันทึกถูกปิดไว้เพื่อป้องกันข้อมูลผิดพลาด กดปุ่ม "👁 กำลัง Preview กะดึก" อีกครั้งเพื่อออก</span>
+        </div>
+      )}
 
       {shiftInfo.shift === 'night' && (
         <div style={{
