@@ -1113,6 +1113,8 @@ function FourMTab() {
   const [cpcMonth, setCpcMonth] = useState(today.slice(0, 7)); // YYYY-MM สำหรับ Export Changing Point Control
   const [cpcExporting, setCpcExporting] = useState(false);
   const [imageViewModal, setImageViewModal] = useState(null); // { url, title }
+  const [showDocPanel, setShowDocPanel] = useState(false);
+  const canManageDoc = ['admin', 'manager'].includes(role);
 
   useEffect(() => {
     supabase.from('production_lines').select('name, section').order('name').then(({ data }) => setLines(data || []));
@@ -1247,26 +1249,22 @@ function FourMTab() {
       dayMap[item.id][day][shift].push(l);
     }
 
-    // ลายเซ็นผู้อนุมัติสำหรับตารางรายละเอียด
-    const allIds = [...new Set((monthLogs || []).flatMap(l => [l.sv_approved_by, l.approved_by].filter(Boolean)))];
-    const { data: sigProfiles } = await supabase.from('profiles').select('id, full_name, signature_url').in('id', allIds.length ? allIds : ['__none__']);
-    const sigMap = {};
-    for (const p of (sigProfiles || [])) {
-      sigMap[p.id] = { name: p.full_name, sigUrl: p.signature_url ? await urlToDataUrl(p.signature_url) : null };
-    }
-
-    // เอกสารควบคุม (เลขฟอร์ม/revision/effective date/legend/ผู้ออก-อนุมัติเอกสาร) — มาจาก document_controls
+    // เอกสารควบคุม (เลขฟอร์ม/revision/effective date/legend/ผู้ออกเอกสาร) — มาจาก document_controls
     // ถ้ายังไม่มีตาราง/ยังไม่ตั้งค่า ให้ fallback เป็นค่าว่าง ไม่ให้ export ล้ม
     let docCtrl = null;
     try {
       const { data } = await supabase.from('document_controls')
-        .select('doc_no, revision, effective_date, legend, issued:issued_by(full_name, signature_url), approved:approved_by(full_name, signature_url)')
+        .select('doc_no, revision, effective_date, legend, issued:issued_by(full_name, signature_url)')
         .eq('doc_key', 'changing_point_control').maybeSingle();
       docCtrl = data;
     } catch { /* ตาราง document_controls อาจยังไม่ถูกสร้าง */ }
-    const issuedSig   = docCtrl?.issued?.signature_url   ? await urlToDataUrl(docCtrl.issued.signature_url)   : null;
-    const approvedSig = docCtrl?.approved?.signature_url ? await urlToDataUrl(docCtrl.approved.signature_url) : null;
+    const issuedSig = docCtrl?.issued?.signature_url ? await urlToDataUrl(docCtrl.issued.signature_url) : null;
     const logoDataUrl = await getTsLogoDataUrl();
+
+    // ประวัติการแก้ไขเอกสาร (ตาราง Production Department ด้านบนซ้ายของฟอร์มจริง)
+    const { data: revisionRows } = await supabase.from('document_control_revisions')
+      .select('seq, record_date, rev, issued_date, description, responsible, approved_name')
+      .eq('doc_key', 'changing_point_control').order('seq');
 
     const lineSection = lines.find(li => li.name === line)?.section || '';
 
@@ -1282,12 +1280,12 @@ function FourMTab() {
       return `<th style="border:1px solid #999;padding:2px;font-size:8px;min-width:15px;${weekend ? 'background:#ddd' : ''}">${d}</th>`;
     }).join('');
 
-    // แยก Day/Night เป็นแถว (ไม่ใช่คอลัมน์) — แต่ละ checklist item จะมี 2 แถว: กะเช้า / กะดึก
+    // แยก Night/Day เป็นแถว (ไม่ใช่คอลัมน์) — แต่ละ checklist item จะมี 2 แถว: N (กะดึก) / D (กะเช้า) ตามฟอร์มจริง
     const gridRowsHtml = CHECKLIST_ITEMS.flatMap((item, idx) => {
       const color = CATEGORY_COLOR[item.category];
       const isFirstOfCat = idx === 0 || CHECKLIST_ITEMS[idx - 1].category !== item.category;
       const catRowSpan = CHECKLIST_ITEMS.filter(it => it.category === item.category).length * 2;
-      return ['day', 'night'].map((shift, shiftIdx) => {
+      return ['night', 'day'].map((shift, shiftIdx) => {
         const cells = Array.from({ length: daysInMonth }, (_, i) => {
           const d = i + 1;
           const dow = new Date(y, m - 1, d).getDay();
@@ -1300,35 +1298,10 @@ function FourMTab() {
         return `<tr>
           ${(isFirstOfCat && shiftIdx === 0) ? `<td rowspan="${catRowSpan}" style="border:1px solid #999;background:${color};color:#fff;font-weight:700;text-align:center;font-size:10px;writing-mode:vertical-rl;padding:4px 2px">${item.category}</td>` : ''}
           ${shiftIdx === 0 ? `<td rowspan="2" style="border:1px solid #999;padding:3px 6px;font-size:9px;white-space:nowrap">${item.label}</td>` : ''}
-          <td style="border:1px solid #999;padding:2px 5px;font-size:8px;white-space:nowrap;background:#f8f8f8">${shift === 'day' ? 'กะเช้า' : 'กะดึก'}</td>
+          <td style="border:1px solid #999;padding:2px 5px;font-size:9px;font-weight:700;text-align:center;background:#f8f8f8" title="${shift === 'day' ? 'กะเช้า (Day)' : 'กะดึก (Night)'}">${shift === 'day' ? 'D' : 'N'}</td>
           ${cells}
         </tr>`;
       });
-    }).join('');
-
-    // ตารางรายละเอียด: เฉพาะวันที่มี log (X) เรียงตามวันที่
-    const detailLogs = (monthLogs || []).slice().sort((a, b) => a.work_date.localeCompare(b.work_date));
-    const detailRowsHtml = detailLogs.map((l, i) => {
-      const item = matchChecklistItem(l);
-      const shift = shiftOf(l);
-      const svApprover = l.sv_approved_by ? sigMap[l.sv_approved_by] : null;
-      const qaApprover = l.approved_by    ? sigMap[l.approved_by]    : null;
-      return `<tr>
-        <td style="border:1px solid #ccc;padding:3px 5px;text-align:center">${i + 1}</td>
-        <td style="border:1px solid #ccc;padding:3px 5px;white-space:nowrap">${fmtDate(l.work_date)}</td>
-        <td style="border:1px solid #ccc;padding:3px 5px;text-align:center;white-space:nowrap">${shift === 'day' ? 'กะเช้า' : 'กะดึก'}</td>
-        <td style="border:1px solid #ccc;padding:3px 5px;color:${CATEGORY_COLOR[l.category]}">${l.category}</td>
-        <td style="border:1px solid #ccc;padding:3px 5px;font-size:9px">${item?.label || ''}</td>
-        <td style="border:1px solid #ccc;padding:3px 5px;font-size:10px">${l.description}</td>
-        <td style="border:1px solid #ccc;padding:3px 5px;text-align:center;min-width:70px">
-          ${svApprover?.sigUrl ? `<img src="${svApprover.sigUrl}" style="max-height:30px;max-width:60px;object-fit:contain"/>` : ''}
-          ${svApprover?.name ? `<div style="font-size:8px;color:#666">${svApprover.name}</div>` : ''}
-        </td>
-        <td style="border:1px solid #ccc;padding:3px 5px;text-align:center;min-width:70px">
-          ${qaApprover?.sigUrl ? `<img src="${qaApprover.sigUrl}" style="max-height:30px;max-width:60px;object-fit:contain"/>` : ''}
-          ${qaApprover?.name ? `<div style="font-size:8px;color:#666">${qaApprover.name}</div>` : ''}
-        </td>
-      </tr>`;
     }).join('');
 
     // ใช้ปี ค.ศ. (Gregorian) เหมือนกับ fmtDate ที่ใช้ทั่วทั้งระบบ + บังคับ timezone Asia/Bangkok เพื่อไม่ให้วันที่คลาดเคลื่อนตาม timezone เครื่อง
@@ -1338,7 +1311,17 @@ function FourMTab() {
     const docNo = docCtrl?.doc_no || '-';
     const revision = docCtrl?.revision || '0';
     const effectiveDateStr = docCtrl?.effective_date ? fmtDate(docCtrl.effective_date) : '-';
-    const legendText = docCtrl?.legend || 'O = ไม่มีการเปลี่ยนแปลง   X = มีการเปลี่ยนแปลง (4M)';
+    const legendText = docCtrl?.legend || 'X = ในกรณีที่เปลี่ยนแปลงในวันนั้น\nO = ไม่ในกรณีที่เปลี่ยนแปลงในวันนั้น';
+
+    const revHistoryRowsHtml = (revisionRows && revisionRows.length ? revisionRows : [{}]).map((r, i) => `<tr>
+      <td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:8px">${r.seq ?? (i + 1)}</td>
+      <td style="border:1px solid #000;padding:2px 4px;font-size:8px;white-space:nowrap">${r.record_date ? fmtDate(r.record_date) : ''}</td>
+      <td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:8px">${r.rev || ''}</td>
+      <td style="border:1px solid #000;padding:2px 4px;font-size:8px;white-space:nowrap">${r.issued_date ? fmtDate(r.issued_date) : ''}</td>
+      <td style="border:1px solid #000;padding:2px 4px;font-size:8px">${r.description || ''}</td>
+      <td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:8px">${r.responsible || ''}</td>
+      <td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:8px">${r.approved_name || ''}</td>
+    </tr>`).join('');
 
     const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>Changing Point Control Record</title>
 <style>
@@ -1347,21 +1330,49 @@ function FourMTab() {
   table{border-collapse:collapse;width:100%}
   @media print{@page{size:A3 landscape;margin:8mm}body{-webkit-print-color-adjust:exact}}
 </style></head><body style="padding:8mm">
-  <table style="margin-bottom:8px"><tr>
-    <td style="width:90px;border:1px solid #000;padding:4px;text-align:center;vertical-align:middle">
-      ${logoDataUrl ? `<img src="${logoDataUrl}" style="max-width:80px;max-height:50px;object-fit:contain"/>` : ''}
+  <table style="margin-bottom:6px"><tr>
+    <td style="width:55%;vertical-align:top;padding:0 4px 0 0">
+      <div style="font-size:9px;font-weight:700;margin-bottom:2px">${docNo} Rev.${revision}</div>
+      <div style="font-size:8px;line-height:1.4;margin-bottom:4px">${legendText.split('\n').map(l => `<div>${l}</div>`).join('')}</div>
+      <table>
+        <thead><tr style="background:#f3f4f6">
+          <th style="border:1px solid #000;padding:2px;font-size:8px">ลำดับที่</th>
+          <th style="border:1px solid #000;padding:2px;font-size:8px">วันที่บันทึก</th>
+          <th style="border:1px solid #000;padding:2px;font-size:8px">Rev</th>
+          <th style="border:1px solid #000;padding:2px;font-size:8px">Issued date</th>
+          <th style="border:1px solid #000;padding:2px;font-size:8px">Description of Change (New Issued)</th>
+          <th style="border:1px solid #000;padding:2px;font-size:8px">Responsible (PD2)</th>
+          <th style="border:1px solid #000;padding:2px;font-size:8px">Approved</th>
+        </tr></thead>
+        <tbody>${revHistoryRowsHtml}</tbody>
+      </table>
+      <table style="margin-top:4px"><tr>
+        <td style="border:1px solid #000;padding:4px;font-size:8px;width:60%">Effective Date: <b>${effectiveDateStr}</b></td>
+        <td style="border:1px solid #000;padding:4px;font-size:8px;text-align:center">
+          <div>Issued</div>
+          ${issuedSig ? `<img src="${issuedSig}" style="max-height:26px;max-width:60px;object-fit:contain"/>` : '<div style="height:26px"></div>'}
+          <div>${docCtrl?.issued?.full_name || ''}</div>
+        </td>
+      </tr></table>
     </td>
-    <td style="background:#fde047;padding:8px;text-align:center;font-weight:700;font-size:14px;border:1px solid #000">
-      ใบบันทึกการเปลี่ยนแปลง<br/><span style="font-size:11px">Changing Point Control Record</span>
-    </td>
-    <td style="width:170px;border:1px solid #000;padding:4px;font-size:10px">
-      <div>ส่วน (Section): <b>${lineSection}</b></div>
-      <div>แผนก (Department): <b>${lineSection}</b></div>
-      <div>ไลน์ (Line): <b>${line}</b></div>
-    </td>
-    <td style="width:140px;border:1px solid #000;padding:4px;font-size:10px">
-      <div>เดือน: <b>${thaiMonths[m]} ${y}</b></div>
-      <div>พิมพ์วันที่: ${todayStr}</div>
+    <td style="width:45%;vertical-align:top">
+      <table><tr>
+        <td style="width:90px;border:1px solid #000;padding:4px;text-align:center;vertical-align:middle">
+          ${logoDataUrl ? `<img src="${logoDataUrl}" style="max-width:80px;max-height:50px;object-fit:contain"/>` : ''}
+        </td>
+        <td style="background:#fde047;padding:8px;text-align:center;font-weight:700;font-size:14px;border:1px solid #000">
+          ใบบันทึกการเปลี่ยนแปลง<br/><span style="font-size:11px">Changing Point Control Record</span>
+        </td>
+        <td style="width:170px;border:1px solid #000;padding:4px;font-size:10px">
+          <div>ส่วน (Section): <b>${lineSection}</b></div>
+          <div>แผนก (Department): <b>${lineSection}</b></div>
+          <div>ไลน์ (Line): <b>${line}</b></div>
+        </td>
+        <td style="width:140px;border:1px solid #000;padding:4px;font-size:10px">
+          <div>เดือน: <b>${thaiMonths[m]} ${y}</b></div>
+          <div>พิมพ์วันที่: ${todayStr}</div>
+        </td>
+      </tr></table>
     </td>
   </tr></table>
 
@@ -1369,56 +1380,13 @@ function FourMTab() {
     <thead>
       <tr style="background:#f3f4f6">
         <th style="border:1px solid #999"></th>
-        <th style="border:1px solid #999;padding:3px;font-size:9px">รายละเอียด (Detail)</th>
-        <th style="border:1px solid #999;padding:3px;font-size:8px">กะ</th>
+        <th style="border:1px solid #999;padding:3px;font-size:9px">Detail (รายละเอียด)</th>
+        <th style="border:1px solid #999;padding:3px;font-size:8px">N/D</th>
         ${dayHeaderCells}
       </tr>
     </thead>
     <tbody>${gridRowsHtml}</tbody>
   </table>
-
-  <table style="margin-top:6px"><tr>
-    <td style="border:1px solid #999;padding:5px;font-size:9px;width:55%">
-      <b>Legend:</b> ${legendText}
-    </td>
-    <td style="border:1px solid #999;padding:5px;font-size:9px">
-      <b>Revision:</b> ${revision}
-    </td>
-  </tr></table>
-
-  <h3 style="margin:14px 0 4px;font-size:12px">รายละเอียดการเปลี่ยนแปลง (X) ในเดือนนี้ — รวม ${detailLogs.length} รายการ</h3>
-  <table>
-    <thead><tr style="background:#f3f4f6">
-      <th style="border:1px solid #ccc;padding:3px">#</th>
-      <th style="border:1px solid #ccc;padding:3px">วันที่</th>
-      <th style="border:1px solid #ccc;padding:3px">กะ</th>
-      <th style="border:1px solid #ccc;padding:3px">4M</th>
-      <th style="border:1px solid #ccc;padding:3px">หัวข้อ</th>
-      <th style="border:1px solid #ccc;padding:3px">รายละเอียด</th>
-      <th style="border:1px solid #ccc;padding:3px">ลายเซ็น SV</th>
-      <th style="border:1px solid #ccc;padding:3px">ลายเซ็น QA</th>
-    </tr></thead>
-    <tbody>${detailRowsHtml}</tbody>
-  </table>
-
-  <table style="margin-top:14px"><tr>
-    <td style="border:1px solid #000;padding:6px;width:25%;font-size:9px">
-      <div>เอกสารเลขที่ (Doc. No.): <b>${docNo}</b></div>
-    </td>
-    <td style="border:1px solid #000;padding:6px;width:25%;text-align:center;font-size:9px">
-      <div>จัดทำโดย (Issued by)</div>
-      ${issuedSig ? `<img src="${issuedSig}" style="max-height:32px;max-width:70px;object-fit:contain"/>` : '<div style="height:32px"></div>'}
-      <div>${docCtrl?.issued?.full_name || '-'}</div>
-    </td>
-    <td style="border:1px solid #000;padding:6px;width:25%;text-align:center;font-size:9px">
-      <div>อนุมัติโดย (Approved by)</div>
-      ${approvedSig ? `<img src="${approvedSig}" style="max-height:32px;max-width:70px;object-fit:contain"/>` : '<div style="height:32px"></div>'}
-      <div>${docCtrl?.approved?.full_name || '-'}</div>
-    </td>
-    <td style="border:1px solid #000;padding:6px;width:25%;font-size:9px">
-      <div>วันที่มีผลบังคับใช้ (Effective Date): <b>${effectiveDateStr}</b></div>
-    </td>
-  </tr></table>
 <script>window.onload = () => window.print();</script>
 </body></html>`;
 
@@ -1590,7 +1558,15 @@ function FourMTab() {
             opacity: (cpcExporting || !line) ? 0.5 : 1 }}>
           {cpcExporting ? 'กำลังสร้าง...' : '📅 Export Changing Point'}
         </button>
+        {canManageDoc && (
+          <button onClick={() => setShowDocPanel(v => !v)} style={{
+            padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            background: showDocPanel ? 'rgba(245,158,11,0.18)' : 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)',
+          }}>⚙️ จัดการเอกสาร</button>
+        )}
       </div>
+
+      {showDocPanel && canManageDoc && <DocumentControlPanel />}
 
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
@@ -1687,6 +1663,164 @@ function FourMTab() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+function DocumentControlPanel() {
+  const DOC_KEY = 'changing_point_control';
+  const [docNo, setDocNo] = useState('');
+  const [revision, setRevision] = useState('');
+  const [effectiveDate, setEffectiveDate] = useState('');
+  const [legend, setLegend] = useState('');
+  const [issuedBy, setIssuedBy] = useState('');
+  const [profiles, setProfiles] = useState([]);
+  const [revisions, setRevisions] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [newRev, setNewRev] = useState({ record_date: '', rev: '', issued_date: '', description: '', responsible: '', approved_name: '' });
+
+  const load = async () => {
+    setLoading(true);
+    const [{ data: doc }, { data: profs }, { data: revs }] = await Promise.all([
+      supabase.from('document_controls').select('doc_no, revision, effective_date, legend, issued_by').eq('doc_key', DOC_KEY).maybeSingle(),
+      supabase.from('profiles').select('id, full_name').order('full_name'),
+      supabase.from('document_control_revisions').select('id, seq, record_date, rev, issued_date, description, responsible, approved_name').eq('doc_key', DOC_KEY).order('seq'),
+    ]);
+    setDocNo(doc?.doc_no || '');
+    setRevision(doc?.revision || '');
+    setEffectiveDate(doc?.effective_date || '');
+    setLegend(doc?.legend || '');
+    setIssuedBy(doc?.issued_by || '');
+    setProfiles(profs || []);
+    setRevisions(revs || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const saveDoc = async () => {
+    setSaving(true);
+    const { error } = await supabase.from('document_controls').upsert({
+      doc_key: DOC_KEY,
+      doc_no: docNo.trim() || null,
+      revision: revision.trim() || null,
+      effective_date: effectiveDate || null,
+      legend: legend || null,
+      issued_by: issuedBy || null,
+    }, { onConflict: 'doc_key' });
+    setSaving(false);
+    if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
+    toast.success('บันทึกข้อมูลเอกสารสำเร็จ');
+    load();
+  };
+
+  const addRevision = async () => {
+    if (!newRev.rev.trim()) { toast.error('กรุณาระบุ Rev'); return; }
+    const { error } = await supabase.from('document_control_revisions').insert([{
+      doc_key: DOC_KEY, seq: revisions.length + 1,
+      record_date: newRev.record_date || null,
+      rev: newRev.rev.trim(),
+      issued_date: newRev.issued_date || null,
+      description: newRev.description.trim() || null,
+      responsible: newRev.responsible.trim() || null,
+      approved_name: newRev.approved_name.trim() || null,
+    }]);
+    if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
+    setNewRev({ record_date: '', rev: '', issued_date: '', description: '', responsible: '', approved_name: '' });
+    load();
+  };
+
+  const removeRevision = async (r) => {
+    if (!window.confirm(`ลบ Rev "${r.rev}"?`)) return;
+    await supabase.from('document_control_revisions').delete().eq('id', r.id);
+    load();
+  };
+
+  const inSt = { padding: '6px 8px', borderRadius: 6, fontSize: 12, width: '100%', boxSizing: 'border-box' };
+
+  return (
+    <div className="card" style={{ padding: 16, marginBottom: 14 }}>
+      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>⚙️ จัดการเอกสาร — Changing Point Control Record</div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 10 }}>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--muted)' }}>เลขฟอร์ม (doc_no)</label>
+          <input value={docNo} onChange={e => setDocNo(e.target.value)} placeholder="เช่น FM-PD-037" style={inSt} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--muted)' }}>Revision</label>
+          <input value={revision} onChange={e => setRevision(e.target.value)} placeholder="เช่น 00" style={inSt} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--muted)' }}>Effective Date</label>
+          <input type="date" value={effectiveDate || ''} onChange={e => setEffectiveDate(e.target.value)} style={inSt} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--muted)' }}>ผู้ออกเอกสาร (Issued)</label>
+          <select value={issuedBy} onChange={e => setIssuedBy(e.target.value)} style={inSt}>
+            <option value="">— เลือก —</option>
+            {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 10 }}>
+        <label style={{ fontSize: 11, color: 'var(--muted)' }}>Legend (2 บรรทัด)</label>
+        <textarea value={legend} onChange={e => setLegend(e.target.value)} rows={2} style={{ ...inSt, resize: 'vertical' }} />
+      </div>
+
+      <button onClick={saveDoc} disabled={saving} style={{
+        padding: '7px 16px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+        background: 'var(--accent)', color: '#fff', border: 'none', opacity: saving ? 0.6 : 1, marginBottom: 18,
+      }}>{saving ? 'กำลังบันทึก...' : '💾 บันทึกข้อมูลเอกสาร'}</button>
+
+      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>📜 ประวัติการแก้ไขเอกสาร (Revision History)</div>
+      <div style={{ overflowX: 'auto', marginBottom: 10 }}>
+        <table style={{ minWidth: 720 }}>
+          <thead>
+            <tr>
+              <th style={{ fontSize: 11 }}>#</th>
+              <th style={{ fontSize: 11 }}>วันที่บันทึก</th>
+              <th style={{ fontSize: 11 }}>Rev</th>
+              <th style={{ fontSize: 11 }}>Issued date</th>
+              <th style={{ fontSize: 11 }}>Description</th>
+              <th style={{ fontSize: 11 }}>Responsible</th>
+              <th style={{ fontSize: 11 }}>Approved</th>
+              <th style={{ fontSize: 11 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {revisions.map((r, i) => (
+              <tr key={r.id}>
+                <td style={{ fontSize: 12 }}>{r.seq ?? i + 1}</td>
+                <td style={{ fontSize: 12 }}>{r.record_date || '—'}</td>
+                <td style={{ fontSize: 12 }}>{r.rev}</td>
+                <td style={{ fontSize: 12 }}>{r.issued_date || '—'}</td>
+                <td style={{ fontSize: 12 }}>{r.description || '—'}</td>
+                <td style={{ fontSize: 12 }}>{r.responsible || '—'}</td>
+                <td style={{ fontSize: 12 }}>{r.approved_name || '—'}</td>
+                <td>
+                  <button onClick={() => removeRevision(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444' }}>ลบ</button>
+                </td>
+              </tr>
+            ))}
+            {!loading && revisions.length === 0 && (
+              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 14, fontSize: 12 }}>ยังไม่มีประวัติการแก้ไข</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6, alignItems: 'end' }}>
+        <input type="date" value={newRev.record_date} onChange={e => setNewRev(v => ({ ...v, record_date: e.target.value }))} style={inSt} title="วันที่บันทึก" />
+        <input value={newRev.rev} onChange={e => setNewRev(v => ({ ...v, rev: e.target.value }))} placeholder="Rev" style={inSt} />
+        <input type="date" value={newRev.issued_date} onChange={e => setNewRev(v => ({ ...v, issued_date: e.target.value }))} style={inSt} title="Issued date" />
+        <input value={newRev.description} onChange={e => setNewRev(v => ({ ...v, description: e.target.value }))} placeholder="Description" style={inSt} />
+        <input value={newRev.responsible} onChange={e => setNewRev(v => ({ ...v, responsible: e.target.value }))} placeholder="Responsible" style={inSt} />
+        <input value={newRev.approved_name} onChange={e => setNewRev(v => ({ ...v, approved_name: e.target.value }))} placeholder="Approved" style={inSt} />
+        <button onClick={addRevision} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none' }}>+ เพิ่ม</button>
+      </div>
     </div>
   );
 }
