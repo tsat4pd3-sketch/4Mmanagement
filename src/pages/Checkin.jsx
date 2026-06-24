@@ -21,6 +21,13 @@ function toLocalDateStr(date) {
   return `${y}-${m}-${d}`;
 }
 
+function addDaysToDateStr(dateStr, days) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  return toLocalDateStr(dt);
+}
+
 function getShiftInfo() {
   const now = new Date();
   const h = now.getHours();
@@ -65,6 +72,7 @@ export default function Checkin() {
   const [employees,      setEmployees]      = useState([]);
   const [lines,          setLines]          = useState([]);
   const [attendance,     setAttendance]     = useState({});
+  const [otBookings,     setOtBookings]     = useState({});
   const [isSaving,       setIsSaving]       = useState(false);
   const [filterShift,    setFilterShift]    = useState(true);
   const [noSchedule,     setNoSchedule]     = useState(false);
@@ -82,6 +90,7 @@ export default function Checkin() {
 
   const fetchData = async () => {
     const { workDateStr } = shiftInfo;
+    const nextDateStr = addDaysToDateStr(workDateStr, 1);
 
     let empQ = supabase.from('employees').select('*').eq('is_active', true).order('employee_id_code');
     if (role === 'leader') {
@@ -96,6 +105,7 @@ export default function Checkin() {
       { data: overrideData },
       { data: lineData },
       { data: mergeData },
+      { data: bookingData },
     ] = await Promise.all([
       empQ,
       supabase.from('daily_production_logs')
@@ -105,6 +115,9 @@ export default function Checkin() {
       supabase.from('shift_overrides').select('*').eq('work_date', workDateStr),
       supabase.from('production_lines').select('id, name, section').order('section').order('name'),
       supabase.from('shift_merge_events').select('*').lte('start_date', workDateStr).gte('end_date', workDateStr),
+      shiftInfo.shift === 'night'
+        ? supabase.from('ot_night_bookings').select('employee_id').eq('work_date', nextDateStr)
+        : Promise.resolve({ data: [] }),
     ]);
     setLines(lineData || []);
 
@@ -165,7 +178,15 @@ export default function Checkin() {
       };
     });
     setAttendance(init);
+
+    const bookingSet = new Set((bookingData || []).map(b => b.employee_id));
+    const bookInit = {};
+    enriched.forEach(emp => { bookInit[emp.id] = bookingSet.has(emp.id); });
+    setOtBookings(bookInit);
   };
+
+  const toggleOtBooking = (empId) =>
+    setOtBookings(prev => ({ ...prev, [empId]: !prev[empId] }));
 
   const toggle = (empId, field) =>
     setAttendance(prev => ({ ...prev, [empId]: { ...prev[empId], [field]: !prev[empId][field] } }));
@@ -233,6 +254,31 @@ export default function Checkin() {
       .upsert(logs, { onConflict: 'work_date,employee_id' });
 
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); setIsSaving(false); return; }
+
+    /* ── กะดึก: บันทึกการจอง OT วันถัดไป (สำหรับธุรการจองรถรับส่ง) ── */
+    if (shiftInfo.shift === 'night') {
+      const nextDateStr = addDaysToDateStr(workDateStr, 1);
+      const toBook   = displayed.filter(emp => otBookings[emp.id]).map(emp => emp.id);
+      const toUnbook = displayed.filter(emp => !otBookings[emp.id]).map(emp => emp.id);
+
+      if (toBook.length) {
+        await supabase.from('ot_night_bookings').upsert(
+          toBook.map(empId => ({
+            work_date:      nextDateStr,
+            employee_id:    empId,
+            booked_by:      userData.user.id,
+            booked_by_name: fullName || null,
+          })),
+          { onConflict: 'employee_id,work_date' }
+        );
+      }
+      if (toUnbook.length) {
+        await supabase.from('ot_night_bookings')
+          .delete()
+          .eq('work_date', nextDateStr)
+          .in('employee_id', toUnbook);
+      }
+    }
 
     /* ── Skill farming: +1 XP for employees working at stations requiring ≥70% skill ── */
     try {
@@ -636,6 +682,16 @@ export default function Checkin() {
         {role === 'leader' && <span style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0' }}>รวม {displayed.length} คน</span>}
       </div>
 
+      {shiftInfo.shift === 'night' && (
+        <div style={{
+          padding: '10px 14px', borderRadius: 8, marginBottom: 14,
+          background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.25)',
+          fontSize: 13, color: '#06b6d4', display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          🚐 <span>คอลัมน์ <strong>OT พรุ่งนี้</strong> = จองล่วงหน้าว่าจะมาทำ OT คืนวันที่ {addDaysToDateStr(shiftInfo.workDateStr, 1)} เพื่อใช้ออกรายงานให้ธุรการจองรถรับส่ง (ดูที่หน้า Report)</span>
+        </div>
+      )}
+
       {noSchedule && (
         <div style={{
           padding: '10px 14px', borderRadius: 8, marginBottom: 14,
@@ -660,6 +716,9 @@ export default function Checkin() {
               <th style={{ minWidth: 220 }}>🏖️ การลา</th>
               <th style={{ minWidth: 140 }}>หมายเหตุ</th>
               <th style={{ textAlign: 'center', minWidth: 110 }}>สถานะ</th>
+              {shiftInfo.shift === 'night' && (
+                <th style={{ textAlign: 'center', minWidth: 90 }} title="จองมาทำ OT คืนพรุ่งนี้ — ใช้ออกรายงานให้ธุรการจองรถรับส่ง">🚐 OT พรุ่งนี้</th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -846,13 +905,23 @@ export default function Checkin() {
                       </div>
                     )}
                   </td>
+                  {shiftInfo.shift === 'night' && (
+                    <td style={{ textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        style={{ transform: 'scale(1.4)', accentColor: '#06b6d4', width: 'auto' }}
+                        checked={!!otBookings[emp.id]}
+                        onChange={() => toggleOtBooking(emp.id)}
+                      />
+                    </td>
+                  )}
                 </tr>
               );
             })}
 
             {displayed.length === 0 && (
               <tr>
-                <td colSpan={10} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>
+                <td colSpan={shiftInfo.shift === 'night' ? 11 : 10} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>
                   ไม่มีพนักงานในกะนี้ — ลองกด 👥 ทุกคน
                 </td>
               </tr>
