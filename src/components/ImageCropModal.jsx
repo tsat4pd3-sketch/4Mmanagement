@@ -39,6 +39,12 @@ export default function ImageCropModal({
       setMinScale(s);
       setPos({ x: 0, y: 0 });
     };
+    img.onerror = () => {
+      // เบราว์เซอร์ไม่รองรับฟอร์แมตไฟล์นี้ (เช่นรูป .heic จากกล้อง iPhone) — ถ้าไม่ดักไว้
+      // กรอบครอบรูปจะว่างเปล่าแบบไม่มี error ใดๆ ผู้ใช้กดยืนยันไปได้โดยไม่มีรูปติดไปด้วย
+      alert('ไม่สามารถแสดงตัวอย่างรูปนี้ได้ ไฟล์อาจเป็นฟอร์แมตที่ไม่รองรับ (เช่น .heic จากกล้อง iPhone)\nกรุณาเปลี่ยนรูปเป็น JPG หรือ PNG แล้วลองใหม่');
+      onCancel?.();
+    };
     img.src = url;
     return () => URL.revokeObjectURL(url);
   }, [file]);
@@ -88,6 +94,10 @@ export default function ImageCropModal({
         const fileName = (file.name || 'image').replace(/\.\w+$/, '.jpg');
         onConfirm(new File([blob], fileName, { type: 'image/jpeg' }));
       }, 'image/jpeg', quality);
+    };
+    img.onerror = () => {
+      alert('ไม่สามารถใช้รูปนี้ได้ ไฟล์อาจเป็นฟอร์แมตที่ไม่รองรับ (เช่น .heic จากกล้อง iPhone)\nกรุณาเปลี่ยนรูปเป็น JPG หรือ PNG แล้วลองใหม่');
+      onCancel?.();
     };
     img.src = imgUrl;
   };
