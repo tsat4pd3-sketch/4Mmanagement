@@ -326,11 +326,7 @@ export default function Checkin() {
 
     /* ── Auto-open production session + Telegram notification ── */
     try {
-      const now = new Date();
-      const totalMins = now.getHours() * 60 + now.getMinutes();
       const isNight = shiftInfo.shift === 'night';
-      const startTime = !isNight ? '08:00' : totalMins < 22 * 60 + 30 ? '20:00' : '22:30';
-      const hasOtNight = isNight && totalMins < 22 * 60 + 30;
 
       // ไลน์ที่ถูกเช็คจริง (อาจมีหลายไลน์ถ้าเลือกทั้ง section)
       const checkedLineIds = [...new Set(displayed.map(emp => emp.line_id).filter(Boolean))];
@@ -338,7 +334,16 @@ export default function Checkin() {
       const lineNamesText = checkedLines.map(l => l.name).join(', ') || (selSection ? `Section: ${selSection}` : 'ทุกไลน์');
 
       // เปิด session ทุกไลน์ที่ถูกเช็ค (ถ้ายังไม่มี)
+      // start_time ของกะดึกอ้างจากเช็คบ็อกซ์ OT ของพนักงานในไลน์นั้นจริง ๆ
+      // (ไม่ใช่เวลาที่ SV กดบันทึก — เพราะ SV อาจกดบันทึกล่าช้ากว่าเวลาที่งานเริ่มจริง)
+      let anyOtNight = false;
       for (const ln of checkedLines) {
+        const lineHasOtNight = isNight && displayed.some(e =>
+          e.line_id === ln.id && attendance[e.id]?.is_present && attendance[e.id]?.has_ot
+        );
+        const lineStartTime = !isNight ? '08:00' : (lineHasOtNight ? '20:00' : '22:30');
+        if (lineHasOtNight) anyOtNight = true;
+
         const { data: exist } = await supabaseDR
           .from('production_sessions').select('id')
           .eq('work_date', workDateStr).eq('line_name', ln.name).eq('shift', shiftInfo.shift)
@@ -346,12 +351,15 @@ export default function Checkin() {
         if (!exist) {
           await supabaseDR.from('production_sessions').insert({
             work_date: workDateStr, line_name: ln.name,
-            shift: shiftInfo.shift, start_time: startTime,
+            shift: shiftInfo.shift, start_time: lineStartTime,
             status: 'open', opened_by_name: fullName || 'SV',
-            notes: hasOtNight ? 'OT กะดึก (Auto จากเช็คชื่อ)' : null,
+            notes: lineHasOtNight ? 'OT กะดึก (Auto จากเช็คชื่อ)' : null,
           });
         }
       }
+
+      const hasOtNight = anyOtNight;
+      const startTime  = !isNight ? '08:00' : (hasOtNight ? '20:00' : '22:30');
 
       // summary สำหรับ Telegram
       const shown = displayed;
