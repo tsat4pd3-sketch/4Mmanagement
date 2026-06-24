@@ -749,10 +749,22 @@ function LiveTab({ role }) {
     loadProdOrders(selSession.id, selSession.line_name);
   };
 
+  // หา opened_at สำหรับ order ที่ยกยอดเข้ามา — anchor กับ "เวลาเริ่มกะ" ของ session ใหม่เสมอ
+  // (ไม่ใช่เวลาที่กดปุ่ม import จริง) เพื่อให้ Heijunka จัดออเดอร์นี้ไว้ที่ต้นแถวของกะใหม่ ไม่ใช่ลอยไปอยู่
+  // ช่วงเวลาปัจจุบันตามนาฬิกาจริง ซึ่งอาจยังอยู่ในครึ่งวันของกะเก่า ทำให้การ์ดไม่ถูกจัดเรียงเข้าแถวกะใหม่
+  const carryImportOpenedAt = () => {
+    if (!selSession?.work_date || !selSession?.start_time) return null;
+    const [h, m] = selSession.start_time.split(':').map(Number);
+    let d = new Date(`${selSession.work_date}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`);
+    if (selSession.shift === 'night' && h < 8) d = new Date(d.getTime() + 86400000);
+    return d.toISOString();
+  };
+
   // Import carry-over orders into current session
   const handleImportCarryOrders = async () => {
     if (!selSession || !carryOrders.length) return;
     let imported = 0;
+    const opened_at = carryImportOpenedAt();
     for (const o of carryOrders) {
       const dup = prodOrders.find(p => p.prod_no === o.prod_no);
       if (dup) {
@@ -774,6 +786,7 @@ function LiveTab({ role }) {
         opened_by:    fullName,
         carry_over_from_session_id: o.session_id,
         carry_over_note: o.carry_over_note || `ค้างจากกะก่อน (ทำได้ ${o.qty_actual || 0}/${o.qty} ชิ้น)`,
+        ...(opened_at ? { opened_at } : {}),
       });
       if (!error) {
         imported++;
@@ -1672,6 +1685,18 @@ function LiveTab({ role }) {
                   const openOrders = prodOrders.filter(o => o.status === 'open');
                   if (!openOrders.length) return null;
                   const allDecided = openOrders.every(o => carryOverDecisions[o.id]);
+                  // ประมาณยอดที่ "ผลิตได้จริง" ในช่วงเวลาที่เหลือของกะนี้ (จาก opened_at ถึงเวลาปิดกะที่กรอก)
+                  // ใช้เป็นค่า default ของ "ยอดที่ทำได้ในกะนี้" แทนเริ่มจาก 0 — หัวหน้ากะแก้ไขได้ถ้าไม่ตรง
+                  const estimateAchievableQty = (o) => {
+                    const ctSec = ctForMatNo(o.mat_no);
+                    if (!ctSec || !o.opened_at || !selSession?.work_date) return null;
+                    const openedMs = new Date(o.opened_at).getTime();
+                    const endTimeStr = closeEndTime || nowTime();
+                    let endMs = new Date(`${selSession.work_date}T${endTimeStr.slice(0,5)}:00`).getTime();
+                    if (endMs < openedMs) endMs += 86400000; // กะดึกข้ามวัน
+                    const availMin = Math.max(0, (endMs - openedMs) / 60000);
+                    return Math.max(0, Math.min(o.qty, Math.floor(availMin * 60 / ctSec)));
+                  };
                   return (
                     <div style={{ marginBottom: 14, padding: '12px 14px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10 }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', marginBottom: 10 }}>
@@ -1691,7 +1716,14 @@ function LiveTab({ role }) {
                                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.mat_no} · เป้า {o.qty} ชิ้น</div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 6 }}>
-                                  <button onClick={() => setCarryOverDecisions(d => ({ ...d, [o.id]: 'carry' }))}
+                                  <button onClick={() => {
+                                      setCarryOverDecisions(d => ({ ...d, [o.id]: 'carry' }));
+                                      setCarryQtyActual(m => {
+                                        if (m[o.id] !== undefined && m[o.id] !== '') return m;
+                                        const est = estimateAchievableQty(o);
+                                        return est != null ? { ...m, [o.id]: String(est) } : m;
+                                      });
+                                    }}
                                     style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'carry' ? '#22c55e' : 'var(--border)'}`, background: dec === 'carry' ? 'rgba(34,197,94,0.2)' : 'var(--bg2)', color: dec === 'carry' ? '#22c55e' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                                     ➡ ยกยอดต่อ
                                   </button>
@@ -1706,7 +1738,7 @@ function LiveTab({ role }) {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                                   <div style={{ flex: 1 }}>
                                     <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, marginBottom: 3 }}>
-                                      ✏️ ยอดที่ทำได้ในกะนี้ (ชิ้น)
+                                      ✏️ ยอดที่ทำได้ในกะนี้ (ชิ้น) {dec === 'carry' && estimateAchievableQty(o) != null && <span style={{ color: '#4d9fff', fontWeight: 400 }}>· คำนวณจากเวลาที่เหลือ แก้ไขได้</span>}
                                     </div>
                                     <input type="number" min="0" max={o.qty} value={qActual}
                                       placeholder="0"
