@@ -1175,41 +1175,99 @@ function LiveTab({ role }) {
               </div>
             </div>
 
-            {/* KPI summary from prod_orders */}
+            {/* Per-product breakdown — กะเดียวอาจผลิตหลาย MAT.NO จึงต้องแยกสรุปรายชิ้นงาน ไม่รวมเป็นก้อนเดียว */}
             {(() => {
               const totalTarget    = prodOrders.reduce((s, o) => s + o.qty, 0);
               const totalConfirmed = prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
               const pct = totalTarget > 0 ? Math.min(100, Math.round((totalConfirmed / totalTarget) * 100)) : 0;
               const barClr = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#4d9fff';
+
+              const matNos = Array.from(new Set(prodOrders.map(o => o.mat_no))).filter(Boolean);
+              const productRows = matNos.map(matNo => {
+                const orders    = prodOrders.filter(o => o.mat_no === matNo);
+                const orderIds  = new Set(orders.map(o => o.id));
+                const target    = orders.reduce((s, o) => s + o.qty, 0);
+                const confirmed = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
+                const openCnt   = orders.filter(o => o.status === 'open').length;
+                const closedCnt = orders.filter(o => o.status === 'confirmed').length;
+                const ng  = defectLogs.filter(d => orderIds.has(d.prod_order_id)).reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
+                const dt  = dtLogs.filter(d => d.mat_no === matNo).reduce((s, d) => s + (d.duration_min || 0), 0);
+                const ct  = ctForMatNo(matNo);
+                const name = kanbanStds.find(s => s.mat_no === matNo)?.dr_products?.name || '';
+                const rowPct = target > 0 ? Math.min(100, Math.round((confirmed / target) * 100)) : 0;
+                return { matNo, name, target, confirmed, openCnt, closedCnt, ng, dt, ct, rowPct };
+              }).sort((a, b) => b.target - a.target);
+
+              const unassignedDT = dtLogs.filter(d => !d.mat_no).reduce((s, d) => s + (d.duration_min || 0), 0);
+
               return (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 12, marginBottom: 16 }}>
-                  {[
-                    { label: 'เปิด Order', value: prodOrders.filter(o => o.status === 'open').length, unit: 'ใบ', color: '#f59e0b' },
-                    { label: 'ปิดแล้ว',   value: prodOrders.filter(o => o.status === 'confirmed').length, unit: 'ใบ', color: '#22c55e' },
-                    { label: 'เป้ารวม',   value: totalTarget,    unit: 'ชิ้น', color: '#4d9fff' },
-                    { label: 'ผลิตได้',   value: totalConfirmed, unit: 'ชิ้น', color: '#22c55e' },
-                    { label: 'Downtime',  value: fmtMin(totalDT), unit: '',    color: '#a855f7', small: true },
-                    { label: 'นอกแผน',   value: fmtMin(unplannedDT), unit: '', color: '#ef4444', small: true },
-                  ].map(k => (
-                    <div key={k.label} style={{ background: 'var(--card)', border: `1px solid ${k.color}25`, borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
-                      <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{k.label}</div>
-                      <div style={{ fontSize: k.small ? 13 : 22, fontWeight: 800, color: k.color, lineHeight: 1 }}>{k.value ?? 0}</div>
-                      {k.unit && <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>{k.unit}</div>}
-                    </div>
-                  ))}
-                  {/* Overall progress bar */}
-                  {prodOrders.length > 0 && (
-                    <div style={{ gridColumn: '1/-1', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 16px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12 }}>
-                        <span style={{ color: 'var(--muted)' }}>ความคืบหน้ากะนี้</span>
-                        <span style={{ fontWeight: 800, color: barClr }}>{totalConfirmed} / {totalTarget} ชิ้น ({pct}%)</span>
+                <>
+                  {productRows.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>
+                        🔩 แยกตามชิ้นงาน ({productRows.length} MAT.NO)
                       </div>
-                      <div style={{ height: 10, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${pct}%`, background: barClr, borderRadius: 99, transition: 'width 0.5s ease' }} />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {productRows.map(r => {
+                          const rowClr = r.rowPct >= 100 ? '#22c55e' : r.rowPct >= 60 ? '#f59e0b' : '#4d9fff';
+                          return (
+                            <div key={r.matNo} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 14px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{r.matNo}</span>
+                                  {r.name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{r.name}</span>}
+                                  {r.ct > 0 && <span style={{ fontSize: 10, color: 'var(--muted)' }}>· CT {r.ct}s</span>}
+                                  <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontWeight: 700 }}>เปิด {r.openCnt}</span>
+                                  <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700 }}>ปิด {r.closedCnt}</span>
+                                  {r.ng > 0 && <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontWeight: 700 }}>🔴 NG {r.ng}</span>}
+                                  {r.dt > 0 && <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>⏱ {fmtMin(r.dt)}</span>}
+                                </div>
+                                <span style={{ fontSize: 13, fontWeight: 800, color: rowClr }}>{r.confirmed} / {r.target} ชิ้น ({r.rowPct}%)</span>
+                              </div>
+                              <div style={{ height: 7, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
+                                <div style={{ height: '100%', width: `${r.rowPct}%`, background: rowClr, borderRadius: 99, transition: 'width 0.5s ease' }} />
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
+                      {unassignedDT > 0 && (
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>⏱ Downtime ที่ไม่ระบุชิ้นงาน: {fmtMin(unassignedDT)}</div>
+                      )}
                     </div>
                   )}
-                </div>
+
+                  {/* ภาพรวมทั้งกะ (รวมทุกชิ้นงาน) */}
+                  <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>📊 ภาพรวมทั้งกะ</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 12, marginBottom: 16 }}>
+                    {[
+                      { label: 'เปิด Order', value: prodOrders.filter(o => o.status === 'open').length, unit: 'ใบ', color: '#f59e0b' },
+                      { label: 'ปิดแล้ว',   value: prodOrders.filter(o => o.status === 'confirmed').length, unit: 'ใบ', color: '#22c55e' },
+                      { label: 'เป้ารวม',   value: totalTarget,    unit: 'ชิ้น', color: '#4d9fff' },
+                      { label: 'ผลิตได้',   value: totalConfirmed, unit: 'ชิ้น', color: '#22c55e' },
+                      { label: 'Downtime',  value: fmtMin(totalDT), unit: '',    color: '#a855f7', small: true },
+                      { label: 'นอกแผน',   value: fmtMin(unplannedDT), unit: '', color: '#ef4444', small: true },
+                    ].map(k => (
+                      <div key={k.label} style={{ background: 'var(--card)', border: `1px solid ${k.color}25`, borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
+                        <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{k.label}</div>
+                        <div style={{ fontSize: k.small ? 13 : 22, fontWeight: 800, color: k.color, lineHeight: 1 }}>{k.value ?? 0}</div>
+                        {k.unit && <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>{k.unit}</div>}
+                      </div>
+                    ))}
+                    {/* Overall progress bar */}
+                    {prodOrders.length > 0 && (
+                      <div style={{ gridColumn: '1/-1', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 16px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12 }}>
+                          <span style={{ color: 'var(--muted)' }}>ความคืบหน้ากะนี้ (รวมทุกชิ้นงาน)</span>
+                          <span style={{ fontWeight: 800, color: barClr }}>{totalConfirmed} / {totalTarget} ชิ้น ({pct}%)</span>
+                        </div>
+                        <div style={{ height: 10, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${pct}%`, background: barClr, borderRadius: 99, transition: 'width 0.5s ease' }} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
               );
             })()}
 
