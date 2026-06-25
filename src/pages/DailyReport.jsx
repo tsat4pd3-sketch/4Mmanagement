@@ -168,7 +168,7 @@ function LiveTab({ role }) {
   const [defectTypes, setDefectTypes]   = useState([]);
   const [defectLogs, setDefectLogs]     = useState([]);
   const [showDefect, setShowDefect]     = useState(false);
-  const [defectForm, setDefectForm]     = useState({ id: null, defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+  const [defectForm, setDefectForm]     = useState({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
   const [savingDefect, setSavingDefect] = useState(false);
 
   // SV review-before-approve modal for pending_close requests
@@ -325,7 +325,7 @@ function LiveTab({ role }) {
   const loadDefectLogs = useCallback(async (sessionId) => {
     if (!sessionId) return;
     const { data } = await supabaseDR.from('defect_logs')
-      .select('*, dr_defect_types(name_th, color)')
+      .select('*, dr_defect_types(name_th, color), prod_orders(prod_no, mat_no, part_name)')
       .eq('session_id', sessionId)
       .order('logged_at', { ascending: false });
     setDefectLogs(data || []);
@@ -711,13 +711,22 @@ function LiveTab({ role }) {
   // ── บันทึกงานเสีย handler ──────────────────────────────────────
   const handleAddDefectLog = async () => {
     if (!selSession || !defectForm.defect_type_id) { toast.error('เลือกประเภทงานเสีย'); return; }
+    // ไลน์เดียวอาจผลิตได้หลาย MAT.NO พร้อมกัน — ถ้าไลน์นี้มี MAT.NO ที่ผลิตอยู่ ต้องเลือกก่อนทุกครั้ง
+    // เพื่อไม่ให้งานเสียถูกลงรวมเป็นของไลน์ทั้งไลน์ทั้งที่เสียแค่ MAT.NO เดียว
+    const matNoOptions = Array.from(new Set(prodOrders.filter(o => o.status !== 'cancelled').map(o => o.mat_no))).filter(Boolean);
+    if (matNoOptions.length && !defectForm.mat_no) { toast.error('เลือก MAT.NO ที่เสียก่อน'); return; }
     const ng      = parseInt(defectForm.qty_ng)      || 0;
     const suspect = parseInt(defectForm.qty_suspect) || 0;
     const repair  = parseInt(defectForm.qty_repair)  || 0;
     if (ng + suspect + repair === 0) { toast.error('กรอกจำนวนงานเสียอย่างน้อย 1 ช่อง'); return; }
     setSavingDefect(true);
     const { data: { user } } = await supabase.auth.getUser();
+    const matchedOrder = defectForm.mat_no
+      ? (prodOrders.find(o => o.mat_no === defectForm.mat_no && o.status === 'open')
+         || prodOrders.filter(o => o.mat_no === defectForm.mat_no).sort((a, b) => new Date(b.opened_at) - new Date(a.opened_at))[0])
+      : null;
     const payload = {
+      prod_order_id:    matchedOrder?.id || null,
       defect_type_id:   defectForm.defect_type_id,
       qty_ng:           ng,
       qty_suspect:      suspect,
@@ -737,7 +746,7 @@ function LiveTab({ role }) {
     const label = [ng ? `NG ${ng}` : '', suspect ? `สงสัย ${suspect}` : '', repair ? `ซ่อม ${repair}` : ''].filter(Boolean).join(' · ');
     toast.success(defectForm.id ? `แก้ไขงานเสีย: ${label} ✓` : `บันทึกงานเสีย: ${label} ✓`);
     setShowDefect(false);
-    setDefectForm({ id: null, defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+    setDefectForm({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
     loadDefectLogs(selSession.id);
   };
 
@@ -1318,7 +1327,11 @@ function LiveTab({ role }) {
                       style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       📤 Scan ปิด / Confirm
                     </button>
-                    <button onClick={() => { setShowDefect(true); setDefectForm({ id: null, prod_order_id: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' }); }}
+                    <button onClick={() => {
+                      const activeMatNos = Array.from(new Set(prodOrders.filter(o => o.status === 'open').map(o => o.mat_no))).filter(Boolean);
+                      setShowDefect(true);
+                      setDefectForm({ id: null, mat_no: activeMatNos.length === 1 ? activeMatNos[0] : '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+                    }}
                       style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       🔴 บันทึกงานเสีย
                     </button>
@@ -1453,6 +1466,11 @@ function LiveTab({ role }) {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{d.dr_defect_types?.name_th || '—'}</span>
+                          {d.prod_orders?.mat_no && (
+                            <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9', fontWeight: 700, fontFamily: 'monospace' }}>
+                              {d.prod_orders.mat_no}
+                            </span>
+                          )}
                           {d.prod_orders?.prod_no && (
                             <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(74,222,128,0.1)', color: '#22c55e', fontWeight: 700, fontFamily: 'monospace' }}>
                               {d.prod_orders.prod_no}
@@ -1470,7 +1488,7 @@ function LiveTab({ role }) {
                       </div>
                       {canManage && (
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button onClick={() => { setDefectForm({ id: d.id, defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '' }); setShowDefect(true); }}
+                          <button onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '' }); setShowDefect(true); }}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✎</button>
                           <button onClick={() => handleDeleteDefectLog(d.id)}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
@@ -2278,12 +2296,28 @@ function LiveTab({ role }) {
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {(() => {
+                  const matNoOptions = Array.from(new Set(prodOrders.filter(o => o.status !== 'cancelled').map(o => o.mat_no))).filter(Boolean);
+                  if (!matNoOptions.length) return null;
+                  return (
+                    <Field label="MAT.NO ที่เสีย *">
+                      <select autoFocus value={defectForm.mat_no} onChange={e => setDefectForm(f => ({ ...f, mat_no: e.target.value }))} style={inputStyle}>
+                        <option value="">เลือก MAT.NO...</option>
+                        {matNoOptions.map(mn => {
+                          const o = prodOrders.find(o => o.mat_no === mn);
+                          return <option key={mn} value={mn}>{mn}{o?.part_name ? ` · ${o.part_name}` : ''}</option>;
+                        })}
+                      </select>
+                    </Field>
+                  );
+                })()}
+
                 <Field label="ประเภทงานเสีย *">
                   {(() => {
                     const pt = sessionProcessType();
                     const filtered = defectTypes.filter(t => !t.process_type || t.process_type === pt || t.process_type === 'common');
                     return (
-                      <select autoFocus value={defectForm.defect_type_id} onChange={e => setDefectForm(f => ({ ...f, defect_type_id: e.target.value }))} style={inputStyle}>
+                      <select value={defectForm.defect_type_id} onChange={e => setDefectForm(f => ({ ...f, defect_type_id: e.target.value }))} style={inputStyle}>
                         <option value="">เลือกประเภท...</option>
                         {filtered.map(t => (
                           <option key={t.id} value={t.id}>{t.name_th}</option>
