@@ -37,7 +37,7 @@ const btnSecondary = {
   borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)',
 };
 
-const BLANK = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', is_active: true, effective_from: '', image_url: '' });
+const BLANK = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', is_active: true, effective_from: '', image_url: '', pair_mat_no: '' });
 
 /* ── Quick-link chips to connected modules ── */
 function RelatedLinks({ matNo, productId }) {
@@ -126,7 +126,7 @@ export default function ProductMaster() {
       customer: item.customer || '', line_name: item.line_name || '',
       cycle_time_sec: item.cycle_time_sec || '', target_per_shift: item.target_per_shift || '',
       process_type: item.process_type || 'welding_assembly', is_active: item.is_active, effective_from: item.effective_from || '',
-      image_url: item.image_url || sharedImage || '',
+      image_url: item.image_url || sharedImage || '', pair_mat_no: item.pair_mat_no || '',
     } : BLANK());
   };
 
@@ -169,6 +169,7 @@ export default function ProductMaster() {
         is_active: form.is_active,
         effective_from: form.effective_from || null,
         image_url: imageUrl,
+        pair_mat_no: form.pair_mat_no || null,
       };
       let savedId = editing;
       if (editing === 'new') {
@@ -186,6 +187,14 @@ export default function ProductMaster() {
       } else {
         const { error } = await supabaseDR.from('dr_products').update(payload).eq('id', editing);
         if (error) { toast.error(error.message); return; }
+      }
+      // ผูกคู่ RH/LH สองทาง — ถ้าเปลี่ยน/ยกเลิกคู่เดิม ให้เลิกผูกฝั่งคู่เดิมด้วย
+      const oldPairMatNo = editing !== 'new' ? items.find(i => i.id === editing)?.pair_mat_no : null;
+      if (oldPairMatNo && oldPairMatNo !== payload.pair_mat_no) {
+        await supabaseDR.from('dr_products').update({ pair_mat_no: null }).eq('mat_no', oldPairMatNo);
+      }
+      if (payload.pair_mat_no) {
+        await supabaseDR.from('dr_products').update({ pair_mat_no: payload.mat_no }).eq('mat_no', payload.pair_mat_no);
       }
       // ชิ้นงานเดียวกัน (ชื่อตรงกัน) ต่างแค่ customer/mat — sync รูปให้ทุก variant อัตโนมัติ
       if (imageFile && payload.name) {
@@ -739,6 +748,14 @@ export default function ProductMaster() {
                 <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inputSt}>
                   <option value="">ไม่ระบุ</option>
                   {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                </select>
+              </Field>
+              <Field label="MAT.NO คู่ (RH/LH) — เปิด/ปิด Order พร้อมกันอัตโนมัติ">
+                <select value={form.pair_mat_no} onChange={e => setForm(f => ({ ...f, pair_mat_no: e.target.value }))} style={inputSt}>
+                  <option value="">ไม่มีคู่</option>
+                  {items.filter(i => i.mat_no && i.mat_no !== form.mat_no && i.is_active).map(i => (
+                    <option key={i.id} value={i.mat_no}>{i.mat_no} — {i.name}</option>
+                  ))}
                 </select>
               </Field>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

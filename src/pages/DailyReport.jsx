@@ -156,6 +156,7 @@ function LiveTab({ role }) {
   const openProdInputRef = useRef(null);
   const closeProdInputRef = useRef(null);
   const [savingProdOpen, setSavingProdOpen] = useState(false);
+  const [pendingPairId, setPendingPairId] = useState(null); // order id ที่รอสแกนคู่ RH/LH ต่อ
   // Overflow confirmation modal
   const [overflowInfo, setOverflowInfo]   = useState(null); // { prodNo, matNo, qty, std, overMin, remainMin, newOrderMin }
 
@@ -584,7 +585,7 @@ function LiveTab({ role }) {
   // insert จริง (ใช้ทั้งจาก handleScanOpen และ handleOverflowForce)
   const doInsertProdOrder = async (prodNo, matNo, qty, std, status = 'open') => {
     const opened_at = backfillOpenedAt();
-    const { error } = await supabaseDR.from('prod_orders').insert({
+    const { data, error } = await supabaseDR.from('prod_orders').insert({
       session_id:  selSession.id,
       prod_no:     prodNo,
       mat_no:      matNo,
@@ -596,8 +597,8 @@ function LiveTab({ role }) {
       is_backfill: openProdForm.is_backfill,
       opened_by:   fullName,
       ...(opened_at ? { opened_at } : {}),
-    });
-    return error;
+    }).select().single();
+    return { error, data };
   };
 
   const handleScanOpen = async () => {
@@ -630,11 +631,34 @@ function LiveTab({ role }) {
     }
 
     setSavingProdOpen(true);
-    const error = await doInsertProdOrder(prodNo, matNo, qty, std, 'open');
+    const { error, data } = await doInsertProdOrder(prodNo, matNo, qty, std, 'open');
     setSavingProdOpen(false);
     if (error) { toast.error(error.message); return; }
-    toast.success(`เปิด Order ${prodNo} · ${matNo} · ${qty} ชิ้น ✓`);
-    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false, backfill_time: '' }));
+
+    // ── RH/LH auto pairing ──────────────────────────────────────────
+    const partnerMatNo = products.find(p => p.mat_no === matNo)?.pair_mat_no || null;
+    let nextMatNo = openProdForm.mat_no;
+    if (pendingPairId) {
+      // นี่คือการสแกนคู่ RH/LH ใบที่สอง — ผูกกลับไปยังใบแรกที่รออยู่
+      await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', pendingPairId);
+      await supabaseDR.from('prod_orders').update({ paired_order_id: pendingPairId }).eq('id', data.id);
+      setPendingPairId(null);
+      toast.success(`เปิด Order คู่ RH/LH พร้อมกัน ✓ (${prodNo})`);
+    } else if (partnerMatNo) {
+      const existingPartner = prodOrders.find(o => o.mat_no === partnerMatNo && o.status === 'open' && !o.paired_order_id);
+      if (existingPartner) {
+        await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', existingPartner.id);
+        await supabaseDR.from('prod_orders').update({ paired_order_id: existingPartner.id }).eq('id', data.id);
+        toast.success(`เปิด Order ${prodNo} ✓ และผูกคู่กับ ${existingPartner.prod_no} (RH/LH) อัตโนมัติ`);
+      } else {
+        setPendingPairId(data.id);
+        nextMatNo = partnerMatNo;
+        toast.info(`เปิด ${prodNo} แล้ว — สแกน PROD.NO ของคู่ RH/LH (MAT.NO ${partnerMatNo}) ต่อได้เลย`);
+      }
+    } else {
+      toast.success(`เปิด Order ${prodNo} · ${matNo} · ${qty} ชิ้น ✓`);
+    }
+    setOpenProdForm(f => ({ prod_no: '', mat_no: nextMatNo, qty: f.qty, is_backfill: false, backfill_time: '' }));
     loadProdOrders(selSession.id, selSession.line_name);
     setTimeout(() => openProdInputRef.current?.focus(), 80);
   };
@@ -644,7 +668,7 @@ function LiveTab({ role }) {
     if (!overflowInfo) return;
     const { prodNo, matNo, qty, std } = overflowInfo;
     setSavingProdOpen(true);
-    const error = await doInsertProdOrder(prodNo, matNo, qty, std, 'carry_over');
+    const { error } = await doInsertProdOrder(prodNo, matNo, qty, std, 'carry_over');
     setSavingProdOpen(false);
     setOverflowInfo(null);
     if (error) { toast.error(error.message); return; }
@@ -658,7 +682,7 @@ function LiveTab({ role }) {
     if (!overflowInfo) return;
     const { prodNo, matNo, qty, std } = overflowInfo;
     setSavingProdOpen(true);
-    const error = await doInsertProdOrder(prodNo, matNo, qty, std, 'open');
+    const { error } = await doInsertProdOrder(prodNo, matNo, qty, std, 'open');
     setSavingProdOpen(false);
     setOverflowInfo(null);
     if (error) { toast.error(error.message); return; }
@@ -692,9 +716,26 @@ function LiveTab({ role }) {
       confirmed_at: new Date().toISOString(),
       qty_ok:       match.qty,
     }).eq('id', match.id);
+    if (error) { setSavingProdClose(false); toast.error(error.message); return; }
+
+    // ── RH/LH auto pairing: ปิดคู่พร้อมกันถ้าผูกไว้และยังเปิดอยู่ ──
+    let pairedClosedNo = null;
+    if (match.paired_order_id) {
+      const partner = prodOrders.find(o => o.id === match.paired_order_id && o.status === 'open');
+      if (partner) {
+        await supabaseDR.from('prod_orders').update({
+          status:       'confirmed',
+          confirmed_by: fullName,
+          confirmed_at: new Date().toISOString(),
+          qty_ok:       partner.qty,
+        }).eq('id', partner.id);
+        pairedClosedNo = partner.prod_no;
+      }
+    }
     setSavingProdClose(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success(`ปิด Order ${match.prod_no} · ${match.qty} ชิ้น ✓`);
+    toast.success(pairedClosedNo
+      ? `ปิด Order ${match.prod_no} และคู่ RH/LH ${pairedClosedNo} พร้อมกัน ✓`
+      : `ปิด Order ${match.prod_no} · ${match.qty} ชิ้น ✓`);
     setCloseProdNo('');
     setCloseMatch(null);
     loadProdOrders(selSession.id, selSession.line_name);
@@ -904,6 +945,13 @@ function LiveTab({ role }) {
     if (undecided.length > 0) {
       toast.error(`มี ${undecided.length} Order ที่ยังไม่ได้ตัดสินใจ (Carry Over / ยกเลิก)`);
       return;
+    }
+
+    // เตือนถ้ากะนี้ไม่มีข้อมูลการผลิตเลย — เผื่อพนักงานลืม Scan เปิด Order / บันทึก Downtime ก่อนปิดกะ
+    if (prodOrders.length === 0 && dtLogs.length === 0) {
+      if (!window.confirm('กะนี้ยังไม่มี Prod Order และไม่มี Downtime เลย — ยืนยันจะปิดกะหรือไม่?')) return;
+    } else if (prodOrders.length === 0) {
+      if (!window.confirm('กะนี้ยังไม่มี Prod Order เลย (มีแต่ Downtime) — ยืนยันจะปิดกะหรือไม่?')) return;
     }
 
     setSavingClose(true);
@@ -2110,6 +2158,12 @@ function LiveTab({ role }) {
                 สแกน PROD.NO → กด Enter → บันทึกอัตโนมัติ — ไม่ต้องคลิกปุ่ม
               </div>
 
+              {pendingPairId && (
+                <div style={{ padding: '8px 12px', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: 8, fontSize: 12, color: '#a855f7', fontWeight: 600, marginBottom: 12 }}>
+                  🔗 รอสแกนคู่ RH/LH (MAT.NO {openProdForm.mat_no}) — เปิดเสร็จจะผูกคู่กับใบแรกอัตโนมัติ
+                </div>
+              )}
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <Field label="PROD.NO (สแกน barcode PROD.NO บน Tag Card) *">
                   <input ref={openProdInputRef} autoFocus value={openProdForm.prod_no}
@@ -2207,7 +2261,7 @@ function LiveTab({ role }) {
               )}
 
               <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowScanOpen(false)} style={cancelBtnStyle}>ปิด</button>
+                <button onClick={() => { setShowScanOpen(false); setPendingPairId(null); }} style={cancelBtnStyle}>ปิด</button>
                 <button onClick={handleScanOpen}
                   disabled={savingProdOpen || !openProdForm.prod_no || !openProdForm.mat_no || !openProdForm.qty || !!prodOrders.find(o => o.prod_no === openProdForm.prod_no)}
                   style={{ ...saveBtnStyle, background: '#f59e0b', color: '#000', fontSize: 14,
