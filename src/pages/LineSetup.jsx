@@ -65,6 +65,12 @@ export default function LineSetup() {
   const [machineForm, setMachineForm] = useState({ id: null, machine_no: '' });
   const [drMachines, setDrMachines] = useState([]);
 
+  // เส้นทางการผลิตแบบต่อเนื่อง (sequential flow) ระหว่างจุดเครื่องจักร — ใช้บอกว่า
+  // เครื่องไหนหยุดแล้วทำให้สายงานหยุดทั้งสาย (ตรงข้ามกับเครื่อง parallel ที่หยุดแค่ตัวเอง)
+  const [flowLinks, setFlowLinks] = useState([]);
+  const [connectMode, setConnectMode] = useState(false);
+  const [connectFrom, setConnectFrom] = useState(null);
+
   // Standard manpower
   const [stdDay,   setStdDay]   = useState(0);
   const [stdNight, setStdNight] = useState(0);
@@ -108,6 +114,8 @@ export default function LineSetup() {
     setWipPoints(wipData || []);
     const { data: mpData } = await supabase.from('machine_points').select('*').eq('line_name', selectedLine);
     setMachinePoints(mpData || []);
+    const { data: flData } = await supabase.from('machine_flow_links').select('*').eq('line_name', selectedLine);
+    setFlowLinks(flData || []);
     const { data: drMc } = await supabaseDR.from('machines').select('id, machine_no, machine_name').eq('line_name', selectedLine).eq('is_active', true).order('sort_order');
     setDrMachines(drMc || []);
     const { data: drPd } = await supabaseDR.from('dr_products').select('mat_no, name').eq('line_name', selectedLine).eq('is_active', true).not('mat_no', 'is', null).order('mat_no');
@@ -262,7 +270,10 @@ export default function LineSetup() {
       } else {
         if (kind === 'station') { const st = stations.find(s => s.id === id); if (st) editStation(st); }
         if (kind === 'wip') { const p = wipPoints.find(s => s.id === id); if (p) editWipPoint(p); }
-        if (kind === 'machine') { const p = machinePoints.find(s => s.id === id); if (p) editMachinePoint(p); }
+        if (kind === 'machine') {
+          if (connectMode) handleMachineConnectClick(id);
+          else { const p = machinePoints.find(s => s.id === id); if (p) editMachinePoint(p); }
+        }
       }
       setDragInfo(null);
       setDragPos(null);
@@ -490,13 +501,36 @@ export default function LineSetup() {
     if (!error) fetchLineData();
   };
 
+  /* ── เส้นทางการผลิต (sequential flow ระหว่างจุดเครื่องจักร) ── */
+  const handleMachineConnectClick = async (id) => {
+    if (!connectFrom) { setConnectFrom(id); return; }
+    if (connectFrom === id) { setConnectFrom(null); return; }
+    const exists = flowLinks.some(l =>
+      (l.from_machine_point_id === connectFrom && l.to_machine_point_id === id) ||
+      (l.from_machine_point_id === id && l.to_machine_point_id === connectFrom)
+    );
+    setConnectFrom(null);
+    if (exists) return;
+    const { error } = await supabase.from('machine_flow_links').insert([{
+      line_name: selectedLine, from_machine_point_id: connectFrom, to_machine_point_id: id,
+    }]);
+    if (error) return alert('Error: ' + error.message);
+    fetchLineData();
+  };
+
+  const deleteFlowLink = async (id) => {
+    if (!window.confirm('ยืนยันการลบเส้นเชื่อมต่อนี้?')) return;
+    const { error } = await supabase.from('machine_flow_links').delete().eq('id', id);
+    if (!error) fetchLineData();
+  };
+
   return (
     <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12, height: isMobile ? 'auto' : 'calc(100vh - 40px)' }}>
       {selectedLine && (
         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
           {TABS.map(t => (
             <button key={t.key}
-              onClick={() => { setActiveTab(t.key); setTempPos(null); setWipTempPos(null); setMachineTempPos(null); }}
+              onClick={() => { setActiveTab(t.key); setTempPos(null); setWipTempPos(null); setMachineTempPos(null); setConnectMode(false); setConnectFrom(null); }}
               style={{
                 padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
                 border: `1px solid ${activeTab === t.key ? 'var(--accent)' : 'var(--border2)'}`,
@@ -644,31 +678,50 @@ export default function LineSetup() {
                 </div>
               )}
 
+              {activeTab === 'machines' && (
+                <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 4 }}
+                  viewBox="0 0 100 100" preserveAspectRatio="none">
+                  {flowLinks.map(link => {
+                    const from = machinePoints.find(p => p.id === link.from_machine_point_id);
+                    const to = machinePoints.find(p => p.id === link.to_machine_point_id);
+                    if (!from || !to) return null;
+                    const x1 = parseFloat(from.pos_left), y1 = parseFloat(from.pos_top);
+                    const x2 = parseFloat(to.pos_left), y2 = parseFloat(to.pos_top);
+                    return (
+                      <g key={link.id}>
+                        <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#f97316" strokeWidth={0.4} />
+                        <circle cx={x2} cy={y2} r={1} fill="#f97316" />
+                      </g>
+                    );
+                  })}
+                </svg>
+              )}
               {activeTab === 'machines' && machinePoints.map(p => {
                 const isSelected = machineForm.id === p.id;
                 const mc = drMachines.find(m => m.machine_no === p.machine_no);
                 const isDragging = dragInfo?.kind === 'machine' && dragInfo.id === p.id;
+                const isConnectSource = connectMode && connectFrom === p.id;
                 const top = isDragging && dragPos ? dragPos.top : p.pos_top;
                 const left = isDragging && dragPos ? dragPos.left : p.pos_left;
                 return (
                   <div
                     key={p.id}
                     onMouseDown={(e) => startDrag(e, 'machine', p.id)}
-                    title="คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง"
+                    title={connectMode ? 'คลิกเพื่อเชื่อมต่อสายงาน' : 'คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง'}
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
                       width: POINT_W, height: POINT_H,
-                      border: isSelected ? '2px solid var(--green)' : '2px solid rgba(255,255,255,0.75)',
+                      border: isConnectSource ? '2px solid #f97316' : isSelected ? '2px solid var(--green)' : '2px solid rgba(255,255,255,0.75)',
                       borderRadius: 7,
-                      backgroundColor: isSelected ? 'rgba(34,197,94,0.18)' : 'rgba(0,0,0,0.82)',
+                      backgroundColor: isConnectSource ? 'rgba(249,115,22,0.22)' : isSelected ? 'rgba(34,197,94,0.18)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
-                      boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
-                      cursor: isDragging ? 'grabbing' : 'grab', display: 'flex', flexDirection: 'column',
+                      boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isConnectSource ? '0 0 8px rgba(249,115,22,0.7)' : isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
+                      cursor: isDragging ? 'grabbing' : connectMode ? 'pointer' : 'grab', display: 'flex', flexDirection: 'column',
                       alignItems: 'center', justifyContent: 'center',
                       padding: '2px 2px 1px', zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
                   >
-                    <div style={{ fontSize: 8, fontWeight: 700, color: isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ fontSize: 8, fontWeight: 700, color: isConnectSource ? '#f97316' : isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       ⚙️ {p.machine_no}
                     </div>
                     <div style={{ fontSize: 7, color: '#a3a3a3', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1074,6 +1127,50 @@ export default function LineSetup() {
                 {machinePoints.length === 0 && (
                   <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีจุดเครื่องจักร</div>
                 )}
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border)', marginTop: 14, paddingTop: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <h4 style={{ margin: 0, color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
+                    🔗 เส้นทางการผลิต
+                  </h4>
+                  <button
+                    onClick={() => { setConnectMode(v => !v); setConnectFrom(null); }}
+                    style={{
+                      padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                      border: `1px solid ${connectMode ? '#f97316' : 'var(--border2)'}`,
+                      background: connectMode ? 'rgba(249,115,22,0.18)' : 'var(--bg2)',
+                      color: connectMode ? '#f97316' : 'var(--text2)',
+                    }}>
+                    {connectMode ? '✓ กำลังเชื่อม' : '🔗 เชื่อมต่อ'}
+                  </button>
+                </div>
+                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
+                  เชื่อมเครื่องจักรที่ทำงาน <b>ต่อเนื่องกัน (Sequential)</b> — ถ้าเครื่องหนึ่งหยุด อีกเครื่องในสายต้องหยุดด้วย<br />
+                  เครื่องที่ <b>ไม่เชื่อม</b> ถือว่าทำงานแบบ Parallel — Downtime จะกระทบแค่เครื่องนั้นเครื่องเดียว
+                </div>
+                {connectMode && (
+                  <div style={{ fontSize: 11, color: '#f97316', background: 'rgba(249,115,22,0.1)', padding: '8px 10px', borderRadius: 8, marginBottom: 10 }}>
+                    {connectFrom
+                      ? `คลิกเครื่องจักรเครื่องที่ 2 บนรูปเพื่อเชื่อมจาก ${machinePoints.find(p => p.id === connectFrom)?.machine_no || ''}`
+                      : 'คลิกเครื่องจักรเครื่องแรกบนรูปเพื่อเริ่มเชื่อมสายงาน'}
+                  </div>
+                )}
+                <div style={{ maxHeight: 160, overflowY: 'auto' }}>
+                  {flowLinks.map(link => {
+                    const from = machinePoints.find(p => p.id === link.from_machine_point_id);
+                    const to = machinePoints.find(p => p.id === link.to_machine_point_id);
+                    return (
+                      <div key={link.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+                        <span style={{ color: 'var(--text)' }}>⚙️ {from?.machine_no || '?'} → {to?.machine_no || '?'}</span>
+                        <button onClick={() => deleteFlowLink(link.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>🗑️</button>
+                      </div>
+                    );
+                  })}
+                  {flowLinks.length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '8px 0', color: 'var(--muted)', fontSize: 11 }}>ยังไม่มีการเชื่อมต่อสายงาน</div>
+                  )}
+                </div>
               </div>
             </div>
           )}
