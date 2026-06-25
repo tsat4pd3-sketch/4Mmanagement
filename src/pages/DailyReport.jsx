@@ -171,6 +171,9 @@ function LiveTab({ role }) {
   const [defectForm, setDefectForm]     = useState({ id: null, defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
   const [savingDefect, setSavingDefect] = useState(false);
 
+  // SV review-before-approve modal for pending_close requests
+  const [showApproveReview, setShowApproveReview] = useState(false);
+
   // Close Shift modal (OEE)
   const [showCloseShift, setShowCloseShift] = useState(false);
   const [closeNg, setCloseNg]               = useState('0');
@@ -1159,9 +1162,9 @@ function LiveTab({ role }) {
                       <div style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 6, padding: '4px 10px' }}>
                         ⏳ รออนุมัติปิดกะ · ขอโดย {selSession.close_requested_by_name || '—'}
                       </div>
-                      <button onClick={handleApproveClose}
+                      <button onClick={() => setShowApproveReview(true)}
                         style={{ ...saveBtnStyle, background: '#22c55e', fontWeight: 700 }}>
-                        ✅ อนุมัติปิดกะ
+                        🔍 ตรวจสอบ & อนุมัติ
                       </button>
                       <button onClick={handleRejectClose}
                         style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
@@ -1564,13 +1567,107 @@ function LiveTab({ role }) {
         )}
 
         {/* ── CLOSE SHIFT / OEE modal ─────────────────────────── */}
+        {/* SV review-before-approve — show exactly what the leader submitted before deciding */}
+        {showApproveReview && selSession && (() => {
+          const oeeColor = selSession.oee == null ? 'var(--muted)' : selSession.oee >= 85 ? '#22c55e' : selSession.oee >= 65 ? '#f59e0b' : '#ef4444';
+          const confirmedOrders  = prodOrders.filter(o => o.status === 'confirmed');
+          const carryOrdersList  = prodOrders.filter(o => o.status === 'carry_over');
+          const cancelledOrders  = prodOrders.filter(o => o.status === 'cancelled');
+          return (
+            <div className="overlay" style={{ zIndex: 2100 }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.5)', borderRadius: 14, padding: 24, width: 'min(95vw,520px)', maxHeight: '90vh', overflowY: 'auto' }}>
+                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: '#f59e0b' }}>🔍 ตรวจสอบคำขอปิดกะ</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
+                  {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)}
+                </div>
+
+                <div style={{ marginBottom: 14, padding: '10px 14px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>📋 ขอโดย {selSession.close_requested_by_name || '—'}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                    เวลาที่ขอ: {selSession.close_requested_at ? fmtDateTime(selSession.close_requested_at) : '—'} · เริ่มกะ {selSession.start_time} · ปิดกะ {selSession.end_time}
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(90px,1fr))', gap: 10, marginBottom: 14 }}>
+                  {[
+                    { label: 'เวลากะ',   value: fmtMin(selSession.shift_min),            color: 'var(--text)' },
+                    { label: 'ผลิตได้',  value: `${selSession.actual_qty ?? 0} ชิ้น`,     color: '#22c55e' },
+                    { label: 'ดี',       value: `${selSession.qty_ok ?? 0} ชิ้น`,         color: '#22c55e' },
+                    { label: 'NG',       value: `${selSession.qty_ng ?? 0} ชิ้น`,         color: '#ef4444' },
+                    { label: 'สงสัย',    value: `${selSession.qty_suspect ?? 0} ชิ้น`,    color: '#f59e0b' },
+                    { label: 'ซ่อม',     value: `${selSession.qty_repair ?? 0} ชิ้น`,     color: '#a78bfa' },
+                    { label: 'OEE',      value: selSession.oee != null ? `${selSession.oee}%` : 'N/A', color: oeeColor },
+                  ].map(k => (
+                    <div key={k.label} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{k.label}</div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: k.color, marginTop: 2 }}>{k.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {defectLogs.length > 0 && (
+                  <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>🔴 รายการงานเสีย ({defectLogs.length})</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {defectLogs.map(d => (
+                        <div key={d.id} style={{ fontSize: 12, color: 'var(--text2)' }}>
+                          • {d.dr_defect_types?.name_th || 'ไม่ระบุชนิด'} — NG {d.qty_ng || 0} / สงสัย {d.qty_suspect || 0} / ซ่อม {d.qty_repair || 0}
+                          {d.description && <span style={{ color: 'var(--muted)' }}> ({d.description})</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {dtLogs.length > 0 && (
+                  <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>⏱ Downtime ({dtLogs.length} รายการ, รวม {fmtMin(totalDT)})</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {dtLogs.map(d => (
+                        <div key={d.id} style={{ fontSize: 12, color: 'var(--text2)' }}>
+                          • {d.dr_downtime_types?.name_th || 'ไม่ระบุสาเหตุ'} — {fmtMin(d.duration_min || 0)}
+                          {d.description && <span style={{ color: 'var(--muted)' }}> ({d.description})</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(carryOrdersList.length > 0 || cancelledOrders.length > 0) && (
+                  <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>➡ การตัดสินใจ Order ที่ยังไม่ปิด</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {carryOrdersList.map(o => (
+                        <div key={o.id} style={{ fontSize: 12, color: '#a78bfa' }}>• {o.prod_no} ({o.mat_no}) — ยกยอดต่อ {o.qty_actual ?? 0}/{o.qty} ชิ้น</div>
+                      ))}
+                      {cancelledOrders.map(o => (
+                        <div key={o.id} style={{ fontSize: 12, color: '#666' }}>• {o.prod_no} ({o.mat_no}) — ยกเลิก ({o.qty_actual ?? 0}/{o.qty} ชิ้น)</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14 }}>
+                  ✓ Order ที่ปิดสำเร็จ: {confirmedOrders.length} ใบ ({confirmedOrders.reduce((s,o) => s+o.qty, 0)} ชิ้น)
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                  <button onClick={() => setShowApproveReview(false)} style={cancelBtnStyle}>ปิด</button>
+                  <button onClick={() => { setShowApproveReview(false); handleRejectClose(); }} style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>✕ ปฏิเสธ</button>
+                  <button onClick={() => { setShowApproveReview(false); handleApproveClose(); }} style={{ ...saveBtnStyle, background: '#22c55e', fontWeight: 700 }}>✅ ยืนยันอนุมัติ</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {showCloseShift && selSession && (() => {
           const ng = parseInt(closeNg) || 0;
           const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty } = computeOEE(ng, closeEndTime, closeStartTime);
           const oeeColor = oee == null ? 'var(--muted)' : oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
           return (
             <div className="overlay" style={{ zIndex: 2000 }}>
-              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,480px)' }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,480px)', maxHeight: '90vh', overflowY: 'auto' }}>
                 <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#ef4444' }}>
                   {role === 'leader' ? '📋 ขอปิดกะ — สรุปผลและ OEE' : '🔒 ปิดกะ — สรุปผลและ OEE'}
                 </div>
