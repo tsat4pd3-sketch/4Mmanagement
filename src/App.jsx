@@ -25,6 +25,7 @@ const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
 const LineStock      = lazy(() => import('./pages/LineStock'));
 const CompanyCalendar = lazy(() => import('./pages/CompanyCalendar'));
+const RackCenter      = lazy(() => import('./pages/RackCenter'));
 
 /* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null, signatureUrl: null, fullName: null });
@@ -51,6 +52,7 @@ const NAV_ITEMS = [
   { to: '/products',        icon: '🔩', label: 'Product Master',    roles: null, group: 'การผลิต' },
   { to: '/line-stock',      icon: '📦', label: 'Line Stock',         roles: null, group: 'การผลิต' },
   { to: '/heijunka',       icon: '🎴', label: 'Heijunka Kanban',   roles: null, group: 'การผลิต' },
+  { to: '/rack-center',    icon: '🗃️', label: 'Rack Center',       roles: null, group: 'การผลิต' },
 
   { to: '/report',        icon: '📋', label: 'รายงาน',            roles: null, group: 'รายงาน/คุณภาพ' },
   { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', roles: ['admin', 'manager', 'supervisor', 'leader', 'qa'], group: 'รายงาน/คุณภาพ' },
@@ -623,6 +625,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/products"   element={<ProductMaster />} />
               <Route path="/line-stock" element={<LineStock />} />
               <Route path="/heijunka"  element={<HeijunkaKanban />} />
+              <Route path="/rack-center" element={<RackCenter />} />
               <Route path="/company-calendar" element={<CompanyCalendar />} />
             </Routes>
           </Suspense>
