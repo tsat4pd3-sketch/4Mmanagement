@@ -422,12 +422,15 @@ function LiveTab({ role }) {
   };
 
   // เดาเวลาปิดกะที่ "น่าจะ" ถูก จากเวลาจริงตอนกดขอปิดกะ — เทียบกับเวลาเลิกงานมาตรฐาน
-  // ถ้ากดก่อนเวลาเลิกงานมาตรฐาน +1 ชม. → ไม่มี OT ใช้เวลาเลิกงานมาตรฐาน
-  // ถ้ากดช้ากว่านั้น → สันนิษฐานว่ามี OT ใช้เวลาสิ้นสุด OT มาตรฐาน (แก้ไขเองได้เสมอ)
+  // กะเช้า: ถ้ากดก่อนเวลาเลิกงานมาตรฐาน +1 ชม. → ไม่มี OT ใช้เวลาเลิกงานมาตรฐาน (17:30)
+  //         ถ้ากดช้ากว่านั้น → สันนิษฐานว่ามี OT ใช้เวลาสิ้นสุด OT มาตรฐาน (20:00, แก้ไขเองได้เสมอ)
+  // กะดึก: เลิกงานเสมอที่ 08:00 — OT ของกะดึกคือ "เข้าเร็วขึ้น" (20:00 แทน 22:30) ไม่ใช่เลิกช้าลง
+  //         ห้ามเดาเวลาเลิกเกิน 08:00 เพราะแทบไม่มีจริง (จะทำให้เวลากะรวมผิดเพี้ยนมาก เช่น 14 ชม.)
   const guessCloseEndTime = () => {
     if (!selSession) return nowTime();
-    const std = selSession.shift === 'night' ? '08:00' : '17:30';
-    const ot  = selSession.shift === 'night' ? '10:30' : '20:00';
+    if (selSession.shift === 'night') return '08:00';
+    const std = '17:30';
+    const ot  = '20:00';
     const stdDT = buildDT(std);
     if (!stdDT) return nowTime();
     const noOtCutoff = new Date(stdDT.getTime() + 60 * 60000);
@@ -1211,7 +1214,13 @@ function LiveTab({ role }) {
                 const ct  = ctForMatNo(matNo);
                 const name = kanbanStds.find(s => s.mat_no === matNo)?.dr_products?.name || '';
                 const rowPct = target > 0 ? Math.min(100, Math.round((confirmed / target) * 100)) : 0;
-                return { matNo, name, target, confirmed, openCnt, closedCnt, ng, dt, ct, rowPct };
+                // เวลาทำงานจริงของพาร์ทนี้ — บางพาร์ทในไลน์เดียวกันอาจเริ่ม/เลิกต่างกัน
+                // เช่น คนเข้า OT มาช่วยพาร์ทหนึ่งตั้งแต่ 20:00 แต่อีกพาร์ทเริ่มตามกำลังคนปกติ 22:30
+                const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
+                const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
+                const actualStart = openedTimes.length ? new Date(Math.min(...openedTimes)) : null;
+                const actualEnd   = closedTimes.length ? new Date(Math.max(...closedTimes)) : null;
+                return { matNo, name, target, confirmed, openCnt, closedCnt, ng, dt, ct, rowPct, actualStart, actualEnd };
               }).sort((a, b) => b.target - a.target);
 
               const unassignedDT = dtLogs.filter(d => !d.mat_no).reduce((s, d) => s + (d.duration_min || 0), 0);
@@ -1233,6 +1242,11 @@ function LiveTab({ role }) {
                                   <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{r.matNo}</span>
                                   {r.name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{r.name}</span>}
                                   {r.ct > 0 && <span style={{ fontSize: 10, color: 'var(--muted)' }}>· CT {r.ct}s</span>}
+                                  {r.actualStart && (
+                                    <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', fontWeight: 700 }}>
+                                      🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}
+                                    </span>
+                                  )}
                                   <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontWeight: 700 }}>เปิด {r.openCnt}</span>
                                   <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700 }}>ปิด {r.closedCnt}</span>
                                   {r.ng > 0 && <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontWeight: 700 }}>🔴 NG {r.ng}</span>}
@@ -1740,7 +1754,11 @@ function LiveTab({ role }) {
                     const orderIds = new Set(orders.map(o => o.id));
                     const ng = defectLogs.filter(d => orderIds.has(d.prod_order_id)).reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
                     const dt = dtLogs.filter(d => d.mat_no === matNo).reduce((s, d) => s + (d.duration_min || 0), 0);
-                    return { matNo, partName: orders[0]?.part_name, qty: confirmedQty + openQty, ng, dt };
+                    const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
+                    const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
+                    const actualStart = openedTimes.length ? new Date(Math.min(...openedTimes)) : null;
+                    const actualEnd   = closedTimes.length ? new Date(Math.max(...closedTimes)) : null;
+                    return { matNo, partName: orders[0]?.part_name, qty: confirmedQty + openQty, ng, dt, actualStart, actualEnd };
                   }).sort((a, b) => b.qty - a.qty);
                   const dtNoMat = dtLogs.filter(d => !d.mat_no).reduce((s, d) => s + (d.duration_min || 0), 0);
                   return (
@@ -1752,6 +1770,9 @@ function LiveTab({ role }) {
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{r.matNo}</div>
                               {r.partName && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.partName}</div>}
+                              {r.actualStart && (
+                                <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 1 }}>🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}</div>
+                              )}
                             </div>
                             <div style={{ textAlign: 'center', minWidth: 50 }}>
                               <div style={{ fontSize: 9, color: 'var(--muted)' }}>ผลิตได้</div>
