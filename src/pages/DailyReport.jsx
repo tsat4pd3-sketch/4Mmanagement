@@ -312,6 +312,9 @@ function LiveTab({ role }) {
         const deduped = (carried || []).filter(o => {
           if (currentProdNos.has(o.prod_no)) return false;
           if (seen.has(o.prod_no)) return false;
+          // ออเดอร์ที่ผลิตครบเป้าแล้ว (qty_actual >= qty) ไม่ถือเป็นยอดค้าง — ถ้ายังยกมาจะกลายเป็น
+          // "ผีค้าง 1 ชิ้น" ไปเรื่อยๆ ทุกกะเพราะโค้ดเก่าบังคับขั้นต่ำ 1 ชิ้นแม้ผลิตครบแล้ว
+          if ((o.qty_actual || 0) >= o.qty) return false;
           seen.add(o.prod_no);
           return true;
         });
@@ -788,7 +791,13 @@ function LiveTab({ role }) {
           .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id);
         continue;
       }
-      const remainQty = Math.max(1, o.qty - (o.qty_actual || 0));
+      const remainQty = o.qty - (o.qty_actual || 0);
+      if (remainQty <= 0) {
+        // ผลิตครบเป้าแล้ว ไม่ต้องยกยอด — แค่ปิดต้นทางไม่ให้ขึ้นเตือนค้างอีก
+        await supabaseDR.from('prod_orders').update({ status: 'imported' })
+          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id);
+        continue;
+      }
       const { error } = await supabaseDR.from('prod_orders').insert({
         session_id:   selSession.id,
         prod_no:      o.prod_no,
@@ -2552,6 +2561,7 @@ function HistoryTab({ role }) {
   const [defectMap, setDefectMap] = useState({});
   const [orderMap, setOrderMap]   = useState({});
   const [deleting, setDeleting]   = useState(null);
+  const [ordersMinimized, setOrdersMinimized] = useState({});
 
   const isAdmin = role === 'admin';
 
@@ -2697,7 +2707,11 @@ function HistoryTab({ role }) {
                     if (!matNos.length) return null;
                     const rows = matNos.map(matNo => {
                       const matOrders = orders.filter(o => o.mat_no === matNo);
-                      const qty = matOrders.filter(o => o.status === 'confirmed' || o.status === 'carry_over').reduce((sum, o) => sum + (o.qty_actual ?? o.qty ?? 0), 0);
+                      const qty = matOrders.reduce((sum, o) => {
+                        if (o.status === 'confirmed') return sum + (o.qty || 0);
+                        if (o.status === 'carry_over') return sum + (o.qty_actual || 0);
+                        return sum;
+                      }, 0);
                       const orderIds = new Set(matOrders.map(o => o.id));
                       const ng = defects.filter(d => orderIds.has(d.prod_order_id)).reduce((sum, d) => sum + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
                       const dt = dts.filter(d => d.mat_no === matNo).reduce((sum, d) => sum + (d.duration_min || 0), 0);
@@ -2723,9 +2737,17 @@ function HistoryTab({ role }) {
                   })()}
 
                   {/* Prod orders */}
-                  {orders.length > 0 && (
+                  {orders.length > 0 && (() => {
+                    const minimized = ordersMinimized[s.id] ?? true;
+                    return (
                     <div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>📋 Prod Orders ({orders.length} ใบ)</div>
+                      <div
+                        onClick={() => setOrdersMinimized(m => ({ ...m, [s.id]: !minimized }))}
+                        style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, userSelect: 'none' }}>
+                        <span style={{ fontSize: 10 }}>{minimized ? '▶' : '▼'}</span>
+                        📋 Prod Orders ({orders.length} ใบ)
+                      </div>
+                      {!minimized && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {orders.map(o => {
                           const statusColor = o.status === 'confirmed' ? '#22c55e' : o.status === 'carry_over' ? '#a78bfa' : o.status === 'cancelled' ? '#666' : '#f59e0b';
@@ -2742,8 +2764,10 @@ function HistoryTab({ role }) {
                           );
                         })}
                       </div>
+                      )}
                     </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Defect logs */}
                   {defects.length > 0 && (

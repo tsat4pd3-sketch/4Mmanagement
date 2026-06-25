@@ -20,62 +20,28 @@ const UNPLAN_COLORS = ['#ef4444','#f97316','#eab308','#84cc16','#06b6d4','#8b5cf
 const PLAN_COLORS   = ['#60a5fa','#34d399','#fb7185','#fbbf24'];
 
 // ── OEE calculation helpers ──────────────────────────────────────
-const SHIFT_MIN = 720; // 12h shift
-
+// หมายเหตุ: A/P/Q/OEE คำนวณและบันทึกไว้แล้วใน production_sessions (oee_a/oee_p/oee_q/oee)
+// ตอนปิดกะจาก DailyReport.jsx ซึ่งคิดรวม break_policies และ CT ต่อ MAT.NO อย่างถูกต้องแล้ว
+// ห้ามคำนวณซ้ำด้วยสูตรอย่างง่ายที่นี่ เพราะจะได้ตัวเลขคนละชุดกับหน้า Daily Report
 function calcOEE(sessions, downtimes, defects) {
-  // For each session, calculate A, P, Q from raw data
   const results = [];
   for (const s of sessions) {
     const sessionDT = downtimes.filter(d => d.session_id === s.id);
     const sessionDefects = defects.filter(d => d.session_id === s.id);
 
-    // AT: available time = shift minutes - planned DT
-    const plannedMin  = sessionDT.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
+    const plannedMin   = sessionDT.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
     const unplannedMin = sessionDT.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
 
-    // Use stored start/end or default to shift length
-    let shiftMin = SHIFT_MIN;
-    if (s.start_time && s.end_time) {
-      const [sh, sm] = s.start_time.split(':').map(Number);
-      const [eh, em] = s.end_time.split(':').map(Number);
-      let diff = (eh * 60 + em) - (sh * 60 + sm);
-      if (diff <= 0) diff += 1440; // crosses midnight
-      if (diff > 0 && diff <= 1440) shiftMin = diff;
-    }
-
-    const loadingMin = shiftMin - plannedMin;
-    const operatingMin = Math.max(0, loadingMin - unplannedMin);
-
-    // A = operating / loading
-    const oeeA = loadingMin > 0 ? Math.min(100, (operatingMin / loadingMin) * 100) : (s.oee_a != null ? s.oee_a : null);
-
-    // P = (actual_qty * CT) / operating_min  — if CT available
-    const ctSec = s.dr_products?.cycle_time_sec || 0;
-    let oeeP = s.oee_p != null ? s.oee_p : null;
-    if (ctSec > 0 && operatingMin > 0 && s.actual_qty) {
-      oeeP = Math.min(100, ((s.actual_qty * ctSec / 60) / operatingMin) * 100);
-    }
-
-    // Q = qty_ok / actual_qty
     const ngQty = sessionDefects.reduce((a, d) => a + (d.qty_ng || 0), 0) + (s.qty_ng || 0);
     const totalQty = s.actual_qty || 0;
     const okQty = s.qty_ok || Math.max(0, totalQty - ngQty);
-    let oeeQ = s.oee_q != null ? s.oee_q : null;
-    if (totalQty > 0) {
-      oeeQ = Math.min(100, (okQty / totalQty) * 100);
-    }
-
-    const oee = (oeeA != null && oeeP != null && oeeQ != null)
-      ? (oeeA / 100) * (oeeP / 100) * (oeeQ / 100) * 100
-      : s.oee;
 
     results.push({
       ...s,
-      calcA: oeeA != null ? +oeeA.toFixed(1) : null,
-      calcP: oeeP != null ? +oeeP.toFixed(1) : null,
-      calcQ: oeeQ != null ? +oeeQ.toFixed(1) : null,
-      calcOEE: oee != null ? +oee.toFixed(1) : null,
-      loadingMin,
+      calcA: s.oee_a != null ? +Number(s.oee_a).toFixed(1) : null,
+      calcP: s.oee_p != null ? +Number(s.oee_p).toFixed(1) : null,
+      calcQ: s.oee_q != null ? +Number(s.oee_q).toFixed(1) : null,
+      calcOEE: s.oee  != null ? +Number(s.oee).toFixed(1)  : null,
       unplannedMin: +unplannedMin.toFixed(1),
       plannedMin:   +plannedMin.toFixed(1),
       dtBreakdown: sessionDT,
@@ -140,7 +106,7 @@ export default function OEEAnalytics() {
     setLoading(true);
     try {
       let q = supabaseDR.from('production_sessions')
-        .select('*, dr_products(name, cycle_time_sec, target_per_shift)')
+        .select('*')
         .eq('status', 'closed')
         .gte('work_date', dateFrom)
         .lte('work_date', dateTo)
