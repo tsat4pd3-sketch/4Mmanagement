@@ -1749,6 +1749,7 @@ function LiveTab({ role }) {
                   if (!matNos.length) return null;
                   const rows = matNos.map(matNo => {
                     const orders = prodOrders.filter(o => o.mat_no === matNo);
+                    const target = orders.reduce((s, o) => s + o.qty, 0);
                     const confirmedQty = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
                     const openQty = orders.filter(o => o.status === 'open').reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || 0), 0);
                     const orderIds = new Set(orders.map(o => o.id));
@@ -1758,34 +1759,61 @@ function LiveTab({ role }) {
                     const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
                     const actualStart = openedTimes.length ? new Date(Math.min(...openedTimes)) : null;
                     const actualEnd   = closedTimes.length ? new Date(Math.max(...closedTimes)) : null;
-                    return { matNo, partName: orders[0]?.part_name, qty: confirmedQty + openQty, ng, dt, actualStart, actualEnd };
+                    // ควรผลิตได้ "ถ้าวิ่งเต็มเวลา" จาก opened_at ถึง confirmed_at จริง (ไม่หัก downtime) — ใช้เทียบ %P
+                    // ไม่ใช่เวลากะทั้งหมด เพราะพาร์ทนี้อาจเริ่ม/เลิกไม่ตรงกับเวลากะ (เช่น OT บางส่วนของไลน์)
+                    const ctSec = ctForMatNo(matNo);
+                    const winEndMs = actualEnd ? actualEnd.getTime() : (closeEndTime && selSession?.work_date ? (() => {
+                      let e = new Date(`${selSession.work_date}T${closeEndTime.slice(0,5)}:00`).getTime();
+                      if (actualStart && e < actualStart.getTime()) e += 86400000;
+                      return e;
+                    })() : null);
+                    const winMin = (actualStart && winEndMs) ? Math.max(0, (winEndMs - actualStart.getTime()) / 60000) : null;
+                    const achievable = (ctSec > 0 && winMin != null) ? Math.floor(winMin * 60 / ctSec) : null;
+                    return { matNo, partName: orders[0]?.part_name, target, qty: confirmedQty + openQty, ng, dt, actualStart, actualEnd, achievable };
                   }).sort((a, b) => b.qty - a.qty);
                   const dtNoMat = dtLogs.filter(d => !d.mat_no).reduce((s, d) => s + (d.duration_min || 0), 0);
                   return (
                     <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>📦 สรุปแยกตามชิ้นงาน ({rows.length} MAT.NO)</div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>📦 สรุปแยกตามชิ้นงาน ({rows.length} MAT.NO) — เป้าหมาย vs ควรได้ (เต็มเวลา) vs ผลิตได้จริง</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         {rows.map(r => (
-                          <div key={r.matNo} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--bg)', borderRadius: 8 }}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{r.matNo}</div>
-                              {r.partName && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.partName}</div>}
-                              {r.actualStart && (
-                                <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 1 }}>🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}</div>
-                              )}
+                          <div key={r.matNo} style={{ padding: '8px 10px', background: 'var(--bg)', borderRadius: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{r.matNo}</div>
+                                {r.partName && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.partName}</div>}
+                                {r.actualStart && (
+                                  <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 1 }}>🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}</div>
+                                )}
+                              </div>
+                              <div style={{ textAlign: 'center', minWidth: 40 }}>
+                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>NG</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: r.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{r.ng}</div>
+                              </div>
+                              <div style={{ textAlign: 'center', minWidth: 60 }}>
+                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>Downtime</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: r.dt > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtMin(Math.round(r.dt))}</div>
+                              </div>
                             </div>
-                            <div style={{ textAlign: 'center', minWidth: 50 }}>
-                              <div style={{ fontSize: 9, color: 'var(--muted)' }}>ผลิตได้</div>
-                              <div style={{ fontSize: 13, fontWeight: 800, color: '#22c55e' }}>{r.qty}</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
+                              <div style={{ textAlign: 'center', padding: '4px 0', background: 'var(--bg2)', borderRadius: 6 }}>
+                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>เป้าหมาย</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{r.target}</div>
+                              </div>
+                              <div style={{ textAlign: 'center', padding: '4px 0', background: 'rgba(168,85,247,0.1)', borderRadius: 6 }}>
+                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>ควรได้ (เต็มเวลา)</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa' }}>{r.achievable != null ? r.achievable : '—'}</div>
+                              </div>
+                              <div style={{ textAlign: 'center', padding: '4px 0', background: 'rgba(34,197,94,0.1)', borderRadius: 6 }}>
+                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>ผลิตได้จริง</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: '#22c55e' }}>{r.qty}</div>
+                              </div>
                             </div>
-                            <div style={{ textAlign: 'center', minWidth: 40 }}>
-                              <div style={{ fontSize: 9, color: 'var(--muted)' }}>NG</div>
-                              <div style={{ fontSize: 13, fontWeight: 800, color: r.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{r.ng}</div>
-                            </div>
-                            <div style={{ textAlign: 'center', minWidth: 60 }}>
-                              <div style={{ fontSize: 9, color: 'var(--muted)' }}>Downtime</div>
-                              <div style={{ fontSize: 13, fontWeight: 800, color: r.dt > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtMin(Math.round(r.dt))}</div>
-                            </div>
+                            {r.achievable > 0 && (
+                              <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4, textAlign: 'right' }}>
+                                %P พาร์ทนี้ ≈ {Math.min(100, Math.round(r.qty / r.achievable * 100))}%
+                              </div>
+                            )}
                           </div>
                         ))}
                         {dtNoMat > 0 && (
@@ -1794,6 +1822,84 @@ function LiveTab({ role }) {
                           </div>
                         )}
                       </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Timeline: machine run / policy break / planned-unplanned downtime — รายละเอียดของ %A */}
+                {(() => {
+                  if (!selSession?.work_date) return null;
+                  const startTimeStr = closeStartTime || selSession.start_time;
+                  if (!startTimeStr) return null;
+                  const winStart = new Date(`${selSession.work_date}T${startTimeStr.slice(0,5)}:00`).getTime();
+                  const endTimeStr = closeEndTime || nowTime();
+                  let winEnd = new Date(`${selSession.work_date}T${endTimeStr.slice(0,5)}:00`).getTime();
+                  if (winEnd <= winStart) winEnd += 86400000; // กะดึกข้ามวัน
+                  if (winEnd <= winStart) return null;
+
+                  const sessionShift = selSession.shift || 'day';
+                  const processType = sessionProcessType();
+                  const blocks = [];
+                  breakPolicies
+                    .filter(p => (p.shift === 'both' || p.shift === sessionShift) && (p.process_type === 'common' || p.process_type === processType))
+                    .forEach(p => {
+                      const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
+                      let pStart = new Date(`${selSession.work_date}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`).getTime();
+                      let pEnd = pStart + (p.duration_min || 0) * 60000;
+                      if (pEnd < winStart) { pStart += 86400000; pEnd += 86400000; }
+                      const s = Math.max(pStart, winStart), e = Math.min(pEnd, winEnd);
+                      if (e > s) blocks.push({ start: s, end: e, label: p.label || p.name || 'พักตามนโยบาย', color: '#22c55e' });
+                    });
+                  dtLogs.forEach(d => {
+                    if (!d.started_at) return;
+                    const s0 = new Date(d.started_at).getTime();
+                    const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + (d.duration_min || 0) * 60000;
+                    const s = Math.max(s0, winStart), e = Math.min(e0, winEnd);
+                    if (e > s) {
+                      const planned = d.dr_downtime_types?.category === 'planned';
+                      blocks.push({ start: s, end: e, label: d.dr_downtime_types?.name_th || 'Downtime', color: planned ? '#f59e0b' : '#ef4444' });
+                    }
+                  });
+                  blocks.sort((a, b) => a.start - b.start);
+                  const segments = [];
+                  let cursor = winStart;
+                  blocks.forEach(b => {
+                    const s = Math.max(b.start, cursor);
+                    if (s > cursor) segments.push({ start: cursor, end: s, label: 'Run', color: '#4d9fff' });
+                    if (b.end > cursor) { segments.push({ ...b, start: s }); cursor = Math.max(cursor, b.end); }
+                  });
+                  if (cursor < winEnd) segments.push({ start: cursor, end: winEnd, label: 'Run', color: '#4d9fff' });
+                  const totalMs = winEnd - winStart;
+
+                  return (
+                    <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>📈 Timeline เครื่องจักร — รายละเอียดของ %A</div>
+                      <div style={{ display: 'flex', height: 28, borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                        {segments.map((s, i) => (
+                          <div key={i} title={`${s.label} · ${fmtTime(new Date(s.start))}–${fmtTime(new Date(s.end))}`}
+                            style={{ width: `${(s.end - s.start) / totalMs * 100}%`, background: s.color, minWidth: 2 }} />
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--muted)', marginTop: 3 }}>
+                        <span>{fmtTime(new Date(winStart))}</span>
+                        <span>{fmtTime(new Date(winEnd))}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
+                        {[
+                          { label: 'วิ่งงาน', color: '#4d9fff' },
+                          { label: 'พักตามนโยบาย', color: '#22c55e' },
+                          { label: 'หยุดในแผน', color: '#f59e0b' },
+                          { label: 'หยุดนอกแผน', color: '#ef4444' },
+                        ].map(k => (
+                          <div key={k.label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--muted)' }}>
+                            <span style={{ width: 9, height: 9, borderRadius: 2, background: k.color, display: 'inline-block' }} />
+                            {k.label}
+                          </div>
+                        ))}
+                      </div>
+                      {dtLogs.some(d => !d.started_at) && (
+                        <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ มี Downtime บางรายการไม่ได้ระบุเวลาเริ่ม/จบ จึงไม่แสดงในไทม์ไลน์ (นับรวมในยอด Downtime ด้านบนแล้ว)</div>
+                      )}
                     </div>
                   );
                 })()}
