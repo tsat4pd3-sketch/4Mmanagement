@@ -947,6 +947,14 @@ function LiveTab({ role }) {
       return;
     }
 
+    // Downtime ที่ยังไม่ระบุระยะเวลา (เริ่มไว้แต่ยังไม่กดปิด) ต้องปิดให้ครบก่อน
+    // ไม่งั้นช่วงเวลานั้นจะไม่ถูกหักออกจาก Availability ตอนคำนวณ OEE (duration_min เป็น null = นับเป็น 0 นาที)
+    const openDT = dtLogs.filter(d => d.duration_min == null);
+    if (openDT.length > 0) {
+      toast.error(`มี Downtime ${openDT.length} รายการที่ยังไม่ระบุระยะเวลา/เวลาสิ้นสุด กรุณาปิดให้ครบก่อนปิดกะ`);
+      return;
+    }
+
     // เตือนถ้ากะนี้ไม่มีข้อมูลการผลิตเลย — เผื่อพนักงานลืม Scan เปิด Order / บันทึก Downtime ก่อนปิดกะ
     if (prodOrders.length === 0 && dtLogs.length === 0) {
       if (!window.confirm('กะนี้ยังไม่มี Prod Order และไม่มี Downtime เลย — ยืนยันจะปิดกะหรือไม่?')) return;
@@ -2984,22 +2992,18 @@ function ExportTab() {
     };
   });
 
+  // หมายเหตุ: A/P/Q/OEE ใช้ค่าที่บันทึกไว้แล้วใน production_sessions (oee_a/oee_p/oee_q/oee)
+  // ซึ่งคำนวณตอนปิดกะจาก computeOEE() — คิดรวมเวลาเปิด-ปิดกะจริง, break policy, และ CT ต่อ MAT.NO แล้ว
+  // ห้าม recalculate ที่นี่ด้วยสมมติฐานกะ 12 ชม. คงที่ ไม่งั้นจะได้เลขไม่ตรงกับหน้า Output/Dashboard/OEEAnalytics
   const buildOEE = (sessions) => {
     const rows = [];
     for (const s of sessions) {
       const dts = s.downtime_logs || [];
       const unplanDT = dts.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
       const planDT   = dts.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
-      const SHIFT_MIN = 720;
-      const loadMin  = SHIFT_MIN - planDT;
-      const opMin    = Math.max(0, loadMin - unplanDT);
-      const ctSec    = s.dr_products?.cycle_time_sec || 0;
-      const calcA    = loadMin > 0 ? +(opMin / loadMin * 100).toFixed(1) : null;
-      const calcP    = ctSec > 0 && opMin > 0 && s.actual_qty ? +((s.actual_qty * ctSec / 60) / opMin * 100).toFixed(1) : null;
       const ngQty    = (s.defect_logs || []).reduce((a, d) => a + (d.qty_ng || 0), 0) + (s.qty_ng || 0);
       const totalQty = s.actual_qty || 0;
-      const calcQ    = totalQty > 0 ? +(Math.max(0, totalQty - ngQty) / totalQty * 100).toFixed(1) : null;
-      const calcOEE  = calcA && calcP && calcQ ? +((calcA/100)*(calcP/100)*(calcQ/100)*100).toFixed(1) : null;
+      const ctSec    = s.dr_products?.cycle_time_sec || 0;
 
       // Main OEE row
       rows.push({
@@ -3008,16 +3012,14 @@ function ExportTab() {
         'กะ': s.shift === 'day' ? 'เช้า' : 'ดึก',
         'สินค้า': s.dr_products?.name || '',
         'Cycle Time (วิ)': ctSec || '',
-        'AT (นาที)': +loadMin.toFixed(1),
         'Unplanned DT (นาที)': +unplanDT.toFixed(1),
         'Planned DT (นาที)': +planDT.toFixed(1),
-        'Operating Time (นาที)': +opMin.toFixed(1),
         'ยอดผลิต': totalQty,
         'NG': ngQty,
-        'A (%)': calcA ?? (s.oee_a != null ? +Number(s.oee_a).toFixed(1) : ''),
-        'P (%)': calcP ?? (s.oee_p != null ? +Number(s.oee_p).toFixed(1) : ''),
-        'Q (%)': calcQ ?? (s.oee_q != null ? +Number(s.oee_q).toFixed(1) : ''),
-        'OEE (%)': calcOEE ?? (s.oee != null ? +Number(s.oee).toFixed(1) : ''),
+        'A (%)': s.oee_a != null ? +Number(s.oee_a).toFixed(1) : '',
+        'P (%)': s.oee_p != null ? +Number(s.oee_p).toFixed(1) : '',
+        'Q (%)': s.oee_q != null ? +Number(s.oee_q).toFixed(1) : '',
+        'OEE (%)': s.oee != null ? +Number(s.oee).toFixed(1) : '',
       });
 
       // Downtime detail rows (indented)
@@ -3028,10 +3030,8 @@ function ExportTab() {
           'กะ': '  └ DT',
           'สินค้า': d.dr_downtime_types?.name_th || 'ไม่ระบุ',
           'Cycle Time (วิ)': d.dr_downtime_types?.category === 'planned' ? 'Planned' : 'Unplanned',
-          'AT (นาที)': '',
           'Unplanned DT (นาที)': '',
           'Planned DT (นาที)': '',
-          'Operating Time (นาที)': '',
           'ยอดผลิต': '',
           'NG': '',
           'A (%)': '',

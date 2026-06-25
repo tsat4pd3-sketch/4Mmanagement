@@ -160,7 +160,7 @@ export default function Dashboard() {
     const [{ data: sessions }, { data: breakPolicies }, { data: products }] = await Promise.all([
       supabaseDR
         .from('production_sessions')
-        .select('id, line_name, shift, status, work_date, created_at, dr_products(name, target_per_shift, cycle_time_sec, process_type)')
+        .select('id, line_name, shift, status, work_date, start_time, created_at, dr_products(name, target_per_shift, cycle_time_sec, process_type)')
         .eq('work_date', todayStr),
       supabaseDR.from('break_policies').select('*').eq('is_active', true),
       supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, image_url').not('mat_no', 'is', null),
@@ -188,8 +188,13 @@ export default function Dashboard() {
       (defectLogs || []).forEach(d => { (defectBySession[d.session_id]  ||= []).push(d); });
     }
 
+    // ประมาณ OEE "สด" ของกะที่กำลังผลิตอยู่ (ยังไม่ปิดกะ) — สูตรเดียวกับ computeOEE() ใน DailyReport.jsx
+    // ใช้ work_date + start_time (เวลาเปิดกะจริงที่ตั้งไว้) เป็นจุดเริ่ม ไม่ใช่ created_at ที่อาจคลาดเคลื่อน
+    // และคิด CT แยกตาม MAT.NO ของแต่ละ order ไม่ใช่ CT เดียวของ session เพราะกะเดียวอาจผลิตหลาย MAT.NO
     const computeSessionOEE = (s) => {
-      const openedAt  = s.created_at ? new Date(s.created_at) : null;
+      const openedAt = (s.work_date && s.start_time)
+        ? new Date(`${s.work_date}T${s.start_time.slice(0,5)}:00`)
+        : (s.created_at ? new Date(s.created_at) : null);
       const closedAt  = new Date();
       if (!openedAt) return null;
       const shiftMin  = Math.round((closedAt - openedAt) / 60000);
@@ -213,13 +218,20 @@ export default function Dashboard() {
         }, 0);
       const netAvail = Math.max(0, shiftMin - plannedDT - policyBreak);
       const runMin   = Math.max(0, netAvail - unplannedDT);
-      const ctSec    = s.dr_products?.cycle_time_sec || 0;
-      const produced = (ordersBySession[s.id] || []).filter(o => o.status === 'confirmed').reduce((a, o) => a + o.qty, 0);
+      const orders   = ordersBySession[s.id] || [];
+      let producedMin = 0, knownQty = 0;
+      const produced = orders.filter(o => o.status === 'confirmed').reduce((a, o) => a + o.qty, 0);
+      orders.filter(o => o.status === 'confirmed').forEach(o => {
+        const ct = ctMap[o.mat_no] || s.dr_products?.cycle_time_sec || 0;
+        if (ct > 0) { producedMin += o.qty * ct / 60; knownQty += o.qty; }
+      });
       const ngQty    = (defectBySession[s.id] || []).reduce((a, d) => a + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
       const A = netAvail > 0 ? Math.min(1, runMin / netAvail) : 0;
-      const P = (runMin > 0 && ctSec > 0) ? Math.min(1, (produced * ctSec / 60) / runMin) : (runMin > 0 ? 1 : 0);
+      // ไม่มี Cycle Time ของ MAT.NO ที่ผลิตเลย → P คำนวณไม่ได้ ห้าม default เป็น 100%
+      const P = knownQty > 0 ? (runMin > 0 ? Math.min(1, producedMin / runMin) : 0) : null;
       const Q = produced > 0 ? Math.max(0, (produced - ngQty) / produced) : 1;
-      return { A, P, Q, oee: A * P * Q, runMin, netAvail, shiftMin };
+      const oee = P != null ? A * P * Q : null;
+      return { A, P, Q, oee, runMin, netAvail, shiftMin };
     };
 
     const ps = (sessions || []).map(s => {
@@ -1095,7 +1107,7 @@ export default function Dashboard() {
                       const tpct     = s.target > 0 ? Math.min((s.actual / s.target) * 100, 100) : 0;
                       const barColor = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
                       const oee      = s.oeeData;
-                      const oeeColor = !oee ? '#888' : oee.oee >= 0.85 ? '#22c55e' : oee.oee >= 0.65 ? '#f59e0b' : '#ef4444';
+                      const oeeColor = (!oee || oee.oee == null) ? '#888' : oee.oee >= 0.85 ? '#22c55e' : oee.oee >= 0.65 ? '#f59e0b' : '#ef4444';
                       const doneCount = s.orders.filter(o => o.status === 'confirmed').length;
 
                       return (
@@ -1110,7 +1122,7 @@ export default function Dashboard() {
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                               {s.target > 0 && <span style={{ fontSize: 10, color: tpct >= 100 ? '#22c55e' : 'var(--muted)' }}>เป้า {tpct.toFixed(0)}%</span>}
                               <span style={{ fontSize: 13, fontWeight: 800, color: barColor }}>{pct.toFixed(0)}%</span>
-                              {oee && <span style={{ fontSize: 13, fontWeight: 800, color: oeeColor }}>OEE {(oee.oee * 100).toFixed(0)}%</span>}
+                              {oee && <span style={{ fontSize: 13, fontWeight: 800, color: oeeColor }}>OEE {oee.oee != null ? `${(oee.oee * 100).toFixed(0)}%` : 'N/A'}</span>}
                             </div>
                           </div>
                           <div style={{ height: 5, borderRadius: 3, background: 'var(--border2)', overflow: 'hidden' }}>
@@ -1119,10 +1131,10 @@ export default function Dashboard() {
                           {oee && s.status === 'open' && (
                             <div style={{ display: 'flex', gap: 10, marginTop: 5 }}>
                               {[{ l: 'A', v: oee.A, t: 'Availability' }, { l: 'P', v: oee.P, t: 'Performance' }, { l: 'Q', v: oee.Q, t: 'Quality' }].map(k => {
-                                const c = k.v >= 0.85 ? '#22c55e' : k.v >= 0.65 ? '#f59e0b' : '#ef4444';
+                                const c = k.v == null ? '#888' : k.v >= 0.85 ? '#22c55e' : k.v >= 0.65 ? '#f59e0b' : '#ef4444';
                                 return (
                                   <span key={k.l} title={k.t} style={{ fontSize: 10, color: c, fontWeight: 700 }}>
-                                    {k.l} {(k.v * 100).toFixed(0)}%
+                                    {k.l} {k.v != null ? `${(k.v * 100).toFixed(0)}%` : 'N/A'}
                                   </span>
                                 );
                               })}
