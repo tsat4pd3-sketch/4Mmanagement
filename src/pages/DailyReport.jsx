@@ -1120,6 +1120,13 @@ function LiveTab({ role }) {
   const handleRejectClose = async () => {
     if (!selSession || selSession.status !== 'pending_close') return;
     if (!window.confirm('ปฏิเสธคำขอปิดกะ? กะจะกลับสู่สถานะ "กำลังผลิต"')) return;
+    // คืนสถานะ order ที่เคยถูกยกยอด/ยกเลิกไว้ตอนขอปิดกะ กลับเป็น open เพื่อให้ leader แก้ไขใหม่ได้
+    await supabaseDR.from('prod_orders').update({
+      status:                      'open',
+      carry_over_note:             null,
+      carry_over_from_session_id:  null,
+      qty_actual:                  0,
+    }).eq('session_id', selSession.id).in('status', ['carry_over', 'cancelled']);
     const { error } = await supabaseDR.from('production_sessions').update({
       status:                  'open',
       close_requested_by_name: null,
