@@ -168,7 +168,7 @@ function LiveTab({ role }) {
   const [defectTypes, setDefectTypes]   = useState([]);
   const [defectLogs, setDefectLogs]     = useState([]);
   const [showDefect, setShowDefect]     = useState(false);
-  const [defectForm, setDefectForm]     = useState({ id: null, defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+  const [defectForm, setDefectForm]     = useState({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
   const [savingDefect, setSavingDefect] = useState(false);
 
   // SV review-before-approve modal for pending_close requests
@@ -312,6 +312,9 @@ function LiveTab({ role }) {
         const deduped = (carried || []).filter(o => {
           if (currentProdNos.has(o.prod_no)) return false;
           if (seen.has(o.prod_no)) return false;
+          // ออเดอร์ที่ผลิตครบเป้าแล้ว (qty_actual >= qty) ไม่ถือเป็นยอดค้าง — ถ้ายังยกมาจะกลายเป็น
+          // "ผีค้าง 1 ชิ้น" ไปเรื่อยๆ ทุกกะเพราะโค้ดเก่าบังคับขั้นต่ำ 1 ชิ้นแม้ผลิตครบแล้ว
+          if ((o.qty_actual || 0) >= o.qty) return false;
           seen.add(o.prod_no);
           return true;
         });
@@ -325,7 +328,7 @@ function LiveTab({ role }) {
   const loadDefectLogs = useCallback(async (sessionId) => {
     if (!sessionId) return;
     const { data } = await supabaseDR.from('defect_logs')
-      .select('*, dr_defect_types(name_th, color)')
+      .select('*, dr_defect_types(name_th, color), prod_orders(prod_no, mat_no, part_name)')
       .eq('session_id', sessionId)
       .order('logged_at', { ascending: false });
     setDefectLogs(data || []);
@@ -711,13 +714,22 @@ function LiveTab({ role }) {
   // ── บันทึกงานเสีย handler ──────────────────────────────────────
   const handleAddDefectLog = async () => {
     if (!selSession || !defectForm.defect_type_id) { toast.error('เลือกประเภทงานเสีย'); return; }
+    // ไลน์เดียวอาจผลิตได้หลาย MAT.NO พร้อมกัน — ถ้าไลน์นี้มี MAT.NO ที่ผลิตอยู่ ต้องเลือกก่อนทุกครั้ง
+    // เพื่อไม่ให้งานเสียถูกลงรวมเป็นของไลน์ทั้งไลน์ทั้งที่เสียแค่ MAT.NO เดียว
+    const matNoOptions = Array.from(new Set(prodOrders.filter(o => o.status !== 'cancelled').map(o => o.mat_no))).filter(Boolean);
+    if (matNoOptions.length && !defectForm.mat_no) { toast.error('เลือก MAT.NO ที่เสียก่อน'); return; }
     const ng      = parseInt(defectForm.qty_ng)      || 0;
     const suspect = parseInt(defectForm.qty_suspect) || 0;
     const repair  = parseInt(defectForm.qty_repair)  || 0;
     if (ng + suspect + repair === 0) { toast.error('กรอกจำนวนงานเสียอย่างน้อย 1 ช่อง'); return; }
     setSavingDefect(true);
     const { data: { user } } = await supabase.auth.getUser();
+    const matchedOrder = defectForm.mat_no
+      ? (prodOrders.find(o => o.mat_no === defectForm.mat_no && o.status === 'open')
+         || prodOrders.filter(o => o.mat_no === defectForm.mat_no).sort((a, b) => new Date(b.opened_at) - new Date(a.opened_at))[0])
+      : null;
     const payload = {
+      prod_order_id:    matchedOrder?.id || null,
       defect_type_id:   defectForm.defect_type_id,
       qty_ng:           ng,
       qty_suspect:      suspect,
@@ -737,7 +749,7 @@ function LiveTab({ role }) {
     const label = [ng ? `NG ${ng}` : '', suspect ? `สงสัย ${suspect}` : '', repair ? `ซ่อม ${repair}` : ''].filter(Boolean).join(' · ');
     toast.success(defectForm.id ? `แก้ไขงานเสีย: ${label} ✓` : `บันทึกงานเสีย: ${label} ✓`);
     setShowDefect(false);
-    setDefectForm({ id: null, defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+    setDefectForm({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
     loadDefectLogs(selSession.id);
   };
 
@@ -779,7 +791,13 @@ function LiveTab({ role }) {
           .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id);
         continue;
       }
-      const remainQty = Math.max(1, o.qty - (o.qty_actual || 0));
+      const remainQty = o.qty - (o.qty_actual || 0);
+      if (remainQty <= 0) {
+        // ผลิตครบเป้าแล้ว ไม่ต้องยกยอด — แค่ปิดต้นทางไม่ให้ขึ้นเตือนค้างอีก
+        await supabaseDR.from('prod_orders').update({ status: 'imported' })
+          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id);
+        continue;
+      }
       const { error } = await supabaseDR.from('prod_orders').insert({
         session_id:   selSession.id,
         prod_no:      o.prod_no,
@@ -1318,7 +1336,11 @@ function LiveTab({ role }) {
                       style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       📤 Scan ปิด / Confirm
                     </button>
-                    <button onClick={() => { setShowDefect(true); setDefectForm({ id: null, prod_order_id: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' }); }}
+                    <button onClick={() => {
+                      const activeMatNos = Array.from(new Set(prodOrders.filter(o => o.status === 'open').map(o => o.mat_no))).filter(Boolean);
+                      setShowDefect(true);
+                      setDefectForm({ id: null, mat_no: activeMatNos.length === 1 ? activeMatNos[0] : '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+                    }}
                       style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       🔴 บันทึกงานเสีย
                     </button>
@@ -1453,6 +1475,11 @@ function LiveTab({ role }) {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{d.dr_defect_types?.name_th || '—'}</span>
+                          {d.prod_orders?.mat_no && (
+                            <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9', fontWeight: 700, fontFamily: 'monospace' }}>
+                              {d.prod_orders.mat_no}
+                            </span>
+                          )}
                           {d.prod_orders?.prod_no && (
                             <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(74,222,128,0.1)', color: '#22c55e', fontWeight: 700, fontFamily: 'monospace' }}>
                               {d.prod_orders.prod_no}
@@ -1470,7 +1497,7 @@ function LiveTab({ role }) {
                       </div>
                       {canManage && (
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button onClick={() => { setDefectForm({ id: d.id, defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '' }); setShowDefect(true); }}
+                          <button onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '' }); setShowDefect(true); }}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✎</button>
                           <button onClick={() => handleDeleteDefectLog(d.id)}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
@@ -1749,6 +1776,7 @@ function LiveTab({ role }) {
                   if (!matNos.length) return null;
                   const rows = matNos.map(matNo => {
                     const orders = prodOrders.filter(o => o.mat_no === matNo);
+                    const target = orders.reduce((s, o) => s + o.qty, 0);
                     const confirmedQty = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
                     const openQty = orders.filter(o => o.status === 'open').reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || 0), 0);
                     const orderIds = new Set(orders.map(o => o.id));
@@ -1758,34 +1786,61 @@ function LiveTab({ role }) {
                     const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
                     const actualStart = openedTimes.length ? new Date(Math.min(...openedTimes)) : null;
                     const actualEnd   = closedTimes.length ? new Date(Math.max(...closedTimes)) : null;
-                    return { matNo, partName: orders[0]?.part_name, qty: confirmedQty + openQty, ng, dt, actualStart, actualEnd };
+                    // ควรผลิตได้ "ถ้าวิ่งเต็มเวลา" จาก opened_at ถึง confirmed_at จริง (ไม่หัก downtime) — ใช้เทียบ %P
+                    // ไม่ใช่เวลากะทั้งหมด เพราะพาร์ทนี้อาจเริ่ม/เลิกไม่ตรงกับเวลากะ (เช่น OT บางส่วนของไลน์)
+                    const ctSec = ctForMatNo(matNo);
+                    const winEndMs = actualEnd ? actualEnd.getTime() : (closeEndTime && selSession?.work_date ? (() => {
+                      let e = new Date(`${selSession.work_date}T${closeEndTime.slice(0,5)}:00`).getTime();
+                      if (actualStart && e < actualStart.getTime()) e += 86400000;
+                      return e;
+                    })() : null);
+                    const winMin = (actualStart && winEndMs) ? Math.max(0, (winEndMs - actualStart.getTime()) / 60000) : null;
+                    const achievable = (ctSec > 0 && winMin != null) ? Math.floor(winMin * 60 / ctSec) : null;
+                    return { matNo, partName: orders[0]?.part_name, target, qty: confirmedQty + openQty, ng, dt, actualStart, actualEnd, achievable };
                   }).sort((a, b) => b.qty - a.qty);
                   const dtNoMat = dtLogs.filter(d => !d.mat_no).reduce((s, d) => s + (d.duration_min || 0), 0);
                   return (
                     <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>📦 สรุปแยกตามชิ้นงาน ({rows.length} MAT.NO)</div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>📦 สรุปแยกตามชิ้นงาน ({rows.length} MAT.NO) — เป้าหมาย vs ควรได้ (เต็มเวลา) vs ผลิตได้จริง</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         {rows.map(r => (
-                          <div key={r.matNo} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--bg)', borderRadius: 8 }}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{r.matNo}</div>
-                              {r.partName && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.partName}</div>}
-                              {r.actualStart && (
-                                <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 1 }}>🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}</div>
-                              )}
+                          <div key={r.matNo} style={{ padding: '8px 10px', background: 'var(--bg)', borderRadius: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{r.matNo}</div>
+                                {r.partName && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.partName}</div>}
+                                {r.actualStart && (
+                                  <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 1 }}>🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}</div>
+                                )}
+                              </div>
+                              <div style={{ textAlign: 'center', minWidth: 40 }}>
+                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>NG</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: r.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{r.ng}</div>
+                              </div>
+                              <div style={{ textAlign: 'center', minWidth: 60 }}>
+                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>Downtime</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: r.dt > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtMin(Math.round(r.dt))}</div>
+                              </div>
                             </div>
-                            <div style={{ textAlign: 'center', minWidth: 50 }}>
-                              <div style={{ fontSize: 9, color: 'var(--muted)' }}>ผลิตได้</div>
-                              <div style={{ fontSize: 13, fontWeight: 800, color: '#22c55e' }}>{r.qty}</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
+                              <div style={{ textAlign: 'center', padding: '4px 0', background: 'var(--bg2)', borderRadius: 6 }}>
+                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>เป้าหมาย</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{r.target}</div>
+                              </div>
+                              <div style={{ textAlign: 'center', padding: '4px 0', background: 'rgba(168,85,247,0.1)', borderRadius: 6 }}>
+                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>ควรได้ (เต็มเวลา)</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa' }}>{r.achievable != null ? r.achievable : '—'}</div>
+                              </div>
+                              <div style={{ textAlign: 'center', padding: '4px 0', background: 'rgba(34,197,94,0.1)', borderRadius: 6 }}>
+                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>ผลิตได้จริง</div>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: '#22c55e' }}>{r.qty}</div>
+                              </div>
                             </div>
-                            <div style={{ textAlign: 'center', minWidth: 40 }}>
-                              <div style={{ fontSize: 9, color: 'var(--muted)' }}>NG</div>
-                              <div style={{ fontSize: 13, fontWeight: 800, color: r.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{r.ng}</div>
-                            </div>
-                            <div style={{ textAlign: 'center', minWidth: 60 }}>
-                              <div style={{ fontSize: 9, color: 'var(--muted)' }}>Downtime</div>
-                              <div style={{ fontSize: 13, fontWeight: 800, color: r.dt > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtMin(Math.round(r.dt))}</div>
-                            </div>
+                            {r.achievable > 0 && (
+                              <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4, textAlign: 'right' }}>
+                                %P พาร์ทนี้ ≈ {Math.min(100, Math.round(r.qty / r.achievable * 100))}%
+                              </div>
+                            )}
                           </div>
                         ))}
                         {dtNoMat > 0 && (
@@ -1794,6 +1849,84 @@ function LiveTab({ role }) {
                           </div>
                         )}
                       </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Timeline: machine run / policy break / planned-unplanned downtime — รายละเอียดของ %A */}
+                {(() => {
+                  if (!selSession?.work_date) return null;
+                  const startTimeStr = closeStartTime || selSession.start_time;
+                  if (!startTimeStr) return null;
+                  const winStart = new Date(`${selSession.work_date}T${startTimeStr.slice(0,5)}:00`).getTime();
+                  const endTimeStr = closeEndTime || nowTime();
+                  let winEnd = new Date(`${selSession.work_date}T${endTimeStr.slice(0,5)}:00`).getTime();
+                  if (winEnd <= winStart) winEnd += 86400000; // กะดึกข้ามวัน
+                  if (winEnd <= winStart) return null;
+
+                  const sessionShift = selSession.shift || 'day';
+                  const processType = sessionProcessType();
+                  const blocks = [];
+                  breakPolicies
+                    .filter(p => (p.shift === 'both' || p.shift === sessionShift) && (p.process_type === 'common' || p.process_type === processType))
+                    .forEach(p => {
+                      const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
+                      let pStart = new Date(`${selSession.work_date}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`).getTime();
+                      let pEnd = pStart + (p.duration_min || 0) * 60000;
+                      if (pEnd < winStart) { pStart += 86400000; pEnd += 86400000; }
+                      const s = Math.max(pStart, winStart), e = Math.min(pEnd, winEnd);
+                      if (e > s) blocks.push({ start: s, end: e, label: p.label || p.name || 'พักตามนโยบาย', color: '#22c55e' });
+                    });
+                  dtLogs.forEach(d => {
+                    if (!d.started_at) return;
+                    const s0 = new Date(d.started_at).getTime();
+                    const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + (d.duration_min || 0) * 60000;
+                    const s = Math.max(s0, winStart), e = Math.min(e0, winEnd);
+                    if (e > s) {
+                      const planned = d.dr_downtime_types?.category === 'planned';
+                      blocks.push({ start: s, end: e, label: d.dr_downtime_types?.name_th || 'Downtime', color: planned ? '#f59e0b' : '#ef4444' });
+                    }
+                  });
+                  blocks.sort((a, b) => a.start - b.start);
+                  const segments = [];
+                  let cursor = winStart;
+                  blocks.forEach(b => {
+                    const s = Math.max(b.start, cursor);
+                    if (s > cursor) segments.push({ start: cursor, end: s, label: 'Run', color: '#4d9fff' });
+                    if (b.end > cursor) { segments.push({ ...b, start: s }); cursor = Math.max(cursor, b.end); }
+                  });
+                  if (cursor < winEnd) segments.push({ start: cursor, end: winEnd, label: 'Run', color: '#4d9fff' });
+                  const totalMs = winEnd - winStart;
+
+                  return (
+                    <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>📈 Timeline เครื่องจักร — รายละเอียดของ %A</div>
+                      <div style={{ display: 'flex', height: 28, borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
+                        {segments.map((s, i) => (
+                          <div key={i} title={`${s.label} · ${fmtTime(new Date(s.start))}–${fmtTime(new Date(s.end))}`}
+                            style={{ width: `${(s.end - s.start) / totalMs * 100}%`, background: s.color, minWidth: 2 }} />
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--muted)', marginTop: 3 }}>
+                        <span>{fmtTime(new Date(winStart))}</span>
+                        <span>{fmtTime(new Date(winEnd))}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
+                        {[
+                          { label: 'วิ่งงาน', color: '#4d9fff' },
+                          { label: 'พักตามนโยบาย', color: '#22c55e' },
+                          { label: 'หยุดในแผน', color: '#f59e0b' },
+                          { label: 'หยุดนอกแผน', color: '#ef4444' },
+                        ].map(k => (
+                          <div key={k.label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--muted)' }}>
+                            <span style={{ width: 9, height: 9, borderRadius: 2, background: k.color, display: 'inline-block' }} />
+                            {k.label}
+                          </div>
+                        ))}
+                      </div>
+                      {dtLogs.some(d => !d.started_at) && (
+                        <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ มี Downtime บางรายการไม่ได้ระบุเวลาเริ่ม/จบ จึงไม่แสดงในไทม์ไลน์ (นับรวมในยอด Downtime ด้านบนแล้ว)</div>
+                      )}
                     </div>
                   );
                 })()}
@@ -2172,12 +2305,28 @@ function LiveTab({ role }) {
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {(() => {
+                  const matNoOptions = Array.from(new Set(prodOrders.filter(o => o.status !== 'cancelled').map(o => o.mat_no))).filter(Boolean);
+                  if (!matNoOptions.length) return null;
+                  return (
+                    <Field label="MAT.NO ที่เสีย *">
+                      <select autoFocus value={defectForm.mat_no} onChange={e => setDefectForm(f => ({ ...f, mat_no: e.target.value }))} style={inputStyle}>
+                        <option value="">เลือก MAT.NO...</option>
+                        {matNoOptions.map(mn => {
+                          const o = prodOrders.find(o => o.mat_no === mn);
+                          return <option key={mn} value={mn}>{mn}{o?.part_name ? ` · ${o.part_name}` : ''}</option>;
+                        })}
+                      </select>
+                    </Field>
+                  );
+                })()}
+
                 <Field label="ประเภทงานเสีย *">
                   {(() => {
                     const pt = sessionProcessType();
                     const filtered = defectTypes.filter(t => !t.process_type || t.process_type === pt || t.process_type === 'common');
                     return (
-                      <select autoFocus value={defectForm.defect_type_id} onChange={e => setDefectForm(f => ({ ...f, defect_type_id: e.target.value }))} style={inputStyle}>
+                      <select value={defectForm.defect_type_id} onChange={e => setDefectForm(f => ({ ...f, defect_type_id: e.target.value }))} style={inputStyle}>
                         <option value="">เลือกประเภท...</option>
                         {filtered.map(t => (
                           <option key={t.id} value={t.id}>{t.name_th}</option>
@@ -2412,6 +2561,7 @@ function HistoryTab({ role }) {
   const [defectMap, setDefectMap] = useState({});
   const [orderMap, setOrderMap]   = useState({});
   const [deleting, setDeleting]   = useState(null);
+  const [ordersMinimized, setOrdersMinimized] = useState({});
 
   const isAdmin = role === 'admin';
 
@@ -2557,7 +2707,11 @@ function HistoryTab({ role }) {
                     if (!matNos.length) return null;
                     const rows = matNos.map(matNo => {
                       const matOrders = orders.filter(o => o.mat_no === matNo);
-                      const qty = matOrders.filter(o => o.status === 'confirmed' || o.status === 'carry_over').reduce((sum, o) => sum + (o.qty_actual ?? o.qty ?? 0), 0);
+                      const qty = matOrders.reduce((sum, o) => {
+                        if (o.status === 'confirmed') return sum + (o.qty || 0);
+                        if (o.status === 'carry_over') return sum + (o.qty_actual || 0);
+                        return sum;
+                      }, 0);
                       const orderIds = new Set(matOrders.map(o => o.id));
                       const ng = defects.filter(d => orderIds.has(d.prod_order_id)).reduce((sum, d) => sum + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
                       const dt = dts.filter(d => d.mat_no === matNo).reduce((sum, d) => sum + (d.duration_min || 0), 0);
@@ -2583,9 +2737,17 @@ function HistoryTab({ role }) {
                   })()}
 
                   {/* Prod orders */}
-                  {orders.length > 0 && (
+                  {orders.length > 0 && (() => {
+                    const minimized = ordersMinimized[s.id] ?? true;
+                    return (
                     <div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>📋 Prod Orders ({orders.length} ใบ)</div>
+                      <div
+                        onClick={() => setOrdersMinimized(m => ({ ...m, [s.id]: !minimized }))}
+                        style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, userSelect: 'none' }}>
+                        <span style={{ fontSize: 10 }}>{minimized ? '▶' : '▼'}</span>
+                        📋 Prod Orders ({orders.length} ใบ)
+                      </div>
+                      {!minimized && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {orders.map(o => {
                           const statusColor = o.status === 'confirmed' ? '#22c55e' : o.status === 'carry_over' ? '#a78bfa' : o.status === 'cancelled' ? '#666' : '#f59e0b';
@@ -2602,8 +2764,10 @@ function HistoryTab({ role }) {
                           );
                         })}
                       </div>
+                      )}
                     </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Defect logs */}
                   {defects.length > 0 && (
