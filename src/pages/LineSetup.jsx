@@ -62,7 +62,7 @@ export default function LineSetup() {
   // จุดเครื่องจักรบนผัง (ผูกกับตาราง machines ของ Daily Report โปรเจกต์ ด้วย machine_no)
   const [machinePoints, setMachinePoints] = useState([]);
   const [machineTempPos, setMachineTempPos] = useState(null);
-  const [machineForm, setMachineForm] = useState({ id: null, machine_no: '' });
+  const [machineForm, setMachineForm] = useState({ id: null, machine_no: '', redundancy_group: '' });
   const [drMachines, setDrMachines] = useState([]);
 
   // เส้นทางการผลิตแบบต่อเนื่อง (sequential flow) ระหว่างจุดเครื่องจักร — ใช้บอกว่า
@@ -342,7 +342,7 @@ export default function LineSetup() {
       }
       setCollisionWarn(null);
       setMachineTempPos(pos);
-      setMachineForm({ id: null, machine_no: '' });
+      setMachineForm({ id: null, machine_no: '', redundancy_group: '' });
       return;
     }
 
@@ -474,7 +474,7 @@ export default function LineSetup() {
   /* ── จุดเครื่องจักร ── */
   const editMachinePoint = (p) => {
     setMachineTempPos(null);
-    setMachineForm({ id: p.id, machine_no: p.machine_no });
+    setMachineForm({ id: p.id, machine_no: p.machine_no, redundancy_group: p.redundancy_group || '' });
   };
 
   const handleSaveMachine = async () => {
@@ -485,6 +485,7 @@ export default function LineSetup() {
       machine_no:  machineForm.machine_no,
       pos_top:     machineTempPos ? machineTempPos.top : existing?.pos_top,
       pos_left:    machineTempPos ? machineTempPos.left : existing?.pos_left,
+      redundancy_group: machineForm.redundancy_group.trim() || null,
     };
     const { error } = machineForm.id
       ? await supabase.from('machine_points').update(payload).eq('id', machineForm.id)
@@ -492,7 +493,7 @@ export default function LineSetup() {
     if (error) return alert('Error: ' + error.message);
     fetchLineData();
     setMachineTempPos(null);
-    setMachineForm({ id: null, machine_no: '' });
+    setMachineForm({ id: null, machine_no: '', redundancy_group: '' });
   };
 
   const deleteMachinePoint = async (id) => {
@@ -711,9 +712,9 @@ export default function LineSetup() {
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
                       width: POINT_W, height: POINT_H,
-                      border: isConnectSource ? '2px solid #f97316' : isSelected ? '2px solid var(--green)' : '2px solid rgba(255,255,255,0.75)',
+                      border: isConnectSource ? '2px solid #f97316' : isSelected ? '2px solid var(--green)' : p.redundancy_group ? '2px dashed #a855f7' : '2px solid rgba(255,255,255,0.75)',
                       borderRadius: 7,
-                      backgroundColor: isConnectSource ? 'rgba(249,115,22,0.22)' : isSelected ? 'rgba(34,197,94,0.18)' : 'rgba(0,0,0,0.82)',
+                      backgroundColor: isConnectSource ? 'rgba(249,115,22,0.22)' : isSelected ? 'rgba(34,197,94,0.18)' : p.redundancy_group ? 'rgba(168,85,247,0.15)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
                       boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isConnectSource ? '0 0 8px rgba(249,115,22,0.7)' : isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
                       cursor: isDragging ? 'grabbing' : connectMode ? 'pointer' : 'grab', display: 'flex', flexDirection: 'column',
@@ -727,6 +728,11 @@ export default function LineSetup() {
                     <div style={{ fontSize: 7, color: '#a3a3a3', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {mc?.machine_name || ''}
                     </div>
+                    {p.redundancy_group && (
+                      <div style={{ fontSize: 6, color: '#d8b4fe', fontWeight: 700, textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        🔀 {p.redundancy_group}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1093,11 +1099,25 @@ export default function LineSetup() {
                   {drMachines.length === 0 && (
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>ไม่พบเครื่องจักรของไลน์นี้ใน Daily Report</div>
                   )}
+                  <div>
+                    <label style={{ ...labelSt, display: 'block', marginBottom: 4 }}>กลุ่มเครื่องคู่ขนาน (Redundancy Group) — ไม่บังคับ</label>
+                    <input type="text" list="redundancy-group-options" value={machineForm.redundancy_group}
+                      onChange={e => setMachineForm({ ...machineForm, redundancy_group: e.target.value })}
+                      placeholder="เช่น Laser Group" />
+                    <datalist id="redundancy-group-options">
+                      {[...new Set(machinePoints.map(p => p.redundancy_group).filter(Boolean))].map(g => (
+                        <option key={g} value={g} />
+                      ))}
+                    </datalist>
+                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>
+                      ใส่ชื่อกลุ่มเดียวกันให้เครื่องที่ทำงานคู่ขนานแบบ balance cycle time (เช่น Laser1/2/3) — ถ้าตัวใดหยุด ระบบจะลดกำลังผลิตตามสัดส่วน (1/จำนวนเครื่องในกลุ่ม) ไม่ใช่หยุดทั้งไลน์
+                    </div>
+                  </div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                     <button onClick={handleSaveMachine} style={{ flex: 1, padding: '9px', background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700 }}>
                       {machineForm.id ? 'บันทึก' : 'เพิ่ม'}
                     </button>
-                    <button onClick={() => { setMachineTempPos(null); setMachineForm({ id: null, machine_no: '' }); }}
+                    <button onClick={() => { setMachineTempPos(null); setMachineForm({ id: null, machine_no: '', redundancy_group: '' }); }}
                       style={{ padding: '9px 14px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 7 }}>
                       ยกเลิก
                     </button>
@@ -1119,6 +1139,9 @@ export default function LineSetup() {
                       <div onClick={() => editMachinePoint(p)} style={{ cursor: 'pointer', flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{p.machine_no}</div>
                         <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{mc?.machine_name || ''}</div>
+                        {p.redundancy_group && (
+                          <div style={{ fontSize: 10, color: '#a855f7', fontWeight: 700, marginTop: 2 }}>🔀 {p.redundancy_group}</div>
+                        )}
                       </div>
                       <button onClick={() => deleteMachinePoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>
                     </div>
