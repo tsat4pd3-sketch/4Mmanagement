@@ -895,9 +895,11 @@ export default function Dashboard() {
                       return sorted.map(o => {
                         const roundIdx = roundIndexOf(o.orderStartMs);
                         if (curRoundIdx === null || roundIdx !== curRoundIdx) {
-                          // ข้ามไปรอบใหม่ — เริ่มคิวใหม่จากต้นรอบเสมอ ไม่ลากดีเลย์ของรอบก่อนหน้ามาทับ
+                          // ข้ามไปรอบใหม่ — รีเซ็ตคิวไปต้นรอบ "เฉพาะตอนที่ใบก่อนหน้าปิดไปแล้วจริง ๆ ก่อนรอบนี้"
+                          // ถ้าใบก่อนหน้ายังครองไลน์อยู่ข้ามเข้ามาในรอบนี้ (queueEndMs ล้ำเข้ามา) ห้ามดันกลับไปต้นรอบ
+                          // เด็ดขาด เพราะ 1 ไลน์ผลิตได้ทีละใบเท่านั้น แถบจะซ้อนทับกันไม่ได้ไม่ว่ากรณีใด
                           curRoundIdx = roundIdx;
-                          queueEndMs = roundStartOf(roundIdx);
+                          queueEndMs = Math.max(queueEndMs, roundStartOf(roundIdx));
                         }
                         const durationMs = Math.max(o.orderEndMs - o.orderStartMs, 0);
                         let startMs = Math.max(o.orderStartMs, queueEndMs);
