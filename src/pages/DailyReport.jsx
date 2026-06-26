@@ -195,6 +195,9 @@ function LiveTab({ role }) {
   const canRequestClose  = ['admin', 'manager', 'supervisor', 'leader'].includes(role); // request or direct-close
   const canApproveClose  = ['admin', 'manager', 'supervisor'].includes(role);           // approve pending_close
   const canScan          = ['admin', 'manager', 'supervisor', 'leader'].includes(role);
+  // leader แก้ไข/ลบ order, defect, downtime ได้เฉพาะตอนกะยังเปิดอยู่ (ยังไม่ส่งขออนุมัติปิดกะ) —
+  // ถ้าส่งขอปิดกะแล้ว (pending_close) ต้องรอ SV อนุมัติ/ปฏิเสธก่อน ถ้าโดนปฏิเสธ สถานะจะกลับเป็น open ให้แก้ไขได้อีก
+  const canEditRecords   = canManage || (role === 'leader' && selSession?.status === 'open');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1577,7 +1580,7 @@ function LiveTab({ role }) {
                         <div style={{ fontSize: 20, fontWeight: 900, color: statusColor, lineHeight: 1 }}>{o.qty}</div>
                         <div style={{ fontSize: 9, color: 'var(--muted)' }}>ชิ้น</div>
                       </div>
-                      {canManage && !confirmed && !carryOver && (
+                      {canEditRecords && !confirmed && !carryOver && (
                         <button onClick={() => handleDeleteProdOrder(o.id)}
                           style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 2px' }}>✕</button>
                       )}
@@ -1651,7 +1654,7 @@ function LiveTab({ role }) {
                           {d.reported_by_name && ` · ${d.reported_by_name}`}
                         </div>
                       </div>
-                      {canManage && (
+                      {canEditRecords && (
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '' }); setShowDefect(true); }}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✎</button>
@@ -1697,7 +1700,7 @@ function LiveTab({ role }) {
                       <div style={{ fontSize: 15, fontWeight: 800, color: d.dr_downtime_types?.color || '#aaa', minWidth: 64, textAlign: 'right' }}>
                         {fmtMin(d.duration_min)}
                       </div>
-                      {canManage && (
+                      {canEditRecords && (
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button onClick={() => {
                             const sAt = d.started_at ? new Date(d.started_at) : null;
