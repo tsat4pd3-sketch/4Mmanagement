@@ -1949,7 +1949,7 @@ function LiveTab({ role }) {
                       let pEnd = pStart + (p.duration_min || 0) * 60000;
                       if (pEnd < winStart) { pStart += 86400000; pEnd += 86400000; }
                       const s = Math.max(pStart, winStart), e = Math.min(pEnd, winEnd);
-                      if (e > s) blocks.push({ start: s, end: e, label: p.label || p.name || 'พักตามนโยบาย', color: '#22c55e' });
+                      if (e > s) blocks.push({ start: s, end: e, label: p.label || p.name || 'พักตามนโยบาย', color: '#4d9fff' });
                     });
                   dtLogs.forEach(d => {
                     if (!d.started_at) return;
@@ -1966,10 +1966,10 @@ function LiveTab({ role }) {
                   let cursor = winStart;
                   blocks.forEach(b => {
                     const s = Math.max(b.start, cursor);
-                    if (s > cursor) segments.push({ start: cursor, end: s, label: 'Run', color: '#4d9fff' });
+                    if (s > cursor) segments.push({ start: cursor, end: s, label: 'Run', color: '#22c55e' });
                     if (b.end > cursor) { segments.push({ ...b, start: s }); cursor = Math.max(cursor, b.end); }
                   });
-                  if (cursor < winEnd) segments.push({ start: cursor, end: winEnd, label: 'Run', color: '#4d9fff' });
+                  if (cursor < winEnd) segments.push({ start: cursor, end: winEnd, label: 'Run', color: '#22c55e' });
                   const totalMs = winEnd - winStart;
 
                   return (
@@ -1987,8 +1987,8 @@ function LiveTab({ role }) {
                       </div>
                       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
                         {[
-                          { label: 'วิ่งงาน', color: '#4d9fff' },
-                          { label: 'พักตามนโยบาย', color: '#22c55e' },
+                          { label: 'วิ่งงาน', color: '#22c55e' },
+                          { label: 'พักตามนโยบาย', color: '#4d9fff' },
                           { label: 'หยุดในแผน', color: '#f59e0b' },
                           { label: 'หยุดนอกแผน', color: '#ef4444' },
                         ].map(k => (
@@ -2233,7 +2233,7 @@ function LiveTab({ role }) {
                       let pEnd = pStart + (p.duration_min || 0) * 60000;
                       if (pEnd < winStart) { pStart += 86400000; pEnd += 86400000; }
                       const s = Math.max(pStart, winStart), e = Math.min(pEnd, winEnd);
-                      if (e > s) blocks.push({ start: s, end: e, label: p.label || p.name || 'พักตามนโยบาย', color: '#22c55e' });
+                      if (e > s) blocks.push({ start: s, end: e, label: p.label || p.name || 'พักตามนโยบาย', color: '#4d9fff' });
                     });
                   dtLogs.forEach(d => {
                     if (!d.started_at) return;
@@ -2250,10 +2250,10 @@ function LiveTab({ role }) {
                   let cursor = winStart;
                   blocks.forEach(b => {
                     const s = Math.max(b.start, cursor);
-                    if (s > cursor) segments.push({ start: cursor, end: s, label: 'Run', color: '#4d9fff' });
+                    if (s > cursor) segments.push({ start: cursor, end: s, label: 'Run', color: '#22c55e' });
                     if (b.end > cursor) { segments.push({ ...b, start: s }); cursor = Math.max(cursor, b.end); }
                   });
-                  if (cursor < winEnd) segments.push({ start: cursor, end: winEnd, label: 'Run', color: '#4d9fff' });
+                  if (cursor < winEnd) segments.push({ start: cursor, end: winEnd, label: 'Run', color: '#22c55e' });
                   const totalMs = winEnd - winStart;
 
                   return (
@@ -2271,8 +2271,8 @@ function LiveTab({ role }) {
                       </div>
                       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
                         {[
-                          { label: 'วิ่งงาน', color: '#4d9fff' },
-                          { label: 'พักตามนโยบาย', color: '#22c55e' },
+                          { label: 'วิ่งงาน', color: '#22c55e' },
+                          { label: 'พักตามนโยบาย', color: '#4d9fff' },
                           { label: 'หยุดในแผน', color: '#f59e0b' },
                           { label: 'หยุดนอกแผน', color: '#ef4444' },
                         ].map(k => (
