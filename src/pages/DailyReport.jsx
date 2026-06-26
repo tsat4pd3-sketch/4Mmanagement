@@ -649,10 +649,11 @@ function LiveTab({ role }) {
     return SHIFT_MIN - breakMin;
   };
 
-  // คำนวณเวลาที่ commit ไปแล้วในกะนี้ (นาที) จากทุก order ที่ยังไม่ cancelled — ใช้ CT ของแต่ละ MAT.NO
+  // คำนวณเวลาที่ commit ไปแล้วในกะนี้ (นาที) จากทุก order ที่ยังไม่ cancelled/carry_over — ใช้ CT ของแต่ละ MAT.NO
+  // carry_over คือ order ที่ตัดสินใจส่งไปกะถัดไปแล้ว ไม่ควรนับเป็นภาระของกะนี้อีก ไม่งั้นจะค้างกินความจุไปตลอด
   const calcCommittedMin = () => {
     return prodOrders
-      .filter(o => !['cancelled', 'imported'].includes(o.status))
+      .filter(o => !['cancelled', 'imported', 'carry_over'].includes(o.status))
       .reduce((sum, o) => sum + (o.qty || 0) * ctForMatNo(o.mat_no) / 60, 0);
   };
 
