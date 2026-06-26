@@ -1559,11 +1559,6 @@ function LiveTab({ role }) {
                   const isCarried   = !!o.carry_over_from_session_id;
                   const statusColor = confirmed ? '#22c55e' : carryOver ? '#a78bfa' : cancelled ? '#666' : '#f59e0b';
                   const statusLabel = confirmed ? '✓ ปิดแล้ว' : carryOver ? '➡ ยกยอด' : cancelled ? '✕ ยกเลิก' : '● ผลิต';
-                  const orderDefects = defectLogs.filter(d => d.prod_order_id === o.id);
-                  const dNg  = orderDefects.reduce((s,d) => s+(d.qty_ng||0), 0);
-                  const dSus = orderDefects.reduce((s,d) => s+(d.qty_suspect||0), 0);
-                  const dRep = orderDefects.reduce((s,d) => s+(d.qty_repair||0), 0);
-                  const hasQuality  = dNg > 0 || dSus > 0 || dRep > 0;
                   return (
                     <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'var(--bg2)', borderRadius: 8,
                       border: `1px solid ${statusColor}40`, borderLeft: `4px solid ${statusColor}`,
@@ -1588,14 +1583,6 @@ function LiveTab({ role }) {
                           เปิด {fmtTime(new Date(o.opened_at))} {o.opened_by && `· ${o.opened_by}`}
                           {confirmed && o.confirmed_at && ` · ปิด ${fmtTime(new Date(o.confirmed_at))} · ${o.confirmed_by}`}
                         </div>
-                        {hasQuality && (
-                          <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
-                            {dNg  > 0 && <span style={{ fontSize: 10, color: '#ef4444', fontWeight: 700 }}>🔴 NG: {dNg}</span>}
-                            {dSus > 0 && <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700 }}>🟡 สงสัย: {dSus}</span>}
-                            {dRep > 0 && <span style={{ fontSize: 10, color: '#a78bfa', fontWeight: 700 }}>🔧 ซ่อม: {dRep}</span>}
-                            <span style={{ fontSize: 10, color: 'var(--muted)' }}>({orderDefects.length} รายการ)</span>
-                          </div>
-                        )}
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <div style={{ fontSize: 20, fontWeight: 900, color: statusColor, lineHeight: 1 }}>{o.qty}</div>
