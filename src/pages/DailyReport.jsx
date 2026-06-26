@@ -189,6 +189,8 @@ function LiveTab({ role }) {
   const [carryOverDecisions, setCarryOverDecisions] = useState({});
   // qty_actual produced this shift for each open order (before carry-over)
   const [carryQtyActual, setCarryQtyActual] = useState({});
+  // เวลาหยุดผลิตจริงต่อออเดอร์ (ใช้แทนเวลาปิดกะรวมตอนคำนวณสรุปแยกตามชิ้นงาน เผื่อพาร์ทนี้หยุดไม่ตรงกับเวลาปิดกะ)
+  const [carryStopTime, setCarryStopTime] = useState({});
 
   const canManage        = ['admin', 'manager', 'supervisor'].includes(role);
   const canOpen          = ['admin', 'manager', 'supervisor', 'leader'].includes(role); // open new shift
@@ -1082,15 +1084,24 @@ function LiveTab({ role }) {
     for (const order of openOrders) {
       const decision  = carryOverDecisions[order.id];
       const qActual   = parseInt(carryQtyActual[order.id]) || 0;
+      // เวลาหยุดผลิตจริงของออเดอร์นี้ — ใช้ที่กรอกไว้ ถ้าไม่ได้แก้ก็ใช้เวลาปิดกะรวมเป็น default
+      const stopTimeStr = carryStopTime[order.id] ?? closeEndTime;
+      let stoppedAt = null;
+      if (stopTimeStr && selSession.work_date) {
+        let ms = new Date(`${selSession.work_date}T${stopTimeStr.slice(0,5)}:00`).getTime();
+        if (order.opened_at && ms < new Date(order.opened_at).getTime()) ms += 86400000; // กะดึกข้ามวัน
+        stoppedAt = new Date(ms).toISOString();
+      }
       if (decision === 'carry') {
         await supabaseDR.from('prod_orders').update({
           status:      'carry_over',
           qty_actual:  qActual,
+          stopped_at:  stoppedAt,
           carry_over_from_session_id: selSession.id,
           carry_over_note: `ยกยอด: ทำได้ ${qActual}/${order.qty} ชิ้น จาก${selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} ${fmtDate(selSession.work_date)}`,
         }).eq('id', order.id);
       } else if (decision === 'cancel') {
-        await supabaseDR.from('prod_orders').update({ status: 'cancelled', qty_actual: qActual }).eq('id', order.id);
+        await supabaseDR.from('prod_orders').update({ status: 'cancelled', qty_actual: qActual, stopped_at: stoppedAt }).eq('id', order.id);
       }
     }
 
@@ -1856,7 +1867,9 @@ function LiveTab({ role }) {
                     const ng = defectLogs.filter(d => orderIds.has(d.prod_order_id)).reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
                     const dt = dtLogs.filter(d => d.mat_no === matNo).reduce((s, d) => s + (d.duration_min || 0), 0);
                     const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
-                    const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
+                    // เวลาปิดของ order — confirmed ใช้ confirmed_at, ยกยอด/ยกเลิกใช้ stopped_at ที่กรอกไว้ตอนปิดกะ (แยกตามพาร์ทได้)
+                    const closedTimes = orders.filter(o => (o.status === 'confirmed' && o.confirmed_at) || ((o.status === 'carry_over' || o.status === 'cancelled') && o.stopped_at))
+                      .map(o => new Date(o.confirmed_at || o.stopped_at).getTime());
                     const actualStart = openedTimes.length ? new Date(Math.min(...openedTimes)) : null;
                     const actualEnd   = closedTimes.length ? new Date(Math.max(...closedTimes)) : null;
                     const ctSec = ctForMatNo(matNo);
@@ -2136,8 +2149,17 @@ function LiveTab({ role }) {
                     const dt = dtLogs.filter(d => d.mat_no === matNo).reduce((s, d) => s + (d.duration_min || 0), 0);
                     const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
                     const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
+                    // ออเดอร์ที่ยังเปิด แต่ตัดสินใจ (ยกยอด/ยกเลิก) และกรอก "เวลาหยุดผลิตจริง" ไว้แล้ว — ใช้เวลานั้น
+                    // แทนเวลาปิดกะรวมของไลน์ เผื่อพาร์ทนี้หยุดวิ่งไปแล้วก่อนเวลาปิดกะ (กรณีมีหลาย MAT.NO วิ่งพร้อมกัน)
+                    const openStopTimes = orders.filter(o => o.status === 'open' && carryOverDecisions[o.id]).map(o => {
+                      const stopStr = carryStopTime[o.id] ?? closeEndTime;
+                      if (!stopStr || !selSession?.work_date) return null;
+                      let ms = new Date(`${selSession.work_date}T${stopStr.slice(0,5)}:00`).getTime();
+                      if (o.opened_at && ms < new Date(o.opened_at).getTime()) ms += 86400000;
+                      return ms;
+                    }).filter(Boolean);
                     const actualStart = openedTimes.length ? new Date(Math.min(...openedTimes)) : null;
-                    const actualEnd   = closedTimes.length ? new Date(Math.max(...closedTimes)) : null;
+                    const actualEnd   = (closedTimes.length || openStopTimes.length) ? new Date(Math.max(...closedTimes, ...openStopTimes)) : null;
                     // ควรผลิตได้ "ถ้าวิ่งเต็มเวลา" จาก opened_at ถึง confirmed_at จริง (ไม่หัก downtime) — ใช้เทียบ %P
                     // ไม่ใช่เวลากะทั้งหมด เพราะพาร์ทนี้อาจเริ่ม/เลิกไม่ตรงกับเวลากะ (เช่น OT บางส่วนของไลน์)
                     const ctSec = ctForMatNo(matNo);
@@ -2358,8 +2380,8 @@ function LiveTab({ role }) {
                               </div>
                               {/* qty_actual input — show when carry or cancel (always need to know what was done this shift) */}
                               {dec && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                                  <div style={{ flex: 1 }}>
+                                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+                                  <div style={{ flex: 1, minWidth: 90 }}>
                                     <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, marginBottom: 3 }}>
                                       ✏️ ยอดที่ทำได้ในกะนี้ (ชิ้น) {dec === 'carry' && estimateAchievableQty(o) != null && <span style={{ color: '#4d9fff', fontWeight: 400 }}>· คำนวณจากเวลาที่เหลือ แก้ไขได้</span>}
                                     </div>
@@ -2369,6 +2391,15 @@ function LiveTab({ role }) {
                                       style={{ ...inputStyle, fontSize: 16, fontWeight: 800, textAlign: 'center', width: 100,
                                         borderColor: qA > 0 ? '#22c55e' : 'var(--border)',
                                         color:       qA > 0 ? '#22c55e' : 'var(--text)' }} />
+                                  </div>
+                                  <div style={{ minWidth: 110 }}>
+                                    <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, marginBottom: 3 }}>
+                                      ⏱ เวลาหยุดผลิตจริง
+                                    </div>
+                                    <TimeInput24
+                                      value={carryStopTime[o.id] ?? closeEndTime}
+                                      onChange={e => setCarryStopTime(m => ({ ...m, [o.id]: e.target.value }))}
+                                      style={{ fontSize: 14 }} />
                                   </div>
                                   {dec === 'carry' && qA >= 0 && (
                                     <div style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700 }}>
