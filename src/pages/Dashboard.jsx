@@ -180,7 +180,7 @@ export default function Dashboard() {
     if (sessionIds.length > 0) {
       const [{ data: orders }, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
         supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, prod_no, part_name, mat_no, opened_at, confirmed_at').in('session_id', sessionIds),
-        supabaseDR.from('downtime_logs').select('session_id, duration_min, dr_downtime_types(category)').in('session_id', sessionIds),
+        supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', sessionIds),
         supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessionIds),
       ]);
       (orders     || []).forEach(o => { (ordersBySession[o.session_id]  ||= []).push(o); });
@@ -226,7 +226,50 @@ export default function Dashboard() {
         if (ct > 0) { producedMin += o.qty * ct / 60; knownQty += o.qty; }
       });
       const ngQty    = (defectBySession[s.id] || []).reduce((a, d) => a + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
-      const A = netAvail > 0 ? Math.min(1, runMin / netAvail) : 0;
+      // Availability: ถ้ากะนี้มีหลาย MAT.NO วิ่งคนละช่วงเวลากัน ให้แยกคำนวณ netAvail/runMin ตามช่วงเปิด-ปิดของแต่ละ
+      // MAT.NO เอง แล้วถ่วงเฉลี่ยตามเวลาที่รัน (runMin) กลับเป็นค่าไลน์เดียว — สูตรเดียวกับ computeOEE() ใน DailyReport.jsx
+      const dtOverlapMinLive = (startMs, endMs, pred = () => true) => {
+        if (!startMs || !endMs || endMs <= startMs) return 0;
+        return dts.filter(pred).reduce((sum, d) => {
+          if (!d.started_at) return sum;
+          const s0 = new Date(d.started_at).getTime();
+          const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + (d.duration_min || 0) * 60000;
+          const ov0 = Math.max(s0, startMs), ov1 = Math.min(e0, endMs);
+          return ov1 > ov0 ? sum + (ov1 - ov0) / 60000 : sum;
+        }, 0);
+      };
+      let totalNetAvailByMat = 0, totalRunMinByMat = 0;
+      const matNosForA = Array.from(new Set(orders.map(o => o.mat_no)));
+      matNosForA.forEach(matNo => {
+        const matOrders = orders.filter(o => o.mat_no === matNo);
+        const openedTimes = matOrders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
+        const closedTimes = matOrders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
+        const matStartMs = openedTimes.length ? Math.min(...openedTimes) : null;
+        const matEndMs   = closedTimes.length ? Math.max(...closedTimes) : closedAt.getTime();
+        if (matStartMs == null || matEndMs <= matStartMs) return;
+        const windowMin = (matEndMs - matStartMs) / 60000;
+        const matPolicyBreakMin = (breakPolicies || [])
+          .filter(p => p.shift === 'both' || p.shift === s.shift)
+          .filter(p => p.process_type === 'common' || p.process_type === s.dr_products?.process_type)
+          .reduce((sum, p) => {
+            const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
+            let pStart = new Date(`${wDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`);
+            let pEnd = new Date(pStart.getTime() + p.duration_min * 60000);
+            if (pStart.getTime() < matStartMs && pEnd.getTime() < matStartMs) {
+              pStart = new Date(pStart.getTime() + 86400000);
+              pEnd   = new Date(pEnd.getTime() + 86400000);
+            }
+            return sum + Math.max(0, (Math.min(pEnd.getTime(), matEndMs) - Math.max(pStart.getTime(), matStartMs)) / 60000);
+          }, 0);
+        const matLoggedPlanned   = dtOverlapMinLive(matStartMs, matEndMs, d => d.dr_downtime_types?.category === 'planned');
+        const matLoggedUnplanned = dtOverlapMinLive(matStartMs, matEndMs, d => d.dr_downtime_types?.category !== 'planned');
+        const matNetAvail = Math.max(0, windowMin - matPolicyBreakMin - matLoggedPlanned);
+        const matRunMin   = Math.max(0, matNetAvail - matLoggedUnplanned);
+        totalNetAvailByMat += matNetAvail;
+        totalRunMinByMat   += matRunMin;
+      });
+      const A = totalNetAvailByMat > 0 ? Math.min(1, totalRunMinByMat / totalNetAvailByMat)
+        : (netAvail > 0 ? Math.min(1, runMin / netAvail) : 0);
       // ไม่มี Cycle Time ของ MAT.NO ที่ผลิตเลย → P คำนวณไม่ได้ ห้าม default เป็น 100%
       const P = knownQty > 0 ? (runMin > 0 ? Math.min(1, producedMin / runMin) : 0) : null;
       const Q = produced > 0 ? Math.max(0, (produced - ngQty) / produced) : 1;

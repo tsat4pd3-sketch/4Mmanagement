@@ -533,9 +533,9 @@ function LiveTab({ role }) {
   // นาที Downtime ที่ทับซ้อนกับช่วงเวลา [startMs, endMs] — ใช้หักจาก "เวลาที่ MAT.NO นี้วิ่งจริง" ก่อนเทียบ %P
   // เทียบด้วยช่วงเวลาจริง (started_at/ended_at) ไม่ใช่แค่ d.mat_no ตรงกัน เพราะ Downtime ของไลน์ร่วม (ไม่ระบุ MAT.NO)
   // ก็กระทบ MAT.NO ที่วิ่งซ้อนอยู่ในช่วงนั้นด้วย — ถ้าไม่หัก จะนับเวลาผลิตจริงเกิน ทำให้ %P เพี้ยน (เช่นเกิน 100%)
-  const dtOverlapMin = (startMs, endMs) => {
+  const dtOverlapMin = (startMs, endMs, pred = () => true) => {
     if (!startMs || !endMs || endMs <= startMs) return 0;
-    return dtLogs.reduce((sum, d) => {
+    return dtLogs.filter(pred).reduce((sum, d) => {
       if (!d.started_at) return sum;
       const s0 = new Date(d.started_at).getTime();
       const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + (d.duration_min || 0) * 60000;
@@ -1019,7 +1019,38 @@ function LiveTab({ role }) {
     const netAvail    = Math.max(0, shiftMin - plannedDT);
     const runMin      = Math.max(0, netAvail - loggedUnplannedDT);
 
-    const A = netAvail > 0 ? Math.min(1, runMin / netAvail) : 0;
+    // Availability: ถ้ากะนี้มีหลาย MAT.NO/product วิ่งคนละช่วงเวลากัน (เช่นไลน์ร่วม APRON ASSY) ให้แยกคำนวณ
+    // netAvail/runMin ตามช่วงเวลาเปิด-ปิดของแต่ละ MAT.NO เอง แล้วถ่วงเฉลี่ยตามเวลาที่รัน (runMin) กลับเป็นค่าไลน์
+    // เดียว — ไม่ใช้ช่วงเวลาทั้งกะตัวเดียวคำนวณรวม เพราะ MAT.NO หนึ่งอาจหยุดวิ่งไปแล้วก่อนเวลาปิดกะจริง
+    let totalNetAvailByMat = 0, totalRunMinByMat = 0;
+    const matNosForA = Array.from(new Set(prodOrders.map(o => o.mat_no)));
+    matNosForA.forEach(matNo => {
+      const orders = prodOrders.filter(o => o.mat_no === matNo);
+      const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
+      const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
+      // ออเดอร์ที่ยังเปิดแต่ตัดสินใจ (ยกยอด/ยกเลิก) แล้วและกรอก "เวลาหยุดผลิตจริง" ไว้ — ใช้เวลานั้นปิดช่วงของ MAT.NO นี้
+      const openStopTimes = orders.filter(o => o.status === 'open' && carryOverDecisions[o.id]).map(o => {
+        const stopStr = carryStopTime[o.id] ?? endTimeOverride;
+        if (!stopStr || !workDate) return null;
+        let ms = new Date(`${workDate}T${stopStr.slice(0,5)}:00`).getTime();
+        if (o.opened_at && ms < new Date(o.opened_at).getTime()) ms += 86400000;
+        return ms;
+      }).filter(Boolean);
+      const matStartMs = openedTimes.length ? Math.min(...openedTimes) : null;
+      const matEndMs   = (closedTimes.length || openStopTimes.length) ? Math.max(...closedTimes, ...openStopTimes) : null;
+      if (matStartMs == null || matEndMs == null || matEndMs <= matStartMs) return;
+      const windowMin = (matEndMs - matStartMs) / 60000;
+      const matPolicyBreakMin = computePolicyBreakMin(new Date(matStartMs), new Date(matEndMs), sessionShift, processType);
+      const matLoggedPlanned   = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category === 'planned');
+      const matLoggedUnplanned = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category !== 'planned');
+      const matNetAvail = Math.max(0, windowMin - matPolicyBreakMin - matLoggedPlanned);
+      const matRunMin   = Math.max(0, matNetAvail - matLoggedUnplanned);
+      totalNetAvailByMat += matNetAvail;
+      totalRunMinByMat   += matRunMin;
+    });
+    // ถ้าแยกตาม MAT.NO ไม่ได้เลย (เช่นกะมีแต่ Downtime ไม่มี Order) ให้ fallback กลับไปใช้ช่วงเวลาทั้งกะแบบเดิม
+    const A = totalNetAvailByMat > 0 ? Math.min(1, totalRunMinByMat / totalNetAvailByMat)
+      : (netAvail > 0 ? Math.min(1, runMin / netAvail) : 0);
 
     // Performance: เทียบยอดผลิตจริงกับ "ควรได้ถ้าวิ่งเต็มเวลา" ของแต่ละ MAT.NO แยกกัน (ช่วงเวลาเปิด-ปิดของใบงานนั้นๆ หักด้วย
     // Downtime ที่ทับซ้อนช่วงนั้น) แล้วรวมยอด — ต้องแยกตาม MAT.NO เพราะไลน์ร่วม (เช่น APRON ASSY) อาจผลิตหลาย MAT.NO
