@@ -3085,11 +3085,10 @@ function HistoryTab({ role }) {
                     if (!matNos.length) return null;
                     const rows = matNos.map(matNo => {
                       const matOrders = orders.filter(o => o.mat_no === matNo);
-                      const qty = matOrders.reduce((sum, o) => {
-                        if (o.status === 'confirmed') return sum + (o.qty || 0);
-                        if (o.status === 'carry_over') return sum + (o.qty_actual || 0);
-                        return sum;
-                      }, 0);
+                      // ยอด "ผลิต" นับเฉพาะ confirmed เท่านั้น ให้ตรงกับ actual_qty ที่หัว session เสมอ —
+                      // carry_over คือยกยอดไปกะถัดไป ไม่ใช่ของกะนี้ ห้ามนับเป็นผลิต (qty_actual ของ carry_over
+                      // ไม่น่าเชื่อถือ อาจเป็นข้อมูลเก่า/ใส่ผิดตอนยกยอด ทำให้ผลรวมไม่ตรงกับยอดรวมที่บันทึกไว้)
+                      const qty = matOrders.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty || 0), 0);
                       const orderIds = new Set(matOrders.map(o => o.id));
                       const ng = defects.filter(d => orderIds.has(d.prod_order_id)).reduce((sum, d) => sum + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
                       const dt = dts.filter(d => d.mat_no === matNo).reduce((sum, d) => sum + (d.duration_min || 0), 0);
