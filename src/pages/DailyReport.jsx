@@ -134,6 +134,8 @@ function LiveTab({ role }) {
   const [dtLogs, setDtLogs]         = useState([]);
   const [selSession, setSelSession] = useState(null);
   const [loading, setLoading]       = useState(true);
+  // CT overage history — keyed by mat_no: { checked, overCount, ctSec, avgObservedCt } จากกะปิดล่าสุดของไลน์เดียวกัน
+  const [ctOverage, setCtOverage]   = useState({});
 
   const [showOpen, setShowOpen] = useState(false);
   const [openForm, setOpenForm] = useState(() => { const s = currentShift(); return { work_date: today(), line_name: '', shift: s, product_id: '', start_time: shiftStart(s) }; });
@@ -536,6 +538,72 @@ function LiveTab({ role }) {
       return e > s ? sum + (e - s) / 60000 : sum;
     }, 0);
   };
+
+  // เช็คย้อนหลัง: MAT.NO นี้ผลิตเกิน CT ที่ตั้งไว้ซ้ำๆ ในกะที่ปิดไปแล้วของไลน์เดียวกันหรือไม่ (8 กะล่าสุด)
+  // ถ้าเกินบ่อย แสดงว่า CT ใน Product Master น่าจะตั้งช้ากว่าความเป็นจริง ควรปรับ ไม่ใช่ปัญหาแค่กะเดียว
+  useEffect(() => {
+    if (!showCloseShift && !showApproveReview) return;
+    if (!selSession?.line_name || !prodOrders.length) { setCtOverage({}); return; }
+    const matNos = Array.from(new Set(prodOrders.map(o => o.mat_no).filter(Boolean)));
+    if (!matNos.length) { setCtOverage({}); return; }
+    let cancelled = false;
+    (async () => {
+      const { data: prevSessions } = await supabaseDR.from('production_sessions')
+        .select('id')
+        .eq('line_name', selSession.line_name)
+        .eq('status', 'closed')
+        .neq('id', selSession.id)
+        .order('closed_at', { ascending: false })
+        .limit(8);
+      if (cancelled || !prevSessions?.length) { if (!cancelled) setCtOverage({}); return; }
+      const prevIds = prevSessions.map(s => s.id);
+      const [{ data: histOrders }, { data: histDt }] = await Promise.all([
+        supabaseDR.from('prod_orders').select('*').in('session_id', prevIds).in('mat_no', matNos).eq('status', 'confirmed'),
+        supabaseDR.from('downtime_logs').select('session_id, started_at, ended_at, duration_min').in('session_id', prevIds),
+      ]);
+      if (cancelled) return;
+      const result = {};
+      matNos.forEach(matNo => {
+        const ctSec = ctForMatNo(matNo);
+        if (ctSec <= 0) return;
+        let checked = 0, overCount = 0;
+        const observedCts = [];
+        prevIds.forEach(sid => {
+          const orders = (histOrders || []).filter(o => o.session_id === sid && o.mat_no === matNo);
+          if (!orders.length) return;
+          const qty = orders.reduce((s, o) => s + o.qty, 0);
+          const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
+          const closedTimes = orders.filter(o => o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
+          if (!openedTimes.length || !closedTimes.length) return;
+          const startMs = Math.min(...openedTimes), endMs = Math.max(...closedTimes);
+          if (endMs <= startMs) return;
+          const dtOverlap = (histDt || []).filter(d => d.session_id === sid).reduce((sum, d) => {
+            if (!d.started_at) return sum;
+            const s0 = new Date(d.started_at).getTime();
+            const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + (d.duration_min || 0) * 60000;
+            const s = Math.max(s0, startMs), e = Math.min(e0, endMs);
+            return e > s ? sum + (e - s) / 60000 : sum;
+          }, 0);
+          const winMin = Math.max(0, (endMs - startMs) / 60000 - dtOverlap);
+          const achievable = Math.floor(winMin * 60 / ctSec);
+          checked++;
+          if (qty > achievable) {
+            overCount++;
+            if (winMin > 0) observedCts.push(winMin * 60 / qty);
+          }
+        });
+        if (checked > 0) {
+          result[matNo] = {
+            checked, overCount, ctSec,
+            avgObservedCt: observedCts.length ? observedCts.reduce((s, v) => s + v, 0) / observedCts.length : null,
+          };
+        }
+      });
+      setCtOverage(result);
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCloseShift, showApproveReview, selSession?.id, selSession?.line_name, prodOrders]);
 
   // หา process_type ของกะนี้ — อิงจากไลน์เป็นหลัก (เครื่องจักรของไลน์ HYDROFORM ถูก tag เป็น metal_forming ไว้แล้วใน
   // ตั้งค่า > เครื่องจักร และไม่ขึ้นกับว่าเปิด Order ไปแล้วหรือยัง) ถ้าไลน์ไม่มีเครื่องจักร tag ไว้ ค่อย fallback ไปดูสินค้าที่กำลังผลิต
@@ -1787,14 +1855,20 @@ function LiveTab({ role }) {
                     // (รวมเวลาหยุด) ทำให้ %P ต่ำเกินจริง และไม่ตรงกับ P รวมที่คำนวณใน computeOEE()
                     const winMin = (actualStart && winEndMs) ? Math.max(0, (winEndMs - actualStart.getTime()) / 60000 - dtOverlapMin(actualStart.getTime(), winEndMs)) : null;
                     const achievable = (ctSec > 0 && winMin != null) ? Math.floor(winMin * 60 / ctSec) : null;
-                    return { matNo, partName: orders[0]?.part_name, target, qty, ng, dt, actualStart, actualEnd, achievable };
+                    // ผลิตได้จริง > ควรได้ (ตาม CT ที่ตั้งไว้) แปลว่า CT ใน Product Master ตั้งไว้ช้ากว่าความเป็นจริง
+                    // ย้อนคำนวณ CT จริงที่สังเกตได้จากกะนี้ไว้เตือน ไม่ใช่ปล่อยให้ %P ติดเพดาน 100% เฉยๆ
+                    const observedCtSec = (winMin != null && winMin > 0 && qty > 0) ? (winMin * 60 / qty) : null;
+                    const overCt = ctSec > 0 && achievable != null && qty > achievable;
+                    return { matNo, partName: orders[0]?.part_name, target, qty, ng, dt, actualStart, actualEnd, achievable, ctSec, observedCtSec, overCt };
                   }).sort((a, b) => b.qty - a.qty);
                   const dtNoMat = dtLogs.filter(d => !d.mat_no).reduce((s, d) => s + (d.duration_min || 0), 0);
                   return (
                     <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>📦 สรุปแยกตามชิ้นงาน ({rows.length} MAT.NO) — เป้าหมาย vs ควรได้ (เต็มเวลา) vs ผลิตได้จริง</div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 6 }}>
-                        {rows.map(r => (
+                        {rows.map(r => {
+                          const overage = ctOverage[r.matNo];
+                          return (
                           <div key={r.matNo} style={{ padding: '8px 10px', background: 'var(--bg)', borderRadius: 8 }}>
                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
                               <div style={{ flex: 1, minWidth: 0 }}>
@@ -1832,8 +1906,19 @@ function LiveTab({ role }) {
                                 %P พาร์ทนี้ ≈ {Math.min(100, Math.round(r.qty / r.achievable * 100))}%
                               </div>
                             )}
+                            {r.overCt && r.observedCtSec != null && (
+                              <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 4, padding: '4px 6px', background: 'rgba(245,158,11,0.1)', borderRadius: 6 }}>
+                                ⚠ ผลิตเกิน CT ที่ตั้งไว้ ({r.ctSec} วิ) — CT จริงที่สังเกตได้กะนี้ ≈ {r.observedCtSec.toFixed(1)} วิ/ชิ้น
+                              </div>
+                            )}
+                            {overage && overage.overCount >= 3 && (
+                              <div style={{ fontSize: 10, color: '#ef4444', marginTop: 4, padding: '4px 6px', background: 'rgba(239,68,68,0.1)', borderRadius: 6, fontWeight: 700 }}>
+                                🔁 เกิน CT ซ้ำ {overage.overCount}/{overage.checked} กะล่าสุด — แนะนำปรับ CT ใน Product Master เป็น ~{overage.avgObservedCt?.toFixed(1)} วิ/ชิ้น
+                              </div>
+                            )}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                       {dtNoMat > 0 && (
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
@@ -2051,14 +2136,21 @@ function LiveTab({ role }) {
                     // (รวมเวลาหยุด) ทำให้ %P ต่ำเกินจริง และไม่ตรงกับ P รวมที่คำนวณใน computeOEE()
                     const winMin = (actualStart && winEndMs) ? Math.max(0, (winEndMs - actualStart.getTime()) / 60000 - dtOverlapMin(actualStart.getTime(), winEndMs)) : null;
                     const achievable = (ctSec > 0 && winMin != null) ? Math.floor(winMin * 60 / ctSec) : null;
-                    return { matNo, partName: orders[0]?.part_name, target, qty: confirmedQty + openQty, ng, dt, actualStart, actualEnd, achievable };
+                    const qty = confirmedQty + openQty;
+                    // ผลิตได้จริง > ควรได้ (ตาม CT ที่ตั้งไว้) แปลว่า CT ใน Product Master ตั้งไว้ช้ากว่าความเป็นจริง
+                    // ย้อนคำนวณ CT จริงที่สังเกตได้จากกะนี้ไว้เตือน ไม่ใช่ปล่อยให้ %P ติดเพดาน 100% เฉยๆ
+                    const observedCtSec = (winMin != null && winMin > 0 && qty > 0) ? (winMin * 60 / qty) : null;
+                    const overCt = ctSec > 0 && achievable != null && qty > achievable;
+                    return { matNo, partName: orders[0]?.part_name, target, qty, ng, dt, actualStart, actualEnd, achievable, ctSec, observedCtSec, overCt };
                   }).sort((a, b) => b.qty - a.qty);
                   const dtNoMat = dtLogs.filter(d => !d.mat_no).reduce((s, d) => s + (d.duration_min || 0), 0);
                   return (
                     <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>📦 สรุปแยกตามชิ้นงาน ({rows.length} MAT.NO) — เป้าหมาย vs ควรได้ (เต็มเวลา) vs ผลิตได้จริง</div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 6 }}>
-                        {rows.map(r => (
+                        {rows.map(r => {
+                          const overage = ctOverage[r.matNo];
+                          return (
                           <div key={r.matNo} style={{ padding: '8px 10px', background: 'var(--bg)', borderRadius: 8 }}>
                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
                               <div style={{ flex: 1, minWidth: 0 }}>
@@ -2096,8 +2188,19 @@ function LiveTab({ role }) {
                                 %P พาร์ทนี้ ≈ {Math.min(100, Math.round(r.qty / r.achievable * 100))}%
                               </div>
                             )}
+                            {r.overCt && r.observedCtSec != null && (
+                              <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 4, padding: '4px 6px', background: 'rgba(245,158,11,0.1)', borderRadius: 6 }}>
+                                ⚠ ผลิตเกิน CT ที่ตั้งไว้ ({r.ctSec} วิ) — CT จริงที่สังเกตได้กะนี้ ≈ {r.observedCtSec.toFixed(1)} วิ/ชิ้น
+                              </div>
+                            )}
+                            {overage && overage.overCount >= 3 && (
+                              <div style={{ fontSize: 10, color: '#ef4444', marginTop: 4, padding: '4px 6px', background: 'rgba(239,68,68,0.1)', borderRadius: 6, fontWeight: 700 }}>
+                                🔁 เกิน CT ซ้ำ {overage.overCount}/{overage.checked} กะล่าสุด — แนะนำปรับ CT ใน Product Master เป็น ~{overage.avgObservedCt?.toFixed(1)} วิ/ชิ้น
+                              </div>
+                            )}
                           </div>
-                        ))}
+                          );
+                        })}
                         {dtNoMat > 0 && (
                           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                             + Downtime ไม่ได้ระบุชิ้นงาน (ทั้งไลน์): {fmtMin(Math.round(dtNoMat))}
