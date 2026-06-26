@@ -667,6 +667,21 @@ function LiveTab({ role }) {
     return d.toISOString();
   };
 
+  // เดาเวลาเริ่มผลิตจริงให้ตอนติ๊ก "ยิงย้อนหลัง" — ใบแรกของกะ = เวลาเริ่มกะ, ใบต่อไป = เวลาปิดจริง (confirmed_at)
+  // ของใบก่อนหน้าถ้ามี ไม่งั้นประมาณด้วย CT (opened_at + qty/CT) เพื่อลดโอกาสเวลาซ้อนกันระหว่าง 2 ใบ
+  const guessBackfillTime = () => {
+    if (!selSession) return '';
+    const prev = [...prodOrders].sort((a, b) => new Date(b.opened_at) - new Date(a.opened_at))[0];
+    if (!prev) return (selSession.start_time || '').slice(0, 5);
+    if (prev.confirmed_at) return new Date(prev.confirmed_at).toTimeString().slice(0, 5);
+    const ctSec = ctForMatNo(prev.mat_no);
+    if (ctSec > 0) {
+      const estMs = new Date(prev.opened_at).getTime() + (prev.qty || 0) * ctSec * 1000;
+      return new Date(estMs).toTimeString().slice(0, 5);
+    }
+    return (selSession.start_time || '').slice(0, 5);
+  };
+
   // insert จริง (ใช้ทั้งจาก handleScanOpen และ handleOverflowForce)
   const doInsertProdOrder = async (prodNo, matNo, qty, std, status = 'open') => {
     const opened_at = backfillOpenedAt();
@@ -692,6 +707,7 @@ function LiveTab({ role }) {
     if (!prodNo) { toast.error('สแกนหรือกรอก PROD.NO ก่อน'); return; }
     if (!matNo)  { toast.error('สแกนหรือกรอก MAT.NO ก่อน');  return; }
     if (!openProdForm.qty || parseInt(openProdForm.qty) < 1) { toast.error('ระบุจำนวนชิ้น'); return; }
+    if (openProdForm.is_backfill && !openProdForm.backfill_time) { toast.error('ระบุเวลาที่เริ่มผลิตจริงก่อน (บังคับสำหรับยิงย้อนหลัง)'); return; }
 
     const dup = prodOrders.find(o => o.prod_no === prodNo);
     if (dup) {
@@ -2554,7 +2570,7 @@ function LiveTab({ role }) {
               {/* Backfill toggle */}
               <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', marginTop: 10, background: openProdForm.is_backfill ? 'rgba(107,114,128,0.15)' : 'rgba(107,114,128,0.06)', border: `1px solid ${openProdForm.is_backfill ? 'rgba(107,114,128,0.5)' : 'rgba(107,114,128,0.2)'}`, borderRadius: 8 }}>
                 <input type="checkbox" checked={openProdForm.is_backfill}
-                  onChange={e => setOpenProdForm(f => ({ ...f, is_backfill: e.target.checked, backfill_time: e.target.checked ? f.backfill_time : '' }))}
+                  onChange={e => setOpenProdForm(f => ({ ...f, is_backfill: e.target.checked, backfill_time: e.target.checked ? (f.backfill_time || guessBackfillTime()) : '' }))}
                   style={{ width: 16, height: 16, cursor: 'pointer' }} />
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>ยิงย้อนหลัง / เติมข้อมูล</div>
@@ -2562,7 +2578,7 @@ function LiveTab({ role }) {
                 </div>
               </label>
               {openProdForm.is_backfill && (
-                <Field label="เวลาที่เริ่มผลิตจริง (ไม่ระบุ = ใช้เวลาตอนนี้)">
+                <Field label="เวลาที่เริ่มผลิตจริง * (บังคับใส่ — ระบบเดาให้แล้ว เช็คอีกครั้งก่อนบันทึก)">
                   <input type="time" value={openProdForm.backfill_time}
                     onChange={e => setOpenProdForm(f => ({ ...f, backfill_time: e.target.value }))}
                     style={inputStyle} />
@@ -2579,9 +2595,9 @@ function LiveTab({ role }) {
               <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
                 <button onClick={() => { setShowScanOpen(false); setPendingPairId(null); }} style={cancelBtnStyle}>ปิด</button>
                 <button onClick={handleScanOpen}
-                  disabled={savingProdOpen || !openProdForm.prod_no || !openProdForm.mat_no || !openProdForm.qty || !!prodOrders.find(o => o.prod_no === openProdForm.prod_no)}
+                  disabled={savingProdOpen || !openProdForm.prod_no || !openProdForm.mat_no || !openProdForm.qty || (openProdForm.is_backfill && !openProdForm.backfill_time) || !!prodOrders.find(o => o.prod_no === openProdForm.prod_no)}
                   style={{ ...saveBtnStyle, background: '#f59e0b', color: '#000', fontSize: 14,
-                    opacity: (savingProdOpen || !openProdForm.prod_no || !openProdForm.mat_no || !openProdForm.qty) ? 0.5 : 1 }}>
+                    opacity: (savingProdOpen || !openProdForm.prod_no || !openProdForm.mat_no || !openProdForm.qty || (openProdForm.is_backfill && !openProdForm.backfill_time)) ? 0.5 : 1 }}>
                   {savingProdOpen ? '...' : '📥 เปิด Order'}
                 </button>
               </div>
