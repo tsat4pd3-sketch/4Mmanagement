@@ -1393,6 +1393,9 @@ function LiveTab({ role }) {
               const totalTarget    = prodOrders.reduce((s, o) => s + o.qty, 0);
               const totalConfirmed = prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
               const pct = totalTarget > 0 ? Math.min(100, Math.round((totalConfirmed / totalTarget) * 100)) : 0;
+              // ของเสีย/สงสัย ต้องเบิก input ทดแทนเพิ่มเพื่อให้ได้ยอดดีครบเป้า (ซ่อมได้ไม่ต้องเบิกใหม่)
+              const totalNg = defectLogs.reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
+              const totalInputNeeded = totalTarget + totalNg;
               const barClr = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#4d9fff';
 
               const matNos = Array.from(new Set(prodOrders.map(o => o.mat_no))).filter(Boolean);
@@ -1469,6 +1472,7 @@ function LiveTab({ role }) {
                       { label: 'ปิดแล้ว',   value: prodOrders.filter(o => o.status === 'confirmed').length, unit: 'ใบ', color: '#22c55e' },
                       { label: 'เป้ารวม',   value: totalTarget,    unit: 'ชิ้น', color: '#4d9fff' },
                       { label: 'ผลิตได้',   value: totalConfirmed, unit: 'ชิ้น', color: '#22c55e' },
+                      { label: 'Input ต้องเบิก', value: totalInputNeeded, unit: totalNg > 0 ? `ชิ้น (รวม NG ${totalNg})` : 'ชิ้น', color: '#f59e0b' },
                       { label: 'Downtime',  value: fmtMin(totalDT), unit: '',    color: '#a855f7', small: true },
                       { label: 'นอกแผน',   value: fmtMin(unplannedDT), unit: '', color: '#ef4444', small: true },
                     ].map(k => (
