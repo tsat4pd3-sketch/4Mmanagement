@@ -191,6 +191,8 @@ function LiveTab({ role }) {
   const [carryQtyActual, setCarryQtyActual] = useState({});
   // เวลาหยุดผลิตจริงต่อออเดอร์ (ใช้แทนเวลาปิดกะรวมตอนคำนวณสรุปแยกตามชิ้นงาน เผื่อพาร์ทนี้หยุดไม่ตรงกับเวลาปิดกะ)
   const [carryStopTime, setCarryStopTime] = useState({});
+  // แก้เวลาเริ่ม-หยุดจริงต่อ MAT.NO (เฉพาะ MAT.NO ที่ confirmed ครบแล้ว ไม่มีออเดอร์เปิดค้าง) — { [matNo]: { start, end } } เป็น "HH:MM"
+  const [matTimeOverride, setMatTimeOverride] = useState({});
 
   const canManage        = ['admin', 'manager', 'supervisor'].includes(role);
   const canOpen          = ['admin', 'manager', 'supervisor', 'leader'].includes(role); // open new shift
@@ -1022,10 +1024,24 @@ function LiveTab({ role }) {
     // Availability: ถ้ากะนี้มีหลาย MAT.NO/product วิ่งคนละช่วงเวลากัน (เช่นไลน์ร่วม APRON ASSY) ให้แยกคำนวณ
     // netAvail/runMin ตามช่วงเวลาเปิด-ปิดของแต่ละ MAT.NO เอง แล้วถ่วงเฉลี่ยตามเวลาที่รัน (runMin) กลับเป็นค่าไลน์
     // เดียว — ไม่ใช้ช่วงเวลาทั้งกะตัวเดียวคำนวณรวม เพราะ MAT.NO หนึ่งอาจหยุดวิ่งไปแล้วก่อนเวลาปิดกะจริง
+    // เวลาที่หัวหน้ากะแก้เองต่อ MAT.NO (เฉพาะ MAT.NO ที่ confirmed ครบแล้ว) — แก้ทับช่วงที่ระบบจับเวลาอัตโนมัติไว้
+    const applyMatTimeOverride = (matNo, hasOpenOrders, startMs, endMs) => {
+      if (hasOpenOrders) return { startMs, endMs };
+      const ov = matTimeOverride[matNo];
+      if (!ov || !workDate) return { startMs, endMs };
+      let s = startMs, e = endMs;
+      if (ov.start) s = new Date(`${workDate}T${ov.start.slice(0,5)}:00`).getTime();
+      if (ov.end) {
+        e = new Date(`${workDate}T${ov.end.slice(0,5)}:00`).getTime();
+        if (s != null && e < s) e += 86400000;
+      }
+      return { startMs: s, endMs: e };
+    };
     let totalNetAvailByMat = 0, totalRunMinByMat = 0;
     const matNosForA = Array.from(new Set(prodOrders.map(o => o.mat_no)));
     matNosForA.forEach(matNo => {
       const orders = prodOrders.filter(o => o.mat_no === matNo);
+      const hasOpenOrders = orders.some(o => o.status === 'open');
       const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
       const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
       // ออเดอร์ที่ยังเปิดแต่ตัดสินใจ (ยกยอด/ยกเลิก) แล้วและกรอก "เวลาหยุดผลิตจริง" ไว้ — ใช้เวลานั้นปิดช่วงของ MAT.NO นี้
@@ -1036,8 +1052,9 @@ function LiveTab({ role }) {
         if (o.opened_at && ms < new Date(o.opened_at).getTime()) ms += 86400000;
         return ms;
       }).filter(Boolean);
-      const matStartMs = openedTimes.length ? Math.min(...openedTimes) : null;
-      const matEndMs   = (closedTimes.length || openStopTimes.length) ? Math.max(...closedTimes, ...openStopTimes) : null;
+      let matStartMs = openedTimes.length ? Math.min(...openedTimes) : null;
+      let matEndMs   = (closedTimes.length || openStopTimes.length) ? Math.max(...closedTimes, ...openStopTimes) : null;
+      ({ startMs: matStartMs, endMs: matEndMs } = applyMatTimeOverride(matNo, hasOpenOrders, matStartMs, matEndMs));
       if (matStartMs == null || matEndMs == null || matEndMs <= matStartMs) return;
       const windowMin = (matEndMs - matStartMs) / 60000;
       const matPolicyBreakMin = computePolicyBreakMin(new Date(matStartMs), new Date(matEndMs), sessionShift, processType);
@@ -1065,10 +1082,12 @@ function LiveTab({ role }) {
       if (!qty) return;
       const ctSec = ctForMatNo(matNo);
       if (ctSec <= 0) { unknownQty += qty; return; }
+      const hasOpenOrders = orders.some(o => o.status === 'open');
       const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
       const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
-      const startMs = openedTimes.length ? Math.min(...openedTimes) : (openedAt ? openedAt.getTime() : null);
-      const endMs   = closedTimes.length ? Math.max(...closedTimes) : closedAt.getTime();
+      let startMs = openedTimes.length ? Math.min(...openedTimes) : (openedAt ? openedAt.getTime() : null);
+      let endMs   = closedTimes.length ? Math.max(...closedTimes) : closedAt.getTime();
+      ({ startMs, endMs } = applyMatTimeOverride(matNo, hasOpenOrders, startMs, endMs));
       if (startMs == null || endMs <= startMs) { unknownQty += qty; return; }
       const runWinMin = Math.max(0, (endMs - startMs) / 60000 - dtOverlapMin(startMs, endMs));
       totalAchievable += Math.floor(runWinMin * 60 / ctSec);
@@ -1133,6 +1152,28 @@ function LiveTab({ role }) {
         }).eq('id', order.id);
       } else if (decision === 'cancel') {
         await supabaseDR.from('prod_orders').update({ status: 'cancelled', qty_actual: qActual, stopped_at: stoppedAt }).eq('id', order.id);
+      }
+    }
+
+    // บันทึกเวลาเริ่ม-หยุดจริงที่แก้เองต่อ MAT.NO (เฉพาะ MAT.NO ที่ confirmed ครบแล้ว) — แก้ opened_at ของออเดอร์ที่เปิดก่อนสุด
+    // และ confirmed_at ของออเดอร์ที่ปิดล่าสุด เพื่อให้ช่วงเวลาที่หน้าอื่น (SV review, OEEAnalytics) อ่านย้อนหลังตรงกับที่แก้ไว้
+    for (const [matNo, ov] of Object.entries(matTimeOverride)) {
+      if (!ov || (!ov.start && !ov.end) || !selSession.work_date) continue;
+      const orders = prodOrders.filter(o => o.mat_no === matNo);
+      if (!orders.length || orders.some(o => o.status === 'open')) continue;
+      if (ov.start) {
+        const firstOrder = orders.reduce((a, b) => (!a.opened_at || (b.opened_at && new Date(b.opened_at) < new Date(a.opened_at))) ? b : a);
+        const ms = new Date(`${selSession.work_date}T${ov.start.slice(0,5)}:00`).getTime();
+        await supabaseDR.from('prod_orders').update({ opened_at: new Date(ms).toISOString() }).eq('id', firstOrder.id);
+      }
+      if (ov.end) {
+        const confirmedOrders = orders.filter(o => o.status === 'confirmed' && o.confirmed_at);
+        if (confirmedOrders.length) {
+          const lastOrder = confirmedOrders.reduce((a, b) => (new Date(b.confirmed_at) > new Date(a.confirmed_at)) ? b : a);
+          let ms = new Date(`${selSession.work_date}T${ov.end.slice(0,5)}:00`).getTime();
+          if (lastOrder.opened_at && ms < new Date(lastOrder.opened_at).getTime()) ms += 86400000;
+          await supabaseDR.from('prod_orders').update({ confirmed_at: new Date(ms).toISOString() }).eq('id', lastOrder.id);
+        }
       }
     }
 
@@ -1229,6 +1270,8 @@ function LiveTab({ role }) {
     setShowCloseShift(false);
     setCarryOverDecisions({});
     setCarryQtyActual({});
+    setCarryStopTime({});
+    setMatTimeOverride({});
     load();
     setSelSession(null);
     setDtLogs([]);
@@ -2178,6 +2221,7 @@ function LiveTab({ role }) {
                     const orderIds = new Set(orders.map(o => o.id));
                     const ng = defectLogs.filter(d => orderIds.has(d.prod_order_id)).reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
                     const dt = dtLogs.filter(d => d.mat_no === matNo).reduce((s, d) => s + (d.duration_min || 0), 0);
+                    const hasOpenOrders = orders.some(o => o.status === 'open');
                     const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
                     const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
                     // ออเดอร์ที่ยังเปิด แต่ตัดสินใจ (ยกยอด/ยกเลิก) และกรอก "เวลาหยุดผลิตจริง" ไว้แล้ว — ใช้เวลานั้น
@@ -2189,8 +2233,22 @@ function LiveTab({ role }) {
                       if (o.opened_at && ms < new Date(o.opened_at).getTime()) ms += 86400000;
                       return ms;
                     }).filter(Boolean);
-                    const actualStart = openedTimes.length ? new Date(Math.min(...openedTimes)) : null;
-                    const actualEnd   = (closedTimes.length || openStopTimes.length) ? new Date(Math.max(...closedTimes, ...openStopTimes)) : null;
+                    const baseStartMs = openedTimes.length ? Math.min(...openedTimes) : null;
+                    const baseEndMs   = (closedTimes.length || openStopTimes.length) ? Math.max(...closedTimes, ...openStopTimes) : null;
+                    // แก้เวลาเริ่ม-หยุดจริงเอง ได้เฉพาะ MAT.NO ที่ confirmed ครบแล้ว (ไม่มีออเดอร์เปิดค้าง) — เผื่อระบบจับเวลาอัตโนมัติ
+                    // (opened_at/confirmed_at) ไม่ตรงกับเวลาที่เครื่องวิ่งจริง
+                    const editableTime = !hasOpenOrders;
+                    const ov = editableTime ? (matTimeOverride[matNo] || {}) : {};
+                    const overrideStartMs = (ov.start && selSession?.work_date)
+                      ? new Date(`${selSession.work_date}T${ov.start.slice(0,5)}:00`).getTime() : null;
+                    const overrideEndMs = (ov.end && selSession?.work_date) ? (() => {
+                      let ms = new Date(`${selSession.work_date}T${ov.end.slice(0,5)}:00`).getTime();
+                      const refStart = overrideStartMs ?? baseStartMs;
+                      if (refStart != null && ms < refStart) ms += 86400000;
+                      return ms;
+                    })() : null;
+                    const actualStart = overrideStartMs != null ? new Date(overrideStartMs) : (baseStartMs != null ? new Date(baseStartMs) : null);
+                    const actualEnd   = overrideEndMs != null ? new Date(overrideEndMs) : (baseEndMs != null ? new Date(baseEndMs) : null);
                     // ควรผลิตได้ "ถ้าวิ่งเต็มเวลา" จาก opened_at ถึง confirmed_at จริง (ไม่หัก downtime) — ใช้เทียบ %P
                     // ไม่ใช่เวลากะทั้งหมด เพราะพาร์ทนี้อาจเริ่ม/เลิกไม่ตรงกับเวลากะ (เช่น OT บางส่วนของไลน์)
                     const ctSec = ctForMatNo(matNo);
@@ -2208,7 +2266,7 @@ function LiveTab({ role }) {
                     // ย้อนคำนวณ CT จริงที่สังเกตได้จากกะนี้ไว้เตือน ไม่ใช่ปล่อยให้ %P ติดเพดาน 100% เฉยๆ
                     const observedCtSec = (winMin != null && winMin > 0 && qty > 0) ? (winMin * 60 / qty) : null;
                     const overCt = ctSec > 0 && achievable != null && qty > achievable;
-                    return { matNo, partName: orders[0]?.part_name, target, qty, ng, dt, actualStart, actualEnd, achievable, ctSec, observedCtSec, overCt };
+                    return { matNo, partName: orders[0]?.part_name, target, qty, ng, dt, actualStart, actualEnd, achievable, ctSec, observedCtSec, overCt, editableTime };
                   }).sort((a, b) => b.qty - a.qty);
                   const dtNoMat = dtLogs.filter(d => !d.mat_no).reduce((s, d) => s + (d.duration_min || 0), 0);
                   return (
@@ -2224,7 +2282,22 @@ function LiveTab({ role }) {
                                 <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{r.matNo}</div>
                                 {r.partName && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.partName}</div>}
                                 {r.actualStart && (
-                                  <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 1 }}>🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}</div>
+                                  r.editableTime ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
+                                      <span style={{ fontSize: 11 }}>🕐</span>
+                                      <TimeInput24
+                                        value={matTimeOverride[r.matNo]?.start ?? fmtTime(r.actualStart)}
+                                        onChange={e => setMatTimeOverride(m => ({ ...m, [r.matNo]: { ...m[r.matNo], start: e.target.value } }))}
+                                        style={{ fontSize: 11, padding: '1px 3px', width: 64 }} />
+                                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>–</span>
+                                      <TimeInput24
+                                        value={matTimeOverride[r.matNo]?.end ?? (r.actualEnd ? fmtTime(r.actualEnd) : '')}
+                                        onChange={e => setMatTimeOverride(m => ({ ...m, [r.matNo]: { ...m[r.matNo], end: e.target.value } }))}
+                                        style={{ fontSize: 11, padding: '1px 3px', width: 64 }} />
+                                    </div>
+                                  ) : (
+                                    <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 1 }}>🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}</div>
+                                  )
                                 )}
                               </div>
                               <div style={{ textAlign: 'center', minWidth: 40 }}>
