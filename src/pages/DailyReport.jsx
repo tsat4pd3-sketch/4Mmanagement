@@ -523,6 +523,20 @@ function LiveTab({ role }) {
   // (session.product_id ไม่ได้ถูกตั้งค่าจาก UI เปิดกะ เลยเป็น null เสมอ — ใช้ mat_no ของแต่ละใบงานแทน)
   const ctForMatNo = (matNo) => kanbanStds.find(s => s.mat_no === matNo)?.dr_products?.cycle_time_sec || 0;
 
+  // นาที Downtime ที่ทับซ้อนกับช่วงเวลา [startMs, endMs] — ใช้หักจาก "เวลาที่ MAT.NO นี้วิ่งจริง" ก่อนเทียบ %P
+  // เทียบด้วยช่วงเวลาจริง (started_at/ended_at) ไม่ใช่แค่ d.mat_no ตรงกัน เพราะ Downtime ของไลน์ร่วม (ไม่ระบุ MAT.NO)
+  // ก็กระทบ MAT.NO ที่วิ่งซ้อนอยู่ในช่วงนั้นด้วย — ถ้าไม่หัก จะนับเวลาผลิตจริงเกิน ทำให้ %P เพี้ยน (เช่นเกิน 100%)
+  const dtOverlapMin = (startMs, endMs) => {
+    if (!startMs || !endMs || endMs <= startMs) return 0;
+    return dtLogs.reduce((sum, d) => {
+      if (!d.started_at) return sum;
+      const s0 = new Date(d.started_at).getTime();
+      const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + (d.duration_min || 0) * 60000;
+      const s = Math.max(s0, startMs), e = Math.min(e0, endMs);
+      return e > s ? sum + (e - s) / 60000 : sum;
+    }, 0);
+  };
+
   // หา process_type ของกะนี้ — อิงจากไลน์เป็นหลัก (เครื่องจักรของไลน์ HYDROFORM ถูก tag เป็น metal_forming ไว้แล้วใน
   // ตั้งค่า > เครื่องจักร และไม่ขึ้นกับว่าเปิด Order ไปแล้วหรือยัง) ถ้าไลน์ไม่มีเครื่องจักร tag ไว้ ค่อย fallback ไปดูสินค้าที่กำลังผลิต
   const sessionProcessType = () => {
@@ -917,20 +931,31 @@ function LiveTab({ role }) {
 
     const A = netAvail > 0 ? Math.min(1, runMin / netAvail) : 0;
 
-    // Performance: คิดเป็นนาทีที่ "ควรใช้" ต่อใบงาน โดยใช้ CT ของ MAT.NO นั้นๆ (ไม่ใช่ CT เดียวของ session
-    // เพราะกะเดียวอาจผลิตหลาย MAT.NO) — รวมเฉพาะใบที่หา CT เจอ ใบที่ไม่มี CT จะถูกแยกนับเป็น unknownQty
-    let producedMin = 0, knownQty = 0, unknownQty = 0;
-    const tallyOrder = (matNo, qty) => {
+    // Performance: เทียบยอดผลิตจริงกับ "ควรได้ถ้าวิ่งเต็มเวลา" ของแต่ละ MAT.NO แยกกัน (ช่วงเวลาเปิด-ปิดของใบงานนั้นๆ หักด้วย
+    // Downtime ที่ทับซ้อนช่วงนั้น) แล้วรวมยอด — ต้องแยกตาม MAT.NO เพราะไลน์ร่วม (เช่น APRON ASSY) อาจผลิตหลาย MAT.NO
+    // พร้อมกันคนละสถานี ถ้ารวม producedMin ของทุก MAT.NO แล้วหารด้วย runMin เดียวของทั้งกะ จะนับเวลาซ้ำซ้อน ทำให้ P เพี้ยน
+    // (เคยเจอ P ติดเพดาน 100% ทั้งที่ผลิตได้น้อยกว่าควรได้ของแต่ละ MAT.NO ตอนแยกดู)
+    let knownQty = 0, unknownQty = 0, totalAchievable = 0;
+    const matNosForP = Array.from(new Set(prodOrders.map(o => o.mat_no)));
+    matNosForP.forEach(matNo => {
+      const orders = prodOrders.filter(o => o.mat_no === matNo);
+      const qty = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)
+                + orders.filter(o => o.status === 'open').reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || 0), 0);
       if (!qty) return;
-      const ct = ctForMatNo(matNo);
-      if (ct > 0) { producedMin += qty * ct / 60; knownQty += qty; }
-      else unknownQty += qty;
-    };
-    prodOrders.filter(o => o.status === 'confirmed').forEach(o => tallyOrder(o.mat_no, o.qty));
-    prodOrders.filter(o => o.status === 'open').forEach(o => tallyOrder(o.mat_no, parseInt(carryQtyActual[o.id]) || 0));
+      const ctSec = ctForMatNo(matNo);
+      if (ctSec <= 0) { unknownQty += qty; return; }
+      const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
+      const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
+      const startMs = openedTimes.length ? Math.min(...openedTimes) : (openedAt ? openedAt.getTime() : null);
+      const endMs   = closedTimes.length ? Math.max(...closedTimes) : closedAt.getTime();
+      if (startMs == null || endMs <= startMs) { unknownQty += qty; return; }
+      const runWinMin = Math.max(0, (endMs - startMs) / 60000 - dtOverlapMin(startMs, endMs));
+      totalAchievable += Math.floor(runWinMin * 60 / ctSec);
+      knownQty += qty;
+    });
 
     // ctSec ไม่รู้เลยสักใบ (ไม่มี Cycle Time ใน Product Master ของทุก MAT.NO ที่ผลิต) → P คำนวณไม่ได้จริง ห้าม default เป็น 100%
-    const P = knownQty > 0 ? (runMin > 0 ? Math.min(1, producedMin / runMin) : 0) : null;
+    const P = knownQty > 0 ? (totalAchievable > 0 ? Math.min(1, knownQty / totalAchievable) : 0) : null;
     const Q = totalProduced > 0 ? Math.max(0, (totalProduced - ngQty) / totalProduced) : 1;
     const oee = P != null ? A * P * Q : null;
     return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty, knownQty, unknownQty };
@@ -1758,7 +1783,9 @@ function LiveTab({ role }) {
                       if (actualStart && e < actualStart.getTime()) e += 86400000;
                       return e;
                     })() : null);
-                    const winMin = (actualStart && winEndMs) ? Math.max(0, (winEndMs - actualStart.getTime()) / 60000) : null;
+                    // หักเวลา Downtime ที่ทับซ้อนช่วงวิ่งของ MAT.NO นี้ออกก่อน ไม่งั้น "ควรได้" จะคิดจากเวลาทั้งหมด
+                    // (รวมเวลาหยุด) ทำให้ %P ต่ำเกินจริง และไม่ตรงกับ P รวมที่คำนวณใน computeOEE()
+                    const winMin = (actualStart && winEndMs) ? Math.max(0, (winEndMs - actualStart.getTime()) / 60000 - dtOverlapMin(actualStart.getTime(), winEndMs)) : null;
                     const achievable = (ctSec > 0 && winMin != null) ? Math.floor(winMin * 60 / ctSec) : null;
                     return { matNo, partName: orders[0]?.part_name, target, qty, ng, dt, actualStart, actualEnd, achievable };
                   }).sort((a, b) => b.qty - a.qty);
@@ -1949,24 +1976,31 @@ function LiveTab({ role }) {
                   </Field>
                 </div>
 
-                {/* Summary stats */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(90px,1fr))', gap: 10, marginBottom: 16 }}>
-                  {[
-                    { label: 'เวลากะ',       value: fmtMin(shiftMin),        color: 'var(--text)' },
-                    { label: 'หยุดนโยบาย',   value: fmtMin(Math.round(policyBreakMin)), color: '#22c55e' },
-                    { label: 'เวลาที่พร้อม',  value: fmtMin(netAvail),        color: '#a78bfa' },
-                    { label: 'Downtime',      value: fmtMin(totalDT),         color: '#ef4444' },
-                    { label: 'Run Time',      value: fmtMin(runMin),          color: '#4d9fff' },
-                    { label: 'Order ที่ปิด', value: `${prodOrders.filter(o => o.status === 'confirmed').length} ใบ`, color: '#22c55e' },
-                    { label: 'ผลิตได้',     value: `${totalProduced} ชิ้น`, color: '#22c55e' },
-                    { label: 'NG',           value: `${ng} ชิ้น`,        color: '#f97316' },
-                  ].map(k => (
-                    <div key={k.label} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
-                      <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{k.label}</div>
-                      <div style={{ fontSize: 14, fontWeight: 800, color: k.color, marginTop: 2 }}>{k.value}</div>
+                {/* Summary stats — แยกหยุดในแผน(เพิ่มเติมจากนโยบาย)/นอกแผนออกจากกัน ให้บวกกันแล้วเท่ากับเวลากะเป๊ะๆ
+                    (เวลากะ = หยุดนโยบาย + หยุดในแผน + หยุดนอกแผน + Run Time) ไม่งั้นจะดูเหมือนเวลารวมเกิน 12 ชม. */}
+                {(() => {
+                  const loggedPlannedDT   = dtLogs.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
+                  const loggedUnplannedDT = totalDT - loggedPlannedDT;
+                  return (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(90px,1fr))', gap: 10, marginBottom: 16 }}>
+                      {[
+                        { label: 'เวลากะ',       value: fmtMin(shiftMin),        color: 'var(--text)' },
+                        { label: 'หยุดนโยบาย',   value: fmtMin(Math.round(policyBreakMin)), color: '#22c55e' },
+                        { label: 'หยุดในแผน',     value: fmtMin(Math.round(loggedPlannedDT)), color: '#f59e0b' },
+                        { label: 'หยุดนอกแผน',    value: fmtMin(Math.round(loggedUnplannedDT)), color: '#ef4444' },
+                        { label: 'Run Time',      value: fmtMin(runMin),          color: '#4d9fff' },
+                        { label: 'Order ที่ปิด', value: `${prodOrders.filter(o => o.status === 'confirmed').length} ใบ`, color: '#22c55e' },
+                        { label: 'ผลิตได้',     value: `${totalProduced} ชิ้น`, color: '#22c55e' },
+                        { label: 'NG',           value: `${ng} ชิ้น`,        color: '#f97316' },
+                      ].map(k => (
+                        <div key={k.label} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+                          <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{k.label}</div>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: k.color, marginTop: 2 }}>{k.value}</div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  );
+                })()}
 
                 {/* Quality summary from defect_logs */}
                 {(() => {
@@ -2013,7 +2047,9 @@ function LiveTab({ role }) {
                       if (actualStart && e < actualStart.getTime()) e += 86400000;
                       return e;
                     })() : null);
-                    const winMin = (actualStart && winEndMs) ? Math.max(0, (winEndMs - actualStart.getTime()) / 60000) : null;
+                    // หักเวลา Downtime ที่ทับซ้อนช่วงวิ่งของ MAT.NO นี้ออกก่อน ไม่งั้น "ควรได้" จะคิดจากเวลาทั้งหมด
+                    // (รวมเวลาหยุด) ทำให้ %P ต่ำเกินจริง และไม่ตรงกับ P รวมที่คำนวณใน computeOEE()
+                    const winMin = (actualStart && winEndMs) ? Math.max(0, (winEndMs - actualStart.getTime()) / 60000 - dtOverlapMin(actualStart.getTime(), winEndMs)) : null;
                     const achievable = (ctSec > 0 && winMin != null) ? Math.floor(winMin * 60 / ctSec) : null;
                     return { matNo, partName: orders[0]?.part_name, target, qty: confirmedQty + openQty, ng, dt, actualStart, actualEnd, achievable };
                   }).sort((a, b) => b.qty - a.qty);
