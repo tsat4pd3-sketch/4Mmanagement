@@ -1013,6 +1013,16 @@ export default function Dashboard() {
                         })()}
                         {(() => {
                           const positioned = computeQueuedPositionsFull(cards).map(item => pctForHalf(item, half)).filter(Boolean);
+                          // MIN_W_PCT บวกความกว้างขั้นต่ำให้การ์ดบาง ๆ มองเห็นได้ แต่ถ้าการ์ดสองใบต่อคิวกันพอดี
+                          // (จบ-เริ่มติดกัน) การบวกความกว้างขั้นต่ำแยกอิสระแต่ละใบจะทำให้ขอบขวาของใบแรกล้ำ
+                          // ขอบซ้ายของใบถัดไป เห็นเป็นแถบซ้อนทับกันทั้งที่ข้อมูลจริงต่อคิวไม่ทับกัน — หรี่ความกว้าง
+                          // ของใบก่อนหน้าลงให้ไม่ล้ำขอบซ้ายของใบถัดไปเสมอ
+                          for (let i = 0; i < positioned.length - 1; i++) {
+                            const maxRight = positioned[i + 1].leftPct;
+                            if (positioned[i].leftPct + positioned[i].widthPct > maxRight) {
+                              positioned[i].widthPct = Math.max(0, maxRight - positioned[i].leftPct);
+                            }
+                          }
                           return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone }, oi) => {
                           if (leftPct >= 100) return null;
                           const statusColor = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
