@@ -299,12 +299,14 @@ function LiveTab({ role }) {
 
     // Fetch carry-over orders from previous sessions of same line (not yet imported)
     if (lineName) {
+      // ยอดยกถูกบันทึกถาวรตั้งแต่หัวหน้ากะ "ส่งขอปิดกะ" แล้ว (ไม่ต้องรอ SV อนุมัติ) — SV มีหน้าที่ตรวจ
+      // NG/Downtime/OEE เท่านั้น ไม่เกี่ยวกับยอดยก จึงรับ pending_close ด้วย ไม่ต้องรอ closed
       const { data: prevSessions } = await supabaseDR.from('production_sessions')
         .select('id')
         .eq('line_name', lineName)
-        .eq('status', 'closed')
+        .in('status', ['closed', 'pending_close'])
         .neq('id', sessionId)
-        .order('closed_at', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(5);
       if (prevSessions?.length) {
         const prevIds = prevSessions.map(s => s.id);
@@ -1108,7 +1110,13 @@ function LiveTab({ role }) {
     const openOrders = prodOrders.filter(o => o.status === 'open');
     const undecided  = openOrders.filter(o => !carryOverDecisions[o.id]);
     if (undecided.length > 0) {
-      toast.error(`มี ${undecided.length} Order ที่ยังไม่ได้ตัดสินใจ (Carry Over / ยกเลิก)`);
+      toast.error(`มี ${undecided.length} Order ที่ยังไม่ได้ตัดสินใจ (ผลิตครบแล้ว / ยกยอด / ยกเลิก)`);
+      return;
+    }
+    // ครบเป้าแล้วแต่ยังเลือก "ยกยอดต่อ" — ไม่มีอะไรเหลือให้ยก ต้องใช้ "ผลิตครบแล้ว" แทน
+    const invalidCarry = openOrders.filter(o => carryOverDecisions[o.id] === 'carry' && (parseInt(carryQtyActual[o.id]) || 0) >= o.qty);
+    if (invalidCarry.length > 0) {
+      toast.error(`มี ${invalidCarry.length} Order ที่ผลิตครบเป้าแล้วแต่เลือก "ยกยอดต่อ" — กรุณาเปลี่ยนเป็น "ผลิตครบแล้ว"`);
       return;
     }
 
@@ -1143,12 +1151,22 @@ function LiveTab({ role }) {
         stoppedAt = new Date(ms).toISOString();
       }
       if (decision === 'carry') {
+        // หมายเหตุ: ไม่เซ็ต carry_over_from_session_id ที่นี่ — field นี้ใช้บอกว่า order นี้ "ถูกรับมาจากกะก่อน"
+        // (ใส่ตอน import เท่านั้น ที่ handleImportCarryOrders) ถ้าเซ็ตที่นี่จะกลายเป็น order ตัวเองชี้กลับมาตัวเอง
+        // ทำให้ขึ้นป้าย "ยกยอดมา" ผิดๆทั้งที่ยังไม่เคยถูกรับมาจากไหนเลย แค่กำลังจะถูกยกออกไปกะถัดไปเป็นครั้งแรก
         await supabaseDR.from('prod_orders').update({
           status:      'carry_over',
           qty_actual:  qActual,
           stopped_at:  stoppedAt,
-          carry_over_from_session_id: selSession.id,
           carry_over_note: `ยกยอด: ทำได้ ${qActual}/${order.qty} ชิ้น จาก${selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} ${fmtDate(selSession.work_date)}`,
+        }).eq('id', order.id);
+      } else if (decision === 'confirm') {
+        await supabaseDR.from('prod_orders').update({
+          status:       'confirmed',
+          qty_actual:   order.qty,
+          stopped_at:   stoppedAt,
+          confirmed_at: stoppedAt,
+          confirmed_by: fullName,
         }).eq('id', order.id);
       } else if (decision === 'cancel') {
         await supabaseDR.from('prod_orders').update({ status: 'cancelled', qty_actual: qActual, stopped_at: stoppedAt }).eq('id', order.id);
@@ -1325,6 +1343,14 @@ function LiveTab({ role }) {
   // SV rejects pending_close → revert to 'open'
   const handleRejectClose = async () => {
     if (!selSession || selSession.status !== 'pending_close') return;
+    // ยอดยกของกะนี้เปิดให้กะถัดไปรับได้ทันทีที่ขอปิดกะ (ไม่รอ SV) — ถ้ากะถัดไปรับไปแล้ว (status: 'imported')
+    // ห้ามปฏิเสธ เพราะข้อมูลถูกใช้ไปแล้ว ย้อนกลับเป็น open เฉยๆจะทำให้ของซ้ำซ้อน/ขัดแย้งกับกะถัดไป
+    const { data: alreadyImported } = await supabaseDR.from('prod_orders')
+      .select('id').eq('session_id', selSession.id).eq('status', 'imported').limit(1);
+    if (alreadyImported?.length) {
+      toast.error('ไม่สามารถปฏิเสธได้ — มียอดยกของกะนี้ถูกกะถัดไปรับไปแล้ว กรุณาแก้ไขร่วมกับหัวหน้ากะถัดไปก่อน');
+      return;
+    }
     if (!window.confirm('ปฏิเสธคำขอปิดกะ? กะจะกลับสู่สถานะ "กำลังผลิต"')) return;
     // คืนสถานะ order ที่เคยถูกยกยอด/ยกเลิกไว้ตอนขอปิดกะ กลับเป็น open เพื่อให้ leader แก้ไขใหม่ได้
     await supabaseDR.from('prod_orders').update({
@@ -1936,7 +1962,9 @@ function LiveTab({ role }) {
                   const rows = matNos.map(matNo => {
                     const orders = prodOrders.filter(o => o.mat_no === matNo);
                     const target = orders.reduce((s, o) => s + o.qty, 0);
-                    const qty = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
+                    // นับยอด confirmed เต็มเป้า + qty_actual ของ carry_over/cancelled (กรอกเองโดย leader ตอนปิดกะ)
+                    // ให้ตรงกับยอดรวม selSession.actual_qty ด้านบน ไม่งั้นจะเห็นเป็น 0 ทั้งที่ความจริงผลิตไปแล้ว
+                    const qty = orders.reduce((s, o) => s + (o.status === 'confirmed' ? o.qty : (o.qty_actual || 0)), 0);
                     const orderIds = new Set(orders.map(o => o.id));
                     const ng = defectLogs.filter(d => orderIds.has(d.prod_order_id)).reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
                     const dt = dtLogs.filter(d => d.mat_no === matNo).reduce((s, d) => s + (d.duration_min || 0), 0);
@@ -2433,19 +2461,15 @@ function LiveTab({ role }) {
                 {(() => {
                   const openOrders = prodOrders.filter(o => o.status === 'open');
                   if (!openOrders.length) return null;
-                  const allDecided = openOrders.every(o => carryOverDecisions[o.id]);
-                  // ประมาณยอดที่ "ผลิตได้จริง" ในช่วงเวลาที่เหลือของกะนี้ (จาก opened_at ถึงเวลาปิดกะที่กรอก)
-                  // ใช้เป็นค่า default ของ "ยอดที่ทำได้ในกะนี้" แทนเริ่มจาก 0 — หัวหน้ากะแก้ไขได้ถ้าไม่ตรง
-                  const estimateAchievableQty = (o) => {
-                    const ctSec = ctForMatNo(o.mat_no);
-                    if (!ctSec || !o.opened_at || !selSession?.work_date) return null;
-                    const openedMs = new Date(o.opened_at).getTime();
-                    const endTimeStr = closeEndTime || nowTime();
-                    let endMs = new Date(`${selSession.work_date}T${endTimeStr.slice(0,5)}:00`).getTime();
-                    if (endMs < openedMs) endMs += 86400000; // กะดึกข้ามวัน
-                    const availMin = Math.max(0, (endMs - openedMs) / 60000);
-                    return Math.max(0, Math.min(o.qty, Math.floor(availMin * 60 / ctSec)));
-                  };
+                  // ยอดยกต้องมาจากของจริงที่ leader กรอกเองเท่านั้น ห้ามให้ระบบประมาณเวลาที่ "น่าจะ" ผลิตได้มาเติมให้
+                  // (ของเดิมเคยเดาจากเวลาที่เหลือ ทำให้ดูเหมือนผลิตครบทั้งที่ยังไม่ได้ทำ) — เริ่มที่ 0 เสมอ บังคับให้กรอกเอง
+                  const invalidCarry = openOrders.filter(o => {
+                    const dec = carryOverDecisions[o.id];
+                    if (dec !== 'carry') return false;
+                    const qA = parseInt(carryQtyActual[o.id]) || 0;
+                    return qA >= o.qty; // ผลิตครบ/เกินเป้าแล้ว แต่ยังเลือก "ยกยอดต่อ" — ไม่มีอะไรเหลือให้ยก
+                  });
+                  const allDecided = openOrders.every(o => carryOverDecisions[o.id]) && invalidCarry.length === 0;
                   return (
                     <div style={{ marginBottom: 14, padding: '12px 14px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10 }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', marginBottom: 10 }}>
@@ -2466,14 +2490,14 @@ function LiveTab({ role }) {
                                 </div>
                                 <div style={{ display: 'flex', gap: 6 }}>
                                   <button onClick={() => {
-                                      setCarryOverDecisions(d => ({ ...d, [o.id]: 'carry' }));
-                                      setCarryQtyActual(m => {
-                                        if (m[o.id] !== undefined && m[o.id] !== '') return m;
-                                        const est = estimateAchievableQty(o);
-                                        return est != null ? { ...m, [o.id]: String(est) } : m;
-                                      });
+                                      setCarryOverDecisions(d => ({ ...d, [o.id]: 'confirm' }));
+                                      setCarryQtyActual(m => ({ ...m, [o.id]: String(o.qty) }));
                                     }}
-                                    style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'carry' ? '#22c55e' : 'var(--border)'}`, background: dec === 'carry' ? 'rgba(34,197,94,0.2)' : 'var(--bg2)', color: dec === 'carry' ? '#22c55e' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                                    style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'confirm' ? '#22c55e' : 'var(--border)'}`, background: dec === 'confirm' ? 'rgba(34,197,94,0.2)' : 'var(--bg2)', color: dec === 'confirm' ? '#22c55e' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                                    ✅ ผลิตครบแล้ว
+                                  </button>
+                                  <button onClick={() => setCarryOverDecisions(d => ({ ...d, [o.id]: 'carry' }))}
+                                    style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'carry' ? '#a78bfa' : 'var(--border)'}`, background: dec === 'carry' ? 'rgba(167,139,250,0.2)' : 'var(--bg2)', color: dec === 'carry' ? '#a78bfa' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                                     ➡ ยกยอดต่อ
                                   </button>
                                   <button onClick={() => setCarryOverDecisions(d => ({ ...d, [o.id]: 'cancel' }))}
@@ -2482,12 +2506,17 @@ function LiveTab({ role }) {
                                   </button>
                                 </div>
                               </div>
-                              {/* qty_actual input — show when carry or cancel (always need to know what was done this shift) */}
-                              {dec && (
+                              {/* ผลิตครบแล้ว = ปิดยอดเต็มเป้าทันที ไม่ต้องกรอกอะไรเพิ่ม / ยกยอด-ยกเลิก ต้องกรอกยอดที่ทำได้จริงเอง (ห้ามเดาให้) */}
+                              {dec === 'confirm' && (
+                                <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>
+                                  ✓ ปิดยอด {o.qty} / {o.qty} ชิ้น (ครบเป้า) — ไม่มียอดยกไปกะถัดไป
+                                </div>
+                              )}
+                              {(dec === 'carry' || dec === 'cancel') && (
                                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
                                   <div style={{ flex: 1, minWidth: 90 }}>
                                     <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, marginBottom: 3 }}>
-                                      ✏️ ยอดที่ทำได้ในกะนี้ (ชิ้น) {dec === 'carry' && estimateAchievableQty(o) != null && <span style={{ color: '#4d9fff', fontWeight: 400 }}>· คำนวณจากเวลาที่เหลือ แก้ไขได้</span>}
+                                      ✏️ ยอดที่ทำได้จริงในกะนี้ (ชิ้น) — กรอกเองตามของจริง
                                     </div>
                                     <input type="number" min="0" max={o.qty} value={qActual}
                                       placeholder="0"
@@ -2506,8 +2535,8 @@ function LiveTab({ role }) {
                                       style={{ fontSize: 14 }} />
                                   </div>
                                   {dec === 'carry' && qA >= 0 && (
-                                    <div style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700 }}>
-                                      → กะหน้ารับต่อ <strong>{remaining}</strong> ชิ้น
+                                    <div style={{ fontSize: 11, fontWeight: 700, color: qA >= o.qty ? '#ef4444' : '#a78bfa' }}>
+                                      {qA >= o.qty ? '⚠ ครบเป้าแล้ว ไม่มีอะไรเหลือให้ยก — กดปุ่ม "ผลิตครบแล้ว" แทน' : <>→ กะหน้ารับต่อ <strong>{remaining}</strong> ชิ้น</>}
                                     </div>
                                   )}
                                 </div>
@@ -2518,7 +2547,7 @@ function LiveTab({ role }) {
                       </div>
                       {!allDecided && (
                         <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 8 }}>
-                          ⚠ ต้องเลือก "ยกยอดต่อ" หรือ "ยกเลิก" ทุก Order ก่อนปิดกะ
+                          ⚠ ต้องเลือก "ผลิตครบแล้ว" / "ยกยอดต่อ" / "ยกเลิก" ทุก Order ก่อนปิดกะ {invalidCarry.length > 0 && '(บาง Order เลือก "ยกยอดต่อ" ทั้งที่ครบเป้าแล้ว — กรุณาแก้)'}
                         </div>
                       )}
                     </div>
@@ -3220,10 +3249,9 @@ function HistoryTab({ role }) {
                     if (!matNos.length) return null;
                     const rows = matNos.map(matNo => {
                       const matOrders = orders.filter(o => o.mat_no === matNo);
-                      // ยอด "ผลิต" นับเฉพาะ confirmed เท่านั้น ให้ตรงกับ actual_qty ที่หัว session เสมอ —
-                      // carry_over คือยกยอดไปกะถัดไป ไม่ใช่ของกะนี้ ห้ามนับเป็นผลิต (qty_actual ของ carry_over
-                      // ไม่น่าเชื่อถือ อาจเป็นข้อมูลเก่า/ใส่ผิดตอนยกยอด ทำให้ผลรวมไม่ตรงกับยอดรวมที่บันทึกไว้)
-                      const qty = matOrders.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty || 0), 0);
+                      // ยอด "ผลิต" = confirmed เต็มเป้า + qty_actual ของ carry_over/cancelled — ให้ตรงกับ actual_qty
+                      // ที่หัว session เสมอ (qty_actual ตอนนี้ต้องกรอกเองทุกครั้ง ไม่มี auto-estimate แล้ว จึงเชื่อถือได้)
+                      const qty = matOrders.reduce((sum, o) => sum + (o.status === 'confirmed' ? (o.qty || 0) : (o.qty_actual || 0)), 0);
                       const orderIds = new Set(matOrders.map(o => o.id));
                       const ng = defects.filter(d => orderIds.has(d.prod_order_id)).reduce((sum, d) => sum + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
                       const dt = dts.filter(d => d.mat_no === matNo).reduce((sum, d) => sum + (d.duration_min || 0), 0);
