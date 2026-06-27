@@ -1420,7 +1420,7 @@ function LiveTab({ role }) {
                 • {o.line_name} · {o.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · วันที่ {fmtDate(o.work_date)}
               </div>
             ))}
-            <div style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>กรุณา SV ทำการปิดกะให้ครบก่อนเริ่มกะใหม่</div>
+            <div style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>กะเหล่านี้ค้างจากวันก่อน กรุณาปิด/อนุมัติให้ครบ (เริ่มกะใหม่ของวันนี้ได้ตามปกติ ไม่ต้องรอ)</div>
           </div>
         )}
 
@@ -1460,7 +1460,10 @@ function LiveTab({ role }) {
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  {canOpen && selSession.status === 'open' && (
+                  {/* เปิดกะใหม่ได้เสมอไม่ว่ากะที่เลือกอยู่จะสถานะไหน — กะรออนุมัติ SV (pending_close)
+                      ไม่ควรบล็อกการเริ่มกะถัดไป เพราะ SV ทำงานแค่กะเช้าแต่ไลน์ผลิตทำงาน 24 ชม.
+                      (handleOpenSession เช็คซ้ำเฉพาะไลน์+กะ+วันที่เดียวกันอยู่แล้ว ป้องกันเปิดทับกะเดิมจริงๆ) */}
+                  {canOpen && (
                     <button onClick={() => { const s = currentShift(); setOpenForm(f => ({ ...f, shift: s, start_time: shiftStart(s) })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>
                   )}
 
