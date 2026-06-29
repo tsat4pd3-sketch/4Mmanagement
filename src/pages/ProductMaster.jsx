@@ -37,7 +37,7 @@ const btnSecondary = {
   borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)',
 };
 
-const BLANK = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', is_active: true, effective_from: '', image_url: '', pair_mat_no: '' });
+const BLANK = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', posting_mode: 'immediate', lot_accumulate_threshold: '', is_active: true, effective_from: '', image_url: '', pair_mat_no: '' });
 
 /* ── Quick-link chips to connected modules ── */
 function RelatedLinks({ matNo, productId }) {
@@ -125,7 +125,9 @@ export default function ProductMaster() {
       name: item.name, code: item.code || '', mat_no: item.mat_no || '', p_no: item.p_no || '',
       customer: item.customer || '', line_name: item.line_name || '',
       cycle_time_sec: item.cycle_time_sec || '', target_per_shift: item.target_per_shift || '',
-      process_type: item.process_type || 'welding_assembly', is_active: item.is_active, effective_from: item.effective_from || '',
+      process_type: item.process_type || 'welding_assembly',
+      posting_mode: item.posting_mode || 'immediate', lot_accumulate_threshold: item.lot_accumulate_threshold || '',
+      is_active: item.is_active, effective_from: item.effective_from || '',
       image_url: item.image_url || sharedImage || '', pair_mat_no: item.pair_mat_no || '',
     } : BLANK());
   };
@@ -138,7 +140,9 @@ export default function ProductMaster() {
       name: item.name, code: item.code || '', mat_no: '', p_no: '',
       customer: item.customer || '', line_name: item.line_name || '',
       cycle_time_sec: item.cycle_time_sec || '', target_per_shift: item.target_per_shift || '',
-      process_type: item.process_type || 'welding_assembly', is_active: true,
+      process_type: item.process_type || 'welding_assembly',
+      posting_mode: item.posting_mode || 'immediate', lot_accumulate_threshold: item.lot_accumulate_threshold || '',
+      is_active: true,
       effective_from: new Date().toISOString().slice(0, 10),
       image_url: item.image_url || '',
     });
@@ -146,6 +150,9 @@ export default function ProductMaster() {
 
   const handleSave = async () => {
     if (!form.name) { toast.error('กรอกชื่อสินค้า'); return; }
+    if (form.posting_mode === 'lot_accumulate' && !(Number(form.lot_accumulate_threshold) > 0)) {
+      toast.error('กรอกจำนวนสะสมขั้นต่ำ (เช่น 800, 1000) สำหรับโหมดสะสม lot'); return;
+    }
     setSaving(true);
     try {
       let imageUrl = form.image_url || null;
@@ -166,6 +173,9 @@ export default function ProductMaster() {
         cycle_time_sec: form.cycle_time_sec ? parseFloat(form.cycle_time_sec) : null,
         target_per_shift: form.target_per_shift ? parseInt(form.target_per_shift) : null,
         process_type: form.process_type || 'welding_assembly',
+        posting_mode: form.posting_mode || 'immediate',
+        lot_accumulate_threshold: form.posting_mode === 'lot_accumulate' && form.lot_accumulate_threshold
+          ? parseInt(form.lot_accumulate_threshold) : null,
         is_active: form.is_active,
         effective_from: form.effective_from || null,
         image_url: imageUrl,
@@ -495,6 +505,9 @@ export default function ProductMaster() {
                         <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: item.process_type === 'metal_forming' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.12)', color: item.process_type === 'metal_forming' ? '#fbbf24' : '#22c55e' }}>
                           {item.process_type === 'metal_forming' ? '⚙ Metal Forming' : '🔥 Welding/Assy'}
                         </span>
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: item.posting_mode === 'lot_accumulate' ? 'rgba(168,85,247,0.15)' : 'rgba(56,189,248,0.12)', color: item.posting_mode === 'lot_accumulate' ? '#a855f7' : '#38bdf8' }}>
+                          {item.posting_mode === 'lot_accumulate' ? `📥 สะสม Lot ≥${item.lot_accumulate_threshold ?? '?'}` : '📌 มีกัมบังก็ผลิต'}
+                        </span>
                         {members.length > 1 && <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {members.length} revisions</span>}
                         {!active && <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(107,114,128,0.15)', color: '#6b7280', fontWeight: 700 }}>ปิดใช้งาน</span>}
                       </div>
@@ -610,6 +623,9 @@ export default function ProductMaster() {
                       <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{partName}</span>
                       <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: repItem.process_type === 'metal_forming' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.12)', color: repItem.process_type === 'metal_forming' ? '#fbbf24' : '#22c55e' }}>
                         {repItem.process_type === 'metal_forming' ? '⚙ Metal Forming' : '🔥 Welding/Assy'}
+                      </span>
+                      <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: repItem.posting_mode === 'lot_accumulate' ? 'rgba(168,85,247,0.15)' : 'rgba(56,189,248,0.12)', color: repItem.posting_mode === 'lot_accumulate' ? '#a855f7' : '#38bdf8' }}>
+                        {repItem.posting_mode === 'lot_accumulate' ? `📥 สะสม Lot ≥${repItem.lot_accumulate_threshold ?? '?'}` : '📌 มีกัมบังก็ผลิต'}
                       </span>
                       <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>👥 {nameFamilies.length} ลูกค้า</span>
                       {totalBomAll > 0 && <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(61,214,92,0.1)', color: 'var(--accent)', fontWeight: 700 }}>📦 BOM: {totalBomAll}</span>}
@@ -744,6 +760,19 @@ export default function ProductMaster() {
                   <option value="metal_forming">⚙ Metal Forming</option>
                 </select>
               </Field>
+              <Field label="รูปแบบขึ้นกัมบัง *">
+                <select value={form.posting_mode} onChange={e => setForm(f => ({ ...f, posting_mode: e.target.value }))} style={inputSt}>
+                  <option value="immediate">📌 มีกัมบังก็ผลิต (ขึ้น Order ทุกครั้งที่ scan)</option>
+                  <option value="lot_accumulate">📥 สะสม Lot ก่อนขึ้น Order (Lot Post)</option>
+                </select>
+              </Field>
+              {form.posting_mode === 'lot_accumulate' && (
+                <Field label="จำนวนสะสมขั้นต่ำก่อนขึ้น Order (ชิ้น) *">
+                  <input type="number" min="1" value={form.lot_accumulate_threshold}
+                    onChange={e => setForm(f => ({ ...f, lot_accumulate_threshold: e.target.value }))}
+                    placeholder="เช่น 800, 1000" style={inputSt} />
+                </Field>
+              )}
               <Field label="ไลน์ผลิตหลัก">
                 <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inputSt}>
                   <option value="">ไม่ระบุ</option>
