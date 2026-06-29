@@ -945,7 +945,6 @@ export default function Management() {
                 queueEndMs = roundStartOf(roundIdx);
               }
               const durationMs = Math.max(o.orderEndMs - o.orderStartMs, 0);
-              const queueFloorMs = queueEndMs;
               let startMs = Math.max(o.orderStartMs, queueEndMs);
               let endMs = startMs + durationMs;
               // ถ้าช่วงเวลาผลิตของการ์ดนี้ทับเวลาพักเบรค ไม่เลื่อน startMs ไปหลังเบรค (เพราะจะทำให้
@@ -968,9 +967,10 @@ export default function Management() {
                 const confMs = new Date(o.confirmed_at).getTime();
                 if (endMs > confMs) {
                   endMs = confMs;
-                  // ห้ามให้ startMs ย้อนไปก่อนคิวที่ใบก่อนหน้าครองอยู่แล้ว (queueFloorMs) — ไม่งั้นถ้าสแกนปิด
-                  // 2 ใบพร้อมกัน (confirmed_at เท่ากัน) ทั้งคู่จะถูกหดให้จบที่จุดเดียวกันแล้วทับกัน
-                  startMs = Math.max(o.orderStartMs, queueFloorMs, endMs - durationMs);
+                  // ความกว้างการ์ดต้องไม่สั้นกว่า durationMs (qty × ct) เด็ดขาด เพราะนั่นคือเวลาขั้นต่ำที่ต้องใช้จริง
+                  // ในการผลิต ต่อให้ queueFloorMs (คิวใบก่อนหน้า) จะถูกล้ำก็ต้องยอม เพราะมันคือความจริงทางกายภาพ
+                  // ที่บีบไม่ได้ — ถ้าเกิดทับใบก่อนหน้าแสดงว่าข้อมูลเวลาที่สแกนปิดไม่ตรงกับเวลาที่ผลิตจริง ต้องโชว์ให้เห็น
+                  startMs = Math.max(o.orderStartMs, endMs - durationMs);
                   endMs = Math.max(endMs, startMs);
                 }
               }
