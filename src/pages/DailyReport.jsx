@@ -825,24 +825,17 @@ function LiveTab({ role }) {
       qty_ok:       match.qty,
     }).eq('id', match.id);
     if (error) { setSavingProdClose(false); toast.error(error.message); return; }
-
-    // ── RH/LH auto pairing: ปิดคู่พร้อมกันถ้าผูกไว้และยังเปิดอยู่ ──
-    let pairedClosedNo = null;
-    if (match.paired_order_id) {
-      const partner = prodOrders.find(o => o.id === match.paired_order_id && o.status === 'open');
-      if (partner) {
-        await supabaseDR.from('prod_orders').update({
-          status:       'confirmed',
-          confirmed_by: fullName,
-          confirmed_at: new Date().toISOString(),
-          qty_ok:       partner.qty,
-        }).eq('id', partner.id);
-        pairedClosedNo = partner.prod_no;
-      }
-    }
     setSavingProdClose(false);
-    toast.success(pairedClosedNo
-      ? `ปิด Order ${match.prod_no} และคู่ RH/LH ${pairedClosedNo} พร้อมกัน ✓`
+
+    // หมายเหตุ: เคย auto-close คู่ RH/LH ที่ผูกกันพร้อมกัน แต่ตัดออกแล้ว
+    // เพราะแต่ละข้างผลิตจบไม่พร้อมกันจริง การ force ปิดคู่ทำให้ qty_ok ผิดและ dashboard
+    // แสดงสถานะสับสน (ข้างที่ยังไม่จบถูกตีว่าเสร็จ) — ตอนนี้ปิดอิสระต่อข้าง
+    // paired_order_id ยังใช้แค่โชว์ label ว่าเป็นคู่กัน ไม่กระทบสถานะ
+    const partnerOpenNo = match.paired_order_id
+      ? prodOrders.find(o => o.id === match.paired_order_id && o.status === 'open')?.prod_no
+      : null;
+    toast.success(partnerOpenNo
+      ? `ปิด Order ${match.prod_no} · ${match.qty} ชิ้น ✓ (คู่ RH/LH ${partnerOpenNo} ยังเปิดอยู่ ต้องสแกนปิดแยก)`
       : `ปิด Order ${match.prod_no} · ${match.qty} ชิ้น ✓`);
     setCloseProdNo('');
     setCloseMatch(null);
