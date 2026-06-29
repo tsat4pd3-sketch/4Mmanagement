@@ -1101,7 +1101,7 @@ export default function Dashboard() {
                           const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
                           return (
                             <Fragment key={o.prod_no || oi}>
-                            <div title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}ม.)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs-realEndMs)/60000)}ม. ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}`}
+                            <div title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs-realEndMs)/60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}`}
                               style={{
                                 position: 'absolute', top: 4, bottom: 4,
                                 left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 24,
