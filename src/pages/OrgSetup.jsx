@@ -2,17 +2,19 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
 
-const KIND_LABEL = { section: 'Section', line: 'ไลน์', team: 'Team' };
+const KIND_LABEL = { section: 'Section', department: 'แผนก', line: 'ไลน์', team: 'Team' };
 
 export default function OrgSetup() {
   const [nodes, setNodes] = useState([]);
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selSection, setSelSection] = useState(null);
+  const [selDept, setSelDept] = useState(null);
   const [selLine, setSelLine] = useState(null);
   const [modal, setModal] = useState(null); // { kind, parentId, editing }
   const [formName, setFormName] = useState('');
   const [formCode, setFormCode] = useState('');
+  const [formCostCenter, setFormCostCenter] = useState('');
   const [formRefLineId, setFormRefLineId] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -30,27 +32,35 @@ export default function OrgSetup() {
   };
 
   const sections = useMemo(() => nodes.filter(n => n.kind === 'section'), [nodes]);
-  const linesOf = (sectionId) => nodes.filter(n => n.kind === 'line' && n.parent_id === sectionId);
+  const deptsOf = (sectionId) => nodes.filter(n => n.kind === 'department' && n.parent_id === sectionId);
+  const linesOf = (deptId) => nodes.filter(n => n.kind === 'line' && n.parent_id === deptId);
   const teamsOf = (lineId) => nodes.filter(n => n.kind === 'team' && n.parent_id === lineId);
 
   useEffect(() => {
     if (!selSection && sections.length) setSelSection(sections[0].id);
   }, [sections]); // eslint-disable-line
 
-  const currentLines = selSection ? linesOf(selSection) : [];
+  const currentDepts = selSection ? deptsOf(selSection) : [];
+  useEffect(() => {
+    if (currentDepts.length && !currentDepts.some(d => d.id === selDept)) setSelDept(currentDepts[0].id);
+    if (!currentDepts.length) setSelDept(null);
+  }, [selSection, nodes]); // eslint-disable-line
+
+  const currentLines = selDept ? linesOf(selDept) : [];
   useEffect(() => {
     if (currentLines.length && !currentLines.some(l => l.id === selLine)) setSelLine(currentLines[0].id);
     if (!currentLines.length) setSelLine(null);
-  }, [selSection, nodes]); // eslint-disable-line
+  }, [selDept, nodes]); // eslint-disable-line
 
   const currentTeams = selLine ? teamsOf(selLine) : [];
 
   const openCreate = (kind, parentId) => {
-    setFormName(''); setFormCode(''); setFormRefLineId('');
+    setFormName(''); setFormCode(''); setFormCostCenter(''); setFormRefLineId('');
     setModal({ kind, parentId, editing: null });
   };
   const openEdit = (node) => {
-    setFormName(node.name); setFormCode(node.code || ''); setFormRefLineId(node.ref_line_id ? String(node.ref_line_id) : '');
+    setFormName(node.name); setFormCode(node.code || ''); setFormCostCenter(node.cost_center || '');
+    setFormRefLineId(node.ref_line_id ? String(node.ref_line_id) : '');
     setModal({ kind: node.kind, parentId: node.parent_id, editing: node });
   };
 
@@ -61,6 +71,7 @@ export default function OrgSetup() {
       kind: modal.kind,
       name: formName.trim(),
       code: formCode.trim() || null,
+      cost_center: formCostCenter.trim() || null,
       parent_id: modal.parentId,
       ref_line_id: modal.kind === 'line' && formRefLineId ? Number(formRefLineId) : null,
     };
@@ -86,11 +97,12 @@ export default function OrgSetup() {
     if (error) return toast.error('ลบไม่สำเร็จ: ' + error.message);
     toast.success('ลบสำเร็จ');
     if (node.kind === 'section' && selSection === node.id) setSelSection(null);
+    if (node.kind === 'department' && selDept === node.id) setSelDept(null);
     if (node.kind === 'line' && selLine === node.id) setSelLine(null);
     fetchAll();
   };
 
-  const colStyle = { flex: 1, minWidth: 260, display: 'flex', flexDirection: 'column' };
+  const colStyle = { flex: 1, minWidth: 240, display: 'flex', flexDirection: 'column' };
   const itemStyle = (active) => ({
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     padding: '9px 12px', borderRadius: 8, cursor: 'pointer', marginBottom: 4,
@@ -105,7 +117,7 @@ export default function OrgSetup() {
           🏢 แผนผังองค์กร
         </h2>
         <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>
-          จัดการโครงสร้าง Section → ไลน์ → Team (master data ที่หน้าอื่นใช้อ้างอิง)
+          จัดการโครงสร้าง Section → แผนก → ไลน์ → Team พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)
         </p>
       </div>
 
@@ -122,7 +134,9 @@ export default function OrgSetup() {
             {sections.map(s => (
               <div key={s.id} style={itemStyle(selSection === s.id)} onClick={() => setSelSection(s.id)}>
                 <span style={{ fontSize: 13, color: s.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: s.is_active ? 'none' : 'line-through' }}>
-                  {s.name} <span style={{ fontSize: 10, color: 'var(--muted)' }}>({linesOf(s.id).length} ไลน์)</span>
+                  {s.name}
+                  <span style={{ fontSize: 10, color: 'var(--muted)' }}> ({deptsOf(s.id).length} แผนก)</span>
+                  {s.cost_center && <CostBadge code={s.cost_center} />}
                 </span>
                 <RowActions node={s} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
               </div>
@@ -130,21 +144,41 @@ export default function OrgSetup() {
             {!sections.length && <Empty text="ยังไม่มี Section" />}
           </div>
 
+          {/* Departments */}
+          <div style={colStyle} className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>แผนก ({currentDepts.length})</strong>
+              <button onClick={() => selSection && openCreate('department', selSection)} disabled={!selSection} style={addBtnSt}>➕</button>
+            </div>
+            {!selSection ? <Empty text="เลือก Section ก่อน" /> : currentDepts.map(d => (
+              <div key={d.id} style={itemStyle(selDept === d.id)} onClick={() => setSelDept(d.id)}>
+                <span style={{ fontSize: 13, color: d.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: d.is_active ? 'none' : 'line-through' }}>
+                  {d.name}
+                  <span style={{ fontSize: 10, color: 'var(--muted)' }}> ({linesOf(d.id).length} ไลน์)</span>
+                  {d.cost_center && <CostBadge code={d.cost_center} />}
+                </span>
+                <RowActions node={d} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
+              </div>
+            ))}
+            {selSection && !currentDepts.length && <Empty text="ยังไม่มีแผนกในนี้" />}
+          </div>
+
           {/* Lines */}
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>ไลน์ ({currentLines.length})</strong>
-              <button onClick={() => selSection && openCreate('line', selSection)} disabled={!selSection} style={addBtnSt}>➕</button>
+              <button onClick={() => selDept && openCreate('line', selDept)} disabled={!selDept} style={addBtnSt}>➕</button>
             </div>
-            {!selSection ? <Empty text="เลือก Section ก่อน" /> : currentLines.map(l => (
+            {!selDept ? <Empty text="เลือกแผนกก่อน" /> : currentLines.map(l => (
               <div key={l.id} style={itemStyle(selLine === l.id)} onClick={() => setSelLine(l.id)}>
                 <span style={{ fontSize: 13, color: l.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: l.is_active ? 'none' : 'line-through' }}>
                   {l.name} {!l.ref_line_id && <span style={{ fontSize: 10, color: '#f59e0b' }}>(ไม่ผูก production_lines)</span>}
+                  {l.cost_center && <CostBadge code={l.cost_center} />}
                 </span>
                 <RowActions node={l} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
               </div>
             ))}
-            {selSection && !currentLines.length && <Empty text="ยังไม่มีไลน์ในนี้" />}
+            {selDept && !currentLines.length && <Empty text="ยังไม่มีไลน์ในแผนกนี้" />}
           </div>
 
           {/* Teams */}
@@ -157,6 +191,7 @@ export default function OrgSetup() {
               <div key={t.id} style={itemStyle(false)}>
                 <span style={{ fontSize: 13, color: t.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: t.is_active ? 'none' : 'line-through' }}>
                   {t.name}
+                  {t.cost_center && <CostBadge code={t.cost_center} />}
                 </span>
                 <RowActions node={t} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
               </div>
@@ -175,11 +210,15 @@ export default function OrgSetup() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <label style={labelSt}>ชื่อ</label>
-                <input type="text" value={formName} onChange={e => setFormName(e.target.value)} placeholder="เช่น PD5 / LINE E / Team D" />
+                <input type="text" value={formName} onChange={e => setFormName(e.target.value)} placeholder="เช่น PD5 / HYDROFORM LASERCUT / LINE E / Team D" />
               </div>
               <div>
                 <label style={labelSt}>Code (ใช้อ้างอิงค่าเดิมในระบบ — ไม่บังคับ)</label>
                 <input type="text" value={formCode} onChange={e => setFormCode(e.target.value)} placeholder="เช่น PD5 / A" />
+              </div>
+              <div>
+                <label style={labelSt}>Cost Center (ไม่บังคับ)</label>
+                <input type="text" value={formCostCenter} onChange={e => setFormCostCenter(e.target.value)} placeholder="เช่น 2140662101" />
               </div>
               {modal.kind === 'line' && (
                 <div>
@@ -213,6 +252,14 @@ function RowActions({ node, onEdit, onToggle, onDelete }) {
       <button onClick={() => onToggle(node)} title={node.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'} style={iconBtnSt}>{node.is_active ? '🟢' : '⚪'}</button>
       <button onClick={() => onDelete(node)} title="ลบ" style={iconBtnSt}>🗑️</button>
     </div>
+  );
+}
+
+function CostBadge({ code }) {
+  return (
+    <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 6px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border2)' }}>
+      💰{code}
+    </span>
   );
 }
 
