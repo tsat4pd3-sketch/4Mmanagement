@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
 
-const KIND_LABEL = { section: 'Section', department: 'แผนก', line: 'ไลน์', team: 'Team' };
+const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม', team: 'Team / กะ' };
 const COST_CENTER_REQUIRED = ['section', 'department', 'line'];
 
 export default function OrgSetup() {
@@ -121,7 +121,7 @@ export default function OrgSetup() {
           🏢 แผนผังองค์กร
         </h2>
         <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>
-          จัดการโครงสร้าง Section → แผนก → ไลน์ → Team พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)
+          จัดการโครงสร้าง Section/ส่วน → Department/แผนก → Group/กลุ่ม → Team/กะ พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)
         </p>
       </div>
 
@@ -132,7 +132,7 @@ export default function OrgSetup() {
           {/* Sections */}
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>SECTION ({sections.length})</strong>
+              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>SECTION / ส่วน ({sections.length})</strong>
               <button onClick={() => openCreate('section', null)} style={addBtnSt}>➕</button>
             </div>
             {sections.map(s => (
@@ -151,14 +151,14 @@ export default function OrgSetup() {
           {/* Departments */}
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>แผนก ({currentDepts.length})</strong>
+              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>DEPARTMENT / แผนก ({currentDepts.length})</strong>
               <button onClick={() => selSection && openCreate('department', selSection)} disabled={!selSection} style={addBtnSt}>➕</button>
             </div>
             {!selSection ? <Empty text="เลือก Section ก่อน" /> : currentDepts.map(d => (
               <div key={d.id} style={itemStyle(selDept === d.id)} onClick={() => setSelDept(d.id)}>
                 <span style={{ fontSize: 13, color: d.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: d.is_active ? 'none' : 'line-through' }}>
                   {d.name}
-                  <span style={{ fontSize: 10, color: 'var(--muted)' }}> ({linesOf(d.id).length} ไลน์)</span>
+                  <span style={{ fontSize: 10, color: 'var(--muted)' }}> ({linesOf(d.id).length} กลุ่ม)</span>
                   {d.cost_center && <CostBadge code={d.cost_center} />}
                 </span>
                 <RowActions node={d} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
@@ -170,7 +170,7 @@ export default function OrgSetup() {
           {/* Lines */}
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>ไลน์ ({currentLines.length})</strong>
+              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>GROUP / กลุ่ม ({currentLines.length})</strong>
               <button onClick={() => selDept && openCreate('line', selDept)} disabled={!selDept} style={addBtnSt}>➕</button>
             </div>
             {!selDept ? <Empty text="เลือกแผนกก่อน" /> : currentLines.map(l => (
@@ -182,16 +182,16 @@ export default function OrgSetup() {
                 <RowActions node={l} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
               </div>
             ))}
-            {selDept && !currentLines.length && <Empty text="ยังไม่มีไลน์ในแผนกนี้" />}
+            {selDept && !currentLines.length && <Empty text="ยังไม่มีกลุ่มในแผนกนี้" />}
           </div>
 
           {/* Teams */}
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>TEAM ({currentTeams.length})</strong>
+              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>TEAM / กะ ({currentTeams.length})</strong>
               <button onClick={() => selLine && openCreate('team', selLine)} disabled={!selLine} style={addBtnSt}>➕</button>
             </div>
-            {!selLine ? <Empty text="เลือกไลน์ก่อน" /> : currentTeams.map(t => (
+            {!selLine ? <Empty text="เลือกกลุ่มก่อน" /> : currentTeams.map(t => (
               <div key={t.id} style={itemStyle(false)}>
                 <span style={{ fontSize: 13, color: t.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: t.is_active ? 'none' : 'line-through' }}>
                   {t.name}
@@ -200,7 +200,7 @@ export default function OrgSetup() {
                 <RowActions node={t} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
               </div>
             ))}
-            {selLine && !currentTeams.length && <Empty text="ยังไม่มี Team ในไลน์นี้" />}
+            {selLine && !currentTeams.length && <Empty text="ยังไม่มี Team ในกลุ่มนี้" />}
           </div>
         </div>
       )}

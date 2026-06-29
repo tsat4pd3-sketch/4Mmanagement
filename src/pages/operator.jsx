@@ -83,6 +83,8 @@ export default function Operator() {
   const [rejectLuReason,  setRejectLuReason]  = useState('');
   const [runningWeekly,   setRunningWeekly]   = useState(false);
   const [orgSectionOpts,  setOrgSectionOpts]  = useState([]);
+  const [orgSectionNodes, setOrgSectionNodes] = useState([]);
+  const [orgDeptNodes,    setOrgDeptNodes]    = useState([]);
 
   useEffect(() => {
     let alive = true;
@@ -93,8 +95,15 @@ export default function Operator() {
       .then(({ data }) => { if (alive) setLines(data || []); });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
       .then(({ data }) => { if (alive) setBusRoutes(data || []); });
-    supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('sort_order')
-      .then(({ data }) => { if (alive) setOrgSectionOpts((data || []).map(n => n.code || n.name)); });
+    supabase.from('org_nodes').select('id, code, name, kind, parent_id').eq('is_active', true).order('sort_order')
+      .then(({ data }) => {
+        if (!alive) return;
+        const orgNodes = data || [];
+        const secNodes = orgNodes.filter(n => n.kind === 'section');
+        setOrgSectionNodes(secNodes);
+        setOrgSectionOpts(secNodes.map(n => n.code || n.name));
+        setOrgDeptNodes(orgNodes.filter(n => n.kind === 'department'));
+      });
     if (isLeader && userLineId) {
       supabase.from('production_lines').select('name').eq('id', userLineId).single()
         .then(({ data }) => { if (alive) setMyLineName(data?.name ?? ''); });
@@ -1038,10 +1047,33 @@ export default function Operator() {
                   </select>
                 </div>
               </div>
-              <div>
-                <label style={labelSt}>แผนก</label>
-                <input type="text" value={editingEmp.department || ''}
-                  onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value })} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={labelSt}>Section / ส่วน</label>
+                  {isSupervisor ? (
+                    <input type="text" value={userSection || ''} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+                  ) : (
+                    <select value={editingEmp.section || ''} onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value, department: '' })}>
+                      <option value="">— เลือก —</option>
+                      {orgSectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  )}
+                </div>
+                <div>
+                  <label style={labelSt}>Department / แผนก</label>
+                  {(() => {
+                    const empSection = isSupervisor ? userSection : editingEmp.section;
+                    const secNode = orgSectionNodes.find(s => (s.code || s.name) === empSection);
+                    const deptOpts = secNode ? orgDeptNodes.filter(d => d.parent_id === secNode.id) : [];
+                    return (
+                      <select value={editingEmp.department || ''} disabled={!empSection}
+                        onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value })}>
+                        <option value="">{empSection ? '— เลือก —' : 'เลือก Section ก่อน'}</option>
+                        {deptOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
+                      </select>
+                    );
+                  })()}
+                </div>
               </div>
               <div>
                 <label style={labelSt}>วันเริ่มงาน</label>
@@ -1049,30 +1081,17 @@ export default function Operator() {
                   onChange={e => setEditingEmp({ ...editingEmp, start_date: e.target.value })} />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label style={labelSt}>Section</label>
-                  {isSupervisor ? (
-                    <input type="text" value={userSection || ''} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
-                  ) : (
-                    <select value={editingEmp.section || ''} onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value })}>
-                      <option value="">— เลือก —</option>
-                      {orgSectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  )}
-                </div>
-                <div>
-                  <label style={labelSt}>Team</label>
-                  <select value={editingEmp.team || ''} onChange={e => setEditingEmp({ ...editingEmp, team: e.target.value })}>
-                    <option value="">— เลือก —</option>
-                    <option value="A">Team A (กะเช้า)</option>
-                    <option value="B">Team B (กะดึก)</option>
-                    <option value="C">Team C (ไม่มีพันธะกะ)</option>
-                  </select>
-                </div>
+              <div>
+                <label style={labelSt}>Team / กะ</label>
+                <select value={editingEmp.team || ''} onChange={e => setEditingEmp({ ...editingEmp, team: e.target.value })}>
+                  <option value="">— เลือก —</option>
+                  <option value="A">Team A (กะเช้า)</option>
+                  <option value="B">Team B (กะดึก)</option>
+                  <option value="C">Team C (ไม่มีพันธะกะ)</option>
+                </select>
               </div>
               <div>
-                <label style={labelSt}>Group / Line</label>
+                <label style={labelSt}>Group / กลุ่ม (Line)</label>
                 {isLeader ? (
                   <input type="text" value={editingEmp.group_name || myLineName || ''} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                 ) : (

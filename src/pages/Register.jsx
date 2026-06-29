@@ -22,7 +22,8 @@ export default function Register() {
   const [lines,       setLines]       = useState([]);
   const [busRoutes,   setBusRoutes]   = useState([]);
   const [busRouteId,  setBusRouteId]  = useState('');
-  const [sectionOpts, setSectionOpts] = useState([]);
+  const [orgSections, setOrgSections] = useState([]);
+  const [orgDepts,    setOrgDepts]    = useState([]);
   const [teamOpts,    setTeamOpts]    = useState([]);
 
   useEffect(() => {
@@ -35,14 +36,18 @@ export default function Register() {
       });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
       .then(({ data }) => setBusRoutes(data || []));
-    supabase.from('org_nodes').select('code, name, kind').eq('is_active', true).order('sort_order')
+    supabase.from('org_nodes').select('id, code, name, kind, parent_id').eq('is_active', true).order('sort_order')
       .then(({ data }) => {
         const nodes = data || [];
-        setSectionOpts(nodes.filter(n => n.kind === 'section').map(n => n.code || n.name));
+        setOrgSections(nodes.filter(n => n.kind === 'section'));
+        setOrgDepts(nodes.filter(n => n.kind === 'department'));
         const teamCodes = [...new Set(nodes.filter(n => n.kind === 'team').map(n => n.code || n.name))];
         setTeamOpts(teamCodes);
       });
   }, []);
+
+  const selectedSectionNode = orgSections.find(s => (s.code || s.name) === section);
+  const deptOpts = selectedSectionNode ? orgDepts.filter(d => d.parent_id === selectedSectionNode.id) : [];
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -143,25 +148,28 @@ export default function Register() {
               </select>
             </div>
             <div>
-              <label style={labelSt}>แผนก / สายงาน</label>
-              <input type="text" placeholder="เช่น ฝ่ายผลิต" value={department} onChange={e => setDepartment(e.target.value)} />
+              <label style={labelSt}>Section / ส่วน</label>
+              {isSupervisor && userSection ? (
+                <input type="text" value={userSection} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+              ) : (
+                <select value={section} onChange={e => { setSection(e.target.value); setDepartment(''); }}>
+                  <option value="">— เลือก —</option>
+                  {orgSections.map(s => <option key={s.id} value={s.code || s.name}>{s.name}</option>)}
+                </select>
+              )}
             </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
-              <label style={labelSt}>Section</label>
-              {isSupervisor && userSection ? (
-                <input type="text" value={userSection} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
-              ) : (
-                <select value={section} onChange={e => setSection(e.target.value)}>
-                  <option value="">— เลือก —</option>
-                  {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              )}
+              <label style={labelSt}>Department / แผนก</label>
+              <select value={department} onChange={e => setDepartment(e.target.value)} disabled={!section}>
+                <option value="">{section ? '— เลือก —' : 'เลือก Section ก่อน'}</option>
+                {deptOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
+              </select>
             </div>
             <div>
-              <label style={labelSt}>Team</label>
+              <label style={labelSt}>Team / กะ</label>
               <select value={team} onChange={e => setTeam(e.target.value)}>
                 <option value="">— เลือก —</option>
                 {teamOpts.map(t => <option key={t} value={t}>Team {t}</option>)}
@@ -170,7 +178,7 @@ export default function Register() {
           </div>
 
           <div>
-            <label style={labelSt}>Group / Line</label>
+            <label style={labelSt}>Group / กลุ่ม (Line)</label>
             {(() => {
               const lineOpts = isSupervisor && userSection
                 ? lines.filter(l => l.section === userSection)
