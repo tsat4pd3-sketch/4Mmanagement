@@ -933,6 +933,21 @@ export default function Dashboard() {
                       const sorted = cards
                         .filter(o => o.orderStartMs && o.orderEndMs)
                         .sort((a, b) => a.orderStartMs - b.orderStartMs);
+                      // เงื่อนไขผสม: ใบที่ยังไม่ปิด+เกินเวลาจะตีแดงก็ต่อเมื่อ "ยอดรวมจริงของแถวนี้ยังไม่ทันเป้าตามเวลา" ด้วย
+                      // ถ้ายอดรวมทันเป้าอยู่ (แค่สแกนปิดไม่ตรง FIFO) จะไม่ตีแดง เพราะงานยังผลิตได้ตามแผนจริง
+                      const ctSec = ctByMatNo[sorted[0]?.mat_no] || 0;
+                      const rowActualQty = cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
+                      const firstStartMs = sorted.length ? sorted[0].orderStartMs : null;
+                      let expectedQty = Infinity;
+                      if (ctSec > 0 && firstStartMs) {
+                        let elapsedMs = Math.max(0, Math.min(nowMs, firstStartMs + 24 * 3600000) - firstStartMs);
+                        breaks.forEach(([bs, be]) => {
+                          const os = Math.max(bs, firstStartMs), oe = Math.min(be, nowMs);
+                          if (oe > os) elapsedMs -= (oe - os);
+                        });
+                        expectedQty = Math.max(0, elapsedMs) / 1000 / ctSec;
+                      }
+                      const rowBehindPace = rowActualQty < expectedQty;
                       let queueEndMs = -Infinity;
                       let curRoundIdx = null;
                       return sorted.map(o => {
@@ -991,7 +1006,7 @@ export default function Dashboard() {
                         // เพราะพนักงานมักทำงานเป็นช่วงแล้วมาสแกนปิดทีหลัง ไม่ใช่ปิดทันทีที่ผลิตจบตามทฤษฎี
                         // แต่ถ้ายังไม่ปิด ห้ามยืดไปถึง "ตอนนี้" (occupiedEndMs สำหรับใบเปิดเกินกำหนด) เพราะจะดันใบถัดไปผิดตำแหน่ง
                         queueEndMs = (o.isDone && o.confirmed_at) ? occupiedEndMs : endMs;
-                        const isDelayed = !o.isDone && !o.isCarry && endMs < nowMs;
+                        const isDelayed = !o.isDone && !o.isCarry && endMs < nowMs && rowBehindPace;
                         return { o, startMs, endMs, occupiedEndMs, isDelayed, isLateDone };
                       }).map((item, i, arr) => {
                         // ใบที่ยังไม่ปิด+เลยกำหนด หางสีแดงจะยืดไปถึง "ตอนนี้" เสมอ — แต่ถ้าใบถัดไปเริ่มทำงานไปแล้ว
