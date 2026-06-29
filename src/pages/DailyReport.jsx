@@ -744,19 +744,29 @@ function LiveTab({ role }) {
     if (error) { toast.error(error.message); return; }
 
     // ── RH/LH auto pairing ──────────────────────────────────────────
+    // ทั้ง 2 ข้างมีเลข SAP order เป็นของตัวเองเสมอ ต้องสแกนคู่ 2 ครั้งจริง — ไม่มีกรณี order ข้างเดียวแล้ว
     const partnerMatNo = products.find(p => p.mat_no === matNo)?.pair_mat_no || null;
     let nextMatNo = openProdForm.mat_no;
+
     if (pendingPairId) {
-      // นี่คือการสแกนคู่ RH/LH ใบที่สอง — ผูกกลับไปยังใบแรกที่รออยู่
+      // separate_order: นี่คือการสแกนคู่ RH/LH ใบที่สอง — ผูกกลับไปยังใบแรกที่รออยู่
+      // sync opened_at ให้ตรงกับใบแรก เพราะผลิตพร้อมกันจริงแม้สแกนคนละเวลา
+      const firstOrder = prodOrders.find(o => o.id === pendingPairId);
       await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', pendingPairId);
-      await supabaseDR.from('prod_orders').update({ paired_order_id: pendingPairId }).eq('id', data.id);
+      await supabaseDR.from('prod_orders').update({
+        paired_order_id: pendingPairId,
+        ...(firstOrder?.opened_at ? { opened_at: firstOrder.opened_at } : {}),
+      }).eq('id', data.id);
       setPendingPairId(null);
       toast.success(`เปิด Order คู่ RH/LH พร้อมกัน ✓ (${prodNo})`);
     } else if (partnerMatNo) {
       const existingPartner = prodOrders.find(o => o.mat_no === partnerMatNo && o.status === 'open' && !o.paired_order_id);
       if (existingPartner) {
         await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', existingPartner.id);
-        await supabaseDR.from('prod_orders').update({ paired_order_id: existingPartner.id }).eq('id', data.id);
+        await supabaseDR.from('prod_orders').update({
+          paired_order_id: existingPartner.id,
+          ...(existingPartner.opened_at ? { opened_at: existingPartner.opened_at } : {}),
+        }).eq('id', data.id);
         toast.success(`เปิด Order ${prodNo} ✓ และผูกคู่กับ ${existingPartner.prod_no} (RH/LH) อัตโนมัติ`);
       } else {
         setPendingPairId(data.id);
@@ -825,24 +835,17 @@ function LiveTab({ role }) {
       qty_ok:       match.qty,
     }).eq('id', match.id);
     if (error) { setSavingProdClose(false); toast.error(error.message); return; }
-
-    // ── RH/LH auto pairing: ปิดคู่พร้อมกันถ้าผูกไว้และยังเปิดอยู่ ──
-    let pairedClosedNo = null;
-    if (match.paired_order_id) {
-      const partner = prodOrders.find(o => o.id === match.paired_order_id && o.status === 'open');
-      if (partner) {
-        await supabaseDR.from('prod_orders').update({
-          status:       'confirmed',
-          confirmed_by: fullName,
-          confirmed_at: new Date().toISOString(),
-          qty_ok:       partner.qty,
-        }).eq('id', partner.id);
-        pairedClosedNo = partner.prod_no;
-      }
-    }
     setSavingProdClose(false);
-    toast.success(pairedClosedNo
-      ? `ปิด Order ${match.prod_no} และคู่ RH/LH ${pairedClosedNo} พร้อมกัน ✓`
+
+    // หมายเหตุ: เคย auto-close คู่ RH/LH ที่ผูกกันพร้อมกัน แต่ตัดออกแล้ว
+    // เพราะแต่ละข้างผลิตจบไม่พร้อมกันจริง การ force ปิดคู่ทำให้ qty_ok ผิดและ dashboard
+    // แสดงสถานะสับสน (ข้างที่ยังไม่จบถูกตีว่าเสร็จ) — ตอนนี้ปิดอิสระต่อข้าง
+    // paired_order_id ยังใช้แค่โชว์ label ว่าเป็นคู่กัน ไม่กระทบสถานะ
+    const partnerOpenNo = match.paired_order_id
+      ? prodOrders.find(o => o.id === match.paired_order_id && o.status === 'open')?.prod_no
+      : null;
+    toast.success(partnerOpenNo
+      ? `ปิด Order ${match.prod_no} · ${match.qty} ชิ้น ✓ (คู่ RH/LH ${partnerOpenNo} ยังเปิดอยู่ ต้องสแกนปิดแยก)`
       : `ปิด Order ${match.prod_no} · ${match.qty} ชิ้น ✓`);
     setCloseProdNo('');
     setCloseMatch(null);
