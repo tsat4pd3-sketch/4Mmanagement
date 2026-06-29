@@ -33,9 +33,25 @@ export default function OrgSetup() {
   };
 
   const sections = useMemo(() => nodes.filter(n => n.kind === 'section'), [nodes]);
+  const allDepts = useMemo(() => nodes.filter(n => n.kind === 'department'), [nodes]);
+  const allLines = useMemo(() => nodes.filter(n => n.kind === 'line'), [nodes]);
   const deptsOf = (sectionId) => nodes.filter(n => n.kind === 'department' && n.parent_id === sectionId);
   const linesOf = (deptId) => nodes.filter(n => n.kind === 'line' && n.parent_id === deptId);
   const teamsOf = (lineId) => nodes.filter(n => n.kind === 'team' && n.parent_id === lineId);
+
+  const parentOptionsFor = (kind) => {
+    if (kind === 'department') return sections.map(s => ({ id: s.id, label: s.name }));
+    if (kind === 'line') return allDepts.map(d => {
+      const sec = sections.find(s => s.id === d.parent_id);
+      return { id: d.id, label: `${sec?.name || '?'} > ${d.name}` };
+    });
+    if (kind === 'team') return allLines.map(l => {
+      const dep = allDepts.find(d => d.id === l.parent_id);
+      return { id: l.id, label: `${dep?.name || '?'} > ${l.name}` };
+    });
+    return [];
+  };
+  const PARENT_LABEL = { department: 'อยู่ภายใต้ Section', line: 'อยู่ภายใต้ Department', team: 'อยู่ภายใต้ Group' };
 
   useEffect(() => {
     if (!selSection && sections.length) setSelSection(sections[0].id);
@@ -216,6 +232,14 @@ export default function OrgSetup() {
                 <label style={labelSt}>ชื่อ</label>
                 <input type="text" value={formName} onChange={e => setFormName(e.target.value)} placeholder="เช่น PD5 / HYDROFORM LASERCUT / LINE E / Team D" />
               </div>
+              {modal.kind !== 'section' && (
+                <div>
+                  <label style={labelSt}>{PARENT_LABEL[modal.kind]}</label>
+                  <select value={modal.parentId ?? ''} onChange={e => setModal(m => ({ ...m, parentId: Number(e.target.value) }))}>
+                    {parentOptionsFor(modal.kind).map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                  </select>
+                </div>
+              )}
               <div>
                 <label style={labelSt}>Code (ใช้อ้างอิงค่าเดิมในระบบ — ไม่บังคับ)</label>
                 <input type="text" value={formCode} onChange={e => setFormCode(e.target.value)} placeholder="เช่น PD5 / A" />
