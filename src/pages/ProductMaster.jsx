@@ -1808,7 +1808,7 @@ function PartsMasterPanel({ canEdit, fullName, setCsvPreview, reloadKey }) {
    ใช้ parts_master เป็นแหล่งข้อมูลเดียวสำหรับ UOM (ไม่เก็บ uom ซ้ำใน kanban_standards)
    qty_per_kanban เริ่มต้น = parts_master.qty_per_pkg (1 ใบ Kanban = 1 packaging)
    ───────────────────────────────────────────────────────────────────────────── */
-const EMPTY_KBS = { mat_no: '', qty_per_kanban: '' };
+const EMPTY_KBS = { mat_no: '', qty_per_kanban: '', min_qty: '', max_qty: '' };
 
 function KanbanStdPanel({ canEdit, fullName }) {
   const [parts,     setParts]     = useState([]);
@@ -1845,6 +1845,8 @@ function KanbanStdPanel({ canEdit, fullName }) {
     setForm({
       mat_no: row.mat_no,
       qty_per_kanban: row.ks ? String(row.ks.qty_per_kanban) : (row.qty_per_pkg != null ? String(row.qty_per_pkg) : ''),
+      min_qty: row.ks?.min_qty != null ? String(row.ks.min_qty) : '',
+      max_qty: row.ks?.max_qty != null ? String(row.ks.max_qty) : '',
     });
     setShowModal(true);
   };
@@ -1853,10 +1855,15 @@ function KanbanStdPanel({ canEdit, fullName }) {
     if (!form.mat_no.trim()) { toast.error('กรอก Mat No.'); return; }
     const qty = parseFloat(form.qty_per_kanban);
     if (!qty || qty <= 0) { toast.error('กรอก Qty/Kanban ให้ถูกต้อง'); return; }
+    const minQ = form.min_qty === '' ? null : parseInt(form.min_qty);
+    const maxQ = form.max_qty === '' ? null : parseInt(form.max_qty);
+    if (minQ != null && maxQ != null && maxQ < minQ) { toast.error('Max ต้อง ≥ Min'); return; }
     setSaving(true);
     const { error } = await supabaseDR.from('kanban_standards').upsert({
       mat_no: form.mat_no.trim().toUpperCase(),
       qty_per_kanban: qty,
+      min_qty: minQ,
+      max_qty: maxQ,
       is_active: true,
       updated_by: fullName,
       updated_at: new Date().toISOString(),
@@ -1892,7 +1899,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--bg2)' }}>
-                {['Mat No.', 'Part Name', 'Supplier', 'UOM', 'Qty/Pkg', 'Qty/Kanban', 'อัปเดต'].map(h => (
+                {['Mat No.', 'Part Name', 'Supplier', 'UOM', 'Qty/Pkg', 'Qty/Kanban', 'Min', 'Max', 'อัปเดต'].map(h => (
                   <th key={h} style={{ padding: '9px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
                 ))}
                 {canEdit && <th style={{ padding: '9px 14px', width: 80 }}></th>}
@@ -1900,7 +1907,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={canEdit ? 8 : 7} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่พบข้อมูล — เพิ่มพาร์ทใน Parts Master ก่อน</td></tr>
+                <tr><td colSpan={canEdit ? 10 : 9} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่พบข้อมูล — เพิ่มพาร์ทใน Parts Master ก่อน</td></tr>
               )}
               {filtered.map(row => {
                 const mismatch = row.ks && row.qty_per_pkg != null && Number(row.ks.qty_per_kanban) !== Number(row.qty_per_pkg);
@@ -1915,6 +1922,8 @@ function KanbanStdPanel({ canEdit, fullName }) {
                       {row.ks ? row.ks.qty_per_kanban.toLocaleString() : '—'}
                       {mismatch && <span title="ไม่ตรงกับ Qty/Pkg ใน Parts Master" style={{ marginLeft: 4 }}>⚠️</span>}
                     </td>
+                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: row.ks?.min_qty != null ? 'var(--text2)' : 'var(--muted)' }}>{row.ks?.min_qty != null ? row.ks.min_qty.toLocaleString() : '—'}</td>
+                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: row.ks?.max_qty != null ? 'var(--text2)' : 'var(--muted)' }}>{row.ks?.max_qty != null ? row.ks.max_qty.toLocaleString() : '—'}</td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)' }}>
                       {row.ks ? (
                         <span title={row.ks.updated_by || ''}>
@@ -1957,8 +1966,21 @@ function KanbanStdPanel({ canEdit, fullName }) {
                   autoFocus
                 />
               </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Min (สต็อกขั้นต่ำสโตร์)</label>
+                  <input type="number" min="0" step="1" style={{ ...inputSt, textAlign: 'center', fontWeight: 700 }}
+                    value={form.min_qty} onChange={e => setForm(f => ({ ...f, min_qty: e.target.value }))} placeholder="เว้นว่าง = ไม่คุม" />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Max (เติมขึ้นถึง)</label>
+                  <input type="number" min="0" step="1" style={{ ...inputSt, textAlign: 'center', fontWeight: 700 }}
+                    value={form.max_qty} onChange={e => setForm(f => ({ ...f, max_qty: e.target.value }))} placeholder="เว้นว่าง = ไม่คุม" />
+                </div>
+              </div>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                 UOM: <strong style={{ color: 'var(--text)' }}>{parts.find(p => p.mat_no === form.mat_no)?.uom || '—'}</strong> (จาก Parts Master)
+                · Min-Max ใช้คุมการเติม/สะสม lot ที่สโตร์ (เว้นว่าง = เติมตาม demand รายรอบ)
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>

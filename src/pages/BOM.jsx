@@ -23,7 +23,7 @@ const TD = ({ children, style }) => (
   <td style={{ padding: '8px 10px', fontSize: 13, color: 'var(--text)', borderTop: '1px solid var(--border)', ...style }}>{children}</td>
 );
 
-const EMPTY_FORM = { mat_no: '', part_name: '', qty_per_unit: 1, uom: 'pcs', supplier: '', note: '' };
+const EMPTY_FORM = { mat_no: '', part_name: '', qty_per_unit: 1, uom: 'pcs', supplier: '', note: '', source_line: '' };
 
 export default function BOM() {
   const { role, fullName } = useContext(UserContext);
@@ -67,7 +67,7 @@ export default function BOM() {
 
   /* ── save / delete ── */
   const openAdd  = () => { setEditItem(null); setForm(EMPTY_FORM); setShowForm(true); };
-  const openEdit = (it) => { setEditItem(it); setForm({ mat_no: it.mat_no, part_name: it.part_name, qty_per_unit: it.qty_per_unit, uom: it.uom, supplier: it.supplier || '', note: it.note || '' }); setShowForm(true); };
+  const openEdit = (it) => { setEditItem(it); setForm({ mat_no: it.mat_no, part_name: it.part_name, qty_per_unit: it.qty_per_unit, uom: it.uom, supplier: it.supplier || '', note: it.note || '', source_line: it.source_line || '' }); setShowForm(true); };
 
   const handleSave = async () => {
     if (!form.mat_no.trim() || !form.part_name.trim()) { toast.error('กรอก Mat No. และชื่อพาร์ทก่อน'); return; }
@@ -78,6 +78,7 @@ export default function BOM() {
       mat_no: form.mat_no.trim(), part_name: form.part_name.trim(),
       qty_per_unit: qty, uom: form.uom.trim() || 'pcs',
       supplier: form.supplier.trim() || null, note: form.note.trim() || null,
+      source_line: form.source_line.trim() || null,
       updated_at: new Date().toISOString(),
     };
     const { error } = editItem
@@ -102,6 +103,11 @@ export default function BOM() {
     loadItems(selProduct.id);
     loadProducts();
   };
+
+  /* ── ไลน์ทั้งหมด (สำหรับเลือก source_line ของพาร์ทผลิตเอง) ── */
+  const lineNames = useMemo(() => {
+    return [...new Set((products || []).map(p => p.line_name).filter(Boolean))].sort();
+  }, [products]);
 
   /* ── filtered products ── */
   const filtered = useMemo(() => {
@@ -195,7 +201,7 @@ export default function BOM() {
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ background: 'var(--bg2)' }}>
-                        <TH>Mat No.</TH><TH>ชื่อพาร์ท</TH><TH w={110}>ใช้ / 1 ชิ้น</TH><TH w={70}>หน่วย</TH><TH>Supplier</TH><TH>หมายเหตุ</TH>
+                        <TH>Mat No.</TH><TH>ชื่อพาร์ท</TH><TH w={110}>ใช้ / 1 ชิ้น</TH><TH w={70}>หน่วย</TH><TH>ผลิตที่ไลน์</TH><TH>Supplier</TH><TH>หมายเหตุ</TH>
                         {canEdit && <TH w={100}> </TH>}
                       </tr>
                     </thead>
@@ -206,6 +212,9 @@ export default function BOM() {
                           <TD>{it.part_name}</TD>
                           <TD style={{ fontWeight: 800, color: 'var(--accent)' }}>{Number(it.qty_per_unit)}</TD>
                           <TD style={{ color: 'var(--muted)' }}>{it.uom}</TD>
+                          <TD>{it.source_line
+                            ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>🏭 {it.source_line}</span>
+                            : <span style={{ color: 'var(--muted)' }}>—</span>}</TD>
                           <TD style={{ color: 'var(--muted)' }}>{it.supplier || '—'}</TD>
                           <TD style={{ color: 'var(--muted)', fontSize: 12 }}>{it.note || '—'}</TD>
                           {canEdit && (
@@ -253,6 +262,13 @@ export default function BOM() {
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>หน่วย</label>
                 <input style={inputSt} value={form.uom} onChange={e => setForm(f => ({ ...f, uom: e.target.value }))} placeholder="pcs" />
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ผลิตที่ไลน์ (source line — สำหรับพาร์ทผลิตเอง 200)</label>
+                <input style={inputSt} list="bom-source-lines" value={form.source_line} onChange={e => setForm(f => ({ ...f, source_line: e.target.value }))} placeholder="เว้นว่าง = ของซื้อ/วัตถุดิบ (ดึงจากสโตร์)" />
+                <datalist id="bom-source-lines">
+                  {lineNames.map(l => <option key={l} value={l} />)}
+                </datalist>
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>SUPPLIER</label>
