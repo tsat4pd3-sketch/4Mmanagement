@@ -86,6 +86,12 @@ export default function OrgSetup() {
     if (COST_CENTER_REQUIRED.includes(modal.kind) && !formCostCenter.trim()) {
       return toast.error('กรุณากรอก Cost Center');
     }
+    if (formCostCenter.trim()) {
+      const dup = nodes.find(n =>
+        n.is_active && n.cost_center && n.cost_center.trim() === formCostCenter.trim() && n.id !== modal.editing?.id
+      );
+      if (dup) return toast.error(`Cost Center นี้ถูกใช้แล้วที่ "${dup.name}" — กรุณาเปลี่ยนเลข`);
+    }
     setSaving(true);
     const payload = {
       kind: modal.kind,
