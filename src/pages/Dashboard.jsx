@@ -983,7 +983,10 @@ export default function Dashboard() {
                         } else if (!o.isDone && !o.isCarry && nowMs > endMs) {
                           occupiedEndMs = nowMs;
                         }
-                        queueEndMs = occupiedEndMs;
+                        // เดินคิวด้วย endMs (เวลาจบตามจริง/ตามแผน) ไม่ใช่ occupiedEndMs ที่ถูกยืดไปถึง "ตอนนี้"
+                        // เพราะ occupiedEndMs ใช้แค่โชว์ "หาง" สีแดงของใบที่ยังไม่ปิด ไม่ควรไปดันตำแหน่งใบถัดไป
+                        // (ไม่งั้นถ้าพนักงานปิด order ไม่ตรง sequence ตอนเปิด ใบที่ปิดแล้วจะถูกดันไปทับ "ตอนนี้" ผิดตำแหน่ง)
+                        queueEndMs = endMs;
                         const isDelayed = !o.isDone && !o.isCarry && endMs < nowMs;
                         return { o, startMs, endMs, occupiedEndMs, isDelayed, isLateDone };
                       });

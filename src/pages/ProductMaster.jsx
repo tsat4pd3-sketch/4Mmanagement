@@ -779,7 +779,7 @@ export default function ProductMaster() {
                   {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                 </select>
               </Field>
-              <Field label="MAT.NO คู่ (RH/LH) — เปิด/ปิด Order พร้อมกันอัตโนมัติ">
+              <Field label="MAT.NO คู่ (RH/LH) — สแกนคู่ 2 ครั้ง เปิด/ปิดอิสระต่อข้าง">
                 <select value={form.pair_mat_no} onChange={e => setForm(f => ({ ...f, pair_mat_no: e.target.value }))} style={inputSt}>
                   <option value="">ไม่มีคู่</option>
                   {items.filter(i => i.mat_no && i.mat_no !== form.mat_no && i.is_active).map(i => (

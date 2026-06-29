@@ -744,19 +744,29 @@ function LiveTab({ role }) {
     if (error) { toast.error(error.message); return; }
 
     // ── RH/LH auto pairing ──────────────────────────────────────────
+    // ทั้ง 2 ข้างมีเลข SAP order เป็นของตัวเองเสมอ ต้องสแกนคู่ 2 ครั้งจริง — ไม่มีกรณี order ข้างเดียวแล้ว
     const partnerMatNo = products.find(p => p.mat_no === matNo)?.pair_mat_no || null;
     let nextMatNo = openProdForm.mat_no;
+
     if (pendingPairId) {
-      // นี่คือการสแกนคู่ RH/LH ใบที่สอง — ผูกกลับไปยังใบแรกที่รออยู่
+      // separate_order: นี่คือการสแกนคู่ RH/LH ใบที่สอง — ผูกกลับไปยังใบแรกที่รออยู่
+      // sync opened_at ให้ตรงกับใบแรก เพราะผลิตพร้อมกันจริงแม้สแกนคนละเวลา
+      const firstOrder = prodOrders.find(o => o.id === pendingPairId);
       await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', pendingPairId);
-      await supabaseDR.from('prod_orders').update({ paired_order_id: pendingPairId }).eq('id', data.id);
+      await supabaseDR.from('prod_orders').update({
+        paired_order_id: pendingPairId,
+        ...(firstOrder?.opened_at ? { opened_at: firstOrder.opened_at } : {}),
+      }).eq('id', data.id);
       setPendingPairId(null);
       toast.success(`เปิด Order คู่ RH/LH พร้อมกัน ✓ (${prodNo})`);
     } else if (partnerMatNo) {
       const existingPartner = prodOrders.find(o => o.mat_no === partnerMatNo && o.status === 'open' && !o.paired_order_id);
       if (existingPartner) {
         await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', existingPartner.id);
-        await supabaseDR.from('prod_orders').update({ paired_order_id: existingPartner.id }).eq('id', data.id);
+        await supabaseDR.from('prod_orders').update({
+          paired_order_id: existingPartner.id,
+          ...(existingPartner.opened_at ? { opened_at: existingPartner.opened_at } : {}),
+        }).eq('id', data.id);
         toast.success(`เปิด Order ${prodNo} ✓ และผูกคู่กับ ${existingPartner.prod_no} (RH/LH) อัตโนมัติ`);
       } else {
         setPendingPairId(data.id);
