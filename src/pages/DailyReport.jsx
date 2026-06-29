@@ -2659,7 +2659,7 @@ function LiveTab({ role }) {
               )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <Field label="PROD.NO (สแกน barcode PROD.NO บน Tag Card) *">
+                <Field label="PROD.NO (สแกน barcode ตัวล่าง Sender/ID บน Tag Card) *">
                   <input ref={openProdInputRef} autoFocus value={openProdForm.prod_no}
                     onChange={e => setOpenProdForm(f => ({ ...f, prod_no: e.target.value }))}
                     onKeyDown={e => {
@@ -2672,6 +2672,7 @@ function LiveTab({ role }) {
                     }}
                     placeholder="สแกน PROD.NO..."
                     style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }} />
+                  <ScanLenHint value={openProdForm.prod_no} />
                 </Field>
 
                 {(() => {
@@ -2776,12 +2777,13 @@ function LiveTab({ role }) {
                 สแกน PROD.NO → Confirm อัตโนมัติทันที — ไม่ต้องคลิกปุ่ม
               </div>
 
-              <Field label="PROD.NO (สแกน barcode PROD.NO บน Tag Card)">
+              <Field label="PROD.NO (สแกน barcode ตัวล่าง Sender/ID บน Tag Card)">
                 <input ref={closeProdInputRef} autoFocus value={closeProdNo}
                   onChange={e => handleCloseProdNoChange(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && closeMatch) handleScanCloseImmediate(closeMatch); }}
                   placeholder="สแกน PROD.NO..."
                   style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }} />
+                <ScanLenHint value={closeProdNo} />
               </Field>
 
               {/* Match preview */}
@@ -5115,6 +5117,21 @@ function Field({ label, children }) {
     <div>
       <label style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, display: 'block', marginBottom: 4 }}>{label}</label>
       {children}
+    </div>
+  );
+}
+
+// แสดงจำนวนหลักที่สแกน/พิมพ์เข้ามาจริง เพื่อให้เช็คได้ทันทีว่าเครื่องสแกนรับเลขครบ (ตรงกับ SAP) หรือถูกตัดหลัก
+// SAP traceability ใช้เลข Sender/ID เต็ม 12 หลัก — ถ้าได้ไม่ครบให้ไปตั้งค่าเครื่องสแกน (ยิงให้ครบทั้งบาร์โค้ด)
+function ScanLenHint({ value }) {
+  const v = (value || '').replace(/[\r\n\s]/g, '');
+  if (!v) return null;
+  const ok = v.length === 12;
+  return (
+    <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6,
+      color: ok ? '#22c55e' : '#f59e0b' }}>
+      <span>{ok ? '✓' : '⚠'} รับมา {v.length} หลัก</span>
+      {!ok && <span style={{ color: 'var(--muted)', fontWeight: 500 }}>— SAP ต้องครบ 12 หลัก (ถ้าไม่ครบ = เครื่องสแกนตัดเลข ให้ตั้งค่าใหม่)</span>}
     </div>
   );
 }
