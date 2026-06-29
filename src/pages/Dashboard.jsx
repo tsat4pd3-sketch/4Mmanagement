@@ -993,6 +993,13 @@ export default function Dashboard() {
                         queueEndMs = (o.isDone && o.confirmed_at) ? occupiedEndMs : endMs;
                         const isDelayed = !o.isDone && !o.isCarry && endMs < nowMs;
                         return { o, startMs, endMs, occupiedEndMs, isDelayed, isLateDone };
+                      }).map((item, i, arr) => {
+                        // ใบที่ยังไม่ปิด+เลยกำหนด หางสีแดงจะยืดไปถึง "ตอนนี้" เสมอ — แต่ถ้าใบถัดไปเริ่มทำงานไปแล้ว
+                        // (แสดงว่าคิวเดินต่อไปจริงแล้ว) ต้องตัดหางแดงให้สุดแค่จุดที่ใบถัดไปเริ่ม ไม่ให้ยืดไปทับใบถัดไป
+                        if (item.isDelayed && arr[i + 1]) {
+                          return { ...item, occupiedEndMs: Math.min(item.occupiedEndMs, arr[i + 1].startMs) };
+                        }
+                        return item;
                       });
                     };
 
