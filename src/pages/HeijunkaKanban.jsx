@@ -48,6 +48,26 @@ function nowHHMM() {
   const d = new Date();
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
+/* แปลงเวลา "HH:MM" ของ workDate ให้เป็น ms จริง — ห่อข้ามเที่ยงคืนเข้ากรอบ 08:00→08:00 ของวันนั้น */
+function timeStrToMs(workDate, t) {
+  if (!t) return null;
+  const gridStartMs = new Date(`${workDate}T08:00:00`).getTime();
+  const [h, m] = t.slice(0, 5).split(':').map(Number);
+  let ms = gridStartMs + h * 3600000 + m * 60000;
+  if (h < 8) ms += 24 * 3600000;
+  return ms;
+}
+/* หารอบจัดส่งที่ order นี้ "ถูกสแกนเปิด" เข้าไปตกอยู่ในช่วง [รอบก่อนหน้า.cutoff, รอบนี้.cutoff)
+   ของไลน์/กะนั้น — ถ้าเปิดมาหลังรอบสุดท้ายไปแล้ว (ยังไม่มีรอบรองรับ) ให้เข้ารอบสุดท้ายไปก่อน ไม่ทิ้ง demand */
+function findRoundIdForOrder(line_name, shift, openedAtIso, roundsForLineShift, roundWindows) {
+  if (!openedAtIso || !roundsForLineShift.length) return null;
+  const ms = new Date(openedAtIso).getTime();
+  for (const r of roundsForLineShift) {
+    const w = roundWindows[r.id];
+    if (w && ms >= w.startMs && ms < w.endMs) return r.id;
+  }
+  return roundsForLineShift[roundsForLineShift.length - 1].id;
+}
 function getRoundStatus(r, confirmedSet, receivedMap) {
   const key = `${r.line_name}|${r.shift}|${r.round_no}`;
   if (confirmedSet.has(key)) {
@@ -85,12 +105,6 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
     return m;
   }, [deliveries]);
 
-  const byLine = useMemo(() => {
-    const m = {};
-    rounds.forEach(r => { (m[r.line_name] = m[r.line_name] || []).push(r); });
-    return m;
-  }, [rounds]);
-
   // demand per line: parts + kanban cards needed
   const demandByLine = useMemo(() => {
     const lineToColIds = {};
@@ -110,7 +124,15 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
     return res;
   }, [view.cols, view.rowList, kanbanStd]);
 
-  if (!rounds.length) return (
+  // byLine: รวมทุกไลน์ที่มีรอบจัดส่ง "หรือ" มี demand จริง — กันไลน์ที่ยังไม่ตั้งรอบหายไปจากบอร์ด
+  const byLine = useMemo(() => {
+    const m = {};
+    rounds.forEach(r => { (m[r.line_name] = m[r.line_name] || []).push(r); });
+    Object.keys(demandByLine).forEach(lineName => { if (!m[lineName]) m[lineName] = []; });
+    return m;
+  }, [rounds, demandByLine]);
+
+  if (!Object.keys(byLine).length) return (
     <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
       ยังไม่มีรอบจัดส่ง — ตั้งค่าที่ 📦 Line Stock → ⏰ รอบจัดส่ง
     </div>
@@ -129,6 +151,11 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
                 {demand.parts.length} พาร์ท · {demand.totalKanban} การ์ด
               </span>
             </div>
+            {!lineRounds.length ? (
+              <div style={{ padding: '12px 14px', background: 'var(--bg2)', border: '1px dashed var(--border2)', borderRadius: 10, fontSize: 12, color: 'var(--muted)' }}>
+                ⚠️ ไลน์นี้ยังไม่ตั้งรอบจัดส่ง — ตั้งค่าที่ 📦 Line Stock → ⏰ รอบจัดส่ง (demand ด้านบนคำนวณจากแผนผลิตวันนี้แล้ว รอกำหนดรอบเพื่อแจ้งสโตร์)
+              </div>
+            ) : (
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               {lineRounds.map(r => {
                 const key = `${r.line_name}|${r.shift}|${r.round_no}`;
@@ -211,6 +238,7 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
                 );
               })}
             </div>
+            )}
           </div>
         );
       })}
@@ -247,11 +275,6 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt }) {
     deliveries.forEach(d => { m[`${d.line_name}|${d.shift}|${d.round_no}`] = d; });
     return m;
   }, [deliveries]);
-  const byLine = useMemo(() => {
-    const m = {};
-    rounds.forEach(r => { (m[r.line_name] = m[r.line_name] || []).push(r); });
-    return m;
-  }, [rounds]);
   const demandByLine = useMemo(() => {
     const lineToColIds = {};
     view.cols.forEach(c => { (lineToColIds[c.line] = lineToColIds[c.line] || []).push(c.id); });
@@ -269,6 +292,13 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt }) {
     });
     return res;
   }, [view.cols, view.rowList, kanbanStd]);
+  // รวมไลน์ที่มี demand จริงแต่ยังไม่ตั้งรอบจัดส่งเข้ามาด้วย กันหายไปจากบอร์ด
+  const byLine = useMemo(() => {
+    const m = {};
+    rounds.forEach(r => { (m[r.line_name] = m[r.line_name] || []).push(r); });
+    Object.keys(demandByLine).forEach(lineName => { if (!m[lineName]) m[lineName] = []; });
+    return m;
+  }, [rounds, demandByLine]);
 
   const timeToMs = (t) => {
     if (!t) return null;
@@ -278,7 +308,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt }) {
     return ms;
   };
 
-  if (!rounds.length) return (
+  if (!Object.keys(byLine).length) return (
     <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
       ยังไม่มีรอบจัดส่ง — ตั้งค่าที่ 📦 Line Stock → ⏰ รอบจัดส่ง
     </div>
