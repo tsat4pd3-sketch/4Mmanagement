@@ -408,9 +408,15 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
     return map;
   }, [rounds, lineFilter]);
 
+  const nextRoundNo = useCallback((line_name, shift) => {
+    const existing = rounds.filter(r => r.line_name === line_name && r.shift === shift);
+    return existing.reduce((m, r) => Math.max(m, r.round_no || 0), 0) + 1;
+  }, [rounds]);
+
   const openNew = () => {
     setEditId(null);
-    setForm({ ...EMPTY_RND, line_name: lineFilter || '' });
+    const ln = lineFilter || '';
+    setForm({ ...EMPTY_RND, line_name: ln, round_no: ln ? String(nextRoundNo(ln, 'day')) : '' });
     setShowModal(true);
   };
 
@@ -452,7 +458,25 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
     if (editId) {
       ({ error } = await supabaseDR.from('kanban_delivery_rounds').update(payload).eq('id', editId));
     } else {
-      ({ error } = await supabaseDR.from('kanban_delivery_rounds').insert(payload));
+      // กันชนกับรอบเดิม (รวมที่ถูกปิด is_active=false) — ถ้า round_no นี้มีอยู่แล้ว ให้รีไซเคิลแถวเดิม / เลื่อนเป็นเลขถัดไป
+      const { data: dup } = await supabaseDR.from('kanban_delivery_rounds')
+        .select('id, is_active')
+        .eq('line_name', payload.line_name).eq('shift', payload.shift).eq('round_no', payload.round_no)
+        .maybeSingle();
+      if (dup) {
+        if (!dup.is_active) {
+          // เคยมีรอบนี้แต่ถูกลบไป → เปิดใช้ใหม่พร้อมค่าที่กรอก
+          ({ error } = await supabaseDR.from('kanban_delivery_rounds').update(payload).eq('id', dup.id));
+        } else {
+          // รอบนี้มีอยู่จริง → ขยับเป็นเลขถัดไปที่ว่าง
+          const { data: all } = await supabaseDR.from('kanban_delivery_rounds')
+            .select('round_no').eq('line_name', payload.line_name).eq('shift', payload.shift);
+          payload.round_no = (all || []).reduce((m, r) => Math.max(m, r.round_no || 0), 0) + 1;
+          ({ error } = await supabaseDR.from('kanban_delivery_rounds').insert(payload));
+        }
+      } else {
+        ({ error } = await supabaseDR.from('kanban_delivery_rounds').insert(payload));
+      }
     }
     setSaving(false);
     if (error) { toast.error(error.message); return; }
@@ -586,7 +610,7 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
                   list="dl-lines"
                   style={inputSt}
                   value={form.line_name}
-                  onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))}
+                  onChange={e => setForm(f => ({ ...f, line_name: e.target.value, round_no: editId ? f.round_no : String(nextRoundNo(e.target.value, f.shift)) }))}
                   placeholder="เลือกหรือพิมพ์ชื่อไลน์..."
                 />
                 <datalist id="dl-lines">
@@ -597,7 +621,7 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>กะ *</label>
-                  <select value={form.shift} onChange={e => setForm(f => ({ ...f, shift: e.target.value }))} style={inputSt}>
+                  <select value={form.shift} onChange={e => setForm(f => ({ ...f, shift: e.target.value, round_no: editId ? f.round_no : String(nextRoundNo(f.line_name, e.target.value)) }))} style={inputSt}>
                     <option value="day">☀️ กะเช้า (day)</option>
                     <option value="night">🌙 กะดึก (night)</option>
                     <option value="all">🔄 ทุกกะ (all)</option>
