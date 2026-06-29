@@ -962,18 +962,11 @@ export default function Management() {
                   }
                 });
               }
+              // กฎตายตัว: ใบกัมบังห้ามซ้อนทับกันเอง และความกว้างต้องไม่สั้นกว่า durationMs (qty × ct) เด็ดขาด
+              // ดังนั้นถ้าปิดงานเร็วกว่าทฤษฎี (confirmed_at < endMs) จะไม่บีบ/เลื่อนตำแหน่งตาม confirmed_at เลย —
+              // ปล่อยให้การ์ดอยู่ตามคิว (queueFloor + durationMs) เหมือนเดิม ใช้ confirmed_at แค่ตัดสินสี/ไอคอนเท่านั้น
+              // ส่วนกรณีปิดงานช้ากว่าทฤษฎี (isLateDone) ปล่อยให้ endMs เดิม + แสดง "หาง" ของความช้าแยกต่างหาก (ไม่ขยับการ์ดหลัก)
               const isLateDone = o.isDone && !!o.confirmed_at && new Date(o.confirmed_at).getTime() > endMs;
-              if (o.isDone && o.confirmed_at) {
-                const confMs = new Date(o.confirmed_at).getTime();
-                if (endMs > confMs) {
-                  endMs = confMs;
-                  // ความกว้างการ์ดต้องไม่สั้นกว่า durationMs (qty × ct) เด็ดขาด เพราะนั่นคือเวลาขั้นต่ำที่ต้องใช้จริง
-                  // ในการผลิต ต่อให้ queueFloorMs (คิวใบก่อนหน้า) จะถูกล้ำก็ต้องยอม เพราะมันคือความจริงทางกายภาพ
-                  // ที่บีบไม่ได้ — ถ้าเกิดทับใบก่อนหน้าแสดงว่าข้อมูลเวลาที่สแกนปิดไม่ตรงกับเวลาที่ผลิตจริง ต้องโชว์ให้เห็น
-                  startMs = Math.max(o.orderStartMs, endMs - durationMs);
-                  endMs = Math.max(endMs, startMs);
-                }
-              }
               let occupiedEndMs = endMs;
               if (o.isDone && o.confirmed_at) {
                 occupiedEndMs = new Date(o.confirmed_at).getTime();
