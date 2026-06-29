@@ -31,9 +31,13 @@ export default function OrgSetup() {
     setLoading(false);
   };
 
+  const ORPHAN = '__ORPHAN__';
   const sections = useMemo(() => nodes.filter(n => n.kind === 'section'), [nodes]);
   const allDepts = useMemo(() => nodes.filter(n => n.kind === 'department'), [nodes]);
-  const deptsOf = (sectionId) => nodes.filter(n => n.kind === 'department' && n.parent_id === sectionId);
+  const orphanDepts = useMemo(() => nodes.filter(n => n.kind === 'department' && !n.parent_id), [nodes]);
+  const deptsOf = (sectionId) => sectionId === ORPHAN
+    ? orphanDepts
+    : nodes.filter(n => n.kind === 'department' && n.parent_id === sectionId);
   const linesOf = (deptId) => nodes.filter(n => n.kind === 'line' && n.parent_id === deptId);
 
   const parentOptionsFor = (kind) => {
@@ -154,13 +158,21 @@ export default function OrgSetup() {
               </div>
             ))}
             {!sections.length && <Empty text="ยังไม่มี Section" />}
+            {!!orphanDepts.length && (
+              <div style={itemStyle(selSection === ORPHAN)} onClick={() => setSelSection(ORPHAN)}>
+                <span style={{ fontSize: 13, color: '#f59e0b' }}>
+                  ⚠️ ไม่มี Section
+                  <span style={{ fontSize: 10, color: 'var(--muted)' }}> ({orphanDepts.length} แผนก)</span>
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Departments */}
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>DEPARTMENT / แผนก ({currentDepts.length})</strong>
-              <button onClick={() => selSection && openCreate('department', selSection)} disabled={!selSection} style={addBtnSt}>➕</button>
+              <button onClick={() => selSection && selSection !== ORPHAN && openCreate('department', selSection)} disabled={!selSection || selSection === ORPHAN} style={addBtnSt}>➕</button>
             </div>
             {!selSection ? <Empty text="เลือก Section ก่อน" /> : currentDepts.map(d => (
               <div key={d.id} style={itemStyle(selDept === d.id)} onClick={() => setSelDept(d.id)}>
