@@ -930,14 +930,22 @@ export default function Dashboard() {
                     // เพื่อให้การ์ดที่ดีเลย์ล้นข้ามกะ (เช่น ผลิตจากกะเช้าไปจบกะดึก) ต่อแถวเดิมได้ ไม่ถูกตัดทิ้งที่ขอบกะ
                     const computeQueuedPositionsFull = (cards) => {
                       const breaks = allBreaksOnce();
-                      const sorted = cards
-                        .filter(o => o.orderStartMs && o.orderEndMs)
+                      const filtered = cards.filter(o => o.orderStartMs && o.orderEndMs);
+                      const byOpenTime = [...filtered].sort((a, b) => a.orderStartMs - b.orderStartMs);
+                      // คิวแสดงผลจริง: ใบที่ "ปิดแล้ว" (confirm) คือลำดับการผลิตที่เกิดขึ้นจริง ให้แทรกเข้าคิวก่อนตามเวลาปิดจริง
+                      // (confirmed_at) เสมอ — ใบที่ "ยังไม่ปิด" ถือว่ายังไม่ถึงตาที่ผลิตจริง ต้องถีบไปต่อท้ายคิวเสมอ ไม่ว่าจะ
+                      // เปิดมาก่อนนานแค่ไหนก็ตาม ผลคือถ้ามีใบ confirm มาแทรก จะดันใบที่ยังไม่ปิดถอยไปอยู่หลังสุด ไม่บังพื้นที่
+                      // ของใบที่ทำสำเร็จไปแล้วจริง ๆ — ทำให้เหลือใบแดง (ยังไม่ปิด) แค่เท่าที่จำเป็นจริง ๆ
+                      const doneCards = filtered.filter(o => o.isDone && o.confirmed_at)
+                        .sort((a, b) => new Date(a.confirmed_at).getTime() - new Date(b.confirmed_at).getTime() || a.orderStartMs - b.orderStartMs);
+                      const openCards = filtered.filter(o => !(o.isDone && o.confirmed_at))
                         .sort((a, b) => a.orderStartMs - b.orderStartMs);
+                      const sorted = [...doneCards, ...openCards];
                       // เงื่อนไขผสม: ใบที่ยังไม่ปิด+เกินเวลาจะตีแดงก็ต่อเมื่อ "ยอดรวมจริงของแถวนี้ยังไม่ทันเป้าตามเวลา" ด้วย
                       // ถ้ายอดรวมทันเป้าอยู่ (แค่สแกนปิดไม่ตรง FIFO) จะไม่ตีแดง เพราะงานยังผลิตได้ตามแผนจริง
-                      const ctSec = ctByMatNo[sorted[0]?.mat_no] || 0;
+                      const ctSec = ctByMatNo[byOpenTime[0]?.mat_no] || 0;
                       const rowActualQty = cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
-                      const firstStartMs = sorted.length ? sorted[0].orderStartMs : null;
+                      const firstStartMs = byOpenTime.length ? byOpenTime[0].orderStartMs : null;
                       let expectedQty = Infinity;
                       if (ctSec > 0 && firstStartMs) {
                         let elapsedMs = Math.max(0, Math.min(nowMs, firstStartMs + 24 * 3600000) - firstStartMs);
