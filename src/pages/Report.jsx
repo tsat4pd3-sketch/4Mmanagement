@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useContext, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -126,7 +127,13 @@ const groupSkillsByCategory = (defs) =>
 const lbSt = { fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 4, display: 'block' };
 
 export default function Report() {
-  const [activeTab, setActiveTab] = useState(0);
+  const location = useLocation();
+  const initialParams = new URLSearchParams(location.search);
+  const initialTab = Number(initialParams.get('tab'));
+  const [activeTab, setActiveTab] = useState(
+    Number.isInteger(initialTab) && initialTab >= 0 && initialTab < TABS.length ? initialTab : 0
+  );
+  const autoOpenMaster = initialParams.get('master') === '1';
 
   return (
     <div className="page-content">
@@ -154,12 +161,12 @@ export default function Report() {
       {activeTab === 6 && <SkillAllowanceTab />}
       {activeTab === 7 && <AttendanceFormTab />}
       {activeTab === 8 && <MultiSkillFormTab />}
-      {activeTab === 9 && <OtTransportBookingTab />}
+      {activeTab === 9 && <OtTransportBookingTab autoOpenMaster={autoOpenMaster} />}
     </div>
   );
 }
 
-function OtTransportBookingTab() {
+function OtTransportBookingTab({ autoOpenMaster }) {
   const { role } = useContext(UserContext);
   const canManageMaster = ['admin', 'manager', 'supervisor'].includes(role);
 
@@ -175,7 +182,7 @@ function OtTransportBookingTab() {
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(false);
   const [section, setSection] = useState('');
-  const [showMaster, setShowMaster] = useState(false);
+  const [showMaster, setShowMaster] = useState(!!autoOpenMaster && canManageMaster);
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name, section').then(({ data }) => setLines(data || []));

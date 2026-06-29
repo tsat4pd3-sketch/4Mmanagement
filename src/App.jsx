@@ -50,7 +50,6 @@ const NAV_ITEMS = [
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     roles: null, group: 'การผลิต' },
   { to: '/daily-report',   icon: '📊', label: 'Daily Report',      roles: null, group: 'การผลิต' },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE Analytics',      roles: null, group: 'การผลิต' },
-  { to: '/products',        icon: '🔩', label: 'Product Master',    roles: null, group: 'การผลิต' },
   { to: '/line-stock',      icon: '📦', label: 'Line Stock',         roles: null, group: 'การผลิต' },
   { to: '/heijunka',       icon: '🎴', label: 'Heijunka Kanban',   roles: null, group: 'การผลิต' },
   { to: '/rack-center',    icon: '🗃️', label: 'Rack Center',       roles: null, group: 'การผลิต' },
@@ -58,12 +57,14 @@ const NAV_ITEMS = [
   { to: '/report',        icon: '📋', label: 'รายงาน',            roles: null, group: 'รายงาน/คุณภาพ' },
   { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', roles: ['admin', 'manager', 'supervisor', 'leader', 'qa'], group: 'รายงาน/คุณภาพ' },
 
-  { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
+  { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     roles: ['admin'], group: 'บริหารจัดการ' },
   { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
   { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager', 'supervisor', 'leader'], group: 'บริหารจัดการ' },
+  { to: '/products',        icon: '🔩', label: 'Product Master',    roles: null, group: 'บริหารจัดการ' },
+  { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    roles: null, group: 'บริหารจัดการ' },
-  { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     roles: ['admin'], group: 'บริหารจัดการ' },
+  { to: '/report?tab=9&master=1', icon: '🚐', label: 'ตั้งค่าสายรถรับส่ง', roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
 ];
 
 const NAV_GROUP_ORDER = ['ภาพรวม', 'การผลิต', 'รายงาน/คุณภาพ', 'บริหารจัดการ'];
