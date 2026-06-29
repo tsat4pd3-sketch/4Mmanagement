@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
 
-const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม', team: 'Team / กะ' };
+const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม' };
 const COST_CENTER_REQUIRED = ['section', 'department', 'line'];
 
 export default function OrgSetup() {
@@ -11,7 +11,6 @@ export default function OrgSetup() {
   const [loading, setLoading] = useState(true);
   const [selSection, setSelSection] = useState(null);
   const [selDept, setSelDept] = useState(null);
-  const [selLine, setSelLine] = useState(null);
   const [modal, setModal] = useState(null); // { kind, parentId, editing }
   const [formName, setFormName] = useState('');
   const [formCode, setFormCode] = useState('');
@@ -34,10 +33,8 @@ export default function OrgSetup() {
 
   const sections = useMemo(() => nodes.filter(n => n.kind === 'section'), [nodes]);
   const allDepts = useMemo(() => nodes.filter(n => n.kind === 'department'), [nodes]);
-  const allLines = useMemo(() => nodes.filter(n => n.kind === 'line'), [nodes]);
   const deptsOf = (sectionId) => nodes.filter(n => n.kind === 'department' && n.parent_id === sectionId);
   const linesOf = (deptId) => nodes.filter(n => n.kind === 'line' && n.parent_id === deptId);
-  const teamsOf = (lineId) => nodes.filter(n => n.kind === 'team' && n.parent_id === lineId);
 
   const parentOptionsFor = (kind) => {
     if (kind === 'department') return sections.map(s => ({ id: s.id, label: s.name }));
@@ -45,13 +42,9 @@ export default function OrgSetup() {
       const sec = sections.find(s => s.id === d.parent_id);
       return { id: d.id, label: `${sec?.name || '?'} > ${d.name}` };
     });
-    if (kind === 'team') return allLines.map(l => {
-      const dep = allDepts.find(d => d.id === l.parent_id);
-      return { id: l.id, label: `${dep?.name || '?'} > ${l.name}` };
-    });
     return [];
   };
-  const PARENT_LABEL = { department: 'อยู่ภายใต้ Section', line: 'อยู่ภายใต้ Department', team: 'อยู่ภายใต้ Group' };
+  const PARENT_LABEL = { department: 'อยู่ภายใต้ Section', line: 'อยู่ภายใต้ Department' };
 
   useEffect(() => {
     if (!selSection && sections.length) setSelSection(sections[0].id);
@@ -64,12 +57,6 @@ export default function OrgSetup() {
   }, [selSection, nodes]); // eslint-disable-line
 
   const currentLines = selDept ? linesOf(selDept) : [];
-  useEffect(() => {
-    if (currentLines.length && !currentLines.some(l => l.id === selLine)) setSelLine(currentLines[0].id);
-    if (!currentLines.length) setSelLine(null);
-  }, [selDept, nodes]); // eslint-disable-line
-
-  const currentTeams = selLine ? teamsOf(selLine) : [];
 
   const openCreate = (kind, parentId) => {
     setFormName(''); setFormCode(''); setFormCostCenter(''); setFormRefLineId('');
@@ -124,7 +111,6 @@ export default function OrgSetup() {
     toast.success('ลบสำเร็จ');
     if (node.kind === 'section' && selSection === node.id) setSelSection(null);
     if (node.kind === 'department' && selDept === node.id) setSelDept(null);
-    if (node.kind === 'line' && selLine === node.id) setSelLine(null);
     fetchAll();
   };
 
@@ -143,7 +129,7 @@ export default function OrgSetup() {
           🏢 แผนผังองค์กร
         </h2>
         <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>
-          จัดการโครงสร้าง Section/ส่วน → Department/แผนก → Group/กลุ่ม → Team/กะ พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)
+          จัดการโครงสร้าง Section/ส่วน → Department/แผนก → Group/กลุ่ม พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)
         </p>
       </div>
 
@@ -196,7 +182,7 @@ export default function OrgSetup() {
               <button onClick={() => selDept && openCreate('line', selDept)} disabled={!selDept} style={addBtnSt}>➕</button>
             </div>
             {!selDept ? <Empty text="เลือกแผนกก่อน" /> : currentLines.map(l => (
-              <div key={l.id} style={itemStyle(selLine === l.id)} onClick={() => setSelLine(l.id)}>
+              <div key={l.id} style={itemStyle(false)}>
                 <span style={{ fontSize: 13, color: l.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: l.is_active ? 'none' : 'line-through' }}>
                   {l.name} {!l.ref_line_id && <span style={{ fontSize: 10, color: '#f59e0b' }}>(ไม่ผูก production_lines)</span>}
                   {l.cost_center && <CostBadge code={l.cost_center} />}
@@ -205,24 +191,6 @@ export default function OrgSetup() {
               </div>
             ))}
             {selDept && !currentLines.length && <Empty text="ยังไม่มีกลุ่มในแผนกนี้" />}
-          </div>
-
-          {/* Teams */}
-          <div style={colStyle} className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>TEAM / กะ ({currentTeams.length})</strong>
-              <button onClick={() => selLine && openCreate('team', selLine)} disabled={!selLine} style={addBtnSt}>➕</button>
-            </div>
-            {!selLine ? <Empty text="เลือกกลุ่มก่อน" /> : currentTeams.map(t => (
-              <div key={t.id} style={itemStyle(false)}>
-                <span style={{ fontSize: 13, color: t.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: t.is_active ? 'none' : 'line-through' }}>
-                  {t.name}
-                  {t.cost_center && <CostBadge code={t.cost_center} />}
-                </span>
-                <RowActions node={t} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
-              </div>
-            ))}
-            {selLine && !currentTeams.length && <Empty text="ยังไม่มี Team ในกลุ่มนี้" />}
           </div>
         </div>
       )}
