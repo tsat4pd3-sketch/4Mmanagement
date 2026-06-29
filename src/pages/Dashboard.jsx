@@ -983,10 +983,10 @@ export default function Dashboard() {
                         } else if (!o.isDone && !o.isCarry && nowMs > endMs) {
                           occupiedEndMs = nowMs;
                         }
-                        // เดินคิวด้วย endMs (เวลาจบตามจริง/ตามแผน) ไม่ใช่ occupiedEndMs ที่ถูกยืดไปถึง "ตอนนี้"
-                        // เพราะ occupiedEndMs ใช้แค่โชว์ "หาง" สีแดงของใบที่ยังไม่ปิด ไม่ควรไปดันตำแหน่งใบถัดไป
-                        // (ไม่งั้นถ้าพนักงานปิด order ไม่ตรง sequence ตอนเปิด ใบที่ปิดแล้วจะถูกดันไปทับ "ตอนนี้" ผิดตำแหน่ง)
-                        queueEndMs = endMs;
+                        // เดินคิวด้วยเวลาที่ "ครองไลน์จริง": ถ้าปิดใบแล้ว (ไม่ว่าจะปิดเร็ว/ช้ากว่าทฤษฎี) ใช้ confirmed_at จริง
+                        // เพราะพนักงานมักทำงานเป็นช่วงแล้วมาสแกนปิดทีหลัง ไม่ใช่ปิดทันทีที่ผลิตจบตามทฤษฎี
+                        // แต่ถ้ายังไม่ปิด ห้ามยืดไปถึง "ตอนนี้" (occupiedEndMs สำหรับใบเปิดเกินกำหนด) เพราะจะดันใบถัดไปผิดตำแหน่ง
+                        queueEndMs = (o.isDone && o.confirmed_at) ? occupiedEndMs : endMs;
                         const isDelayed = !o.isDone && !o.isCarry && endMs < nowMs;
                         return { o, startMs, endMs, occupiedEndMs, isDelayed, isLateDone };
                       });
