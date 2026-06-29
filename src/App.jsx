@@ -64,7 +64,6 @@ const NAV_ITEMS = [
   { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    roles: null, group: 'บริหารจัดการ' },
-  { to: '/report?tab=9&master=1', icon: '🚐', label: 'ตั้งค่าสายรถรับส่ง', roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
 ];
 
 const NAV_GROUP_ORDER = ['ภาพรวม', 'การผลิต', 'รายงาน/คุณภาพ', 'บริหารจัดการ'];
