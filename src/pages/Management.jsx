@@ -940,9 +940,11 @@ export default function Management() {
             let curRoundIdx = null;
             return sorted.map(o => {
               const roundIdx = roundIndexOf(o.orderStartMs);
+              // ห้ามให้ queueEndMs ถอยหลัง — ถ้าการ์ดก่อนหน้ายาวคร่อมเข้ารอบถัดไป (duration ยาวจาก qty×ct)
+              // ต้องเดินคิวต่อจากที่มันจบจริง ไม่ใช่กระโดดกลับไปที่จุดเริ่มรอบใหม่ (จะทำให้ทับกัน)
               if (curRoundIdx === null || roundIdx !== curRoundIdx) {
                 curRoundIdx = roundIdx;
-                queueEndMs = roundStartOf(roundIdx);
+                queueEndMs = Math.max(queueEndMs, roundStartOf(roundIdx));
               }
               const durationMs = Math.max(o.orderEndMs - o.orderStartMs, 0);
               let startMs = Math.max(o.orderStartMs, queueEndMs);
