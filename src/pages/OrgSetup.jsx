@@ -209,7 +209,7 @@ export default function OrgSetup() {
               {modal.kind !== 'section' && (
                 <div>
                   <label style={labelSt}>{PARENT_LABEL[modal.kind]}</label>
-                  <select value={modal.parentId ?? ''} onChange={e => setModal(m => ({ ...m, parentId: Number(e.target.value) }))}>
+                  <select value={modal.parentId ?? ''} onChange={e => setModal(m => ({ ...m, parentId: e.target.value }))}>
                     {parentOptionsFor(modal.kind).map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                   </select>
                 </div>
