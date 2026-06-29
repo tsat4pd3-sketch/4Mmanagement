@@ -408,9 +408,14 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
     return map;
   }, [rounds, lineFilter]);
 
+  // เลขรอบที่ "ว่าง" ตัวแรก โดยดูจากรอบที่ยัง active เท่านั้น — ถ้าตรงกับรอบที่ถูกลบ (is_active=false)
+  // handleSave จะ reactivate ให้เอง ทำให้รีไซเคิลเลขรอบเดิมได้ ไม่ไต่ขึ้นเรื่อย ๆ
   const nextRoundNo = useCallback((line_name, shift) => {
-    const existing = rounds.filter(r => r.line_name === line_name && r.shift === shift);
-    return existing.reduce((m, r) => Math.max(m, r.round_no || 0), 0) + 1;
+    const used = new Set(rounds.filter(r => r.line_name === line_name && r.shift === shift)
+      .map(r => r.round_no));
+    let n = 1;
+    while (used.has(n)) n++;
+    return n;
   }, [rounds]);
 
   const openNew = () => {
@@ -494,10 +499,8 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
   };
 
   const suggestRound = useCallback(() => {
-    const existing = rounds.filter(r => r.line_name === form.line_name && r.shift === form.shift);
-    const maxRound = existing.reduce((m, r) => Math.max(m, r.round_no || 0), 0);
-    setForm(f => ({ ...f, round_no: String(maxRound + 1) }));
-  }, [rounds, form.line_name, form.shift]);
+    setForm(f => ({ ...f, round_no: String(nextRoundNo(form.line_name, form.shift)) }));
+  }, [nextRoundNo, form.line_name, form.shift]);
 
   return (
     <>
