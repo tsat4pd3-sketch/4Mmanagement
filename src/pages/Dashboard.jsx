@@ -945,6 +945,7 @@ export default function Dashboard() {
                           queueEndMs = Math.max(queueEndMs, roundStartOf(roundIdx));
                         }
                         const durationMs = Math.max(o.orderEndMs - o.orderStartMs, 0);
+                        const queueFloorMs = queueEndMs;
                         let startMs = Math.max(o.orderStartMs, queueEndMs);
                         let endMs = startMs + durationMs;
                         // ถ้าช่วงเวลาผลิตของการ์ดนี้ทับเวลาพักเบรค ไม่เลื่อน startMs ไปหลังเบรค (เพราะจะทำให้
@@ -971,7 +972,10 @@ export default function Dashboard() {
                           const confMs = new Date(o.confirmed_at).getTime();
                           if (endMs > confMs) {
                             endMs = confMs;
-                            startMs = Math.max(o.orderStartMs, endMs - durationMs);
+                            // ห้ามให้ startMs ย้อนไปก่อนคิวที่ใบก่อนหน้าครองอยู่แล้ว (queueFloorMs) — ไม่งั้นถ้าสแกนปิด
+                            // 2 ใบพร้อมกัน (confirmed_at เท่ากัน) ทั้งคู่จะถูกหดให้จบที่จุดเดียวกันแล้วทับกัน
+                            startMs = Math.max(o.orderStartMs, queueFloorMs, endMs - durationMs);
+                            endMs = Math.max(endMs, startMs);
                           }
                         }
                         // เวลาที่ "ครองไลน์" จริง สำหรับผลักคิวถัดไป (ไม่ใช่แค่เวลาจบตามแผน):
