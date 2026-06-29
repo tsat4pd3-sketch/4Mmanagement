@@ -26,6 +26,7 @@ const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
 const LineStock      = lazy(() => import('./pages/LineStock'));
 const CompanyCalendar = lazy(() => import('./pages/CompanyCalendar'));
 const RackCenter      = lazy(() => import('./pages/RackCenter'));
+const OrgSetup        = lazy(() => import('./pages/OrgSetup'));
 
 /* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null, signatureUrl: null, fullName: null });
@@ -62,6 +63,7 @@ const NAV_ITEMS = [
   { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager', 'supervisor', 'leader'], group: 'บริหารจัดการ' },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    roles: null, group: 'บริหารจัดการ' },
+  { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     roles: ['admin'], group: 'บริหารจัดการ' },
 ];
 
 const NAV_GROUP_ORDER = ['ภาพรวม', 'การผลิต', 'รายงาน/คุณภาพ', 'บริหารจัดการ'];
@@ -615,6 +617,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/add-user"   element={
                 <RoleRoute allow={['admin']} userRole={role}><AddUser /></RoleRoute>
+              } />
+              <Route path="/org-setup"  element={
+                <RoleRoute allow={['admin']} userRole={role}><OrgSetup /></RoleRoute>
               } />
               <Route path="/shift-organize" element={
                 <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}><ShiftOrganize /></RoleRoute>

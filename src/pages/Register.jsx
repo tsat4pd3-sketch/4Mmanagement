@@ -3,9 +3,6 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import ImageCropModal from '../components/ImageCropModal';
 
-const SECTIONS = ['PD1', 'PD2', 'PD3', 'PD4'];
-const TEAMS    = ['A', 'B', 'C'];
-
 export default function Register() {
   const { role, lineId: userLineId, section: userSection } = useContext(UserContext);
   const isSupervisor = role === 'supervisor';
@@ -25,6 +22,8 @@ export default function Register() {
   const [lines,       setLines]       = useState([]);
   const [busRoutes,   setBusRoutes]   = useState([]);
   const [busRouteId,  setBusRouteId]  = useState('');
+  const [sectionOpts, setSectionOpts] = useState([]);
+  const [teamOpts,    setTeamOpts]    = useState([]);
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name, section').order('name')
@@ -36,6 +35,13 @@ export default function Register() {
       });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
       .then(({ data }) => setBusRoutes(data || []));
+    supabase.from('org_nodes').select('code, name, kind').eq('is_active', true).order('sort_order')
+      .then(({ data }) => {
+        const nodes = data || [];
+        setSectionOpts(nodes.filter(n => n.kind === 'section').map(n => n.code || n.name));
+        const teamCodes = [...new Set(nodes.filter(n => n.kind === 'team').map(n => n.code || n.name))];
+        setTeamOpts(teamCodes);
+      });
   }, []);
 
   const handleRegister = async (e) => {
@@ -150,7 +156,7 @@ export default function Register() {
               ) : (
                 <select value={section} onChange={e => setSection(e.target.value)}>
                   <option value="">— เลือก —</option>
-                  {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               )}
             </div>
@@ -158,7 +164,7 @@ export default function Register() {
               <label style={labelSt}>Team</label>
               <select value={team} onChange={e => setTeam(e.target.value)}>
                 <option value="">— เลือก —</option>
-                {TEAMS.map(t => <option key={t} value={t}>Team {t}</option>)}
+                {teamOpts.map(t => <option key={t} value={t}>Team {t}</option>)}
               </select>
             </div>
           </div>

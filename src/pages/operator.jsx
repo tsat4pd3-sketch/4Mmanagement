@@ -82,6 +82,7 @@ export default function Operator() {
   const [rejectLuModal,   setRejectLuModal]   = useState(null);
   const [rejectLuReason,  setRejectLuReason]  = useState('');
   const [runningWeekly,   setRunningWeekly]   = useState(false);
+  const [orgSectionOpts,  setOrgSectionOpts]  = useState([]);
 
   useEffect(() => {
     let alive = true;
@@ -92,6 +93,8 @@ export default function Operator() {
       .then(({ data }) => { if (alive) setLines(data || []); });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
       .then(({ data }) => { if (alive) setBusRoutes(data || []); });
+    supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('sort_order')
+      .then(({ data }) => { if (alive) setOrgSectionOpts((data || []).map(n => n.code || n.name)); });
     if (isLeader && userLineId) {
       supabase.from('production_lines').select('name').eq('id', userLineId).single()
         .then(({ data }) => { if (alive) setMyLineName(data?.name ?? ''); });
@@ -1054,7 +1057,7 @@ export default function Operator() {
                   ) : (
                     <select value={editingEmp.section || ''} onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value })}>
                       <option value="">— เลือก —</option>
-                      {['PD1','PD2','PD3','PD4'].map(s => <option key={s} value={s}>{s}</option>)}
+                      {orgSectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   )}
                 </div>

@@ -40,6 +40,7 @@ export default function LineSetup() {
   const [collisionWarn, setCollisionWarn] = useState(null); // string message หรือ null
   const [showManpower, setShowManpower] = useState(false);
   const [skillDefs, setSkillDefs] = useState([]);
+  const [sectionOpts, setSectionOpts] = useState([]);
   const [activeTab, setActiveTab] = useState('stations'); // 'stations' | 'wip' | 'machines'
 
   // ลากย้ายจุดที่มีอยู่แล้วได้ (ไม่ต้องลบสร้างใหม่) — drag เกินระยะนิดเดียวถือเป็นการลาก ไม่ใช่คลิกแก้ไข
@@ -99,6 +100,8 @@ export default function LineSetup() {
   useEffect(() => {
     fetchLines();
     supabase.from('skill_definitions').select('*').order('sort_order').then(({ data }) => setSkillDefs(data || []));
+    supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('sort_order')
+      .then(({ data }) => setSectionOpts((data || []).map(n => n.code || n.name)));
   }, []);
 
   useEffect(() => {
@@ -793,7 +796,7 @@ export default function LineSetup() {
                     style={{ fontSize: 11, padding: '2px 4px', borderRadius: 5, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', width: 'auto', flexShrink: 0 }}
                   >
                     <option value="">Section</option>
-                    {['PD1','PD2','PD3','PD4'].map(s => <option key={s} value={s}>{s}</option>)}
+                    {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                   <button onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
                     style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}

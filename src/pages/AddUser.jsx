@@ -9,14 +9,13 @@ const ROLES = [
   { value: 'qa',         label: 'QA',         color: '#c084fc', desc: 'Approve/Reject 4M Changes + ดูรายงาน' },
   { value: 'document_control', label: 'Document Control', color: '#fb923c', desc: 'ดูแลปฏิทินบริษัท + เอกสารควบคุม (วันทำงาน/วันหยุด/กะ)' },
 ];
-const SECTIONS = ['PD1', 'PD2', 'PD3', 'PD4'];
-const TEAMS    = ['A', 'B'];
-
 const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', section: '', lineId: '', team: '', notifyEmail: '' };
 
 export default function AddUser() {
   const [users,         setUsers]         = useState([]);
   const [lines,         setLines]         = useState([]);
+  const [sectionOpts,   setSectionOpts]   = useState([]);
+  const [teamOpts,      setTeamOpts]      = useState([]);
   const [fetchingUsers, setFetchingUsers] = useState(true);
   const [showModal,     setShowModal]     = useState(false);
   const [modalMode,     setModalMode]     = useState('create');
@@ -29,6 +28,12 @@ export default function AddUser() {
   useEffect(() => {
     supabase.from('production_lines').select('id, name').order('name')
       .then(({ data }) => setLines(data || []));
+    supabase.from('org_nodes').select('code, name, kind').eq('is_active', true).order('sort_order')
+      .then(({ data }) => {
+        const nodes = data || [];
+        setSectionOpts(nodes.filter(n => n.kind === 'section').map(n => n.code || n.name));
+        setTeamOpts([...new Set(nodes.filter(n => n.kind === 'team').map(n => n.code || n.name))]);
+      });
     fetchUsers();
   }, []);
 
@@ -291,14 +296,14 @@ export default function AddUser() {
                   <label style={labelSt}>Section</label>
                   <select value={form.section} onChange={e => setF('section', e.target.value)}>
                     <option value="">— เลือก —</option>
-                    {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                    {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>
                   <label style={labelSt}>Team</label>
                   <select value={form.team} onChange={e => setF('team', e.target.value)}>
                     <option value="">— เลือก —</option>
-                    {TEAMS.map(t => <option key={t} value={t}>Team {t}</option>)}
+                    {teamOpts.map(t => <option key={t} value={t}>Team {t}</option>)}
                   </select>
                 </div>
               </div>
