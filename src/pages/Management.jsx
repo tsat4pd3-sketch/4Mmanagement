@@ -968,15 +968,15 @@ export default function Management() {
               // ส่วนกรณีปิดงานช้ากว่าทฤษฎี (isLateDone) ปล่อยให้ endMs เดิม + แสดง "หาง" ของความช้าแยกต่างหาก (ไม่ขยับการ์ดหลัก)
               const isLateDone = o.isDone && !!o.confirmed_at && new Date(o.confirmed_at).getTime() > endMs;
               let occupiedEndMs = endMs;
-              if (o.isDone && o.confirmed_at) {
+              if (isLateDone) {
                 occupiedEndMs = new Date(o.confirmed_at).getTime();
               } else if (!o.isDone && !o.isCarry && nowMs > endMs) {
                 occupiedEndMs = nowMs;
               }
-              // เดินคิวด้วยเวลาที่ "ครองไลน์จริง": ถ้าปิดใบแล้ว (ไม่ว่าจะปิดเร็ว/ช้ากว่าทฤษฎี) ใช้ confirmed_at จริง
-              // เพราะพนักงานมักทำงานเป็นช่วงแล้วมาสแกนปิดทีหลัง ไม่ใช่ปิดทันทีที่ผลิตจบตามทฤษฎี
-              // แต่ถ้ายังไม่ปิด ห้ามยืดไปถึง "ตอนนี้" (occupiedEndMs สำหรับใบเปิดเกินกำหนด) เพราะจะดันใบถัดไปผิดตำแหน่ง
-              queueEndMs = (o.isDone && o.confirmed_at) ? occupiedEndMs : endMs;
+              // เดินคิวต้องไม่ขยับมาก่อน endMs ของการ์ดนี้เด็ดขาด (ไม่งั้นใบถัดไปจะมาทับกล่องที่แสดงอยู่)
+              // ถ้าปิดช้ากว่าทฤษฎี (isLateDone) ค่อยยืดคิวต่อไปถึง occupiedEndMs (confirmed_at จริง) กันใบถัดไปทับ "หาง"
+              // ถ้าปิดเร็ว/ยังไม่ปิด ใช้ endMs เดิม — ห้ามใช้ confirmed_at ที่เร็วกว่ามาเลื่อนคิวให้สั้นลง
+              queueEndMs = isLateDone ? occupiedEndMs : endMs;
               const isDelayed = !o.isDone && !o.isCarry && !o.is_backfill && endMs < nowMs && rowBehindPace;
               return { o, startMs, endMs, occupiedEndMs, isDelayed, isLateDone };
             }).map((item, i, arr) => {
