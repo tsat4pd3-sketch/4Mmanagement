@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
 
 const KIND_LABEL = { section: 'Section', department: 'แผนก', line: 'ไลน์', team: 'Team' };
+const COST_CENTER_REQUIRED = ['section', 'department', 'line'];
 
 export default function OrgSetup() {
   const [nodes, setNodes] = useState([]);
@@ -66,6 +67,9 @@ export default function OrgSetup() {
 
   const handleSave = async () => {
     if (!formName.trim()) return toast.error('กรุณากรอกชื่อ');
+    if (COST_CENTER_REQUIRED.includes(modal.kind) && !formCostCenter.trim()) {
+      return toast.error('กรุณากรอก Cost Center');
+    }
     setSaving(true);
     const payload = {
       kind: modal.kind,
@@ -217,7 +221,9 @@ export default function OrgSetup() {
                 <input type="text" value={formCode} onChange={e => setFormCode(e.target.value)} placeholder="เช่น PD5 / A" />
               </div>
               <div>
-                <label style={labelSt}>Cost Center (ไม่บังคับ)</label>
+                <label style={labelSt}>
+                  Cost Center {COST_CENTER_REQUIRED.includes(modal.kind) ? '(บังคับ)' : '(ไม่บังคับ)'}
+                </label>
                 <input type="text" value={formCostCenter} onChange={e => setFormCostCenter(e.target.value)} placeholder="เช่น 2140662101" />
               </div>
               {modal.kind === 'line' && (
