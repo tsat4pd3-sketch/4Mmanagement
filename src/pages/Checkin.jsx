@@ -2,6 +2,7 @@ import { useState, useEffect, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { loadCompanyCalendar, getDayType } from '../utils/companyCalendar';
 
 const LEAVE_TYPES = ['ลากิจ', 'ลาป่วย', 'ลาพักร้อน'];
 const LEAVE_DURATION_OPTS = [
@@ -74,6 +75,8 @@ export default function Checkin() {
   const [attendance,     setAttendance]     = useState({});
   const [otBookings,     setOtBookings]     = useState({});
   const [otTasks,        setOtTasks]        = useState({});
+  const [otExtraBookings, setOtExtraBookings] = useState({}); // { [empId]: { [date]: bool } } — วันหยุดล่วงหน้าเพิ่ม
+  const [otExtraTasks,    setOtExtraTasks]    = useState({}); // { [empId]: { [date]: taskTypeId } }
   const [taskTypes,      setTaskTypes]      = useState([]);
   const [isSaving,       setIsSaving]       = useState(false);
   const [filterShift,    setFilterShift]    = useState(true);
@@ -86,13 +89,38 @@ export default function Checkin() {
   const [exportSection,  setExportSection]  = useState('');
   const [exporting,      setExporting]      = useState(false);
   const [previewNight,   setPreviewNight]   = useState(false);
+  const [calLoaded,      setCalLoaded]      = useState(false);
 
   const realShiftInfo = getShiftInfo();
   const shiftInfo = previewNight
     ? { ...realShiftInfo, shift: 'night', label: '🌙 กะดึก (Preview)' }
     : realShiftInfo;
 
-  useEffect(() => { fetchData(); }, [previewNight]);
+  useEffect(() => { loadCompanyCalendar().then(() => setCalLoaded(true)); }, []);
+  useEffect(() => { fetchData(); }, [previewNight, calLoaded]);
+
+  const isHolidayDate = (dateStr) => calLoaded && getDayType(dateStr) !== 'working';
+
+  /* ── วันที่จองรถ "ล่วงหน้าเพิ่ม" ในรอบเช็คชื่อนี้ (เพิ่มเติมจากกลไกเดิม) ──
+     กะดึก: คืนถัดไป (nextDateStr) จองได้เสมออยู่แล้ว (กลไกเดิม) — ถ้าคืนถัดๆไปจากนั้นเป็นวันหยุดต่อกัน
+            (เช่น คืน พฤหัส จองคืนศุกร์ไว้แล้ว, ถ้าคืนเสาร์เป็นวันหยุด ก็ให้จองคืนเสาร์+อาทิตย์ต่อได้เลย)
+     กะเช้า: ปกติ OT วันนี้ใช้ has_ot อยู่แล้ว (ไม่ใช่ล่วงหน้า) — ถ้าพรุ่งนี้เป็นวันหยุด ให้จองล่วงหน้าต่อเนื่อง
+            จนกว่าจะเจอวันทำงานปกติ (เช่น กะเช้าศุกร์ จองเสาร์-อาทิตย์-(จันทร์ถ้าหยุดด้วย)) */
+  const extraAdvanceDates = (() => {
+    const { workDateStr, shift } = shiftInfo;
+    const dates = [];
+    const scanStart = shift === 'night' ? addDaysToDateStr(workDateStr, 2) : addDaysToDateStr(workDateStr, 1);
+    let cur = scanStart;
+    while (isHolidayDate(cur)) { dates.push(cur); cur = addDaysToDateStr(cur, 1); }
+    return dates;
+  })();
+
+  const shortDateLabel = (dateStr) => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    const wd = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][dt.getDay()];
+    return `${wd} ${d}/${m}`;
+  };
 
   const fetchData = async () => {
     const { workDateStr } = shiftInfo;
@@ -113,6 +141,7 @@ export default function Checkin() {
       { data: mergeData },
       { data: bookingData },
       { data: taskTypeData },
+      { data: extraBookingData },
     ] = await Promise.all([
       empQ,
       supabase.from('daily_production_logs')
@@ -126,6 +155,9 @@ export default function Checkin() {
         ? supabase.from('ot_night_bookings').select('employee_id, task_type_id').eq('work_date', nextDateStr).eq('shift', 'night')
         : supabase.from('ot_night_bookings').select('employee_id, task_type_id').eq('work_date', workDateStr).eq('shift', 'day'),
       supabase.from('ot_task_types').select('id, name').eq('is_active', true).order('sort_order'),
+      extraAdvanceDates.length
+        ? supabase.from('ot_night_bookings').select('employee_id, work_date, task_type_id').in('work_date', extraAdvanceDates).eq('shift', shiftInfo.shift)
+        : Promise.resolve({ data: [] }),
     ]);
     setLines(lineData || []);
     setTaskTypes(taskTypeData || []);
@@ -198,6 +230,18 @@ export default function Checkin() {
     });
     setOtBookings(bookInit);
     setOtTasks(taskInit);
+
+    const extraBookInit = {};
+    const extraTaskInit = {};
+    enriched.forEach(emp => { extraBookInit[emp.id] = {}; extraTaskInit[emp.id] = {}; });
+    (extraBookingData || []).forEach(b => {
+      if (!extraBookInit[b.employee_id]) extraBookInit[b.employee_id] = {};
+      if (!extraTaskInit[b.employee_id]) extraTaskInit[b.employee_id] = {};
+      extraBookInit[b.employee_id][b.work_date] = true;
+      extraTaskInit[b.employee_id][b.work_date] = b.task_type_id || '';
+    });
+    setOtExtraBookings(extraBookInit);
+    setOtExtraTasks(extraTaskInit);
   };
 
   const toggleOtBooking = (empId) =>
@@ -205,6 +249,12 @@ export default function Checkin() {
 
   const setOtTask = (empId, taskTypeId) =>
     setOtTasks(prev => ({ ...prev, [empId]: taskTypeId }));
+
+  const toggleOtExtraBooking = (empId, date) =>
+    setOtExtraBookings(prev => ({ ...prev, [empId]: { ...prev[empId], [date]: !prev[empId]?.[date] } }));
+
+  const setOtExtraTask = (empId, date, taskTypeId) =>
+    setOtExtraTasks(prev => ({ ...prev, [empId]: { ...prev[empId], [date]: taskTypeId } }));
 
   const toggle = (empId, field) =>
     setAttendance(prev => ({ ...prev, [empId]: { ...prev[empId], [field]: !prev[empId][field] } }));
@@ -304,6 +354,37 @@ export default function Checkin() {
           .eq('work_date', bookDate)
           .eq('shift', otShift)
           .in('employee_id', toUnbook);
+      }
+    }
+
+    /* ── บันทึกการจองรถ "ล่วงหน้าเพิ่ม" สำหรับวันหยุดต่อเนื่อง (extraAdvanceDates) ── */
+    if (extraAdvanceDates.length) {
+      const otShift = shiftInfo.shift;
+      for (const d of extraAdvanceDates) {
+        const isBookedExtra = emp => !!otExtraBookings[emp.id]?.[d];
+        const toBookExtra   = displayed.filter(isBookedExtra).map(emp => emp.id);
+        const toUnbookExtra = displayed.filter(emp => !isBookedExtra(emp)).map(emp => emp.id);
+
+        if (toBookExtra.length) {
+          await supabase.from('ot_night_bookings').upsert(
+            toBookExtra.map(empId => ({
+              work_date:      d,
+              shift:          otShift,
+              employee_id:    empId,
+              task_type_id:   otExtraTasks[empId]?.[d] || null,
+              booked_by:      userData.user.id,
+              booked_by_name: fullName || null,
+            })),
+            { onConflict: 'employee_id,work_date,shift' }
+          );
+        }
+        if (toUnbookExtra.length) {
+          await supabase.from('ot_night_bookings')
+            .delete()
+            .eq('work_date', d)
+            .eq('shift', otShift)
+            .in('employee_id', toUnbookExtra);
+        }
       }
     }
 
@@ -753,6 +834,9 @@ export default function Checkin() {
           {shiftInfo.shift === 'night'
             ? <>คอลัมน์ <strong>จองรถ OT / งานที่ทำ</strong> = จองล่วงหน้าว่าจะมาทำ OT คืนวันที่ {addDaysToDateStr(shiftInfo.workDateStr, 1)} พร้อมระบุงานที่จะทำ เพื่อใช้ออกรายงานให้ธุรการจองรถรับส่ง (ดูที่หน้า Report)</>
             : <>ติ๊ก <strong>OT</strong> แล้วเลือก <strong>งานที่ทำ</strong> ในคอลัมน์ขวา เพื่อใช้ออกรายงานให้ธุรการจองรถรับส่ง (ดูที่หน้า Report)</>}
+          {!!extraAdvanceDates.length && (
+            <> · 🔶 พบวันหยุดต่อเนื่อง <strong>{extraAdvanceDates.map(shortDateLabel).join(', ')}</strong> — เพิ่มช่องจองรถล่วงหน้าให้แล้ว</>
+          )}
         </span>
       </div>
 
@@ -780,7 +864,7 @@ export default function Checkin() {
               <th style={{ minWidth: 220 }}>🏖️ การลา</th>
               <th style={{ minWidth: 140 }}>หมายเหตุ</th>
               <th style={{ textAlign: 'center', minWidth: 110 }}>สถานะ</th>
-              <th style={{ textAlign: 'center', minWidth: 150 }} title="จองรถรับส่งสำหรับ OT พร้อมระบุงานที่ทำ — ใช้ออกรายงานให้ธุรการจองรถรับส่ง">🚐 จองรถ OT / งานที่ทำ</th>
+              <th style={{ textAlign: 'center', minWidth: 150 }} title="จองรถรับส่งสำหรับ OT พร้อมระบุงานที่ทำ — ใช้ออกรายงานให้ธุรการจองรถรับส่ง · ช่อง 🔶 = จองล่วงหน้าเพิ่มสำหรับวันหยุดต่อเนื่อง (ตามปฏิทินบริษัท)">🚐 จองรถ OT / งานที่ทำ</th>
             </tr>
           </thead>
           <tbody>
@@ -968,37 +1052,63 @@ export default function Checkin() {
                     )}
                   </td>
                   <td style={{ textAlign: 'center' }}>
-                    {shiftInfo.shift === 'night' ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                        <input
-                          type="checkbox"
-                          style={{ transform: 'scale(1.4)', accentColor: '#06b6d4', width: 'auto' }}
-                          checked={!!otBookings[emp.id]}
-                          onChange={() => toggleOtBooking(emp.id)}
-                        />
-                        {otBookings[emp.id] && (
-                          <select
-                            value={otTasks[emp.id] || ''}
-                            onChange={e => setOtTask(emp.id, e.target.value || null)}
-                            style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130 }}
-                          >
-                            <option value="">— งานที่ทำ —</option>
-                            {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                          </select>
-                        )}
-                      </div>
-                    ) : rec.has_ot ? (
-                      <select
-                        value={otTasks[emp.id] || ''}
-                        onChange={e => setOtTask(emp.id, e.target.value || null)}
-                        style={{ fontSize: 11, padding: '2px 4px', maxWidth: 140 }}
-                      >
-                        <option value="">— งานที่ทำ —</option>
-                        {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                      </select>
-                    ) : (
-                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
-                    )}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                      {shiftInfo.shift === 'night' ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                          <span style={{ fontSize: 9, color: 'var(--muted)' }}>{shortDateLabel(addDaysToDateStr(shiftInfo.workDateStr, 1))}</span>
+                          <input
+                            type="checkbox"
+                            style={{ transform: 'scale(1.4)', accentColor: '#06b6d4', width: 'auto' }}
+                            checked={!!otBookings[emp.id]}
+                            onChange={() => toggleOtBooking(emp.id)}
+                          />
+                          {otBookings[emp.id] && (
+                            <select
+                              value={otTasks[emp.id] || ''}
+                              onChange={e => setOtTask(emp.id, e.target.value || null)}
+                              style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130 }}
+                            >
+                              <option value="">— งานที่ทำ —</option>
+                              {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                            </select>
+                          )}
+                        </div>
+                      ) : rec.has_ot ? (
+                        <select
+                          value={otTasks[emp.id] || ''}
+                          onChange={e => setOtTask(emp.id, e.target.value || null)}
+                          style={{ fontSize: 11, padding: '2px 4px', maxWidth: 140 }}
+                        >
+                          <option value="">— งานที่ทำ —</option>
+                          {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                      ) : (
+                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
+                      )}
+
+                      {/* จองรถล่วงหน้าเพิ่ม — วันหยุดต่อเนื่อง */}
+                      {extraAdvanceDates.map(d => (
+                        <div key={d} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 4, borderTop: '1px dashed var(--border)' }}>
+                          <span style={{ fontSize: 9, color: '#f59e0b', fontWeight: 700 }}>{shortDateLabel(d)} 🔶</span>
+                          <input
+                            type="checkbox"
+                            style={{ transform: 'scale(1.3)', accentColor: '#f59e0b', width: 'auto' }}
+                            checked={!!otExtraBookings[emp.id]?.[d]}
+                            onChange={() => toggleOtExtraBooking(emp.id, d)}
+                          />
+                          {otExtraBookings[emp.id]?.[d] && (
+                            <select
+                              value={otExtraTasks[emp.id]?.[d] || ''}
+                              onChange={e => setOtExtraTask(emp.id, d, e.target.value || null)}
+                              style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130 }}
+                            >
+                              <option value="">— งานที่ทำ —</option>
+                              {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                            </select>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </td>
                 </tr>
               );
