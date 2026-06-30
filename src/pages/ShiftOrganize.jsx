@@ -25,6 +25,7 @@ export default function ShiftOrganize() {
 
   const [weekRef,   setWeekRef]   = useState(new Date());
   const [lines,     setLines]     = useState([]);
+  const [orgSections, setOrgSections] = useState([]);
   const [weekTeams, setWeekTeams] = useState({}); // line_id → 'A' | 'B' | null
   const [pending,   setPending]   = useState({}); // line_id → 'A' | 'B'
   const [isSaving,  setIsSaving]  = useState(false);
@@ -66,8 +67,12 @@ export default function ShiftOrganize() {
   }, [weekRef, lines.length]);
 
   const fetchLines = async () => {
-    const { data } = await supabase.from('production_lines').select('id, name, section').order('id');
-    setLines(data || []);
+    const [{ data: lineData }, { data: orgData }] = await Promise.all([
+      supabase.from('production_lines').select('id, name, section').order('id'),
+      supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name'),
+    ]);
+    setLines(lineData || []);
+    setOrgSections((orgData || []).map(n => n.code || n.name).sort());
   };
 
   const fetchEmployees = async () => {
@@ -485,7 +490,7 @@ export default function ShiftOrganize() {
                   <label style={labelSt}>Section</label>
                   <select value={mrgSection} onChange={e => setMrgSection(e.target.value)}>
                     <option value="">— เลือก Section —</option>
-                    {[...new Set(lines.map(l => l.section).filter(Boolean))].sort().map(sec => (
+                    {(orgSections.length ? orgSections : [...new Set(lines.map(l => l.section).filter(Boolean))].sort()).map(sec => (
                       <option key={sec} value={sec}>{sec}</option>
                     ))}
                   </select>

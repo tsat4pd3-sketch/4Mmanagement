@@ -81,6 +81,7 @@ export default function Checkin() {
   const [isSaving,       setIsSaving]       = useState(false);
   const [filterShift,    setFilterShift]    = useState(true);
   const [noSchedule,     setNoSchedule]     = useState(false);
+  const [orgSections,    setOrgSections]    = useState([]);
   const [selSection,     setSelSection]     = useState('');
   const [selLine,        setSelLine]        = useState('');
   const [showExport,     setShowExport]     = useState(false);
@@ -138,6 +139,7 @@ export default function Checkin() {
       { data: scheduleData },
       { data: overrideData },
       { data: lineData },
+      { data: orgNodeData },
       { data: mergeData },
       { data: bookingData },
       { data: taskTypeData },
@@ -150,6 +152,7 @@ export default function Checkin() {
       supabase.from('shift_schedules').select('*').eq('work_date', workDateStr),
       supabase.from('shift_overrides').select('*').eq('work_date', workDateStr),
       supabase.from('production_lines').select('id, name, section').order('section').order('name'),
+      supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name'),
       supabase.from('shift_merge_events').select('*').lte('start_date', workDateStr).gte('end_date', workDateStr),
       shiftInfo.shift === 'night'
         ? supabase.from('ot_night_bookings').select('employee_id, task_type_id').eq('work_date', nextDateStr).eq('shift', 'night')
@@ -160,6 +163,7 @@ export default function Checkin() {
         : Promise.resolve({ data: [] }),
     ]);
     setLines(lineData || []);
+    setOrgSections((orgNodeData || []).map(n => n.code || n.name).sort());
     setTaskTypes(taskTypeData || []);
 
     if (!empData) return;
@@ -651,7 +655,7 @@ export default function Checkin() {
     }
   };
 
-  const sections = [...new Set(lines.map(l => l.section))].sort();
+  const sections = orgSections.length ? orgSections : [...new Set(lines.map(l => l.section))].sort();
   const linesForSection = selSection ? lines.filter(l => l.section === selSection) : lines;
 
   const displayed = employees.filter(emp => {

@@ -129,6 +129,7 @@ export default function Dashboard() {
   const [logs, setLogs]         = useState([]);
   const [fourMLogs, setFourMLogs] = useState([]);
   const [lines, setLines]       = useState([]);
+  const [orgSections, setOrgSections] = useState([]);
   const [loading, setLoading]   = useState(true);
 
   const [empCounts, setEmpCounts] = useState({});   // { [line_id]: count }
@@ -295,6 +296,7 @@ export default function Dashboard() {
       { data: logData },
       { data: fmData },
       { data: lineData },
+      { data: orgNodeData },
       { data: empData },
       { data: scheduleData },
       { data: overrideData },
@@ -308,6 +310,7 @@ export default function Dashboard() {
         .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
       supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift').order('name'),
+      supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name'),
       supabase.from('employees').select('id, line_id, team').eq('is_active', true),
       supabase.from('shift_schedules').select('line_id, day_team').eq('work_date', date),
       supabase.from('shift_overrides').select('employee_id, shift').eq('work_date', date),
@@ -343,6 +346,7 @@ export default function Dashboard() {
     setLogs(enriched);
     setFourMLogs(fmData || []);
     setLines(lineData || []);
+    setOrgSections((orgNodeData || []).map(n => n.code || n.name).sort());
 
     // Build line capacity using shift_schedules for correct day/night split
     const counts = {};
@@ -460,7 +464,7 @@ export default function Dashboard() {
   const inDayOTWindow      = nowMin >= 17 * 60 + 30 && nowMin < 20 * 60;
   const inExtendedOTWindow = nowMin >= 20 * 60 && nowMin < 23 * 60;
 
-  const sections = useMemo(() => [...new Set(lines.map(l => l.section).filter(Boolean))].sort(), [lines]);
+  const sections = useMemo(() => orgSections.length ? orgSections : [...new Set(lines.map(l => l.section).filter(Boolean))].sort(), [lines, orgSections]);
   const visibleLines = useMemo(
     () => selectedSection === 'all' ? lines : lines.filter(l => l.section === selectedSection),
     [lines, selectedSection],

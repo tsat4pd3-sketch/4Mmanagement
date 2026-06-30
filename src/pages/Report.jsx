@@ -126,6 +126,15 @@ const groupSkillsByCategory = (defs) =>
 
 const lbSt = { fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 4, display: 'block' };
 
+function useOrgSections() {
+  const [orgSections, setOrgSections] = useState([]);
+  useEffect(() => {
+    supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name')
+      .then(({ data }) => setOrgSections((data || []).map(n => n.code || n.name).sort()));
+  }, []);
+  return orgSections;
+}
+
 export default function Report() {
   const location = useLocation();
   const initialParams = new URLSearchParams(location.search);
@@ -169,6 +178,7 @@ export default function Report() {
 function OtTransportBookingTab({ autoOpenMaster }) {
   const { role } = useContext(UserContext);
   const canManageMaster = ['admin', 'manager', 'supervisor'].includes(role);
+  const orgSectionList = useOrgSections();
 
   const todayStr = (() => {
     const d = new Date();
@@ -212,7 +222,7 @@ function OtTransportBookingTab({ autoOpenMaster }) {
     .filter(r => !section || r.employees?.section === section)
     .filter(r => shiftFilter === 'all' || r.shift === shiftFilter);
 
-  const sections = [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+  const sections = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
 
   const handleExportCsv = () => {
     downloadCSV(
@@ -440,6 +450,7 @@ function OtMasterDataPanel() {
 function DailyTab() {
   const now = new Date();
   const isDay = (now.getHours() * 60 + now.getMinutes()) >= 480 && (now.getHours() * 60 + now.getMinutes()) < 1200;
+  const orgSectionList = useOrgSections();
   const [date, setDate]   = useState(getWorkDate());
   const [shift, setShift] = useState(isDay ? 'day' : 'night');
   const [logs, setLogs]   = useState([]);
@@ -486,7 +497,7 @@ function DailyTab() {
     setLoading(false);
   };
 
-  const dailySections = useMemo(() => [...new Set(lines.map(l => l.section).filter(Boolean))].sort(), [lines]);
+  const dailySections = useMemo(() => orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort(), [lines, orgSectionList]);
   const dailyVisibleLines = dailySection ? lines.filter(l => l.section === dailySection) : lines;
 
   const filteredLogs = useMemo(() => logs.filter(l => {
@@ -616,6 +627,7 @@ table{border-collapse:collapse;width:100%}
 }
 
 function PerEmployeeTab() {
+  const orgSectionList = useOrgSections();
   const [employees, setEmployees] = useState([]);
   const [selected, setSelected] = useState('');
   const [logs, setLogs] = useState([]);
@@ -653,7 +665,7 @@ function PerEmployeeTab() {
     setLoading(false);
   };
 
-  const empSections = useMemo(() => [...new Set(employees.map(e => e.section).filter(Boolean))].sort(), [employees]);
+  const empSections = useMemo(() => orgSectionList.length ? orgSectionList : [...new Set(employees.map(e => e.section).filter(Boolean))].sort(), [employees, orgSectionList]);
   const filteredEmployees = useMemo(() => employees.filter(e => {
     if (empSection && e.section !== empSection) return false;
     if (empTeam && e.team !== empTeam) return false;
@@ -2010,7 +2022,8 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
 const selSt = { padding: '7px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', minWidth: 120 };
 
 function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilterLine, filterTeam, setFilterTeam }) {
-  const sections = useMemo(() => [...new Set(lines.map(l => l.section).filter(Boolean))].sort(), [lines]);
+  const orgSectionList = useOrgSections();
+  const sections = useMemo(() => orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort(), [lines, orgSectionList]);
   const visibleLines = filterSection ? lines.filter(l => l.section === filterSection) : lines;
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
