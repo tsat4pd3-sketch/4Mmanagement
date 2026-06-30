@@ -1821,7 +1821,7 @@ function PartsMasterPanel({ canEdit, fullName, setCsvPreview, reloadKey }) {
    ใช้ parts_master เป็นแหล่งข้อมูลเดียวสำหรับ UOM (ไม่เก็บ uom ซ้ำใน kanban_standards)
    qty_per_kanban เริ่มต้น = parts_master.qty_per_pkg (1 ใบ Kanban = 1 packaging)
    ───────────────────────────────────────────────────────────────────────────── */
-const EMPTY_KBS = { mat_no: '', qty_per_kanban: '', min_qty: '', max_qty: '' };
+const EMPTY_KBS = { mat_no: '', qty_per_kanban: '', min_qty: '', max_qty: '', lot_size: '' };
 
 function KanbanStdPanel({ canEdit, fullName }) {
   const [parts,     setParts]     = useState([]);
@@ -1860,6 +1860,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
       qty_per_kanban: row.ks ? String(row.ks.qty_per_kanban) : (row.qty_per_pkg != null ? String(row.qty_per_pkg) : ''),
       min_qty: row.ks?.min_qty != null ? String(row.ks.min_qty) : '',
       max_qty: row.ks?.max_qty != null ? String(row.ks.max_qty) : '',
+      lot_size: row.ks?.lot_size != null ? String(row.ks.lot_size) : '',
     });
     setShowModal(true);
   };
@@ -1877,6 +1878,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
       qty_per_kanban: qty,
       min_qty: minQ,
       max_qty: maxQ,
+      lot_size: form.lot_size === '' ? null : parseInt(form.lot_size),
       is_active: true,
       updated_by: fullName,
       updated_at: new Date().toISOString(),
@@ -1912,7 +1914,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--bg2)' }}>
-                {['Mat No.', 'Part Name', 'Supplier', 'UOM', 'Qty/Pkg', 'Qty/Kanban', 'Min', 'Max', 'อัปเดต'].map(h => (
+                {['Mat No.', 'Part Name', 'Supplier', 'UOM', 'Qty/Pkg', 'Qty/Kanban', 'Min', 'Max', 'Lot size', 'อัปเดต'].map(h => (
                   <th key={h} style={{ padding: '9px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
                 ))}
                 {canEdit && <th style={{ padding: '9px 14px', width: 80 }}></th>}
@@ -1920,7 +1922,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={canEdit ? 10 : 9} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่พบข้อมูล — เพิ่มพาร์ทใน Parts Master ก่อน</td></tr>
+                <tr><td colSpan={canEdit ? 11 : 10} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่พบข้อมูล — เพิ่มพาร์ทใน Parts Master ก่อน</td></tr>
               )}
               {filtered.map(row => {
                 const mismatch = row.ks && row.qty_per_pkg != null && Number(row.ks.qty_per_kanban) !== Number(row.qty_per_pkg);
@@ -1937,6 +1939,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
                     </td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: row.ks?.min_qty != null ? 'var(--text2)' : 'var(--muted)' }}>{row.ks?.min_qty != null ? row.ks.min_qty.toLocaleString() : '—'}</td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: row.ks?.max_qty != null ? 'var(--text2)' : 'var(--muted)' }}>{row.ks?.max_qty != null ? row.ks.max_qty.toLocaleString() : '—'}</td>
+                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, fontWeight: 700, color: row.ks?.lot_size != null ? '#7c3aed' : 'var(--muted)' }}>{row.ks?.lot_size != null ? row.ks.lot_size.toLocaleString() : '—'}</td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)' }}>
                       {row.ks ? (
                         <span title={row.ks.updated_by || ''}>
@@ -1991,9 +1994,14 @@ function KanbanStdPanel({ canEdit, fullName }) {
                     value={form.max_qty} onChange={e => setForm(f => ({ ...f, max_qty: e.target.value }))} placeholder="เว้นว่าง = ไม่คุม" />
                 </div>
               </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', display: 'block', marginBottom: 4 }}>Lot size (สะสม demand ครบเท่านี้ → ยิงใบสั่งผลิต + ใบเบิกวัตถุดิบ อัตโนมัติ)</label>
+                <input type="number" min="1" step="1" style={{ ...inputSt, textAlign: 'center', fontWeight: 900, fontSize: 16 }}
+                  value={form.lot_size} onChange={e => setForm(f => ({ ...f, lot_size: e.target.value }))} placeholder="เว้นว่าง = ไม่สะสมเป็นล็อต" />
+              </div>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                 UOM: <strong style={{ color: 'var(--text)' }}>{parts.find(p => p.mat_no === form.mat_no)?.uom || '—'}</strong> (จาก Parts Master)
-                · Min-Max ใช้คุมการเติม/สะสม lot ที่สโตร์ (เว้นว่าง = เติมตาม demand รายรอบ)
+                · Min-Max คุมการเติมที่สโตร์ · Lot size = เกณฑ์ยิงใบสั่งผลิตพาร์ทย่อย
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
