@@ -3757,26 +3757,37 @@ function AttendanceFormTab() {
     const startDate = `${year}-${pad(month)}-${pad(days[0])}`;
     const endDate   = `${year}-${pad(month)}-${pad(days[days.length - 1])}`;
 
-    let q = supabase
-      .from('daily_production_logs')
-      .select('work_date, employee_id, is_present, has_ot, has_extended_ot, shift, leave_type, leave_duration, leave_period, employees(name, employee_id_code, section, team, line_id)')
-      .gte('work_date', startDate)
-      .lte('work_date', endDate)
-      .limit(10000);
-
-    const { data: logs } = await q;
-
-    // group by employee
+    // Step 1: get employees matching current filters from employees table (server-side)
     const selectedLineId = line ? (lines.find(l => l.name === line)?.id ?? null) : null;
-    const empMap = {};
-    (logs || []).forEach(log => {
-      const emp = log.employees;
-      if (!emp) return;
-      if (selectedLineId && emp.line_id !== selectedLineId) return;
-      if (dept && emp.section !== dept) return;
-      if (team && emp.team !== team) return;
+    let empQ = supabase.from('employees')
+      .select('id, name, employee_id_code, section, team, line_id');
+    if (selectedLineId) empQ = empQ.eq('line_id', selectedLineId);
+    if (dept)           empQ = empQ.eq('section', dept);
+    if (team)           empQ = empQ.eq('team', team);
+    const { data: filteredEmps } = await empQ;
+    if (!filteredEmps?.length) { setEmpRows([]); setLoading(false); return; }
 
+    const empMetaById = Object.fromEntries((filteredEmps || []).map(e => [e.id, e]));
+    const empIds = filteredEmps.map(e => e.id);
+
+    // Step 2: fetch logs in batches of 50 (50 emps × 15 days = 750 rows, safe under 1000 limit)
+    const BATCH = 50;
+    const allLogs = [];
+    for (let i = 0; i < empIds.length; i += BATCH) {
+      const { data: batchLogs } = await supabase
+        .from('daily_production_logs')
+        .select('work_date, employee_id, is_present, has_ot, has_extended_ot, shift, leave_type, leave_duration, leave_period')
+        .gte('work_date', startDate)
+        .lte('work_date', endDate)
+        .in('employee_id', empIds.slice(i, i + BATCH));
+      allLogs.push(...(batchLogs || []));
+    }
+
+    const empMap = {};
+    allLogs.forEach(log => {
       const id  = log.employee_id;
+      const emp = empMetaById[id];
+      if (!emp) return;
       const day = parseInt(log.work_date.split('-')[2]);
       if (!empMap[id]) empMap[id] = { emp, byDay: {} };
       empMap[id].byDay[day] = {
@@ -3786,7 +3797,7 @@ function AttendanceFormTab() {
         shift:       log.shift || 'day',
         leave:       log.leave_type || null,
         leaveDur:    log.leave_duration || null,
-        leavePeriod: log.leave_period || null,  // 'morning' | 'afternoon' | null
+        leavePeriod: log.leave_period || null,
       };
     });
 
