@@ -193,6 +193,9 @@ function LiveTab({ role }) {
   const [carryStopTime, setCarryStopTime] = useState({});
   // แก้เวลาเริ่ม-หยุดจริงต่อ MAT.NO (เฉพาะ MAT.NO ที่ confirmed ครบแล้ว ไม่มีออเดอร์เปิดค้าง) — { [matNo]: { start, end } } เป็น "HH:MM"
   const [matTimeOverride, setMatTimeOverride] = useState({});
+  // modal แก้เวลาย้อนหลัง (สำหรับกะที่ปิดแล้ว — ใช้คำนวณ OEE ใหม่)
+  const [showEditTimes, setShowEditTimes] = useState(false);
+  const [savingTimes, setSavingTimes]     = useState(false);
 
   const canManage        = ['admin', 'manager', 'supervisor'].includes(role);
   const canOpen          = ['admin', 'manager', 'supervisor', 'leader'].includes(role); // open new shift
@@ -441,6 +444,63 @@ function LiveTab({ role }) {
   //         ถ้ากดช้ากว่านั้น → สันนิษฐานว่ามี OT ใช้เวลาสิ้นสุด OT มาตรฐาน (20:00, แก้ไขเองได้เสมอ)
   // กะดึก: เลิกงานเสมอที่ 08:00 — OT ของกะดึกคือ "เข้าเร็วขึ้น" (20:00 แทน 22:30) ไม่ใช่เลิกช้าลง
   //         ห้ามเดาเวลาเลิกเกิน 08:00 เพราะแทบไม่มีจริง (จะทำให้เวลากะรวมผิดเพี้ยนมาก เช่น 14 ชม.)
+  const openEditTimes = () => {
+    setCloseStartTime(selSession?.start_time || '');
+    setCloseEndTime(selSession?.end_time || '');
+    setMatTimeOverride({});
+    setShowEditTimes(true);
+  };
+
+  const handleSaveTimes = async () => {
+    if (!selSession) return;
+    setSavingTimes(true);
+    try {
+      // อัปเดต opened_at / confirmed_at ต่อ MAT.NO (เดียวกับตอนปิดกะ)
+      for (const [matNo, ov] of Object.entries(matTimeOverride)) {
+        if (!ov || (!ov.start && !ov.end) || !selSession.work_date) continue;
+        const orders = prodOrders.filter(o => o.mat_no === matNo);
+        if (!orders.length || orders.some(o => o.status === 'open')) continue;
+        if (ov.start) {
+          const firstOrder = orders.reduce((a, b) => (!a.opened_at || (b.opened_at && new Date(b.opened_at) < new Date(a.opened_at))) ? b : a);
+          const ms = new Date(`${selSession.work_date}T${ov.start.slice(0, 5)}:00`).getTime();
+          await supabaseDR.from('prod_orders').update({ opened_at: new Date(ms).toISOString() }).eq('id', firstOrder.id);
+        }
+        if (ov.end) {
+          const confirmedOds = orders.filter(o => o.status === 'confirmed' && o.confirmed_at);
+          if (confirmedOds.length) {
+            const lastOrder = confirmedOds.reduce((a, b) => (new Date(b.confirmed_at) > new Date(a.confirmed_at)) ? b : a);
+            let ms = new Date(`${selSession.work_date}T${ov.end.slice(0, 5)}:00`).getTime();
+            if (lastOrder.opened_at && ms < new Date(lastOrder.opened_at).getTime()) ms += 86400000;
+            await supabaseDR.from('prod_orders').update({ confirmed_at: new Date(ms).toISOString() }).eq('id', lastOrder.id);
+          }
+        }
+      }
+      // คำนวณ OEE ใหม่ด้วยเวลาที่แก้
+      const totalQtyNg = defectLogs.reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
+      const { A, P, Q, oee, shiftMin } = computeOEE(totalQtyNg, closeEndTime, closeStartTime);
+      const startChanged = closeStartTime && closeStartTime !== selSession.start_time;
+      const endChanged   = closeEndTime   && closeEndTime   !== selSession.end_time;
+      const update = {
+        shift_min: shiftMin,
+        oee_a: parseFloat((A * 100).toFixed(2)),
+        oee_p: P != null ? parseFloat((P * 100).toFixed(2)) : null,
+        oee_q: parseFloat((Q * 100).toFixed(2)),
+        oee:   oee != null ? parseFloat((oee * 100).toFixed(2)) : null,
+        ...(startChanged ? { start_time: closeStartTime } : {}),
+        ...(endChanged   ? { end_time:   closeEndTime   } : {}),
+      };
+      await supabaseDR.from('production_sessions').update(update).eq('id', selSession.id);
+      toast.success('บันทึกเวลาและคำนวณ OEE ใหม่สำเร็จ');
+      setShowEditTimes(false);
+      setMatTimeOverride({});
+      load();
+    } catch (e) {
+      toast.error('เกิดข้อผิดพลาด: ' + e.message);
+    } finally {
+      setSavingTimes(false);
+    }
+  };
+
   const guessCloseEndTime = () => {
     if (!selSession) return nowTime();
     if (selSession.shift === 'night') return '08:00';
@@ -1499,6 +1559,14 @@ function LiveTab({ role }) {
                     <button onClick={() => { setCloseNg('0'); setCloseEndTime(guessCloseEndTime()); setCloseStartTime(selSession.start_time || ''); setShowCloseShift(true); }}
                       style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
                       {role === 'leader' ? '📋 ขอปิดกะ' : '🔒 ปิดกะ'}
+                    </button>
+                  )}
+
+                  {/* closed/pending_close — SV+ แก้เวลาและคำนวณ OEE ใหม่ */}
+                  {canManage && ['closed', 'pending_close'].includes(selSession.status) && (
+                    <button onClick={openEditTimes}
+                      style={{ ...cancelBtnStyle, borderColor: '#6366f1', color: '#6366f1', fontWeight: 700 }}>
+                      ✏️ แก้เวลากะ
                     </button>
                   )}
                 </div>
@@ -2595,6 +2663,82 @@ function LiveTab({ role }) {
                     style={{ ...saveBtnStyle, background: '#ef4444',
                       opacity: (savingClose || prodOrders.filter(o => o.status === 'open').some(o => !carryOverDecisions[o.id])) ? 0.5 : 1 }}>
                     {savingClose ? '...' : role === 'leader' ? '📋 ส่งขอปิดกะ' : '🔒 ยืนยันปิดกะ'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── EDIT TIMES modal — แก้เวลากะ + per-MAT.NO สำหรับกะที่ปิดแล้ว ─── */}
+        {showEditTimes && selSession && (() => {
+          const matNos = Array.from(new Set(prodOrders.map(o => o.mat_no))).filter(Boolean);
+          return (
+            <div className="overlay" style={{ zIndex: 2000 }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(99,102,241,0.5)', borderRadius: 14, padding: 24, width: 'min(95vw,640px)', maxHeight: '90vh', overflowY: 'auto' }}>
+                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#6366f1' }}>✏️ แก้เวลากะ + คำนวณ OEE ใหม่</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>
+                  {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)}
+                </div>
+                <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 16 }}>
+                  ⚠ เวลาที่แก้ไม่เกี่ยวกับเวลาสแกนกัมบัง — ใช้เฉพาะคำนวณ %A, %P, OEE เท่านั้น
+                </div>
+
+                {/* เวลาเริ่ม-จบกะ */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+                  <Field label="เวลาเริ่มกะ (เริ่มเครื่อง)">
+                    <TimeInput24 value={closeStartTime} onChange={e => setCloseStartTime(e.target.value)} style={{ fontSize: 16 }} />
+                  </Field>
+                  <Field label="เวลาปิดกะ (หยุดเครื่อง)">
+                    <TimeInput24 value={closeEndTime} onChange={e => setCloseEndTime(e.target.value)} style={{ fontSize: 16 }} />
+                  </Field>
+                </div>
+
+                {/* เวลาเริ่ม-หยุดต่อ MAT.NO */}
+                {matNos.length > 0 && (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>
+                      🕐 เวลาเริ่ม–หยุดผลิตต่อ MAT.NO (ใช้คำนวณ %P รายชิ้นงาน)
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {matNos.map(matNo => {
+                        const orders = prodOrders.filter(o => o.mat_no === matNo);
+                        const openedTimes  = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
+                        const closedTimes  = orders
+                          .filter(o => (o.status === 'confirmed' && o.confirmed_at) || ((o.status === 'carry_over' || o.status === 'cancelled') && o.stopped_at))
+                          .map(o => new Date(o.confirmed_at || o.stopped_at).getTime());
+                        const actualStart  = openedTimes.length ? new Date(Math.min(...openedTimes)) : null;
+                        const actualEnd    = closedTimes.length ? new Date(Math.max(...closedTimes)) : null;
+                        const partName     = prodOrders.find(o => o.mat_no === matNo)?.part_name || '';
+                        return (
+                          <div key={matNo} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 12px' }}>
+                            <div style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', marginBottom: 4 }}>
+                              {matNo}{partName && <span style={{ color: 'var(--muted)', fontWeight: 400, fontFamily: 'inherit' }}> · {partName}</span>}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 11, color: 'var(--muted)' }}>เริ่ม:</span>
+                              <TimeInput24
+                                value={matTimeOverride[matNo]?.start ?? (actualStart ? fmtTime(actualStart) : '')}
+                                onChange={e => setMatTimeOverride(m => ({ ...m, [matNo]: { ...m[matNo], start: e.target.value } }))}
+                                style={{ fontSize: 12 }} />
+                              <span style={{ fontSize: 11, color: 'var(--muted)' }}>หยุด:</span>
+                              <TimeInput24
+                                value={matTimeOverride[matNo]?.end ?? (actualEnd ? fmtTime(actualEnd) : '')}
+                                onChange={e => setMatTimeOverride(m => ({ ...m, [matNo]: { ...m[matNo], end: e.target.value } }))}
+                                style={{ fontSize: 12 }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                  <button onClick={() => { setShowEditTimes(false); setMatTimeOverride({}); }} style={cancelBtnStyle}>ยกเลิก</button>
+                  <button onClick={handleSaveTimes} disabled={savingTimes}
+                    style={{ ...saveBtnStyle, background: '#6366f1', opacity: savingTimes ? 0.6 : 1 }}>
+                    {savingTimes ? '...' : '💾 บันทึก + คำนวณ OEE ใหม่'}
                   </button>
                 </div>
               </div>
