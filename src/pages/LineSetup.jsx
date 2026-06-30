@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 
 const TABS = [
@@ -7,7 +7,6 @@ const TABS = [
   { key: 'machines', label: '⚙️ เครื่องจักร' },
 ];
 
-const SKILL_ALLOWANCE_TYPES = ['งานเชื่อม', 'งานขับรถฟอล์คลิฟท์', 'งานขับเครน'];
 
 const SKILL_CAT_META = {
   hard_skill:    { label: 'Hard Skill',    color: '#ef4444', icon: '🔧', desc: 'ทักษะการทำงานรูปแบบต่างๆ' },
@@ -90,6 +89,8 @@ export default function LineSetup() {
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
   }, []);
+
+  const skillAllowanceTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
 
   const fetchLines = async () => {
     const { data } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name').order('name');
@@ -915,7 +916,7 @@ export default function LineSetup() {
                       onChange={e => setFormData({ ...formData, skill_allowance_type: e.target.value })}
                       style={{ marginTop: 4, width: '100%' }}>
                       <option value="">-- เลือกประเภท --</option>
-                      {SKILL_ALLOWANCE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      {skillAllowanceTypes.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
                 )}

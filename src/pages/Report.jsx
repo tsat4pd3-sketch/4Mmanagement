@@ -3194,7 +3194,6 @@ const KpiSmall = ({ value, label }) => (
 const THAI_MONTHS = ['', 'มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน',
   'กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 
-const WORK_TYPES = ['งานเชื่อม', 'งานขับรถฟอล์คลิฟท์', 'งานขับเครน'];
 const SHIFT_DEFS = [
   { key: 'day',   label: '01' },
   { key: 'night', label: '02' },
@@ -3208,11 +3207,13 @@ function SkillAllowanceTab() {
   const [line,   setLine]   = useState('');
   const [section, setSection] = useState('');
   const [team,   setTeam]   = useState('');
-  const [lines,  setLines]  = useState([]);
+  const [lines,     setLines]     = useState([]);
+  const [skillDefs, setSkillDefs] = useState([]);
   const [rows,   setRows]   = useState([]); // [{emp, shifts:{day:{},night:{}}}]
   const [loading, setLoading] = useState(false);
 
-  const [workType,   setWorkType]   = useState(WORK_TYPES[0]);
+  const workTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
+  const [workType,   setWorkType]   = useState('');
   const [costCenter, setCostCenter] = useState('');
   const [rightsDay,   setRightsDay]   = useState('');
   const [rightsNight, setRightsNight] = useState('');
@@ -3224,6 +3225,8 @@ function SkillAllowanceTab() {
   useEffect(() => {
     supabase.from('production_lines').select('name, section, cost_center, head_name').order('name')
       .then(({ data }) => setLines(data || []));
+    supabase.from('skill_definitions').select('category, allowance_type').eq('category', 'allowance_skill')
+      .then(({ data }) => setSkillDefs(data || []));
   }, []);
 
   // ดึง Cost Center และหัวหน้างาน จากไลน์ที่เลือกอัตโนมัติ (ยังแก้ไขเองได้ถ้าต้องการ)
@@ -3580,7 +3583,8 @@ function SkillAllowanceTab() {
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ประเภทงาน</div>
           <select value={workType} onChange={e => setWorkType(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            {WORK_TYPES.map(w => <option key={w} value={w}>{w}</option>)}
+            <option value="">— เลือกประเภท —</option>
+            {workTypes.map(w => <option key={w} value={w}>{w}</option>)}
           </select>
         </div>
         <div>

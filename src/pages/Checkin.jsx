@@ -4,7 +4,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { loadCompanyCalendar, getDayType } from '../utils/companyCalendar';
 
-const LEAVE_TYPES = ['ลากิจ', 'ลาป่วย', 'ลาพักร้อน'];
+const LEAVE_TYPES = ['ลากิจ', 'ลาป่วย', 'ลาพักร้อน', 'อื่นๆ'];
 const LEAVE_DURATION_OPTS = [
   { value: 'full',  label: 'เต็มวัน' },
   { value: 'half',  label: 'ครึ่งวัน' },
@@ -969,6 +969,22 @@ export default function Checkin() {
                         <option value="">— ไม่ลา —</option>
                         {LEAVE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
+
+                      {/* หมายเหตุ (แสดงเมื่อเลือก อื่นๆ) */}
+                      {rec.leave_type === 'อื่นๆ' && (
+                        <input
+                          type="text"
+                          placeholder="ระบุเหตุผล..."
+                          value={rec.remark || ''}
+                          onChange={e => setAttendance(prev => ({ ...prev, [emp.id]: { ...prev[emp.id], remark: e.target.value } }))}
+                          style={{
+                            padding: '4px 8px', borderRadius: 6, fontSize: 11,
+                            border: '1px solid rgba(168,85,247,0.4)',
+                            background: 'rgba(168,85,247,0.06)', color: 'var(--text)',
+                            width: '100%',
+                          }}
+                        />
+                      )}
 
                       {/* Duration (shown only when leave_type is set) */}
                       {hasLeave && (

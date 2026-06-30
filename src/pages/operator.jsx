@@ -5,7 +5,6 @@ import { toast } from '../components/Toast';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
 
-const WORK_TYPES = ['งานเชื่อม', 'งานขับรถฟอล์คลิฟท์', 'งานขับเครน'];
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
   return new Promise((resolve) => {
@@ -365,6 +364,7 @@ export default function Operator() {
     fetchEmployees();
   };
 
+  const workTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
   const allEmps = useMemo(() => [...employees, ...inactiveEmployees], [employees, inactiveEmployees]);
   const sectionOpts = useMemo(() => orgSectionOpts.length ? orgSectionOpts : [...new Set(allEmps.map(e => e.section).filter(Boolean))].sort(), [allEmps, orgSectionOpts]);
   const deptOpts    = useMemo(() => orgDeptNodes.length ? orgDeptNodes.map(n => n.code || n.name) : [...new Set(allEmps.map(e => e.department).filter(Boolean))].sort(), [allEmps, orgDeptNodes]);
@@ -780,7 +780,7 @@ export default function Operator() {
                     <label style={labelSt}>ประเภทค่าฝีมือที่ผูก</label>
                     <select value={newSkill.allowance_type} onChange={e => setNewSkill({ ...newSkill, allowance_type: e.target.value })}>
                       <option value="">— เลือกประเภท —</option>
-                      {WORK_TYPES.map(w => <option key={w} value={w}>{w}</option>)}
+                      {workTypes.map(w => <option key={w} value={w}>{w}</option>)}
                     </select>
                   </div>
                 )}
@@ -855,7 +855,7 @@ export default function Operator() {
                         <select value={editingSkill.allowance_type || ''}
                           onChange={e => setEditingSkill({ ...editingSkill, allowance_type: e.target.value })}>
                           <option value="">— เลือกประเภท —</option>
-                          {WORK_TYPES.map(w => <option key={w} value={w}>{w}</option>)}
+                          {workTypes.map(w => <option key={w} value={w}>{w}</option>)}
                         </select>
                       </div>
                     )}
