@@ -674,6 +674,121 @@ function KanbanCardGrid({ rowList, kanbanStd, fmt }) {
   );
 }
 
+/* ─── Pull Board — ตัวสะสม demand + ใบสั่งผลิตล็อต + ใบเบิกวัตถุดิบ ───────────── */
+const LOT_STATUS = {
+  pending:   { label: '🆕 รอผลิต',   color: '#f59e0b', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.3)', next: 'producing', nextLabel: '▶ เริ่มผลิต' },
+  producing: { label: '🔧 กำลังผลิต', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)',  border: 'rgba(14,165,233,0.3)', next: 'done',      nextLabel: '✔ ผลิตเสร็จ' },
+  done:      { label: '✅ เสร็จแล้ว',  color: '#22c55e', bg: 'rgba(34,197,94,0.1)',   border: 'rgba(34,197,94,0.3)', next: null,        nextLabel: null },
+};
+function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, onAdvanceLot, onIssueRaw, fmt }) {
+  const rawByLot = useMemo(() => {
+    const m = {};
+    rawRequests.forEach(r => { (m[r.lot_request_id] = m[r.lot_request_id] || []).push(r); });
+    return m;
+  }, [rawRequests]);
+
+  const Section = ({ title, children }) => (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 10, fontFamily: 'var(--font-display)' }}>{title}</div>
+      {children}
+    </div>
+  );
+
+  return (
+    <div style={{ padding: 16 }}>
+      {/* ① ตัวสะสม demand */}
+      <Section title="① 📈 ตัวสะสม Demand (รอครบล็อต)">
+        {accumulator.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มี demand สะสม</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+            {accumulator.map(a => {
+              const lot = lotSizeMap[a.child_mat_no];
+              const pct = lot ? Math.min(100, (a.pending_qty / lot) * 100) : 0;
+              return (
+                <div key={a.child_mat_no} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: 12 }}>
+                  <div style={{ fontFamily: 'monospace', fontWeight: 800, color: matColor(a.child_mat_no), fontSize: 13 }}>{a.child_mat_no}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6 }}>
+                    <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{fmt(a.pending_qty)}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{lot ? `/ ${fmt(lot)} ล็อต` : 'ยังไม่ตั้ง lot'}</span>
+                  </div>
+                  {lot > 0 && (
+                    <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden', marginTop: 6 }}>
+                      <div style={{ width: `${pct}%`, height: '100%', background: pct >= 100 ? '#22c55e' : '#7c3aed' }} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Section>
+
+      {/* ② ใบสั่งผลิตล็อต + ใบเบิกวัตถุดิบ */}
+      <Section title="② 🏭 ใบสั่งผลิตล็อต (Production Child part)">
+        {lotRequests.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีใบสั่งผลิต — demand สะสมยังไม่ครบล็อต</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 12 }}>
+            {lotRequests.map(lot => {
+              const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
+              const raws = rawByLot[lot.id] || [];
+              return (
+                <div key={lot.id} style={{ background: st.bg, border: `1px solid ${st.border}`, borderRadius: 12, overflow: 'hidden' }}>
+                  <div style={{ padding: '10px 14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 800, color: matColor(lot.child_mat_no) }}>{lot.child_mat_no}</span>
+                      <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: st.color }}>{st.label}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{lot.part_name || ''}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 8 }}>
+                      <span style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)' }}>{fmt(lot.lot_qty)} <span style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น/ล็อต</span></span>
+                      {lot.source_line
+                        ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>🏭 {lot.source_line}</span>
+                        : <span style={{ fontSize: 10, color: 'var(--muted)' }}>ของซื้อ/ไม่ระบุไลน์</span>}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+                      {lot.work_date || ''}{lot.source_prod_no ? ` · จาก FG ${lot.source_prod_no}` : ''}
+                    </div>
+                    {st.next && (
+                      <button onClick={() => onAdvanceLot(lot, st.next)} disabled={busy === lot.id}
+                        style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(0,0,0,0.12)', color: st.color, border: `1px solid ${st.border}`, fontFamily: 'var(--font-body)' }}>
+                        {busy === lot.id ? '...' : st.nextLabel}
+                      </button>
+                    )}
+                  </div>
+                  {raws.length > 0 && (
+                    <div style={{ borderTop: '1px solid rgba(128,128,128,0.15)', padding: '8px 14px', background: 'rgba(0,0,0,0.06)' }}>
+                      <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--muted)', marginBottom: 6 }}>📤 ใบเบิกวัตถุดิบ (Store Raw)</div>
+                      {raws.map(r => {
+                        const issued = r.status === 'issued';
+                        return (
+                          <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: 11 }}>
+                            <div>
+                              <span style={{ fontFamily: 'monospace', fontWeight: 700, color: matColor(r.raw_mat_no) }}>{r.raw_mat_no}</span>
+                              <span style={{ color: 'var(--muted)', marginLeft: 6 }}>{fmt(r.qty)}</span>
+                            </div>
+                            {issued
+                              ? <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 700 }}>✔ จ่ายแล้ว</span>
+                              : <button onClick={() => onIssueRaw(r)} disabled={busy === r.id}
+                                  style={{ padding: '3px 9px', borderRadius: 7, fontSize: 10, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
+                                  {busy === r.id ? '...' : 'จ่าย'}
+                                </button>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Section>
+    </div>
+  );
+}
+
 export default function HeijunkaKanban() {
   const { fullName } = useContext(UserContext);
   const [workDate, setWorkDate]   = useState(getWorkDate());
@@ -691,6 +806,53 @@ export default function HeijunkaKanban() {
   const [confirming, setConfirming] = useState(null);
   const [receiveModal, setReceiveModal] = useState(null); // { round, parts, mode }
   const [receiving, setReceiving] = useState(false);
+  // ── Pull system (ใบสั่งผลิตล็อต + ใบเบิกวัตถุดิบ + ตัวสะสม demand) ──
+  const [lotRequests, setLotRequests] = useState([]);
+  const [rawRequests, setRawRequests] = useState([]);
+  const [accumulator, setAccumulator] = useState([]);
+  const [lotSizeMap, setLotSizeMap]   = useState({});   // mat_no → lot_size
+  const [pullBusy, setPullBusy]       = useState(null);
+
+  const loadPull = useCallback(async () => {
+    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }] = await Promise.all([
+      supabaseDR.from('child_lot_requests').select('*').order('created_at', { ascending: false }).limit(200),
+      supabaseDR.from('raw_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(400),
+      supabaseDR.from('child_demand_accumulator').select('*').gt('pending_qty', 0).order('pending_qty', { ascending: false }),
+      supabaseDR.from('kanban_standards').select('mat_no, lot_size').eq('is_active', true),
+    ]);
+    setLotRequests(lots || []);
+    setRawRequests(raws || []);
+    setAccumulator(acc || []);
+    const lm = {};
+    (ks || []).forEach(s => { if (s.lot_size != null) lm[s.mat_no] = s.lot_size; });
+    setLotSizeMap(lm);
+  }, []);
+
+  const advanceLot = async (lot, next) => {
+    setPullBusy(lot.id);
+    try {
+      const { error } = await supabaseDR.from('child_lot_requests').update({ status: next }).eq('id', lot.id);
+      if (error) throw error;
+      // ปิดล็อต = จ่ายวัตถุดิบที่ผูกไว้ทั้งหมดเป็น issued ด้วย
+      if (next === 'done') {
+        await supabaseDR.from('raw_withdrawal_requests').update({ status: 'issued' }).eq('lot_request_id', lot.id).eq('status', 'pending');
+      }
+      toast.success(`อัปเดตล็อต ${lot.child_mat_no} → ${next}`);
+      await loadPull();
+    } catch (err) { toast.error(err.message); }
+    setPullBusy(null);
+  };
+
+  const issueRaw = async (raw) => {
+    setPullBusy(raw.id);
+    try {
+      const { error } = await supabaseDR.from('raw_withdrawal_requests').update({ status: 'issued' }).eq('id', raw.id);
+      if (error) throw error;
+      toast.success(`จ่ายวัตถุดิบ ${raw.raw_mat_no} แล้ว`);
+      await loadPull();
+    } catch (err) { toast.error(err.message); }
+    setPullBusy(null);
+  };
 
   /* ── load & explode ── */
   const load = useCallback(async () => {
@@ -769,6 +931,7 @@ export default function HeijunkaKanban() {
   }, [workDate]);
 
   useEffect(() => { loadDeliveries(); }, [loadDeliveries]);
+  useEffect(() => { loadPull(); }, [loadPull]);
 
   const confirmRound = async (r, parts) => {
     if (confirming) return;
@@ -1002,7 +1165,7 @@ export default function HeijunkaKanban() {
 
       {/* View mode toggle */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-        {[{ id: 'board', label: '🏪 Store Board' }, { id: 'timeline', label: '📊 Heijunka Board' }, { id: 'cards', label: '🎴 การ์ด' }, { id: 'table', label: '📋 ตาราง' }].map(v => (
+        {[{ id: 'board', label: '🏪 Store Board' }, { id: 'timeline', label: '📊 Heijunka Board' }, { id: 'pull', label: '🔄 Pull / ใบสั่งผลิต' }, { id: 'cards', label: '🎴 การ์ด' }, { id: 'table', label: '📋 ตาราง' }].map(v => (
           <button key={v.id} onClick={() => setViewMode(v.id)} style={{
             padding: '7px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
             background: viewMode === v.id ? 'var(--accent)' : 'var(--bg2)',
@@ -1026,6 +1189,11 @@ export default function HeijunkaKanban() {
         ) : viewMode === 'timeline' ? (
           <DeliveryTimelineBoard
             rounds={rounds} deliveries={deliveries} view={view} kanbanStd={kanbanStd} fmt={fmt}
+          />
+        ) : viewMode === 'pull' ? (
+          <PullBoard
+            lotRequests={lotRequests} rawRequests={rawRequests} accumulator={accumulator}
+            lotSizeMap={lotSizeMap} busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} fmt={fmt}
           />
         ) : view.cols.length === 0 ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีกะ/แผนผลิตในวันที่ {workDate}</div>
@@ -1095,7 +1263,7 @@ export default function HeijunkaKanban() {
       </div>
 
       {/* Delivery Rounds Panel — only for cards/table view, board has it built-in */}
-      {viewMode !== 'board' && (
+      {viewMode !== 'board' && viewMode !== 'pull' && (
         <DeliveryRoundsPanel rounds={rounds} deliveries={deliveries} onConfirm={confirmRound} confirming={confirming}
           onReceive={openReceive} demandByLine={demandByLine} />
       )}
