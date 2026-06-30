@@ -1562,8 +1562,8 @@ function LiveTab({ role }) {
                     </button>
                   )}
 
-                  {/* closed/pending_close — SV+ แก้เวลาและคำนวณ OEE ใหม่ */}
-                  {canManage && ['closed', 'pending_close'].includes(selSession.status) && (
+                  {/* closed/pending_close — SV+/leader แก้เวลาและคำนวณ OEE ใหม่ */}
+                  {(canManage || role === 'leader') && ['closed', 'pending_close'].includes(selSession.status) && (
                     <button onClick={openEditTimes}
                       style={{ ...cancelBtnStyle, borderColor: '#6366f1', color: '#6366f1', fontWeight: 700 }}>
                       ✏️ แก้เวลากะ
