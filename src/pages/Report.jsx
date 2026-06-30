@@ -974,7 +974,7 @@ function RangeTab() {
     setLoading(true);
     const { data } = await supabase.from('daily_production_logs')
       .select('work_date, is_present, employee_id, employees(name, employee_id_code, section, team, line_id)')
-      .gte('work_date', from).lte('work_date', to);
+      .gte('work_date', from).lte('work_date', to).limit(10000);
     const map = {};
     (data || []).forEach(l => {
       const key = l.employee_id;
@@ -3297,7 +3297,8 @@ function SkillAllowanceTab() {
       .eq('has_helmet', true)
       .eq('has_boots', true)
       .eq('has_gloves', true)
-      .in('assigned_line', stationIds);
+      .in('assigned_line', stationIds)
+      .limit(10000);
 
     // group by employee, แยกตามกะ (day=กะ01 / night=กะ02)
     const empMap = {};
@@ -3757,7 +3758,8 @@ function AttendanceFormTab() {
       .from('daily_production_logs')
       .select('work_date, employee_id, is_present, has_ot, has_extended_ot, shift, leave_type, leave_duration, leave_period, employees(name, employee_id_code, section, team, line_id)')
       .gte('work_date', startDate)
-      .lte('work_date', endDate);
+      .lte('work_date', endDate)
+      .limit(10000);
 
     const { data: logs } = await q;
 
