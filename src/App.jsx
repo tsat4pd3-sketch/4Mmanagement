@@ -38,6 +38,7 @@ const ROLE_LABELS = {
   leader:     '⭐ Leader',
   qa:         '🔍 QA',
   document_control: '🗂 Doc Control',
+  display:    '📺 Display',
 };
 
 // null roles = accessible to every role
@@ -532,6 +533,114 @@ function ToggleBtn({ isOpen, sidebarW, onClick }) {
   );
 }
 
+/* ─── Auto-Logout ──────────────────────────────────────────────────── */
+const IDLE_TIMEOUT_MS  = 30 * 60 * 1000; // 30 min idle → show warning
+const WARN_DURATION_MS =  5 * 60 * 1000; // 5 min countdown before forced logout
+
+function useAutoLogout(isDisplay, onLogout) {
+  const [warnSecsLeft, setWarnSecsLeft] = useState(null); // null = not warning
+  const lastActivityRef = useRef(Date.now());
+  const warnActiveRef   = useRef(false);
+  const countdownRef    = useRef(null);
+  const onLogoutRef     = useRef(onLogout);
+  useEffect(() => { onLogoutRef.current = onLogout; }, [onLogout]);
+
+  const stopCountdown = useCallback(() => {
+    if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+    warnActiveRef.current = false;
+    setWarnSecsLeft(null);
+  }, []);
+
+  const dismissWarning = useCallback(() => {
+    stopCountdown();
+    lastActivityRef.current = Date.now();
+  }, [stopCountdown]);
+
+  useEffect(() => {
+    if (isDisplay) return; // display users never get auto-logged out
+
+    const EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+    const onActivity = () => { lastActivityRef.current = Date.now(); };
+    EVENTS.forEach(e => window.addEventListener(e, onActivity, { passive: true }));
+
+    // Poll every 30s to check idle time
+    const pollId = setInterval(() => {
+      if (warnActiveRef.current) return; // already counting down
+      const idle = Date.now() - lastActivityRef.current;
+      if (idle >= IDLE_TIMEOUT_MS) {
+        // Start countdown
+        warnActiveRef.current = true;
+        let secsLeft = Math.round(WARN_DURATION_MS / 1000);
+        setWarnSecsLeft(secsLeft);
+        countdownRef.current = setInterval(() => {
+          secsLeft -= 1;
+          setWarnSecsLeft(secsLeft);
+          if (secsLeft <= 0) {
+            clearInterval(countdownRef.current);
+            countdownRef.current = null;
+            warnActiveRef.current = false;
+            onLogoutRef.current();
+          }
+        }, 1000);
+      }
+    }, 30_000);
+
+    return () => {
+      EVENTS.forEach(e => window.removeEventListener(e, onActivity));
+      clearInterval(pollId);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, [isDisplay]);
+
+  return { warnSecsLeft, dismissWarning };
+}
+
+function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
+  const mins = Math.floor(secsLeft / 60);
+  const secs = secsLeft % 60;
+  const timeStr = mins > 0 ? `${mins}:${String(secs).padStart(2,'0')} นาที` : `${secs} วินาที`;
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div style={{
+        background: 'var(--card)', border: '1px solid var(--border2)',
+        borderRadius: 16, padding: '32px 36px', maxWidth: 400, width: '90vw',
+        boxShadow: 'var(--shadow-lg)', textAlign: 'center',
+      }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>⏱️</div>
+        <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>
+          คุณไม่ได้ใช้งานระบบ
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 20, lineHeight: 1.6 }}>
+          ระบบจะออกจากระบบอัตโนมัติใน
+          <span style={{ fontWeight: 800, color: '#ef4444', fontSize: 20, display: 'block', margin: '6px 0' }}>
+            {timeStr}
+          </span>
+          เพื่อความปลอดภัยของข้อมูล
+        </div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+          <button onClick={onStay} style={{
+            padding: '10px 24px', borderRadius: 9, fontWeight: 700, fontSize: 14, cursor: 'pointer',
+            background: 'var(--accent)', color: '#fff', border: 'none',
+          }}>
+            ยังอยู่ที่นี่
+          </button>
+          <button onClick={onLogout} style={{
+            padding: '10px 24px', borderRadius: 9, fontWeight: 700, fontSize: 14, cursor: 'pointer',
+            background: 'rgba(239,68,68,0.12)', color: '#ef4444',
+            border: '1px solid rgba(239,68,68,0.35)',
+          }}>
+            ออกจากระบบ
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userEmail, userFullName, userNotifyEmail, userSignatureUrl }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
@@ -557,6 +666,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
     navigate('/login');
   };
 
+  const isDisplay = userRole === 'display';
+  const { warnSecsLeft, dismissWarning } = useAutoLogout(isDisplay, handleLogout);
+
   const sidebarPx  = isTV ? 280 : 240;
   const marginLeft = (!isMobile && isOpen) ? sidebarPx : 0;
   const role       = userRole ?? 'admin';
@@ -574,6 +686,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
 
   return (
     <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
+      {warnSecsLeft !== null && (
+        <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
+      )}
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         <ToggleBtn isOpen={isOpen} sidebarW={sidebarPx} onClick={() => setIsOpen(o => !o)} />
         <NotificationBell userId={userId} />
