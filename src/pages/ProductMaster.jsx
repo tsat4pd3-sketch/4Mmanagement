@@ -404,7 +404,7 @@ export default function ProductMaster() {
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 1200, margin: '0 auto' }}>
       {/* ── Main Tab Bar ── */}
       <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 20, width: 'fit-content' }}>
-        {[{ key:'products', label:'🔩 Products' }, { key:'bom', label:'📦 BOM' }, { key:'parts', label:'🗂 Parts Master' }, { key:'kanban', label:'🎴 Kanban Std' }, { key:'export', label:'📤 Export' }].map(t => (
+        {[{ key:'products', label:'🔩 Products' }, { key:'bom', label:'📦 BOM' }, { key:'packaging', label:'📦 Packaging' }, { key:'parts', label:'🗂 Parts Master' }, { key:'kanban', label:'🎴 Kanban Std' }, { key:'export', label:'📤 Export' }].map(t => (
           <button key={t.key} onClick={() => setMainTab(t.key)}
             style={{ padding:'6px 18px', borderRadius:6, border:'none', cursor:'pointer', fontSize:13, fontWeight:600,
               background: mainTab===t.key ? 'var(--accent)' : 'transparent',
@@ -859,6 +859,7 @@ export default function ProductMaster() {
       </>)}
 
       {mainTab === 'bom'   && <BOMPanel canEdit={canEdit} fullName={fullName} />}
+      {mainTab === 'packaging' && <PackagingPanel canEdit={canEdit} fullName={fullName} />}
       {mainTab === 'parts' && <PartsMasterPanel canEdit={canEdit} fullName={fullName} setCsvPreview={setCsvPreview} reloadKey={partsReloadKey} />}
       {mainTab === 'kanban' && <KanbanStdPanel canEdit={canEdit} fullName={fullName} />}
       {mainTab === 'export' && <ExportPanel items={items} kanbanStds={kanbanStds} bomCounts={bomCounts} />}
@@ -1822,6 +1823,223 @@ function PartsMasterPanel({ canEdit, fullName, setCsvPreview, reloadKey }) {
    qty_per_kanban เริ่มต้น = parts_master.qty_per_pkg (1 ใบ Kanban = 1 packaging)
    ───────────────────────────────────────────────────────────────────────────── */
 const EMPTY_KBS = { mat_no: '', qty_per_kanban: '', min_qty: '', max_qty: '', lot_size: '' };
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PANEL: PACKAGING — master กล่อง/พาเลท + link ต่อ product (เบิกจาก Rack Center)
+   ───────────────────────────────────────────────────────────────────────────── */
+const EMPTY_PKG_LINK = { packaging_code: '', packaging_name: '', pcs_per_pkg: 1, note: '' };
+const EMPTY_PKG_MASTER = { code: '', name: '', ptype: 'box', uom: 'pcs', supplier: '' };
+const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16 };
+
+function PackagingPanel({ canEdit, fullName }) {
+  const [products, setProducts]   = useState([]);
+  const [selProduct, setSelProduct] = useState(null);
+  const [links, setLinks]         = useState([]);
+  const [counts, setCounts]       = useState({});
+  const [masters, setMasters]     = useState([]);
+  const [search, setSearch]       = useState('');
+  const [loading, setLoading]     = useState(false);
+  const [showLink, setShowLink]   = useState(false);
+  const [editLink, setEditLink]   = useState(null);
+  const [linkForm, setLinkForm]   = useState(EMPTY_PKG_LINK);
+  const [showMaster, setShowMaster] = useState(false);
+  const [masterForm, setMasterForm] = useState(EMPTY_PKG_MASTER);
+  const [editMaster, setEditMaster] = useState(null);
+  const [saving, setSaving]       = useState(false);
+
+  const loadAll = useCallback(async () => {
+    const [{ data: prods }, { data: lk }, { data: ms }] = await Promise.all([
+      supabaseDR.from('dr_products').select('id, name, mat_no, line_name').eq('is_active', true).order('line_name').order('name'),
+      supabaseDR.from('product_packaging').select('product_id').eq('is_active', true),
+      supabaseDR.from('packaging_master').select('*').eq('is_active', true).order('code'),
+    ]);
+    setProducts(prods || []); setMasters(ms || []);
+    const c = {}; (lk || []).forEach(r => { c[r.product_id] = (c[r.product_id] || 0) + 1; }); setCounts(c);
+  }, []);
+  const loadLinks = useCallback(async (pid) => {
+    if (!pid) { setLinks([]); return; }
+    setLoading(true);
+    const { data } = await supabaseDR.from('product_packaging').select('*').eq('product_id', pid).eq('is_active', true).order('packaging_code');
+    setLoading(false); setLinks(data || []);
+  }, []);
+  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => { loadLinks(selProduct?.id); }, [selProduct, loadLinks]);
+
+  const openAddLink  = () => { setEditLink(null); setLinkForm(EMPTY_PKG_LINK); setShowLink(true); };
+  const openEditLink = (it) => { setEditLink(it); setLinkForm({ packaging_code: it.packaging_code, packaging_name: it.packaging_name || '', pcs_per_pkg: it.pcs_per_pkg, note: it.note || '' }); setShowLink(true); };
+  const saveLink = async () => {
+    if (!linkForm.packaging_code) { toast.error('เลือก packaging ก่อน'); return; }
+    const pcs = parseInt(linkForm.pcs_per_pkg);
+    if (!pcs || pcs < 1) { toast.error('จำนวนชิ้น/บรรจุภัณฑ์ ต้อง ≥ 1'); return; }
+    setSaving(true);
+    const payload = { packaging_code: linkForm.packaging_code, packaging_name: linkForm.packaging_name || masters.find(m => m.code === linkForm.packaging_code)?.name || null, pcs_per_pkg: pcs, note: linkForm.note.trim() || null };
+    const { error } = editLink
+      ? await supabaseDR.from('product_packaging').update(payload).eq('id', editLink.id)
+      : await supabaseDR.from('product_packaging').insert({ ...payload, product_id: selProduct.id, created_by: fullName });
+    setSaving(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(editLink ? 'แก้ไขแล้ว' : 'ผูก packaging แล้ว'); setShowLink(false); loadLinks(selProduct.id); loadAll();
+  };
+  const delLink = async (it) => { if (!window.confirm(`ลบ ${it.packaging_code} ออกจาก product นี้?`)) return; await supabaseDR.from('product_packaging').update({ is_active: false }).eq('id', it.id); loadLinks(selProduct.id); loadAll(); };
+
+  const saveMaster = async () => {
+    if (!masterForm.code.trim() || !masterForm.name.trim()) { toast.error('กรอก code + ชื่อ'); return; }
+    setSaving(true);
+    const payload = { code: masterForm.code.trim().toUpperCase(), name: masterForm.name.trim(), ptype: masterForm.ptype || null, uom: masterForm.uom || 'pcs', supplier: masterForm.supplier.trim() || null };
+    const { error } = editMaster
+      ? await supabaseDR.from('packaging_master').update(payload).eq('id', editMaster.id)
+      : await supabaseDR.from('packaging_master').insert(payload);
+    setSaving(false);
+    if (error) { toast.error(error.code === '23505' ? `code ${payload.code} ซ้ำ` : error.message); return; }
+    toast.success('บันทึก Packaging Master'); setMasterForm(EMPTY_PKG_MASTER); setEditMaster(null); loadAll();
+  };
+  const delMaster = async (m) => { if (!window.confirm(`ลบ ${m.code}?`)) return; await supabaseDR.from('packaging_master').update({ is_active: false }).eq('id', m.id); loadAll(); };
+
+  const filtered = useMemo(() => { const q = search.trim().toLowerCase(); if (!q) return products; return products.filter(p => (p.name || '').toLowerCase().includes(q) || (p.mat_no || '').toLowerCase().includes(q) || (p.line_name || '').toLowerCase().includes(q)); }, [products, search]);
+
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 'clamp(16px,2vw,20px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>📦 Packaging</h2>
+          <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>ผูกบรรจุภัณฑ์กับ product · พอ FG ผลิต → ยิงใบเบิก packaging ไป Rack Center อัตโนมัติ</p>
+        </div>
+        {canEdit && <button onClick={() => setShowMaster(true)} style={{ ...btnSecondary }}>🗃 จัดการ Packaging Master ({masters.length})</button>}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 320px) 1fr', gap: 16, alignItems: 'start' }}>
+        {/* product list */}
+        <div style={{ ...cardSt, padding: 12 }}>
+          <input style={inputSt} placeholder="🔍 ค้นหา product..." value={search} onChange={e => setSearch(e.target.value)} />
+          <div style={{ marginTop: 10, maxHeight: '70vh', overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {filtered.map(p => {
+              const active = selProduct?.id === p.id; const n = counts[p.id] || 0;
+              return (
+                <div key={p.id} onClick={() => setSelProduct(p)} style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: active ? 'rgba(61,214,92,0.1)' : 'var(--bg2)', border: `1px solid ${active ? 'rgba(61,214,92,0.4)' : 'var(--border)'}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                    <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 10, flexShrink: 0, background: n > 0 ? 'rgba(61,214,92,0.15)' : 'rgba(255,255,255,0.06)', color: n > 0 ? 'var(--accent)' : 'var(--muted)' }}>{n > 0 ? `${n} pkg` : 'ยังไม่ผูก'}</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{[p.mat_no, p.line_name].filter(Boolean).join(' · ')}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* links */}
+        <div style={cardSt}>
+          {!selProduct ? (
+            <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>← เลือก product เพื่อผูก packaging</div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{selProduct.name}</div>
+                {canEdit && <button onClick={openAddLink} style={{ ...btnPrimary }}>+ ผูก Packaging</button>}
+              </div>
+              {loading ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
+                : links.length === 0 ? <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 8, border: '1px dashed var(--border)' }}>ยังไม่ผูก packaging{canEdit && ' — กด "+ ผูก Packaging"'}</div>
+                : (
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead><tr style={{ background: 'var(--bg2)' }}><TH>Code</TH><TH>ชื่อ</TH><TH w={140}>ชิ้น/บรรจุภัณฑ์</TH><TH>หมายเหตุ</TH>{canEdit && <TH w={90}> </TH>}</tr></thead>
+                    <tbody>
+                      {links.map(it => (
+                        <tr key={it.id}>
+                          <TD style={{ fontFamily: 'monospace', fontWeight: 700, color: '#f59e0b' }}>{it.packaging_code}</TD>
+                          <TD>{it.packaging_name || '—'}</TD>
+                          <TD style={{ fontWeight: 800, color: 'var(--accent)' }}>{it.pcs_per_pkg}</TD>
+                          <TD style={{ color: 'var(--muted)', fontSize: 12 }}>{it.note || '—'}</TD>
+                          {canEdit && <TD><div style={{ display: 'flex', gap: 6 }}>
+                            <button onClick={() => openEditLink(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>
+                            <button onClick={() => delLink(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#ef4444', cursor: 'pointer', fontSize: 12 }}>🗑</button>
+                          </div></TD>}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* link modal */}
+      {showLink && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setShowLink(false)}>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 16, fontFamily: 'var(--font-display)' }}>{editLink ? '✏️ แก้ไข' : '➕ ผูก'} Packaging</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Packaging *</label>
+                <select style={inputSt} value={linkForm.packaging_code} disabled={!!editLink}
+                  onChange={e => { const m = masters.find(x => x.code === e.target.value); setLinkForm(f => ({ ...f, packaging_code: e.target.value, packaging_name: m?.name || '' })); }}>
+                  <option value="">— เลือกจาก Packaging Master —</option>
+                  {masters.map(m => <option key={m.id} value={m.code}>{m.code} · {m.name}{m.ptype ? ` (${m.ptype})` : ''}</option>)}
+                </select>
+                {masters.length === 0 && <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>ยังไม่มี Packaging Master — กด "🗃 จัดการ Packaging Master" เพิ่มก่อน</div>}
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>จำนวนชิ้น FG ต่อ 1 บรรจุภัณฑ์ *</label>
+                <input type="number" min="1" step="1" style={{ ...inputSt, textAlign: 'center', fontWeight: 900, fontSize: 16 }} value={linkForm.pcs_per_pkg} onChange={e => setLinkForm(f => ({ ...f, pcs_per_pkg: e.target.value }))} />
+                <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>เช่น 100 = 1 กล่องใส่ได้ 100 ชิ้น → ผลิต 200 ชิ้น เบิก 2 กล่อง</div>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>
+                <input style={inputSt} value={linkForm.note} onChange={e => setLinkForm(f => ({ ...f, note: e.target.value }))} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+              <button onClick={() => setShowLink(false)} style={btnSecondary}>ยกเลิก</button>
+              <button onClick={saveLink} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : '💾 บันทึก'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* master manager modal */}
+      {showMaster && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setShowMaster(false)}>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(620px,100%)', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 12, fontFamily: 'var(--font-display)' }}>🗃 Packaging Master</div>
+            {canEdit && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 0.9fr 0.7fr 1fr auto', gap: 8, alignItems: 'end', marginBottom: 14 }}>
+                <div><label style={{ fontSize: 10, color: 'var(--muted)' }}>Code *</label><input style={inputSt} value={masterForm.code} onChange={e => setMasterForm(f => ({ ...f, code: e.target.value }))} placeholder="BOX-A" /></div>
+                <div><label style={{ fontSize: 10, color: 'var(--muted)' }}>ชื่อ *</label><input style={inputSt} value={masterForm.name} onChange={e => setMasterForm(f => ({ ...f, name: e.target.value }))} /></div>
+                <div><label style={{ fontSize: 10, color: 'var(--muted)' }}>ประเภท</label>
+                  <select style={inputSt} value={masterForm.ptype} onChange={e => setMasterForm(f => ({ ...f, ptype: e.target.value }))}>
+                    {['box','pallet','bag','wrap','tray','other'].map(t => <option key={t} value={t}>{t}</option>)}
+                  </select></div>
+                <div><label style={{ fontSize: 10, color: 'var(--muted)' }}>UOM</label><input style={inputSt} value={masterForm.uom} onChange={e => setMasterForm(f => ({ ...f, uom: e.target.value }))} /></div>
+                <div><label style={{ fontSize: 10, color: 'var(--muted)' }}>Supplier</label><input style={inputSt} value={masterForm.supplier} onChange={e => setMasterForm(f => ({ ...f, supplier: e.target.value }))} /></div>
+                <button onClick={saveMaster} disabled={saving} style={{ ...btnPrimary, padding: '8px 14px' }}>{editMaster ? '💾' : '+'}</button>
+              </div>
+            )}
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr style={{ background: 'var(--bg2)' }}><TH>Code</TH><TH>ชื่อ</TH><TH>ประเภท</TH><TH>UOM</TH><TH>Supplier</TH>{canEdit && <TH w={80}> </TH>}</tr></thead>
+              <tbody>
+                {masters.length === 0 && <tr><td colSpan={canEdit ? 6 : 5} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มี packaging</td></tr>}
+                {masters.map(m => (
+                  <tr key={m.id}>
+                    <TD style={{ fontFamily: 'monospace', fontWeight: 700, color: '#f59e0b' }}>{m.code}</TD>
+                    <TD>{m.name}</TD><TD style={{ color: 'var(--muted)' }}>{m.ptype || '—'}</TD>
+                    <TD style={{ color: 'var(--muted)' }}>{m.uom}</TD><TD style={{ color: 'var(--muted)' }}>{m.supplier || '—'}</TD>
+                    {canEdit && <TD><div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => { setEditMaster(m); setMasterForm({ code: m.code, name: m.name, ptype: m.ptype || 'box', uom: m.uom || 'pcs', supplier: m.supplier || '' }); }} style={{ padding: '3px 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 11 }}>✏️</button>
+                      <button onClick={() => delMaster(m)} style={{ padding: '3px 7px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#ef4444', cursor: 'pointer', fontSize: 11 }}>🗑</button>
+                    </div></TD>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <button onClick={() => { setShowMaster(false); setEditMaster(null); setMasterForm(EMPTY_PKG_MASTER); }} style={btnSecondary}>ปิด</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 function KanbanStdPanel({ canEdit, fullName }) {
   const [parts,     setParts]     = useState([]);

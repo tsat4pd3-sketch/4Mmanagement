@@ -45,17 +45,32 @@ export default function RackCenter() {
   const [saving,         setSaving]         = useState(false);
   const [busyId,         setBusyId]         = useState(null);
   const [showDone,       setShowDone]       = useState(false);
+  const [pkgReqs,        setPkgReqs]        = useState([]);   // packaging_withdrawal_requests
+  const [pkgBusy,        setPkgBusy]        = useState(null);
 
   const load = useCallback(async () => {
-    const [{ data: ln }, { data: ct }, { data: req }] = await Promise.all([
+    const [{ data: ln }, { data: ct }, { data: req }, { data: pkg }] = await Promise.all([
       supabase.from('production_lines').select('name').order('name'),
       supabaseDR.from('container_types').select('*').eq('is_active', true).order('name'),
       supabaseDR.from('rack_requests').select('*').order('requested_at', { ascending: false }).limit(200),
+      supabaseDR.from('packaging_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(200),
     ]);
     setLines(ln || []);
     setContainerTypes(ct || []);
     setRequests(req || []);
+    setPkgReqs(pkg || []);
   }, []);
+
+  const issuePkg = async (p) => {
+    setPkgBusy(p.id);
+    try {
+      const { error } = await supabaseDR.from('packaging_withdrawal_requests').update({ status: 'issued' }).eq('id', p.id);
+      if (error) throw error;
+      toast.success(`จ่าย packaging ${p.packaging_code} แล้ว`);
+      await load();
+    } catch (err) { toast.error(err.message); }
+    setPkgBusy(null);
+  };
 
   useEffect(() => { load(); }, [load]);
 
@@ -156,6 +171,38 @@ export default function RackCenter() {
           </button>
         </div>
       </div>
+
+      {/* Packaging withdrawal requests (auto จากการผลิต FG) */}
+      {(() => {
+        const pending = pkgReqs.filter(p => p.status !== 'issued');
+        if (pending.length === 0) return null;
+        return (
+          <div style={{ ...card, marginBottom: 16, borderColor: 'rgba(245,158,11,0.4)' }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: '#f59e0b', marginBottom: 10, fontFamily: 'var(--font-display)' }}>
+              📦 ใบเบิก Packaging จากการผลิต <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>({pending.length} รายการ)</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 10 }}>
+              {pending.map(p => (
+                <div key={p.id} style={{ background: 'var(--bg2)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 10, padding: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#f59e0b' }}>{p.packaging_code}</span>
+                    <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{p.qty}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{p.packaging_name || ''}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                    {p.source_line ? `🏭 ${p.source_line}` : ''}{p.product_name ? ` · ${p.product_name}` : ''}
+                    {p.source_prod_no ? ` · FG ${p.source_prod_no}` : ''}
+                  </div>
+                  <button onClick={() => issuePkg(p)} disabled={pkgBusy === p.id}
+                    style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
+                    {pkgBusy === p.id ? '...' : '✔ จ่าย Packaging'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Kanban board: 4 status columns */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 14 }}>
