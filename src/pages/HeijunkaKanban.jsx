@@ -680,12 +680,24 @@ const LOT_STATUS = {
   producing: { label: '🔧 กำลังผลิต', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)',  border: 'rgba(14,165,233,0.3)', next: 'done',      nextLabel: '✔ ผลิตเสร็จ' },
   done:      { label: '✅ เสร็จแล้ว',  color: '#22c55e', bg: 'rgba(34,197,94,0.1)',   border: 'rgba(34,197,94,0.3)', next: null,        nextLabel: null },
 };
-function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, onAdvanceLot, onIssueRaw, fmt }) {
+function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, onAdvanceLot, onIssueRaw, onReorder, fmt }) {
   const rawByLot = useMemo(() => {
     const m = {};
     rawRequests.forEach(r => { (m[r.lot_request_id] = m[r.lot_request_id] || []).push(r); });
     return m;
   }, [rawRequests]);
+
+  // จัดกลุ่มใบสั่งผลิตตามไลน์ผลิต + เรียงตามคิว (seq_no น้อยก่อน, ไม่มี seq ไปท้าย แล้วเรียงตามเวลา)
+  const lotsByLine = useMemo(() => {
+    const m = {};
+    lotRequests.forEach(l => { const k = l.source_line || '— ไม่ระบุไลน์ (ของซื้อ) —'; (m[k] = m[k] || []).push(l); });
+    Object.values(m).forEach(arr => arr.sort((a, b) => {
+      const sa = a.seq_no == null ? Infinity : a.seq_no, sb = b.seq_no == null ? Infinity : b.seq_no;
+      if (sa !== sb) return sa - sb;
+      return new Date(a.created_at) - new Date(b.created_at);
+    }));
+    return m;
+  }, [lotRequests]);
 
   const Section = ({ title, children }) => (
     <div style={{ marginBottom: 22 }}>
@@ -724,66 +736,86 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, on
         )}
       </Section>
 
-      {/* ② ใบสั่งผลิตล็อต + ใบเบิกวัตถุดิบ */}
-      <Section title="② 🏭 ใบสั่งผลิตล็อต (Production Child part)">
+      {/* ② ใบสั่งผลิตล็อต + ใบเบิกวัตถุดิบ — จัดกลุ่มตามไลน์ + เรียงคิวผลิต */}
+      <Section title="② 🏭 ใบสั่งผลิตล็อต + คิวผลิต (Production Child part)">
         {lotRequests.length === 0 ? (
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีใบสั่งผลิต — demand สะสมยังไม่ครบล็อต</div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 12 }}>
-            {lotRequests.map(lot => {
-              const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
-              const raws = rawByLot[lot.id] || [];
-              return (
-                <div key={lot.id} style={{ background: st.bg, border: `1px solid ${st.border}`, borderRadius: 12, overflow: 'hidden' }}>
-                  <div style={{ padding: '10px 14px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 800, color: matColor(lot.child_mat_no) }}>{lot.child_mat_no}</span>
-                      <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: st.color }}>{st.label}</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{lot.part_name || ''}</div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 8 }}>
-                      <span style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)' }}>{fmt(lot.lot_qty)} <span style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น/ล็อต</span></span>
-                      {lot.source_line
-                        ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>🏭 {lot.source_line}</span>
-                        : <span style={{ fontSize: 10, color: 'var(--muted)' }}>ของซื้อ/ไม่ระบุไลน์</span>}
-                    </div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
-                      {lot.work_date || ''}{lot.source_prod_no ? ` · จาก FG ${lot.source_prod_no}` : ''}
-                    </div>
-                    {st.next && (
-                      <button onClick={() => onAdvanceLot(lot, st.next)} disabled={busy === lot.id}
-                        style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(0,0,0,0.12)', color: st.color, border: `1px solid ${st.border}`, fontFamily: 'var(--font-body)' }}>
-                        {busy === lot.id ? '...' : st.nextLabel}
-                      </button>
-                    )}
-                  </div>
-                  {raws.length > 0 && (
-                    <div style={{ borderTop: '1px solid rgba(128,128,128,0.15)', padding: '8px 14px', background: 'rgba(0,0,0,0.06)' }}>
-                      <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--muted)', marginBottom: 6 }}>📤 ใบเบิกวัตถุดิบ (Store Raw)</div>
-                      {raws.map(r => {
-                        const issued = r.status === 'issued';
-                        return (
-                          <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: 11 }}>
-                            <div>
-                              <span style={{ fontFamily: 'monospace', fontWeight: 700, color: matColor(r.raw_mat_no) }}>{r.raw_mat_no}</span>
-                              <span style={{ color: 'var(--muted)', marginLeft: 6 }}>{fmt(r.qty)}</span>
-                            </div>
-                            {issued
-                              ? <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 700 }}>✔ จ่ายแล้ว</span>
-                              : <button onClick={() => onIssueRaw(r)} disabled={busy === r.id}
-                                  style={{ padding: '3px 9px', borderRadius: 7, fontSize: 10, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
-                                  {busy === r.id ? '...' : 'จ่าย'}
-                                </button>}
+        ) : Object.keys(lotsByLine).sort().map(lineName => {
+          const lineLots = lotsByLine[lineName];
+          // คิวที่ยังไม่เสร็จ ใช้สำหรับเรียงลำดับ
+          const queue = lineLots.filter(l => l.status !== 'done');
+          return (
+            <div key={lineName} style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: '#3b82f6', marginBottom: 8 }}>🏭 {lineName} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· คิว {queue.length}</span></div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 12 }}>
+                {lineLots.map(lot => {
+                  const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
+                  const raws = rawByLot[lot.id] || [];
+                  const qIdx = queue.findIndex(l => l.id === lot.id);
+                  const canReorder = lot.status !== 'done' && queue.length > 1;
+                  return (
+                    <div key={lot.id} style={{ background: st.bg, border: `1px solid ${st.border}`, borderRadius: 12, overflow: 'hidden' }}>
+                      <div style={{ padding: '10px 14px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {qIdx >= 0 && (
+                              <span style={{ fontSize: 12, fontWeight: 900, color: '#7c3aed', background: 'rgba(124,58,237,0.12)', borderRadius: 6, padding: '1px 7px' }}>#{qIdx + 1}</span>
+                            )}
+                            <span style={{ fontFamily: 'monospace', fontWeight: 800, color: matColor(lot.child_mat_no) }}>{lot.child_mat_no}</span>
                           </div>
-                        );
-                      })}
+                          <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: st.color }}>{st.label}</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{lot.part_name || ''}</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                          <span style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)' }}>{fmt(lot.lot_qty)} <span style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น/ล็อต</span></span>
+                          {canReorder && (
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button onClick={() => onReorder(queue, lot, 'up')} disabled={busy === lot.id || qIdx === 0}
+                                style={{ padding: '2px 8px', borderRadius: 6, cursor: qIdx === 0 ? 'default' : 'pointer', fontSize: 12, fontWeight: 800, background: 'var(--bg2)', color: qIdx === 0 ? 'var(--border2)' : 'var(--text)', border: '1px solid var(--border)' }}>▲</button>
+                              <button onClick={() => onReorder(queue, lot, 'down')} disabled={busy === lot.id || qIdx === queue.length - 1}
+                                style={{ padding: '2px 8px', borderRadius: 6, cursor: qIdx === queue.length - 1 ? 'default' : 'pointer', fontSize: 12, fontWeight: 800, background: 'var(--bg2)', color: qIdx === queue.length - 1 ? 'var(--border2)' : 'var(--text)', border: '1px solid var(--border)' }}>▼</button>
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+                          {lot.work_date || ''}{lot.source_prod_no ? ` · จาก FG ${lot.source_prod_no}` : ''}
+                        </div>
+                        {st.next && (
+                          <button onClick={() => onAdvanceLot(lot, st.next)} disabled={busy === lot.id}
+                            style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(0,0,0,0.12)', color: st.color, border: `1px solid ${st.border}`, fontFamily: 'var(--font-body)' }}>
+                            {busy === lot.id ? '...' : st.nextLabel}
+                          </button>
+                        )}
+                      </div>
+                      {raws.length > 0 && (
+                        <div style={{ borderTop: '1px solid rgba(128,128,128,0.15)', padding: '8px 14px', background: 'rgba(0,0,0,0.06)' }}>
+                          <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--muted)', marginBottom: 6 }}>📤 ใบเบิกวัตถุดิบ (Store Raw)</div>
+                          {raws.map(r => {
+                            const issued = r.status === 'issued';
+                            return (
+                              <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: 11 }}>
+                                <div>
+                                  <span style={{ fontFamily: 'monospace', fontWeight: 700, color: matColor(r.raw_mat_no) }}>{r.raw_mat_no}</span>
+                                  <span style={{ color: 'var(--muted)', marginLeft: 6 }}>{fmt(r.qty)}</span>
+                                </div>
+                                {issued
+                                  ? <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 700 }}>✔ จ่ายแล้ว</span>
+                                  : <button onClick={() => onIssueRaw(r)} disabled={busy === r.id}
+                                      style={{ padding: '3px 9px', borderRadius: 7, fontSize: 10, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
+                                      {busy === r.id ? '...' : 'จ่าย'}
+                                    </button>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </Section>
     </div>
   );
@@ -838,6 +870,23 @@ export default function HeijunkaKanban() {
         await supabaseDR.from('raw_withdrawal_requests').update({ status: 'issued' }).eq('lot_request_id', lot.id).eq('status', 'pending');
       }
       toast.success(`อัปเดตล็อต ${lot.child_mat_no} → ${next}`);
+      await loadPull();
+    } catch (err) { toast.error(err.message); }
+    setPullBusy(null);
+  };
+
+  // เรียงคิวผลิต: สลับลำดับใน list ของไลน์นั้นแล้วเขียน seq_no = ตำแหน่งใหม่ทั้งชุด
+  const reorderLot = async (lineLots, lot, dir) => {
+    const arr = [...lineLots];
+    const i = arr.findIndex(l => l.id === lot.id);
+    const j = dir === 'up' ? i - 1 : i + 1;
+    if (i < 0 || j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    setPullBusy(lot.id);
+    try {
+      await Promise.all(arr.map((l, k) =>
+        supabaseDR.from('child_lot_requests').update({ seq_no: k + 1 }).eq('id', l.id)
+      ));
       await loadPull();
     } catch (err) { toast.error(err.message); }
     setPullBusy(null);
@@ -1193,7 +1242,8 @@ export default function HeijunkaKanban() {
         ) : viewMode === 'pull' ? (
           <PullBoard
             lotRequests={lotRequests} rawRequests={rawRequests} accumulator={accumulator}
-            lotSizeMap={lotSizeMap} busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} fmt={fmt}
+            lotSizeMap={lotSizeMap} busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw}
+            onReorder={reorderLot} fmt={fmt}
           />
         ) : view.cols.length === 0 ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีกะ/แผนผลิตในวันที่ {workDate}</div>
