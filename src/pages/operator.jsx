@@ -70,6 +70,7 @@ export default function Operator() {
   const [editingSkill, setEditingSkill] = useState(null); // skill being edited inline
   const [myLineName, setMyLineName] = useState('');
   const [filterSection, setFilterSection] = useState('');
+  const [filterDept,    setFilterDept]    = useState('');
   const [filterGroup,   setFilterGroup]   = useState('');
   const [filterTeam,    setFilterTeam]    = useState('');
   const [filterGrade,   setFilterGrade]   = useState('');
@@ -365,16 +366,18 @@ export default function Operator() {
   };
 
   const allEmps = useMemo(() => [...employees, ...inactiveEmployees], [employees, inactiveEmployees]);
-  const sectionOpts = useMemo(() => [...new Set(allEmps.map(e => e.section).filter(Boolean))].sort(), [allEmps]);
+  const sectionOpts = useMemo(() => orgSectionOpts.length ? orgSectionOpts : [...new Set(allEmps.map(e => e.section).filter(Boolean))].sort(), [allEmps, orgSectionOpts]);
+  const deptOpts    = useMemo(() => orgDeptNodes.length ? orgDeptNodes.map(n => n.code || n.name) : [...new Set(allEmps.map(e => e.department).filter(Boolean))].sort(), [allEmps, orgDeptNodes]);
   const groupOpts   = useMemo(() => [...new Set(allEmps.map(e => e.group_name).filter(Boolean))].sort(), [allEmps]);
   const teamOpts    = useMemo(() => [...new Set(allEmps.map(e => e.team).filter(Boolean))].sort(), [allEmps]);
 
   const displayed = useMemo(() => (showInactive ? inactiveEmployees : employees)
     .filter(emp => !filterSection || emp.section    === filterSection)
+    .filter(emp => !filterDept    || emp.department === filterDept)
     .filter(emp => !filterGroup   || emp.group_name === filterGroup)
     .filter(emp => !filterTeam    || emp.team       === filterTeam)
     .filter(emp => !filterGrade   || getEmpGrade(emp.employee_id_code) === EMP_GRADES[filterGrade]),
-  [employees, inactiveEmployees, showInactive, filterSection, filterGroup, filterTeam, filterGrade]);
+  [employees, inactiveEmployees, showInactive, filterSection, filterDept, filterGroup, filterTeam, filterGrade]);
 
   // Only show skill columns where at least one displayed employee has score > 0
   // Must be useMemo — stable reference prevents ResizeObserver useEffect from looping
@@ -459,6 +462,7 @@ export default function Operator() {
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             {[
               { label: 'Section', value: filterSection, opts: sectionOpts, set: setFilterSection },
+              { label: 'Dept',    value: filterDept,    opts: deptOpts,    set: setFilterDept },
               { label: 'Group',   value: filterGroup,   opts: groupOpts,   set: setFilterGroup },
               { label: 'Team',    value: filterTeam,    opts: teamOpts,    set: setFilterTeam },
             ].map(f => (
@@ -554,6 +558,7 @@ export default function Operator() {
                   <th style={{ position: 'sticky', left: 58, background: 'var(--bg2)', zIndex: 2 }}>ID</th>
                   <th style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 2, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>ชื่อ</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Section</th>
+                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>แผนก</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Group</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Team</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>วันเริ่มงาน</th>
@@ -604,9 +609,9 @@ export default function Operator() {
                     </td>
                     <td style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 1, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>
                       <div style={{ fontWeight: 600 }}>{emp.name}</div>
-                      <div style={{ fontSize: 12, color: 'var(--muted)' }}>{emp.department || 'ไม่ระบุแผนก'}</div>
                     </td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.section    || '—'}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.department || '—'}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.group_name || '—'}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.team       || '—'}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
