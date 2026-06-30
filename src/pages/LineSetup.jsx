@@ -56,6 +56,7 @@ export default function LineSetup() {
   const [wipPoints, setWipPoints] = useState([]);
   const [wipTempPos, setWipTempPos] = useState(null);
   const [drProducts, setDrProducts] = useState([]);
+  const [containerTypes, setContainerTypes] = useState([]);
   const emptyWipForm = { id: null, point_type: 'material', point_name: '', mat_no: '', material_category: '', packaging_no: '', packaging_type: '', min_qty: 0, max_qty: 0, current_qty: 0 };
   const [wipForm, setWipForm] = useState(emptyWipForm);
 
@@ -124,6 +125,9 @@ export default function LineSetup() {
     setDrMachines(drMc || []);
     const { data: drPd } = await supabaseDR.from('dr_products').select('mat_no, name').eq('line_name', selectedLine).eq('is_active', true).not('mat_no', 'is', null).order('mat_no');
     setDrProducts(drPd || []);
+    // ภาชนะ — ดึงจาก container_types (supabaseDR) ตารางกลางเดียวกับ Packaging/Rack Center
+    const { data: ctData } = await supabaseDR.from('container_types').select('code, name, category').eq('is_active', true).order('code');
+    setContainerTypes(ctData || []);
     const lineObj = lines.find(l => l.name === selectedLine);
     if (lineObj) {
       setStdDay(lineObj.std_day_shift ?? 0);
@@ -1012,11 +1016,12 @@ export default function LineSetup() {
                     <>
                       <select value={wipForm.packaging_type}
                         onChange={e => setWipForm({ ...wipForm, packaging_type: e.target.value })}>
-                        <option value="">-- ประเภทภาชนะ --</option>
-                        <option value="rack">Rack</option>
-                        <option value="box">Box</option>
-                        <option value="basket">Basket</option>
+                        <option value="">-- เลือกภาชนะ (Container Types) --</option>
+                        {containerTypes.map(c => <option key={c.code} value={c.code}>{c.code} · {c.name}{c.category ? ` (${c.category})` : ''}</option>)}
                       </select>
+                      {containerTypes.length === 0 && (
+                        <div style={{ fontSize: 11, color: '#f59e0b' }}>ยังไม่มีภาชนะ — เพิ่มที่ Product Master → Packaging → จัดการภาชนะ</div>
+                      )}
                       <input placeholder="packaging no." value={wipForm.packaging_no}
                         onChange={e => setWipForm({ ...wipForm, packaging_no: e.target.value })} />
                     </>
