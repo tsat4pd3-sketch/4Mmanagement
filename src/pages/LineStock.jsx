@@ -37,6 +37,9 @@ function StockTab({ role }) {
   const [stock,   setStock]   = useState([]);
   const [txns,    setTxns]    = useState([]);
   const [bomMap,  setBomMap]  = useState({});
+  const [products, setProducts] = useState([]);     // [{id, name, mat_no, line_name}]
+  const [productBom, setProductBom] = useState({}); // product_id → [{mat_no, part_name}]
+  const [bomProduct, setBomProduct] = useState(''); // product_id ที่เลือกในฟอร์ม (เพื่อดึง MAT จาก BOM)
 
   const [lineFilter, setLineFilter] = useState('');
   const [showTxn,    setShowTxn]    = useState(false);
@@ -46,16 +49,23 @@ function StockTab({ role }) {
   const [matSearch,  setMatSearch]  = useState('');
 
   const load = useCallback(async () => {
-    const [{ data: ln }, { data: stk }, { data: boms }] = await Promise.all([
+    const [{ data: ln }, { data: stk }, { data: boms }, { data: prods }] = await Promise.all([
       supabase.from('production_lines').select('name').order('name'),
       supabaseDR.from('line_stock_summary').select('*').order('line_name').order('mat_no'),
-      supabaseDR.from('bom_items').select('mat_no, part_name').eq('is_active', true),
+      supabaseDR.from('bom_items').select('product_id, mat_no, part_name').eq('is_active', true),
+      supabaseDR.from('dr_products').select('id, name, mat_no, line_name').eq('is_active', true).order('line_name').order('name'),
     ]);
     setLines(ln || []);
     setStock(stk || []);
+    setProducts(prods || []);
     const bm = {};
-    (boms || []).forEach(b => { if (!bm[b.mat_no]) bm[b.mat_no] = b.part_name; });
+    const pb = {};
+    (boms || []).forEach(b => {
+      if (!bm[b.mat_no]) bm[b.mat_no] = b.part_name;
+      (pb[b.product_id] = pb[b.product_id] || []).push({ mat_no: b.mat_no, part_name: b.part_name });
+    });
     setBomMap(bm);
+    setProductBom(pb);
   }, []);
 
   const loadTxns = useCallback(async () => {
@@ -89,6 +99,7 @@ function StockTab({ role }) {
     toast.success(TYPE_LABEL[form.type] + ' — บันทึกแล้ว');
     setShowForm(false);
     setForm(EMPTY_FORM);
+    setBomProduct('');
     load();
     if (showTxn) loadTxns();
   };
@@ -311,6 +322,40 @@ function StockTab({ role }) {
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>วันที่</label>
                   <input type="date" style={inputSt} value={form.work_date} onChange={e => setForm(f => ({ ...f, work_date:e.target.value }))} />
                 </div>
+              </div>
+
+              {/* เลือก MAT จาก BOM ของ product */}
+              <div>
+                <label style={{ fontSize:11, fontWeight:700, color:'#0ea5e9', display:'block', marginBottom:4 }}>📦 ดึง MAT จาก BOM ของ Product (ไม่บังคับ)</label>
+                <select value={bomProduct} onChange={e => setBomProduct(e.target.value)} style={inputSt}>
+                  <option value="">— เลือก Product เพื่อดูพาร์ทย่อยใน BOM —</option>
+                  {products.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.mat_no ? `${p.mat_no} · ` : ''}{p.name}{p.line_name ? ` (${p.line_name})` : ''}
+                    </option>
+                  ))}
+                </select>
+                {bomProduct && (productBom[bomProduct] || []).length > 0 && (
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop:8 }}>
+                    {(productBom[bomProduct] || []).map(c => {
+                      const sel = form.mat_no === c.mat_no;
+                      return (
+                        <button key={c.mat_no} type="button"
+                          onClick={() => setForm(f => ({ ...f, mat_no: c.mat_no, part_name: c.part_name || f.part_name }))}
+                          title={c.part_name || ''}
+                          style={{ padding:'5px 10px', borderRadius:8, cursor:'pointer', fontSize:12, fontFamily:'monospace', fontWeight:700,
+                            background: sel ? 'rgba(14,165,233,0.18)' : 'var(--bg2)',
+                            color: sel ? '#0ea5e9' : 'var(--text2)',
+                            border:`1px solid ${sel ? '#0ea5e9' : 'var(--border)'}` }}>
+                          {c.mat_no}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {bomProduct && (productBom[bomProduct] || []).length === 0 && (
+                  <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>product นี้ยังไม่มี BOM</div>
+                )}
               </div>
 
               {/* Mat No. with autocomplete */}
