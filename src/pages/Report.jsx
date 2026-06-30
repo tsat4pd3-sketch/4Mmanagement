@@ -799,7 +799,8 @@ function StationLogTab() {
       .select('work_date, is_present, has_helmet, has_boots, has_gloves, shift, employees(name, employee_id_code, image_url, team, section)')
       .eq('assigned_line', selectedStation)
       .gte('work_date', from).lte('work_date', to)
-      .order('work_date', { ascending: false });
+      .order('work_date', { ascending: false })
+      .limit(10000);
     setRows(data || []);
     setLoading(false);
   };
@@ -1148,7 +1149,8 @@ function FourMTab() {
       .select('id, work_date, line_name, category, description, created_at, status, sv_approved_by, sv_approved_at, approved_by, approved_at, reject_reason, requires_qa, change_subtype, created_by, request_image_url, qa_image_url')
       .gte('work_date', from).lte('work_date', to)
       .order('work_date', { ascending: false })
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(5000);
     if (line)         q = q.eq('line_name', line);
     if (cat)          q = q.eq('category', cat);
     if (statusFilter) q = q.eq('status', statusFilter);
@@ -1246,7 +1248,8 @@ function FourMTab() {
     const { data: monthLogs } = await supabase.from('four_m_logs')
       .select('id, work_date, line_name, category, description, status, created_at, created_by, sv_approved_by, approved_by')
       .eq('line_name', line).eq('status', 'approved')
-      .gte('work_date', monthStart).lte('work_date', monthEnd);
+      .gte('work_date', monthStart).lte('work_date', monthEnd)
+      .limit(5000);
 
     // กะถูก derive จากเวลาที่บันทึก (created_at) — ใช้กฎเดียวกับ getCurrentShift(): 08:00-19:59 = กะเช้า
     // บังคับ timezone เป็น Asia/Bangkok เสมอ ไม่พึ่ง getHours() (ขึ้นกับ timezone ของเครื่อง ผิดได้ถ้าเครื่องตั้งเวลาไม่ตรง)

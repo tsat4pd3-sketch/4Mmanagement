@@ -524,7 +524,8 @@ export default function Checkin() {
         .from('daily_production_logs')
         .select('employee_id, work_date, is_present, has_ot, has_extended_ot, leave_type, shift')
         .gte('work_date', dateFrom).lte('work_date', dateTo)
-        .in('employee_id', scopedEmp.map(e => e.id));
+        .in('employee_id', scopedEmp.map(e => e.id))
+        .limit(10000);
 
       const logsByEmp = {};
       (logData || []).forEach(l => {

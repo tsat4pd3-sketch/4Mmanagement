@@ -110,7 +110,8 @@ export default function OEEAnalytics() {
         .eq('status', 'closed')
         .gte('work_date', dateFrom)
         .lte('work_date', dateTo)
-        .order('work_date', { ascending: true });
+        .order('work_date', { ascending: true })
+        .limit(5000);
       if (selLine)  q = q.eq('line_name', selLine);
       if (selShift) q = q.eq('shift', selShift);
       const { data: sess } = await q;
