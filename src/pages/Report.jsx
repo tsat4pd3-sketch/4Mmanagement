@@ -135,6 +135,15 @@ function useOrgSections() {
   return orgSections;
 }
 
+function useOrgDepts() {
+  const [orgDepts, setOrgDepts] = useState([]);
+  useEffect(() => {
+    supabase.from('org_nodes').select('code, name').eq('kind', 'department').eq('is_active', true).order('name')
+      .then(({ data }) => setOrgDepts((data || []).map(n => n.code || n.name).sort()));
+  }, []);
+  return orgDepts;
+}
+
 export default function Report() {
   const location = useLocation();
   const initialParams = new URLSearchParams(location.search);
@@ -179,6 +188,7 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   const { role } = useContext(UserContext);
   const canManageMaster = ['admin', 'manager', 'supervisor'].includes(role);
   const orgSectionList = useOrgSections();
+  const orgDeptList    = useOrgDepts();
 
   const todayStr = (() => {
     const d = new Date();
@@ -192,6 +202,7 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(false);
   const [section, setSection] = useState('');
+  const [deptFilter, setDeptFilter] = useState('');
   const [showMaster, setShowMaster] = useState(!!autoOpenMaster && canManageMaster);
 
   useEffect(() => {
@@ -219,7 +230,8 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   const shiftLabel = (s) => s === 'day' ? '☀️ เช้า' : s === 'night' ? '🌙 ดึก' : '—';
 
   const filteredRows = rows
-    .filter(r => !section || r.employees?.section === section)
+    .filter(r => !section    || r.employees?.section    === section)
+    .filter(r => !deptFilter || r.employees?.department === deptFilter)
     .filter(r => shiftFilter === 'all' || r.shift === shiftFilter);
 
   const sections = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
@@ -285,6 +297,10 @@ table{border-collapse:collapse;width:100%}
         <select value={section} onChange={e => setSection(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
           <option value="">— ทุกส่วนงาน —</option>
           {sections.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <option value="">— ทุกแผนก —</option>
+          {orgDeptList.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           {canManageMaster && (
@@ -451,6 +467,7 @@ function DailyTab() {
   const now = new Date();
   const isDay = (now.getHours() * 60 + now.getMinutes()) >= 480 && (now.getHours() * 60 + now.getMinutes()) < 1200;
   const orgSectionList = useOrgSections();
+  const orgDeptList    = useOrgDepts();
   const [date, setDate]   = useState(getWorkDate());
   const [shift, setShift] = useState(isDay ? 'day' : 'night');
   const [logs, setLogs]   = useState([]);
@@ -460,6 +477,7 @@ function DailyTab() {
   const [dailySection, setDailySection] = useState('');
   const [dailyLine, setDailyLine] = useState('');
   const [dailyTeam, setDailyTeam] = useState('');
+  const [dailyDept, setDailyDept] = useState('');
   const [calLoaded, setCalLoaded] = useState(false);
 
   useEffect(() => {
@@ -502,13 +520,14 @@ function DailyTab() {
 
   const filteredLogs = useMemo(() => logs.filter(l => {
     if (dailySection && l.employees?.section !== dailySection) return false;
+    if (dailyDept && l.employees?.department !== dailyDept) return false;
     if (dailyLine) {
       const lineObj = lines.find(ln => String(ln.id) === String(dailyLine));
       if (lineObj && String(l.employees?.line_id) !== String(lineObj.id)) return false;
     }
     if (dailyTeam && l.employees?.team !== dailyTeam) return false;
     return true;
-  }), [logs, dailySection, dailyLine, dailyTeam, lines]);
+  }), [logs, dailySection, dailyDept, dailyLine, dailyTeam, lines]);
 
   const shiftBtnStyle = (val) => ({
     padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
@@ -574,6 +593,10 @@ table{border-collapse:collapse;width:100%}
           <option value="">ทุกส่วนงาน</option>
           {dailySections.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+        <select value={dailyDept} onChange={e => setDailyDept(e.target.value)} style={selSt}>
+          <option value="">ทุกแผนก</option>
+          {orgDeptList.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
         <select value={dailyLine} onChange={e => setDailyLine(e.target.value)} style={selSt}>
           <option value="">ทุกไลน์</option>
           {dailyVisibleLines.map(l => <option key={l.id} value={String(l.id)}>{l.name}</option>)}
@@ -628,6 +651,7 @@ table{border-collapse:collapse;width:100%}
 
 function PerEmployeeTab() {
   const orgSectionList = useOrgSections();
+  const orgDeptList    = useOrgDepts();
   const [employees, setEmployees] = useState([]);
   const [selected, setSelected] = useState('');
   const [logs, setLogs] = useState([]);
@@ -635,6 +659,7 @@ function PerEmployeeTab() {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [stationMap, setStationMap] = useState({});
   const [empSection, setEmpSection] = useState('');
+  const [empDept,    setEmpDept]    = useState('');
   const [empTeam, setEmpTeam] = useState('');
   const [calLoaded, setCalLoaded] = useState(false);
 
@@ -644,7 +669,7 @@ function PerEmployeeTab() {
       (data || []).forEach(w => { m[String(w.id)] = w.station_name; });
       setStationMap(m);
     });
-    supabase.from('employees').select('id, name, employee_id_code, section, team').eq('is_active', true).order('name').then(({ data }) => {
+    supabase.from('employees').select('id, name, employee_id_code, section, department, team').eq('is_active', true).order('name').then(({ data }) => {
       setEmployees(data || []);
       if (data?.length) setSelected(data[0].id);
     });
@@ -667,10 +692,11 @@ function PerEmployeeTab() {
 
   const empSections = useMemo(() => orgSectionList.length ? orgSectionList : [...new Set(employees.map(e => e.section).filter(Boolean))].sort(), [employees, orgSectionList]);
   const filteredEmployees = useMemo(() => employees.filter(e => {
-    if (empSection && e.section !== empSection) return false;
-    if (empTeam && e.team !== empTeam) return false;
+    if (empSection && e.section    !== empSection) return false;
+    if (empDept    && e.department !== empDept)    return false;
+    if (empTeam    && e.team       !== empTeam)    return false;
     return true;
-  }), [employees, empSection, empTeam]);
+  }), [employees, empSection, empDept, empTeam]);
 
   // Reset selected employee when filter changes and current selection is no longer in the list
   useEffect(() => {
@@ -722,6 +748,10 @@ table{border-collapse:collapse;width:100%}
         <select value={empSection} onChange={e => setEmpSection(e.target.value)} style={selSt}>
           <option value="">ทุกส่วนงาน</option>
           {empSections.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={empDept} onChange={e => setEmpDept(e.target.value)} style={selSt}>
+          <option value="">ทุกแผนก</option>
+          {orgDeptList.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
         <select value={empTeam} onChange={e => setEmpTeam(e.target.value)} style={selSt}>
           <option value="">ทุก Team</option>
@@ -1104,6 +1134,7 @@ const STATUS_META = {
 
 function FourMTab() {
   const { role } = useContext(UserContext);
+  const orgSectionList = useOrgSections();
 
   // Determine if the current user can act on this log at its current stage
   const canApproveLog = (log) => {
@@ -1537,7 +1568,7 @@ function FourMTab() {
         <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
         <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }} />
         {(() => {
-          const fourMSections = [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+          const fourMSections = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
           const fourMVisibleLines = fourMSection ? lines.filter(l => l.section === fourMSection) : lines;
           return (<>
             <select value={fourMSection} onChange={e => { setFourMSection(e.target.value); setLine(''); }} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
@@ -2024,8 +2055,9 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
 /* ── Shared Filter Bar for employee tabs ── */
 const selSt = { padding: '7px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', minWidth: 120 };
 
-function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilterLine, filterTeam, setFilterTeam }) {
+function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilterLine, filterTeam, setFilterTeam, filterDept, setFilterDept }) {
   const orgSectionList = useOrgSections();
+  const orgDeptList    = useOrgDepts();
   const sections = useMemo(() => orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort(), [lines, orgSectionList]);
   const visibleLines = filterSection ? lines.filter(l => l.section === filterSection) : lines;
   return (
@@ -2034,6 +2066,12 @@ function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilt
         <option value="">ทุกส่วนงาน</option>
         {sections.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
+      {setFilterDept && (
+        <select value={filterDept || ''} onChange={e => setFilterDept(e.target.value)} style={selSt}>
+          <option value="">ทุกแผนก</option>
+          {orgDeptList.map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+      )}
       <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={selSt}>
         <option value="">ทุกไลน์</option>
         {visibleLines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
@@ -2056,6 +2094,7 @@ function SkillMatrixTab() {
   const [filterLine,     setFilterLine]     = useState('');
   const [filterSection,  setFilterSection]  = useState('');
   const [filterTeam,     setFilterTeam]     = useState('');
+  const [filterDept,     setFilterDept]     = useState('');
   const [lines,          setLines]          = useState([]);
   const [selectedEmp,    setSelectedEmp]    = useState(null);
 
@@ -2064,15 +2103,16 @@ function SkillMatrixTab() {
     load();
   }, []);
 
-  useEffect(() => { load(); }, [filterLine, filterSection, filterTeam]);
+  useEffect(() => { load(); }, [filterLine, filterSection, filterTeam, filterDept]);
 
   const load = async () => {
     setLoading(true);
-    const baseSelect = 'id, name, employee_id_code, image_url, group_name, line_id, section, team, employee_skills(skill_name, score)';
+    const baseSelect = 'id, name, employee_id_code, image_url, group_name, line_id, section, department, team, employee_skills(skill_name, score)';
     let q = supabase.from('employees').select(baseSelect).eq('is_active', true);
     if (filterLine) q = q.eq('line_id', filterLine);
     else if (filterSection) q = q.eq('section', filterSection);
     if (filterTeam) q = q.eq('team', filterTeam);
+    if (filterDept) q = q.eq('department', filterDept);
     q = q.order('name');
     const [{ data: defs }, { data: emps }] = await Promise.all([
       supabase.from('skill_definitions').select('*').order('sort_order'),
@@ -2094,7 +2134,7 @@ function SkillMatrixTab() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <FilterBar lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} />
+        <FilterBar lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>{employees.length} คน · {skillDefs.length} สกิล</span>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>· คลิกที่พนักงานเพื่อดู Radar Chart</span>
         <button onClick={() => {
@@ -2544,6 +2584,7 @@ function MultiSkillFormTab() {
   const [filterLine,    setFilterLine]    = useState('');
   const [filterSection, setFilterSection] = useState('');
   const [filterTeam,    setFilterTeam]    = useState('');
+  const [filterDept,    setFilterDept]    = useState('');
 
   // Header info inputs
   const [dept,       setDept]       = useState('Production');
@@ -2605,11 +2646,12 @@ function MultiSkillFormTab() {
 
   const load = async () => {
     setLoading(true);
-    const sel = 'id, name, employee_id_code, position, section, team, start_date, employee_skills(skill_name, score)';
+    const sel = 'id, name, employee_id_code, position, section, department, team, start_date, employee_skills(skill_name, score)';
     let q = supabase.from('employees').select(sel).eq('is_active', true);
     if (filterLine) q = q.eq('line_id', filterLine);
     else if (filterSection) q = q.eq('section', filterSection);
     if (filterTeam) q = q.eq('team', filterTeam);
+    if (filterDept) q = q.eq('department', filterDept);
     q = q.order('name');
     const { data } = await q;
     setEmployees(data || []);
@@ -2693,7 +2735,7 @@ function MultiSkillFormTab() {
       <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
         <div>
           <span style={lbSt}>ตัวกรอง</span>
-          <FilterBar lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} />
+          <FilterBar lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
         </div>
         <button onClick={load} disabled={loading}
           style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
@@ -3705,11 +3747,14 @@ function SkillAllowanceTab() {
    ══════════════════════════════════════════════════════════════ */
 function AttendanceFormTab() {
   const today   = new Date();
+  const orgSectionList = useOrgSections();
+  const orgDeptList    = useOrgDepts();
   const [year,    setYear]    = useState(today.getFullYear());
   const [month,   setMonth]   = useState(today.getMonth() + 1);
   const [period,  setPeriod]  = useState(2); // 1=1-15, 2=16-end
   const [line,    setLine]    = useState('');
   const [dept,    setDept]    = useState('');
+  const [empDept, setEmpDept] = useState('');
   const [team,    setTeam]    = useState('');
   const [formNo,  setFormNo]  = useState('F-HR-001');
   const [lines,   setLines]   = useState([]);
@@ -3764,9 +3809,10 @@ function AttendanceFormTab() {
     // Step 1: get employees matching current filters from employees table (server-side)
     const selectedLineId = line ? (lines.find(l => l.name === line)?.id ?? null) : null;
     let empQ = supabase.from('employees')
-      .select('id, name, employee_id_code, section, team, line_id');
+      .select('id, name, employee_id_code, section, department, team, line_id');
     if (selectedLineId) empQ = empQ.eq('line_id', selectedLineId);
     if (dept)           empQ = empQ.eq('section', dept);
+    if (empDept)        empQ = empQ.eq('department', empDept);
     if (team)           empQ = empQ.eq('team', team);
     const { data: filteredEmps } = await empQ;
     if (!filteredEmps?.length) { setEmpRows([]); setLoading(false); return; }
@@ -4045,7 +4091,7 @@ function AttendanceFormTab() {
   };
 
   const days = periodDays();
-  const depts = [...new Set(lines.map(l => l.section).filter(Boolean))];
+  const attSections = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -4079,15 +4125,20 @@ function AttendanceFormTab() {
             {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
           </select>
         </div>
-        {depts.length > 0 && (
-          <div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ส่วนงาน / Section</div>
-            <select value={dept} onChange={e => setDept(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-              <option value="">ทุกส่วนงาน</option>
-              {depts.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </div>
-        )}
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ส่วนงาน</div>
+          <select value={dept} onChange={e => setDept(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            <option value="">ทุกส่วนงาน</option>
+            {attSections.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>แผนก</div>
+          <select value={empDept} onChange={e => setEmpDept(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+            <option value="">ทุกแผนก</option>
+            {orgDeptList.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Team</div>
           <select value={team} onChange={e => setTeam(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
