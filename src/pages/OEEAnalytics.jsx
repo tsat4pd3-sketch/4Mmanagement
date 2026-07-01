@@ -1,14 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts';
-
-// ── Supabase DR client ────────────────────────────────────────────
-const DR_URL  = import.meta.env.VITE_SUPABASE_DR_URL  || import.meta.env.VITE_SUPABASE_URL;
-const DR_KEY  = import.meta.env.VITE_SUPABASE_DR_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabaseDR = createClient(DR_URL, DR_KEY);
+import { supabaseDR } from '../supabaseClient';
 
 // ── Colour helpers ───────────────────────────────────────────────
 const oeeColor  = v => v >= 80 ? '#22c55e' : v >= 60 ? '#f59e0b' : '#ef4444';
