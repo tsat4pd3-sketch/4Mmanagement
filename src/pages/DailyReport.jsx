@@ -1152,12 +1152,17 @@ function LiveTab({ role }) {
     const A = totalNetAvailByMat > 0 ? Math.min(1, totalRunMinByMat / totalNetAvailByMat)
       : (netAvail > 0 ? Math.min(1, runMin / netAvail) : 0);
 
-    // Performance: เทียบยอดผลิตจริงกับ "ควรได้ถ้าวิ่งเต็มเวลา" ของแต่ละ MAT.NO แยกกัน (ช่วงเวลาเปิด-ปิดของใบงานนั้นๆ หักด้วย
-    // Downtime ที่ทับซ้อนช่วงนั้น) แล้วรวมยอด — ต้องแยกตาม MAT.NO เพราะไลน์ร่วม (เช่น APRON ASSY) อาจผลิตหลาย MAT.NO
-    // พร้อมกันคนละสถานี ถ้ารวม producedMin ของทุก MAT.NO แล้วหารด้วย runMin เดียวของทั้งกะ จะนับเวลาซ้ำซ้อน ทำให้ P เพี้ยน
-    // (เคยเจอ P ติดเพดาน 100% ทั้งที่ผลิตได้น้อยกว่าควรได้ของแต่ละ MAT.NO ตอนแยกดู)
-    let knownQty = 0, unknownQty = 0, totalAchievable = 0;
+    // Performance: วัดประสิทธิภาพของไลน์ผลิต ไม่ใช่ของแต่ละ order
+    // สูตร OEE มาตรฐาน: P = standard_time_produced / run_time
+    //   standard_time = Σ(qty_i × CT_i)  ← เวลาที่ "ควรใช้" ถ้าวิ่งด้วย CT มาตรฐาน
+    //   run_time = runMin × 60 วินาที    ← เวลาที่ไลน์วิ่งจริงทั้งกะ (หัก break + DT แล้ว)
+    // Sequential (ทำทีละ MAT.NO): P = Σ(qty_i × CT_i) / run_time_sec
+    // Parallel (หลาย MAT.NO วิ่งพร้อมกันคนละสถานี): P = mean(P_i) โดย P_i = (qty_i × CT_i) / run_time_sec
+    //   → ใช้ order time window เพื่อ detect parallel เท่านั้น ไม่ใช่เป็น denominator
+    const runSec = runMin * 60;
     const matNosForP = Array.from(new Set(prodOrders.map(o => o.mat_no)));
+    const matPData = []; // { matNo, qty, ctSec, winStart, winEnd }
+    let unknownQty = 0;
     matNosForP.forEach(matNo => {
       const orders = prodOrders.filter(o => o.mat_no === matNo);
       const qty = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)
@@ -1165,30 +1170,43 @@ function LiveTab({ role }) {
       if (!qty) return;
       const ctSec = ctForMatNo(matNo);
       if (ctSec <= 0) { unknownQty += qty; return; }
-      const hasOpenOrders = orders.some(o => o.status === 'open');
+      // window ใช้สำหรับ detect parallel เท่านั้น
       const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
       const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
-      // open orders ที่ตัดสินใจแล้ว (ยกยอด/ผลิตครบ/ยกเลิก) → ใช้ stop time ขยาย endMs
-      // ไม่งั้น qty จาก open orders ถูกนับเข้า numerator แต่ window ไม่ขยาย → P เกิน 100% ผิดๆ
-      const openStopTimesForP = orders.filter(o => o.status === 'open' && carryOverDecisions[o.id]).map(o => {
-        const stopStr = carryStopTime[o.id] ?? endTimeOverride;
-        if (!stopStr || !workDate) return null;
-        let ms = new Date(`${workDate}T${stopStr.slice(0, 5)}:00`).getTime();
+      const stopTimes   = orders.filter(o => o.status === 'open' && carryOverDecisions[o.id]).map(o => {
+        const s = carryStopTime[o.id] ?? endTimeOverride;
+        if (!s || !workDate) return null;
+        let ms = new Date(`${workDate}T${s.slice(0, 5)}:00`).getTime();
         if (o.opened_at && ms < new Date(o.opened_at).getTime()) ms += 86400000;
         return ms;
       }).filter(Boolean);
-      let startMs = openedTimes.length ? Math.min(...openedTimes) : (openedAt ? openedAt.getTime() : null);
-      const allEndMs = [...closedTimes, ...openStopTimesForP];
-      let endMs = allEndMs.length ? Math.max(...allEndMs) : closedAt.getTime();
-      ({ startMs, endMs } = applyMatTimeOverride(matNo, hasOpenOrders, startMs, endMs));
-      if (startMs == null || endMs <= startMs) { unknownQty += qty; return; }
-      const runWinMin = Math.max(0, (endMs - startMs) / 60000 - dtOverlapMin(startMs, endMs));
-      totalAchievable += Math.floor(runWinMin * 60 / ctSec);
-      knownQty += qty;
+      const winStart = openedTimes.length ? Math.min(...openedTimes) : null;
+      const allEnd   = [...closedTimes, ...stopTimes];
+      const winEnd   = allEnd.length ? Math.max(...allEnd) : null;
+      matPData.push({ matNo, qty, ctSec, winStart, winEnd });
     });
+    const knownQty = matPData.reduce((s, d) => s + d.qty, 0);
 
-    // ctSec ไม่รู้เลยสักใบ (ไม่มี Cycle Time ใน Product Master ของทุก MAT.NO ที่ผลิต) → P คำนวณไม่ได้จริง ห้าม default เป็น 100%
-    const P = knownQty > 0 ? (totalAchievable > 0 ? Math.min(1, knownQty / totalAchievable) : 0) : null;
+    // ตรวจ parallel: มี MAT.NO คู่ไหนที่ window ทับกันมั้ย
+    const isParallel = matPData.length > 1 && matPData.some((a, i) =>
+      matPData.slice(i + 1).some(b =>
+        a.winStart != null && a.winEnd != null && b.winStart != null && b.winEnd != null &&
+        a.winStart < b.winEnd && b.winStart < a.winEnd
+      )
+    );
+
+    let P = null;
+    if (runSec > 0 && matPData.length > 0) {
+      if (isParallel) {
+        // Parallel: P แต่ละ MAT.NO ใช้ run_time เต็มๆ เป็น denominator แล้ว mean
+        const pValues = matPData.map(d => (d.qty * d.ctSec) / runSec);
+        P = Math.min(1, pValues.reduce((s, v) => s + v, 0) / pValues.length);
+      } else {
+        // Sequential: standard time รวมหารด้วย run_time ทั้งกะ
+        const totalStdSec = matPData.reduce((s, d) => s + d.qty * d.ctSec, 0);
+        P = Math.min(1, totalStdSec / runSec);
+      }
+    }
     const Q = totalProduced > 0 ? Math.max(0, (totalProduced - ngQty) / totalProduced) : 1;
     const oee = P != null ? A * P * Q : null;
     return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty, knownQty, unknownQty };
@@ -2681,7 +2699,7 @@ function LiveTab({ role }) {
                     <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ ไม่มี Cycle Time ใน Product Master ของ MAT.NO ที่ผลิตในกะนี้เลย — P/OEE คำนวณไม่ได้ (จะถูกบันทึกเป็น N/A ไม่ใช่ 100%)</div>
                   )}
                   {knownQty > 0 && unknownQty > 0 && (
-                    <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ มี {unknownQty} ชิ้น จาก MAT.NO ที่ยังไม่ตั้ง Cycle Time ใน Product Master — P/OEE คำนวณจากเฉพาะ {knownQty} ชิ้นที่มี CT</div>
+                    <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ มี {unknownQty} ชิ้น จาก MAT.NO ที่ไม่มี Cycle Time ใน Product Master — P/OEE คำนวณจาก standard time ของ {knownQty} ชิ้นที่มี CT หารด้วย run time ทั้งกะ (ค่าจริงจะต่ำกว่าถ้านับ MAT.NO ที่ขาด CT ด้วย)</div>
                   )}
                 </div>
 
