@@ -865,12 +865,30 @@ export default function HeijunkaKanban() {
     try {
       const { error } = await supabaseDR.from('child_lot_requests').update({ status: next }).eq('id', lot.id);
       if (error) throw error;
-      // ปิดล็อต = จ่ายวัตถุดิบที่ผูกไว้ทั้งหมดเป็น issued ด้วย
+      // ── ผลิตเสร็จ = ปิด loop ──
       if (next === 'done') {
+        const wd = lot.work_date || getWorkDate();
+        const txns = [];
+        // (1) ของที่ผลิตได้ กลับเข้าเติมสต็อกสโตร์ (ที่ไลน์ผลิตพาร์ท) — ถ้าเป็นของซื้อ (ไม่มี source_line) ข้าม
+        if (lot.source_line) {
+          txns.push({ line_name: lot.source_line, mat_no: lot.child_mat_no, part_name: lot.part_name, qty: lot.lot_qty,
+            type: 'issue', work_date: wd, note: `auto: ผลิตเสร็จ เติมสต็อก Store Child (ล็อต ${lot.lot_qty})`, created_by: fullName || 'ผลิต' });
+          // (2) ตัดสต็อกวัตถุดิบที่ใช้จริงตามใบเบิก
+          rawRequests.filter(r => r.lot_request_id === lot.id).forEach(r => {
+            txns.push({ line_name: lot.source_line, mat_no: r.raw_mat_no, part_name: r.part_name, qty: r.qty,
+              type: 'consume', work_date: wd, note: `auto: ใช้ผลิต ${lot.child_mat_no} (ล็อต)`, created_by: fullName || 'ผลิต' });
+          });
+        }
+        if (txns.length) {
+          const { error: e2 } = await supabaseDR.from('line_stock_transactions').insert(txns);
+          if (e2) throw e2;
+        }
+        // ใบเบิกวัตถุดิบที่ผูกไว้ → issued
         await supabaseDR.from('raw_withdrawal_requests').update({ status: 'issued' }).eq('lot_request_id', lot.id).eq('status', 'pending');
       }
-      toast.success(`อัปเดตล็อต ${lot.child_mat_no} → ${next}`);
+      toast.success(next === 'done' ? `✅ ผลิตเสร็จ ${lot.child_mat_no} · เติมสต็อกสโตร์ +${lot.lot_qty}` : `อัปเดตล็อต ${lot.child_mat_no} → ${next}`);
       await loadPull();
+      await load();
     } catch (err) { toast.error(err.message); }
     setPullBusy(null);
   };
