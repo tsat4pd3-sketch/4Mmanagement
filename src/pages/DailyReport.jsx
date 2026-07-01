@@ -1150,8 +1150,18 @@ function LiveTab({ role }) {
       const hasOpenOrders = orders.some(o => o.status === 'open');
       const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
       const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
+      // open orders ที่ตัดสินใจแล้ว (ยกยอด/ผลิตครบ/ยกเลิก) → ใช้ stop time ขยาย endMs
+      // ไม่งั้น qty จาก open orders ถูกนับเข้า numerator แต่ window ไม่ขยาย → P เกิน 100% ผิดๆ
+      const openStopTimesForP = orders.filter(o => o.status === 'open' && carryOverDecisions[o.id]).map(o => {
+        const stopStr = carryStopTime[o.id] ?? endTimeOverride;
+        if (!stopStr || !workDate) return null;
+        let ms = new Date(`${workDate}T${stopStr.slice(0, 5)}:00`).getTime();
+        if (o.opened_at && ms < new Date(o.opened_at).getTime()) ms += 86400000;
+        return ms;
+      }).filter(Boolean);
       let startMs = openedTimes.length ? Math.min(...openedTimes) : (openedAt ? openedAt.getTime() : null);
-      let endMs   = closedTimes.length ? Math.max(...closedTimes) : closedAt.getTime();
+      const allEndMs = [...closedTimes, ...openStopTimesForP];
+      let endMs = allEndMs.length ? Math.max(...allEndMs) : closedAt.getTime();
       ({ startMs, endMs } = applyMatTimeOverride(matNo, hasOpenOrders, startMs, endMs));
       if (startMs == null || endMs <= startMs) { unknownQty += qty; return; }
       const runWinMin = Math.max(0, (endMs - startMs) / 60000 - dtOverlapMin(startMs, endMs));

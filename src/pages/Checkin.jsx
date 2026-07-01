@@ -91,6 +91,7 @@ export default function Checkin() {
   const [exporting,      setExporting]      = useState(false);
   const [previewNight,   setPreviewNight]   = useState(false);
   const [calLoaded,      setCalLoaded]      = useState(false);
+  const [openShiftModal, setOpenShiftModal] = useState(null); // { lines, workDateStr, shift, shiftLabel, startTime }
 
   const realShiftInfo = getShiftInfo();
   const shiftInfo = previewNight
@@ -432,7 +433,7 @@ export default function Checkin() {
 
     toast.success('บันทึกข้อมูลสำเร็จ!');
 
-    /* ── Auto-open production session + Telegram notification ── */
+    /* ── ขึ้น Modal ให้ยืนยันเปิดกะ Daily Report + Telegram notification ── */
     try {
       const isNight = shiftInfo.shift === 'night';
 
@@ -441,10 +442,9 @@ export default function Checkin() {
       const checkedLines = lines.filter(l => checkedLineIds.includes(l.id));
       const lineNamesText = checkedLines.map(l => l.name).join(', ') || (selSection ? `Section: ${selSection}` : 'ทุกไลน์');
 
-      // เปิด session ทุกไลน์ที่ถูกเช็ค (ถ้ายังไม่มี)
-      // start_time ของกะดึกอ้างจากเช็คบ็อกซ์ OT ของพนักงานในไลน์นั้นจริง ๆ
-      // (ไม่ใช่เวลาที่ SV กดบันทึก — เพราะ SV อาจกดบันทึกล่าช้ากว่าเวลาที่งานเริ่มจริง)
+      // เตรียมข้อมูลสำหรับ Modal (ตรวจสอบก่อนว่า session เปิดอยู่แล้วหรือไม่)
       let anyOtNight = false;
+      const linesToAsk = [];
       for (const ln of checkedLines) {
         const lineHasOtNight = isNight && displayed.some(e =>
           e.line_id === ln.id && attendance[e.id]?.is_present && attendance[e.id]?.has_ot
@@ -457,13 +457,18 @@ export default function Checkin() {
           .eq('work_date', workDateStr).eq('line_name', ln.name).eq('shift', shiftInfo.shift)
           .maybeSingle();
         if (!exist) {
-          await supabaseDR.from('production_sessions').insert({
-            work_date: workDateStr, line_name: ln.name,
-            shift: shiftInfo.shift, start_time: lineStartTime,
-            status: 'open', opened_by_name: fullName || 'SV',
-            notes: lineHasOtNight ? 'OT กะดึก (Auto จากเช็คชื่อ)' : null,
-          });
+          linesToAsk.push({ line: ln, startTime: lineStartTime, hasOtNight: lineHasOtNight });
         }
+      }
+
+      // ถ้ามีไลน์ที่ยังไม่เปิดกะ → ขึ้น Modal ถาม
+      if (linesToAsk.length > 0) {
+        setOpenShiftModal({
+          lines: linesToAsk,
+          workDateStr,
+          shift: shiftInfo.shift,
+          shiftLabel: shiftInfo.label,
+        });
       }
 
       const hasOtNight = anyOtNight;
@@ -497,6 +502,29 @@ export default function Checkin() {
     } catch (_) { /* non-critical */ }
 
     setIsSaving(false);
+  };
+
+  /* ── เปิดกะ Daily Report จาก Modal ยืนยัน ── */
+  const handleConfirmOpenShift = async () => {
+    if (!openShiftModal) return;
+    try {
+      for (const { line, startTime, hasOtNight } of openShiftModal.lines) {
+        await supabaseDR.from('production_sessions').insert({
+          work_date:       openShiftModal.workDateStr,
+          line_name:       line.name,
+          shift:           openShiftModal.shift,
+          start_time:      startTime,
+          status:          'open',
+          opened_by_name:  fullName || 'SV',
+          notes:           hasOtNight ? 'OT กะดึก (เปิดจากเช็คชื่อ)' : null,
+        });
+      }
+      toast.success(`เปิดกะ ${openShiftModal.lines.map(l => l.line.name).join(', ')} สำเร็จ`);
+    } catch (e) {
+      toast.error('เปิดกะไม่สำเร็จ: ' + e.message);
+    } finally {
+      setOpenShiftModal(null);
+    }
   };
 
   /* ── Export: ฟอร์มกระดาษจริง (ใบขออนุมัติ OT + บันทึกการมาทำงาน) ─── */
@@ -678,6 +706,41 @@ export default function Checkin() {
 
   return (
     <div className="page-content">
+      {/* Modal ยืนยันเปิดกะ Daily Report */}
+      {openShiftModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '24px 28px', maxWidth: 420, width: '100%', boxShadow: '0 8px 40px rgba(0,0,0,0.5)' }}>
+            <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)', marginBottom: 6 }}>📊 เปิดกะ Daily Report?</div>
+            <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 18 }}>
+              บันทึกเช็คชื่อสำเร็จแล้ว — ต้องการเปิดกะเพื่อลงข้อมูลการผลิตด้วยหรือไม่?
+            </div>
+            <div style={{ background: 'var(--bg2)', borderRadius: 8, padding: '10px 14px', marginBottom: 20 }}>
+              {openShiftModal.lines.map(({ line, startTime }) => (
+                <div key={line.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
+                  <span style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 700 }}>▶</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{line.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{openShiftModal.shiftLabel} · เริ่ม {startTime}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setOpenShiftModal(null)}
+                style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+                ข้าม
+              </button>
+              <button
+                onClick={handleConfirmOpenShift}
+                style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#000', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+                เปิดกะ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
