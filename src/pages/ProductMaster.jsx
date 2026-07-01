@@ -1829,7 +1829,7 @@ const EMPTY_KBS = { mat_no: '', qty_per_kanban: '', min_qty: '', max_qty: '', lo
    ───────────────────────────────────────────────────────────────────────────── */
 const EMPTY_PKG_LINK = { packaging_code: '', packaging_name: '', pcs_per_pkg: 1, note: '' };
 const PKG_CATEGORIES = ['BOX', 'RACK', 'BASKET', 'PALLETTE', 'Other'];
-const EMPTY_PKG_MASTER = { code: '', name: '', category: 'BOX', capacity: '', supplier: '' };
+const EMPTY_PKG_MASTER = { code: '', name: '', category: 'BOX', supplier: '' };
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16 };
 
 function PackagingPanel({ canEdit, fullName }) {
@@ -1886,7 +1886,7 @@ function PackagingPanel({ canEdit, fullName }) {
   const saveMaster = async () => {
     if (!masterForm.code.trim() || !masterForm.name.trim()) { toast.error('กรอก code + ชื่อ'); return; }
     setSaving(true);
-    const payload = { code: masterForm.code.trim().toUpperCase(), name: masterForm.name.trim(), category: masterForm.category || null, capacity: masterForm.capacity === '' ? null : parseInt(masterForm.capacity), supplier: masterForm.supplier.trim() || null };
+    const payload = { code: masterForm.code.trim().toUpperCase(), name: masterForm.name.trim(), category: masterForm.category || null, supplier: masterForm.supplier.trim() || null };
     const { error } = editMaster
       ? await supabaseDR.from('container_types').update(payload).eq('id', editMaster.id)
       : await supabaseDR.from('container_types').insert({ ...payload, is_active: true });
@@ -2004,29 +2004,28 @@ function PackagingPanel({ canEdit, fullName }) {
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>🗃 ภาชนะ (Container Types)</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12 }}>ฐานข้อมูลเดียวกับที่ Rack Center ใช้</div>
             {canEdit && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 1fr 0.7fr 1fr auto', gap: 8, alignItems: 'end', marginBottom: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 1fr 1fr auto', gap: 8, alignItems: 'end', marginBottom: 14 }}>
                 <div><label style={{ fontSize: 10, color: 'var(--muted)' }}>Code *</label><input style={inputSt} value={masterForm.code} onChange={e => setMasterForm(f => ({ ...f, code: e.target.value }))} placeholder="BOX-A" /></div>
                 <div><label style={{ fontSize: 10, color: 'var(--muted)' }}>ชื่อ *</label><input style={inputSt} value={masterForm.name} onChange={e => setMasterForm(f => ({ ...f, name: e.target.value }))} /></div>
                 <div><label style={{ fontSize: 10, color: 'var(--muted)' }}>ประเภท</label>
                   <select style={inputSt} value={masterForm.category} onChange={e => setMasterForm(f => ({ ...f, category: e.target.value }))}>
                     {PKG_CATEGORIES.map(t => <option key={t} value={t}>{t}</option>)}
                   </select></div>
-                <div><label style={{ fontSize: 10, color: 'var(--muted)' }}>ความจุ</label><input type="number" min="0" style={inputSt} value={masterForm.capacity} onChange={e => setMasterForm(f => ({ ...f, capacity: e.target.value }))} /></div>
                 <div><label style={{ fontSize: 10, color: 'var(--muted)' }}>Supplier</label><input style={inputSt} value={masterForm.supplier} onChange={e => setMasterForm(f => ({ ...f, supplier: e.target.value }))} /></div>
                 <button onClick={saveMaster} disabled={saving} style={{ ...btnPrimary, padding: '8px 14px' }}>{editMaster ? '💾' : '+'}</button>
               </div>
             )}
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr style={{ background: 'var(--bg2)' }}><TH>Code</TH><TH>ชื่อ</TH><TH>ประเภท</TH><TH>ความจุ</TH><TH>Supplier</TH>{canEdit && <TH w={80}> </TH>}</tr></thead>
+              <thead><tr style={{ background: 'var(--bg2)' }}><TH>Code</TH><TH>ชื่อ</TH><TH>ประเภท</TH><TH>Supplier</TH>{canEdit && <TH w={80}> </TH>}</tr></thead>
               <tbody>
-                {masters.length === 0 && <tr><td colSpan={canEdit ? 6 : 5} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีภาชนะ</td></tr>}
+                {masters.length === 0 && <tr><td colSpan={canEdit ? 5 : 4} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีภาชนะ</td></tr>}
                 {masters.map(m => (
                   <tr key={m.id}>
                     <TD style={{ fontFamily: 'monospace', fontWeight: 700, color: '#f59e0b' }}>{m.code}</TD>
                     <TD>{m.name}</TD><TD style={{ color: 'var(--muted)' }}>{m.category || '—'}</TD>
-                    <TD style={{ color: 'var(--muted)' }}>{m.capacity ?? '—'}</TD><TD style={{ color: 'var(--muted)' }}>{m.supplier || '—'}</TD>
+                    <TD style={{ color: 'var(--muted)' }}>{m.supplier || '—'}</TD>
                     {canEdit && <TD><div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => { setEditMaster(m); setMasterForm({ code: m.code, name: m.name, category: m.category || 'BOX', capacity: m.capacity ?? '', supplier: m.supplier || '' }); }} style={{ padding: '3px 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 11 }}>✏️</button>
+                      <button onClick={() => { setEditMaster(m); setMasterForm({ code: m.code, name: m.name, category: m.category || 'BOX', supplier: m.supplier || '' }); }} style={{ padding: '3px 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 11 }}>✏️</button>
                       <button onClick={() => delMaster(m)} style={{ padding: '3px 7px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#ef4444', cursor: 'pointer', fontSize: 11 }}>🗑</button>
                     </div></TD>}
                   </tr>
