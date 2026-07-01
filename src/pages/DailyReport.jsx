@@ -738,13 +738,22 @@ function LiveTab({ role }) {
   // ของใบก่อนหน้าถ้ามี ไม่งั้นประมาณด้วย CT (opened_at + qty/CT) เพื่อลดโอกาสเวลาซ้อนกันระหว่าง 2 ใบ
   const guessBackfillTime = () => {
     if (!selSession) return '';
+    // คุมให้เวลาที่เดา อยู่ในกรอบกะเสมอ (กะเช้า 08:00–19:59 · กะดึก 20:00–07:59) กัน guess หลุดไปคนละกะ
+    const clampToShift = (hhmm) => {
+      if (!hhmm) return hhmm;
+      const h = Number(hhmm.split(':')[0]);
+      const inDay = h >= 8 && h < 20;
+      if (selSession.shift === 'day'   && !inDay) return (selSession.start_time || '08:00').slice(0, 5);
+      if (selSession.shift === 'night' && inDay)  return (selSession.start_time || '20:00').slice(0, 5);
+      return hhmm;
+    };
     const prev = [...prodOrders].sort((a, b) => new Date(b.opened_at) - new Date(a.opened_at))[0];
     if (!prev) return (selSession.start_time || '').slice(0, 5);
-    if (prev.confirmed_at) return new Date(prev.confirmed_at).toTimeString().slice(0, 5);
+    if (prev.confirmed_at) return clampToShift(new Date(prev.confirmed_at).toTimeString().slice(0, 5));
     const ctSec = ctForMatNo(prev.mat_no);
     if (ctSec > 0) {
       const estMs = new Date(prev.opened_at).getTime() + (prev.qty || 0) * ctSec * 1000;
-      return new Date(estMs).toTimeString().slice(0, 5);
+      return clampToShift(new Date(estMs).toTimeString().slice(0, 5));
     }
     return (selSession.start_time || '').slice(0, 5);
   };
@@ -775,6 +784,15 @@ function LiveTab({ role }) {
     if (!matNo)  { toast.error('สแกนหรือกรอก MAT.NO ก่อน');  return; }
     if (!openProdForm.qty || parseInt(openProdForm.qty) < 1) { toast.error('ระบุจำนวนชิ้น'); return; }
     if (openProdForm.is_backfill && !openProdForm.backfill_time) { toast.error('ระบุเวลาที่เริ่มผลิตจริงก่อน (บังคับสำหรับยิงย้อนหลัง)'); return; }
+    // กันเวลา backfill หลุดกรอบกะ (เช่น กะเช้าเผลอกรอก 23:0x → การ์ดเด้งไปกะกลางคืนใน Heijunka)
+    if (openProdForm.is_backfill && openProdForm.backfill_time && selSession) {
+      const bh = Number(openProdForm.backfill_time.split(':')[0]);
+      const inDay = bh >= 8 && bh < 20;   // กะเช้า 08:00–19:59 · กะดึก 20:00–07:59
+      if ((selSession.shift === 'day' && !inDay) || (selSession.shift === 'night' && inDay)) {
+        toast.error(`เวลา ${openProdForm.backfill_time} อยู่นอกกรอบกะ${selSession.shift === 'day' ? 'เช้า (08:00–20:00)' : 'ดึก (20:00–08:00)'} — ตรวจเวลาที่เริ่มผลิตอีกครั้ง`);
+        return;
+      }
+    }
 
     const dup = prodOrders.find(o => o.prod_no === prodNo);
     if (dup) {
