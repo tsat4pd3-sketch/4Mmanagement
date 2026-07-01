@@ -27,6 +27,9 @@ const LineStock      = lazy(() => import('./pages/LineStock'));
 const CompanyCalendar = lazy(() => import('./pages/CompanyCalendar'));
 const RackCenter      = lazy(() => import('./pages/RackCenter'));
 const OrgSetup        = lazy(() => import('./pages/OrgSetup'));
+const PMSetup     = lazy(() => import('./pages/PMSetup'));
+const PMCheckData = lazy(() => import('./pages/PMCheckData'));
+const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
 
 /* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null, signatureUrl: null, fullName: null });
@@ -65,9 +68,13 @@ const NAV_ITEMS = [
   { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    roles: null, group: 'บริหารจัดการ' },
+
+  { to: '/pm-setup',    icon: '🔩', label: 'PM Setup',      roles: ['admin', 'manager', 'supervisor'], group: 'ซ่อมบำรุง' },
+  { to: '/pm-check',    icon: '✅', label: 'PM ตรวจสอบ',    roles: null, group: 'ซ่อมบำรุง' },
+  { to: '/pm-schedule', icon: '📅', label: 'แผน PM',         roles: null, group: 'ซ่อมบำรุง' },
 ];
 
-const NAV_GROUP_ORDER = ['ภาพรวม', 'การผลิต', 'รายงาน/คุณภาพ', 'บริหารจัดการ'];
+const NAV_GROUP_ORDER = ['ภาพรวม', 'การผลิต', 'รายงาน/คุณภาพ', 'บริหารจัดการ', 'ซ่อมบำรุง'];
 
 const canAccess = (role, roles) => !roles || roles.includes(role ?? 'admin');
 
@@ -747,6 +754,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/heijunka"  element={<HeijunkaKanban />} />
               <Route path="/rack-center" element={<RackCenter />} />
               <Route path="/company-calendar" element={<CompanyCalendar />} />
+              <Route path="/pm-setup"    element={<PMSetup />} />
+              <Route path="/pm-check"    element={<PMCheckData />} />
+              <Route path="/pm-schedule" element={<PMSchedule />} />
             </Routes>
           </Suspense>
         </main>
