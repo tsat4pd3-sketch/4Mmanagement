@@ -8,7 +8,7 @@ import { getOrCreateChecklist } from '../lib/pmChecklists'
 import { notifyDepartment, createNotification } from '../lib/pmNotify'
 import { exportInspectionExcel } from '../lib/pmExportExcel'
 import { exportInspectionPDF, resolveSignatureDataUrl } from '../lib/pmExportPDF'
-import { categoryColor } from './PMSetup'
+import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } from '../lib/pmTaxonomy'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -76,14 +76,16 @@ const S = {
 }
 
 // ─── Variable Row ───────────────────────────────────────────────────────────
-function VariableRow({ cp, idx, r, onChange }) {
+function VariableRow({ cp, idx, r, onChange, methodIndex }) {
   const avg = computeAvg(r.v1, r.v2, r.v3)
   const status = getSpcStatus(avg, cp)
   const c = status ? STATUS_COLOR[status] : null
+  const method = methodIndex?.[cp.checking_method]
   return (
     <div style={S.cpRow(status)}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         {cp.x_pos != null && <span style={{ width: 16, height: 16, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
+        {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}{cp.axis && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 4px' }}>{cp.axis}</span>}</p>
         {c && <span style={{ fontSize: 10, fontWeight: 700, color: c.text }}>{status === 'pass' ? '●' : status === 'warning' ? '⚠' : '✕'}</span>}
       </div>
@@ -110,11 +112,13 @@ function VariableRow({ cp, idx, r, onChange }) {
 }
 
 // ─── Attribute / Note Row ────────────────────────────────────────────────────
-function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote }) {
+function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex }) {
+  const method = methodIndex?.[cp.checking_method]
   return (
     <div style={S.cpRow(null)}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {cp.x_pos != null && <span style={{ width: 16, height: 16, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
+        {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}</p>
         <div style={{ display: 'flex', gap: 4 }}>
           {['ok', 'ng'].map(v => (
@@ -256,8 +260,9 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
     const inspector = { email: profMap[insp.inspector_id]?.email ?? 'Inspector', signature_data: await getSig(insp.inspector_id) }
     const approver = insp.approved_by ? { email: profMap[insp.approved_by]?.email ?? 'Approver', signature_data: await getSig(insp.approved_by) } : null
     const exporter = { email: currentUserEmail ?? 'Exporter', signature_data: await getSig(userId) }
+    const categories = await fetchCategories({ includeInactive: true })
     await supabaseDR.from('inspections').update({ exported_by: userId, exported_at: new Date().toISOString() }).eq('id', insp.id)
-    return { jig, inspection: insp, checkpoints, results: resultMap, inspector, approver, exporter }
+    return { jig, inspection: insp, checkpoints, results: resultMap, inspector, approver, exporter, categories }
   }
 
   const handleExport = async (kind) => {
@@ -368,6 +373,7 @@ export default function PMCheckData() {
   const [saving, setSaving] = useState(false)
   const [inspections, setInspections] = useState([])
   const [viewInspection, setViewInspection] = useState(null)
+  const [methodIndex, setMethodIndex] = useState({})
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -378,6 +384,8 @@ export default function PMCheckData() {
 
   useEffect(() => {
     supabaseDR.from('jigs').select('*').eq('module', 'mtn').order('name').then(({ data }) => setJigs(data ?? []))
+    fetchCategories() // primes the category color cache used by categoryColor()
+    fetchCheckingMethods().then(rows => setMethodIndex(indexByCode(rows)))
   }, [])
 
   useEffect(() => {
@@ -539,9 +547,9 @@ export default function PMCheckData() {
                   ) : (
                     <>
                       {checkpoints.map((cp, idx) => cp.type === 'variable' ? (
-                        <VariableRow key={cp.id} cp={cp} idx={idx} r={results[cp.id] ?? { v1: '', v2: '', v3: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} />
+                        <VariableRow key={cp.id} cp={cp} idx={idx} r={results[cp.id] ?? { v1: '', v2: '', v3: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex} />
                       ) : (
-                        <AttrRow key={cp.id} cp={cp} idx={idx}
+                        <AttrRow key={cp.id} cp={cp} idx={idx} methodIndex={methodIndex}
                           value={results[cp.id]?.attr ?? ''} note={results[cp.id]?.note ?? ''}
                           onChangeAttr={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], attr: v } }))}
                           onChangeNote={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], note: v } }))} />

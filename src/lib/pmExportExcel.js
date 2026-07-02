@@ -67,17 +67,15 @@ function colLetter(n) {
   return s
 }
 
-// ── Category meta (mirrors PMSetup.jsx) ──────────────────────
-const CATEGORY_META = {
-  LP: { label: 'Locate Pin',        short: 'LP', argb: 'FFEF4444' },
-  SD: { label: 'Support Datum',     short: 'SD', argb: 'FF3B82F6' },
-  AC: { label: 'Air Clamp',         short: 'AC', argb: 'FF22C55E' },
-  PS: { label: 'Proximity Sensor',  short: 'PS', argb: 'FFA855F7' },
-  RS: { label: 'Reed Switch',       short: 'RS', argb: 'FFF97316' },
-  V:  { label: 'Valve',             short: 'V',  argb: 'FFEAB308' },
-  SU: { label: 'Service Unit',      short: 'SU', argb: 'FF06B6D4' },
-  SC: { label: 'Switch Control',    short: 'SC', argb: 'FFEC4899' },
-  HD: { label: 'Hand Clamp',        short: 'HD', argb: 'FF8B5CF6' },
+// Category meta comes from the user-managed taxonomy (passed as `categories`).
+function hexToArgb(hex) {
+  const m = /^#?([a-f\d]{6})$/i.exec(hex ?? '')
+  return m ? 'FF' + m[1].toUpperCase() : 'FF6B7280'
+}
+function buildCategoryMeta(categories) {
+  const meta = {}
+  for (const c of categories ?? []) meta[c.code] = { label: c.label, short: c.code, argb: hexToArgb(c.color) }
+  return meta
 }
 
 const COL_WIDTHS = [4, 12, 4, 7, 5, 5, 8, 6, 6, 6, 6, 5, 14, 6, 6, 10, 8]
@@ -103,7 +101,9 @@ export async function exportInspectionExcel({
   inspector,
   approver,
   exporter,
+  categories,
 }) {
+  const CATEGORY_META = buildCategoryMeta(categories)
   const wb = new ExcelJS.Workbook()
   wb.creator = 'PM JIG System'
   const ws = wb.addWorksheet('PM JIG', {
