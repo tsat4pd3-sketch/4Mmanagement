@@ -98,7 +98,7 @@ const S = {
   },
   modal: {
     background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 12,
-    width: '100%', maxWidth: 560, maxHeight: '90vh', display: 'flex', flexDirection: 'column',
+    width: '100%', maxWidth: 680, maxHeight: '90vh', display: 'flex', flexDirection: 'column',
     boxShadow: 'var(--shadow-lg)',
   },
   modalHead: {
@@ -344,7 +344,7 @@ function EquipmentModal({ onClose, onSaved, editEquip, department }) {
   const deptColor = DEPT_COLORS[department] ?? '#3dd65c'
 
   return (
-    <div style={S.overlay} onClick={onClose}>
+    <div style={S.overlay}>
       <motion.div
         style={S.modal}
         onClick={e => e.stopPropagation()}

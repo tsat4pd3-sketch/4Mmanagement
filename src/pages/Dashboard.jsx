@@ -1380,7 +1380,6 @@ export default function Dashboard() {
         return (
           <div
             className="overlay"
-            onClick={() => setExpandedLine(null)}
             style={{ zIndex: 1000 }}
           >
             <div

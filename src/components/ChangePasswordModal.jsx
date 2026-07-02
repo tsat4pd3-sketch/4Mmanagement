@@ -58,7 +58,7 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
   const weak   = next.length > 0 && next.length < 6;
 
   return (
-    <div className="overlay" onClick={handleClose}>
+    <div className="overlay">
       <div
         className="modal"
         onClick={e => e.stopPropagation()}
