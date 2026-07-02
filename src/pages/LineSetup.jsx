@@ -54,6 +54,11 @@ export default function LineSetup() {
   const dragStartRef = useRef({ x: 0, y: 0 });
   const dragPosRef = useRef(null);
 
+  // กรอบของ "ตัวรูปจริง" หลังหักแถบว่าง letterbox จาก object-fit: contain
+  // พิกัด pos_top/pos_left ทุกจุดเก็บเป็น % ของตัวรูปจริง (ไม่ใช่ % ของกล่อง container)
+  // เพื่อให้ตำแหน่งตรงกันทุกหน้า (Management / Dashboard) และไม่เพี้ยนเมื่อจอ/sidebar เปลี่ยนขนาด
+  const [imgBox, setImgBox] = useState(null); // { ox, oy, rw, rh }
+
   // จุด WIP buffer (min/max ต่อจุด — แผนกที่เกี่ยวข้องเห็นเมื่อของต่ำกว่า min)
   // 2 ประเภท: material (เรียกงานจากสโตร์ ผูกกับ mat no. จาก Product Master) และ
   // packaging (เรียกภาชนะเปล่าจาก Tact Center — rack/box/basket แยกด้วย packaging no.)
@@ -296,6 +301,24 @@ export default function LineSetup() {
     return { rect, offsetX, offsetY, renderedW, renderedH };
   };
 
+  const recalcImgBox = () => {
+    const img = imgRef.current;
+    if (!img || !img.naturalWidth) { setImgBox(null); return; }
+    const geom = getImageGeom(img);
+    if (!geom) { setImgBox(null); return; }
+    setImgBox({ ox: geom.offsetX, oy: geom.offsetY, rw: geom.renderedW, rh: geom.renderedH });
+  };
+
+  // คำนวณกรอบรูปใหม่เมื่อรูปโหลด/ขนาดพื้นที่เปลี่ยน (ย่อ-ขยายหน้าต่าง, พับ sidebar)
+  useEffect(() => {
+    setImgBox(null);
+    const img = imgRef.current;
+    if (!img) return;
+    const ro = new ResizeObserver(() => requestAnimationFrame(recalcImgBox));
+    ro.observe(img);
+    return () => ro.disconnect();
+  }, [layoutImage]);
+
   const startDrag = (e, kind, id) => {
     e.preventDefault();
     e.stopPropagation();
@@ -321,7 +344,8 @@ export default function LineSetup() {
       const dx = e.clientX - dragStartRef.current.x;
       const dy = e.clientY - dragStartRef.current.y;
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMovedRef.current = true;
-      const pos = { top: `${((y / rect.height) * 100).toFixed(2)}%`, left: `${((x / rect.width) * 100).toFixed(2)}%` };
+      // เก็บเป็น % ของตัวรูปจริง (หัก letterbox) — ไม่ผูกกับขนาดกล่อง container
+      const pos = { top: `${(((y - offsetY) / renderedH) * 100).toFixed(2)}%`, left: `${(((x - offsetX) / renderedW) * 100).toFixed(2)}%` };
       dragPosRef.current = pos;
       setDragPos(pos);
     };
@@ -371,18 +395,19 @@ export default function LineSetup() {
     const clampedX = Math.min(Math.max(clickX, offsetX + boxW / 2), offsetX + renderedW - boxW / 2);
     const clampedY = Math.min(Math.max(clickY, offsetY + boxH / 2), offsetY + renderedH - boxH / 2);
 
-    const x = (clampedX / rect.width) * 100;
-    const y = (clampedY / rect.height) * 100;
+    // เก็บเป็น % ของตัวรูปจริง (หัก letterbox) — ให้ทุกหน้าอ่านค่าเดียวกันไม่เพี้ยนตามขนาดจอ
+    const x = ((clampedX - offsetX) / renderedW) * 100;
+    const y = ((clampedY - offsetY) / renderedH) * 100;
     const pos = { top: `${y.toFixed(2)}%`, left: `${x.toFixed(2)}%` };
-    const newXpx = (x / 100) * rect.width;
-    const newYpx = (y / 100) * rect.height;
+    const newXpx = clampedX;
+    const newYpx = clampedY;
 
     const checkCollision = (points, w, h) => {
       const PAD_X = w + 8;
       const PAD_Y = h + 8;
       return points.some(p => {
-        const pX = (parseFloat(p.pos_left) / 100) * rect.width;
-        const pY = (parseFloat(p.pos_top) / 100) * rect.height;
+        const pX = offsetX + (parseFloat(p.pos_left) / 100) * renderedW;
+        const pY = offsetY + (parseFloat(p.pos_top) / 100) * renderedH;
         return Math.abs(newXpx - pX) < PAD_X && Math.abs(newYpx - pY) < PAD_Y;
       });
     };
@@ -675,9 +700,12 @@ export default function LineSetup() {
                 ref={imgRef}
                 src={layoutImage}
                 onClick={handleImageClick}
+                onLoad={recalcImgBox}
                 draggable={false}
                 style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'crosshair', display: 'block' }}
               />
+              {/* overlay ยึดกับ "ตัวรูปจริง" — marker ทุกจุดวางเป็น % ของรูป จึงเกาะรูปตามทุกขนาดจอ */}
+              {imgBox && <div style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
               {activeTab === 'stations' && stations.map(st => {
                 const isSelected = formData.id === st.id;
                 const isDragging = dragInfo?.kind === 'station' && dragInfo.id === st.id;
@@ -696,7 +724,7 @@ export default function LineSetup() {
                       backdropFilter: 'blur(2px)',
                       boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
                       cursor: isDragging ? 'grabbing' : 'grab', display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', justifyContent: 'center',
+                      alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto',
                       padding: '4px 4px 2px', zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
                     title="คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง"
@@ -743,7 +771,7 @@ export default function LineSetup() {
                       backdropFilter: 'blur(2px)',
                       boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isLow ? '0 0 8px rgba(239,68,68,0.6)' : '0 2px 6px rgba(0,0,0,0.6)',
                       cursor: isDragging ? 'grabbing' : 'grab', display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', justifyContent: 'center',
+                      alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto',
                       padding: '2px 2px 1px', zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
                   >
@@ -808,7 +836,7 @@ export default function LineSetup() {
                       backdropFilter: 'blur(2px)',
                       boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isConnectSource ? '0 0 8px rgba(249,115,22,0.7)' : isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
                       cursor: isDragging ? 'grabbing' : connectMode ? 'pointer' : 'grab', display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', justifyContent: 'center',
+                      alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto',
                       padding: '2px 2px 1px', zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
                   >
@@ -837,6 +865,7 @@ export default function LineSetup() {
                   <div style={{ color: 'var(--accent)', fontSize: 12 }}>+</div>
                 </div>
               )}
+              </div>}
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: 20 }}>
