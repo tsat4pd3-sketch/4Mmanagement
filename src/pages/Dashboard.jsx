@@ -309,7 +309,7 @@ export default function Dashboard() {
         .eq('work_date', date)
         .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
-      supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift').order('name'),
+      supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, parent_line_name').order('name'),
       supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name'),
       supabase.from('employees').select('id, line_id, team').eq('is_active', true),
       supabase.from('shift_schedules').select('line_id, day_team').eq('work_date', date),
@@ -484,6 +484,22 @@ export default function Dashboard() {
     () => selectedSection === 'all' ? layouts : layouts.filter(l => visibleLineNames.has(l.line_name)),
     [layouts, selectedSection, visibleLineNames],
   );
+
+  // ไลน์ย่อย (เช่น HDF1, LASER123 ใต้ HYDROFORM) ที่ไม่มีรูปผังของตัวเอง — จริงๆ อยู่พื้นที่เดียวกับไลน์หลัก
+  // ให้รวมจุดงาน/คนของมันเข้าไปในการ์ดของไลน์หลักแทนที่จะแยกการ์ด (ซึ่งจะไม่มีรูปให้แสดงอยู่แล้ว)
+  const parentChildrenMap = useMemo(() => {
+    const pcm = {};
+    lines.forEach(l => {
+      if (l.parent_line_name) (pcm[l.parent_line_name] ||= []).push(l.name);
+    });
+    return pcm;
+  }, [lines]);
+  const layoutLineNamesForCard = useCallback((layoutLineName) => {
+    const children = parentChildrenMap[layoutLineName];
+    if (!children?.length) return [layoutLineName];
+    const orphanChildren = children.filter(c => !layouts.some(l => l.line_name === c));
+    return [layoutLineName, ...orphanChildren];
+  }, [parentChildrenMap, layouts]);
 
   /* Filter by assignedShift — memoized so the 1s clock tick doesn't re-filter all logs */
   const shiftLogs = useMemo(
@@ -1254,13 +1270,14 @@ export default function Dashboard() {
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
                 {visibleLayouts.map(layout => {
-                  const lineWs = workstations.filter(w => w.line_name === layout.line_name);
+                  const cardLineNames = layoutLineNamesForCard(layout.line_name);
+                  const lineWs = workstations.filter(w => cardLineNames.includes(w.line_name));
                   const lineStaff = lineWs.map(ws => stationEmpMap[String(ws.id)]).filter(e => e && (!shiftEmpIds || shiftEmpIds.has(e.id)));
-                  // Use lineStats (same source as KPI cards) for the footer counts
-                  const lineStat = lineStats.find(l => l.name === layout.line_name);
-                  const footerPresent = lineStat ? lineStat.linePresent : lineStaff.filter(e => e.is_present === true).length;
-                  const footerTotal   = lineStat ? lineStat.lineTotal   : lineStaff.length;
-                  const footerAbsent  = lineStat ? (footerTotal - footerPresent) : lineStaff.filter(e => e.is_present === false).length;
+                  // Use lineStats (same source as KPI cards) for the footer counts — sum across sub-lines merged into this card
+                  const cardLineStats = lineStats.filter(l => cardLineNames.includes(l.name));
+                  const footerPresent = cardLineStats.length ? cardLineStats.reduce((s, l) => s + l.linePresent, 0) : lineStaff.filter(e => e.is_present === true).length;
+                  const footerTotal   = cardLineStats.length ? cardLineStats.reduce((s, l) => s + l.lineTotal, 0)   : lineStaff.length;
+                  const footerAbsent  = cardLineStats.length ? (footerTotal - footerPresent) : lineStaff.filter(e => e.is_present === false).length;
                   return (
                     <div
                       key={layout.line_name}
@@ -1375,7 +1392,8 @@ export default function Dashboard() {
       {/* Expanded Line Map Modal */}
       {expandedLine && (() => {
         const layout = layouts.find(l => l.line_name === expandedLine);
-        const lineWs = workstations.filter(w => w.line_name === expandedLine);
+        const cardLineNames = layoutLineNamesForCard(expandedLine);
+        const lineWs = workstations.filter(w => cardLineNames.includes(w.line_name));
         if (!layout) return null;
         return (
           <div
