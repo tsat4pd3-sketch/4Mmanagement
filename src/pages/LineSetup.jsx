@@ -66,12 +66,7 @@ export default function LineSetup() {
   const [machineTempPos, setMachineTempPos] = useState(null);
   const [machineForm, setMachineForm] = useState({ id: null, machine_no: '', redundancy_group: '' });
   const [drMachines, setDrMachines] = useState([]);
-
-  // ทะเบียนเครื่องจักร (master — ตาราง machines ของ Daily Report) จัดการที่นี่แทน — Daily Report มีหน้าที่แค่ลง Downtime
-  const emptyMachineReg = { id: null, machine_no: '', machine_name: '', process_type: 'welding_assembly', sort_order: 0, is_active: true };
-  const [machineRegForm, setMachineRegForm] = useState(emptyMachineReg);
-  const [showMachineRegForm, setShowMachineRegForm] = useState(false);
-  const [savingMachineReg, setSavingMachineReg] = useState(false);
+  const [machineTypes, setMachineTypes] = useState([]);
 
   // เส้นทางการผลิตแบบต่อเนื่อง (sequential flow) ระหว่างจุดเครื่องจักร — ใช้บอกว่า
   // เครื่องไหนหยุดแล้วทำให้สายงานหยุดทั้งสาย (ตรงข้ามกับเครื่อง parallel ที่หยุดแค่ตัวเอง)
@@ -128,8 +123,10 @@ export default function LineSetup() {
     setMachinePoints(mpData || []);
     const { data: flData } = await supabase.from('machine_flow_links').select('*').eq('line_name', selectedLine);
     setFlowLinks(flData || []);
-    const { data: drMc } = await supabaseDR.from('machines').select('*').eq('line_name', selectedLine).order('sort_order');
+    const { data: drMc } = await supabaseDR.from('machines').select('*, machine_types(id, label, color, icon)').eq('line_name', selectedLine).order('sort_order');
     setDrMachines(drMc || []);
+    const { data: drMt } = await supabaseDR.from('machine_types').select('*').order('sort_order');
+    setMachineTypes(drMt || []);
     const { data: drPd } = await supabaseDR.from('dr_products').select('mat_no, name').eq('line_name', selectedLine).eq('is_active', true).not('mat_no', 'is', null).order('mat_no');
     setDrProducts(drPd || []);
     // ภาชนะ — ดึงจาก container_types (supabaseDR) ตารางกลางเดียวกับ Packaging/Rack Center
@@ -543,43 +540,6 @@ export default function LineSetup() {
     if (!window.confirm('ยืนยันการลบจุดเครื่องจักรนี้?')) return;
     const { error } = await supabase.from('machine_points').delete().eq('id', id);
     if (!error) fetchLineData();
-  };
-
-  /* ── ทะเบียนเครื่องจักร (master — insert/update/delete ตาราง machines) ── */
-  const openMachineReg = (item = null) => {
-    setMachineRegForm(item
-      ? { id: item.id, machine_no: item.machine_no, machine_name: item.machine_name || '', process_type: item.process_type || 'welding_assembly', sort_order: item.sort_order ?? 0, is_active: item.is_active }
-      : { ...emptyMachineReg, sort_order: drMachines.length + 1 });
-    setShowMachineRegForm(true);
-  };
-
-  const handleSaveMachineReg = async () => {
-    if (!machineRegForm.machine_no.trim()) { alert('กรอกหมายเลขเครื่อง'); return; }
-    setSavingMachineReg(true);
-    const payload = {
-      line_name:    selectedLine,
-      machine_no:   machineRegForm.machine_no.trim().toUpperCase(),
-      machine_name: machineRegForm.machine_name || null,
-      process_type: machineRegForm.process_type,
-      sort_order:   parseInt(machineRegForm.sort_order) || 0,
-      is_active:    machineRegForm.is_active,
-      updated_at:   new Date().toISOString(),
-    };
-    const { error } = machineRegForm.id
-      ? await supabaseDR.from('machines').update(payload).eq('id', machineRegForm.id)
-      : await supabaseDR.from('machines').insert(payload);
-    setSavingMachineReg(false);
-    if (error) { alert('Error: ' + error.message); return; }
-    setShowMachineRegForm(false);
-    setMachineRegForm(emptyMachineReg);
-    fetchLineData();
-  };
-
-  const handleDeleteMachineReg = async (item) => {
-    if (!window.confirm(`ลบเครื่องจักร "${item.machine_no}" ออกจากทะเบียน?\n\nจุดบนผังและประวัติ Downtime ที่อ้างอิงเครื่องนี้จะยังอยู่ แต่จะเลือกเครื่องนี้ใหม่ไม่ได้`)) return;
-    const { error } = await supabaseDR.from('machines').delete().eq('id', item.id);
-    if (error) { alert('Error: ' + error.message); return; }
-    fetchLineData();
   };
 
   /* ── เส้นทางการผลิต (sequential flow ระหว่างจุดเครื่องจักร) ── */
@@ -1211,77 +1171,16 @@ export default function LineSetup() {
 
           {activeTab === 'machines' && (
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginBottom: 10 }}>
-              {/* ── ทะเบียนเครื่องจักร (master) — สร้าง/แก้ไข/ลบเครื่องจักรของไลน์นี้ ── */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <h4 style={{ margin: 0, color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
-                  📋 ทะเบียนเครื่องจักร ({drMachines.length})
-                </h4>
-                {!showMachineRegForm && (
-                  <button onClick={() => openMachineReg()}
-                    style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                    + เพิ่มเครื่องจักร
-                  </button>
-                )}
-              </div>
-
-              {showMachineRegForm && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 10, marginBottom: 14 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    <input autoFocus placeholder="หมายเลขเครื่อง เช่น HDF-01" value={machineRegForm.machine_no}
-                      onChange={e => setMachineRegForm(f => ({ ...f, machine_no: e.target.value.toUpperCase() }))}
-                      style={{ fontFamily: 'monospace', fontWeight: 700 }} />
-                    <input placeholder="ชื่อเครื่อง / รุ่น" value={machineRegForm.machine_name}
-                      onChange={e => setMachineRegForm(f => ({ ...f, machine_name: e.target.value }))} />
-                  </div>
-                  <select value={machineRegForm.process_type} onChange={e => setMachineRegForm(f => ({ ...f, process_type: e.target.value }))}>
-                    <option value="welding_assembly">🔥 Welding / Assembly</option>
-                    <option value="metal_forming">⚙ Metal Forming</option>
-                    <option value="common">🔗 ทั่วไป</option>
-                  </select>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                    <label style={{ fontSize: 12, color: 'var(--text2)' }}>
-                      ลำดับ
-                      <input type="number" min="0" value={machineRegForm.sort_order}
-                        onChange={e => setMachineRegForm(f => ({ ...f, sort_order: e.target.value }))}
-                        style={{ width: 60, marginLeft: 6 }} />
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--text)' }}>
-                      <input type="checkbox" checked={machineRegForm.is_active} onChange={e => setMachineRegForm(f => ({ ...f, is_active: e.target.checked }))} />
-                      ใช้งานอยู่
-                    </label>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                    <button onClick={handleSaveMachineReg} disabled={savingMachineReg}
-                      style={{ flex: 1, padding: '9px', background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, opacity: savingMachineReg ? 0.6 : 1 }}>
-                      {savingMachineReg ? '...' : (machineRegForm.id ? 'บันทึก' : 'เพิ่ม')}
-                    </button>
-                    <button onClick={() => { setShowMachineRegForm(false); setMachineRegForm(emptyMachineReg); }}
-                      style={{ padding: '9px 14px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 7 }}>
-                      ยกเลิก
-                    </button>
-                  </div>
+              {/* ทะเบียนเครื่องจักร (สร้าง/แก้ไข/กำหนดประเภท) ย้ายไปหน้าฐานข้อมูลเครื่องจักรแล้ว — ที่นี่แค่วางจุดบนผัง */}
+              <a href="/machine-database" target="_blank" rel="noopener noreferrer"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, textDecoration: 'none',
+                  background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>🏭 ฐานข้อมูลเครื่องจักร</div>
+                  <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 1 }}>{drMachines.length} เครื่องในไลน์นี้ · เพิ่ม/แก้ไข/กำหนดประเภทเครื่องจักรที่นี่</div>
                 </div>
-              )}
-
-              <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: 16 }}>
-                {drMachines.map(m => {
-                  const PROC_LABEL = { welding_assembly: '🔥', metal_forming: '⚙', common: '🔗' };
-                  return (
-                    <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: '1px solid var(--border)', opacity: m.is_active ? 1 : 0.5 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: 'var(--text)' }}>{PROC_LABEL[m.process_type] || ''} {m.machine_no}</span>
-                        {m.machine_name && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{m.machine_name}</span>}
-                        {!m.is_active && <span style={{ fontSize: 10, color: '#ef4444', marginLeft: 6 }}>(ปิดใช้)</span>}
-                      </div>
-                      <button onClick={() => openMachineReg(m)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 9px', fontSize: 11, cursor: 'pointer', color: 'var(--text)', flexShrink: 0 }}>แก้ไข</button>
-                      <button onClick={() => handleDeleteMachineReg(m)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15, flexShrink: 0 }}>🗑️</button>
-                    </div>
-                  );
-                })}
-                {drMachines.length === 0 && !showMachineRegForm && (
-                  <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีเครื่องจักรในไลน์นี้</div>
-                )}
-              </div>
+                <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700, flexShrink: 0 }}>เปิดหน้า ↗</span>
+              </a>
 
               {/* ── วางจุดเครื่องจักรบนผัง ── */}
               <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
@@ -1292,12 +1191,23 @@ export default function LineSetup() {
                   <select value={machineForm.machine_no}
                     onChange={e => setMachineForm({ ...machineForm, machine_no: e.target.value })}>
                     <option value="">-- เลือกเครื่องจักร --</option>
-                    {drMachines.filter(m => m.is_active).map(m => (
+                    {drMachines.filter(m => m.is_active && !m.machine_type_id).map(m => (
                       <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `- ${m.machine_name}` : ''}</option>
                     ))}
+                    {machineTypes.map(t => {
+                      const items = drMachines.filter(m => m.is_active && m.machine_type_id === t.id);
+                      if (!items.length) return null;
+                      return (
+                        <optgroup key={t.id} label={`${t.icon || ''} ${t.label}`}>
+                          {items.map(m => (
+                            <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `- ${m.machine_name}` : ''}</option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
                   </select>
                   {drMachines.filter(m => m.is_active).length === 0 && (
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มีเครื่องจักรในทะเบียนของไลน์นี้ — เพิ่มได้ที่ "📋 ทะเบียนเครื่องจักร" ด้านล่าง</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มีเครื่องจักรในทะเบียนของไลน์นี้ — เพิ่มได้ที่ 🏭 ฐานข้อมูลเครื่องจักร ด้านบน</div>
                   )}
                   <div>
                     <label style={{ ...labelSt, display: 'block', marginBottom: 4 }}>กลุ่มเครื่องคู่ขนาน (Redundancy Group) — ไม่บังคับ</label>
