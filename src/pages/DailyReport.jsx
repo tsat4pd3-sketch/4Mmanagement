@@ -137,6 +137,8 @@ function LiveTab({ role }) {
   // CT overage history — keyed by mat_no: { checked, overCount, ctSec, avgObservedCt } จากกะปิดล่าสุดของไลน์เดียวกัน
   const [ctOverage, setCtOverage]   = useState({});
 
+  const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
+
   const [showOpen, setShowOpen] = useState(false);
   const [openForm, setOpenForm] = useState(() => { const s = currentShift(); return { work_date: today(), line_name: '', shift: s, product_id: '', start_time: shiftStart(s) }; });
 
@@ -209,7 +211,7 @@ function LiveTab({ role }) {
   const load = useCallback(async () => {
     setLoading(true);
     const [{ data: ln }, { data: pr }, { data: dt }, { data: ks }, { data: bp }, { data: mc }, { data: dft }] = await Promise.all([
-      supabase.from('production_lines').select('id, name, section').order('name'),
+      supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
       supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name'),
       supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type)').eq('is_active', true).order('mat_no'),
@@ -220,8 +222,16 @@ function LiveTab({ role }) {
 
     const lm = {};
     (ln || []).forEach(l => { lm[l.name] = l; });
+    const pcm = {};
+    (ln || []).forEach(l => {
+      if (l.parent_line_name) {
+        if (!pcm[l.parent_line_name]) pcm[l.parent_line_name] = [];
+        pcm[l.parent_line_name].push(l.name);
+      }
+    });
     setLines(ln || []);
     setLineMap(lm);
+    setParentChildrenMap(pcm);
     setProducts(pr || []);
     setDtTypes(dt || []);
     setKanbanStds(ks || []);
@@ -243,7 +253,14 @@ function LiveTab({ role }) {
 
     if (role === 'leader' && userLineId) {
       const myLine = (ln || []).find(l => l.id === userLineId);
-      if (myLine) sq = sq.eq('line_name', myLine.name);
+      if (myLine) {
+        const children = pcm[myLine.name];
+        if (children?.length) {
+          sq = sq.in('line_name', [myLine.name, ...children]);
+        } else {
+          sq = sq.eq('line_name', myLine.name);
+        }
+      }
     }
 
     let { data: ss } = await sq;
@@ -1503,19 +1520,38 @@ function LiveTab({ role }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: sessions.length > 1 ? '220px 1fr' : '1fr', gap: 16 }}>
       {sessions.length > 1 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>กะที่เปิดอยู่</div>
-          {sessions.map(s => (
-            <button key={s.id} onClick={() => { setSelSession(s); }}
-              style={{ padding: '10px 12px', borderRadius: 8, border: `2px solid ${selSession?.id === s.id ? 'var(--accent)' : 'var(--border)'}`,
-                background: selSession?.id === s.id ? 'var(--accent-dim)' : 'var(--card)', cursor: 'pointer', textAlign: 'left' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{s.line_name}</div>
-                {s.status === 'pending_close' && <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 10, background: 'rgba(245,158,11,0.2)', color: '#f59e0b' }}>⏳ รออนุมัติ</span>}
+          {(() => {
+            // Group sessions by parent line (or self if no parent)
+            const groups = {};
+            sessions.forEach(s => {
+              const parent = lineMap[s.line_name]?.parent_line_name || s.line_name;
+              if (!groups[parent]) groups[parent] = [];
+              groups[parent].push(s);
+            });
+            return Object.entries(groups).map(([groupName, groupSessions]) => (
+              <div key={groupName}>
+                {groupSessions.some(s => lineMap[s.line_name]?.parent_line_name) && (
+                  <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--muted)', padding: '6px 4px 2px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                    {groupName}
+                  </div>
+                )}
+                {groupSessions.map(s => (
+                  <button key={s.id} onClick={() => setSelSession(s)}
+                    style={{ display: 'block', width: '100%', marginBottom: 4, padding: lineMap[s.line_name]?.parent_line_name ? '8px 10px 8px 16px' : '10px 12px',
+                      borderRadius: 8, border: `2px solid ${selSession?.id === s.id ? 'var(--accent)' : 'var(--border)'}`,
+                      background: selSession?.id === s.id ? 'var(--accent-dim)' : 'var(--card)', cursor: 'pointer', textAlign: 'left' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{s.line_name}</div>
+                      {s.status === 'pending_close' && <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 5px', borderRadius: 10, background: 'rgba(245,158,11,0.2)', color: '#f59e0b' }}>⏳</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(s.work_date)}</div>
+                  </button>
+                ))}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(s.work_date)}</div>
-            </button>
-          ))}
+            ));
+          })()}
         </div>
       )}
 
@@ -1985,7 +2021,17 @@ function LiveTab({ role }) {
                 <Field label="ไลน์การผลิต">
                   <select value={openForm.line_name} onChange={e => setOpenForm(f => ({ ...f, line_name: e.target.value }))} style={inputStyle}>
                     <option value="">เลือกไลน์...</option>
-                    {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                    {lines.filter(l => !l.parent_line_name && !parentChildrenMap[l.name]).map(l => (
+                      <option key={l.id} value={l.name}>{l.name}</option>
+                    ))}
+                    {Object.entries(parentChildrenMap).map(([parent, children]) => (
+                      <optgroup key={parent} label={`▸ ${parent}`}>
+                        {children.map(cn => {
+                          const cl = lines.find(l => l.name === cn);
+                          return cl ? <option key={cl.id} value={cl.name}>{cl.name}</option> : null;
+                        })}
+                      </optgroup>
+                    ))}
                   </select>
                 </Field>
                 <Field label="กะทำงาน">

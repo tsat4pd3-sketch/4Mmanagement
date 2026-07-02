@@ -3,7 +3,7 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts';
-import { supabaseDR } from '../supabaseClient';
+import { supabase, supabaseDR } from '../supabaseClient';
 
 // ── Colour helpers ───────────────────────────────────────────────
 const oeeColor  = v => v >= 80 ? '#22c55e' : v >= 60 ? '#f59e0b' : '#ef4444';
@@ -84,6 +84,7 @@ export default function OEEAnalytics() {
   const [dtTypes,    setDtTypes]    = useState([]);
   const [defectTypes,setDefectTypes]= useState([]);
   const [lines,      setLines]      = useState([]);
+  const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
   const [loading,    setLoading]    = useState(true);
 
   // Filters
@@ -100,6 +101,13 @@ export default function OEEAnalytics() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
+      const pcm = parentChildrenMap; // pre-loaded by separate useEffect below
+
+      // Expand selLine: if it's a parent, include all its children
+      const expandedLines = selLine
+        ? (pcm[selLine] ? [selLine, ...pcm[selLine]] : [selLine])
+        : null;
+
       let q = supabaseDR.from('production_sessions')
         .select('*')
         .eq('status', 'closed')
@@ -107,7 +115,8 @@ export default function OEEAnalytics() {
         .lte('work_date', dateTo)
         .order('work_date', { ascending: true })
         .limit(5000);
-      if (selLine)  q = q.eq('line_name', selLine);
+      if (expandedLines?.length === 1) q = q.eq('line_name', expandedLines[0]);
+      else if (expandedLines?.length > 1) q = q.in('line_name', expandedLines);
       if (selShift) q = q.eq('shift', selShift);
       const { data: sess } = await q;
 
@@ -136,7 +145,21 @@ export default function OEEAnalytics() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, selLine, selShift]);
+  }, [dateFrom, dateTo, selLine, selShift, parentChildrenMap]);
+
+  // Pre-load parent-children map from main project's production_lines
+  useEffect(() => {
+    supabase.from('production_lines').select('name, parent_line_name').then(({ data }) => {
+      const pcm = {};
+      (data || []).forEach(l => {
+        if (l.parent_line_name) {
+          if (!pcm[l.parent_line_name]) pcm[l.parent_line_name] = [];
+          pcm[l.parent_line_name].push(l.name);
+        }
+      });
+      setParentChildrenMap(pcm);
+    });
+  }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -242,7 +265,19 @@ export default function OEEAnalytics() {
         </div>
         <select style={s.sel} value={selLine} onChange={e => setSelLine(e.target.value)}>
           <option value="">ทุกไลน์</option>
-          {lines.map(l => <option key={l} value={l}>{l}</option>)}
+          {/* Leaf lines (no parent, no children in session list) */}
+          {lines.filter(l => !Object.values(parentChildrenMap).flat().includes(l) && !parentChildrenMap[l]).map(l => (
+            <option key={l} value={l}>{l}</option>
+          ))}
+          {/* Parent lines: show as group + individual sub-lines */}
+          {Object.entries(parentChildrenMap).filter(([p]) => lines.includes(p) || lines.some(l => parentChildrenMap[p]?.includes(l))).map(([parent, children]) => (
+            <optgroup key={parent} label={`▸ ${parent}`}>
+              <option value={parent}>{parent} (ทั้งหมด)</option>
+              {children.filter(c => lines.includes(c)).map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </optgroup>
+          ))}
         </select>
         <select style={s.sel} value={selShift} onChange={e => setSelShift(e.target.value)}>
           <option value="">ทุกกะ</option>

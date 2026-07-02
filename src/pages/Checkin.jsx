@@ -91,7 +91,9 @@ export default function Checkin() {
   const [exporting,      setExporting]      = useState(false);
   const [previewNight,   setPreviewNight]   = useState(false);
   const [calLoaded,      setCalLoaded]      = useState(false);
-  const [openShiftModal, setOpenShiftModal] = useState(null); // { lines, workDateStr, shift, shiftLabel, startTime }
+  const [openShiftModal, setOpenShiftModal] = useState(null); // { lines, workDateStr, shift, shiftLabel }
+  const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
+  const [subLineSelections, setSubLineSelections] = useState({}); // { lineName: bool } — modal checkboxes
 
   const realShiftInfo = getShiftInfo();
   const shiftInfo = previewNight
@@ -152,7 +154,7 @@ export default function Checkin() {
         .eq('work_date', workDateStr),
       supabase.from('shift_schedules').select('*').eq('work_date', workDateStr),
       supabase.from('shift_overrides').select('*').eq('work_date', workDateStr),
-      supabase.from('production_lines').select('id, name, section').order('section').order('name'),
+      supabase.from('production_lines').select('id, name, section, parent_line_name').order('section').order('name'),
       supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name'),
       supabase.from('shift_merge_events').select('*').lte('start_date', workDateStr).gte('end_date', workDateStr),
       shiftInfo.shift === 'night'
@@ -164,6 +166,14 @@ export default function Checkin() {
         : Promise.resolve({ data: [] }),
     ]);
     setLines(lineData || []);
+    const pcm = {};
+    (lineData || []).forEach(l => {
+      if (l.parent_line_name) {
+        if (!pcm[l.parent_line_name]) pcm[l.parent_line_name] = [];
+        pcm[l.parent_line_name].push(l.name);
+      }
+    });
+    setParentChildrenMap(pcm);
     setOrgSections((orgNodeData || []).map(n => n.code || n.name).sort());
     setTaskTypes(taskTypeData || []);
 
@@ -452,17 +462,33 @@ export default function Checkin() {
         const lineStartTime = !isNight ? '08:00' : (lineHasOtNight ? '20:00' : '22:30');
         if (lineHasOtNight) anyOtNight = true;
 
-        const { data: exist } = await supabaseDR
-          .from('production_sessions').select('id')
-          .eq('work_date', workDateStr).eq('line_name', ln.name).eq('shift', shiftInfo.shift)
-          .maybeSingle();
-        if (!exist) {
-          linesToAsk.push({ line: ln, startTime: lineStartTime, hasOtNight: lineHasOtNight });
+        const children = parentChildrenMap[ln.name];
+        if (children?.length) {
+          // Parent line (e.g. HYDROFORM) — expand to sub-machines, let leader pick
+          for (const childName of children) {
+            const { data: exist } = await supabaseDR
+              .from('production_sessions').select('id')
+              .eq('work_date', workDateStr).eq('line_name', childName).eq('shift', shiftInfo.shift)
+              .maybeSingle();
+            if (!exist) {
+              const childLine = lines.find(l => l.name === childName);
+              if (childLine) linesToAsk.push({ line: childLine, startTime: lineStartTime, hasOtNight: lineHasOtNight, parentName: ln.name });
+            }
+          }
+        } else {
+          const { data: exist } = await supabaseDR
+            .from('production_sessions').select('id')
+            .eq('work_date', workDateStr).eq('line_name', ln.name).eq('shift', shiftInfo.shift)
+            .maybeSingle();
+          if (!exist) {
+            linesToAsk.push({ line: ln, startTime: lineStartTime, hasOtNight: lineHasOtNight });
+          }
         }
       }
 
       // ถ้ามีไลน์ที่ยังไม่เปิดกะ → ขึ้น Modal ถาม
       if (linesToAsk.length > 0) {
+        setSubLineSelections(Object.fromEntries(linesToAsk.map(({ line }) => [line.name, true])));
         setOpenShiftModal({
           lines: linesToAsk,
           workDateStr,
@@ -507,8 +533,10 @@ export default function Checkin() {
   /* ── เปิดกะ Daily Report จาก Modal ยืนยัน ── */
   const handleConfirmOpenShift = async () => {
     if (!openShiftModal) return;
+    const toOpen = openShiftModal.lines.filter(({ line }) => subLineSelections[line.name] !== false);
+    if (!toOpen.length) { toast.info('ไม่ได้เลือกไลน์ไหนเพื่อเปิดกะ'); setOpenShiftModal(null); setSubLineSelections({}); return; }
     try {
-      for (const { line, startTime, hasOtNight } of openShiftModal.lines) {
+      for (const { line, startTime, hasOtNight } of toOpen) {
         await supabaseDR.from('production_sessions').insert({
           work_date:       openShiftModal.workDateStr,
           line_name:       line.name,
@@ -519,11 +547,12 @@ export default function Checkin() {
           notes:           hasOtNight ? 'OT กะดึก (เปิดจากเช็คชื่อ)' : null,
         });
       }
-      toast.success(`เปิดกะ ${openShiftModal.lines.map(l => l.line.name).join(', ')} สำเร็จ`);
+      toast.success(`เปิดกะ ${toOpen.map(l => l.line.name).join(', ')} สำเร็จ`);
     } catch (e) {
       toast.error('เปิดกะไม่สำเร็จ: ' + e.message);
     } finally {
       setOpenShiftModal(null);
+      setSubLineSelections({});
     }
   };
 
@@ -714,20 +743,39 @@ export default function Checkin() {
             <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 18 }}>
               บันทึกเช็คชื่อสำเร็จแล้ว — ต้องการเปิดกะเพื่อลงข้อมูลการผลิตด้วยหรือไม่?
             </div>
-            <div style={{ background: 'var(--bg2)', borderRadius: 8, padding: '10px 14px', marginBottom: 20 }}>
-              {openShiftModal.lines.map(({ line, startTime }) => (
-                <div key={line.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: '1px solid var(--border)' }}>
-                  <span style={{ fontSize: 13, color: 'var(--accent)', fontWeight: 700 }}>▶</span>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{line.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{openShiftModal.shiftLabel} · เริ่ม {startTime}</div>
+            <div style={{ background: 'var(--bg2)', borderRadius: 8, padding: '10px 14px', marginBottom: 20, maxHeight: 260, overflowY: 'auto' }}>
+              {(() => {
+                const groups = {};
+                openShiftModal.lines.forEach(item => {
+                  const gKey = item.parentName || item.line.name;
+                  if (!groups[gKey]) groups[gKey] = { parentName: item.parentName, items: [] };
+                  groups[gKey].items.push(item);
+                });
+                return Object.entries(groups).map(([gKey, { parentName, items }]) => (
+                  <div key={gKey} style={{ marginBottom: 6 }}>
+                    {parentName && (
+                      <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', paddingBottom: 4, letterSpacing: '0.4px', textTransform: 'uppercase' }}>
+                        {parentName}
+                      </div>
+                    )}
+                    {items.map(({ line, startTime }) => (
+                      <div key={line.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0', borderBottom: '1px solid var(--border)', paddingLeft: parentName ? 8 : 0 }}>
+                        <input type="checkbox" checked={subLineSelections[line.name] !== false}
+                          onChange={e => setSubLineSelections(prev => ({ ...prev, [line.name]: e.target.checked }))}
+                          style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer', flexShrink: 0 }} />
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{line.name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{openShiftModal.shiftLabel} · เริ่ม {startTime}</div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              ))}
+                ));
+              })()}
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button
-                onClick={() => setOpenShiftModal(null)}
+                onClick={() => { setOpenShiftModal(null); setSubLineSelections({}); }}
                 style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
                 ข้าม
               </button>

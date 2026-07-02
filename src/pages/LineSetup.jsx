@@ -29,6 +29,7 @@ export default function LineSetup() {
   const [selectedLine, setSelectedLine] = useState('');
   const [newLineName, setNewLineName] = useState('');
   const [newLineSection, setNewLineSection] = useState('');
+  const [newLineParent, setNewLineParent] = useState('');
   const [isAddingLine, setIsAddingLine] = useState(false);
   const [layoutImage, setLayoutImage] = useState(null);
   const [stations, setStations] = useState([]);
@@ -94,7 +95,7 @@ export default function LineSetup() {
   const skillAllowanceTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
 
   const fetchLines = async () => {
-    const { data } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name').order('name');
+    const { data } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name').order('name');
     setLines(data || []);
     if (data?.length > 0 && !selectedLine) setSelectedLine(data[0].name);
   };
@@ -173,15 +174,21 @@ export default function LineSetup() {
     setMpSaving(false);
   };
 
+  const handleUpdateParent = async (line, parentName) => {
+    await supabase.from('production_lines').update({ parent_line_name: parentName || null }).eq('id', line.id);
+    await fetchLines();
+  };
+
   const handleAddLine = async () => {
     const name = newLineName.trim();
     if (!name) return;
     setIsAddingLine(true);
-    const { error } = await supabase.from('production_lines').insert([{ name, section: newLineSection || null }]);
+    const { error } = await supabase.from('production_lines').insert([{ name, section: newLineSection || null, parent_line_name: newLineParent || null }]);
     if (error) { alert('Error: ' + error.message); }
     else {
       setNewLineName('');
       setNewLineSection('');
+      setNewLineParent('');
       await fetchLines();
       setSelectedLine(name);
     }
@@ -189,7 +196,13 @@ export default function LineSetup() {
   };
 
   const handleDeleteLine = async (line) => {
-    if (!window.confirm(`ลบไลน์ "${line.name}" ?\n\nจุดงานและผังไลน์ทั้งหมดในไลน์นี้จะถูกลบด้วย`)) return;
+    const childCount = lines.filter(l => l.parent_line_name === line.name).length;
+    const warn = childCount > 0 ? `\n\nไลน์นี้เป็นไลน์หลักของ ${childCount} ไลน์ลูก — ลูกจะถูกเปลี่ยนเป็น standalone อัตโนมัติ` : '';
+    if (!window.confirm(`ลบไลน์ "${line.name}" ?\n\nจุดงานและผังไลน์ทั้งหมดในไลน์นี้จะถูกลบด้วย${warn}`)) return;
+    // Clear parent ref from children first
+    if (childCount > 0) {
+      await supabase.from('production_lines').update({ parent_line_name: null }).eq('parent_line_name', line.name);
+    }
     await supabase.from('workstations').delete().eq('line_name', line.name);
     await supabase.from('line_layouts').delete().eq('line_name', line.name);
     await supabase.from('employees').update({ line_id: null }).eq('line_id', line.id);
@@ -780,41 +793,72 @@ export default function LineSetup() {
             <span style={labelSt}>ไลน์ผลิต ({lines.length})</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
-            {lines.map(l => (
-              <div key={l.id}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-                  background: selectedLine === l.name ? 'var(--accent-dim)' : 'var(--bg2)',
-                  border: `1px solid ${selectedLine === l.name ? 'var(--accent)' : 'var(--border)'}`,
-                  transition: 'background 0.15s, border-color 0.15s',
-                }}
-                onClick={() => { setSelectedLine(l.name); setTempPos(null); setFormData({ id: null, name: '', requirements: {} }); }}
-              >
+            {(() => {
+              // Build ordered display: parents first, their children indented below
+              const parentLines = lines.filter(l => !l.parent_line_name);
+              const childLines  = lines.filter(l => l.parent_line_name);
+              const orphans     = childLines.filter(c => !lines.find(p => p.name === c.parent_line_name));
+              const ordered = [];
+              parentLines.forEach(p => {
+                ordered.push({ ...p, _isParent: childLines.some(c => c.parent_line_name === p.name) });
+                childLines.filter(c => c.parent_line_name === p.name).forEach(c => ordered.push({ ...c, _isChild: true }));
+              });
+              orphans.forEach(c => ordered.push({ ...c, _isChild: true, _orphan: true }));
+              return ordered.map(l => (
+                <div key={l.id}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '7px 10px', borderRadius: 8, cursor: 'pointer',
+                    marginLeft: l._isChild ? 12 : 0,
+                    background: selectedLine === l.name ? 'var(--accent-dim)' : l._isChild ? 'var(--bg3)' : 'var(--bg2)',
+                    border: `1px solid ${selectedLine === l.name ? 'var(--accent)' : l._isChild ? 'var(--border)' : 'var(--border)'}`,
+                    transition: 'background 0.15s, border-color 0.15s',
+                  }}
+                  onClick={() => { setSelectedLine(l.name); setTempPos(null); setFormData({ id: null, name: '', requirements: {} }); }}
+                >
+                  {l._isChild && <span style={{ fontSize: 10, color: 'var(--muted)', flexShrink: 0 }}>└</span>}
+                  {l._isParent && <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>▼</span>}
                   <span style={{ fontSize: 13, flex: 1, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {l.name}
+                    {l._orphan && <span style={{ fontSize: 9, color: '#ef4444', marginLeft: 4 }}>!parent missing</span>}
                   </span>
                   <select
                     value={l.section || ''}
                     onClick={e => e.stopPropagation()}
                     onChange={e => { e.stopPropagation(); handleUpdateSection(l, e.target.value); }}
-                    style={{ fontSize: 11, padding: '2px 4px', borderRadius: 5, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', width: 'auto', flexShrink: 0 }}
+                    style={{ fontSize: 10, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0, maxWidth: 64 }}
                   >
                     <option value="">Section</option>
                     {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
+                  {/* Parent line selector — can't assign parent to a line that already has children */}
+                  {!l._isParent && (
+                    <select
+                      value={l.parent_line_name || ''}
+                      onClick={e => e.stopPropagation()}
+                      onChange={e => { e.stopPropagation(); handleUpdateParent(l, e.target.value); }}
+                      title="ไลน์หลัก (parent)"
+                      style={{ fontSize: 10, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: l.parent_line_name ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', flexShrink: 0, maxWidth: 72 }}
+                    >
+                      <option value="">ไม่มีหลัก</option>
+                      {lines.filter(p => p.name !== l.name && !p.parent_line_name).map(p => (
+                        <option key={p.id} value={p.name}>{p.name}</option>
+                      ))}
+                    </select>
+                  )}
                   <button onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
                     style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
                     title="ลบไลน์">🗑️</button>
-              </div>
-            ))}
+                </div>
+              ));
+            })()}
             {lines.length === 0 && (
               <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีไลน์ผลิต</div>
             )}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ display: 'flex', gap: 6 }}>
-              <input placeholder="ชื่อไลน์ใหม่ เช่น ไลน์ F" value={newLineName}
+              <input placeholder="ชื่อไลน์ใหม่ เช่น HDF3" value={newLineName}
                 onChange={e => setNewLineName(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleAddLine()}
                 style={{ flex: 1, fontSize: 13, padding: '8px 10px' }} />
@@ -824,6 +868,13 @@ export default function LineSetup() {
                 {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
+            <select value={newLineParent} onChange={e => setNewLineParent(e.target.value)}
+              style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: newLineParent ? 'var(--accent)' : 'var(--text2)' }}>
+              <option value="">ไม่มีไลน์หลัก (standalone)</option>
+              {lines.filter(l => !l.parent_line_name).map(l => (
+                <option key={l.id} value={l.name}>ลูกของ {l.name}</option>
+              ))}
+            </select>
             <button onClick={handleAddLine} disabled={isAddingLine || !newLineName.trim()}
               style={{ padding: '8px 12px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13 }}>
               {isAddingLine ? '...' : '+ เพิ่มไลน์'}
