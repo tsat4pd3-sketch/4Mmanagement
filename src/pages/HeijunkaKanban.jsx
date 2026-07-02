@@ -821,12 +821,189 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, on
   );
 }
 
+/* ─── Unified Store Board — ตู้ Kanban รวมของทุกสโตร์ ─────────────────────────
+   หน้างานจริงมีหลายสโตร์แยกกัน แต่ละสโตร์มี "ของ" และ "ปลายทาง" ต่างกัน:
+   🏭 Store FG (parent 100) → ไลน์ประกอบ · 🔧 Store Child (200/300) → Production Child
+   🧱 Store Raw (500) → Production Child · 📦 Rack Center (ภาชนะ+packaging) → ทุกไลน์
+   ทุกสโตร์ใช้การ์ดหน้าตาเดียวกัน: สถานะ → ปลายทาง → ปุ่มขยับสถานะ ────────────── */
+const STORE_TABS = [
+  { key: 'fg',    icon: '🏭', label: 'Store FG',        desc: 'พาร์ทแม่ (100) → ไลน์ประกอบ' },
+  { key: 'child', icon: '🔧', label: 'Store Child',     desc: 'พาร์ทย่อย (200/300) → Production Child' },
+  { key: 'raw',   icon: '🧱', label: 'Store Raw Mat',   desc: 'วัตถุดิบ (500) → Production Child' },
+  { key: 'rack',  icon: '📦', label: 'Rack Center',     desc: 'ภาชนะ + Packaging → ทุกไลน์' },
+];
+function QueueCard({ code, name, qty, unit, destination, statusLabel, statusColor, statusBg, statusBorder, actionLabel, onAction, busy, meta }) {
+  return (
+    <div style={{ background: statusBg, border: `1px solid ${statusBorder}`, borderRadius: 12, overflow: 'hidden' }}>
+      <div style={{ height: 4, background: statusColor }} />
+      <div style={{ padding: '10px 14px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontFamily: 'monospace', fontWeight: 800, color: matColor(code), fontSize: 13 }}>{code}</span>
+          <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: statusColor }}>{statusLabel}</span>
+        </div>
+        {name && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{name}</div>}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 8 }}>
+          <span style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)' }}>{qty} <span style={{ fontSize: 11, color: 'var(--muted)' }}>{unit || ''}</span></span>
+          {destination && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>➜ {destination}</span>}
+        </div>
+        {meta && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>{meta}</div>}
+        {actionLabel && (
+          <button onClick={onAction} disabled={busy}
+            style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(0,0,0,0.12)', color: statusColor, border: `1px solid ${statusBorder}`, fontFamily: 'var(--font-body)' }}>
+            {busy ? '...' : actionLabel}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+const RACK_STATUS = {
+  requested: { label: '🔔 เรียกแล้ว', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)', next: '🔧 เริ่มเตรียม' },
+  preparing: { label: '🔧 กำลังเตรียม', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', border: 'rgba(14,165,233,0.3)', next: '🚚 จัดส่งแล้ว' },
+  delivered: { label: '🚚 จัดส่งแล้ว', color: '#a855f7', bg: 'rgba(168,85,247,0.1)', border: 'rgba(168,85,247,0.3)', next: '✅ ยืนยันรับ' },
+  received:  { label: '✅ รับแล้ว', color: '#22c55e', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.3)', next: null },
+};
+function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, kanbanStd, onConfirm, confirming, onReceive,
+  lotRequests, rawRequests, rackRequests, pkgRequests, busy, onAdvanceLot, onIssueRaw, onAdvanceRack, onIssuePkg, fmt }) {
+
+  const confirmedSet = useMemo(() => { const s = new Set(); deliveries.forEach(d => s.add(`${d.line_name}|${d.shift}|${d.round_no}`)); return s; }, [deliveries]);
+  const receivedMap  = useMemo(() => { const m = {}; deliveries.forEach(d => { m[`${d.line_name}|${d.shift}|${d.round_no}`] = d; }); return m; }, [deliveries]);
+  const demandByLine = useMemo(() => {
+    const lineToColIds = {};
+    view.cols.forEach(c => { (lineToColIds[c.line] = lineToColIds[c.line] || []).push(c.id); });
+    const res = {};
+    Object.keys(lineToColIds).forEach(lineName => {
+      const colIdSet = new Set(lineToColIds[lineName]);
+      const partsForLine = view.rowList.filter(r => Object.entries(r.perCol).some(([cid, v]) => colIdSet.has(cid) && v > 0));
+      const totalKanban = partsForLine.reduce((s, r) => { const per = kanbanStd[r.mat_no]; return s + (per ? Math.ceil(r.netTotal / per) : 0); }, 0);
+      res[lineName] = { parts: partsForLine, totalKanban };
+    });
+    return res;
+  }, [view.cols, view.rowList, kanbanStd]);
+
+  const counts = {
+    fg: rounds.filter(r => !confirmedSet.has(`${r.line_name}|${r.shift}|${r.round_no}`)).length,
+    child: lotRequests.filter(l => l.status !== 'done').length,
+    raw: rawRequests.filter(r => r.status !== 'issued').length,
+    rack: rackRequests.filter(r => r.status !== 'received').length + pkgRequests.filter(p => p.status !== 'issued').length,
+  };
+
+  return (
+    <div style={{ padding: 16 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+        {STORE_TABS.map(t => (
+          <button key={t.key} onClick={() => setStore(t.key)} title={t.desc}
+            style={{ padding: '10px 16px', borderRadius: 10, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+              background: store === t.key ? 'var(--accent)' : 'var(--bg2)', color: store === t.key ? '#08130a' : 'var(--text2)',
+              border: `1px solid ${store === t.key ? 'var(--accent)' : 'var(--border)'}`, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, minWidth: 150 }}>
+            <span>{t.icon} {t.label} {counts[t.key] > 0 && <span style={{ opacity: 0.8 }}>({counts[t.key]})</span>}</span>
+            <span style={{ fontSize: 10, fontWeight: 500, opacity: 0.75 }}>{t.desc}</span>
+          </button>
+        ))}
+      </div>
+
+      {store === 'fg' && (
+        rounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีรอบจัดส่ง</div> :
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12 }}>
+          {rounds.map(r => {
+            const key = `${r.line_name}|${r.shift}|${r.round_no}`;
+            const status = getRoundStatus(r, confirmedSet, receivedMap);
+            const isConf = confirmedSet.has(key);
+            const isReceived = !!receivedMap[key]?.received_status;
+            const demand = demandByLine[r.line_name] || { parts: [], totalKanban: 0 };
+            const needAction = !isConf && (status.label === '⏳ กำลังเตรียม' || status.label === '🔴 ค้างส่ง');
+            return (
+              <QueueCard key={r.id} code={`รอบ ${r.round_no}`} name={r.line_name}
+                qty={demand.totalKanban} unit="การ์ด" destination={r.line_name}
+                statusLabel={status.label} statusColor={status.top} statusBg={status.bg} statusBorder={status.border}
+                actionLabel={needAction ? '✅ ยืนยันส่งแล้ว' : (isConf && !isReceived ? '✔️ รับครบ' : null)}
+                busy={confirming === r.id}
+                onAction={() => needAction ? onConfirm(r, demand.parts) : onReceive(r, demand.parts, 'full')}
+                meta={`ส่ง ${r.delivery_time?.slice(0,5) || '—'} · ตัดยอด ${r.cutoff_time?.slice(0,5) || '—'}`} />
+            );
+          })}
+        </div>
+      )}
+
+      {store === 'child' && (
+        lotRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบสั่งผลิตพาร์ทย่อย</div> :
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12 }}>
+          {lotRequests.map(lot => {
+            const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
+            return (
+              <QueueCard key={lot.id} code={lot.child_mat_no} name={lot.part_name}
+                qty={fmt(lot.lot_qty)} unit="ชิ้น/ล็อต" destination={lot.source_line || 'ของซื้อ'}
+                statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
+                actionLabel={st.nextLabel} busy={busy === lot.id} onAction={() => onAdvanceLot(lot, st.next)}
+                meta={lot.source_prod_no ? `จาก FG ${lot.source_prod_no}` : ''} />
+            );
+          })}
+        </div>
+      )}
+
+      {store === 'raw' && (
+        rawRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบเบิกวัตถุดิบ</div> :
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12 }}>
+          {rawRequests.map(r => {
+            const parentLot = lotRequests.find(l => l.id === r.lot_request_id);
+            const issued = r.status === 'issued';
+            return (
+              <QueueCard key={r.id} code={r.raw_mat_no} name={r.part_name}
+                qty={fmt(r.qty)} unit="" destination={parentLot?.source_line || '—'}
+                statusLabel={issued ? '✔ จ่ายแล้ว' : '🆕 รอจ่าย'} statusColor={issued ? '#22c55e' : '#f59e0b'}
+                statusBg={issued ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)'} statusBorder={issued ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}
+                actionLabel={issued ? null : 'จ่ายวัตถุดิบ'} busy={busy === r.id} onAction={() => onIssueRaw(r)}
+                meta={`สำหรับ ${r.lot_request_id ? parentLot?.child_mat_no || '' : ''}`} />
+            );
+          })}
+        </div>
+      )}
+
+      {store === 'rack' && (
+        <>
+          <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>🗃️ ภาชนะ (แร็ค/ถาด)</div>
+          {rackRequests.length === 0 ? <div style={{ padding: '10px 0 20px', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีการเรียกภาชนะ</div> : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12, marginBottom: 20 }}>
+              {rackRequests.map(r => {
+                const st = RACK_STATUS[r.status] || RACK_STATUS.requested;
+                return (
+                  <QueueCard key={r.id} code={r.container_type_id || 'ภาชนะ'} name={null}
+                    qty={r.qty} unit="ใบ" destination={r.line_name}
+                    statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
+                    actionLabel={st.next} busy={busy === r.id} onAction={() => onAdvanceRack(r)}
+                    meta={r.note || ''} />
+                );
+              })}
+            </div>
+          )}
+          <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>📦 Packaging (จากการผลิต)</div>
+          {pkgRequests.length === 0 ? <div style={{ padding: '10px 0', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบเบิก packaging</div> : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12 }}>
+              {pkgRequests.map(p => {
+                const issued = p.status === 'issued';
+                return (
+                  <QueueCard key={p.id} code={p.packaging_code} name={p.packaging_name}
+                    qty={p.qty} unit="" destination={p.source_line || '—'}
+                    statusLabel={issued ? '✔ จ่ายแล้ว' : '🆕 รอจ่าย'} statusColor={issued ? '#22c55e' : '#f59e0b'}
+                    statusBg={issued ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)'} statusBorder={issued ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}
+                    actionLabel={issued ? null : 'จ่าย Packaging'} busy={busy === p.id} onAction={() => onIssuePkg(p)}
+                    meta={[p.product_name, p.source_prod_no ? `FG ${p.source_prod_no}` : ''].filter(Boolean).join(' · ')} />
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function HeijunkaKanban() {
   const { fullName } = useContext(UserContext);
   const [workDate, setWorkDate]   = useState(getWorkDate());
   const [shiftFilter, setShiftFilter] = useState('all');
   const [matFilter, setMatFilter] = useState('');            // '' | '200' | '300' | '500' — กรอง view เดียวกันทั้งฝั่งผลิต/store
-  const [viewMode, setViewMode]   = useState('board');       // 'board' | 'cards' | 'table'
+  const [viewMode, setViewMode]   = useState('unified');     // 'unified' | 'board' | 'timeline' | 'pull' | 'cards' | 'table'
   const [loading, setLoading]     = useState(false);
   const [sessions, setSessions]   = useState([]);
   const [demands, setDemands]     = useState([]);
@@ -844,17 +1021,25 @@ export default function HeijunkaKanban() {
   const [accumulator, setAccumulator] = useState([]);
   const [lotSizeMap, setLotSizeMap]   = useState({});   // mat_no → lot_size
   const [pullBusy, setPullBusy]       = useState(null);
+  // ── ตู้ Kanban รวม: Rack Center (ภาชนะ + packaging) ──
+  const [rackRequests, setRackRequests] = useState([]);
+  const [pkgRequests, setPkgRequests]   = useState([]);
+  const [unifiedStore, setUnifiedStore] = useState('fg'); // 'fg' | 'child' | 'raw' | 'rack'
 
   const loadPull = useCallback(async () => {
-    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }] = await Promise.all([
+    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }, { data: racks }, { data: pkgs }] = await Promise.all([
       supabaseDR.from('child_lot_requests').select('*').order('created_at', { ascending: false }).limit(200),
       supabaseDR.from('raw_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(400),
       supabaseDR.from('child_demand_accumulator').select('*').gt('pending_qty', 0).order('pending_qty', { ascending: false }),
       supabaseDR.from('kanban_standards').select('mat_no, lot_size').eq('is_active', true),
+      supabaseDR.from('rack_requests').select('*').order('requested_at', { ascending: false }).limit(200),
+      supabaseDR.from('packaging_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(200),
     ]);
     setLotRequests(lots || []);
     setRawRequests(raws || []);
     setAccumulator(acc || []);
+    setRackRequests(racks || []);
+    setPkgRequests(pkgs || []);
     const lm = {};
     (ks || []).forEach(s => { if (s.lot_size != null) lm[s.mat_no] = s.lot_size; });
     setLotSizeMap(lm);
@@ -916,6 +1101,34 @@ export default function HeijunkaKanban() {
       const { error } = await supabaseDR.from('raw_withdrawal_requests').update({ status: 'issued' }).eq('id', raw.id);
       if (error) throw error;
       toast.success(`จ่ายวัตถุดิบ ${raw.raw_mat_no} แล้ว`);
+      await loadPull();
+    } catch (err) { toast.error(err.message); }
+    setPullBusy(null);
+  };
+
+  const advanceRack = async (r) => {
+    const next = { requested: 'preparing', preparing: 'delivered', delivered: 'received' }[r.status];
+    if (!next) return;
+    setPullBusy(r.id);
+    try {
+      const payload = { status: next };
+      if (next === 'preparing') { payload.prepared_by = fullName; payload.prepared_at = new Date().toISOString(); }
+      if (next === 'delivered') { payload.delivered_by = fullName; payload.delivered_at = new Date().toISOString(); }
+      if (next === 'received')  { payload.received_by  = fullName; payload.received_at  = new Date().toISOString(); }
+      const { error } = await supabaseDR.from('rack_requests').update(payload).eq('id', r.id);
+      if (error) throw error;
+      toast.success(`อัปเดตภาชนะ → ${next}`);
+      await loadPull();
+    } catch (err) { toast.error(err.message); }
+    setPullBusy(null);
+  };
+
+  const issuePkg = async (p) => {
+    setPullBusy(p.id);
+    try {
+      const { error } = await supabaseDR.from('packaging_withdrawal_requests').update({ status: 'issued' }).eq('id', p.id);
+      if (error) throw error;
+      toast.success(`จ่าย packaging ${p.packaging_code} แล้ว`);
       await loadPull();
     } catch (err) { toast.error(err.message); }
     setPullBusy(null);
@@ -1232,7 +1445,7 @@ export default function HeijunkaKanban() {
 
       {/* View mode toggle */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-        {[{ id: 'board', label: '🏪 Store Board' }, { id: 'timeline', label: '📊 Heijunka Board' }, { id: 'pull', label: '🔄 Pull / ใบสั่งผลิต' }, { id: 'cards', label: '🎴 การ์ด' }, { id: 'table', label: '📋 ตาราง' }].map(v => (
+        {[{ id: 'unified', label: '🗄️ ตู้ Kanban รวม' }, { id: 'board', label: '🏪 Store Board' }, { id: 'timeline', label: '📊 Heijunka Board' }, { id: 'pull', label: '🔄 Pull / ใบสั่งผลิต' }, { id: 'cards', label: '🎴 การ์ด' }, { id: 'table', label: '📋 ตาราง' }].map(v => (
           <button key={v.id} onClick={() => setViewMode(v.id)} style={{
             padding: '7px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
             background: viewMode === v.id ? 'var(--accent)' : 'var(--bg2)',
@@ -1247,6 +1460,15 @@ export default function HeijunkaKanban() {
       <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
+        ) : viewMode === 'unified' ? (
+          <UnifiedStoreBoard
+            store={unifiedStore} setStore={setUnifiedStore}
+            rounds={rounds} deliveries={deliveries} view={view} kanbanStd={kanbanStd}
+            onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
+            lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests}
+            busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} onAdvanceRack={advanceRack} onIssuePkg={issuePkg}
+            fmt={fmt}
+          />
         ) : viewMode === 'board' ? (
           <StoreBoardView
             rounds={rounds} deliveries={deliveries} view={view}
@@ -1331,7 +1553,7 @@ export default function HeijunkaKanban() {
       </div>
 
       {/* Delivery Rounds Panel — only for cards/table view, board has it built-in */}
-      {viewMode !== 'board' && viewMode !== 'pull' && (
+      {viewMode !== 'board' && viewMode !== 'pull' && viewMode !== 'unified' && (
         <DeliveryRoundsPanel rounds={rounds} deliveries={deliveries} onConfirm={confirmRound} confirming={confirming}
           onReceive={openReceive} demandByLine={demandByLine} />
       )}
