@@ -32,6 +32,7 @@ export default function LineSetup() {
   const [newLineParent, setNewLineParent] = useState('');
   const [isAddingLine, setIsAddingLine] = useState(false);
   const [layoutImage, setLayoutImage] = useState(null);
+  const [usingParentLayout, setUsingParentLayout] = useState(false); // true = ยืมรูปผังจากไลน์หลักมาแสดง (ยังไม่มีรูปของตัวเอง)
   const [stations, setStations] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [tempPos, setTempPos] = useState(null);
@@ -113,8 +114,21 @@ export default function LineSetup() {
   }, [selectedLine]);
 
   const fetchLineData = async () => {
-    const { data: layoutData } = await supabase.from('line_layouts').select('*').eq('line_name', selectedLine).single();
-    setLayoutImage(layoutData?.image_url || null);
+    const lineObj0 = lines.find(l => l.name === selectedLine);
+    const { data: layoutData } = await supabase.from('line_layouts').select('*').eq('line_name', selectedLine).maybeSingle();
+    if (layoutData?.image_url) {
+      setLayoutImage(layoutData.image_url);
+      setUsingParentLayout(false);
+    } else if (lineObj0?.parent_line_name) {
+      // ไลน์ย่อย (เช่น HDF1) ไม่มีรูปผังของตัวเอง — ใช้รูปเดียวกับไลน์หลัก (HYDROFORM) แทน
+      // เพราะจริงๆ อยู่พื้นที่เดียวกันในโรงงาน ไม่ต้องอัปโหลดรูปซ้ำ
+      const { data: parentLayout } = await supabase.from('line_layouts').select('image_url').eq('line_name', lineObj0.parent_line_name).maybeSingle();
+      setLayoutImage(parentLayout?.image_url || null);
+      setUsingParentLayout(!!parentLayout?.image_url);
+    } else {
+      setLayoutImage(null);
+      setUsingParentLayout(false);
+    }
     const { data: stationData } = await supabase.from('workstations').select('*, station_requirements(*)').eq('line_name', selectedLine);
     setStations(stationData || []);
     const { data: wipData } = await supabase.from('wip_buffer_points').select('*').eq('line_name', selectedLine).order('point_name');
@@ -237,6 +251,7 @@ export default function LineSetup() {
       const { data } = supabase.storage.from('employee-photos').getPublicUrl(`layouts/${fileName}`);
       await supabase.from('line_layouts').upsert({ line_name: selectedLine, image_url: data.publicUrl }, { onConflict: 'line_name' });
       setLayoutImage(data.publicUrl);
+      setUsingParentLayout(false);
     } catch (error) { alert('Error: ' + error.message); }
     finally { setIsUploading(false); }
   };
@@ -619,6 +634,16 @@ export default function LineSetup() {
                   whiteSpace: 'nowrap', pointerEvents: 'none',
                 }}>
                   {collisionWarn}
+                </div>
+              )}
+              {usingParentLayout && (
+                <div style={{
+                  position: 'absolute', top: 8, left: 8,
+                  background: 'rgba(77,159,255,0.92)', color: '#fff',
+                  padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                  zIndex: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.3)', pointerEvents: 'none',
+                }}>
+                  🔗 ใช้รูปผังจากไลน์หลัก — อัปโหลดรูปใหม่เพื่อแยกเป็นของตัวเอง
                 </div>
               )}
               <img

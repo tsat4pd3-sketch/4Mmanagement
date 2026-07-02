@@ -1537,8 +1537,7 @@ function FourMTab() {
 
       {/* Image viewer modal */}
       {imageViewModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          onClick={() => setImageViewModal(null)}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 13, color: '#fff', marginBottom: 8, fontWeight: 600 }}>{imageViewModal.title}</div>
             <img src={imageViewModal.url} style={{ maxWidth: '88vw', maxHeight: '80vh', borderRadius: 10, objectFit: 'contain', display: 'block' }} />
@@ -1915,7 +1914,7 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
       position: 'fixed', inset: 0, zIndex: 2100,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)',
-    }} onClick={onClose}>
+    }}>
       <div onClick={e => e.stopPropagation()} style={{
         width: 'min(460px, 94vw)',
         background: 'var(--bg2)',

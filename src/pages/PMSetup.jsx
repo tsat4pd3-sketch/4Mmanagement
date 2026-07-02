@@ -106,7 +106,7 @@ const S = {
   },
   modal: {
     background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 12,
-    width: '100%', maxWidth: 640, maxHeight: '92vh', display: 'flex', flexDirection: 'column',
+    width: '100%', maxWidth: 680, maxHeight: '92vh', display: 'flex', flexDirection: 'column',
     boxShadow: 'var(--shadow-lg)',
   },
   modalHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 24px', borderBottom: '1px solid var(--border)' },
@@ -420,9 +420,10 @@ function EquipmentModal({ onClose, onSaved, editJig, department }) {
   const pinnedCount = checkpoints.filter(c => c.x_pos != null).length
 
   return (
-    <div style={S.overlay} onClick={onClose}>
+    <div style={S.overlay}>
       <motion.div style={S.modal} onClick={e => e.stopPropagation()}
         initial={{ opacity: 0, scale: 0.96, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 16 }} transition={{ duration: 0.18 }}>
+        {/* Header */}
         <div style={S.modalHead}>
           <div>
             <h2 style={S.modalTitle}>{isEdit ? 'แก้ไขอุปกรณ์' : 'เพิ่มอุปกรณ์ใหม่'}</h2>

@@ -152,7 +152,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
       background: 'rgba(0,0,0,0.65)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       padding: '16px',
-    }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    }}>
       <div style={{
         width: 'min(480px, 100%)',
         background: 'var(--card)',

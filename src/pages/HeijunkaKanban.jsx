@@ -1626,7 +1626,7 @@ function ReceiveModal({ round, parts, mode, fmt, saving, onCancel, onSubmit }) {
   const [actual, setActual] = useState(() => Object.fromEntries(netParts.map(p => [p.mat_no, p.netTotal])));
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onCancel}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(440px,100%)', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>
           {mode === 'full' ? '✔️ ยืนยันรับของครบ' : '⚠️ บันทึกรับของไม่ครบ'}
