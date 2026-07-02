@@ -249,17 +249,10 @@ export default function MachineDatabase() {
                   </button>
                 </div>
               </Field>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="ลำดับ">
-                  <input type="number" min="0" value={editing.sort_order} onChange={e => setEditing(f => ({ ...f, sort_order: e.target.value }))} style={inputStyle} />
-                </Field>
-                <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={editing.is_active} onChange={e => setEditing(f => ({ ...f, is_active: e.target.checked }))} />
-                    <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
-                  </label>
-                </div>
-              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input type="checkbox" checked={editing.is_active} onChange={e => setEditing(f => ({ ...f, is_active: e.target.checked }))} />
+                <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
+              </label>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
               <button onClick={() => setEditing(null)} style={cancelBtnStyle}>ยกเลิก</button>
