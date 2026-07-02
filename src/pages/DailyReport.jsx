@@ -4132,12 +4132,11 @@ function ExportTab() {
    SETUP TAB
 ═══════════════════════════════════════════════════════════════ */
 function SetupTab({ role }) {
-  const [subTab, setSubTab] = useState('machines');
+  const [subTab, setSubTab] = useState('downtime');
   return (
     <div>
       <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 20, width: 'fit-content', flexWrap: 'wrap' }}>
         {[
-          { key: 'machines',  label: '⚙️ เครื่องจักร' },
           { key: 'downtime',  label: '⏱ ประเภท Downtime' },
           { key: 'defects',   label: '🔴 ประเภทงานเสีย' },
           { key: 'breaks',    label: '☕ นโยบายหยุดพัก' },
@@ -4150,172 +4149,12 @@ function SetupTab({ role }) {
           </button>
         ))}
       </div>
-      {subTab === 'machines' && <MachineSetup role={role} />}
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
+        ⚙️ การเพิ่ม/แก้ไขเครื่องจักรของไลน์ ย้ายไปอยู่ที่หน้า <b>ตั้งค่าผังไลน์ → เครื่องจักร</b> แล้ว
+      </div>
       {subTab === 'downtime' && <DowntimeTypeSetup role={role} />}
       {subTab === 'defects'  && <DefectTypeSetup role={role} />}
       {subTab === 'breaks'   && <BreakPolicySetup role={role} />}
-    </div>
-  );
-}
-
-/* ── Machine Setup ── */
-function MachineSetup({ role }) {
-  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
-  const [items, setItems]     = useState([]);
-  const [lines, setLines]     = useState([]);
-  const [editing, setEditing] = useState(null);
-  const [saving, setSaving]   = useState(false);
-  const [filterLine, setFilterLine] = useState('');
-  const emptyForm = { line_name: '', machine_no: '', machine_name: '', process_type: 'welding_assembly', sort_order: 0, is_active: true };
-  const [form, setForm]       = useState(emptyForm);
-
-  const load = useCallback(async () => {
-    const [{ data: mc }, { data: ln }] = await Promise.all([
-      supabaseDR.from('machines').select('*').order('line_name').order('sort_order'),
-      supabase.from('production_lines').select('name').order('name'),
-    ]);
-    setItems(mc || []);
-    setLines((ln || []).map(l => l.name));
-  }, []);
-  useEffect(() => { load(); }, [load]);
-
-  const openEdit = (item = null) => {
-    setEditing(item?.id || 'new');
-    setForm(item
-      ? { line_name: item.line_name, machine_no: item.machine_no, machine_name: item.machine_name || '', process_type: item.process_type, sort_order: item.sort_order, is_active: item.is_active }
-      : { ...emptyForm, line_name: filterLine || '', sort_order: items.length + 1 });
-  };
-
-  const handleSave = async () => {
-    if (!form.line_name) { toast.error('เลือกไลน์'); return; }
-    if (!form.machine_no) { toast.error('กรอกหมายเลขเครื่อง'); return; }
-    setSaving(true);
-    const payload = { ...form, machine_no: form.machine_no.trim().toUpperCase(), sort_order: parseInt(form.sort_order) || 0, updated_at: new Date().toISOString() };
-    const { error } = editing === 'new'
-      ? await supabaseDR.from('machines').insert(payload)
-      : await supabaseDR.from('machines').update(payload).eq('id', editing);
-    setSaving(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success('บันทึกสำเร็จ');
-    setEditing(null);
-    load();
-  };
-
-  const handleDelete = async (id) => {
-    if (!window.confirm('ลบเครื่องจักรนี้?')) return;
-    const { error } = await supabaseDR.from('machines').delete().eq('id', id);
-    if (error) { toast.error(error.message); return; }
-    load();
-  };
-
-  const PROC_LABEL = { welding_assembly: '🔥 Welding/Assembly', metal_forming: '⚙ Metal Forming', common: '🔗 ทุกกระบวนการ' };
-
-  // Group by line
-  const displayLines = filterLine ? [filterLine] : [...new Set(items.map(i => i.line_name))];
-  const filteredItems = filterLine ? items.filter(i => i.line_name === filterLine) : items;
-
-  return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1, flexWrap: 'wrap' }}>
-          <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ ...inputStyle, maxWidth: 200 }}>
-            <option value="">— ทุกไลน์ —</option>
-            {lines.map(l => <option key={l} value={l}>{l}</option>)}
-          </select>
-          <div style={{ fontSize: 13, color: 'var(--muted)' }}>{filteredItems.length} เครื่อง</div>
-        </div>
-        {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มเครื่องจักร</button>}
-      </div>
-
-      {displayLines.length === 0 && (
-        <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีข้อมูลเครื่องจักร</div>
-      )}
-
-      {displayLines.map(lineName => {
-        const lineItems = items.filter(i => i.line_name === lineName);
-        return (
-          <div key={lineName} style={{ marginBottom: 20, border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-            <div style={{ padding: '10px 16px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>⚙️ {lineName}</span>
-              <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>{lineItems.length} เครื่อง</span>
-              {canEdit && !filterLine && (
-                <button onClick={() => { setFilterLine(lineName); openEdit({ line_name: lineName, machine_no: '', machine_name: '', process_type: 'welding_assembly', sort_order: lineItems.length + 1, is_active: true }); }}
-                  style={{ background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 5, padding: '3px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                  + เพิ่ม
-                </button>
-              )}
-            </div>
-            <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {lineItems.map(item => (
-                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, opacity: item.is_active ? 1 : 0.5 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 14, fontWeight: 800, fontFamily: 'monospace', color: 'var(--text)' }}>{item.machine_no}</span>
-                      {item.machine_name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{item.machine_name}</span>}
-                      <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, background: 'rgba(99,102,241,0.12)', color: '#a78bfa', fontWeight: 700 }}>{PROC_LABEL[item.process_type]}</span>
-                      {!item.is_active && <span style={{ fontSize: 10, color: '#ef4444' }}>(ปิดใช้)</span>}
-                    </div>
-                  </div>
-                  {canEdit && (
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                      <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-
-      {editing && (
-        <div className="overlay" style={{ zIndex: 2000 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,420px)' }}>
-            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>
-              {editing === 'new' ? '+ เพิ่มเครื่องจักร' : 'แก้ไขเครื่องจักร'}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <Field label="ไลน์การผลิต *">
-                <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inputStyle}>
-                  <option value="">— เลือกไลน์ —</option>
-                  {lines.map(l => <option key={l} value={l}>{l}</option>)}
-                </select>
-              </Field>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="หมายเลขเครื่อง *">
-                  <input autoFocus value={form.machine_no} onChange={e => setForm(f => ({ ...f, machine_no: e.target.value.toUpperCase() }))} placeholder="เช่น MC-01" style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700 }} />
-                </Field>
-                <Field label="ชื่อเครื่อง / รุ่น">
-                  <input value={form.machine_name} onChange={e => setForm(f => ({ ...f, machine_name: e.target.value }))} placeholder="เช่น CO2 Welder" style={inputStyle} />
-                </Field>
-              </div>
-              <Field label="ประเภทกระบวนการ">
-                <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inputStyle}>
-                  <option value="welding_assembly">🔥 Welding / Assembly</option>
-                  <option value="metal_forming">⚙ Metal Forming</option>
-                  <option value="common">🔗 ทั่วไป</option>
-                </select>
-              </Field>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="ลำดับ">
-                  <input type="number" min="0" value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: e.target.value }))} style={inputStyle} />
-                </Field>
-                <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
-                    <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
-                  </label>
-                </div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-              <button onClick={() => setEditing(null)} style={cancelBtnStyle}>ยกเลิก</button>
-              <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : 'บันทึก'}</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
