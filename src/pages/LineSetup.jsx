@@ -492,6 +492,22 @@ export default function LineSetup() {
     if (!error) fetchLineData();
   };
 
+  // เรียกเติมจุด WIP ที่ต่ำกว่า min — สร้างการ์ดคำขอเข้าคิว (ไปโผล่ที่ Heijunka Kanban → ตู้รวม → WIP Point)
+  const requestWipReplenish = async (p) => {
+    const { data: existing } = await supabase.from('wip_replenish_requests')
+      .select('id').eq('wip_point_id', p.id).in('status', ['pending', 'preparing']).limit(1);
+    if (existing?.length) { alert('มีคำขอเติมจุดนี้ค้างอยู่แล้ว รอเจ้าหน้าที่ดำเนินการ'); return; }
+    const qty = Math.max(0, (p.max_qty ?? 0) - (p.current_qty ?? 0)) || (p.min_qty ?? 0);
+    const { error } = await supabase.from('wip_replenish_requests').insert({
+      wip_point_id: p.id, line_name: selectedLine, point_name: p.point_name, point_type: p.point_type,
+      mat_no: p.mat_no || null, material_category: p.material_category || null,
+      packaging_type: p.packaging_type || null, packaging_no: p.packaging_no || null,
+      request_qty: qty || 1,
+    });
+    if (error) { alert(error.message); return; }
+    alert(`🔔 เรียกเติม "${p.point_name}" แล้ว — ดูสถานะได้ที่ Heijunka Kanban → ตู้ Kanban รวม → 🔄 WIP Point`);
+  };
+
   /* ── จุดเครื่องจักร ── */
   const editMachinePoint = (p) => {
     setMachineTempPos(null);
@@ -1131,7 +1147,15 @@ export default function LineSetup() {
                           คงเหลือ {p.current_qty ?? 0} (min {p.min_qty ?? 0} / max {p.max_qty ?? 0})
                         </div>
                       </div>
-                      <button onClick={() => deleteWipPoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {isLow && (
+                          <button onClick={() => requestWipReplenish(p)} title="เรียกเติมของจุดนี้"
+                            style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', color: '#f59e0b', cursor: 'pointer', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '4px 8px', whiteSpace: 'nowrap' }}>
+                            🔔 เรียกเติม
+                          </button>
+                        )}
+                        <button onClick={() => deleteWipPoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>
+                      </div>
                     </div>
                   );
                 })}

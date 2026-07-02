@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
-import { supabaseDR } from '../supabaseClient';
+import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 
@@ -831,7 +831,13 @@ const STORE_TABS = [
   { key: 'child', icon: '🔧', label: 'Store Child',     desc: 'พาร์ทย่อย (200/300) → Production Child' },
   { key: 'raw',   icon: '🧱', label: 'Store Raw Mat',   desc: 'วัตถุดิบ (500) → Production Child' },
   { key: 'rack',  icon: '📦', label: 'Rack Center',     desc: 'ภาชนะ + Packaging → ทุกไลน์' },
+  { key: 'wip',   icon: '🔄', label: 'WIP Point',       desc: 'จุด WIP ในไลน์ที่เรียกเติม → ไลน์นั้น' },
 ];
+const WIP_STATUS = {
+  pending:   { label: '🔔 เรียกแล้ว',   color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)', next: '🔧 เริ่มเตรียม' },
+  preparing: { label: '🔧 กำลังเตรียม', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', border: 'rgba(14,165,233,0.3)', next: '✅ ส่งเติมแล้ว' },
+  delivered: { label: '✅ เติมแล้ว',    color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  border: 'rgba(34,197,94,0.3)', next: null },
+};
 function QueueCard({ code, name, qty, unit, destination, statusLabel, statusColor, statusBg, statusBorder, actionLabel, onAction, busy, meta }) {
   return (
     <div style={{ background: statusBg, border: `1px solid ${statusBorder}`, borderRadius: 12, overflow: 'hidden' }}>
@@ -864,7 +870,7 @@ const RACK_STATUS = {
   received:  { label: '✅ รับแล้ว', color: '#22c55e', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.3)', next: null },
 };
 function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, kanbanStd, onConfirm, confirming, onReceive,
-  lotRequests, rawRequests, rackRequests, pkgRequests, busy, onAdvanceLot, onIssueRaw, onAdvanceRack, onIssuePkg, fmt }) {
+  lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, busy, onAdvanceLot, onIssueRaw, onAdvanceRack, onIssuePkg, onAdvanceWip, fmt }) {
 
   const confirmedSet = useMemo(() => { const s = new Set(); deliveries.forEach(d => s.add(`${d.line_name}|${d.shift}|${d.round_no}`)); return s; }, [deliveries]);
   const receivedMap  = useMemo(() => { const m = {}; deliveries.forEach(d => { m[`${d.line_name}|${d.shift}|${d.round_no}`] = d; }); return m; }, [deliveries]);
@@ -886,6 +892,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, kanbanSt
     child: lotRequests.filter(l => l.status !== 'done').length,
     raw: rawRequests.filter(r => r.status !== 'issued').length,
     rack: rackRequests.filter(r => r.status !== 'received').length + pkgRequests.filter(p => p.status !== 'issued').length,
+    wip: wipRequests.filter(w => w.status !== 'delivered').length,
   };
 
   return (
@@ -994,6 +1001,23 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, kanbanSt
           )}
         </>
       )}
+
+      {store === 'wip' && (
+        wipRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีคำขอเติมจุด WIP — เกิดจากกด "🔔 เรียกเติม" ที่ ⚙️ ตั้งค่าผังไลน์ → จุด WIP</div> :
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12 }}>
+          {wipRequests.map(w => {
+            const st = WIP_STATUS[w.status] || WIP_STATUS.pending;
+            const code = w.point_type === 'packaging' ? (w.packaging_no || w.packaging_type || w.point_name) : (w.mat_no || w.point_name);
+            return (
+              <QueueCard key={w.id} code={code} name={w.point_name}
+                qty={fmt(w.request_qty)} unit="" destination={w.line_name}
+                statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
+                actionLabel={st.next} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
+                meta={w.point_type === 'packaging' ? '📦 packaging' : '🧱 material'} />
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -1024,22 +1048,25 @@ export default function HeijunkaKanban() {
   // ── ตู้ Kanban รวม: Rack Center (ภาชนะ + packaging) ──
   const [rackRequests, setRackRequests] = useState([]);
   const [pkgRequests, setPkgRequests]   = useState([]);
-  const [unifiedStore, setUnifiedStore] = useState('fg'); // 'fg' | 'child' | 'raw' | 'rack'
+  const [wipRequests, setWipRequests]   = useState([]);
+  const [unifiedStore, setUnifiedStore] = useState('fg'); // 'fg' | 'child' | 'raw' | 'rack' | 'wip'
 
   const loadPull = useCallback(async () => {
-    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }, { data: racks }, { data: pkgs }] = await Promise.all([
+    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }, { data: racks }, { data: pkgs }, { data: wips }] = await Promise.all([
       supabaseDR.from('child_lot_requests').select('*').order('created_at', { ascending: false }).limit(200),
       supabaseDR.from('raw_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(400),
       supabaseDR.from('child_demand_accumulator').select('*').gt('pending_qty', 0).order('pending_qty', { ascending: false }),
       supabaseDR.from('kanban_standards').select('mat_no, lot_size').eq('is_active', true),
       supabaseDR.from('rack_requests').select('*').order('requested_at', { ascending: false }).limit(200),
       supabaseDR.from('packaging_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(200),
+      supabase.from('wip_replenish_requests').select('*').order('requested_at', { ascending: false }).limit(200),
     ]);
     setLotRequests(lots || []);
     setRawRequests(raws || []);
     setAccumulator(acc || []);
     setRackRequests(racks || []);
     setPkgRequests(pkgs || []);
+    setWipRequests(wips || []);
     const lm = {};
     (ks || []).forEach(s => { if (s.lot_size != null) lm[s.mat_no] = s.lot_size; });
     setLotSizeMap(lm);
@@ -1129,6 +1156,29 @@ export default function HeijunkaKanban() {
       const { error } = await supabaseDR.from('packaging_withdrawal_requests').update({ status: 'issued' }).eq('id', p.id);
       if (error) throw error;
       toast.success(`จ่าย packaging ${p.packaging_code} แล้ว`);
+      await loadPull();
+    } catch (err) { toast.error(err.message); }
+    setPullBusy(null);
+  };
+
+  // เติมจุด WIP: pending → preparing → delivered — พอ delivered ค่อยบวก current_qty กลับที่จุดจริง (main supabase)
+  const advanceWip = async (w) => {
+    const next = { pending: 'preparing', preparing: 'delivered' }[w.status];
+    if (!next) return;
+    setPullBusy(w.id);
+    try {
+      const payload = { status: next };
+      if (next === 'delivered') { payload.delivered_by = fullName || 'สโตร์'; payload.delivered_at = new Date().toISOString(); }
+      const { error } = await supabase.from('wip_replenish_requests').update(payload).eq('id', w.id);
+      if (error) throw error;
+      if (next === 'delivered' && w.wip_point_id) {
+        const { data: point } = await supabase.from('wip_buffer_points').select('current_qty, max_qty').eq('id', w.wip_point_id).single();
+        if (point) {
+          const newQty = Math.min((point.current_qty || 0) + w.request_qty, point.max_qty ?? Infinity);
+          await supabase.from('wip_buffer_points').update({ current_qty: newQty }).eq('id', w.wip_point_id);
+        }
+      }
+      toast.success(next === 'delivered' ? `✅ เติม ${w.point_name} เรียบร้อย` : `อัปเดต ${w.point_name} → ${next}`);
       await loadPull();
     } catch (err) { toast.error(err.message); }
     setPullBusy(null);
@@ -1465,8 +1515,8 @@ export default function HeijunkaKanban() {
             store={unifiedStore} setStore={setUnifiedStore}
             rounds={rounds} deliveries={deliveries} view={view} kanbanStd={kanbanStd}
             onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
-            lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests}
-            busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} onAdvanceRack={advanceRack} onIssuePkg={issuePkg}
+            lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests}
+            busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} onAdvanceRack={advanceRack} onIssuePkg={issuePkg} onAdvanceWip={advanceWip}
             fmt={fmt}
           />
         ) : viewMode === 'board' ? (
