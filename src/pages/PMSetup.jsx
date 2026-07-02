@@ -41,6 +41,14 @@ function newCheckpoint() {
   return { _key: crypto.randomUUID(), name: '', type: 'attribute', unit: '', nominal: '', spec_min: '', spec_max: '' }
 }
 
+function inferEquipType(stationName) {
+  const code = (stationName ?? '').split('-')[0].trim().toUpperCase()
+  if (code.startsWith('J')) return 'jig'
+  if (code.startsWith('RB')) return 'machine'
+  if (code.startsWith('SP') || code.startsWith('SW') || code.startsWith('PANASONIC')) return 'machine'
+  return 'machine'
+}
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const S = {
@@ -84,7 +92,6 @@ const S = {
     padding: '60px 24px', textAlign: 'center',
     background: 'var(--card)', border: '1px dashed var(--border2)', borderRadius: 'var(--radius-lg)',
   },
-  // Modal
   overlay: {
     position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
     zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
@@ -130,6 +137,13 @@ const S = {
     flex: 1, padding: '9px 0', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 700,
     background: 'var(--accent)', color: '#071008', border: 'none', cursor: 'pointer',
   },
+  modeBtn: (active) => ({
+    flex: 1, padding: '8px 12px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+    border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border2)'}`,
+    background: active ? 'var(--accent-dim)' : 'var(--bg3)',
+    color: active ? 'var(--accent)' : 'var(--muted)',
+    transition: 'all 0.15s',
+  }),
 }
 
 const DEPT_COLORS = {
@@ -138,6 +152,12 @@ const DEPT_COLORS = {
   die_maintenance: '#4d9fff',
   production:      '#3dd65c',
   qa:              '#9b8de8',
+}
+
+const CATEGORY_META = {
+  production: { label: 'Production', color: '#3dd65c', icon: '🏭' },
+  facility:   { label: 'Facility',   color: '#f59a3f', icon: '🔧' },
+  utility:    { label: 'Utility',    color: '#9b8de8', icon: '⚡' },
 }
 
 // ─── CheckpointCard ───────────────────────────────────────────────────────────
@@ -188,7 +208,17 @@ function CheckpointCard({ cp, index, onChange, onDelete }) {
 
 // ─── EquipmentModal ───────────────────────────────────────────────────────────
 function EquipmentModal({ onClose, onSaved, editEquip, department }) {
+  const isEdit = !!editEquip
   const [userId, setUserId] = useState(null)
+
+  // mode: 'workstation' = link to floor map | 'manual' = facility/utility
+  const [addMode, setAddMode] = useState(isEdit ? 'manual' : 'workstation')
+
+  // workstation picker
+  const [workstationOptions, setWorkstationOptions] = useState([])
+  const [workstationId, setWorkstationId] = useState(editEquip?.workstation_id ?? null)
+
+  // equipment fields
   const [name, setName] = useState(editEquip?.name ?? '')
   const [jigNo, setJigNo] = useState(editEquip?.jig_no ?? '')
   const [process, setProcess] = useState(editEquip?.process ?? '')
@@ -197,17 +227,22 @@ function EquipmentModal({ onClose, onSaved, editEquip, department }) {
   const [partNo, setPartNo] = useState(editEquip?.part_no ?? '')
   const [lineName, setLineName] = useState(editEquip?.line_name ?? '')
   const [machineNo, setMachineNo] = useState(editEquip?.machine_no ?? '')
-  const [equipType, setEquipType] = useState(editEquip?.equipment_type ?? 'jig')
+  const [equipType, setEquipType] = useState(editEquip?.equipment_type ?? 'machine')
+  const [equipCategory, setEquipCategory] = useState(editEquip?.equipment_category ?? 'production')
+
+  // checklist fields
   const [frequency, setFrequency] = useState('monthly')
   const [checkpoints, setCheckpoints] = useState([newCheckpoint()])
-  const [lineOptions, setLineOptions] = useState([])
+
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
     getCurrentUserId().then(setUserId)
-    supabase.from('production_lines').select('name').order('name')
-      .then(({ data }) => setLineOptions((data ?? []).map(l => l.name)))
+    // Load all workstations grouped by line for the dropdown
+    supabase.from('workstations').select('id, station_name, line_name')
+      .order('line_name').order('station_name')
+      .then(({ data }) => setWorkstationOptions(data ?? []))
   }, [])
 
   useEffect(() => {
@@ -225,11 +260,43 @@ function EquipmentModal({ onClose, onSaved, editEquip, department }) {
     })
   }, [editEquip, department, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Group workstations by line for <optgroup>
+  const wsGrouped = workstationOptions.reduce((acc, ws) => {
+    const line = ws.line_name ?? 'ไม่ระบุไลน์'
+    if (!acc[line]) acc[line] = []
+    acc[line].push(ws)
+    return acc
+  }, {})
+
+  const handleWorkstationSelect = (wsId) => {
+    setWorkstationId(wsId)
+    if (!wsId) { setName(''); setLineName(''); return }
+    const ws = workstationOptions.find(w => w.id === wsId)
+    if (!ws) return
+    setName(ws.station_name)
+    setLineName(ws.line_name ?? '')
+    setEquipCategory('production')
+    setEquipType(inferEquipType(ws.station_name))
+  }
+
+  const handleModeSwitch = (mode) => {
+    setAddMode(mode)
+    if (mode === 'workstation') {
+      setEquipCategory('production')
+      setWorkstationId(null)
+      setName(''); setLineName('')
+    } else {
+      setWorkstationId(null)
+      setEquipCategory('facility')
+    }
+  }
+
   const updateCp = (key, patch) =>
     setCheckpoints(prev => prev.map(c => c._key === key ? { ...c, ...patch } : c))
 
   const handleSave = async () => {
     if (!name.trim()) { setError('กรุณาใส่ชื่ออุปกรณ์'); return }
+    if (addMode === 'workstation' && !workstationId) { setError('กรุณาเลือกเครื่องจักรจาก Floor Map'); return }
     if (checkpoints.some(c => !c.name.trim())) { setError('กรุณาใส่ชื่อทุกจุดตรวจสอบ'); return }
     setSaving(true); setError('')
     try {
@@ -240,7 +307,9 @@ function EquipmentModal({ onClose, onSaved, editEquip, department }) {
         model: model.trim() || null, part_name: partName.trim() || null,
         part_no: partNo.trim() || null, line_name: lineName || null,
         machine_no: machineNo.trim() || null,
-        equipment_type: equipType, module: 'mtn', layout_type: 'list',
+        equipment_type: equipType, equipment_category: equipCategory,
+        workstation_id: workstationId || null,
+        module: 'mtn', layout_type: 'list',
         created_by: userId,
       })
       if (equipErr) throw equipErr
@@ -287,7 +356,7 @@ function EquipmentModal({ onClose, onSaved, editEquip, department }) {
         {/* Header */}
         <div style={S.modalHead}>
           <div>
-            <h2 style={S.modalTitle}>{editEquip ? 'แก้ไขอุปกรณ์' : 'เพิ่มอุปกรณ์ใหม่'}</h2>
+            <h2 style={S.modalTitle}>{isEdit ? 'แก้ไขอุปกรณ์' : 'เพิ่มอุปกรณ์ใหม่'}</h2>
             <span style={{ fontSize: 12, color: deptColor }}>{DEPT_LABEL[department] ?? department}</span>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button>
@@ -295,6 +364,54 @@ function EquipmentModal({ onClose, onSaved, editEquip, department }) {
 
         {/* Body */}
         <div style={S.modalBody}>
+
+          {/* Mode toggle (only for new equipment) */}
+          {!isEdit && (
+            <div>
+              <label style={S.label}>ประเภทการเพิ่ม</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => handleModeSwitch('workstation')} style={S.modeBtn(addMode === 'workstation')}>
+                  🏭 เลือกจาก Floor Map
+                </button>
+                <button onClick={() => handleModeSwitch('manual')} style={S.modeBtn(addMode === 'manual')}>
+                  ➕ Facility / อื่นๆ
+                </button>
+              </div>
+              <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
+                {addMode === 'workstation'
+                  ? 'เลือกเครื่องจักรที่มีอยู่บน Floor Map (Production-critical)'
+                  : 'เพิ่มเครื่องจักรที่ไม่ได้อยู่บน Floor Map เช่น Air Pump, Compressor'}
+              </p>
+            </div>
+          )}
+
+          {/* Floor map workstation picker */}
+          {addMode === 'workstation' && !isEdit && (
+            <div>
+              <label style={S.label}>เลือกเครื่องจักร ({workstationOptions.length} ตัว)</label>
+              <select
+                value={workstationId ?? ''}
+                onChange={e => handleWorkstationSelect(e.target.value || null)}
+                style={{ width: '100%' }}
+              >
+                <option value="">— เลือกเครื่องจักร —</option>
+                {Object.entries(wsGrouped).sort(([a], [b]) => a.localeCompare(b)).map(([line, stations]) => (
+                  <optgroup key={line} label={`📍 ${line}`}>
+                    {stations.map(ws => (
+                      <option key={ws.id} value={ws.id}>{ws.station_name}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              {workstationId && (
+                <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg3)', borderRadius: 6, fontSize: 12, color: 'var(--text2)' }}>
+                  ✅ <strong style={{ color: 'var(--text)' }}>{name}</strong>
+                  {lineName && <span style={{ color: 'var(--muted)' }}> · {lineName}</span>}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Equipment type */}
           <div>
             <label style={S.label}>ประเภทอุปกรณ์</label>
@@ -313,10 +430,35 @@ function EquipmentModal({ onClose, onSaved, editEquip, department }) {
             </div>
           </div>
 
+          {/* Category (manual mode only) */}
+          {addMode === 'manual' && (
+            <div>
+              <label style={S.label}>หมวดหมู่เครื่องจักร</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {Object.entries(CATEGORY_META).map(([k, v]) => (
+                  <button key={k} onClick={() => setEquipCategory(k)}
+                    style={{
+                      flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                      border: `1.5px solid ${equipCategory === k ? v.color + '60' : 'var(--border2)'}`,
+                      background: equipCategory === k ? v.color + '18' : 'var(--bg3)',
+                      color: equipCategory === k ? v.color : 'var(--muted)',
+                    }}>
+                    {v.icon} {v.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Name */}
           <div>
             <label style={S.label}>ชื่ออุปกรณ์ *</label>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="เช่น JIG-001 ตรวจ Pin Diameter" />
+            <input
+              value={name} onChange={e => setName(e.target.value)}
+              placeholder="เช่น RB141 - Welding, Air Compressor #1"
+              readOnly={addMode === 'workstation' && !!workstationId && !isEdit}
+              style={{ opacity: (addMode === 'workstation' && !!workstationId && !isEdit) ? 0.7 : 1 }}
+            />
           </div>
 
           {/* Metadata grid */}
@@ -336,14 +478,16 @@ function EquipmentModal({ onClose, onSaved, editEquip, department }) {
             ))}
           </div>
 
-          {/* Line selector */}
-          <div>
-            <label style={S.label}>ไลน์ผลิต</label>
-            <select value={lineName} onChange={e => setLineName(e.target.value)}>
-              <option value="">— ไม่ระบุ —</option>
-              {lineOptions.map(l => <option key={l} value={l}>{l}</option>)}
-            </select>
-          </div>
+          {/* Line selector (manual mode or edit mode) */}
+          {(addMode === 'manual' || isEdit) && (
+            <div>
+              <label style={S.label}>ไลน์ / พื้นที่</label>
+              <input
+                value={lineName} onChange={e => setLineName(e.target.value)}
+                placeholder="เช่น Line-A, Utility Room, Building 2"
+              />
+            </div>
+          )}
 
           {/* Frequency */}
           <div>
@@ -394,6 +538,7 @@ function EquipmentModal({ onClose, onSaved, editEquip, department }) {
 function EquipmentCard({ equip, cpCount, frequency, onEdit, onDelete }) {
   const typeColor = { jig: '#3dd65c', die: '#4d9fff', machine: '#f59a3f', fixture: '#9b8de8', tool: '#e05c4a' }
   const color = typeColor[equip.equipment_type] ?? '#527855'
+  const catMeta = CATEGORY_META[equip.equipment_category] ?? CATEGORY_META.production
   return (
     <motion.div
       layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
@@ -403,11 +548,17 @@ function EquipmentCard({ equip, cpCount, frequency, onEdit, onDelete }) {
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
         <h3 style={S.cardTitle}>{equip.name}</h3>
-        <span style={S.tag(color)}>{EQUIP_TYPE_LABEL[equip.equipment_type] ?? equip.equipment_type}</span>
+        <div style={{ display: 'flex', gap: 4, flexDirection: 'column', alignItems: 'flex-end' }}>
+          <span style={S.tag(color)}>{EQUIP_TYPE_LABEL[equip.equipment_type] ?? equip.equipment_type}</span>
+          {equip.equipment_category && equip.equipment_category !== 'production' && (
+            <span style={S.tag(catMeta.color)}>{catMeta.icon} {catMeta.label}</span>
+          )}
+        </div>
       </div>
       {equip.jig_no && <p style={S.meta}>No. {equip.jig_no}</p>}
       {equip.line_name && <p style={S.meta}>📍 {equip.line_name}{equip.machine_no ? ` · ${equip.machine_no}` : ''}</p>}
       {equip.part_name && <p style={S.meta}>🔩 {equip.part_name}{equip.part_no ? ` (${equip.part_no})` : ''}</p>}
+      {equip.workstation_id && <p style={{ ...S.meta, color: 'var(--accent)' }}>🔗 เชื่อมกับ Floor Map</p>}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
         <div style={{ fontSize: 12, color: 'var(--muted)' }}>
           <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{cpCount}</span> จุดตรวจ
