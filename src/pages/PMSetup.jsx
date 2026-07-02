@@ -6,20 +6,8 @@ import { supabase, supabaseDR } from '../supabaseClient'
 import { toast } from '../components/Toast'
 import { FREQ_LABEL, DEPT_LABEL, EQUIP_TYPE_LABEL } from '../lib/pmSchedule'
 import { getOrCreateChecklist, setChecklistFrequency } from '../lib/pmChecklists'
-
-// ─── Category config (JIG hardware component types) ───────────────────────────
-export const CATEGORY_META = {
-  LP: { label: 'LP — Locator Pin',      color: '#ef4444' },
-  SD: { label: 'SD — Support Datum',    color: '#3b82f6' },
-  AC: { label: 'AC — Air Clamp',        color: '#22c55e' },
-  PS: { label: 'PS — Proximity Sensor', color: '#a855f7' },
-  RS: { label: 'RS — Reed Switch',      color: '#f97316' },
-  V:  { label: 'V  — Valve',            color: '#eab308' },
-  SU: { label: 'SU — Service Unit',     color: '#06b6d4' },
-  SC: { label: 'SC — Switch Control',   color: '#ec4899' },
-  HD: { label: 'HD — Hand Clamp',       color: '#8b5cf6' },
-}
-export const categoryColor = (cat) => CATEGORY_META[cat]?.color ?? '#6b7280'
+import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
+import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
 
 const DEPT_COLORS = {
   maintenance:     '#fb923c',
@@ -49,7 +37,7 @@ function inferEquipType(stationCode) {
 function newCheckpoint() {
   return {
     _key: crypto.randomUUID(), name: '', type: 'variable',
-    axis: null, category: null, unit: '', nominal: '', lsl: '', usl: '', lcl: '', ucl: '',
+    axis: null, category: null, checking_method: null, unit: '', nominal: '', lsl: '', usl: '', lcl: '', ucl: '',
     x_pos: null, y_pos: null,
   }
 }
@@ -180,7 +168,7 @@ function ImageAnnotator({ imageUrl, checkpoints, activePinKey, onImageClick, onP
 }
 
 // ─── CheckpointCard ───────────────────────────────────────────────────────────
-function CheckpointCard({ cp, index, onChange, onDelete, isPinning, onPinToggle, hasImage }) {
+function CheckpointCard({ cp, index, onChange, onDelete, isPinning, onPinToggle, hasImage, categories, methods }) {
   const isVar = cp.type === 'variable'
   return (
     <div style={{ ...S.cpCard, borderColor: isPinning ? 'var(--accent)' : 'var(--border)' }}>
@@ -204,12 +192,21 @@ function CheckpointCard({ cp, index, onChange, onDelete, isPinning, onPinToggle,
 
       <input value={cp.name} onChange={e => onChange({ name: e.target.value })} placeholder="ชื่อจุดตรวจสอบ เช่น Pin Diameter" style={{ marginBottom: 8 }} />
 
-      <div style={{ marginBottom: 10 }}>
-        <label style={S.label}>ประเภท (Category)</label>
-        <select value={cp.category ?? ''} onChange={e => onChange({ category: e.target.value || null })}>
-          <option value="">— ไม่ระบุ —</option>
-          {Object.entries(CATEGORY_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-        </select>
+      <div style={S.inputRow}>
+        <div style={{ marginBottom: 10 }}>
+          <label style={S.label}>ประเภท (Category)</label>
+          <select value={cp.category ?? ''} onChange={e => onChange({ category: e.target.value || null })}>
+            <option value="">— ไม่ระบุ —</option>
+            {(categories ?? []).map(c => <option key={c.code} value={c.code}>{c.code} — {c.label}</option>)}
+          </select>
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <label style={S.label}>วิธีการตรวจสอบ</label>
+          <select value={cp.checking_method ?? ''} onChange={e => onChange({ checking_method: e.target.value || null })}>
+            <option value="">— ไม่ระบุ —</option>
+            {(methods ?? []).map(m => <option key={m.code} value={m.code}>{m.icon} {m.label}</option>)}
+          </select>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: isVar ? 10 : 0 }}>
@@ -263,7 +260,7 @@ function CheckpointCard({ cp, index, onChange, onDelete, isPinning, onPinToggle,
 }
 
 // ─── EquipmentModal ───────────────────────────────────────────────────────────
-function EquipmentModal({ onClose, onSaved, editJig, department }) {
+function EquipmentModal({ onClose, onSaved, editJig, department, categories, methods }) {
   const isEdit = !!editJig
   const [userId, setUserId] = useState(null)
 
@@ -394,7 +391,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department }) {
           checkpoints.map((c, i) => ({
             checklist_id: cl.id, jig_id: jigId, name: c.name.trim(), type: c.type,
             axis: c.type === 'variable' ? (c.axis ?? null) : null,
-            category: c.category ?? null, unit: c.unit || null,
+            category: c.category ?? null, checking_method: c.checking_method ?? null, unit: c.unit || null,
             nominal: c.nominal !== '' && c.nominal != null ? Number(c.nominal) : null,
             lsl: c.lsl !== '' && c.lsl != null ? Number(c.lsl) : null,
             usl: c.usl !== '' && c.usl != null ? Number(c.usl) : null,
@@ -580,7 +577,8 @@ function EquipmentModal({ onClose, onSaved, editJig, department }) {
               {checkpoints.map((cp, i) => (
                 <CheckpointCard key={cp._key} cp={cp} index={i}
                   onChange={patch => updateCp(cp._key, patch)} onDelete={() => deleteCp(cp._key)}
-                  isPinning={activePinKey === cp._key} onPinToggle={() => togglePin(cp._key)} hasImage={!!imagePreview} />
+                  isPinning={activePinKey === cp._key} onPinToggle={() => togglePin(cp._key)} hasImage={!!imagePreview}
+                  categories={categories} methods={methods} />
               ))}
             </div>
           </div>
@@ -648,6 +646,15 @@ export default function PMSetup() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editJig, setEditJig] = useState(null)
+  const [categories, setCategories] = useState([])
+  const [methods, setMethods] = useState([])
+  const [taxModal, setTaxModal] = useState(null) // 'category' | 'method' | null
+
+  const loadTaxonomy = () => {
+    fetchCategories().then(setCategories)
+    fetchCheckingMethods().then(setMethods)
+  }
+  useEffect(() => { loadTaxonomy() }, [])
 
   const setDept = (d) => setSearchParams({ dept: d })
 
@@ -705,7 +712,11 @@ export default function PMSetup() {
           <h1 style={S.h1}>PM Setup — อุปกรณ์ & จุดตรวจ</h1>
           <p style={S.sub}>{jigs.length} อุปกรณ์ · แผนก {DEPT_LABEL[department] ?? department}</p>
         </div>
-        <button onClick={openCreate} style={S.primaryBtn}>+ เพิ่มอุปกรณ์</button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={() => setTaxModal('category')} style={S.btnSm('var(--muted)')}>⚙ ประเภท</button>
+          <button onClick={() => setTaxModal('method')} style={S.btnSm('var(--muted)')}>⚙ วิธีตรวจ</button>
+          <button onClick={openCreate} style={S.primaryBtn}>+ เพิ่มอุปกรณ์</button>
+        </div>
       </div>
 
       <div style={S.deptBar}>
@@ -733,7 +744,15 @@ export default function PMSetup() {
       )}
 
       <AnimatePresence>
-        {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} />}
+        {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} categories={categories} methods={methods} />}
+        {taxModal === 'category' && (
+          <TaxonomyManagerModal table="pm_checkpoint_categories" title="จัดการประเภทจุดตรวจ (Category)" extraField="color"
+            onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
+        )}
+        {taxModal === 'method' && (
+          <TaxonomyManagerModal table="pm_checking_methods" title="จัดการวิธีการตรวจสอบ" extraField="icon"
+            onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
+        )}
       </AnimatePresence>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>

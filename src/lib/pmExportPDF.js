@@ -7,26 +7,18 @@ const W = 297   // A4 landscape width mm
 const H = 210   // A4 landscape height mm
 const M = 5     // page margin mm
 
-const CAT_COLOR = {
-  LP: [239, 68,  68],
-  SD: [59,  130, 246],
-  AC: [34,  197, 94],
-  PS: [168, 85,  247],
-  RS: [249, 115, 22],
-  V:  [234, 179, 8],
-  SU: [6,   182, 212],
-  SC: [236, 72,  153],
-  HD: [139, 92,  246],
+// Category color/label come from the user-managed taxonomy (passed in as
+// `categories`); these maps are built per-export. Fallback keeps old codes
+// rendering if the taxonomy row was removed.
+function hexToRgb(hex) {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex ?? '')
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [107, 114, 128]
 }
-const CAT_LABEL = {
-  LP: 'Locate Pin',       SD: 'Support Datum',
-  AC: 'Air Clamp',        PS: 'Proximity Sensor',
-  RS: 'Reed Switch',      V:  'Valve',
-  SU: 'Service Unit',     SC: 'Switch Control',
-  HD: 'Hand Clamp',
+function buildCatMaps(categories) {
+  const color = {}, label = {}
+  for (const c of categories ?? []) { color[c.code] = hexToRgb(c.color); label[c.code] = c.label }
+  return { color, label }
 }
-
-function catColor(cat) { return CAT_COLOR[cat] ?? [107, 114, 128] }
 
 function fmtN(v, d = 3) {
   if (v == null || v === '') return ''
@@ -94,8 +86,11 @@ export async function resolveSignatureDataUrl(publicUrl) {
  */
 export async function exportInspectionPDF({
   jig, inspection, checkpoints, results,
-  inspector, approver, exporter,
+  inspector, approver, exporter, categories,
 }) {
+  const CAT = buildCatMaps(categories)
+  const catColor = (cat) => CAT.color[cat] ?? [107, 114, 128]
+  const CAT_LABEL = CAT.label
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
   doc.setFont('helvetica', 'normal')
 
