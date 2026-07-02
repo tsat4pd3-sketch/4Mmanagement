@@ -31,6 +31,8 @@ export default function LineSetup() {
   const [newLineSection, setNewLineSection] = useState('');
   const [newLineParent, setNewLineParent] = useState('');
   const [isAddingLine, setIsAddingLine] = useState(false);
+  const [editingLineId, setEditingLineId] = useState(null);
+  const [editingLineName, setEditingLineName] = useState('');
   const [layoutImage, setLayoutImage] = useState(null);
   const [usingParentLayout, setUsingParentLayout] = useState(false); // true = ยืมรูปผังจากไลน์หลักมาแสดง (ยังไม่มีรูปของตัวเอง)
   const [stations, setStations] = useState([]);
@@ -235,6 +237,29 @@ export default function LineSetup() {
 
   const handleUpdateSection = async (line, section) => {
     await supabase.from('production_lines').update({ section: section || null }).eq('id', line.id);
+    await fetchLines();
+  };
+
+  const handleRenameLine = async (line, newName) => {
+    const name = newName.trim();
+    if (!name || name === line.name) { setEditingLineId(null); return; }
+    if (lines.some(l => l.id !== line.id && l.name === name)) {
+      alert(`มีไลน์ชื่อ "${name}" อยู่แล้ว`); return;
+    }
+    const old = line.name;
+    // Update production_lines (name + children's parent_line_name)
+    await supabase.from('production_lines').update({ name }).eq('id', line.id);
+    await supabase.from('production_lines').update({ parent_line_name: name }).eq('parent_line_name', old);
+    // Cascade to map/station tables
+    await supabase.from('workstations').update({ line_name: name }).eq('line_name', old);
+    await supabase.from('line_layouts').update({ line_name: name }).eq('line_name', old);
+    await supabase.from('wip_buffer_points').update({ line_name: name }).eq('line_name', old);
+    await supabase.from('machine_points').update({ line_name: name }).eq('line_name', old);
+    await supabase.from('machine_flow_links').update({ line_name: name }).eq('line_name', old);
+    // DR project: machines table
+    await supabaseDR.from('machines').update({ line_name: name }).eq('line_name', old);
+    setEditingLineId(null);
+    if (selectedLine === old) setSelectedLine(name);
     await fetchLines();
   };
 
@@ -828,7 +853,7 @@ export default function LineSetup() {
       </div>
 
       <div style={{
-        width: isMobile ? '100%' : 320,
+        width: isMobile ? '100%' : 400,
         background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14,
         padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', flexShrink: 0
       }}>
@@ -862,37 +887,66 @@ export default function LineSetup() {
                 >
                   {l._isChild && <span style={{ fontSize: 10, color: 'var(--muted)', flexShrink: 0 }}>└</span>}
                   {l._isParent && <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>▼</span>}
-                  <span style={{ fontSize: 13, flex: 1, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {l.name}
-                    {l._orphan && <span style={{ fontSize: 9, color: '#ef4444', marginLeft: 4 }}>!parent missing</span>}
-                  </span>
-                  <select
-                    value={l.section || ''}
-                    onClick={e => e.stopPropagation()}
-                    onChange={e => { e.stopPropagation(); handleUpdateSection(l, e.target.value); }}
-                    style={{ fontSize: 10, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0, maxWidth: 64 }}
-                  >
-                    <option value="">Section</option>
-                    {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                  {/* Parent line selector — can't assign parent to a line that already has children */}
-                  {!l._isParent && (
-                    <select
-                      value={l.parent_line_name || ''}
+                  {editingLineId === l.id ? (
+                    <input
+                      autoFocus
+                      value={editingLineName}
+                      onChange={e => setEditingLineName(e.target.value)}
                       onClick={e => e.stopPropagation()}
-                      onChange={e => { e.stopPropagation(); handleUpdateParent(l, e.target.value); }}
-                      title="ไลน์หลัก (parent)"
-                      style={{ fontSize: 10, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: l.parent_line_name ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', flexShrink: 0, maxWidth: 72 }}
-                    >
-                      <option value="">ไม่มีหลัก</option>
-                      {lines.filter(p => p.name !== l.name && !p.parent_line_name).map(p => (
-                        <option key={p.id} value={p.name}>{p.name}</option>
-                      ))}
-                    </select>
+                      onKeyDown={e => {
+                        e.stopPropagation();
+                        if (e.key === 'Enter') handleRenameLine(l, editingLineName);
+                        if (e.key === 'Escape') setEditingLineId(null);
+                      }}
+                      style={{ flex: 1, fontSize: 12, padding: '2px 6px', borderRadius: 5, border: '1px solid var(--accent)', background: 'var(--bg)', color: 'var(--text)', minWidth: 0 }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: 13, flex: 1, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {l.name}
+                      {l._orphan && <span style={{ fontSize: 9, color: '#ef4444', marginLeft: 4 }}>!parent missing</span>}
+                    </span>
                   )}
-                  <button onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
-                    style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
-                    title="ลบไลน์">🗑️</button>
+                  {editingLineId === l.id ? (
+                    <>
+                      <button onClick={e => { e.stopPropagation(); handleRenameLine(l, editingLineName); }}
+                        style={{ background: 'var(--accent)', border: 'none', color: '#fff', fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', flexShrink: 0, fontWeight: 700 }}>✓</button>
+                      <button onClick={e => { e.stopPropagation(); setEditingLineId(null); }}
+                        style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', flexShrink: 0 }}>✕</button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={e => { e.stopPropagation(); setEditingLineId(l.id); setEditingLineName(l.name); }}
+                        style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 12, padding: '0 2px', lineHeight: 1, flexShrink: 0, cursor: 'pointer' }}
+                        title="เปลี่ยนชื่อ">✏️</button>
+                      <select
+                        value={l.section || ''}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => { e.stopPropagation(); handleUpdateSection(l, e.target.value); }}
+                        style={{ fontSize: 10, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0, maxWidth: 68 }}
+                      >
+                        <option value="">Section</option>
+                        {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                      {/* Parent line selector — can't assign parent to a line that already has children */}
+                      {!l._isParent && (
+                        <select
+                          value={l.parent_line_name || ''}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => { e.stopPropagation(); handleUpdateParent(l, e.target.value); }}
+                          title="ไลน์หลัก (parent)"
+                          style={{ fontSize: 10, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: l.parent_line_name ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', flexShrink: 0, maxWidth: 76 }}
+                        >
+                          <option value="">ไม่มีหลัก</option>
+                          {lines.filter(p => p.name !== l.name && !p.parent_line_name).map(p => (
+                            <option key={p.id} value={p.name}>{p.name}</option>
+                          ))}
+                        </select>
+                      )}
+                      <button onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
+                        style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
+                        title="ลบไลน์">🗑️</button>
+                    </>
+                  )}
                 </div>
               ));
             })()}
