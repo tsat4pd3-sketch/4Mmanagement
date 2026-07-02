@@ -26,7 +26,7 @@ const cancelBtnStyle = {
   borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer',
 };
 
-const emptyMachine = { id: null, line_name: '', machine_no: '', machine_name: '', machine_type_id: '', process_type: 'welding_assembly', sort_order: 0, is_active: true };
+const emptyMachine = { id: null, line_name: '', machine_no: '', machine_name: '', machine_type_id: '', sort_order: 0, is_active: true };
 const emptyType    = { id: null, label: '', color: '#4d9fff', icon: '', sort_order: 0, is_active: true };
 const TYPE_COLORS  = ['#4d9fff', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#ec4899', '#06b6d4', '#84cc16', '#6b7280'];
 
@@ -92,7 +92,7 @@ export default function MachineDatabase() {
   /* ── machine CRUD ── */
   const openEdit = (item = null) => {
     setEditing(item
-      ? { id: item.id, line_name: item.line_name, machine_no: item.machine_no, machine_name: item.machine_name || '', machine_type_id: item.machine_type_id || '', process_type: item.process_type || 'welding_assembly', sort_order: item.sort_order ?? 0, is_active: item.is_active }
+      ? { id: item.id, line_name: item.line_name, machine_no: item.machine_no, machine_name: item.machine_name || '', machine_type_id: item.machine_type_id || '', sort_order: item.sort_order ?? 0, is_active: item.is_active }
       : { ...emptyMachine, line_name: filterLine || '', sort_order: machines.length + 1 });
   };
 
@@ -105,7 +105,6 @@ export default function MachineDatabase() {
       machine_no:        editing.machine_no.trim().toUpperCase(),
       machine_name:      editing.machine_name || null,
       machine_type_id:   editing.machine_type_id || null,
-      process_type:      editing.process_type,
       sort_order:        parseInt(editing.sort_order) || 0,
       is_active:         editing.is_active,
       updated_at:        new Date().toISOString(),
@@ -196,9 +195,6 @@ export default function MachineDatabase() {
                       </span>
                     )}
                     {!item.machine_type_id && <span style={{ fontSize: 10, color: '#f59e0b' }}>ยังไม่ระบุประเภท</span>}
-                    <span style={{ fontSize: 9, color: 'var(--muted)' }} title="กระบวนการ (ใช้กำหนดเวลาพัก)">
-                      {item.process_type === 'metal_forming' ? '⚙ Metal Forming' : item.process_type === 'common' ? '🔗 ทั่วไป' : '🔥 Welding/Assy'}
-                    </span>
                     {!item.is_active && <span style={{ fontSize: 10, color: '#ef4444' }}>(ปิดใช้)</span>}
                   </div>
                 </div>
@@ -252,13 +248,6 @@ export default function MachineDatabase() {
                     + ประเภทใหม่
                   </button>
                 </div>
-              </Field>
-              <Field label="กระบวนการ — ใช้กำหนดเวลาพักตามนโยบายของกะ">
-                <select value={editing.process_type} onChange={e => setEditing(f => ({ ...f, process_type: e.target.value }))} style={inputStyle}>
-                  <option value="welding_assembly">🔥 Welding / Assembly</option>
-                  <option value="metal_forming">⚙ Metal Forming</option>
-                  <option value="common">🔗 ทั่วไป</option>
-                </select>
               </Field>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="ลำดับ">
