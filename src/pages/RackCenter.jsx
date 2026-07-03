@@ -147,7 +147,7 @@ export default function RackCenter() {
   const ACTION_LABEL = { requested: '🔧 เริ่มเตรียม', preparing: '🚚 จัดส่งแล้ว', delivered: '✅ รับแล้ว' };
 
   return (
-    <div style={{ padding: 'clamp(12px,2vw,24px)', maxWidth: 1500, margin: '0 auto' }}>
+    <div style={{ padding: 'clamp(12px,2vw,24px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 'clamp(18px,2.5vw,24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>

@@ -1417,7 +1417,7 @@ export default function HeijunkaKanban() {
   };
 
   return (
-    <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 1500, margin: '0 auto' }}>
+    <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
