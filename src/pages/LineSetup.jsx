@@ -31,7 +31,10 @@ export default function LineSetup() {
   const [newLineSection, setNewLineSection] = useState('');
   const [newLineParent, setNewLineParent] = useState('');
   const [isAddingLine, setIsAddingLine] = useState(false);
+  const [editingLineId, setEditingLineId] = useState(null);
+  const [editingLineName, setEditingLineName] = useState('');
   const [layoutImage, setLayoutImage] = useState(null);
+  const [usingParentLayout, setUsingParentLayout] = useState(false); // true = ยืมรูปผังจากไลน์หลักมาแสดง (ยังไม่มีรูปของตัวเอง)
   const [stations, setStations] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [tempPos, setTempPos] = useState(null);
@@ -51,6 +54,11 @@ export default function LineSetup() {
   const dragStartRef = useRef({ x: 0, y: 0 });
   const dragPosRef = useRef(null);
 
+  // กรอบของ "ตัวรูปจริง" หลังหักแถบว่าง letterbox จาก object-fit: contain
+  // พิกัด pos_top/pos_left ทุกจุดเก็บเป็น % ของตัวรูปจริง (ไม่ใช่ % ของกล่อง container)
+  // เพื่อให้ตำแหน่งตรงกันทุกหน้า (Management / Dashboard) และไม่เพี้ยนเมื่อจอ/sidebar เปลี่ยนขนาด
+  const [imgBox, setImgBox] = useState(null); // { ox, oy, rw, rh }
+
   // จุด WIP buffer (min/max ต่อจุด — แผนกที่เกี่ยวข้องเห็นเมื่อของต่ำกว่า min)
   // 2 ประเภท: material (เรียกงานจากสโตร์ ผูกกับ mat no. จาก Product Master) และ
   // packaging (เรียกภาชนะเปล่าจาก Tact Center — rack/box/basket แยกด้วย packaging no.)
@@ -66,6 +74,7 @@ export default function LineSetup() {
   const [machineTempPos, setMachineTempPos] = useState(null);
   const [machineForm, setMachineForm] = useState({ id: null, machine_no: '', redundancy_group: '' });
   const [drMachines, setDrMachines] = useState([]);
+  const [machineTypes, setMachineTypes] = useState([]);
 
   // เส้นทางการผลิตแบบต่อเนื่อง (sequential flow) ระหว่างจุดเครื่องจักร — ใช้บอกว่า
   // เครื่องไหนหยุดแล้วทำให้สายงานหยุดทั้งสาย (ตรงข้ามกับเครื่อง parallel ที่หยุดแค่ตัวเอง)
@@ -112,8 +121,21 @@ export default function LineSetup() {
   }, [selectedLine]);
 
   const fetchLineData = async () => {
-    const { data: layoutData } = await supabase.from('line_layouts').select('*').eq('line_name', selectedLine).single();
-    setLayoutImage(layoutData?.image_url || null);
+    const lineObj0 = lines.find(l => l.name === selectedLine);
+    const { data: layoutData } = await supabase.from('line_layouts').select('*').eq('line_name', selectedLine).maybeSingle();
+    if (layoutData?.image_url) {
+      setLayoutImage(layoutData.image_url);
+      setUsingParentLayout(false);
+    } else if (lineObj0?.parent_line_name) {
+      // ไลน์ย่อย (เช่น HDF1) ไม่มีรูปผังของตัวเอง — ใช้รูปเดียวกับไลน์หลัก (HYDROFORM) แทน
+      // เพราะจริงๆ อยู่พื้นที่เดียวกันในโรงงาน ไม่ต้องอัปโหลดรูปซ้ำ
+      const { data: parentLayout } = await supabase.from('line_layouts').select('image_url').eq('line_name', lineObj0.parent_line_name).maybeSingle();
+      setLayoutImage(parentLayout?.image_url || null);
+      setUsingParentLayout(!!parentLayout?.image_url);
+    } else {
+      setLayoutImage(null);
+      setUsingParentLayout(false);
+    }
     const { data: stationData } = await supabase.from('workstations').select('*, station_requirements(*)').eq('line_name', selectedLine);
     setStations(stationData || []);
     const { data: wipData } = await supabase.from('wip_buffer_points').select('*').eq('line_name', selectedLine).order('point_name');
@@ -122,8 +144,10 @@ export default function LineSetup() {
     setMachinePoints(mpData || []);
     const { data: flData } = await supabase.from('machine_flow_links').select('*').eq('line_name', selectedLine);
     setFlowLinks(flData || []);
-    const { data: drMc } = await supabaseDR.from('machines').select('id, machine_no, machine_name').eq('line_name', selectedLine).eq('is_active', true).order('sort_order');
+    const { data: drMc } = await supabaseDR.from('machines').select('*, machine_types(id, label, color, icon)').eq('line_name', selectedLine).order('sort_order');
     setDrMachines(drMc || []);
+    const { data: drMt } = await supabaseDR.from('machine_types').select('*').order('sort_order');
+    setMachineTypes(drMt || []);
     const { data: drPd } = await supabaseDR.from('dr_products').select('mat_no, name').eq('line_name', selectedLine).eq('is_active', true).not('mat_no', 'is', null).order('mat_no');
     setDrProducts(drPd || []);
     // ภาชนะ — ดึงจาก container_types (supabaseDR) ตารางกลางเดียวกับ Packaging/Rack Center
@@ -221,6 +245,29 @@ export default function LineSetup() {
     await fetchLines();
   };
 
+  const handleRenameLine = async (line, newName) => {
+    const name = newName.trim();
+    if (!name || name === line.name) { setEditingLineId(null); return; }
+    if (lines.some(l => l.id !== line.id && l.name === name)) {
+      alert(`มีไลน์ชื่อ "${name}" อยู่แล้ว`); return;
+    }
+    const old = line.name;
+    // Update production_lines (name + children's parent_line_name)
+    await supabase.from('production_lines').update({ name }).eq('id', line.id);
+    await supabase.from('production_lines').update({ parent_line_name: name }).eq('parent_line_name', old);
+    // Cascade to map/station tables
+    await supabase.from('workstations').update({ line_name: name }).eq('line_name', old);
+    await supabase.from('line_layouts').update({ line_name: name }).eq('line_name', old);
+    await supabase.from('wip_buffer_points').update({ line_name: name }).eq('line_name', old);
+    await supabase.from('machine_points').update({ line_name: name }).eq('line_name', old);
+    await supabase.from('machine_flow_links').update({ line_name: name }).eq('line_name', old);
+    // DR project: machines table
+    await supabaseDR.from('machines').update({ line_name: name }).eq('line_name', old);
+    setEditingLineId(null);
+    if (selectedLine === old) setSelectedLine(name);
+    await fetchLines();
+  };
+
   const handleUploadImage = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -234,6 +281,7 @@ export default function LineSetup() {
       const { data } = supabase.storage.from('employee-photos').getPublicUrl(`layouts/${fileName}`);
       await supabase.from('line_layouts').upsert({ line_name: selectedLine, image_url: data.publicUrl }, { onConflict: 'line_name' });
       setLayoutImage(data.publicUrl);
+      setUsingParentLayout(false);
     } catch (error) { alert('Error: ' + error.message); }
     finally { setIsUploading(false); }
   };
@@ -252,6 +300,24 @@ export default function LineSetup() {
     const offsetY = (rect.height - renderedH) / 2;
     return { rect, offsetX, offsetY, renderedW, renderedH };
   };
+
+  const recalcImgBox = () => {
+    const img = imgRef.current;
+    if (!img || !img.naturalWidth) { setImgBox(null); return; }
+    const geom = getImageGeom(img);
+    if (!geom) { setImgBox(null); return; }
+    setImgBox({ ox: geom.offsetX, oy: geom.offsetY, rw: geom.renderedW, rh: geom.renderedH });
+  };
+
+  // คำนวณกรอบรูปใหม่เมื่อรูปโหลด/ขนาดพื้นที่เปลี่ยน (ย่อ-ขยายหน้าต่าง, พับ sidebar)
+  useEffect(() => {
+    setImgBox(null);
+    const img = imgRef.current;
+    if (!img) return;
+    const ro = new ResizeObserver(() => requestAnimationFrame(recalcImgBox));
+    ro.observe(img);
+    return () => ro.disconnect();
+  }, [layoutImage]);
 
   const startDrag = (e, kind, id) => {
     e.preventDefault();
@@ -278,7 +344,8 @@ export default function LineSetup() {
       const dx = e.clientX - dragStartRef.current.x;
       const dy = e.clientY - dragStartRef.current.y;
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMovedRef.current = true;
-      const pos = { top: `${((y / rect.height) * 100).toFixed(2)}%`, left: `${((x / rect.width) * 100).toFixed(2)}%` };
+      // เก็บเป็น % ของตัวรูปจริง (หัก letterbox) — ไม่ผูกกับขนาดกล่อง container
+      const pos = { top: `${(((y - offsetY) / renderedH) * 100).toFixed(2)}%`, left: `${(((x - offsetX) / renderedW) * 100).toFixed(2)}%` };
       dragPosRef.current = pos;
       setDragPos(pos);
     };
@@ -328,18 +395,19 @@ export default function LineSetup() {
     const clampedX = Math.min(Math.max(clickX, offsetX + boxW / 2), offsetX + renderedW - boxW / 2);
     const clampedY = Math.min(Math.max(clickY, offsetY + boxH / 2), offsetY + renderedH - boxH / 2);
 
-    const x = (clampedX / rect.width) * 100;
-    const y = (clampedY / rect.height) * 100;
+    // เก็บเป็น % ของตัวรูปจริง (หัก letterbox) — ให้ทุกหน้าอ่านค่าเดียวกันไม่เพี้ยนตามขนาดจอ
+    const x = ((clampedX - offsetX) / renderedW) * 100;
+    const y = ((clampedY - offsetY) / renderedH) * 100;
     const pos = { top: `${y.toFixed(2)}%`, left: `${x.toFixed(2)}%` };
-    const newXpx = (x / 100) * rect.width;
-    const newYpx = (y / 100) * rect.height;
+    const newXpx = clampedX;
+    const newYpx = clampedY;
 
     const checkCollision = (points, w, h) => {
       const PAD_X = w + 8;
       const PAD_Y = h + 8;
       return points.some(p => {
-        const pX = (parseFloat(p.pos_left) / 100) * rect.width;
-        const pY = (parseFloat(p.pos_top) / 100) * rect.height;
+        const pX = offsetX + (parseFloat(p.pos_left) / 100) * renderedW;
+        const pY = offsetY + (parseFloat(p.pos_top) / 100) * renderedH;
         return Math.abs(newXpx - pX) < PAD_X && Math.abs(newYpx - pY) < PAD_Y;
       });
     };
@@ -618,13 +686,26 @@ export default function LineSetup() {
                   {collisionWarn}
                 </div>
               )}
+              {usingParentLayout && (
+                <div style={{
+                  position: 'absolute', top: 8, left: 8,
+                  background: 'rgba(77,159,255,0.92)', color: '#fff',
+                  padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                  zIndex: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.3)', pointerEvents: 'none',
+                }}>
+                  🔗 ใช้รูปผังจากไลน์หลัก — อัปโหลดรูปใหม่เพื่อแยกเป็นของตัวเอง
+                </div>
+              )}
               <img
                 ref={imgRef}
                 src={layoutImage}
                 onClick={handleImageClick}
+                onLoad={recalcImgBox}
                 draggable={false}
                 style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'crosshair', display: 'block' }}
               />
+              {/* overlay ยึดกับ "ตัวรูปจริง" — marker ทุกจุดวางเป็น % ของรูป จึงเกาะรูปตามทุกขนาดจอ */}
+              {imgBox && <div style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
               {activeTab === 'stations' && stations.map(st => {
                 const isSelected = formData.id === st.id;
                 const isDragging = dragInfo?.kind === 'station' && dragInfo.id === st.id;
@@ -643,7 +724,7 @@ export default function LineSetup() {
                       backdropFilter: 'blur(2px)',
                       boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
                       cursor: isDragging ? 'grabbing' : 'grab', display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', justifyContent: 'center',
+                      alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto',
                       padding: '4px 4px 2px', zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
                     title="คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง"
@@ -690,7 +771,7 @@ export default function LineSetup() {
                       backdropFilter: 'blur(2px)',
                       boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isLow ? '0 0 8px rgba(239,68,68,0.6)' : '0 2px 6px rgba(0,0,0,0.6)',
                       cursor: isDragging ? 'grabbing' : 'grab', display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', justifyContent: 'center',
+                      alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto',
                       padding: '2px 2px 1px', zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
                   >
@@ -755,7 +836,7 @@ export default function LineSetup() {
                       backdropFilter: 'blur(2px)',
                       boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isConnectSource ? '0 0 8px rgba(249,115,22,0.7)' : isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
                       cursor: isDragging ? 'grabbing' : connectMode ? 'pointer' : 'grab', display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', justifyContent: 'center',
+                      alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto',
                       padding: '2px 2px 1px', zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
                   >
@@ -784,6 +865,7 @@ export default function LineSetup() {
                   <div style={{ color: 'var(--accent)', fontSize: 12 }}>+</div>
                 </div>
               )}
+              </div>}
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: 20 }}>
@@ -800,7 +882,7 @@ export default function LineSetup() {
       </div>
 
       <div style={{
-        width: isMobile ? '100%' : 320,
+        width: isMobile ? '100%' : 400,
         background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14,
         padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', flexShrink: 0
       }}>
@@ -834,37 +916,66 @@ export default function LineSetup() {
                 >
                   {l._isChild && <span style={{ fontSize: 10, color: 'var(--muted)', flexShrink: 0 }}>└</span>}
                   {l._isParent && <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>▼</span>}
-                  <span style={{ fontSize: 13, flex: 1, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {l.name}
-                    {l._orphan && <span style={{ fontSize: 9, color: '#ef4444', marginLeft: 4 }}>!parent missing</span>}
-                  </span>
-                  <select
-                    value={l.section || ''}
-                    onClick={e => e.stopPropagation()}
-                    onChange={e => { e.stopPropagation(); handleUpdateSection(l, e.target.value); }}
-                    style={{ fontSize: 10, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0, maxWidth: 64 }}
-                  >
-                    <option value="">Section</option>
-                    {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                  {/* Parent line selector — can't assign parent to a line that already has children */}
-                  {!l._isParent && (
-                    <select
-                      value={l.parent_line_name || ''}
+                  {editingLineId === l.id ? (
+                    <input
+                      autoFocus
+                      value={editingLineName}
+                      onChange={e => setEditingLineName(e.target.value)}
                       onClick={e => e.stopPropagation()}
-                      onChange={e => { e.stopPropagation(); handleUpdateParent(l, e.target.value); }}
-                      title="ไลน์หลัก (parent)"
-                      style={{ fontSize: 10, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: l.parent_line_name ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', flexShrink: 0, maxWidth: 72 }}
-                    >
-                      <option value="">ไม่มีหลัก</option>
-                      {lines.filter(p => p.name !== l.name && !p.parent_line_name).map(p => (
-                        <option key={p.id} value={p.name}>{p.name}</option>
-                      ))}
-                    </select>
+                      onKeyDown={e => {
+                        e.stopPropagation();
+                        if (e.key === 'Enter') handleRenameLine(l, editingLineName);
+                        if (e.key === 'Escape') setEditingLineId(null);
+                      }}
+                      style={{ flex: 1, fontSize: 12, padding: '2px 6px', borderRadius: 5, border: '1px solid var(--accent)', background: 'var(--bg)', color: 'var(--text)', minWidth: 0 }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: 13, flex: 1, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {l.name}
+                      {l._orphan && <span style={{ fontSize: 9, color: '#ef4444', marginLeft: 4 }}>!parent missing</span>}
+                    </span>
                   )}
-                  <button onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
-                    style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
-                    title="ลบไลน์">🗑️</button>
+                  {editingLineId === l.id ? (
+                    <>
+                      <button onClick={e => { e.stopPropagation(); handleRenameLine(l, editingLineName); }}
+                        style={{ background: 'var(--accent)', border: 'none', color: '#fff', fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', flexShrink: 0, fontWeight: 700 }}>✓</button>
+                      <button onClick={e => { e.stopPropagation(); setEditingLineId(null); }}
+                        style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', flexShrink: 0 }}>✕</button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={e => { e.stopPropagation(); setEditingLineId(l.id); setEditingLineName(l.name); }}
+                        style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 12, padding: '0 2px', lineHeight: 1, flexShrink: 0, cursor: 'pointer' }}
+                        title="เปลี่ยนชื่อ">✏️</button>
+                      <select
+                        value={l.section || ''}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => { e.stopPropagation(); handleUpdateSection(l, e.target.value); }}
+                        style={{ fontSize: 10, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0, maxWidth: 68 }}
+                      >
+                        <option value="">Section</option>
+                        {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                      {/* Parent line selector — can't assign parent to a line that already has children */}
+                      {!l._isParent && (
+                        <select
+                          value={l.parent_line_name || ''}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => { e.stopPropagation(); handleUpdateParent(l, e.target.value); }}
+                          title="ไลน์หลัก (parent)"
+                          style={{ fontSize: 10, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: l.parent_line_name ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', flexShrink: 0, maxWidth: 76 }}
+                        >
+                          <option value="">ไม่มีหลัก</option>
+                          {lines.filter(p => p.name !== l.name && !p.parent_line_name).map(p => (
+                            <option key={p.id} value={p.name}>{p.name}</option>
+                          ))}
+                        </select>
+                      )}
+                      <button onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
+                        style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
+                        title="ลบไลน์">🗑️</button>
+                    </>
+                  )}
                 </div>
               ));
             })()}
@@ -1168,6 +1279,18 @@ export default function LineSetup() {
 
           {activeTab === 'machines' && (
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginBottom: 10 }}>
+              {/* ทะเบียนเครื่องจักร (สร้าง/แก้ไข/กำหนดประเภท) ย้ายไปหน้าฐานข้อมูลเครื่องจักรแล้ว — ที่นี่แค่วางจุดบนผัง */}
+              <a href="/machine-database" target="_blank" rel="noopener noreferrer"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, textDecoration: 'none',
+                  background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>🏭 ฐานข้อมูลเครื่องจักร</div>
+                  <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 1 }}>{drMachines.length} เครื่องในไลน์นี้ · เพิ่ม/แก้ไข/กำหนดประเภทเครื่องจักรที่นี่</div>
+                </div>
+                <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700, flexShrink: 0 }}>เปิดหน้า ↗</span>
+              </a>
+
+              {/* ── วางจุดเครื่องจักรบนผัง ── */}
               <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
                 {machineForm.id ? '📝 แก้ไขจุดเครื่องจักร' : '⚙️ เพิ่มจุดเครื่องจักร'}
               </h4>
@@ -1176,12 +1299,23 @@ export default function LineSetup() {
                   <select value={machineForm.machine_no}
                     onChange={e => setMachineForm({ ...machineForm, machine_no: e.target.value })}>
                     <option value="">-- เลือกเครื่องจักร --</option>
-                    {drMachines.map(m => (
+                    {drMachines.filter(m => m.is_active && !m.machine_type_id).map(m => (
                       <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `- ${m.machine_name}` : ''}</option>
                     ))}
+                    {machineTypes.map(t => {
+                      const items = drMachines.filter(m => m.is_active && m.machine_type_id === t.id);
+                      if (!items.length) return null;
+                      return (
+                        <optgroup key={t.id} label={`${t.icon || ''} ${t.label}`}>
+                          {items.map(m => (
+                            <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `- ${m.machine_name}` : ''}</option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
                   </select>
-                  {drMachines.length === 0 && (
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>ไม่พบเครื่องจักรของไลน์นี้ใน Daily Report</div>
+                  {drMachines.filter(m => m.is_active).length === 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มีเครื่องจักรในทะเบียนของไลน์นี้ — เพิ่มได้ที่ 🏭 ฐานข้อมูลเครื่องจักร ด้านบน</div>
                   )}
                   <div>
                     <label style={{ ...labelSt, display: 'block', marginBottom: 4 }}>กลุ่มเครื่องคู่ขนาน (Redundancy Group) — ไม่บังคับ</label>

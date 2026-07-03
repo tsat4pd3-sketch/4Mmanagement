@@ -238,7 +238,7 @@ export default function OEEAnalytics() {
 
   // ── Styles ─────────────────────────────────────────────────────
   const s = {
-    page:    { padding: '20px 24px', maxWidth: 1400, margin: '0 auto' },
+    page:    { padding: '20px 24px', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' },
     section: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px', marginBottom: 16 },
     title:   { fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 12 },
     sel:     { background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--text)', fontSize: 13 },

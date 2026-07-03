@@ -14,6 +14,7 @@ const Management   = lazy(() => import('./pages/Management'));
 const Dashboard    = lazy(() => import('./pages/Dashboard'));
 const Operator     = lazy(() => import('./pages/operator'));
 const LineSetup    = lazy(() => import('./pages/LineSetup'));
+const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
 const Report       = lazy(() => import('./pages/Report'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
@@ -66,6 +67,7 @@ const NAV_ITEMS = [
   { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager', 'supervisor', 'leader'], group: 'บริหารจัดการ' },
   { to: '/products',        icon: '🔩', label: 'Product Master',    roles: null, group: 'บริหารจัดการ' },
   { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
+  { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    roles: null, group: 'บริหารจัดการ' },
 
@@ -736,6 +738,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/linesetup"  element={
                 <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}><LineSetup /></RoleRoute>
+              } />
+              <Route path="/machine-database" element={
+                <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}><MachineDatabase /></RoleRoute>
               } />
               <Route path="/add-user"   element={
                 <RoleRoute allow={['admin']} userRole={role}><AddUser /></RoleRoute>

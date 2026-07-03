@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { supabase } from '../supabaseClient'
+import { supabaseDR } from '../supabaseClient'
 import { FREQ_LABEL, DEPT_LABEL, dueStatus, STATUS_META, computeNextDue } from '../lib/pmSchedule'
 
 const DEPT_COLORS = {
@@ -66,38 +66,36 @@ export default function PMSchedule() {
   const fetchData = async () => {
     setLoading(true)
 
-    const { data: checklists } = await supabase
-      .from('pm_checklists')
+    const { data: checklists } = await supabaseDR
+      .from('checklists')
       .select('id, equipment_id, frequency, name')
       .eq('module', 'mtn')
       .eq('department', department)
-      .eq('is_active', true)
 
     if (!checklists || checklists.length === 0) { setRows([]); setLoading(false); return }
 
     const clIds = checklists.map(c => c.id)
     const eqIds = [...new Set(checklists.map(c => c.equipment_id))]
 
-    const [{ data: equipment }, { data: schedules }] = await Promise.all([
-      supabase.from('pm_equipment').select('id, name, jig_no, line_name, machine_no, equipment_type').in('id', eqIds),
-      supabase.from('pm_schedules').select('*').in('checklist_id', clIds),
+    const [{ data: jigs }, { data: inspections }] = await Promise.all([
+      supabaseDR.from('jigs').select('id, name, jig_no, line_name, machine_no, equipment_type').in('id', eqIds),
+      supabaseDR.from('inspections').select('checklist_id, inspected_at').in('checklist_id', clIds).order('inspected_at', { ascending: false }),
     ])
 
-    const equipMap = {}
-    ;(equipment ?? []).forEach(e => { equipMap[e.id] = e })
-    const schedMap = {}
-    ;(schedules ?? []).forEach(s => { schedMap[s.checklist_id] = s })
+    const jigMap = {}
+    ;(jigs ?? []).forEach(j => { jigMap[j.id] = j })
+    // most recent inspection per checklist (inspections already ordered desc)
+    const lastInspMap = {}
+    ;(inspections ?? []).forEach(i => { if (!lastInspMap[i.checklist_id]) lastInspMap[i.checklist_id] = i.inspected_at })
 
     const built = checklists.map(cl => {
-      const eq = equipMap[cl.equipment_id] ?? {}
-      const sched = schedMap[cl.id] ?? null
-      const lastDone = sched?.last_done_at ?? null
-      const nextDue = sched?.next_due_date ? new Date(sched.next_due_date) : computeNextDue(lastDone, cl.frequency)
+      const eq = jigMap[cl.equipment_id] ?? {}
+      const lastDone = lastInspMap[cl.id] ?? null
+      const nextDue = computeNextDue(lastDone, cl.frequency)
       const status = dueStatus(nextDue, cl.frequency)
-      return { cl, eq, sched, nextDue, status }
+      return { cl, eq, lastDone, nextDue, status }
     })
 
-    // Sort: overdue first, then due_soon, then never, then ok, then periodic
     built.sort((a, b) => {
       const ORDER = { overdue: 0, due_soon: 1, never: 2, ok: 3, periodic: 4 }
       return (ORDER[a.status] ?? 5) - (ORDER[b.status] ?? 5)
@@ -123,7 +121,6 @@ export default function PMSchedule() {
         <p style={S.sub}>ตารางการตรวจสอบ · {DEPT_LABEL[department] ?? department}</p>
       </div>
 
-      {/* Department tabs */}
       <div style={S.deptBar}>
         {DEPT_OPTIONS.map(d => (
           <button key={d.key} onClick={() => setDept(d.key)}
@@ -133,7 +130,6 @@ export default function PMSchedule() {
         ))}
       </div>
 
-      {/* Summary cards */}
       {!loading && rows.length > 0 && (
         <div style={S.summaryBar}>
           {Object.entries(STATUS_META).map(([key, meta]) => {
@@ -174,7 +170,7 @@ export default function PMSchedule() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ cl, eq, sched, nextDue, status }) => {
+              {rows.map(({ cl, eq, lastDone, nextDue, status }) => {
                 const meta = STATUS_META[status] ?? STATUS_META.ok
                 const isOverdue = status === 'overdue'
                 return (
@@ -189,14 +185,10 @@ export default function PMSchedule() {
                     </td>
                     <td style={{ fontSize: 13, color: 'var(--muted)' }}>{FREQ_LABEL[cl.frequency] ?? cl.frequency}</td>
                     <td style={{ fontSize: 13, color: 'var(--text2)' }}>
-                      {sched?.last_done_at
-                        ? new Date(sched.last_done_at).toLocaleDateString('th-TH')
-                        : <span style={{ color: 'var(--muted)' }}>—</span>}
+                      {lastDone ? new Date(lastDone).toLocaleDateString('th-TH') : <span style={{ color: 'var(--muted)' }}>—</span>}
                     </td>
                     <td style={{ fontSize: 13, color: isOverdue ? '#e05c4a' : 'var(--text2)', fontWeight: isOverdue ? 700 : 400 }}>
-                      {nextDue
-                        ? nextDue.toLocaleDateString('th-TH')
-                        : <span style={{ color: 'var(--muted)' }}>—</span>}
+                      {nextDue ? nextDue.toLocaleDateString('th-TH') : <span style={{ color: 'var(--muted)' }}>—</span>}
                       {isOverdue && nextDue && (
                         <div style={{ fontSize: 11, color: '#e05c4a' }}>
                           เกิน {Math.abs(Math.floor((nextDue - new Date()) / 86400000))} วัน
@@ -211,7 +203,7 @@ export default function PMSchedule() {
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <button
-                        onClick={() => navigate(`/pm-check?dept=${department}&equip=${eq.id}`)}
+                        onClick={() => navigate(`/pm-check?dept=${department}&equip=${cl.equipment_id}`)}
                         style={S.actionBtn(deptColor)}
                       >
                         ✓ ตรวจ

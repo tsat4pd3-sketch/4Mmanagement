@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, Fragment } from 'react';
+import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -148,9 +148,9 @@ export default function Management() {
   const [drMachines,     setDrMachines]     = useState([]);
   const [lineLayout,     setLineLayout]     = useState(null);
   const [draggingWorker, setDraggingWorker] = useState(null);
-  const [selectedLine,      setSelectedLine]      = useState('');
-  const [lines,             setLines]             = useState([]);
-  const [parentChildrenMap, setParentChildrenMap] = useState({});
+  const [selectedLine,   setSelectedLine]   = useState('');
+  const [lines,          setLines]          = useState([]);
+  const [allLines,       setAllLines]       = useState([]); // ทุกไลน์รวมไลน์ย่อย (ใช้หา parent_line_name)
   const [show4MModal,    setShow4MModal]    = useState(null);
   const [log4MForm,      setLog4MForm]      = useState({ category: 'Man', description: '', moveType: 'same', skillOk: false, hasHistory: false, subtype: 'change' });
   const [isMobile,       setIsMobile]       = useState(window.innerWidth <= 768);
@@ -197,10 +197,18 @@ export default function Management() {
       setImgBox({ offsetX: (cw - rw) / 2, offsetY: (ch - rh) / 2, rw, rh });
     });
   }, []);
+  // ResizeObserver จับทุกกรณีที่กรอบรูปเปลี่ยนขนาด รวมถึงพับ/กาง sidebar
+  // ซึ่งเปลี่ยนขนาด container โดยไม่มี window resize event
   useEffect(() => {
     window.addEventListener('resize', recalcImgBox);
-    return () => window.removeEventListener('resize', recalcImgBox);
-  }, [recalcImgBox]);
+    const img = imgRef.current;
+    const ro = img ? new ResizeObserver(recalcImgBox) : null;
+    if (ro) ro.observe(img);
+    return () => {
+      window.removeEventListener('resize', recalcImgBox);
+      if (ro) ro.disconnect();
+    };
+  }, [recalcImgBox, lineLayout]);
   // reset imgBox when layout changes
   useEffect(() => { setImgBox(null); }, [lineLayout]);
 
@@ -213,14 +221,21 @@ export default function Management() {
     return () => clearInterval(t);
   }, []);
 
-  const fetchLineProd = useCallback(async (lineName) => {
-    if (!lineName) { setLineProdData(null); return; }
+  // ไลน์ย่อยที่ผูกกับ selectedLine (เช่น HDF1/HDF2 ใต้ HYDROFORM) — รวมจุดงาน/เครื่องจักร/การผลิตของมันเข้ามาแสดง
+  // ในผังเดียวกัน เพราะจริงๆ อยู่พื้นที่เดียวกัน ไม่ได้แยกกันทางกายภาพ
+  const childLineNames = useMemo(
+    () => allLines.filter(l => l.parent_line_name === selectedLine).map(l => l.name),
+    [allLines, selectedLine],
+  );
+
+  const fetchLineProd = useCallback(async (lineNames) => {
+    if (!lineNames?.length) { setLineProdData(null); return; }
     const todayStr = getWorkDate();
     const { data: sessions } = await supabaseDR
       .from('production_sessions')
       .select('id, line_name, shift, status, work_date, created_at, dr_products(name, target_per_shift, cycle_time_sec)')
       .eq('work_date', todayStr)
-      .eq('line_name', lineName);
+      .in('line_name', lineNames);
     if (!sessions?.length) { setLineProdData(null); return; }
     const sessionIds = sessions.map(s => s.id);
     const { data: orders } = await supabaseDR
@@ -249,10 +264,11 @@ export default function Management() {
 
   useEffect(() => {
     if (!selectedLine) return;
-    fetchLineProd(selectedLine);
-    const t = setInterval(() => fetchLineProd(selectedLine), 30000);
+    const cardLineNames = [selectedLine, ...childLineNames];
+    fetchLineProd(cardLineNames);
+    const t = setInterval(() => fetchLineProd(cardLineNames), 30000);
     return () => clearInterval(t);
-  }, [selectedLine, fetchLineProd]);
+  }, [selectedLine, childLineNames, fetchLineProd]);
 
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth <= 768);
@@ -266,18 +282,13 @@ export default function Management() {
       let q = supabase.from('production_lines').select('id, name, parent_line_name').order('name');
       if (isLeader && userLineId) q = q.eq('id', userLineId);
       const { data } = await q;
-      setLines(data || []);
-      const pcm = {};
-      (data || []).forEach(l => {
-        if (l.parent_line_name) {
-          if (!pcm[l.parent_line_name]) pcm[l.parent_line_name] = [];
-          pcm[l.parent_line_name].push(l.name);
-        }
-      });
-      setParentChildrenMap(pcm);
-      // default to first non-child line (parent/standalone)
-      const firstLine = (data || []).find(l => !l.parent_line_name) || data?.[0];
-      if (firstLine) setSelectedLine(firstLine.name);
+      // ไลน์ย่อย (มี parent_line_name) ใช้ผังเดียวกับไลน์หลักและถูกรวมเข้าการ์ดเดียวกันอยู่แล้ว —
+      // ไม่ต้องให้เลือกแยกในหน้านี้ เพื่อไม่ให้ dropdown แตกเป็นหลายไลน์ทั้งที่พื้นที่จริงเดียวกัน
+      const topLevel = (data || []).filter(l => !l.parent_line_name);
+      setLines(topLevel.length ? topLevel : (data || []));
+      const list = topLevel.length ? topLevel : (data || []);
+      if (list.length > 0) setSelectedLine(list[0].name);
+      setAllLines(data || []);
     };
     fetchLines();
   }, []);
@@ -289,15 +300,16 @@ export default function Management() {
   }, [selectedLine]);
 
   const fetchSetup = async () => {
-    const { data: layoutData } = await supabase.from('line_layouts').select('image_url').eq('line_name', selectedLine).single();
+    const cardLineNames = [selectedLine, ...childLineNames];
+    const { data: layoutData } = await supabase.from('line_layouts').select('image_url').eq('line_name', selectedLine).maybeSingle();
     setLineLayout(layoutData?.image_url || null);
-    const { data: stationData } = await supabase.from('workstations').select('*, station_requirements(*)').eq('line_name', selectedLine);
+    const { data: stationData } = await supabase.from('workstations').select('*, station_requirements(*)').in('line_name', cardLineNames);
     setDynamicStations(stationData || []);
-    const { data: wipData } = await supabase.from('wip_buffer_points').select('*').eq('line_name', selectedLine);
+    const { data: wipData } = await supabase.from('wip_buffer_points').select('*').in('line_name', cardLineNames);
     setWipPoints(wipData || []);
-    const { data: mpData } = await supabase.from('machine_points').select('*').eq('line_name', selectedLine);
+    const { data: mpData } = await supabase.from('machine_points').select('*').in('line_name', cardLineNames);
     setMachinePoints(mpData || []);
-    const { data: drMc } = await supabaseDR.from('machines').select('id, machine_no, machine_name').eq('line_name', selectedLine).eq('is_active', true);
+    const { data: drMc } = await supabaseDR.from('machines').select('id, machine_no, machine_name').in('line_name', cardLineNames).eq('is_active', true);
     setDrMachines(drMc || []);
   };
 
@@ -528,8 +540,11 @@ export default function Management() {
   const saveHomePosition = async (worker, stationId) => {
     const empId = worker.employee_id || worker.employees?.id;
     if (!empId) return;
+    // ใช้ line_name ของสถานีจริง ไม่ใช่ selectedLine เฉยๆ — เพราะตอนนี้ selectedLine อาจเป็นไลน์หลัก
+    // (เช่น HYDROFORM) ที่รวมจุดงานจากไลน์ย่อยหลายไลน์ (HDF1/HDF2/...) เข้ามาแสดงพร้อมกัน
+    const station = dynamicStations.find(s => String(s.id) === String(stationId));
     await supabase.from('employee_home_positions').upsert(
-      { employee_id: empId, station_id: stationId, line_name: selectedLine, updated_at: new Date().toISOString() },
+      { employee_id: empId, station_id: stationId, line_name: station?.line_name || selectedLine, updated_at: new Date().toISOString() },
       { onConflict: 'employee_id' }
     );
     setHomePositions(prev => ({ ...prev, [empId]: String(stationId) }));
@@ -782,24 +797,13 @@ export default function Management() {
           <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.08em' }}>ไลน์ผลิต</div>
           <select value={selectedLine} onChange={(e) => !isLeader && setSelectedLine(e.target.value)} disabled={isLeader}
             style={{ width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 13, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', opacity: isLeader ? 0.7 : 1 }}>
-            {(() => {
-              const childNames = new Set(lines.filter(l => l.parent_line_name).map(l => l.name));
-              const result = [];
-              lines.filter(l => !l.parent_line_name).forEach(l => {
-                const children = parentChildrenMap[l.name] || [];
-                result.push(<option key={l.id} value={l.name}>{l.name}{children.length ? ' ▸' : ''}</option>);
-                children.forEach(childName => {
-                  const child = lines.find(c => c.name === childName);
-                  if (child) result.push(<option key={child.id} value={child.name}>　└ {childName}</option>);
-                });
-              });
-              // orphan children whose parent is not in the list
-              lines.filter(l => l.parent_line_name && !lines.find(p => p.name === l.parent_line_name)).forEach(l => {
-                result.push(<option key={l.id} value={l.name}>{l.name}</option>);
-              });
-              return result;
-            })()}
+            {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
           </select>
+          {childLineNames.length > 0 && (
+            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+              🔗 รวมไลน์ย่อย: {childLineNames.join(', ')}
+            </div>
+          )}
         </div>
 
         {/* instruction banner on mobile when worker selected */}
@@ -1606,8 +1610,7 @@ export default function Management() {
 
       {/* ── Radar skill modal (portal → renders at body to escape stacking context) ── */}
       {radarWorker && createPortal(
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}
-          onClick={() => setRadarWorker(null)}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 16, padding: '20px 24px', width: 'min(90vw, 380px)', boxShadow: 'var(--shadow-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               {radarWorker.employees?.image_url
@@ -1675,7 +1678,7 @@ export default function Management() {
       {/* ── Mobile bottom sheet: worker detail ── */}
       {isMobile && detailSheet && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} onClick={() => setDetailSheet(null)} />
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} />
           <div style={{ position: 'relative', background: 'var(--card)', borderRadius: '20px 20px 0 0', padding: '20px 20px 36px', boxShadow: 'var(--shadow-lg)', animation: 'slideUp 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
             <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } } @keyframes hoverIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
             {/* Handle */}
@@ -1774,7 +1777,7 @@ export default function Management() {
           .sort((a, b) => b._fit.score - a._fit.score);
         return (
           <div style={{ position: 'fixed', inset: 0, zIndex: 3000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-            <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)' }} onClick={() => setStationModal(null)} />
+            <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)' }} />
             <div style={{ position: 'relative', background: 'var(--card)', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480, padding: '20px 18px 36px', boxShadow: 'var(--shadow-lg)', maxHeight: '80vh', display: 'flex', flexDirection: 'column', animation: 'slideUp 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
               {/* Handle */}
               <div style={{ width: 36, height: 4, background: 'var(--border2)', borderRadius: 3, margin: '0 auto 14px' }} />

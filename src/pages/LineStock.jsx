@@ -789,7 +789,7 @@ export default function LineStock() {
   const [activeTab, setActiveTab] = useState('stock');
 
   return (
-    <div style={{ padding:'clamp(12px,2vw,24px)', maxWidth:1300, margin:'0 auto' }}>
+    <div style={{ padding:'clamp(12px,2vw,24px)', maxWidth:'min(96vw, 2000px)', margin:'0 auto' }}>
       {/* Tab bar */}
       <div style={{ display:'flex', gap:4, marginBottom:20, borderBottom:'2px solid var(--border)', paddingBottom:0 }}>
         {TABS.map(t => (

@@ -42,6 +42,52 @@ function getShiftInfo(date) {
   return { isDay, label: isDay ? 'กะเช้า' : 'กะดึก', icon: isDay ? '☀️' : '🌙' };
 }
 
+// การ์ดผังไลน์ย่อ — พิกัด pos_top/pos_left เป็น % ของ "ตัวรูปจริง" (มาตรฐานเดียวกับ LineSetup/Management)
+// ใช้ object-fit: contain + overlay ที่ยึดกรอบรูปหลังหัก letterbox เพื่อให้จุดเกาะรูปตามทุกขนาดการ์ด
+function ThumbMap({ imageUrl, alt, markers }) {
+  const imgRef = useRef(null);
+  const [box, setBox] = useState(null); // { ox, oy, rw, rh }
+  const recalc = useCallback(() => {
+    const img = imgRef.current;
+    if (!img || !img.naturalWidth) { setBox(null); return; }
+    const cw = img.clientWidth, ch = img.clientHeight;
+    const scale = Math.min(cw / img.naturalWidth, ch / img.naturalHeight);
+    const rw = img.naturalWidth * scale, rh = img.naturalHeight * scale;
+    setBox({ ox: (cw - rw) / 2, oy: (ch - rh) / 2, rw, rh });
+  }, []);
+  useEffect(() => {
+    const img = imgRef.current;
+    if (!img) return;
+    const ro = new ResizeObserver(() => requestAnimationFrame(recalc));
+    ro.observe(img);
+    return () => ro.disconnect();
+  }, [recalc, imageUrl]);
+  return (
+    <div style={{ position: 'relative', aspectRatio: '16/9' }}>
+      <img ref={imgRef} src={imageUrl} alt={alt} onLoad={recalc}
+        style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', opacity: 0.65 }} />
+      {box && (
+        <div style={{ position: 'absolute', left: box.ox, top: box.oy, width: box.rw, height: box.rh, pointerEvents: 'none' }}>
+          {markers.map(m => (
+            <div key={m.id} style={{ position: 'absolute', top: m.top, left: m.left, transform: 'translate(-50%, -50%)', zIndex: 2 }}>
+              <div style={{
+                width: 26, height: 26, borderRadius: '50%',
+                border: `2px solid ${m.color}`, boxShadow: `0 0 6px ${m.color}88`,
+                overflow: 'hidden', background: '#1a1a1a',
+              }}>
+                {m.img
+                  ? <img src={m.img} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: m.color }}>{m.initial}</div>
+                }
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RadialProgress({ pct, size = 80, stroke = 7, color = 'var(--accent)' }) {
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
@@ -148,7 +194,13 @@ export default function Dashboard() {
     };
     measure();
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
+    // ResizeObserver จับกรณีขนาดรูปเปลี่ยนโดยไม่มี window resize (เช่น พับ sidebar, รูปเพิ่งโหลดเสร็จ)
+    const ro = mapImgRef.current ? new ResizeObserver(measure) : null;
+    if (ro && mapImgRef.current) ro.observe(mapImgRef.current);
+    return () => {
+      window.removeEventListener('resize', measure);
+      if (ro) ro.disconnect();
+    };
   }, [expandedLine]);
   const [prodStatus,    setProdStatus]    = useState([]);
   const [ctByMatNo,     setCtByMatNo]     = useState({});
@@ -493,6 +545,22 @@ export default function Dashboard() {
     () => selectedSection === 'all' ? layouts : layouts.filter(l => visibleLineNames.has(l.line_name)),
     [layouts, selectedSection, visibleLineNames],
   );
+
+  // ไลน์ย่อย (เช่น HDF1, LASER123 ใต้ HYDROFORM) ที่ไม่มีรูปผังของตัวเอง — จริงๆ อยู่พื้นที่เดียวกับไลน์หลัก
+  // ให้รวมจุดงาน/คนของมันเข้าไปในการ์ดของไลน์หลักแทนที่จะแยกการ์ด (ซึ่งจะไม่มีรูปให้แสดงอยู่แล้ว)
+  const parentChildrenMap = useMemo(() => {
+    const pcm = {};
+    lines.forEach(l => {
+      if (l.parent_line_name) (pcm[l.parent_line_name] ||= []).push(l.name);
+    });
+    return pcm;
+  }, [lines]);
+  const layoutLineNamesForCard = useCallback((layoutLineName) => {
+    const children = parentChildrenMap[layoutLineName];
+    if (!children?.length) return [layoutLineName];
+    const orphanChildren = children.filter(c => !layouts.some(l => l.line_name === c));
+    return [layoutLineName, ...orphanChildren];
+  }, [parentChildrenMap, layouts]);
 
   /* Filter by assignedShift — memoized so the 1s clock tick doesn't re-filter all logs */
   const shiftLogs = useMemo(
@@ -1276,57 +1344,40 @@ export default function Dashboard() {
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
                 {visibleLayouts.map(layout => {
-                  const lineWs = workstations.filter(w => w.line_name === layout.line_name);
+                  const cardLineNames = layoutLineNamesForCard(layout.line_name);
+                  const lineWs = workstations.filter(w => cardLineNames.includes(w.line_name));
                   const lineStaff = lineWs.map(ws => stationEmpMap[String(ws.id)]).filter(e => e && (!shiftEmpIds || shiftEmpIds.has(e.id)));
-                  // Use lineStats (same source as KPI cards) for the footer counts
-                  const lineStat = lineStats.find(l => l.name === layout.line_name);
-                  const footerPresent = lineStat ? lineStat.linePresent : lineStaff.filter(e => e.is_present === true).length;
-                  const footerTotal   = lineStat ? lineStat.lineTotal   : lineStaff.length;
-                  const footerAbsent  = lineStat ? (footerTotal - footerPresent) : lineStaff.filter(e => e.is_present === false).length;
+                  // Use lineStats (same source as KPI cards) for the footer counts — sum across sub-lines merged into this card
+                  const cardLineStats = lineStats.filter(l => cardLineNames.includes(l.name));
+                  const footerPresent = cardLineStats.length ? cardLineStats.reduce((s, l) => s + l.linePresent, 0) : lineStaff.filter(e => e.is_present === true).length;
+                  const footerTotal   = cardLineStats.length ? cardLineStats.reduce((s, l) => s + l.lineTotal, 0)   : lineStaff.length;
+                  const footerAbsent  = cardLineStats.length ? (footerTotal - footerPresent) : lineStaff.filter(e => e.is_present === false).length;
                   return (
                     <div
                       key={layout.line_name}
                       onClick={() => setExpandedLine(layout.line_name)}
                       style={{ cursor: 'pointer', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border2)', background: '#111' }}
                     >
-                      {/* Map thumbnail */}
-                      <div style={{ position: 'relative', aspectRatio: '16/9' }}>
-                        <img
-                          src={layout.image_url}
-                          alt={layout.line_name}
-                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: 0.65 }}
-                        />
-                        {lineWs.map(ws => {
+                      {/* Map thumbnail — marker ยึดกับตัวรูปจริง (contain) ตำแหน่งไม่เพี้ยนตามขนาดการ์ด */}
+                      <ThumbMap
+                        imageUrl={layout.image_url}
+                        alt={layout.line_name}
+                        markers={lineWs.map(ws => {
                           const emp = stationEmpMap[String(ws.id)];
                           if (!emp) return null;
                           if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
                           // Only show employees who are present
                           if (emp.is_present !== true) return null;
-                          const fit = emp.fitScore;
-                          const fitLv = getFitLevel(fit);
-                          const color = fitLv ? fitLv.color : '#aaa';
-                          return (
-                            <div key={ws.id} style={{
-                              position: 'absolute', top: ws.pos_top, left: ws.pos_left,
-                              transform: 'translate(-50%, -50%)',
-                              zIndex: 2,
-                            }}>
-                              <div style={{
-                                width: 26, height: 26, borderRadius: '50%',
-                                border: `2px solid ${color}`,
-                                boxShadow: `0 0 6px ${color}88`,
-                                overflow: 'hidden',
-                                background: '#1a1a1a',
-                              }}>
-                                {emp.image_url
-                                  ? <img src={emp.image_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                  : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color }}>{(emp.name || '?')[0]}</div>
-                                }
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                          const fitLv = getFitLevel(emp.fitScore);
+                          return {
+                            id: ws.id,
+                            top: ws.pos_top, left: ws.pos_left,
+                            color: fitLv ? fitLv.color : '#aaa',
+                            img: emp.image_url,
+                            initial: (emp.name || '?')[0],
+                          };
+                        }).filter(Boolean)}
+                      />
                       {/* Line label */}
                       <div style={{ padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg3)' }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60%' }}>
@@ -1397,12 +1448,12 @@ export default function Dashboard() {
       {/* Expanded Line Map Modal */}
       {expandedLine && (() => {
         const layout = layouts.find(l => l.line_name === expandedLine);
-        const lineWs = workstations.filter(w => w.line_name === expandedLine);
+        const cardLineNames = layoutLineNamesForCard(expandedLine);
+        const lineWs = workstations.filter(w => cardLineNames.includes(w.line_name));
         if (!layout) return null;
         return (
           <div
             className="overlay"
-            onClick={() => setExpandedLine(null)}
             style={{ zIndex: 1000 }}
           >
             <div

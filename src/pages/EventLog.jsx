@@ -1067,7 +1067,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
   })();
 
   return (
-    <div className="overlay" onClick={onClose} style={{ zIndex: 2000, alignItems: 'flex-start', overflowY: 'auto', padding: '24px 16px' }}>
+    <div className="overlay" style={{ zIndex: 2000, alignItems: 'flex-start', overflowY: 'auto', padding: '24px 16px' }}>
       <div onClick={e => e.stopPropagation()}
         style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 28,
           width: 'min(95vw,860px)', boxShadow: 'var(--shadow-lg)', marginTop: 20, marginBottom: 20 }}>
