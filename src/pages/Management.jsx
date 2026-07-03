@@ -148,8 +148,9 @@ export default function Management() {
   const [drMachines,     setDrMachines]     = useState([]);
   const [lineLayout,     setLineLayout]     = useState(null);
   const [draggingWorker, setDraggingWorker] = useState(null);
-  const [selectedLine,   setSelectedLine]   = useState('');
-  const [lines,          setLines]          = useState([]);
+  const [selectedLine,      setSelectedLine]      = useState('');
+  const [lines,             setLines]             = useState([]);
+  const [parentChildrenMap, setParentChildrenMap] = useState({});
   const [show4MModal,    setShow4MModal]    = useState(null);
   const [log4MForm,      setLog4MForm]      = useState({ category: 'Man', description: '', moveType: 'same', skillOk: false, hasHistory: false, subtype: 'change' });
   const [isMobile,       setIsMobile]       = useState(window.innerWidth <= 768);
@@ -262,11 +263,21 @@ export default function Management() {
   useEffect(() => {
     supabase.from('skill_definitions').select('*').order('sort_order').then(({ data }) => setSkillDefs(data || []));
     const fetchLines = async () => {
-      let q = supabase.from('production_lines').select('id, name').order('name');
+      let q = supabase.from('production_lines').select('id, name, parent_line_name').order('name');
       if (isLeader && userLineId) q = q.eq('id', userLineId);
       const { data } = await q;
       setLines(data || []);
-      if (data?.length > 0) setSelectedLine(data[0].name);
+      const pcm = {};
+      (data || []).forEach(l => {
+        if (l.parent_line_name) {
+          if (!pcm[l.parent_line_name]) pcm[l.parent_line_name] = [];
+          pcm[l.parent_line_name].push(l.name);
+        }
+      });
+      setParentChildrenMap(pcm);
+      // default to first non-child line (parent/standalone)
+      const firstLine = (data || []).find(l => !l.parent_line_name) || data?.[0];
+      if (firstLine) setSelectedLine(firstLine.name);
     };
     fetchLines();
   }, []);
@@ -771,7 +782,23 @@ export default function Management() {
           <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.08em' }}>ไลน์ผลิต</div>
           <select value={selectedLine} onChange={(e) => !isLeader && setSelectedLine(e.target.value)} disabled={isLeader}
             style={{ width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 13, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', opacity: isLeader ? 0.7 : 1 }}>
-            {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+            {(() => {
+              const childNames = new Set(lines.filter(l => l.parent_line_name).map(l => l.name));
+              const result = [];
+              lines.filter(l => !l.parent_line_name).forEach(l => {
+                const children = parentChildrenMap[l.name] || [];
+                result.push(<option key={l.id} value={l.name}>{l.name}{children.length ? ' ▸' : ''}</option>);
+                children.forEach(childName => {
+                  const child = lines.find(c => c.name === childName);
+                  if (child) result.push(<option key={child.id} value={child.name}>　└ {childName}</option>);
+                });
+              });
+              // orphan children whose parent is not in the list
+              lines.filter(l => l.parent_line_name && !lines.find(p => p.name === l.parent_line_name)).forEach(l => {
+                result.push(<option key={l.id} value={l.name}>{l.name}</option>);
+              });
+              return result;
+            })()}
           </select>
         </div>
 

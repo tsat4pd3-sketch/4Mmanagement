@@ -90,7 +90,7 @@ function getRoundStatus(r, confirmedSet, receivedMap) {
 }
 
 /* ─── Store Board View ───────────────────────────────────────────────────── */
-function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confirming, onReceive, fmt }) {
+function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confirming, onReceive, fmt, lineMap }) {
   const [expanded, setExpanded] = useState(null);
 
   const confirmedSet = useMemo(() => {
@@ -124,13 +124,19 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
     return res;
   }, [view.cols, view.rowList, kanbanStd]);
 
-  // byLine: รวมทุกไลน์ที่มีรอบจัดส่ง "หรือ" มี demand จริง — กันไลน์ที่ยังไม่ตั้งรอบหายไปจากบอร์ด
+  // byLine: รวมทุกไลน์ที่มีรอบจัดส่ง "หรือ" มี demand จริง — group sub-lines ใต้ parent
   const byLine = useMemo(() => {
     const m = {};
-    rounds.forEach(r => { (m[r.line_name] = m[r.line_name] || []).push(r); });
-    Object.keys(demandByLine).forEach(lineName => { if (!m[lineName]) m[lineName] = []; });
+    rounds.forEach(r => {
+      const key = lineMap?.[r.line_name]?.parent_line_name || r.line_name;
+      (m[key] = m[key] || []).push(r);
+    });
+    Object.keys(demandByLine).forEach(lineName => {
+      const key = lineMap?.[lineName]?.parent_line_name || lineName;
+      if (!m[key]) m[key] = [];
+    });
     return m;
-  }, [rounds, demandByLine]);
+  }, [rounds, demandByLine, lineMap]);
 
   if (!Object.keys(byLine).length) return (
     <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
@@ -247,7 +253,7 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
 }
 
 /* ─── Delivery Timeline Board — 24h heijunka-style view of delivery rounds ── */
-function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt }) {
+function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineMap }) {
   const [expanded, setExpanded] = useState(null);
   const [breakPolicies, setBreakPolicies] = useState([]);
   useEffect(() => {
@@ -292,13 +298,19 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt }) {
     });
     return res;
   }, [view.cols, view.rowList, kanbanStd]);
-  // รวมไลน์ที่มี demand จริงแต่ยังไม่ตั้งรอบจัดส่งเข้ามาด้วย กันหายไปจากบอร์ด
+  // รวมไลน์ที่มี demand จริงแต่ยังไม่ตั้งรอบจัดส่งเข้ามาด้วย กันหายไปจากบอร์ด — group sub-lines ใต้ parent
   const byLine = useMemo(() => {
     const m = {};
-    rounds.forEach(r => { (m[r.line_name] = m[r.line_name] || []).push(r); });
-    Object.keys(demandByLine).forEach(lineName => { if (!m[lineName]) m[lineName] = []; });
+    rounds.forEach(r => {
+      const key = lineMap?.[r.line_name]?.parent_line_name || r.line_name;
+      (m[key] = m[key] || []).push(r);
+    });
+    Object.keys(demandByLine).forEach(lineName => {
+      const key = lineMap?.[lineName]?.parent_line_name || lineName;
+      if (!m[key]) m[key] = [];
+    });
     return m;
-  }, [rounds, demandByLine]);
+  }, [rounds, demandByLine, lineMap]);
 
   const timeToMs = (t) => {
     if (!t) return null;
@@ -1045,6 +1057,8 @@ export default function HeijunkaKanban() {
   const [accumulator, setAccumulator] = useState([]);
   const [lotSizeMap, setLotSizeMap]   = useState({});   // mat_no → lot_size
   const [pullBusy, setPullBusy]       = useState(null);
+  const [lineMap,   setLineMap]       = useState({});   // name → { parent_line_name, ... }
+  const [parentChildrenMap, setParentChildrenMap] = useState({}); // parent → [children]
   // ── ตู้ Kanban รวม: Rack Center (ภาชนะ + packaging) ──
   const [rackRequests, setRackRequests] = useState([]);
   const [pkgRequests, setPkgRequests]   = useState([]);
@@ -1188,6 +1202,20 @@ export default function HeijunkaKanban() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // 0) production line hierarchy
+      const { data: linesData } = await supabase.from('production_lines').select('id, name, parent_line_name').order('name');
+      const lm = {};
+      const pcm = {};
+      (linesData || []).forEach(l => {
+        lm[l.name] = l;
+        if (l.parent_line_name) {
+          if (!pcm[l.parent_line_name]) pcm[l.parent_line_name] = [];
+          pcm[l.parent_line_name].push(l.name);
+        }
+      });
+      setLineMap(lm);
+      setParentChildrenMap(pcm);
+
       // 1) sessions ของวันนั้น
       const { data: sess, error: e1 } = await supabaseDR.from('production_sessions')
         .select('id, line_name, shift, status, product_id, dr_products(id, name, mat_no)')
@@ -1523,11 +1551,11 @@ export default function HeijunkaKanban() {
           <StoreBoardView
             rounds={rounds} deliveries={deliveries} view={view}
             kanbanStd={kanbanStd} onConfirm={confirmRound} confirming={confirming}
-            onReceive={openReceive} fmt={fmt}
+            onReceive={openReceive} fmt={fmt} lineMap={lineMap}
           />
         ) : viewMode === 'timeline' ? (
           <DeliveryTimelineBoard
-            rounds={rounds} deliveries={deliveries} view={view} kanbanStd={kanbanStd} fmt={fmt}
+            rounds={rounds} deliveries={deliveries} view={view} kanbanStd={kanbanStd} fmt={fmt} lineMap={lineMap}
           />
         ) : viewMode === 'pull' ? (
           <PullBoard
