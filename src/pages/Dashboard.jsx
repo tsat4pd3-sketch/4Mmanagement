@@ -42,6 +42,52 @@ function getShiftInfo(date) {
   return { isDay, label: isDay ? 'กะเช้า' : 'กะดึก', icon: isDay ? '☀️' : '🌙' };
 }
 
+// การ์ดผังไลน์ย่อ — พิกัด pos_top/pos_left เป็น % ของ "ตัวรูปจริง" (มาตรฐานเดียวกับ LineSetup/Management)
+// ใช้ object-fit: contain + overlay ที่ยึดกรอบรูปหลังหัก letterbox เพื่อให้จุดเกาะรูปตามทุกขนาดการ์ด
+function ThumbMap({ imageUrl, alt, markers }) {
+  const imgRef = useRef(null);
+  const [box, setBox] = useState(null); // { ox, oy, rw, rh }
+  const recalc = useCallback(() => {
+    const img = imgRef.current;
+    if (!img || !img.naturalWidth) { setBox(null); return; }
+    const cw = img.clientWidth, ch = img.clientHeight;
+    const scale = Math.min(cw / img.naturalWidth, ch / img.naturalHeight);
+    const rw = img.naturalWidth * scale, rh = img.naturalHeight * scale;
+    setBox({ ox: (cw - rw) / 2, oy: (ch - rh) / 2, rw, rh });
+  }, []);
+  useEffect(() => {
+    const img = imgRef.current;
+    if (!img) return;
+    const ro = new ResizeObserver(() => requestAnimationFrame(recalc));
+    ro.observe(img);
+    return () => ro.disconnect();
+  }, [recalc, imageUrl]);
+  return (
+    <div style={{ position: 'relative', aspectRatio: '16/9' }}>
+      <img ref={imgRef} src={imageUrl} alt={alt} onLoad={recalc}
+        style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', opacity: 0.65 }} />
+      {box && (
+        <div style={{ position: 'absolute', left: box.ox, top: box.oy, width: box.rw, height: box.rh, pointerEvents: 'none' }}>
+          {markers.map(m => (
+            <div key={m.id} style={{ position: 'absolute', top: m.top, left: m.left, transform: 'translate(-50%, -50%)', zIndex: 2 }}>
+              <div style={{
+                width: 26, height: 26, borderRadius: '50%',
+                border: `2px solid ${m.color}`, boxShadow: `0 0 6px ${m.color}88`,
+                overflow: 'hidden', background: '#1a1a1a',
+              }}>
+                {m.img
+                  ? <img src={m.img} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: m.color }}>{m.initial}</div>
+                }
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RadialProgress({ pct, size = 80, stroke = 7, color = 'var(--accent)' }) {
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
@@ -147,7 +193,13 @@ export default function Dashboard() {
     };
     measure();
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
+    // ResizeObserver จับกรณีขนาดรูปเปลี่ยนโดยไม่มี window resize (เช่น พับ sidebar, รูปเพิ่งโหลดเสร็จ)
+    const ro = mapImgRef.current ? new ResizeObserver(measure) : null;
+    if (ro && mapImgRef.current) ro.observe(mapImgRef.current);
+    return () => {
+      window.removeEventListener('resize', measure);
+      if (ro) ro.disconnect();
+    };
   }, [expandedLine]);
   const [prodStatus,    setProdStatus]    = useState([]);
   const [ctByMatNo,     setCtByMatNo]     = useState({});
@@ -1284,44 +1336,26 @@ export default function Dashboard() {
                       onClick={() => setExpandedLine(layout.line_name)}
                       style={{ cursor: 'pointer', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border2)', background: '#111' }}
                     >
-                      {/* Map thumbnail */}
-                      <div style={{ position: 'relative', aspectRatio: '16/9' }}>
-                        <img
-                          src={layout.image_url}
-                          alt={layout.line_name}
-                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: 0.65 }}
-                        />
-                        {lineWs.map(ws => {
+                      {/* Map thumbnail — marker ยึดกับตัวรูปจริง (contain) ตำแหน่งไม่เพี้ยนตามขนาดการ์ด */}
+                      <ThumbMap
+                        imageUrl={layout.image_url}
+                        alt={layout.line_name}
+                        markers={lineWs.map(ws => {
                           const emp = stationEmpMap[String(ws.id)];
                           if (!emp) return null;
                           if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
                           // Only show employees who are present
                           if (emp.is_present !== true) return null;
-                          const fit = emp.fitScore;
-                          const fitLv = getFitLevel(fit);
-                          const color = fitLv ? fitLv.color : '#aaa';
-                          return (
-                            <div key={ws.id} style={{
-                              position: 'absolute', top: ws.pos_top, left: ws.pos_left,
-                              transform: 'translate(-50%, -50%)',
-                              zIndex: 2,
-                            }}>
-                              <div style={{
-                                width: 26, height: 26, borderRadius: '50%',
-                                border: `2px solid ${color}`,
-                                boxShadow: `0 0 6px ${color}88`,
-                                overflow: 'hidden',
-                                background: '#1a1a1a',
-                              }}>
-                                {emp.image_url
-                                  ? <img src={emp.image_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                  : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color }}>{(emp.name || '?')[0]}</div>
-                                }
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                          const fitLv = getFitLevel(emp.fitScore);
+                          return {
+                            id: ws.id,
+                            top: ws.pos_top, left: ws.pos_left,
+                            color: fitLv ? fitLv.color : '#aaa',
+                            img: emp.image_url,
+                            initial: (emp.name || '?')[0],
+                          };
+                        }).filter(Boolean)}
+                      />
                       {/* Line label */}
                       <div style={{ padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg3)' }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60%' }}>

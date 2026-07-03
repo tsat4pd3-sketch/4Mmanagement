@@ -27,7 +27,7 @@ export default function Register() {
   const [teamOpts,    setTeamOpts]    = useState([]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section').order('name')
+    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
       .then(({ data }) => {
         setLines(data || []);
         if (isSupervisor && userSection) {
@@ -163,7 +163,7 @@ export default function Register() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>Department / แผนก</label>
-              <select value={department} onChange={e => setDepartment(e.target.value)} disabled={!section}>
+              <select value={department} onChange={e => { setDepartment(e.target.value); setGroupName(''); setLineId(null); }} disabled={!section}>
                 <option value="">{section ? '— เลือก —' : 'เลือก Section ก่อน'}</option>
                 {deptOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
               </select>
@@ -180,9 +180,15 @@ export default function Register() {
           <div>
             <label style={labelSt}>Group / กลุ่ม (Line)</label>
             {(() => {
-              const lineOpts = isSupervisor && userSection
+              let lineOpts = isSupervisor && userSection
                 ? lines.filter(l => l.section === userSection)
                 : lines;
+              if (department) {
+                const filtered = lineOpts.filter(l =>
+                  l.name === department || l.parent_line_name === department
+                );
+                if (filtered.length > 0) lineOpts = filtered;
+              }
               return (
                 <select value={groupName} onChange={e => {
                   const val = e.target.value;

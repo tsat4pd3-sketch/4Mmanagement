@@ -197,10 +197,18 @@ export default function Management() {
       setImgBox({ offsetX: (cw - rw) / 2, offsetY: (ch - rh) / 2, rw, rh });
     });
   }, []);
+  // ResizeObserver จับทุกกรณีที่กรอบรูปเปลี่ยนขนาด รวมถึงพับ/กาง sidebar
+  // ซึ่งเปลี่ยนขนาด container โดยไม่มี window resize event
   useEffect(() => {
     window.addEventListener('resize', recalcImgBox);
-    return () => window.removeEventListener('resize', recalcImgBox);
-  }, [recalcImgBox]);
+    const img = imgRef.current;
+    const ro = img ? new ResizeObserver(recalcImgBox) : null;
+    if (ro) ro.observe(img);
+    return () => {
+      window.removeEventListener('resize', recalcImgBox);
+      if (ro) ro.disconnect();
+    };
+  }, [recalcImgBox, lineLayout]);
   // reset imgBox when layout changes
   useEffect(() => { setImgBox(null); }, [lineLayout]);
 

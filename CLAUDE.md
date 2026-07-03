@@ -107,6 +107,35 @@
 
 ---
 
+## Organizational Hierarchy (Thai Summit Group)
+
+ลำดับชั้นองค์กรที่สอดคล้องกันทั้งระบบ — **ห้ามเพิ่มฟีเจอร์ที่ขัดกับลำดับชั้นนี้**
+
+```
+ระดับส่วน (Section)      → org_nodes.kind='section'  cost center 21404XXXX
+  เช่น PD1, PD2, QA, MTN, JIG MTN, DIE MTN
+      ↓
+ระดับแผนก (Department)  → org_nodes.kind='department' cost center 21405XXXX
+  เช่น HYDROFORM, ASSEMBLY
+      ↓
+ระดับกลุ่ม/ไลน์หลัก    → production_lines ที่ parent_line_name IS NULL
+  เช่น HYDROFORM (parent), LINE APRON ASSY
+      ↓
+ระดับไลน์ผลิต           → production_lines ที่ parent_line_name SET
+  เช่น HDF1, HDF2, LASER123, LASER456, LASER E50, LASER EXPORT
+      ↓
+ระดับ Team              → employees.team = 'A' | 'B' | 'C'
+  A/B หมุนกะ | C กะเช้าตลอด
+```
+
+**กฎการ link ข้ามระดับ:**
+- `production_lines.section` = `org_nodes.code` ของ section
+- `production_lines.parent_line_name` = `name` ของ production_line ระดับแผนก (เช่น 'HYDROFORM')
+- Department name ใน org_nodes ต้องตรงกับ parent production_line name เพื่อให้ Register กรอง LINE dropdown ถูก
+- Register.jsx กรอง LINE โดย: `l.name === department || l.parent_line_name === department`
+
+---
+
 ## Role System
 
 | Role | สิทธิ์หลัก |
