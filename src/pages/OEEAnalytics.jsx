@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer, Cell, ReferenceLine,
+  LineChart, Line, BarChart, Bar, ComposedChart, PieChart, Pie,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  Cell, ReferenceLine, LabelList,
 } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
 
@@ -13,6 +14,12 @@ const qColor    = v => v >= 99 ? '#22c55e' : v >= 95 ? '#f59e0b' : '#ef4444';
 
 const UNPLAN_COLORS = ['#ef4444','#f97316','#eab308','#84cc16','#06b6d4','#8b5cf6','#ec4899','#6b7280','#a78bfa'];
 const PLAN_COLORS   = ['#60a5fa','#34d399','#fb7185','#fbbf24'];
+
+// เป้าหมายมาตรฐานของแต่ละตัวชี้วัด — ใช้แสดงเส้น Target บนกราฟ/เกจ
+const TARGET = { oee: 85, a: 90, p: 90, q: 99 };
+const METRIC_COLOR = { a: '#22c55e', p: '#f59e0b', q: '#a78bfa' };
+const METRIC_LABEL = { a: 'AVAILABILITY (A)', p: 'PERFORMANCE (P)', q: 'QUALITY (Q)' };
+const METRIC_COLOR_FN = { a: aColor, p: pColor, q: qColor };
 
 // ── OEE calculation helpers ──────────────────────────────────────
 // หมายเหตุ: A/P/Q/OEE คำนวณและบันทึกไว้แล้วใน production_sessions (oee_a/oee_p/oee_q/oee)
@@ -48,11 +55,32 @@ function calcOEE(sessions, downtimes, defects) {
 }
 
 // ── Date helpers ─────────────────────────────────────────────────
+// ⚠️ ห้ามใช้ toISOString() เพื่อคำนวณวันที่ local — จะเพี้ยนข้ามวันเพราะ UTC offset (ดู CLAUDE.md)
 const fmtMonthKey = d => d.slice(0, 7);          // YYYY-MM
 const fmtYearKey  = d => d.slice(0, 4);          // YYYY
 const thMonths = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 const fmtMonthLabel = k => { const [y, m] = k.split('-'); return `${thMonths[+m - 1]} ${(+y + 543).toString().slice(-2)}`; };
 const fmtDayLabel   = d => { const [,m,dd] = d.split('-'); return `${+dd}/${+m}`; };
+const fmtThaiDate   = d => { if (!d) return '—'; const [y,m,dd] = d.split('-').map(Number); return `${dd} ${thMonths[m-1]} ${y+543}`; };
+
+function getWorkDateStr(date = new Date()) {
+  const h = date.getHours();
+  const d = new Date(date);
+  if (h < 8) d.setDate(d.getDate() - 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function dateStrAdd(dateStr, deltaDays) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + deltaDays);
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
 
 // ── KPI Card ─────────────────────────────────────────────────────
 const KpiCard = ({ label, value, color, sub }) => (
@@ -76,15 +104,305 @@ const OEETooltip = ({ active, payload, label }) => {
   );
 };
 
+// ── Gauge ring (SVG, no deps) ─────────────────────────────────────
+function GaugeRing({ value, size = 168, stroke = 15, color = '#22c55e' }) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const pct = value == null ? 0 : Math.max(0, Math.min(100, value));
+  const offset = c * (1 - pct / 100);
+  return (
+    <svg width={size} height={size}>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--border)" strokeWidth={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+        strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
+    </svg>
+  );
+}
+
+// ── Mini sparkline bar (under A/P/Q kpi) ──────────────────────────
+function MiniTrend({ data, dataKey, color, target }) {
+  const hasData = data.some(d => d[dataKey] != null);
+  if (!hasData) return <div style={{ height: 54, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: 'var(--muted)' }}>ไม่มีข้อมูล</div>;
+  return (
+    <ResponsiveContainer width="100%" height={54}>
+      <BarChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+        <ReferenceLine y={target} stroke={color} strokeDasharray="3 3" strokeOpacity={0.6} />
+        <Bar dataKey={dataKey} fill={color} radius={[2, 2, 0, 0]} opacity={0.85} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ── Vertical metric bar (Live session card) ───────────────────────
+function MetricColumn({ label, value, target, color }) {
+  const H = 130;
+  const pct = value == null ? 0 : Math.max(0, Math.min(100, value));
+  const barH = (pct / 100) * H;
+  const targetTop = H - (target / 100) * H;
+  return (
+    <div style={{ textAlign: 'center', width: 70 }}>
+      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 6 }}>{label}</div>
+      <div style={{ position: 'relative', width: 44, height: H, margin: '0 auto', background: 'var(--bg2)', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: barH, background: color, transition: 'height .5s ease' }} />
+        <div style={{ position: 'absolute', left: -1, right: -1, top: targetTop, borderTop: '2px dashed rgba(255,255,255,0.55)' }} />
+      </div>
+      <div style={{ marginTop: 6, fontWeight: 900, fontSize: 15, color }}>{value != null ? value.toFixed(1) : '—'}%</div>
+    </div>
+  );
+}
+
+const STATUS_BADGE = {
+  open:          { label: '● RUNNING',    bg: 'rgba(34,197,94,0.15)',  color: '#22c55e' },
+  pending_close: { label: '◐ รออนุมัติปิด', bg: 'rgba(245,158,11,0.15)', color: '#f59e0b' },
+  closed:        { label: '■ ปิดกะแล้ว',   bg: 'rgba(148,163,184,0.15)', color: '#94a3b8' },
+};
+
 // ── Main Component ───────────────────────────────────────────────
 export default function OEEAnalytics() {
+  const [viewTab, setViewTab] = useState('today'); // today | trend
+
+  // ══════════════════════════ Shared line/org data ══════════════════════════
+  const [linesFull, setLinesFull] = useState([]); // [{id,name,section,parent_line_name}]
+  const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
+
+  useEffect(() => {
+    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name').then(({ data }) => {
+      const rows = data || [];
+      setLinesFull(rows);
+      const pcm = {};
+      rows.forEach(l => {
+        if (l.parent_line_name) {
+          if (!pcm[l.parent_line_name]) pcm[l.parent_line_name] = [];
+          pcm[l.parent_line_name].push(l.name);
+        }
+      });
+      setParentChildrenMap(pcm);
+    });
+  }, []);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     TAB: TODAY — real-time single-day monitoring dashboard
+     ══════════════════════════════════════════════════════════════════════ */
+  const [tdDate,   setTdDate]   = useState(() => getWorkDateStr());
+  const [tdShift,  setTdShift]  = useState('');
+  const [tdSection,setTdSection]= useState('');
+  const [tdDept,   setTdDept]   = useState('');
+  const [tdLine,   setTdLine]   = useState('');
+  const [tdTeam,   setTdTeam]   = useState('');
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastUpdate,  setLastUpdate]  = useState(null);
+
+  const [tdSessions,  setTdSessions]  = useState([]);
+  const [tdDowntimes, setTdDowntimes] = useState([]);
+  const [tdDefects,   setTdDefects]   = useState([]);
+  const [tdHistory,   setTdHistory]   = useState([]); // last 10 days, closed sessions, lightweight
+  const [tdProductsByMat, setTdProductsByMat] = useState({}); // mat_no -> part name
+  const [shiftSchedMap, setShiftSchedMap] = useState({}); // line_id -> day_team
+  const [tdLoading, setTdLoading] = useState(false);
+
+  // Cascading Section → Department(group) → Line options
+  const sectionOptions = useMemo(() => [...new Set(linesFull.map(l => l.section).filter(Boolean))].sort(), [linesFull]);
+
+  const deptOptions = useMemo(() => {
+    const inSection = tdSection ? linesFull.filter(l => l.section === tdSection) : linesFull;
+    const parents = [...new Set(inSection.filter(l => parentChildrenMap[l.name]).map(l => l.name))];
+    const standalone = inSection.filter(l => !l.parent_line_name && !parentChildrenMap[l.name]).map(l => l.name);
+    return { parents: parents.sort(), standalone: standalone.sort() };
+  }, [tdSection, linesFull, parentChildrenMap]);
+
+  const lineOptions = useMemo(() => {
+    if (!tdDept) return [];
+    if (parentChildrenMap[tdDept]) return parentChildrenMap[tdDept];
+    return [];
+  }, [tdDept, parentChildrenMap]);
+
+  const tdScopeLines = useMemo(() => {
+    if (tdLine) return [tdLine];
+    if (tdDept) return parentChildrenMap[tdDept] ? [tdDept, ...parentChildrenMap[tdDept]] : [tdDept];
+    if (tdSection) return linesFull.filter(l => l.section === tdSection).map(l => l.name);
+    return null; // ทุกไลน์
+  }, [tdLine, tdDept, tdSection, linesFull, parentChildrenMap]);
+
+  const tdScopeLabel = tdLine || tdDept || tdSection || 'ทุกไลน์';
+
+  const loadToday = useCallback(async () => {
+    setTdLoading(true);
+    try {
+      let q = supabaseDR.from('production_sessions')
+        .select('*, dr_products(name, mat_no)')
+        .eq('work_date', tdDate)
+        .in('status', ['open', 'pending_close', 'closed'])
+        .order('created_at', { ascending: false })
+        .limit(500);
+      if (tdScopeLines?.length === 1) q = q.eq('line_name', tdScopeLines[0]);
+      else if (tdScopeLines?.length > 1) q = q.in('line_name', tdScopeLines);
+      if (tdShift) q = q.eq('shift', tdShift);
+      const { data: sess } = await q;
+
+      const sessionIds = (sess || []).map(s => s.id);
+      const [{ data: dt }, { data: def }] = await Promise.all([
+        sessionIds.length
+          ? supabaseDR.from('downtime_logs').select('*, dr_downtime_types(name_th, category, color)').in('session_id', sessionIds)
+          : Promise.resolve({ data: [] }),
+        sessionIds.length
+          ? supabaseDR.from('defect_logs').select('*, dr_defect_types(name_th, color)').in('session_id', sessionIds)
+          : Promise.resolve({ data: [] }),
+      ]);
+
+      setTdSessions(sess || []);
+      setTdDowntimes(dt || []);
+      setTdDefects(def || []);
+      setLastUpdate(new Date());
+
+      // เก็บ mat_no → part name ไว้ map ให้ downtime_logs.mat_no (free text, ไม่ใช่ FK)
+      const matMap = {};
+      (sess || []).forEach(s => { if (s.dr_products?.mat_no) matMap[s.dr_products.mat_no] = s.dr_products.name; });
+      setTdProductsByMat(prev => ({ ...prev, ...matMap }));
+    } finally {
+      setTdLoading(false);
+    }
+  }, [tdDate, tdShift, tdScopeLines]);
+
+  const loadTdHistory = useCallback(async () => {
+    const startStr = dateStrAdd(tdDate, -9);
+    let q = supabaseDR.from('production_sessions')
+      .select('work_date, oee, oee_a, oee_p, oee_q, status, line_name, shift')
+      .eq('status', 'closed')
+      .gte('work_date', startStr).lte('work_date', tdDate)
+      .limit(3000);
+    if (tdScopeLines?.length === 1) q = q.eq('line_name', tdScopeLines[0]);
+    else if (tdScopeLines?.length > 1) q = q.in('line_name', tdScopeLines);
+    if (tdShift) q = q.eq('shift', tdShift);
+    const { data } = await q;
+    setTdHistory(data || []);
+  }, [tdDate, tdShift, tdScopeLines]);
+
+  // ทีมตามตาราง shift_schedules (A/B สลับกันตามวัน, C กะเช้าตลอด) — best effort, ถ้าไม่มีข้อมูลจะไม่ระบุ
+  useEffect(() => {
+    if (!tdDate || !linesFull.length) return;
+    const ids = linesFull.map(l => l.id);
+    supabase.from('shift_schedules').select('line_id, day_team').eq('work_date', tdDate).in('line_id', ids)
+      .then(({ data }) => {
+        const m = {};
+        (data || []).forEach(r => { m[r.line_id] = r.day_team; });
+        setShiftSchedMap(m);
+      });
+  }, [tdDate, linesFull]);
+
+  const lineIdByName = useMemo(() => Object.fromEntries(linesFull.map(l => [l.name, l.id])), [linesFull]);
+  const resolveTeam = useCallback((lineName, shift) => {
+    const id = lineIdByName[lineName];
+    const dayTeam = id != null ? shiftSchedMap[id] : undefined;
+    if (!dayTeam) return null;
+    if (shift === 'day') return dayTeam;
+    if (dayTeam === 'C') return null; // Team C ไม่มีกะดึก
+    return dayTeam === 'A' ? 'B' : 'A';
+  }, [lineIdByName, shiftSchedMap]);
+
+  useEffect(() => { loadToday(); }, [loadToday]);
+  useEffect(() => { loadTdHistory(); }, [loadTdHistory]);
+
+  // Auto refresh ทุก 60 วิ เฉพาะตอนอยู่ tab วันนี้ + เปิด auto refresh
+  useEffect(() => {
+    if (viewTab !== 'today' || !autoRefresh) return;
+    const t = setInterval(() => { loadToday(); loadTdHistory(); }, 60000);
+    return () => clearInterval(t);
+  }, [viewTab, autoRefresh, loadToday, loadTdHistory]);
+
+  const tdSessionsTeamFiltered = useMemo(() => {
+    if (!tdTeam) return tdSessions;
+    return tdSessions.filter(s => resolveTeam(s.line_name, s.shift) === tdTeam);
+  }, [tdSessions, tdTeam, resolveTeam]);
+
+  const tdSessionIdSet = useMemo(() => new Set(tdSessionsTeamFiltered.map(s => s.id)), [tdSessionsTeamFiltered]);
+  const tdDowntimesScoped = useMemo(() => tdTeam ? tdDowntimes.filter(d => tdSessionIdSet.has(d.session_id)) : tdDowntimes, [tdDowntimes, tdTeam, tdSessionIdSet]);
+  const tdDefectsScoped   = useMemo(() => tdTeam ? tdDefects.filter(d => tdSessionIdSet.has(d.session_id)) : tdDefects,   [tdDefects, tdTeam, tdSessionIdSet]);
+
+  const tdRows = useMemo(() => calcOEE(tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped), [tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped]);
+
+  const tdKpi = useMemo(() => {
+    const valid = key => tdRows.filter(r => r[key] != null).map(r => r[key]);
+    const avg = arr => arr.length ? +(arr.reduce((s, v) => s + v, 0) / arr.length).toFixed(1) : null;
+    return {
+      oee: avg(valid('calcOEE')), a: avg(valid('calcA')), p: avg(valid('calcP')), q: avg(valid('calcQ')),
+      totalQty: tdRows.reduce((s, r) => s + (r.totalQty || 0), 0),
+      targetQty: tdRows.reduce((s, r) => s + (r.target_qty || 0), 0),
+      totalDT: tdDowntimesScoped.reduce((s, d) => s + (d.duration_min || 0), 0),
+      totalShiftMin: tdSessionsTeamFiltered.reduce((s, r) => s + (r.shift_min || 0), 0),
+    };
+  }, [tdRows, tdDowntimesScoped, tdSessionsTeamFiltered]);
+
+  const tdHistoryGrouped = useMemo(() => {
+    const map = {};
+    for (const r of tdHistory) { (map[r.work_date] ||= []).push(r); }
+    const days = [];
+    for (let i = 9; i >= 0; i--) {
+      const key = dateStrAdd(tdDate, -i);
+      const items = map[key] || [];
+      const avg = arr => arr.length ? +(arr.reduce((s, v) => s + v, 0) / arr.length).toFixed(1) : null;
+      days.push({
+        key, label: fmtDayLabel(key),
+        oee: avg(items.filter(i => i.oee   != null).map(i => +i.oee)),
+        a:   avg(items.filter(i => i.oee_a != null).map(i => +i.oee_a)),
+        p:   avg(items.filter(i => i.oee_p != null).map(i => +i.oee_p)),
+        q:   avg(items.filter(i => i.oee_q != null).map(i => +i.oee_q)),
+      });
+    }
+    return days;
+  }, [tdHistory, tdDate]);
+
+  // Live/latest session card
+  const tdLiveSession = useMemo(() => {
+    const running = tdSessionsTeamFiltered.filter(s => s.status === 'open' || s.status === 'pending_close')
+      .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    if (running.length) return running[0];
+    const closed = [...tdSessionsTeamFiltered].sort((a, b) => (b.closed_at || b.created_at || '').localeCompare(a.closed_at || a.created_at || ''));
+    return closed[0] || null;
+  }, [tdSessionsTeamFiltered]);
+
+  const tdLiveRow = useMemo(() => tdLiveSession ? tdRows.find(r => r.id === tdLiveSession.id) : null, [tdLiveSession, tdRows]);
+
+  // Downtime donut (โดยประเภท)
+  const tdDtDonut = useMemo(() => {
+    const map = {};
+    for (const d of tdDowntimesScoped) {
+      const name = d.dr_downtime_types?.name_th || 'ไม่ระบุ';
+      const cat  = d.dr_downtime_types?.category || 'unplanned';
+      if (!map[name]) map[name] = { name, min: 0, category: cat };
+      map[name].min += d.duration_min || 0;
+    }
+    const total = Object.values(map).reduce((s, d) => s + d.min, 0);
+    return Object.values(map).sort((a, b) => b.min - a.min).map((d, i) => ({
+      ...d, min: +d.min.toFixed(1), pct: total > 0 ? +(d.min / total * 100).toFixed(1) : 0,
+      color: d.category === 'planned' ? PLAN_COLORS[i % PLAN_COLORS.length] : UNPLAN_COLORS[i % UNPLAN_COLORS.length],
+    }));
+  }, [tdDowntimesScoped]);
+
+  // Top 10 downtime แยกตามพาร์ท (mat_no ที่บันทึกไว้ตอน log downtime)
+  const tdDtByPart = useMemo(() => {
+    const map = {};
+    for (const d of tdDowntimesScoped) {
+      const mat = d.mat_no || 'ไม่ระบุ MAT.NO';
+      if (!map[mat]) map[mat] = { mat, part: tdProductsByMat[mat] || mat, min: 0 };
+      map[mat].min += d.duration_min || 0;
+    }
+    const arr = Object.values(map).sort((a, b) => b.min - a.min).slice(0, 10);
+    const max = arr.length ? arr[0].min : 0;
+    const total = Object.values(map).reduce((s, d) => s + d.min, 0);
+    return arr.map(d => ({ ...d, min: +d.min.toFixed(1), pct: total > 0 ? +(d.min / total * 100).toFixed(1) : 0, barPct: max > 0 ? (d.min / max * 100) : 0 }));
+  }, [tdDowntimesScoped, tdProductsByMat]);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     TAB: TREND — historical range analytics (เดิม)
+     ══════════════════════════════════════════════════════════════════════ */
   const [sessions,   setSessions]   = useState([]);
   const [downtimes,  setDowntimes]  = useState([]);
   const [defects,    setDefects]    = useState([]);
   const [dtTypes,    setDtTypes]    = useState([]);
   const [defectTypes,setDefectTypes]= useState([]);
   const [lines,      setLines]      = useState([]);
-  const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
   const [loading,    setLoading]    = useState(true);
 
   // Filters
@@ -101,7 +419,7 @@ export default function OEEAnalytics() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const pcm = parentChildrenMap; // pre-loaded by separate useEffect below
+      const pcm = parentChildrenMap; // pre-loaded by shared effect above
 
       // Expand selLine: if it's a parent, include all its children
       const expandedLines = selLine
@@ -146,20 +464,6 @@ export default function OEEAnalytics() {
       setLoading(false);
     }
   }, [dateFrom, dateTo, selLine, selShift, parentChildrenMap]);
-
-  // Pre-load parent-children map from main project's production_lines
-  useEffect(() => {
-    supabase.from('production_lines').select('name, parent_line_name').then(({ data }) => {
-      const pcm = {};
-      (data || []).forEach(l => {
-        if (l.parent_line_name) {
-          if (!pcm[l.parent_line_name]) pcm[l.parent_line_name] = [];
-          pcm[l.parent_line_name].push(l.name);
-        }
-      });
-      setParentChildrenMap(pcm);
-    });
-  }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -248,12 +552,266 @@ export default function OEEAnalytics() {
 
   return (
     <div style={s.page}>
+      <style>{`@keyframes oee-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }`}</style>
+
       {/* Header */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--text)' }}>📈 OEE Analytics</div>
-        <div style={{ fontSize: 13, color: 'var(--muted)' }}>วิเคราะห์ประสิทธิภาพการผลิต — Availability · Performance · Quality</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--text)' }}>📈 OEE Analytics</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>วิเคราะห์ประสิทธิภาพการผลิต — Availability · Performance · Quality</div>
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button style={s.tab(viewTab === 'today')}  onClick={() => setViewTab('today')}>⚡ ภาพรวมวันนี้</button>
+          <button style={s.tab(viewTab === 'trend')}  onClick={() => setViewTab('trend')}>📊 แนวโน้ม/ประวัติ</button>
+        </div>
       </div>
 
+      {viewTab === 'today' ? (
+        <>
+          {/* ── Filter bar ── */}
+          <div style={{ ...s.section, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+            <input type="date" value={tdDate} onChange={e => setTdDate(e.target.value)} style={s.sel} />
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{fmtThaiDate(tdDate)}</span>
+
+            <select style={s.sel} value={tdShift} onChange={e => setTdShift(e.target.value)}>
+              <option value="">ALL SHIFT (ทุกกะ)</option>
+              <option value="day">กะเช้า</option>
+              <option value="night">กะดึก</option>
+            </select>
+
+            <select style={s.sel} value={tdSection} onChange={e => { setTdSection(e.target.value); setTdDept(''); setTdLine(''); }}>
+              <option value="">ทุกส่วนงาน</option>
+              {sectionOptions.map(sec => <option key={sec} value={sec}>{sec}</option>)}
+            </select>
+
+            <select style={s.sel} value={tdDept} onChange={e => { setTdDept(e.target.value); setTdLine(''); }}>
+              <option value="">ทุกแผนก/กลุ่มไลน์</option>
+              {deptOptions.parents.map(p => <option key={p} value={p}>▸ {p}</option>)}
+              {deptOptions.standalone.map(l => <option key={l} value={l}>{l}</option>)}
+            </select>
+
+            {lineOptions.length > 0 && (
+              <select style={s.sel} value={tdLine} onChange={e => setTdLine(e.target.value)}>
+                <option value="">{tdDept} (ทั้งหมด)</option>
+                {lineOptions.map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+            )}
+
+            <select style={s.sel} value={tdTeam} onChange={e => setTdTeam(e.target.value)}>
+              <option value="">ทุกทีม</option>
+              <option value="A">Team A</option>
+              <option value="B">Team B</option>
+              <option value="C">Team C</option>
+            </select>
+
+            <div style={{ flex: 1 }} />
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+              LAST UPDATE : {lastUpdate ? lastUpdate.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
+            </span>
+            <button onClick={() => { loadToday(); loadTdHistory(); }} style={{ ...s.tab(false) }}>🔄</button>
+            <button onClick={() => setAutoRefresh(v => !v)} style={s.tab(autoRefresh)}>
+              <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: autoRefresh ? '#22c55e' : 'var(--muted)', marginRight: 6, animation: autoRefresh ? 'oee-pulse 1.4s ease infinite' : 'none' }} />
+              AUTO REFRESH
+            </button>
+            {tdLoading && <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด...</span>}
+          </div>
+
+          {/* 1. OEE Overview */}
+          <div style={s.section}>
+            <div style={s.title}>1. OEE OVERVIEW — {tdScopeLabel}</div>
+            <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ position: 'relative', width: 168, height: 168, flexShrink: 0 }}>
+                <GaugeRing value={tdKpi.oee} color={oeeColor(tdKpi.oee ?? 0)} />
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>OEE รวมวันนี้</div>
+                  <div style={{ fontSize: 34, fontWeight: 900, color: tdKpi.oee != null ? oeeColor(tdKpi.oee) : 'var(--muted)' }}>{tdKpi.oee ?? '—'}{tdKpi.oee != null ? '%' : ''}</div>
+                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>TARGET {TARGET.oee}%</div>
+                </div>
+              </div>
+              {['a', 'p', 'q'].map(k => (
+                <div key={k} style={{ flex: 1, minWidth: 160 }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{METRIC_LABEL[k]}</div>
+                  <div style={{ fontSize: 26, fontWeight: 900, color: tdKpi[k] != null ? METRIC_COLOR_FN[k](tdKpi[k]) : 'var(--muted)' }}>{tdKpi[k] ?? '—'}{tdKpi[k] != null ? '%' : ''}</div>
+                  <MiniTrend data={tdHistoryGrouped} dataKey={k} color={METRIC_COLOR[k]} target={TARGET[k]} />
+                  <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'right' }}>TARGET {TARGET[k]}%</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Row: Live session + Production qty gauge */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16, marginBottom: 16 }}>
+            {/* 1.1 Live session */}
+            <div style={{ ...s.section, marginBottom: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={s.title}>1.1 OEE รายการล่าสุด (กำลังผลิตงานอยู่)</div>
+                {tdLiveSession && (() => { const b = STATUS_BADGE[tdLiveSession.status] || STATUS_BADGE.closed; return (
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: b.bg, color: b.color }}>{b.label}</span>
+                ); })()}
+              </div>
+              {!tdLiveSession ? (
+                <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 13 }}>ไม่มีข้อมูลกะในวันที่เลือก</div>
+              ) : (
+                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div style={{ minWidth: 140 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>LINE</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>{tdLiveSession.line_name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>PART</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>{tdLiveSession.dr_products?.name || tdLiveSession.dr_products?.mat_no || '—'}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>OEE</div>
+                    <div style={{ fontSize: 28, fontWeight: 900, color: tdLiveRow?.calcOEE != null ? oeeColor(tdLiveRow.calcOEE) : 'var(--muted)' }}>
+                      {tdLiveRow?.calcOEE ?? '—'}{tdLiveRow?.calcOEE != null ? '%' : ''}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>TARGET {TARGET.oee}%</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 14 }}>
+                    <MetricColumn label="A" value={tdLiveRow?.calcA} target={TARGET.a} color={METRIC_COLOR.a} />
+                    <MetricColumn label="P" value={tdLiveRow?.calcP} target={TARGET.p} color={METRIC_COLOR.p} />
+                    <MetricColumn label="Q" value={tdLiveRow?.calcQ} target={TARGET.q} color={METRIC_COLOR.q} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 3. Production qty gauge */}
+            <div style={{ ...s.section, marginBottom: 0 }}>
+              <div style={s.title}>3. จำนวนชิ้นงานที่ผลิตรวมของวันนี้</div>
+              <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>เป้าหมาย</div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--text)' }}>{tdKpi.targetQty.toLocaleString()} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>ชิ้น</span></div>
+                  <div style={{ height: 10 }} />
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>ผลิตได้แล้ว</div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: '#4d9fff' }}>{tdKpi.totalQty.toLocaleString()} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>ชิ้น</span></div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>คงเหลืออีก {Math.max(0, tdKpi.targetQty - tdKpi.totalQty).toLocaleString()} ชิ้น</div>
+                </div>
+                <div style={{ position: 'relative', width: 140, height: 140, flexShrink: 0 }}>
+                  <GaugeRing value={tdKpi.targetQty > 0 ? Math.min(100, tdKpi.totalQty / tdKpi.targetQty * 100) : 0} color="#4d9fff" size={140} stroke={13} />
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: '#4d9fff' }}>{tdKpi.targetQty > 0 ? Math.round(Math.min(100, tdKpi.totalQty / tdKpi.targetQty * 100)) : 0}%</div>
+                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>เทียบเป้าหมาย</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 1.2 Daily OEE chart */}
+          <div style={s.section}>
+            <div style={s.title}>1.2 OEE แสดงค่าของแต่ละวัน (10 วันล่าสุด)</div>
+            <ResponsiveContainer width="100%" height={260}>
+              <ComposedChart data={tdHistoryGrouped} margin={{ top: 20, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="%" />
+                <Tooltip content={<OEETooltip />} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <ReferenceLine y={TARGET.oee} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} label={{ value: `TARGET ${TARGET.oee}%`, fill: '#22c55e', fontSize: 10, position: 'insideTopRight' }} />
+                <Bar dataKey="oee" name="OEE %" fill="#22c55e" opacity={0.85} radius={[3, 3, 0, 0]}>
+                  <LabelList dataKey="oee" position="top" formatter={v => v != null ? `${v}%` : ''} style={{ fontSize: 10, fill: 'var(--text)' }} />
+                </Bar>
+                <Line type="monotone" dataKey="a" name="A%" stroke="#22c55e" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
+                <Line type="monotone" dataKey="p" name="P%" stroke="#f59e0b" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
+                <Line type="monotone" dataKey="q" name="Q%" stroke="#a78bfa" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* 2. Downtime */}
+          <div style={s.section}>
+            <div style={s.title}>2. DOWNTIME</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '0.8fr 1.3fr 1.5fr', gap: 16 }}>
+              {/* 2.1 Total */}
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 10 }}>2.1 Downtime รวมของวันนี้</div>
+                <div style={{ position: 'relative', width: 120, height: 120, margin: '0 auto' }}>
+                  <GaugeRing value={tdKpi.totalShiftMin > 0 ? Math.min(100, tdKpi.totalDT / tdKpi.totalShiftMin * 100) : 0} color="#a855f7" size={120} stroke={11} />
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ fontSize: 22, fontWeight: 900, color: '#a855f7' }}>{tdKpi.totalDT.toLocaleString()}</div>
+                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>นาที</div>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
+                  {tdKpi.totalShiftMin > 0 ? (tdKpi.totalDT / tdKpi.totalShiftMin * 100).toFixed(2) : '0.00'}% ของเวลาผลิตทั้งหมด
+                </div>
+              </div>
+
+              {/* 2.2 Donut by type */}
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 10 }}>2.2 Downtime แยกตามสาเหตุ</div>
+                {tdDtDonut.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>ไม่มีข้อมูล Downtime</div>
+                ) : (
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <ResponsiveContainer width={140} height={140}>
+                      <PieChart>
+                        <Pie data={tdDtDonut} dataKey="min" nameKey="name" innerRadius={38} outerRadius={62} paddingAngle={2}>
+                          {tdDtDonut.map((d, i) => <Cell key={i} fill={d.color} />)}
+                        </Pie>
+                        <Tooltip formatter={v => [`${v} นาที`]} contentStyle={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div style={{ flex: 1, overflowX: 'auto' }}>
+                      <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                        <thead><tr style={{ color: 'var(--muted)' }}>
+                          <th style={{ textAlign: 'left', padding: '3px 6px' }}>สาเหตุ</th>
+                          <th style={{ textAlign: 'right', padding: '3px 6px' }}>นาที</th>
+                          <th style={{ textAlign: 'right', padding: '3px 6px' }}>%</th>
+                        </tr></thead>
+                        <tbody>
+                          {tdDtDonut.map((d, i) => (
+                            <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
+                              <td style={{ padding: '3px 6px' }}><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: d.color, marginRight: 5 }} />{d.name}</td>
+                              <td style={{ textAlign: 'right', padding: '3px 6px', color: 'var(--text)' }}>{d.min}</td>
+                              <td style={{ textAlign: 'right', padding: '3px 6px', color: 'var(--text)' }}>{d.pct}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 2.3 Top 10 by part */}
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 10 }}>2.3 Top 10 Downtime รายพาร์ท</div>
+                {tdDtByPart.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>ไม่มีข้อมูล</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                      <thead><tr style={{ color: 'var(--muted)' }}>
+                        <th style={{ textAlign: 'left', padding: '3px 6px' }}>#</th>
+                        <th style={{ textAlign: 'left', padding: '3px 6px' }}>พาร์ท</th>
+                        <th style={{ textAlign: 'right', padding: '3px 6px' }}>นาที</th>
+                        <th style={{ textAlign: 'right', padding: '3px 6px' }}>%</th>
+                        <th style={{ padding: '3px 6px', width: 90 }}></th>
+                      </tr></thead>
+                      <tbody>
+                        {tdDtByPart.map((d, i) => (
+                          <tr key={d.mat} style={{ borderTop: '1px solid var(--border)' }}>
+                            <td style={{ padding: '3px 6px', color: 'var(--muted)' }}>{i + 1}</td>
+                            <td style={{ padding: '3px 6px', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 140 }}>{d.part}</td>
+                            <td style={{ textAlign: 'right', padding: '3px 6px', color: 'var(--text)' }}>{d.min}</td>
+                            <td style={{ textAlign: 'right', padding: '3px 6px', color: 'var(--muted)' }}>{d.pct}%</td>
+                            <td style={{ padding: '3px 6px' }}>
+                              <div style={{ height: 8, borderRadius: 4, background: 'var(--bg2)', overflow: 'hidden' }}>
+                                <div style={{ height: '100%', width: `${d.barPct}%`, background: '#a855f7', borderRadius: 4 }} />
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      ) : (
+      <>
       {/* Filters */}
       <div style={{ ...s.section, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
         <div style={{ display: 'flex', gap: 4 }}>
@@ -447,6 +1005,8 @@ export default function OEEAnalytics() {
           </table>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }
