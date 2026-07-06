@@ -175,6 +175,7 @@ export default function Dashboard() {
   const [logs, setLogs]         = useState([]);
   const [fourMLogs, setFourMLogs] = useState([]);
   const [lines, setLines]       = useState([]);
+  const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['Hydroform1','Hydroform2'] }
   const [orgSections, setOrgSections] = useState([]);
   const [loading, setLoading]   = useState(true);
 
@@ -398,6 +399,14 @@ export default function Dashboard() {
     setLogs(enriched);
     setFourMLogs(fmData || []);
     setLines(lineData || []);
+    const pcm = {};
+    (lineData || []).forEach(l => {
+      if (l.parent_line_name) {
+        if (!pcm[l.parent_line_name]) pcm[l.parent_line_name] = [];
+        pcm[l.parent_line_name].push(l.name);
+      }
+    });
+    setParentChildrenMap(pcm);
     setOrgSections((orgNodeData || []).map(n => n.code || n.name).sort());
 
     // Build line capacity using shift_schedules for correct day/night split
@@ -744,64 +753,74 @@ export default function Dashboard() {
       </div>
 
       {/* ── Line Status Grid ─────────────────────────────── */}
-      <motion.div {...stagger(7)} style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
-          สถานะไลน์ผลิต
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: isUltra ? 'repeat(auto-fill, minmax(200px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(180px, 1fr))' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: isMobile ? 10 : 14 }}>
-          {lineStats.map((line, i) => {
-            const healthy = line.rate >= 80 && line.lineAlerts === 0;
-            const warn    = line.lineAlerts > 0 || (line.rate > 0 && line.rate < 80);
-            const color   = healthy ? '#22c55e' : warn ? '#f59e0b' : '#555';
-            return (
-              <motion.div key={line.id} {...stagger(8 + i)}>
-                <div style={{
-                  background: 'var(--card)', border: '1px solid var(--border2)',
-                  borderRadius: 12, padding: isWide ? '18px 20px' : '14px 16px',
-                  boxShadow: 'var(--shadow-sm)',
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <div style={{ fontSize: isWide ? 14 : 13, fontWeight: 700, color: 'var(--text)' }}>{line.name}</div>
-                      {line.section && (
-                        <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 2, fontWeight: 600 }}>{line.section}</div>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                      <div style={{
-                        width: 8, height: 8, borderRadius: '50%', background: color,
-                        boxShadow: `0 0 6px ${color}`,
-                      }} />
-                      {line.lineAlerts > 0 && (
-                        <div style={{
-                          fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 6,
-                          background: 'rgba(231,76,60,0.15)', color: '#e74c3c',
-                          border: '1px solid rgba(231,76,60,0.3)',
-                        }}>
-                          🚨 {line.lineAlerts}
+      {(() => {
+        // Build hierarchical render order: parent → children indented below
+        const childNames = new Set(lines.filter(l => l.parent_line_name).map(l => l.name));
+        const renderOrder = [];
+        lineStats.forEach(ls => {
+          if (childNames.has(ls.name)) return;
+          renderOrder.push({ ...ls, _isChild: false });
+          (parentChildrenMap[ls.name] || []).forEach(childName => {
+            const cs = lineStats.find(l => l.name === childName);
+            if (cs) renderOrder.push({ ...cs, _isChild: true });
+          });
+        });
+        return (
+          <motion.div {...stagger(7)} style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
+              สถานะไลน์ผลิต
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: isUltra ? 'repeat(auto-fill, minmax(200px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(180px, 1fr))' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: isMobile ? 10 : 14 }}>
+              {renderOrder.map((line, i) => {
+                const healthy = line.rate >= 80 && line.lineAlerts === 0;
+                const warn    = line.lineAlerts > 0 || (line.rate > 0 && line.rate < 80);
+                const color   = healthy ? '#22c55e' : warn ? '#f59e0b' : '#555';
+                return (
+                  <motion.div key={line.id} {...stagger(8 + i)}
+                    style={line._isChild ? { paddingLeft: 16, borderLeft: '2px solid var(--border2)', marginLeft: 4 } : {}}>
+                    <div style={{
+                      background: line._isChild ? 'var(--bg2)' : 'var(--card)',
+                      border: `1px solid ${line._isChild ? 'var(--border)' : 'var(--border2)'}`,
+                      borderRadius: 12, padding: isWide ? '18px 20px' : '14px 16px',
+                      boxShadow: line._isChild ? 'none' : 'var(--shadow-sm)',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                          {line._isChild && (
+                            <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>└ ไลน์ย่อย</div>
+                          )}
+                          <div style={{ fontSize: isWide ? 14 : 13, fontWeight: line._isChild ? 600 : 700, color: 'var(--text)' }}>{line.name}</div>
+                          {line.section && !line._isChild && (
+                            <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 2, fontWeight: 600 }}>{line.section}</div>
+                          )}
                         </div>
-                      )}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, boxShadow: `0 0 6px ${color}` }} />
+                          {line.lineAlerts > 0 && (
+                            <div style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(231,76,60,0.15)', color: '#e74c3c', border: '1px solid rgba(231,76,60,0.3)' }}>
+                              🚨 {line.lineAlerts}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                        <span style={{ fontSize: isWide ? 32 : 24, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
+                          {line.linePresent}
+                        </span>
+                        <span style={{ fontSize: isWide ? 13 : 11, color: 'var(--muted)' }}>/ {line.lineTotal} คน</span>
+                      </div>
+                      <MiniBar value={line.linePresent} max={line.lineTotal} color={color} />
+                      <div style={{ marginTop: 8, fontSize: 10, fontWeight: 700, color }}>
+                        {line.lineTotal === 0 ? 'ไม่มีข้อมูล' : `${line.rate}% Attendance ${healthy ? '· ✓ Normal' : line.lineAlerts > 0 ? '· ⚠ Risk' : ''}`}
+                      </div>
                     </div>
-                  </div>
-
-                  <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                    <span style={{ fontSize: isWide ? 32 : 24, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-                      {line.linePresent}
-                    </span>
-                    <span style={{ fontSize: isWide ? 13 : 11, color: 'var(--muted)' }}>/ {line.lineTotal} คน</span>
-                  </div>
-
-                  <MiniBar value={line.linePresent} max={line.lineTotal} color={color} />
-
-                  <div style={{ marginTop: 8, fontSize: 10, fontWeight: 700, color }}>
-                    {line.lineTotal === 0 ? 'ไม่มีข้อมูล' : `${line.rate}% Attendance ${healthy ? '· ✓ Normal' : line.lineAlerts > 0 ? '· ⚠ Risk' : ''}`}
-                  </div>
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-      </motion.div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </motion.div>
+        );
+      })()}
 
       {/* ── Heijunka Timeline Board ───────────────────── */}
       {visibleProdStatus.length > 0 && (() => {
@@ -817,10 +836,13 @@ export default function Dashboard() {
           return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
         };
 
-        // group sessions by line
+        // group sessions by line — sub-lines fold under parent
+        const childParentMap = {};
+        lines.forEach(l => { if (l.parent_line_name) childParentMap[l.name] = l.parent_line_name; });
         const byLine = {};
         visibleProdStatus.forEach(s => {
-          (byLine[s.line_name] = byLine[s.line_name] || []).push(s);
+          const key = childParentMap[s.line_name] || s.line_name;
+          (byLine[key] = byLine[key] || []).push(s);
         });
 
         return (
