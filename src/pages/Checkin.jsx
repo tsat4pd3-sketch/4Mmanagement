@@ -1354,7 +1354,7 @@ export default function Checkin() {
       {/* จองรถ OT แบบอิสระ modal */}
       {showOtBookModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
-          <div style={{ background: 'var(--card)', borderRadius: 12, padding: 22, width: '100%', maxWidth: 460, maxHeight: '86vh', display: 'flex', flexDirection: 'column', border: '1px solid var(--border)' }}>
+          <div style={{ background: 'var(--card)', borderRadius: 12, padding: 22, width: '100%', maxWidth: 640, maxHeight: '86vh', display: 'flex', flexDirection: 'column', border: '1px solid var(--border)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6, color: 'var(--text)' }}>🚐 จองรถ OT</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>
               เลือกวันที่/กะ/ไลน์/ทีมได้อิสระ ไม่ต้องรอเช็คชื่อกะนั้น — เหมาะกับกรณีทีมที่ต้องจอง OT ไม่ใช่ทีมที่กำลังเช็คชื่ออยู่ (เช่น จันทร์แรกหลังสลับกะ)
@@ -1407,16 +1407,17 @@ export default function Checkin() {
               ) : otBookEmpOptions.length === 0 ? (
                 <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่พบพนักงานในไลน์/ทีมนี้</div>
               ) : otBookEmpOptions.map((emp, i) => (
-                <div key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderTop: i ? '1px solid var(--border)' : 'none' }}>
+                <div key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderTop: i ? '1px solid var(--border)' : 'none' }}>
                   <input type="checkbox" checked={!!otBookSelections[emp.id]}
-                    onChange={e => setOtBookSelections(prev => ({ ...prev, [emp.id]: e.target.checked }))} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{emp.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code} · Team {emp.team}</div>
+                    onChange={e => setOtBookSelections(prev => ({ ...prev, [emp.id]: e.target.checked }))}
+                    style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer', flexShrink: 0 }} />
+                  <div style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{emp.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{emp.employee_id_code} · Team {emp.team}</div>
                   </div>
                   {otBookSelections[emp.id] && (
                     <select value={otBookTasks[emp.id] || ''} onChange={e => setOtBookTasks(prev => ({ ...prev, [emp.id]: e.target.value }))}
-                      style={{ fontSize: 11, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)', maxWidth: 130 }}>
+                      style={{ fontSize: 11, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)', width: 150, flexShrink: 0 }}>
                       <option value="">— งานที่ทำ —</option>
                       {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
