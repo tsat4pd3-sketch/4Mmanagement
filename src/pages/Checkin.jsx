@@ -95,6 +95,18 @@ export default function Checkin() {
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
   const [subLineSelections, setSubLineSelections] = useState({}); // { lineName: bool } — modal checkboxes
 
+  /* ── จองรถ OT แบบอิสระ (ไม่ผูกกับกะที่กำลังเช็คชื่ออยู่) ──
+     ใช้กรณีอย่างจันทร์แรกหลังสลับกะ ที่ทีมซึ่งต้องจอง OT ไม่ใช่ทีมที่กำลังเช็คชื่ออยู่ตรงหน้า */
+  const [showOtBookModal,  setShowOtBookModal]  = useState(false);
+  const [otBookDate,       setOtBookDate]       = useState(() => toLocalDateStr(new Date()));
+  const [otBookShift,      setOtBookShift]      = useState('night');
+  const [otBookLineId,     setOtBookLineId]     = useState('');
+  const [otBookTeam,       setOtBookTeam]       = useState('');
+  const [otBookSelections, setOtBookSelections] = useState({}); // { empId: bool }
+  const [otBookTasks,      setOtBookTasks]      = useState({}); // { empId: taskTypeId }
+  const [otBookLoading,    setOtBookLoading]    = useState(false);
+  const [otBookSaving,     setOtBookSaving]     = useState(false);
+
   const realShiftInfo = getShiftInfo();
   const shiftInfo = previewNight
     ? { ...realShiftInfo, shift: 'night', label: '🌙 กะดึก (Preview)' }
@@ -556,6 +568,77 @@ export default function Checkin() {
     }
   };
 
+  /* ── จองรถ OT แบบอิสระ: เลือกวันที่/กะ/ไลน์/ทีมเองได้ ไม่ผูกกับกะที่กำลังเช็คชื่ออยู่
+     ใช้กรณีทีมที่ต้องจอง OT ไม่ใช่ทีมที่กำลังเช็คชื่ออยู่ตรงหน้า (เช่น จันทร์แรกหลังสลับกะ) ── */
+  const otBookLineOptions = [...new Map(employees.filter(e => e.line_id).map(e => [e.line_id, e])).values()]
+    .map(e => lines.find(l => l.id === e.line_id))
+    .filter(Boolean)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const otBookEmpOptions = employees.filter(e =>
+    (!otBookLineId || String(e.line_id) === String(otBookLineId)) &&
+    (!otBookTeam || e.team === otBookTeam)
+  );
+
+  const loadOtBookExisting = async (date, shift) => {
+    if (!date || !shift) return;
+    setOtBookLoading(true);
+    const { data } = await supabase.from('ot_night_bookings').select('employee_id, task_type_id').eq('work_date', date).eq('shift', shift);
+    const sel = {}; const tasks = {};
+    (data || []).forEach(r => { sel[r.employee_id] = true; if (r.task_type_id) tasks[r.employee_id] = r.task_type_id; });
+    setOtBookSelections(sel);
+    setOtBookTasks(tasks);
+    setOtBookLoading(false);
+  };
+
+  const openOtBookModal = () => {
+    setOtBookDate(toLocalDateStr(new Date()));
+    setOtBookShift('night');
+    setOtBookLineId(lineId || '');
+    setOtBookTeam(team || '');
+    setShowOtBookModal(true);
+    loadOtBookExisting(toLocalDateStr(new Date()), 'night');
+  };
+
+  const handleSaveOtBookModal = async () => {
+    if (!otBookDate || !otBookShift) { toast.error('เลือกวันที่และกะก่อน'); return; }
+    setOtBookSaving(true);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const toBook   = otBookEmpOptions.filter(e => otBookSelections[e.id]).map(e => e.id);
+      const toUnbook = otBookEmpOptions.filter(e => !otBookSelections[e.id]).map(e => e.id);
+
+      if (toBook.length) {
+        const { error } = await supabase.from('ot_night_bookings').upsert(
+          toBook.map(empId => ({
+            work_date:      otBookDate,
+            shift:          otBookShift,
+            employee_id:    empId,
+            task_type_id:   otBookTasks[empId] || null,
+            booked_by:      userData?.user?.id || null,
+            booked_by_name: fullName || null,
+          })),
+          { onConflict: 'employee_id,work_date,shift' }
+        );
+        if (error) throw error;
+      }
+      if (toUnbook.length) {
+        const { error } = await supabase.from('ot_night_bookings')
+          .delete()
+          .eq('work_date', otBookDate)
+          .eq('shift', otBookShift)
+          .in('employee_id', toUnbook);
+        if (error) throw error;
+      }
+      toast.success(`บันทึกการจองรถ OT วันที่ ${otBookDate} แล้ว (${toBook.length} คน)`);
+      setShowOtBookModal(false);
+    } catch (e) {
+      toast.error('บันทึกไม่สำเร็จ: ' + e.message);
+    } finally {
+      setOtBookSaving(false);
+    }
+  };
+
   /* ── Export: ฟอร์มกระดาษจริง (ใบขออนุมัติ OT + บันทึกการมาทำงาน) ─── */
   const ATT_CODE = { 'ลากิจ': 'ก', 'ลาป่วย': 'ป', 'ลาพักร้อน': 'ส' };
 
@@ -842,6 +925,17 @@ export default function Checkin() {
             }}
           >
             📄 ส่งออกฟอร์ม
+          </button>
+          <button
+            onClick={openOtBookModal}
+            title="จองรถ OT วันที่/ไลน์/ทีมใดก็ได้ ไม่ต้องรอเช็คชื่อกะนั้น"
+            style={{
+              padding: '8px 14px', borderRadius: 8,
+              border: '1px solid var(--border2)', fontSize: 12, cursor: 'pointer',
+              background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 600,
+            }}
+          >
+            🚐 จองรถ OT
           </button>
           <button
             onClick={handleSave}
@@ -1256,6 +1350,91 @@ export default function Checkin() {
           </tbody>
         </table>
       </div>
+
+      {/* จองรถ OT แบบอิสระ modal */}
+      {showOtBookModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+          <div style={{ background: 'var(--card)', borderRadius: 12, padding: 22, width: '100%', maxWidth: 460, maxHeight: '86vh', display: 'flex', flexDirection: 'column', border: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6, color: 'var(--text)' }}>🚐 จองรถ OT</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>
+              เลือกวันที่/กะ/ไลน์/ทีมได้อิสระ ไม่ต้องรอเช็คชื่อกะนั้น — เหมาะกับกรณีทีมที่ต้องจอง OT ไม่ใช่ทีมที่กำลังเช็คชื่ออยู่ (เช่น จันทร์แรกหลังสลับกะ)
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>วันที่ทำ OT</label>
+                <input type="date" value={otBookDate}
+                  onChange={e => { setOtBookDate(e.target.value); loadOtBookExisting(e.target.value, otBookShift); }}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>กะ</label>
+                <select value={otBookShift}
+                  onChange={e => { setOtBookShift(e.target.value); loadOtBookExisting(otBookDate, e.target.value); }}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }}>
+                  <option value="day">☀️ กะเช้า</option>
+                  <option value="night">🌙 กะดึก</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>ไลน์</label>
+                <select value={otBookLineId} onChange={e => setOtBookLineId(e.target.value)}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }}>
+                  <option value="">— เลือกไลน์ —</option>
+                  {otBookLineOptions.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>ทีม</label>
+                <select value={otBookTeam} onChange={e => setOtBookTeam(e.target.value)}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }}>
+                  <option value="">— ทุกทีม —</option>
+                  <option value="A">Team A</option>
+                  <option value="B">Team B</option>
+                  <option value="C">Team C</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 14 }}>
+              {otBookLoading ? (
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
+              ) : !otBookLineId ? (
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>เลือกไลน์ก่อน</div>
+              ) : otBookEmpOptions.length === 0 ? (
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่พบพนักงานในไลน์/ทีมนี้</div>
+              ) : otBookEmpOptions.map((emp, i) => (
+                <div key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderTop: i ? '1px solid var(--border)' : 'none' }}>
+                  <input type="checkbox" checked={!!otBookSelections[emp.id]}
+                    onChange={e => setOtBookSelections(prev => ({ ...prev, [emp.id]: e.target.checked }))} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{emp.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code} · Team {emp.team}</div>
+                  </div>
+                  {otBookSelections[emp.id] && (
+                    <select value={otBookTasks[emp.id] || ''} onChange={e => setOtBookTasks(prev => ({ ...prev, [emp.id]: e.target.value }))}
+                      style={{ fontSize: 11, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)', maxWidth: 130 }}>
+                      <option value="">— งานที่ทำ —</option>
+                      {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowOtBookModal(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
+              <button onClick={handleSaveOtBookModal} disabled={otBookSaving || !otBookLineId}
+                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: otBookSaving || !otBookLineId ? 'not-allowed' : 'pointer', opacity: otBookSaving || !otBookLineId ? 0.6 : 1 }}>
+                {otBookSaving ? '⏳ กำลังบันทึก...' : '💾 บันทึกการจอง'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Export forms modal */}
       {showExport && (
