@@ -175,7 +175,6 @@ export default function Dashboard() {
   const [logs, setLogs]         = useState([]);
   const [fourMLogs, setFourMLogs] = useState([]);
   const [lines, setLines]       = useState([]);
-  const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['Hydroform1','Hydroform2'] }
   const [orgSections, setOrgSections] = useState([]);
   const [loading, setLoading]   = useState(true);
 
@@ -399,14 +398,6 @@ export default function Dashboard() {
     setLogs(enriched);
     setFourMLogs(fmData || []);
     setLines(lineData || []);
-    const pcm = {};
-    (lineData || []).forEach(l => {
-      if (l.parent_line_name) {
-        if (!pcm[l.parent_line_name]) pcm[l.parent_line_name] = [];
-        pcm[l.parent_line_name].push(l.name);
-      }
-    });
-    setParentChildrenMap(pcm);
     setOrgSections((orgNodeData || []).map(n => n.code || n.name).sort());
 
     // Build line capacity using shift_schedules for correct day/night split
