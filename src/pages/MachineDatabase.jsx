@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { hasPermission } from '../utils/permissions';
 
 /* ─── shared little UI bits ─────────────────────────────────── */
 function Field({ label, children }) {
@@ -35,7 +36,7 @@ const TYPE_COLORS  = ['#4d9fff', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#e
 ═══════════════════════════════════════════════════════════════ */
 export default function MachineDatabase() {
   const { role } = useContext(UserContext);
-  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
+  const canEdit = hasPermission('manage_master_data', role);
 
   const [machines, setMachines]     = useState([]);
   const [lines, setLines]           = useState([]);

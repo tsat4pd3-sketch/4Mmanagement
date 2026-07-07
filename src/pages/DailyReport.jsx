@@ -5,6 +5,7 @@ import { UserContext } from '../App';
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
 import { toast } from '../components/Toast';
 import tsLogoUrl from '../assets/TS logo.png';
+import { hasPermission } from '../utils/permissions';
 
 // โหลดโลโก้บริษัท (เหมือนหน้าเว็บ) เป็น base64 ครั้งเดียวสำหรับฝัง PDF
 let tsLogoDataUrlPromise = null;
@@ -82,7 +83,7 @@ export default function DailyReport() {
   const { role } = useContext(UserContext);
   const [tab, setTab] = useState('live');
 
-  const canSetup = ['admin', 'manager', 'supervisor'].includes(role);
+  const canSetup = hasPermission('manage_master_data', role);
 
   return (
     <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
@@ -4161,7 +4162,7 @@ function SetupTab({ role }) {
 
 /* ── Defect Type Setup ── */
 function DefectTypeSetup({ role }) {
-  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
+  const canEdit = hasPermission('manage_master_data', role);
   const [items, setItems]     = useState([]);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving]   = useState(false);
@@ -4298,7 +4299,7 @@ function DefectTypeSetup({ role }) {
 
 /* ── Break Policy Setup ── */
 function BreakPolicySetup({ role }) {
-  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
+  const canEdit = hasPermission('manage_master_data', role);
   const [items, setItems]   = useState([]);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -4540,7 +4541,7 @@ function ProductSetup({ role }) {
     load();
   };
 
-  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
+  const canEdit = hasPermission('manage_master_data', role);
 
   // ── Kanban CRUD ──────────────────────────────────────────────
   const openKanbanEdit = (std = null, defaultProductId = '') => {
@@ -4883,7 +4884,7 @@ function DowntimeTypeSetup({ role }) {
     load();
   };
 
-  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
+  const canEdit = hasPermission('manage_master_data', role);
 
   const processGroups = [
     { key: 'welding_assembly', label: '🔥 Welding / Assembly', color: '#f97316' },
@@ -5060,7 +5061,7 @@ function _KanbanStandardSetup_REMOVED({ role }) {
     load();
   };
 
-  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
+  const canEdit = hasPermission('manage_master_data', role);
 
   const getItemDisplay = (item) => {
     const prod = item.dr_products;

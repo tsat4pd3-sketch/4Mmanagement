@@ -4,6 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ImageCropModal from '../components/ImageCropModal';
+import { hasPermission } from '../utils/permissions';
 
 /* ─── PRODUCT MASTER ─────────────────────────────────────────────────────────
    ฐานข้อมูลกลางของ Product/Model ที่ใช้ร่วมกันในทุกโมดูล
@@ -51,7 +52,7 @@ function RelatedLinks({ matNo, productId }) {
 
 export default function ProductMaster() {
   const { role, fullName } = useContext(UserContext);
-  const canEdit  = ['admin', 'manager', 'supervisor'].includes(role);
+  const canEdit  = hasPermission('manage_master_data', role);
   const [mainTab, setMainTab] = useState('products');
 
   /* ── state ── */

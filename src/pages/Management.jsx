@@ -4,6 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
+import { hasPermission } from '../utils/permissions';
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
   return new Promise((resolve) => {
@@ -591,7 +592,7 @@ export default function Management() {
   /* ── Special Pool Card ── */
   const SpecialCard = ({ worker }) => {
     const task = specialTasks.find(t => t.employee_id === worker.employee_id);
-    const canDrag = ['admin', 'manager', 'supervisor'].includes(role);
+    const canDrag = hasPermission('manage_master_data', role);
     const isSelected = selectedWorker?.id === worker.id;
     return (
       <div
@@ -847,7 +848,7 @@ export default function Management() {
               <span style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>🟡 งานนอกไลน์</span>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>{specialWorkers.length} คน</span>
             </div>
-            {['admin','manager','supervisor'].includes(role) && specialWorkers.length > 0 && (
+            {hasPermission('manage_master_data', role) && specialWorkers.length > 0 && (
               <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 5, fontStyle: 'italic' }}>drag กลับไลน์ผลิตได้</div>
             )}
           </div>
