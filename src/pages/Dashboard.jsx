@@ -184,6 +184,7 @@ export default function Dashboard() {
   const [workstations,  setWorkstations]  = useState([]);
   const [stationEmpMap, setStationEmpMap] = useState({});
   const [expandedLine,  setExpandedLine]  = useState(null);
+  const [expandedLines, setExpandedLines] = useState(new Set()); // ชื่อไลน์หลักที่กดขยายดูไลน์ย่อยในการ์ดสถานะไลน์ผลิต
   const mapImgRef = useRef(null);
   const [mapBox, setMapBox] = useState({ w: 0, h: 0 });
   useEffect(() => {
@@ -745,16 +746,31 @@ export default function Dashboard() {
 
       {/* ── Line Status Grid ─────────────────────────────── */}
       {(() => {
-        // Build hierarchical render order: parent → children indented below
+        // ไลน์หลักที่มีไลน์ย่อย → รวมยอดคนของไลน์หลัก+ย่อยเข้าเป็นการ์ดเดียว (กันเลข "0/14" ซ้ำกันทุกไลน์ย่อย)
+        // กดขยาย (▾) เพื่อดูการ์ดแยกของแต่ละไลน์ย่อยด้านล่างได้ ไม่บังคับโชว์ตลอด
         const childNames = new Set(lines.filter(l => l.parent_line_name).map(l => l.name));
         const renderOrder = [];
         lineStats.forEach(ls => {
           if (childNames.has(ls.name)) return;
-          renderOrder.push({ ...ls, _isChild: false });
-          (parentChildrenMap[ls.name] || []).forEach(childName => {
-            const cs = lineStats.find(l => l.name === childName);
-            if (cs) renderOrder.push({ ...cs, _isChild: true });
-          });
+          const childNamesForLs = parentChildrenMap[ls.name] || [];
+          const childStats = childNamesForLs.map(childName => lineStats.find(l => l.name === childName)).filter(Boolean);
+          if (childStats.length) {
+            const combined = {
+              ...ls,
+              linePresent: ls.linePresent + childStats.reduce((s, c) => s + c.linePresent, 0),
+              lineTotal:   ls.lineTotal   + childStats.reduce((s, c) => s + c.lineTotal, 0),
+              lineAlerts:  ls.lineAlerts  + childStats.reduce((s, c) => s + c.lineAlerts, 0),
+            };
+            combined.rate = combined.lineTotal > 0 ? Math.round((combined.linePresent / combined.lineTotal) * 100) : 0;
+            renderOrder.push({ ...combined, _isChild: false, _hasChildren: true, _children: childStats });
+          } else {
+            renderOrder.push({ ...ls, _isChild: false });
+          }
+        });
+        const toggleExpand = (name) => setExpandedLines(prev => {
+          const next = new Set(prev);
+          if (next.has(name)) next.delete(name); else next.add(name);
+          return next;
         });
         return (
           <motion.div {...stagger(7)} style={{ marginBottom: 24 }}>
@@ -762,27 +778,38 @@ export default function Dashboard() {
               สถานะไลน์ผลิต
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isUltra ? 'repeat(auto-fill, minmax(200px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(180px, 1fr))' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: isMobile ? 10 : 14 }}>
-              {renderOrder.map((line, i) => {
+              {renderOrder.flatMap((line, i) => {
                 const healthy = line.rate >= 80 && line.lineAlerts === 0;
                 const warn    = line.lineAlerts > 0 || (line.rate > 0 && line.rate < 80);
                 const color   = healthy ? '#22c55e' : warn ? '#f59e0b' : '#555';
-                return (
+                const isExpanded = line._hasChildren && expandedLines.has(line.name);
+                const card = (
                   <motion.div key={line.id} {...stagger(8 + i)}
                     style={line._isChild ? { paddingLeft: 16, borderLeft: '2px solid var(--border2)', marginLeft: 4 } : {}}>
-                    <div style={{
-                      background: line._isChild ? 'var(--bg2)' : 'var(--card)',
-                      border: `1px solid ${line._isChild ? 'var(--border)' : 'var(--border2)'}`,
-                      borderRadius: 12, padding: isWide ? '18px 20px' : '14px 16px',
-                      boxShadow: line._isChild ? 'none' : 'var(--shadow-sm)',
-                    }}>
+                    <div
+                      onClick={line._hasChildren ? () => toggleExpand(line.name) : undefined}
+                      style={{
+                        background: line._isChild ? 'var(--bg2)' : 'var(--card)',
+                        border: `1px solid ${line._isChild ? 'var(--border)' : 'var(--border2)'}`,
+                        borderRadius: 12, padding: isWide ? '18px 20px' : '14px 16px',
+                        boxShadow: line._isChild ? 'none' : 'var(--shadow-sm)',
+                        cursor: line._hasChildren ? 'pointer' : 'default',
+                      }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
                           {line._isChild && (
                             <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>└ ไลน์ย่อย</div>
                           )}
-                          <div style={{ fontSize: isWide ? 14 : 13, fontWeight: line._isChild ? 600 : 700, color: 'var(--text)' }}>{line.name}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <div style={{ fontSize: isWide ? 14 : 13, fontWeight: line._isChild ? 600 : 700, color: 'var(--text)' }}>{line.name}</div>
+                            {line._hasChildren && (
+                              <span style={{ fontSize: 9, color: 'var(--muted)', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+                            )}
+                          </div>
                           {line.section && !line._isChild && (
-                            <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 2, fontWeight: 600 }}>{line.section}</div>
+                            <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 2, fontWeight: 600 }}>
+                              {line.section}{line._hasChildren && ` · ${line._children.length} ไลน์ย่อย`}
+                            </div>
                           )}
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
@@ -807,6 +834,41 @@ export default function Dashboard() {
                     </div>
                   </motion.div>
                 );
+                if (!isExpanded) return [card];
+                const childCards = line._children.map((cs, ci) => {
+                  const cHealthy = cs.rate >= 80 && cs.lineAlerts === 0;
+                  const cWarn    = cs.lineAlerts > 0 || (cs.rate > 0 && cs.rate < 80);
+                  const cColor   = cHealthy ? '#22c55e' : cWarn ? '#f59e0b' : '#555';
+                  return (
+                    <motion.div key={cs.id} {...stagger(8 + i + ci + 1)} style={{ paddingLeft: 16, borderLeft: '2px solid var(--border2)', marginLeft: 4 }}>
+                      <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, padding: isWide ? '18px 20px' : '14px 16px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>└ ไลน์ย่อย</div>
+                            <div style={{ fontSize: isWide ? 14 : 13, fontWeight: 600, color: 'var(--text)' }}>{cs.name}</div>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                            <div style={{ width: 8, height: 8, borderRadius: '50%', background: cColor, boxShadow: `0 0 6px ${cColor}` }} />
+                            {cs.lineAlerts > 0 && (
+                              <div style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(231,76,60,0.15)', color: '#e74c3c', border: '1px solid rgba(231,76,60,0.3)' }}>
+                                🚨 {cs.lineAlerts}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                          <span style={{ fontSize: isWide ? 32 : 24, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>{cs.linePresent}</span>
+                          <span style={{ fontSize: isWide ? 13 : 11, color: 'var(--muted)' }}>/ {cs.lineTotal} คน</span>
+                        </div>
+                        <MiniBar value={cs.linePresent} max={cs.lineTotal} color={cColor} />
+                        <div style={{ marginTop: 8, fontSize: 10, fontWeight: 700, color: cColor }}>
+                          {cs.lineTotal === 0 ? 'ไม่มีข้อมูล' : `${cs.rate}% Attendance ${cHealthy ? '· ✓ Normal' : cs.lineAlerts > 0 ? '· ⚠ Risk' : ''}`}
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                });
+                return [card, ...childCards];
               })}
             </div>
           </motion.div>
