@@ -8,6 +8,7 @@ import {
   ResponsiveContainer, Tooltip,
 } from 'recharts';
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
+import { hasPermission } from '../utils/permissions';
 import { loadCompanyCalendar, getDayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import tsLogoUrl from '../assets/TS logo.png';
 import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/changePointChecklist';
@@ -186,7 +187,7 @@ export default function Report() {
 
 function OtTransportBookingTab({ autoOpenMaster }) {
   const { role } = useContext(UserContext);
-  const canManageMaster = ['admin', 'manager', 'supervisor'].includes(role);
+  const canManageMaster = hasPermission('manage_master_data', role);
   const orgSectionList = useOrgSections();
   const orgDeptList    = useOrgDepts();
 

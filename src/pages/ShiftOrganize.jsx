@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
+import { hasPermission } from '../utils/permissions';
 
 function getWeekDates(refDate) {
   const d = new Date(refDate);
@@ -21,7 +22,7 @@ function toDateStr(d) {
 
 export default function ShiftOrganize() {
   const { role } = useContext(UserContext);
-  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
+  const canEdit = hasPermission('manage_master_data', role);
 
   const [weekRef,   setWeekRef]   = useState(new Date());
   const [lines,     setLines]     = useState([]);

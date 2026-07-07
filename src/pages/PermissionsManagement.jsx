@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import { supabase } from '../supabaseClient';
 import { loadPermissions } from '../utils/permissions';
 import { toast } from '../components/Toast';
@@ -162,8 +162,8 @@ export default function PermissionsManagement() {
           </thead>
           <tbody>
             {PAGE_GROUPS.map(g => (
-              <>
-                <tr key={g.group}>
+              <Fragment key={g.group}>
+                <tr>
                   <td colSpan={ROLES.length + 1} style={{ paddingTop: 14, paddingBottom: 4 }}>
                     <span style={s.groupTitle}>{g.group}</span>
                   </td>
@@ -174,7 +174,7 @@ export default function PermissionsManagement() {
                     {ROLES.map(r => <Cell key={r.value} permissionKey={p.key} role={r.value} />)}
                   </tr>
                 ))}
-              </>
+              </Fragment>
             ))}
 
             <tr>

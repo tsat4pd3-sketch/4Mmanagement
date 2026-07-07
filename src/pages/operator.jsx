@@ -4,6 +4,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
+import { hasPermission } from '../utils/permissions';
 
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
@@ -735,7 +736,7 @@ export default function Operator() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                        {['admin','manager','supervisor'].includes(role) && (
+                        {hasPermission('manage_master_data', role) && (
                           <button onClick={() => setEditingSkill({ ...sd, scope_section: sd.scope_section || '' })}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>✏️</button>
                         )}
