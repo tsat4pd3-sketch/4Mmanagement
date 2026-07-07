@@ -1134,14 +1134,25 @@ const STATUS_META = {
 };
 
 function FourMTab() {
-  const { role } = useContext(UserContext);
+  const { role, section: userSection, lineId: userLineId } = useContext(UserContext);
   const orgSectionList = useOrgSections();
 
   // Determine if the current user can act on this log at its current stage
+  // supervisor/leader อนุมัติได้เฉพาะ log ของไลน์/ส่วนงานตัวเอง — กันอนุมัติข้ามไลน์ที่ตัวเองไม่ได้ดูแล
   const canApproveLog = (log) => {
     if (['admin', 'manager'].includes(role)) return true;
-    if (log.status === 'pending')    return ['supervisor', 'leader'].includes(role);
     if (log.status === 'pending_qa') return role === 'qa';
+    if (log.status !== 'pending') return false;
+    if (role === 'leader') {
+      const myLine = lines.find(l => l.id === userLineId);
+      if (!myLine) return false;
+      return log.line_name === myLine.name || childLineNamesOf(myLine.name).includes(log.line_name);
+    }
+    if (role === 'supervisor') {
+      if (!userSection) return false;
+      const logLine = lines.find(l => l.name === log.line_name);
+      return normSection(logLine?.section) === normSection(userSection);
+    }
     return false;
   };
 
@@ -1168,12 +1179,27 @@ function FourMTab() {
   const [showDocPanel, setShowDocPanel] = useState(false);
   const canManageDoc = ['admin', 'manager'].includes(role);
 
+  const normSection = (s) => (s || '').trim().toLowerCase();
+  const childLineNamesOf = (lineName) => lines.filter(l => l.parent_line_name === lineName).map(l => l.name);
+
+  // supervisor/leader เห็น 4M log เฉพาะไลน์/ส่วนงานตัวเอง (เดิมเห็นข้ามไลน์ได้หมด)
+  const allowedLineNames = useMemo(() => {
+    if (role === 'leader' && userLineId) {
+      const myLine = lines.find(l => l.id === userLineId);
+      return myLine ? [myLine.name, ...childLineNamesOf(myLine.name)] : [];
+    }
+    if (role === 'supervisor' && userSection) {
+      return lines.filter(l => normSection(l.section) === normSection(userSection)).map(l => l.name);
+    }
+    return null;
+  }, [role, userSection, userLineId, lines]);
+
   useEffect(() => {
-    supabase.from('production_lines').select('name, section').order('name').then(({ data }) => setLines(data || []));
+    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name').then(({ data }) => setLines(data || []));
     loadCompanyCalendar();
   }, []);
 
-  useEffect(() => { load(); }, [from, to, line, cat, statusFilter]);
+  useEffect(() => { load(); }, [from, to, line, cat, statusFilter, allowedLineNames]);
 
   const load = async () => {
     setLoading(true);
@@ -1186,6 +1212,7 @@ function FourMTab() {
     if (line)         q = q.eq('line_name', line);
     if (cat)          q = q.eq('category', cat);
     if (statusFilter) q = q.eq('status', statusFilter);
+    if (allowedLineNames) q = q.in('line_name', allowedLineNames.length ? allowedLineNames : ['__none__']);
     const { data } = await q;
     setLogs(data || []);
 
@@ -1568,8 +1595,11 @@ function FourMTab() {
         <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
         <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }} />
         {(() => {
-          const fourMSections = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
-          const fourMVisibleLines = fourMSection ? lines.filter(l => l.section === fourMSection) : lines;
+          const scopedLines = allowedLineNames ? lines.filter(l => allowedLineNames.includes(l.name)) : lines;
+          const fourMSections = allowedLineNames
+            ? [...new Set(scopedLines.map(l => l.section).filter(Boolean))].sort()
+            : (orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort());
+          const fourMVisibleLines = fourMSection ? scopedLines.filter(l => l.section === fourMSection) : scopedLines;
           return (<>
             <select value={fourMSection} onChange={e => { setFourMSection(e.target.value); setLine(''); }} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
               <option value="">ทุกส่วนงาน</option>
@@ -2087,6 +2117,7 @@ function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilt
 }
 
 function SkillMatrixTab() {
+  const { role, section: userSection, lineId: userLineId } = useContext(UserContext);
   const vw = useWidth();
   const [skillDefs,      setSkillDefs]      = useState([]);
   const [employees,      setEmployees]      = useState([]);
@@ -2109,6 +2140,10 @@ function SkillMatrixTab() {
     setLoading(true);
     const baseSelect = 'id, name, employee_id_code, image_url, group_name, line_id, section, department, team, employee_skills(skill_name, score)';
     let q = supabase.from('employees').select(baseSelect).eq('is_active', true);
+    // leader/supervisor เห็นเฉพาะไลน์/ส่วนงานตัวเองเสมอ ไม่ว่า filter ที่เลือกไว้จะเป็นอะไร —
+    // บังคับ scope นี้เพิ่มเติมจาก filter อิสระ กันดูข้ามไลน์/ส่วนงานที่ตัวเองไม่ได้ดูแล
+    if (role === 'leader' && userLineId) q = q.eq('line_id', userLineId);
+    else if (role === 'supervisor' && userSection) q = q.eq('section', userSection);
     if (filterLine) q = q.eq('line_id', filterLine);
     else if (filterSection) q = q.eq('section', filterSection);
     if (filterTeam) q = q.eq('team', filterTeam);
@@ -2575,7 +2610,7 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
 
 function MultiSkillFormTab() {
   const vw = useWidth();
-  const { role, signatureUrl: ctxSigUrl, fullName: ctxFullName } = useContext(UserContext);
+  const { role, section: userSection, lineId: userLineId, signatureUrl: ctxSigUrl, fullName: ctxFullName } = useContext(UserContext);
 
   const [skillDefs,     setSkillDefs]     = useState([]);
   const [employees,     setEmployees]     = useState([]);
@@ -2648,6 +2683,9 @@ function MultiSkillFormTab() {
     setLoading(true);
     const sel = 'id, name, employee_id_code, position, section, department, team, start_date, employee_skills(skill_name, score)';
     let q = supabase.from('employees').select(sel).eq('is_active', true);
+    // leader/supervisor เห็นเฉพาะไลน์/ส่วนงานตัวเองเสมอ ไม่ว่า filter ที่เลือกไว้จะเป็นอะไร
+    if (role === 'leader' && userLineId) q = q.eq('line_id', userLineId);
+    else if (role === 'supervisor' && userSection) q = q.eq('section', userSection);
     if (filterLine) q = q.eq('line_id', filterLine);
     else if (filterSection) q = q.eq('section', filterSection);
     if (filterTeam) q = q.eq('team', filterTeam);

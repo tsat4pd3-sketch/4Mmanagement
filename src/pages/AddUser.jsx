@@ -54,6 +54,14 @@ export default function AddUser() {
 
   const setF = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
+  // ป้องกันบั๊ก fail-open: ถ้า supervisor/leader ไม่มี section/line_id ทุกหน้าที่กรองข้อมูลตาม
+  // section/line_id จะข้าม condition แล้วโชว์ข้อมูลทุกไลน์ทุกแผนกเหมือน admin โดยไม่มีอะไรเตือน
+  const validateScope = () => {
+    if (form.role === 'supervisor' && !form.section) return 'Supervisor ต้องกำหนด Section ไม่งั้นจะเห็นข้อมูลทุกส่วนงานเหมือน admin';
+    if (form.role === 'leader' && (!form.lineId || !form.team)) return 'Leader ต้องกำหนดทั้งไลน์ผลิตและ Team ไม่งั้นจะเห็นข้อมูลทุกไลน์เหมือน admin';
+    return null;
+  };
+
   const openCreate = () => {
     setForm(emptyForm);
     setEditingId(null);
@@ -83,6 +91,8 @@ export default function AddUser() {
 
   const handleCreate = async () => {
     if (!form.email || !form.password) return setError('กรุณากรอก Email และรหัสผ่าน');
+    const scopeErr = validateScope();
+    if (scopeErr) return setError(scopeErr);
     setLoading(true);
     setMessage(null);
     setError(null);
@@ -122,6 +132,8 @@ export default function AddUser() {
   };
 
   const handleUpdate = async () => {
+    const scopeErr = validateScope();
+    if (scopeErr) return setError(scopeErr);
     setLoading(true);
     setMessage(null);
     setError(null);
@@ -294,14 +306,14 @@ export default function AddUser() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
-                  <label style={labelSt}>Section</label>
+                  <label style={labelSt}>Section {form.role === 'supervisor' && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}</label>
                   <select value={form.section} onChange={e => setF('section', e.target.value)}>
                     <option value="">— เลือก —</option>
                     {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label style={labelSt}>Team</label>
+                  <label style={labelSt}>Team {form.role === 'leader' && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}</label>
                   <select value={form.team} onChange={e => setF('team', e.target.value)}>
                     <option value="">— เลือก —</option>
                     {teamOpts.map(t => <option key={t} value={t}>Team {t}</option>)}
@@ -310,12 +322,20 @@ export default function AddUser() {
               </div>
 
               <div>
-                <label style={labelSt}>ไลน์ผลิต / Group</label>
+                <label style={labelSt}>ไลน์ผลิต / Group {form.role === 'leader' && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}</label>
                 <select value={form.lineId} onChange={e => setF('lineId', e.target.value)}>
                   <option value="">— เลือกไลน์ —</option>
                   {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select>
               </div>
+
+              {(form.role === 'supervisor' || form.role === 'leader') && (
+                <div style={{ fontSize: 11, color: 'var(--muted)', padding: '8px 10px', background: 'var(--bg3)', borderRadius: 6, lineHeight: 1.5 }}>
+                  ⚠️ {form.role === 'supervisor'
+                    ? 'Supervisor เห็นเฉพาะข้อมูลใน Section ที่กำหนด — ถ้าไม่กำหนดจะเห็นทุกส่วนงานเหมือน admin'
+                    : 'Leader เห็นเฉพาะข้อมูลในไลน์+Team ที่กำหนด — ถ้าไม่กำหนดจะเห็นทุกไลน์เหมือน admin'}
+                </div>
+              )}
 
               <div>
                 <label style={labelSt}>📬 Notify Email (รับการแจ้งเตือน)</label>

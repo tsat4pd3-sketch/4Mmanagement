@@ -3339,6 +3339,7 @@ function LiveTab({ role }) {
    HISTORY TAB
 ═══════════════════════════════════════════════════════════════ */
 function HistoryTab({ role }) {
+  const { section: userSection, lineId: userLineId } = useContext(UserContext);
   const [sessions, setSessions]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState({ date: '', line_name: '' });
@@ -3364,6 +3365,22 @@ function HistoryTab({ role }) {
 
   const load = useCallback(async () => {
     setLoading(true);
+    const { data: ln } = await supabase.from('production_lines').select('id, name, section, parent_line_name').order('name');
+    const lm = {};
+    (ln || []).forEach(l => { lm[l.name] = l; });
+    const pcm = {};
+    (ln || []).forEach(l => { if (l.parent_line_name) (pcm[l.parent_line_name] ||= []).push(l.name); });
+    const normSection = (s) => (s || '').trim().toLowerCase();
+
+    // ไลน์ที่ role นี้มีสิทธิ์เห็นประวัติ — leader/supervisor เห็นเฉพาะของตัวเอง เหมือน LiveTab
+    let allowedLineNames = null;
+    if (role === 'leader' && userLineId) {
+      const myLine = (ln || []).find(l => l.id === userLineId);
+      allowedLineNames = myLine ? [myLine.name, ...(pcm[myLine.name] || [])] : [];
+    } else if (role === 'supervisor' && userSection) {
+      allowedLineNames = (ln || []).filter(l => normSection(l.section) === normSection(userSection)).map(l => l.name);
+    }
+
     let q = supabaseDR.from('production_sessions')
       .select('*, dr_products(name)')
       .eq('status', 'closed')
@@ -3371,14 +3388,12 @@ function HistoryTab({ role }) {
       .limit(100);
     if (filter.date)      q = q.eq('work_date', filter.date);
     if (filter.line_name) q = q.eq('line_name', filter.line_name);
-    const [{ data: ss }, { data: ln }] = await Promise.all([
-      q,
-      supabase.from('production_lines').select('name').order('name'),
-    ]);
+    if (allowedLineNames) q = q.in('line_name', allowedLineNames.length ? allowedLineNames : ['__none__']);
+    const { data: ss } = await q;
     setSessions(ss || []);
-    setLineNames((ln || []).map(l => l.name));
+    setLineNames(allowedLineNames ?? (ln || []).map(l => l.name));
     setLoading(false);
-  }, [filter]);
+  }, [filter, role, userSection, userLineId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -3626,18 +3641,34 @@ function HistoryTab({ role }) {
    EXPORT TAB
 ═══════════════════════════════════════════════════════════════ */
 function ExportTab() {
+  const { role, section: userSection, lineId: userLineId } = useContext(UserContext);
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
   const firstOfMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; };
 
   const [filter, setFilter]       = useState({ date_from: firstOfMonth(), date_to: today(), line_name: '' });
   const [lineNames, setLineNames] = useState([]);
+  const [allowedLineNames, setAllowedLineNames] = useState(null); // null = ไม่จำกัด (admin/manager/qa/...)
   const [loading, setLoading]     = useState(false);
   const [preview, setPreview]     = useState(null); // { type, rows, cols }
 
   useEffect(() => {
-    supabase.from('production_lines').select('name').order('name')
-      .then(({ data }) => setLineNames((data || []).map(l => l.name)));
-  }, []);
+    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
+      .then(({ data }) => {
+        const ln = data || [];
+        const normSection = (s) => (s || '').trim().toLowerCase();
+        const pcm = {};
+        ln.forEach(l => { if (l.parent_line_name) (pcm[l.parent_line_name] ||= []).push(l.name); });
+        let allowed = null;
+        if (role === 'leader' && userLineId) {
+          const myLine = ln.find(l => l.id === userLineId);
+          allowed = myLine ? [myLine.name, ...(pcm[myLine.name] || [])] : [];
+        } else if (role === 'supervisor' && userSection) {
+          allowed = ln.filter(l => normSection(l.section) === normSection(userSection)).map(l => l.name);
+        }
+        setAllowedLineNames(allowed);
+        setLineNames(allowed ?? ln.map(l => l.name));
+      });
+  }, [role, userSection, userLineId]);
 
   // ── fetch all raw data ──────────────────────────────────────────
   const fetchData = async () => {
@@ -3653,6 +3684,7 @@ function ExportTab() {
       .order('work_date', { ascending: true })
       .order('shift', { ascending: true });
     if (filter.line_name) q = q.eq('line_name', filter.line_name);
+    if (allowedLineNames) q = q.in('line_name', allowedLineNames.length ? allowedLineNames : ['__none__']);
     const { data, error } = await q;
     setLoading(false);
     if (error) { toast.error(error.message); return null; }

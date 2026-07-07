@@ -68,7 +68,7 @@ const STATUS_META = {
 };
 
 export default function Checkin() {
-  const { role, lineId, team, fullName } = useContext(UserContext);
+  const { role, lineId, team, section: userSection, fullName } = useContext(UserContext);
 
   const [employees,      setEmployees]      = useState([]);
   const [lines,          setLines]          = useState([]);
@@ -146,6 +146,8 @@ export default function Checkin() {
     if (role === 'leader') {
       if (lineId) empQ = empQ.eq('line_id', lineId);
       if (team)   empQ = empQ.eq('team', team);
+    } else if (role === 'supervisor') {
+      if (userSection) empQ = empQ.eq('section', userSection);
     }
 
     const [

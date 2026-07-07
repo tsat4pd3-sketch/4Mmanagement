@@ -138,8 +138,9 @@ const MAN_CASE_META = {
 };
 
 export default function Management() {
-  const { role, lineId: userLineId, team: userTeam, fullName, user } = useContext(UserContext);
+  const { role, lineId: userLineId, team: userTeam, section: userSection, fullName, user } = useContext(UserContext);
   const isLeader = role === 'leader';
+  const isSupervisor = role === 'supervisor';
 
   const [workers,        setWorkers]        = useState([]);
   const [fourMLogs,      setFourMLogs]      = useState([]);
@@ -280,8 +281,9 @@ export default function Management() {
   useEffect(() => {
     supabase.from('skill_definitions').select('*').order('sort_order').then(({ data }) => setSkillDefs(data || []));
     const fetchLines = async () => {
-      let q = supabase.from('production_lines').select('id, name, parent_line_name').order('name');
+      let q = supabase.from('production_lines').select('id, name, section, parent_line_name').order('name');
       if (isLeader && userLineId) q = q.eq('id', userLineId);
+      else if (isSupervisor && userSection) q = q.eq('section', userSection);
       const { data } = await q;
       // ไลน์ย่อย (มี parent_line_name) ใช้ผังเดียวกับไลน์หลักและถูกรวมเข้าการ์ดเดียวกันอยู่แล้ว —
       // ไม่ต้องให้เลือกแยกในหน้านี้ เพื่อไม่ให้ dropdown แตกเป็นหลายไลน์ทั้งที่พื้นที่จริงเดียวกัน
@@ -554,9 +556,16 @@ export default function Management() {
   const specialEmpIds = new Set(specialTasks.map(t => t.employee_id));
 
   const matchesTeam = (w) => {
-    if (!isLeader) return true;
-    // Leaders only see workers from their own line
-    if (userLineId && w.employees?.line_id !== userLineId) return false;
+    if (isLeader) {
+      // Leader เห็นเฉพาะพนักงานในไลน์ตัวเอง
+      if (userLineId && w.employees?.line_id !== userLineId) return false;
+      return true;
+    }
+    if (isSupervisor) {
+      // Supervisor เห็นเฉพาะพนักงานในส่วนงานตัวเอง (เหมือน operator.jsx)
+      if (userSection && w.employees?.section !== userSection) return false;
+      return true;
+    }
     return true;
   };
 
