@@ -2,7 +2,7 @@ import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
-import { hasPermission } from '../utils/permissions';
+import { can } from '../utils/permissions';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
    Store จ่ายพาร์ทเข้าไลน์ → บันทึก transaction type='issue'
@@ -32,7 +32,7 @@ const EMPTY_FORM = { line_name:'', mat_no:'', part_name:'', qty:'', type:'issue'
    ───────────────────────────────────────────────────────────────────────────── */
 function StockTab({ role }) {
   const { fullName } = useContext(UserContext);
-  const canIssue = ['admin','manager','supervisor','leader'].includes(role);
+  const canIssue = can('line_stock', 'issue', role);
 
   const [lines,   setLines]   = useState([]);
   const [stock,   setStock]   = useState([]);
@@ -786,7 +786,7 @@ const TABS = [
 
 export default function LineStock() {
   const { role, fullName } = useContext(UserContext);
-  const canEdit = hasPermission('manage_master_data', role);
+  const canEdit = can('line_stock', 'manage_rounds', role);
   const [activeTab, setActiveTab] = useState('stock');
 
   return (
