@@ -115,8 +115,9 @@ async function buildTelegramMessage(log: Record<string, unknown>, title: string)
   return lines.join('\n');
 }
 
+const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
 
 /* ── Handler ─────────────────────────────────────── */
 Deno.serve(async (req) => {
