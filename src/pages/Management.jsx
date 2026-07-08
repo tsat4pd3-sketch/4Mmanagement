@@ -5,6 +5,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
 import { hasPermission } from '../utils/permissions';
+import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
   return new Promise((resolve) => {
@@ -271,6 +272,25 @@ export default function Management() {
     const t = setInterval(() => fetchLineProd(cardLineNames), 30000);
     return () => clearInterval(t);
   }, [selectedLine, childLineNames, fetchLineProd]);
+
+  // ── Downtime alarm — จุดเครื่องจักรบนผังกระพริบแดงเมื่อมี downtime ค้างอยู่ ──
+  // realtime: พนักงานบันทึก downtime ที่หน้า Daily Report แล้วผังหน้านี้ต้องกระพริบทันที
+  // interval 60s: เอาไว้ปลด alarm "เพิ่งบันทึก" ที่หมดอายุตามเวลา (RECENT_ALARM_MIN)
+  const [dtAlarms, setDtAlarms] = useState({ byMachine: {}, byLine: {}, list: [] });
+  useEffect(() => {
+    if (!selectedLine) { setDtAlarms({ byMachine: {}, byLine: {}, list: [] }); return; }
+    const cardLineNames = [selectedLine, ...childLineNames];
+    let debounceTimer = null;
+    const refresh = () => fetchActiveDowntimes(cardLineNames).then(setDtAlarms).catch(() => {});
+    const debounced = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(refresh, 1000); };
+    refresh();
+    const t = setInterval(refresh, 60000);
+    const ch = supabaseDR.channel('mgmt-dt-alarm')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       debounced)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, debounced)
+      .subscribe();
+    return () => { clearInterval(t); clearTimeout(debounceTimer); supabaseDR.removeChannel(ch); };
+  }, [selectedLine, childLineNames]);
 
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth <= 768);
@@ -1533,22 +1553,38 @@ export default function Management() {
                         </div>
                       );
                     })}
-                    {filterMachine && machinePoints.map(p => {
+                    {machinePoints.map(p => {
+                      const alarms = dtAlarms.byMachine[p.machine_no];
+                      // เครื่องที่กำลัง Downtime ต้องโชว์เสมอแม้ปิด filter MACHINE — เป็น alarm ไม่ใช่แค่ข้อมูลผัง
+                      if (!filterMachine && !alarms) return null;
                       const mc = drMachines.find(m => m.machine_no === p.machine_no);
                       const mTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const mLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
+                      const firstAlarm = alarms?.[0];
+                      const elapsed = firstAlarm ? dtElapsedMin(firstAlarm) : null;
+                      const ongoing = firstAlarm && !firstAlarm.ended_at && firstAlarm.duration_min == null;
+                      const title = alarms
+                        ? `🚨 ${p.machine_no} ${mc?.machine_name || ''} — DOWNTIME\n${alarms.map(d => `${d.dr_downtime_types?.name_th || 'Downtime'}${d.description ? ` — ${d.description}` : ''}`).join('\n')}`
+                        : `⚙️ ${p.machine_no} ${mc?.machine_name || ''}`;
                       return (
-                        <div key={`mc-${p.id}`} title={`⚙️ ${p.machine_no} ${mc?.machine_name || ''}`}
+                        <div key={`mc-${p.id}`} title={title}
+                          className={alarms ? 'dt-alarm-blink' : undefined}
                           style={{
                             position: 'absolute', top: mTop, left: mLeft, transform: 'translate(-50%, -50%)',
-                            width: 54, height: 40, zIndex: 4,
-                            border: '2px solid rgba(245,158,11,0.85)', borderRadius: 7,
+                            minWidth: 54, maxWidth: alarms ? 90 : 54, height: 40, zIndex: alarms ? 6 : 4,
+                            border: alarms ? '2px solid #ef4444' : '2px solid rgba(245,158,11,0.85)', borderRadius: 7,
                             backgroundColor: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(2px)',
                             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                            padding: '2px 2px 1px',
+                            padding: '2px 3px 1px',
                           }}>
-                          <div style={{ fontSize: 8, fontWeight: 700, color: '#e0e0e0', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>⚙️ {p.machine_no}</div>
-                          <div style={{ fontSize: 7, color: '#a3a3a3', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mc?.machine_name || ''}</div>
+                          <div style={{ fontSize: 8, fontWeight: 700, color: alarms ? '#fff' : '#e0e0e0', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {alarms ? '🚨' : '⚙️'} {p.machine_no}
+                          </div>
+                          <div style={{ fontSize: 7, color: alarms ? '#fecaca' : '#a3a3a3', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {alarms
+                              ? `${firstAlarm.dr_downtime_types?.name_th || 'Downtime'}${ongoing && elapsed != null ? ` ${elapsed}น.` : ''}`
+                              : (mc?.machine_name || '')}
+                          </div>
                         </div>
                       );
                     })}

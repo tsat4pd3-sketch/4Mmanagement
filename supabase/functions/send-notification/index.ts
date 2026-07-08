@@ -113,6 +113,30 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
     }
 
+    /* ── Machine downtime alert ──────────────────── */
+    if (event === 'downtime') {
+      const d = body.downtime;
+      if (!d) return new Response('missing downtime', { status: 400 });
+      const shiftLabel = d.shift === 'day' ? 'กะเช้า' : 'กะดึก';
+      const ongoing = !d.end_time && d.duration_min == null;
+      const lines = [
+        `🚨🚨 <b>เครื่องจักร DOWNTIME</b> 🚨🚨`,
+        ``,
+        `⚙️ เครื่องจักร: <b>${d.machine_no || '-'}${d.machine_name ? ` (${d.machine_name})` : ''}</b>`,
+        `🏭 ไลน์: ${d.line_name} · ${shiftLabel}`,
+        `📅 วันที่: ${d.work_date}`,
+        `🛑 สาเหตุ: ${d.type_name || '-'}${d.category === 'planned' ? ' (Planned)' : ''}`,
+      ];
+      if (d.start_time)          lines.push(`🕐 เริ่ม: ${d.start_time}${d.end_time ? ` – ${d.end_time}` : ' — <b>ยังไม่จบ ⏳</b>'}`);
+      else if (ongoing)          lines.push(`⏳ สถานะ: <b>เครื่องยังหยุดอยู่</b>`);
+      if (d.duration_min != null) lines.push(`⏱ ระยะเวลา: ${d.duration_min} นาที`);
+      if (d.mat_no)              lines.push(`🔩 ชิ้นงาน: ${d.mat_no}`);
+      if (d.description)         lines.push(`📝 รายละเอียด: ${d.description}`);
+      lines.push(``, `👤 ผู้แจ้ง: ${d.reported_by || '-'}`, `— Production System`);
+      await sendTelegram(lines.join('\n')).catch(console.error);
+      return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
+    }
+
     /* ── Production session close workflow ───────── */
     if (event === 'prod_close') {
       const s = body.session;

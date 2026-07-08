@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
+import { isAlarmingDT, dtElapsedMin } from '../utils/downtimeAlarm';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -69,17 +70,26 @@ function ThumbMap({ imageUrl, alt, markers }) {
       {box && (
         <div style={{ position: 'absolute', left: box.ox, top: box.oy, width: box.rw, height: box.rh, pointerEvents: 'none' }}>
           {markers.map(m => (
-            <div key={m.id} style={{ position: 'absolute', top: m.top, left: m.left, transform: 'translate(-50%, -50%)', zIndex: 2 }}>
-              <div style={{
-                width: 26, height: 26, borderRadius: '50%',
-                border: `2px solid ${m.color}`, boxShadow: `0 0 6px ${m.color}88`,
-                overflow: 'hidden', background: '#1a1a1a',
-              }}>
-                {m.img
-                  ? <img src={m.img} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: m.color }}>{m.initial}</div>
-                }
-              </div>
+            <div key={m.id} style={{ position: 'absolute', top: m.top, left: m.left, transform: 'translate(-50%, -50%)', zIndex: m.alarm ? 3 : 2 }}>
+              {m.alarm ? (
+                <div className="dt-alarm-blink" style={{
+                  border: '2px solid #ef4444', borderRadius: 6, padding: '2px 6px',
+                  fontSize: 8, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap',
+                }}>
+                  🚨 {m.label}
+                </div>
+              ) : (
+                <div style={{
+                  width: 26, height: 26, borderRadius: '50%',
+                  border: `2px solid ${m.color}`, boxShadow: `0 0 6px ${m.color}88`,
+                  overflow: 'hidden', background: '#1a1a1a',
+                }}>
+                  {m.img
+                    ? <img src={m.img} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: m.color }}>{m.initial}</div>
+                  }
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -182,6 +192,7 @@ export default function Dashboard() {
 
   const [layouts,       setLayouts]       = useState([]);
   const [workstations,  setWorkstations]  = useState([]);
+  const [machinePoints, setMachinePoints] = useState([]);
   const [stationEmpMap, setStationEmpMap] = useState({});
   const [expandedLine,  setExpandedLine]  = useState(null);
   const [expandedLines, setExpandedLines] = useState(new Set()); // ชื่อไลน์หลักที่กดขยายดูไลน์ย่อยในการ์ดสถานะไลน์ผลิต
@@ -234,7 +245,7 @@ export default function Dashboard() {
     if (sessionIds.length > 0) {
       const [{ data: orders }, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
         supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, prod_no, part_name, mat_no, opened_at, confirmed_at').in('session_id', sessionIds),
-        supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', sessionIds),
+        supabaseDR.from('downtime_logs').select('id, session_id, machine_no, description, duration_min, started_at, ended_at, created_at, dr_downtime_types(category, name_th)').in('session_id', sessionIds),
         supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessionIds),
       ]);
       (orders     || []).forEach(o => { (ordersBySession[o.session_id]  ||= []).push(o); });
@@ -338,7 +349,11 @@ export default function Dashboard() {
       const actual  = active.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty_ok ?? o.qty ?? 0), 0);
       const target  = s.dr_products?.target_per_shift || 0;
       const oeeData = s.status === 'open' ? computeSessionOEE(s) : null;
-      return { ...s, orders: active, demand, actual, target, oeeData };
+      // downtime ที่กำลัง alarm (ยังไม่ปิดรายการ หรือเพิ่งบันทึกเข้ามา) — เฉพาะกะที่ยังไม่ปิด
+      const activeDT = ['open', 'pending_close'].includes(s.status)
+        ? (dtBySession[s.id] || []).filter(d => isAlarmingDT(d))
+        : [];
+      return { ...s, orders: active, demand, actual, target, oeeData, activeDT };
     });
     setProdStatus(ps);
   }, []);
@@ -356,6 +371,7 @@ export default function Dashboard() {
       { data: layoutData },
       { data: wsData },
       { data: hpData },
+      { data: mpData },
     ] = await Promise.all([
       supabase.from('daily_production_logs')
         .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, shift, assigned_line, employees!inner(id, name, image_url, employee_id_code, line_id, team, is_active, employee_skills(skill_name, score))')
@@ -370,6 +386,7 @@ export default function Dashboard() {
       supabase.from('line_layouts').select('line_name, image_url'),
       supabase.from('workstations').select('id, line_name, station_name, pos_top, pos_left, station_requirements(skill_name, min_score)'),
       supabase.from('employee_home_positions').select('employee_id, station_id, employees(id, name, image_url, position, employee_skills(skill_name, score))'),
+      supabase.from('machine_points').select('id, line_name, machine_no, pos_top, pos_left'),
     ]);
 
     // Build per-line day_team map
@@ -416,6 +433,7 @@ export default function Dashboard() {
     setEmpCounts(counts);
     setLayouts(layoutData || []);
     setWorkstations(wsData || []);
+    setMachinePoints(mpData || []);
 
     // Build skill fit lookups from NESTED data (same source as Management page,
     // avoids the 1000-row truncation that flat queries hit).
@@ -537,6 +555,23 @@ export default function Dashboard() {
     () => selectedSection === 'all' ? layouts : layouts.filter(l => visibleLineNames.has(l.line_name)),
     [layouts, selectedSection, visibleLineNames],
   );
+
+  // ── Downtime alarm — รวม downtime ที่ยังค้าง/เพิ่งบันทึกจากทุกกะที่มองเห็น ──
+  // ใช้ขับ banner ด้านบน, ป้ายบนการ์ดสถานะไลน์ และจุดเครื่องจักรกระพริบบนผัง
+  const dtAlarmList = useMemo(
+    () => visibleProdStatus.flatMap(s => (s.activeDT || []).map(d => ({ ...d, line_name: s.line_name, shift: s.shift }))),
+    [visibleProdStatus],
+  );
+  const dtAlarmByMachine = useMemo(() => {
+    const m = {};
+    dtAlarmList.forEach(d => { if (d.machine_no) (m[d.machine_no] ||= []).push(d); });
+    return m;
+  }, [dtAlarmList]);
+  const dtAlarmByLine = useMemo(() => {
+    const m = {};
+    dtAlarmList.forEach(d => { (m[d.line_name] ||= []).push(d); });
+    return m;
+  }, [dtAlarmList]);
 
   // ไลน์ย่อย (เช่น HDF1, LASER123 ใต้ HYDROFORM) ที่ไม่มีรูปผังของตัวเอง — จริงๆ อยู่พื้นที่เดียวกับไลน์หลัก
   // ให้รวมจุดงาน/คนของมันเข้าไปในการ์ดของไลน์หลักแทนที่จะแยกการ์ด (ซึ่งจะไม่มีรูปให้แสดงอยู่แล้ว)
@@ -744,6 +779,39 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {/* ── Downtime Alarm Banner — เครื่องจักรหยุด กระพริบเตือนทั้งแถบ ── */}
+      {dtAlarmList.length > 0 && (
+        <motion.div {...stagger(6)} className="dt-alarm-banner"
+          style={{ border: '1px solid rgba(239,68,68,0.45)', borderRadius: 12, padding: isMobile ? '12px 14px' : '14px 18px', marginBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+            <span className="dt-alarm-icon" style={{ fontSize: 20 }}>🚨</span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: '#ef4444', fontFamily: 'var(--font-display)' }}>
+              เครื่องจักร Downtime {dtAlarmList.length} รายการ
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {dtAlarmList.map(d => {
+              const elapsed = dtElapsedMin(d, now.getTime());
+              const ongoing = !d.ended_at && d.duration_min == null;
+              return (
+                <div key={d.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8,
+                  background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(239,68,68,0.4)',
+                }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#fca5a5' }}>⚙️ {d.machine_no || d.line_name}</span>
+                  <span style={{ fontSize: 11, color: 'var(--text2)' }}>{d.line_name}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}>{d.dr_downtime_types?.name_th || 'Downtime'}</span>
+                  {ongoing && elapsed != null && (
+                    <span style={{ fontSize: 11, fontWeight: 800, color: '#fbbf24' }}>⏱ {elapsed} นาที</span>
+                  )}
+                  {!ongoing && <span style={{ fontSize: 10, color: 'var(--muted)' }}>ปิดรายการแล้ว (เพิ่งบันทึก)</span>}
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
+
       {/* ── Line Status Grid ─────────────────────────────── */}
       {(() => {
         // ไลน์หลักที่มีไลน์ย่อย → รวมยอดคนของไลน์หลัก+ย่อยเข้าเป็นการ์ดเดียว (กันเลข "0/14" ซ้ำกันทุกไลน์ย่อย)
@@ -783,6 +851,9 @@ export default function Dashboard() {
                 const warn    = line.lineAlerts > 0 || (line.rate > 0 && line.rate < 80);
                 const color   = healthy ? '#22c55e' : warn ? '#f59e0b' : '#555';
                 const isExpanded = line._hasChildren && expandedLines.has(line.name);
+                // downtime alarm ของไลน์นี้ + ไลน์ย่อยที่ถูกรวมเข้าการ์ดเดียวกัน
+                const cardDT = [line.name, ...(line._children?.map(c => c.name) || [])]
+                  .flatMap(n => dtAlarmByLine[n] || []);
                 const card = (
                   <motion.div key={line.id} {...stagger(8 + i)}
                     style={line._isChild ? { paddingLeft: 16, borderLeft: '2px solid var(--border2)', marginLeft: 4 } : {}}>
@@ -819,6 +890,12 @@ export default function Dashboard() {
                               🚨 {line.lineAlerts}
                             </div>
                           )}
+                          {cardDT.length > 0 && (
+                            <div className="dt-alarm-blink" title={cardDT.map(d => `${d.machine_no || '-'} · ${d.dr_downtime_types?.name_th || 'Downtime'}`).join('\n')}
+                              style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 6, color: '#fff', border: '1px solid #ef4444' }}>
+                              ⚙️ DT {cardDT.length}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -839,6 +916,7 @@ export default function Dashboard() {
                   const cHealthy = cs.rate >= 80 && cs.lineAlerts === 0;
                   const cWarn    = cs.lineAlerts > 0 || (cs.rate > 0 && cs.rate < 80);
                   const cColor   = cHealthy ? '#22c55e' : cWarn ? '#f59e0b' : '#555';
+                  const csDT     = dtAlarmByLine[cs.name] || [];
                   return (
                     <motion.div key={cs.id} {...stagger(8 + i + ci + 1)} style={{ paddingLeft: 16, borderLeft: '2px solid var(--border2)', marginLeft: 4 }}>
                       <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, padding: isWide ? '18px 20px' : '14px 16px' }}>
@@ -852,6 +930,12 @@ export default function Dashboard() {
                             {cs.lineAlerts > 0 && (
                               <div style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(231,76,60,0.15)', color: '#e74c3c', border: '1px solid rgba(231,76,60,0.3)' }}>
                                 🚨 {cs.lineAlerts}
+                              </div>
+                            )}
+                            {csDT.length > 0 && (
+                              <div className="dt-alarm-blink" title={csDT.map(d => `${d.machine_no || '-'} · ${d.dr_downtime_types?.name_th || 'Downtime'}`).join('\n')}
+                                style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 6, color: '#fff', border: '1px solid #ef4444' }}>
+                                ⚙️ DT {csDT.length}
                               </div>
                             )}
                           </div>
@@ -1415,21 +1499,30 @@ export default function Dashboard() {
                       <ThumbMap
                         imageUrl={layout.image_url}
                         alt={layout.line_name}
-                        markers={lineWs.map(ws => {
-                          const emp = stationEmpMap[String(ws.id)];
-                          if (!emp) return null;
-                          if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
-                          // Only show employees who are present
-                          if (emp.is_present !== true) return null;
-                          const fitLv = getFitLevel(emp.fitScore);
-                          return {
-                            id: ws.id,
-                            top: ws.pos_top, left: ws.pos_left,
-                            color: fitLv ? fitLv.color : '#aaa',
-                            img: emp.image_url,
-                            initial: (emp.name || '?')[0],
-                          };
-                        }).filter(Boolean)}
+                        markers={[
+                          ...lineWs.map(ws => {
+                            const emp = stationEmpMap[String(ws.id)];
+                            if (!emp) return null;
+                            if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
+                            // Only show employees who are present
+                            if (emp.is_present !== true) return null;
+                            const fitLv = getFitLevel(emp.fitScore);
+                            return {
+                              id: ws.id,
+                              top: ws.pos_top, left: ws.pos_left,
+                              color: fitLv ? fitLv.color : '#aaa',
+                              img: emp.image_url,
+                              initial: (emp.name || '?')[0],
+                            };
+                          }).filter(Boolean),
+                          // จุดเครื่องจักรที่กำลัง Downtime — กระพริบแดงบนผังย่อ
+                          ...machinePoints
+                            .filter(p => cardLineNames.includes(p.line_name) && dtAlarmByMachine[p.machine_no])
+                            .map(p => ({
+                              id: `mc-${p.id}`, alarm: true, label: p.machine_no,
+                              top: `${parseFloat(p.pos_top) || 0}%`, left: `${parseFloat(p.pos_left) || 0}%`,
+                            })),
+                        ]}
                       />
                       {/* Line label */}
                       <div style={{ padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg3)' }}>
@@ -1643,6 +1736,37 @@ export default function Dashboard() {
                           </div>
                         );
                       })}
+                      {/* จุดเครื่องจักรบนผัง — เฉพาะเครื่องที่กำลัง Downtime กระพริบแดงพร้อมชื่อสาเหตุ */}
+                      {machinePoints
+                        .filter(p => cardLineNames.includes(p.line_name) && dtAlarmByMachine[p.machine_no])
+                        .map(p => {
+                          const alarms = dtAlarmByMachine[p.machine_no];
+                          const first = alarms[0];
+                          const elapsed = dtElapsedMin(first, now.getTime());
+                          const ongoing = !first.ended_at && first.duration_min == null;
+                          return (
+                            <div key={`mc-${p.id}`}
+                              title={alarms.map(d => `${d.dr_downtime_types?.name_th || 'Downtime'}${d.description ? ` — ${d.description}` : ''}`).join('\n')}
+                              style={{
+                                position: 'absolute', top: `${parseFloat(p.pos_top) || 0}%`, left: `${parseFloat(p.pos_left) || 0}%`,
+                                transform: 'translate(-50%, -50%)', zIndex: 5,
+                                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                              }}>
+                              <div className="dt-alarm-blink" style={{
+                                border: '2px solid #ef4444', borderRadius: 8, padding: '4px 8px',
+                                fontSize: 'clamp(10px, 1.2vw, 15px)', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap',
+                              }}>
+                                🚨 {p.machine_no}
+                              </div>
+                              <div style={{
+                                background: 'rgba(0,0,0,0.8)', borderRadius: 4, padding: '2px 6px',
+                                fontSize: 'clamp(9px, 1vw, 13px)', fontWeight: 700, color: '#fca5a5', whiteSpace: 'nowrap',
+                              }}>
+                                {first.dr_downtime_types?.name_th || 'Downtime'}{ongoing && elapsed != null ? ` · ${elapsed} นาที` : ''}
+                              </div>
+                            </div>
+                          );
+                        })}
                     </>
                   );
                 })()}
