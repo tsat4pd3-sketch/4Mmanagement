@@ -159,7 +159,8 @@ export default function PermissionsManagement() {
     }),
   };
 
-  const PermTable = ({ groups, firstColLabel }) => (
+  // เรียกเป็นฟังก์ชันธรรมดา (ไม่ใช่ <Component/>) — กัน react ถือเป็น component ใหม่ทุก render แล้ว remount ตาราง
+  const renderPermTable = (groups, firstColLabel) => (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
@@ -219,7 +220,7 @@ export default function PermissionsManagement() {
         <button style={s.tabBtn(tab === 'actions')} onClick={() => setTab('actions')}>🛠️ สิทธิ์การทำงาน (สร้าง/แก้/ลบ/อนุมัติ)</button>
       </div>
 
-      {tab === 'pages' && <PermTable groups={pageGroups} firstColLabel="หน้า" />}
+      {tab === 'pages' && renderPermTable(pageGroups, 'หน้า')}
 
       {tab === 'actions' && (
         <>
@@ -228,7 +229,7 @@ export default function PermissionsManagement() {
             สิทธิ์รายการย่อยเหล่านี้จะมีผลจริงกับแต่ละหน้า <strong>เมื่อหน้านั้นถูกอัปเดตให้อ่านค่าจากระบบนี้</strong> (กำลังทยอยเปิดใช้ทีละหน้า) —
             ระหว่างนี้หน้าที่ยังไม่อัปเดตจะยึดตามพฤติกรรมเดิม ค่าที่ตั้งไว้ตรงนี้จะถูกใช้ทันทีที่หน้านั้นเปิดใช้ระบบใหม่
           </div>
-          <PermTable groups={[...actionGroups, legacyGroup]} firstColLabel="การทำงาน" />
+          {renderPermTable([...actionGroups, legacyGroup], 'การทำงาน')}
         </>
       )}
     </div>
