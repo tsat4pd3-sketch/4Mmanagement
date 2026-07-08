@@ -51,6 +51,16 @@ git push origin main
 - Rollback เฉพาะรอบนี้: `git revert -m 1 <merge-sha รอบ 3>` หรือ
   `git checkout d9430ba -- src/pages/Dashboard.jsx`
 
+## รอบแก้ที่ 4 — กะดึก OT หัวกะ + port planner ไปหน้า Management
+
+- **main ก่อน merge รอบ 4:** commit `d5b7e70` (+ commits อื่นของทีมที่เข้ามาระหว่างนั้น)
+- ไฟล์ที่เปลี่ยน: `src/pages/Dashboard.jsx`, `src/pages/Management.jsx`
+- เนื้อหา: (1) กะดึกใช้กติกาจริง — เข้าปกติ 22:30–08:00, เปิด OT = เข้า 20:00 แทน
+  planner จะบอกก่อนกะเริ่มว่า "เข้า 22:30 ทัน" หรือ "ต้องเรียกเข้า 20:00"
+  (2) หน้า Management mini Heijunka ได้ครบชุด: PLANNER strip + แถบ ⛔ downtime +
+  tooltip สาเหตุดีเลย์ + ดูย้อนหลังรายวัน
+- Rollback เฉพาะรอบนี้: `git revert -m 1 <merge-sha รอบ 4>`
+
 ## สิ่งที่ต้องรู้ตอน rollback
 
 1. **ยอดสต็อกจาก "ยืนยันส่ง" ต่างกันสองเวอร์ชัน** — เวอร์ชันใหม่บันทึก `line_stock_transactions`
