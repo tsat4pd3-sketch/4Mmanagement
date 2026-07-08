@@ -7,6 +7,7 @@ import { toast } from '../components/Toast'
 import { getSpcStatus, STATUS_COLOR } from '../lib/spc'
 import { getOrCreateChecklist } from '../lib/pmChecklists'
 import { notifyDepartment, createNotification } from '../lib/pmNotify'
+import { handleDailyPmSave } from '../lib/pmDailyAlarm'
 import { exportInspectionExcel } from '../lib/pmExportExcel'
 import { exportInspectionPDF, resolveSignatureDataUrl } from '../lib/pmExportPDF'
 import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } from '../lib/pmTaxonomy'
@@ -461,6 +462,14 @@ export default function PMCheckData() {
       if (overall === 'fail') {
         notifyDepartment(department, { title: 'พบผลตรวจไม่ผ่าน (NG)', body: `${selectedJig.name} — ${formatDate(insp.inspected_at)}`, type: 'error', refTable: 'inspections', refId: insp.id }, userId).catch(() => {})
       }
+
+      // Daily PM line alarm (green when the line is complete & all pass, red on NG).
+      const ngTopics = checkpoints.filter(cp => {
+        const r = results[cp.id]
+        if (!r) return false
+        return cp.type === 'variable' ? getSpcStatus(computeAvg(r.v1, r.v2, r.v3), cp) === 'fail' : r.attr === 'ng'
+      }).map(cp => cp.name)
+      handleDailyPmSave({ jig: selectedJig, department, overall, ngTopics }).catch(() => {})
 
       toast.success('บันทึกผลการตรวจสำเร็จ')
       const init = {}
