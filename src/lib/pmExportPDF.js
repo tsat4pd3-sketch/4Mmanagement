@@ -94,7 +94,7 @@ export async function exportInspectionPDF({
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
   doc.setFont('helvetica', 'normal')
 
-  const datePart = new Date(inspection.inspected_at).toISOString().slice(0, 10)
+  const datePart = new Date(inspection.inspected_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
   const dateDisplay = fmtDate(inspection.inspected_at)
 
   let jigImg = null
@@ -373,7 +373,7 @@ export async function exportInspectionPDF({
         return {
           item: String(idx + 1), name: cp.name, std: cp.name, checking: '', picture: '',
           okng: ok, action: r?.action_text ?? '', date: '', results: '', approve: '',
-          remark: r?.note_text ?? '', _ng: ok === 'NG',
+          remark: '', _ng: ok === 'NG',
         }
       })
 

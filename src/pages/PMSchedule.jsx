@@ -79,7 +79,7 @@ export default function PMSchedule() {
 
     const [{ data: jigs }, { data: inspections }] = await Promise.all([
       supabaseDR.from('jigs').select('id, name, jig_no, line_name, machine_no, equipment_type').in('id', eqIds),
-      supabaseDR.from('inspections').select('checklist_id, inspected_at').in('checklist_id', clIds).order('inspected_at', { ascending: false }),
+      supabaseDR.from('inspections').select('checklist_id, inspected_at').in('checklist_id', clIds).neq('approval_status', 'rejected').order('inspected_at', { ascending: false }),
     ])
 
     const jigMap = {}
@@ -185,10 +185,10 @@ export default function PMSchedule() {
                     </td>
                     <td style={{ fontSize: 13, color: 'var(--muted)' }}>{FREQ_LABEL[cl.frequency] ?? cl.frequency}</td>
                     <td style={{ fontSize: 13, color: 'var(--text2)' }}>
-                      {lastDone ? new Date(lastDone).toLocaleDateString('th-TH') : <span style={{ color: 'var(--muted)' }}>—</span>}
+                      {lastDone ? new Date(lastDone).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' }) : <span style={{ color: 'var(--muted)' }}>—</span>}
                     </td>
                     <td style={{ fontSize: 13, color: isOverdue ? '#e05c4a' : 'var(--text2)', fontWeight: isOverdue ? 700 : 400 }}>
-                      {nextDue ? nextDue.toLocaleDateString('th-TH') : <span style={{ color: 'var(--muted)' }}>—</span>}
+                      {nextDue ? nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' }) : <span style={{ color: 'var(--muted)' }}>—</span>}
                       {isOverdue && nextDue && (
                         <div style={{ fontSize: 11, color: '#e05c4a' }}>
                           เกิน {Math.abs(Math.floor((nextDue - new Date()) / 86400000))} วัน
