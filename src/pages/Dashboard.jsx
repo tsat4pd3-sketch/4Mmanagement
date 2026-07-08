@@ -1549,23 +1549,9 @@ export default function Dashboard() {
                     sessions.forEach(s => { (byChild[s.line_name] = byChild[s.line_name] || []).push(s); });
                     const childNames = Object.keys(byChild).sort();
                     const multi = childNames.length > 1 || (childNames.length === 1 && childNames[0] !== lineName);
-                    // แถวรวมทั้งกลุ่มต่อกะ — สะพานเชื่อมกับยอดต่อ product บน timeline (ผลรวมสองมุมมองต้องเท่ากัน)
-                    const shiftTotals = ['day', 'night'].map(shift => {
-                      const list = sessions.filter(s => s.shift === shift);
-                      return { shift, demand: list.reduce((a, s) => a + s.demand, 0), actual: list.reduce((a, s) => a + s.actual, 0), n: list.length };
-                    }).filter(t => t.n > 0 && (t.demand > 0 || t.actual > 0));
+                    // ไม่รวมยอดข้ามโปรดัก (RH/LH คนละพาร์ท) — แต่ละบล็อกกะบอกชื่อโปรดักที่ผลิตแทน
                     return (
                   <div style={{ padding: '8px 14px 10px', borderTop: '1px solid var(--border2)' }}>
-                    {multi && shiftTotals.length > 0 && (
-                      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 8, paddingBottom: 8, borderBottom: '1px dashed var(--border2)' }}>
-                        <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>Σ รวมทุกไลน์ย่อย</span>
-                        {shiftTotals.map(t => (
-                          <span key={t.shift} style={{ fontSize: 12, fontWeight: 800, color: t.actual >= t.demand ? '#22c55e' : 'var(--text)' }}>
-                            {t.shift === 'day' ? '☀️' : '🌙'} {t.actual.toLocaleString()} <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600 }}>/ {t.demand.toLocaleString()} ชิ้น</span>
-                          </span>
-                        ))}
-                      </div>
-                    )}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
                     {childNames.map(childName => {
                       const childSessions = [...byChild[childName]].sort((a, b) => (a.shift === b.shift ? 0 : a.shift === 'day' ? -1 : 1));
@@ -1598,6 +1584,15 @@ export default function Dashboard() {
                               <span style={{ fontSize: 20, fontWeight: 900, color: barColor, lineHeight: 1 }}>{s.actual}</span>
                               <span style={{ fontSize: 11, color: 'var(--muted)' }}>/ {s.demand} ชิ้น</span>
                               <span style={{ fontSize: 10, color: 'var(--muted)' }}>{doneCount}/{s.orders.length} ใบ</span>
+                              {(() => {
+                                const prods = [...new Set(s.orders.map(o => nameByMatNo[o.mat_no] || o.mat_no).filter(Boolean))];
+                                if (!prods.length) return null;
+                                return (
+                                  <span title={prods.join(' · ')} style={{ fontSize: 9, fontWeight: 700, color: '#4d9fff', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {prods[0]}{prods.length > 1 ? ` +${prods.length - 1}` : ''}
+                                  </span>
+                                );
+                              })()}
                             </div>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                               {s.target > 0 && <span style={{ fontSize: 10, color: tpct >= 100 ? '#22c55e' : 'var(--muted)' }}>เป้า {tpct.toFixed(0)}%</span>}
