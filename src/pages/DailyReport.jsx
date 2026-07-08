@@ -32,12 +32,40 @@ function notifyProdClose(payload) {
 }
 
 // แจ้งเตือน Telegram ทันทีที่พนักงานบันทึก Downtime — fire-and-forget ไม่บล็อกการบันทึก
-function notifyDowntime(payload) {
+// event: 'downtime' (เครื่องหยุดใหม่) | 'downtime_recovered' (ปิดรายการที่เปิดค้าง = เครื่องกลับมารันได้)
+function notifyDowntime(payload, event = 'downtime') {
   fetch(`https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-notification`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-    body: JSON.stringify({ event: 'downtime', downtime: payload }),
+    body: JSON.stringify({ event, downtime: payload }),
   }).catch(() => {});
+}
+
+// สรุปชิ้นงาน/Downtime ของกะ สำหรับแนบในข้อความแจ้งเตือนปิดกะ (Telegram)
+// entries: [{ mat_no, part_name, qty, carry }] — carry = ยอดยกไปกะถัดไป
+function summarizeParts(entries) {
+  const map = {};
+  entries.forEach(e => {
+    if (!e || (!e.qty && !e.carry)) return;
+    const key = e.mat_no || e.part_name || '-';
+    const p = (map[key] ||= { mat_no: key, name: e.part_name || '', qty: 0, carry_qty: 0 });
+    if (e.carry) p.carry_qty += e.qty || 0; else p.qty += e.qty || 0;
+  });
+  return Object.values(map).filter(p => p.qty > 0 || p.carry_qty > 0);
+}
+
+function summarizeDowntimes(dtLogs) {
+  const map = {};
+  (dtLogs || []).forEach(d => {
+    const key = d.dr_downtime_types?.name_th || 'ไม่ระบุสาเหตุ';
+    const a = (map[key] ||= { name: key, min: 0, count: 0, machines: [] });
+    a.min += d.duration_min || 0;
+    a.count += 1;
+    if (d.machine_no && !a.machines.includes(d.machine_no)) a.machines.push(d.machine_no);
+  });
+  return Object.values(map)
+    .map(a => ({ ...a, min: Math.round(a.min), machines: a.machines.slice(0, 3) }))
+    .sort((x, y) => y.min - x.min);
 }
 
 /* ─── TimeInput24 — native time picker (spinner arrows + clock UI) ───
@@ -588,27 +616,35 @@ function LiveTab({ role }) {
     setSavingDT(false);
     if (error) { toast.error(error.message); return; }
 
-    // แจ้งเตือน Telegram เฉพาะตอนบันทึกรายการใหม่ (แก้ไขไม่ต้องแจ้งซ้ำ)
+    // แจ้งเตือน Telegram:
+    //   - รายการใหม่ → 🚨 เครื่อง Downtime (แก้ไขทั่วไปไม่แจ้งซ้ำ ไม่ให้ข้อความรกกลุ่ม)
+    //   - แก้ไขรายการที่เปิดค้างอยู่ (ยังไม่มีเวลาจบ/ระยะเวลา) แล้วครั้งนี้ปิดรายการ → ✅ เครื่องกลับมารันได้
+    const dtType = dtTypes.find(t => t.id === dtForm.downtime_type_id);
+    const mcName = machines.find(m => m.machine_no === dtForm.machine_no && m.line_name === selSession.line_name)?.machine_name
+      || machines.find(m => m.machine_no === dtForm.machine_no)?.machine_name || '';
+    const fmtHM = (d) => d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : null;
+    const notifyBase = {
+      line_name:    selSession.line_name,
+      shift:        selSession.shift,
+      work_date:    selSession.work_date,
+      machine_no:   dtForm.machine_no,
+      machine_name: mcName,
+      type_name:    dtType?.name_th || '',
+      category:     dtType?.category || '',
+      start_time:   fmtHM(startedAt),
+      end_time:     fmtHM(endedAt),
+      duration_min: durMin != null ? Math.round(durMin) : null,
+      mat_no:       dtForm.mat_no || null,
+      description:  dtForm.description || null,
+      reported_by:  fullName,
+    };
     if (!dtForm.id) {
-      const dtType = dtTypes.find(t => t.id === dtForm.downtime_type_id);
-      const mcName = machines.find(m => m.machine_no === dtForm.machine_no && m.line_name === selSession.line_name)?.machine_name
-        || machines.find(m => m.machine_no === dtForm.machine_no)?.machine_name || '';
-      const fmtHM = (d) => d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : null;
-      notifyDowntime({
-        line_name:    selSession.line_name,
-        shift:        selSession.shift,
-        work_date:    selSession.work_date,
-        machine_no:   dtForm.machine_no,
-        machine_name: mcName,
-        type_name:    dtType?.name_th || '',
-        category:     dtType?.category || '',
-        start_time:   fmtHM(startedAt),
-        end_time:     fmtHM(endedAt),
-        duration_min: durMin,
-        mat_no:       dtForm.mat_no || null,
-        description:  dtForm.description || null,
-        reported_by:  fullName,
-      });
+      notifyDowntime(notifyBase);
+    } else {
+      const orig = dtLogs.find(x => x.id === dtForm.id);
+      const wasOpen   = orig && !orig.ended_at && orig.duration_min == null;
+      const nowClosed = endedAt != null || durMin != null;
+      if (wasOpen && nowClosed) notifyDowntime(notifyBase, 'downtime_recovered');
     }
 
     toast.success(dtForm.id ? 'แก้ไข Downtime แล้ว' : 'บันทึก Downtime แล้ว');
@@ -1444,6 +1480,24 @@ function LiveTab({ role }) {
       line_name: selSession.line_name, shift: selSession.shift, work_date: selSession.work_date,
       actor: fullName, qty_ok: totalQtyOk, qty_ng: totalQtyNg, qty_suspect: totalQtySuspect,
       oee: oee != null ? parseFloat((oee * 100).toFixed(1)) : null,
+      // รายละเอียดเพิ่มเติม — ให้ข้อความ Telegram ครอบคลุมเท่าหน้าสรุปปิดกะ
+      start_time:   (closeStartTime || selSession.start_time || '').slice(0, 5) || null,
+      end_time:     (closeEndTime || '').slice(0, 5) || null,
+      shift_min:    shiftMin,
+      qty_repair:   totalQtyRepair,
+      total_qty:    totalProducedFinal,
+      oee_a:        parseFloat((A * 100).toFixed(1)),
+      oee_p:        P != null ? parseFloat((P * 100).toFixed(1)) : null,
+      oee_q:        parseFloat((Q * 100).toFixed(1)),
+      parts: summarizeParts([
+        ...confirmed.map(o => ({ mat_no: o.mat_no, part_name: o.part_name, qty: o.qty })),
+        ...openOrders.map(o => carryOverDecisions[o.id] === 'confirm'
+          ? { mat_no: o.mat_no, part_name: o.part_name, qty: o.qty }
+          : { mat_no: o.mat_no, part_name: o.part_name, qty: parseInt(carryQtyActual[o.id]) || 0, carry: true }),
+      ]),
+      downtimes:    summarizeDowntimes(dtLogs),
+      dt_total_min: Math.round(dtLogs.reduce((s, d) => s + (d.duration_min || 0), 0)),
+      dt_count:     dtLogs.length,
     });
     setShowCloseShift(false);
     setCarryOverDecisions({});
@@ -1493,6 +1547,24 @@ function LiveTab({ role }) {
       work_date: selSession.work_date, actor: fullName,
       requested_by: selSession.close_requested_by_name,
       qty_ok: selSession.qty_ok, qty_ng: selSession.qty_ng, oee: selSession.oee,
+      // รายละเอียดเพิ่มเติม — อ่านจากค่าที่บันทึกไว้ตอนขอปิดกะ + ข้อมูลกะที่โหลดอยู่
+      start_time:   (selSession.start_time || '').slice(0, 5) || null,
+      end_time:     (selSession.end_time || '').slice(0, 5) || null,
+      shift_min:    selSession.shift_min,
+      qty_suspect:  selSession.qty_suspect,
+      qty_repair:   selSession.qty_repair,
+      total_qty:    selSession.actual_qty,
+      oee_a:        selSession.oee_a,
+      oee_p:        selSession.oee_p,
+      oee_q:        selSession.oee_q,
+      parts: summarizeParts(prodOrders.map(o => o.status === 'confirmed'
+        ? { mat_no: o.mat_no, part_name: o.part_name, qty: o.qty }
+        : o.status === 'carry_over'
+          ? { mat_no: o.mat_no, part_name: o.part_name, qty: o.qty_actual || 0, carry: true }
+          : null).filter(Boolean)),
+      downtimes:    summarizeDowntimes(dtLogs),
+      dt_total_min: Math.round(dtLogs.reduce((s, d) => s + (d.duration_min || 0), 0)),
+      dt_count:     dtLogs.length,
     });
     load();
     setSelSession(null);

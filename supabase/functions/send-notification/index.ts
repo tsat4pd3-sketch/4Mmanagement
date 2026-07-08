@@ -137,6 +137,28 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
     }
 
+    /* ── Machine downtime recovered (เครื่องกลับมารันได้) ── */
+    if (event === 'downtime_recovered') {
+      const d = body.downtime;
+      if (!d) return new Response('missing downtime', { status: 400 });
+      const shiftLabel = d.shift === 'day' ? 'กะเช้า' : 'กะดึก';
+      const lines = [
+        `✅ <b>เครื่องกลับมารันได้แล้ว</b>`,
+        ``,
+        `⚙️ เครื่องจักร: <b>${d.machine_no || '-'}${d.machine_name ? ` (${d.machine_name})` : ''}</b>`,
+        `🏭 ไลน์: ${d.line_name} · ${shiftLabel}`,
+        `📅 วันที่: ${d.work_date}`,
+        `🛠 สาเหตุที่หยุด: ${d.type_name || '-'}`,
+      ];
+      if (d.start_time)           lines.push(`🕐 ช่วงที่หยุด: ${d.start_time}${d.end_time ? ` – ${d.end_time}` : ''}`);
+      if (d.duration_min != null) lines.push(`⏱ หยุดรวม: <b>${d.duration_min} นาที</b>`);
+      if (d.mat_no)               lines.push(`🔩 ชิ้นงาน: ${d.mat_no}`);
+      if (d.description)          lines.push(`📝 รายละเอียด: ${d.description}`);
+      lines.push(``, `👤 ผู้ปิดรายการ: ${d.reported_by || '-'}`, `— Production System`);
+      await sendTelegram(lines.join('\n')).catch(console.error);
+      return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
+    }
+
     /* ── Production session close workflow ───────── */
     if (event === 'prod_close') {
       const s = body.session;
@@ -155,8 +177,43 @@ Deno.serve(async (req) => {
         `🏭 ไลน์: ${s.line_name} · ${shiftLabel}`,
         `📅 วันที่: ${s.work_date}`,
       ];
-      if (s.qty_ok != null) lines.push(`✅ ดี: ${s.qty_ok}  ❌ NG: ${s.qty_ng ?? 0}${s.qty_suspect ? `  ⚠️ สงสัย: ${s.qty_suspect}` : ''}`);
-      if (s.oee != null)    lines.push(`📊 OEE: ${s.oee}%`);
+      if (s.start_time) lines.push(`🕗 เวลา: ${s.start_time} – ${s.end_time || '-'}${s.shift_min ? ` (${s.shift_min} นาที)` : ''}`);
+
+      /* ผลผลิต — ยอดรวม + แยกดี/NG/สงสัย/ซ่อม */
+      if (s.qty_ok != null) {
+        if (s.total_qty != null) lines.push(``, `📦 ผลิตรวม: <b>${s.total_qty}</b> ชิ้น`);
+        lines.push(`✅ ดี: ${s.qty_ok}  ❌ NG: ${s.qty_ng ?? 0}${s.qty_suspect ? `  ⚠️ สงสัย: ${s.qty_suspect}` : ''}${s.qty_repair ? `  🔧 ซ่อม: ${s.qty_repair}` : ''}`);
+      }
+
+      /* แยกตามชิ้นงาน (จำกัด 8 รายการ กันข้อความยาวเกิน) */
+      if (Array.isArray(s.parts) && s.parts.length) {
+        for (const p of s.parts.slice(0, 8)) {
+          const carryNote = p.carry_qty ? ` (ยกยอด ${p.carry_qty})` : '';
+          lines.push(`  • ${p.mat_no}${p.name ? ` ${p.name}` : ''}: ${p.qty} ชิ้น${carryNote}`);
+        }
+        if (s.parts.length > 8) lines.push(`  • …และอีก ${s.parts.length - 8} รายการ`);
+      }
+
+      /* Downtime สรุปตามสาเหตุ (จำกัด 6 สาเหตุ) */
+      if (s.dt_count) {
+        lines.push(``, `⏱ Downtime ${s.dt_count} รายการ · รวม <b>${s.dt_total_min ?? 0} นาที</b>`);
+        if (Array.isArray(s.downtimes)) {
+          for (const d of s.downtimes.slice(0, 6)) {
+            const mc = d.machines?.length ? ` (${d.machines.join(', ')})` : '';
+            lines.push(`  • ${d.name} — ${d.min} นาที${d.count > 1 ? ` ×${d.count}` : ''}${mc}`);
+          }
+          if (s.downtimes.length > 6) lines.push(`  • …และอีก ${s.downtimes.length - 6} สาเหตุ`);
+        }
+      } else if (Array.isArray(s.downtimes)) {
+        lines.push(``, `⏱ Downtime: ไม่มี`);
+      }
+
+      if (s.oee != null) {
+        const apq = (s.oee_a != null || s.oee_p != null || s.oee_q != null)
+          ? ` (A ${s.oee_a ?? '-'}% · P ${s.oee_p ?? '-'}% · Q ${s.oee_q ?? '-'}%)`
+          : '';
+        lines.push(``, `📊 OEE: <b>${s.oee}%</b>${apq}`);
+      }
       lines.push(`${m.extra}`, ``, `👤 ผู้ดำเนินการ: ${s.actor}`, `— Production System`);
       await sendTelegram(lines.join('\n')).catch(console.error);
       return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
