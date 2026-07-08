@@ -339,7 +339,7 @@ export async function exportInspectionExcel({
         setVal(ws, `N${row}`, '', { border: true })
         setVal(ws, `O${row}`, '', { border: true })
         setVal(ws, `P${row}`, '', { border: true })
-        setVal(ws, `Q${row}`, r?.note_text ?? '', { size: 8, wrap: true, border: true })
+        setVal(ws, `Q${row}`, '', { size: 8, wrap: true, border: true })
         row++
       })
     }
@@ -365,7 +365,7 @@ export async function exportInspectionExcel({
   setVal(ws, `A${row}`, 'NG = ผิดปกติ     OK = ปกติ', { size: 7 })
 
   merge(ws, `J${row}`, `Q${row}`)
-  setVal(ws, `J${row}`, `FM-JIG-003    Rev.00 Eff.date: ${new Date(inspection.inspected_at).toLocaleDateString('th-TH')}`, { size: 7, center: true })
+  setVal(ws, `J${row}`, `FM-JIG-003    Rev.00 Eff.date: ${new Date(inspection.inspected_at).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })}`, { size: 7, center: true })
 
   const buffer = await wb.xlsx.writeBuffer()
   const blob = new Blob([buffer], {
@@ -373,7 +373,7 @@ export async function exportInspectionExcel({
   })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
-  const datePart = new Date(inspection.inspected_at).toISOString().slice(0, 10)
+  const datePart = new Date(inspection.inspected_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
   a.href = url
   a.download = `PM_JIG_${jig.jig_no ?? jig.name}_${datePart}.xlsx`
   a.click()

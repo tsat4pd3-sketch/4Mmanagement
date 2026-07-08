@@ -314,7 +314,6 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
                       ) : (
                         <>
                           <p style={{ fontSize: 12, color: 'var(--muted)', margin: '2px 0 0' }}>{r.value_attribute?.toUpperCase()}</p>
-                          {r.note_text && <p style={{ fontSize: 12, color: 'var(--text2)', margin: '2px 0 0' }}>{r.note_text}</p>}
                         </>
                       )}
                     </div>
@@ -453,7 +452,7 @@ export default function PMCheckData() {
           const avg = computeAvg(r.v1, r.v2, r.v3)
           return { inspection_id: insp.id, checkpoint_id: cp.id, value_1: v1, value_2: v2, value_3: v3, avg_value: avg, value_numeric: avg, status: getSpcStatus(avg, cp) ?? (avg != null ? 'pass' : null) }
         }
-        return { inspection_id: insp.id, checkpoint_id: cp.id, value_attribute: r.attr || null, note_text: cp.type === 'note' ? (r.note?.trim() || null) : null, status: r.attr === 'ng' ? 'fail' : r.attr === 'ok' ? 'pass' : null }
+        return { inspection_id: insp.id, checkpoint_id: cp.id, value_attribute: r.attr || null, status: r.attr === 'ng' ? 'fail' : r.attr === 'ok' ? 'pass' : null }
       })
       const { error: e2 } = await supabaseDR.from('inspection_results').insert(rows)
       if (e2) throw e2
