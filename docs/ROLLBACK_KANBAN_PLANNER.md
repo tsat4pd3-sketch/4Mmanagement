@@ -32,6 +32,15 @@ git commit -m "Rollback HeijunkaKanban to pre-planner baseline (5143c32)"
 git push origin main
 ```
 
+## รอบแก้ที่ 2 — Batch confirm บน Dashboard/Management timeline
+
+- **main ก่อน merge รอบ 2:** commit `01889c4`
+- ไฟล์ที่เปลี่ยน: `src/pages/Dashboard.jsx`, `src/pages/Management.jsx`
+- เนื้อหา: ใบกัมบังที่พนักงานสแกนปิดรวดเดียวทั้งล็อต (ห่างกัน ≤5 นาที) จะถูกตัดสิน
+  "ปิดช้า (ส้ม ✓!)" ที่ใบสุดท้ายของชุดเท่านั้น ไม่ตีส้มใบแรก ๆ ของชุดอีก
+- Rollback เฉพาะรอบนี้: `git revert -m 1 <merge-sha รอบ 2>` หรือ
+  `git checkout 01889c4 -- src/pages/Dashboard.jsx src/pages/Management.jsx`
+
 ## สิ่งที่ต้องรู้ตอน rollback
 
 1. **ยอดสต็อกจาก "ยืนยันส่ง" ต่างกันสองเวอร์ชัน** — เวอร์ชันใหม่บันทึก `line_stock_transactions`

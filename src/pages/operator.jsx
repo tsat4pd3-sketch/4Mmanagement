@@ -583,16 +583,28 @@ export default function Operator() {
                         background: !emp.is_active ? 'var(--border2)' : grade.gradient,
                         boxShadow: !emp.is_active ? 'none' : `0 0 10px ${grade.glow}`,
                       }}>
-                        <img
-                          src={emp.image_url || ''}
-                          alt=""
-                          style={{
-                            width: 42, height: 42, borderRadius: 9,
-                            objectFit: 'cover', display: 'block',
-                            filter: !emp.is_active ? 'grayscale(1)' : 'none',
-                            background: 'var(--bg3)',
-                          }}
-                        />
+                        {emp.image_url ? (
+                          <img
+                            src={emp.image_url}
+                            alt=""
+                            style={{
+                              width: 42, height: 42, borderRadius: 9,
+                              objectFit: 'cover', display: 'block',
+                              filter: !emp.is_active ? 'grayscale(1)' : 'none',
+                              background: 'var(--bg3)',
+                            }}
+                          />
+                        ) : (
+                          <div
+                            title="ยังไม่มีรูป — กด ✏️ แก้ไขเพื่ออัปโหลดรูป"
+                            style={{
+                              width: 42, height: 42, borderRadius: 9,
+                              background: 'var(--bg3)', display: 'flex',
+                              alignItems: 'center', justifyContent: 'center', fontSize: 20,
+                            }}>
+                            👤
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td style={{ position: 'sticky', left: 58, background: 'var(--bg2)', zIndex: 1 }}>
