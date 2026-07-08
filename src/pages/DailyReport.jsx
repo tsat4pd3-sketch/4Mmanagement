@@ -1298,28 +1298,11 @@ function LiveTab({ role }) {
     const oee = P != null ? A * P * Q : null;
     return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty, knownQty, unknownQty };
   };
-
-  // หัก Line Stock ตาม BOM × qty_ok — idempotent: กันหักซ้ำด้วย ref_session_id
-  // (ปิดกะจริง + SV อนุมัติ pending_close อาจเข้าเส้นทาง consume ทั้งคู่ / reopen แล้วปิดใหม่)
-  const consumeLineStock = async (session, qtyOk, note) => {
-    if (!(qtyOk > 0) || !session?.product_id) return;
-    const { count } = await supabaseDR.from('line_stock_transactions')
-      .select('id', { count: 'exact', head: true })
-      .eq('ref_session_id', session.id).eq('type', 'consume');
-    if (count) return; // กะนี้เคยหัก stock แล้ว → ไม่หักซ้ำ
-    const { data: bomItems } = await supabaseDR
-      .from('bom_items').select('mat_no, part_name, qty_per_unit')
-      .eq('product_id', session.product_id).eq('is_active', true);
-    if (!bomItems?.length) return;
-    await supabaseDR.from('line_stock_transactions').insert(
-      bomItems.map(b => ({
-        line_name: session.line_name, mat_no: b.mat_no, part_name: b.part_name,
-        qty: parseFloat((qtyOk * Number(b.qty_per_unit)).toFixed(4)),
-        type: 'consume', ref_session_id: session.id,
-        work_date: session.work_date, note, created_by: fullName,
-      }))
-    );
-  };
+  // NOTE: การหัก Line Stock (child parts) ทำโดย DB trigger trg_explode_child_demand
+  // บน prod_orders — backflush ตอน order เปลี่ยนเป็น 'confirmed' (ระเบิด BOM → หัก
+  // least(on_hand, gross) จาก mini-store ของไลน์ → ส่วนขาดเข้า accumulator → ถึง lot
+  // สั่งผลิต child 200 + เบิก raw 500 + packaging). ไม่หักที่หน้าปิดกะอีกแล้ว เพื่อไม่ให้
+  // order ที่ confirmed ถูกหักซ้ำ (order ที่ยกยอดจะถูก backflush เมื่อ confirmed ในกะถัดไป).
 
   const handleCloseSession = async () => {
     if (!selSession) return;
@@ -1468,14 +1451,7 @@ function LiveTab({ role }) {
     setSavingClose(false);
     if (error) { toast.error(error.message); return; }
 
-    // ── Auto-consume Line Stock ────────────────────────────────────────────
-    // เมื่อปิดกะจริง (SV+ close โดยตรง) ให้หัก stock พาร์ทย่อยตาม BOM × qty_ok
-    // Leader request (pending_close) ยังไม่หัก — รอ SV อนุมัติค่อยหักใน handleApproveClose
-    if (!isLeaderRequest) {
-      await consumeLineStock(selSession, totalQtyOk,
-        `Auto: close กะ ${selSession.shift === 'day' ? 'เช้า' : 'ดึก'} qty_ok=${totalQtyOk}`);
-    }
-    // ────────────────────────────────────────────────────────────────────────
+    // Line Stock ถูกหักโดย DB trigger บน prod_orders (backflush ตอน confirmed) — ดูหมายเหตุด้านบน
 
     const oeeLabel = oee != null ? `${(oee * 100).toFixed(1)}%` : 'N/A (ไม่มี Cycle Time)';
     if (isLeaderRequest) {
@@ -1530,9 +1506,7 @@ function LiveTab({ role }) {
     }).eq('id', selSession.id);
     if (error) { toast.error(error.message); return; }
 
-    // Auto-consume เมื่อ SV approve close (idempotent — ถ้าเคยหักแล้วจะไม่หักซ้ำ)
-    await consumeLineStock(selSession, selSession.qty_ok || 0,
-      `Auto: SV อนุมัติปิดกะ qty_ok=${selSession.qty_ok || 0}`);
+    // Line Stock หักโดย DB trigger บน prod_orders (backflush ตอน confirmed) — ไม่หักซ้ำที่นี่
 
     toast.success(`อนุมัติปิดกะแล้ว ✓ (ขอโดย ${selSession.close_requested_by_name || '—'})`);
     notifyProdClose({
