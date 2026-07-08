@@ -211,6 +211,8 @@ Reject → status: "rejected" + reject_reason
 ### `send-notification`
 - **Endpoint:** `POST /functions/v1/send-notification`
 - **Payload:** `{ event: "status_change", log: { ...four_m_log } }`
+- **Events อื่น:** `checkin_summary`, `prod_close`, `downtime`
+  - `downtime` — แจ้ง Telegram ทันทีที่พนักงานบันทึก Downtime ใหม่จากหน้า Daily Report (payload `{ event: "downtime", downtime: {...} }`) — คู่กับ alarm กระพริบแดงที่จุดเครื่องจักรบน Dashboard/Management (helper: `src/utils/downtimeAlarm.js` — alarm เมื่อ downtime ยังไม่ปิดรายการ หรือเพิ่งบันทึกภายใน 10 นาที)
 - **Secrets ที่ต้องตั้งใน Supabase:**
   - `TELEGRAM_BOT_TOKEN` — จาก @BotFather
   - `TELEGRAM_CHAT_ID` — Group Chat ID (เลขติดลบ เช่น `-5279077923`)

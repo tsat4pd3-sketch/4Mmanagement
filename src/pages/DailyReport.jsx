@@ -31,6 +31,15 @@ function notifyProdClose(payload) {
   }).catch(() => {});
 }
 
+// แจ้งเตือน Telegram ทันทีที่พนักงานบันทึก Downtime — fire-and-forget ไม่บล็อกการบันทึก
+function notifyDowntime(payload) {
+  fetch(`https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-notification`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+    body: JSON.stringify({ event: 'downtime', downtime: payload }),
+  }).catch(() => {});
+}
+
 /* ─── TimeInput24 — native time picker (spinner arrows + clock UI) ───
    พนักงานคลิกลูกศรขึ้น/ลงข้างตัวเลข หรือคลิกไอคอนนาฬิกาเพื่อเลือกเวลา
    ปุ่ม "ตอนนี้" เติมเวลาปัจจุบันให้ทันที ───────────────────────── */
@@ -578,6 +587,30 @@ function LiveTab({ role }) {
         });
     setSavingDT(false);
     if (error) { toast.error(error.message); return; }
+
+    // แจ้งเตือน Telegram เฉพาะตอนบันทึกรายการใหม่ (แก้ไขไม่ต้องแจ้งซ้ำ)
+    if (!dtForm.id) {
+      const dtType = dtTypes.find(t => t.id === dtForm.downtime_type_id);
+      const mcName = machines.find(m => m.machine_no === dtForm.machine_no && m.line_name === selSession.line_name)?.machine_name
+        || machines.find(m => m.machine_no === dtForm.machine_no)?.machine_name || '';
+      const fmtHM = (d) => d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : null;
+      notifyDowntime({
+        line_name:    selSession.line_name,
+        shift:        selSession.shift,
+        work_date:    selSession.work_date,
+        machine_no:   dtForm.machine_no,
+        machine_name: mcName,
+        type_name:    dtType?.name_th || '',
+        category:     dtType?.category || '',
+        start_time:   fmtHM(startedAt),
+        end_time:     fmtHM(endedAt),
+        duration_min: durMin,
+        mat_no:       dtForm.mat_no || null,
+        description:  dtForm.description || null,
+        reported_by:  fullName,
+      });
+    }
+
     toast.success(dtForm.id ? 'แก้ไข Downtime แล้ว' : 'บันทึก Downtime แล้ว');
     setShowDT(false);
     setDtForm({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
