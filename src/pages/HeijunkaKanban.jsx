@@ -1151,10 +1151,15 @@ export default function HeijunkaKanban() {
   }, []);
 
   const advanceLot = async (lot, next) => {
+    if (lot.status === next) return;
     setPullBusy(lot.id);
     try {
-      const { error } = await supabaseDR.from('child_lot_requests').update({ status: next }).eq('id', lot.id);
+      // เปลี่ยนสถานะแบบมีเงื่อนไข: อัปเดตเฉพาะแถวที่ยัง "ไม่ใช่" ค่าใหม่ แล้วเช็คว่าเราเป็นคนเปลี่ยนจริง
+      // กัน double-click / สองแท็บ ไม่ให้ insert stock (issue/consume) ซ้ำตอนปิดล็อต
+      const { data: updated, error } = await supabaseDR.from('child_lot_requests')
+        .update({ status: next }).eq('id', lot.id).neq('status', next).select('id');
       if (error) throw error;
+      if (!updated || updated.length === 0) { await loadPull(); setPullBusy(null); return; }
       // ── ผลิตเสร็จ = ปิด loop ──
       if (next === 'done') {
         const wd = lot.work_date || getWorkDate();
@@ -1361,6 +1366,17 @@ export default function HeijunkaKanban() {
     if (confirming) return;
     setConfirming(r.id);
     try {
+      // กันยืนยันซ้ำ: ถ้ารอบนี้ยืนยันส่งไปแล้ว (มี confirmed_at) อย่า insert issue ซ้ำ — จะทำให้ stock บวกเกินจริง
+      const { data: existing } = await supabaseDR.from('kanban_deliveries')
+        .select('confirmed_at')
+        .match({ work_date: workDate, line_name: r.line_name, shift: r.shift, round_no: r.round_no })
+        .maybeSingle();
+      if (existing?.confirmed_at) {
+        toast.info(`รอบ ${r.round_no} ยืนยันส่งไปแล้ว — ไม่บันทึกซ้ำ`);
+        await loadDeliveries();
+        setConfirming(null);
+        return;
+      }
       const { error } = await supabaseDR.from('kanban_deliveries').upsert({
         work_date: workDate, line_name: r.line_name, shift: r.shift, round_no: r.round_no,
         confirmed_at: new Date().toISOString(), confirmed_by: fullName || 'Store',

@@ -1299,6 +1299,28 @@ function LiveTab({ role }) {
     return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty, knownQty, unknownQty };
   };
 
+  // หัก Line Stock ตาม BOM × qty_ok — idempotent: กันหักซ้ำด้วย ref_session_id
+  // (ปิดกะจริง + SV อนุมัติ pending_close อาจเข้าเส้นทาง consume ทั้งคู่ / reopen แล้วปิดใหม่)
+  const consumeLineStock = async (session, qtyOk, note) => {
+    if (!(qtyOk > 0) || !session?.product_id) return;
+    const { count } = await supabaseDR.from('line_stock_transactions')
+      .select('id', { count: 'exact', head: true })
+      .eq('ref_session_id', session.id).eq('type', 'consume');
+    if (count) return; // กะนี้เคยหัก stock แล้ว → ไม่หักซ้ำ
+    const { data: bomItems } = await supabaseDR
+      .from('bom_items').select('mat_no, part_name, qty_per_unit')
+      .eq('product_id', session.product_id).eq('is_active', true);
+    if (!bomItems?.length) return;
+    await supabaseDR.from('line_stock_transactions').insert(
+      bomItems.map(b => ({
+        line_name: session.line_name, mat_no: b.mat_no, part_name: b.part_name,
+        qty: parseFloat((qtyOk * Number(b.qty_per_unit)).toFixed(4)),
+        type: 'consume', ref_session_id: session.id,
+        work_date: session.work_date, note, created_by: fullName,
+      }))
+    );
+  };
+
   const handleCloseSession = async () => {
     if (!selSession) return;
 
@@ -1448,24 +1470,10 @@ function LiveTab({ role }) {
 
     // ── Auto-consume Line Stock ────────────────────────────────────────────
     // เมื่อปิดกะจริง (SV+ close โดยตรง) ให้หัก stock พาร์ทย่อยตาม BOM × qty_ok
-    if (!isLeaderRequest && totalQtyOk > 0 && selSession.product_id) {
-      const { data: bomItems } = await supabaseDR
-        .from('bom_items').select('mat_no, part_name, qty_per_unit')
-        .eq('product_id', selSession.product_id).eq('is_active', true);
-      if (bomItems?.length) {
-        const consumeRows = bomItems.map(b => ({
-          line_name:      selSession.line_name,
-          mat_no:         b.mat_no,
-          part_name:      b.part_name,
-          qty:            parseFloat((totalQtyOk * Number(b.qty_per_unit)).toFixed(4)),
-          type:           'consume',
-          ref_session_id: selSession.id,
-          work_date:      selSession.work_date,
-          note:           `Auto: close กะ ${selSession.shift === 'day' ? 'เช้า' : 'ดึก'} qty_ok=${totalQtyOk}`,
-          created_by:     fullName,
-        }));
-        await supabaseDR.from('line_stock_transactions').insert(consumeRows);
-      }
+    // Leader request (pending_close) ยังไม่หัก — รอ SV อนุมัติค่อยหักใน handleApproveClose
+    if (!isLeaderRequest) {
+      await consumeLineStock(selSession, totalQtyOk,
+        `Auto: close กะ ${selSession.shift === 'day' ? 'เช้า' : 'ดึก'} qty_ok=${totalQtyOk}`);
     }
     // ────────────────────────────────────────────────────────────────────────
 
@@ -1522,24 +1530,9 @@ function LiveTab({ role }) {
     }).eq('id', selSession.id);
     if (error) { toast.error(error.message); return; }
 
-    // Auto-consume เมื่อ SV approve close
-    const qtyOk = selSession.qty_ok || 0;
-    if (qtyOk > 0 && selSession.product_id) {
-      const { data: bomItems } = await supabaseDR
-        .from('bom_items').select('mat_no, part_name, qty_per_unit')
-        .eq('product_id', selSession.product_id).eq('is_active', true);
-      if (bomItems?.length) {
-        await supabaseDR.from('line_stock_transactions').insert(
-          bomItems.map(b => ({
-            line_name: selSession.line_name, mat_no: b.mat_no, part_name: b.part_name,
-            qty: parseFloat((qtyOk * Number(b.qty_per_unit)).toFixed(4)),
-            type: 'consume', ref_session_id: selSession.id,
-            work_date: selSession.work_date,
-            note: `Auto: SV อนุมัติปิดกะ qty_ok=${qtyOk}`, created_by: fullName,
-          }))
-        );
-      }
-    }
+    // Auto-consume เมื่อ SV approve close (idempotent — ถ้าเคยหักแล้วจะไม่หักซ้ำ)
+    await consumeLineStock(selSession, selSession.qty_ok || 0,
+      `Auto: SV อนุมัติปิดกะ qty_ok=${selSession.qty_ok || 0}`);
 
     toast.success(`อนุมัติปิดกะแล้ว ✓ (ขอโดย ${selSession.close_requested_by_name || '—'})`);
     notifyProdClose({
