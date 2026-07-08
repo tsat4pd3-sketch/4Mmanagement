@@ -41,6 +41,16 @@ git push origin main
 - Rollback เฉพาะรอบนี้: `git revert -m 1 <merge-sha รอบ 2>` หรือ
   `git checkout 01889c4 -- src/pages/Dashboard.jsx src/pages/Management.jsx`
 
+## รอบแก้ที่ 3 — MES-style planner บน Dashboard Heijunka Board
+
+- **main ก่อน merge รอบ 3:** commit `d9430ba`
+- ไฟล์ที่เปลี่ยน: `src/pages/Dashboard.jsx` (ไฟล์เดียว, อ่านข้อมูลเพิ่มจาก `downtime_logs` คอลัมน์เดิม)
+- เนื้อหา: (1) 🧠 PLANNER strip คาดการณ์เวลาเสร็จ + คำแนะนำเปิด OT ต่อไลน์/กะ
+  (2) แถบ ⛔ downtime บนไทม์ไลน์ + tooltip ใบที่ดีเลย์บอกสาเหตุจาก downtime ที่คาบเกี่ยว
+  (3) เลือกดู Heijunka Board ย้อนหลังรายวันได้ (date picker ที่หัว section)
+- Rollback เฉพาะรอบนี้: `git revert -m 1 <merge-sha รอบ 3>` หรือ
+  `git checkout d9430ba -- src/pages/Dashboard.jsx`
+
 ## สิ่งที่ต้องรู้ตอน rollback
 
 1. **ยอดสต็อกจาก "ยืนยันส่ง" ต่างกันสองเวอร์ชัน** — เวอร์ชันใหม่บันทึก `line_stock_transactions`

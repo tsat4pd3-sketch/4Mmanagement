@@ -218,15 +218,16 @@ export default function Dashboard() {
   const [nameByMatNo,   setNameByMatNo]   = useState({});
   const [imgByMatNo,    setImgByMatNo]    = useState({});
   const [breakPolicies, setBreakPolicies] = useState([]);
+  // วันที่ของ Heijunka Board — เลือกดูย้อนหลังได้ (default = วันงานปัจจุบัน)
+  const [boardDate,     setBoardDate]     = useState(() => getWorkDateStr(new Date()));
 
   // โหลดเฉพาะข้อมูลผลิต/OEE จาก DR — เบากว่า fetchAll มาก ใช้กับ realtime
   const fetchProdStatus = useCallback(async () => {
-    const todayStr = getWorkDateStr(new Date());
     const [{ data: sessions }, { data: breakPolicies }, { data: products }] = await Promise.all([
       supabaseDR
         .from('production_sessions')
         .select('id, line_name, shift, status, work_date, start_time, created_at, dr_products(name, target_per_shift, cycle_time_sec, process_type)')
-        .eq('work_date', todayStr),
+        .eq('work_date', boardDate),
       supabaseDR.from('break_policies').select('*').eq('is_active', true),
       supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, image_url').not('mat_no', 'is', null),
     ]);
@@ -353,10 +354,10 @@ export default function Dashboard() {
       const activeDT = ['open', 'pending_close'].includes(s.status)
         ? (dtBySession[s.id] || []).filter(d => isAlarmingDT(d))
         : [];
-      return { ...s, orders: active, demand, actual, target, oeeData, activeDT };
+      return { ...s, orders: active, demand, actual, target, oeeData, activeDT, dtLogs: dtBySession[s.id] || [] };
     });
     setProdStatus(ps);
-  }, []);
+  }, [boardDate]);
 
   const fetchAll = useCallback(async (date) => {
     setLoading(true);
@@ -1001,8 +1002,11 @@ export default function Dashboard() {
         const LEFT_W  = 136;
         const nowMs   = now.getTime();
 
-        const wd = visibleProdStatus[0]?.work_date || new Date().toISOString().slice(0, 10);
+        const wd = visibleProdStatus[0]?.work_date || boardDate;
         const gridStartMs = new Date(`${wd}T08:00:00`).getTime();
+        const gridEndMs   = gridStartMs + 24 * 3600000;
+        const isHistorical = nowMs >= gridEndMs;   // ดูวันย้อนหลัง — วันงานนั้นจบไปแล้ว
+        const isFutureDay  = nowMs < gridStartMs;
 
         const fmtMs = (ms) => {
           const d = new Date(ms);
@@ -1018,10 +1022,34 @@ export default function Dashboard() {
           (byLine[key] = byLine[key] || []).push(s);
         });
 
+        const shiftDate = (days) => {
+          const d = new Date(`${boardDate}T12:00:00`);
+          d.setDate(d.getDate() + days);
+          setBoardDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+        };
+        const todayStr = getWorkDateStr(new Date());
+        const dateBtn = {
+          padding: '4px 10px', borderRadius: 7, cursor: 'pointer', fontSize: 11, fontWeight: 700,
+          background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text2)', fontFamily: 'var(--font-body)',
+        };
+
         return (
           <motion.div {...stagger(8)} style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
-              📊 Heijunka Board — ไทม์ไลน์การผลิต
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                📊 Heijunka Board — ไทม์ไลน์การผลิต
+                {isHistorical && <span style={{ marginLeft: 8, fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'rgba(168,85,247,0.15)', color: '#a855f7', letterSpacing: 0 }}>📅 ย้อนหลัง {boardDate}</span>}
+                {isFutureDay && <span style={{ marginLeft: 8, fontSize: 10, padding: '2px 8px', borderRadius: 10, background: 'rgba(148,163,184,0.15)', color: 'var(--muted)', letterSpacing: 0 }}>📅 ล่วงหน้า {boardDate}</span>}
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button onClick={() => shiftDate(-1)} style={dateBtn}>◀</button>
+                <input type="date" value={boardDate} max={todayStr} onChange={e => e.target.value && setBoardDate(e.target.value)}
+                  style={{ padding: '4px 8px', borderRadius: 7, fontSize: 11, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
+                <button onClick={() => shiftDate(1)} disabled={boardDate >= todayStr} style={{ ...dateBtn, opacity: boardDate >= todayStr ? 0.4 : 1, cursor: boardDate >= todayStr ? 'default' : 'pointer' }}>▶</button>
+                {boardDate !== todayStr && (
+                  <button onClick={() => setBoardDate(todayStr)} style={{ ...dateBtn, background: 'var(--accent)', color: '#08130a', border: '1px solid var(--accent)' }}>วันนี้</button>
+                )}
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 12, padding: '6px 10px', background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border2)' }}>
               {[
@@ -1031,6 +1059,7 @@ export default function Dashboard() {
                 { c: '#ef4444', icon: '!', label: 'ล่าช้า' },
                 { c: '#f59e0b', icon: '↷', label: 'ยกยอดข้ามกะ' },
                 { c: '#6b7280', icon: '⏪', label: 'ยิงย้อนหลัง (backfill)' },
+                { c: '#ef4444', icon: '⛔', label: 'Downtime (แถบบนแถว)' },
               ].map(item => (
                 <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                   <span style={{ width: 14, height: 14, borderRadius: 3, background: `${item.c}28`, border: `1.5px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
@@ -1130,6 +1159,28 @@ export default function Dashboard() {
                     };
 
                     const allCards = buildCards(sessions);
+
+                    // ── Downtime ของไลน์นี้ (จาก downtime_logs ทุก session ของวันนั้น) ──
+                    // ใช้วาดแถบ ⛔ บนไทม์ไลน์ และผูกเข้า tooltip ของใบที่ดีเลย์/ปิดช้า เพื่อบอก "สาเหตุ" ของการหลุดแผน
+                    const dtWindows = sessions.flatMap(s => (s.dtLogs || []).map(d => {
+                      const ds = d.started_at ? new Date(d.started_at).getTime() : null;
+                      if (ds == null) return null;
+                      const de = d.ended_at ? new Date(d.ended_at).getTime() : ds + (d.duration_min || 0) * 60000;
+                      return {
+                        s: ds, e: Math.max(de, ds + 60000), name: d.dr_downtime_types?.name_th || 'Downtime',
+                        machine: d.machine_no || '', desc: d.description || '',
+                        planned: d.dr_downtime_types?.category === 'planned',
+                        min: d.duration_min || Math.round((de - ds) / 60000),
+                      };
+                    }).filter(Boolean)).sort((a, b) => a.s - b.s);
+                    const dtLabel = (w) => `⛔ ${w.name}${w.machine ? ` @${w.machine}` : ''} ${fmtMs(w.s)}–${fmtMs(w.e)} (${w.min}น.)${w.desc ? ` — ${w.desc}` : ''}`;
+                    // downtime ที่คาบเกี่ยวช่วงเวลา [a,b] ของใบกัมบัง — ใช้อธิบายสาเหตุดีเลย์ใน tooltip
+                    const dtTooltip = (a, b) => {
+                      const hits = dtWindows.filter(w => w.s < b && w.e > a);
+                      return hits.length
+                        ? ` · สาเหตุที่เป็นไปได้: ${hits.map(dtLabel).join(' · ')}`
+                        : ' · ไม่มีบันทึก downtime ในช่วงนี้';
+                    };
 
                     // แยกแถวตามชื่อ product (ไม่ใช่ mat_no) — เพื่อไม่ให้ product ต่างกัน (เช่น RH60 / LH61) ปนแถวเดียวกัน
                     // แต่ part เดียวกันที่ต่าง mat_no/customer เท่านั้น (เช่น FVL/FTM/AAT) ให้รวมแถวเดียว
@@ -1324,7 +1375,7 @@ export default function Dashboard() {
                         tailLeftPct = tLeft;
                         tailWidthPct = Math.max(0, tRight - tLeft);
                       }
-                      return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone };
+                      return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs, occupiedEndMs: item.occupiedEndMs };
                     };
 
                     // เรียงตามเวลาเริ่มจริง แล้วต่อคิวในแถวเดียวกัน (ไม่สร้างแถวใหม่) — แต่ละการ์ดเริ่มได้ไม่ก่อนการ์ดก่อนหน้าสิ้นสุด
@@ -1373,6 +1424,20 @@ export default function Dashboard() {
                               );
                             });
                         })()}
+                        {/* ⛔ แถบ downtime — วางชิดขอบบนแถว ไม่บังใบกัมบัง ชี้เมาส์ดูรายละเอียดได้ */}
+                        {dtWindows.map((w, di) => {
+                          const l = Math.max(0, (w.s - half.startMs) * pctPerMs);
+                          const rgt = Math.min(100, (w.e - half.startMs) * pctPerMs);
+                          if (rgt <= 0 || l >= 100 || rgt <= l) return null;
+                          return (
+                            <div key={`dt-${di}`} title={dtLabel(w)}
+                              style={{
+                                position: 'absolute', top: 0, height: 5, left: `${l}%`, width: `${Math.max(rgt - l, 0.4)}%`,
+                                background: w.planned ? '#94a3b8' : '#ef4444', opacity: 0.85,
+                                borderRadius: '0 0 3px 3px', zIndex: 3, cursor: 'help',
+                              }} />
+                          );
+                        })}
                         {(() => {
                           const positioned = computeQueuedPositionsFull(cards).map(item => pctForHalf(item, half)).filter(Boolean);
                           // MIN_W_PCT บวกความกว้างขั้นต่ำให้การ์ดบาง ๆ มองเห็นได้ แต่ถ้าการ์ดสองใบต่อคิวกันพอดี
@@ -1385,15 +1450,18 @@ export default function Dashboard() {
                               positioned[i].widthPct = Math.max(0, maxRight - positioned[i].leftPct);
                             }
                           }
-                          return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone }, oi) => {
+                          return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs }, oi) => {
                           if (leftPct >= 100) return null;
                           const statusColor = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
                           const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : '▶';
                           const doneQty  = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
                           const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
+                          // ใบที่หลุดแผน (ดีเลย์/ปิดช้า) — แนบ downtime ที่คาบเกี่ยวช่วงเวลาของใบนั้นเข้า tooltip เป็นสาเหตุ
+                          const causeText = isLateDone ? dtTooltip(startMs, new Date(o.confirmed_at).getTime())
+                            : isDelayed ? dtTooltip(startMs, Math.min(nowMs, gridEndMs)) : '';
                           return (
                             <Fragment key={o.prod_no || oi}>
-                            <div title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs-realEndMs)/60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}`}
+                            <div title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs-realEndMs)/60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${causeText}`}
                               style={{
                                 position: 'absolute', top: 4, bottom: 4,
                                 left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 24,
@@ -1436,7 +1504,65 @@ export default function Dashboard() {
                       </div>
                     );
 
-                    return HALVES.map(half => (
+                    // ── Smart planner: คาดการณ์เวลาเสร็จจากคิวจริง + คำแนะนำเปิด OT ──
+                    // เวลาเสร็จคาดการณ์ = จุดจบของใบสุดท้ายในคิว (คิวคำนวณจาก cycle time × qty ต่อคิวจากเวลาปัจจุบัน
+                    // และหลบช่วงพักแล้ว) — เทียบกับขอบกะ: กะเช้าเลิกปกติ 17:30 / OT ได้ถึง 20:00 · กะดึกเลิกปกติ 05:30 / OT ได้ถึง 08:00
+                    const plannerChips = (() => {
+                      const BOUNDS = {
+                        day:   { regEndMs: gridStartMs + 9.5 * 3600000,  otEndMs: gridStartMs + 12 * 3600000, regLabel: '17:30', otLabel: '20:00' },
+                        night: { regEndMs: gridStartMs + 21.5 * 3600000, otEndMs: gridEndMs,                  regLabel: '05:30', otLabel: '08:00' },
+                      };
+                      const chips = [];
+                      ['day', 'night'].forEach(shift => {
+                        let remainCards = 0, remainQty = 0, projEndMs = null, noCt = 0;
+                        productRows.forEach(row => {
+                          computeQueuedPositionsFull(row.cards).forEach(item => {
+                            if (item.o.shift !== shift || item.o.isDone || item.o.isCarry) return;
+                            remainCards++;
+                            remainQty += Math.max(0, (item.o.qty || 0) - (item.o.qty_actual || 0));
+                            if (!(ctByMatNo[item.o.mat_no] > 0)) noCt++;
+                            const end = Math.max(item.endMs, item.occupiedEndMs);
+                            projEndMs = projEndMs == null ? end : Math.max(projEndMs, end);
+                          });
+                        });
+                        if (!remainCards) return;
+                        const b = BOUNDS[shift];
+                        const sLabel = shift === 'day' ? '☀️' : '🌙';
+                        if (isHistorical) {
+                          chips.push({ color: '#ef4444', text: `${sLabel} งานไม่จบในกะ ${remainCards} ใบ (~${remainQty.toLocaleString()} ชิ้น)` });
+                          return;
+                        }
+                        if (isFutureDay || projEndMs == null) return;
+                        const projLabel = `~${fmtMs(projEndMs)}`;
+                        const otMin = Math.ceil((projEndMs - b.regEndMs) / 60000);
+                        if (noCt === remainCards) {
+                          chips.push({ color: 'var(--muted)', text: `${sLabel} คาดการณ์ไม่ได้ — งานค้าง ${remainCards} ใบไม่มี cycle time` });
+                        } else if (projEndMs <= b.regEndMs) {
+                          chips.push({ color: '#22c55e', text: `${sLabel} คาดเสร็จ ${projLabel} — จบในเวลาปกติ (ก่อน ${b.regLabel}) ไม่ต้องเปิด OT` });
+                        } else if (projEndMs <= b.otEndMs) {
+                          chips.push({ color: '#f59e0b', text: `${sLabel} คาดเสร็จ ${projLabel} — ⏰ ต้องเปิด OT ~${otMin} นาที (เลิก ${b.regLabel} → ผลิตถึง ${projLabel})` });
+                        } else {
+                          chips.push({ color: '#ef4444', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกินกรอบ OT (${b.otLabel}) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
+                        }
+                      });
+                      return chips;
+                    })();
+
+                    const plannerStrip = plannerChips.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '6px 10px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+                        <span style={{ fontSize: 9, fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>🧠 PLANNER</span>
+                        {plannerChips.map((c, i) => (
+                          <span key={i} style={{ fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: `${c.color === 'var(--muted)' ? 'rgba(148,163,184,0.12)' : c.color + '1f'}`, color: c.color, border: `1px solid ${c.color === 'var(--muted)' ? 'rgba(148,163,184,0.3)' : c.color + '55'}` }}>
+                            {c.text}
+                          </span>
+                        ))}
+                      </div>
+                    );
+
+                    return (
+                      <Fragment>
+                        {plannerStrip}
+                        {HALVES.map(half => (
                       <div key={half.key} style={{ borderTop: half.key === 'pm' ? '2px solid var(--border2)' : 'none' }}>
                         {hourHeader(half.hours, half.startMs)}
                         {productRows.map((row, ri) => {
@@ -1471,7 +1597,9 @@ export default function Dashboard() {
                           );
                         })}
                       </div>
-                    ));
+                        ))}
+                      </Fragment>
+                    );
                   })()}
 
                   {/* ── Footer: per-session progress + OEE ── */}
