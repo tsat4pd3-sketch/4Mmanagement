@@ -94,7 +94,7 @@ export async function exportInspectionPDF({
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
   doc.setFont('helvetica', 'normal')
 
-  const datePart = new Date(inspection.inspected_at).toISOString().slice(0, 10)
+  const datePart = new Date(inspection.inspected_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
   const dateDisplay = fmtDate(inspection.inspected_at)
 
   let jigImg = null
@@ -109,6 +109,28 @@ export async function exportInspectionPDF({
     const cat = cp.category ?? '__none__'
     if (!groupMap[cat]) { groupMap[cat] = []; groupOrder.push(cat) }
     groupMap[cat].push(cp)
+  }
+
+  // One item number shared by the image pins and every table row, numbered in
+  // table order (by category group). X/Y measurements of one variable share a
+  // number (deduped by base name within the group); attributes get one each —
+  // so a pin labelled "5" always points at table item 5.
+  const itemNoMap = {}
+  {
+    let n = 0
+    for (const cat of groupOrder) {
+      const seenBase = {}
+      for (const cp of groupMap[cat]) {
+        if (cp.type === 'variable') {
+          const base = (cp.name ?? '').replace(/\s+[XY]$/i, '').trim()
+          if (seenBase[base] == null) { n += 1; seenBase[base] = n }
+          itemNoMap[cp.id] = seenBase[base]
+        } else {
+          n += 1
+          itemNoMap[cp.id] = n
+        }
+      }
+    }
   }
 
   // SECTION 1: HEADER BLOCK
@@ -209,6 +231,7 @@ export async function exportInspectionPDF({
 
   checkpoints.forEach((cp, i) => {
     if (cp.x_pos == null || cp.y_pos == null) return
+    const num = itemNoMap[cp.id] ?? (i + 1)
 
     const pinX = M + 0.5 + cp.x_pos * (IMG_W - 1)
     const pinY = IMG_Y + 0.5 + cp.y_pos * (IMG_H - 1)
@@ -237,10 +260,10 @@ export async function exportInspectionPDF({
     doc.line(cx - 1.15, cy + PIN_R - 0.45, cx, pinY)
     doc.line(cx + 1.15, cy + PIN_R - 0.45, cx, pinY)
 
-    doc.setFontSize(i + 1 > 9 ? 4 : 5)
+    doc.setFontSize(num > 9 ? 4 : 5)
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(255, 255, 255)
-    doc.text(String(i + 1), cx, cy, { align: 'center', baseline: 'middle' })
+    doc.text(String(num), cx, cy, { align: 'center', baseline: 'middle' })
   })
 
   const DP_X = M + IMG_W + 2
@@ -276,20 +299,19 @@ export async function exportInspectionPDF({
 
     if (isVar) {
       const rows = []
-      let itemNo = 1
       const seenBase = {}
       for (const cp of cps) {
-        const base = cp.name.replace(/\s+[XY]$/i, '').trim()
+        const base = (cp.name ?? '').replace(/\s+[XY]$/i, '').trim()
         const r = results[cp.id]
         const ok = r?.status === 'pass' ? 'OK' : r?.status === 'fail' ? 'NG' : ''
         const finalOk = r?.final_status === 'pass' ? 'OK'
           : r?.final_status === 'fail' ? 'NG' : ok
 
         const isFirst = !seenBase[base]
-        if (isFirst) { seenBase[base] = itemNo; itemNo++ }
+        if (isFirst) seenBase[base] = true
 
         rows.push({
-          item:     isFirst ? String(seenBase[base]) : '',
+          item:     isFirst ? String(itemNoMap[cp.id]) : '',
           name:     isFirst ? base : '',
           axis:     cp.axis ?? '',
           std:      cp.nominal != null ? `Ø ${fmtN(cp.nominal)}` : '',
@@ -367,13 +389,13 @@ export async function exportInspectionPDF({
       })
 
     } else {
-      const rows = cps.map((cp, idx) => {
+      const rows = cps.map((cp) => {
         const r = results[cp.id]
         const ok = r?.value_attribute === 'ok' ? 'OK' : r?.value_attribute === 'ng' ? 'NG' : ''
         return {
-          item: String(idx + 1), name: cp.name, std: cp.name, checking: '', picture: '',
+          item: String(itemNoMap[cp.id]), name: cp.name, std: cp.name, checking: '', picture: '',
           okng: ok, action: r?.action_text ?? '', date: '', results: '', approve: '',
-          remark: r?.note_text ?? '', _ng: ok === 'NG',
+          remark: '', _ng: ok === 'NG',
         }
       })
 

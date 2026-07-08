@@ -372,7 +372,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
 
       const { error: jigErr } = await supabaseDR.from('jigs').upsert({
         id: jigId, name: name.trim(), description: description.trim() || null,
-        image_path: imagePath, layout_type: layoutType,
+        image_path: imagePath,
         created_by: userId, module: editJig?.module ?? 'mtn',
         jig_no: jigNo.trim() || null, process: process.trim() || null,
         model: model.trim() || null, part_name: partName.trim() || null,
