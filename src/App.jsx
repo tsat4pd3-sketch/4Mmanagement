@@ -32,6 +32,7 @@ const OrgSetup        = lazy(() => import('./pages/OrgSetup'));
 const PMSetup     = lazy(() => import('./pages/PMSetup'));
 const PMCheckData = lazy(() => import('./pages/PMCheckData'));
 const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
+const DailyPM     = lazy(() => import('./pages/DailyPM'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 
 /* ─── Role System ──────────────────────────────────────────── */
@@ -57,6 +58,7 @@ const NAV_ITEMS = [
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     roles: null, group: 'ฝ่ายผลิต' },
   { to: '/daily-report',   icon: '📊', label: 'Daily Report',      roles: null, group: 'ฝ่ายผลิต' },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                roles: null, group: 'ฝ่ายผลิต' },
+  { to: '/daily-pm',       icon: '✅', label: 'Daily PM ฝ่ายผลิต',   roles: null, group: 'ฝ่ายผลิต' },
 
   { to: '/line-stock',      icon: '📦', label: 'Store management',       roles: null, group: 'Logistic - Store' },
   { to: '/heijunka',       icon: '🎴', label: 'Kanban Board',             roles: null, group: 'Logistic - Store' },
@@ -774,6 +776,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/oee-analytics" element={
                 <RoleRoute path="/oee-analytics" userRole={role}><OEEAnalytics /></RoleRoute>
+              } />
+              <Route path="/daily-pm" element={
+                <RoleRoute path="/daily-pm" userRole={role}><DailyPM /></RoleRoute>
               } />
               <Route path="/event-log" element={
                 <RoleRoute path="/event-log" userRole={role}><EventLog /></RoleRoute>
