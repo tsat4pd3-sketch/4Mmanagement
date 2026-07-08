@@ -600,6 +600,15 @@ function PlannerStrip({ rounds, deliveries, roundAlloc, workDate, breakPolicies,
     : null;
   const nextMins = next ? Math.round((next.ms - nowMs) / 60000) : null;
 
+  // ตัดยอดถัดไป = หน้าต่าง demand ที่กำลังจะปิด — สโตร์ต้องรู้ก่อนเพื่อเตรียมของทัน
+  const nextCut = isToday
+    ? pending
+        .map(r => ({ r, ms: timeStrToMs(workDate, r.cutoff_time) }))
+        .filter(x => x.ms != null && x.ms > nowMs)
+        .sort((a, b) => a.ms - b.ms)[0] || null
+    : null;
+  const nextCutMins = nextCut ? Math.round((nextCut.ms - nowMs) / 60000) : null;
+
   // ⚠️ ตรวจตารางรอบ: cutoff ต้องมาก่อนเวลาส่ง + ช่วงส่งไม่ควรชนช่วงพักของกะนั้น
   const breakIvs = breakPolicies.map(p => {
     const s = timeStrToMs(workDate, p.start_time);
@@ -618,6 +627,23 @@ function PlannerStrip({ rounds, deliveries, roundAlloc, workDate, breakPolicies,
     }
   });
 
+  // ⚖️ ตรวจสมดุลโหลด (heijunka): รอบไหนแบกการ์ดเกิน 2 เท่าของค่าเฉลี่ยไลน์|กะ → แนะนำขยับเวลาตัดยอด/เพิ่มรอบ
+  const loadByLS = {};
+  rounds.forEach(r => {
+    const k = `${r.line_name}|${r.shift}`;
+    (loadByLS[k] = loadByLS[k] || []).push({ r, cards: roundAlloc[r.id]?.totalKanban || 0 });
+  });
+  Object.values(loadByLS).forEach(list => {
+    if (list.length < 2) return;
+    const total = list.reduce((s, x) => s + x.cards, 0);
+    if (!total) return;
+    const avg = total / list.length;
+    list.forEach(({ r, cards }) => {
+      if (cards >= avg * 2 && cards >= 4)
+        warnings.push(`${r.line_name} รอบ ${r.round_no}: โหลด ${cards} การ์ด สูงกว่าค่าเฉลี่ย ${avg.toFixed(1)} มาก — พิจารณาขยับเวลาตัดยอดหรือเพิ่มรอบเพื่อเกลี่ยโหลด (heijunka)`);
+    });
+  });
+
   const tile = (icon, label, value, sub, color) => (
     <div key={label} style={{ flex: '1 1 150px', minWidth: 150, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '10px 14px' }}>
       <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{icon} {label}</div>
@@ -629,6 +655,10 @@ function PlannerStrip({ rounds, deliveries, roundAlloc, workDate, breakPolicies,
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {tile('⏱', 'ตัดยอดถัดไป',
+          nextCut ? `อีก ${nextCutMins} นาที` : isToday ? '—' : '—',
+          nextCut ? `${nextCut.r.line_name} รอบ ${nextCut.r.round_no} · ตัดยอด ${nextCut.r.cutoff_time?.slice(0, 5)}` : (isToday ? 'ไม่มีรอบที่รอตัดยอด' : 'นอกกรอบวันงานที่เลือก'),
+          nextCut && nextCutMins <= 15 ? '#f59e0b' : 'var(--text)')}
         {tile('⏭', 'รอบส่งถัดไป',
           next ? (nextMins > 0 ? `อีก ${nextMins} นาที` : '🚚 กำลังส่ง') : isToday ? 'ครบทุกรอบแล้ว' : '—',
           next ? `${next.r.line_name} รอบ ${next.r.round_no} · ส่ง ${next.r.delivery_time?.slice(0, 5)}` : (isToday ? '' : 'นอกกรอบวันงานที่เลือก'),
