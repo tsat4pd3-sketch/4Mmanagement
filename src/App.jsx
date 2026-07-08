@@ -656,6 +656,8 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 }
 
 /* ─── Protected Layout ─────────────────────────────────────────────── */
+// permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
+// (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
 function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userEmail, userFullName, userNotifyEmail, userSignatureUrl }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
@@ -825,6 +827,8 @@ export default function App() {
   // ป้องกัน fail-open: ห้าม fallback เป็น 'admin' ระหว่างรอโหลด (เคยเป็นช่องโหว่)
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [permsLoaded,   setPermsLoaded]   = useState(false);
+  // bump เมื่อ role_permissions เปลี่ยน (realtime) เพื่อให้ sidebar/route ที่อ่าน cache แบบ sync re-render
+  const [permsVersion,  setPermsVersion]  = useState(0);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -867,6 +871,19 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // admin แก้สิทธิ์ที่หน้า จัดการสิทธิ์ → ทุกเครื่องที่เปิดอยู่รีเฟรช cache + re-render ทันที
+  useEffect(() => {
+    if (!session?.user) return;
+    const ch = supabase
+      .channel('role-permissions-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, async () => {
+        await loadPermissions(true);
+        setPermsVersion(v => v + 1);
+      })
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [session?.user?.id]);
+
   return (
     <>
       <div id="noise-overlay" />
@@ -892,6 +909,7 @@ export default function App() {
                 session={session}
                 theme={theme}
                 onToggleTheme={toggleTheme}
+                permsVersion={permsVersion}
                 userRole={userRole}
                 userLineId={userLineId}
                 userTeam={userTeam}

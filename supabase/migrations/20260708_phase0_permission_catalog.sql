@@ -124,3 +124,15 @@ select r.role,
 from cat
 cross join (select unnest(array['admin','manager','supervisor','leader','qa','document_control','display']::user_role[]) as role) r
 on conflict (role, permission_key) do nothing;
+
+-- ── Realtime: broadcast role_permissions changes so every open client can
+--    refresh its permission cache immediately (App.jsx subscribes). ──
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'role_permissions'
+  ) then
+    alter publication supabase_realtime add table public.role_permissions;
+  end if;
+end $$;
