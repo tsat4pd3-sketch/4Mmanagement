@@ -3,6 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { loadCompanyCalendar, getDayType } from '../utils/companyCalendar';
+import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy';
 
 const LEAVE_TYPES = ['ลากิจ', 'ลาป่วย', 'ลาพักร้อน', 'อื่นๆ'];
 const LEAVE_DURATION_OPTS = [
@@ -801,9 +802,13 @@ export default function Checkin() {
   const sections = orgSections.length ? orgSections : [...new Set(lines.map(l => l.section))].sort();
   const linesForSection = selSection ? lines.filter(l => l.section === selSection) : lines;
 
+  // เลือกไลน์ = มองแบบเป็นขั้น (hierarchy): ไลน์หลักเห็นรวมพนักงานของไลน์ย่อยทุกไลน์,
+  // ไลน์ย่อยเห็นของตัวเอง + พนักงานที่ผูกกับไลน์หลัก (พื้นที่เดียวกัน) — ไม่ใช่กรอง line_id ตรงเป๊ะ
+  const selLineFamilyIds = selLine ? getLineFamilyIds(lines, Number(selLine)) : null;
+
   const displayed = employees.filter(emp => {
     if (filterShift && emp.assignedShift && emp.assignedShift !== shiftInfo.shift) return false;
-    if (selLine)    return emp.line_id === Number(selLine);
+    if (selLine)    return selLineFamilyIds?.size ? selLineFamilyIds.has(emp.line_id) : emp.line_id === Number(selLine);
     if (selSection) {
       const lineIds = linesForSection.map(l => l.id);
       return lineIds.includes(emp.line_id);
@@ -1002,7 +1007,9 @@ export default function Checkin() {
                 style={{ padding: '6px 10px', borderRadius: 6, fontSize: 13, width: 'auto', minWidth: 180 }}
               >
                 <option value="">— ทุกไลน์ใน {selSection} —</option>
-                {linesForSection.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {toHierarchicalOptions(linesForSection).map(({ line: l, depth }) => (
+                  <option key={l.id} value={l.id}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+                ))}
               </select>
             </div>
           )}

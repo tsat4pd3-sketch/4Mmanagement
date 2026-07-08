@@ -5,6 +5,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
 import { hasPermission } from '../utils/permissions';
+import { getLineFamilyNames, getLineFamilyIds, getAncestorNames, toHierarchicalOptions } from '../utils/lineHierarchy';
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
   return new Promise((resolve) => {
@@ -223,11 +224,23 @@ export default function Management() {
     return () => clearInterval(t);
   }, []);
 
-  // ไลน์ย่อยที่ผูกกับ selectedLine (เช่น HDF1/HDF2 ใต้ HYDROFORM) — รวมจุดงาน/เครื่องจักร/การผลิตของมันเข้ามาแสดง
-  // ในผังเดียวกัน เพราะจริงๆ อยู่พื้นที่เดียวกัน ไม่ได้แยกกันทางกายภาพ
-  const childLineNames = useMemo(
-    () => allLines.filter(l => l.parent_line_name === selectedLine).map(l => l.name),
+  // การมองเห็นแบบเป็นขั้น (hierarchy) — ไม่ผูกกับ layout:
+  //   เลือกไลน์หลัก   → เห็นจุดของตัวเอง + ไลน์ย่อยทุกไลน์ใต้มัน
+  //   เลือกไลน์ย่อย A → เห็นจุดของ A + ไลน์หลัก (ไม่เห็นไลน์ย่อยข้างเคียง)
+  // viewLineNames = ครอบครัวของไลน์ที่เลือก ใช้ยิง query จุดงาน/WIP/เครื่องจักร/การผลิตทั้งหมด
+  const viewLineNames = useMemo(
+    () => {
+      const fam = getLineFamilyNames(allLines, selectedLine);
+      return fam.length ? fam : (selectedLine ? [selectedLine] : []);
+    },
     [allLines, selectedLine],
+  );
+  const viewKey = viewLineNames.join('|');
+  // ป้ายบอกใต้ dropdown ว่า view นี้รวมไลน์ไหนเข้ามาบ้าง
+  const mergedParentNames = useMemo(() => getAncestorNames(allLines, selectedLine), [allLines, selectedLine]);
+  const mergedChildNames  = useMemo(
+    () => viewLineNames.filter(n => n !== selectedLine && !mergedParentNames.includes(n)),
+    [viewLineNames, selectedLine, mergedParentNames],
   );
 
   const fetchLineProd = useCallback(async (lineNames) => {
@@ -266,11 +279,10 @@ export default function Management() {
 
   useEffect(() => {
     if (!selectedLine) return;
-    const cardLineNames = [selectedLine, ...childLineNames];
-    fetchLineProd(cardLineNames);
-    const t = setInterval(() => fetchLineProd(cardLineNames), 30000);
+    fetchLineProd(viewLineNames);
+    const t = setInterval(() => fetchLineProd(viewLineNames), 30000);
     return () => clearInterval(t);
-  }, [selectedLine, childLineNames, fetchLineProd]);
+  }, [selectedLine, viewKey, fetchLineProd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth <= 768);
@@ -281,17 +293,28 @@ export default function Management() {
   useEffect(() => {
     supabase.from('skill_definitions').select('*').order('sort_order').then(({ data }) => setSkillDefs(data || []));
     const fetchLines = async () => {
-      let q = supabase.from('production_lines').select('id, name, section, parent_line_name').order('name');
-      if (isLeader && userLineId) q = q.eq('id', userLineId);
-      else if (isSupervisor && userSection) q = q.eq('section', userSection);
-      const { data } = await q;
-      // ไลน์ย่อย (มี parent_line_name) ใช้ผังเดียวกับไลน์หลักและถูกรวมเข้าการ์ดเดียวกันอยู่แล้ว —
-      // ไม่ต้องให้เลือกแยกในหน้านี้ เพื่อไม่ให้ dropdown แตกเป็นหลายไลน์ทั้งที่พื้นที่จริงเดียวกัน
-      const topLevel = (data || []).filter(l => !l.parent_line_name);
-      setLines(topLevel.length ? topLevel : (data || []));
-      const list = topLevel.length ? topLevel : (data || []);
-      if (list.length > 0) setSelectedLine(list[0].name);
-      setAllLines(data || []);
+      // ดึงทุกไลน์เสมอเพื่อ resolve ลำดับชั้น (parent/children) ได้ครบ — scope ไปตัดที่ "รายการให้เลือก" แทน
+      // ไม่งั้น leader ที่ผูกกับไลน์หลักจะมองไม่เห็นจุดที่ set ไว้ที่ไลน์ย่อย (และกลับกัน)
+      const { data } = await supabase.from('production_lines').select('id, name, section, parent_line_name').order('name');
+      const all = data || [];
+      setAllLines(all);
+
+      let visible = all;
+      if (isLeader && userLineId) {
+        // leader เลือกได้เฉพาะครอบครัวไลน์ตัวเอง (ไลน์ตัวเอง + สายบน + สายล่าง)
+        const famNames = new Set(getLineFamilyNames(all, userLineId));
+        visible = all.filter(l => famNames.has(l.name));
+        if (!visible.length) visible = all.filter(l => l.id === userLineId);
+      } else if (isSupervisor && userSection) {
+        visible = all.filter(l => l.section === userSection);
+      }
+      setLines(visible);
+
+      // ค่าเริ่มต้น: leader เริ่มที่ไลน์ตัวเอง / role อื่นเริ่มที่ไลน์หลักตัวแรก
+      const own = isLeader && userLineId ? visible.find(l => l.id === userLineId) : null;
+      const topLevel = visible.filter(l => !l.parent_line_name);
+      const first = own || topLevel[0] || visible[0];
+      if (first) setSelectedLine(first.name);
     };
     fetchLines();
   }, []);
@@ -299,20 +322,31 @@ export default function Management() {
   useEffect(() => {
     if (!selectedLine) return;
     fetchData();
-    fetchSetup();
   }, [selectedLine]);
 
+  // viewKey อยู่ใน deps ด้วย — ตอน mount allLines มาถึงช้ากว่า selectedLine ได้
+  // พอ hierarchy resolve เสร็จ (viewLineNames เปลี่ยน) ต้อง refetch จุดงานของทั้งครอบครัวไลน์
+  useEffect(() => {
+    if (!selectedLine) return;
+    fetchSetup();
+  }, [selectedLine, viewKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const fetchSetup = async () => {
-    const cardLineNames = [selectedLine, ...childLineNames];
-    const { data: layoutData } = await supabase.from('line_layouts').select('image_url').eq('line_name', selectedLine).maybeSingle();
-    setLineLayout(layoutData?.image_url || null);
-    const { data: stationData } = await supabase.from('workstations').select('*, station_requirements(*)').in('line_name', cardLineNames);
+    // ผังไลน์: ใช้ของตัวเองก่อน ถ้าไลน์ย่อยไม่มีรูปผังของตัวเอง ไล่ขึ้นไปใช้ของไลน์หลัก
+    // (พื้นที่จริงเดียวกัน — pattern เดียวกับ LineSetup.jsx)
+    const layoutCandidates = [selectedLine, ...getAncestorNames(allLines, selectedLine)];
+    const { data: layoutRows } = await supabase.from('line_layouts').select('line_name, image_url').in('line_name', layoutCandidates);
+    const layoutByName = Object.fromEntries((layoutRows || []).map(r => [r.line_name, r.image_url]));
+    setLineLayout(layoutCandidates.map(n => layoutByName[n]).find(Boolean) || null);
+
+    // จุดงาน/WIP/เครื่องจักร: ดึงตามครอบครัวไลน์ (ตัวเอง + สายบน + สายล่าง)
+    const { data: stationData } = await supabase.from('workstations').select('*, station_requirements(*)').in('line_name', viewLineNames);
     setDynamicStations(stationData || []);
-    const { data: wipData } = await supabase.from('wip_buffer_points').select('*').in('line_name', cardLineNames);
+    const { data: wipData } = await supabase.from('wip_buffer_points').select('*').in('line_name', viewLineNames);
     setWipPoints(wipData || []);
-    const { data: mpData } = await supabase.from('machine_points').select('*').in('line_name', cardLineNames);
+    const { data: mpData } = await supabase.from('machine_points').select('*').in('line_name', viewLineNames);
     setMachinePoints(mpData || []);
-    const { data: drMc } = await supabaseDR.from('machines').select('id, machine_no, machine_name').in('line_name', cardLineNames).eq('is_active', true);
+    const { data: drMc } = await supabaseDR.from('machines').select('id, machine_no, machine_name').in('line_name', viewLineNames).eq('is_active', true);
     setDrMachines(drMc || []);
   };
 
@@ -412,8 +446,9 @@ export default function Management() {
             .eq('employee_id', empId).eq('assigned_line', String(finalAssign))
             .lt('work_date', today).limit(1);
           const hasHistory = (history?.length ?? 0) > 0;
-          const currentLineId = lines.find(l => l.name === station.line_name)?.id;
-          const sameLine = droppedWorker.employees?.line_id != null && droppedWorker.employees.line_id === currentLineId;
+          // "ไลน์เดิม" นับทั้งครอบครัวไลน์ของสถานี (ไลน์หลัก↔ไลน์ย่อยพื้นที่เดียวกัน ไม่ใช่ย้ายข้ามไลน์)
+          const stationFamilyIds = getLineFamilyIds(allLines, station.line_name);
+          const sameLine = droppedWorker.employees?.line_id != null && stationFamilyIds.has(droppedWorker.employees.line_id);
           const skillOk = fit.details.length === 0 || fit.details.every(d => d.pass);
           const moveType = sameLine ? 'same' : 'cross';
           const manCase = getManCase({ moveType, skillOk, hasHistory });
@@ -555,10 +590,17 @@ export default function Management() {
 
   const specialEmpIds = new Set(specialTasks.map(t => t.employee_id));
 
+  // Leader เห็นพนักงานทั้งครอบครัวไลน์ตัวเอง (ไลน์ตัวเอง + ไลน์หลัก + ไลน์ย่อย) —
+  // พนักงานมักถูกผูกกับไลน์หลักแม้ทำงานอยู่ไลน์ย่อย ถ้ากรองแค่ line_id ตรงเป๊ะจะมองไม่เห็นกัน
+  const leaderFamilyIds = useMemo(() => {
+    if (!isLeader || !userLineId) return null;
+    const ids = getLineFamilyIds(allLines, userLineId);
+    return ids.size ? ids : new Set([userLineId]);
+  }, [isLeader, userLineId, allLines]);
+
   const matchesTeam = (w) => {
     if (isLeader) {
-      // Leader เห็นเฉพาะพนักงานในไลน์ตัวเอง
-      if (userLineId && w.employees?.line_id !== userLineId) return false;
+      if (leaderFamilyIds && !leaderFamilyIds.has(w.employees?.line_id)) return false;
       return true;
     }
     if (isSupervisor) {
@@ -805,13 +847,22 @@ export default function Management() {
         {!panelCollapsed && (<>
         <div style={{ marginBottom: 10, flexShrink: 0 }}>
           <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.08em' }}>ไลน์ผลิต</div>
-          <select value={selectedLine} onChange={(e) => !isLeader && setSelectedLine(e.target.value)} disabled={isLeader}
-            style={{ width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 13, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', opacity: isLeader ? 0.7 : 1 }}>
-            {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+          {/* เลือกได้ทั้งไลน์หลัก (view รวมไลน์ย่อยทั้งหมด) และไลน์ย่อย (view ไลน์ย่อย+ไลน์หลัก)
+              leader ก็สลับดูภายในครอบครัวไลน์ตัวเองได้ — รายการใน `lines` ถูก scope ไว้แล้วตอน fetch */}
+          <select value={selectedLine} onChange={(e) => setSelectedLine(e.target.value)}
+            style={{ width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 13, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
+            {toHierarchicalOptions(lines).map(({ line: l, depth }) => (
+              <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+            ))}
           </select>
-          {childLineNames.length > 0 && (
+          {mergedChildNames.length > 0 && (
             <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
-              🔗 รวมไลน์ย่อย: {childLineNames.join(', ')}
+              🔗 รวมไลน์ย่อย: {mergedChildNames.join(', ')}
+            </div>
+          )}
+          {mergedParentNames.length > 0 && (
+            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+              🔗 รวมจุดของไลน์หลัก: {mergedParentNames.join(', ')}
             </div>
           )}
         </div>
