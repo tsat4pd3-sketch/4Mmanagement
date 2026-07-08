@@ -35,6 +35,15 @@ export function canAccessPage(path, role) {
   return hasPermission(`page:${path}`, role);
 }
 
+/**
+ * สิทธิ์ระดับ action (Phase 0 — docs/PERMISSIONS-DESIGN.md)
+ * key ในตาราง = `${resource}:${action}` เช่น 'products:create', 'four_m:approve_qa'
+ * ใน component แนะนำใช้ hook usePerms() (src/utils/usePerms.js) แทนการเรียกตรง
+ */
+export function can(resource, action, role) {
+  return hasPermission(`${resource}:${action}`, role);
+}
+
 /** อ่าน permission ทั้งหมดของ role หนึ่ง ๆ เป็น object { [permission_key]: boolean } — ใช้ในหน้าจัดการสิทธิ์ */
 export function getAllForRole(role) {
   if (!cache) return {};
