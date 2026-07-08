@@ -26,10 +26,20 @@
 
 ---
 
-## Supabase Project
+## Supabase Projects
 
-- **Project ID:** `ewhdfqwfwofivojtsizn`
-- **URL:** `https://ewhdfqwfwofivojtsizn.supabase.co`
+ระบบใช้ **2 Supabase projects แยกกัน** — ห้ามสมมติว่าเป็น project เดียว
+
+| Project | ID | ใช้เก็บอะไร | Client ใน code |
+|---------|-----|------------|----------------|
+| Main | `ewhdfqwfwofivojtsizn` | auth, profiles, employees, production_lines, four_m_logs, cqi15_event_logs, role_permissions ฯลฯ | `supabase` (`src/supabaseClient.js`) |
+| DR (Daily Report/PM) | `eyhclzkifitbhbljgoav` | production_sessions, downtime_logs, defect_logs, machines, prod_orders, dr_products ฯลฯ | `supabaseDR` (`src/supabaseClient.js`) |
+
+> ⚠️ **กฎเหล็ก — `supabaseDR` ไม่เคย authenticate**
+> `supabaseDR` ถูกสร้างด้วย `createClient(url, anonKey)` เฉยๆ ไม่มี `auth` config ผูกกับ session เลย
+> ไม่ว่า user จะ login เข้าแอปแล้วหรือไม่ ทุก query ผ่าน `supabaseDR` วิ่งด้วย role `anon` เสมอ
+> **ห้าม** เปลี่ยน RLS policy ของตารางฝั่ง DR project จาก `public`/`anon` ไปเป็น `TO authenticated` แบบเหมาว่าจะปลอดภัยขึ้น — จะพังทันทีเพราะ client ไม่มี JWT ให้เช็ค (เคยทำพังมาแล้วครั้งหนึ่ง: Product Master, Machine List, PM data, เปิดกะหายหมดทั้งระบบ ต้อง revert ฉุกเฉิน)
+> ถ้าจะ secure ฝั่ง DR project จริงๆ ต้องผ่าน Edge Function ที่ validate ฝั่ง server เอง — ยังไม่ได้ทำ เป็น known gap
 
 ---
 
@@ -39,8 +49,9 @@
 | Table | คำอธิบาย | Fields สำคัญ |
 |-------|---------|-------------|
 | `employees` | ข้อมูลพนักงาน | id, employee_id_code, name, image_url, line_id, team (A/B/C), section, is_active, position |
-| `production_lines` | ไลน์ผลิต | id, name, section, std_day_shift, std_night_shift |
-| `profiles` | User roles | id, email, role, full_name, line_id, section, notify_email, signature_url |
+| `production_lines` | ไลน์ผลิต | id, name, section, parent_line_name, std_day_shift, std_night_shift |
+| `profiles` | User roles + scope | id, email, role, full_name, line_id, section, notify_email, signature_url |
+| `role_permissions` | สิทธิ์เข้าหน้า/action ตาม role (data-driven) | role, permission_key, allowed |
 
 ### การผลิตรายวัน
 | Table | คำอธิบาย | Fields สำคัญ |
@@ -87,23 +98,34 @@
 
 ## Pages & Routes
 
-| Route | Component | Role ที่เข้าได้ | คำอธิบาย |
-|-------|-----------|--------------|---------|
-| `/` | Dashboard | ทุก role | KPI cards, line status, floor maps, 4M activity feed |
-| `/management` | Management | ทุก role | Drag-drop station assignment, skill fit scoring, 4M logging |
-| `/checkin` | Checkin | ทุก role | เช็คชื่อ + PPE + ลางาน รายวัน |
-| `/event-log` | EventLog | ทุก role | CQI-15 Welding Event Log + Approval Workflow (4 roles) |
-| `/daily-report` | DailyReport | ทุก role | **[PLANNED]** บันทึก Daily Production Report แทน AppSheet |
-| `/downtime` | Downtime | Admin/Manager/SV | **[PLANNED]** บันทึกและวิเคราะห์ Downtime รายไลน์ |
-| `/production-target` | ProductionTarget | Admin/Manager | **[PLANNED]** Target vs Actual รายวัน/รายเดือน + กราฟ |
-| `/pm-checker` | PMChecker | Admin/Manager/SV | **[PLANNED]** ระบบแผน PM เครื่องจักร + Approval |
-| `/linesetup` | LineSetup | Admin/Manager/SV | ตั้งค่าไลน์, อัปโหลด layout, เพิ่ม workstations |
-| `/register` | Register | Admin/SV | เพิ่มพนักงานใหม่พร้อมรูปและข้อมูล |
-| `/operator` | Operator | Admin/Manager/SV/Leader | ฐานข้อมูลพนักงาน + skill matrix |
-| `/report` | Report | ทุก role | 10 tabs + CSV export |
-| `/shift-organize` | ShiftOrganize | Admin/Manager/SV | ตารางกะ A/B + overrides |
-| `/add-user` | AddUser | Admin เท่านั้น | สร้าง/แก้ไข system users + roles |
-| `/login` | Login | ไม่ต้อง auth | หน้าเข้าสู่ระบบ |
+> สิทธิ์เข้าถึงแต่ละหน้า **ไม่ได้ hardcode ในโค้ดอีกต่อไป** — อ่านจากตาราง `role_permissions` ผ่าน `src/utils/permissions.js` (`canAccessPage`) ปรับได้จากหน้า `/permissions` (admin เท่านั้น) คอลัมน์ "Role" ด้านล่างคือ default ตอน seed ไม่ใช่ source of truth
+
+| Group (sidebar) | Route | Component | Role (seed default) |
+|---|---|---|---|
+| ภาพรวม | `/`, `/dashboard` | Dashboard | ทุก role |
+| ฝ่ายผลิต | `/checkin` | Checkin | ทุก role |
+| ฝ่ายผลิต | `/management` | Management | ทุก role |
+| ฝ่ายผลิต | `/daily-report` | DailyReport | ทุก role |
+| ฝ่ายผลิต | `/oee-analytics` | OEEAnalytics | ทุก role |
+| Logistic - Store | `/line-stock` | LineStock | ทุก role |
+| Logistic - Store | `/heijunka` | HeijunkaKanban | ทุก role |
+| Logistic - Store | `/rack-center` | RackCenter | ทุก role |
+| การตรวจสอบและซ่อมบำรุง | `/pm-check` | PMCheckData | ทุก role |
+| การตรวจสอบและซ่อมบำรุง | `/pm-schedule` | PMSchedule | ทุก role |
+| การตรวจสอบและซ่อมบำรุง | `/pm-setup` | PMSetup | admin/manager/supervisor |
+| รายงาน | `/report` | Report | ทุก role (10 tabs + CSV export) |
+| รายงาน | `/event-log` | EventLog | admin/manager/supervisor/leader/qa (CQI-15 + Approval) |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/org-setup` | OrgSetup | admin |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/register` | Register | admin/manager/supervisor |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/operator` | Operator | admin/manager/supervisor/leader |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/products` | ProductMaster | ทุก role |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/linesetup` | LineSetup | admin/manager/supervisor |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/machine-database` | MachineDatabase | admin/manager/supervisor |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/shift-organize` | ShiftOrganize | admin/manager/supervisor |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/company-calendar` | CompanyCalendar | ทุก role |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/permissions` | PermissionsManagement | admin เท่านั้น |
+| (ไม่อยู่ใน sidebar) | `/add-user` | AddUser | admin เท่านั้น |
+| (ไม่อยู่ใน sidebar) | `/login` | Login | ไม่ต้อง auth |
 
 ---
 
@@ -138,13 +160,32 @@
 
 ## Role System
 
+7 roles ใน enum `user_role`: `admin, manager, supervisor, leader, qa, document_control, display`
+
 | Role | สิทธิ์หลัก |
 |------|-----------|
-| `admin` | ทุกอย่าง รวมถึง Add User |
-| `manager` | ดูและแก้ไขได้ทุกหน้า ยกเว้น Add User |
-| `supervisor` | จัดการไลน์ตัวเอง, Register พนักงาน, อนุมัติ 4M step 1 |
+| `admin` | ทุกอย่าง รวมถึง Add User, จัดการสิทธิ์ |
+| `manager` | ดูและแก้ไขได้ทุกหน้า ยกเว้น Add User/จัดการสิทธิ์ |
+| `supervisor` | จัดการเฉพาะ section ตัวเอง, Register พนักงาน, อนุมัติ 4M step 1 |
 | `leader` | เห็นเฉพาะ line/team ของตัวเอง |
 | `qa` | ดู Dashboard + Report, อนุมัติ 4M step QA |
+| `document_control` | จัดการเอกสาร CQI-15 |
+| `display` | ดูอย่างเดียว (จอแสดงผลลอย ไม่ login เป็นคน) |
+
+### สิทธิ์ตามหน้า/action — `role_permissions` (data-driven, ไม่ hardcode)
+
+- ตาราง `role_permissions (role, permission_key, allowed)` เป็น source of truth เดียวสำหรับ "role ไหนเข้าหน้า/ทำ action ไหนได้บ้าง"
+- โหลดผ่าน `loadPermissions()` (cache ใน memory) แล้วเช็คด้วย `hasPermission(key, role)` / `canAccessPage(path, role)` — ไฟล์ `src/utils/permissions.js`
+- `admin` bypass เสมอ (return true ทันทีไม่ query cache) กันกรณี config ผิดจนตัวเองเข้าไม่ได้
+- แก้ได้จากหน้า `/permissions` (`src/pages/PermissionsManagement.jsx`) — ตาราง matrix role × permission key, toggle แล้ว upsert ทันที
+- permission key รูปแบบ `page:/route` สำหรับสิทธิ์เข้าหน้า, `manage_master_data` สำหรับสิทธิ์แก้ master data รวม (แทนที่เช็ค `['admin','manager','supervisor'].includes(role)` แบบ hardcode ที่กระจายอยู่ ~10 ไฟล์เดิม)
+- **ต่างจาก scoping ตาม section/line/team** (ด้านล่าง) — permission ตอบว่า "เข้าหน้านี้ได้ไหม/ทำ action นี้ได้ไหม" ส่วน scoping ตอบว่า "เห็นข้อมูลแถวไหนบ้าง" สองเรื่องนี้แยกกันคนละกลไก
+
+### Section/Line/Team Scoping
+
+- `supervisor` ถูกผูกกับ `profiles.section` หนึ่งค่า, `leader` ถูกผูกกับ `profiles.line_id` + `team` — ต้องกรอกตอนสร้าง user ใน AddUser.jsx (validate บังคับ ถ้าไม่กรอกจะเห็นข้อมูลทุกส่วนงานเหมือน admin)
+- หน้าที่ query ข้อมูลระดับ section/line ต้อง filter ตาม scope นี้เสมอ (ตรวจสอบและปิดช่องโหว่แล้วใน Management, Checkin, DailyReport ทุก tab, Report.jsx ทุก tab ที่เกี่ยวกับ 4M/Skill Matrix — ดู pattern: mandatory scope filter ก่อน แล้วค่อย apply free-text filter ทับ)
+- หน้าใหม่ที่ query ข้อมูลตาม line/section **ต้องเพิ่ม scope filter แบบเดียวกัน** ไม่งั้น leader/supervisor จะเห็นข้อมูลข้าม section/line โดยไม่ตั้งใจ
 
 ---
 
@@ -315,10 +356,14 @@ Environment Variables:
 
 ---
 
-## Branch
+## Branch & Deploy Workflow
 
 - **Main branch:** `main`
-- **Development branch:** `claude/awesome-gauss-Sflxt`
+- **Development branch:** เปลี่ยนชื่อทุก session (Claude Code on the web สุ่มชื่อให้ใหม่) — เช็คชื่อจริงจาก `git branch --show-current` หรือคำสั่งของ user ในแต่ละ session อย่าอ้างอิงชื่อ branch เก่าจาก session ก่อนหน้า
+- **ไม่มี staging/test environment แยก** — "merge เข้า main" คือขั้นตอนทดสอบของ user เอง ถ้าพังจะสั่ง rollback เอง ดังนั้น: build ผ่าน (`npm run build`) แล้ว merge เข้า main ได้เลย ไม่ต้องรอ "ทดสอบก่อน" เพิ่ม
+- ถ้า development branch ที่กำหนดมา merge เข้า main ไปแล้ว (ไม่มี commit ใหม่ค้าง) ให้ restart จาก main ล่าสุด: `git checkout -B <branch> origin/main` ก่อนทำงานต่อ ห้าม stack งานใหม่บน history ที่ merge ไปแล้ว
+- **ห้ามแก้ RLS policy หรือ schema migration แบบ blanket** (เช่น loop เปลี่ยน policy หลายตารางพร้อมกัน) โดยไม่เข้าใจว่าตารางนั้นอยู่ project ไหนและ client ฝั่งไหนอ่าน — ดู "Supabase Projects" ด้านบน เคยทำพังมาแล้วครั้งหนึ่งกับฝั่ง DR project
+- เปลี่ยน DB schema ทุกครั้ง ให้เขียนเป็น migration file ใน `supabase/migrations/` เพื่อให้ session อื่นเห็นประวัติ ไม่ใช่แก้ตรงผ่าน MCP เฉยๆ
 
 ---
 
