@@ -6,6 +6,7 @@ import ImageCropModal from '../components/ImageCropModal';
 export default function Register() {
   const { role, lineId: userLineId, section: userSection } = useContext(UserContext);
   const isSupervisor = role === 'supervisor';
+  const isLeader     = role === 'leader';
 
   const [empCode,     setEmpCode]     = useState('');
   const [name,        setName]        = useState('');
@@ -32,6 +33,10 @@ export default function Register() {
         setLines(data || []);
         if (isSupervisor && userSection) {
           setSection(userSection);
+        } else if (isLeader && userLineId) {
+          // leader ไม่มี profiles.section — ล็อกส่วนงานจาก section ของไลน์ที่ตัวเองผูกอยู่
+          const myLine = (data || []).find(l => l.id === userLineId);
+          if (myLine?.section) setSection(myLine.section);
         }
       });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
@@ -45,6 +50,11 @@ export default function Register() {
         setTeamOpts(teamCodes);
       });
   }, []);
+
+  // ส่วนงานที่ถูกล็อก: supervisor = section ใน profile ตัวเอง, leader = section ของไลน์ที่ผูกอยู่
+  // ('' = ไม่ล็อก เลือกได้อิสระ เช่น admin/manager)
+  const leaderSection = isLeader && userLineId ? (lines.find(l => l.id === userLineId)?.section || '') : '';
+  const lockedSection = isSupervisor ? (userSection || '') : leaderSection;
 
   const selectedSectionNode = orgSections.find(s => (s.code || s.name) === section);
   const deptOpts = selectedSectionNode ? orgDepts.filter(d => d.parent_id === selectedSectionNode.id) : [];
@@ -85,7 +95,7 @@ export default function Register() {
 
       alert('เพิ่มพนักงานสำเร็จ!');
       setEmpCode(''); setName(''); setPosition(''); setDepartment('');
-      setSection(isSupervisor && userSection ? userSection : '');
+      setSection(lockedSection || '');
       setGroupName(''); setLineId(null); setBusRouteId('');
       setTeam(''); setStartDate(''); setPhoto(null);
       document.getElementById('photo-upload').value = '';
@@ -149,8 +159,8 @@ export default function Register() {
             </div>
             <div>
               <label style={labelSt}>Section / ส่วน</label>
-              {isSupervisor && userSection ? (
-                <input type="text" value={userSection} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+              {lockedSection ? (
+                <input type="text" value={lockedSection} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
               ) : (
                 <select value={section} onChange={e => { setSection(e.target.value); setDepartment(''); }}>
                   <option value="">— เลือก —</option>
@@ -180,8 +190,8 @@ export default function Register() {
           <div>
             <label style={labelSt}>Group / กลุ่ม (Line)</label>
             {(() => {
-              let lineOpts = isSupervisor && userSection
-                ? lines.filter(l => l.section === userSection)
+              let lineOpts = lockedSection
+                ? lines.filter(l => l.section === lockedSection)
                 : lines;
               if (department) {
                 const filtered = lineOpts.filter(l =>
