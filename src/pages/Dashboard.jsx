@@ -784,31 +784,26 @@ export default function Dashboard() {
                 const color   = healthy ? '#22c55e' : warn ? '#f59e0b' : '#555';
                 const isExpanded = line._hasChildren && expandedLines.has(line.name);
                 const card = (
-                  <motion.div key={line.id} {...stagger(8 + i)}
-                    style={line._isChild ? { paddingLeft: 16, borderLeft: '2px solid var(--border2)', marginLeft: 4 } : {}}>
+                  <motion.div key={line.id} {...stagger(8 + i)}>
                     <div
                       onClick={line._hasChildren ? () => toggleExpand(line.name) : undefined}
                       style={{
-                        background: line._isChild ? 'var(--bg2)' : 'var(--card)',
-                        border: `1px solid ${line._isChild ? 'var(--border)' : 'var(--border2)'}`,
+                        background: 'var(--card)',
+                        border: '1px solid var(--border2)',
+                        borderLeft: line._hasChildren ? '4px solid var(--accent)' : '1px solid var(--border2)',
                         borderRadius: 12, padding: isWide ? '18px 20px' : '14px 16px',
-                        boxShadow: line._isChild ? 'none' : 'var(--shadow-sm)',
+                        boxShadow: 'var(--shadow-sm)',
                         cursor: line._hasChildren ? 'pointer' : 'default',
                       }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
-                          {line._isChild && (
-                            <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>└ ไลน์ย่อย</div>
-                          )}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <div style={{ fontSize: isWide ? 14 : 13, fontWeight: line._isChild ? 600 : 700, color: 'var(--text)' }}>{line.name}</div>
-                            {line._hasChildren && (
-                              <span style={{ fontSize: 9, color: 'var(--muted)', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
-                            )}
+                            {line._hasChildren && <span style={{ fontSize: 13 }}>📂</span>}
+                            <div style={{ fontSize: isWide ? 14 : 13, fontWeight: 700, color: 'var(--text)' }}>{line.name}</div>
                           </div>
-                          {line.section && !line._isChild && (
+                          {line.section && (
                             <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 2, fontWeight: 600 }}>
-                              {line.section}{line._hasChildren && ` · ${line._children.length} ไลน์ย่อย`}
+                              {line.section}{line._hasChildren && ` · รวม ${line._children.length} ไลน์ย่อย`}
                             </div>
                           )}
                         </div>
@@ -825,50 +820,74 @@ export default function Dashboard() {
                         <span style={{ fontSize: isWide ? 32 : 24, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
                           {line.linePresent}
                         </span>
-                        <span style={{ fontSize: isWide ? 13 : 11, color: 'var(--muted)' }}>/ {line.lineTotal} คน</span>
+                        <span style={{ fontSize: isWide ? 13 : 11, color: 'var(--muted)' }}>/ {line.lineTotal} คน{line._hasChildren && ' (รวมย่อย)'}</span>
                       </div>
                       <MiniBar value={line.linePresent} max={line.lineTotal} color={color} />
-                      <div style={{ marginTop: 8, fontSize: 10, fontWeight: 700, color }}>
-                        {line.lineTotal === 0 ? 'ไม่มีข้อมูล' : `${line.rate}% Attendance ${healthy ? '· ✓ Normal' : line.lineAlerts > 0 ? '· ⚠ Risk' : ''}`}
+                      <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color }}>
+                          {line.lineTotal === 0 ? 'ไม่มีข้อมูล' : `${line.rate}% Attendance ${healthy ? '· ✓ Normal' : line.lineAlerts > 0 ? '· ⚠ Risk' : ''}`}
+                        </span>
+                        {line._hasChildren && (
+                          <span style={{ fontSize: 9, fontWeight: 800, color: 'var(--accent)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 3 }}>
+                            {isExpanded ? 'ซ่อนไลน์ย่อย' : 'ดูไลน์ย่อย'}
+                            <span style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+                          </span>
+                        )}
                       </div>
                     </div>
                   </motion.div>
                 );
                 if (!isExpanded) return [card];
-                const childCards = line._children.map((cs, ci) => {
-                  const cHealthy = cs.rate >= 80 && cs.lineAlerts === 0;
-                  const cWarn    = cs.lineAlerts > 0 || (cs.rate > 0 && cs.rate < 80);
-                  const cColor   = cHealthy ? '#22c55e' : cWarn ? '#f59e0b' : '#555';
-                  return (
-                    <motion.div key={cs.id} {...stagger(8 + i + ci + 1)} style={{ paddingLeft: 16, borderLeft: '2px solid var(--border2)', marginLeft: 4 }}>
-                      <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, padding: isWide ? '18px 20px' : '14px 16px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <div>
-                            <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>└ ไลน์ย่อย</div>
-                            <div style={{ fontSize: isWide ? 14 : 13, fontWeight: 600, color: 'var(--text)' }}>{cs.name}</div>
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                            <div style={{ width: 8, height: 8, borderRadius: '50%', background: cColor, boxShadow: `0 0 6px ${cColor}` }} />
-                            {cs.lineAlerts > 0 && (
-                              <div style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(231,76,60,0.15)', color: '#e74c3c', border: '1px solid rgba(231,76,60,0.3)' }}>
-                                🚨 {cs.lineAlerts}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                          <span style={{ fontSize: isWide ? 32 : 24, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>{cs.linePresent}</span>
-                          <span style={{ fontSize: isWide ? 13 : 11, color: 'var(--muted)' }}>/ {cs.lineTotal} คน</span>
-                        </div>
-                        <MiniBar value={cs.linePresent} max={cs.lineTotal} color={cColor} />
-                        <div style={{ marginTop: 8, fontSize: 10, fontWeight: 700, color: cColor }}>
-                          {cs.lineTotal === 0 ? 'ไม่มีข้อมูล' : `${cs.rate}% Attendance ${cHealthy ? '· ✓ Normal' : cs.lineAlerts > 0 ? '· ⚠ Risk' : ''}`}
-                        </div>
+                const nested = (
+                  <motion.div key={`${line.id}-children`} {...stagger(8 + i)} style={{ gridColumn: '1 / -1' }}>
+                    <div style={{
+                      background: 'var(--bg2)',
+                      border: '1px dashed var(--border2)',
+                      borderLeft: '4px solid var(--accent)',
+                      borderRadius: 12, padding: isWide ? '14px 16px' : '12px 14px',
+                    }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span>↳ ไลน์ย่อยของ</span>
+                        <span style={{ color: 'var(--accent)' }}>{line.name}</span>
+                        <span>({line._children.length})</span>
                       </div>
-                    </motion.div>
-                  );
-                });
-                return [card, ...childCards];
+                      <div style={{ display: 'grid', gridTemplateColumns: isUltra ? 'repeat(auto-fill, minmax(180px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(170px, 1fr))' : 'repeat(auto-fill, minmax(150px, 1fr))', gap: isMobile ? 8 : 12 }}>
+                        {line._children.map((cs) => {
+                          const cHealthy = cs.rate >= 80 && cs.lineAlerts === 0;
+                          const cWarn    = cs.lineAlerts > 0 || (cs.rate > 0 && cs.rate < 80);
+                          const cColor   = cHealthy ? '#22c55e' : cWarn ? '#f59e0b' : '#555';
+                          return (
+                            <div key={cs.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, padding: isWide ? '12px 14px' : '10px 12px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div>
+                                  <span style={{ fontSize: 8, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.12)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>ไลน์ย่อย</span>
+                                  <div style={{ fontSize: isWide ? 13 : 12, fontWeight: 600, color: 'var(--text)', marginTop: 4 }}>{cs.name}</div>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: cColor, boxShadow: `0 0 6px ${cColor}` }} />
+                                  {cs.lineAlerts > 0 && (
+                                    <div style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(231,76,60,0.15)', color: '#e74c3c', border: '1px solid rgba(231,76,60,0.3)' }}>
+                                      🚨 {cs.lineAlerts}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                                <span style={{ fontSize: isWide ? 26 : 20, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>{cs.linePresent}</span>
+                                <span style={{ fontSize: isWide ? 12 : 10, color: 'var(--muted)' }}>/ {cs.lineTotal} คน</span>
+                              </div>
+                              <MiniBar value={cs.linePresent} max={cs.lineTotal} color={cColor} />
+                              <div style={{ marginTop: 6, fontSize: 9, fontWeight: 700, color: cColor }}>
+                                {cs.lineTotal === 0 ? 'ไม่มีข้อมูล' : `${cs.rate}% Attendance ${cHealthy ? '· ✓ Normal' : cs.lineAlerts > 0 ? '· ⚠ Risk' : ''}`}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+                return [card, nested];
               })}
             </div>
           </motion.div>
