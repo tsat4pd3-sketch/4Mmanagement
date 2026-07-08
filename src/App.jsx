@@ -17,6 +17,7 @@ const Operator     = lazy(() => import('./pages/operator'));
 const LineSetup    = lazy(() => import('./pages/LineSetup'));
 const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
+const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
 const Report       = lazy(() => import('./pages/Report'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
@@ -46,6 +47,7 @@ const ROLE_LABELS = {
   leader:     '⭐ Leader',
   qa:         '🔍 QA',
   document_control: '🗂 Doc Control',
+  sale:       '💼 Sale',
   display:    '📺 Display',
 };
 
@@ -64,6 +66,7 @@ const NAV_ITEMS = [
   { to: '/line-stock',      icon: '📦', label: 'Store management',       roles: null, group: 'Logistic - Store' },
   { to: '/heijunka',       icon: '🎴', label: 'Kanban Board',             roles: null, group: 'Logistic - Store' },
   { to: '/rack-center',    icon: '🗃️', label: 'Rack Center management',  roles: null, group: 'Logistic - Store' },
+  { to: '/customer-demand', icon: '🚚', label: 'Customer Demand & Shipping', roles: null, group: 'Logistic - Store' },
 
   { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-schedule', icon: '📅', label: 'แผน PM อุปกรณ์เครื่องจักร',        roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
@@ -796,6 +799,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/heijunka"  element={
                 <RoleRoute path="/heijunka" userRole={role}><HeijunkaKanban /></RoleRoute>
+              } />
+              <Route path="/customer-demand" element={
+                <RoleRoute path="/customer-demand" userRole={role}><CustomerDemand /></RoleRoute>
               } />
               <Route path="/rack-center" element={
                 <RoleRoute path="/rack-center" userRole={role}><RackCenter /></RoleRoute>
