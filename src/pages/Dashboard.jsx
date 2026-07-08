@@ -588,7 +588,14 @@ export default function Dashboard() {
     const stdTotal = selectedShift === 'day'  ? (line.std_day_shift   || 0)
                    : selectedShift === 'night' ? (line.std_night_shift || 0)
                    : (line.std_day_shift || 0) + (line.std_night_shift || 0);
-    const lineTotal = stdTotal > 0 ? stdTotal : (empCounts[line.id]?.[shiftKey] ?? lineLogs.length);
+    // ไลน์ย่อยส่วนใหญ่ถูกตั้ง std ก็อปมาจากไลน์หลัก แต่พนักงานจริงผูกกับไลน์หลักหมด (ไลน์ย่อย = 0 คน)
+    // → ไลน์ย่อยที่ไม่มีพนักงาน/ไม่มีคนเช็คชื่อของตัวเอง ให้ capacity = 0 กันตัวหารเฟ้อตอนรวมเข้าไลน์หลัก
+    //   (เดิม HYDROFORM = 14 + 14×6 = 98) — ไลน์เดี่ยว/ไลน์หลักไม่กระทบ
+    const isSubline    = !!line.parent_line_name;
+    const hasOwnPeople = (empCounts[line.id]?.all ?? 0) > 0 || lineLogs.length > 0;
+    const lineTotal = (isSubline && !hasOwnPeople)
+      ? 0
+      : (stdTotal > 0 ? stdTotal : (empCounts[line.id]?.[shiftKey] ?? lineLogs.length));
     const lineAlerts = fourMLogs.filter(f => f.line_name === line.name).length;
     const rate = lineTotal > 0 ? Math.round((linePresent / lineTotal) * 100) : 0;
     return { ...line, linePresent, lineTotal, lineAlerts, rate };

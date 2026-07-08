@@ -731,10 +731,18 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
         }}>
           <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
             <Routes>
-              <Route path="/dashboard"  element={<Dashboard />} />
-              <Route path="/management" element={<Management />} />
-              <Route path="/checkin"    element={<Checkin />} />
-              <Route path="/report"     element={<Report />} />
+              <Route path="/dashboard"  element={
+                <RoleRoute path="/dashboard" userRole={role}><Dashboard /></RoleRoute>
+              } />
+              <Route path="/management" element={
+                <RoleRoute path="/management" userRole={role}><Management /></RoleRoute>
+              } />
+              <Route path="/checkin"    element={
+                <RoleRoute path="/checkin" userRole={role}><Checkin /></RoleRoute>
+              } />
+              <Route path="/report"     element={
+                <RoleRoute path="/report" userRole={role}><Report /></RoleRoute>
+              } />
               <Route path="/register"   element={
                 <RoleRoute path="/register" userRole={role}><Register /></RoleRoute>
               } />
@@ -759,21 +767,39 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/permissions" element={
                 <RoleRoute path="/permissions" userRole={role}><PermissionsManagement /></RoleRoute>
               } />
-              <Route path="/daily-report"  element={<DailyReport />} />
-              <Route path="/oee-analytics" element={<OEEAnalytics />} />
+              <Route path="/daily-report"  element={
+                <RoleRoute path="/daily-report" userRole={role}><DailyReport /></RoleRoute>
+              } />
+              <Route path="/oee-analytics" element={
+                <RoleRoute path="/oee-analytics" userRole={role}><OEEAnalytics /></RoleRoute>
+              } />
               <Route path="/event-log" element={
                 <RoleRoute path="/event-log" userRole={role}><EventLog /></RoleRoute>
               } />
-              <Route path="/products"   element={<ProductMaster />} />
-              <Route path="/line-stock" element={<LineStock />} />
-              <Route path="/heijunka"  element={<HeijunkaKanban />} />
-              <Route path="/rack-center" element={<RackCenter />} />
-              <Route path="/company-calendar" element={<CompanyCalendar />} />
+              <Route path="/products"   element={
+                <RoleRoute path="/products" userRole={role}><ProductMaster /></RoleRoute>
+              } />
+              <Route path="/line-stock" element={
+                <RoleRoute path="/line-stock" userRole={role}><LineStock /></RoleRoute>
+              } />
+              <Route path="/heijunka"  element={
+                <RoleRoute path="/heijunka" userRole={role}><HeijunkaKanban /></RoleRoute>
+              } />
+              <Route path="/rack-center" element={
+                <RoleRoute path="/rack-center" userRole={role}><RackCenter /></RoleRoute>
+              } />
+              <Route path="/company-calendar" element={
+                <RoleRoute path="/company-calendar" userRole={role}><CompanyCalendar /></RoleRoute>
+              } />
               <Route path="/pm-setup"    element={
                 <RoleRoute path="/pm-setup" userRole={role}><PMSetup /></RoleRoute>
               } />
-              <Route path="/pm-check"    element={<PMCheckData />} />
-              <Route path="/pm-schedule" element={<PMSchedule />} />
+              <Route path="/pm-check"    element={
+                <RoleRoute path="/pm-check" userRole={role}><PMCheckData /></RoleRoute>
+              } />
+              <Route path="/pm-schedule" element={
+                <RoleRoute path="/pm-schedule" userRole={role}><PMSchedule /></RoleRoute>
+              } />
             </Routes>
           </Suspense>
         </main>
