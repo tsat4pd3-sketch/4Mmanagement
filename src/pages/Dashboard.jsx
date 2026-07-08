@@ -983,13 +983,26 @@ export default function Dashboard() {
                       )}
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {sessions.map(s => (
-                        <span key={s.id} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700,
-                          background: s.status === 'open' ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.12)',
-                          color: s.status === 'open' ? '#22c55e' : '#888' }}>
-                          {s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} {s.status === 'open' ? '● Live' : '✓ ปิดแล้ว'}
-                        </span>
-                      ))}
+                      {/* hierarchy: ยุบป้ายกะเป็น 1 ชิปต่อไลน์ย่อย (☀️/🌙 อยู่ในชิปเดียวกัน) แทนป้ายต่อ session ที่รกเมื่อมีหลายไลน์ลูก */}
+                      {(() => {
+                        const byChild = {};
+                        sessions.forEach(s => { (byChild[s.line_name] = byChild[s.line_name] || []).push(s); });
+                        const names = Object.keys(byChild).sort();
+                        const multi = names.length > 1 || (names.length === 1 && names[0] !== lineName);
+                        return names.map(ln => {
+                          const list = [...byChild[ln]].sort((a, b) => (a.shift === b.shift ? 0 : a.shift === 'day' ? -1 : 1));
+                          const anyOpen = list.some(s => s.status === 'open');
+                          return (
+                            <span key={ln} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700,
+                              background: anyOpen ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.12)',
+                              color: anyOpen ? '#22c55e' : '#888' }}>
+                              {multi && <span style={{ fontWeight: 800 }}>{ln} · </span>}
+                              {list.map(s => `${s.shift === 'day' ? '☀️' : '🌙'}${s.status === 'open' ? '●' : '✓'}`).join(' ')}
+                              {anyOpen ? ' Live' : ' ปิดแล้ว'}
+                            </span>
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
 
@@ -1530,9 +1543,46 @@ export default function Dashboard() {
                     );
                   })()}
 
-                  {/* ── Footer: per-session progress + OEE ── */}
-                  <div style={{ padding: '8px 14px 10px', borderTop: '1px solid var(--border2)', display: 'flex', flexWrap: 'wrap', gap: 14 }}>
-                    {sessions.map(s => {
+                  {/* ── Footer: per-session progress + OEE — จัดกลุ่มตามไลน์ย่อย (hierarchy) ── */}
+                  {(() => {
+                    const byChild = {};
+                    sessions.forEach(s => { (byChild[s.line_name] = byChild[s.line_name] || []).push(s); });
+                    const childNames = Object.keys(byChild).sort();
+                    const multi = childNames.length > 1 || (childNames.length === 1 && childNames[0] !== lineName);
+                    // แถวรวมทั้งกลุ่มต่อกะ — สะพานเชื่อมกับยอดต่อ product บน timeline (ผลรวมสองมุมมองต้องเท่ากัน)
+                    const shiftTotals = ['day', 'night'].map(shift => {
+                      const list = sessions.filter(s => s.shift === shift);
+                      return { shift, demand: list.reduce((a, s) => a + s.demand, 0), actual: list.reduce((a, s) => a + s.actual, 0), n: list.length };
+                    }).filter(t => t.n > 0 && (t.demand > 0 || t.actual > 0));
+                    return (
+                  <div style={{ padding: '8px 14px 10px', borderTop: '1px solid var(--border2)' }}>
+                    {multi && shiftTotals.length > 0 && (
+                      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 8, paddingBottom: 8, borderBottom: '1px dashed var(--border2)' }}>
+                        <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>Σ รวมทุกไลน์ย่อย</span>
+                        {shiftTotals.map(t => (
+                          <span key={t.shift} style={{ fontSize: 12, fontWeight: 800, color: t.actual >= t.demand ? '#22c55e' : 'var(--text)' }}>
+                            {t.shift === 'day' ? '☀️' : '🌙'} {t.actual.toLocaleString()} <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600 }}>/ {t.demand.toLocaleString()} ชิ้น</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+                    {childNames.map(childName => {
+                      const childSessions = [...byChild[childName]].sort((a, b) => (a.shift === b.shift ? 0 : a.shift === 'day' ? -1 : 1));
+                      const active = childSessions.filter(s => (s.demand || 0) > 0 || (s.actual || 0) > 0);
+                      const emptyCount = childSessions.length - active.length;
+                      return (
+                        <div key={childName} style={{ flex: '1 1 220px', minWidth: 200, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {multi && (
+                            <div style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', borderBottom: '1px solid var(--border)', paddingBottom: 3 }}>
+                              🏭 {childName}
+                              {emptyCount > 0 && <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--muted)' }}> · {emptyCount} กะไม่มีแผน</span>}
+                            </div>
+                          )}
+                          {active.length === 0 && (
+                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>ไม่มีแผนผลิต</div>
+                          )}
+                          {active.map(s => {
                       const pct      = s.demand > 0 ? Math.min((s.actual / s.demand) * 100, 100) : 0;
                       const tpct     = s.target > 0 ? Math.min((s.actual / s.target) * 100, 100) : 0;
                       const barColor = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
@@ -1541,7 +1591,7 @@ export default function Dashboard() {
                       const doneCount = s.orders.filter(o => o.status === 'confirmed').length;
 
                       return (
-                        <div key={s.id} style={{ flex: '1 1 200px', minWidth: 180 }}>
+                        <div key={s.id} style={{ minWidth: 180 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
                             <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
                               <span style={{ fontSize: 10, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'}</span>
@@ -1572,8 +1622,14 @@ export default function Dashboard() {
                           )}
                         </div>
                       );
+                          })}
+                        </div>
+                      );
                     })}
+                    </div>
                   </div>
+                    );
+                  })()}
 
                 </div>
               );

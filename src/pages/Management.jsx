@@ -1272,13 +1272,26 @@ export default function Management() {
                     <button onClick={() => setBoardDate(todayWd)} style={{ padding: '1px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 9, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: '#08130a' }}>วันนี้</button>
                   )}
                   {totalDelayed > 0 && <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, fontWeight: 700, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>⚠️ ดีเลย์ {totalDelayed} ใบ</span>}
-                  {sessions.map(s => (
-                    <span key={s.id} style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, fontWeight: 700,
-                      background: s.status === 'open' ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.12)',
-                      color: s.status === 'open' ? '#22c55e' : '#888' }}>
-                      {s.shift === 'day' ? '☀️' : '🌙'} {s.status === 'open' ? '● Live' : '✓ ปิด'}
-                    </span>
-                  ))}
+                  {(() => {
+                    // hierarchy: 1 ชิปต่อไลน์ย่อย แทนป้ายต่อ session
+                    const byChild = {};
+                    sessions.forEach(sx => { (byChild[sx.line_name] = byChild[sx.line_name] || []).push(sx); });
+                    const names = Object.keys(byChild).sort();
+                    const multi = names.length > 1 || (names.length === 1 && names[0] !== selectedLine);
+                    return names.map(ln => {
+                      const list = [...byChild[ln]].sort((a, b) => (a.shift === b.shift ? 0 : a.shift === 'day' ? -1 : 1));
+                      const anyOpen = list.some(sx => sx.status === 'open');
+                      return (
+                        <span key={ln} style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, fontWeight: 700,
+                          background: anyOpen ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.12)',
+                          color: anyOpen ? '#22c55e' : '#888' }}>
+                          {multi && <span style={{ fontWeight: 800 }}>{ln} · </span>}
+                          {list.map(sx => `${sx.shift === 'day' ? '☀️' : '🌙'}${sx.status === 'open' ? '●' : '✓'}`).join(' ')}
+                          {anyOpen ? ' Live' : ' ปิด'}
+                        </span>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
               {/* Kanban ที่เปิดอยู่ ต่อ MAT.NO */}
