@@ -121,8 +121,8 @@ export default function MachineDatabase() {
   };
 
   const handleDelete = async (item) => {
-    if (!window.confirm(`ลบเครื่องจักร "${item.machine_no}" ?\n\nจุดบนผังไลน์และประวัติ Downtime ที่อ้างอิงเครื่องนี้จะยังอยู่ แต่จะเลือกเครื่องนี้ใหม่ไม่ได้`)) return;
-    const { error } = await supabaseDR.from('machines').delete().eq('id', item.id);
+    if (!window.confirm(`ปิดใช้งานเครื่องจักร "${item.machine_no}" ?\n\nจุดบนผังไลน์และประวัติ Downtime ที่อ้างอิงเครื่องนี้จะยังอยู่ แต่จะเลือกเครื่องนี้ใหม่ไม่ได้ (เปิดใช้กลับได้ภายหลัง)`)) return;
+    const { error } = await supabaseDR.from('machines').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', item.id);
     if (error) { toast.error(error.message); return; }
     load();
   };

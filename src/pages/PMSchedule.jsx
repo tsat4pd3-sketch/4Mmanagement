@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabaseDR } from '../supabaseClient'
-import { FREQ_LABEL, DEPT_LABEL, dueStatus, STATUS_META, computeNextDue } from '../lib/pmSchedule'
+import { FREQ_LABEL, DEPT_LABEL, dueStatus, STATUS_META, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -191,7 +191,7 @@ export default function PMSchedule() {
                       {nextDue ? nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' }) : <span style={{ color: 'var(--muted)' }}>—</span>}
                       {isOverdue && nextDue && (
                         <div style={{ fontSize: 11, color: '#e05c4a' }}>
-                          เกิน {Math.abs(Math.floor((nextDue - new Date()) / 86400000))} วัน
+                          เกิน {Math.abs(daysUntilDue(nextDue))} วัน
                         </div>
                       )}
                     </td>
