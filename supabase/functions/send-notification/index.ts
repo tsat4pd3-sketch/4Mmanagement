@@ -6,41 +6,80 @@ const supabase = createClient(
 );
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN');
-const TELEGRAM_CHAT_ID   = Deno.env.get('TELEGRAM_CHAT_ID');
+const TELEGRAM_CHAT_ID   = Deno.env.get('TELEGRAM_CHAT_ID');   // legacy single-group fallback
 
-/* ── Telegram senders ──────────────────────────── */
-async function sendTelegram(message: string) {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+// Bot token: prefer the value set in-app (notification_settings, read via the
+// service role) else the env secret. Resolved per request into BOT_TOKEN.
+let BOT_TOKEN: string | undefined = TELEGRAM_BOT_TOKEN;
+async function getBotToken(): Promise<string | undefined> {
+  try {
+    const { data } = await supabase.from('notification_settings').select('bot_token').eq('id', 1).maybeSingle();
+    const t = data?.bot_token ? String(data.bot_token).trim() : '';
+    return t || TELEGRAM_BOT_TOKEN || undefined;
+  } catch { return TELEGRAM_BOT_TOKEN || undefined; }
+}
+
+/* ── Rule-based routing ─────────────────────────────
+   notification_rules(event_key → is_enabled, channel_id) + telegram_channels
+   let the admin turn each notification on/off and pick which room it goes to.
+   Unknown event → send to fallback. Known-but-disabled → skip Telegram.
+   Room with no chat_id / inactive → fallback to legacy TELEGRAM_CHAT_ID, so
+   existing notifications keep working until each room is configured. */
+type Route = { enabled: boolean; chatId?: string };
+async function loadRoutes(): Promise<Record<string, Route>> {
+  try {
+    const { data } = await supabase
+      .from('notification_rules')
+      .select('event_key, is_enabled, telegram_channels(chat_id, is_active)');
+    const map: Record<string, Route> = {};
+    for (const r of data ?? []) {
+      const ch = (r as Record<string, unknown>).telegram_channels as { chat_id?: string; is_active?: boolean } | null;
+      const chatId = ch && ch.is_active && ch.chat_id ? String(ch.chat_id).trim() : undefined;
+      map[r.event_key as string] = { enabled: r.is_enabled as boolean, chatId };
+    }
+    return map;
+  } catch { return {}; }
+}
+// Returns null when the event is explicitly disabled; otherwise the chat to use.
+function resolveEvent(routes: Record<string, Route>, key: string): string | null {
+  const r = routes[key];
+  if (r && !r.enabled) return null;
+  return (r?.chatId) || TELEGRAM_CHAT_ID || null;
+}
+
+/* ── Telegram senders (chatId-aware) ──────────────── */
+async function sendTelegram(message: string, chatId?: string | null): Promise<boolean> {
+  const chat = chatId ?? TELEGRAM_CHAT_ID;
+  if (!BOT_TOKEN || !chat) return false;
+  const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: message, parse_mode: 'HTML' }),
+    body: JSON.stringify({ chat_id: chat, text: message, parse_mode: 'HTML' }),
+  });
+  return res.ok;
+}
+
+async function sendTelegramPhoto(photoUrl: string, caption: string, chatId?: string | null) {
+  const chat = chatId ?? TELEGRAM_CHAT_ID;
+  if (!BOT_TOKEN || !chat) return;
+  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chat, photo: photoUrl, caption, parse_mode: 'HTML' }),
   });
 }
 
-async function sendTelegramPhoto(photoUrl: string, caption: string) {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, photo: photoUrl, caption, parse_mode: 'HTML' }),
-  });
-}
-
-async function sendTelegramMediaGroup(photos: { url: string; caption: string }[]) {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || !photos.length) return;
-  if (photos.length === 1) {
-    await sendTelegramPhoto(photos[0].url, photos[0].caption);
-    return;
-  }
-  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMediaGroup`, {
+async function sendTelegramMediaGroup(photos: { url: string; caption: string }[], chatId?: string | null) {
+  const chat = chatId ?? TELEGRAM_CHAT_ID;
+  if (!BOT_TOKEN || !chat || !photos.length) return;
+  if (photos.length === 1) { await sendTelegramPhoto(photos[0].url, photos[0].caption, chat); return; }
+  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMediaGroup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      chat_id: TELEGRAM_CHAT_ID,
+      chat_id: chat,
       media: photos.map((p, i) => ({
-        type: 'photo',
-        media: p.url,
+        type: 'photo', media: p.url,
         ...(i === 0 ? { caption: p.caption, parse_mode: 'HTML' } : {}),
       })),
     }),
@@ -51,21 +90,17 @@ async function sendTelegramMediaGroup(photos: { url: string; caption: string }[]
 function statusLabel(status: string) {
   return { pending: 'รอ SV Approve', pending_qa: 'รอ QA Approve', approved: 'Approved ✅', rejected: 'Rejected ❌' }[status] ?? status;
 }
-
 async function getFullName(userId: string | null | undefined): Promise<string> {
   if (!userId) return '-';
   const { data } = await supabase.from('profiles').select('full_name').eq('id', userId).single();
   return (data?.full_name as string) || '-';
 }
-
 async function buildTelegramMessage(log: Record<string, unknown>, title: string) {
   const creatorName   = await getFullName(log.created_by as string);
   const svName        = await getFullName(log.sv_approved_by as string);
   const approverName  = await getFullName(log.approved_by as string);
-
   const lines = [
-    `🔔 <b>${title}</b>`,
-    ``,
+    `🔔 <b>${title}</b>`, ``,
     `📅 วันที่: ${log.work_date}`,
     `🏭 ไลน์: ${log.line_name}`,
     `📋 ประเภท: ${log.category}`,
@@ -73,14 +108,15 @@ async function buildTelegramMessage(log: Record<string, unknown>, title: string)
     `🔖 สถานะ: ${statusLabel(log.status as string)}`,
     `👤 ผู้แจ้ง: ${creatorName}`,
   ];
-
   if (log.sv_approved_by) lines.push(`✅ Supervisor อนุมัติ: ${svName}`);
   if (log.approved_by)    lines.push(`✅ QA อนุมัติ: ${approverName}`);
   if (log.reject_reason)  lines.push(`❌ เหตุผล: ${log.reject_reason}`);
-
   lines.push(``, `— 4M Management System`);
   return lines.join('\n');
 }
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
 /* ── Handler ─────────────────────────────────────── */
 Deno.serve(async (req) => {
@@ -89,39 +125,47 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const { event } = body;
+    BOT_TOKEN = await getBotToken();   // in-app token (if set) else env secret
+
+    /* ── Channel connectivity test (from the config page) ── */
+    if (event === 'test_channel') {
+      const chat = (body.chat_id ? String(body.chat_id).trim() : '') || undefined;
+      if (!chat) return json({ sent: false, reason: 'ไม่มี chat_id' });
+      const ok = await sendTelegram(`🔔 <b>ทดสอบการแจ้งเตือน</b>\nเชื่อมต่อ Telegram สำเร็จ ✅`, chat);
+      return json(ok ? { sent: true } : { sent: false, reason: 'Telegram ปฏิเสธ — ตรวจ chat_id และบอทอยู่ในกลุ่มหรือยัง' });
+    }
+
+    const routes = await loadRoutes();
 
     /* ── Checkin Summary ─────────────────────────── */
     if (event === 'checkin_summary') {
       const s = body.summary;
       if (!s) return new Response('missing summary', { status: 400 });
+      const chat = resolveEvent(routes, 'checkin_summary');
+      if (chat === null) return json({ ok: true, skipped: true });
       const otNote = s.has_ot_night ? `\n⏰ เปิด OT กะดึก (${s.start_time} น.)` : `\n🕗 เวลาเริ่ม: ${s.start_time} น.`;
       const message = [
-        `✅ <b>เช็คชื่อเสร็จแล้ว</b>`,
-        ``,
+        `✅ <b>เช็คชื่อเสร็จแล้ว</b>`, ``,
         `🏭 ไลน์: <b>${s.line_name}</b> · ${s.shift_label}`,
-        `📅 วันที่: ${s.work_date}${otNote}`,
-        ``,
+        `📅 วันที่: ${s.work_date}${otNote}`, ``,
         `👥 เข้างาน: <b>${s.present}/${s.total}</b>`,
-        `⏰ OT: ${s.ot}`,
-        `🏖️ ลา: ${s.leave}`,
-        `❌ ขาด: ${s.absent}`,
-        ``,
-        `✍️ ตรวจโดย: ${s.checked_by}`,
-        `— 4M Management System`,
+        `⏰ OT: ${s.ot}`, `🏖️ ลา: ${s.leave}`, `❌ ขาด: ${s.absent}`, ``,
+        `✍️ ตรวจโดย: ${s.checked_by}`, `— 4M Management System`,
       ].join('\n');
-      await sendTelegram(message).catch(console.error);
-      return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
     }
 
     /* ── Machine downtime alert ──────────────────── */
     if (event === 'downtime') {
       const d = body.downtime;
       if (!d) return new Response('missing downtime', { status: 400 });
+      const chat = resolveEvent(routes, 'downtime');
+      if (chat === null) return json({ ok: true, skipped: true });
       const shiftLabel = d.shift === 'day' ? 'กะเช้า' : 'กะดึก';
       const ongoing = !d.end_time && d.duration_min == null;
       const lines = [
-        `🚨🚨 <b>เครื่องจักร DOWNTIME</b> 🚨🚨`,
-        ``,
+        `🚨🚨 <b>เครื่องจักร DOWNTIME</b> 🚨🚨`, ``,
         `⚙️ เครื่องจักร: <b>${d.machine_no || '-'}${d.machine_name ? ` (${d.machine_name})` : ''}</b>`,
         `🏭 ไลน์: ${d.line_name} · ${shiftLabel}`,
         `📅 วันที่: ${d.work_date}`,
@@ -133,18 +177,19 @@ Deno.serve(async (req) => {
       if (d.mat_no)              lines.push(`🔩 ชิ้นงาน: ${d.mat_no}`);
       if (d.description)         lines.push(`📝 รายละเอียด: ${d.description}`);
       lines.push(``, `👤 ผู้แจ้ง: ${d.reported_by || '-'}`, `— Production System`);
-      await sendTelegram(lines.join('\n')).catch(console.error);
-      return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
+      await sendTelegram(lines.join('\n'), chat).catch(console.error);
+      return json({ ok: true });
     }
 
-    /* ── Machine downtime recovered (เครื่องกลับมารันได้) ── */
+    /* ── Machine downtime recovered ──────────────── */
     if (event === 'downtime_recovered') {
       const d = body.downtime;
       if (!d) return new Response('missing downtime', { status: 400 });
+      const chat = resolveEvent(routes, 'downtime_recovered');
+      if (chat === null) return json({ ok: true, skipped: true });
       const shiftLabel = d.shift === 'day' ? 'กะเช้า' : 'กะดึก';
       const lines = [
-        `✅ <b>เครื่องกลับมารันได้แล้ว</b>`,
-        ``,
+        `✅ <b>เครื่องกลับมารันได้แล้ว</b>`, ``,
         `⚙️ เครื่องจักร: <b>${d.machine_no || '-'}${d.machine_name ? ` (${d.machine_name})` : ''}</b>`,
         `🏭 ไลน์: ${d.line_name} · ${shiftLabel}`,
         `📅 วันที่: ${d.work_date}`,
@@ -155,14 +200,16 @@ Deno.serve(async (req) => {
       if (d.mat_no)               lines.push(`🔩 ชิ้นงาน: ${d.mat_no}`);
       if (d.description)          lines.push(`📝 รายละเอียด: ${d.description}`);
       lines.push(``, `👤 ผู้ปิดรายการ: ${d.reported_by || '-'}`, `— Production System`);
-      await sendTelegram(lines.join('\n')).catch(console.error);
-      return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
+      await sendTelegram(lines.join('\n'), chat).catch(console.error);
+      return json({ ok: true });
     }
 
-    /* ── Production session close workflow ───────── */
+    /* ── Production session close ────────────────── */
     if (event === 'prod_close') {
       const s = body.session;
       if (!s) return new Response('missing session', { status: 400 });
+      const chat = resolveEvent(routes, 'prod_close');
+      if (chat === null) return json({ ok: true, skipped: true });
       const shiftLabel = s.shift === 'day' ? 'กะเช้า' : 'กะดึก';
       const map = {
         pending_close:    { title: '🟡 ขอปิดกะ — รอ SV อนุมัติ', extra: '' },
@@ -172,20 +219,15 @@ Deno.serve(async (req) => {
       };
       const m = map[s.status] ?? { title: `🔔 Production · ${s.status}`, extra: '' };
       const lines = [
-        `<b>${m.title}</b>`,
-        ``,
+        `<b>${m.title}</b>`, ``,
         `🏭 ไลน์: ${s.line_name} · ${shiftLabel}`,
         `📅 วันที่: ${s.work_date}`,
       ];
       if (s.start_time) lines.push(`🕗 เวลา: ${s.start_time} – ${s.end_time || '-'}${s.shift_min ? ` (${s.shift_min} นาที)` : ''}`);
-
-      /* ผลผลิต — ยอดรวม + แยกดี/NG/สงสัย/ซ่อม */
       if (s.qty_ok != null) {
         if (s.total_qty != null) lines.push(``, `📦 ผลิตรวม: <b>${s.total_qty}</b> ชิ้น`);
         lines.push(`✅ ดี: ${s.qty_ok}  ❌ NG: ${s.qty_ng ?? 0}${s.qty_suspect ? `  ⚠️ สงสัย: ${s.qty_suspect}` : ''}${s.qty_repair ? `  🔧 ซ่อม: ${s.qty_repair}` : ''}`);
       }
-
-      /* แยกตามชิ้นงาน (จำกัด 8 รายการ กันข้อความยาวเกิน) */
       if (Array.isArray(s.parts) && s.parts.length) {
         for (const p of s.parts.slice(0, 8)) {
           const carryNote = p.carry_qty ? ` (ยกยอด ${p.carry_qty})` : '';
@@ -193,8 +235,6 @@ Deno.serve(async (req) => {
         }
         if (s.parts.length > 8) lines.push(`  • …และอีก ${s.parts.length - 8} รายการ`);
       }
-
-      /* Downtime สรุปตามสาเหตุ (จำกัด 6 สาเหตุ) */
       if (s.dt_count) {
         lines.push(``, `⏱ Downtime ${s.dt_count} รายการ · รวม <b>${s.dt_total_min ?? 0} นาที</b>`);
         if (Array.isArray(s.downtimes)) {
@@ -207,36 +247,51 @@ Deno.serve(async (req) => {
       } else if (Array.isArray(s.downtimes)) {
         lines.push(``, `⏱ Downtime: ไม่มี`);
       }
-
       if (s.oee != null) {
         const apq = (s.oee_a != null || s.oee_p != null || s.oee_q != null)
-          ? ` (A ${s.oee_a ?? '-'}% · P ${s.oee_p ?? '-'}% · Q ${s.oee_q ?? '-'}%)`
-          : '';
+          ? ` (A ${s.oee_a ?? '-'}% · P ${s.oee_p ?? '-'}% · Q ${s.oee_q ?? '-'}%)` : '';
         lines.push(``, `📊 OEE: <b>${s.oee}%</b>${apq}`);
       }
       lines.push(`${m.extra}`, ``, `👤 ผู้ดำเนินการ: ${s.actor}`, `— Production System`);
-      await sendTelegram(lines.join('\n')).catch(console.error);
-      return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
+      await sendTelegram(lines.join('\n'), chat).catch(console.error);
+      return json({ ok: true });
     }
 
+    /* ── Daily PM alarm (System 1) ───────────────── */
+    if (event === 'pm_daily') {
+      const p = body.pm;
+      if (!p) return new Response('missing pm', { status: 400 });
+      const key = p.color === 'green' ? 'pm_daily_green' : p.color === 'orange' ? 'pm_daily_orange' : 'pm_daily_red';
+      const chat = resolveEvent(routes, key);
+      if (chat === null) return json({ ok: true, skipped: true });
+      const head = p.color === 'green' ? '🟢 <b>ตรวจ Daily PM เรียบร้อย ทุกอย่างปกติ</b>'
+        : p.color === 'orange' ? '🟠 <b>ยังตรวจ Daily PM ไม่ครบ (เกินเวลา)</b>'
+        : '🔴 <b>Daily PM พบความผิดปกติ</b>';
+      const lines = [head, ``, `🏭 ไลน์: <b>${p.line_name}</b>${p.shift_label ? ` · ${p.shift_label}` : ''}`, `📅 วันที่: ${p.work_date}`];
+      if (p.checked != null && p.total != null) lines.push(`✅ ตรวจแล้ว: <b>${p.checked}/${p.total}</b> เครื่อง`);
+      if (Array.isArray(p.missing) && p.missing.length) lines.push(`⏳ ยังไม่ตรวจ: ${p.missing.join(', ')}`);
+      if (Array.isArray(p.ng) && p.ng.length) {
+        lines.push(``, `⚠️ ผิดปกติ:`);
+        for (const n of p.ng.slice(0, 10)) lines.push(`  • ${n.machine ? `${n.machine} — ` : ''}${n.name}${n.topics?.length ? `: ${n.topics.join(', ')}` : ''}`);
+      }
+      lines.push(``, `— Smart Maintenance`);
+      await sendTelegram(lines.join('\n'), chat).catch(console.error);
+      return json({ ok: true });
+    }
+
+    /* ── 4M change management (in-app always + Telegram by rule) ── */
     const { log } = body;
     if (!log) return new Response('missing log', { status: 400 });
-
+    const chat = resolveEvent(routes, 'four_m_status');
     const status: string = log.status;
 
-    /* Determine notification targets ──────────────── */
     type Target = { userId: string };
     const targets: Target[] = [];
-
     const addProfilesByRole = async (roles: string[]) => {
       const { data } = await supabase.from('profiles').select('id').in('role', roles);
       for (const p of data ?? []) targets.push({ userId: p.id });
     };
-
-    const addCreator = async () => {
-      if (!log.created_by) return;
-      targets.push({ userId: log.created_by as string });
-    };
+    const addCreator = async () => { if (log.created_by) targets.push({ userId: log.created_by as string }); };
 
     if (status === 'pending') {
       await addProfilesByRole(['supervisor', 'leader', 'admin', 'manager']);
@@ -249,7 +304,6 @@ Deno.serve(async (req) => {
       await addProfilesByRole(['admin', 'manager']);
     }
 
-    /* Deduplicate */
     const seen = new Set<string>();
     const unique = targets.filter(t => { if (seen.has(t.userId)) return false; seen.add(t.userId); return true; });
 
@@ -258,7 +312,6 @@ Deno.serve(async (req) => {
       : `4M แจ้งเตือน · ${log.line_name}`;
     const notifBody = `${log.work_date} · ${log.description}`;
 
-    /* In-app notifications */
     await Promise.allSettled(unique.map(async (t) => {
       await supabase.from('notifications').insert({
         user_id: t.userId, title, body: notifBody,
@@ -267,37 +320,33 @@ Deno.serve(async (req) => {
       });
     }));
 
-    /* Telegram text notification */
-    const message = await buildTelegramMessage(log, title);
-    await sendTelegram(message).catch(console.error);
-
-    /* Telegram image attachments ─────────────────── */
-    /* pending_qa: SV อนุมัติแล้ว ส่งรูป OJT ให้ QA ดู */
-    if (status === 'pending_qa' && log.request_image_url) {
-      await sendTelegramPhoto(
-        log.request_image_url as string,
-        `📎 <b>รูปหลักฐาน OJT</b>\n${log.category} · ${log.line_name}\n${log.description}`
-      ).catch(console.error);
+    // Telegram only if this event isn't disabled in the rules
+    if (chat !== null) {
+      const message = await buildTelegramMessage(log, title);
+      await sendTelegram(message, chat).catch(console.error);
+      if (status === 'pending_qa' && log.request_image_url) {
+        await sendTelegramPhoto(
+          log.request_image_url as string,
+          `📎 <b>รูปหลักฐาน OJT</b>\n${log.category} · ${log.line_name}\n${log.description}`,
+          chat,
+        ).catch(console.error);
+      }
+      if (status === 'approved') {
+        const photos: { url: string; caption: string }[] = [];
+        if (log.request_image_url) {
+          photos.push({
+            url: log.request_image_url as string,
+            caption: `✅ <b>อนุมัติแล้ว — 4M ${log.category}</b>\n🏭 ${log.line_name} · 📅 ${log.work_date}\n📝 ${log.description}\n\n📎 รูปหลักฐาน OJT (ผู้แจ้ง)`,
+          });
+        }
+        if (log.qa_image_url) photos.push({ url: log.qa_image_url as string, caption: `🔍 รูปยืนยันคุณภาพ (QA)` });
+        if (photos.length) await sendTelegramMediaGroup(photos, chat).catch(console.error);
+      }
     }
 
-    /* approved: ส่งทั้งรูป OJT + รูป QA เป็น album */
-    if (status === 'approved') {
-      const photos: { url: string; caption: string }[] = [];
-      if (log.request_image_url) {
-        photos.push({
-          url: log.request_image_url as string,
-          caption: `✅ <b>อนุมัติแล้ว — 4M ${log.category}</b>\n🏭 ${log.line_name} · 📅 ${log.work_date}\n📝 ${log.description}\n\n📎 รูปหลักฐาน OJT (ผู้แจ้ง)`,
-        });
-      }
-      if (log.qa_image_url) {
-        photos.push({ url: log.qa_image_url as string, caption: `🔍 รูปยืนยันคุณภาพ (QA)` });
-      }
-      if (photos.length) await sendTelegramMediaGroup(photos).catch(console.error);
-    }
-
-    return new Response(JSON.stringify({ ok: true, sent: unique.length }), { headers: { 'Content-Type': 'application/json' } });
+    return json({ ok: true, sent: unique.length });
   } catch (err) {
     console.error(err);
-    return new Response(JSON.stringify({ error: String(err) }), { status: 500 });
+    return json({ error: String(err) }, 500);
   }
 });
