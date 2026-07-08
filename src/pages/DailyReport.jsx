@@ -5,7 +5,7 @@ import { UserContext } from '../App';
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
 import { toast } from '../components/Toast';
 import tsLogoUrl from '../assets/TS logo.png';
-import { hasPermission } from '../utils/permissions';
+import { can } from '../utils/permissions';
 
 // โหลดโลโก้บริษัท (เหมือนหน้าเว็บ) เป็น base64 ครั้งเดียวสำหรับฝัง PDF
 let tsLogoDataUrlPromise = null;
@@ -83,7 +83,7 @@ export default function DailyReport() {
   const { role } = useContext(UserContext);
   const [tab, setTab] = useState('live');
 
-  const canSetup = hasPermission('manage_master_data', role);
+  const canSetup = can('daily_report', 'setup', role);
 
   return (
     <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
@@ -200,11 +200,11 @@ function LiveTab({ role }) {
   const [showEditTimes, setShowEditTimes] = useState(false);
   const [savingTimes, setSavingTimes]     = useState(false);
 
-  const canManage        = ['admin', 'manager', 'supervisor'].includes(role);
-  const canOpen          = ['admin', 'manager', 'supervisor', 'leader'].includes(role); // open new shift
-  const canRequestClose  = ['admin', 'manager', 'supervisor', 'leader'].includes(role); // request or direct-close
-  const canApproveClose  = ['admin', 'manager', 'supervisor'].includes(role);           // approve pending_close
-  const canScan          = ['admin', 'manager', 'supervisor', 'leader'].includes(role);
+  const canManage        = can('daily_report', 'close_shift', role);
+  const canOpen          = can('daily_report', 'open_shift', role);    // open new shift
+  const canRequestClose  = can('daily_report', 'request_close', role); // request or direct-close
+  const canApproveClose  = can('daily_report', 'approve_close', role); // approve pending_close
+  const canScan          = can('daily_report', 'record', role);        // scan open/close, defects, downtime
   // leader แก้ไข/ลบ order, defect, downtime ได้เฉพาะตอนกะยังเปิดอยู่ (ยังไม่ส่งขออนุมัติปิดกะ) —
   // ถ้าส่งขอปิดกะแล้ว (pending_close) ต้องรอ SV อนุมัติ/ปฏิเสธก่อน ถ้าโดนปฏิเสธ สถานะจะกลับเป็น open ให้แก้ไขได้อีก
   const canEditRecords   = canManage || (role === 'leader' && selSession?.status === 'open');
@@ -3351,7 +3351,7 @@ function HistoryTab({ role }) {
   const [deleting, setDeleting]   = useState(null);
   const [ordersMinimized, setOrdersMinimized] = useState({});
 
-  const isAdmin = role === 'admin';
+  const canDeleteSession = can('daily_report', 'delete_session', role);
 
   const handleDelete = async (s) => {
     if (!window.confirm(`ลบกะ ${s.line_name} ${s.shift === 'day' ? 'กะเช้า' : 'กะดึก'} วันที่ ${fmtDate(s.work_date)} ?\n(ข้อมูล Order, Downtime, Defect จะถูกลบทั้งหมด)`)) return;
@@ -3468,7 +3468,7 @@ function HistoryTab({ role }) {
                     </div>
                   )}
                   <span style={{ color: 'var(--muted)', fontSize: 16 }}>{expanded === s.id ? '▲' : '▼'}</span>
-                  {isAdmin && (
+                  {canDeleteSession && (
                     <button
                       onClick={e => { e.stopPropagation(); handleDelete(s); }}
                       disabled={deleting === s.id}
@@ -4194,7 +4194,7 @@ function SetupTab({ role }) {
 
 /* ── Defect Type Setup ── */
 function DefectTypeSetup({ role }) {
-  const canEdit = hasPermission('manage_master_data', role);
+  const canEdit = can('daily_report', 'setup', role);
   const [items, setItems]     = useState([]);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving]   = useState(false);
@@ -4331,7 +4331,7 @@ function DefectTypeSetup({ role }) {
 
 /* ── Break Policy Setup ── */
 function BreakPolicySetup({ role }) {
-  const canEdit = hasPermission('manage_master_data', role);
+  const canEdit = can('daily_report', 'setup', role);
   const [items, setItems]   = useState([]);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -4573,7 +4573,7 @@ function ProductSetup({ role }) {
     load();
   };
 
-  const canEdit = hasPermission('manage_master_data', role);
+  const canEdit = can('daily_report', 'setup', role);
 
   // ── Kanban CRUD ──────────────────────────────────────────────
   const openKanbanEdit = (std = null, defaultProductId = '') => {
@@ -4916,7 +4916,7 @@ function DowntimeTypeSetup({ role }) {
     load();
   };
 
-  const canEdit = hasPermission('manage_master_data', role);
+  const canEdit = can('daily_report', 'setup', role);
 
   const processGroups = [
     { key: 'welding_assembly', label: '🔥 Welding / Assembly', color: '#f97316' },
@@ -5093,7 +5093,7 @@ function _KanbanStandardSetup_REMOVED({ role }) {
     load();
   };
 
-  const canEdit = hasPermission('manage_master_data', role);
+  const canEdit = can('daily_report', 'setup', role);
 
   const getItemDisplay = (item) => {
     const prod = item.dr_products;

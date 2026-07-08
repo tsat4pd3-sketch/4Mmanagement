@@ -4,7 +4,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
-import { hasPermission } from '../utils/permissions';
+import { can } from '../utils/permissions';
 
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
@@ -647,6 +647,7 @@ export default function Operator() {
                     <td style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 1, boxShadow: '-2px 0 8px rgba(0,0,0,0.18)', padding: '0 8px' }}>
                       {emp.is_active ? (
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
+                          {can('employees', 'edit', role) && (
                           <button title="แก้ไขข้อมูล" onClick={() => openEdit(emp)} style={{
                             width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
                             background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
@@ -657,6 +658,8 @@ export default function Operator() {
                             onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245,158,11,0.12)'; e.currentTarget.style.transform = 'scale(1)'; }}>
                             ✏️
                           </button>
+                          )}
+                          {can('employees', 'deactivate', role) && (
                           <button title="ปิดใช้งาน" onClick={() => handleDeactivate(emp.id, emp.name)} style={{
                             width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
                             background: 'rgba(239,68,68,0.1)', color: '#ef4444',
@@ -667,8 +670,9 @@ export default function Operator() {
                             onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; e.currentTarget.style.transform = 'scale(1)'; }}>
                             🚫
                           </button>
+                          )}
                         </div>
-                      ) : (
+                      ) : can('employees', 'deactivate', role) ? (
                         <button title="เปิดใช้งานอีกครั้ง" onClick={() => handleReactivate(emp.id)} style={{
                           width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
                           background: 'rgba(34,197,94,0.12)', color: '#22c55e',
@@ -680,7 +684,7 @@ export default function Operator() {
                           onMouseLeave={e => { e.currentTarget.style.background = 'rgba(34,197,94,0.12)'; e.currentTarget.style.transform = 'scale(1)'; }}>
                           ↩
                         </button>
-                      )}
+                      ) : null}
                     </td>
                   </tr>
                   );
@@ -736,11 +740,11 @@ export default function Operator() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                        {hasPermission('manage_master_data', role) && (
+                        {can('skills', 'edit', role) && (
                           <button onClick={() => setEditingSkill({ ...sd, scope_section: sd.scope_section || '' })}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>✏️</button>
                         )}
-                        {['admin','manager'].includes(role) && (
+                        {can('skills', 'delete', role) && (
                           <button onClick={() => handleDeleteSkill(sd)}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>🗑️</button>
                         )}
@@ -892,7 +896,7 @@ export default function Operator() {
             <div style={{ fontSize: 13, color: 'var(--muted)' }}>
               คำขออัพระดับทักษะที่รอการอนุมัติ ({levelUpRequests.length} รายการ)
             </div>
-            {['admin','manager'].includes(role) && (
+            {can('skills', 'run_weekly_update', role) && (
               <button onClick={handleRunWeeklyUpdate} disabled={runningWeekly}
                 style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
                   background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)',
@@ -924,8 +928,8 @@ export default function Operator() {
                 const toLv = SKILL_LEVELS.find(l => l.min === req.to_level);
                 const needsDoc = req.to_level === 100;
                 const canApprove = req.to_level === 100
-                  ? ['admin','manager'].includes(role)
-                  : ['admin','manager','supervisor'].includes(role);
+                  ? can('skills', 'approve_levelup_100', role)
+                  : can('skills', 'approve_levelup', role);
                 return (
                   <div key={req.id} className="card" style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '14px 16px' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>

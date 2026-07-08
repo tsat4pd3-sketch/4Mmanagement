@@ -8,7 +8,7 @@ import {
   ResponsiveContainer, Tooltip,
 } from 'recharts';
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
-import { hasPermission } from '../utils/permissions';
+import { hasPermission, can } from '../utils/permissions';
 import { loadCompanyCalendar, getDayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import { getLineFamilyNames, getLineFamilyIds } from '../utils/lineHierarchy';
 import tsLogoUrl from '../assets/TS logo.png';
@@ -1141,9 +1141,12 @@ function FourMTab() {
   // Determine if the current user can act on this log at its current stage
   // supervisor/leader อนุมัติได้เฉพาะ log ของไลน์/ส่วนงานตัวเอง — กันอนุมัติข้ามไลน์ที่ตัวเองไม่ได้ดูแล
   const canApproveLog = (log) => {
-    if (['admin', 'manager'].includes(role)) return true;
-    if (log.status === 'pending_qa') return role === 'qa';
+    // QA step — action gate ผ่านตาราง permission (admin/manager/qa ไม่ scope เหมือนเดิม)
+    if (log.status === 'pending_qa') return can('four_m', 'approve_qa', role);
     if (log.status !== 'pending') return false;
+    // SV step — สิทธิ์ action มาจาก can() ส่วน scoping ยังเป็นตาม role เดิมทุกประการ
+    if (!can('four_m', 'approve_sv', role)) return false;
+    if (['admin', 'manager'].includes(role)) return true; // ไม่ scope เหมือนเดิม
     if (role === 'leader') {
       const myLine = lines.find(l => l.id === userLineId);
       if (!myLine) return false;
@@ -1180,7 +1183,7 @@ function FourMTab() {
   const [cpcExporting, setCpcExporting] = useState(false);
   const [imageViewModal, setImageViewModal] = useState(null); // { url, title }
   const [showDocPanel, setShowDocPanel] = useState(false);
-  const canManageDoc = ['admin', 'manager'].includes(role);
+  const canManageDoc = can('four_m', 'manage_docs', role);
 
   const normSection = (s) => (s || '').trim().toLowerCase();
   // ครอบครัวไลน์ตามลำดับชั้น (ตัวเอง + สายบน + สายล่าง) — fallback เป็นชื่อเดิมถ้า lines ยังไม่โหลด
@@ -1738,7 +1741,7 @@ function FourMTab() {
                           </span>
                         )
                       ) : (
-                        ['admin','manager'].includes(role) && (
+                        can('four_m', 'reset', role) && (
                           <button onClick={() => supabase.from('four_m_logs').update({ status: 'pending', sv_approved_by: null, sv_approved_at: null, approved_by: null, approved_at: null, reject_reason: null }).eq('id', l.id).then(load)}
                             style={{ padding: '3px 8px', borderRadius: 5, fontSize: 10, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
                             Reset

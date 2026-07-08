@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase, supabaseDR } from '../supabaseClient'
+import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { getSpcStatus, STATUS_COLOR } from '../lib/spc'
 import { getOrCreateChecklist } from '../lib/pmChecklists'
@@ -213,7 +214,7 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
   useEffect(() => { fetchResults() }, [inspection.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const cpMap = Object.fromEntries(checkpoints.map(c => [c.id, c]))
-  const canApprove = ['admin', 'manager', 'supervisor', 'qa'].includes(userRole)
+  const canApprove = can('pm', 'approve', userRole)
 
   const handleApprove = async () => {
     setApproving(true)

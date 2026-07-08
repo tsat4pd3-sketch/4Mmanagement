@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
+import { can } from '../utils/permissions';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { DAY_TYPE_META } from '../utils/companyCalendar';
@@ -12,7 +13,7 @@ const toDateStr = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(
 
 export default function CompanyCalendar() {
   const { role } = useContext(UserContext);
-  const canEdit = ['admin', 'document_control'].includes(role);
+  const canEdit = can('company_calendar', 'edit', role);
 
   const [year, setYear] = useState(new Date().getFullYear());
   const [calendar, setCalendar] = useState({}); // work_date -> day_type (saved)
