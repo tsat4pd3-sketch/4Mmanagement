@@ -548,10 +548,20 @@ export default function Dashboard() {
     return pcm;
   }, [lines]);
   const layoutLineNamesForCard = useCallback((layoutLineName) => {
-    const children = parentChildrenMap[layoutLineName];
-    if (!children?.length) return [layoutLineName];
-    const orphanChildren = children.filter(c => !layouts.some(l => l.line_name === c));
-    return [layoutLineName, ...orphanChildren];
+    // ไล่ลงเป็นขั้น (รองรับย่อยซ้อนย่อย): ลูกที่ไม่มีผังของตัวเองถูกรวมเข้าการ์ดนี้แล้วไล่ต่อลงไป
+    // ลูกที่มีผังของตัวเอง = มี card แยกของมันเอง จึงหยุดไล่สายนั้น (จุดของมันวางบนรูปของมันเอง)
+    const names = [layoutLineName];
+    const seen = new Set(names);
+    const walk = (parentName) => {
+      for (const child of parentChildrenMap[parentName] || []) {
+        if (seen.has(child) || layouts.some(l => l.line_name === child)) continue;
+        seen.add(child);
+        names.push(child);
+        walk(child);
+      }
+    };
+    walk(layoutLineName);
+    return names;
   }, [parentChildrenMap, layouts]);
 
   /* Filter by assignedShift — memoized so the 1s clock tick doesn't re-filter all logs */
