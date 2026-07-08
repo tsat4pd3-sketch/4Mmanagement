@@ -1505,44 +1505,92 @@ export default function Dashboard() {
                     );
 
                     // ── Smart planner: คาดการณ์เวลาเสร็จจากคิวจริง + คำแนะนำเปิด OT ──
-                    // เวลาเสร็จคาดการณ์ = จุดจบของใบสุดท้ายในคิว (คิวคำนวณจาก cycle time × qty ต่อคิวจากเวลาปัจจุบัน
-                    // และหลบช่วงพักแล้ว) — เทียบกับขอบกะ: กะเช้าเลิกปกติ 17:30 / OT ได้ถึง 20:00 · กะดึกเลิกปกติ 05:30 / OT ได้ถึง 08:00
+                    // กะเช้า: OT ต่อท้ายกะ — เลิกปกติ 17:30, OT ได้ถึง 20:00
+                    // กะดึก: OT อยู่หัวกะ — เข้าปกติ 22:30–08:00 แต่ถ้าเปิด OT จะเข้า 20:00 แทน
+                    //   คำถามที่ต้องตอบก่อนกะดึกเริ่ม: งานที่เห็นทั้งหมด เข้า 22:30 ทันก่อน 08:00 มั้ย ถ้าไม่ทันต้องเรียกเข้า 20:00
                     const plannerChips = (() => {
-                      const BOUNDS = {
-                        day:   { regEndMs: gridStartMs + 9.5 * 3600000,  otEndMs: gridStartMs + 12 * 3600000, regLabel: '17:30', otLabel: '20:00' },
-                        night: { regEndMs: gridStartMs + 21.5 * 3600000, otEndMs: gridEndMs,                  regLabel: '05:30', otLabel: '08:00' },
+                      const DAY_REG_END   = gridStartMs + 9.5  * 3600000;  // 17:30
+                      const DAY_OT_END    = gridStartMs + 12   * 3600000;  // 20:00
+                      const NIGHT_OT_IN   = gridStartMs + 12   * 3600000;  // 20:00 (เข้าแบบเปิด OT)
+                      const NIGHT_REG_IN  = gridStartMs + 14.5 * 3600000;  // 22:30 (เข้าปกติ)
+                      const FRAME_END     = gridEndMs;                     // 08:00
+                      // จำลองเวลาเสร็จ: เริ่มจาก startMs ใส่เนื้องาน workMs แล้วยืดคร่อมช่วงพักที่ทับ
+                      const finishFrom = (startMs, workMs) => {
+                        const breaks = allBreaksOnce();
+                        let end = startMs + workMs;
+                        const consumed = new Set();
+                        let ext = true;
+                        while (ext) {
+                          ext = false;
+                          breaks.forEach(([bs, be], i) => {
+                            if (consumed.has(i)) return;
+                            if (bs < end && be > startMs) { consumed.add(i); end += be - bs; ext = true; }
+                          });
+                        }
+                        return end;
                       };
                       const chips = [];
                       ['day', 'night'].forEach(shift => {
-                        let remainCards = 0, remainQty = 0, projEndMs = null, noCt = 0;
+                        let remainCards = 0, remainQty = 0, projEndMs = null, noCt = 0, workMs = 0, started = false;
                         productRows.forEach(row => {
                           computeQueuedPositionsFull(row.cards).forEach(item => {
-                            if (item.o.shift !== shift || item.o.isDone || item.o.isCarry) return;
+                            if (item.o.shift !== shift) return;
+                            if (item.o.isDone || (item.o.qty_actual || 0) > 0) started = true;
+                            if (item.o.isDone || item.o.isCarry) return;
                             remainCards++;
-                            remainQty += Math.max(0, (item.o.qty || 0) - (item.o.qty_actual || 0));
-                            if (!(ctByMatNo[item.o.mat_no] > 0)) noCt++;
+                            const rq = Math.max(0, (item.o.qty || 0) - (item.o.qty_actual || 0));
+                            remainQty += rq;
+                            const ct = ctByMatNo[item.o.mat_no] || 0;
+                            if (ct > 0) workMs += rq * ct * 1000; else noCt++;
                             const end = Math.max(item.endMs, item.occupiedEndMs);
                             projEndMs = projEndMs == null ? end : Math.max(projEndMs, end);
                           });
                         });
                         if (!remainCards) return;
-                        const b = BOUNDS[shift];
                         const sLabel = shift === 'day' ? '☀️' : '🌙';
                         if (isHistorical) {
                           chips.push({ color: '#ef4444', text: `${sLabel} งานไม่จบในกะ ${remainCards} ใบ (~${remainQty.toLocaleString()} ชิ้น)` });
                           return;
                         }
                         if (isFutureDay || projEndMs == null) return;
-                        const projLabel = `~${fmtMs(projEndMs)}`;
-                        const otMin = Math.ceil((projEndMs - b.regEndMs) / 60000);
                         if (noCt === remainCards) {
                           chips.push({ color: 'var(--muted)', text: `${sLabel} คาดการณ์ไม่ได้ — งานค้าง ${remainCards} ใบไม่มี cycle time` });
-                        } else if (projEndMs <= b.regEndMs) {
-                          chips.push({ color: '#22c55e', text: `${sLabel} คาดเสร็จ ${projLabel} — จบในเวลาปกติ (ก่อน ${b.regLabel}) ไม่ต้องเปิด OT` });
-                        } else if (projEndMs <= b.otEndMs) {
-                          chips.push({ color: '#f59e0b', text: `${sLabel} คาดเสร็จ ${projLabel} — ⏰ ต้องเปิด OT ~${otMin} นาที (เลิก ${b.regLabel} → ผลิตถึง ${projLabel})` });
+                          return;
+                        }
+                        if (shift === 'day') {
+                          const projLabel = `~${fmtMs(projEndMs)}`;
+                          const otMin = Math.ceil((projEndMs - DAY_REG_END) / 60000);
+                          if (projEndMs <= DAY_REG_END) {
+                            chips.push({ color: '#22c55e', text: `${sLabel} คาดเสร็จ ${projLabel} — จบในเวลาปกติ (ก่อน 17:30) ไม่ต้องเปิด OT` });
+                          } else if (projEndMs <= DAY_OT_END) {
+                            chips.push({ color: '#f59e0b', text: `${sLabel} คาดเสร็จ ${projLabel} — ⏰ ต้องเปิด OT ~${otMin} นาที (เลิก 17:30 → ผลิตถึง ${projLabel})` });
+                          } else {
+                            chips.push({ color: '#ef4444', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
+                          }
+                          return;
+                        }
+                        // ── กะดึก ──
+                        if (nowMs < NIGHT_REG_IN && !started) {
+                          // ยังไม่เริ่มกะดึก → โหมดตัดสินใจ: เข้า 22:30 ทันมั้ย หรือต้องเรียกเข้า 20:00 (เปิด OT หัวกะ)
+                          const normalFinish = finishFrom(Math.max(NIGHT_REG_IN, nowMs), workMs);
+                          if (normalFinish <= FRAME_END) {
+                            chips.push({ color: '#22c55e', text: `${sLabel} เข้างานปกติ 22:30 ทัน — คาดเสร็จ ~${fmtMs(normalFinish)} (ก่อน 08:00) ไม่ต้องเปิด OT` });
+                          } else {
+                            const otFinish = finishFrom(Math.max(NIGHT_OT_IN, nowMs), workMs);
+                            if (otFinish <= FRAME_END) {
+                              chips.push({ color: '#f59e0b', text: `${sLabel} ⏰ ต้องเปิด OT เข้า 20:00 — คาดเสร็จ ~${fmtMs(otFinish)} (ถ้าเข้า 22:30 จะจบ ~${fmtMs(normalFinish)} เกิน 08:00)` });
+                            } else {
+                              chips.push({ color: '#ef4444', text: `${sLabel} 🚨 เกินกำลังกะดึกแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(otFinish)}) — ควรวางแผนยกยอด/เพิ่มกำลัง` });
+                            }
+                          }
+                          return;
+                        }
+                        // กะดึกเริ่มผลิตแล้ว → ใช้คิวจริงเทียบขอบกะ 08:00
+                        const projLabel = `~${fmtMs(projEndMs)}`;
+                        if (projEndMs <= FRAME_END) {
+                          chips.push({ color: '#22c55e', text: `${sLabel} คาดเสร็จ ${projLabel} — จบภายในกะ (ก่อน 08:00)` });
                         } else {
-                          chips.push({ color: '#ef4444', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกินกรอบ OT (${b.otLabel}) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
+                          chips.push({ color: '#ef4444', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
                         }
                       });
                       return chips;
