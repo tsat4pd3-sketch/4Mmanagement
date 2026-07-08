@@ -10,6 +10,7 @@ const ROLES = [
   { value: 'leader',     label: 'Leader',     color: '#22c55e' },
   { value: 'qa',         label: 'QA',         color: '#c084fc' },
   { value: 'document_control', label: 'Doc Control', color: '#fb923c' },
+  { value: 'sale',       label: 'Sale',       color: '#38bdf8' },
   { value: 'display',    label: 'Display',    color: '#94a3b8' },
 ];
 
@@ -37,6 +38,7 @@ const PAGE_GROUPS = [
       { key: 'page:/line-stock',   label: 'Store management' },
       { key: 'page:/heijunka',     label: 'Kanban Board' },
       { key: 'page:/rack-center',  label: 'Rack Center management' },
+      { key: 'page:/customer-demand', label: 'Customer Demand & Shipping' },
     ],
   },
   {

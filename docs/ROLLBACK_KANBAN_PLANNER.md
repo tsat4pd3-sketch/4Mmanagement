@@ -61,6 +61,20 @@ git push origin main
   tooltip สาเหตุดีเลย์ + ดูย้อนหลังรายวัน
 - Rollback เฉพาะรอบนี้: `git revert -m 1 <merge-sha รอบ 4>`
 
+## รอบแก้ที่ 5 — Customer Demand (Forecast + Shipping) หน้าใหม่
+
+- ไฟล์ใหม่: `src/pages/CustomerDemand.jsx` · ไฟล์แก้: `src/App.jsx`,
+  `src/pages/AddUser.jsx`, `src/pages/PermissionsManagement.jsx`
+- **Database (ไม่ revert อัตโนมัติด้วย git):**
+  - โปรเจค DR (`eyhclzkifitbhbljgoav`): ตารางใหม่ `demand_upload_batches`,
+    `customer_forecasts`, `customer_shipping_orders` (ดู `docs/sql/04_customer_demand.sql`)
+    — เป็นตารางใหม่ล้วน ไม่กระทบตารางเดิม ถ้าต้องถอน: `drop table customer_shipping_orders, customer_forecasts, demand_upload_batches;`
+  - โปรเจคหลัก (`ewhdfqwfwofivojtsizn`): เพิ่มค่า enum `user_role` = 'sale'
+    (enum value ลบไม่ได้ แต่ไม่มีผลข้างเคียงถ้าไม่มี user ใช้) + แถว `role_permissions`
+    ของ `page:/customer-demand` และ role sale — ลบได้ด้วย
+    `delete from role_permissions where permission_key = 'page:/customer-demand' or role = 'sale';`
+- Rollback โค้ด: `git revert -m 1 <merge-sha รอบ 5>` — หน้าใหม่หายไป ตาราง DB คงอยู่เฉยๆ ไม่มีใครเรียกใช้
+
 ## สิ่งที่ต้องรู้ตอน rollback
 
 1. **ยอดสต็อกจาก "ยืนยันส่ง" ต่างกันสองเวอร์ชัน** — เวอร์ชันใหม่บันทึก `line_stock_transactions`
