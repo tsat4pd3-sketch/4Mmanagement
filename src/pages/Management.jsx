@@ -970,6 +970,21 @@ export default function Management() {
             const openCards = filtered.filter(o => !(o.isDone && o.confirmed_at))
               .sort((a, b) => a.orderStartMs - b.orderStartMs);
             const sorted = [...doneCards, ...openCards];
+            // ── ชุดสแกนปิดรวด (batch confirm) ──────────────────────────────────────
+            // เครื่องจักรยังไม่ส่งสัญญาณจบทีละใบ พนักงานจึงสแกนปิดทั้งล็อตรวดเดียว (เช่น 9 ใบติดกัน)
+            // ถ้าตัดสิน "ปิดช้า" รายใบจาก confirmed_at ใบแรก ๆ ของชุดจะกลายเป็นส้มเกินจริงเสมอ
+            // จึงจัดกลุ่มใบที่สแกนห่างกันไม่เกิน 5 นาทีเป็นชุดเดียว แล้วตัดสินความช้าที่ใบสุดท้ายของชุด
+            // (เทียบเวลาสแกนจบชุด กับเวลาจบตามทฤษฎีของงานทั้งชุด)
+            const BATCH_GAP_MS = 5 * 60000;
+            const batchIdOf = new Map();
+            let curBatchId = 0;
+            doneCards.forEach((o, i) => {
+              if (i > 0 && new Date(o.confirmed_at).getTime() - new Date(doneCards[i - 1].confirmed_at).getTime() > BATCH_GAP_MS) curBatchId++;
+              batchIdOf.set(o, curBatchId);
+            });
+            const batchCount = new Map();
+            doneCards.forEach(o => { const b = batchIdOf.get(o); batchCount.set(b, (batchCount.get(b) || 0) + 1); });
+            const batchSeen = new Map();
             // เงื่อนไขผสม: ใบที่ยังไม่ปิด+เกินเวลาจะตีแดงก็ต่อเมื่อ "ยอดรวมจริงของแถวนี้ยังไม่ทันเป้าตามเวลา" ด้วย
             // ถ้ายอดรวมทันเป้าอยู่ (แค่สแกนปิดไม่ตรง FIFO) จะไม่ตีแดง เพราะงานยังผลิตได้ตามแผนจริง
             const ctSec = ctByMatNo[byOpenTime[0]?.mat_no] || 0;
@@ -1017,7 +1032,17 @@ export default function Management() {
               // ดังนั้นถ้าปิดงานเร็วกว่าทฤษฎี (confirmed_at < endMs) จะไม่บีบ/เลื่อนตำแหน่งตาม confirmed_at เลย —
               // ปล่อยให้การ์ดอยู่ตามคิว (queueFloor + durationMs) เหมือนเดิม ใช้ confirmed_at แค่ตัดสินสี/ไอคอนเท่านั้น
               // ส่วนกรณีปิดงานช้ากว่าทฤษฎี (isLateDone) ปล่อยให้ endMs เดิม + แสดง "หาง" ของความช้าแยกต่างหาก (ไม่ขยับการ์ดหลัก)
-              const isLateDone = o.isDone && !!o.confirmed_at && new Date(o.confirmed_at).getTime() > endMs;
+              // ปิดช้า: ใบเดี่ยวตัดสินตามเดิม · ใบในชุดสแกนรวดเดียวตัดสินเฉพาะใบสุดท้ายของชุด
+              // (ใบแรก ๆ ของชุดถือว่าจบตามคิวทฤษฎี เพราะเวลาสแกนไม่ใช่เวลาผลิตจบจริงของใบนั้น)
+              let isLateDone = false;
+              if (o.isDone && o.confirmed_at) {
+                const bid = batchIdOf.get(o);
+                const size = batchCount.get(bid) || 1;
+                const seen = (batchSeen.get(bid) || 0) + 1;
+                batchSeen.set(bid, seen);
+                if (size === 1 || seen === size)
+                  isLateDone = new Date(o.confirmed_at).getTime() > endMs + (size > 1 ? BATCH_GAP_MS : 0);
+              }
               let occupiedEndMs = endMs;
               if (isLateDone) {
                 occupiedEndMs = new Date(o.confirmed_at).getTime();
