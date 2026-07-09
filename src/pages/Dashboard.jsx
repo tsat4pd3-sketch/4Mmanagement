@@ -1544,11 +1544,10 @@ export default function Dashboard() {
                           );
                           });
                         })()}
-                        {/* Now marker */}
-                        {nowMs >= half.startMs && nowMs < half.startMs + 12 * 3600000 && (() => {
-                          const nowPct = (nowMs - half.startMs) * pctPerMs;
-                          return <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${nowPct}%`, width: 1.5, background: 'rgba(77,159,255,0.7)', zIndex: 2, pointerEvents: 'none' }} />;
-                        })()}
+                        {/* Now marker — playhead ชมพูเรืองแสง (สีไม่ซ้ำสถานะใดบนบอร์ด) */}
+                        {nowMs >= half.startMs && nowMs < half.startMs + 12 * 3600000 && (
+                          <div className="now-line" style={{ left: `${(nowMs - half.startMs) * pctPerMs}%` }} />
+                        )}
                       </div>
                     );
 
@@ -1719,11 +1718,22 @@ export default function Dashboard() {
                         {plannerStrip}
                         {/* พาร์ทละ 1 บล็อก — ป้าย/รูปใหญ่อันเดียวครอบ 2 แถบเวลา (☀️ 08–20 บน / 🌙 20–08 ล่าง)
                             หัวชั่วโมงแสดงเวลาคู่บน-ล่างในคอลัมน์เดียวกัน (โครงเดียวกับบอร์ดหน้าจัดการไลน์) */}
-                        <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+                        <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
                           <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 10, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1 }}>
                             <span>☀️ กะเช้า (แถบบน)</span>
                             <span>🌙 กะดึก (แถบล่าง)</span>
                           </div>
+                          {/* ป้ายเวลาปัจจุบัน ลอยตรงตำแหน่ง playhead (คอลัมน์ใช้ร่วม 2 กะ — ไอคอนบอกว่าอยู่กะไหน) */}
+                          {(() => {
+                            const curHalf = HALVES.find(hf => nowMs >= hf.startMs && nowMs < hf.startMs + 12 * 3600000);
+                            if (!curHalf) return null;
+                            const t = new Date(nowMs);
+                            return (
+                              <div className="now-chip" style={{ left: `calc(${LEFT_W}px + (100% - ${LEFT_W}px) * ${(nowMs - curHalf.startMs) / (12 * 3600000)})` }}>
+                                {curHalf.key === 'am' ? '☀️' : '🌙'} {String(t.getHours()).padStart(2, '0')}:{String(t.getMinutes()).padStart(2, '0')}
+                              </div>
+                            );
+                          })()}
                           {HALVES[0].hours.map((h, i) => {
                             const hPm = HALVES[1].hours[i];
                             const amSlot = HALVES[0].startMs + i * 3600000;

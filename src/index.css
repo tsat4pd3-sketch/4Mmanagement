@@ -450,3 +450,34 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   animation: personAlarmAmber 1.1s ease-in-out infinite;
   border-color: #f59e0b !important;
 }
+
+/* ─── Now marker (playhead) บนบอร์ดไทม์ไลน์ทุกหน้า ─────────────────
+   สีชมพู #ec4899 จงใจไม่ซ้ำกับสีสถานะใดๆ บนบอร์ด (น้ำเงิน=กำลังผลิต เขียว=เสร็จ
+   แดง=ช้า เหลือง=ยกยอด เทา=หยุดตามแผน) — เส้นหนา + จุดหัวเรืองแสงกระพริบ
+   คู่กับ .now-chip ป้ายเวลาปัจจุบันลอยบนหัวตาราง */
+@keyframes nowLinePulse {
+  0%, 100% { box-shadow: 0 0 3px 0 rgba(236, 72, 153, 0.9); }
+  50%      { box-shadow: 0 0 12px 3px rgba(236, 72, 153, 0.85); }
+}
+.now-line {
+  position: absolute; top: 0; bottom: 0; width: 2px;
+  background: linear-gradient(180deg, #ec4899, rgba(236, 72, 153, 0.45));
+  z-index: 4; pointer-events: none;
+  animation: nowLinePulse 1.5s ease-in-out infinite;
+}
+.now-line::before {
+  content: ''; position: absolute; top: 0; left: 50%; transform: translate(-50%, -1px);
+  border-left: 5px solid transparent; border-right: 5px solid transparent;
+  border-top: 6px solid #ec4899;
+}
+@keyframes nowChipGlow {
+  0%, 100% { box-shadow: 0 0 6px rgba(236, 72, 153, 0.55); }
+  50%      { box-shadow: 0 0 14px rgba(236, 72, 153, 0.95); }
+}
+.now-chip {
+  position: absolute; top: 50%; transform: translate(-50%, -50%);
+  background: #ec4899; color: #fff; font-weight: 800; font-size: 11px;
+  padding: 2px 9px; border-radius: 20px; z-index: 5; pointer-events: none;
+  white-space: nowrap; line-height: 1.4;
+  animation: nowChipGlow 1.5s ease-in-out infinite;
+}

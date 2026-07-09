@@ -276,7 +276,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
   );
 
   const hourHeader = (hours, halfStartMs) => (
-    <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+    <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
       <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 8, fontWeight: 700, color: 'var(--muted)' }}>รอบจัดส่ง</div>
       {hours.map((h, i) => {
         const slotMs = halfStartMs + i * 3600000;
@@ -292,10 +292,18 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
             background: isNow ? 'rgba(77,159,255,0.12)' : 'transparent',
           }}>
             {String(h).padStart(2,'0')}:00
-            {isNow && <div style={{ width: 3, height: 3, borderRadius: '50%', background: '#4d9fff', margin: '1px auto 0' }} />}
           </div>
         );
       })}
+      {/* ป้ายเวลาปัจจุบัน ลอยตรงตำแหน่ง playhead */}
+      {nowMs >= halfStartMs && nowMs < halfStartMs + 12 * 3600000 && (() => {
+        const t = new Date(nowMs);
+        return (
+          <div className="now-chip" style={{ left: `calc(${LEFT_W}px + (100% - ${LEFT_W}px) * ${(nowMs - halfStartMs) / (12 * 3600000)})` }}>
+            ⏱ {String(t.getHours()).padStart(2, '0')}:{String(t.getMinutes()).padStart(2, '0')}
+          </div>
+        );
+      })()}
     </div>
   );
 
@@ -399,10 +407,10 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
           );
         });
       })()}
-      {nowMs >= half.startMs && nowMs < half.startMs + 12 * 3600000 && (() => {
-        const nowPct = (nowMs - half.startMs) * pctPerMs;
-        return <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${nowPct}%`, width: 1.5, background: 'rgba(77,159,255,0.7)', zIndex: 2, pointerEvents: 'none' }} />;
-      })()}
+      {/* Now marker — playhead ชมพูเรืองแสง (สีไม่ซ้ำสถานะใดบนบอร์ด) */}
+      {nowMs >= half.startMs && nowMs < half.startMs + 12 * 3600000 && (
+        <div className="now-line" style={{ left: `${(nowMs - half.startMs) * pctPerMs}%` }} />
+      )}
     </div>
   );
 
