@@ -525,14 +525,31 @@ export default function Management() {
   const handleDragEnd   = () => { setDraggingWorker(null); setDragOverStation(null); };
   const handleDrop      = (e, stationId) => { e.preventDefault(); assignWorker(e.dataTransfer.getData('logId'), stationId); setDraggingWorker(null); setDragOverStation(null); };
 
-  /* ── Hover (desktop) ── */
+  /* ── Hover (desktop เมาส์จริงเท่านั้น) ──
+     จอทัช/iPad จอกว้างจะยิง mouseenter ตอนแตะแต่ไม่มี mouseleave → การ์ดสกิลค้าง
+     จึงเปิด hover card เฉพาะอุปกรณ์ที่ hover ได้จริง (แตะใช้ radar modal ที่มีปุ่มปิดแทน) */
+  const canHover = typeof window !== 'undefined' && window.matchMedia?.('(hover: hover)').matches;
   const onHoverEnter = (e, worker, fit = null, stationName = null) => {
-    if (isMobile) return;
+    if (isMobile || !canHover) return;
     clearTimeout(hoverTimer.current);
     const rect = e.currentTarget.getBoundingClientRect();
     hoverTimer.current = setTimeout(() => setHoverCard({ worker, fit, rect, stationName }), 180);
   };
   const onHoverLeave = () => { clearTimeout(hoverTimer.current); setHoverCard(null); };
+
+  // กันการ์ดค้างทุกกรณี: แตะ/scroll ที่ไหนก็ได้ = ปิด + auto-hide 8 วินาที
+  useEffect(() => {
+    if (!hoverCard) return;
+    const clear = () => { clearTimeout(hoverTimer.current); setHoverCard(null); };
+    window.addEventListener('touchstart', clear, { passive: true });
+    window.addEventListener('scroll', clear, true);
+    const t = setTimeout(clear, 8000);
+    return () => {
+      window.removeEventListener('touchstart', clear);
+      window.removeEventListener('scroll', clear, true);
+      clearTimeout(t);
+    };
+  }, [hoverCard]);
 
   /* ── Touch tap on pool card ── */
   const handlePoolTap = (worker) => {
