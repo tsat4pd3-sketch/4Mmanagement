@@ -350,10 +350,14 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  const [lineOptions, setLineOptions] = useState([])
   useEffect(() => {
     getCurrentUserId().then(setUserId)
     supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').order('line_name').order('sort_order')
       .then(({ data }) => setMachineOptions(data ?? []))
+    // production lines (MAIN project) for the usage "นับยอดจากไลน์" dropdown
+    supabase.from('production_lines').select('name').order('name')
+      .then(({ data }) => setLineOptions((data ?? []).map(l => l.name).filter(Boolean)))
   }, [])
 
   useEffect(() => {
@@ -733,6 +737,11 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                 <button key={v} onClick={() => setPlanType(v)} title={hint} style={S.modeBtn(planType === v)}>{label}</button>
               ))}
             </div>
+            {(planType === 'time' || planType === 'hybrid') && (
+              <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
+                🗓️ <b>ตามเวลา</b> = ใช้รอบจาก “ความถี่การตรวจ” ด้านบน (ตอนนี้: <b style={{ color: 'var(--accent)' }}>{FREQ_LABEL[frequency] ?? frequency}</b>) → ครบกำหนด = วันตรวจล่าสุด + รอบนั้น
+              </div>
+            )}
             {(planType === 'usage' || planType === 'hybrid') && (
               <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div>
@@ -741,10 +750,13 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                 </div>
                 <div>
                   <label style={S.label}>นับยอดจากไลน์</label>
-                  <input value={usageLine} onChange={e => setUsageLine(e.target.value)} placeholder={lineName || 'เช่น Line-A'} />
+                  <select value={usageLine} onChange={e => setUsageLine(e.target.value)}>
+                    <option value="">— ใช้ไลน์ของอุปกรณ์{lineName ? ` (${lineName})` : ''} —</option>
+                    {(usageLine && !lineOptions.includes(usageLine) ? [usageLine, ...lineOptions] : lineOptions).map(l => <option key={l} value={l}>{l}</option>)}
+                  </select>
                 </div>
                 <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)' }}>
-                  ระบบนับ prod_orders.qty ของไลน์นี้ตั้งแต่ PM ครั้งก่อน เทียบ threshold → คำนวณวันครบ + health score (เว้นไลน์ว่าง = ใช้ไลน์ของอุปกรณ์)
+                  ระบบนับ prod_orders.qty ของไลน์นี้ตั้งแต่ PM ครั้งก่อน เทียบ threshold → คำนวณวันครบ + health score · เลือกไลน์จากฐานข้อมูลไลน์ผลิต (เว้นว่าง = ใช้ไลน์ของอุปกรณ์)
                 </div>
               </div>
             )}
@@ -900,7 +912,9 @@ export default function PMSetup() {
       })
     }
 
-    setJigs(jigData ?? [])
+    // show only equipment that has a checklist in the selected department
+    // (each dept tab = its own responsibility; equipment "belongs" via its checklist)
+    setJigs((jigData ?? []).filter(j => clMap[j.id]))
     setCpCounts(counts)
     setPinFlags(pins)
     setLoading(false)
