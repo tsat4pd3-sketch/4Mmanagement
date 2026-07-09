@@ -923,6 +923,8 @@ export default function Dashboard() {
                 // downtime alarm ของไลน์นี้ + ไลน์ย่อยที่ถูกรวมเข้าการ์ดเดียวกัน
                 const cardNames = [line.name, ...(line._children?.map(c => c.name) || [])];
                 const cardDT = cardNames.flatMap(n => dtAlarmByLine[n] || []);
+                // ป้าย 4M: แดงเมื่อยังมีรายการรออนุมัติ · เหลืองเมื่ออนุมัติครบแล้ว (เป็นแค่ประวัติวันนี้)
+                const cardFMPending = fourMLogs.some(f => cardNames.includes(f.line_name) && f.status !== 'approved' && f.status !== 'rejected');
                 const card = (
                   <motion.div key={line.id} {...stagger(8 + i)} style={{ height: '100%' }}>
                     <div
@@ -953,8 +955,13 @@ export default function Dashboard() {
                           {line.lineAlerts > 0 && (
                             <div onClick={() => setAndonLine({ title: line.name, names: cardNames })}
                               title="คลิกดูรายละเอียด 4M ที่แจ้งเตือน"
-                              style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(231,76,60,0.15)', color: '#e74c3c', border: '1px solid rgba(231,76,60,0.3)', cursor: 'pointer' }}>
-                              🚨 {line.lineAlerts}
+                              style={{
+                                fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, cursor: 'pointer',
+                                background: cardFMPending ? 'rgba(231,76,60,0.15)' : 'rgba(245,158,11,0.15)',
+                                color: cardFMPending ? '#e74c3c' : '#f59e0b',
+                                border: `1px solid ${cardFMPending ? 'rgba(231,76,60,0.3)' : 'rgba(245,158,11,0.35)'}`,
+                              }}>
+                              {cardFMPending ? '🚨' : '🟡'} {line.lineAlerts}
                             </div>
                           )}
                           {cardDT.length > 0 && (
@@ -1013,6 +1020,7 @@ export default function Dashboard() {
                           const cWarn    = cs.lineAlerts > 0 || (cs.rate > 0 && cs.rate < 80);
                           const cColor   = cHealthy ? '#22c55e' : cWarn ? '#f59e0b' : '#555';
                           const csDT     = dtAlarmByLine[cs.name] || [];
+                          const csFMPending = fourMLogs.some(f => f.line_name === cs.name && f.status !== 'approved' && f.status !== 'rejected');
                           return (
                             <div key={cs.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, padding: isWide ? '12px 14px' : '10px 12px' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1025,8 +1033,13 @@ export default function Dashboard() {
                                   {cs.lineAlerts > 0 && (
                                     <div onClick={() => setAndonLine({ title: cs.name, names: [cs.name] })}
                                       title="คลิกดูรายละเอียด 4M ที่แจ้งเตือน"
-                                      style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(231,76,60,0.15)', color: '#e74c3c', border: '1px solid rgba(231,76,60,0.3)', cursor: 'pointer' }}>
-                                      🚨 {cs.lineAlerts}
+                                      style={{
+                                        fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, cursor: 'pointer',
+                                        background: csFMPending ? 'rgba(231,76,60,0.15)' : 'rgba(245,158,11,0.15)',
+                                        color: csFMPending ? '#e74c3c' : '#f59e0b',
+                                        border: `1px solid ${csFMPending ? 'rgba(231,76,60,0.3)' : 'rgba(245,158,11,0.35)'}`,
+                                      }}>
+                                      {csFMPending ? '🚨' : '🟡'} {cs.lineAlerts}
                                     </div>
                                   )}
                                   {csDT.length > 0 && (
@@ -2029,20 +2042,30 @@ export default function Dashboard() {
         const fms = fourMLogs.filter(f => andonLine.names.includes(f.line_name));
         const CAT_ICON = { Man: '👤', Machine: '⚙️', Material: '📦', Method: '📋' };
         const fmtTime = (ts) => ts ? new Date(ts).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '—';
+        // ── ระดับไฟ Andon: แดง = เครื่องหยุดค้างอยู่ · เหลือง = มีรายการรอดำเนินการ · เขียว = อนุมัติครบ/ปกติ ──
+        const hasOngoingDT = dts.some(d => !d.ended_at && d.duration_min == null);
+        const hasPendingFM = fms.some(f => f.status !== 'approved' && f.status !== 'rejected');
+        const level = hasOngoingDT ? 'red' : (hasPendingFM || dts.length > 0) ? 'amber' : 'green';
+        const LV = {
+          red:   { color: '#ef4444', icon: '🔴', label: 'ANDON — RED',   desc: 'มีเครื่องจักรหยุดค้างอยู่ — ต้องดำเนินการทันที' },
+          amber: { color: '#f59e0b', icon: '🟡', label: 'ANDON — YELLOW', desc: 'มีรายการรอดำเนินการ / รออนุมัติ' },
+          green: { color: '#22c55e', icon: '🟢', label: 'ANDON — GREEN', desc: 'รายการทั้งหมดอนุมัติแล้ว · สถานะปกติ' },
+        }[level];
         return (
           <div className="overlay" style={{ zIndex: 1100 }} onClick={() => setAndonLine(null)}>
-            <div onClick={e => e.stopPropagation()} className="dt-alarm-banner" style={{
+            <div onClick={e => e.stopPropagation()} className={level === 'red' ? 'dt-alarm-banner' : undefined} style={{
               background: 'var(--card)', borderRadius: 16, padding: '20px 24px',
               width: 'min(94vw, 720px)', maxHeight: '90vh', overflowY: 'auto',
-              border: '2px solid rgba(239,68,68,0.55)',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.6), 0 0 30px rgba(239,68,68,0.25)',
+              border: `2px solid ${LV.color}88`,
+              boxShadow: `0 20px 60px rgba(0,0,0,0.6), 0 0 30px ${LV.color}40`,
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span className="dt-alarm-icon" style={{ fontSize: 26 }}>🚨</span>
+                  <span className={level === 'red' ? 'dt-alarm-icon' : undefined} style={{ fontSize: 26 }}>{LV.icon}</span>
                   <div>
-                    <div style={{ fontSize: 19, fontWeight: 900, color: '#ef4444', fontFamily: 'var(--font-display)', letterSpacing: '0.04em' }}>ANDON ALARM</div>
+                    <div style={{ fontSize: 19, fontWeight: 900, color: LV.color, fontFamily: 'var(--font-display)', letterSpacing: '0.04em' }}>{LV.label}</div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{andonLine.title}</div>
+                    <div style={{ fontSize: 12, color: LV.color, fontWeight: 700, marginTop: 2 }}>{LV.desc}</div>
                   </div>
                 </div>
                 <button onClick={() => setAndonLine(null)}
@@ -2050,7 +2073,7 @@ export default function Dashboard() {
               </div>
 
               {/* เครื่องจักร Downtime — กระพริบแดง */}
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: hasOngoingDT ? '#ef4444' : 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
                 ⚙️ เครื่องจักรหยุด (Downtime) · {dts.length} รายการ
               </div>
               {dts.length === 0 ? (
@@ -2093,7 +2116,7 @@ export default function Dashboard() {
                       display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
                       padding: '10px 14px', borderRadius: 10,
                       background: 'var(--bg3)', border: '1px solid var(--border2)',
-                      borderLeft: '3px solid #f59e0b',
+                      borderLeft: `3px solid ${f.status === 'approved' ? '#22c55e' : f.status === 'rejected' ? '#ef4444' : '#f59e0b'}`,
                     }}>
                       <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{CAT_ICON[f.category] || '🔧'} {f.category}</span>
                       <span style={{ fontSize: 13, color: 'var(--text2)' }}>📍 {f.line_name}</span>
