@@ -334,6 +334,10 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [equipCategory, setEquipCategory] = useState(editJig?.equipment_category ?? 'production')
 
   const [frequency, setFrequency] = useState('periodic')
+  // Phase 2 — plan type (time | usage | hybrid) + usage-based predictive fields
+  const [planType, setPlanType] = useState('time')
+  const [usageThreshold, setUsageThreshold] = useState('')
+  const [usageLine, setUsageLine] = useState('')
   const [checkpoints, setCheckpoints] = useState([])
   const [layoutType, setLayoutType] = useState(editJig?.layout_type ?? 'image_pin')
   const [imageFile, setImageFile] = useState(null)
@@ -360,6 +364,12 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         group_name: c.group_name ?? '', description: c.description ?? '',
         _imgFile: null, _imgPreview: c.image_path ? getPublicUrl(c.image_path) : null,
       })))
+      const { data: plan } = await supabaseDR.from('pm_plans').select('plan_type, usage_threshold, usage_source_line').eq('checklist_id', cl.id).maybeSingle()
+      if (plan) {
+        setPlanType(plan.plan_type ?? 'time')
+        setUsageThreshold(plan.usage_threshold != null ? String(plan.usage_threshold) : '')
+        setUsageLine(plan.usage_source_line ?? '')
+      }
     })
   }, [editJig, department, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -464,6 +474,19 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
       const cl = await getOrCreateChecklist(jigId, 'mtn', department, userId)
       if (!cl) throw new Error('Failed to create checklist')
       await setChecklistFrequency(cl.id, frequency)
+
+      // Phase 2 — persist the plan type + usage rule (row exists via trigger; upsert on checklist_id)
+      {
+        const uses = planType === 'usage' || planType === 'hybrid'
+        const thr = usageThreshold !== '' && usageThreshold != null ? Number(usageThreshold) : null
+        await supabaseDR.from('pm_plans').upsert({
+          checklist_id: cl.id,
+          plan_type: planType,
+          usage_metric: uses ? 'produced_qty' : null,
+          usage_threshold: uses ? thr : null,
+          usage_source_line: uses ? (usageLine.trim() || lineName || null) : null,
+        }, { onConflict: 'checklist_id' })
+      }
 
       // อัพโหลดรูปอ้างอิงต่อจุด (ที่เพิ่งแนบใหม่) ก่อน insert
       const cpImagePaths = {}
@@ -646,6 +669,35 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             <div style={S.freqBtns}>
               {Object.entries(FREQ_LABEL).map(([v, lbl]) => <button key={v} onClick={() => setFrequency(v)} style={S.freqBtn(frequency === v)}>{lbl}</button>)}
             </div>
+          </div>
+
+          {/* Phase 2 — plan type: time / usage / hybrid */}
+          <div>
+            <label style={S.label}>รูปแบบแผน PM</label>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {[
+                { v: 'time', label: '🗓️ ตามเวลา', hint: 'ครบรอบตามความถี่' },
+                { v: 'usage', label: '📈 ตามการใช้งาน', hint: 'ครบเมื่อผลิตถึงยอด' },
+                { v: 'hybrid', label: '⚖️ ผสม', hint: 'อันไหนถึงก่อนใช้อันนั้น' },
+              ].map(({ v, label, hint }) => (
+                <button key={v} onClick={() => setPlanType(v)} title={hint} style={S.modeBtn(planType === v)}>{label}</button>
+              ))}
+            </div>
+            {(planType === 'usage' || planType === 'hybrid') && (
+              <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div>
+                  <label style={S.label}>ครบเมื่อผลิตถึง (ชิ้น)</label>
+                  <input type="number" min="1" value={usageThreshold} onChange={e => setUsageThreshold(e.target.value)} placeholder="เช่น 50000" />
+                </div>
+                <div>
+                  <label style={S.label}>นับยอดจากไลน์</label>
+                  <input value={usageLine} onChange={e => setUsageLine(e.target.value)} placeholder={lineName || 'เช่น Line-A'} />
+                </div>
+                <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)' }}>
+                  ระบบนับ prod_orders.qty ของไลน์นี้ตั้งแต่ PM ครั้งก่อน เทียบ threshold → คำนวณวันครบ + health score (เว้นไลน์ว่าง = ใช้ไลน์ของอุปกรณ์)
+                </div>
+              </div>
+            )}
           </div>
 
           <div>
