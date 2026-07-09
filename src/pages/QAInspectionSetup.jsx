@@ -58,6 +58,12 @@ const RANK = {
   SC: { label: 'SC', color: '#ef4444' },
 };
 
+/* ชื่อ view มาตรฐานของแบบ 2D orthographic — ให้ทุกคนตั้งชื่อแผ่นสม่ำเสมอ */
+const STANDARD_VIEWS = [
+  'Front View', 'Back View', 'Top View', 'Bottom View',
+  'Side View (LH)', 'Side View (RH)', 'Isometric', 'Section A-A', 'Section B-B', 'Detail',
+];
+
 /* เรียง balloon แบบ natural: A1 < A2 < B < D1 < H2 < H10 < 1 < 2 */
 const balloonSort = (a, b) =>
   String(a.balloon_no || '').localeCompare(String(b.balloon_no || ''), undefined, { numeric: true, sensitivity: 'base' });
@@ -134,6 +140,8 @@ export default function QAInspectionSetup() {
   const [drawings, setDrawings] = useState([]);        // หลายแผ่น/มุมมองต่อ part (qa_part_drawings)
   const [activeDwgId, setActiveDwgId] = useState(null);
   const [prodImg, setProdImg] = useState(null);        // รูป product จาก BOM/Product Master (dr_products.image_url)
+  const [titlePicker, setTitlePicker] = useState(null); // { mode:'add', file } | { mode:'rename', dwg }
+  const [customTitle, setCustomTitle] = useState('');
   const fileRef = useRef(null);                        // input เพิ่ม drawing ใหม่
   const replaceRef = useRef(null);                     // input เปลี่ยนรูปแผ่นที่เปิดอยู่
 
@@ -295,15 +303,19 @@ export default function QAInspectionSetup() {
     return supabase.storage.from('qa-drawings').getPublicUrl(path).data.publicUrl;
   };
 
-  const addDrawing = async (file) => {
+  /* เลือกไฟล์แล้ว → เปิด picker ตั้งชื่อ view มาตรฐานก่อน ค่อยอัพโหลดจริง */
+  const addDrawing = (file) => {
     if (!sel || !file) return;
-    const title = window.prompt('ชื่อแผ่น/มุมมอง (เช่น View A, Section B-B, มุมบน)', `Drawing ${drawings.length + 1}`);
-    if (title === null) return;
+    setTitlePicker({ mode: 'add', file });
+    setCustomTitle('');
+  };
+
+  const doAddDrawing = async (file, title) => {
     setUploading(true);
     const url = await uploadFile(file);
     if (!url) { setUploading(false); return; }
     const { data, error } = await supabase.from('qa_part_drawings').insert({
-      part_id: sel.id, title: title.trim() || `Drawing ${drawings.length + 1}`,
+      part_id: sel.id, title: title || `Drawing ${drawings.length + 1}`,
       drawing_url: url, sort: drawings.length,
     }).select().single();
     setUploading(false);
@@ -326,12 +338,25 @@ export default function QAInspectionSetup() {
     loadDrawings(sel.id);
   };
 
-  const renameDrawing = async (dwg) => {
-    const title = window.prompt('เปลี่ยนชื่อแผ่น/มุมมอง', dwg.title);
-    if (title === null || !title.trim()) return;
-    const { error } = await supabase.from('qa_part_drawings').update({ title: title.trim() }).eq('id', dwg.id);
+  const renameDrawing = (dwg) => {
+    setTitlePicker({ mode: 'rename', dwg });
+    setCustomTitle(dwg.title);
+  };
+
+  const doRenameDrawing = async (dwg, title) => {
+    const { error } = await supabase.from('qa_part_drawings').update({ title }).eq('id', dwg.id);
     if (error) { toast.error(error.message); return; }
     loadDrawings(sel.id);
+  };
+
+  /* ยืนยันชื่อจาก picker (ทั้งเพิ่มใหม่และเปลี่ยนชื่อ) */
+  const confirmTitle = (title) => {
+    const t = (title || '').trim();
+    if (!t) { toast.error('เลือก view หรือพิมพ์ชื่อแผ่นก่อน'); return; }
+    const p = titlePicker;
+    setTitlePicker(null);
+    if (p.mode === 'add') doAddDrawing(p.file, t);
+    else doRenameDrawing(p.dwg, t);
   };
 
   const deleteDrawing = async (dwg) => {
@@ -660,6 +685,39 @@ export default function QAInspectionSetup() {
           </div>
         )}
       </div>
+
+      {/* ── ตั้งชื่อแผ่น/มุมมอง (เพิ่มใหม่ + เปลี่ยนชื่อ) — เลือกจาก view มาตรฐานหรือพิมพ์เอง ── */}
+      {titlePicker && (
+        <Modal title={titlePicker.mode === 'add' ? '🖼 ตั้งชื่อแผ่น/มุมมองของ drawing ใหม่' : `✏️ เปลี่ยนชื่อแผ่น "${titlePicker.dwg.title}"`}
+          onClose={() => setTitlePicker(null)} width={480}>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700, marginBottom: 8 }}>เลือก view มาตรฐาน</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 14 }}>
+            {STANDARD_VIEWS.map(v => {
+              const used = drawings.some(d => d.title === v && d.id !== titlePicker.dwg?.id);
+              return (
+                <button key={v} onClick={() => confirmTitle(v)} disabled={used}
+                  title={used ? 'มีแผ่นชื่อนี้อยู่แล้ว' : ''}
+                  style={{
+                    ...ghostBtn, padding: '9px 10px', fontSize: 12.5, textAlign: 'center',
+                    opacity: used ? 0.4 : 1, cursor: used ? 'not-allowed' : 'pointer',
+                  }}>
+                  {v}{used ? ' ✓' : ''}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700, marginBottom: 6 }}>หรือพิมพ์ชื่อเอง</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input style={{ ...inputSt, flex: 1 }} placeholder="เช่น Section C-C, มุมเชื่อม Bracket" value={customTitle}
+              onChange={e => setCustomTitle(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') confirmTitle(customTitle); }} autoFocus />
+            <button style={btnSt()} onClick={() => confirmTitle(customTitle)}>ตกลง</button>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+            <button style={ghostBtn} onClick={() => setTitlePicker(null)}>ยกเลิก</button>
+          </div>
+        </Modal>
+      )}
 
       {/* ── Part modal ── */}
       {partModal && (
