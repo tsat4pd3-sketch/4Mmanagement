@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'rea
 import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { isAlarmingDT, dtElapsedMin } from '../utils/downtimeAlarm';
+import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -79,15 +80,22 @@ function ThumbMap({ imageUrl, alt, markers }) {
                   🚨 {m.label}
                 </div>
               ) : (
-                <div style={{
-                  width: 26, height: 26, borderRadius: '50%',
-                  border: `2px solid ${m.color}`, boxShadow: `0 0 6px ${m.color}88`,
-                  overflow: 'hidden', background: '#1a1a1a',
-                }}>
-                  {m.img
-                    ? <img src={m.img} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: m.color }}>{m.initial}</div>
-                  }
+                <div style={{ position: 'relative' }} title={m.personAlarm?.label}>
+                  <div
+                    className={m.personAlarm ? (m.personAlarm.kind === 'red' ? 'person-alarm-red' : 'person-alarm-amber') : undefined}
+                    style={{
+                      width: 26, height: 26, borderRadius: '50%',
+                      border: `2px solid ${m.color}`, boxShadow: `0 0 6px ${m.color}88`,
+                      overflow: 'hidden', background: '#1a1a1a',
+                    }}>
+                    {m.img
+                      ? <img src={m.img} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: m.color }}>{m.initial}</div>
+                    }
+                  </div>
+                  {m.personAlarm && (
+                    <div style={{ position: 'absolute', top: -5, right: -5, fontSize: 9, lineHeight: 1 }}>{m.personAlarm.icon}</div>
+                  )}
                 </div>
               )}
             </div>
@@ -479,6 +487,9 @@ export default function Dashboard() {
         is_present:      att ? att.is_present      : null,
         has_ot:          att?.has_ot          ?? false,
         has_extended_ot: att?.has_extended_ot ?? false,
+        has_helmet:      att?.has_helmet      ?? true,
+        has_boots:       att?.has_boots       ?? true,
+        has_gloves:      att?.has_gloves      ?? true,
         assignedShift:   att?.assignedShift   ?? null,
         fitScore:        computeFit(hp.employee_id, hp.station_id),
       };
@@ -496,6 +507,9 @@ export default function Dashboard() {
         is_present:      l.is_present,
         has_ot:          l.has_ot          ?? false,
         has_extended_ot: l.has_extended_ot ?? false,
+        has_helmet:      l.has_helmet      ?? true,
+        has_boots:       l.has_boots       ?? true,
+        has_gloves:      l.has_gloves      ?? true,
         assignedShift:   l.assignedShift   ?? null,
         fitScore:        computeFit(l.employees.id, l.assigned_line),
       };
@@ -573,6 +587,17 @@ export default function Dashboard() {
     dtAlarmList.forEach(d => { (m[d.line_name] ||= []).push(d); });
     return m;
   }, [dtAlarmList]);
+
+  // ── Person alarm — คนกระพริบบนผัง: แดง = PPE ไม่ครบ, เหลือง = ย้ายจุดแล้ว 4M ยังรออนุมัติ ──
+  const man4mPendingFor = useMemo(() => buildMan4mPendingMatcher(fourMLogs), [fourMLogs]);
+  const personAlarmOf = useCallback((emp) => {
+    if (!emp || emp.is_present !== true) return null;
+    const ppeMiss = ppeMissingList(emp);
+    if (ppeMiss.length) return { kind: 'red', icon: '⛑', label: `PPE ไม่ครบ (${ppeMiss.join(', ')})` };
+    const pend = man4mPendingFor(emp.name);
+    if (pend) return { kind: 'amber', icon: '⏳', label: `รออนุมัติ 4M — ${pend.description}` };
+    return null;
+  }, [man4mPendingFor]);
 
   // ไลน์ย่อย (เช่น HDF1, LASER123 ใต้ HYDROFORM) ที่ไม่มีรูปผังของตัวเอง — จริงๆ อยู่พื้นที่เดียวกับไลน์หลัก
   // ให้รวมจุดงาน/คนของมันเข้าไปในการ์ดของไลน์หลักแทนที่จะแยกการ์ด (ซึ่งจะไม่มีรูปให้แสดงอยู่แล้ว)
@@ -1801,6 +1826,7 @@ export default function Dashboard() {
                               color: fitLv ? fitLv.color : '#aaa',
                               img: emp.image_url,
                               initial: (emp.name || '?')[0],
+                              personAlarm: personAlarmOf(emp),
                             };
                           }).filter(Boolean),
                           // จุดเครื่องจักรที่กำลัง Downtime — กระพริบแดงบนผังย่อ
@@ -1986,22 +2012,26 @@ export default function Dashboard() {
                         const fitLv = getFitLevel(fit);
                         const color = fitLv ? fitLv.color : '#aaa';
                         const shortName = (emp.name || '').split(' ')[0];
+                        const pAlarm = personAlarmOf(emp);
                         return (
                           <div key={ws.id}
                             onMouseEnter={e => { e.currentTarget.style.zIndex = 50; }}
                             onMouseLeave={e => { e.currentTarget.style.zIndex = 2; }}
+                            title={pAlarm?.label}
                             style={{
                               position: 'absolute', top: `${top + oy}%`, left: `${left + ox}%`,
                               transform: 'translate(-50%, -50%)',
-                              zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0,
+                              zIndex: pAlarm ? 4 : 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0,
                               transition: 'z-index 0s',
                             }}>
-                            <div style={{
-                              width: 'clamp(48px, 6vw, 84px)', height: 'clamp(48px, 6vw, 84px)', borderRadius: '50%',
-                              border: `clamp(3px, 0.4vw, 5px) solid ${color}`,
-                              boxShadow: `0 0 10px ${color}99`,
-                              overflow: 'hidden', background: '#1a1a1a',
-                            }}>
+                            <div
+                              className={pAlarm ? (pAlarm.kind === 'red' ? 'person-alarm-red' : 'person-alarm-amber') : undefined}
+                              style={{
+                                width: 'clamp(48px, 6vw, 84px)', height: 'clamp(48px, 6vw, 84px)', borderRadius: '50%',
+                                border: `clamp(3px, 0.4vw, 5px) solid ${color}`,
+                                boxShadow: `0 0 10px ${color}99`,
+                                overflow: 'hidden', background: '#1a1a1a',
+                              }}>
                               {emp.image_url
                                 ? <img src={emp.image_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                 : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'clamp(14px, 1.8vw, 26px)', fontWeight: 800, color }}>{(emp.name || '?')[0]}</div>
@@ -2020,6 +2050,16 @@ export default function Dashboard() {
                             )}
                             {emp.has_extended_ot && (
                               <div style={{ fontSize: 'clamp(9px, 1.1vw, 15px)', fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>OT+23</div>
+                            )}
+                            {pAlarm && (
+                              <div style={{
+                                fontSize: 'clamp(9px, 1.1vw, 14px)', fontWeight: 800, whiteSpace: 'nowrap',
+                                color: pAlarm.kind === 'red' ? '#fca5a5' : '#fde68a',
+                                background: pAlarm.kind === 'red' ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)',
+                                padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 2,
+                              }}>
+                                {pAlarm.icon} {pAlarm.kind === 'red' ? 'PPE ไม่ครบ' : 'รอ 4M'}
+                              </div>
                             )}
                           </div>
                         );

@@ -7,6 +7,7 @@ import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } fro
 import { hasPermission } from '../utils/permissions';
 import { getLineFamilyNames, getLineFamilyIds, getAncestorNames, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
+import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
   return new Promise((resolve) => {
@@ -145,6 +146,7 @@ export default function Management() {
   const isSupervisor = role === 'supervisor';
 
   const [workers,        setWorkers]        = useState([]);
+  const [ppeAlerts,      setPpeAlerts]      = useState([]); // เช็คชื่อแล้วแต่ PPE ไม่ครบ (ไม่อยู่ใน workers)
   const [fourMLogs,      setFourMLogs]      = useState([]);
   const [dynamicStations,setDynamicStations]= useState([]);
   const [wipPoints,      setWipPoints]      = useState([]);
@@ -382,6 +384,13 @@ export default function Management() {
       .from('daily_production_logs')
       .select('id, assigned_line, employee_id, employees(id, employee_id_code, name, image_url, team, section, line_id, employee_skills(skill_name, score))')
       .eq('work_date', today).eq('shift', getCurrentShift()).eq('is_present', true).eq('has_helmet', true).eq('has_boots', true).eq('has_gloves', true);
+    // คนที่เช็คชื่อแล้วแต่ PPE ไม่ครบ — ไม่เข้า pool (ห้ามจัดลงสถานี) แต่ต้องกระพริบเตือนบนหัวผัง
+    const { data: ppeData } = await supabase
+      .from('daily_production_logs')
+      .select('id, employee_id, has_helmet, has_boots, has_gloves, employees(id, name, image_url, team, line_id)')
+      .eq('work_date', today).eq('shift', getCurrentShift()).eq('is_present', true)
+      .or('has_helmet.eq.false,has_boots.eq.false,has_gloves.eq.false');
+    setPpeAlerts(ppeData || []);
     const { data: mData } = await supabase.from('four_m_logs').select('*').eq('work_date', today);
     const { data: homeData } = await supabase.from('employee_home_positions').select('employee_id, station_id');
     const { data: stData } = await supabase.from('operator_special_tasks').select('*').eq('work_date', today);
@@ -774,6 +783,8 @@ export default function Management() {
   /* ── Station worker ── */
   const StationWorker = ({ worker, fit, stationName }) => {
     const fc = fitColor(fit.score);
+    // ย้ายจุด/ข้ามไลน์แล้ว 4M Man ยังรออนุมัติ → วงแหวนเหลืองกระพริบจนกว่าจะอนุมัติ
+    const pend4m = man4mPendingFor(worker.employees?.name);
     return (
       <div
         draggable={!isMobile}
@@ -785,11 +796,13 @@ export default function Management() {
       >
         {/* photo only — score & name now live exclusively in the hover popup card so the
             small on-map circle isn't cropped/obscured by an overlaid number */}
-        <div style={{ position: 'relative', width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, flexShrink: 0 }}>
+        <div style={{ position: 'relative', width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, flexShrink: 0 }}
+          title={pend4m ? `⏳ รออนุมัติ 4M — ${pend4m.description}` : undefined}>
           {worker.employees?.image_url
-            ? <img src={worker.employees.image_url} style={{ width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `2px solid ${fc}`, boxShadow: `0 0 8px ${fc}88`, display: 'block' }} />
-            : <div style={{ width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, borderRadius: '50%', background: `${fc}22`, border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>👤</div>
+            ? <img src={worker.employees.image_url} className={pend4m ? 'person-alarm-amber' : undefined} style={{ width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `2px solid ${fc}`, boxShadow: `0 0 8px ${fc}88`, display: 'block' }} />
+            : <div className={pend4m ? 'person-alarm-amber' : undefined} style={{ width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, borderRadius: '50%', background: `${fc}22`, border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>👤</div>
           }
+          {pend4m && <span style={{ position: 'absolute', top: -6, right: -6, fontSize: 10, lineHeight: 1 }}>⏳</span>}
         </div>
       </div>
     );
@@ -803,6 +816,13 @@ export default function Management() {
       pendingDocByLine[m.line_name].push(m);
     }
   }
+
+  /* ── Person alarm ── */
+  // 4M Man ที่ยังรออนุมัติ → StationWorker วงแหวนเหลืองกระพริบ (จับคู่ด้วยชื่อใน description)
+  const man4mPendingFor = buildMan4mPendingMatcher(fourMLogs);
+  // PPE ไม่ครบ เฉพาะครอบครัวไลน์ที่กำลังดู — แถบแดงกระพริบเหนือผัง
+  const viewLineFamilyIds = selectedLine ? getLineFamilyIds(allLines, selectedLine) : new Set();
+  const ppeAlertsInView = ppeAlerts.filter(p => p.employees?.line_id != null && viewLineFamilyIds.has(p.employees.line_id));
 
   /* ── Layout ── */
   const poolW = isMobile ? '100%' : panelCollapsed ? 44 : isUltra ? 280 : isWide ? 248 : 220;
@@ -1556,6 +1576,24 @@ export default function Management() {
             </div>
           );
         })()}
+
+        {/* PPE alarm — เช็คชื่อแล้วแต่ PPE ไม่ครบ: ไม่เข้า pool จึงไม่โผล่บนผัง ต้องมีแถบกระพริบเตือนแทน */}
+        {ppeAlertsInView.length > 0 && (
+          <div className="dt-alarm-banner" style={{ border: '1px solid rgba(239,68,68,0.45)', borderRadius: 10, padding: '8px 12px', marginBottom: 8, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: '#ef4444' }}>
+              <span className="dt-alarm-icon">⛑</span> PPE ไม่ครบ {ppeAlertsInView.length} คน — ห้ามเข้าไลน์จนกว่าจะครบ
+            </span>
+            {ppeAlertsInView.map(p => (
+              <span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px', borderRadius: 6, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(239,68,68,0.4)' }}>
+                {p.employees?.image_url
+                  ? <img src={p.employees.image_url} className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid #ef4444' }} />
+                  : <span className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid #ef4444', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>👤</span>}
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>{p.employees?.name?.split(' ')[0] || '?'}</span>
+                <span style={{ fontSize: 10, color: '#fca5a5' }}>ขาด: {ppeMissingList(p).join(', ')}</span>
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Canvas */}
         <div style={{
