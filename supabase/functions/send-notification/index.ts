@@ -26,11 +26,11 @@ async function getBotToken(): Promise<string | undefined> {
    Known-but-disabled → skip Telegram. Rooms with no chat_id / inactive are
    dropped; if that leaves no valid room, fall back to legacy TELEGRAM_CHAT_ID
    so existing notifications keep working until each room is configured. */
-type Route = { enabled: boolean; chats: string[] };
+type Route = { enabled: boolean; chats: string[]; template?: string | null };
 async function loadRoutes(): Promise<Record<string, Route>> {
   try {
     const [{ data: rules }, { data: channels }] = await Promise.all([
-      supabase.from('notification_rules').select('event_key, is_enabled, channel_ids, channel_id'),
+      supabase.from('notification_rules').select('event_key, is_enabled, channel_ids, channel_id, template'),
       supabase.from('telegram_channels').select('id, chat_id, is_active'),
     ]);
     const chatById = new Map<string, string>();
@@ -43,10 +43,31 @@ async function loadRoutes(): Promise<Record<string, Route>> {
         ? ((r as Record<string, unknown>).channel_ids as string[])
         : (r as { channel_id?: string }).channel_id ? [(r as { channel_id: string }).channel_id] : [];
       const chats = [...new Set(ids.map((id) => chatById.get(String(id))).filter((v): v is string => !!v))];
-      map[r.event_key as string] = { enabled: r.is_enabled as boolean, chats };
+      const template = (r as { template?: string | null }).template;
+      map[r.event_key as string] = { enabled: r.is_enabled as boolean, chats, template };
     }
     return map;
   } catch { return {}; }
+}
+
+/* Admin-editable message templates. A rule with a non-empty `template` renders
+   it against that event's {placeholders}; NULL/empty keeps the rich built-in
+   message below (so nothing changes until an admin opts in). Unknown {tokens}
+   render empty. */
+function ruleTemplate(routes: Record<string, Route>, key: string): string | null {
+  const t = routes[key]?.template;
+  return t && String(t).trim() ? String(t) : null;
+}
+function renderTemplate(template: string, vars: Record<string, unknown>): string {
+  return template.replace(/\{(\w+)\}/g, (_m, k) => {
+    const v = vars[k as string];
+    return v == null ? '' : String(v);
+  });
+}
+// choose rendered template when set, else the built-in message
+function pick(routes: Record<string, Route>, key: string, vars: Record<string, unknown>, builtin: string): string {
+  const t = ruleTemplate(routes, key);
+  return t ? renderTemplate(t, vars) : builtin;
 }
 // Returns null when the event is explicitly disabled; otherwise the chat(s) to
 // use — the configured rooms, or the legacy fallback group when none resolve.
@@ -166,7 +187,7 @@ Deno.serve(async (req) => {
       const chat = resolveEvent(routes, 'checkin_summary');
       if (chat === null) return json({ ok: true, skipped: true });
       const otNote = s.has_ot_night ? `\n⏰ เปิด OT กะดึก (${s.start_time} น.)` : `\n🕗 เวลาเริ่ม: ${s.start_time} น.`;
-      const message = [
+      const builtin = [
         `✅ <b>เช็คชื่อเสร็จแล้ว</b>`, ``,
         `🏭 ไลน์: <b>${s.line_name}</b> · ${s.shift_label}`,
         `📅 วันที่: ${s.work_date}${otNote}`, ``,
@@ -174,6 +195,11 @@ Deno.serve(async (req) => {
         `⏰ OT: ${s.ot}`, `🏖️ ลา: ${s.leave}`, `❌ ขาด: ${s.absent}`, ``,
         `✍️ ตรวจโดย: ${s.checked_by}`, `— 4M Management System`,
       ].join('\n');
+      const message = pick(routes, 'checkin_summary', {
+        line_name: s.line_name, shift_label: s.shift_label, work_date: s.work_date,
+        present: s.present, total: s.total, ot: s.ot, leave: s.leave, absent: s.absent,
+        checked_by: s.checked_by, start_time: s.start_time,
+      }, builtin);
       await sendTelegram(message, chat).catch(console.error);
       return json({ ok: true });
     }
@@ -199,7 +225,13 @@ Deno.serve(async (req) => {
       if (d.mat_no)              lines.push(`🔩 ชิ้นงาน: ${d.mat_no}`);
       if (d.description)         lines.push(`📝 รายละเอียด: ${d.description}`);
       lines.push(``, `👤 ผู้แจ้ง: ${d.reported_by || '-'}`, `— Production System`);
-      await sendTelegram(lines.join('\n'), chat).catch(console.error);
+      const message = pick(routes, 'downtime', {
+        machine_no: d.machine_no || '-', machine_name: d.machine_name || '', line_name: d.line_name,
+        shift_label: shiftLabel, work_date: d.work_date, type_name: d.type_name || '-',
+        duration_min: d.duration_min ?? '', mat_no: d.mat_no || '', description: d.description || '',
+        reported_by: d.reported_by || '-', start_time: d.start_time || '', end_time: d.end_time || '',
+      }, lines.join('\n'));
+      await sendTelegram(message, chat).catch(console.error);
       return json({ ok: true });
     }
 
@@ -222,7 +254,13 @@ Deno.serve(async (req) => {
       if (d.mat_no)               lines.push(`🔩 ชิ้นงาน: ${d.mat_no}`);
       if (d.description)          lines.push(`📝 รายละเอียด: ${d.description}`);
       lines.push(``, `👤 ผู้ปิดรายการ: ${d.reported_by || '-'}`, `— Production System`);
-      await sendTelegram(lines.join('\n'), chat).catch(console.error);
+      const message = pick(routes, 'downtime_recovered', {
+        machine_no: d.machine_no || '-', machine_name: d.machine_name || '', line_name: d.line_name,
+        shift_label: shiftLabel, work_date: d.work_date, type_name: d.type_name || '-',
+        duration_min: d.duration_min ?? '', mat_no: d.mat_no || '', description: d.description || '',
+        reported_by: d.reported_by || '-', start_time: d.start_time || '', end_time: d.end_time || '',
+      }, lines.join('\n'));
+      await sendTelegram(message, chat).catch(console.error);
       return json({ ok: true });
     }
 
@@ -282,7 +320,16 @@ Deno.serve(async (req) => {
         lines.push(``, `📊 OEE: <b>${s.oee}%</b>${apq}`);
       }
       lines.push(`${m.extra}`, ``, `👤 ผู้ดำเนินการ: ${s.actor}`, `— Production System`);
-      await sendTelegram(lines.join('\n'), chat).catch(console.error);
+      const message = pick(routes, 'prod_close', {
+        title: m.title, line_name: s.line_name, shift_label: shiftLabel, work_date: s.work_date,
+        total_qty: s.total_qty ?? '', qty_ok: s.qty_ok ?? '', qty_ng: s.qty_ng ?? 0,
+        qty_suspect: s.qty_suspect ?? '', qty_repair: s.qty_repair ?? '',
+        oee: s.oee ?? '', oee_a: s.oee_a ?? '', oee_p: s.oee_p ?? '', oee_q: s.oee_q ?? '',
+        start_time: s.start_time || '', end_time: s.end_time || '', shift_min: s.shift_min ?? '',
+        dt_count: s.dt_count ?? 0, dt_total_min: s.dt_total_min ?? 0, actor: s.actor,
+        requested_by: s.requested_by || '-',
+      }, lines.join('\n'));
+      await sendTelegram(message, chat).catch(console.error);
       return json({ ok: true });
     }
 
@@ -299,12 +346,19 @@ Deno.serve(async (req) => {
       const lines = [head, ``, `🏭 ไลน์: <b>${p.line_name}</b>${p.shift_label ? ` · ${p.shift_label}` : ''}`, `📅 วันที่: ${p.work_date}`];
       if (p.checked != null && p.total != null) lines.push(`✅ ตรวจแล้ว: <b>${p.checked}/${p.total}</b> เครื่อง`);
       if (Array.isArray(p.missing) && p.missing.length) lines.push(`⏳ ยังไม่ตรวจ: ${p.missing.join(', ')}`);
-      if (Array.isArray(p.ng) && p.ng.length) {
+      const ngList = Array.isArray(p.ng) ? p.ng : [];
+      if (ngList.length) {
         lines.push(``, `⚠️ ผิดปกติ:`);
-        for (const n of p.ng.slice(0, 10)) lines.push(`  • ${n.machine ? `${n.machine} — ` : ''}${n.name}${n.topics?.length ? `: ${n.topics.join(', ')}` : ''}`);
+        for (const n of ngList.slice(0, 10)) lines.push(`  • ${n.machine ? `${n.machine} — ` : ''}${n.name}${n.topics?.length ? `: ${n.topics.join(', ')}` : ''}`);
       }
       lines.push(``, `— Smart Maintenance`);
-      await sendTelegram(lines.join('\n'), chat).catch(console.error);
+      const ngText = ngList.map((n: Record<string, unknown>) => `${n.machine ? `${n.machine} — ` : ''}${n.name}${Array.isArray(n.topics) && n.topics.length ? `: ${(n.topics as string[]).join(', ')}` : ''}`).join('\n');
+      const message = pick(routes, key, {
+        line_name: p.line_name, shift_label: p.shift_label || '', work_date: p.work_date,
+        checked: p.checked ?? '', total: p.total ?? '',
+        missing: Array.isArray(p.missing) ? p.missing.join(', ') : '', ng: ngText,
+      }, lines.join('\n'));
+      await sendTelegram(message, chat).catch(console.error);
       return json({ ok: true });
     }
 
@@ -351,7 +405,12 @@ Deno.serve(async (req) => {
 
     // Telegram only if this event isn't disabled in the rules
     if (chat !== null) {
-      const message = await buildTelegramMessage(log, title);
+      const builtin = await buildTelegramMessage(log, title);
+      const message = pick(routes, 'four_m_status', {
+        title, work_date: log.work_date, line_name: log.line_name, category: log.category,
+        description: log.description, status_label: statusLabel(status),
+        creator: await getFullName(log.created_by as string), reject_reason: log.reject_reason || '',
+      }, builtin);
       await sendTelegram(message, chat).catch(console.error);
       if (status === 'pending_qa' && log.request_image_url) {
         await sendTelegramPhoto(

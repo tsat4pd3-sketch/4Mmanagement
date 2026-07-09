@@ -13,6 +13,42 @@ const CATEGORY_LABEL = {
   maintenance: '🔧 Maintenance', pull: '🎴 Pull System', stock: '📦 Stock',
 }
 
+// Starting point shown when an admin first customizes a message. NULL template
+// in the DB = the edge function keeps its rich built-in message.
+const DEFAULT_TEMPLATES = {
+  checkin_summary: '✅ เช็คชื่อเสร็จแล้ว\n🏭 ไลน์: {line_name} · {shift_label}\n📅 {work_date}\n👥 เข้างาน: {present}/{total} · OT {ot} · ลา {leave} · ขาด {absent}\n✍️ ตรวจโดย {checked_by}',
+  downtime: '🚨 เครื่องจักร DOWNTIME\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n🛑 {type_name}\n⏱ {duration_min} นาที\n🔩 {mat_no}\n📝 {description}\n👤 {reported_by}',
+  downtime_recovered: '✅ เครื่องกลับมารันได้แล้ว\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n⏱ หยุดรวม {duration_min} นาที\n👤 {reported_by}',
+  prod_close: '{title}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n📦 ผลิตรวม {total_qty} · ✅ {qty_ok} ❌ NG {qty_ng}\n📊 OEE {oee}%\n👤 {actor}',
+  four_m_status: '🔔 {title}\n📅 {work_date} · 🏭 {line_name}\n📋 {category}\n📝 {description}\n🔖 {status_label}\n👤 {creator}',
+  pm_daily_green: '🟢 ตรวจ Daily PM เรียบร้อย ทุกอย่างปกติ\n🏭 {line_name} · {shift_label}\n📅 {work_date}\n✅ ตรวจแล้ว {checked}/{total} เครื่อง',
+  pm_daily_orange: '🟠 ยังตรวจ Daily PM ไม่ครบ (เกินเวลา)\n🏭 {line_name} · {shift_label}\n📅 {work_date}\n✅ ตรวจแล้ว {checked}/{total} · ⏳ ขาด: {missing}',
+  pm_daily_red: '🔴 Daily PM พบความผิดปกติ\n🏭 {line_name} · {shift_label}\n📅 {work_date}\n⚠️ {ng}',
+}
+const COMMON_PH = ['line_name', 'shift_label', 'work_date']
+const PLACEHOLDERS = {
+  checkin_summary: [...COMMON_PH, 'present', 'total', 'ot', 'leave', 'absent', 'checked_by', 'start_time'],
+  downtime: [...COMMON_PH, 'machine_no', 'machine_name', 'type_name', 'duration_min', 'mat_no', 'description', 'reported_by', 'start_time', 'end_time'],
+  downtime_recovered: [...COMMON_PH, 'machine_no', 'machine_name', 'type_name', 'duration_min', 'mat_no', 'description', 'reported_by', 'start_time', 'end_time'],
+  prod_close: [...COMMON_PH, 'title', 'total_qty', 'qty_ok', 'qty_ng', 'qty_suspect', 'qty_repair', 'oee', 'oee_a', 'oee_p', 'oee_q', 'start_time', 'end_time', 'shift_min', 'dt_count', 'dt_total_min', 'actor', 'requested_by'],
+  four_m_status: [...COMMON_PH, 'title', 'category', 'description', 'status_label', 'creator', 'reject_reason'],
+  pm_daily_green: [...COMMON_PH, 'checked', 'total'],
+  pm_daily_orange: [...COMMON_PH, 'checked', 'total', 'missing'],
+  pm_daily_red: [...COMMON_PH, 'checked', 'total', 'ng'],
+}
+// sample values for the live preview only (not sent anywhere)
+const SAMPLE = {
+  line_name: 'HDF1', shift_label: 'กะเช้า', work_date: '2026-07-09', present: 18, total: 20,
+  ot: 3, leave: 1, absent: 1, checked_by: 'สมชาย', start_time: '08:00', end_time: '08:25',
+  machine_no: 'M-01', machine_name: '(Press 500T)', type_name: 'ไฟดับ', duration_min: 25,
+  mat_no: 'PN-123', description: 'มอเตอร์ร้อนผิดปกติ', reported_by: 'สมหญิง',
+  title: '✅ ปิดกะสำเร็จ', total_qty: 1200, qty_ok: 1180, qty_ng: 20, qty_suspect: 0, qty_repair: 5,
+  oee: 87, oee_a: 95, oee_p: 92, oee_q: 98, shift_min: 600, dt_count: 2, dt_total_min: 40,
+  actor: 'สมชาย', requested_by: 'สมศักดิ์', category: 'Man', status_label: 'Approved ✅',
+  creator: 'สมปอง', reject_reason: '-', checked: 8, missing: 'M-03, M-05', ng: 'M-02 — Press: น็อตหลวม',
+}
+const renderPreview = (t) => String(t ?? '').replace(/\{(\w+)\}/g, (_m, k) => (SAMPLE[k] != null ? String(SAMPLE[k]) : ''))
+
 export default function NotificationConfig() {
   const [rooms, setRooms] = useState([])
   const [rules, setRules] = useState([])
@@ -21,6 +57,8 @@ export default function NotificationConfig() {
   const [newRoom, setNewRoom] = useState({ name: '', chat_id: '' })
   const [tokenStatus, setTokenStatus] = useState({ is_set: false, last4: null })
   const [tokenInput, setTokenInput] = useState('')
+  const [editingTpl, setEditingTpl] = useState(null) // event_key being edited
+  const [tplDraft, setTplDraft] = useState('')
 
   const load = async () => {
     setLoading(true)
@@ -119,6 +157,24 @@ export default function NotificationConfig() {
     const next = cur.includes(roomId) ? cur.filter(id => id !== roomId) : [...cur, roomId]
     updateRule(rule.event_key, { channel_ids: next })
   }
+
+  /* ── template editor ── */
+  const startEditTpl = (rule) => {
+    setEditingTpl(rule.event_key)
+    setTplDraft(rule.template ?? DEFAULT_TEMPLATES[rule.event_key] ?? '')
+  }
+  const saveTpl = async (rule) => {
+    const val = tplDraft.trim() ? tplDraft : null
+    await updateRule(rule.event_key, { template: val })
+    setEditingTpl(null)
+    toast.success(val ? 'บันทึกข้อความแล้ว' : 'กลับไปใช้ข้อความมาตรฐานของระบบ')
+  }
+  const resetTpl = async (rule) => {
+    await updateRule(rule.event_key, { template: null })
+    setEditingTpl(null)
+    toast.info('กลับไปใช้ข้อความมาตรฐานของระบบ')
+  }
+  const insertPh = (ph) => setTplDraft(d => `${d}${d && !d.endsWith(' ') && !d.endsWith('\n') ? ' ' : ''}{${ph}}`)
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>
 
@@ -221,6 +277,53 @@ export default function NotificationConfig() {
                       ⚠️ ห้องที่เลือกยังไม่ใส่ chat_id → ตอนนี้จะไปเข้า<b>กลุ่มเดิม</b> ไม่ใช่ห้องนี้ (ไปเติม chat_id ที่ส่วน “ห้องแจ้งเตือน” ด้านบน)
                     </div>
                   )}
+
+                  {/* ── message template editor ── */}
+                  <div style={{ flexBasis: '100%', borderTop: '1px dashed var(--border)', paddingTop: 8, marginTop: 2 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <button onClick={() => editingTpl === rule.event_key ? setEditingTpl(null) : startEditTpl(rule)}
+                        style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>
+                        ✏️ {editingTpl === rule.event_key ? 'ปิดตัวแก้ข้อความ' : 'ปรับข้อความ'}
+                      </button>
+                      <span style={{ fontSize: 11, color: rule.template ? 'var(--accent)' : 'var(--muted)' }}>
+                        {rule.template ? '● ใช้ข้อความที่กำหนดเอง' : '○ ใช้ข้อความมาตรฐานของระบบ'}
+                      </span>
+                    </div>
+
+                    {editingTpl === rule.event_key && (
+                      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                          คลิกตัวแปรเพื่อแทรก · รองรับ HTML tag ของ Telegram: <code>&lt;b&gt;ตัวหนา&lt;/b&gt;</code>
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                          {(PLACEHOLDERS[rule.event_key] ?? []).map(ph => (
+                            <button key={ph} onClick={() => insertPh(ph)}
+                              style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 6, padding: '2px 7px', fontSize: 11, fontFamily: 'monospace', cursor: 'pointer' }}>
+                              {`{${ph}}`}
+                            </button>
+                          ))}
+                        </div>
+                        <textarea value={tplDraft} onChange={e => setTplDraft(e.target.value)} rows={6}
+                          placeholder="พิมพ์ข้อความ… เว้นว่าง = กลับไปใช้ข้อความมาตรฐาน"
+                          style={{ ...inputStyle, fontFamily: 'monospace', lineHeight: 1.5, resize: 'vertical' }} />
+                        <div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ตัวอย่าง (ข้อมูลสมมติ):</div>
+                          <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, fontSize: 12, color: 'var(--text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                            dangerouslySetInnerHTML={{ __html: renderPreview(tplDraft) || '<span style="color:var(--muted)">— ว่าง (จะใช้ข้อความมาตรฐาน) —</span>' }} />
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button onClick={() => saveTpl(rule)}
+                            style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>บันทึกข้อความ</button>
+                          <button onClick={() => setTplDraft(DEFAULT_TEMPLATES[rule.event_key] ?? '')}
+                            style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 12px', fontSize: 12, cursor: 'pointer' }}>โหลดแบบเริ่มต้น</button>
+                          <button onClick={() => resetTpl(rule)}
+                            style={{ background: 'transparent', color: '#e05c4a', border: '1px solid rgba(224,92,74,0.4)', borderRadius: 8, padding: '7px 12px', fontSize: 12, cursor: 'pointer' }}>ใช้ข้อความมาตรฐาน</button>
+                          <button onClick={() => setEditingTpl(null)}
+                            style={{ background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 12px', fontSize: 12, cursor: 'pointer' }}>ยกเลิก</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 )
               })}
