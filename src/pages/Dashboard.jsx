@@ -73,11 +73,14 @@ function ThumbMap({ imageUrl, alt, markers }) {
           {markers.map(m => (
             <div key={m.id} style={{ position: 'absolute', top: m.top, left: m.left, transform: 'translate(-50%, -50%)', zIndex: m.alarm ? 3 : 2 }}>
               {m.alarm ? (
-                <div className="dt-alarm-blink" style={{
-                  border: '2px solid #ef4444', borderRadius: 6, padding: '2px 6px',
-                  fontSize: 10, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap',
-                }}>
-                  🚨 {m.label}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <div className="dt-alarm-blink" style={{
+                    width: 26, height: 26, borderRadius: '50%',
+                    border: '2px solid #ef4444', boxShadow: '0 0 8px #ef4444',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 13, background: 'rgba(0,0,0,0.6)',
+                  }}>⚙️</div>
+                  <div style={{ background: 'rgba(239,68,68,0.9)', borderRadius: 4, padding: '0px 5px', fontSize: 10, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', maxWidth: 64, overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{m.label}</div>
                 </div>
               ) : (
                 <div style={{ position: 'relative' }} title={m.personAlarm?.label}>
@@ -2204,7 +2207,9 @@ export default function Dashboard() {
                   // กันการ์ดซ้อนทับกัน: ผลักออกจากกันใน "พิกเซลจริง" ของภาพที่ render
                   // (แปลง % เป็น px ตามขนาดจริงของ mapBox ก่อนคำนวณ แล้วแปลงกลับเป็น % ตอน render)
                   const boxW = mapBox.w || 800, boxH = mapBox.h || 450;
-                  const MIN_PX_X = 72, MIN_PX_Y = 96; // ระยะห่างขั้นต่ำ: ความกว้าง/ความสูงรวม nametag+badge ของ card (ตัวการ์ดเอง overlap กันเองได้นิดหน่อย)
+                  // MK = ขนาด marker สเกลตามความกว้างผังจริง — สูตรเดียวกับหน้า Management/LineSetup
+                  const MK = Math.round(Math.max(34, Math.min(84, boxW * 0.055)));
+                  const MIN_PX_X = MK * 1.2, MIN_PX_Y = MK * 1.6; // ระยะห่างขั้นต่ำรวม nametag+badge
                   const pxMarkers = markers.map(m => ({ ...m, px: m.left / 100 * boxW, py: m.top / 100 * boxH, dox: 0, doy: 0 }));
                   for (let pass = 0; pass < 60; pass++) {
                     let moved = false;
@@ -2228,7 +2233,7 @@ export default function Dashboard() {
                     if (!moved) break;
                   }
                   // clamp ไม่ให้การ์ด (avatar+ชื่อ+badge) ตกขอบรูป — การ์ดถูก translate(-50%,-50%)
-                  const EDGE_X = 58, EDGE_TOP = 52, EDGE_BOTTOM = 92;
+                  const EDGE_X = MK * 0.9, EDGE_TOP = MK * 0.7, EDGE_BOTTOM = MK * 1.5;
                   for (const m of pxMarkers) {
                     const fx = Math.min(Math.max(m.px + m.dox, EDGE_X), boxW - EDGE_X);
                     const fy = Math.min(Math.max(m.py + m.doy, EDGE_TOP), boxH - EDGE_BOTTOM);
@@ -2274,29 +2279,29 @@ export default function Dashboard() {
                             <div
                               className={pAlarm ? (pAlarm.kind === 'red' ? 'person-alarm-red' : 'person-alarm-amber') : undefined}
                               style={{
-                                width: 'clamp(60px, 6.5vw, 100px)', height: 'clamp(60px, 6.5vw, 100px)', borderRadius: '50%',
-                                border: `clamp(3px, 0.4vw, 5px) solid ${color}`,
+                                width: MK, height: MK, borderRadius: '50%',
+                                border: `${Math.max(2, Math.round(MK * 0.06))}px solid ${color}`,
                                 boxShadow: `0 0 10px ${color}99`,
                                 overflow: 'hidden', background: '#1a1a1a',
                               }}>
                               {emp.image_url
                                 ? <img src={emp.image_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'clamp(18px, 2vw, 32px)', fontWeight: 800, color }}>{(emp.name || '?')[0]}</div>
+                                : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.round(MK * 0.38), fontWeight: 800, color }}>{(emp.name || '?')[0]}</div>
                               }
                             </div>
                             <div style={{
                               background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
                               borderRadius: 4, padding: 'clamp(1px, 0.3vw, 4px) clamp(6px, 0.8vw, 12px)',
-                              fontSize: 'clamp(13px, 1.5vw, 20px)', fontWeight: 700, color: '#fff',
-                              whiteSpace: 'nowrap', maxWidth: 'clamp(90px, 10vw, 160px)',
+                              fontSize: Math.max(11, Math.round(MK * 0.24)), fontWeight: 700, color: '#fff',
+                              whiteSpace: 'nowrap', maxWidth: MK * 1.9,
                               overflow: 'hidden', textOverflow: 'ellipsis',
                               marginTop: 'clamp(-6px, -0.5vw, -3px)', position: 'relative', zIndex: 1,
                             }}>{shortName}</div>
                             {fit !== null && (
-                              <div style={{ fontSize: 'clamp(12px, 1.3vw, 18px)', fontWeight: 800, color, background: `${color}25`, padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>{fit}%</div>
+                              <div style={{ fontSize: Math.max(10, Math.round(MK * 0.2)), fontWeight: 800, color, background: `${color}25`, padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>{fit}%</div>
                             )}
                             {emp.has_extended_ot && (
-                              <div style={{ fontSize: 'clamp(12px, 1.3vw, 18px)', fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>OT+23</div>
+                              <div style={{ fontSize: Math.max(10, Math.round(MK * 0.2)), fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>OT+23</div>
                             )}
                             {pAlarm && (
                               <div style={{
