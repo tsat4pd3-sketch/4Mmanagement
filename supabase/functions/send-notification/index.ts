@@ -363,6 +363,81 @@ Deno.serve(async (req) => {
     }
 
     /* ── 4M change management (in-app always + Telegram by rule) ── */
+    if (event === 'pm_plan_reminder') {
+      const p = body.pm;
+      if (!p) return new Response('missing pm', { status: 400 });
+      const chat = resolveEvent(routes, 'pm_plan_reminder');
+      if (chat === null) return json({ ok: true, skipped: true });
+      const overdue = Number(p.days) < 0;
+      const dueLine = overdue ? `📅 ครบกำหนด: ${p.due_date} — <b>เกินมาแล้ว ${Math.abs(Number(p.days))} วัน</b>` : `📅 ครบกำหนด: ${p.due_date} (อีก <b>${p.days}</b> วัน)`;
+      const equip = `${p.machine_no ? `${p.machine_no} ` : ''}${p.jig_name || '-'}`.trim();
+      const lines = [`${p.stage_label || '🗓️ เตือนรอบ PM'}`, ``, `🔧 เครื่อง/จิ๊ก: <b>${equip}</b>`];
+      if (p.line_name) lines.push(`🏭 ไลน์: ${p.line_name}`);
+      if (p.part_name) lines.push(`📦 ชิ้นงาน: ${p.part_name}`);
+      if (p.checklist_name) lines.push(`📋 เช็คลิสต์: ${p.checklist_name}${p.frequency ? ` (รอบ ${p.frequency})` : ''}`);
+      lines.push(dueLine, ``, `— Smart Maintenance`);
+      const message = pick(routes, 'pm_plan_reminder', { stage: p.stage, stage_label: p.stage_label, days: p.days, due_date: p.due_date, jig_name: p.jig_name || '', machine_no: p.machine_no || '', line_name: p.line_name || '', part_name: p.part_name || '', checklist_name: p.checklist_name || '', frequency: p.frequency || '' }, lines.join('\n'));
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
+    }
+
+    /* ── Smart Logistic — Customer Demand / Shipping (EDI 830·862) ────────── */
+    if (event === 'edi_import') {
+      const e = body.edi;
+      if (!e) return new Response('missing edi', { status: 400 });
+      const chat = resolveEvent(routes, 'edi_import');
+      if (chat === null) return json({ ok: true, skipped: true });
+      const kindLabel = e.kind === 'orders' ? '862 Shipping Schedule (รอบส่งงาน)' : '830 Planning Forecast';
+      const lines = [
+        `📡 <b>นำเข้าข้อมูลลูกค้า — EDI ${kindLabel}</b>`, ``,
+        `🏭 Ship-to: <b>${e.ship_tos}</b>`,
+        `🧾 รายการ: <b>${e.rows}</b> · 📄 ${e.files} ไฟล์`,
+        `📅 ช่วง: ${e.date_from} → ${e.date_to}`,
+      ];
+      if (e.unmatched) lines.push(`⚠️ พาร์ทที่ยังจับคู่ mat_no ไม่ได้: ${e.unmatched}`);
+      lines.push(``, `👤 ผู้อัพโหลด: ${e.uploaded_by || '-'}`, `— Smart Logistic`);
+      const message = pick(routes, 'edi_import', { kind_label: kindLabel, ship_tos: e.ship_tos, rows: e.rows, files: e.files, date_from: e.date_from, date_to: e.date_to, unmatched: e.unmatched ?? 0, uploaded_by: e.uploaded_by || '-' }, lines.join('\n'));
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
+    }
+
+    if (event === 'shipping_shipped') {
+      const s = body.ship;
+      if (!s) return new Response('missing ship', { status: 400 });
+      const chat = resolveEvent(routes, 'shipping_shipped');
+      if (chat === null) return json({ ok: true, skipped: true });
+      const lines = [
+        `🚚 <b>ส่งงานลูกค้าแล้ว</b>`, ``,
+        `🕐 รอบ ${s.ship_time || '-'} · 📅 ${s.due_date}`,
+        `🏭 ลูกค้า: <b>${s.customer || '-'}</b>${s.dock_code ? ` · Dock ${s.dock_code}` : ''}`,
+        `🔩 ${s.mat_no}${s.customer_part_no ? ` (${s.customer_part_no})` : ''}${s.part_name ? ` — ${s.part_name}` : ''}`,
+        `📦 จำนวน: <b>${s.qty}</b> ชิ้น${s.order_no ? ` · PO ${s.order_no}` : ''}`,
+        ``, `👤 ผู้ส่ง: ${s.shipped_by || '-'}`, `— Smart Logistic`,
+      ];
+      const message = pick(routes, 'shipping_shipped', { ship_time: s.ship_time || '-', due_date: s.due_date, customer: s.customer || '-', dock_code: s.dock_code || '', mat_no: s.mat_no, customer_part_no: s.customer_part_no || '', part_name: s.part_name || '', qty: s.qty, order_no: s.order_no || '', shipped_by: s.shipped_by || '-' }, lines.join('\n'));
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
+    }
+
+    if (event === 'shipping_overdue') {
+      const s = body.ship;
+      if (!s) return new Response('missing ship', { status: 400 });
+      const chat = resolveEvent(routes, 'shipping_overdue');
+      if (chat === null) return json({ ok: true, skipped: true });
+      const items: { ship_time?: string; customer?: string; mat_no?: string; qty?: number }[] = Array.isArray(s.items) ? s.items : [];
+      const lines = [
+        `🔴 <b>รอบส่งเลยเวลา — ยังไม่ได้ส่ง ${s.count} รอบ</b>`, ``,
+        `📅 วันงาน: ${s.work_date}`,
+      ];
+      for (const it of items.slice(0, 10)) lines.push(`  • ${it.ship_time || '-'} · ${it.customer || '-'} · ${it.mat_no} × ${it.qty}`);
+      if (items.length > 10) lines.push(`  • …และอีก ${items.length - 10} รอบ`);
+      lines.push(``, `⚠️ รีบตรวจสอบ/อัปเดตสถานะที่หน้า Customer Demand → Shipping Chart`, `— Smart Logistic`);
+      const itemsText = items.map((it) => `${it.ship_time || '-'} · ${it.customer || '-'} · ${it.mat_no} × ${it.qty}`).join('\n');
+      const message = pick(routes, 'shipping_overdue', { work_date: s.work_date, count: s.count, items: itemsText }, lines.join('\n'));
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
+    }
+
     const { log } = body;
     if (!log) return new Response('missing log', { status: 400 });
     const chat = resolveEvent(routes, 'four_m_status');
