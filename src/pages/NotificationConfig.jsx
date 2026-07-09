@@ -113,6 +113,12 @@ export default function NotificationConfig() {
       .update({ ...patch, updated_at: new Date().toISOString() }).eq('event_key', event_key)
     if (error) { toast.error(error.message); load() }
   }
+  // toggle a room in/out of a rule's channel_ids (one event → many rooms)
+  const toggleRuleRoom = (rule, roomId) => {
+    const cur = Array.isArray(rule.channel_ids) ? rule.channel_ids : []
+    const next = cur.includes(roomId) ? cur.filter(id => id !== roomId) : [...cur, roomId]
+    updateRule(rule.event_key, { channel_ids: next })
+  }
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>
 
@@ -173,33 +179,51 @@ export default function NotificationConfig() {
       </div>
 
       {/* ── Rules ── */}
-      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>รายการแจ้งเตือน — เลือกว่าเรื่องไหนเข้าห้องไหน</div>
+      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>รายการแจ้งเตือน — เลือกว่าเรื่องไหนเข้าห้องไหน</div>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>กดเลือกห้องได้ <b>หลายห้อง</b> ต่อหนึ่งเรื่อง · ไม่เลือกห้องเลย = เข้ากลุ่มเดิม (fallback)</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {Object.entries(rulesByCat).map(([cat, catRules]) => (
           <div key={cat}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>{CATEGORY_LABEL[cat] ?? cat}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {catRules.map(rule => (
-                <div key={rule.event_key} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', flex: '1 1 240px', minWidth: 0 }}>
+              {catRules.map(rule => {
+                const selected = Array.isArray(rule.channel_ids) ? rule.channel_ids : []
+                const selectedRooms = rooms.filter(r => selected.includes(r.id))
+                const allSelectedMissChat = selectedRooms.length > 0 && selectedRooms.every(r => !(r.chat_id ?? '').trim())
+                return (
+                <div key={rule.event_key} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', display: 'flex', flexWrap: 'wrap', gap: '10px 14px', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', flex: '1 1 200px', minWidth: 150 }}>
                     <input type="checkbox" checked={rule.is_enabled} onChange={e => updateRule(rule.event_key, { is_enabled: e.target.checked })} style={{ flexShrink: 0 }} />
                     <span style={{ fontSize: 13, fontWeight: 600, color: rule.is_enabled ? 'var(--text)' : 'var(--muted)' }}>{rule.label}</span>
                   </label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>เข้าห้อง</span>
-                    <select value={rule.channel_id ?? ''} onChange={e => updateRule(rule.event_key, { channel_id: e.target.value || null })}
-                      style={{ ...inputStyle, width: 200, opacity: rule.is_enabled ? 1 : 0.5 }} disabled={!rule.is_enabled}>
-                      <option value="">— ไม่ส่ง / fallback —</option>
-                      {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                    </select>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end', flex: '1 1 300px', minWidth: 0, opacity: rule.is_enabled ? 1 : 0.5 }}>
+                    {rooms.map(room => {
+                      const on = selected.includes(room.id)
+                      const noChat = !(room.chat_id ?? '').trim()
+                      return (
+                        <label key={room.id} title={noChat ? 'ห้องนี้ยังไม่มี chat_id' : ''}
+                          style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: rule.is_enabled ? 'pointer' : 'default',
+                            background: on ? 'var(--bg2)' : 'transparent', border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                            color: on ? 'var(--text)' : 'var(--muted)', borderRadius: 999, padding: '4px 10px', userSelect: 'none' }}>
+                          <input type="checkbox" checked={on} disabled={!rule.is_enabled} onChange={() => toggleRuleRoom(rule, room.id)} style={{ flexShrink: 0 }} />
+                          {room.name}{on && noChat ? ' ⚠️' : ''}
+                        </label>
+                      )
+                    })}
                   </div>
-                  {rule.is_enabled && rule.channel_id && !(rooms.find(r => r.id === rule.channel_id)?.chat_id ?? '').trim() && (
+                  {rule.is_enabled && selected.length === 0 && (
+                    <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--muted)' }}>
+                      ยังไม่เลือกห้อง → จะไปเข้า<b>กลุ่มเดิม (fallback)</b>
+                    </div>
+                  )}
+                  {rule.is_enabled && allSelectedMissChat && (
                     <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--accent2)' }}>
                       ⚠️ ห้องที่เลือกยังไม่ใส่ chat_id → ตอนนี้จะไปเข้า<b>กลุ่มเดิม</b> ไม่ใช่ห้องนี้ (ไปเติม chat_id ที่ส่วน “ห้องแจ้งเตือน” ด้านบน)
                     </div>
                   )}
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         ))}

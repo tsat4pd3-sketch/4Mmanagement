@@ -20,70 +20,91 @@ async function getBotToken(): Promise<string | undefined> {
 }
 
 /* ── Rule-based routing ─────────────────────────────
-   notification_rules(event_key → is_enabled, channel_id) + telegram_channels
-   let the admin turn each notification on/off and pick which room it goes to.
-   Unknown event → send to fallback. Known-but-disabled → skip Telegram.
-   Room with no chat_id / inactive → fallback to legacy TELEGRAM_CHAT_ID, so
-   existing notifications keep working until each room is configured. */
-type Route = { enabled: boolean; chatId?: string };
+   notification_rules(event_key → is_enabled, channel_ids[]) + telegram_channels
+   let the admin turn each notification on/off and pick which room(s) it goes to.
+   One event can fan out to several rooms. Unknown event → send to fallback.
+   Known-but-disabled → skip Telegram. Rooms with no chat_id / inactive are
+   dropped; if that leaves no valid room, fall back to legacy TELEGRAM_CHAT_ID
+   so existing notifications keep working until each room is configured. */
+type Route = { enabled: boolean; chats: string[] };
 async function loadRoutes(): Promise<Record<string, Route>> {
   try {
-    const { data } = await supabase
-      .from('notification_rules')
-      .select('event_key, is_enabled, telegram_channels(chat_id, is_active)');
+    const [{ data: rules }, { data: channels }] = await Promise.all([
+      supabase.from('notification_rules').select('event_key, is_enabled, channel_ids, channel_id'),
+      supabase.from('telegram_channels').select('id, chat_id, is_active'),
+    ]);
+    const chatById = new Map<string, string>();
+    for (const c of channels ?? []) {
+      if (c.is_active && c.chat_id) chatById.set(String(c.id), String(c.chat_id).trim());
+    }
     const map: Record<string, Route> = {};
-    for (const r of data ?? []) {
-      const ch = (r as Record<string, unknown>).telegram_channels as { chat_id?: string; is_active?: boolean } | null;
-      const chatId = ch && ch.is_active && ch.chat_id ? String(ch.chat_id).trim() : undefined;
-      map[r.event_key as string] = { enabled: r.is_enabled as boolean, chatId };
+    for (const r of rules ?? []) {
+      const ids: string[] = Array.isArray((r as Record<string, unknown>).channel_ids)
+        ? ((r as Record<string, unknown>).channel_ids as string[])
+        : (r as { channel_id?: string }).channel_id ? [(r as { channel_id: string }).channel_id] : [];
+      const chats = [...new Set(ids.map((id) => chatById.get(String(id))).filter((v): v is string => !!v))];
+      map[r.event_key as string] = { enabled: r.is_enabled as boolean, chats };
     }
     return map;
   } catch { return {}; }
 }
-// Returns null when the event is explicitly disabled; otherwise the chat to use.
-function resolveEvent(routes: Record<string, Route>, key: string): string | null {
+// Returns null when the event is explicitly disabled; otherwise the chat(s) to
+// use — the configured rooms, or the legacy fallback group when none resolve.
+function resolveEvent(routes: Record<string, Route>, key: string): string[] | null {
   const r = routes[key];
   if (r && !r.enabled) return null;
-  return (r?.chatId) || TELEGRAM_CHAT_ID || null;
+  if (r && r.chats.length) return r.chats;
+  return TELEGRAM_CHAT_ID ? [TELEGRAM_CHAT_ID] : [];
 }
 
-/* ── Telegram senders (chatId-aware) ──────────────── */
-async function sendTelegram(message: string, chatId?: string | null): Promise<boolean> {
-  const chat = chatId ?? TELEGRAM_CHAT_ID;
-  if (!BOT_TOKEN || !chat) return false;
-  const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chat, text: message, parse_mode: 'HTML' }),
-  });
-  return res.ok;
+/* ── Telegram senders (fan out to one or many chats) ── */
+function chatList(chatId?: string | string[] | null): string[] {
+  const raw = chatId == null ? (TELEGRAM_CHAT_ID ? [TELEGRAM_CHAT_ID] : []) : Array.isArray(chatId) ? chatId : [chatId];
+  return [...new Set(raw.filter((c): c is string => !!c))];
 }
 
-async function sendTelegramPhoto(photoUrl: string, caption: string, chatId?: string | null) {
-  const chat = chatId ?? TELEGRAM_CHAT_ID;
-  if (!BOT_TOKEN || !chat) return;
-  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chat, photo: photoUrl, caption, parse_mode: 'HTML' }),
-  });
+async function sendTelegram(message: string, chatId?: string | string[] | null): Promise<boolean> {
+  const chats = chatList(chatId);
+  if (!BOT_TOKEN || !chats.length) return false;
+  const results = await Promise.all(chats.map((chat) =>
+    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chat, text: message, parse_mode: 'HTML' }),
+    }).then((res) => res.ok).catch(() => false),
+  ));
+  return results.some(Boolean);
 }
 
-async function sendTelegramMediaGroup(photos: { url: string; caption: string }[], chatId?: string | null) {
-  const chat = chatId ?? TELEGRAM_CHAT_ID;
-  if (!BOT_TOKEN || !chat || !photos.length) return;
-  if (photos.length === 1) { await sendTelegramPhoto(photos[0].url, photos[0].caption, chat); return; }
-  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMediaGroup`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chat,
-      media: photos.map((p, i) => ({
-        type: 'photo', media: p.url,
-        ...(i === 0 ? { caption: p.caption, parse_mode: 'HTML' } : {}),
-      })),
-    }),
-  });
+async function sendTelegramPhoto(photoUrl: string, caption: string, chatId?: string | string[] | null) {
+  const chats = chatList(chatId);
+  if (!BOT_TOKEN || !chats.length) return;
+  await Promise.all(chats.map((chat) =>
+    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chat, photo: photoUrl, caption, parse_mode: 'HTML' }),
+    }).catch(() => {}),
+  ));
+}
+
+async function sendTelegramMediaGroup(photos: { url: string; caption: string }[], chatId?: string | string[] | null) {
+  const chats = chatList(chatId);
+  if (!BOT_TOKEN || !chats.length || !photos.length) return;
+  if (photos.length === 1) { await sendTelegramPhoto(photos[0].url, photos[0].caption, chats); return; }
+  await Promise.all(chats.map((chat) =>
+    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMediaGroup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chat,
+        media: photos.map((p, i) => ({
+          type: 'photo', media: p.url,
+          ...(i === 0 ? { caption: p.caption, parse_mode: 'HTML' } : {}),
+        })),
+      }),
+    }).catch(() => {}),
+  ));
 }
 
 /* ── Helpers ────────────────────────────────────── */
