@@ -36,12 +36,27 @@ function inferEquipType(stationCode) {
   return 'machine'
 }
 
-function newCheckpoint() {
+function newCheckpoint(extra = {}) {
   return {
     _key: crypto.randomUUID(), name: '', type: 'variable',
     axis: null, category: null, checking_method: null, unit: '', nominal: '', lsl: '', usl: '', lcl: '', ucl: '',
     x_pos: null, y_pos: null,
+    group_name: '', description: '', image_path: null, _imgFile: null, _imgPreview: null,
+    ...extra,
   }
+}
+
+/* จัดกลุ่มตาม group_name (Item 1 "Locate Pin" → LP1..): กลุ่มที่ตั้งชื่อมาก่อน
+   ตามลำดับที่พบ, จุดที่ไม่มีกลุ่มต่อท้าย — ใช้ทั้งตอน render และตอน save (sort_order) */
+function groupCheckpoints(cps) {
+  const named = [], map = {}, ungrouped = []
+  for (const cp of cps) {
+    const g = (cp.group_name || '').trim()
+    if (!g) { ungrouped.push(cp); continue }
+    if (!map[g]) { map[g] = { name: g, items: [] }; named.push(map[g]) }
+    map[g].items.push(cp)
+  }
+  return { named, ungrouped, ordered: [...named.flatMap(g => g.items), ...ungrouped] }
 }
 
 function getPublicUrl(path) {
@@ -130,7 +145,7 @@ const S = {
 }
 
 // ─── ImageAnnotator (upload + click-to-pin) ────────────────────────────────────
-function ImageAnnotator({ imageUrl, checkpoints, activePinKey, onImageClick, onPinRemove }) {
+function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageClick, onPinRemove }) {
   const containerRef = useRef(null)
   const handleClick = (e) => {
     if (!activePinKey) return
@@ -156,7 +171,7 @@ function ImageAnnotator({ imageUrl, checkpoints, activePinKey, onImageClick, onP
             onClick={e => { e.stopPropagation(); onPinRemove(cp._key) }}
             title={`${cp.name || `จุด ${i + 1}`} — คลิกเพื่อลบ`}
           >
-            <div style={{ width: 20, height: 20, borderRadius: '50%', background: col, border: '2px solid #fff', color: '#fff', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.4)' }}>{i + 1}</div>
+            <div style={{ minWidth: 20, height: 20, padding: '0 3px', borderRadius: 10, background: col, border: '2px solid #fff', color: '#fff', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>{labels?.[i] ?? i + 1}</div>
           </button>
         )
       })}
@@ -170,16 +185,22 @@ function ImageAnnotator({ imageUrl, checkpoints, activePinKey, onImageClick, onP
 }
 
 // ─── CheckpointCard ───────────────────────────────────────────────────────────
-function CheckpointCard({ cp, index, onChange, onDelete, isPinning, onPinToggle, hasImage, categories, methods }) {
+function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage, isPinning, onPinToggle, hasImage, categories, methods }) {
   const isVar = cp.type === 'variable'
   return (
     <div style={{ ...S.cpCard, borderColor: isPinning ? 'var(--accent)' : 'var(--border)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--bg3)', color: 'var(--muted)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{index + 1}</span>
+          <span style={{ minWidth: 20, height: 20, padding: '0 4px', borderRadius: 10, background: 'var(--bg3)', color: 'var(--muted)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{label}</span>
           <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>จุดตรวจสอบ</span>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
+          {isVar && (
+            <button onClick={onDuplicate} title="ทำสำเนาจุดนี้เป็นอีกแกน (X↔Y) — copy ชื่อ/tool ให้ กรอกแค่ spec"
+              style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)' }}>
+              ⧉ อีกแกน
+            </button>
+          )}
           {hasImage && (
             <button onClick={onPinToggle} style={{
               padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
@@ -192,7 +213,11 @@ function CheckpointCard({ cp, index, onChange, onDelete, isPinning, onPinToggle,
         </div>
       </div>
 
-      <input value={cp.name} onChange={e => onChange({ name: e.target.value })} placeholder="ชื่อจุดตรวจสอบ เช่น Pin Diameter" style={{ marginBottom: 8 }} />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+        <input value={cp.name} onChange={e => onChange({ name: e.target.value })} placeholder="ชื่อจุดตรวจสอบ เช่น LP1" />
+        <input value={cp.group_name ?? ''} onChange={e => onChange({ group_name: e.target.value })}
+          placeholder="กลุ่ม/หัวข้อ (Item) เช่น Locate Pin" list="cp-group-options" />
+      </div>
 
       <div style={S.inputRow}>
         <div style={{ marginBottom: 10 }}>
@@ -251,12 +276,38 @@ function CheckpointCard({ cp, index, onChange, onDelete, isPinning, onPinToggle,
       )}
 
       {!isVar && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
-          <span style={{ padding: '3px 10px', borderRadius: 6, background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 11, fontWeight: 700, border: '1px solid var(--accent)' }}>OK</span>
-          <span style={{ padding: '3px 10px', borderRadius: 6, background: 'rgba(224,92,74,0.1)', color: '#e05c4a', fontSize: 11, fontWeight: 700, border: '1px solid rgba(224,92,74,0.3)' }}>NG</span>
-          {cp.type === 'note' && <span style={{ padding: '3px 10px', borderRadius: 6, background: 'var(--bg3)', color: 'var(--muted)', fontSize: 11, border: '1px solid var(--border)' }}>+ ข้อความ</span>}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 2 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <span style={{ padding: '3px 10px', borderRadius: 6, background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 11, fontWeight: 700, border: '1px solid var(--accent)' }}>OK</span>
+            <span style={{ padding: '3px 10px', borderRadius: 6, background: 'rgba(224,92,74,0.1)', color: '#e05c4a', fontSize: 11, fontWeight: 700, border: '1px solid rgba(224,92,74,0.3)' }}>NG</span>
+            {cp.type === 'note' && <span style={{ padding: '3px 10px', borderRadius: 6, background: 'var(--bg3)', color: 'var(--muted)', fontSize: 11, border: '1px solid var(--border)' }}>+ ข้อความ</span>}
+          </div>
+          <div>
+            <label style={S.label}>เกณฑ์ตัดสิน (Standard) — ขึ้นบรรทัดใหม่ได้</label>
+            <textarea rows={2} value={cp.description ?? ''} onChange={e => onChange({ description: e.target.value })}
+              placeholder={'เช่น กดชิ้นงานแน่น ไม่หลวมคลอน\nไม่เกิดการรั่วซึมบริเวณซิล, Fitting'} />
+          </div>
         </div>
       )}
+
+      {/* รูปอ้างอิงต่อจุด (คอลัมน์ Picture ของฟอร์ม) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+        {cp._imgPreview ? (
+          <>
+            <img src={cp._imgPreview} alt="" style={{ height: 44, borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg2)' }} />
+            <label style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer' }}>
+              <input type="file" accept="image/*" onChange={onCpImage} style={{ display: 'none' }} />เปลี่ยนรูป
+            </label>
+            <button onClick={() => onChange({ _imgFile: null, _imgPreview: null, image_path: null })}
+              style={{ fontSize: 11, color: 'var(--red)', background: 'none', border: 'none', cursor: 'pointer' }}>ลบรูป</button>
+          </>
+        ) : (
+          <label style={{ fontSize: 11, color: 'var(--muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <input type="file" accept="image/*" onChange={onCpImage} style={{ display: 'none' }} />
+            🖼 แนบรูปอ้างอิง (Picture)
+          </label>
+        )}
+      </div>
     </div>
   )
 }
@@ -283,6 +334,10 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [equipCategory, setEquipCategory] = useState(editJig?.equipment_category ?? 'production')
 
   const [frequency, setFrequency] = useState('periodic')
+  // Phase 2 — plan type (time | usage | hybrid) + usage-based predictive fields
+  const [planType, setPlanType] = useState('time')
+  const [usageThreshold, setUsageThreshold] = useState('')
+  const [usageLine, setUsageLine] = useState('')
   const [checkpoints, setCheckpoints] = useState([])
   const [layoutType, setLayoutType] = useState(editJig?.layout_type ?? 'image_pin')
   const [imageFile, setImageFile] = useState(null)
@@ -304,7 +359,17 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
       if (!cl) return
       setFrequency(cl.frequency)
       const { data: cps } = await supabaseDR.from('jig_checkpoints').select('*').eq('checklist_id', cl.id).order('sort_order')
-      setCheckpoints((cps ?? []).map(c => ({ ...c, _key: c.id })))
+      setCheckpoints((cps ?? []).map(c => ({
+        ...c, _key: c.id,
+        group_name: c.group_name ?? '', description: c.description ?? '',
+        _imgFile: null, _imgPreview: c.image_path ? getPublicUrl(c.image_path) : null,
+      })))
+      const { data: plan } = await supabaseDR.from('pm_plans').select('plan_type, usage_threshold, usage_source_line').eq('checklist_id', cl.id).maybeSingle()
+      if (plan) {
+        setPlanType(plan.plan_type ?? 'time')
+        setUsageThreshold(plan.usage_threshold != null ? String(plan.usage_threshold) : '')
+        setUsageLine(plan.usage_source_line ?? '')
+      }
     })
   }, [editJig, department, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -348,6 +413,28 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   }
   const togglePin = (key) => setActivePinKey(prev => prev === key ? null : key)
 
+  // TASK 4: ทำสำเนาจุด variable เป็นอีกแกน (X↔Y) — copy ชื่อ/tool/กลุ่ม ให้กรอกแค่ spec
+  const duplicateCp = (key) => setCheckpoints(prev => {
+    const i = prev.findIndex(c => c._key === key)
+    if (i < 0) return prev
+    const src = prev[i]
+    const copy = newCheckpoint({
+      name: src.name, type: src.type, category: src.category, checking_method: src.checking_method,
+      unit: src.unit, group_name: src.group_name, axis: src.axis === 'Y' ? 'X' : 'Y',
+      x_pos: src.x_pos, y_pos: src.y_pos,
+      image_path: src.image_path, _imgPreview: src._imgPreview,
+    })
+    return [...prev.slice(0, i + 1), copy, ...prev.slice(i + 1)]
+  })
+
+  // TASK 3: รูปอ้างอิงต่อ checkpoint — บีบอัดตอนเลือก อัพโหลดจริงตอน save
+  const handleCpImage = async (key, e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    const compressed = await imageCompression(file, { maxSizeMB: 0.2, maxWidthOrHeight: 900 })
+    updateCp(key, { _imgFile: compressed, _imgPreview: URL.createObjectURL(compressed) })
+  }
+
   const handleImage = async (e) => {
     const file = e.target.files[0]
     if (!file) return
@@ -387,10 +474,39 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
       const cl = await getOrCreateChecklist(jigId, 'mtn', department, userId)
       if (!cl) throw new Error('Failed to create checklist')
       await setChecklistFrequency(cl.id, frequency)
+
+      // Phase 2 — persist the plan type + usage rule (row exists via trigger; upsert on checklist_id)
+      {
+        const uses = planType === 'usage' || planType === 'hybrid'
+        const thr = usageThreshold !== '' && usageThreshold != null ? Number(usageThreshold) : null
+        await supabaseDR.from('pm_plans').upsert({
+          checklist_id: cl.id,
+          plan_type: planType,
+          usage_metric: uses ? 'produced_qty' : null,
+          usage_threshold: uses ? thr : null,
+          usage_source_line: uses ? (usageLine.trim() || lineName || null) : null,
+        }, { onConflict: 'checklist_id' })
+      }
+
+      // อัพโหลดรูปอ้างอิงต่อจุด (ที่เพิ่งแนบใหม่) ก่อน insert
+      const cpImagePaths = {}
+      for (const c of checkpoints) {
+        if (!c._imgFile) continue
+        const ext = (c._imgFile.name?.split('.').pop() || 'jpg').toLowerCase()
+        const p = `jigs/${jigId}/cp-${c._key}.${ext}`
+        const { error: imgErr } = await supabaseDR.storage.from('jig-images').upload(p, c._imgFile, { upsert: true })
+        if (imgErr) throw imgErr
+        cpImagePaths[c._key] = p
+      }
+
+      // save ตามลำดับกลุ่ม (Item) → sort_order สอดคล้องกับหน้า execution/export
+      const { named, ordered } = groupCheckpoints(checkpoints)
+      const groupOrderMap = Object.fromEntries(named.map((g, i) => [g.name, i]))
+
       await supabaseDR.from('jig_checkpoints').delete().eq('checklist_id', cl.id)
-      if (checkpoints.length > 0) {
+      if (ordered.length > 0) {
         const { error: cpErr } = await supabaseDR.from('jig_checkpoints').insert(
-          checkpoints.map((c, i) => ({
+          ordered.map((c, i) => ({
             checklist_id: cl.id, jig_id: jigId, name: c.name.trim(), type: c.type,
             axis: c.type === 'variable' ? (c.axis ?? null) : null,
             category: c.category ?? null, checking_method: c.checking_method ?? null, unit: c.unit || null,
@@ -402,6 +518,10 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             x_pos: layoutType === 'list' ? null : (c.x_pos ?? null),
             y_pos: layoutType === 'list' ? null : (c.y_pos ?? null),
             sort_order: i,
+            group_name: (c.group_name || '').trim() || null,
+            group_order: groupOrderMap[(c.group_name || '').trim()] ?? null,
+            description: (c.description || '').trim() || null,
+            image_path: cpImagePaths[c._key] ?? c.image_path ?? null,
           }))
         )
         if (cpErr) throw cpErr
@@ -417,6 +537,27 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
 
   const deptColor = DEPT_COLORS[department] ?? '#3dd65c'
   const pinnedCount = checkpoints.filter(c => c.x_pos != null).length
+
+  // จัดกลุ่มสำหรับ render + label "Item.sub" (เช่น 1.3) ให้การ์ดกับ pin ตรงกัน
+  const grouped = groupCheckpoints(checkpoints)
+  const cpLabels = {}
+  grouped.named.forEach((g, gi) => g.items.forEach((c, j) => { cpLabels[c._key] = `${gi + 1}.${j + 1}` }))
+  {
+    const namedCount = grouped.named.reduce((s, g) => s + g.items.length, 0)
+    grouped.ungrouped.forEach((c, k) => { cpLabels[c._key] = String(namedCount + k + 1) })
+  }
+  const groupHeaderStyle = {
+    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 6,
+    background: 'var(--accent-dim)', border: '1px solid var(--border2)',
+    fontSize: 12, fontWeight: 800, color: 'var(--accent)',
+  }
+  const renderCard = (cp) => (
+    <CheckpointCard key={cp._key} cp={cp} label={cpLabels[cp._key]}
+      onChange={patch => updateCp(cp._key, patch)} onDelete={() => deleteCp(cp._key)}
+      onDuplicate={() => duplicateCp(cp._key)} onCpImage={e => handleCpImage(cp._key, e)}
+      isPinning={activePinKey === cp._key} onPinToggle={() => togglePin(cp._key)} hasImage={!!imagePreview}
+      categories={categories} methods={methods} />
+  )
 
   return (
     <div style={S.overlay}>
@@ -530,6 +671,35 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             </div>
           </div>
 
+          {/* Phase 2 — plan type: time / usage / hybrid */}
+          <div>
+            <label style={S.label}>รูปแบบแผน PM</label>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {[
+                { v: 'time', label: '🗓️ ตามเวลา', hint: 'ครบรอบตามความถี่' },
+                { v: 'usage', label: '📈 ตามการใช้งาน', hint: 'ครบเมื่อผลิตถึงยอด' },
+                { v: 'hybrid', label: '⚖️ ผสม', hint: 'อันไหนถึงก่อนใช้อันนั้น' },
+              ].map(({ v, label, hint }) => (
+                <button key={v} onClick={() => setPlanType(v)} title={hint} style={S.modeBtn(planType === v)}>{label}</button>
+              ))}
+            </div>
+            {(planType === 'usage' || planType === 'hybrid') && (
+              <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div>
+                  <label style={S.label}>ครบเมื่อผลิตถึง (ชิ้น)</label>
+                  <input type="number" min="1" value={usageThreshold} onChange={e => setUsageThreshold(e.target.value)} placeholder="เช่น 50000" />
+                </div>
+                <div>
+                  <label style={S.label}>นับยอดจากไลน์</label>
+                  <input value={usageLine} onChange={e => setUsageLine(e.target.value)} placeholder={lineName || 'เช่น Line-A'} />
+                </div>
+                <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)' }}>
+                  ระบบนับ prod_orders.qty ของไลน์นี้ตั้งแต่ PM ครั้งก่อน เทียบ threshold → คำนวณวันครบ + health score (เว้นไลน์ว่าง = ใช้ไลน์ของอุปกรณ์)
+                </div>
+              </div>
+            )}
+          </div>
+
           <div>
             <label style={S.label}>รูปแบบ Check Sheet</label>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -555,7 +725,8 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                 </label>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <ImageAnnotator imageUrl={imagePreview} checkpoints={checkpoints} activePinKey={activePinKey}
+                  <ImageAnnotator imageUrl={imagePreview} checkpoints={grouped.ordered}
+                    labels={grouped.ordered.map(c => cpLabels[c._key])} activePinKey={activePinKey}
                     onImageClick={(x, y) => { updateCp(activePinKey, { x_pos: x, y_pos: y }); setActivePinKey(null) }}
                     onPinRemove={(key) => { updateCp(key, { x_pos: null, y_pos: null }); if (activePinKey === key) setActivePinKey(null) }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -575,13 +746,20 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
               <label style={{ ...S.label, marginBottom: 0 }}>จุดตรวจสอบ ({checkpoints.length})</label>
               <button onClick={addCp} style={{ ...S.btnSm('var(--accent)'), fontSize: 12 }}>+ เพิ่มจุดตรวจ</button>
             </div>
+            <datalist id="cp-group-options">
+              {[...new Set(checkpoints.map(c => (c.group_name || '').trim()).filter(Boolean))].map(g => <option key={g} value={g} />)}
+            </datalist>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {checkpoints.map((cp, i) => (
-                <CheckpointCard key={cp._key} cp={cp} index={i}
-                  onChange={patch => updateCp(cp._key, patch)} onDelete={() => deleteCp(cp._key)}
-                  isPinning={activePinKey === cp._key} onPinToggle={() => togglePin(cp._key)} hasImage={!!imagePreview}
-                  categories={categories} methods={methods} />
+              {grouped.named.map((g, gi) => (
+                <div key={g.name} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={groupHeaderStyle}>Item {gi + 1} — {g.name} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({g.items.length} จุด)</span></div>
+                  {g.items.map(renderCard)}
+                </div>
               ))}
+              {grouped.named.length > 0 && grouped.ungrouped.length > 0 && (
+                <div style={{ ...groupHeaderStyle, background: 'var(--bg3)', color: 'var(--muted)' }}>ไม่ระบุกลุ่ม</div>
+              )}
+              {grouped.ungrouped.map(renderCard)}
             </div>
           </div>
 

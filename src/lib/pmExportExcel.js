@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs'
+import { supabaseDR } from '../supabaseClient'
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -6,6 +7,17 @@ function fmt(v, d = 3) {
   if (v == null || v === '') return ''
   return Number(v).toFixed(d).replace(/\.?0+$/, '')
 }
+
+// รูปอ้างอิงต่อ checkpoint (jig_checkpoints.image_path ใน bucket jig-images)
+async function fetchImageBuffer(path) {
+  if (!path) return null
+  try {
+    const url = supabaseDR.storage.from('jig-images').getPublicUrl(path).data.publicUrl
+    const res = await fetch(url)
+    return new Uint8Array(await res.arrayBuffer())
+  } catch { return null }
+}
+const imgExt = (path) => /\.png$/i.test(path ?? '') ? 'png' : 'jpeg'
 
 function signatureToBuffer(dataUrl) {
   if (!dataUrl) return null
@@ -188,21 +200,32 @@ export async function exportInspectionExcel({
 
   borderRange(ws, 6, 1, 7, 17)
 
-  // ── GROUP checkpoints by category ────────────────────────
+  // ── GROUP checkpoints ─────────────────────────────────────
+  // ถ้ามี group_name (Item หัวข้อจากฟอร์มจริง เช่น "Locate Pin") จัดกลุ่มตามนั้น
+  // ไม่งั้น fallback จัดตาม category แบบเดิม — กลุ่มหนึ่งมีทั้ง variable/attribute ได้
+  const useNamed = checkpoints.some(c => (c.group_name ?? '').trim())
   const groupOrder = []
   const groupMap = {}
   for (const cp of checkpoints) {
-    const cat = cp.category ?? '__none__'
-    if (!groupMap[cat]) { groupMap[cat] = []; groupOrder.push(cat) }
-    groupMap[cat].push(cp)
+    const key = useNamed ? ((cp.group_name ?? '').trim() || '__none__') : (cp.category ?? '__none__')
+    if (!groupMap[key]) { groupMap[key] = []; groupOrder.push(key) }
+    groupMap[key].push(cp)
   }
+  const namedKeys = groupOrder.filter(k => k !== '__none__')
+
+  // preload รูปอ้างอิงต่อจุด
+  const cpImgs = {}
+  await Promise.all(checkpoints.filter(c => c.image_path).map(async c => {
+    cpImgs[c.id] = await fetchImageBuffer(c.image_path)
+  }))
 
   let row = 8
 
   for (const cat of groupOrder) {
-    const cps = groupMap[cat]
-    const meta = CATEGORY_META[cat] ?? { label: cat === '__none__' ? 'Other' : cat, argb: 'FF6B7280' }
-    const isVariable = cps[0]?.type === 'variable'
+    const allCps = groupMap[cat]
+    const meta = useNamed
+      ? { label: cat === '__none__' ? 'อื่นๆ' : `Item ${namedKeys.indexOf(cat) + 1} — ${cat}`, argb: 'FF374151', short: null }
+      : (CATEGORY_META[cat] ?? { label: cat === '__none__' ? 'Other' : cat, argb: 'FF6B7280' })
 
     ws.getRow(row).height = 14
     merge(ws, `A${row}`, `${lastCol}${row}`)
@@ -211,7 +234,11 @@ export async function exportInspectionExcel({
     ws.getCell(`A${row}`).font = { bold: true, size: 9, color: { argb: meta.argb } }
     row++
 
-    if (isVariable) {
+    const varSubset = allCps.filter(c => c.type === 'variable')
+    const attrSubset = allCps.filter(c => c.type !== 'variable')
+
+    if (varSubset.length) {
+      const cps = varSubset
       const subGroups = []
       const seenBase = {}
       for (const cp of cps) {
@@ -299,8 +326,10 @@ export async function exportInspectionExcel({
         }
         itemNo++
       }
+    }
 
-    } else {
+    if (attrSubset.length) {
+      const cps = attrSubset
       ws.getRow(row).height = 14
       const aHdrs = [
         ['A', 'Item'], ['B', 'Check Point'], ['G', 'Checking'],
@@ -319,16 +348,24 @@ export async function exportInspectionExcel({
 
       cps.forEach((cp, idx) => {
         const r = results[cp.id]
-        ws.getRow(row).height = 22
+        const hasImg = !!cpImgs[cp.id]
+        ws.getRow(row).height = hasImg ? 42 : 22
         const ok = r?.value_attribute === 'ok' ? 'OK' : r?.value_attribute === 'ng' ? 'NG' : ''
 
         setVal(ws, `A${row}`, idx + 1, { center: true, size: 8, border: true })
         setVal(ws, `B${row}`, cp.name, { size: 8, wrap: true, border: true })
         merge(ws, `C${row}`, `F${row}`)
-        setVal(ws, `C${row}`, cp.name, { size: 7, wrap: true, border: true })
+        // Standard = เกณฑ์ตัดสินหลายบรรทัด (description) ถ้าไม่มีใช้ชื่อจุดแบบเดิม
+        setVal(ws, `C${row}`, cp.description || cp.name, { size: 7, wrap: true, border: true })
         setVal(ws, `G${row}`, '', { border: true })
         merge(ws, `H${row}`, `K${row}`)
         setVal(ws, `H${row}`, '', { border: true })
+        if (hasImg) {
+          try {
+            const imgId = wb.addImage({ buffer: cpImgs[cp.id], extension: imgExt(cp.image_path) })
+            ws.addImage(imgId, { tl: { col: 7, row: row - 1 }, ext: { width: 130, height: 52 } })
+          } catch { /* รูปเสีย — ปล่อยช่องว่าง */ }
+        }
 
         const okCell = ws.getCell(`L${row}`)
         okCell.value = ok

@@ -90,7 +90,7 @@ export default function PMSchedule() {
       supabaseDR.from('inspections').select('checklist_id, inspected_at').in('checklist_id', clIds).neq('approval_status', 'rejected').order('inspected_at', { ascending: false }),
       // Server-materialized plan (pm_plans, Phase 1). If the table isn't there yet
       // the query just returns null and we fall back to computing due dates live.
-      supabaseDR.from('pm_plans').select('checklist_id, next_due_date, next_due_reason, last_done_at').in('checklist_id', clIds),
+      supabaseDR.from('pm_plans').select('checklist_id, next_due_date, next_due_reason, last_done_at, health_score, plan_type').in('checklist_id', clIds),
     ])
 
     const jigMap = {}
@@ -109,7 +109,8 @@ export default function PMSchedule() {
       // when there's no plan row (or the migration hasn't run yet).
       const nextDue = plan?.next_due_date ? parseLocalDate(plan.next_due_date) : computeNextDue(lastDone, cl.frequency)
       const status = dueStatus(nextDue, cl.frequency)
-      return { cl, eq, lastDone, nextDue, status, reason: plan?.next_due_reason ?? 'time' }
+      return { cl, eq, lastDone, nextDue, status, reason: plan?.next_due_reason ?? 'time',
+               planType: plan?.plan_type ?? 'time', health: plan?.health_score ?? null }
     })
 
     built.sort((a, b) => {
@@ -186,9 +187,11 @@ export default function PMSchedule() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ cl, eq, lastDone, nextDue, status }) => {
+              {rows.map(({ cl, eq, lastDone, nextDue, status, reason, planType, health }) => {
                 const meta = STATUS_META[status] ?? STATUS_META.ok
                 const isOverdue = status === 'overdue'
+                const isUsage = planType === 'usage' || planType === 'hybrid'
+                const healthColor = health == null ? 'var(--muted)' : health >= 60 ? '#3dd65c' : health >= 30 ? '#e0b34a' : '#e05c4a'
                 return (
                   <tr key={cl.id} style={{ background: isOverdue ? 'rgba(224,92,74,0.04)' : undefined }}>
                     <td>
@@ -208,6 +211,21 @@ export default function PMSchedule() {
                       {isOverdue && nextDue && (
                         <div style={{ fontSize: 11, color: '#e05c4a' }}>
                           เกิน {Math.abs(daysUntilDue(nextDue))} วัน
+                        </div>
+                      )}
+                      {isUsage && (
+                        <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: reason === 'usage' ? '#4aa3e0' : 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>
+                            {reason === 'usage' ? '📈 ตามการใช้งาน' : '🗓️ ตามเวลา'}
+                          </span>
+                          {health != null && (
+                            <span title="สุขภาพ (ยิ่งต่ำยิ่งใกล้ครบตามยอดผลิต)" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ width: 44, height: 5, background: 'var(--bg2)', borderRadius: 3, overflow: 'hidden', display: 'inline-block' }}>
+                                <span style={{ display: 'block', height: '100%', width: `${Math.max(0, Math.min(100, health))}%`, background: healthColor }} />
+                              </span>
+                              <span style={{ fontSize: 10, color: healthColor }}>{Math.round(health)}%</span>
+                            </span>
+                          )}
                         </div>
                       )}
                     </td>

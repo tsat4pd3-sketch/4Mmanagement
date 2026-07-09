@@ -362,6 +362,34 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
+    /* ── Maintenance Planned PM staged reminder (System 3) ── */
+    if (event === 'pm_plan_reminder') {
+      const p = body.pm;
+      if (!p) return new Response('missing pm', { status: 400 });
+      const chat = resolveEvent(routes, 'pm_plan_reminder');
+      if (chat === null) return json({ ok: true, skipped: true });
+      const overdue = Number(p.days) < 0;
+      const dueLine = overdue
+        ? `📅 ครบกำหนด: ${p.due_date} — <b>เกินมาแล้ว ${Math.abs(Number(p.days))} วัน</b>`
+        : `📅 ครบกำหนด: ${p.due_date} (อีก <b>${p.days}</b> วัน)`;
+      const equip = `${p.machine_no ? `${p.machine_no} ` : ''}${p.jig_name || '-'}`.trim();
+      const lines = [
+        `${p.stage_label || '🗓️ เตือนรอบ PM'}`, ``,
+        `🔧 เครื่อง/จิ๊ก: <b>${equip}</b>`,
+      ];
+      if (p.line_name)      lines.push(`🏭 ไลน์: ${p.line_name}`);
+      if (p.part_name)      lines.push(`📦 ชิ้นงาน: ${p.part_name}`);
+      if (p.checklist_name) lines.push(`📋 เช็คลิสต์: ${p.checklist_name}${p.frequency ? ` (รอบ ${p.frequency})` : ''}`);
+      lines.push(dueLine, ``, `— Smart Maintenance`);
+      const message = pick(routes, 'pm_plan_reminder', {
+        stage: p.stage, stage_label: p.stage_label, days: p.days, due_date: p.due_date,
+        jig_name: p.jig_name || '', machine_no: p.machine_no || '', line_name: p.line_name || '',
+        part_name: p.part_name || '', checklist_name: p.checklist_name || '', frequency: p.frequency || '',
+      }, lines.join('\n'));
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
+    }
+
     /* ── 4M change management (in-app always + Telegram by rule) ── */
     const { log } = body;
     if (!log) return new Response('missing log', { status: 400 });
