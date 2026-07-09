@@ -58,3 +58,10 @@ create policy "customer_shipping_orders_all" on customer_shipping_orders for all
 --   ('sale','page:/customer-demand',true), ('sale','page:/',true),
 --   ('sale','page:/dashboard',true), ('sale','page:/heijunka',true)
 -- on conflict (role, permission_key) do update set allowed = excluded.allowed;
+
+-- ── เพิ่มเติม (migration: customer_demand_edi_columns) — รองรับไฟล์ EDI Ford 830/862 ──
+-- alter table customer_forecasts add column customer_part_no text;
+-- alter table customer_forecasts add column source text not null default 'manual';
+-- alter table customer_shipping_orders add column customer_part_no text;
+-- alter table customer_shipping_orders add column source text not null default 'manual';
+-- alter table customer_shipping_orders add column dock_code text;

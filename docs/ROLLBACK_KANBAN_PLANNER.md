@@ -75,6 +75,13 @@ git push origin main
     `delete from role_permissions where permission_key = 'page:/customer-demand' or role = 'sale';`
 - Rollback โค้ด: `git revert -m 1 <merge-sha รอบ 5>` — หน้าใหม่หายไป ตาราง DB คงอยู่เฉยๆ ไม่มีใครเรียกใช้
 
+## รอบแก้ที่ 6 — รองรับไฟล์ EDI จริง (Ford/AAT 830·862)
+
+- ไฟล์แก้: `src/pages/CustomerDemand.jsx` · DB: เพิ่มคอลัมน์ `customer_part_no`, `source`,
+  `dock_code` (nullable/default — ไม่กระทบข้อมูลเดิม, ดูท้าย `docs/sql/04_customer_demand.sql`)
+- นำเข้า EDI เป็นแบบ "แทนที่ฉบับเดิมของ ship-to" — ถ้า rollback โค้ด ข้อมูลที่นำเข้าแล้วยังอยู่ครบ
+- Rollback เฉพาะรอบนี้: `git revert -m 1 <merge-sha รอบ 6>`
+
 ## สิ่งที่ต้องรู้ตอน rollback
 
 1. **ยอดสต็อกจาก "ยืนยันส่ง" ต่างกันสองเวอร์ชัน** — เวอร์ชันใหม่บันทึก `line_stock_transactions`
