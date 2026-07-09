@@ -4,7 +4,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import InternalTimeBoard from '../components/InternalTimeBoard';
-import { frameMin } from '../utils/timeFrame';
+import { frameMin, breaksToFrame } from '../utils/timeFrame';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
    Store จ่ายพาร์ทเข้าไลน์ → บันทึก transaction type='issue'
@@ -911,9 +911,14 @@ function DeliveryTimeBoardTab() {
   const [deliveries, setDeliveries] = useState([]);
   const [popup, setPopup] = useState(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [breakPolicies, setBreakPolicies] = useState([]);
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 30000);
     return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    supabaseDR.from('break_policies').select('*').eq('is_active', true)
+      .then(({ data }) => setBreakPolicies(data || []));
   }, []);
 
   const workDateNow = () => {
@@ -984,7 +989,7 @@ function DeliveryTimeBoardTab() {
       <InternalTimeBoard
         title={`🕐 บอร์ดรอบส่งภายในวันนี้ — Store → ไลน์ผลิต`}
         hint="ตั้งค่ารอบที่แท็บ ⏰ รอบจัดส่ง · กดยืนยันส่ง/รับที่หน้า 🎴 Kanban Board"
-        groups={groups} nowMin={nm}
+        groups={groups} nowMin={nm} breaks={breaksToFrame(breakPolicies)}
         onItemClick={(r, x, y) => setPopup({ r, x, y })}
       />
       {popup && (() => {

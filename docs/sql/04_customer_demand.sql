@@ -70,3 +70,11 @@ create policy "customer_shipping_orders_all" on customer_shipping_orders for all
 -- create table ship_to_plants (code text primary key, customer_name text not null,
 --   plant_name text, note text, is_active boolean default true, updated_at timestamptz default now());
 -- + RLS policy to public + seed: GRBNA GBL9A GBJWA GBJWC GBJWE HPUDA 1155B
+
+-- ── เพิ่มเติม (2026-07-09) — แยกหน้า Planner & Sales ออกจาก Delivery ──
+-- โปรเจคหลัก: seed สิทธิ์หน้าใหม่ /planner-sales โดย copy จากสิทธิ์ /customer-demand เดิม
+-- (applied ผ่าน MCP แล้ว)
+-- insert into role_permissions (role, permission_key, allowed)
+-- select role, 'page:/planner-sales', allowed from role_permissions
+-- where permission_key = 'page:/customer-demand'
+-- on conflict (role, permission_key) do nothing;

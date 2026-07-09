@@ -140,6 +140,21 @@ git push origin main
   ถอนได้ด้วย `drop table if exists internal_delivery_sla;`
 - Rollback เฉพาะรอบนี้: `git revert -m 1 <merge-sha รอบ 11>` — ไม่มีผลกับข้อมูล kanban/rack เดิม
 
+## รอบแก้ที่ 12 — มาตรฐานบอร์ดเวลา (now-line/เงาเบรค) + แยกหน้า Planner & Sales / Delivery
+
+- **มาตรฐานบอร์ด:** `InternalTimeBoard.jsx` (Rack Center + Store) และ Shipping Chart
+  (หน้า Delivery) ได้ playhead ชมพู `.now-line` + ป้ายเวลา `.now-chip` + แถบลายเฉียง
+  ช่วงเวลาพักจาก `break_policies` — มาตรฐานเดียวกับบอร์ด Heijunka (helper ใหม่
+  `breaksToFrame` ใน `src/utils/timeFrame.js`)
+- **แยกหน้า:** `src/pages/PlannerSales.jsx` (ใหม่ · route `/planner-sales` · Forecast
+  Planner + อัพโหลด Sales ย้ายมาทั้งก้อน) — `CustomerDemand.jsx` เดิมกลายเป็นหน้า
+  🚚 Delivery (เหลือ Shipping Chart + Ship-to Config) route `/customer-demand` เดิม
+- ไฟล์แก้: `App.jsx` (route+เมนู), `PermissionsManagement.jsx` (เพิ่ม key หน้าใหม่)
+- **DB (โปรเจคหลัก):** แถว `role_permissions` ของ `page:/planner-sales` (copy จาก
+  `/customer-demand`: manager/supervisor/leader/qa/sale) — ถอน:
+  `delete from role_permissions where permission_key = 'page:/planner-sales';`
+- Rollback โค้ด: `git revert -m 1 <merge-sha รอบ 12>` — ข้อมูล forecast/order ไม่ถูกแตะ
+
 ## สิ่งที่ต้องรู้ตอน rollback
 
 1. **ยอดสต็อกจาก "ยืนยันส่ง" ต่างกันสองเวอร์ชัน** — เวอร์ชันใหม่บันทึก `line_stock_transactions`

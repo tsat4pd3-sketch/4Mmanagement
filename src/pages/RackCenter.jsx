@@ -4,7 +4,7 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import InternalTimeBoard from '../components/InternalTimeBoard';
-import { frameMin, frameMinFromIso } from '../utils/timeFrame';
+import { frameMin, frameMinFromIso, breaksToFrame } from '../utils/timeFrame';
 
 /* ─── RACK CENTER — เรียกภาชนะ/แร็คเปล่าคืนกลับมาใช้ ──────────────────────
    ไลน์ผลิตส่งกล่อง/ถาด/แร็คเปล่ากลับ rack center → ขอภาชนะชุดใหม่กลับมาใช้
@@ -56,6 +56,7 @@ export default function RackCenter() {
   const [slaDraft,       setSlaDraft]       = useState(null);
   const [popup,          setPopup]          = useState(null);      // { r, x, y } — คลิกบล็อกบนบอร์ดเวลา
   const [nowMs,          setNowMs]          = useState(() => Date.now());   // นาฬิกาบอร์ดเวลา/SLA
+  const [breakPolicies,  setBreakPolicies]  = useState([]);        // เงาเวลาพักบนบอร์ดเวลา
 
   const load = useCallback(async () => {
     const [{ data: ln }, { data: ct }, { data: req }, { data: pkg }, { data: slaRow }] = await Promise.all([
@@ -87,6 +88,10 @@ export default function RackCenter() {
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 30000);
     return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    supabaseDR.from('break_policies').select('*').eq('is_active', true)
+      .then(({ data }) => setBreakPolicies(data || []));
   }, []);
 
   // live refresh เมื่อมีไลน์/rack center อื่นกดเปลี่ยนสถานะ
@@ -267,7 +272,7 @@ export default function RackCenter() {
           <InternalTimeBoard
             title={`🕐 บอร์ดเวลาเรียกภาชนะ — วันงานปัจจุบัน`}
             hint={`SLA: เริ่มเตรียมใน ${sla.prepare_within_min} นาที · ส่งถึงไลน์ใน ${sla.deliver_within_min} นาที (🟠 เลยเตรียม · 🔴 เลยส่ง)`}
-            groups={groups} nowMin={nm}
+            groups={groups} nowMin={nm} breaks={breaksToFrame(breakPolicies)}
             onItemClick={(r, x, y) => setPopup({ r, x, y })}
           />
         );
