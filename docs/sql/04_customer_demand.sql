@@ -65,3 +65,8 @@ create policy "customer_shipping_orders_all" on customer_shipping_orders for all
 -- alter table customer_shipping_orders add column customer_part_no text;
 -- alter table customer_shipping_orders add column source text not null default 'manual';
 -- alter table customer_shipping_orders add column dock_code text;
+
+-- ── เพิ่มเติม (migration: ship_to_plants_config) — config code ปลายทาง → ลูกค้า ──
+-- create table ship_to_plants (code text primary key, customer_name text not null,
+--   plant_name text, note text, is_active boolean default true, updated_at timestamptz default now());
+-- + RLS policy to public + seed: GRBNA GBL9A GBJWA GBJWC GBJWE HPUDA 1155B

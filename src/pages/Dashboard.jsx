@@ -220,6 +220,8 @@ export default function Dashboard() {
   const [breakPolicies, setBreakPolicies] = useState([]);
   // วันที่ของ Heijunka Board — เลือกดูย้อนหลังได้ (default = วันงานปัจจุบัน)
   const [boardDate,     setBoardDate]     = useState(() => getWorkDateStr(new Date()));
+  const [lineByMat,     setLineByMat]     = useState({});   // mat_no → line_name (จาก dr_products)
+  const [ediOrders,     setEdiOrders]     = useState([]);   // รอบส่งลูกค้า (EDI 862) วันนี้+พรุ่งนี้ ที่ยังไม่ส่ง
 
   // โหลดเฉพาะข้อมูลผลิต/OEE จาก DR — เบากว่า fetchAll มาก ใช้กับ realtime
   const fetchProdStatus = useCallback(async () => {
@@ -229,18 +231,33 @@ export default function Dashboard() {
         .select('id, line_name, shift, status, work_date, start_time, created_at, dr_products(name, target_per_shift, cycle_time_sec, process_type)')
         .eq('work_date', boardDate),
       supabaseDR.from('break_policies').select('*').eq('is_active', true),
-      supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, image_url').not('mat_no', 'is', null),
+      supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, image_url, line_name').not('mat_no', 'is', null),
     ]);
     // production_sessions.product_id ไม่ได้ตั้งค่าเสมอ (กะนึงมีได้หลาย mat_no) — ใช้ map นี้
     // เป็น fallback หา cycle_time_sec รายออเดอร์จาก mat_no ตรง ๆ แทนการพึ่ง session.dr_products
     const ctMap = {};
     const nameMap = {};
     const imgMap = {};
-    (products || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; nameMap[p.mat_no] = p.name || ''; imgMap[p.mat_no] = p.image_url || ''; });
+    const lineMap = {};
+    (products || []).forEach(p => {
+      ctMap[p.mat_no] = p.cycle_time_sec || 0; nameMap[p.mat_no] = p.name || ''; imgMap[p.mat_no] = p.image_url || '';
+      if (p.line_name) lineMap[p.mat_no] = p.line_name;
+    });
     setCtByMatNo(ctMap);
     setNameByMatNo(nameMap);
     setImgByMatNo(imgMap);
+    setLineByMat(lineMap);
     setBreakPolicies(breakPolicies || []);
+    // 📡 รอบส่งลูกค้า (EDI 862) ของวันนี้→พรุ่งนี้ ที่ยังไม่ส่ง — ใช้พยากรณ์กะดึกล่วงหน้าแม้ยังไม่เปิดใบผลิต
+    {
+      const nd = new Date(`${boardDate}T12:00:00`);
+      nd.setDate(nd.getDate() + 1);
+      const nextDay = `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, '0')}-${String(nd.getDate()).padStart(2, '0')}`;
+      const { data: shipOrders } = await supabaseDR.from('customer_shipping_orders')
+        .select('mat_no, qty, due_date, ship_time, customer, status')
+        .gte('due_date', boardDate).lte('due_date', nextDay).neq('status', 'shipped');
+      setEdiOrders(shipOrders || []);
+    }
     const sessionIds = (sessions || []).map(s => s.id);
     let ordersBySession = {}, dtBySession = {}, defectBySession = {};
     if (sessionIds.length > 0) {
@@ -1559,6 +1576,50 @@ export default function Dashboard() {
                             projEndMs = projEndMs == null ? end : Math.max(projEndMs, end);
                           });
                         });
+                        // 📡 EDI fallback: กะดึกยังไม่เปิดใบผลิตเลย — ใช้รอบส่งลูกค้าของพรุ่งนี้ตอบว่าต้องเรียกเข้า 20:00 มั้ย
+                        if (shift === 'night' && !remainCards && !isHistorical && !isFutureDay && nowMs < gridStartMs + 14.5 * 3600000) {
+                          const ediForLine = ediOrders.filter(o => {
+                            const ln = lineByMat[o.mat_no];
+                            return ln && (childParentMap[ln] || ln) === lineName && o.due_date > boardDate;
+                          });
+                          const ediQty = ediForLine.reduce((a, o) => a + Number(o.qty), 0);
+                          if (ediQty > 0) {
+                            const NIGHT_OT_IN2 = gridStartMs + 12 * 3600000, NIGHT_REG_IN2 = gridStartMs + 14.5 * 3600000;
+                            let w = 0, noCtQty = 0;
+                            ediForLine.forEach(o => { const ct = ctByMatNo[o.mat_no] || 0; if (ct > 0) w += Number(o.qty) * ct * 1000; else noCtQty += Number(o.qty); });
+                            const finishFrom2 = (startMs, workMs) => {
+                              const breaks = allBreaksOnce();
+                              let end = startMs + workMs;
+                              const consumed = new Set();
+                              let ext = true;
+                              while (ext) {
+                                ext = false;
+                                breaks.forEach(([bs, be], i) => {
+                                  if (consumed.has(i)) return;
+                                  if (bs < end && be > startMs) { consumed.add(i); end += be - bs; ext = true; }
+                                });
+                              }
+                              return end;
+                            };
+                            if (w <= 0) {
+                              chips.push({ color: 'var(--muted)', text: `🌙📡 EDI: งานส่งพรุ่งนี้ ${ediQty.toLocaleString()} ชิ้น แต่ไม่มี cycle time — คาดการณ์ไม่ได้` });
+                            } else {
+                              const nf = finishFrom2(Math.max(NIGHT_REG_IN2, nowMs), w);
+                              const tail = noCtQty > 0 ? ` (+${noCtQty.toLocaleString()} ชิ้นไม่มี CT)` : '';
+                              if (nf <= gridEndMs) {
+                                chips.push({ color: '#22c55e', text: `🌙📡 EDI ส่งพรุ่งนี้ ${ediQty.toLocaleString()} ชิ้น — เข้าปกติ 22:30 ทัน คาดเสร็จ ~${fmtMs(nf)}${tail}` });
+                              } else {
+                                const of2 = finishFrom2(Math.max(NIGHT_OT_IN2, nowMs), w);
+                                if (of2 <= gridEndMs) {
+                                  chips.push({ color: '#f59e0b', text: `🌙📡 EDI ส่งพรุ่งนี้ ${ediQty.toLocaleString()} ชิ้น — ⏰ ควรเรียกเข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)} · ถ้าเข้า 22:30 จบ ~${fmtMs(nf)})${tail}` });
+                                } else {
+                                  chips.push({ color: '#ef4444', text: `🌙📡 EDI ส่งพรุ่งนี้ ${ediQty.toLocaleString()} ชิ้น — 🚨 เกินกำลังแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)}) วางแผนล่วงหน้า${tail}` });
+                                }
+                              }
+                            }
+                          }
+                          return;
+                        }
                         if (!remainCards) return;
                         const sLabel = shift === 'day' ? '☀️' : '🌙';
                         if (isHistorical) {
