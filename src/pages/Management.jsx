@@ -1014,7 +1014,7 @@ export default function Management() {
         {/* ── Mini Heijunka board ── */}
         {lineProdData && (() => {
           const HOURS = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
-          const LEFT_W = 110;
+          const LEFT_W = 170; // ป้ายพาร์ทใหญ่ขึ้น (รูป 46px + ชื่อ 2 บรรทัด) — ป้ายเดียวครอบ 2 แถบเวลา
           const nowMs = nowForBoard.current.getTime();
           const wd = lineProdData.workDate;
           const gridStartMs = new Date(`${wd}T08:00:00`).getTime();
@@ -1428,58 +1428,13 @@ export default function Management() {
                   ))}
                 </div>
               )}
-              {/* Timeline: 2 แถว × 12 ชม. แยกแถวตาม product (mat_no) */}
-              {HALVES.map(half => (
-                <div key={half.key} style={{ borderTop: half.key === 'pm' ? '2px solid var(--border2)' : 'none' }}>
-                  {/* Hour header */}
-                  <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
-                    <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 8, fontWeight: 700, color: 'var(--muted)' }}>กะ / ผลิต</div>
-                    {half.hours.map((h, i) => {
-                      const slotMs = half.startMs + i * 3600000;
-                      const isNow = nowMs >= slotMs && nowMs < slotMs + 3600000;
-                      const isShiftBound = h === 8 || h === 20;
-                      return (
-                        <div key={i} style={{
-                          flex: 1, minWidth: 0, textAlign: 'center',
-                          fontSize: 8, fontWeight: isNow ? 800 : isShiftBound ? 600 : 400,
-                          color: isNow ? '#4d9fff' : isShiftBound ? 'var(--text2)' : 'var(--muted)',
-                          padding: '4px 0', lineHeight: 1,
-                          borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
-                          background: isNow ? 'rgba(77,159,255,0.12)' : 'transparent',
-                        }}>
-                          {String(h).padStart(2,'0')}:00
-                          {isNow && <div style={{ width: 3, height: 3, borderRadius: '50%', background: '#4d9fff', margin: '1px auto 0' }} />}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {/* Rows ต่อ product */}
-                  {productRows.map((row, ri) => {
-                    const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
-                    const rowDemand = row.cards.reduce((a, c) => a + (c.qty || 0), 0);
-                    const doneCount = row.cards.filter(c => c.isDone).length;
-                    const delayed   = computeQueuedPositionsFull(row.cards).map(item => pctForHalf(item, half)).filter(p => p && p.isDelayed).length;
-                    const isOpen    = row.cards.some(c => c.sessionOpen);
-                    const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
-                    const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
-                    return (
-                      <div key={row.key} style={{ display: 'flex', height: 34, borderTop: ri > 0 ? '1px solid var(--border2)' : 'none', overflow: 'hidden' }}>
-                        <div style={{ width: LEFT_W, flexShrink: 0, padding: '3px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
-                          {row.img && <img src={row.img} alt="" style={{ width: 20, height: 20, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />}
-                          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <span style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: LEFT_W - 16 }}>{row.label}</span>
-                            {delayed > 0 && <span style={{ fontSize: 7, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}</span>}
-                            {isOpen && delayed === 0 && <span style={{ fontSize: 7, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 2 }}>
-                            <span style={{ fontSize: 11, fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
-                            <span style={{ fontSize: 7, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
-                          </div>
-                          </div>
-                        </div>
-                        {/* Timeline cells + order blocks */}
-                        <div style={{ flex: 1, position: 'relative', display: 'flex' }}>
+              {/* Timeline: พาร์ทละ 1 บล็อก — ป้าย/รูปใหญ่อันเดียวครอบ 2 แถบเวลา (☀️ 08–20 บน / 🌙 20–08 ล่าง)
+                  แทนการวาดซ้ำเช้า-ดึกแยกกันซึ่งทำให้ป้ายซ้ายครึ่งหนึ่งเป็นข้อมูลซ้ำและรูปพาร์ทถูกบีบจนเล็ก
+                  หัวชั่วโมงแสดงเวลาคู่บน-ล่างในคอลัมน์เดียวกัน (คอลัมน์เดียว = 2 เวลาห่างกัน 12 ชม.) */}
+              {(() => {
+                const STRIP_H = 32;
+                const renderStrip = (row, half) => (
+                  <div key={half.key} style={{ height: STRIP_H, position: 'relative', display: 'flex', borderTop: half.key === 'pm' ? '1px dashed var(--border)' : 'none' }}>
                           {half.hours.map((h, i) => {
                             const slotMs = half.startMs + i * 3600000;
                             const isNow = nowMs >= slotMs && nowMs < slotMs + 3600000;
@@ -1576,12 +1531,69 @@ export default function Management() {
                             const nowPct = (nowMs - half.startMs) * pctPerMs;
                             return <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${nowPct}%`, width: 1.5, background: 'rgba(77,159,255,0.7)', zIndex: 2, pointerEvents: 'none' }} />;
                           })()}
-                        </div>
+                          {/* ป้ายกะมุมซ้ายของแถบ — บอกว่าแถบนี้คือช่วงเช้าหรือดึก */}
+                          <span style={{ position: 'absolute', left: 3, bottom: 1, fontSize: 8, opacity: 0.55, zIndex: 2, pointerEvents: 'none' }}>{half.key === 'am' ? '☀️' : '🌙'}</span>
+                  </div>
+                );
+                return (
+                  <div>
+                    {/* Hour header — เวลาคู่: บรรทัดบน ☀️ 08–19 / บรรทัดล่าง 🌙 20–07 คอลัมน์เดียวกัน */}
+                    <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+                      <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '3px 8px', fontSize: 9, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1 }}>
+                        <span>☀️ กะเช้า (แถบบน)</span>
+                        <span>🌙 กะดึก (แถบล่าง)</span>
                       </div>
-                    );
-                  })}
-                </div>
-              ))}
+                      {HALVES[0].hours.map((h, i) => {
+                        const hPm = HALVES[1].hours[i];
+                        const amSlot = HALVES[0].startMs + i * 3600000;
+                        const pmSlot = HALVES[1].startMs + i * 3600000;
+                        const isNowAm = nowMs >= amSlot && nowMs < amSlot + 3600000;
+                        const isNowPm = nowMs >= pmSlot && nowMs < pmSlot + 3600000;
+                        return (
+                          <div key={i} style={{
+                            flex: 1, minWidth: 0, textAlign: 'center', padding: '3px 0', lineHeight: 1.3,
+                            borderRight: '1px solid var(--border)',
+                            background: (isNowAm || isNowPm) ? 'rgba(77,159,255,0.12)' : 'transparent',
+                          }}>
+                            <div style={{ fontSize: 9, fontWeight: isNowAm ? 800 : 500, color: isNowAm ? '#4d9fff' : 'var(--text2)' }}>{String(h).padStart(2, '0')}:00</div>
+                            <div style={{ fontSize: 8, fontWeight: isNowPm ? 800 : 400, color: isNowPm ? '#4d9fff' : 'var(--muted)' }}>{String(hPm).padStart(2, '0')}:00</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Rows ต่อ product — ป้าย+รูปใหญ่ 1 อันครอบทั้ง 2 แถบเวลา */}
+                    {productRows.map((row) => {
+                      const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
+                      const rowDemand = row.cards.reduce((a, c) => a + (c.qty || 0), 0);
+                      const doneCount = row.cards.filter(c => c.isDone).length;
+                      const delayed   = computeQueuedPositionsFull(row.cards).filter(p => p.isDelayed).length;
+                      const isOpen    = row.cards.some(c => c.sessionOpen);
+                      const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
+                      const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
+                      return (
+                        <div key={row.key} style={{ display: 'flex', borderTop: '1px solid var(--border2)', overflow: 'hidden' }}>
+                          <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden' }}>
+                            {row.img && <img src={row.img} alt="" style={{ width: 46, height: 46, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
+                            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0 }}>
+                              <div style={{ fontSize: 10, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>{row.label}</div>
+                              <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: 14, fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
+                                <span style={{ fontSize: 9, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
+                                {delayed > 0 && <span style={{ fontSize: 9, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}</span>}
+                                {isOpen && delayed === 0 && <span style={{ fontSize: 9, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                            {renderStrip(row, HALVES[0])}
+                            {renderStrip(row, HALVES[1])}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           );
         })()}
