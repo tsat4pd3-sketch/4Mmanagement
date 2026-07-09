@@ -208,6 +208,20 @@ td {
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: var(--accent-dim); }
 
+/* ─── Sticky-header table ───────────────────────────────────────────
+   ครอบตาราง matrix ยาวๆ (เช็คชื่อ, จัดการสิทธิ์, สกิล) ให้หัวตารางค้างไว้ตอนเลื่อนลง
+   ใช้: <div className="table-sticky"> (มัก + .card) — ปรับความสูงด้วย style={{maxHeight}} ได้ */
+.table-sticky { overflow: auto; max-height: calc(100vh - 210px); }
+.table-sticky thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--card);
+  box-shadow: 0 1px 0 var(--border);
+}
+/* หัวคอลัมน์ที่ sticky ซ้ายอยู่แล้ว (เช่นชื่อพนักงาน/ชื่อสิทธิ์) ต้องลอยเหนือหัวคอลัมน์อื่นตรงมุม */
+.table-sticky thead th[style*="sticky"] { z-index: 12; }
+
 /* ─── Input / Select ────────────────────────────────────────────────────── */
 input, select, textarea {
   background: var(--bg3);

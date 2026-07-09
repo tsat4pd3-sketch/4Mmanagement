@@ -148,7 +148,7 @@ export default function PermissionsManagement() {
         การเปลี่ยนแปลงที่นี่มีผลกับผู้ใช้ทันทีตั้งแต่ครั้งถัดไปที่โหลดหน้าเว็บ
       </div>
 
-      <div style={{ overflowX: 'auto' }}>
+      <div className="table-sticky">
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '2px solid var(--border)' }}>

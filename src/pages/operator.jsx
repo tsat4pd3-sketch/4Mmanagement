@@ -550,14 +550,14 @@ export default function Operator() {
             className="skill-table-wrap">
             <div style={{ height: 1, width: tableWrapRef.current?.scrollWidth || 2000 }} />
           </div>
-          <div ref={tableWrapRef} className="card skill-table-wrap"
+          <div ref={tableWrapRef} className="card skill-table-wrap table-sticky"
             style={{ overflowX: 'auto', borderRadius: '0 0 8px 8px', marginTop: 0 }}>
             <table style={{ minWidth: 560, borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  <th style={{ position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 2 }}>โปรไฟล์</th>
-                  <th style={{ position: 'sticky', left: 58, background: 'var(--bg2)', zIndex: 2 }}>ID</th>
-                  <th style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 2, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>ชื่อ</th>
+                  <th style={{ position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 12 }}>โปรไฟล์</th>
+                  <th style={{ position: 'sticky', left: 58, background: 'var(--bg2)', zIndex: 12 }}>ID</th>
+                  <th style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 12, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>ชื่อ</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Section</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>แผนก</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Group</th>
@@ -569,7 +569,7 @@ export default function Operator() {
                       {sd.scope_section && <div style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 400 }}>📍{sd.scope_section}</div>}
                     </th>
                   ))}
-                  <th style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 2, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>จัดการ</th>
+                  <th style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 12, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>จัดการ</th>
                 </tr>
               </thead>
               <tbody>
