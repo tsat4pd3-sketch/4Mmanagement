@@ -38,6 +38,7 @@ export default function DailyPM() {
   const [tab, setTab] = useState('status')
   const [userId, setUserId] = useState(null)
   const [jigs, setJigs] = useState([])
+  const [prodLines, setProdLines] = useState([]) // รายชื่อไลน์ผลิต — ใช้กำหนดไลน์ให้อุปกรณ์ที่ยังไม่ระบุ
   const [targets, setTargets] = useState([])
   const [resultByJig, setResultByJig] = useState({})   // jig_id -> { status }
   const [firstOrderByLine, setFirstOrderByLine] = useState({})  // line_name -> ISO
@@ -61,13 +62,15 @@ export default function DailyPM() {
     const si = getShiftInfo()
     const startISO = si.shiftStart.toISOString()
 
-    const [{ data: jigRows }, { data: targetRows }, { data: prodChecklists }] = await Promise.all([
+    const [{ data: jigRows }, { data: targetRows }, { data: prodChecklists }, { data: lineRows }] = await Promise.all([
       supabaseDR.from('jigs').select('id, name, machine_no, line_name, jig_no').eq('module', 'mtn').order('line_name').order('name'),
       supabaseDR.from('pm_daily_line_targets').select('*').eq('is_active', true),
       supabaseDR.from('checklists').select('id').eq('module', 'mtn').eq('department', 'production'),
+      supabase.from('production_lines').select('name, parent_line_name').order('name'),
     ])
     setJigs(jigRows ?? [])
     setTargets(targetRows ?? [])
+    setProdLines(lineRows ?? [])
 
     // "checked this shift" = a production-department inspection since the shift start
     const prodClIds = new Set((prodChecklists ?? []).map(c => c.id))
@@ -164,6 +167,15 @@ export default function DailyPM() {
     targets.forEach(t => s.add(`${t.line_name}::${t.jig_id}`))
     return s
   }, [targets])
+
+  // กำหนดไลน์ให้อุปกรณ์ที่ยังไม่ระบุ — แก้จากหน้านี้ได้เลย ไม่ต้องวิ่งไปหน้าตั้งค่า PM
+  const assignJigLine = async (jig, line_name) => {
+    if (!canManage || !line_name) return
+    const { error } = await supabaseDR.from('jigs').update({ line_name }).eq('id', jig.id)
+    if (error) return toast.error(error.message)
+    toast.success(`ย้าย ${jig.name} เข้าไลน์ ${line_name} แล้ว — ติ๊กลงทะเบียนได้เลย`)
+    setJigs(prev => prev.map(j => (j.id === jig.id ? { ...j, line_name } : j)))
+  }
 
   const toggleTarget = async (line_name, jig) => {
     if (!canManage) return
@@ -309,8 +321,8 @@ export default function DailyPM() {
                     </div>
                     {noLine && (
                       <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 10 }}>
-                        อุปกรณ์กลุ่มนี้ยังไม่ถูกระบุว่าอยู่ไลน์ไหน — ลงทะเบียนไม่ได้ เพราะระบบจะจับคู่กับออร์เดอร์แรกของไลน์เพื่อเริ่มนับเวลาไม่ได้ (สถานะจะค้าง "ยังไม่เริ่มผลิต" ตลอด)
-                        {' '}กรุณากำหนดไลน์ให้อุปกรณ์ที่หน้า <Link to="/pm-setup" style={{ color: '#f59e0b', fontWeight: 700 }}>ตั้งค่า PM</Link> ก่อน
+                        อุปกรณ์กลุ่มนี้ยังไม่ถูกระบุว่าอยู่ไลน์ไหน — ระบบจับคู่กับออร์เดอร์แรกของไลน์เพื่อเริ่มนับเวลาไม่ได้ (สถานะจะค้าง "ยังไม่เริ่มผลิต" ตลอด)
+                        {' '}<b>เลือกไลน์ในการ์ดด้านล่างได้เลย</b> อุปกรณ์จะย้ายเข้ากลุ่มไลน์นั้นแล้วติ๊กลงทะเบียนต่อได้ทันที (หรือแก้ที่หน้า <Link to="/pm-setup" style={{ color: '#f59e0b', fontWeight: 700 }}>ตั้งค่า PM</Link> ก็ได้)
                       </div>
                     )}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 8 }}>
@@ -322,13 +334,22 @@ export default function DailyPM() {
                           <label key={j.id} title={`${j.name}${j.machine_no ? ` · ${j.machine_no}` : ''}${j.jig_no ? ` · ${j.jig_no}` : ''}`} style={{
                             display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 10px', borderRadius: 8, cursor: canToggle ? 'pointer' : 'default',
                             border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, background: on ? 'var(--accent-dim)' : 'var(--bg3)',
-                            opacity: noLine ? 0.6 : 1,
                           }}>
-                            <input type="checkbox" checked={on} disabled={!canToggle} onChange={() => toggleTarget(line, j)} style={{ marginTop: 2, flexShrink: 0 }} />
+                            {/* width/height กันเหนียวซ้ำกับ rule กลาง input[type=checkbox]{width:auto} — global width:100% เคยยืด checkbox จนบีบชื่อหาย */}
+                            <input type="checkbox" checked={on} disabled={!canToggle} onChange={() => toggleTarget(line, j)} style={{ marginTop: 2, flexShrink: 0, width: 15, height: 15 }} />
                             <div style={{ minWidth: 0, flex: 1 }}>
                               {/* ชื่อเต็ม ตัดได้ไม่เกิน 2 บรรทัด — ห้ามตัดจนเหลือตัวเดียวแบบ nowrap เดิม */}
                               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', lineHeight: 1.35, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>{j.name}</div>
                               {(j.machine_no || j.jig_no) && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>{[j.machine_no, j.jig_no].filter(Boolean).join(' · ')}</div>}
+                              {noLine && canManage && (
+                                <select defaultValue="" onClick={e => e.preventDefault()} onChange={e => assignJigLine(j, e.target.value)}
+                                  style={{ width: '100%', marginTop: 6, padding: '4px 8px', fontSize: 12, borderRadius: 6, background: 'var(--bg)', border: '1px solid rgba(245,158,11,0.5)', color: 'var(--text)' }}>
+                                  <option value="" disabled>📍 เลือกไลน์ให้เครื่องนี้…</option>
+                                  {prodLines.map(l => (
+                                    <option key={l.name} value={l.name}>{l.parent_line_name ? `↳ ${l.name}` : l.name}</option>
+                                  ))}
+                                </select>
+                              )}
                             </div>
                           </label>
                         )

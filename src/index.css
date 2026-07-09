@@ -235,6 +235,12 @@ input, select, textarea {
   outline: none;
   transition: border-color 0.2s;
 }
+/* checkbox/radio ต้องไม่โดน width:100% ด้านบน — ไม่งั้นมันยืดเต็ม container แล้วบีบ label ข้างๆ จนหาย
+   (เคยกัดที่หน้า Daily PM: ชื่อเครื่องในการ์ดลงทะเบียนถูกบีบจนมองไม่เห็น) */
+input[type="checkbox"], input[type="radio"] {
+  width: auto;
+  padding: 0;
+}
 input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 input::placeholder, textarea::placeholder { color: var(--muted); }
 select { cursor: pointer; }
