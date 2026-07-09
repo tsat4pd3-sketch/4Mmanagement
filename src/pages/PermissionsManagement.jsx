@@ -38,7 +38,8 @@ const PAGE_GROUPS = [
       { key: 'page:/line-stock',   label: 'Store management' },
       { key: 'page:/heijunka',     label: 'Kanban Board' },
       { key: 'page:/rack-center',  label: 'Rack Center management' },
-      { key: 'page:/customer-demand', label: 'Customer Demand & Shipping' },
+      { key: 'page:/planner-sales', label: 'Planner & Sales' },
+      { key: 'page:/customer-demand', label: 'Delivery' },
     ],
   },
   {
