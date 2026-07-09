@@ -23,10 +23,6 @@ const inputSt = {
   border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)',
 };
 
-const todayStr = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
 const dateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const monthFirst = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 const monthLabel = (iso) => {
@@ -659,16 +655,37 @@ const SHIP_STATUS = {
   shipped:  { label: '✅ ส่งแล้ว',    color: '#22c55e', next: null,       nextLabel: null },
 };
 function ShippingTab({ fullName, refreshKey, custLabel }) {
-  const [day, setDay] = useState(todayStr());
+  // กรอบ "วันงาน" 08:00 → 08:00 วันถัดไป (ตามกฎเวลาทำงานของระบบ) — รอบส่งตี 0–7 โมง คือช่วงกะดึกของวันงานนั้น
+  const [day, setDay] = useState(workDateStr());
   const [orders, setOrders] = useState([]);
   const [busy, setBusy] = useState(null);
-  const [fgStock, setFgStock] = useState({});   // mat_no → { total, lines: [{line_name, qty}] } — stock FG พร้อมส่งใน warehouse
+  const [fgStock, setFgStock] = useState({});   // mat_no → { total, lines } — stock FG พร้อมส่งใน warehouse
   const [cardFilter, setCardFilter] = useState('todo');   // 'todo' | 'overdue' | 'shipped' | 'all'
+  const [popup, setPopup] = useState(null);     // { o, x, y } — popup รายละเอียดเมื่อคลิกบล็อกบนชาร์ต
+  const [highlightId, setHighlightId] = useState(null);
+
+  const nextDayOf = (d) => { const x = new Date(`${d}T12:00:00`); x.setDate(x.getDate() + 1); return dateStr(x); };
 
   const load = useCallback(async () => {
-    const { data } = await supabaseDR.from('customer_shipping_orders').select('*').eq('due_date', day).order('ship_time', { ascending: true, nullsFirst: false });
-    setOrders(data || []);
-    const mats = [...new Set((data || []).map(o => o.mat_no))];
+    // วันงาน D = (D, เวลา ≥ 08:00 หรือไม่ระบุเวลา) + (D+1, เวลา < 08:00 = กะดึกข้ามคืน)
+    const nd = nextDayOf(day);
+    const [{ data: d1 }, { data: d2 }] = await Promise.all([
+      supabaseDR.from('customer_shipping_orders').select('*').eq('due_date', day),
+      supabaseDR.from('customer_shipping_orders').select('*').eq('due_date', nd).not('ship_time', 'is', null).lt('ship_time', '08:00'),
+    ]);
+    const list = [
+      ...(d1 || []).filter(o => !o.ship_time || o.ship_time.slice(0, 5) >= '08:00'),
+      ...(d2 || []),
+    ];
+    const wrapKey = (o) => {
+      if (!o.ship_time) return 100000;
+      const m = Number(o.ship_time.slice(0, 2)) * 60 + Number(o.ship_time.slice(3, 5));
+      return m < 480 ? m + 1440 : m;
+    };
+    list.sort((a, b) => wrapKey(a) - wrapKey(b));
+    setOrders(list);
+    setPopup(null);
+    const mats = [...new Set(list.map(o => o.mat_no))];
     if (mats.length) {
       const { data: st } = await supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand').in('mat_no', mats);
       const m = {};
@@ -684,12 +701,39 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
   }, [day]);
   useEffect(() => { load(); }, [load, refreshKey]);
 
+  const shiftDay = (n) => {
+    const d = new Date(`${day}T12:00:00`);
+    d.setDate(d.getDate() + n);
+    setDay(dateStr(d));
+  };
+
+  /* เวลาบนกรอบวันงาน: นาทีแบบ wrap — ก่อน 08:00 บวก 24 ชม. เข้าท้ายกรอบ */
+  const FRAME_START = 8 * 60;
+  const wrapMins = (t) => {
+    if (!t) return null;
+    const m = Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+    return m < FRAME_START ? m + 1440 : m;
+  };
+  const now = new Date();
+  const isToday = day === workDateStr();
+  const nowW = wrapMins(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+  const isOverdue = (o) => isToday && o.status !== 'shipped' && wrapMins(o.ship_time) != null && wrapMins(o.ship_time) < nowW;
+
+  const byCustomer = useMemo(() => {
+    const m = {};
+    orders.forEach(o => {
+      const key = custLabel ? custLabel(o.customer) : (o.customer || '— ไม่ระบุลูกค้า —');
+      (m[key] = m[key] || []).push(o);
+    });
+    return m;
+  }, [orders, custLabel]);
+
   // จัดสรร stock พร้อมส่งให้รอบที่ยังไม่ส่ง เรียงตามเวลา (FIFO) — รอบไหนพร้อมส่ง/ขาดเท่าไหร่
   const coverage = useMemo(() => {
     const remain = {};
     Object.entries(fgStock).forEach(([m, v]) => { remain[m] = v.total; });
     const map = {};
-    [...orders].sort((a, b) => ((a.ship_time || '99') < (b.ship_time || '99') ? -1 : 1)).forEach(o => {
+    orders.forEach(o => {
       if (o.status === 'shipped') return;
       const avail = remain[o.mat_no] || 0;
       const use = Math.min(avail, Number(o.qty));
@@ -698,12 +742,6 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
     });
     return map;
   }, [orders, fgStock]);
-
-  const shiftDay = (n) => {
-    const d = new Date(`${day}T12:00:00`);
-    d.setDate(d.getDate() + n);
-    setDay(dateStr(d));
-  };
 
   const advance = async (o) => {
     const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
@@ -741,42 +779,21 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
     setBusy(null);
   };
 
-  const now = new Date();
-  const isToday = day === todayStr();
-  const nowMins = now.getHours() * 60 + now.getMinutes();
-  const timeMins = (t) => t ? Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)) : null;
-  const isOverdue = (o) => isToday && o.status !== 'shipped' && timeMins(o.ship_time) != null && timeMins(o.ship_time) < nowMins;
-
-  const byCustomer = useMemo(() => {
-    const m = {};
-    orders.forEach(o => {
-      const key = custLabel ? custLabel(o.customer) : (o.customer || '— ไม่ระบุลูกค้า —');
-      (m[key] = m[key] || []).push(o);
-    });
-    return m;
-  }, [orders, custLabel]);
-
   const shippedCount = orders.filter(o => o.status === 'shipped').length;
   const overdueCount = orders.filter(isOverdue).length;
-  // timeline 06:00–22:00 (ช่วงรอบส่งปกติ) — ถ้ามีรอบนอกช่วงจะขยายให้เอง
-  const mins = orders.map(o => timeMins(o.ship_time)).filter(v => v != null);
-  const tStart = Math.min(6 * 60, ...(mins.length ? [Math.floor(Math.min(...mins) / 60) * 60] : [6 * 60]));
-  const tEnd = Math.max(22 * 60, ...(mins.length ? [Math.ceil((Math.max(...mins) + 30) / 60) * 60] : [22 * 60]));
-  const span = tEnd - tStart;
-  const hourMarks = [];
-  for (let h = tStart / 60; h <= tEnd / 60; h++) hourMarks.push(h);
-  // ── กันบล็อกทับกัน: รอบที่เวลาชน/ใกล้กัน (< SPAN_MIN นาที) ถูกดันลง "เลน" ถัดไปของแถวลูกค้าเดียวกัน ──
-  const SPAN_MIN = 40;                       // ความกว้างเวลาโดยประมาณของ 1 บล็อกบนชาร์ต
-  const PX_PER_HOUR = 76;                    // สเกลแกนเวลา — ชาร์ตกว้างจริงและเลื่อนซ้ายขวาได้
-  const chartW = (span / 60) * PX_PER_HOUR;
-  const LANE_H = 30;
+
+  // ── ชาร์ตเต็มกรอบ 24 ชม. (08:00 → 08:00) ไม่ต้องเลื่อน — บล็อกเล็ก คลิกดูรายละเอียดใน popup ──
+  const tStart = FRAME_START, span = 1440;
+  const hourMarks = Array.from({ length: 25 }, (_, i) => FRAME_START + i * 60);
+  const SPAN_MIN = 40;   // ระยะเวลาที่ถือว่า "ชนกัน" → แยกเลน
+  const LANE_H = 20;
   const lanesByCustomer = (() => {
     const res = {};
     Object.entries(byCustomer).forEach(([cust, list]) => {
-      const laneEnd = [];                    // เวลาสิ้นสุดของบล็อกล่าสุดในแต่ละเลน
+      const laneEnd = [];
       const map = {};
-      [...list].sort((a, b) => (timeMins(a.ship_time) ?? 100000) - (timeMins(b.ship_time) ?? 100000)).forEach(o => {
-        const t = timeMins(o.ship_time) ?? tEnd;
+      list.forEach(o => {
+        const t = wrapMins(o.ship_time) ?? (tStart + span);
         let li = laneEnd.findIndex(end => t >= end);
         if (li < 0) { li = laneEnd.length; laneEnd.push(0); }
         laneEnd[li] = t + SPAN_MIN;
@@ -787,14 +804,32 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
     return res;
   })();
 
+  // คลิกจาก popup → กระโดดไปการ์ดรายการด้านล่าง (สลับ filter ให้ถ้าการ์ดถูกซ่อนอยู่)
+  const goToCard = (o) => {
+    const visible = cardFilter === 'all'
+      || (cardFilter === 'shipped' && o.status === 'shipped')
+      || (cardFilter === 'overdue' && isOverdue(o))
+      || (cardFilter === 'todo' && o.status !== 'shipped');
+    if (!visible) setCardFilter('all');
+    setPopup(null);
+    setHighlightId(o.id);
+    setTimeout(() => document.getElementById(`ship-card-${o.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
+    setTimeout(() => setHighlightId(null), 3000);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* แถวควบคุม — บรรทัดเดียว: เลือกวัน + สรุปยอด */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button onClick={() => shiftDay(-1)} style={btn(false)}>◀</button>
-        <input type="date" value={day} onChange={e => e.target.value && setDay(e.target.value)} style={inputSt} />
-        <button onClick={() => shiftDay(1)} style={btn(false)}>▶</button>
-        {!isToday && <button onClick={() => setDay(todayStr())} style={btn(true)}>วันนี้</button>}
-        <span style={{ width: 1, height: 22, background: 'var(--border)' }} />
+        <button onClick={() => shiftDay(-1)} style={{ ...btn(false), width: 'auto', flexShrink: 0 }}>◀</button>
+        <input type="date" value={day} onChange={e => e.target.value && setDay(e.target.value)}
+          style={{ ...inputSt, width: 140, flexShrink: 0 }} />
+        <button onClick={() => shiftDay(1)} style={{ ...btn(false), width: 'auto', flexShrink: 0 }}>▶</button>
+        {!isToday && <button onClick={() => setDay(workDateStr())} style={{ ...btn(true), width: 'auto', flexShrink: 0 }}>วันนี้</button>}
+        <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--muted)', flexShrink: 0 }}>
+          🕗 วันงาน 08:00 → 08:00
+        </span>
+        <span style={{ width: 1, height: 22, background: 'var(--border)', flexShrink: 0 }} />
         <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>
           🚚 {orders.length} รอบส่ง · ✅ {shippedCount} ส่งแล้ว
           {overdueCount > 0 && <span style={{ color: '#ef4444' }}> · 🔴 {overdueCount} เลยเวลา</span>}
@@ -803,75 +838,123 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
 
       {orders.length === 0 ? (
         <div style={{ ...card, padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-          ไม่มีรอบส่งงานวันที่ {day} — อัพโหลด Order ที่แท็บ 📤 อัพโหลด
+          ไม่มีรอบส่งงานในวันงาน {day} (08:00 → 08:00 วันถัดไป) — อัพโหลด Order ที่แท็บ 📤 อัพโหลด
         </div>
       ) : (
         <>
-          {/* Shipping time chart — แยกแถวตามลูกค้า + แยก "เลน" เมื่อรอบเวลาชนกัน (ไม่ทับกัน) · เลื่อนซ้ายขวาได้ */}
+          {/* Shipping time chart — เต็ม 24 ชม.ในจอเดียว · รอบเวลาชนกันแยกชั้นอัตโนมัติ · คลิกบล็อกดูรายละเอียด */}
           <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🕐 Shipping Time Chart — {day}</span>
-              <span style={{ fontSize: 10, color: 'var(--muted)' }}>↔ เลื่อนดูตามเวลาได้ · รอบที่เวลาชนกันจะแยกชั้นให้อัตโนมัติ</span>
+            <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🕐 Shipping Time Chart — วันงาน {day}</span>
+              <span style={{ fontSize: 10, color: 'var(--muted)' }}>คลิกที่บล็อกเพื่อดูรายละเอียด / ไปที่การ์ดรายการ</span>
             </div>
-            <div style={{ overflowX: 'auto' }}>
-              <div style={{ minWidth: 130 + chartW }}>
-                <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
-                  <div style={{ width: 130, flexShrink: 0, padding: '4px 10px', fontSize: 9, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)', position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 3 }}>ลูกค้า</div>
-                  <div style={{ flex: 1, position: 'relative', height: 20 }}>
-                    {hourMarks.map(h => (
-                      <span key={h} style={{ position: 'absolute', left: `${((h * 60 - tStart) / span) * 100}%`, fontSize: 9, color: 'var(--muted)', transform: 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
-                        {String(h).padStart(2, '0')}:00
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                {Object.entries(byCustomer).map(([cust, list]) => {
-                  const lanes = lanesByCustomer[cust] || { map: {}, count: 1 };
-                  const rowH = 10 + lanes.count * LANE_H;
-                  return (
-                    <div key={cust} style={{ display: 'flex', borderTop: '1px solid var(--border)' }}>
-                      <div style={{ width: 130, flexShrink: 0, padding: '6px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text2)', borderRight: '1px solid var(--border2)', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', position: 'sticky', left: 0, background: 'var(--card)', zIndex: 3 }}>
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cust}</span>
-                        <span style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 600 }}>{list.length} รอบ</span>
-                      </div>
-                      <div style={{ flex: 1, position: 'relative', height: rowH }}>
-                        {hourMarks.map(h => (
-                          <div key={h} style={{ position: 'absolute', top: 0, bottom: 0, left: `${((h * 60 - tStart) / span) * 100}%`, width: 1, background: 'var(--border)' }} />
-                        ))}
-                        {isToday && nowMins >= tStart && nowMins <= tEnd && (
-                          <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${((nowMins - tStart) / span) * 100}%`, width: 1.5, background: 'rgba(77,159,255,0.8)', zIndex: 2 }} />
-                        )}
-                        {list.map(o => {
-                          const tm = timeMins(o.ship_time);
-                          const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
-                          const od = isOverdue(o);
-                          const color = od ? '#ef4444' : st.color;
-                          const left = tm == null ? 0 : ((tm - tStart) / span) * 100;
-                          const lane = lanes.map[o.id] || 0;
-                          return (
-                            <div key={o.id}
-                              title={`${o.ship_time || 'ไม่ระบุเวลา'} · ${o.order_no || ''} ${o.mat_no} · ${fmt(o.qty)} ชิ้น · ${st.label}${od ? ' · 🔴 เลยเวลาแล้วยังไม่ส่ง' : ''}`}
-                              style={{
-                                position: 'absolute', top: 5 + lane * LANE_H, height: LANE_H - 4,
-                                left: `${left}%`, width: `${(SPAN_MIN / span) * 100}%`, minWidth: 52, maxWidth: 120,
-                                background: `${color}22`, border: `1.5px solid ${color}cc`, borderRadius: 6, zIndex: 1,
-                                display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 6px', overflow: 'hidden', cursor: 'default', boxSizing: 'border-box',
-                                boxShadow: od ? `0 0 6px ${color}55` : 'none',
-                              }}>
-                              <div style={{ fontSize: 9, fontWeight: 800, color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {o.ship_time || '—'} · {fmt(o.qty)} {o.status === 'shipped' ? '✅' : od ? '🔴' : ''}
-                              </div>
-                              <div style={{ fontSize: 8, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: 'monospace' }}>{o.mat_no}</div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
+            <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+              <div style={{ width: 110, flexShrink: 0, padding: '3px 10px', fontSize: 9, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)' }}>ลูกค้า</div>
+              <div style={{ flex: 1, position: 'relative', height: 16 }}>
+                {hourMarks.map((m, i) => (i % 2 === 0 &&
+                  <span key={m} style={{ position: 'absolute', left: `${((m - tStart) / span) * 100}%`, fontSize: 8, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: 'translateX(-50%)', top: 3, whiteSpace: 'nowrap' }}>
+                    {String((m / 60) % 24 | 0).padStart(2, '0')}
+                  </span>
+                ))}
               </div>
             </div>
+            {Object.entries(byCustomer).map(([cust, list]) => {
+              const lanes = lanesByCustomer[cust] || { map: {}, count: 1 };
+              const rowH = 8 + lanes.count * LANE_H;
+              return (
+                <div key={cust} style={{ display: 'flex', borderTop: '1px solid var(--border)' }}>
+                  <div style={{ width: 110, flexShrink: 0, padding: '4px 10px', fontSize: 10, fontWeight: 700, color: 'var(--text2)', borderRight: '1px solid var(--border2)', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cust}</span>
+                    <span style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 600 }}>{list.length} รอบ</span>
+                  </div>
+                  <div style={{ flex: 1, position: 'relative', height: rowH }}>
+                    {hourMarks.map(m => (
+                      <div key={m} style={{ position: 'absolute', top: 0, bottom: 0, left: `${((m - tStart) / span) * 100}%`, width: 1, background: (m % 1440) === 1200 ? 'var(--border2)' : 'var(--border)' }} />
+                    ))}
+                    {isToday && nowW >= tStart && nowW <= tStart + span && (
+                      <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${((nowW - tStart) / span) * 100}%`, width: 1.5, background: 'rgba(77,159,255,0.8)', zIndex: 2, pointerEvents: 'none' }} />
+                    )}
+                    {list.map(o => {
+                      const tw = wrapMins(o.ship_time);
+                      const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
+                      const od = isOverdue(o);
+                      const color = od ? '#ef4444' : st.color;
+                      const left = tw == null ? 99 : ((tw - tStart) / span) * 100;
+                      const lane = lanes.map[o.id] || 0;
+                      const isSel = popup?.o?.id === o.id;
+                      return (
+                        <div key={o.id}
+                          onClick={e => setPopup({ o, x: e.clientX, y: e.clientY })}
+                          style={{
+                            position: 'absolute', top: 4 + lane * LANE_H, height: LANE_H - 4,
+                            left: `${Math.min(left, 97.5)}%`, width: `${(SPAN_MIN / span) * 100}%`, minWidth: 30,
+                            background: `${color}${isSel ? '55' : '22'}`, border: `1.5px solid ${color}${isSel ? '' : 'cc'}`, borderRadius: 4, zIndex: 1,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', cursor: 'pointer', boxSizing: 'border-box',
+                            boxShadow: od ? `0 0 5px ${color}55` : 'none',
+                          }}>
+                          <span style={{ fontSize: 8, fontWeight: 800, color, whiteSpace: 'nowrap' }}>
+                            {(o.ship_time || '—').slice(0, 5)}{o.status === 'shipped' ? '✅' : ''}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
+
+          {/* Popup รายละเอียดรอบส่ง — คลิกบล็อกบนชาร์ต */}
+          {popup && (() => {
+            const o = popup.o;
+            const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
+            const od = isOverdue(o);
+            const cov = coverage[o.id];
+            const W = 270;
+            const left = Math.max(8, Math.min(popup.x - W / 2, window.innerWidth - W - 12));
+            const top = Math.min(popup.y + 12, window.innerHeight - 260);
+            return (
+              <>
+                <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
+                <div style={{ position: 'fixed', left, top, width: W, zIndex: 999, background: 'var(--bg3)', border: `1px solid ${od ? '#ef4444' : st.color}66`, borderRadius: 12, boxShadow: '0 8px 28px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
+                  <div style={{ height: 4, background: od ? '#ef4444' : st.color }} />
+                  <div style={{ padding: '10px 14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>🕐 {(o.ship_time || 'ไม่ระบุเวลา').slice(0, 5)}</span>
+                      <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: od ? '#ef4444' : st.color }}>{od ? '🔴 เลยเวลา' : st.label}</span>
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6', marginTop: 2 }}>{custLabel ? custLabel(o.customer) : o.customer}{o.due_date !== day ? ` · ส่งเช้า ${o.due_date}` : ''}</div>
+                    <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700, marginTop: 6 }}>
+                      {o.mat_no}{o.customer_part_no && o.customer_part_no !== o.mat_no ? <span style={{ color: 'var(--muted)', fontWeight: 600 }}> · {o.customer_part_no}</span> : null}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.part_name || ''}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6 }}>
+                      <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{fmt(o.qty)} <span style={{ fontSize: 10, color: 'var(--muted)' }}>ชิ้น</span></span>
+                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>{o.order_no ? `PO ${o.order_no}` : ''}{o.dock_code ? ` · Dock ${o.dock_code}` : ''}</span>
+                    </div>
+                    {o.status !== 'shipped' && cov?.tracked && (
+                      cov.short <= 0
+                        ? <div style={{ fontSize: 10, color: '#22c55e', fontWeight: 700, marginTop: 4 }}>📦 stock พร้อมส่งครบ</div>
+                        : <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>⚠️ stock มี {fmt(cov.covered)} — ขาด {fmt(cov.short)} ชิ้น</div>
+                    )}
+                    {o.shipped_by && <div style={{ fontSize: 10, color: '#22c55e', marginTop: 4 }}>✓ {o.shipped_by}</div>}
+                    <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                      {st.next && (
+                        <button onClick={() => { advance(o); setPopup(null); }} disabled={busy === o.id}
+                          style={{ flex: 1, padding: '7px 8px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: `${st.color}22`, color: st.color, border: `1px solid ${st.color}55`, fontFamily: 'var(--font-body)' }}>
+                          {busy === o.id ? '...' : st.nextLabel}
+                        </button>
+                      )}
+                      <button onClick={() => goToCard(o)}
+                        style={{ flex: 1, padding: '7px 8px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', fontFamily: 'var(--font-body)' }}>
+                        ⬇ ไปที่การ์ด
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
 
           {/* รายการรอบส่ง + ปุ่มอัปเดตสถานะ — กรองให้เห็นเฉพาะที่ต้องทำก่อน */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -891,12 +974,16 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
             ).map(o => {
               const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
               const od = isOverdue(o);
+              const isHl = highlightId === o.id;
               return (
-                <div key={o.id} style={{ background: `${od ? '#ef4444' : st.color}0f`, border: `1px solid ${od ? '#ef4444' : st.color}55`, borderRadius: 12, overflow: 'hidden' }}>
+                <div key={o.id} id={`ship-card-${o.id}`} style={{
+                  background: `${od ? '#ef4444' : st.color}0f`, border: `1px solid ${od ? '#ef4444' : st.color}55`, borderRadius: 12, overflow: 'hidden',
+                  boxShadow: isHl ? '0 0 0 3px rgba(77,159,255,0.65)' : 'none', transition: 'box-shadow 0.3s',
+                }}>
                   <div style={{ height: 4, background: od ? '#ef4444' : st.color }} />
                   <div style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>🕐 {o.ship_time || 'ไม่ระบุเวลา'}</span>
+                      <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>🕐 {(o.ship_time || 'ไม่ระบุเวลา').slice(0, 5)}{o.due_date !== day ? <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600 }}> (เช้า {o.due_date.slice(5)})</span> : null}</span>
                       <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: od ? '#ef4444' : st.color }}>{od ? '🔴 เลยเวลา' : st.label}</span>
                     </div>
                     <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700, marginTop: 4 }}>
