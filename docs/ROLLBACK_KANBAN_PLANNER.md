@@ -167,6 +167,20 @@ git push origin main
 - Rollback โค้ด: `git revert -m 1 <merge-sha รอบ 13>` — ถ้า revert โค้ดโดยไม่ลบแถว DB
   ก็ไม่มีผลข้างเคียง (โค้ดเก่าไม่อ่าน key พวกนี้)
 
+## รอบแก้ที่ 14 — รับงานเข้า stock อัตโนมัติเมื่อปิดออเดอร์ (FG → warehouse, child → store)
+
+- **DB (โปรเจค DR):** migration `20260710_stock_inflow_on_confirm.sql` —
+  ตาราง `stock_inflow_rules` (กฎปลายทาง: prefix 1 → FG WAREHOUSE, prefix 2 → STORE, ปรับได้) +
+  trigger `trg_post_confirmed_output` บน `prod_orders` (สแกนปิดออเดอร์ → insert
+  `line_stock_transactions` type issue เข้าปลายทางทันที ไม่ต้องรอปิดกะ, กันซ้ำด้วย `ref_order_id`) +
+  คอลัมน์ใหม่ `line_stock_transactions.ref_order_id/ref_session_id` (nullable)
+- ไฟล์แก้: `src/pages/LineStock.jsx` — tab ใหม่ ⚙️ รับเข้าอัตโนมัติ (CRUD กฎ, สิทธิ์แก้ =
+  `can('line_stock','manage_rounds')` เดียวกับจัดการรอบจัดส่ง)
+- วงจรครบ: ปิดออเดอร์ → FG เข้า warehouse → Shipping Chart เห็น stock พร้อมส่ง →
+  กด "ส่งแล้ว" หักออกอัตโนมัติ (ของเดิมรอบ 8)
+- Rollback: `git revert -m 1 <merge-sha รอบ 14>` + SQL rollback ท้าย migration file
+  (drop trigger/function/table — แถวที่ post แล้วลบได้จากหน้า Line Stock, created_by = 'auto')
+
 ## สิ่งที่ต้องรู้ตอน rollback
 
 1. **ยอดสต็อกจาก "ยืนยันส่ง" ต่างกันสองเวอร์ชัน** — เวอร์ชันใหม่บันทึก `line_stock_transactions`
