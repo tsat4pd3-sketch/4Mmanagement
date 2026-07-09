@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { can } from '../utils/permissions'
@@ -390,12 +390,51 @@ export default function PMCheckData() {
     fetchCheckingMethods().then(rows => setMethodIndex(indexByCode(rows)))
   }, [])
 
+  // ── โหมดฝ่ายผลิต: รายการเครื่องซ้ายมือต้องเป็น "เครื่องที่ลงทะเบียน Daily PM" เท่านั้น ──
+  // จัดกลุ่มตามไลน์ + สถานะว่ากะนี้ตรวจแล้วหรือยัง — ไม่ใช่เครื่องทุกตัวทุกแผนกแบบแท็บซ่อมบำรุง
+  const [dailyLineByJig, setDailyLineByJig] = useState(null)   // jig_id -> [line_name] (null = แท็บอื่น)
+  const [checkedThisShift, setCheckedThisShift] = useState({}) // jig_id -> 'pass' | 'fail'
+  useEffect(() => {
+    if (department !== 'production') { setDailyLineByJig(null); setCheckedThisShift({}); return }
+    let cancelled = false
+    ;(async () => {
+      const [{ data: tg }, { data: prodCls }] = await Promise.all([
+        supabaseDR.from('pm_daily_line_targets').select('jig_id, line_name').eq('is_active', true),
+        supabaseDR.from('checklists').select('id').eq('module', 'mtn').eq('department', 'production'),
+      ])
+      // จุดเริ่มกะปัจจุบัน (เช้า 08:00 / ดึก 20:00, ก่อน 08:00 = กะดึกของวันก่อน)
+      const now = new Date()
+      const isDay = now.getHours() >= 8 && now.getHours() < 20
+      const ws = new Date(now)
+      if (now.getHours() < 8) ws.setDate(ws.getDate() - 1)
+      ws.setHours(isDay ? 8 : 20, 0, 0, 0)
+      const clIds = new Set((prodCls ?? []).map(c => c.id))
+      const { data: insp } = await supabaseDR.from('inspections')
+        .select('jig_id, status, checklist_id')
+        .gte('inspected_at', ws.toISOString())
+        .order('inspected_at', { ascending: false })
+      if (cancelled) return
+      const st = {}
+      for (const i of insp ?? []) {
+        if (!clIds.has(i.checklist_id)) continue
+        if (!st[i.jig_id]) st[i.jig_id] = i.status // ล่าสุดชนะ (เรียง desc แล้ว)
+      }
+      const byJig = {}
+      ;(tg ?? []).forEach(t => { (byJig[t.jig_id] ||= []).push(t.line_name) })
+      setDailyLineByJig(byJig)
+      setCheckedThisShift(st)
+    })()
+    return () => { cancelled = true }
+  }, [department])
+
   useEffect(() => {
     if (!equipParam || jigs.length === 0) { setSelectedJig(null); return }
     setSelectedJig(jigs.find(j => j.id === equipParam) ?? null)
   }, [equipParam, jigs])
 
-  const selectJig = (jig) => setSearchParams({ dept: department, equip: jig.id })
+  // คง line filter (?line=) ไว้ตอนเลือกเครื่อง — มาจากปุ่ม "ไปหน้าตรวจ" ของ Daily PM รายไลน์
+  const lineFilter = searchParams.get('line')
+  const selectJig = (jig) => setSearchParams({ dept: department, equip: jig.id, ...(lineFilter ? { line: lineFilter } : {}) })
   const setDept = (d) => setSearchParams({ dept: d, ...(equipParam ? { equip: equipParam } : {}) })
 
   const fetchHistory = async (jigId) => {
@@ -471,6 +510,8 @@ export default function PMCheckData() {
         return cp.type === 'variable' ? getSpcStatus(computeAvg(r.v1, r.v2, r.v3), cp) === 'fail' : r.attr === 'ng'
       }).map(cp => cp.name)
       handleDailyPmSave({ jig: selectedJig, department, overall, ngTopics }).catch(() => {})
+      // อัปเดตป้าย "ตรวจแล้ว/รอตรวจ" ในรายการซ้ายทันที ไม่ต้องรอโหลดใหม่
+      if (department === 'production') setCheckedThisShift(prev => ({ ...prev, [selectedJig.id]: overall }))
 
       toast.success('บันทึกผลการตรวจสำเร็จ')
       const init = {}
@@ -505,13 +546,65 @@ export default function PMCheckData() {
           {DEPT_OPTIONS.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, DEPT_COLORS[d.key] ?? '#3dd65c')}>{d.label}</button>)}
         </div>
         <div style={S.jigList}>
-          {jigs.length === 0 && <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20 }}>ยังไม่มีอุปกรณ์</p>}
-          {jigs.map(jig => (
-            <div key={jig.id} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{jig.name}</p>
-              {jig.line_name && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>📍 {jig.line_name}</p>}
-            </div>
-          ))}
+          {department === 'production' ? (() => {
+            // แท็บฝ่ายผลิต: เฉพาะเครื่องที่ลงทะเบียน Daily PM จัดกลุ่มตามไลน์ + สถานะกะนี้
+            if (dailyLineByJig == null) return <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20 }}>กำลังโหลด...</p>
+            const lineParam = searchParams.get('line')
+            const byLine = {}
+            jigs.forEach(j => {
+              const lns = dailyLineByJig[j.id]
+              if (!lns) return
+              lns.forEach(ln => {
+                if (lineParam && ln !== lineParam) return
+                ;(byLine[ln] ||= []).push(j)
+              })
+            })
+            const lineNames = Object.keys(byLine).sort()
+            if (!lineNames.length) return (
+              <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>
+                {lineParam ? `ไลน์ ${lineParam} ยังไม่ได้ลงทะเบียนเครื่องตรวจ` : 'ยังไม่มีเครื่องที่ลงทะเบียน Daily PM'}<br />
+                <Link to="/daily-pm" style={{ color: 'var(--accent)', fontWeight: 700 }}>ไปลงทะเบียนที่หน้า Daily PM →</Link>
+              </p>
+            )
+            return (<>
+              {lineParam && (
+                <div style={{ fontSize: 11, color: 'var(--muted)', padding: '0 4px 6px' }}>
+                  กรองเฉพาะไลน์ {lineParam} · <span onClick={() => setSearchParams({ dept: department, ...(equipParam ? { equip: equipParam } : {}) })} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>ดูทุกไลน์</span>
+                </div>
+              )}
+              {lineNames.map(ln => (
+                <div key={ln} style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: deptColor, padding: '2px 4px 4px' }}>🏭 {ln} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· ตรวจแล้ว {byLine[ln].filter(j => checkedThisShift[j.id]).length}/{byLine[ln].length}</span></div>
+                  {byLine[ln].map(jig => {
+                    const st = checkedThisShift[jig.id]
+                    return (
+                      <div key={`${ln}-${jig.id}`} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{jig.name}</p>
+                          <span style={{
+                            flexShrink: 0, fontSize: 10, fontWeight: 800, padding: '1px 7px', borderRadius: 20,
+                            background: st === 'fail' ? 'rgba(224,92,74,0.15)' : st ? 'rgba(61,214,92,0.15)' : 'rgba(245,158,11,0.15)',
+                            color: st === 'fail' ? '#e05c4a' : st ? '#3dd65c' : '#f59e0b',
+                          }}>
+                            {st === 'fail' ? '✗ NG' : st ? '✓ ตรวจแล้ว' : 'รอตรวจ'}
+                          </span>
+                        </div>
+                        {jig.machine_no && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>{jig.machine_no}</p>}
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
+            </>)
+          })() : (<>
+            {jigs.length === 0 && <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20 }}>ยังไม่มีอุปกรณ์</p>}
+            {jigs.map(jig => (
+              <div key={jig.id} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{jig.name}</p>
+                {jig.line_name && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>📍 {jig.line_name}</p>}
+              </div>
+            ))}
+          </>)}
         </div>
       </div>
 

@@ -290,11 +290,11 @@ export default function DailyPM() {
                   {(row.missing.length > 0 || row.ng.length > 0) && (
                     // ต้องพาไปแท็บ "ฝ่ายผลิต" ตรงๆ (?dept=production) — หน้า pm-check เปิดค่าเริ่มต้นเป็นแท็บซ่อมบำรุง
                     // ถ้าพนักงานบันทึกผลผิดแท็บ ระบบ Daily PM จะไม่นับให้
-                    <Link to="/pm-check?dept=production" style={{
+                    <Link to={`/pm-check?dept=production&line=${encodeURIComponent(row.line_name)}`} style={{
                       display: 'inline-block', marginTop: 10, fontSize: 12, fontWeight: 700, textDecoration: 'none',
                       padding: '6px 12px', borderRadius: 8, background: `${meta.color}18`, color: meta.color, border: `1px solid ${meta.color}55`,
                     }}>
-                      📋 ไปหน้าตรวจสอบอุปกรณ์ (แท็บฝ่ายผลิต) →
+                      📋 ไปตรวจเครื่องของไลน์นี้ →
                     </Link>
                   )}
                 </div>
