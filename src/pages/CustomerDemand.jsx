@@ -657,10 +657,13 @@ function PlannerTab({ refreshKey, custLabel }) {
 
 /* ─── Shipping Time Chart Tab (Logistic) ──────────────────────────────────── */
 const SHIP_STATUS = {
-  pending:  { label: '🕐 รอเตรียม',  color: '#f59e0b', next: 'prepared', nextLabel: '📦 เตรียมของแล้ว' },
-  prepared: { label: '📦 เตรียมแล้ว', color: '#0ea5e9', next: 'shipped',  nextLabel: '🚚 ส่งงานแล้ว' },
-  shipped:  { label: '✅ ส่งแล้ว',    color: '#22c55e', next: null,       nextLabel: null },
+  pending:   { label: '🕐 รอยืนยัน',    color: '#f59e0b', next: 'confirmed', nextLabel: '✔️ ยืนยันออเดอร์แล้ว' },
+  confirmed: { label: '✔️ ยืนยันแล้ว',  color: '#38bdf8', next: 'prepared',  nextLabel: '📦 เตรียมของแล้ว' },
+  prepared:  { label: '📦 เตรียมแล้ว',  color: '#0ea5e9', next: 'loaded',    nextLabel: '🚛 โหลดขึ้นรถแล้ว' },
+  loaded:    { label: '🚛 โหลดแล้ว',    color: '#a855f7', next: 'shipped',   nextLabel: '🚚 ส่งถึงลูกค้าแล้ว' },
+  shipped:   { label: '✅ ส่งแล้ว',     color: '#22c55e', next: null,        nextLabel: null },
 };
+const SHIP_RANK = { pending: 0, confirmed: 1, prepared: 2, loaded: 3, shipped: 4 };
 function ShippingTab({ fullName, refreshKey, custLabel }) {
   // กรอบ "วันงาน" 08:00 → 08:00 วันถัดไป (ตามกฎเวลาทำงานของระบบ) — รอบส่งตี 0–7 โมง คือช่วงกะดึกของวันงานนั้น
   const [day, setDay] = useState(workDateStr());
@@ -668,18 +671,22 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
   const [busy, setBusy] = useState(null);
   const [fgStock, setFgStock] = useState({});   // mat_no → { total, lines } — stock FG พร้อมส่งใน warehouse
   const [cardFilter, setCardFilter] = useState('todo');   // 'todo' | 'overdue' | 'shipped' | 'all'
+  const [wfSteps, setWfSteps] = useState([]);              // standard workflow (walkback) — deadline ต่อเฟส
   const [popup, setPopup] = useState(null);     // { o, x, y } — popup รายละเอียดเมื่อคลิกบล็อกบนชาร์ต
   const [highlightId, setHighlightId] = useState(null);
+  const [collapsedCust, setCollapsedCust] = useState({});  // ย่อแถวลูกค้า (ข้อมูลเยอะ) — ยังเห็นจุดสถานะแบบย่อ
 
   const nextDayOf = (d) => { const x = new Date(`${d}T12:00:00`); x.setDate(x.getDate() + 1); return dateStr(x); };
 
   const load = useCallback(async () => {
     // วันงาน D = (D, เวลา ≥ 08:00 หรือไม่ระบุเวลา) + (D+1, เวลา < 08:00 = กะดึกข้ามคืน)
     const nd = nextDayOf(day);
-    const [{ data: d1 }, { data: d2 }] = await Promise.all([
+    const [{ data: d1 }, { data: d2 }, { data: wfs }] = await Promise.all([
       supabaseDR.from('customer_shipping_orders').select('*').eq('due_date', day),
       supabaseDR.from('customer_shipping_orders').select('*').eq('due_date', nd).not('ship_time', 'is', null).lt('ship_time', '08:00'),
+      supabaseDR.from('shipping_workflow_steps').select('*').eq('is_active', true).order('step_no'),
     ]);
+    setWfSteps(wfs || []);
     const list = [
       ...(d1 || []).filter(o => !o.ship_time || o.ship_time.slice(0, 5) >= '08:00'),
       ...(d2 || []),
@@ -725,6 +732,24 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
   const isToday = day === workDateStr();
   const nowW = wrapMins(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
   const isOverdue = (o) => isToday && o.status !== 'shipped' && wrapMins(o.ship_time) != null && wrapMins(o.ship_time) < nowW;
+
+  // ── Standard workflow (walkback): deadline ต่อเฟส = เวลาส่ง − offset_min ──
+  const stepsForCust = (customer) => {
+    const own = wfSteps.filter(st => st.customer === customer);
+    return own.length ? own : wfSteps.filter(st => st.customer == null);
+  };
+  const phaseList = (o) => {
+    const tw = wrapMins(o.ship_time);
+    if (tw == null || !wfSteps.length) return [];
+    return stepsForCust(o.customer).map(st => {
+      const dl = tw - st.offset_min;
+      const m = ((dl % 1440) + 1440) % 1440;
+      const done = (SHIP_RANK[o.status] ?? 0) >= (SHIP_RANK[st.requires_status] ?? 9);
+      const missed = !done && isToday && nowW > dl;
+      return { ...st, deadline: `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`, done, missed };
+    });
+  };
+  const phaseLate = (o) => o.status !== 'shipped' && !isOverdue(o) && phaseList(o).some(ph => ph.missed);
 
   const byCustomer = useMemo(() => {
     const m = {};
@@ -799,32 +824,14 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
   const shippedCount = orders.filter(o => o.status === 'shipped').length;
   const overdueCount = orders.filter(isOverdue).length;
 
-  // แจ้งเตือนรอบเลยเวลาเข้า Smart Logistic ครั้งเดียวต่อรอบ (mark overdue_notified_at กันซ้ำ)
-  useEffect(() => {
-    if (!isToday) return;
-    const targets = orders.filter(o => isOverdue(o) && !o.overdue_notified_at);
-    if (!targets.length) return;
-    (async () => {
-      const ids = targets.map(o => o.id);
-      const { data: marked, error } = await supabaseDR.from('customer_shipping_orders')
-        .update({ overdue_notified_at: new Date().toISOString() }).in('id', ids).is('overdue_notified_at', null).select('id');
-      if (error || !marked?.length) return; // เครื่องอื่น mark ไปก่อนแล้ว — ไม่แจ้งซ้ำ
-      supabase.functions.invoke('send-notification', {
-        body: { event: 'shipping_overdue', ship: {
-          work_date: day, count: targets.length,
-          items: targets.map(o => ({ ship_time: (o.ship_time || '').slice(0, 5), customer: custLabel ? custLabel(o.customer) : o.customer, mat_no: o.mat_no, qty: o.qty })),
-        } },
-      }).catch(() => {});
-      setOrders(prev => prev.map(o => (ids.includes(o.id) ? { ...o, overdue_notified_at: new Date().toISOString() } : o)));
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orders, isToday, day]);
+  // การเตือน 'เลยเวลา/หลุดเฟส' ย้ายไปอยู่ที่ shipping-phase-scan (pg_cron ทุก 10 นาที) — ทำงานแม้ไม่มีใครเปิดหน้านี้
+
 
   // ── ชาร์ตเต็มกรอบ 24 ชม. (08:00 → 08:00) ไม่ต้องเลื่อน — บล็อกเล็ก คลิกดูรายละเอียดใน popup ──
   const tStart = FRAME_START, span = 1440;
   const hourMarks = Array.from({ length: 25 }, (_, i) => FRAME_START + i * 60);
   const SPAN_MIN = 40;   // ระยะเวลาที่ถือว่า "ชนกัน" → แยกเลน
-  const LANE_H = 20;
+  const LANE_H = 28;     // ความสูงต่อเลน — กว้างพอให้อ่านเวลาชัดจากระยะไกล
   const lanesByCustomer = (() => {
     const res = {};
     Object.entries(byCustomer).forEach(([cust, list]) => {
@@ -887,7 +894,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
               <span style={{ fontSize: 10, color: 'var(--muted)' }}>คลิกที่บล็อกเพื่อดูรายละเอียด / ไปที่การ์ดรายการ</span>
             </div>
             <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
-              <div style={{ width: 110, flexShrink: 0, padding: '3px 10px', fontSize: 9, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)' }}>ลูกค้า</div>
+              <div style={{ width: 130, flexShrink: 0, padding: '3px 10px', fontSize: 9, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)' }}>ลูกค้า · คลิกชื่อเพื่อย่อ/ขยาย</div>
               <div style={{ flex: 1, position: 'relative', height: 16 }}>
                 {hourMarks.map((m, i) => (i % 2 === 0 &&
                   <span key={m} style={{ position: 'absolute', left: `${((m - tStart) / span) * 100}%`, fontSize: 8, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: 'translateX(-50%)', top: 3, whiteSpace: 'nowrap' }}>
@@ -898,12 +905,18 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
             </div>
             {Object.entries(byCustomer).map(([cust, list]) => {
               const lanes = lanesByCustomer[cust] || { map: {}, count: 1 };
-              const rowH = 8 + lanes.count * LANE_H;
+              const isCol = !!collapsedCust[cust];
+              const rowH = isCol ? 26 : 10 + lanes.count * LANE_H;
+              const doneN = list.filter(x => x.status === 'shipped').length;
               return (
                 <div key={cust} style={{ display: 'flex', borderTop: '1px solid var(--border)' }}>
-                  <div style={{ width: 110, flexShrink: 0, padding: '4px 10px', fontSize: 10, fontWeight: 700, color: 'var(--text2)', borderRight: '1px solid var(--border2)', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cust}</span>
-                    <span style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 600 }}>{list.length} รอบ</span>
+                  <div onClick={() => setCollapsedCust(m => ({ ...m, [cust]: !m[cust] }))}
+                    title={isCol ? 'คลิกเพื่อขยาย' : 'คลิกเพื่อย่อ'}
+                    style={{ width: 130, flexShrink: 0, padding: '4px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text2)', borderRight: '1px solid var(--border2)', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ color: 'var(--muted)', marginRight: 4 }}>{isCol ? '▸' : '▾'}</span>{cust}
+                    </span>
+                    <span style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 600 }}>{list.length} รอบ · ✅ {doneN}</span>
                   </div>
                   <div style={{ flex: 1, position: 'relative', height: rowH }}>
                     {hourMarks.map(m => (
@@ -916,22 +929,32 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                       const tw = wrapMins(o.ship_time);
                       const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
                       const od = isOverdue(o);
-                      const color = od ? '#ef4444' : st.color;
+                      const pl = phaseLate(o);
+                      const color = od ? '#ef4444' : pl ? '#f97316' : st.color;
                       const left = tw == null ? 99 : ((tw - tStart) / span) * 100;
                       const lane = lanes.map[o.id] || 0;
                       const isSel = popup?.o?.id === o.id;
+                      if (isCol) {
+                        // โหมดย่อ — จุดสถานะเล็ก ๆ ตามตำแหน่งเวลา ยังคลิกดูรายละเอียดได้
+                        return (
+                          <div key={o.id} onClick={e => setPopup({ o, x: e.clientX, y: e.clientY })}
+                            title={`${(o.ship_time || '—').slice(0, 5)} · ${o.mat_no} × ${fmt(o.qty)}`}
+                            style={{ position: 'absolute', top: 8, width: 9, height: 9, borderRadius: '50%', left: `${Math.min(left, 98.5)}%`,
+                              background: color, border: '1.5px solid rgba(0,0,0,0.25)', cursor: 'pointer', zIndex: 1 }} />
+                        );
+                      }
                       return (
                         <div key={o.id}
                           onClick={e => setPopup({ o, x: e.clientX, y: e.clientY })}
                           style={{
-                            position: 'absolute', top: 4 + lane * LANE_H, height: LANE_H - 4,
-                            left: `${Math.min(left, 97.5)}%`, width: `${(SPAN_MIN / span) * 100}%`, minWidth: 30,
-                            background: `${color}${isSel ? '55' : '22'}`, border: `1.5px solid ${color}${isSel ? '' : 'cc'}`, borderRadius: 4, zIndex: 1,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', cursor: 'pointer', boxSizing: 'border-box',
+                            position: 'absolute', top: 5 + lane * LANE_H, height: LANE_H - 6,
+                            left: `${Math.min(left, 97)}%`, width: `${(SPAN_MIN / span) * 100}%`, minWidth: 44,
+                            background: `${color}${isSel ? '55' : '22'}`, border: `1.5px solid ${color}${isSel ? '' : 'cc'}`, borderRadius: 5, zIndex: 1,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, overflow: 'hidden', cursor: 'pointer', boxSizing: 'border-box',
                             boxShadow: od ? `0 0 5px ${color}55` : 'none',
                           }}>
-                          <span style={{ fontSize: 8, fontWeight: 800, color, whiteSpace: 'nowrap' }}>
-                            {(o.ship_time || '—').slice(0, 5)}{o.status === 'shipped' ? '✅' : ''}
+                          <span style={{ fontSize: 11, fontWeight: 800, color, whiteSpace: 'nowrap', lineHeight: 1 }}>
+                            {(o.ship_time || '—').slice(0, 5)}{o.status === 'shipped' ? ' ✅' : ''}
                           </span>
                         </div>
                       );
@@ -947,6 +970,8 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
             const o = popup.o;
             const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
             const od = isOverdue(o);
+            const pl = phaseLate(o);
+            const phases = phaseList(o);
             const cov = coverage[o.id];
             const W = 270;
             const left = Math.max(8, Math.min(popup.x - W / 2, window.innerWidth - W - 12));
@@ -959,7 +984,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                   <div style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>🕐 {(o.ship_time || 'ไม่ระบุเวลา').slice(0, 5)}</span>
-                      <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: od ? '#ef4444' : st.color }}>{od ? '🔴 เลยเวลา' : st.label}</span>
+                      <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: od ? '#ef4444' : pl ? '#f97316' : st.color }}>{od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : st.label}</span>
                     </div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6', marginTop: 2 }}>{custLabel ? custLabel(o.customer) : o.customer}{o.due_date !== day ? ` · ส่งเช้า ${o.due_date}` : ''}</div>
                     <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700, marginTop: 6 }}>
@@ -974,6 +999,18 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                       cov.short <= 0
                         ? <div style={{ fontSize: 10, color: '#22c55e', fontWeight: 700, marginTop: 4 }}>📦 stock พร้อมส่งครบ</div>
                         : <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>⚠️ stock มี {fmt(cov.covered)} — ขาด {fmt(cov.short)} ชิ้น</div>
+                    )}
+                    {o.status !== 'shipped' && phases.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
+                        {phases.map(ph => (
+                          <span key={ph.id} title={`${ph.name} — ต้องเสร็จภายใน ${ph.deadline}`} style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 6,
+                            background: ph.done ? 'rgba(34,197,94,0.12)' : ph.missed ? 'rgba(239,68,68,0.12)' : 'var(--bg2)',
+                            color: ph.done ? '#22c55e' : ph.missed ? '#ef4444' : 'var(--muted)',
+                            border: `1px solid ${ph.done ? 'rgba(34,197,94,0.3)' : ph.missed ? 'rgba(239,68,68,0.35)' : 'var(--border)'}` }}>
+                            {ph.done ? '✓' : ph.missed ? '🔴' : '⏳'} {ph.name} {ph.deadline}
+                          </span>
+                        ))}
+                      </div>
                     )}
                     {o.shipped_by && <div style={{ fontSize: 10, color: '#22c55e', marginTop: 4 }}>✓ {o.shipped_by}</div>}
                     <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
@@ -1012,17 +1049,20 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
             ).map(o => {
               const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
               const od = isOverdue(o);
+              const pl = phaseLate(o);
+              const cardColor = od ? '#ef4444' : pl ? '#f97316' : st.color;
+              const phases = phaseList(o);
               const isHl = highlightId === o.id;
               return (
                 <div key={o.id} id={`ship-card-${o.id}`} style={{
-                  background: `${od ? '#ef4444' : st.color}0f`, border: `1px solid ${od ? '#ef4444' : st.color}55`, borderRadius: 12, overflow: 'hidden',
+                  background: `${cardColor}0f`, border: `1px solid ${cardColor}55`, borderRadius: 12, overflow: 'hidden',
                   boxShadow: isHl ? '0 0 0 3px rgba(77,159,255,0.65)' : 'none', transition: 'box-shadow 0.3s',
                 }}>
-                  <div style={{ height: 4, background: od ? '#ef4444' : st.color }} />
+                  <div style={{ height: 4, background: cardColor }} />
                   <div style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>🕐 {(o.ship_time || 'ไม่ระบุเวลา').slice(0, 5)}{o.due_date !== day ? <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600 }}> (เช้า {o.due_date.slice(5)})</span> : null}</span>
-                      <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: od ? '#ef4444' : st.color }}>{od ? '🔴 เลยเวลา' : st.label}</span>
+                      <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: cardColor }}>{od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : st.label}</span>
                     </div>
                     <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700, marginTop: 4 }}>
                       {o.mat_no}{o.customer_part_no && o.customer_part_no !== o.mat_no ? <span style={{ color: 'var(--muted)', fontWeight: 600 }}> · {o.customer_part_no}</span> : null}
@@ -1032,6 +1072,18 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                       <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{fmt(o.qty)} <span style={{ fontSize: 10, color: 'var(--muted)' }}>ชิ้น</span></span>
                       <span style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6' }}>{o.customer ? (custLabel ? custLabel(o.customer) : o.customer) : ''}</span>
                     </div>
+                    {o.status !== 'shipped' && phases.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                        {phases.map(ph => (
+                          <span key={ph.id} title={`${ph.name} — ต้องเสร็จภายใน ${ph.deadline}`} style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 6,
+                            background: ph.done ? 'rgba(34,197,94,0.12)' : ph.missed ? 'rgba(239,68,68,0.12)' : 'var(--bg2)',
+                            color: ph.done ? '#22c55e' : ph.missed ? '#ef4444' : 'var(--muted)',
+                            border: `1px solid ${ph.done ? 'rgba(34,197,94,0.3)' : ph.missed ? 'rgba(239,68,68,0.35)' : 'var(--border)'}` }}>
+                            {ph.done ? '✓' : ph.missed ? '🔴' : '⏳'} {ph.name} {ph.deadline}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {o.status !== 'shipped' && coverage[o.id]?.tracked && (
                       coverage[o.id].short <= 0
                         ? <div style={{ fontSize: 10, color: '#22c55e', fontWeight: 700, marginTop: 4 }}>📦 stock พร้อมส่งครบ</div>
@@ -1051,6 +1103,153 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/* ─── Standard Workflow การส่งงาน (walkback) ─────────────────────────────────
+   จากเวลาส่งถึงลูกค้า ถอยกลับเป็น deadline ต่อเฟส — scanner (ทุก 10 นาที) ใช้ตารางนี้
+   ตัดสินว่า "หลุดเฟสไหน" แล้วแจ้ง Smart Logistic ทันที ไม่ต้องรอตก due ─────────── */
+const REQ_STATUS_OPTIONS = [
+  { value: 'confirmed', label: '✔️ ยืนยันออเดอร์แล้ว' },
+  { value: 'prepared',  label: '📦 เตรียมของแล้ว' },
+  { value: 'loaded',    label: '🚛 โหลดขึ้นรถแล้ว' },
+  { value: 'shipped',   label: '🚚 ส่งถึงลูกค้าแล้ว' },
+];
+function WorkflowSection({ canEdit }) {
+  const [steps, setSteps] = useState([]);
+  const [draft, setDraft] = useState({});
+  const [busy, setBusy] = useState(null);
+  const [scope, setScope] = useState('');       // '' = ค่ามาตรฐานทุกลูกค้า · code = ชุดเฉพาะลูกค้า
+  const [codes, setCodes] = useState([]);
+
+  useEffect(() => {
+    supabaseDR.from('ship_to_plants').select('code, customer_name').order('code')
+      .then(({ data }) => setCodes(data || []));
+  }, []);
+
+  const load = useCallback(async () => {
+    let q = supabaseDR.from('shipping_workflow_steps').select('*').eq('is_active', true).order('step_no');
+    q = scope ? q.eq('customer', scope) : q.is('customer', null);
+    const { data } = await q;
+    setSteps(data || []);
+    setDraft({});
+  }, [scope]);
+  useEffect(() => { load(); }, [load]);
+
+  // ลูกค้าที่ยังไม่มีชุดของตัวเอง → คัดลอกจากค่ามาตรฐานมาเป็นจุดตั้งต้น
+  const copyFromDefault = async () => {
+    const { data: defs } = await supabaseDR.from('shipping_workflow_steps').select('*').is('customer', null).eq('is_active', true).order('step_no');
+    if (!defs?.length) { toast.error('ยังไม่มีค่ามาตรฐานให้คัดลอก'); return; }
+    const { error } = await supabaseDR.from('shipping_workflow_steps')
+      .insert(defs.map(d => ({ customer: scope, step_no: d.step_no, name: d.name, offset_min: d.offset_min, requires_status: d.requires_status })));
+    if (error) toast.error(error.message);
+    else { toast.success(`สร้างชุดเฟสของ ${scope} จากค่ามาตรฐานแล้ว`); await load(); }
+  };
+
+  const val = (r, k) => (draft[r.id]?.[k] ?? r[k] ?? '');
+  const setVal = (r, k, v) => setDraft(d => ({ ...d, [r.id]: { ...d[r.id], [k]: v } }));
+
+  const save = async (r) => {
+    const d = draft[r.id];
+    if (!d) return;
+    setBusy(r.id);
+    const { error } = await supabaseDR.from('shipping_workflow_steps').update({
+      name: String(d.name ?? r.name).trim() || r.name,
+      offset_min: Math.max(0, parseInt(d.offset_min ?? r.offset_min) || 0),
+      requires_status: d.requires_status ?? r.requires_status,
+    }).eq('id', r.id);
+    if (error) toast.error(error.message);
+    else { toast.success('บันทึกเฟสแล้ว'); await load(); }
+    setBusy(null);
+  };
+  const remove = async (r) => {
+    if (!window.confirm(`ลบเฟส "${r.name}"? การแจ้งเตือนของเฟสนี้จะหยุดทันที`)) return;
+    setBusy(r.id);
+    const { error } = await supabaseDR.from('shipping_workflow_steps').update({ is_active: false }).eq('id', r.id);
+    if (error) toast.error(error.message);
+    else { toast.success('ลบเฟสแล้ว'); await load(); }
+    setBusy(null);
+  };
+  const add = async () => {
+    const maxNo = steps.reduce((m, x) => Math.max(m, x.step_no || 0), 0);
+    const { error } = await supabaseDR.from('shipping_workflow_steps')
+      .insert({ customer: scope || null, step_no: maxNo + 1, name: 'เฟสใหม่', offset_min: 30, requires_status: 'prepared' });
+    if (error) toast.error(error.message);
+    else await load();
+  };
+
+  const cell = { padding: '6px 10px', borderTop: '1px solid var(--border)' };
+  const edSt = { ...inputSt, padding: '5px 8px', fontSize: 12, width: '100%', boxSizing: 'border-box' };
+
+  return (
+    <div style={{ ...card, marginTop: 16 }}>
+      <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>🚛 Standard Workflow การส่งงาน (walkback)</div>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+        นับถอยหลังจาก<strong>เวลาส่งถึงลูกค้า</strong> — แต่ละเฟสต้องถึงสถานะที่กำหนดก่อน deadline (เวลาส่ง − นาที walkback)
+        ระบบสแกนทุก 10 นาที เฟสไหนหลุดจะแจ้งเข้า Smart Logistic ทันที ไม่ต้องรอตก due ลูกค้า
+        · เพิ่ม/ลดจำนวนเฟสได้ตามความเหมาะสมของแต่ละลูกค้า
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ชุดเฟสของ:</span>
+        <select value={scope} onChange={e => setScope(e.target.value)} style={{ ...inputSt, width: 220 }}>
+          <option value="">🌐 ค่ามาตรฐาน (ทุกลูกค้า)</option>
+          {codes.map(c => (
+            <option key={c.code} value={c.code}>
+              {c.customer_name && c.customer_name !== c.code ? `${c.customer_name} (${c.code})` : c.code}
+            </option>
+          ))}
+        </select>
+        {scope && steps.length === 0 && canEdit && (
+          <button onClick={copyFromDefault} style={btn(false)}>📋 คัดลอกจากค่ามาตรฐาน</button>
+        )}
+        {scope && steps.length === 0 && (
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>ลูกค้านี้ยังไม่มีชุดเฟสของตัวเอง — ตอนนี้ใช้ค่ามาตรฐานอยู่</span>
+        )}
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+          <thead><tr style={{ background: 'var(--bg2)' }}>
+            {['ลำดับ', 'ชื่อเฟส', 'ก่อนเวลาส่ง (นาที)', 'ต้องถึงสถานะ', ''].map(h => (
+              <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {steps.map(r => (
+              <tr key={r.id}>
+                <td style={{ ...cell, fontWeight: 900, color: '#7c3aed' }}>#{r.step_no}</td>
+                <td style={cell}>{canEdit ? <input value={val(r, 'name')} onChange={e => setVal(r, 'name', e.target.value)} style={edSt} /> : <span style={{ fontSize: 13, fontWeight: 700 }}>{r.name}</span>}</td>
+                <td style={cell}>{canEdit ? <input type="number" min="0" value={val(r, 'offset_min')} onChange={e => setVal(r, 'offset_min', e.target.value)} style={{ ...edSt, width: 110 }} /> : <span style={{ fontSize: 13 }}>{r.offset_min}</span>}</td>
+                <td style={cell}>{canEdit ? (
+                  <select value={val(r, 'requires_status')} onChange={e => setVal(r, 'requires_status', e.target.value)} style={{ ...edSt, width: 170 }}>
+                    {REQ_STATUS_OPTIONS.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}
+                  </select>
+                ) : <span style={{ fontSize: 12 }}>{REQ_STATUS_OPTIONS.find(x => x.value === r.requires_status)?.label || r.requires_status}</span>}</td>
+                <td style={{ ...cell, whiteSpace: 'nowrap' }}>
+                  {canEdit && draft[r.id] && (
+                    <button onClick={() => save(r)} disabled={busy === r.id}
+                      style={{ padding: '5px 14px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', marginRight: 6 }}>
+                      {busy === r.id ? '...' : '💾 บันทึก'}
+                    </button>
+                  )}
+                  {canEdit && (
+                    <button onClick={() => remove(r)} disabled={busy === r.id}
+                      style={{ padding: '5px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontFamily: 'var(--font-body)' }}>
+                      🗑 ลบ
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {canEdit && (
+        <button onClick={add} style={{ ...btn(false), marginTop: 12 }}>➕ เพิ่มเฟส</button>
+      )}
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
+        ตัวอย่าง: ส่งถึงลูกค้า 13:00 → เตรียมงานเสร็จ (120 นาที) deadline 11:00 · โหลดขึ้นรถ (60 นาที) deadline 12:00 · รถออก/ส่ง (0 นาที) deadline 13:00
+      </div>
     </div>
   );
 }
@@ -1103,6 +1302,7 @@ function ShipToTab({ canEdit, onChanged }) {
   const setVal = (r, k, v) => setDraft(d => ({ ...d, [r.code]: { customer_name: val(r, 'customer_name'), plant_name: val(r, 'plant_name'), note: val(r, 'note'), ...d[r.code], [k]: v } }));
 
   return (
+    <>
     <div style={card}>
       <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>⚙️ Ship-to Plant Config</div>
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
@@ -1148,6 +1348,8 @@ function ShipToTab({ canEdit, onChanged }) {
         </div>
       )}
     </div>
+    <WorkflowSection canEdit={canEdit} />
+    </>
   );
 }
 
