@@ -151,13 +151,18 @@ export default function NotificationConfig() {
         {rooms.map(room => (
           <div key={room.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 12, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
             <input value={room.name} onChange={e => patchRoom(room.id, 'name', e.target.value)} placeholder="ชื่อห้อง" style={{ ...inputStyle, width: 200, flex: '0 0 auto' }} />
-            <input value={room.chat_id ?? ''} onChange={e => patchRoom(room.id, 'chat_id', e.target.value)} placeholder="chat_id เช่น -1001234567890" style={{ ...monoStyle, flex: 1, minWidth: 170 }} />
+            <input value={room.chat_id ?? ''} onChange={e => patchRoom(room.id, 'chat_id', e.target.value)} placeholder="chat_id เช่น -1001234567890" style={{ ...monoStyle, flex: 1, minWidth: 170, borderColor: (room.chat_id ?? '').trim() ? undefined : 'var(--accent2)' }} />
             <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
               <input type="checkbox" checked={room.is_active} onChange={e => patchRoom(room.id, 'is_active', e.target.checked)} />เปิด
             </label>
             <button onClick={() => saveRoom(room)} disabled={busy === room.id} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>บันทึก</button>
             <button onClick={() => testRoom(room)} disabled={busy === `test-${room.id}`} style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 12, cursor: 'pointer' }}>📤 ทดสอบ</button>
             <button onClick={() => deleteRoom(room)} style={{ background: 'transparent', color: '#e05c4a', border: '1px solid rgba(224,92,74,0.4)', borderRadius: 8, padding: '8px 10px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
+            {!(room.chat_id ?? '').trim() && (
+              <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--accent2)' }}>
+                ⚠️ ยังไม่ใส่ chat_id — รายการที่เลือกห้องนี้จะไปเข้า<b>กลุ่มเดิม (fallback)</b> ไม่ใช่ห้องนี้
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -188,6 +193,11 @@ export default function NotificationConfig() {
                       {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                     </select>
                   </div>
+                  {rule.is_enabled && rule.channel_id && !(rooms.find(r => r.id === rule.channel_id)?.chat_id ?? '').trim() && (
+                    <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--accent2)' }}>
+                      ⚠️ ห้องที่เลือกยังไม่ใส่ chat_id → ตอนนี้จะไปเข้า<b>กลุ่มเดิม</b> ไม่ใช่ห้องนี้ (ไปเติม chat_id ที่ส่วน “ห้องแจ้งเตือน” ด้านบน)
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
