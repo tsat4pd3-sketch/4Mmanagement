@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
-import { supabaseDR } from '../supabaseClient';
+import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
@@ -350,6 +350,13 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         }
       }
       toast.success(`✅ นำเข้า EDI ${edi.records.length} รายการ — แทนที่ฉบับเดิมของ ${edi.shipTos.join(', ')} แล้ว`);
+      // แจ้งห้อง Smart Logistic (best-effort — พังก็ไม่กระทบการนำเข้า)
+      supabase.functions.invoke('send-notification', {
+        body: { event: 'edi_import', edi: {
+          kind: edi.kind, ship_tos: edi.shipTos.join(', '), rows: edi.records.length, files: edi.files.length,
+          date_from: edi.dateFrom, date_to: edi.dateTo, unmatched: edi.unmatched.length, uploaded_by: fullName || 'Sales',
+        } },
+      }).catch(() => {});
       setEdi(null);
       await loadBatches();
       onImported?.();
@@ -774,6 +781,16 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
         }
       }
     }
+    if (st.next === 'shipped') {
+      supabase.functions.invoke('send-notification', {
+        body: { event: 'shipping_shipped', ship: {
+          ship_time: (o.ship_time || '').slice(0, 5), due_date: o.due_date,
+          customer: custLabel ? custLabel(o.customer) : o.customer, dock_code: o.dock_code,
+          mat_no: o.mat_no, customer_part_no: o.customer_part_no, part_name: o.part_name,
+          qty: o.qty, order_no: o.order_no, shipped_by: fullName || 'Logistic',
+        } },
+      }).catch(() => {});
+    }
     toast.success(st.next === 'shipped' ? `🚚 ส่ง ${o.mat_no} แล้ว` : `📦 เตรียม ${o.mat_no} แล้ว`);
     await load();
     setBusy(null);
@@ -781,6 +798,27 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
 
   const shippedCount = orders.filter(o => o.status === 'shipped').length;
   const overdueCount = orders.filter(isOverdue).length;
+
+  // แจ้งเตือนรอบเลยเวลาเข้า Smart Logistic ครั้งเดียวต่อรอบ (mark overdue_notified_at กันซ้ำ)
+  useEffect(() => {
+    if (!isToday) return;
+    const targets = orders.filter(o => isOverdue(o) && !o.overdue_notified_at);
+    if (!targets.length) return;
+    (async () => {
+      const ids = targets.map(o => o.id);
+      const { data: marked, error } = await supabaseDR.from('customer_shipping_orders')
+        .update({ overdue_notified_at: new Date().toISOString() }).in('id', ids).is('overdue_notified_at', null).select('id');
+      if (error || !marked?.length) return; // เครื่องอื่น mark ไปก่อนแล้ว — ไม่แจ้งซ้ำ
+      supabase.functions.invoke('send-notification', {
+        body: { event: 'shipping_overdue', ship: {
+          work_date: day, count: targets.length,
+          items: targets.map(o => ({ ship_time: (o.ship_time || '').slice(0, 5), customer: custLabel ? custLabel(o.customer) : o.customer, mat_no: o.mat_no, qty: o.qty })),
+        } },
+      }).catch(() => {});
+      setOrders(prev => prev.map(o => (ids.includes(o.id) ? { ...o, overdue_notified_at: new Date().toISOString() } : o)));
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders, isToday, day]);
 
   // ── ชาร์ตเต็มกรอบ 24 ชม. (08:00 → 08:00) ไม่ต้องเลื่อน — บล็อกเล็ก คลิกดูรายละเอียดใน popup ──
   const tStart = FRAME_START, span = 1440;

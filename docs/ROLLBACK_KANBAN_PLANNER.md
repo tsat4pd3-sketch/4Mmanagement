@@ -100,6 +100,18 @@ git push origin main
 - Rollback เฉพาะรอบนี้: `git revert -m 1 <merge-sha รอบ 8>` — แถว consume ที่เกิดแล้ว
   ลบ/แก้ได้จากหน้า Line Stock ตามปกติ
 
+## รอบแก้ที่ 9 — แจ้งเตือน Smart Logistic (EDI/Shipping)
+
+- ไฟล์แก้: `src/pages/CustomerDemand.jsx`, `src/pages/NotificationConfig.jsx`,
+  `supabase/functions/send-notification/index.ts`
+- **Edge function `send-notification` deploy เป็น v28** (โปรเจคหลัก) — เพิ่ม 3 event:
+  `edi_import`, `shipping_shipped`, `shipping_overdue` + sync `pm_plan_reminder` ที่ repo ตกหล่น
+  ถ้าต้อง rollback edge function: redeploy โค้ดจาก commit ก่อนหน้า (v27 = repo ก่อน merge รอบนี้ + pm_plan_reminder)
+- DB: แถว `notification_rules` 3 แถว (category logistic, ผูกห้อง Smart Logistic แล้ว) —
+  ปิดได้จากหน้า ตั้งค่าการแจ้งเตือน หรือ `delete from notification_rules where category='logistic';`
+  + คอลัมน์ `customer_shipping_orders.overdue_notified_at` (DR)
+- Rollback โค้ด: `git revert -m 1 <merge-sha รอบ 9>` — event จะไม่ถูกยิงอีก edge function มี handler ค้างไว้ไม่เป็นไร
+
 ## สิ่งที่ต้องรู้ตอน rollback
 
 1. **ยอดสต็อกจาก "ยืนยันส่ง" ต่างกันสองเวอร์ชัน** — เวอร์ชันใหม่บันทึก `line_stock_transactions`

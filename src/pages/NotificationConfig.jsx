@@ -11,6 +11,7 @@ const monoStyle = { ...inputStyle, fontFamily: 'monospace' }
 const CATEGORY_LABEL = {
   manpower: '🧑‍🏭 Manpower', production: '🏭 Production', quality: '🔍 Quality',
   maintenance: '🔧 Maintenance', pull: '🎴 Pull System', stock: '📦 Stock',
+  logistic: '🚚 Logistic',
 }
 
 // Starting point shown when an admin first customizes a message. NULL template
@@ -24,6 +25,9 @@ const DEFAULT_TEMPLATES = {
   pm_daily_green: '🟢 ตรวจ Daily PM เรียบร้อย ทุกอย่างปกติ\n🏭 {line_name} · {shift_label}\n📅 {work_date}\n✅ ตรวจแล้ว {checked}/{total} เครื่อง',
   pm_daily_orange: '🟠 ยังตรวจ Daily PM ไม่ครบ (เกินเวลา)\n🏭 {line_name} · {shift_label}\n📅 {work_date}\n✅ ตรวจแล้ว {checked}/{total} · ⏳ ขาด: {missing}',
   pm_daily_red: '🔴 Daily PM พบความผิดปกติ\n🏭 {line_name} · {shift_label}\n📅 {work_date}\n⚠️ {ng}',
+  edi_import: '📡 นำเข้า EDI {kind_label}\n🏭 Ship-to: {ship_tos}\n🧾 {rows} รายการ · 📄 {files} ไฟล์\n📅 {date_from} → {date_to}\n👤 {uploaded_by}',
+  shipping_shipped: '🚚 ส่งงานลูกค้าแล้ว\n🕐 รอบ {ship_time} · 📅 {due_date}\n🏭 {customer} · Dock {dock_code}\n🔩 {mat_no} × {qty} ชิ้น\n👤 {shipped_by}',
+  shipping_overdue: '🔴 รอบส่งเลยเวลา {count} รอบ — วันงาน {work_date}\n{items}',
 }
 const COMMON_PH = ['line_name', 'shift_label', 'work_date']
 const PLACEHOLDERS = {
@@ -35,6 +39,9 @@ const PLACEHOLDERS = {
   pm_daily_green: [...COMMON_PH, 'checked', 'total'],
   pm_daily_orange: [...COMMON_PH, 'checked', 'total', 'missing'],
   pm_daily_red: [...COMMON_PH, 'checked', 'total', 'ng'],
+  edi_import: ['kind_label', 'ship_tos', 'rows', 'files', 'date_from', 'date_to', 'unmatched', 'uploaded_by'],
+  shipping_shipped: ['ship_time', 'due_date', 'customer', 'dock_code', 'mat_no', 'customer_part_no', 'part_name', 'qty', 'order_no', 'shipped_by'],
+  shipping_overdue: ['work_date', 'count', 'items'],
 }
 // sample values for the live preview only (not sent anywhere)
 const SAMPLE = {
@@ -46,6 +53,11 @@ const SAMPLE = {
   oee: 87, oee_a: 95, oee_p: 92, oee_q: 98, shift_min: 600, dt_count: 2, dt_total_min: 40,
   actor: 'สมชาย', requested_by: 'สมศักดิ์', category: 'Man', status_label: 'Approved ✅',
   creator: 'สมปอง', reject_reason: '-', checked: 8, missing: 'M-03, M-05', ng: 'M-02 — Press: น็อตหลวม',
+  kind_label: '862 Shipping Schedule (รอบส่งงาน)', ship_tos: 'GRBNA, GBL9A', rows: 538, files: 6,
+  date_from: '2026-07-06', date_to: '2026-07-18', unmatched: 2, uploaded_by: 'Sale A',
+  ship_time: '09:00', due_date: '2026-07-09', customer: 'AAT (GRBNA)', dock_code: 'B5',
+  customer_part_no: 'RB3B 16E060 BA', qty: 50, order_no: 'SGUCHF', shipped_by: 'Logistic B',
+  count: 3, items: '08:00 · AAT · 10106790 × 50\n09:00 · AAT · 10100401 × 50',
 }
 const renderPreview = (t) => String(t ?? '').replace(/\{(\w+)\}/g, (_m, k) => (SAMPLE[k] != null ? String(SAMPLE[k]) : ''))
 
