@@ -2316,7 +2316,8 @@ export default function Dashboard() {
                           </div>
                         );
                       })}
-                      {/* จุดเครื่องจักรบนผัง — เฉพาะเครื่องที่กำลัง Downtime กระพริบแดงพร้อมชื่อสาเหตุ */}
+                      {/* จุดเครื่องจักรบนผัง — เฉพาะเครื่องที่กำลัง Downtime กระพริบแดงพร้อมชื่อสาเหตุ
+                          รูปทรงตาม UI-CONVENTIONS ข้อ 1: วงกลม 0.8×MK + ป้ายใต้ พร้อม edge clamp ไม่ให้ตกขอบรูป */}
                       {machinePoints
                         .filter(p => cardLineNames.includes(p.line_name) && dtAlarmByMachine[p.machine_no])
                         .map(p => {
@@ -2324,23 +2325,37 @@ export default function Dashboard() {
                           const first = alarms[0];
                           const elapsed = dtElapsedMin(first, now.getTime());
                           const ongoing = !first.ended_at && first.duration_min == null;
+                          const MKS = Math.round(MK * 0.8);
+                          const rawL = (parseFloat(p.pos_left) || 0) / 100 * boxW;
+                          const rawT = (parseFloat(p.pos_top) || 0) / 100 * boxH;
+                          const leftPct = Math.min(Math.max(rawL, MKS * 0.55), boxW - MKS * 0.55) / boxW * 100;
+                          const topPct  = Math.min(Math.max(rawT, MKS * 0.7), boxH - MKS * 1.35) / boxH * 100;
                           return (
                             <div key={`mc-${p.id}`}
                               title={alarms.map(d => `${d.dr_downtime_types?.name_th || 'Downtime'}${d.description ? ` — ${d.description}` : ''}`).join('\n')}
                               style={{
-                                position: 'absolute', top: `${parseFloat(p.pos_top) || 0}%`, left: `${parseFloat(p.pos_left) || 0}%`,
+                                position: 'absolute', top: `${topPct}%`, left: `${leftPct}%`,
                                 transform: 'translate(-50%, -50%)', zIndex: 5,
                                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
                               }}>
                               <div className="dt-alarm-blink" style={{
-                                border: '2px solid #ef4444', borderRadius: 8, padding: '4px 8px',
-                                fontSize: 'clamp(10px, 1.2vw, 15px)', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap',
+                                width: MKS, height: MKS, borderRadius: '50%',
+                                border: `${Math.max(2, Math.round(MKS * 0.06))}px solid #ef4444`,
+                                backgroundColor: 'rgba(239,68,68,0.25)', backdropFilter: 'blur(2px)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: Math.max(13, Math.round(MKS * 0.44)), lineHeight: 1,
+                              }}>🚨</div>
+                              <div style={{
+                                background: 'rgba(0,0,0,0.8)', borderRadius: 4, padding: '1px 6px',
+                                fontSize: Math.max(11, Math.round(MKS * 0.24)), fontWeight: 800, color: '#fff',
+                                whiteSpace: 'nowrap', maxWidth: MKS * 1.9, overflow: 'hidden', textOverflow: 'ellipsis',
                               }}>
-                                🚨 {p.machine_no}
+                                {p.machine_no}
                               </div>
                               <div style={{
-                                background: 'rgba(0,0,0,0.8)', borderRadius: 4, padding: '2px 6px',
-                                fontSize: 'clamp(9px, 1vw, 13px)', fontWeight: 700, color: '#fca5a5', whiteSpace: 'nowrap',
+                                background: 'rgba(239,68,68,0.25)', borderRadius: 3, padding: '0 5px',
+                                fontSize: Math.max(10, Math.round(MKS * 0.2)), fontWeight: 700, color: '#fca5a5',
+                                whiteSpace: 'nowrap', maxWidth: MKS * 2, overflow: 'hidden', textOverflow: 'ellipsis',
                               }}>
                                 {first.dr_downtime_types?.name_th || 'Downtime'}{ongoing && elapsed != null ? ` · ${elapsed} นาที` : ''}
                               </div>

@@ -5,6 +5,7 @@ import { UserContext } from '../App'
 import { toast } from '../components/Toast'
 import { computeDailyPmStatus, DAILY_PM_STATUS_META, DAILY_PM_WINDOW_MIN } from '../lib/pmDailyStatus'
 import { fmtTime } from '../utils/dateFormat'
+import { can } from '../utils/permissions'
 
 /* ── date / shift (local, Asia/Bangkok = deployment local) ── */
 const toLocalDateStr = (d) =>
@@ -29,11 +30,9 @@ function getShiftInfo(now = new Date()) {
   }
 }
 
-const canManageRoles = ['admin', 'manager', 'supervisor']
-
 export default function DailyPM() {
   const { role } = useContext(UserContext)
-  const canManage = canManageRoles.includes(role)
+  const canManage = can('pm', 'setup', role)
 
   const [tab, setTab] = useState('status')
   const [userId, setUserId] = useState(null)

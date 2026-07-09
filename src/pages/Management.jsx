@@ -778,7 +778,7 @@ export default function Management() {
         </div>
         {/* team badge */}
         {worker.employees?.team && (
-          <div style={{ fontSize: 9, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.18)', borderRadius: 3, padding: '1px 6px', flexShrink: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.18)', borderRadius: 3, padding: '1px 6px', flexShrink: 0 }}>
             Team {worker.employees.team}
           </div>
         )}
@@ -1425,7 +1425,7 @@ export default function Management() {
                   { c: '#ef4444', icon: '⛔', label: 'Downtime (แถบบนแถว)' },
                 ].map(item => (
                   <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 15, height: 15, borderRadius: 3, background: `${item.c}28`, border: `1.2px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
+                    <span style={{ width: 15, height: 15, borderRadius: 3, background: `${item.c}28`, border: `1.2px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
                     <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
                   </div>
                 ))}
@@ -1518,10 +1518,10 @@ export default function Management() {
                                 }}>
                                 <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`, background: `${sc}22` }} />
                                 <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 2px', overflow: 'hidden' }}>
-                                  <div style={{ fontSize: 7, fontWeight: 800, color: sc, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  <div style={{ fontSize: 10, fontWeight: 800, color: sc, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                     {icon} {o.prod_no || (oi + 1)}
                                   </div>
-                                  <div style={{ fontSize: 6, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.qty}ชิ้น</div>
+                                  <div style={{ fontSize: 9, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.qty}ชิ้น</div>
                                 </div>
                               </div>
                               {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
@@ -1544,14 +1544,14 @@ export default function Management() {
                             <div className="now-line" style={{ left: `${(nowMs - half.startMs) * pctPerMs}%` }} />
                           )}
                           {/* ป้ายกะมุมซ้ายของแถบ — บอกว่าแถบนี้คือช่วงเช้าหรือดึก */}
-                          <span style={{ position: 'absolute', left: 3, bottom: 1, fontSize: 8, opacity: 0.55, zIndex: 2, pointerEvents: 'none' }}>{half.key === 'am' ? '☀️' : '🌙'}</span>
+                          <span style={{ position: 'absolute', left: 3, bottom: 1, fontSize: 10, opacity: 0.55, zIndex: 2, pointerEvents: 'none' }}>{half.key === 'am' ? '☀️' : '🌙'}</span>
                   </div>
                 );
                 return (
                   <div>
                     {/* Hour header — เวลาคู่: บรรทัดบน ☀️ 08–19 / บรรทัดล่าง 🌙 20–07 คอลัมน์เดียวกัน */}
                     <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
-                      <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '3px 8px', fontSize: 9, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1 }}>
+                      <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '3px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1 }}>
                         <span>☀️ กะเช้า (แถบบน)</span>
                         <span>🌙 กะดึก (แถบล่าง)</span>
                       </div>
@@ -1578,8 +1578,8 @@ export default function Management() {
                             borderRight: '1px solid var(--border)',
                             background: (isNowAm || isNowPm) ? 'rgba(77,159,255,0.12)' : 'transparent',
                           }}>
-                            <div style={{ fontSize: 9, fontWeight: isNowAm ? 800 : 500, color: isNowAm ? '#4d9fff' : 'var(--text2)' }}>{String(h).padStart(2, '0')}:00</div>
-                            <div style={{ fontSize: 8, fontWeight: isNowPm ? 800 : 400, color: isNowPm ? '#4d9fff' : 'var(--muted)' }}>{String(hPm).padStart(2, '0')}:00</div>
+                            <div style={{ fontSize: 11, fontWeight: isNowAm ? 800 : 500, color: isNowAm ? '#4d9fff' : 'var(--text2)' }}>{String(h).padStart(2, '0')}:00</div>
+                            <div style={{ fontSize: 10, fontWeight: isNowPm ? 800 : 400, color: isNowPm ? '#4d9fff' : 'var(--muted)' }}>{String(hPm).padStart(2, '0')}:00</div>
                           </div>
                         );
                       })}
