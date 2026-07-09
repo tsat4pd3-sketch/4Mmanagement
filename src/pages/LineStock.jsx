@@ -1026,12 +1026,157 @@ function DeliveryTimeBoardTab() {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
+   TAB: รับเข้าอัตโนมัติ — ปลายทาง stock เมื่อปิดออเดอร์ (stock_inflow_rules)
+   ทำงานคู่กับ DB trigger fn_post_confirmed_output บน prod_orders:
+   สแกนปิดออเดอร์ปุ๊บ ผลผลิตถูก post เข้า stock ปลายทางทันที ไม่ต้องรอปิดกะ
+   ───────────────────────────────────────────────────────────────────────────── */
+function InflowRulesTab({ canEdit }) {
+  const [rules, setRules] = useState([]);
+  const [lines, setLines] = useState([]);
+  const [form, setForm] = useState({ match_type: 'prefix', match_value: '', dest_line_name: '' });
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    const [{ data: r }, { data: ln }] = await Promise.all([
+      supabaseDR.from('stock_inflow_rules').select('*').order('match_type').order('match_value'),
+      supabase.from('production_lines').select('name').order('name'),
+    ]);
+    setRules(r || []);
+    setLines(ln || []);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const addRule = async () => {
+    const mv = form.match_value.trim().toUpperCase();
+    const dest = form.dest_line_name.trim();
+    if (!mv) { toast.error(form.match_type === 'prefix' ? 'กรอกเลขขึ้นต้น MAT เช่น 1 หรือ 2' : 'กรอก MAT No.'); return; }
+    if (!dest) { toast.error('กรอกปลายทาง เช่น FG WAREHOUSE / STORE'); return; }
+    setSaving(true);
+    const { error } = await supabaseDR.from('stock_inflow_rules')
+      .upsert({ match_type: form.match_type, match_value: mv, dest_line_name: dest, is_active: true, updated_at: new Date().toISOString() }, { onConflict: 'match_type,match_value' });
+    setSaving(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`✓ ${form.match_type === 'prefix' ? `MAT ขึ้นต้น ${mv}` : mv} → ${dest}`);
+    setForm(f => ({ ...f, match_value: '', dest_line_name: '' }));
+    load();
+  };
+
+  const toggleRule = async (r) => {
+    const { error } = await supabaseDR.from('stock_inflow_rules')
+      .update({ is_active: !r.is_active, updated_at: new Date().toISOString() }).eq('id', r.id);
+    if (error) { toast.error(error.message); return; }
+    load();
+  };
+
+  const deleteRule = async (r) => {
+    if (!window.confirm(`ลบกฎ "${r.match_type === 'prefix' ? `MAT ขึ้นต้น ${r.match_value}` : r.match_value} → ${r.dest_line_name}"?`)) return;
+    const { error } = await supabaseDR.from('stock_inflow_rules').delete().eq('id', r.id);
+    if (error) { toast.error(error.message); return; }
+    toast.success('ลบกฎแล้ว');
+    load();
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 720 }}>
+      <div style={card}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>⚙️ รับงานเข้า stock อัตโนมัติเมื่อปิดออเดอร์</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.7 }}>
+          สแกนปิดออเดอร์ (confirm) ปุ๊บ ระบบ post ผลผลิตเข้า stock ปลายทางทันที ไม่ต้องรอปิดกะ —
+          FG (เบอร์ 1xxx) เข้า warehouse พร้อมส่งลูกค้า · พาร์ทลูก (เบอร์ 2xxx) เข้าสโตร์/ปลายทางที่กำหนด
+          <br />กฎแบบ <strong>MAT ตรงตัว</strong> ชนะแบบ <strong>ขึ้นต้นด้วย</strong> · รายการที่เข้าแล้วดูได้ที่แท็บ 📦 Stock (ผู้บันทึก = auto)
+        </div>
+      </div>
+
+      <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr style={{ background: 'var(--bg2)' }}>
+            {['เงื่อนไข MAT No.', 'ปลายทาง (line_name)', 'สถานะ', ''].map(h => (
+              <th key={h} style={{ padding: '9px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {rules.length === 0 && (
+              <tr><td colSpan={4} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีกฎ — งานที่ปิดออเดอร์จะไม่ถูก post เข้า stock อัตโนมัติ</td></tr>
+            )}
+            {rules.map(r => (
+              <tr key={r.id} style={{ borderTop: '1px solid var(--border)', opacity: r.is_active ? 1 : 0.45 }}>
+                <td style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+                  {r.match_type === 'prefix'
+                    ? <>ขึ้นต้นด้วย <span style={{ fontFamily: 'monospace', color: '#0ea5e9', fontSize: 14 }}>{r.match_value}</span></>
+                    : <span style={{ fontFamily: 'monospace', color: '#0ea5e9', fontSize: 14 }}>{r.match_value}</span>}
+                </td>
+                <td style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>📍 {r.dest_line_name}</td>
+                <td style={{ padding: '8px 14px' }}>
+                  <button onClick={() => canEdit && toggleRule(r)} disabled={!canEdit}
+                    style={{ padding: '4px 12px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: canEdit ? 'pointer' : 'default', fontFamily: 'var(--font-body)',
+                      background: r.is_active ? 'rgba(34,197,94,0.12)' : 'var(--bg2)', color: r.is_active ? '#22c55e' : 'var(--muted)',
+                      border: `1px solid ${r.is_active ? 'rgba(34,197,94,0.35)' : 'var(--border)'}` }}>
+                    {r.is_active ? '✓ ใช้งาน' : 'ปิดอยู่'}
+                  </button>
+                </td>
+                <td style={{ padding: '8px 14px', textAlign: 'right' }}>
+                  {canEdit && (
+                    <button onClick={() => deleteRule(r)}
+                      style={{ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontFamily: 'var(--font-body)' }}>
+                      🗑 ลบ
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {canEdit && (
+        <div style={card}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>➕ เพิ่ม/แก้กฎ</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ชนิดเงื่อนไข</span>
+              <select value={form.match_type} onChange={e => setForm(f => ({ ...f, match_type: e.target.value }))} style={{ ...inputSt, width: 150 }}>
+                <option value="prefix">MAT ขึ้นต้นด้วย…</option>
+                <option value="mat">MAT ตรงตัว</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{form.match_type === 'prefix' ? 'เลขขึ้นต้น (เช่น 1, 2)' : 'MAT No.'}</span>
+              <input value={form.match_value} onChange={e => setForm(f => ({ ...f, match_value: e.target.value }))}
+                placeholder={form.match_type === 'prefix' ? '1' : '1XXXXXXX'} style={{ ...inputSt, width: form.match_type === 'prefix' ? 130 : 190, fontFamily: 'monospace' }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ปลายทาง (พิมพ์เอง หรือเลือกไลน์)</span>
+              <input list="inflow-dest-options" value={form.dest_line_name} onChange={e => setForm(f => ({ ...f, dest_line_name: e.target.value }))}
+                placeholder="FG WAREHOUSE" style={{ ...inputSt, width: 220 }} />
+              <datalist id="inflow-dest-options">
+                <option value="FG WAREHOUSE" />
+                <option value="STORE" />
+                {lines.map(l => <option key={l.name} value={l.name} />)}
+              </datalist>
+            </div>
+            <button onClick={addRule} disabled={saving} style={{ ...btn('var(--accent)', '#08130a'), opacity: saving ? 0.6 : 1 }}>
+              {saving ? '...' : '💾 บันทึก'}
+            </button>
+          </div>
+        </div>
+      )}
+      {!canEdit && (
+        <div style={{ ...card, borderColor: 'rgba(245,158,11,0.4)', fontSize: 12, color: '#f59e0b' }}>
+          👁 โหมดดูอย่างเดียว — แก้กฎได้เฉพาะผู้มีสิทธิ์จัดการรอบจัดส่ง (ตั้งได้ที่หน้า จัดการสิทธิ์)
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
    MAIN EXPORT
    ───────────────────────────────────────────────────────────────────────────── */
 const TABS = [
   { key:'stock',     label:'📦 Stock' },
   { key:'delivery',  label:'⏰ รอบจัดส่ง' },
   { key:'timeboard', label:'🕐 บอร์ดเวลา' },
+  { key:'inflow',    label:'⚙️ รับเข้าอัตโนมัติ' },
 ];
 
 export default function LineStock() {
@@ -1070,6 +1215,7 @@ export default function LineStock() {
       {activeTab === 'stock'     && <StockTab role={role} />}
       {activeTab === 'delivery'  && <DeliveryRoundsTab canEdit={canEdit} fullName={fullName} />}
       {activeTab === 'timeboard' && <DeliveryTimeBoardTab />}
+      {activeTab === 'inflow'    && <InflowRulesTab canEdit={canEdit} />}
     </div>
   );
 }
