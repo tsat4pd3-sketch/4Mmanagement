@@ -99,7 +99,7 @@ const FIELD_DEFS = {
 };
 
 /* ─── Upload Tab ──────────────────────────────────────────────────────────── */
-function UploadTab({ canUpload, fullName, onImported }) {
+function UploadTab({ canUpload, fullName, onImported, custLabel }) {
   const [kind, setKind] = useState('forecast');   // 'forecast' | 'orders'
   const [fileName, setFileName] = useState('');
   const [headers, setHeaders] = useState([]);     // [{ idx, text }]
@@ -318,6 +318,9 @@ function UploadTab({ canUpload, fullName, onImported }) {
         .insert({ kind: edi.kind, file_name: `EDI ${edi.kind === 'orders' ? '862' : '830'} × ${edi.files.length} ไฟล์ (${edi.shipTos.join(',')})`, row_count: edi.records.length, uploaded_by: fullName || 'Sales' })
         .select().single();
       if (e1) throw e1;
+      // code ปลายทางใหม่ที่ยังไม่อยู่ใน config → เพิ่มให้อัตโนมัติ (ชื่อตั้งต้น = code รอทีมตั้งชื่อลูกค้า)
+      await supabaseDR.from('ship_to_plants')
+        .upsert(edi.shipTos.map(c => ({ code: c, customer_name: c })), { onConflict: 'code', ignoreDuplicates: true });
       if (edi.kind === 'forecast') {
         const { error: eDel } = await supabaseDR.from('customer_forecasts').delete().eq('source', 'edi_830').in('customer', edi.shipTos);
         if (eDel) throw eDel;
@@ -397,7 +400,7 @@ function UploadTab({ canUpload, fullName, onImported }) {
               </div>
               <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--text2)', marginBottom: 8 }}>
                 <span>📄 {edi.files.length} ไฟล์</span>
-                <span>🏭 Ship-to: <strong>{edi.shipTos.join(', ')}</strong></span>
+                <span>🏭 Ship-to: <strong>{edi.shipTos.map(c => custLabel ? custLabel(c) : c).join(', ')}</strong></span>
                 <span>📅 {edi.dateFrom} → {edi.dateTo}</span>
                 <span>🧾 {edi.records.length} รายการ</span>
                 <span style={{ color: edi.unmatched.length ? '#f59e0b' : '#22c55e' }}>
@@ -495,7 +498,7 @@ function UploadTab({ canUpload, fullName, onImported }) {
 }
 
 /* ─── Forecast Planner Tab ────────────────────────────────────────────────── */
-function PlannerTab({ refreshKey }) {
+function PlannerTab({ refreshKey, custLabel }) {
   const [horizon, setHorizon] = useState(3);          // จำนวนเดือนล่วงหน้า
   const [forecasts, setForecasts] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -625,7 +628,7 @@ function PlannerTab({ refreshKey }) {
                       <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{r.mat_no}</div>
                       <div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.part_name || ''}</div>
                     </td>
-                    <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)' }}>{r.customer || '—'}</td>
+                    <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)' }}>{r.customer ? (custLabel ? custLabel(r.customer) : r.customer) : '—'}</td>
                     <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 13, fontWeight: 700, textAlign: 'right', color: '#4d9fff' }}>{fmt(r.forecast)}</td>
                     <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 13, fontWeight: 700, textAlign: 'right', color: '#22c55e' }}>{fmt(r.ordered)}</td>
                     <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 12, fontWeight: 800, textAlign: 'right', color: r.coverage == null ? 'var(--muted)' : r.coverage > 110 ? '#ef4444' : r.coverage >= 80 ? '#22c55e' : '#f59e0b' }}>
@@ -654,7 +657,7 @@ const SHIP_STATUS = {
   prepared: { label: '📦 เตรียมแล้ว', color: '#0ea5e9', next: 'shipped',  nextLabel: '🚚 ส่งงานแล้ว' },
   shipped:  { label: '✅ ส่งแล้ว',    color: '#22c55e', next: null,       nextLabel: null },
 };
-function ShippingTab({ fullName, refreshKey }) {
+function ShippingTab({ fullName, refreshKey, custLabel }) {
   const [day, setDay] = useState(todayStr());
   const [orders, setOrders] = useState([]);
   const [busy, setBusy] = useState(null);
@@ -691,9 +694,12 @@ function ShippingTab({ fullName, refreshKey }) {
 
   const byCustomer = useMemo(() => {
     const m = {};
-    orders.forEach(o => { (m[o.customer || '— ไม่ระบุลูกค้า —'] = m[o.customer || '— ไม่ระบุลูกค้า —'] || []).push(o); });
+    orders.forEach(o => {
+      const key = custLabel ? custLabel(o.customer) : (o.customer || '— ไม่ระบุลูกค้า —');
+      (m[key] = m[key] || []).push(o);
+    });
     return m;
-  }, [orders]);
+  }, [orders, custLabel]);
 
   const shippedCount = orders.filter(o => o.status === 'shipped').length;
   const overdueCount = orders.filter(isOverdue).length;
@@ -799,7 +805,7 @@ function ShippingTab({ fullName, refreshKey }) {
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.part_name || ''}{o.order_no ? ` · PO ${o.order_no}` : ''}{o.dock_code ? ` · Dock ${o.dock_code}` : ''}</div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6 }}>
                       <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{fmt(o.qty)} <span style={{ fontSize: 10, color: 'var(--muted)' }}>ชิ้น</span></span>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6' }}>{o.customer || ''}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6' }}>{o.customer ? (custLabel ? custLabel(o.customer) : o.customer) : ''}</span>
                     </div>
                     {o.shipped_by && <div style={{ fontSize: 10, color: '#22c55e', marginTop: 4 }}>✓ {o.shipped_by} · {o.shipped_at ? new Date(o.shipped_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }) : ''}</div>}
                     {st.next && (
@@ -819,12 +825,109 @@ function ShippingTab({ fullName, refreshKey }) {
   );
 }
 
+/* ─── Ship-to Plant Config Tab ────────────────────────────────────────────── */
+function ShipToTab({ canEdit, onChanged }) {
+  const [rows, setRows] = useState([]);
+  const [draft, setDraft] = useState({});     // code → { customer_name, plant_name, note }
+  const [newCode, setNewCode] = useState('');
+  const [busy, setBusy] = useState(null);
+
+  const load = useCallback(async () => {
+    const { data } = await supabaseDR.from('ship_to_plants').select('*').order('code');
+    setRows(data || []);
+    setDraft({});
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const save = async (code) => {
+    const d = draft[code];
+    if (!d) return;
+    setBusy(code);
+    const { error } = await supabaseDR.from('ship_to_plants')
+      .update({ customer_name: d.customer_name?.trim() || code, plant_name: d.plant_name?.trim() || null, note: d.note?.trim() || null, updated_at: new Date().toISOString() })
+      .eq('code', code);
+    if (error) toast.error(error.message);
+    else { toast.success(`บันทึก ${code} แล้ว`); await load(); onChanged?.(); }
+    setBusy(null);
+  };
+  const addCode = async () => {
+    const code = newCode.trim().toUpperCase();
+    if (!code) return;
+    const { error } = await supabaseDR.from('ship_to_plants').insert({ code, customer_name: code });
+    if (error) { toast.error(error.message); return; }
+    setNewCode('');
+    await load();
+  };
+
+  const cell = { padding: '6px 10px', borderTop: '1px solid var(--border)' };
+  const edSt = { ...inputSt, padding: '5px 8px', fontSize: 12, width: '100%', boxSizing: 'border-box' };
+  const val = (r, k) => (draft[r.code]?.[k] ?? r[k] ?? '');
+  const setVal = (r, k, v) => setDraft(d => ({ ...d, [r.code]: { customer_name: val(r, 'customer_name'), plant_name: val(r, 'plant_name'), note: val(r, 'note'), ...d[r.code], [k]: v } }));
+
+  return (
+    <div style={card}>
+      <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>⚙️ Ship-to Plant Config</div>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+        ตั้งชื่อลูกค้าให้ code ปลายทางจากไฟล์ EDI (เช่น GRBNA → AAT) — ชื่อนี้จะแสดงแทน code ในทุกหน้าจอ · code ใหม่จากไฟล์ EDI จะถูกเพิ่มเข้าลิสต์นี้อัตโนมัติ
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+          <thead><tr style={{ background: 'var(--bg2)' }}>
+            {['Code', 'ชื่อลูกค้า *', 'โรงงาน/ท่า', 'หมายเหตุ', ''].map(h => (
+              <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.code}>
+                <td style={{ ...cell, fontFamily: 'monospace', fontWeight: 800, color: '#0ea5e9', fontSize: 13 }}>{r.code}</td>
+                <td style={cell}>{canEdit ? <input value={val(r, 'customer_name')} onChange={e => setVal(r, 'customer_name', e.target.value)} style={edSt} placeholder="เช่น AAT / FTM" /> : <span style={{ fontSize: 13, fontWeight: 700 }}>{r.customer_name}</span>}</td>
+                <td style={cell}>{canEdit ? <input value={val(r, 'plant_name')} onChange={e => setVal(r, 'plant_name', e.target.value)} style={edSt} /> : <span style={{ fontSize: 12, color: 'var(--text2)' }}>{r.plant_name || '—'}</span>}</td>
+                <td style={cell}>{canEdit ? <input value={val(r, 'note')} onChange={e => setVal(r, 'note', e.target.value)} style={edSt} /> : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{r.note || ''}</span>}</td>
+                <td style={cell}>
+                  {canEdit && draft[r.code] && (
+                    <button onClick={() => save(r.code)} disabled={busy === r.code}
+                      style={{ padding: '5px 14px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                      {busy === r.code ? '...' : '💾 บันทึก'}
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {canEdit && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <input value={newCode} onChange={e => setNewCode(e.target.value)} placeholder="เพิ่ม code ใหม่" style={{ ...inputSt, width: 160 }} />
+          <button onClick={addCode} style={btn(false)}>➕ เพิ่ม</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Page ────────────────────────────────────────────────────────────────── */
 export default function CustomerDemand() {
   const { role, fullName } = useContext(UserContext);
   const [tab, setTab] = useState('planner');
   const [refreshKey, setRefreshKey] = useState(0);
   const canUpload = ['admin', 'manager', 'sale'].includes(role);
+
+  // ship-to code → ชื่อลูกค้า (config ที่แท็บ ⚙️) — ใช้แสดงผลทุกแท็บ
+  const [shipToMap, setShipToMap] = useState({});
+  const loadShipTo = useCallback(async () => {
+    const { data } = await supabaseDR.from('ship_to_plants').select('*');
+    const m = {};
+    (data || []).forEach(r => { m[r.code] = r; });
+    setShipToMap(m);
+  }, []);
+  useEffect(() => { loadShipTo(); }, [loadShipTo]);
+  const custLabel = useCallback((code) => {
+    if (!code) return '— ไม่ระบุลูกค้า —';
+    const r = shipToMap[code];
+    return r && r.customer_name && r.customer_name !== code ? `${r.customer_name} (${code})` : code;
+  }, [shipToMap]);
 
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
@@ -842,12 +945,14 @@ export default function CustomerDemand() {
           { id: 'planner',  label: '📈 Forecast Planner' },
           { id: 'shipping', label: '🕐 Shipping Chart' },
           { id: 'upload',   label: '📤 อัพโหลด (Sales)' },
+          { id: 'shipto',   label: '⚙️ Ship-to Config' },
         ].map(t => <button key={t.id} onClick={() => setTab(t.id)} style={btn(tab === t.id)}>{t.label}</button>)}
       </div>
 
-      {tab === 'upload' && <UploadTab canUpload={canUpload} fullName={fullName} onImported={() => setRefreshKey(k => k + 1)} />}
-      {tab === 'planner' && <PlannerTab refreshKey={refreshKey} />}
-      {tab === 'shipping' && <ShippingTab fullName={fullName} refreshKey={refreshKey} />}
+      {tab === 'upload' && <UploadTab canUpload={canUpload} fullName={fullName} onImported={() => { setRefreshKey(k => k + 1); loadShipTo(); }} custLabel={custLabel} />}
+      {tab === 'planner' && <PlannerTab refreshKey={refreshKey} custLabel={custLabel} />}
+      {tab === 'shipping' && <ShippingTab fullName={fullName} refreshKey={refreshKey} custLabel={custLabel} />}
+      {tab === 'shipto' && <ShipToTab canEdit={canUpload} onChanged={() => { setRefreshKey(k => k + 1); loadShipTo(); }} />}
     </div>
   );
 }

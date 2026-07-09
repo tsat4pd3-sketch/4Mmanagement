@@ -82,6 +82,14 @@ git push origin main
 - นำเข้า EDI เป็นแบบ "แทนที่ฉบับเดิมของ ship-to" — ถ้า rollback โค้ด ข้อมูลที่นำเข้าแล้วยังอยู่ครบ
 - Rollback เฉพาะรอบนี้: `git revert -m 1 <merge-sha รอบ 6>`
 
+## รอบแก้ที่ 7 — Ship-to Config + EDI เข้า Dashboard planner
+
+- ไฟล์แก้: `src/pages/CustomerDemand.jsx`, `src/pages/Dashboard.jsx`
+- DB (โปรเจค DR): ตารางใหม่ `ship_to_plants` (config code→ลูกค้า, seed code จากไฟล์ชุดแรก)
+  — ถอนได้ด้วย `drop table ship_to_plants;`
+- Dashboard planner อ่าน `customer_shipping_orders` เพิ่ม (read-only) เพื่อพยากรณ์กะดึกล่วงหน้า
+- Rollback เฉพาะรอบนี้: `git revert -m 1 <merge-sha รอบ 7>`
+
 ## สิ่งที่ต้องรู้ตอน rollback
 
 1. **ยอดสต็อกจาก "ยืนยันส่ง" ต่างกันสองเวอร์ชัน** — เวอร์ชันใหม่บันทึก `line_stock_transactions`
