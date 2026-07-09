@@ -204,6 +204,7 @@ export default function Dashboard() {
   const [stationEmpMap, setStationEmpMap] = useState({});
   const [expandedLine,  setExpandedLine]  = useState(null);
   const [expandedLines, setExpandedLines] = useState(new Set()); // ชื่อไลน์หลักที่กดขยายดูไลน์ย่อยในการ์ดสถานะไลน์ผลิต
+  const [andonLine, setAndonLine] = useState(null); // { title, names } — เปิด Andon panel เจาะรายละเอียด alarm ของไลน์
   const mapImgRef = useRef(null);
   const [mapBox, setMapBox] = useState({ w: 0, h: 0 });
   useEffect(() => {
@@ -922,19 +923,17 @@ export default function Dashboard() {
                 const color   = healthy ? '#22c55e' : warn ? '#f59e0b' : '#555';
                 const isExpanded = line._hasChildren && expandedLines.has(line.name);
                 // downtime alarm ของไลน์นี้ + ไลน์ย่อยที่ถูกรวมเข้าการ์ดเดียวกัน
-                const cardDT = [line.name, ...(line._children?.map(c => c.name) || [])]
-                  .flatMap(n => dtAlarmByLine[n] || []);
+                const cardNames = [line.name, ...(line._children?.map(c => c.name) || [])];
+                const cardDT = cardNames.flatMap(n => dtAlarmByLine[n] || []);
                 const card = (
                   <motion.div key={line.id} {...stagger(8 + i)} style={{ height: '100%' }}>
                     <div
-                      onClick={line._hasChildren ? () => toggleExpand(line.name) : undefined}
                       style={{
                         background: 'var(--card)',
                         border: '1px solid var(--border2)',
                         borderLeft: line._hasChildren ? '4px solid var(--accent)' : '1px solid var(--border2)',
                         borderRadius: 12, padding: isWide ? '18px 20px' : '14px 16px',
                         boxShadow: 'var(--shadow-sm)',
-                        cursor: line._hasChildren ? 'pointer' : 'default',
                         height: '100%', boxSizing: 'border-box',
                         minHeight: isWide ? 190 : 165,
                         display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
@@ -954,13 +953,16 @@ export default function Dashboard() {
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                           <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, boxShadow: `0 0 6px ${color}` }} />
                           {line.lineAlerts > 0 && (
-                            <div style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(231,76,60,0.15)', color: '#e74c3c', border: '1px solid rgba(231,76,60,0.3)' }}>
+                            <div onClick={() => setAndonLine({ title: line.name, names: cardNames })}
+                              title="คลิกดูรายละเอียด 4M ที่แจ้งเตือน"
+                              style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(231,76,60,0.15)', color: '#e74c3c', border: '1px solid rgba(231,76,60,0.3)', cursor: 'pointer' }}>
                               🚨 {line.lineAlerts}
                             </div>
                           )}
                           {cardDT.length > 0 && (
-                            <div className="dt-alarm-blink" title={cardDT.map(d => `${d.machine_no || '-'} · ${d.dr_downtime_types?.name_th || 'Downtime'}`).join('\n')}
-                              style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, color: '#fff', border: '1px solid #ef4444' }}>
+                            <div className="dt-alarm-blink" onClick={() => setAndonLine({ title: line.name, names: cardNames })}
+                              title="คลิกดูรายละเอียดเครื่องจักรที่ Downtime"
+                              style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, color: '#fff', border: '1px solid #ef4444', cursor: 'pointer' }}>
                               ⚙️ DT {cardDT.length}
                             </div>
                           )}
@@ -978,10 +980,16 @@ export default function Dashboard() {
                           {line.lineTotal === 0 ? 'ไม่มีข้อมูล' : `${line.rate}% Attendance ${healthy ? '· ✓ Normal' : line.lineAlerts > 0 ? '· ⚠ Risk' : ''}`}
                         </span>
                         {line._hasChildren && (
-                          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          <button onClick={() => toggleExpand(line.name)}
+                            style={{
+                              fontSize: 13, fontWeight: 800, color: 'var(--accent)', whiteSpace: 'nowrap',
+                              display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer',
+                              background: 'var(--accent-dim)', border: '1px solid var(--accent)',
+                              borderRadius: 7, padding: '4px 10px',
+                            }}>
                             {isExpanded ? 'ซ่อนไลน์ย่อย' : 'ดูไลน์ย่อย'}
                             <span style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
-                          </span>
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1017,13 +1025,16 @@ export default function Dashboard() {
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                                   <div style={{ width: 7, height: 7, borderRadius: '50%', background: cColor, boxShadow: `0 0 6px ${cColor}` }} />
                                   {cs.lineAlerts > 0 && (
-                                    <div style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(231,76,60,0.15)', color: '#e74c3c', border: '1px solid rgba(231,76,60,0.3)' }}>
+                                    <div onClick={() => setAndonLine({ title: cs.name, names: [cs.name] })}
+                                      title="คลิกดูรายละเอียด 4M ที่แจ้งเตือน"
+                                      style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(231,76,60,0.15)', color: '#e74c3c', border: '1px solid rgba(231,76,60,0.3)', cursor: 'pointer' }}>
                                       🚨 {cs.lineAlerts}
                                     </div>
                                   )}
                                   {csDT.length > 0 && (
-                                    <div className="dt-alarm-blink" title={csDT.map(d => `${d.machine_no || '-'} · ${d.dr_downtime_types?.name_th || 'Downtime'}`).join('\n')}
-                                      style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, color: '#fff', border: '1px solid #ef4444' }}>
+                                    <div className="dt-alarm-blink" onClick={() => setAndonLine({ title: cs.name, names: [cs.name] })}
+                                      title="คลิกดูรายละเอียดเครื่องจักรที่ Downtime"
+                                      style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, color: '#fff', border: '1px solid #ef4444', cursor: 'pointer' }}>
                                       ⚙️ DT {csDT.length}
                                     </div>
                                   )}
@@ -2004,6 +2015,98 @@ export default function Dashboard() {
           </div>
         </motion.div>
       </div>
+
+      {/* ── Andon Alarm Panel — เจาะรายละเอียดว่า alarm ของไลน์มาจากอะไร ── */}
+      {andonLine && (() => {
+        const dts = andonLine.names.flatMap(n => dtAlarmByLine[n] || []);
+        const fms = fourMLogs.filter(f => andonLine.names.includes(f.line_name));
+        const CAT_ICON = { Man: '👤', Machine: '⚙️', Material: '📦', Method: '📋' };
+        const fmtTime = (ts) => ts ? new Date(ts).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '—';
+        return (
+          <div className="overlay" style={{ zIndex: 1100 }} onClick={() => setAndonLine(null)}>
+            <div onClick={e => e.stopPropagation()} className="dt-alarm-banner" style={{
+              background: 'var(--card)', borderRadius: 16, padding: '20px 24px',
+              width: 'min(94vw, 720px)', maxHeight: '90vh', overflowY: 'auto',
+              border: '2px solid rgba(239,68,68,0.55)',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.6), 0 0 30px rgba(239,68,68,0.25)',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span className="dt-alarm-icon" style={{ fontSize: 26 }}>🚨</span>
+                  <div>
+                    <div style={{ fontSize: 19, fontWeight: 900, color: '#ef4444', fontFamily: 'var(--font-display)', letterSpacing: '0.04em' }}>ANDON ALARM</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{andonLine.title}</div>
+                  </div>
+                </div>
+                <button onClick={() => setAndonLine(null)}
+                  style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--muted)', padding: '0 4px' }}>✕</button>
+              </div>
+
+              {/* เครื่องจักร Downtime — กระพริบแดง */}
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
+                ⚙️ เครื่องจักรหยุด (Downtime) · {dts.length} รายการ
+              </div>
+              {dts.length === 0 ? (
+                <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0 14px' }}>ไม่มีเครื่องจักร Downtime ที่ยังแจ้งเตือน</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+                  {dts.map(d => {
+                    const elapsed = dtElapsedMin(d, now.getTime());
+                    const ongoing = !d.ended_at && d.duration_min == null;
+                    return (
+                      <div key={d.id} className={ongoing ? 'dt-alarm-blink' : undefined} style={{
+                        display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
+                        padding: '10px 14px', borderRadius: 10,
+                        background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.45)',
+                      }}>
+                        <span style={{ fontSize: 16, fontWeight: 900, color: '#fca5a5', fontFamily: 'var(--font-display)' }}>⚙️ {d.machine_no || '—'}</span>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: '#ef4444' }}>{d.dr_downtime_types?.name_th || 'Downtime'}</span>
+                        <span style={{ fontSize: 13, color: 'var(--text2)' }}>📍 {d.line_name}</span>
+                        <span style={{ fontSize: 13, color: 'var(--muted)' }}>เริ่ม {fmtTime(d.started_at || d.created_at)}</span>
+                        {ongoing
+                          ? (elapsed != null && <span style={{ fontSize: 14, fontWeight: 900, color: '#fbbf24' }}>⏱ ค้างมาแล้ว {elapsed} นาที</span>)
+                          : <span style={{ fontSize: 12, color: 'var(--muted)' }}>ปิดรายการแล้ว (เพิ่งบันทึก)</span>}
+                        {d.detail && <span style={{ fontSize: 13, color: 'var(--text2)', width: '100%' }}>📝 {d.detail}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* 4M Alerts */}
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
+                🚨 4M Changes · {fms.length} รายการ
+              </div>
+              {fms.length === 0 ? (
+                <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0' }}>ไม่มีรายการ 4M ของวันนี้</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {fms.map(f => (
+                    <div key={f.id} style={{
+                      display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
+                      padding: '10px 14px', borderRadius: 10,
+                      background: 'var(--bg3)', border: '1px solid var(--border2)',
+                      borderLeft: '3px solid #f59e0b',
+                    }}>
+                      <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{CAT_ICON[f.category] || '🔧'} {f.category}</span>
+                      <span style={{ fontSize: 13, color: 'var(--text2)' }}>📍 {f.line_name}</span>
+                      <span style={{ fontSize: 12, color: 'var(--muted)' }}>{fmtTime(f.created_at)}</span>
+                      <span style={{
+                        fontSize: 12, fontWeight: 800, padding: '2px 8px', borderRadius: 6,
+                        background: f.status === 'approved' ? 'rgba(34,197,94,0.15)' : f.status === 'rejected' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
+                        color: f.status === 'approved' ? '#22c55e' : f.status === 'rejected' ? '#ef4444' : '#f59e0b',
+                      }}>
+                        {f.status === 'approved' ? '✓ อนุมัติแล้ว' : f.status === 'rejected' ? '✕ ปฏิเสธ' : f.status === 'pending_qa' ? '🔍 รอ QA' : '⏳ รออนุมัติ'}
+                      </span>
+                      {f.description && <span style={{ fontSize: 13, color: 'var(--text)', width: '100%' }}>{f.description}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Expanded Line Map Modal */}
       {expandedLine && (() => {
