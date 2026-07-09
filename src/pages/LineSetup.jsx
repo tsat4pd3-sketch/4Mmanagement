@@ -285,6 +285,12 @@ export default function LineSetup() {
       if (uploadError) throw uploadError;
       const { data } = supabase.storage.from('employee-photos').getPublicUrl(`layouts/${fileName}`);
       await supabase.from('line_layouts').upsert({ line_name: selectedLine, image_url: data.publicUrl }, { onConflict: 'line_name' });
+      // ลบไฟล์ผังเดิมของไลน์นี้ทิ้ง กันไฟล์เก่ากองเป็นขยะใน storage
+      // (เฉพาะผังของตัวเองเท่านั้น — ผังที่ยืมแสดงจากไลน์แม่ห้ามลบ เพราะไลน์แม่ยังใช้อยู่)
+      if (!usingParentLayout && layoutImage?.includes('/employee-photos/layouts/')) {
+        const oldName = decodeURIComponent(layoutImage.split('/employee-photos/')[1] || '');
+        if (oldName.startsWith('layouts/')) supabase.storage.from('employee-photos').remove([oldName]);
+      }
       setLayoutImage(data.publicUrl);
       setUsingParentLayout(false);
     } catch (error) { alert('Error: ' + error.message); }

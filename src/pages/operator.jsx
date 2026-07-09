@@ -289,6 +289,15 @@ export default function Operator() {
       }).eq('id', editingEmp.id);
       if (error) throw error;
 
+      // เปลี่ยนรูปสำเร็จแล้วค่อยลบไฟล์รูปเดิมทิ้ง — ไฟล์ใหม่ได้ชื่อใหม่เสมอ (emp_<timestamp>)
+      // ถ้าไม่ลบ ไฟล์เก่าจะกองเป็นขยะใน storage (เคยสะสมกว่า 100MB) · fire-and-forget ลบพลาดไม่ต้อง error
+      if (editingEmp.newPhoto && editingEmp.image_url?.includes('/employee-photos/')) {
+        const oldName = decodeURIComponent(editingEmp.image_url.split('/employee-photos/')[1] || '');
+        if (oldName && !oldName.startsWith('layouts/')) {
+          supabase.storage.from('employee-photos').remove([oldName]);
+        }
+      }
+
       // Skills marked as enabled → upsert; disabled (N/A) → delete record
       const enabledSkills = skillDefs.filter(sd => editingEmp.skillEnabled?.[sd.name]);
       const disabledSkillNames = skillDefs.filter(sd => !editingEmp.skillEnabled?.[sd.name]).map(sd => sd.name);
