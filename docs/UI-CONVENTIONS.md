@@ -100,7 +100,32 @@ const MK = Math.round(Math.max(34, Math.min(84, renderedMapWidth * 0.055)));
 - เพิ่มอุปกรณ์ฝั่ง PM → ดึงจาก machine master (ดู `PMSetup.jsx` addMode workstation)
 - รูปชิ้นงานที่อัพไว้ใน Product Master (`dr_products.image_url`) ให้ดึงมาแสดงซ้ำได้เลย ไม่อัพใหม่
 
-## 6. เบ็ดเตล็ดที่เคยกัด
+## 6. บอร์ดเวลา (Time boards) — Heijunka / Shipping Chart / Rack Center / Store
+
+pattern ร่วมของทุกบอร์ดที่วางรายการบนแกนเวลา (เพิ่ม 2026-07-10):
+
+- **กรอบวันงาน 08:00 → 08:00 วันถัดไป** เต็ม 24 ชม.ในจอเดียว ไม่มี scroll แนวนอน —
+  เวลาก่อนตี 8 = ช่วงกะดึกของวันงานเดิม (นาทีแบบ wrap: h<8 บวก 1440) ใช้ helper
+  `frameMin`/`frameMinFromIso` จาก `src/utils/timeFrame.js`
+- **เส้นเวลาปัจจุบัน**: class `.now-line` (playhead ชมพู #ec4899 กระพริบเรืองแสง —
+  สีชมพูจงใจไม่ซ้ำสีสถานะใดๆ) + ป้ายเวลา `.now-chip` (⏱ HH:MM) ลอยบนหัวตาราง —
+  สอง class นี้อยู่ใน `index.css` ห้ามวาดเส้นเองด้วยสีอื่น
+- **เงาเวลาเบรค**: แถบลายเฉียง `repeating-linear-gradient(45deg, rgba(148,163,184,0.18) …)`
+  + ขอบประซ้าย/ขวา จากตาราง `break_policies` (DR, is_active) — แปลงเป็นช่วงนาทีบนกรอบ
+  ด้วย `breaksToFrame()` ใน `src/utils/timeFrame.js` · ชี้เมาส์เห็นชื่อช่วงพัก
+- **เวลาชนกันแยกเลนอัตโนมัติ** (รายการห่างกัน < 40 นาทีถือว่าชน) — ห้ามวางทับกัน
+- **ย่อ/ขยายรายแถว**: คลิกชื่อปลายทาง/ลูกค้า → โหมดย่อเหลือจุดสถานะ 9px ตามตำแหน่งเวลา
+- **คลิกบล็อก → popup** รายละเอียด + ปุ่ม action (ตามข้อ 1.4: ต้องมีทางปิดเสมอ)
+- ฟอนต์: ป้ายชั่วโมงบนแกน/ป้ายรอง ≥ 11px · ตัวเลขเวลาในบล็อก 12px (ตามข้อ 4)
+- บอร์ดภายในโรงงาน (ปลายทาง = ไลน์) ให้ใช้ component กลาง
+  `src/components/InternalTimeBoard.jsx` — อย่าเขียนบอร์ดใหม่จากศูนย์
+
+หน้าอ้างอิง: `HeijunkaKanban.jsx` (ต้นแบบ now-line/เงาเบรค), `CustomerDemand.jsx`
+(Shipping Chart), `RackCenter.jsx` + `LineStock.jsx` (ใช้ InternalTimeBoard)
+
+---
+
+## 7. เบ็ดเตล็ดที่เคยกัด
 
 - `index.css` ตั้ง `input{width:100%}` ทั้งแอป — input ใน flex row ต้องกำหนด width เอง
 - ปุ่มพับ sidebar อยู่**ในหัว sidebar** (ปุ่ม ⟨ ข้างโลโก้) — ปุ่มลอย ☰ โชว์เฉพาะตอนพับ ห้ามมีปุ่มลอยทับเนื้อหา

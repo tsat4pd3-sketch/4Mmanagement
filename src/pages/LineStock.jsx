@@ -1006,16 +1006,16 @@ function DeliveryTimeBoardTab() {
               <div style={{ padding: '10px 14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)' }}>{r.shift === 'night' ? '🌙' : '☀️'} รอบ {r.round_no}</span>
-                  <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: st.color }}>{st.label}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: st.color }}>{st.label}</span>
                 </div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', marginTop: 2 }}>📍 {r.line_name}</div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.8 }}>
                   ตัดยอด {(r.cutoff_time || '').slice(0, 5) || '—'} → ส่ง {(r.delivery_time || '').slice(0, 5)}<br />
                   {r.points_count || 1} จุด × {r.time_per_point_min || 10} นาที · เตรียม {r.prep_minutes || 60} นาที
                 </div>
-                {st.d?.confirmed_by && <div style={{ fontSize: 10, color: '#22c55e', marginTop: 4 }}>✓ ส่งโดย {st.d.confirmed_by}</div>}
-                {st.d?.received_by && <div style={{ fontSize: 10, color: st.d.received_status === 'full' ? '#22c55e' : '#f59e0b' }}>{st.d.received_status === 'full' ? '✔️' : '⚠️'} รับโดย {st.d.received_by}</div>}
-                <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 8 }}>👉 กดยืนยันส่ง/รับของที่หน้า 🎴 Kanban Board</div>
+                {st.d?.confirmed_by && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 4 }}>✓ ส่งโดย {st.d.confirmed_by}</div>}
+                {st.d?.received_by && <div style={{ fontSize: 11, color: st.d.received_status === 'full' ? '#22c55e' : '#f59e0b' }}>{st.d.received_status === 'full' ? '✔️' : '⚠️'} รับโดย {st.d.received_by}</div>}
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>👉 กดยืนยันส่ง/รับของที่หน้า 🎴 Kanban Board</div>
               </div>
             </div>
           </>

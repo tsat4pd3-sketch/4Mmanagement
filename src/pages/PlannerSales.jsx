@@ -418,7 +418,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {edi.unmatched.map(pn => (
-                      <span key={pn} style={{ fontSize: 10, fontWeight: 700, fontFamily: 'monospace', padding: '2px 8px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>{pn}</span>
+                      <span key={pn} style={{ fontSize: 11, fontWeight: 700, fontFamily: 'monospace', padding: '2px 8px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>{pn}</span>
                     ))}
                   </div>
                 </div>
@@ -447,7 +447,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
                 {fields.map(f => (
                   <div key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)' }}>{f.label}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{f.label}</span>
                     <select value={mapping[f.key] ?? -1} onChange={e => setMapping(m => ({ ...m, [f.key]: Number(e.target.value) }))} style={{ ...inputSt, minWidth: 140 }}>
                       <option value={-1}>— ไม่ใช้ —</option>
                       {headers.map(h => <option key={h.idx} value={h.idx}>{h.text || `(คอลัมน์ ${h.idx + 1})`}</option>)}
@@ -612,7 +612,7 @@ function PlannerTab({ refreshKey, custLabel }) {
             ...(noCtCount ? [{ label: 'พาร์ทไม่มี cycle time', value: noCtCount, icon: '⚠️', warn: true }] : []),
           ].map(c => (
             <div key={c.label} style={{ flex: '1 1 150px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'rgba(245,158,11,0.4)' : 'var(--border)'}`, borderRadius: 8, padding: '8px 12px' }}>
-              <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {c.label}</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {c.label}</div>
               <div style={{ fontSize: 20, fontWeight: 900, color: c.warn ? '#f59e0b' : 'var(--text)', fontFamily: 'var(--font-display)' }}>{c.value}</div>
             </div>
           ))}
@@ -630,7 +630,7 @@ function PlannerTab({ refreshKey, custLabel }) {
                   <tr key={r.mat_no}>
                     <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)' }}>
                       <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{r.mat_no}</div>
-                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.part_name || ''}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.part_name || ''}</div>
                     </td>
                     <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)' }}>{r.customer ? (custLabel ? custLabel(r.customer) : r.customer) : '—'}</td>
                     <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 13, fontWeight: 700, textAlign: 'right', color: '#4d9fff' }}>{fmt(r.forecast)}</td>

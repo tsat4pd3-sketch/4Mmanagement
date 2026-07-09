@@ -328,7 +328,7 @@ export default function RackCenter() {
                     </div>
                     <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>{r.container_name}</div>
                     {r.note && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>📝 {r.note}</div>}
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
                       {r.requested_by ? `โดย ${r.requested_by} · ` : ''}{timeAgo(r.requested_at)}
                     </div>
                     {canOperate && col.key !== 'received' && (
@@ -369,11 +369,11 @@ export default function RackCenter() {
               <div style={{ padding: '10px 14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)' }}>📍 {r.line_name}</span>
-                  <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: col.color }}>{col.label}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: col.color }}>{col.label}</span>
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>{r.container_name} <b>×{r.qty}</b></div>
                 {r.note && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>📝 {r.note}</div>}
-                <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
                   🔔 {r.requested_by || '-'} · {timeAgo(r.requested_at)}
                   {r.delivered_by ? ` · 🚚 ${r.delivered_by}` : ''}{r.received_by ? ` · ✅ ${r.received_by}` : ''}
                 </div>

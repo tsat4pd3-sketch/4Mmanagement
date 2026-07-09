@@ -261,7 +261,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
           style={{ ...inputSt, width: 140, flexShrink: 0 }} />
         <button onClick={() => shiftDay(1)} style={{ ...btn(false), width: 'auto', flexShrink: 0 }}>▶</button>
         {!isToday && <button onClick={() => setDay(workDateStr())} style={{ ...btn(true), width: 'auto', flexShrink: 0 }}>วันนี้</button>}
-        <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--muted)', flexShrink: 0 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--muted)', flexShrink: 0 }}>
           🕗 วันงาน 08:00 → 08:00
         </span>
         <span style={{ width: 1, height: 22, background: 'var(--border)', flexShrink: 0 }} />
@@ -281,13 +281,13 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
           <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🕐 Shipping Time Chart — วันงาน {day}</span>
-              <span style={{ fontSize: 10, color: 'var(--muted)' }}>คลิกที่บล็อกเพื่อดูรายละเอียด / ไปที่การ์ดรายการ</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>คลิกที่บล็อกเพื่อดูรายละเอียด / ไปที่การ์ดรายการ</span>
             </div>
             <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
-              <div style={{ width: 130, flexShrink: 0, padding: '3px 10px', fontSize: 9, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)' }}>ลูกค้า · คลิกชื่อเพื่อย่อ/ขยาย</div>
-              <div style={{ flex: 1, position: 'relative', height: 18 }}>
+              <div style={{ width: 130, flexShrink: 0, padding: '3px 10px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)' }}>ลูกค้า · คลิกชื่อเพื่อย่อ/ขยาย</div>
+              <div style={{ flex: 1, position: 'relative', height: 22 }}>
                 {hourMarks.map((m, i) => (i % 2 === 0 &&
-                  <span key={m} style={{ position: 'absolute', left: `${((m - tStart) / span) * 100}%`, fontSize: 8, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
+                  <span key={m} style={{ position: 'absolute', left: `${((m - tStart) / span) * 100}%`, fontSize: 11, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
                     {String((m / 60) % 24 | 0).padStart(2, '0')}
                   </span>
                 ))}
@@ -312,7 +312,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       <span style={{ color: 'var(--muted)', marginRight: 4 }}>{isCol ? '▸' : '▾'}</span>{cust}
                     </span>
-                    <span style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 600 }}>{list.length} รอบ · ✅ {doneN}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{list.length} รอบ · ✅ {doneN}</span>
                   </div>
                   <div style={{ flex: 1, position: 'relative', height: rowH }}>
                     {hourMarks.map(m => (
@@ -359,12 +359,12 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                           onClick={e => setPopup({ o, x: e.clientX, y: e.clientY })}
                           style={{
                             position: 'absolute', top: 5 + lane * LANE_H, height: LANE_H - 6,
-                            left: `${Math.min(left, 97)}%`, width: `${(SPAN_MIN / span) * 100}%`, minWidth: 44,
+                            left: `${Math.min(left, 97)}%`, width: `${(SPAN_MIN / span) * 100}%`, minWidth: 48,
                             background: `${color}${isSel ? '55' : '22'}`, border: `1.5px solid ${color}${isSel ? '' : 'cc'}`, borderRadius: 5, zIndex: 1,
                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, overflow: 'hidden', cursor: 'pointer', boxSizing: 'border-box',
                             boxShadow: od ? `0 0 5px ${color}55` : 'none',
                           }}>
-                          <span style={{ fontSize: 11, fontWeight: 800, color, whiteSpace: 'nowrap', lineHeight: 1 }}>
+                          <span style={{ fontSize: 12, fontWeight: 800, color, whiteSpace: 'nowrap', lineHeight: 1 }}>
                             {(o.ship_time || '—').slice(0, 5)}{o.status === 'shipped' ? ' ✅' : ''}
                           </span>
                         </div>
@@ -395,7 +395,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                   <div style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>🕐 {(o.ship_time || 'ไม่ระบุเวลา').slice(0, 5)}</span>
-                      <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: od ? '#ef4444' : pl ? '#f97316' : st.color }}>{od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : st.label}</span>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: od ? '#ef4444' : pl ? '#f97316' : st.color }}>{od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : st.label}</span>
                     </div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6', marginTop: 2 }}>{custLabel ? custLabel(o.customer) : o.customer}{o.due_date !== day ? ` · ส่งเช้า ${o.due_date}` : ''}</div>
                     <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700, marginTop: 6 }}>
@@ -403,18 +403,18 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.part_name || ''}</div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6 }}>
-                      <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{fmt(o.qty)} <span style={{ fontSize: 10, color: 'var(--muted)' }}>ชิ้น</span></span>
-                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>{o.order_no ? `PO ${o.order_no}` : ''}{o.dock_code ? ` · Dock ${o.dock_code}` : ''}</span>
+                      <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{fmt(o.qty)} <span style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น</span></span>
+                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>{o.order_no ? `PO ${o.order_no}` : ''}{o.dock_code ? ` · Dock ${o.dock_code}` : ''}</span>
                     </div>
                     {o.status !== 'shipped' && cov?.tracked && (
                       cov.short <= 0
-                        ? <div style={{ fontSize: 10, color: '#22c55e', fontWeight: 700, marginTop: 4 }}>📦 stock พร้อมส่งครบ</div>
-                        : <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>⚠️ stock มี {fmt(cov.covered)} — ขาด {fmt(cov.short)} ชิ้น</div>
+                        ? <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginTop: 4 }}>📦 stock พร้อมส่งครบ</div>
+                        : <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>⚠️ stock มี {fmt(cov.covered)} — ขาด {fmt(cov.short)} ชิ้น</div>
                     )}
                     {o.status !== 'shipped' && phases.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
                         {phases.map(ph => (
-                          <span key={ph.id} title={`${ph.name} — ต้องเสร็จภายใน ${ph.deadline}`} style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 6,
+                          <span key={ph.id} title={`${ph.name} — ต้องเสร็จภายใน ${ph.deadline}`} style={{ fontSize: 11, fontWeight: 700, padding: '2px 6px', borderRadius: 6,
                             background: ph.done ? 'rgba(34,197,94,0.12)' : ph.missed ? 'rgba(239,68,68,0.12)' : 'var(--bg2)',
                             color: ph.done ? '#22c55e' : ph.missed ? '#ef4444' : 'var(--muted)',
                             border: `1px solid ${ph.done ? 'rgba(34,197,94,0.3)' : ph.missed ? 'rgba(239,68,68,0.35)' : 'var(--border)'}` }}>
@@ -423,7 +423,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                         ))}
                       </div>
                     )}
-                    {o.shipped_by && <div style={{ fontSize: 10, color: '#22c55e', marginTop: 4 }}>✓ {o.shipped_by}</div>}
+                    {o.shipped_by && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 4 }}>✓ {o.shipped_by}</div>}
                     <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
                       {st.next && (
                         <button onClick={() => { advance(o); setPopup(null); }} disabled={busy === o.id}
@@ -451,7 +451,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
               { id: 'all',     label: `ทั้งหมด (${orders.length})` },
             ].map(f => <button key={f.id} onClick={() => setCardFilter(f.id)} style={btn(cardFilter === f.id)}>{f.label}</button>)}
             <span style={{ width: 1, height: 20, background: 'var(--border)' }} />
-            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)' }}>เรียง:</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>เรียง:</span>
             <button onClick={() => setSortMode('urgent')} style={btn(sortMode === 'urgent')} title="ใบที่หลุดเฟส/deadline ใกล้สุดขึ้นแถวบน">⚡ ใกล้ดิวก่อน</button>
             <button onClick={() => setSortMode('time')} style={btn(sortMode === 'time')}>🕐 ตามเวลาส่ง</button>
           </div>
@@ -476,21 +476,21 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                   <div style={{ height: 4, background: cardColor }} />
                   <div style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>🕐 {(o.ship_time || 'ไม่ระบุเวลา').slice(0, 5)}{o.due_date !== day ? <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600 }}> (เช้า {o.due_date.slice(5)})</span> : null}</span>
-                      <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: cardColor }}>{od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : st.label}</span>
+                      <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>🕐 {(o.ship_time || 'ไม่ระบุเวลา').slice(0, 5)}{o.due_date !== day ? <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}> (เช้า {o.due_date.slice(5)})</span> : null}</span>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: cardColor }}>{od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : st.label}</span>
                     </div>
                     <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700, marginTop: 4 }}>
                       {o.mat_no}{o.customer_part_no && o.customer_part_no !== o.mat_no ? <span style={{ color: 'var(--muted)', fontWeight: 600 }}> · {o.customer_part_no}</span> : null}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.part_name || ''}{o.order_no ? ` · PO ${o.order_no}` : ''}{o.dock_code ? ` · Dock ${o.dock_code}` : ''}</div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6 }}>
-                      <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{fmt(o.qty)} <span style={{ fontSize: 10, color: 'var(--muted)' }}>ชิ้น</span></span>
+                      <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{fmt(o.qty)} <span style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น</span></span>
                       <span style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6' }}>{o.customer ? (custLabel ? custLabel(o.customer) : o.customer) : ''}</span>
                     </div>
                     {o.status !== 'shipped' && phases.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
                         {phases.map(ph => (
-                          <span key={ph.id} title={`${ph.name} — ต้องเสร็จภายใน ${ph.deadline}`} style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 6,
+                          <span key={ph.id} title={`${ph.name} — ต้องเสร็จภายใน ${ph.deadline}`} style={{ fontSize: 11, fontWeight: 700, padding: '2px 6px', borderRadius: 6,
                             background: ph.done ? 'rgba(34,197,94,0.12)' : ph.missed ? 'rgba(239,68,68,0.12)' : 'var(--bg2)',
                             color: ph.done ? '#22c55e' : ph.missed ? '#ef4444' : 'var(--muted)',
                             border: `1px solid ${ph.done ? 'rgba(34,197,94,0.3)' : ph.missed ? 'rgba(239,68,68,0.35)' : 'var(--border)'}` }}>
@@ -501,10 +501,10 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                     )}
                     {o.status !== 'shipped' && coverage[o.id]?.tracked && (
                       coverage[o.id].short <= 0
-                        ? <div style={{ fontSize: 10, color: '#22c55e', fontWeight: 700, marginTop: 4 }}>📦 stock พร้อมส่งครบ</div>
-                        : <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>⚠️ stock มี {fmt(coverage[o.id].covered)} — ขาด {fmt(coverage[o.id].short)} ชิ้น (รอผลิต)</div>
+                        ? <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginTop: 4 }}>📦 stock พร้อมส่งครบ</div>
+                        : <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>⚠️ stock มี {fmt(coverage[o.id].covered)} — ขาด {fmt(coverage[o.id].short)} ชิ้น (รอผลิต)</div>
                     )}
-                    {o.shipped_by && <div style={{ fontSize: 10, color: '#22c55e', marginTop: 4 }}>✓ {o.shipped_by} · {o.shipped_at ? new Date(o.shipped_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }) : ''}</div>}
+                    {o.shipped_by && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 4 }}>✓ {o.shipped_by} · {o.shipped_at ? new Date(o.shipped_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }) : ''}</div>}
                     {st.next && (
                       <button onClick={() => advance(o)} disabled={busy === o.id}
                         style={{ marginTop: 8, width: '100%', padding: '7px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(0,0,0,0.12)', color: st.color, border: `1px solid ${st.color}55`, fontFamily: 'var(--font-body)' }}>
