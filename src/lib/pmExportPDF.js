@@ -105,13 +105,23 @@ export async function exportInspectionPDF({
     jigImg = await urlToBase64(url)
   }
 
+  // ถ้ามี group_name (Item หัวข้อจากฟอร์มจริง) จัดกลุ่มตามนั้น ไม่งั้นตาม category แบบเดิม
+  const useNamed = checkpoints.some(c => (c.group_name ?? '').trim())
   const groupOrder = []
   const groupMap = {}
   for (const cp of checkpoints) {
-    const cat = cp.category ?? '__none__'
+    const cat = useNamed ? ((cp.group_name ?? '').trim() || '__none__') : (cp.category ?? '__none__')
     if (!groupMap[cat]) { groupMap[cat] = []; groupOrder.push(cat) }
     groupMap[cat].push(cp)
   }
+  const namedKeys = groupOrder.filter(k => k !== '__none__')
+
+  // preload รูปอ้างอิงต่อ checkpoint (คอลัมน์ Picture)
+  const cpImgs = {}
+  await Promise.all(checkpoints.filter(c => c.image_path).map(async (c) => {
+    const url = supabaseDR.storage.from('jig-images').getPublicUrl(c.image_path).data.publicUrl
+    cpImgs[c.id] = await urlToBase64(url)
+  }))
 
   // One item number shared by the image pins and every table row, numbered in
   // table order (by category group). X/Y measurements of one variable share a
@@ -286,20 +296,25 @@ export async function exportInspectionPDF({
   let curY = IMG_Y + IMG_H + 1
 
   for (const cat of groupOrder) {
-    const cps = groupMap[cat]
-    const col = catColor(cat)
-    const label = CAT_LABEL[cat] ?? (cat === '__none__' ? 'Other' : cat)
-    const isVar = cps[0]?.type === 'variable'
+    const allCps = groupMap[cat]
+    const col = useNamed ? [55, 65, 81] : catColor(cat)
+    const label = useNamed
+      ? (cat === '__none__' ? 'Other' : `Item ${namedKeys.indexOf(cat) + 1} — ${cat}`)
+      : (CAT_LABEL[cat] ?? (cat === '__none__' ? 'Other' : cat))
 
     drawRect(doc, M, curY, W - 2 * M, 5, { fill: col })
     doc.setDrawColor(...col)
     doc.rect(M, curY, W - 2 * M, 5, 'S')
-    txt(doc, `${cat !== '__none__' ? `[${cat}]  ` : ''}${label}`, W / 2, curY + 2.5, {
+    txt(doc, `${!useNamed && cat !== '__none__' ? `[${cat}]  ` : ''}${label}`, W / 2, curY + 2.5, {
       size: 7, bold: true, align: 'center', color: [255, 255, 255],
     })
     curY += 5
 
-    if (isVar) {
+    const varSubset = allCps.filter(c => c.type === 'variable')
+    const attrSubset = allCps.filter(c => c.type !== 'variable')
+
+    if (varSubset.length) {
+      const cps = varSubset
       const rows = []
       const seenBase = {}
       for (const cp of cps) {
@@ -390,14 +405,19 @@ export async function exportInspectionPDF({
         },
       })
 
-    } else {
+      curY = doc.lastAutoTable.finalY + 1
+    }
+
+    if (attrSubset.length) {
+      const cps = attrSubset
       const rows = cps.map((cp) => {
         const r = results[cp.id]
         const ok = r?.value_attribute === 'ok' ? 'OK' : r?.value_attribute === 'ng' ? 'NG' : ''
         return {
-          item: String(itemNoMap[cp.id]), name: cp.name, std: cp.name, checking: '', picture: '',
+          // Standard = เกณฑ์ตัดสินหลายบรรทัด (description) ถ้าไม่มีใช้ชื่อจุดแบบเดิม
+          item: String(itemNoMap[cp.id]), name: cp.name, std: cp.description || cp.name, checking: '', picture: '',
           okng: ok, action: r?.action_text ?? '', date: '', results: '', approve: '',
-          remark: '', _ng: ok === 'NG',
+          remark: '', _ng: ok === 'NG', _img: cpImgs[cp.id] ?? null,
         }
       })
 
@@ -432,11 +452,26 @@ export async function exportInspectionPDF({
             data.cell.styles.textColor = [180, 0, 0]
           }
           if (!row._ng && data.column.dataKey === 'okng' && data.cell.raw === 'OK') data.cell.styles.textColor = [0, 140, 0]
+          if (row._img && data.section === 'body') data.cell.styles.minCellHeight = 14
+        },
+        didDrawCell(data) {
+          // วาดรูปอ้างอิงต่อจุดลงคอลัมน์ Picture
+          if (data.section !== 'body' || data.column.dataKey !== 'picture') return
+          const img = data.row.raw?._img
+          if (!img) return
+          const pad = 0.6
+          const w = Math.min(36, data.cell.width - 2 * pad)
+          const h = data.cell.height - 2 * pad
+          try { doc.addImage(img, 'JPEG', data.cell.x + pad, data.cell.y + pad, w, h) } catch {
+            try { doc.addImage(img, 'PNG', data.cell.x + pad, data.cell.y + pad, w, h) } catch { /* ข้ามรูปเสีย */ }
+          }
         },
       })
+
+      curY = doc.lastAutoTable.finalY + 1
     }
 
-    curY = doc.lastAutoTable.finalY + 1.5
+    curY += 0.5
   }
 
   // SECTION 5: LEGEND

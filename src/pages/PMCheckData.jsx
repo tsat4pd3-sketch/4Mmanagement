@@ -77,6 +77,17 @@ const S = {
   },
 }
 
+// รูปอ้างอิงต่อจุด (คอลัมน์ Picture ของฟอร์ม) — คลิกเปิดเต็มจอ
+function CpImage({ cp }) {
+  if (!cp.image_path) return null
+  const url = getPublicUrl(cp.image_path)
+  return (
+    <a href={url} target="_blank" rel="noreferrer" title="เปิดรูปเต็มจอ">
+      <img src={url} alt="" style={{ height: 52, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', display: 'block' }} />
+    </a>
+  )
+}
+
 // ─── Variable Row ───────────────────────────────────────────────────────────
 function VariableRow({ cp, idx, r, onChange, methodIndex }) {
   const avg = computeAvg(r.v1, r.v2, r.v3)
@@ -89,6 +100,7 @@ function VariableRow({ cp, idx, r, onChange, methodIndex }) {
         {cp.x_pos != null && <span style={{ width: 16, height: 16, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
         {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}{cp.axis && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 4px' }}>{cp.axis}</span>}</p>
+        <CpImage cp={cp} />
         {c && <span style={{ fontSize: 10, fontWeight: 700, color: c.text }}>{status === 'pass' ? '●' : status === 'warning' ? '⚠' : '✕'}</span>}
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -122,6 +134,7 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
         {cp.x_pos != null && <span style={{ width: 16, height: 16, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
         {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}</p>
+        <CpImage cp={cp} />
         <div style={{ display: 'flex', gap: 4 }}>
           {['ok', 'ng'].map(v => (
             <button key={v} onClick={() => onChangeAttr(v === value ? '' : v)} style={{
@@ -133,6 +146,11 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
           ))}
         </div>
       </div>
+      {cp.description && (
+        <p style={{ fontSize: 11.5, color: 'var(--text2)', whiteSpace: 'pre-line', margin: '0 0 0 24px', lineHeight: 1.5 }}>
+          📐 {cp.description}
+        </p>
+      )}
       {cp.type === 'note' && <input value={note} onChange={e => onChangeNote(e.target.value)} placeholder="หมายเหตุ (ถ้ามี)..." />}
     </div>
   )
@@ -315,6 +333,7 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
                         </p>
                       ) : (
                         <>
+                          {cp.description && <p style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'pre-line', margin: '2px 0 0' }}>{cp.description}</p>}
                           <p style={{ fontSize: 12, color: 'var(--muted)', margin: '2px 0 0' }}>{r.value_attribute?.toUpperCase()}</p>
                         </>
                       )}
@@ -556,14 +575,34 @@ export default function PMCheckData() {
                     <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 0' }}>ยังไม่มีจุดตรวจสอบ — ไปตั้งค่าที่ PM Setup ก่อน</p>
                   ) : (
                     <>
-                      {checkpoints.map((cp, idx) => cp.type === 'variable' ? (
-                        <VariableRow key={cp.id} cp={cp} idx={idx} r={results[cp.id] ?? { v1: '', v2: '', v3: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex} />
-                      ) : (
-                        <AttrRow key={cp.id} cp={cp} idx={idx} methodIndex={methodIndex}
-                          value={results[cp.id]?.attr ?? ''} note={results[cp.id]?.note ?? ''}
-                          onChangeAttr={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], attr: v } }))}
-                          onChangeNote={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], note: v } }))} />
-                      ))}
+                      {(() => {
+                        // เลข Item ต่อกลุ่ม (group_name) — sort_order จาก PM Setup จัดกลุ่มมาให้ต่อเนื่องแล้ว
+                        const groupNo = {}
+                        let gN = 0
+                        checkpoints.forEach(c => { const g = (c.group_name || '').trim(); if (g && groupNo[g] == null) groupNo[g] = ++gN })
+                        return checkpoints.map((cp, idx) => {
+                          const g = (cp.group_name || '').trim()
+                          const prevG = ((checkpoints[idx - 1]?.group_name) || '').trim()
+                          const header = g && g !== prevG ? (
+                            <div style={{ padding: '7px 12px', borderRadius: 8, marginBottom: 8, background: 'var(--accent-dim)', border: '1px solid var(--border2)', fontSize: 12.5, fontWeight: 800, color: 'var(--accent)' }}>
+                              Item {groupNo[g]} — {g}
+                            </div>
+                          ) : (!g && prevG ? (
+                            <div style={{ padding: '7px 12px', borderRadius: 8, marginBottom: 8, background: 'var(--bg3)', border: '1px solid var(--border)', fontSize: 12.5, fontWeight: 800, color: 'var(--muted)' }}>
+                              อื่นๆ
+                            </div>
+                          ) : null)
+                          const row = cp.type === 'variable' ? (
+                            <VariableRow cp={cp} idx={idx} r={results[cp.id] ?? { v1: '', v2: '', v3: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex} />
+                          ) : (
+                            <AttrRow cp={cp} idx={idx} methodIndex={methodIndex}
+                              value={results[cp.id]?.attr ?? ''} note={results[cp.id]?.note ?? ''}
+                              onChangeAttr={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], attr: v } }))}
+                              onChangeNote={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], note: v } }))} />
+                          )
+                          return <div key={cp.id}>{header}{row}</div>
+                        })
+                      })()}
                       <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="หมายเหตุ (ถ้ามี)..." style={{ marginTop: 8 }} />
                       <button onClick={handleSave} disabled={saving || !canRecord} style={{ ...S.saveBtn, opacity: (saving || !canRecord) ? 0.6 : isFormReady ? 1 : 0.75 }}>
                         {saving ? 'กำลังบันทึก...' : !canRecord ? '🔒 ไม่มีสิทธิ์บันทึกผลตรวจ' : isFormReady ? 'บันทึกผลการตรวจ' : `บันทึก (ยังไม่ครบ ${checkpoints.filter(cp => { const r = results[cp.id]; return cp.type === 'variable' ? !(r?.v1 !== '' && r?.v2 !== '' && r?.v3 !== '') : !r?.attr }).length} จุด)`}
