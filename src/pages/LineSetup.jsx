@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { UserContext } from '../App';
+import { can } from '../utils/permissions';
 
 const TABS = [
   { key: 'stations', label: '📍 จุดงาน' },
@@ -25,6 +27,9 @@ const POINT_W = 54;
 const POINT_H = 46;
 
 export default function LineSetup() {
+  // สิทธิ์แก้ไข — role ที่ไม่มี line_setup:edit เห็นหน้าแบบอ่านอย่างเดียว (ดูผัง/รายการได้ แก้ไม่ได้)
+  const { role } = useContext(UserContext);
+  const canEdit = can('line_setup', 'edit', role);
   const [lines, setLines] = useState([]);
   const [selectedLine, setSelectedLine] = useState('');
   const [newLineName, setNewLineName] = useState('');
@@ -320,6 +325,7 @@ export default function LineSetup() {
   }, [layoutImage]);
 
   const startDrag = (e, kind, id) => {
+    if (!canEdit) return; // read-only: ห้ามลากย้าย และห้ามเปิด panel แก้ไขจากการคลิกหมุด
     e.preventDefault();
     e.stopPropagation();
     dragStartRef.current = { x: e.clientX, y: e.clientY };
@@ -375,6 +381,7 @@ export default function LineSetup() {
   }, [dragInfo]);
 
   const handleImageClick = (e) => {
+    if (!canEdit) return; // read-only: คลิกบนผังไม่วางจุดใหม่
     const img = e.target;
     const geom = getImageGeom(img);
     const { rect, offsetX, offsetY, renderedW, renderedH } = geom;
@@ -702,7 +709,7 @@ export default function LineSetup() {
                 onClick={handleImageClick}
                 onLoad={recalcImgBox}
                 draggable={false}
-                style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'crosshair', display: 'block' }}
+                style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: canEdit ? 'crosshair' : 'default', display: 'block' }}
               />
               {/* overlay ยึดกับ "ตัวรูปจริง" — marker ทุกจุดวางเป็น % ของรูป จึงเกาะรูปตามทุกขนาดจอ */}
               {imgBox && <div style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
@@ -727,7 +734,7 @@ export default function LineSetup() {
                       alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto',
                       padding: '4px 4px 2px', zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
-                    title="คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง"
+                    title={canEdit ? 'คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง' : st.station_name}
                   >
                     <div style={{ fontSize: 12, fontWeight: 700, color: isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {st.station_name}
@@ -761,7 +768,7 @@ export default function LineSetup() {
                   <div
                     key={p.id}
                     onMouseDown={(e) => startDrag(e, 'wip', p.id)}
-                    title="คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง"
+                    title={canEdit ? 'คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง' : p.point_name}
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
                       width: POINT_W, height: POINT_H,
@@ -826,7 +833,7 @@ export default function LineSetup() {
                   <div
                     key={p.id}
                     onMouseDown={(e) => startDrag(e, 'machine', p.id)}
-                    title={connectMode ? 'คลิกเพื่อเชื่อมต่อสายงาน' : 'คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง'}
+                    title={!canEdit ? p.machine_no : connectMode ? 'คลิกเพื่อเชื่อมต่อสายงาน' : 'คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง'}
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
                       width: POINT_W, height: POINT_H,
@@ -870,10 +877,12 @@ export default function LineSetup() {
           ) : (
             <div style={{ textAlign: 'center', padding: 20 }}>
               <p style={{ color: 'var(--muted)', marginBottom: 12 }}>ยังไม่มีรูปผังไลน์ {selectedLine}</p>
-              <label style={uploadBtnSt}>
-                {isUploading ? 'อัปโหลด...' : '➕ อัปโหลดรูป'}
-                <input type="file" hidden onChange={handleUploadImage} disabled={isUploading} />
-              </label>
+              {canEdit && (
+                <label style={uploadBtnSt}>
+                  {isUploading ? 'อัปโหลด...' : '➕ อัปโหลดรูป'}
+                  <input type="file" hidden onChange={handleUploadImage} disabled={isUploading} />
+                </label>
+              )}
             </div>
           )
         ) : (
@@ -942,7 +951,7 @@ export default function LineSetup() {
                       <button onClick={e => { e.stopPropagation(); setEditingLineId(null); }}
                         style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', flexShrink: 0 }}>✕</button>
                     </>
-                  ) : (
+                  ) : canEdit && (
                     <>
                       <button onClick={e => { e.stopPropagation(); setEditingLineId(l.id); setEditingLineName(l.name); }}
                         style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 12, padding: '0 2px', lineHeight: 1, flexShrink: 0, cursor: 'pointer' }}
@@ -983,6 +992,7 @@ export default function LineSetup() {
               <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีไลน์ผลิต</div>
             )}
           </div>
+          {canEdit && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ display: 'flex', gap: 6 }}>
               <input placeholder="ชื่อไลน์ใหม่ เช่น HDF3" value={newLineName}
@@ -1007,10 +1017,11 @@ export default function LineSetup() {
               {isAddingLine ? '...' : '+ เพิ่มไลน์'}
             </button>
           </div>
+          )}
         </div>
 
         {selectedLine && <>
-          {layoutImage && (
+          {canEdit && layoutImage && (
             <label style={{ fontSize: 12, color: 'var(--blue)', cursor: 'pointer', display: 'block', marginBottom: 14, textAlign: 'right' }}>
               {isUploading ? 'อัปโหลด...' : '🔄 เปลี่ยนรูปภาพ'}
               <input type="file" hidden onChange={handleUploadImage} disabled={isUploading} />
@@ -1114,7 +1125,7 @@ export default function LineSetup() {
               </div>
             ) : (
               <div style={{ textAlign: 'center', padding: '16px', border: '2px dashed var(--border)', color: 'var(--muted)', borderRadius: 10, fontSize: 12 }}>
-                คลิกบนรูปภาพเพื่อเพิ่มจุดงาน<br />หรือคลิกที่จุดเดิมเพื่อแก้ไข
+                {canEdit ? <>คลิกบนรูปภาพเพื่อเพิ่มจุดงาน<br />หรือคลิกที่จุดเดิมเพื่อแก้ไข</> : '👁️ โหมดดูอย่างเดียว — ไม่มีสิทธิ์แก้ไข'}
               </div>
             )}
           </div>
@@ -1127,7 +1138,7 @@ export default function LineSetup() {
               const reqs = st.station_requirements || [];
               return (
                 <div key={st.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div onClick={() => editStation(st)} style={{ cursor: 'pointer', flex: 1 }}>
+                  <div onClick={() => canEdit && editStation(st)} style={{ cursor: canEdit ? 'pointer' : 'default', flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 5 }}>
                       {st.station_name}
                       {st.skill_allowance && <span style={{ fontSize: 10, background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>💰 ค่าฝีมือ{st.skill_allowance_type ? ` (${st.skill_allowance_type})` : ''}</span>}
@@ -1141,7 +1152,7 @@ export default function LineSetup() {
                         : 'ไม่มีสกิลที่กำหนด'}
                     </div>
                   </div>
-                  <button onClick={() => deleteStation(st.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>
+                  {canEdit && <button onClick={() => deleteStation(st.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                 </div>
               );
             })}
@@ -1236,7 +1247,7 @@ export default function LineSetup() {
                 </div>
               ) : (
                 <div style={{ textAlign: 'center', padding: '16px', border: '2px dashed var(--border)', color: 'var(--muted)', borderRadius: 10, fontSize: 12, marginBottom: 14 }}>
-                  คลิกบนรูปภาพเพื่อเพิ่มจุด WIP<br />หรือคลิกที่จุดเดิมเพื่อแก้ไข
+                  {canEdit ? <>คลิกบนรูปภาพเพื่อเพิ่มจุด WIP<br />หรือคลิกที่จุดเดิมเพื่อแก้ไข</> : '👁️ โหมดดูอย่างเดียว — ไม่มีสิทธิ์แก้ไข'}
                 </div>
               )}
               <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
@@ -1247,7 +1258,7 @@ export default function LineSetup() {
                   const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
                   return (
                     <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div onClick={() => editWipPoint(p)} style={{ cursor: 'pointer', flex: 1 }}>
+                      <div onClick={() => canEdit && editWipPoint(p)} style={{ cursor: canEdit ? 'pointer' : 'default', flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
                           {p.point_type === 'packaging' ? '📦' : '🧱'} {p.point_name} {isLow && <span style={{ fontSize: 10, background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>⚠️ ต่ำกว่า min</span>}
                         </div>
@@ -1265,7 +1276,7 @@ export default function LineSetup() {
                             🔔 เรียกเติม
                           </button>
                         )}
-                        <button onClick={() => deleteWipPoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>
+                        {canEdit && <button onClick={() => deleteWipPoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                       </div>
                     </div>
                   );
@@ -1343,7 +1354,7 @@ export default function LineSetup() {
                 </div>
               ) : (
                 <div style={{ textAlign: 'center', padding: '16px', border: '2px dashed var(--border)', color: 'var(--muted)', borderRadius: 10, fontSize: 12, marginBottom: 14 }}>
-                  คลิกบนรูปภาพเพื่อเพิ่มจุดเครื่องจักร<br />หรือคลิกที่จุดเดิมเพื่อแก้ไข
+                  {canEdit ? <>คลิกบนรูปภาพเพื่อเพิ่มจุดเครื่องจักร<br />หรือคลิกที่จุดเดิมเพื่อแก้ไข</> : '👁️ โหมดดูอย่างเดียว — ไม่มีสิทธิ์แก้ไข'}
                 </div>
               )}
               <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
@@ -1354,14 +1365,14 @@ export default function LineSetup() {
                   const mc = drMachines.find(m => m.machine_no === p.machine_no);
                   return (
                     <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div onClick={() => editMachinePoint(p)} style={{ cursor: 'pointer', flex: 1 }}>
+                      <div onClick={() => canEdit && editMachinePoint(p)} style={{ cursor: canEdit ? 'pointer' : 'default', flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{p.machine_no}</div>
                         <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{mc?.machine_name || ''}</div>
                         {p.redundancy_group && (
                           <div style={{ fontSize: 10, color: '#a855f7', fontWeight: 700, marginTop: 2 }}>🔀 {p.redundancy_group}</div>
                         )}
                       </div>
-                      <button onClick={() => deleteMachinePoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>
+                      {canEdit && <button onClick={() => deleteMachinePoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                     </div>
                   );
                 })}
@@ -1375,6 +1386,7 @@ export default function LineSetup() {
                   <h4 style={{ margin: 0, color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
                     🔗 เส้นทางการผลิต
                   </h4>
+                  {canEdit && (
                   <button
                     onClick={() => { setConnectMode(v => !v); setConnectFrom(null); }}
                     style={{
@@ -1385,6 +1397,7 @@ export default function LineSetup() {
                     }}>
                     {connectMode ? '✓ กำลังเชื่อม' : '🔗 เชื่อมต่อ'}
                   </button>
+                  )}
                 </div>
                 <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
                   เชื่อมเครื่องจักรที่ทำงาน <b>ต่อเนื่องกัน (Sequential)</b> — ถ้าเครื่องหนึ่งหยุด อีกเครื่องในสายต้องหยุดด้วย<br />
@@ -1404,7 +1417,7 @@ export default function LineSetup() {
                     return (
                       <div key={link.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
                         <span style={{ color: 'var(--text)' }}>⚙️ {from?.machine_no || '?'} → {to?.machine_no || '?'}</span>
-                        <button onClick={() => deleteFlowLink(link.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>🗑️</button>
+                        {canEdit && <button onClick={() => deleteFlowLink(link.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>🗑️</button>}
                       </div>
                     );
                   })}
@@ -1435,27 +1448,27 @@ export default function LineSetup() {
             <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
               <div style={{ flex: 1 }}>
                 <label style={labelSt}>☀️ กะเช้า (คน)</label>
-                <input type="number" min={0} value={stdDay}
+                <input type="number" min={0} value={stdDay} disabled={!canEdit}
                   onChange={e => setStdDay(e.target.value)}
                   style={{ marginTop: 4, fontSize: 18, fontWeight: 700, textAlign: 'center' }} />
               </div>
               <div style={{ flex: 1 }}>
                 <label style={labelSt}>🌙 กะดึก (คน)</label>
-                <input type="number" min={0} value={stdNight}
+                <input type="number" min={0} value={stdNight} disabled={!canEdit}
                   onChange={e => setStdNight(e.target.value)}
                   style={{ marginTop: 4, fontSize: 18, fontWeight: 700, textAlign: 'center' }} />
               </div>
             </div>
             <div style={{ marginBottom: 12 }}>
               <label style={labelSt}>🏷️ Cost Center</label>
-              <input type="text" value={costCenter}
+              <input type="text" value={costCenter} disabled={!canEdit}
                 onChange={e => setCostCenter(e.target.value)}
                 placeholder="เช่น 2140662201"
                 style={{ marginTop: 4, fontSize: 14, fontWeight: 600 }} />
             </div>
             <div style={{ marginBottom: 12 }}>
               <label style={labelSt}>👨‍🔧 หัวหน้างาน (ประจำไลน์นี้)</label>
-              <input type="text" value={signerHead}
+              <input type="text" value={signerHead} disabled={!canEdit}
                 onChange={e => setSignerHead(e.target.value)}
                 placeholder="เช่น คุณสุวิทชัย ดีทั่ว"
                 style={{ marginTop: 4 }} />
@@ -1464,10 +1477,12 @@ export default function LineSetup() {
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                 รวม <strong style={{ color: 'var(--text)' }}>{(parseInt(stdDay) || 0) + (parseInt(stdNight) || 0)}</strong> คน
               </span>
+              {canEdit && (
               <button onClick={handleSaveStdManpower} disabled={mpSaving}
                 style={{ padding: '7px 18px', background: mpSaving ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
                 {mpSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
               </button>
+              )}
             </div>
           </div>
           )}
@@ -1485,23 +1500,25 @@ export default function LineSetup() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
                 <div>
                   <label style={labelSt}>ผู้จัดการต้นสังกัด</label>
-                  <input type="text" value={signerManager} onChange={e => setSignerManager(e.target.value)} style={{ marginTop: 4 }} />
+                  <input type="text" value={signerManager} disabled={!canEdit} onChange={e => setSignerManager(e.target.value)} style={{ marginTop: 4 }} />
                 </div>
                 <div>
                   <label style={labelSt}>เจ้าหน้าที่ TA</label>
-                  <input type="text" value={signerTA} onChange={e => setSignerTA(e.target.value)} style={{ marginTop: 4 }} />
+                  <input type="text" value={signerTA} disabled={!canEdit} onChange={e => setSignerTA(e.target.value)} style={{ marginTop: 4 }} />
                 </div>
                 <div>
                   <label style={labelSt}>ผู้จัดการส่วน HRM</label>
-                  <input type="text" value={signerHRM} onChange={e => setSignerHRM(e.target.value)} style={{ marginTop: 4 }} />
+                  <input type="text" value={signerHRM} disabled={!canEdit} onChange={e => setSignerHRM(e.target.value)} style={{ marginTop: 4 }} />
                 </div>
               </div>
+              {canEdit && (
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <button onClick={handleSaveSigners} disabled={signersSaving}
                   style={{ padding: '7px 18px', background: signersSaving ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
                   {signersSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
                 </button>
               </div>
+              )}
             </div>
           ) : (
             <div style={{ fontSize: 11, color: 'var(--muted)', padding: '8px 0' }}>
