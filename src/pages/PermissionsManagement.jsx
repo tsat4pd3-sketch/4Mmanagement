@@ -163,7 +163,7 @@ export default function PermissionsManagement() {
 
   // เรียกเป็นฟังก์ชันธรรมดา (ไม่ใช่ <Component/>) — กัน react ถือเป็น component ใหม่ทุก render แล้ว remount ตาราง
   const renderPermTable = (groups, firstColLabel) => (
-    <div style={{ overflowX: 'auto' }}>
+    <div className="table-sticky">
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr style={{ borderBottom: '2px solid var(--border)' }}>

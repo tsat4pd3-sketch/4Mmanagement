@@ -45,8 +45,15 @@ function excelSerialToDate(n) {
 function parseDateCell(v) {
   if (v == null || v === '') return null;
   if (v instanceof Date && !isNaN(v)) return new Date(v.getFullYear(), v.getMonth(), v.getDate());
+  if (typeof v === 'number' && v >= 19000101 && v <= 21991231) {
+    // EDI แบบ Ford ใช้เลข YYYYMMDD ตรง ๆ เช่น 20260706
+    const y = Math.floor(v / 10000), mo = Math.floor(v / 100) % 100, da = v % 100;
+    if (mo >= 1 && mo <= 12 && da >= 1 && da <= 31) return new Date(y, mo - 1, da);
+  }
   if (typeof v === 'number' && v > 20000 && v < 80000) return excelSerialToDate(v);
   const s = String(v).trim();
+  const m8 = s.match(/^(19|20|21)(\d{2})(\d{2})(\d{2})$/);
+  if (m8) return new Date(Number(m8[1] + m8[2]), +m8[3] - 1, +m8[4]);
   let m = s.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/);            // yyyy-mm[-dd]
   if (m) return new Date(+m[1], +m[2] - 1, +(m[3] || 1));
   m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);                // dd/mm/yyyy (แบบไทย, รองรับ พ.ศ.)
@@ -92,7 +99,7 @@ const FIELD_DEFS = {
 };
 
 /* ─── Upload Tab ──────────────────────────────────────────────────────────── */
-function UploadTab({ canUpload, fullName, onImported }) {
+function UploadTab({ canUpload, fullName, onImported, custLabel }) {
   const [kind, setKind] = useState('forecast');   // 'forecast' | 'orders'
   const [fileName, setFileName] = useState('');
   const [headers, setHeaders] = useState([]);     // [{ idx, text }]
@@ -102,6 +109,7 @@ function UploadTab({ canUpload, fullName, onImported }) {
   const [monthCols, setMonthCols] = useState([]); // [{ idx, month }] สำหรับ wide mode
   const [saving, setSaving] = useState(false);
   const [batches, setBatches] = useState([]);
+  const [edi, setEdi] = useState(null); // ไฟล์ EDI (Ford 830/862) ที่ parse แล้ว รอยืนยันนำเข้า
 
   const loadBatches = useCallback(async () => {
     const { data } = await supabaseDR.from('demand_upload_batches').select('*').order('uploaded_at', { ascending: false }).limit(30);
@@ -109,11 +117,106 @@ function UploadTab({ canUpload, fullName, onImported }) {
   }, []);
   useEffect(() => { loadBatches(); }, [loadBatches]);
 
-  const handleFile = async (file, kindNow) => {
-    if (!file) return;
+  /* ── EDI (Ford/AAT · 830 = Planning Forecast · 862 = Shipping Schedule) ──
+     ไฟล์จากระบบ EDI มี sheet ดิบที่หัวตารางคงที่ — ตรวจจับแล้ว parse อัตโนมัติ ไม่ต้อง map มือ */
+  const EDI_SIG = ['Part Num', 'Forecast Net Qty', 'Forecast Date'];
+  const findEdiSheet = (XLSX, wb) => {
+    for (const name of wb.SheetNames) {
+      const m = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: '' });
+      for (let i = 0; i < Math.min(m.length, 5); i++) {
+        const hd = m[i].map(c => String(c).trim());
+        if (EDI_SIG.every(k => hd.includes(k))) return { matrix: m, hIdx: i, headers: hd };
+      }
+    }
+    return null;
+  };
+  const parseEdiFile = (sheet, fName) => {
+    const { matrix, hIdx, headers } = sheet;
+    const col = (n) => headers.indexOf(n);
+    const is862 = col('Forecast Time') >= 0;
+    const out = [];
+    matrix.slice(hIdx + 1).forEach(r => {
+      const part = String(r[col('Part Num')] ?? '').trim();
+      if (!part) return;
+      const qty = numCell(r[col('Forecast Net Qty')]);
+      const d = parseDateCell(r[col('Forecast Date')]);
+      if (qty <= 0 || !d) return;
+      out.push({
+        part, qty, date: dateStr(d),
+        shipTo: String(r[col('Ship To GSDB Code')] ?? '').trim() || 'EDI',
+        po: String(r[col('Purchase Order Num')] ?? '').trim(),
+        time: is862 ? parseTimeCell(r[col('Forecast Time')]) : null,
+        dock: is862 && col('Dock Code') >= 0 ? String(r[col('Dock Code')] ?? '').trim() : null,
+      });
+    });
+    return { is862, rows: out, fName };
+  };
+
+  const handleFiles = async (fileList, kindNow) => {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
     try {
       const XLSX = await import('xlsx');
-      const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
+      const ediFiles = [];
+      let manual = null;
+      for (const file of files) {
+        const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
+        const ediSheet = findEdiSheet(XLSX, wb);
+        if (ediSheet) { ediFiles.push(parseEdiFile(ediSheet, file.name)); continue; }
+        if (!manual) manual = { wb, name: file.name };
+      }
+      if (ediFiles.length) {
+        if (ediFiles.some(f => f.is862) && ediFiles.some(f => !f.is862)) {
+          toast.error('อย่าเลือกไฟล์ 830 (Forecast) ปนกับ 862 (Shipping) ในครั้งเดียว — แยกนำเข้าทีละชนิด');
+          return;
+        }
+        const is862 = ediFiles[0].is862;
+        // dedupe: EDI ออกบรรทัดซ้ำ key เดิมได้ — ใช้ตัวหลังสุด ไม่บวกทบ
+        const byKey = new Map();
+        ediFiles.forEach(f => f.rows.forEach(r => byKey.set(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`, r)));
+        const rows2 = [...byKey.values()];
+        if (!rows2.length) { toast.error('ไม่พบรายการที่มีจำนวน > 0 ในไฟล์ EDI'); return; }
+        // map Part Num ลูกค้า → mat_no ภายใน ผ่าน p_no (normalize ตัด ขีด/ช่องว่าง) — FG (ขึ้นต้น 1) ชนะ child
+        const norm = (x) => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const [{ data: stds }, { data: prods }] = await Promise.all([
+          supabaseDR.from('kanban_standards').select('mat_no, p_no, part_name').not('p_no', 'is', null),
+          supabaseDR.from('dr_products').select('mat_no, p_no, name').eq('is_active', true).not('p_no', 'is', null),
+        ]);
+        const matMap = {};
+        const put = (pno, mat, name) => {
+          const k = norm(pno);
+          if (!k || !mat) return;
+          const cur = matMap[k];
+          if (!cur || (!String(cur.mat_no).startsWith('1') && String(mat).startsWith('1'))) matMap[k] = { mat_no: mat, name };
+        };
+        (stds || []).forEach(x => put(x.p_no, x.mat_no, x.part_name));
+        (prods || []).forEach(x => put(x.p_no, x.mat_no, x.name));
+        const unmatched = new Set();
+        const records = rows2.map(r => {
+          const hit = matMap[norm(r.part)];
+          if (!hit) unmatched.add(r.part);
+          return { ...r, mat_no: hit ? hit.mat_no : r.part, part_name: hit ? hit.name : null };
+        });
+        setEdi({
+          kind: is862 ? 'orders' : 'forecast',
+          files: ediFiles.map(f => f.fName),
+          records, unmatched: [...unmatched],
+          shipTos: [...new Set(records.map(r => r.shipTo))].sort(),
+          dateFrom: records.reduce((a, r) => (a < r.date ? a : r.date), records[0].date),
+          dateTo: records.reduce((a, r) => (a > r.date ? a : r.date), records[0].date),
+        });
+        setHeaders([]); setRows([]); setFileName('');
+        toast.success(`📡 ตรวจพบ EDI ${is862 ? '862 (Shipping Schedule)' : '830 (Forecast)'} — ${records.length} รายการจาก ${ediFiles.length} ไฟล์`);
+        return;
+      }
+      if (!manual) { toast.error('อ่านไฟล์ไม่สำเร็จ'); return; }
+      setEdi(null);
+      parseManual(XLSX, manual.wb, manual.name, kindNow);
+    } catch (err) { toast.error('อ่านไฟล์ไม่สำเร็จ: ' + err.message); }
+  };
+
+  const parseManual = (XLSX, wb, fName, kindNow) => {
+    try {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
       // หัวตาราง = แถวแรกที่มีข้อมูล ≥ 2 ช่อง
@@ -121,7 +224,7 @@ function UploadTab({ canUpload, fullName, onImported }) {
       if (hIdx < 0) { toast.error('ไม่พบหัวตารางในไฟล์'); return; }
       const hd = matrix[hIdx].map((text, idx) => ({ idx, text: String(text).trim() }));
       const dataRows = matrix.slice(hIdx + 1).filter(r => r.some(c => String(c).trim() !== ''));
-      setFileName(file.name);
+      setFileName(fName);
       setHeaders(hd);
       setRows(dataRows);
       // auto-guess mapping จากชื่อหัวคอลัมน์
@@ -206,6 +309,57 @@ function UploadTab({ canUpload, fullName, onImported }) {
     setSaving(false);
   };
 
+  // นำเข้า EDI: ฉบับล่าสุดแทนที่ฉบับเดิมของ ship-to เดียวกัน (sale อัพโหลดใหม่ทุกวัน ไม่ให้ยอดทบซ้ำ)
+  const doImportEdi = async () => {
+    if (!edi) return;
+    setSaving(true);
+    try {
+      const { data: batch, error: e1 } = await supabaseDR.from('demand_upload_batches')
+        .insert({ kind: edi.kind, file_name: `EDI ${edi.kind === 'orders' ? '862' : '830'} × ${edi.files.length} ไฟล์ (${edi.shipTos.join(',')})`, row_count: edi.records.length, uploaded_by: fullName || 'Sales' })
+        .select().single();
+      if (e1) throw e1;
+      // code ปลายทางใหม่ที่ยังไม่อยู่ใน config → เพิ่มให้อัตโนมัติ (ชื่อตั้งต้น = code รอทีมตั้งชื่อลูกค้า)
+      await supabaseDR.from('ship_to_plants')
+        .upsert(edi.shipTos.map(c => ({ code: c, customer_name: c })), { onConflict: 'code', ignoreDuplicates: true });
+      if (edi.kind === 'forecast') {
+        const { error: eDel } = await supabaseDR.from('customer_forecasts').delete().eq('source', 'edi_830').in('customer', edi.shipTos);
+        if (eDel) throw eDel;
+        const recs = edi.records.map(r => ({
+          batch_id: batch.id, customer: r.shipTo, mat_no: r.mat_no, part_name: r.part_name,
+          customer_part_no: r.part, period_month: r.date, qty: r.qty, source: 'edi_830',
+        }));
+        for (let i = 0; i < recs.length; i += 500) {
+          const { error } = await supabaseDR.from('customer_forecasts').insert(recs.slice(i, i + 500));
+          if (error) throw error;
+        }
+      } else {
+        // เก็บใบที่เตรียม/ส่งไปแล้ว — ลบเฉพาะ pending จาก EDI ในช่วง horizon แล้วลงฉบับใหม่ (ไม่ insert ซ้ำ slot ที่ทำไปแล้ว)
+        const { data: keepRows } = await supabaseDR.from('customer_shipping_orders')
+          .select('customer, customer_part_no, mat_no, due_date, ship_time, status')
+          .in('customer', edi.shipTos).gte('due_date', edi.dateFrom).neq('status', 'pending');
+        const keepKeys = new Set((keepRows || []).map(k => `${k.customer}|${k.customer_part_no || k.mat_no}|${k.due_date}|${(k.ship_time || '').slice(0, 5)}`));
+        const { error: eDel } = await supabaseDR.from('customer_shipping_orders').delete()
+          .eq('source', 'edi_862').eq('status', 'pending').in('customer', edi.shipTos).gte('due_date', edi.dateFrom);
+        if (eDel) throw eDel;
+        const recs = edi.records
+          .filter(r => !keepKeys.has(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`))
+          .map(r => ({
+            batch_id: batch.id, order_no: r.po || null, customer: r.shipTo, mat_no: r.mat_no, part_name: r.part_name,
+            customer_part_no: r.part, qty: r.qty, due_date: r.date, ship_time: r.time, dock_code: r.dock || null, source: 'edi_862',
+          }));
+        for (let i = 0; i < recs.length; i += 500) {
+          const { error } = await supabaseDR.from('customer_shipping_orders').insert(recs.slice(i, i + 500));
+          if (error) throw error;
+        }
+      }
+      toast.success(`✅ นำเข้า EDI ${edi.records.length} รายการ — แทนที่ฉบับเดิมของ ${edi.shipTos.join(', ')} แล้ว`);
+      setEdi(null);
+      await loadBatches();
+      onImported?.();
+    } catch (err) { toast.error(err.message); }
+    setSaving(false);
+  };
+
   const deleteBatch = async (b) => {
     if (!window.confirm(`ลบชุดข้อมูล "${b.file_name}" (${b.row_count} แถว)? ข้อมูลที่นำเข้าจากไฟล์นี้จะถูกลบทั้งหมด`)) return;
     const { error } = await supabaseDR.from('demand_upload_batches').delete().eq('id', b.id);
@@ -232,13 +386,52 @@ function UploadTab({ canUpload, fullName, onImported }) {
               <button key={t.k} onClick={() => { setKind(t.k); setHeaders([]); setRows([]); setFileName(''); }} style={btn(kind === t.k)}>{t.label}</button>
             ))}
             <label style={{ ...btn(false), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              📂 เลือกไฟล์ Excel/CSV
-              <input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
-                onChange={e => { handleFile(e.target.files?.[0], kind); e.target.value = ''; }} />
+              📂 เลือกไฟล์ Excel/CSV (เลือกหลายไฟล์ได้)
+              <input type="file" accept=".xlsx,.xls,.csv" multiple style={{ display: 'none' }}
+                onChange={e => { handleFiles(e.target.files, kind); e.target.value = ''; }} />
             </label>
             {fileName && <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--muted)' }}>📄 {fileName} · {rows.length} แถว</span>}
           </div>
 
+          {edi && (
+            <div style={{ border: '1px solid rgba(77,159,255,0.35)', background: 'rgba(77,159,255,0.05)', borderRadius: 10, padding: 14, marginBottom: 4 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#4d9fff', marginBottom: 8 }}>
+                📡 EDI {edi.kind === 'orders' ? '862 — Shipping Schedule (รอบส่งงาน)' : '830 — Planning Forecast'}
+              </div>
+              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--text2)', marginBottom: 8 }}>
+                <span>📄 {edi.files.length} ไฟล์</span>
+                <span>🏭 Ship-to: <strong>{edi.shipTos.map(c => custLabel ? custLabel(c) : c).join(', ')}</strong></span>
+                <span>📅 {edi.dateFrom} → {edi.dateTo}</span>
+                <span>🧾 {edi.records.length} รายการ</span>
+                <span style={{ color: edi.unmatched.length ? '#f59e0b' : '#22c55e' }}>
+                  🔗 จับคู่พาร์ทได้ {edi.records.length - edi.records.filter(r => edi.unmatched.includes(r.part)).length}/{edi.records.length}
+                </span>
+              </div>
+              {edi.unmatched.length > 0 && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', marginBottom: 4 }}>
+                    ⚠️ Part No. ที่ยังจับคู่ mat_no ภายในไม่ได้ (จะบันทึกด้วยเลขพาร์ทลูกค้าไปก่อน — เพิ่ม P/N ที่ Product Master แล้วอัพใหม่ได้):
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {edi.unmatched.map(pn => (
+                      <span key={pn} style={{ fontSize: 10, fontWeight: 700, fontFamily: 'monospace', padding: '2px 8px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>{pn}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
+                การนำเข้าจะ<strong>แทนที่</strong>ข้อมูล EDI ฉบับเดิมของ ship-to เดียวกัน (อัพใหม่ทุกวันได้ ยอดไม่ทบซ้ำ)
+                {edi.kind === 'orders' ? ' · รอบที่เตรียม/ส่งไปแล้วจะไม่ถูกแตะ' : ''}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={doImportEdi} disabled={saving}
+                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
+                  {saving ? 'กำลังนำเข้า...' : '⬆ ยืนยันนำเข้า EDI'}
+                </button>
+                <button onClick={() => setEdi(null)} style={{ ...btn(false) }}>ยกเลิก</button>
+              </div>
+            </div>
+          )}
           {headers.length > 0 && (
             <>
               {kind === 'forecast' && monthCols.length >= 2 && (
@@ -305,7 +498,7 @@ function UploadTab({ canUpload, fullName, onImported }) {
 }
 
 /* ─── Forecast Planner Tab ────────────────────────────────────────────────── */
-function PlannerTab({ refreshKey }) {
+function PlannerTab({ refreshKey, custLabel }) {
   const [horizon, setHorizon] = useState(3);          // จำนวนเดือนล่วงหน้า
   const [forecasts, setForecasts] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -339,7 +532,8 @@ function PlannerTab({ refreshKey }) {
   }, [months, refreshKey]);
 
   const chartData = useMemo(() => months.map(m => {
-    const fq = forecasts.filter(f => f.period_month === m).reduce((s, f) => s + Number(f.qty), 0);
+    // period_month อาจเป็นรายเดือน (manual) หรือรายสัปดาห์ (EDI 830) — รวมด้วยเดือนเดียวกัน
+    const fq = forecasts.filter(f => f.period_month.slice(0, 7) === m.slice(0, 7)).reduce((s, f) => s + Number(f.qty), 0);
     const oq = orders.filter(o => o.due_date.slice(0, 7) === m.slice(0, 7)).reduce((s, o) => s + Number(o.qty), 0);
     return { month: monthLabel(m), Forecast: fq, Orders: oq };
   }), [months, forecasts, orders]);
@@ -347,7 +541,7 @@ function PlannerTab({ refreshKey }) {
   // ตารางราย mat_no ของเดือนที่เลือก — forecast vs order จริง + ภาระชั่วโมงผลิต
   const matRows = useMemo(() => {
     const map = {};
-    forecasts.filter(f => f.period_month === focusMonth).forEach(f => {
+    forecasts.filter(f => f.period_month.slice(0, 7) === focusMonth.slice(0, 7)).forEach(f => {
       const r = map[f.mat_no] = map[f.mat_no] || { mat_no: f.mat_no, part_name: f.part_name, customer: f.customer, forecast: 0, ordered: 0 };
       r.forecast += Number(f.qty);
       if (!r.part_name) r.part_name = f.part_name;
@@ -434,7 +628,7 @@ function PlannerTab({ refreshKey }) {
                       <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{r.mat_no}</div>
                       <div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.part_name || ''}</div>
                     </td>
-                    <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)' }}>{r.customer || '—'}</td>
+                    <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)' }}>{r.customer ? (custLabel ? custLabel(r.customer) : r.customer) : '—'}</td>
                     <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 13, fontWeight: 700, textAlign: 'right', color: '#4d9fff' }}>{fmt(r.forecast)}</td>
                     <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 13, fontWeight: 700, textAlign: 'right', color: '#22c55e' }}>{fmt(r.ordered)}</td>
                     <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 12, fontWeight: 800, textAlign: 'right', color: r.coverage == null ? 'var(--muted)' : r.coverage > 110 ? '#ef4444' : r.coverage >= 80 ? '#22c55e' : '#f59e0b' }}>
@@ -463,7 +657,7 @@ const SHIP_STATUS = {
   prepared: { label: '📦 เตรียมแล้ว', color: '#0ea5e9', next: 'shipped',  nextLabel: '🚚 ส่งงานแล้ว' },
   shipped:  { label: '✅ ส่งแล้ว',    color: '#22c55e', next: null,       nextLabel: null },
 };
-function ShippingTab({ fullName, refreshKey }) {
+function ShippingTab({ fullName, refreshKey, custLabel }) {
   const [day, setDay] = useState(todayStr());
   const [orders, setOrders] = useState([]);
   const [busy, setBusy] = useState(null);
@@ -500,9 +694,12 @@ function ShippingTab({ fullName, refreshKey }) {
 
   const byCustomer = useMemo(() => {
     const m = {};
-    orders.forEach(o => { (m[o.customer || '— ไม่ระบุลูกค้า —'] = m[o.customer || '— ไม่ระบุลูกค้า —'] || []).push(o); });
+    orders.forEach(o => {
+      const key = custLabel ? custLabel(o.customer) : (o.customer || '— ไม่ระบุลูกค้า —');
+      (m[key] = m[key] || []).push(o);
+    });
     return m;
-  }, [orders]);
+  }, [orders, custLabel]);
 
   const shippedCount = orders.filter(o => o.status === 'shipped').length;
   const overdueCount = orders.filter(isOverdue).length;
@@ -602,11 +799,13 @@ function ShippingTab({ fullName, refreshKey }) {
                       <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>🕐 {o.ship_time || 'ไม่ระบุเวลา'}</span>
                       <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: od ? '#ef4444' : st.color }}>{od ? '🔴 เลยเวลา' : st.label}</span>
                     </div>
-                    <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700, marginTop: 4 }}>{o.mat_no}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.part_name || ''}{o.order_no ? ` · ${o.order_no}` : ''}</div>
+                    <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700, marginTop: 4 }}>
+                      {o.mat_no}{o.customer_part_no && o.customer_part_no !== o.mat_no ? <span style={{ color: 'var(--muted)', fontWeight: 600 }}> · {o.customer_part_no}</span> : null}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.part_name || ''}{o.order_no ? ` · PO ${o.order_no}` : ''}{o.dock_code ? ` · Dock ${o.dock_code}` : ''}</div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6 }}>
                       <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{fmt(o.qty)} <span style={{ fontSize: 10, color: 'var(--muted)' }}>ชิ้น</span></span>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6' }}>{o.customer || ''}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6' }}>{o.customer ? (custLabel ? custLabel(o.customer) : o.customer) : ''}</span>
                     </div>
                     {o.shipped_by && <div style={{ fontSize: 10, color: '#22c55e', marginTop: 4 }}>✓ {o.shipped_by} · {o.shipped_at ? new Date(o.shipped_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }) : ''}</div>}
                     {st.next && (
@@ -626,12 +825,109 @@ function ShippingTab({ fullName, refreshKey }) {
   );
 }
 
+/* ─── Ship-to Plant Config Tab ────────────────────────────────────────────── */
+function ShipToTab({ canEdit, onChanged }) {
+  const [rows, setRows] = useState([]);
+  const [draft, setDraft] = useState({});     // code → { customer_name, plant_name, note }
+  const [newCode, setNewCode] = useState('');
+  const [busy, setBusy] = useState(null);
+
+  const load = useCallback(async () => {
+    const { data } = await supabaseDR.from('ship_to_plants').select('*').order('code');
+    setRows(data || []);
+    setDraft({});
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const save = async (code) => {
+    const d = draft[code];
+    if (!d) return;
+    setBusy(code);
+    const { error } = await supabaseDR.from('ship_to_plants')
+      .update({ customer_name: d.customer_name?.trim() || code, plant_name: d.plant_name?.trim() || null, note: d.note?.trim() || null, updated_at: new Date().toISOString() })
+      .eq('code', code);
+    if (error) toast.error(error.message);
+    else { toast.success(`บันทึก ${code} แล้ว`); await load(); onChanged?.(); }
+    setBusy(null);
+  };
+  const addCode = async () => {
+    const code = newCode.trim().toUpperCase();
+    if (!code) return;
+    const { error } = await supabaseDR.from('ship_to_plants').insert({ code, customer_name: code });
+    if (error) { toast.error(error.message); return; }
+    setNewCode('');
+    await load();
+  };
+
+  const cell = { padding: '6px 10px', borderTop: '1px solid var(--border)' };
+  const edSt = { ...inputSt, padding: '5px 8px', fontSize: 12, width: '100%', boxSizing: 'border-box' };
+  const val = (r, k) => (draft[r.code]?.[k] ?? r[k] ?? '');
+  const setVal = (r, k, v) => setDraft(d => ({ ...d, [r.code]: { customer_name: val(r, 'customer_name'), plant_name: val(r, 'plant_name'), note: val(r, 'note'), ...d[r.code], [k]: v } }));
+
+  return (
+    <div style={card}>
+      <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>⚙️ Ship-to Plant Config</div>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+        ตั้งชื่อลูกค้าให้ code ปลายทางจากไฟล์ EDI (เช่น GRBNA → AAT) — ชื่อนี้จะแสดงแทน code ในทุกหน้าจอ · code ใหม่จากไฟล์ EDI จะถูกเพิ่มเข้าลิสต์นี้อัตโนมัติ
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+          <thead><tr style={{ background: 'var(--bg2)' }}>
+            {['Code', 'ชื่อลูกค้า *', 'โรงงาน/ท่า', 'หมายเหตุ', ''].map(h => (
+              <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.code}>
+                <td style={{ ...cell, fontFamily: 'monospace', fontWeight: 800, color: '#0ea5e9', fontSize: 13 }}>{r.code}</td>
+                <td style={cell}>{canEdit ? <input value={val(r, 'customer_name')} onChange={e => setVal(r, 'customer_name', e.target.value)} style={edSt} placeholder="เช่น AAT / FTM" /> : <span style={{ fontSize: 13, fontWeight: 700 }}>{r.customer_name}</span>}</td>
+                <td style={cell}>{canEdit ? <input value={val(r, 'plant_name')} onChange={e => setVal(r, 'plant_name', e.target.value)} style={edSt} /> : <span style={{ fontSize: 12, color: 'var(--text2)' }}>{r.plant_name || '—'}</span>}</td>
+                <td style={cell}>{canEdit ? <input value={val(r, 'note')} onChange={e => setVal(r, 'note', e.target.value)} style={edSt} /> : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{r.note || ''}</span>}</td>
+                <td style={cell}>
+                  {canEdit && draft[r.code] && (
+                    <button onClick={() => save(r.code)} disabled={busy === r.code}
+                      style={{ padding: '5px 14px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                      {busy === r.code ? '...' : '💾 บันทึก'}
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {canEdit && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <input value={newCode} onChange={e => setNewCode(e.target.value)} placeholder="เพิ่ม code ใหม่" style={{ ...inputSt, width: 160 }} />
+          <button onClick={addCode} style={btn(false)}>➕ เพิ่ม</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Page ────────────────────────────────────────────────────────────────── */
 export default function CustomerDemand() {
   const { role, fullName } = useContext(UserContext);
   const [tab, setTab] = useState('planner');
   const [refreshKey, setRefreshKey] = useState(0);
   const canUpload = ['admin', 'manager', 'sale'].includes(role);
+
+  // ship-to code → ชื่อลูกค้า (config ที่แท็บ ⚙️) — ใช้แสดงผลทุกแท็บ
+  const [shipToMap, setShipToMap] = useState({});
+  const loadShipTo = useCallback(async () => {
+    const { data } = await supabaseDR.from('ship_to_plants').select('*');
+    const m = {};
+    (data || []).forEach(r => { m[r.code] = r; });
+    setShipToMap(m);
+  }, []);
+  useEffect(() => { loadShipTo(); }, [loadShipTo]);
+  const custLabel = useCallback((code) => {
+    if (!code) return '— ไม่ระบุลูกค้า —';
+    const r = shipToMap[code];
+    return r && r.customer_name && r.customer_name !== code ? `${r.customer_name} (${code})` : code;
+  }, [shipToMap]);
 
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
@@ -649,12 +945,14 @@ export default function CustomerDemand() {
           { id: 'planner',  label: '📈 Forecast Planner' },
           { id: 'shipping', label: '🕐 Shipping Chart' },
           { id: 'upload',   label: '📤 อัพโหลด (Sales)' },
+          { id: 'shipto',   label: '⚙️ Ship-to Config' },
         ].map(t => <button key={t.id} onClick={() => setTab(t.id)} style={btn(tab === t.id)}>{t.label}</button>)}
       </div>
 
-      {tab === 'upload' && <UploadTab canUpload={canUpload} fullName={fullName} onImported={() => setRefreshKey(k => k + 1)} />}
-      {tab === 'planner' && <PlannerTab refreshKey={refreshKey} />}
-      {tab === 'shipping' && <ShippingTab fullName={fullName} refreshKey={refreshKey} />}
+      {tab === 'upload' && <UploadTab canUpload={canUpload} fullName={fullName} onImported={() => { setRefreshKey(k => k + 1); loadShipTo(); }} custLabel={custLabel} />}
+      {tab === 'planner' && <PlannerTab refreshKey={refreshKey} custLabel={custLabel} />}
+      {tab === 'shipping' && <ShippingTab fullName={fullName} refreshKey={refreshKey} custLabel={custLabel} />}
+      {tab === 'shipto' && <ShipToTab canEdit={canUpload} onChanged={() => { setRefreshKey(k => k + 1); loadShipTo(); }} />}
     </div>
   );
 }

@@ -175,12 +175,12 @@ export default function NotificationConfig() {
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>{CATEGORY_LABEL[cat] ?? cat}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {catRules.map(rule => (
-                <div key={rule.event_key} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={rule.is_enabled} onChange={e => updateRule(rule.event_key, { is_enabled: e.target.checked })} />
+                <div key={rule.event_key} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', flex: '1 1 240px', minWidth: 0 }}>
+                    <input type="checkbox" checked={rule.is_enabled} onChange={e => updateRule(rule.event_key, { is_enabled: e.target.checked })} style={{ flexShrink: 0 }} />
                     <span style={{ fontSize: 13, fontWeight: 600, color: rule.is_enabled ? 'var(--text)' : 'var(--muted)' }}>{rule.label}</span>
                   </label>
-                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>เข้าห้อง</span>
                     <select value={rule.channel_id ?? ''} onChange={e => updateRule(rule.event_key, { channel_id: e.target.value || null })}
                       style={{ ...inputStyle, width: 200, opacity: rule.is_enabled ? 1 : 0.5 }} disabled={!rule.is_enabled}>
