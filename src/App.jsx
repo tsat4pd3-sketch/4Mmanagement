@@ -35,6 +35,7 @@ const OrgSetup        = lazy(() => import('./pages/OrgSetup'));
 const PMSetup     = lazy(() => import('./pages/PMSetup'));
 const PMCheckData = lazy(() => import('./pages/PMCheckData'));
 const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
+const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
 const DailyPM     = lazy(() => import('./pages/DailyPM'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
@@ -75,6 +76,7 @@ const NAV_ITEMS = [
 
   { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-schedule', icon: '📅', label: 'แผน PM อุปกรณ์เครื่องจักร',        roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-setup',    icon: '🔩', label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร', roles: ['admin', 'manager', 'supervisor'], group: 'การตรวจสอบและซ่อมบำรุง' },
 
   { to: '/qa',             icon: '🔍', label: 'Quality Control Center', roles: ['admin', 'manager', 'supervisor', 'leader', 'qa', 'document_control'], group: 'ควบคุมคุณภาพ QA/QC' },
@@ -844,6 +846,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/pm-schedule" element={
                 <RoleRoute path="/pm-schedule" userRole={role}><PMSchedule /></RoleRoute>
+              } />
+              <Route path="/mtn-layout" element={
+                <RoleRoute path="/mtn-layout" userRole={role}><MtnMachineLayout /></RoleRoute>
               } />
             </Routes>
           </Suspense>
