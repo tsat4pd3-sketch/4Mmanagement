@@ -384,9 +384,9 @@ export default function Dashboard() {
       const actual  = active.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty_ok ?? o.qty ?? 0), 0);
       const target  = s.dr_products?.target_per_shift || 0;
       const oeeData = s.status === 'open' ? computeSessionOEE(s) : null;
-      // downtime ที่กำลัง alarm (ยังไม่ปิดรายการ หรือเพิ่งบันทึกเข้ามา) — เฉพาะกะที่ยังไม่ปิด
+      // downtime ที่กำลัง alarm (ยังไม่ปิดรายการ = เครื่องยังหยุดอยู่) — เฉพาะกะที่ยังไม่ปิด
       const activeDT = ['open', 'pending_close'].includes(s.status)
-        ? (dtBySession[s.id] || []).filter(d => isAlarmingDT(d))
+        ? (dtBySession[s.id] || []).filter(isAlarmingDT)
         : [];
       return { ...s, orders: active, demand, actual, target, oeeData, activeDT, dtLogs: dtBySession[s.id] || [] };
     });
@@ -861,7 +861,6 @@ export default function Dashboard() {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {dtAlarmList.map(d => {
               const elapsed = dtElapsedMin(d, now.getTime());
-              const ongoing = !d.ended_at && d.duration_min == null;
               return (
                 <div key={d.id} style={{
                   display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8,
@@ -870,10 +869,9 @@ export default function Dashboard() {
                   <span style={{ fontSize: 14, fontWeight: 800, color: '#fca5a5' }}>⚙️ {d.machine_no || d.line_name}</span>
                   <span style={{ fontSize: 13, color: 'var(--text2)' }}>{d.line_name}</span>
                   <span style={{ fontSize: 13, fontWeight: 700, color: '#ef4444' }}>{d.dr_downtime_types?.name_th || 'Downtime'}</span>
-                  {ongoing && elapsed != null && (
-                    <span style={{ fontSize: 13, fontWeight: 800, color: '#fbbf24' }}>⏱ {elapsed} นาที</span>
+                  {elapsed != null && (
+                    <span style={{ fontSize: 13, fontWeight: 800, color: '#fbbf24' }}>⏱ หยุดมาแล้ว {elapsed} นาที</span>
                   )}
-                  {!ongoing && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ปิดรายการแล้ว (เพิ่งบันทึก)</span>}
                 </div>
               );
             })}

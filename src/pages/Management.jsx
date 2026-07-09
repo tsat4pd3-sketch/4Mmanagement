@@ -294,9 +294,9 @@ export default function Management() {
     return () => clearInterval(t);
   }, [selectedLine, viewKey, fetchLineProd]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Downtime alarm — จุดเครื่องจักรบนผังกระพริบแดงเมื่อมี downtime ค้างอยู่ ──
-  // realtime: พนักงานบันทึก downtime ที่หน้า Daily Report แล้วผังหน้านี้ต้องกระพริบทันที
-  // interval 60s: เอาไว้ปลด alarm "เพิ่งบันทึก" ที่หมดอายุตามเวลา (RECENT_ALARM_MIN)
+  // ── Downtime alarm — จุดเครื่องจักรบนผังกระพริบแดงเฉพาะตอน downtime ยังเปิดค้าง (ปิดรายการ = ดับทันที) ──
+  // realtime: บันทึก/ปิดรายการที่หน้า Daily Report แล้วผังหน้านี้ต้องอัปเดตทันที
+  // interval 60s: กันเหนียว เผื่อ realtime event หลุด
   const [dtAlarms, setDtAlarms] = useState({ byMachine: {}, byLine: {}, list: [] });
   useEffect(() => {
     if (!selectedLine) { setDtAlarms({ byMachine: {}, byLine: {}, list: [] }); return; }

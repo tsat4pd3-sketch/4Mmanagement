@@ -212,7 +212,7 @@ Reject → status: "rejected" + reject_reason
 - **Endpoint:** `POST /functions/v1/send-notification`
 - **Payload:** `{ event: "status_change", log: { ...four_m_log } }`
 - **Events อื่น:** `checkin_summary`, `prod_close`, `downtime`, `downtime_recovered`
-  - `downtime` — แจ้ง Telegram ทันทีที่พนักงานบันทึก Downtime ใหม่จากหน้า Daily Report (payload `{ event: "downtime", downtime: {...} }`) — คู่กับ alarm กระพริบแดงที่จุดเครื่องจักรบน Dashboard/Management (helper: `src/utils/downtimeAlarm.js` — alarm เมื่อ downtime ยังไม่ปิดรายการ หรือเพิ่งบันทึกภายใน 10 นาที)
+  - `downtime` — แจ้ง Telegram ทันทีที่พนักงานบันทึก Downtime ใหม่จากหน้า Daily Report (payload `{ event: "downtime", downtime: {...} }`) — คู่กับ alarm กระพริบแดงที่จุดเครื่องจักรบน Dashboard/Management (helper: `src/utils/downtimeAlarm.js` — alarm เฉพาะเมื่อ downtime ยังไม่ปิดรายการ ปิดรายการแล้วดับทันที)
   - **Person alarm (ไม่เกี่ยว Telegram):** marker คนบนผัง Dashboard/Management กระพริบด้วย helper `src/utils/personAlarm.js` — แดง = เช็คชื่อแล้วแต่ PPE ไม่ครบ (Management แสดงเป็นแถบเตือนเหนือผัง เพราะคน PPE ไม่ครบไม่เข้า pool), เหลือง = ย้ายจุด/ข้ามไลน์แล้ว 4M Man ยังรออนุมัติ (จับคู่คน↔log ด้วยชื่อใน description เพราะ four_m_logs ไม่มี employee_id)
   - `downtime_recovered` — แจ้งเมื่อรายการ Downtime ที่เปิดค้าง (ไม่มีเวลาจบ/ระยะเวลา) ถูกแก้ไขจนปิดรายการ = เครื่องกลับมารันได้ (เฉพาะเคสนี้ การแก้ไขทั่วไปไม่แจ้งซ้ำ)
   - `prod_close` — รองรับ field เสริม (start_time/end_time/shift_min, total_qty, qty_repair, oee_a/p/q, parts[], downtimes[], dt_count, dt_total_min, dt_carry[]) — ข้อความ Telegram จะสรุปครบเหมือนหน้าปิดกะ ทุก field optional เพื่อ backward compat
