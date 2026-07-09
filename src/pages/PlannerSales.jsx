@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { can } from '../utils/permissions';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 
 /* ─── PLANNER & SALES — Forecast Planner + อัพโหลดไฟล์จากลูกค้า ──────────────
@@ -660,7 +661,8 @@ export default function PlannerSales() {
   const { role, fullName } = useContext(UserContext);
   const [tab, setTab] = useState('planner');
   const [refreshKey, setRefreshKey] = useState(0);
-  const canUpload = ['admin', 'manager', 'sale'].includes(role);
+  // สิทธิ์อัพโหลดจากตาราง role_permissions (ปรับได้ที่หน้า จัดการสิทธิ์ → สิทธิ์การทำงาน)
+  const canUpload = can('demand', 'upload', role);
 
   // ship-to code → ชื่อลูกค้า (config ที่หน้า 🚚 Delivery → ⚙️ Ship-to Config)
   const [shipToMap, setShipToMap] = useState({});

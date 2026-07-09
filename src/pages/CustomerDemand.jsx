@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { can } from '../utils/permissions';
 import { breaksToFrame } from '../utils/timeFrame';
 
 /* ─── DELIVERY — Shipping Time Chart + Ship-to Config (Logistic) ──────────
@@ -773,8 +774,8 @@ export default function CustomerDemand() {
   const { role, fullName } = useContext(UserContext);
   const [tab, setTab] = useState('shipping');
   const [refreshKey, setRefreshKey] = useState(0);
-  // Ship-to config: เปิดให้ระดับ Supervisor ที่ดูแลหน้านี้จัดการได้ด้วย (เพิ่ม/แก้/ลบ code)
-  const canConfig = ['admin', 'manager', 'sale', 'supervisor'].includes(role);
+  // Ship-to config — สิทธิ์จากตาราง role_permissions (ปรับได้ที่หน้า จัดการสิทธิ์ → สิทธิ์การทำงาน)
+  const canConfig = can('shipping', 'config', role);
 
   // ship-to code → ชื่อลูกค้า (config ที่แท็บ ⚙️) — ใช้แสดงผลทุกแท็บ
   const [shipToMap, setShipToMap] = useState({});

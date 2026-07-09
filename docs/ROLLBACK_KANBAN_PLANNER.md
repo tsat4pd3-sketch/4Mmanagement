@@ -155,6 +155,18 @@ git push origin main
   `delete from role_permissions where permission_key = 'page:/planner-sales';`
 - Rollback โค้ด: `git revert -m 1 <merge-sha รอบ 12>` — ข้อมูล forecast/order ไม่ถูกแตะ
 
+## รอบแก้ที่ 13 — ฟอนต์บอร์ด Heijunka เข้ามาตรฐาน + สิทธิ์ Delivery/Planner & Sales เป็น can()
+
+- `HeijunkaKanban.jsx`: กวาดฟอนต์ 8-10px → ขั้นต่ำ 11px ทั้งหน้า (ตาม docs/UI-CONVENTIONS.md ข้อ 4)
+  — เลย์เอาต์เป็น flex/absolute ยืดตามฟอนต์ ไม่มีการเปลี่ยน logic ใดๆ
+- สิทธิ์: `CustomerDemand.jsx` (Ship-to Config) → `can('shipping','config')` ·
+  `PlannerSales.jsx` (อัพโหลด) → `can('demand','upload')` — เลิก hardcode role array
+- **DB (โปรเจคหลัก):** แถว `permission_catalog` + `role_permissions` 2 key ใหม่
+  (seed ตามสิทธิ์เดิมเป๊ะ) — migration: `20260710_shipping_demand_action_permissions.sql`
+  (มีคำสั่ง rollback ในไฟล์) — ปรับสิทธิ์ได้จากหน้า จัดการสิทธิ์ → สิทธิ์การทำงาน
+- Rollback โค้ด: `git revert -m 1 <merge-sha รอบ 13>` — ถ้า revert โค้ดโดยไม่ลบแถว DB
+  ก็ไม่มีผลข้างเคียง (โค้ดเก่าไม่อ่าน key พวกนี้)
+
 ## สิ่งที่ต้องรู้ตอน rollback
 
 1. **ยอดสต็อกจาก "ยืนยันส่ง" ต่างกันสองเวอร์ชัน** — เวอร์ชันใหม่บันทึก `line_stock_transactions`
