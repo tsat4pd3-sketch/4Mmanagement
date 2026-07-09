@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { loadCompanyCalendar, getDayType } from '../utils/companyCalendar';
 import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy';
@@ -70,6 +71,7 @@ const STATUS_META = {
 
 export default function Checkin() {
   const { role, lineId, team, section: userSection, fullName } = useContext(UserContext);
+  const canRecord = can('checkin', 'record', role);
 
   const [employees,      setEmployees]      = useState([]);
   const [lines,          setLines]          = useState([]);
@@ -946,17 +948,17 @@ export default function Checkin() {
           </button>
           <button
             onClick={handleSave}
-            disabled={isSaving || previewNight}
-            title={previewNight ? 'ปิดโหมด Preview ก่อนบันทึก' : undefined}
+            disabled={isSaving || previewNight || !canRecord}
+            title={previewNight ? 'ปิดโหมด Preview ก่อนบันทึก' : !canRecord ? 'บัญชีของคุณไม่มีสิทธิ์บันทึกเช็คชื่อ' : undefined}
             style={{
               padding: '10px 22px',
-              background: isSaving || previewNight ? 'var(--muted)' : 'var(--accent)',
+              background: (isSaving || previewNight || !canRecord) ? 'var(--muted)' : 'var(--accent)',
               color: '#fff', border: 'none', borderRadius: 8,
               fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14,
-              cursor: previewNight ? 'not-allowed' : 'pointer',
+              cursor: (previewNight || !canRecord) ? 'not-allowed' : 'pointer',
             }}
           >
-            {isSaving ? '⏳ กำลังบันทึก...' : previewNight ? '🔒 ปิด Preview ก่อนบันทึก' : '💾 บันทึก'}
+            {isSaving ? '⏳ กำลังบันทึก...' : previewNight ? '🔒 ปิด Preview ก่อนบันทึก' : !canRecord ? '🔒 ไม่มีสิทธิ์บันทึก' : '💾 บันทึก'}
           </button>
         </div>
       </div>
@@ -1437,7 +1439,7 @@ export default function Checkin() {
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setShowOtBookModal(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
-              <button onClick={handleSaveOtBookModal} disabled={otBookSaving || !otBookLineId}
+              <button onClick={handleSaveOtBookModal} disabled={otBookSaving || !otBookLineId || !canRecord}
                 style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: otBookSaving || !otBookLineId ? 'not-allowed' : 'pointer', opacity: otBookSaving || !otBookLineId ? 0.6 : 1 }}>
                 {otBookSaving ? '⏳ กำลังบันทึก...' : '💾 บันทึกการจอง'}
               </button>

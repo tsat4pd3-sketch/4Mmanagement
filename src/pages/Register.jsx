@@ -1,10 +1,12 @@
 import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
+import { can } from '../utils/permissions';
 import ImageCropModal from '../components/ImageCropModal';
 
 export default function Register() {
   const { role, lineId: userLineId, section: userSection } = useContext(UserContext);
+  const canRegister = can('employees', 'register', role);
   const isSupervisor = role === 'supervisor';
   const isLeader     = role === 'leader';
 
@@ -241,15 +243,16 @@ export default function Register() {
 
           <button
             type="submit"
-            disabled={isUploading}
+            disabled={isUploading || !canRegister}
+            title={canRegister ? undefined : 'บัญชีของคุณไม่มีสิทธิ์ลงทะเบียนพนักงาน'}
             style={{
               marginTop: 4, padding: '13px',
-              background: isUploading ? 'var(--muted)' : 'var(--accent)',
+              background: (isUploading || !canRegister) ? 'var(--muted)' : 'var(--accent)',
               color: '#fff', border: 'none', borderRadius: 8,
               fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15,
             }}
           >
-            {isUploading ? 'กำลังบันทึก...' : 'บันทึกข้อมูลพนักงาน'}
+            {isUploading ? 'กำลังบันทึก...' : canRegister ? 'บันทึกข้อมูลพนักงาน' : '🔒 ไม่มีสิทธิ์ลงทะเบียนพนักงาน'}
           </button>
         </form>
       </div>

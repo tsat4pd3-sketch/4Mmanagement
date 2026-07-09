@@ -364,6 +364,7 @@ export default function PMCheckData() {
 
   const [userId, setUserId] = useState(null)
   const [userRole, setUserRole] = useState(null)
+  const canRecord = can('pm', 'record', userRole)
   const [jigs, setJigs] = useState([])
   const [selectedJig, setSelectedJig] = useState(null)
   const [checklistId, setChecklistId] = useState(null)
@@ -564,8 +565,8 @@ export default function PMCheckData() {
                           onChangeNote={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], note: v } }))} />
                       ))}
                       <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="หมายเหตุ (ถ้ามี)..." style={{ marginTop: 8 }} />
-                      <button onClick={handleSave} disabled={saving} style={{ ...S.saveBtn, opacity: saving ? 0.6 : isFormReady ? 1 : 0.75 }}>
-                        {saving ? 'กำลังบันทึก...' : isFormReady ? 'บันทึกผลการตรวจ' : `บันทึก (ยังไม่ครบ ${checkpoints.filter(cp => { const r = results[cp.id]; return cp.type === 'variable' ? !(r?.v1 !== '' && r?.v2 !== '' && r?.v3 !== '') : !r?.attr }).length} จุด)`}
+                      <button onClick={handleSave} disabled={saving || !canRecord} style={{ ...S.saveBtn, opacity: (saving || !canRecord) ? 0.6 : isFormReady ? 1 : 0.75 }}>
+                        {saving ? 'กำลังบันทึก...' : !canRecord ? '🔒 ไม่มีสิทธิ์บันทึกผลตรวจ' : isFormReady ? 'บันทึกผลการตรวจ' : `บันทึก (ยังไม่ครบ ${checkpoints.filter(cp => { const r = results[cp.id]; return cp.type === 'variable' ? !(r?.v1 !== '' && r?.v2 !== '' && r?.v3 !== '') : !r?.attr }).length} จุด)`}
                       </button>
                     </>
                   )}

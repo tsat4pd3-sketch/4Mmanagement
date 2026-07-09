@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 
 /* ─── RACK CENTER — เรียกภาชนะ/แร็คเปล่าคืนกลับมาใช้ ──────────────────────
@@ -34,7 +35,8 @@ function timeAgo(iso) {
 const EMPTY_FORM = { line_name: '', container_type_id: '', qty: '1', note: '' };
 
 export default function RackCenter() {
-  const { fullName } = useContext(UserContext);
+  const { fullName, role } = useContext(UserContext);
+  const canOperate = can('rack_center', 'operate', role);
 
   const [lines,          setLines]          = useState([]);
   const [containerTypes, setContainerTypes] = useState([]);
@@ -166,9 +168,11 @@ export default function RackCenter() {
             <input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} />
             แสดงที่รับแล้ว
           </label>
-          <button onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineFilter }); setShowForm(true); }} style={btn('#16a34a')}>
-            🔔 เรียกภาชนะ
-          </button>
+          {canOperate && (
+            <button onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineFilter }); setShowForm(true); }} style={btn('#16a34a')}>
+              🔔 เรียกภาชนะ
+            </button>
+          )}
         </div>
       </div>
 
@@ -193,10 +197,10 @@ export default function RackCenter() {
                     {p.source_line ? `🏭 ${p.source_line}` : ''}{p.product_name ? ` · ${p.product_name}` : ''}
                     {p.source_prod_no ? ` · FG ${p.source_prod_no}` : ''}
                   </div>
-                  <button onClick={() => issuePkg(p)} disabled={pkgBusy === p.id}
+                  {canOperate && <button onClick={() => issuePkg(p)} disabled={pkgBusy === p.id}
                     style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
                     {pkgBusy === p.id ? '...' : '✔ จ่าย Packaging'}
-                  </button>
+                  </button>}
                 </div>
               ))}
             </div>
@@ -227,7 +231,7 @@ export default function RackCenter() {
                     <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6 }}>
                       {r.requested_by ? `โดย ${r.requested_by} · ` : ''}{timeAgo(r.requested_at)}
                     </div>
-                    {col.key !== 'received' && (
+                    {canOperate && col.key !== 'received' && (
                       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                         <button onClick={() => advance(r)} disabled={busyId === r.id}
                           style={{ ...btn(col.color), flex: 1, padding: '6px 10px', fontSize: 12, opacity: busyId === r.id ? 0.6 : 1 }}>
