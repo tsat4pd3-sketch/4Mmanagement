@@ -1216,7 +1216,7 @@ export default function Dashboard() {
                           const productKey = (nameByMatNo[o.mat_no] || s.dr_products?.name || '').trim().toUpperCase() || o.mat_no || 'unknown';
                           const productLabel = nameByMatNo[o.mat_no] || s.dr_products?.name || o.mat_no || 'ไม่ทราบ P/N';
                           const productImg = imgByMatNo[o.mat_no] || '';
-                          cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, productImg, shift: s.shift, sessionOpen: s.status === 'open' });
+                          cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, productImg, shift: s.shift, sessionOpen: s.status === 'open', line_name: s.line_name });
                         });
                       });
                       return cards;
@@ -1226,6 +1226,8 @@ export default function Dashboard() {
 
                     // ── Downtime ของไลน์นี้ (จาก downtime_logs ทุก session ของวันนั้น) ──
                     // ใช้วาดแถบ ⛔ บนไทม์ไลน์ และผูกเข้า tooltip ของใบที่ดีเลย์/ปิดช้า เพื่อบอก "สาเหตุ" ของการหลุดแผน
+                    // การ์ดไลน์แม่รวมหลาย sub-line (เช่น Line 60 + Line 61) — ต้องจำว่า downtime เป็นของ
+                    // sub-line ไหน ไม่งั้นเหตุของไลน์หนึ่งจะไปโผล่เป็น "สาเหตุ" บนแถว/tooltip ของอีกไลน์
                     const dtWindows = sessions.flatMap(s => (s.dtLogs || []).map(d => {
                       const ds = d.started_at ? new Date(d.started_at).getTime() : null;
                       if (ds == null) return null;
@@ -1235,12 +1237,15 @@ export default function Dashboard() {
                         machine: d.machine_no || '', desc: d.description || '',
                         planned: d.dr_downtime_types?.category === 'planned',
                         min: d.duration_min || Math.round((de - ds) / 60000),
+                        line_name: s.line_name,
                       };
                     }).filter(Boolean)).sort((a, b) => a.s - b.s);
-                    const dtLabel = (w) => `⛔ ${w.name}${w.machine ? ` @${w.machine}` : ''} ${fmtMs(w.s)}–${fmtMs(w.e)} (${w.min}น.)${w.desc ? ` — ${w.desc}` : ''}`;
-                    // downtime ที่คาบเกี่ยวช่วงเวลา [a,b] ของใบกัมบัง — ใช้อธิบายสาเหตุดีเลย์ใน tooltip
-                    const dtTooltip = (a, b) => {
-                      const hits = dtWindows.filter(w => w.s < b && w.e > a);
+                    // การ์ดนี้มีหลาย sub-line มั้ย — ถ้ามี ให้ระบุชื่อไลน์กำกับใน label กันอ่านแล้วสับสน
+                    const multiSubLine = new Set(sessions.map(s => s.line_name)).size > 1;
+                    const dtLabel = (w) => `⛔ ${multiSubLine && w.line_name ? `[${w.line_name}] ` : ''}${w.name}${w.machine ? ` @${w.machine}` : ''} ${fmtMs(w.s)}–${fmtMs(w.e)} (${w.min}น.)${w.desc ? ` — ${w.desc}` : ''}`;
+                    // downtime ที่คาบเกี่ยวช่วงเวลา [a,b] ของใบกัมบัง — เฉพาะของ sub-line เดียวกับใบนั้น
+                    const dtTooltip = (a, b, lineName) => {
+                      const hits = dtWindows.filter(w => w.s < b && w.e > a && (!lineName || w.line_name === lineName));
                       return hits.length
                         ? ` · สาเหตุที่เป็นไปได้: ${hits.map(dtLabel).join(' · ')}`
                         : ' · ไม่มีบันทึก downtime ในช่วงนี้';
@@ -1488,8 +1493,13 @@ export default function Dashboard() {
                               );
                             });
                         })()}
-                        {/* ⛔ แถบ downtime — วางชิดขอบบนแถว ไม่บังใบกัมบัง ชี้เมาส์ดูรายละเอียดได้ */}
-                        {dtWindows.map((w, di) => {
+                        {/* ⛔ แถบ downtime — วางชิดขอบบนแถว ไม่บังใบกัมบัง ชี้เมาส์ดูรายละเอียดได้
+                            แสดงเฉพาะ downtime ของ sub-line ที่มีใบงานอยู่ในแถวนี้ — ไม่วาดซ้ำทุกแถวจนเหตุของ
+                            อีกไลน์มาโผล่ปนกัน (แถวที่ไม่มีใบงานเลยให้เห็นทุกรายการไว้ก่อน ดีกว่าหายเงียบ) */}
+                        {(() => {
+                          const rowLines = new Set(cards.map(c => c.line_name).filter(Boolean));
+                          return dtWindows.filter(w => !rowLines.size || !w.line_name || rowLines.has(w.line_name));
+                        })().map((w, di) => {
                           const l = Math.max(0, (w.s - half.startMs) * pctPerMs);
                           const rgt = Math.min(100, (w.e - half.startMs) * pctPerMs);
                           if (rgt <= 0 || l >= 100 || rgt <= l) return null;
@@ -1521,8 +1531,9 @@ export default function Dashboard() {
                           const doneQty  = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
                           const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
                           // ใบที่หลุดแผน (ดีเลย์/ปิดช้า) — แนบ downtime ที่คาบเกี่ยวช่วงเวลาของใบนั้นเข้า tooltip เป็นสาเหตุ
-                          const causeText = isLateDone ? dtTooltip(startMs, new Date(o.confirmed_at).getTime())
-                            : isDelayed ? dtTooltip(startMs, Math.min(nowMs, gridEndMs)) : '';
+                          // จำกัดเฉพาะ downtime ของ sub-line เดียวกับใบนี้ ไม่หยิบของอีกไลน์ที่แค่เวลาตรงกันมาปน
+                          const causeText = isLateDone ? dtTooltip(startMs, new Date(o.confirmed_at).getTime(), o.line_name)
+                            : isDelayed ? dtTooltip(startMs, Math.min(nowMs, gridEndMs), o.line_name) : '';
                           return (
                             <Fragment key={o.prod_no || oi}>
                             <div title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs-realEndMs)/60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${causeText}`}
