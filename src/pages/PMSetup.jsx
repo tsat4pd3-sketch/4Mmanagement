@@ -147,6 +147,23 @@ const S = {
 // ─── ImageAnnotator (upload + click-to-pin) ────────────────────────────────────
 function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageClick, onPinRemove }) {
   const containerRef = useRef(null)
+  // pin สเกลตามความกว้างรูปที่ render จริง + clamp ไม่ให้ตกขอบ (docs/UI-CONVENTIONS.md 5.1)
+  const [box, setBox] = useState({ w: 0, h: 0 })
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const measure = () => setBox({ w: el.clientWidth || 0, h: el.clientHeight || 0 })
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    measure()
+    return () => ro.disconnect()
+  }, [imageUrl])
+  const PK = Math.round(Math.max(20, Math.min(36, (box.w || 500) * 0.04)))
+  const pkFont = Math.max(11, Math.round(PK * 0.45))
+  const padX = box.w ? (PK * 0.7 / box.w) * 100 : 0
+  const padTop = box.h ? ((PK + 4) / box.h) * 100 : 0 // anchor ห้อยลง (translate -100%) เผื่อหัวบน
+  const clampPct = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
+
   const handleClick = (e) => {
     if (!activePinKey) return
     const rect = containerRef.current.getBoundingClientRect()
@@ -167,11 +184,16 @@ function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageCl
         const col = isActive ? 'var(--accent)' : categoryColor(cp.category)
         return (
           <button key={cp._key}
-            style={{ position: 'absolute', left: `${cp.x_pos * 100}%`, top: `${cp.y_pos * 100}%`, transform: 'translate(-50%,-100%)', zIndex: 10, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}
+            style={{
+              position: 'absolute',
+              left: `${clampPct(cp.x_pos * 100, padX, 100 - padX)}%`,
+              top: `${clampPct(cp.y_pos * 100, padTop, 100)}%`,
+              transform: 'translate(-50%,-100%)', zIndex: 10, cursor: 'pointer', background: 'none', border: 'none', padding: 0,
+            }}
             onClick={e => { e.stopPropagation(); onPinRemove(cp._key) }}
             title={`${cp.name || `จุด ${i + 1}`} — คลิกเพื่อลบ`}
           >
-            <div style={{ minWidth: 20, height: 20, padding: '0 3px', borderRadius: 10, background: col, border: '2px solid #fff', color: '#fff', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>{labels?.[i] ?? i + 1}</div>
+            <div style={{ minWidth: PK, height: PK, padding: `0 ${Math.round(PK * 0.15)}px`, borderRadius: 999, background: col, border: '2px solid #fff', color: '#fff', fontSize: pkFont, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>{labels?.[i] ?? i + 1}</div>
           </button>
         )
       })}

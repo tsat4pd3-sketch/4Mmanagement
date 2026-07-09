@@ -91,6 +91,12 @@ const MK = Math.round(Math.max(34, Math.min(84, renderedMapWidth * 0.055)));
 คนละอย่างกับ marker บนผังไลน์ (section 1) — อันนี้คือหมุดเลขจุดตรวจบนแบบชิ้นงาน/รูปอุปกรณ์:
 
 - รูปทรง: **วงกลม/pill ป้ายเลข** `minWidth` + `padding + borderRadius: 999` เพื่อรองรับ label หลายตัวอักษร (H35, A1, 1.3) — ห้าม fix width วงกลมจนตัวอักษรล้น
+- **ขนาดสเกลตามความกว้างรูปที่ RENDER จริง** (สูตรเดียวกับ MK ของผังไลน์ แต่เพดานเล็กกว่า) — วัดด้วย `ResizeObserver` บน wrapper:
+  ```js
+  const BK = Math.round(Math.max(20-24, Math.min(36-44, renderedImgWidth * 0.04)));
+  // ฟอนต์เลขใน balloon = max(11, BK*0.42-0.45) · ขอบขาว = max(2, BK*0.07)
+  ```
+- **Edge clamp**: ตำแหน่ง*แสดงผล*ต้อง clamp ไม่ให้ balloon ตกขอบรูป (เผื่อ `BK*0.7` ทุกด้าน; anchor แบบห้อยลง `translate(-50%,-100%)` เผื่อหัวบน `BK+4px`) — **ค่าจริงใน DB ไม่เปลี่ยน**
 - พิกัดเก็บเป็น **% ของรูป** (`pos_x/pos_y` 0–100 ฝั่ง QA, `x_pos/y_pos` 0–1 ฝั่ง PM) anchor `translate(-50%,-50%)`
 - 1 part/อุปกรณ์มี**หลายรูปได้** — balloon ต้องผูกกับรูปที่มันอยู่ (`drawing_id`/`image_id`) ลบรูป = ถอดตำแหน่ง balloon แต่**ห้ามลบตัวจุดตรวจ**
 - เลขจุดตรวจแบบ text เรียงด้วย natural sort (`localeCompare(..., { numeric: true })`) — H2 มาก่อน H10

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase, supabaseDR } from '../supabaseClient'
@@ -75,6 +75,45 @@ const S = {
     width: '100%', padding: '12px 0', borderRadius: 10, fontSize: 14, fontWeight: 700,
     background: 'var(--accent)', color: '#071008', border: 'none', cursor: 'pointer', marginTop: 12,
   },
+}
+
+// รูป JIG + pin จุดตรวจ — pin สเกลตามความกว้างรูปที่ render จริง + clamp ไม่ให้ตกขอบ
+// (docs/UI-CONVENTIONS.md 5.1)
+function JigPinMap({ imgUrl, checkpoints }) {
+  const wrapRef = useRef(null)
+  const [box, setBox] = useState({ w: 0, h: 0 })
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const measure = () => setBox({ w: el.clientWidth || 0, h: el.clientHeight || 0 })
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    measure()
+    return () => ro.disconnect()
+  }, [imgUrl])
+  const PK = Math.round(Math.max(20, Math.min(36, (box.w || 500) * 0.04)))
+  const pkFont = Math.max(11, Math.round(PK * 0.45))
+  const padX = box.w ? (PK * 0.7 / box.w) * 100 : 0
+  const padTop = box.h ? ((PK + 4) / box.h) * 100 : 0
+  const clampPct = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', marginBottom: 16, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
+      <img src={imgUrl} alt="" style={{ width: '100%', maxHeight: 260, objectFit: 'contain', background: 'var(--bg2)', display: 'block' }} />
+      {checkpoints.map((c, i) => {
+        if (c.x_pos == null || c.y_pos == null) return null
+        return (
+          <div key={c.id} style={{
+            position: 'absolute',
+            left: `${clampPct(c.x_pos * 100, padX, 100 - padX)}%`,
+            top: `${clampPct(c.y_pos * 100, padTop, 100)}%`,
+            transform: 'translate(-50%,-100%)',
+          }}>
+            <div style={{ minWidth: PK, height: PK, padding: `0 ${Math.round(PK * 0.15)}px`, borderRadius: 999, background: categoryColor(c.category), color: '#fff', fontSize: pkFont, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff', boxShadow: '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>{i + 1}</div>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 // รูปอ้างอิงต่อจุด (คอลัมน์ Picture ของฟอร์ม) — คลิกเปิดเต็มจอ
@@ -652,17 +691,7 @@ export default function PMCheckData() {
               {tab === 'record' && (
                 <div style={{ maxWidth: 680, margin: '0 auto' }}>
                   {jigImg && selectedJig.layout_type !== 'list' && (
-                    <div style={{ position: 'relative', marginBottom: 16, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
-                      <img src={jigImg} alt="" style={{ width: '100%', maxHeight: 260, objectFit: 'contain', background: 'var(--bg2)', display: 'block' }} />
-                      {checkpoints.map((c, i) => {
-                        if (c.x_pos == null || c.y_pos == null) return null
-                        return (
-                          <div key={c.id} style={{ position: 'absolute', left: `${c.x_pos * 100}%`, top: `${c.y_pos * 100}%`, transform: 'translate(-50%,-100%)' }}>
-                            <div style={{ width: 20, height: 20, borderRadius: '50%', background: categoryColor(c.category), color: '#fff', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff', boxShadow: '0 2px 6px rgba(0,0,0,0.4)' }}>{i + 1}</div>
-                          </div>
-                        )
-                      })}
-                    </div>
+                    <JigPinMap imgUrl={jigImg} checkpoints={checkpoints} />
                   )}
 
                   {checkpoints.length === 0 ? (

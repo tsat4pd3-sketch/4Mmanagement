@@ -142,6 +142,8 @@ export default function QAInspectionSetup() {
   const [prodImg, setProdImg] = useState(null);        // รูป product จาก BOM/Product Master (dr_products.image_url)
   const [titlePicker, setTitlePicker] = useState(null); // { mode:'add', file } | { mode:'rename', dwg }
   const [customTitle, setCustomTitle] = useState('');
+  const dwgWrapRef = useRef(null);                      // wrapper รูป drawing — วัดขนาด render จริง
+  const [dwgSize, setDwgSize] = useState({ w: 0, h: 0 });
   const fileRef = useRef(null);                        // input เพิ่ม drawing ใหม่
   const replaceRef = useRef(null);                     // input เปลี่ยนรูปแผ่นที่เปิดอยู่
 
@@ -176,6 +178,24 @@ export default function QAInspectionSetup() {
   }, []);
 
   useEffect(() => { loadItems(selId); loadDrawings(selId); setPlacingId(null); }, [selId, loadItems, loadDrawings]);
+
+  /* ขนาด balloon สเกลตามความกว้างรูปที่ RENDER จริง (สูตรแบบ MK — ดู docs/UI-CONVENTIONS.md 5.1)
+     + edge clamp ไม่ให้ balloon ตกขอบรูป */
+  useEffect(() => {
+    const el = dwgWrapRef.current;
+    if (!el) { setDwgSize({ w: 0, h: 0 }); return; }
+    const measure = () => setDwgSize({ w: el.clientWidth || 0, h: el.clientHeight || 0 });
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, [activeDwgId, isPdf, drawings.length]);
+
+  const BK = Math.round(Math.max(24, Math.min(44, (dwgSize.w || 600) * 0.04)));
+  const bkFont = Math.max(11, Math.round(BK * 0.42));
+  const clampPos = (v, pad) => Math.min(100 - pad, Math.max(pad, Number(v)));
+  const padX = dwgSize.w ? (BK * 0.7 / dwgSize.w) * 100 : 0;
+  const padY = dwgSize.h ? (BK * 0.7 / dwgSize.h) * 100 : 0;
 
   /* รูป product จาก BOM/Product Master — จับคู่ part_no ↔ mat_no/p_no/code ของ dr_products
      ช่วยพนักงานจำหน้าตาชิ้นงานได้โดยไม่ต้องอัพโหลดซ้ำ */
@@ -593,20 +613,24 @@ export default function QAInspectionSetup() {
                 </div>
               ) : (
                 <div
+                  ref={dwgWrapRef}
                   onClick={onDrawingClick}
                   style={{ position: 'relative', display: 'inline-block', maxWidth: '100%', cursor: canManage ? 'crosshair' : 'default', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border2)' }}>
-                  <img src={activeDwg.drawing_url} alt={activeDwg.title} style={{ display: 'block', maxWidth: '100%' }} />
+                  <img src={activeDwg.drawing_url} alt={activeDwg.title} style={{ display: 'block', maxWidth: '100%' }}
+                    onLoad={e => setDwgSize({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight })} />
                   {items.filter(i => i.pos_x != null && i.pos_y != null && (i.drawing_id === activeDwg.id || (!i.drawing_id && drawings[0]?.id === activeDwg.id))).map(i => (
                     <div key={i.id}
                       title={`#${i.balloon_no} ${i.characteristic}${i.spec_text ? ` · ${i.spec_text}` : ''}`}
                       onClick={e => { e.stopPropagation(); if (canManage) openEditItem(i); }}
                       style={{
-                        position: 'absolute', left: `${i.pos_x}%`, top: `${i.pos_y}%`, transform: 'translate(-50%, -50%)',
-                        minWidth: 26, height: 26, padding: '0 5px', borderRadius: 999,
+                        /* ตำแหน่งแสดงผลถูก clamp ไม่ให้ตกขอบรูป — ค่าจริงใน DB ไม่เปลี่ยน */
+                        position: 'absolute', left: `${clampPos(i.pos_x, padX)}%`, top: `${clampPos(i.pos_y, padY)}%`,
+                        transform: 'translate(-50%, -50%)',
+                        minWidth: BK, height: BK, padding: `0 ${Math.round(BK * 0.2)}px`, borderRadius: 999,
                         background: i.id === placingId ? '#f59e0b' : (i.rank ? RANK[i.rank]?.color : '#4d9fff'),
-                        color: '#fff', fontWeight: 900, fontSize: 11,
+                        color: '#fff', fontWeight: 900, fontSize: bkFont,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        border: '2px solid #fff', boxShadow: '0 1px 5px rgba(0,0,0,0.45)',
+                        border: `${Math.max(2, Math.round(BK * 0.07))}px solid #fff`, boxShadow: '0 1px 5px rgba(0,0,0,0.45)',
                         cursor: 'pointer', opacity: i.is_active ? 1 : 0.45, whiteSpace: 'nowrap',
                       }}>
                       {i.balloon_no}
