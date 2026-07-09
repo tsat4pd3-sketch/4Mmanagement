@@ -208,6 +208,12 @@ Deno.serve(async (req) => {
         lines.push(``, `⏱ Downtime: ไม่มี`);
       }
 
+      /* Downtime ที่ตัดยอดข้ามกะ — เครื่องยังซ่อมไม่เสร็จ กะถัดไปจะเปิดรายการต่ออัตโนมัติ */
+      if (Array.isArray(s.dt_carry) && s.dt_carry.length) {
+        lines.push(``, `⚠️ <b>Downtime ยกข้ามกะ ${s.dt_carry.length} รายการ — เครื่องยังไม่กลับมา</b>`);
+        for (const c of s.dt_carry) lines.push(`  • ${c.machine_no || '-'} — ${c.type_name || 'Downtime'} (กะถัดไปเปิดรายการต่ออัตโนมัติ)`);
+      }
+
       if (s.oee != null) {
         const apq = (s.oee_a != null || s.oee_p != null || s.oee_q != null)
           ? ` (A ${s.oee_a ?? '-'}% · P ${s.oee_p ?? '-'}% · Q ${s.oee_q ?? '-'}%)`
