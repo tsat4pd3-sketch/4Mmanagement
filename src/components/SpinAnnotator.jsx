@@ -65,7 +65,7 @@ export default function SpinAnnotator({
         {pins.map(p => (
           <button key={p.key} onClick={e => { e.stopPropagation(); onRemovePin?.(p.key) }} title={`${p.label} — คลิกเพื่อลบ`}
             style={{ position: 'absolute', left: `${p.x * 100}%`, top: `${p.y * 100}%`, transform: 'translate(-50%,-100%)', zIndex: 10, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}>
-            <div style={{ minWidth: 20, height: 20, padding: '0 3px', borderRadius: 10, background: p.color || 'var(--accent)', border: '2px solid #fff', color: '#fff', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>{p.label}</div>
+            <div style={{ minWidth: 22, height: 22, padding: '0 5px', borderRadius: 999, background: p.color || 'var(--accent)', border: '2px solid #fff', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>{p.label}</div>
           </button>
         ))}
 
@@ -90,7 +90,7 @@ export default function SpinAnnotator({
             <img src={f._preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             <button onClick={e => { e.stopPropagation(); onRemoveFrame?.(f._key) }} title="ลบเฟรม"
               style={{ position: 'absolute', top: -1, right: -1, width: 15, height: 15, borderRadius: '0 0 0 5px', background: '#e05c4a', color: '#fff', fontSize: 10, lineHeight: '15px', textAlign: 'center', border: 'none', cursor: 'pointer' }}>✕</button>
-            <span style={{ position: 'absolute', bottom: 0, left: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 8, padding: '0 3px', borderRadius: '0 4px 0 0' }}>{i + 1}</span>
+            <span style={{ position: 'absolute', bottom: 0, left: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, padding: '0 4px', borderRadius: '0 4px 0 0' }}>{i + 1}</span>
           </div>
         ))}
         <label style={{ width: 46, height: 40, borderRadius: 6, border: '2px dashed var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'default' : 'pointer', color: 'var(--muted)', fontSize: 18, flexShrink: 0 }}>

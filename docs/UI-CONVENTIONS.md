@@ -19,6 +19,7 @@
 | เครื่องจักร (Downtime ค้าง) | class `dt-alarm-blink` ขอบ/พื้นแดง | 🚨 หรือ ⚙️ | machine_no + สาเหตุ + นาทีที่ค้าง |
 | WIP | ขอบเขียว `#22c55e` (แดงเมื่อ `current < min`) — 0.8×MK | 📦 (packaging) / 🧱 (material) | point_name + ป้ายจำนวน `cur/min–max` |
 | จุดงาน (LineSetup) | ขอบขาว/เขียวเมื่อเลือก | 📍 | station_name เต็ม (+💰 ถ้ามีค่าฝีมือ) |
+| เครื่องจักร/อุปกรณ์ (ผัง MTN – สถานะ PM) | ขอบ**สีตามสถานะ PM** (แดงเกินกำหนด / ส้มใกล้ครบ / เขียวปกติ / ม่วงยังไม่ตรวจ) — 0.8×MK | ⚙️ | machine_no/jig_no (+ป้ายรอง: ชื่อเครื่อง) |
 
 **ป้าย (pill) spec:** `background: rgba(0,0,0,0.75-0.78)` · `borderRadius: 4` · ตัวหนังสือขาว bold · `whiteSpace: nowrap` + `overflow: hidden` + `textOverflow: ellipsis` · `maxWidth ≈ 1.8–2 × เส้นผ่านศูนย์กลางวงกลม`
 
@@ -37,7 +38,9 @@ const MK = Math.round(Math.max(34, Math.min(84, renderedMapWidth * 0.055)));
 3. **Edge clamp**: ตำแหน่ง*แสดงผล*ต้องถูก clamp ไม่ให้วงกลม+ป้ายตกขอบรูป — เผื่อซ้าย/ขวา/บน `size*0.55`, ล่าง `size*1.35` (มีป้ายห้อย) — ตำแหน่งจริงใน DB ไม่เปลี่ยน
 4. Hover card แสดงเฉพาะอุปกรณ์ที่ hover ได้จริง: `window.matchMedia('(hover: hover)').matches` — จอทัชให้ใช้ modal ที่มีปุ่มปิด + popup ทุกชนิดต้องมีทางปิดเสมอ (✕/auto-hide — กติกา backdrop click ดู section 5)
 
-หน้าอ้างอิง (ต้นแบบที่ทำถูกแล้ว): `Dashboard.jsx` (modal ผังขยาย + ผังย่อ), `Management.jsx`, `LineSetup.jsx`
+**Component กลาง (2026-07-10):** `src/components/MachineFloorMap.jsx` — ผัง object-fit:contain + marker วงกลม+ป้าย ตามสูตร MK/edge-clamp ข้างบนครบ (โหมด read-only และ editable: คลิกวาง/ลากย้าย/✕ ถอด). หน้า `/mtn-layout` (`MtnMachineLayout.jsx`) ใช้ component นี้ทั้งมุมมองไลน์ผลิตและ Facility — **ขอบวงกลมใช้สีสถานะ PM** (จงใจต่างจาก amber ในตารางข้อ 1 เพราะทั้งผังสื่อสาร "สถานะ" เป็นหลัก) หน้าใหม่ที่ต้องการผัง+marker ให้ reuse `MachineFloorMap` แทนเขียนใหม่
+
+หน้าอ้างอิง (ต้นแบบที่ทำถูกแล้ว): `Dashboard.jsx` (modal ผังขยาย + ผังย่อ), `Management.jsx`, `LineSetup.jsx`, `MtnMachineLayout.jsx`
 
 ---
 
@@ -90,9 +93,11 @@ const MK = Math.round(Math.max(34, Math.min(84, renderedMapWidth * 0.055)));
 
 คนละอย่างกับ marker บนผังไลน์ (section 1) — อันนี้คือหมุดเลขจุดตรวจบนแบบชิ้นงาน/รูปอุปกรณ์:
 
-- รูปทรง: **วงกลม/pill ป้ายเลข** `minWidth` + `padding + borderRadius: 999` เพื่อรองรับ label หลายตัวอักษร (H35, A1, 1.3) — ห้าม fix width วงกลมจนตัวอักษรล้น
-- พิกัดเก็บเป็น **% ของรูป** (`pos_x/pos_y` 0–100 ฝั่ง QA, `x_pos/y_pos` 0–1 ฝั่ง PM) anchor `translate(-50%,-50%)`
-- 1 part/อุปกรณ์มี**หลายรูปได้** — balloon ต้องผูกกับรูปที่มันอยู่ (`drawing_id`/`image_id`) ลบรูป = ถอดตำแหน่ง balloon แต่**ห้ามลบตัวจุดตรวจ**
+- รูปทรง: **วงกลม/pill ป้ายเลข** `minWidth` + `padding + borderRadius: 999` เพื่อรองรับ label หลายตัวอักษร (H35, A1, 1.3) — ห้าม fix width วงกลมจนตัวอักษรล้น · ฟอนต์ ≥ 11px (ตามข้อ 4)
+- พิกัดเก็บเป็น **% ของรูป** (`pos_x/pos_y` 0–100 ฝั่ง QA, `x_pos/y_pos` 0–1 ฝั่ง PM)
+  - **anchor ฝั่ง QA = `translate(-50%,-50%)`** (จุดกึ่งกลาง balloon = พิกัด)
+  - **anchor ฝั่ง PM = `translate(-50%,-100%)`** (map-pin: ปลายล่าง balloon = พิกัด) — ใช้เหมือนกัน**ทั้ง 3 renderer**: ตอนวาง (`SpinAnnotator.jsx`), ตอนตั้งค่า (`PMSetup.jsx`), ตอนตรวจ/ดูผล (`PMCheckData.jsx`) เพราะทั้งหมดอ่าน `jig_checkpoints.x_pos/y_pos` ตัวเดียวกัน — **ห้ามแก้ anchor แค่ไฟล์เดียว** ไม่งั้น pin จะเลื่อนครึ่งความสูงระหว่างจอวางกับจอดู (แก้ต้องแก้พร้อมกันทั้ง 3)
+- 1 part/อุปกรณ์มี**หลายรูป/หลายเฟรมได้** — balloon ต้องผูกกับรูปที่มันอยู่ (`drawing_id`/`image_id`) ลบรูป = ถอดตำแหน่ง balloon แต่**ห้ามลบตัวจุดตรวจ** · ฝั่ง PM รองรับ 360° spin (หลายเฟรม/อุปกรณ์) ผ่าน component กลาง `src/components/SpinAnnotator.jsx` — pin ผูกกับเฟรมที่วาง (`image_id`), ลากรูปหมุนเฟรม, reuse component นี้แทนเขียน annotator ใหม่
 - เลขจุดตรวจแบบ text เรียงด้วย natural sort (`localeCompare(..., { numeric: true })`) — H2 มาก่อน H10
 - สี: จุด control พิเศษ (Rank M/SC) = แดง/amber, จุดทั่วไป = น้ำเงิน `#4d9fff`, กำลังวางตำแหน่ง = amber
 - ชื่อแผ่น drawing ฝั่ง QA ให้เลือกจาก **view มาตรฐาน** (Front/Back/Top/Bottom View, Side View LH/RH, Isometric, Section, Detail) ผ่าน picker — พิมพ์เองได้เฉพาะกรณีพิเศษ

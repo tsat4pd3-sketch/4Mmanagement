@@ -5,6 +5,14 @@ import { useRef, useState, useEffect } from 'react'
    as % of the real image via pos_top/pos_left) stay pinned to the image at any
    viewport size. The caller enriches each point with { color, dim, label, sub }.
 
+   Marker shape follows docs/UI-CONVENTIONS.md §1: circle (⚙️ inside) + name-pill
+   underneath — NEVER a rectangular box. Size uses the shared MK formula scaled to
+   the *rendered* map width (0.8×MK for machines), and the displayed position is
+   edge-clamped so the circle+pill never fall off the image. The circle border
+   carries the PM-status color (this page's whole purpose) instead of the plain
+   amber used on production floor-maps — the one deliberate deviation from §1's
+   colour column, kept because status is what this map communicates.
+
    Read-only by default. Pass `editable` to allow:
      - click on the image (when `armed`) → onImageClick(pct)
      - drag a marker → onMarkerDragEnd(id, pct)
@@ -78,6 +86,29 @@ export default function MachineFloorMap({
     )
   }
 
+  // shared MK size formula (docs/UI-CONVENTIONS.md §1), scaled to the rendered map
+  // width; machine markers = 0.8×MK. Falls back to a sane default until imgBox lands.
+  const MK = imgBox ? Math.round(Math.max(34, Math.min(84, imgBox.rw * 0.055))) : 40
+  const size = Math.round(MK * 0.8)
+  const borderW = Math.max(2, Math.round(MK * 0.06))
+  const pillFont = Math.max(11, Math.round(MK * 0.24))
+  const subFont = Math.max(11, Math.round(MK * 0.2))
+  const iconFont = Math.round(size * 0.44)
+
+  // clamp the *displayed* position so circle+pill stay on the image (DB unchanged):
+  // margin left/right/top = size*0.55, bottom = size*1.35 (pill hangs below).
+  const clampPct = (topStr, leftStr) => {
+    const t = parseFloat(topStr), l = parseFloat(leftStr)
+    if (!imgBox) return { top: topStr, left: leftStr } // only reached before overlay renders
+    const mL = (size * 0.55 / imgBox.rw) * 100
+    const mT = (size * 0.55 / imgBox.rh) * 100
+    const mB = (size * 1.35 / imgBox.rh) * 100
+    return {
+      top: `${Math.max(mT, Math.min(100 - mB, t)).toFixed(2)}%`,
+      left: `${Math.max(mL, Math.min(100 - mL, l)).toFixed(2)}%`,
+    }
+  }
+
   return (
     <div style={{ position: 'relative', flex: 1, minHeight: 320, background: '#0a0f0b', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border)' }}>
       <img ref={imgRef} src={imageUrl} onLoad={recalc} draggable={false}
@@ -89,37 +120,43 @@ export default function MachineFloorMap({
             const sel = p.id === selectedId
             const color = p.color || '#9aa'
             const d = drag && drag.id === p.id
-            const top = d ? drag.top : p.pos_top
-            const left = d ? drag.left : p.pos_left
+            // while dragging show the raw cursor position (unclamped) for responsiveness;
+            // otherwise clamp the stored position to keep the marker on the image.
+            const pos = d ? { top: drag.top, left: drag.left } : clampPct(p.pos_top, p.pos_left)
             return (
               <div key={p.id}
                 onMouseDown={(e) => startDrag(e, p)}
-                onClick={(e) => { e.stopPropagation(); if (!editable) onSelect?.(p); else onSelect?.(p) }}
+                onClick={(e) => { e.stopPropagation(); onSelect?.(p) }}
                 title={p.label}
                 style={{
-                  position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
-                  width: 60, minHeight: 34, borderRadius: 7,
-                  border: `2px solid ${sel ? 'var(--accent)' : color}`,
-                  background: sel ? 'rgba(34,197,94,0.18)' : `${color}22`,
-                  boxShadow: (d ? '0 0 10px rgba(61,214,92,0.7)' : sel ? '0 0 10px rgba(61,214,92,0.6)' : `0 0 7px ${color}66`),
-                  backdropFilter: 'blur(2px)',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  padding: '3px 3px 2px', pointerEvents: 'auto',
-                  cursor: editable ? (d ? 'grabbing' : 'grab') : 'pointer',
-                  opacity: p.dim ? 0.28 : (d ? 0.9 : 1), zIndex: (sel || d) ? 15 : 5,
+                  position: 'absolute', top: pos.top, left: pos.left, transform: 'translate(-50%, -50%)',
+                  width: size, height: size, borderRadius: '50%',
+                  border: `${borderW}px solid ${sel ? 'var(--accent)' : color}`,
+                  background: sel ? 'rgba(34,197,94,0.20)' : 'rgba(10,15,11,0.82)',
+                  boxShadow: d ? '0 0 12px rgba(61,214,92,0.8)' : sel ? '0 0 10px rgba(61,214,92,0.6)' : `0 0 8px ${color}66`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  pointerEvents: 'auto', cursor: editable ? (d ? 'grabbing' : 'grab') : 'pointer',
+                  opacity: p.dim ? 0.28 : (d ? 0.92 : 1), zIndex: (sel || d) ? 15 : 5,
                 }}>
+                <span style={{ fontSize: iconFont, lineHeight: 1 }}>⚙️</span>
+
                 {editable && (
                   <div onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onMarkerRemove?.(p.id) }}
                     title="เอาออกจากผัง"
-                    style={{ position: 'absolute', top: -7, right: -7, width: 15, height: 15, borderRadius: '50%', background: '#e05c4a', color: '#fff', fontSize: 10, lineHeight: '15px', textAlign: 'center', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>✕</div>
+                    style={{ position: 'absolute', top: -6, right: -6, width: 16, height: 16, borderRadius: '50%', background: '#e05c4a', color: '#fff', fontSize: 11, lineHeight: '16px', textAlign: 'center', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>✕</div>
                 )}
-                <div style={{ fontSize: 8, fontWeight: 800, color: sel ? 'var(--accent)' : '#eaeaea', textAlign: 'center', width: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  ⚙️ {p.label}
+
+                {/* name pill(s) underneath the circle */}
+                <div style={{ position: 'absolute', top: 'calc(100% + 3px)', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                  <div style={{ maxWidth: size * 2, background: sel ? 'rgba(34,197,94,0.9)' : 'rgba(0,0,0,0.78)', color: '#fff', fontSize: pillFont, fontWeight: 800, lineHeight: 1.2, padding: '1px 6px', borderRadius: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {p.label}
+                  </div>
+                  {p.sub && (
+                    <div style={{ maxWidth: size * 2, background: 'rgba(0,0,0,0.68)', color: '#cdd6ce', fontSize: subFont, fontWeight: 600, lineHeight: 1.2, padding: '0 5px', borderRadius: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {p.sub}
+                    </div>
+                  )}
                 </div>
-                {p.sub && (
-                  <div style={{ fontSize: 7, color: '#b9c2ba', textAlign: 'center', width: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.sub}</div>
-                )}
-                <div style={{ width: 7, height: 7, borderRadius: '50%', background: color, marginTop: 1, boxShadow: `0 0 4px ${color}` }} />
               </div>
             )
           })}
