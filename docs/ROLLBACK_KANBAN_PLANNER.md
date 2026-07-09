@@ -90,6 +90,16 @@ git push origin main
 - Dashboard planner อ่าน `customer_shipping_orders` เพิ่ม (read-only) เพื่อพยากรณ์กะดึกล่วงหน้า
 - Rollback เฉพาะรอบนี้: `git revert -m 1 <merge-sha รอบ 7>`
 
+## รอบแก้ที่ 8 — ลบ Ship-to code + วงจร FG stock พร้อมส่ง
+
+- ไฟล์แก้: `src/pages/CustomerDemand.jsx`, `src/pages/Dashboard.jsx` (ไม่มี schema ใหม่)
+- Ship-to config: เพิ่มปุ่มลบ + เปิดสิทธิ์ให้ supervisor จัดการได้
+- FG stock: Shipping Chart แสดงความพร้อมส่งจาก `line_stock_summary` (FIFO ต่อรอบ),
+  กด "ส่งแล้ว" จะ insert `line_stock_transactions` type consume หักคลังอัตโนมัติ,
+  Dashboard planner หัก stock พร้อมส่งก่อนคำนวณยอดผลิตกะดึก
+- Rollback เฉพาะรอบนี้: `git revert -m 1 <merge-sha รอบ 8>` — แถว consume ที่เกิดแล้ว
+  ลบ/แก้ได้จากหน้า Line Stock ตามปกติ
+
 ## สิ่งที่ต้องรู้ตอน rollback
 
 1. **ยอดสต็อกจาก "ยืนยันส่ง" ต่างกันสองเวอร์ชัน** — เวอร์ชันใหม่บันทึก `line_stock_transactions`

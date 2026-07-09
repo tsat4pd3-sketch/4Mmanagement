@@ -211,6 +211,7 @@ export default function Dashboard() {
   const [boardDate,     setBoardDate]     = useState(() => getWorkDateStr(new Date()));
   const [lineByMat,     setLineByMat]     = useState({});   // mat_no → line_name (จาก dr_products)
   const [ediOrders,     setEdiOrders]     = useState([]);   // รอบส่งลูกค้า (EDI 862) วันนี้+พรุ่งนี้ ที่ยังไม่ส่ง
+  const [fgStockByMat,  setFgStockByMat]  = useState({});   // mat_no → stock FG พร้อมส่งรวมทุกคลัง
 
   // โหลดเฉพาะข้อมูลผลิต/OEE จาก DR — เบากว่า fetchAll มาก ใช้กับ realtime
   const fetchProdStatus = useCallback(async () => {
@@ -246,6 +247,14 @@ export default function Dashboard() {
         .select('mat_no, qty, due_date, ship_time, customer, status')
         .gte('due_date', boardDate).lte('due_date', nextDay).neq('status', 'shipped');
       setEdiOrders(shipOrders || []);
+      // stock FG พร้อมส่งของ mat เหล่านั้น — planner จะหักออกก่อนคำนวณว่าต้องผลิตคืนนี้เท่าไหร่
+      const shipMats = [...new Set((shipOrders || []).map(o => o.mat_no))];
+      if (shipMats.length) {
+        const { data: st } = await supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand').in('mat_no', shipMats);
+        const fg = {};
+        (st || []).forEach(r => { fg[r.mat_no] = (fg[r.mat_no] || 0) + (parseFloat(r.qty_on_hand) || 0); });
+        setFgStockByMat(fg);
+      } else setFgStockByMat({});
     }
     const sessionIds = (sessions || []).map(s => s.id);
     let ordersBySession = {}, dtBySession = {}, defectBySession = {};
@@ -1462,11 +1471,26 @@ export default function Dashboard() {
                             const ln = lineByMat[o.mat_no];
                             return ln && (childParentMap[ln] || ln) === lineName && o.due_date > boardDate;
                           });
-                          const ediQty = ediForLine.reduce((a, o) => a + Number(o.qty), 0);
+                          // หัก stock FG พร้อมส่งใน warehouse ออกก่อน — ต้องผลิตคืนนี้เฉพาะส่วนที่ขาดจริง
+                          const demandByMat = {};
+                          ediForLine.forEach(o => { demandByMat[o.mat_no] = (demandByMat[o.mat_no] || 0) + Number(o.qty); });
+                          let ediQty = 0, w = 0, noCtQty = 0, stockUsed = 0;
+                          Object.entries(demandByMat).forEach(([mat, q]) => {
+                            const used = Math.min(fgStockByMat[mat] || 0, q);
+                            stockUsed += used;
+                            const net = q - used;
+                            if (net <= 0) return;
+                            ediQty += net;
+                            const ct = ctByMatNo[mat] || 0;
+                            if (ct > 0) w += net * ct * 1000; else noCtQty += net;
+                          });
+                          const grossQty = Object.values(demandByMat).reduce((a, q) => a + q, 0);
+                          if (ediQty <= 0 && stockUsed > 0) {
+                            chips.push({ color: '#22c55e', text: `🌙📡 EDI ส่งพรุ่งนี้ ${grossQty.toLocaleString()} ชิ้น — 📦 stock พร้อมส่งครอบทั้งหมด ไม่ต้องผลิตเพิ่มคืนนี้` });
+                          }
                           if (ediQty > 0) {
                             const NIGHT_OT_IN2 = gridStartMs + 12 * 3600000, NIGHT_REG_IN2 = gridStartMs + 14.5 * 3600000;
-                            let w = 0, noCtQty = 0;
-                            ediForLine.forEach(o => { const ct = ctByMatNo[o.mat_no] || 0; if (ct > 0) w += Number(o.qty) * ct * 1000; else noCtQty += Number(o.qty); });
+                            const stockNote = stockUsed > 0 ? ` · หัก stock ${stockUsed.toLocaleString()} แล้ว` : '';
                             const finishFrom2 = (startMs, workMs) => {
                               const breaks = allBreaksOnce();
                               let end = startMs + workMs;
@@ -1482,18 +1506,18 @@ export default function Dashboard() {
                               return end;
                             };
                             if (w <= 0) {
-                              chips.push({ color: 'var(--muted)', text: `🌙📡 EDI: งานส่งพรุ่งนี้ ${ediQty.toLocaleString()} ชิ้น แต่ไม่มี cycle time — คาดการณ์ไม่ได้` });
+                              chips.push({ color: 'var(--muted)', text: `🌙📡 EDI: งานส่งพรุ่งนี้ ${ediQty.toLocaleString()} ชิ้น แต่ไม่มี cycle time — คาดการณ์ไม่ได้${stockNote}` });
                             } else {
                               const nf = finishFrom2(Math.max(NIGHT_REG_IN2, nowMs), w);
                               const tail = noCtQty > 0 ? ` (+${noCtQty.toLocaleString()} ชิ้นไม่มี CT)` : '';
                               if (nf <= gridEndMs) {
-                                chips.push({ color: '#22c55e', text: `🌙📡 EDI ส่งพรุ่งนี้ ${ediQty.toLocaleString()} ชิ้น — เข้าปกติ 22:30 ทัน คาดเสร็จ ~${fmtMs(nf)}${tail}` });
+                                chips.push({ color: '#22c55e', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — เข้าปกติ 22:30 ทัน คาดเสร็จ ~${fmtMs(nf)}${tail}` });
                               } else {
                                 const of2 = finishFrom2(Math.max(NIGHT_OT_IN2, nowMs), w);
                                 if (of2 <= gridEndMs) {
-                                  chips.push({ color: '#f59e0b', text: `🌙📡 EDI ส่งพรุ่งนี้ ${ediQty.toLocaleString()} ชิ้น — ⏰ ควรเรียกเข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)} · ถ้าเข้า 22:30 จบ ~${fmtMs(nf)})${tail}` });
+                                  chips.push({ color: '#f59e0b', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — ⏰ ควรเรียกเข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)} · ถ้าเข้า 22:30 จบ ~${fmtMs(nf)})${tail}` });
                                 } else {
-                                  chips.push({ color: '#ef4444', text: `🌙📡 EDI ส่งพรุ่งนี้ ${ediQty.toLocaleString()} ชิ้น — 🚨 เกินกำลังแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)}) วางแผนล่วงหน้า${tail}` });
+                                  chips.push({ color: '#ef4444', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — 🚨 เกินกำลังแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)}) วางแผนล่วงหน้า${tail}` });
                                 }
                               }
                             }

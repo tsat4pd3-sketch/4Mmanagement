@@ -35,6 +35,7 @@ const monthLabel = (iso) => {
   return `${TH[m - 1]} ${y + 543}`;
 };
 const fmt = (n) => Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 1 });
+const workDateStr = () => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); return dateStr(d); };
 
 /* ── Excel cell parsers — รองรับรูปแบบวันที่/เวลา ที่เจอบ่อยในไฟล์ลูกค้า ── */
 const MONTH_EN = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
@@ -661,12 +662,41 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
   const [day, setDay] = useState(todayStr());
   const [orders, setOrders] = useState([]);
   const [busy, setBusy] = useState(null);
+  const [fgStock, setFgStock] = useState({});   // mat_no → { total, lines: [{line_name, qty}] } — stock FG พร้อมส่งใน warehouse
 
   const load = useCallback(async () => {
     const { data } = await supabaseDR.from('customer_shipping_orders').select('*').eq('due_date', day).order('ship_time', { ascending: true, nullsFirst: false });
     setOrders(data || []);
+    const mats = [...new Set((data || []).map(o => o.mat_no))];
+    if (mats.length) {
+      const { data: st } = await supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand').in('mat_no', mats);
+      const m = {};
+      (st || []).forEach(r => {
+        const q = parseFloat(r.qty_on_hand) || 0;
+        if (q <= 0) return;
+        const e = m[r.mat_no] = m[r.mat_no] || { total: 0, lines: [] };
+        e.total += q;
+        e.lines.push({ line_name: r.line_name, qty: q });
+      });
+      setFgStock(m);
+    } else setFgStock({});
   }, [day]);
   useEffect(() => { load(); }, [load, refreshKey]);
+
+  // จัดสรร stock พร้อมส่งให้รอบที่ยังไม่ส่ง เรียงตามเวลา (FIFO) — รอบไหนพร้อมส่ง/ขาดเท่าไหร่
+  const coverage = useMemo(() => {
+    const remain = {};
+    Object.entries(fgStock).forEach(([m, v]) => { remain[m] = v.total; });
+    const map = {};
+    [...orders].sort((a, b) => ((a.ship_time || '99') < (b.ship_time || '99') ? -1 : 1)).forEach(o => {
+      if (o.status === 'shipped') return;
+      const avail = remain[o.mat_no] || 0;
+      const use = Math.min(avail, Number(o.qty));
+      remain[o.mat_no] = avail - use;
+      map[o.id] = { covered: use, short: Number(o.qty) - use, tracked: !!fgStock[o.mat_no] };
+    });
+    return map;
+  }, [orders, fgStock]);
 
   const shiftDay = (n) => {
     const d = new Date(`${day}T12:00:00`);
@@ -681,8 +711,32 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
     const payload = { status: st.next };
     if (st.next === 'shipped') { payload.shipped_at = new Date().toISOString(); payload.shipped_by = fullName || 'Logistic'; }
     const { error } = await supabaseDR.from('customer_shipping_orders').update(payload).eq('id', o.id);
-    if (error) toast.error(error.message);
-    else { toast.success(st.next === 'shipped' ? `🚚 ส่ง ${o.mat_no} แล้ว` : `📦 เตรียม ${o.mat_no} แล้ว`); await load(); }
+    if (error) { toast.error(error.message); setBusy(null); return; }
+    // ส่งแล้ว → หักสต็อก FG จากคลังอัตโนมัติเท่าที่มีบันทึกไว้ (ไลน์ที่มีของมากสุดก่อน)
+    if (st.next === 'shipped') {
+      const entry = fgStock[o.mat_no];
+      if (entry?.total > 0) {
+        let left = Number(o.qty);
+        const txns = [];
+        [...entry.lines].sort((a, b) => b.qty - a.qty).forEach(l => {
+          if (left <= 0) return;
+          const use = Math.min(l.qty, left);
+          left -= use;
+          txns.push({
+            line_name: l.line_name, mat_no: o.mat_no, part_name: o.part_name, qty: use,
+            type: 'consume', work_date: workDateStr(),
+            note: `ส่งลูกค้า ${o.customer || ''} · ${o.due_date} ${o.ship_time || ''}${o.order_no ? ` · PO ${o.order_no}` : ''}`,
+            created_by: fullName || 'Logistic',
+          });
+        });
+        if (txns.length) {
+          const { error: e2 } = await supabaseDR.from('line_stock_transactions').insert(txns);
+          if (e2) toast.error('ส่งแล้วแต่ตัดสต็อกไม่สำเร็จ: ' + e2.message);
+        }
+      }
+    }
+    toast.success(st.next === 'shipped' ? `🚚 ส่ง ${o.mat_no} แล้ว` : `📦 เตรียม ${o.mat_no} แล้ว`);
+    await load();
     setBusy(null);
   };
 
@@ -807,6 +861,11 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                       <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{fmt(o.qty)} <span style={{ fontSize: 10, color: 'var(--muted)' }}>ชิ้น</span></span>
                       <span style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6' }}>{o.customer ? (custLabel ? custLabel(o.customer) : o.customer) : ''}</span>
                     </div>
+                    {o.status !== 'shipped' && coverage[o.id]?.tracked && (
+                      coverage[o.id].short <= 0
+                        ? <div style={{ fontSize: 10, color: '#22c55e', fontWeight: 700, marginTop: 4 }}>📦 stock พร้อมส่งครบ</div>
+                        : <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>⚠️ stock มี {fmt(coverage[o.id].covered)} — ขาด {fmt(coverage[o.id].short)} ชิ้น (รอผลิต)</div>
+                    )}
                     {o.shipped_by && <div style={{ fontSize: 10, color: '#22c55e', marginTop: 4 }}>✓ {o.shipped_by} · {o.shipped_at ? new Date(o.shipped_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }) : ''}</div>}
                     {st.next && (
                       <button onClick={() => advance(o)} disabled={busy === o.id}
@@ -858,6 +917,14 @@ function ShipToTab({ canEdit, onChanged }) {
     setNewCode('');
     await load();
   };
+  const removeCode = async (r) => {
+    if (!window.confirm(`ลบ code "${r.code}"${r.customer_name !== r.code ? ` (${r.customer_name})` : ''}?\n\nข้อมูล order/forecast ที่อ้าง code นี้ยังอยู่ครบ (จะแสดงเป็น code ดิบแทนชื่อ) และถ้า code นี้โผล่ในไฟล์ EDI ครั้งหน้า ระบบจะเพิ่มกลับมาให้อัตโนมัติ`)) return;
+    setBusy(r.code);
+    const { error } = await supabaseDR.from('ship_to_plants').delete().eq('code', r.code);
+    if (error) toast.error(error.message);
+    else { toast.success(`ลบ ${r.code} แล้ว`); await load(); onChanged?.(); }
+    setBusy(null);
+  };
 
   const cell = { padding: '6px 10px', borderTop: '1px solid var(--border)' };
   const edSt = { ...inputSt, padding: '5px 8px', fontSize: 12, width: '100%', boxSizing: 'border-box' };
@@ -884,11 +951,17 @@ function ShipToTab({ canEdit, onChanged }) {
                 <td style={cell}>{canEdit ? <input value={val(r, 'customer_name')} onChange={e => setVal(r, 'customer_name', e.target.value)} style={edSt} placeholder="เช่น AAT / FTM" /> : <span style={{ fontSize: 13, fontWeight: 700 }}>{r.customer_name}</span>}</td>
                 <td style={cell}>{canEdit ? <input value={val(r, 'plant_name')} onChange={e => setVal(r, 'plant_name', e.target.value)} style={edSt} /> : <span style={{ fontSize: 12, color: 'var(--text2)' }}>{r.plant_name || '—'}</span>}</td>
                 <td style={cell}>{canEdit ? <input value={val(r, 'note')} onChange={e => setVal(r, 'note', e.target.value)} style={edSt} /> : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{r.note || ''}</span>}</td>
-                <td style={cell}>
+                <td style={{ ...cell, whiteSpace: 'nowrap' }}>
                   {canEdit && draft[r.code] && (
                     <button onClick={() => save(r.code)} disabled={busy === r.code}
-                      style={{ padding: '5px 14px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                      style={{ padding: '5px 14px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', marginRight: 6 }}>
                       {busy === r.code ? '...' : '💾 บันทึก'}
+                    </button>
+                  )}
+                  {canEdit && (
+                    <button onClick={() => removeCode(r)} disabled={busy === r.code}
+                      style={{ padding: '5px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontFamily: 'var(--font-body)' }}>
+                      🗑 ลบ
                     </button>
                   )}
                 </td>
@@ -913,6 +986,8 @@ export default function CustomerDemand() {
   const [tab, setTab] = useState('planner');
   const [refreshKey, setRefreshKey] = useState(0);
   const canUpload = ['admin', 'manager', 'sale'].includes(role);
+  // Ship-to config: เปิดให้ระดับ Supervisor ที่ดูแลหน้านี้จัดการได้ด้วย (เพิ่ม/แก้/ลบ code)
+  const canConfig = ['admin', 'manager', 'sale', 'supervisor'].includes(role);
 
   // ship-to code → ชื่อลูกค้า (config ที่แท็บ ⚙️) — ใช้แสดงผลทุกแท็บ
   const [shipToMap, setShipToMap] = useState({});
@@ -952,7 +1027,7 @@ export default function CustomerDemand() {
       {tab === 'upload' && <UploadTab canUpload={canUpload} fullName={fullName} onImported={() => { setRefreshKey(k => k + 1); loadShipTo(); }} custLabel={custLabel} />}
       {tab === 'planner' && <PlannerTab refreshKey={refreshKey} custLabel={custLabel} />}
       {tab === 'shipping' && <ShippingTab fullName={fullName} refreshKey={refreshKey} custLabel={custLabel} />}
-      {tab === 'shipto' && <ShipToTab canEdit={canUpload} onChanged={() => { setRefreshKey(k => k + 1); loadShipTo(); }} />}
+      {tab === 'shipto' && <ShipToTab canEdit={canConfig} onChanged={() => { setRefreshKey(k => k + 1); loadShipTo(); }} />}
     </div>
   );
 }
