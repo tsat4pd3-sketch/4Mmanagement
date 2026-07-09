@@ -79,7 +79,7 @@ function Modal({ title, onClose, children, width = 560 }) {
         backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
         padding: '5vh 12px', overflowY: 'auto',
       }}
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
+      /* ตั้งใจไม่ปิดเมื่อคลิกพื้นหลัง — กันเผลอกดแล้วข้อมูลในฟอร์มหาย ปิดได้จากปุ่ม ✕/ยกเลิกเท่านั้น */
     >
       <div style={{
         background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14,
