@@ -288,11 +288,13 @@ export default function DailyPM() {
                     </div>
                   )}
                   {(row.missing.length > 0 || row.ng.length > 0) && (
-                    <Link to="/pm-check" style={{
+                    // ต้องพาไปแท็บ "ฝ่ายผลิต" ตรงๆ (?dept=production) — หน้า pm-check เปิดค่าเริ่มต้นเป็นแท็บซ่อมบำรุง
+                    // ถ้าพนักงานบันทึกผลผิดแท็บ ระบบ Daily PM จะไม่นับให้
+                    <Link to="/pm-check?dept=production" style={{
                       display: 'inline-block', marginTop: 10, fontSize: 12, fontWeight: 700, textDecoration: 'none',
                       padding: '6px 12px', borderRadius: 8, background: `${meta.color}18`, color: meta.color, border: `1px solid ${meta.color}55`,
                     }}>
-                      📋 ไปหน้าตรวจสอบอุปกรณ์ →
+                      📋 ไปหน้าตรวจสอบอุปกรณ์ (แท็บฝ่ายผลิต) →
                     </Link>
                   )}
                 </div>
@@ -304,9 +306,31 @@ export default function DailyPM() {
 
       {tab === 'registry' && (
         <div>
+          {/* คู่มือ 4 ขั้น — ระบบนี้ต่อกัน 3 หน้า มือใหม่หลงง่าย ต้องเห็นภาพรวมก่อน */}
+          <div style={{ marginBottom: 14, padding: '12px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>📖 วิธีใช้งาน Daily PM — 4 ขั้น</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8 }}>
+              {[
+                { n: '1', title: 'เพิ่มเครื่อง + หัวข้อตรวจ', desc: <>ที่หน้า <Link to="/pm-setup?dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตั้งค่า PM → แท็บ ฝ่ายผลิต</Link> (กด "+ เพิ่มอุปกรณ์" แล้วใส่ชื่อ/ไลน์/หัวข้อที่ต้องตรวจ)</> },
+                { n: '2', title: 'ลงทะเบียนที่แท็บนี้', desc: 'ติ๊กเครื่องที่ "ต้องตรวจทุกต้นกะ" ของแต่ละไลน์ — ตัวเลข N ของไลน์มาจากตรงนี้' },
+                { n: '3', title: 'พนักงานตรวจต้นกะ', desc: <>ที่หน้า <Link to="/pm-check?dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตรวจสอบอุปกรณ์ → แท็บ ฝ่ายผลิต</Link> เลือกเครื่อง ติ๊กผ่าน/NG แล้วบันทึก</> },
+                { n: '4', title: 'ระบบเฝ้าเอง', desc: 'ยืนยันออร์เดอร์แรกของไลน์ → เริ่มนับ 60 นาที · ครบ+ผ่าน = 🟢 แจ้ง Telegram · พบ NG = 🔴 · เกินเวลายังไม่ครบ = 🟠' },
+              ].map(s => (
+                <div key={s.n} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{s.n}</span>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{s.title}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, lineHeight: 1.45 }}>{s.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
           {!canManage && <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--accent2)' }}>* ดูได้อย่างเดียว — เฉพาะ admin/manager/supervisor แก้ไขได้</div>}
           {Object.keys(jigsByLine).length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>ยังไม่มีอุปกรณ์ในระบบ</div>
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>
+              ยังไม่มีอุปกรณ์ในระบบ — เพิ่มได้ที่หน้า <Link to="/pm-setup?dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตั้งค่า PM → แท็บ ฝ่ายผลิต</Link>
+            </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {Object.entries(jigsByLine).map(([line, lineJigs]) => {
@@ -322,7 +346,7 @@ export default function DailyPM() {
                     {noLine && (
                       <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 10 }}>
                         อุปกรณ์กลุ่มนี้ยังไม่ถูกระบุว่าอยู่ไลน์ไหน — ระบบจับคู่กับออร์เดอร์แรกของไลน์เพื่อเริ่มนับเวลาไม่ได้ (สถานะจะค้าง "ยังไม่เริ่มผลิต" ตลอด)
-                        {' '}<b>เลือกไลน์ในการ์ดด้านล่างได้เลย</b> อุปกรณ์จะย้ายเข้ากลุ่มไลน์นั้นแล้วติ๊กลงทะเบียนต่อได้ทันที (หรือแก้ที่หน้า <Link to="/pm-setup" style={{ color: '#f59e0b', fontWeight: 700 }}>ตั้งค่า PM</Link> ก็ได้)
+                        {' '}<b>เลือกไลน์ในการ์ดด้านล่างได้เลย</b> อุปกรณ์จะย้ายเข้ากลุ่มไลน์นั้นแล้วติ๊กลงทะเบียนต่อได้ทันที (หรือแก้ที่หน้า <Link to="/pm-setup?dept=production" style={{ color: '#f59e0b', fontWeight: 700 }}>ตั้งค่า PM → ฝ่ายผลิต</Link> ก็ได้)
                       </div>
                     )}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 8 }}>
