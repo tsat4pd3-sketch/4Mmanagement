@@ -62,10 +62,10 @@ const DEPTS = [
     glow: 'rgba(77,159,255,0.22)',
     border: 'rgba(77,159,255,0.35)',
     bg: 'rgba(77,159,255,0.06)',
-    route: '/event-log',
+    route: '/qa',
     available: true,
-    desc: 'CQI-15 Welding Event Log & Approval Workflow',
-    modules: ['CQI-15 Event Log'],
+    desc: 'SPC / Cp-Cpk, NCR, 8D CAPA, เครื่องมือวัด, PPM Dashboard, CQI-15 Event Log',
+    modules: ['Quality Dashboard', 'SPC / Cp-Cpk', 'NCR', 'CAPA / 8D', 'เครื่องมือวัด', 'CQI-15 Event Log'],
   },
   {
     key: 'store',
