@@ -1048,7 +1048,7 @@ export default function Dashboard() {
       {/* ── Heijunka Timeline Board ───────────────────── */}
       {visibleProdStatus.length > 0 && (() => {
         const HOURS   = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
-        const LEFT_W  = 136;
+        const LEFT_W  = 175; // ป้ายพาร์ทใหญ่ (รูป 44px + ชื่อ 2 บรรทัด) — ป้ายเดียวครอบ 2 แถบเวลาเช้า/ดึก
         const nowMs   = now.getTime();
 
         const wd = visibleProdStatus[0]?.work_date || boardDate;
@@ -1092,8 +1092,9 @@ export default function Dashboard() {
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <button onClick={() => shiftDate(-1)} style={dateBtn}>◀</button>
+                {/* width ต้องกำหนดเอง — index.css ตั้ง input width:100% ทั้งแอป ถ้าปล่อยไว้ช่องวันที่จะกินเต็มแถวจนปุ่มแตกบรรทัด */}
                 <input type="date" value={boardDate} max={todayStr} onChange={e => e.target.value && setBoardDate(e.target.value)}
-                  style={{ padding: '4px 8px', borderRadius: 7, fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
+                  style={{ width: 148, padding: '4px 8px', borderRadius: 7, fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
                 <button onClick={() => shiftDate(1)} disabled={boardDate >= todayStr} style={{ ...dateBtn, opacity: boardDate >= todayStr ? 0.4 : 1, cursor: boardDate >= todayStr ? 'default' : 'pointer' }}>▶</button>
                 {boardDate !== todayStr && (
                   <button onClick={() => setBoardDate(todayStr)} style={{ ...dateBtn, background: 'var(--accent)', color: '#08130a', border: '1px solid var(--accent)' }}>วันนี้</button>
@@ -1256,32 +1257,6 @@ export default function Dashboard() {
                       (groups[c.productKey] = groups[c.productKey] || { key: c.productKey, label: c.productLabel, img: c.productImg, cards: [] }).cards.push(c);
                     });
                     const productRows = Object.values(groups).sort((a, b) => a.label.localeCompare(b.label));
-
-                    const hourHeader = (hours, halfStartMs) => (
-                      <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
-                        <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '5px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>
-                          กะ / ผลิต
-                        </div>
-                        {hours.map((h, i) => {
-                          const slotMs = halfStartMs + i * 3600000;
-                          const isNow = nowMs >= slotMs && nowMs < slotMs + 3600000;
-                          const isShiftBound = h === 8 || h === 20;
-                          return (
-                            <div key={i} style={{
-                              flex: 1, minWidth: 0, textAlign: 'center',
-                              fontSize: 11, fontWeight: isNow ? 800 : isShiftBound ? 600 : 400,
-                              color: isNow ? '#4d9fff' : isShiftBound ? 'var(--text2)' : 'var(--muted)',
-                              padding: '5px 0', lineHeight: 1,
-                              borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
-                              background: isNow ? 'rgba(77,159,255,0.12)' : 'transparent',
-                            }}>
-                              {String(h).padStart(2,'0')}:00
-                              {isNow && <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#4d9fff', margin: '2px auto 0' }} />}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
 
                     // ช่วง break_policies ที่ตรงกับ half นี้ (เป็น [startMs, endMs]) — ใช้ทั้งวาดแถบและกันการ์ดวางทับเวลาพัก
                     const getBreakIntervals = (half) => breakPolicies
@@ -1742,42 +1717,66 @@ export default function Dashboard() {
                     return (
                       <Fragment>
                         {plannerStrip}
-                        {HALVES.map(half => (
-                      <div key={half.key} style={{ borderTop: half.key === 'pm' ? '2px solid var(--border2)' : 'none' }}>
-                        {hourHeader(half.hours, half.startMs)}
+                        {/* พาร์ทละ 1 บล็อก — ป้าย/รูปใหญ่อันเดียวครอบ 2 แถบเวลา (☀️ 08–20 บน / 🌙 20–08 ล่าง)
+                            หัวชั่วโมงแสดงเวลาคู่บน-ล่างในคอลัมน์เดียวกัน (โครงเดียวกับบอร์ดหน้าจัดการไลน์) */}
+                        <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+                          <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 10, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1 }}>
+                            <span>☀️ กะเช้า (แถบบน)</span>
+                            <span>🌙 กะดึก (แถบล่าง)</span>
+                          </div>
+                          {HALVES[0].hours.map((h, i) => {
+                            const hPm = HALVES[1].hours[i];
+                            const amSlot = HALVES[0].startMs + i * 3600000;
+                            const pmSlot = HALVES[1].startMs + i * 3600000;
+                            const isNowAm = nowMs >= amSlot && nowMs < amSlot + 3600000;
+                            const isNowPm = nowMs >= pmSlot && nowMs < pmSlot + 3600000;
+                            return (
+                              <div key={i} style={{
+                                flex: 1, minWidth: 0, textAlign: 'center', padding: '3px 0', lineHeight: 1.3,
+                                borderRight: '1px solid var(--border)',
+                                background: (isNowAm || isNowPm) ? 'rgba(77,159,255,0.12)' : 'transparent',
+                              }}>
+                                <div style={{ fontSize: 10, fontWeight: isNowAm ? 800 : 500, color: isNowAm ? '#4d9fff' : 'var(--text2)' }}>{String(h).padStart(2, '0')}:00</div>
+                                <div style={{ fontSize: 9, fontWeight: isNowPm ? 800 : 400, color: isNowPm ? '#4d9fff' : 'var(--muted)' }}>{String(hPm).padStart(2, '0')}:00</div>
+                              </div>
+                            );
+                          })}
+                        </div>
                         {productRows.map((row, ri) => {
                           const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
                           const rowDemand = row.cards.reduce((a, c) => a + (c.qty || 0), 0);
                           const doneCount = row.cards.filter(c => c.isDone).length;
-                          const delayed   = computeQueuedPositionsFull(row.cards).map(item => pctForHalf(item, half)).filter(p => p && p.isDelayed).length;
+                          const delayed   = computeQueuedPositionsFull(row.cards).filter(p => p.isDelayed).length;
                           const isOpen    = row.cards.some(c => c.sessionOpen);
                           const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
                           const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
 
                           return (
-                            <div key={row.key} style={{ display: 'flex', height: 38, borderTop: ri > 0 ? '1px solid var(--border2)' : 'none', overflow: 'hidden' }}>
-                              {/* Left summary */}
-                              <div style={{ width: LEFT_W, flexShrink: 0, padding: '3px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
-                                {row.img && <img src={row.img} alt="" style={{ width: 24, height: 24, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />}
-                                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, minWidth: 0 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                                  <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: LEFT_W - 16 }}>{row.label}</span>
-                                  {delayed > 0 && <span style={{ fontSize: 10, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}ใบ</span>}
-                                  {isOpen && delayed === 0 && <span style={{ fontSize: 9, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
-                                  <span style={{ fontSize: 14, fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
-                                  <span style={{ fontSize: 10, color: 'var(--muted)' }}>/{rowDemand} ชิ้น</span>
-                                  <span style={{ fontSize: 10, color: 'var(--muted)' }}>{doneCount}/{row.cards.length}ใบ</span>
-                                </div>
+                            <div key={row.key} style={{ display: 'flex', borderTop: '1px solid var(--border2)', overflow: 'hidden' }}>
+                              {/* Left summary — ป้ายเดียวครอบทั้ง 2 แถบเวลา */}
+                              <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden' }}>
+                                {row.img && <img src={row.img} alt="" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
+                                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0 }}>
+                                  <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>{row.label}</div>
+                                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: 15, fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
+                                    <span style={{ fontSize: 10, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
+                                    {delayed > 0 && <span style={{ fontSize: 10, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}ใบ</span>}
+                                    {isOpen && delayed === 0 && <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
+                                  </div>
                                 </div>
                               </div>
-                              {renderTimeline(row.cards, half, `${half.key}-${ri}`)}
+                              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                                {HALVES.map(half => (
+                                  <div key={half.key} style={{ height: 36, display: 'flex', position: 'relative', borderTop: half.key === 'pm' ? '1px dashed var(--border)' : 'none' }}>
+                                    {renderTimeline(row.cards, half, `${half.key}-${ri}`)}
+                                    <span style={{ position: 'absolute', left: 3, bottom: 1, fontSize: 9, opacity: 0.55, zIndex: 2, pointerEvents: 'none' }}>{half.key === 'am' ? '☀️' : '🌙'}</span>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           );
                         })}
-                      </div>
-                        ))}
                       </Fragment>
                     );
                   })()}
