@@ -11,7 +11,7 @@
  * ตาราง: qa_parts, qa_inspection_items (MAIN project) — เขียนได้เฉพาะ qa:manage
  */
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
-import { supabase } from '../supabaseClient';
+import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
@@ -126,6 +126,8 @@ export default function QAInspectionSetup() {
   const [items, setItems] = useState([]);
   const [search, setSearch] = useState('');
   const [partModal, setPartModal] = useState(null);   // { ...form, id? }
+  const [bomOptions, setBomOptions] = useState(null); // null = ยังไม่โหลด (โหลดครั้งแรกที่เปิด modal)
+  const [bomSearch, setBomSearch] = useState('');
   const [itemModal, setItemModal] = useState(null);   // { ...form, id?, pos_x?, pos_y? }
   const [placingId, setPlacingId] = useState(null);   // item id ที่กำลังรอคลิกวางตำแหน่ง
   const [uploading, setUploading] = useState(false);
@@ -153,6 +155,59 @@ export default function QAInspectionSetup() {
     setItems((data || []).sort(balloonSort));
   }, []);
   useEffect(() => { loadItems(selId); setPlacingId(null); }, [selId, loadItems]);
+
+  /* ตัวเลือกพาร์ทจากฐานข้อมูล BOM ฝั่ง DR (dr_products + bom_items) —
+     อ่านอย่างเดียวผ่าน supabaseDR (anon), โหลด lazy ครั้งแรกที่เปิด modal เพิ่ม Part */
+  useEffect(() => {
+    if (!partModal || bomOptions !== null) return;
+    let alive = true;
+    (async () => {
+      const [{ data: prods }, { data: boms }] = await Promise.all([
+        supabaseDR.from('dr_products').select('id, name, code, mat_no, p_no, customer, line_name').eq('is_active', true).order('name'),
+        supabaseDR.from('bom_items').select('id, product_id, mat_no, part_no, part_name, supplier').eq('is_active', true).order('part_name'),
+      ]);
+      if (!alive) return;
+      const prodById = Object.fromEntries((prods || []).map(p => [p.id, p]));
+      const opts = [
+        ...(prods || []).map(p => ({
+          key: `p-${p.id}`, tag: 'Product',
+          part_no: p.p_no || p.mat_no || p.code || '', part_name: p.name || '',
+          customer: p.customer || '', line_name: p.line_name || '',
+          sub: [p.mat_no, p.line_name].filter(Boolean).join(' · '),
+        })),
+        ...(boms || []).map(b => {
+          const parent = prodById[b.product_id];
+          return {
+            key: `b-${b.id}`, tag: 'BOM',
+            part_no: b.part_no || b.mat_no || '', part_name: b.part_name || '',
+            customer: parent?.customer || '', line_name: parent?.line_name || '',
+            sub: `ใน BOM: ${parent?.name || '—'}${b.supplier ? ` · ${b.supplier}` : ''}`,
+          };
+        }),
+      ].filter(o => o.part_no || o.part_name);
+      setBomOptions(opts);
+    })();
+    return () => { alive = false; };
+  }, [partModal, bomOptions]);
+
+  const bomMatches = useMemo(() => {
+    const q = bomSearch.trim().toLowerCase();
+    if (!bomOptions || q.length < 2) return [];
+    return bomOptions
+      .filter(o => [o.part_no, o.part_name, o.sub].some(v => (v || '').toLowerCase().includes(q)))
+      .slice(0, 8);
+  }, [bomOptions, bomSearch]);
+
+  const pickBomOption = (o) => {
+    setPartModal(f => ({
+      ...f,
+      part_no: o.part_no || f.part_no,
+      part_name: o.part_name || f.part_name,
+      customer: o.customer || f.customer,
+      line_name: lines.includes(o.line_name) ? o.line_name : f.line_name,
+    }));
+    setBomSearch('');
+  };
 
   const shownParts = parts.filter(p => {
     const q = search.trim().toLowerCase();
@@ -494,7 +549,35 @@ export default function QAInspectionSetup() {
 
       {/* ── Part modal ── */}
       {partModal && (
-        <Modal title={partModal.id ? `✏️ แก้ไข ${partModal.part_no}` : '➕ เพิ่ม Part'} onClose={() => setPartModal(null)}>
+        <Modal title={partModal.id ? `✏️ แก้ไข ${partModal.part_no}` : '➕ เพิ่ม Part'} onClose={() => { setPartModal(null); setBomSearch(''); }}>
+          {/* เลือกจากฐานข้อมูล BOM / Product Master → เติมฟอร์มให้ (แก้ทับได้) */}
+          <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: 'var(--bg3)', border: '1px dashed var(--border2)' }}>
+            <Field label="🔍 เลือกจากฐานข้อมูล BOM / Product Master">
+              <input style={inputSt} value={bomSearch} onChange={e => setBomSearch(e.target.value)}
+                placeholder={bomOptions === null ? 'กำลังโหลดฐานข้อมูล…' : `พิมพ์ค้นหา Part No. / ชื่อพาร์ท / MAT.NO (${bomOptions.length.toLocaleString()} รายการ)`} />
+            </Field>
+            {bomSearch.trim().length >= 2 && (
+              <div style={{ marginTop: 8, maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {bomMatches.map(o => (
+                  <button key={o.key} onClick={() => pickBomOption(o)}
+                    style={{
+                      textAlign: 'left', padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                      background: 'var(--card)', border: '1px solid var(--border)',
+                      display: 'flex', gap: 8, alignItems: 'center',
+                    }}>
+                    <Chip label={o.tag} color={o.tag === 'BOM' ? '#f59e0b' : '#4d9fff'} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>{o.part_no || '—'} <span style={{ fontWeight: 500, color: 'var(--text2)' }}>{o.part_name}</span></div>
+                      {o.sub && <div style={{ fontSize: 10.5, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.sub}</div>}
+                    </div>
+                  </button>
+                ))}
+                {bomMatches.length === 0 && bomOptions !== null && (
+                  <div style={{ fontSize: 12, color: 'var(--muted)', padding: '6px 2px' }}>ไม่พบ — กรอกเองด้านล่างได้เลย</div>
+                )}
+              </div>
+            )}
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="Part No. *"><input style={inputSt} value={partModal.part_no} onChange={e => setPartModal(f => ({ ...f, part_no: e.target.value }))} /></Field>
             <Field label="Part Name"><input style={inputSt} value={partModal.part_name} onChange={e => setPartModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
