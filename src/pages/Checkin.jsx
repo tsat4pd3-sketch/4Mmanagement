@@ -808,13 +808,20 @@ export default function Checkin() {
   // ไลน์ย่อยเห็นของตัวเอง + พนักงานที่ผูกกับไลน์หลัก (พื้นที่เดียวกัน) — ไม่ใช่กรอง line_id ตรงเป๊ะ
   const selLineFamilyIds = selLine ? getLineFamilyIds(lines, Number(selLine)) : null;
 
+  // "ทุกไลน์ใน section" ต้องขยายเป็นครอบครัวไลน์แบบเดียวกับตอนเลือกไลน์เจาะจง —
+  // ไลน์แม่/ไลน์ย่อยบางไลน์ไม่ได้กรอก section ของตัวเอง ถ้ากรองแค่ section ตรงเป๊ะ
+  // พนักงานที่ผูกกับไลน์เหล่านั้นจะหายทั้งที่เลือกไลน์ตรงๆ แล้วเห็น (เคยเกิดกับไลน์ย่อยที่มี
+  // section แต่ไลน์แม่ไม่มี — เลือกไลน์ย่อยเจอคน เลือกทุกไลน์กลับว่าง)
+  const sectionFamilyIds = selSection ? (() => {
+    const s = new Set();
+    linesForSection.forEach(l => { getLineFamilyIds(lines, l.id).forEach(id => s.add(id)); });
+    return s;
+  })() : null;
+
   const displayed = employees.filter(emp => {
     if (filterShift && emp.assignedShift && emp.assignedShift !== shiftInfo.shift) return false;
     if (selLine)    return selLineFamilyIds?.size ? selLineFamilyIds.has(emp.line_id) : emp.line_id === Number(selLine);
-    if (selSection) {
-      const lineIds = linesForSection.map(l => l.id);
-      return lineIds.includes(emp.line_id);
-    }
+    if (selSection) return sectionFamilyIds.has(emp.line_id);
     return true;
   });
 
