@@ -16,12 +16,11 @@ export const DEPT_LABEL = {
   qa:              'QA',
 }
 
+// DB constraint jigs_equipment_type_check allows only these three — keep in sync.
 export const EQUIP_TYPE_LABEL = {
   jig:     'JIG',
   die:     'Die',
   machine: 'Machine',
-  fixture: 'Fixture',
-  tool:    'Tool',
 }
 
 export function computeNextDue(lastInspectedAt, frequency) {

@@ -10,6 +10,7 @@ import { FREQ_LABEL, DEPT_LABEL, EQUIP_TYPE_LABEL } from '../lib/pmSchedule'
 import { getOrCreateChecklist, setChecklistFrequency } from '../lib/pmChecklists'
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
+import SpinAnnotator from '../components/SpinAnnotator'
 
 const DEPT_COLORS = {
   maintenance:     '#fb923c',
@@ -40,7 +41,7 @@ function newCheckpoint(extra = {}) {
   return {
     _key: crypto.randomUUID(), name: '', type: 'variable',
     axis: null, category: null, checking_method: null, unit: '', nominal: '', lsl: '', usl: '', lcl: '', ucl: '',
-    x_pos: null, y_pos: null,
+    x_pos: null, y_pos: null, _frameKey: null,
     group_name: '', description: '', image_path: null, _imgFile: null, _imgPreview: null,
     ...extra,
   }
@@ -362,17 +363,23 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [usageLine, setUsageLine] = useState('')
   const [checkpoints, setCheckpoints] = useState([])
   const [layoutType, setLayoutType] = useState(editJig?.layout_type ?? 'image_pin')
-  const [imageFile, setImageFile] = useState(null)
-  const [imagePreview, setImagePreview] = useState(editJig?.image_path ? getPublicUrl(editJig.image_path) : null)
+  // 360° spin: multiple photo frames per equipment (1 frame = single image, ≥8 = spin)
+  const [frames, setFrames] = useState([])   // [{ _key, id?, image_path?, _file?, _preview, title }]
+  const [frameIdx, setFrameIdx] = useState(0)
+  const [imgBusy, setImgBusy] = useState(false)
   const [activePinKey, setActivePinKey] = useState(null)
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  const [lineOptions, setLineOptions] = useState([])
   useEffect(() => {
     getCurrentUserId().then(setUserId)
     supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').order('line_name').order('sort_order')
       .then(({ data }) => setMachineOptions(data ?? []))
+    // production lines (MAIN project) for the usage "นับยอดจากไลน์" dropdown
+    supabase.from('production_lines').select('name').order('name')
+      .then(({ data }) => setLineOptions((data ?? []).map(l => l.name).filter(Boolean)))
   }, [])
 
   useEffect(() => {
@@ -380,10 +387,17 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     getOrCreateChecklist(editJig.id, 'mtn', department, userId).then(async (cl) => {
       if (!cl) return
       setFrequency(cl.frequency)
+      // load spin frames (jig_images); fall back to jigs.image_path as one frame
+      const { data: imgs } = await supabaseDR.from('jig_images').select('*').eq('jig_id', editJig.id).order('sort')
+      let fr = (imgs ?? []).map(im => ({ _key: im.id, id: im.id, image_path: im.image_path, _preview: getPublicUrl(im.image_path), title: im.title }))
+      if (!fr.length && editJig.image_path) fr = [{ _key: 'legacy', image_path: editJig.image_path, _preview: getPublicUrl(editJig.image_path), title: null }]
+      setFrames(fr); setFrameIdx(0)
+      const frameKeyById = Object.fromEntries(fr.filter(f => f.id).map(f => [f.id, f._key]))
       const { data: cps } = await supabaseDR.from('jig_checkpoints').select('*').eq('checklist_id', cl.id).order('sort_order')
       setCheckpoints((cps ?? []).map(c => ({
         ...c, _key: c.id,
         group_name: c.group_name ?? '', description: c.description ?? '',
+        _frameKey: (c.image_id && frameKeyById[c.image_id]) || fr[0]?._key || null,
         _imgFile: null, _imgPreview: c.image_path ? getPublicUrl(c.image_path) : null,
       })))
       const { data: plan } = await supabaseDR.from('pm_plans').select('plan_type, usage_threshold, usage_source_line').eq('checklist_id', cl.id).maybeSingle()
@@ -443,7 +457,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     const copy = newCheckpoint({
       name: src.name, type: src.type, category: src.category, checking_method: src.checking_method,
       unit: src.unit, group_name: src.group_name, axis: src.axis === 'Y' ? 'X' : 'Y',
-      x_pos: src.x_pos, y_pos: src.y_pos,
+      x_pos: src.x_pos, y_pos: src.y_pos, _frameKey: src._frameKey,
       image_path: src.image_path, _imgPreview: src._imgPreview,
     })
     return [...prev.slice(0, i + 1), copy, ...prev.slice(i + 1)]
@@ -457,29 +471,56 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     updateCp(key, { _imgFile: compressed, _imgPreview: URL.createObjectURL(compressed) })
   }
 
-  const handleImage = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    const compressed = await imageCompression(file, { maxSizeMB: 0.3, maxWidthOrHeight: 1200 })
-    setImageFile(compressed)
-    setImagePreview(URL.createObjectURL(compressed))
+  // spin frames — compress on pick, upload on save
+  const addFrames = async (fileList) => {
+    setImgBusy(true)
+    try {
+      const added = []
+      for (const file of Array.from(fileList)) {
+        const compressed = await imageCompression(file, { maxSizeMB: 0.4, maxWidthOrHeight: 1400 })
+        added.push({ _key: crypto.randomUUID(), _file: compressed, _preview: URL.createObjectURL(compressed), title: null })
+      }
+      setFrames(prev => [...prev, ...added])
+    } finally { setImgBusy(false) }
+  }
+  const removeFrame = (key) => {
+    setFrames(prev => {
+      const next = prev.filter(f => f._key !== key)
+      setFrameIdx(fi => Math.max(0, Math.min(fi, next.length - 1)))
+      return next
+    })
+    // unpin any checkpoint that lived on the removed frame
+    setCheckpoints(prev => prev.map(c => c._frameKey === key ? { ...c, x_pos: null, y_pos: null, _frameKey: null } : c))
+    if (activePinKey) setActivePinKey(null)
   }
 
   const handleSave = async () => {
     if (!name.trim()) { setError('กรุณาใส่ชื่ออุปกรณ์'); return }
     if (addMode === 'workstation' && !isEdit && !machineId) { setError('กรุณาเลือกเครื่องจักรจาก Floor Map'); return }
     if (checkpoints.some(c => !c.name.trim())) { setError('กรุณาใส่ชื่อทุกจุดตรวจสอบ'); return }
+    if (layoutType === 'image_pin' && frames.length >= 2 && frames.length < 8) {
+      setError(`โหมด spin ต้องมีอย่างน้อย 8 เฟรม (ตอนนี้ ${frames.length}) — เพิ่มให้ครบ หรือลบให้เหลือรูปเดียว`); return
+    }
     setSaving(true); setError('')
     try {
       const jigId = editJig?.id ?? crypto.randomUUID()
-      let imagePath = layoutType === 'list' ? null : (editJig?.image_path ?? null)
 
-      if (layoutType === 'image_pin' && imageFile) {
-        const ext = imageFile.name.split('.').pop()
-        imagePath = `jigs/${jigId}/jig.${ext}`
-        const { error: uploadErr } = await supabaseDR.storage.from('jig-images').upload(imagePath, imageFile, { upsert: true })
-        if (uploadErr) throw uploadErr
+      // ── resolve spin frames: upload new files, keep existing paths ──
+      const spinMode = layoutType === 'image_pin' && frames.length >= 2
+      const resolvedFrames = []
+      if (layoutType === 'image_pin') {
+        for (const f of frames) {
+          let path = f.image_path ?? null
+          if (f._file) {
+            const ext = (f._file.name?.split('.').pop() || 'jpg').toLowerCase()
+            path = `jigs/${jigId}/frame-${f._key}.${ext}`
+            const { error: upErr } = await supabaseDR.storage.from('jig-images').upload(path, f._file, { upsert: true })
+            if (upErr) throw upErr
+          }
+          if (path) resolvedFrames.push({ key: f._key, path, title: f.title ?? null })
+        }
       }
+      const imagePath = layoutType === 'list' ? null : (resolvedFrames[0]?.path ?? null)
 
       const { error: jigErr } = await supabaseDR.from('jigs').upsert({
         id: jigId, name: name.trim(), description: description.trim() || null,
@@ -492,6 +533,18 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         equipment_type: equipType, equipment_category: equipCategory,
       })
       if (jigErr) throw jigErr
+
+      // ── replace jig_images (spin frames) → map each frameKey to its new row id ──
+      const frameIdByKey = {}
+      await supabaseDR.from('jig_images').delete().eq('jig_id', jigId)
+      if (resolvedFrames.length) {
+        const { data: insImgs, error: imgErr } = await supabaseDR.from('jig_images')
+          .insert(resolvedFrames.map((f, i) => ({ jig_id: jigId, image_path: f.path, sort: i, is_spin_frame: spinMode, title: f.title })))
+          .select('id, image_path')
+        if (imgErr) throw imgErr
+        const idByPath = Object.fromEntries((insImgs ?? []).map(r => [r.image_path, r.id]))
+        resolvedFrames.forEach(f => { frameIdByKey[f.key] = idByPath[f.path] })
+      }
 
       const cl = await getOrCreateChecklist(jigId, 'mtn', department, userId)
       if (!cl) throw new Error('Failed to create checklist')
@@ -539,6 +592,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             ucl: c.ucl !== '' && c.ucl != null ? Number(c.ucl) : null,
             x_pos: layoutType === 'list' ? null : (c.x_pos ?? null),
             y_pos: layoutType === 'list' ? null : (c.y_pos ?? null),
+            image_id: layoutType === 'list' ? null : (frameIdByKey[c._frameKey] ?? frameIdByKey[resolvedFrames[0]?.key] ?? null),
             sort_order: i,
             group_name: (c.group_name || '').trim() || null,
             group_order: groupOrderMap[(c.group_name || '').trim()] ?? null,
@@ -577,7 +631,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     <CheckpointCard key={cp._key} cp={cp} label={cpLabels[cp._key]}
       onChange={patch => updateCp(cp._key, patch)} onDelete={() => deleteCp(cp._key)}
       onDuplicate={() => duplicateCp(cp._key)} onCpImage={e => handleCpImage(cp._key, e)}
-      isPinning={activePinKey === cp._key} onPinToggle={() => togglePin(cp._key)} hasImage={!!imagePreview}
+      isPinning={activePinKey === cp._key} onPinToggle={() => togglePin(cp._key)} hasImage={frames.length > 0}
       categories={categories} methods={methods} />
   )
 
@@ -705,6 +759,11 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                 <button key={v} onClick={() => setPlanType(v)} title={hint} style={S.modeBtn(planType === v)}>{label}</button>
               ))}
             </div>
+            {(planType === 'time' || planType === 'hybrid') && (
+              <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
+                🗓️ <b>ตามเวลา</b> = ใช้รอบจาก “ความถี่การตรวจ” ด้านบน (ตอนนี้: <b style={{ color: 'var(--accent)' }}>{FREQ_LABEL[frequency] ?? frequency}</b>) → ครบกำหนด = วันตรวจล่าสุด + รอบนั้น
+              </div>
+            )}
             {(planType === 'usage' || planType === 'hybrid') && (
               <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div>
@@ -713,10 +772,13 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                 </div>
                 <div>
                   <label style={S.label}>นับยอดจากไลน์</label>
-                  <input value={usageLine} onChange={e => setUsageLine(e.target.value)} placeholder={lineName || 'เช่น Line-A'} />
+                  <select value={usageLine} onChange={e => setUsageLine(e.target.value)}>
+                    <option value="">— ใช้ไลน์ของอุปกรณ์{lineName ? ` (${lineName})` : ''} —</option>
+                    {(usageLine && !lineOptions.includes(usageLine) ? [usageLine, ...lineOptions] : lineOptions).map(l => <option key={l} value={l}>{l}</option>)}
+                  </select>
                 </div>
                 <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)' }}>
-                  ระบบนับ prod_orders.qty ของไลน์นี้ตั้งแต่ PM ครั้งก่อน เทียบ threshold → คำนวณวันครบ + health score (เว้นไลน์ว่าง = ใช้ไลน์ของอุปกรณ์)
+                  ระบบนับ prod_orders.qty ของไลน์นี้ตั้งแต่ PM ครั้งก่อน เทียบ threshold → คำนวณวันครบ + health score · เลือกไลน์จากฐานข้อมูลไลน์ผลิต (เว้นว่าง = ใช้ไลน์ของอุปกรณ์)
                 </div>
               </div>
             )}
@@ -734,32 +796,20 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           {layoutType === 'image_pin' && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <label style={{ ...S.label, marginBottom: 0 }}>รูป JIG</label>
-                {imagePreview && pinnedCount > 0 && <span style={{ fontSize: 11, color: 'var(--accent)' }}>📍 {pinnedCount}/{checkpoints.length} จุดวางแล้ว</span>}
+                <label style={{ ...S.label, marginBottom: 0 }}>รูป / เฟรม 360° + จุดตรวจ</label>
+                {frames.length > 0 && pinnedCount > 0 && <span style={{ fontSize: 11, color: 'var(--accent)' }}>📍 {pinnedCount}/{checkpoints.length} จุดวางแล้ว</span>}
               </div>
-              {!imagePreview ? (
-                <label style={{ display: 'block', cursor: 'pointer' }}>
-                  <input type="file" accept="image/*" onChange={handleImage} style={{ display: 'none' }} />
-                  <div style={{ borderRadius: 8, border: '2px dashed var(--border2)', height: 110, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, color: 'var(--muted)' }}>
-                    <span style={{ fontSize: 24 }}>📷</span>
-                    <span style={{ fontSize: 13 }}>คลิกเพื่ออัพโหลดรูป JIG</span>
-                  </div>
-                </label>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <ImageAnnotator imageUrl={imagePreview} checkpoints={grouped.ordered}
-                    labels={grouped.ordered.map(c => cpLabels[c._key])} activePinKey={activePinKey}
-                    onImageClick={(x, y) => { updateCp(activePinKey, { x_pos: x, y_pos: y }); setActivePinKey(null) }}
-                    onPinRemove={(key) => { updateCp(key, { x_pos: null, y_pos: null }); if (activePinKey === key) setActivePinKey(null) }} />
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>{activePinKey ? '✦ คลิกที่รูปเพื่อวางหมายเลข' : 'กดปุ่ม "วางตำแหน่ง" ที่จุดตรวจด้านล่าง'}</p>
-                    <div style={{ display: 'flex', gap: 10 }}>
-                      <label style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer' }}><input type="file" accept="image/*" onChange={handleImage} style={{ display: 'none' }} />เปลี่ยนรูป</label>
-                      <button onClick={() => { setImageFile(null); setImagePreview(null); setActivePinKey(null) }} style={{ fontSize: 11, color: 'var(--red)', background: 'none', border: 'none', cursor: 'pointer' }}>ลบรูป</button>
-                    </div>
-                  </div>
-                </div>
-              )}
+              <SpinAnnotator
+                frames={frames} frameIdx={frameIdx} setFrameIdx={setFrameIdx}
+                arming={!!activePinKey} busy={imgBusy}
+                pins={grouped.ordered
+                  .filter(c => c.x_pos != null && ((c._frameKey ?? frames[0]?._key) === frames[frameIdx]?._key))
+                  .map(c => ({ key: c._key, x: c.x_pos, y: c.y_pos, label: cpLabels[c._key],
+                    color: activePinKey === c._key ? 'var(--accent)' : categoryColor(c.category) }))}
+                onPlace={(x, y) => { updateCp(activePinKey, { x_pos: x, y_pos: y, _frameKey: frames[frameIdx]?._key ?? null }); setActivePinKey(null) }}
+                onRemovePin={(key) => { updateCp(key, { x_pos: null, y_pos: null }); if (activePinKey === key) setActivePinKey(null) }}
+                onAddFrames={addFrames} onRemoveFrame={removeFrame} />
+              {activePinKey && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>✦ หมุนไปเฟรมที่เห็นจุดชัด แล้วคลิกวางตำแหน่ง</p>}
             </div>
           )}
 
@@ -884,7 +934,9 @@ export default function PMSetup() {
       })
     }
 
-    setJigs(jigData ?? [])
+    // show only equipment that has a checklist in the selected department
+    // (each dept tab = its own responsibility; equipment "belongs" via its checklist)
+    setJigs((jigData ?? []).filter(j => clMap[j.id]))
     setCpCounts(counts)
     setPinFlags(pins)
     setLoading(false)
