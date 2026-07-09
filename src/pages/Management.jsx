@@ -1204,7 +1204,7 @@ export default function Management() {
                 const productKey = (nameByMatNo[o.mat_no] || s.dr_products?.name || '').trim().toUpperCase() || o.mat_no || 'unknown';
                 const productLabel = nameByMatNo[o.mat_no] || s.dr_products?.name || o.mat_no || 'ไม่ทราบ P/N';
                 const productImg = imgByMatNo[o.mat_no] || '';
-                cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, productImg, shift: s.shift, sessionOpen: s.status === 'open' });
+                cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, productImg, shift: s.shift, sessionOpen: s.status === 'open', line_name: s.line_name });
               });
             });
             return cards;
@@ -1213,6 +1213,8 @@ export default function Management() {
           const allCards = buildCards(sessions);
 
           // ── Downtime ของไลน์นี้ — แถบ ⛔ บนไทม์ไลน์ + สาเหตุใน tooltip ของใบที่ดีเลย์/ปิดช้า ──
+          // บอร์ดนี้รวมหลาย sub-line (เช่น Line 60 + Line 61) — ต้องจำว่า downtime เป็นของ sub-line ไหน
+          // ไม่งั้นเหตุของพาร์ทหนึ่งจะไปโผล่เป็นแถบ/สาเหตุบนแถวของอีกพาร์ท
           const dtWindows = sessions.flatMap(sx => (sx.dtLogs || []).map(d => {
             const ds = d.started_at ? new Date(d.started_at).getTime() : null;
             if (ds == null) return null;
@@ -1222,11 +1224,14 @@ export default function Management() {
               machine: d.machine_no || '', desc: d.description || '',
               planned: d.dr_downtime_types?.category === 'planned',
               min: d.duration_min || Math.round((de - ds) / 60000),
+              line_name: sx.line_name,
             };
           }).filter(Boolean)).sort((a, b) => a.s - b.s);
-          const dtLabel = (w) => `⛔ ${w.name}${w.machine ? ` @${w.machine}` : ''} ${fmtMs(w.s)}–${fmtMs(w.e)} (${w.min}น.)${w.desc ? ` — ${w.desc}` : ''}`;
-          const dtTooltip = (a, b) => {
-            const hits = dtWindows.filter(w => w.s < b && w.e > a);
+          const multiSubLine = new Set(sessions.map(sx => sx.line_name)).size > 1;
+          const dtLabel = (w) => `⛔ ${multiSubLine && w.line_name ? `[${w.line_name}] ` : ''}${w.name}${w.machine ? ` @${w.machine}` : ''} ${fmtMs(w.s)}–${fmtMs(w.e)} (${w.min}น.)${w.desc ? ` — ${w.desc}` : ''}`;
+          // สาเหตุดีเลย์ของใบกัมบัง — เฉพาะ downtime ของ sub-line เดียวกับใบนั้น
+          const dtTooltip = (a, b, lineName) => {
+            const hits = dtWindows.filter(w => w.s < b && w.e > a && (!lineName || w.line_name === lineName));
             return hits.length ? ` · สาเหตุที่เป็นไปได้: ${hits.map(dtLabel).join(' · ')}` : ' · ไม่มีบันทึก downtime ในช่วงนี้';
           };
 
@@ -1347,21 +1352,21 @@ export default function Management() {
               border: `1px solid ${totalDelayed > 0 ? 'rgba(239,68,68,0.45)' : hasOpen ? 'rgba(34,197,94,0.35)' : 'var(--border2)'}`,
               borderRadius: 10, overflow: 'hidden',
             }}>
-              {/* Header */}
-              <div style={{ padding: '6px 12px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg2)' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>
+              {/* Header — ขนาดอ่านได้จากระยะยืนดูจอ ไม่ใช่ตัวจิ๋วทั้งที่พื้นที่แนวนอนเหลือเยอะ */}
+              <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, background: 'var(--bg2)' }}>
+                <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>
                   📊 Heijunka — {selectedLine}
-                  {isHistorical && <span style={{ marginLeft: 6, fontSize: 8, padding: '1px 6px', borderRadius: 10, background: 'rgba(168,85,247,0.15)', color: '#a855f7' }}>📅 ย้อนหลัง {boardDate}</span>}
+                  {isHistorical && <span style={{ marginLeft: 8, fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'rgba(168,85,247,0.15)', color: '#a855f7' }}>📅 ย้อนหลัง {boardDate}</span>}
                 </span>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <button onClick={() => shiftBoardDate(-1)} style={{ padding: '1px 7px', borderRadius: 6, cursor: 'pointer', fontSize: 9, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>◀</button>
+                <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button onClick={() => shiftBoardDate(-1)} style={{ padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>◀</button>
                   <input type="date" value={boardDate} max={todayWd} onChange={e => e.target.value && setBoardDate(e.target.value)}
-                    style={{ padding: '1px 5px', borderRadius: 6, fontSize: 9, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
-                  <button onClick={() => shiftBoardDate(1)} disabled={boardDate >= todayWd} style={{ padding: '1px 7px', borderRadius: 6, cursor: boardDate >= todayWd ? 'default' : 'pointer', fontSize: 9, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)', opacity: boardDate >= todayWd ? 0.4 : 1 }}>▶</button>
+                    style={{ padding: '3px 8px', borderRadius: 6, fontSize: 12, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
+                  <button onClick={() => shiftBoardDate(1)} disabled={boardDate >= todayWd} style={{ padding: '3px 10px', borderRadius: 6, cursor: boardDate >= todayWd ? 'default' : 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)', opacity: boardDate >= todayWd ? 0.4 : 1 }}>▶</button>
                   {boardDate !== todayWd && (
-                    <button onClick={() => setBoardDate(todayWd)} style={{ padding: '1px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 9, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: '#08130a' }}>วันนี้</button>
+                    <button onClick={() => setBoardDate(todayWd)} style={{ padding: '3px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: '#08130a' }}>วันนี้</button>
                   )}
-                  {totalDelayed > 0 && <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, fontWeight: 700, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>⚠️ ดีเลย์ {totalDelayed} ใบ</span>}
+                  {totalDelayed > 0 && <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, fontWeight: 800, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>⚠️ ดีเลย์ {totalDelayed} ใบ</span>}
                   {(() => {
                     // hierarchy: 1 ชิปต่อไลน์ย่อย แทนป้ายต่อ session
                     const byChild = {};
@@ -1372,7 +1377,7 @@ export default function Management() {
                       const list = [...byChild[ln]].sort((a, b) => (a.shift === b.shift ? 0 : a.shift === 'day' ? -1 : 1));
                       const anyOpen = list.some(sx => sx.status === 'open');
                       return (
-                        <span key={ln} style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, fontWeight: 700,
+                        <span key={ln} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, fontWeight: 700,
                           background: anyOpen ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.12)',
                           color: anyOpen ? '#22c55e' : '#888' }}>
                           {multi && <span style={{ fontWeight: 800 }}>{ln} · </span>}
@@ -1386,17 +1391,17 @@ export default function Management() {
               </div>
               {/* Kanban ที่เปิดอยู่ ต่อ MAT.NO */}
               {matNoChips.length > 0 && (
-                <div style={{ padding: '6px 12px', borderBottom: '1px solid var(--border2)', display: 'flex', gap: 6, flexWrap: 'wrap', background: 'var(--bg)' }}>
-                  <span style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>🎴 Kanban เปิดอยู่:</span>
+                <div style={{ padding: '7px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center', background: 'var(--bg)' }}>
+                  <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>🎴 Kanban เปิดอยู่:</span>
                   {matNoChips.map(([matNo, count]) => (
-                    <span key={matNo} style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, fontWeight: 700, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', fontFamily: 'monospace' }}>
+                    <span key={matNo} style={{ fontSize: 11, padding: '2px 9px', borderRadius: 20, fontWeight: 700, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', fontFamily: 'monospace' }}>
                       {matNo} · {count} ใบ
                     </span>
                   ))}
                 </div>
               )}
               {/* Legend สีสถานะ kanban */}
-              <div style={{ padding: '4px 12px', borderBottom: '1px solid var(--border2)', display: 'flex', gap: 10, flexWrap: 'wrap', background: 'var(--bg)' }}>
+              <div style={{ padding: '6px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', gap: 14, flexWrap: 'wrap', background: 'var(--bg)' }}>
                 {[
                   { c: '#4d9fff', icon: '▶', label: 'กำลังผลิต' },
                   { c: '#22c55e', icon: '✓', label: 'เสร็จแล้ว' },
@@ -1406,18 +1411,18 @@ export default function Management() {
                   { c: '#6b7280', icon: '⏪', label: 'ยิงย้อนหลัง' },
                   { c: '#ef4444', icon: '⛔', label: 'Downtime (แถบบนแถว)' },
                 ].map(item => (
-                  <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span style={{ width: 11, height: 11, borderRadius: 2, background: `${item.c}28`, border: `1.2px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 6, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
-                    <span style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
+                  <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 15, height: 15, borderRadius: 3, background: `${item.c}28`, border: `1.2px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
                   </div>
                 ))}
               </div>
               {/* 🧠 Smart planner — คาดการณ์เวลาเสร็จ / คำแนะนำ OT */}
               {plannerChips.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '5px 12px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
-                  <span style={{ fontSize: 8, fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>🧠 PLANNER</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, padding: '7px 14px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>🧠 PLANNER</span>
                   {plannerChips.map((c, i) => (
-                    <span key={i} style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: `${c.color === 'var(--muted)' ? 'rgba(148,163,184,0.12)' : c.color + '1f'}`, color: c.color, border: `1px solid ${c.color === 'var(--muted)' ? 'rgba(148,163,184,0.3)' : c.color + '55'}` }}>
+                    <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 11px', borderRadius: 10, background: `${c.color === 'var(--muted)' ? 'rgba(148,163,184,0.12)' : c.color + '1f'}`, color: c.color, border: `1px solid ${c.color === 'var(--muted)' ? 'rgba(148,163,184,0.3)' : c.color + '55'}` }}>
                       {c.text}
                     </span>
                   ))}
@@ -1505,8 +1510,12 @@ export default function Management() {
                                 );
                               });
                           })()}
-                          {/* ⛔ แถบ downtime — ชิดขอบบนแถว ชี้เมาส์ดูรายละเอียด */}
-                          {dtWindows.map((w, di) => {
+                          {/* ⛔ แถบ downtime — ชิดขอบบนแถว ชี้เมาส์ดูรายละเอียด
+                              เฉพาะของ sub-line ที่มีใบงานในแถวนี้ ไม่วาดของพาร์ทอื่นปน (แถวไม่มีใบงานให้เห็นครบ) */}
+                          {(() => {
+                            const rowLines = new Set(row.cards.map(c => c.line_name).filter(Boolean));
+                            return dtWindows.filter(w => !rowLines.size || !w.line_name || rowLines.has(w.line_name));
+                          })().map((w, di) => {
                             const l = Math.max(0, (w.s - half.startMs) * pctPerMs);
                             const rgt = Math.min(100, (w.e - half.startMs) * pctPerMs);
                             if (rgt <= 0 || l >= 100 || rgt <= l) return null;
@@ -1527,8 +1536,8 @@ export default function Management() {
                             const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : o.is_backfill ? '⏪' : '▶';
                             const doneQty = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
                             const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
-                            const causeText = isLateDone ? dtTooltip(startMs, new Date(o.confirmed_at).getTime())
-                              : isDelayed ? dtTooltip(startMs, Math.min(nowMs, gridEndMs)) : '';
+                            const causeText = isLateDone ? dtTooltip(startMs, new Date(o.confirmed_at).getTime(), o.line_name)
+                              : isDelayed ? dtTooltip(startMs, Math.min(nowMs, gridEndMs), o.line_name) : '';
                             return (
                               <Fragment key={o.prod_no || oi}>
                               <div
