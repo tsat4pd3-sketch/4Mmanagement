@@ -11,6 +11,7 @@ import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 import { hasPermission, can } from '../utils/permissions';
 import { loadCompanyCalendar, getDayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import { getLineFamilyNames, getLineFamilyIds } from '../utils/lineHierarchy';
+import { inSectionScope } from '../utils/sectionScope';
 import tsLogoUrl from '../assets/TS logo.png';
 import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/changePointChecklist';
 
@@ -1156,7 +1157,7 @@ const STATUS_META = {
 };
 
 function FourMTab() {
-  const { role, section: userSection, lineId: userLineId } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const orgSectionList = useOrgSections();
 
   // Determine if the current user can act on this log at its current stage
@@ -1167,7 +1168,7 @@ function FourMTab() {
     if (log.status !== 'pending') return false;
     // SV step — สิทธิ์ action มาจาก can() ส่วน scoping ยังเป็นตาม role เดิมทุกประการ
     if (!can('four_m', 'approve_sv', role)) return false;
-    if (['admin', 'manager'].includes(role)) return true; // ไม่ scope เหมือนเดิม
+    if (role === 'admin') return true;
     if (role === 'leader') {
       const myLine = lines.find(l => l.id === userLineId);
       if (!myLine) return false;
@@ -1175,12 +1176,13 @@ function FourMTab() {
       // การจัดคนลงจุดของไลน์หลัก (พื้นที่เดียวกัน) ได้ด้วย ไม่ใช่แค่สายลงอย่างเดียว
       return lineFamilyOf(myLine.name).includes(log.line_name);
     }
-    if (role === 'supervisor') {
-      if (!userSection) return false;
+    // role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections) — อนุมัติได้เฉพาะใน scope
+    if (scopeSecs.length) {
       const logLine = lines.find(l => l.name === log.line_name);
-      return normSection(logLine?.section) === normSection(userSection);
+      return inSectionScope(scopeSecs, logLine?.section);
     }
-    return false;
+    if (role === 'manager') return true; // manager ไม่กำหนด scope = ไม่จำกัด เหมือนเดิม
+    return false; // supervisor ที่ไม่มี section = fail-closed เหมือนเดิม
   };
 
   const today = getWorkDate();
@@ -1220,11 +1222,11 @@ function FourMTab() {
       const myLine = lines.find(l => l.id === userLineId);
       return myLine ? getLineFamilyNames(lines, myLine.name) : [];
     }
-    if (role === 'supervisor' && userSection) {
-      return lines.filter(l => normSection(l.section) === normSection(userSection)).map(l => l.name);
+    if (scopeSecs.length) {
+      return lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name);
     }
     return null;
-  }, [role, userSection, userLineId, lines]);
+  }, [role, scopeSecs, userLineId, lines]);
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name, section, parent_line_name').order('name').then(({ data }) => setLines(data || []));
@@ -2153,7 +2155,7 @@ function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilt
 }
 
 function SkillMatrixTab() {
-  const { role, section: userSection, lineId: userLineId } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const vw = useWidth();
   const [skillDefs,      setSkillDefs]      = useState([]);
@@ -2187,7 +2189,7 @@ function SkillMatrixTab() {
     // leader/supervisor เห็นเฉพาะไลน์/ส่วนงานตัวเองเสมอ ไม่ว่า filter ที่เลือกไว้จะเป็นอะไร —
     // บังคับ scope นี้เพิ่มเติมจาก filter อิสระ กันดูข้ามไลน์/ส่วนงานที่ตัวเองไม่ได้ดูแล
     if (role === 'leader' && userLineId) q = q.in('line_id', lineFamilyIdsOf(userLineId));
-    else if (role === 'supervisor' && userSection) q = q.eq('section', userSection);
+    else if (scopeSecs.length) q = q.in('section', scopeSecs);
     if (filterLine) q = q.in('line_id', lineFamilyIdsOf(filterLine));
     else if (filterSection) q = q.eq('section', filterSection);
     if (filterTeam) q = q.eq('team', filterTeam);
@@ -2656,7 +2658,7 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
 
 function MultiSkillFormTab() {
   const vw = useWidth();
-  const { role, section: userSection, lineId: userLineId, signatureUrl: ctxSigUrl, fullName: ctxFullName } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], signatureUrl: ctxSigUrl, fullName: ctxFullName } = useContext(UserContext);
   const canExport = can('report', 'export', role);
 
   const [skillDefs,     setSkillDefs]     = useState([]);
@@ -2738,7 +2740,7 @@ function MultiSkillFormTab() {
     let q = supabase.from('employees').select(sel).eq('is_active', true);
     // leader/supervisor เห็นเฉพาะไลน์/ส่วนงานตัวเองเสมอ ไม่ว่า filter ที่เลือกไว้จะเป็นอะไร
     if (role === 'leader' && userLineId) q = q.in('line_id', lineFamilyIdsOf(userLineId));
-    else if (role === 'supervisor' && userSection) q = q.eq('section', userSection);
+    else if (scopeSecs.length) q = q.in('section', scopeSecs);
     if (filterLine) q = q.in('line_id', lineFamilyIdsOf(filterLine));
     else if (filterSection) q = q.eq('section', filterSection);
     if (filterTeam) q = q.eq('team', filterTeam);

@@ -466,6 +466,30 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
+    if (event === 'shipping_phase_alert') {
+      const a = body.alert;
+      if (!a) return new Response('missing alert', { status: 400 });
+      const chat = resolveEvent(routes, 'shipping_phase_alert');
+      if (chat === null) return json({ ok: true, skipped: true });
+      const groups: { step_name?: string; offset_min?: number; count?: number; items?: { ship_time?: string; deadline?: string; customer?: string; mat_no?: string; qty?: number; status_label?: string }[] }[] = Array.isArray(a.groups) ? a.groups : [];
+      const lines = [
+        `🟠 <b>หลุดเฟสงานส่ง ${a.total} รายการ — เร่งตามก่อนตก due ลูกค้า</b>`, ``,
+        `📅 วันงาน: ${a.work_date}`,
+      ];
+      for (const g of groups) {
+        lines.push(``, `⏱ เฟส "<b>${g.step_name}</b>" (ต้องเสร็จก่อนส่ง ${g.offset_min} นาที) — ${g.count} รอบ:`);
+        for (const it of (g.items ?? []).slice(0, 8)) {
+          lines.push(`  • ส่ง ${it.ship_time} (deadline ${it.deadline}) · ${it.customer} · ${it.mat_no} × ${it.qty} — ${it.status_label}`);
+        }
+        if ((g.items ?? []).length > 8) lines.push(`  • …และอีก ${(g.items ?? []).length - 8} รอบ`);
+      }
+      lines.push(``, `👉 อัปเดตสถานะที่ Customer Demand → Shipping Chart`, `— Smart Logistic`);
+      const itemsText = groups.map((g) => `${g.step_name}: ${(g.items ?? []).map((it) => `${it.ship_time} ${it.mat_no}×${it.qty}`).join(', ')}`).join('\n');
+      const message = pick(routes, 'shipping_phase_alert', { work_date: a.work_date, total: a.total, items: itemsText }, lines.join('\n'));
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
+    }
+
     const { log } = body;
     if (!log) return new Response('missing log', { status: 400 });
     const chat = resolveEvent(routes, 'four_m_status');

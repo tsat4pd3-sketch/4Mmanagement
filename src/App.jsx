@@ -8,6 +8,7 @@ import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 import { loadPermissions, canAccessPage } from './utils/permissions';
+import { effectiveSections } from './utils/sectionScope';
 
 const Register     = lazy(() => import('./pages/Register'));
 const Checkin      = lazy(() => import('./pages/Checkin'));
@@ -18,6 +19,7 @@ const LineSetup    = lazy(() => import('./pages/LineSetup'));
 const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
 const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
+const PlannerSales   = lazy(() => import('./pages/PlannerSales'));
 const Report       = lazy(() => import('./pages/Report'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
@@ -33,6 +35,7 @@ const OrgSetup        = lazy(() => import('./pages/OrgSetup'));
 const PMSetup     = lazy(() => import('./pages/PMSetup'));
 const PMCheckData = lazy(() => import('./pages/PMCheckData'));
 const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
+const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
 const DailyPM     = lazy(() => import('./pages/DailyPM'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
@@ -68,10 +71,12 @@ const NAV_ITEMS = [
   { to: '/line-stock',      icon: '📦', label: 'Store management',       roles: null, group: 'Logistic - Store' },
   { to: '/heijunka',       icon: '🎴', label: 'Kanban Board',             roles: null, group: 'Logistic - Store' },
   { to: '/rack-center',    icon: '🗃️', label: 'Rack Center management',  roles: null, group: 'Logistic - Store' },
-  { to: '/customer-demand', icon: '🚚', label: 'Customer Demand & Shipping', roles: null, group: 'Logistic - Store' },
+  { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           roles: null, group: 'Logistic - Store' },
+  { to: '/customer-demand', icon: '🚚', label: 'Delivery',                  roles: null, group: 'Logistic - Store' },
 
   { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-schedule', icon: '📅', label: 'แผน PM อุปกรณ์เครื่องจักร',        roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-setup',    icon: '🔩', label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร', roles: ['admin', 'manager', 'supervisor'], group: 'การตรวจสอบและซ่อมบำรุง' },
 
   { to: '/qa',             icon: '🔍', label: 'Quality Control Center', roles: ['admin', 'manager', 'supervisor', 'leader', 'qa', 'document_control'], group: 'ควบคุมคุณภาพ QA/QC' },
@@ -219,15 +224,25 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
         zIndex: 1000,
         boxShadow: isOpen ? '4px 0 30px rgba(0,0,0,0.3)' : 'none',
       }}>
-        {/* Logo */}
-        <div style={{ padding: '18px 6px 16px', borderBottom: '1px solid var(--border)', marginBottom: 10, whiteSpace: 'nowrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {/* Logo + ปุ่มพับ sidebar (อยู่ในหัวแถบ ไม่ลอยทับเนื้อหา) */}
+        <div style={{ padding: '18px 6px 16px', borderBottom: '1px solid var(--border)', marginBottom: 10, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <img src={tsLogo} alt="Thai Summit Group" width={28} height={28} style={{ borderRadius: 3, flexShrink: 0 }} />
             <div>
               <div style={{ fontSize: 10, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
               <div style={{ fontSize: 9, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>ESM · Shopfloor</div>
             </div>
           </div>
+          <button
+            onClick={onClose}
+            title="พับเมนู"
+            style={{
+              width: 28, height: 28, borderRadius: 7, flexShrink: 0,
+              background: 'var(--bg3)', border: '1px solid var(--border2)',
+              color: 'var(--text2)', fontSize: 13, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >⟨</button>
         </div>
 
         {/* Links */}
@@ -535,26 +550,26 @@ function NotificationBell({ userId }) {
   );
 }
 
-/* ─── Toggle Button ──────────────────────────────────────────── */
-function ToggleBtn({ isOpen, sidebarW, onClick }) {
+/* ─── Toggle Button — โผล่เฉพาะตอน sidebar พับอยู่ (ปุ่มพับอยู่ในหัว sidebar แล้ว) ─── */
+function ToggleBtn({ isOpen, onClick }) {
+  if (isOpen) return null;
   return (
     <button
       onClick={onClick}
+      title="เปิดเมนู"
       style={{
-        position: 'fixed', top: 14,
-        left: isOpen ? sidebarW + 10 : 14,
+        position: 'fixed', top: 14, left: 14,
         zIndex: 1100,
         width: 34, height: 34, borderRadius: 8,
         background: 'var(--bg3)',
         border: '1px solid var(--border2)',
         color: 'var(--text2)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 15,
-        transition: 'left 0.3s cubic-bezier(0.4,0,0.2,1)',
+        fontSize: 15, cursor: 'pointer',
         boxShadow: 'var(--shadow-sm)',
       }}
     >
-      {isOpen ? '✕' : '☰'}
+      ☰
     </button>
   );
 }
@@ -670,7 +685,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userEmail, userFullName, userNotifyEmail, userSignatureUrl }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userEmail, userFullName, userNotifyEmail, userSignatureUrl }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
   const [isOpen, setIsOpen] = useState(!isMobile);
@@ -704,7 +719,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
     return (
-      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
+      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
           <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} />
         </Suspense>
@@ -713,12 +728,12 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   }
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
+    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
       {warnSecsLeft !== null && (
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
-        <ToggleBtn isOpen={isOpen} sidebarW={sidebarPx} onClick={() => setIsOpen(o => !o)} />
+        <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />
         <NotificationBell userId={userId} />
         <Sidebar
           isOpen={isOpen}
@@ -814,6 +829,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/customer-demand" element={
                 <RoleRoute path="/customer-demand" userRole={role}><CustomerDemand /></RoleRoute>
               } />
+              <Route path="/planner-sales" element={
+                <RoleRoute path="/planner-sales" userRole={role}><PlannerSales /></RoleRoute>
+              } />
               <Route path="/rack-center" element={
                 <RoleRoute path="/rack-center" userRole={role}><RackCenter /></RoleRoute>
               } />
@@ -828,6 +846,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/pm-schedule" element={
                 <RoleRoute path="/pm-schedule" userRole={role}><PMSchedule /></RoleRoute>
+              } />
+              <Route path="/mtn-layout" element={
+                <RoleRoute path="/mtn-layout" userRole={role}><MtnMachineLayout /></RoleRoute>
               } />
             </Routes>
           </Suspense>
@@ -844,6 +865,8 @@ export default function App() {
   const [userLineId,   setUserLineId]   = useState(null);
   const [userTeam,     setUserTeam]     = useState(null);
   const [userSection,  setUserSection]  = useState(null);
+  // ขอบเขตหลายส่วนงาน (จาก profiles.sections + fallback section เดี่ยวของ supervisor) — [] = ไม่จำกัด
+  const [userSections, setUserSections] = useState([]);
   const [userEmail,        setUserEmail]        = useState(null);
   const [userFullName,     setUserFullName]     = useState(null);
   const [userNotifyEmail,  setUserNotifyEmail]  = useState(null);
@@ -866,12 +889,13 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const { data } = await supabase.from('profiles').select('role, line_id, full_name, team, section, notify_email, signature_url').eq('id', user.id).single();
+    const { data } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, notify_email, signature_url').eq('id', user.id).single();
     setUserRole(data?.role ?? null);
     setUserLineId(data?.line_id ?? null);
     setUserFullName(data?.full_name ?? null);
     setUserTeam(data?.team ?? null);
     setUserSection(data?.section ?? null);
+    setUserSections(effectiveSections(data?.role, data?.sections, data?.section));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
     setProfileLoaded(true);
@@ -891,7 +915,7 @@ export default function App() {
         fetchProfile(s.user);
         loadPermissions().then(() => setPermsLoaded(true));
       } else {
-        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null);
+        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null);
         setProfileLoaded(false); setPermsLoaded(false);
       }
     });
@@ -941,6 +965,7 @@ export default function App() {
                 userLineId={userLineId}
                 userTeam={userTeam}
                 userSection={userSection}
+                userSections={userSections}
                 userEmail={userEmail}
                 userFullName={userFullName}
                 userNotifyEmail={userNotifyEmail}

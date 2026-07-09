@@ -28,6 +28,7 @@ const DEFAULT_TEMPLATES = {
   edi_import: '📡 นำเข้า EDI {kind_label}\n🏭 Ship-to: {ship_tos}\n🧾 {rows} รายการ · 📄 {files} ไฟล์\n📅 {date_from} → {date_to}\n👤 {uploaded_by}',
   shipping_shipped: '🚚 ส่งงานลูกค้าแล้ว\n🕐 รอบ {ship_time} · 📅 {due_date}\n🏭 {customer} · Dock {dock_code}\n🔩 {mat_no} × {qty} ชิ้น\n👤 {shipped_by}',
   shipping_overdue: '🔴 รอบส่งเลยเวลา {count} รอบ — วันงาน {work_date}\n{items}',
+  shipping_phase_alert: '🟠 หลุดเฟสงานส่ง {total} รายการ — วันงาน {work_date}\n{items}',
 }
 const COMMON_PH = ['line_name', 'shift_label', 'work_date']
 const PLACEHOLDERS = {
@@ -42,6 +43,7 @@ const PLACEHOLDERS = {
   edi_import: ['kind_label', 'ship_tos', 'rows', 'files', 'date_from', 'date_to', 'unmatched', 'uploaded_by'],
   shipping_shipped: ['ship_time', 'due_date', 'customer', 'dock_code', 'mat_no', 'customer_part_no', 'part_name', 'qty', 'order_no', 'shipped_by'],
   shipping_overdue: ['work_date', 'count', 'items'],
+  shipping_phase_alert: ['work_date', 'total', 'items'],
 }
 // sample values for the live preview only (not sent anywhere)
 const SAMPLE = {

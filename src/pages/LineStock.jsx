@@ -3,6 +3,8 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
+import InternalTimeBoard from '../components/InternalTimeBoard';
+import { frameMin, breaksToFrame } from '../utils/timeFrame';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
    Store จ่ายพาร์ทเข้าไลน์ → บันทึก transaction type='issue'
@@ -901,12 +903,135 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
   );
 }
 
+/* ─── 🕐 บอร์ดเวลารอบส่งภายใน — สไตล์ Shipping Chart ปลายทางเป็นไลน์ผลิต ──────
+   รอบจาก ⏰ รอบจัดส่ง (kanban_delivery_rounds) + สถานะจริงจาก kanban_deliveries
+   การกดยืนยันส่ง/รับ อยู่ที่หน้า 🎴 Kanban Board — บอร์ดนี้ไว้มอนิเตอร์ภาพรวมเวลา */
+function DeliveryTimeBoardTab() {
+  const [rounds, setRounds] = useState([]);
+  const [deliveries, setDeliveries] = useState([]);
+  const [popup, setPopup] = useState(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [breakPolicies, setBreakPolicies] = useState([]);
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    supabaseDR.from('break_policies').select('*').eq('is_active', true)
+      .then(({ data }) => setBreakPolicies(data || []));
+  }, []);
+
+  const workDateNow = () => {
+    const d = new Date(nowMs);
+    if (d.getHours() < 8) d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const load = useCallback(async () => {
+    const wd = workDateNow();
+    const [{ data: rds }, { data: dlvs }] = await Promise.all([
+      supabaseDR.from('kanban_delivery_rounds').select('*').eq('is_active', true).order('line_name').order('round_no'),
+      supabaseDR.from('kanban_deliveries').select('*').eq('work_date', wd),
+    ]);
+    setRounds(rds || []);
+    setDeliveries(dlvs || []);
+  }, []);
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  const dlvMap = useMemo(() => {
+    const m = {};
+    deliveries.forEach(d => { m[`${d.line_name}|${d.shift}|${d.round_no}`] = d; });
+    return m;
+  }, [deliveries]);
+
+  const nowD = new Date(nowMs);
+  const nm = frameMin(`${String(nowD.getHours()).padStart(2, '0')}:${String(nowD.getMinutes()).padStart(2, '0')}`);
+  const statusOf = (r) => {
+    const d = dlvMap[`${r.line_name}|${r.shift}|${r.round_no}`];
+    if (d?.received_status === 'full')    return { label: '✔️ รับครบแล้ว', color: '#22c55e', d };
+    if (d?.received_status === 'partial') return { label: '⚠️ รับไม่ครบ',  color: '#f59e0b', d };
+    if (d)                                return { label: '📦 ส่งแล้ว · รอรับ', color: '#0ea5e9', d };
+    const dlv = frameMin((r.delivery_time || '').slice(0, 5));
+    const cut = frameMin((r.cutoff_time || '').slice(0, 5));
+    const fin = dlv == null ? null : dlv + (r.points_count || 1) * (r.time_per_point_min || 10);
+    if (fin != null && nm > fin)                        return { label: '🔴 ค้างส่ง', color: '#ef4444', d: null };
+    if (cut != null && dlv != null && nm >= cut && nm < dlv) return { label: '⏳ กำลังเตรียม', color: '#0ea5e9', d: null };
+    return { label: '⬜ รอ', color: '#94a3b8', d: null };
+  };
+
+  const groups = useMemo(() => {
+    const byLine = {};
+    rounds.forEach(r => { (byLine[r.line_name] = byLine[r.line_name] || []).push(r); });
+    return Object.keys(byLine).sort().map(lnName => ({
+      key: lnName, label: lnName,
+      sub: `${byLine[lnName].length} รอบ · ✔️ ${byLine[lnName].filter(r => dlvMap[`${r.line_name}|${r.shift}|${r.round_no}`]).length} ยืนยันแล้ว`,
+      items: byLine[lnName]
+        .filter(r => frameMin((r.delivery_time || '').slice(0, 5)) != null)
+        .map(r => {
+          const st = statusOf(r);
+          return {
+            id: r.id, timeMin: frameMin(r.delivery_time.slice(0, 5)), color: st.color,
+            text: `${r.shift === 'night' ? '🌙' : '☀️'}${r.round_no}·${r.delivery_time.slice(0, 5)}`,
+            title: `${lnName} รอบ ${r.round_no} (${r.shift === 'night' ? 'กะดึก' : 'กะเช้า'}) · ตัดยอด ${(r.cutoff_time || '').slice(0, 5) || '—'} · ส่ง ${r.delivery_time.slice(0, 5)} · ${st.label}`,
+            data: r,
+          };
+        }),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rounds, dlvMap, nm]);
+
+  return (
+    <>
+      <InternalTimeBoard
+        title={`🕐 บอร์ดรอบส่งภายในวันนี้ — Store → ไลน์ผลิต`}
+        hint="ตั้งค่ารอบที่แท็บ ⏰ รอบจัดส่ง · กดยืนยันส่ง/รับที่หน้า 🎴 Kanban Board"
+        groups={groups} nowMin={nm} breaks={breaksToFrame(breakPolicies)}
+        onItemClick={(r, x, y) => setPopup({ r, x, y })}
+      />
+      {popup && (() => {
+        const r = popup.r;
+        const st = statusOf(r);
+        const W = 250;
+        const left = Math.max(8, Math.min(popup.x - W / 2, window.innerWidth - W - 12));
+        const top = Math.min(popup.y + 12, window.innerHeight - 200);
+        return (
+          <>
+            <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 999, background: 'var(--bg3)', border: `1px solid ${st.color}66`, borderRadius: 12, boxShadow: '0 8px 28px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
+              <div style={{ height: 4, background: st.color }} />
+              <div style={{ padding: '10px 14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)' }}>{r.shift === 'night' ? '🌙' : '☀️'} รอบ {r.round_no}</span>
+                  <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: st.color }}>{st.label}</span>
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', marginTop: 2 }}>📍 {r.line_name}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.8 }}>
+                  ตัดยอด {(r.cutoff_time || '').slice(0, 5) || '—'} → ส่ง {(r.delivery_time || '').slice(0, 5)}<br />
+                  {r.points_count || 1} จุด × {r.time_per_point_min || 10} นาที · เตรียม {r.prep_minutes || 60} นาที
+                </div>
+                {st.d?.confirmed_by && <div style={{ fontSize: 10, color: '#22c55e', marginTop: 4 }}>✓ ส่งโดย {st.d.confirmed_by}</div>}
+                {st.d?.received_by && <div style={{ fontSize: 10, color: st.d.received_status === 'full' ? '#22c55e' : '#f59e0b' }}>{st.d.received_status === 'full' ? '✔️' : '⚠️'} รับโดย {st.d.received_by}</div>}
+                <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 8 }}>👉 กดยืนยันส่ง/รับของที่หน้า 🎴 Kanban Board</div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
+    </>
+  );
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    MAIN EXPORT
    ───────────────────────────────────────────────────────────────────────────── */
 const TABS = [
-  { key:'stock',    label:'📦 Stock' },
-  { key:'delivery', label:'⏰ รอบจัดส่ง' },
+  { key:'stock',     label:'📦 Stock' },
+  { key:'delivery',  label:'⏰ รอบจัดส่ง' },
+  { key:'timeboard', label:'🕐 บอร์ดเวลา' },
 ];
 
 export default function LineStock() {
@@ -942,8 +1067,9 @@ export default function LineStock() {
         ))}
       </div>
 
-      {activeTab === 'stock'    && <StockTab role={role} />}
-      {activeTab === 'delivery' && <DeliveryRoundsTab canEdit={canEdit} fullName={fullName} />}
+      {activeTab === 'stock'     && <StockTab role={role} />}
+      {activeTab === 'delivery'  && <DeliveryRoundsTab canEdit={canEdit} fullName={fullName} />}
+      {activeTab === 'timeboard' && <DeliveryTimeBoardTab />}
     </div>
   );
 }

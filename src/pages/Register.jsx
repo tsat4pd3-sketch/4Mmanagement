@@ -2,12 +2,12 @@ import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
+import { inSectionScope } from '../utils/sectionScope';
 import ImageCropModal from '../components/ImageCropModal';
 
 export default function Register() {
-  const { role, lineId: userLineId, section: userSection } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canRegister = can('employees', 'register', role);
-  const isSupervisor = role === 'supervisor';
   const isLeader     = role === 'leader';
 
   const [empCode,     setEmpCode]     = useState('');
@@ -33,8 +33,8 @@ export default function Register() {
     supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
       .then(({ data }) => {
         setLines(data || []);
-        if (isSupervisor && userSection) {
-          setSection(userSection);
+        if (scopeSecs.length === 1) {
+          setSection(scopeSecs[0]);
         } else if (isLeader && userLineId) {
           // leader ไม่มี profiles.section — ล็อกส่วนงานจาก section ของไลน์ที่ตัวเองผูกอยู่
           const myLine = (data || []).find(l => l.id === userLineId);
@@ -53,10 +53,13 @@ export default function Register() {
       });
   }, []);
 
-  // ส่วนงานที่ถูกล็อก: supervisor = section ใน profile ตัวเอง, leader = section ของไลน์ที่ผูกอยู่
-  // ('' = ไม่ล็อก เลือกได้อิสระ เช่น admin/manager)
+  // ส่วนงานที่ถูกล็อก: scope เหลือ section เดียว (supervisor เดิม) = ล็อกเลย, leader = section ของไลน์ที่ผูกอยู่
+  // ('' = ไม่ล็อก — ไม่มี scope เลือกอิสระ / scope หลาย section เลือกได้เฉพาะใน scope)
   const leaderSection = isLeader && userLineId ? (lines.find(l => l.id === userLineId)?.section || '') : '';
-  const lockedSection = isSupervisor ? (userSection || '') : leaderSection;
+  const lockedSection = scopeSecs.length === 1 ? scopeSecs[0] : leaderSection;
+  const sectionOptsInScope = scopeSecs.length
+    ? orgSections.filter(s => inSectionScope(scopeSecs, s.code || s.name))
+    : orgSections;
 
   const selectedSectionNode = orgSections.find(s => (s.code || s.name) === section);
   const deptOpts = selectedSectionNode ? orgDepts.filter(d => d.parent_id === selectedSectionNode.id) : [];
@@ -166,7 +169,7 @@ export default function Register() {
               ) : (
                 <select value={section} onChange={e => { setSection(e.target.value); setDepartment(''); }}>
                   <option value="">— เลือก —</option>
-                  {orgSections.map(s => <option key={s.id} value={s.code || s.name}>{s.name}</option>)}
+                  {sectionOptsInScope.map(s => <option key={s.id} value={s.code || s.name}>{s.name}</option>)}
                 </select>
               )}
             </div>
