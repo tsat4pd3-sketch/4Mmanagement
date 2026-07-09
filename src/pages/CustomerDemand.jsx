@@ -663,6 +663,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
   const [orders, setOrders] = useState([]);
   const [busy, setBusy] = useState(null);
   const [fgStock, setFgStock] = useState({});   // mat_no → { total, lines: [{line_name, qty}] } — stock FG พร้อมส่งใน warehouse
+  const [cardFilter, setCardFilter] = useState('todo');   // 'todo' | 'overdue' | 'shipped' | 'all'
 
   const load = useCallback(async () => {
     const { data } = await supabaseDR.from('customer_shipping_orders').select('*').eq('due_date', day).order('ship_time', { ascending: true, nullsFirst: false });
@@ -764,6 +765,27 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
   const span = tEnd - tStart;
   const hourMarks = [];
   for (let h = tStart / 60; h <= tEnd / 60; h++) hourMarks.push(h);
+  // ── กันบล็อกทับกัน: รอบที่เวลาชน/ใกล้กัน (< SPAN_MIN นาที) ถูกดันลง "เลน" ถัดไปของแถวลูกค้าเดียวกัน ──
+  const SPAN_MIN = 40;                       // ความกว้างเวลาโดยประมาณของ 1 บล็อกบนชาร์ต
+  const PX_PER_HOUR = 76;                    // สเกลแกนเวลา — ชาร์ตกว้างจริงและเลื่อนซ้ายขวาได้
+  const chartW = (span / 60) * PX_PER_HOUR;
+  const LANE_H = 30;
+  const lanesByCustomer = (() => {
+    const res = {};
+    Object.entries(byCustomer).forEach(([cust, list]) => {
+      const laneEnd = [];                    // เวลาสิ้นสุดของบล็อกล่าสุดในแต่ละเลน
+      const map = {};
+      [...list].sort((a, b) => (timeMins(a.ship_time) ?? 100000) - (timeMins(b.ship_time) ?? 100000)).forEach(o => {
+        const t = timeMins(o.ship_time) ?? tEnd;
+        let li = laneEnd.findIndex(end => t >= end);
+        if (li < 0) { li = laneEnd.length; laneEnd.push(0); }
+        laneEnd[li] = t + SPAN_MIN;
+        map[o.id] = li;
+      });
+      res[cust] = { map, count: Math.max(1, laneEnd.length) };
+    });
+    return res;
+  })();
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -785,64 +807,88 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
         </div>
       ) : (
         <>
-          {/* Shipping time chart — บล็อกตามเวลารอบส่ง แยกแถวตามลูกค้า */}
+          {/* Shipping time chart — แยกแถวตามลูกค้า + แยก "เลน" เมื่อรอบเวลาชนกัน (ไม่ทับกัน) · เลื่อนซ้ายขวาได้ */}
           <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border2)', fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
-              🕐 Shipping Time Chart — {day}
+            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🕐 Shipping Time Chart — {day}</span>
+              <span style={{ fontSize: 10, color: 'var(--muted)' }}>↔ เลื่อนดูตามเวลาได้ · รอบที่เวลาชนกันจะแยกชั้นให้อัตโนมัติ</span>
             </div>
-            <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
-              <div style={{ width: 120, flexShrink: 0, padding: '4px 10px', fontSize: 9, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)' }}>ลูกค้า</div>
-              <div style={{ flex: 1, position: 'relative', height: 20 }}>
-                {hourMarks.map(h => (
-                  <span key={h} style={{ position: 'absolute', left: `${((h * 60 - tStart) / span) * 100}%`, fontSize: 8, color: 'var(--muted)', transform: 'translateX(-50%)', top: 4 }}>
-                    {String(h).padStart(2, '0')}:00
-                  </span>
-                ))}
-              </div>
-            </div>
-            {Object.entries(byCustomer).map(([cust, list]) => (
-              <div key={cust} style={{ display: 'flex', minHeight: 40, borderTop: '1px solid var(--border)' }}>
-                <div style={{ width: 120, flexShrink: 0, padding: '6px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text2)', borderRight: '1px solid var(--border2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', alignSelf: 'center' }}>
-                  {cust}
-                  <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 600 }}>{list.length} รอบ</div>
+            <div style={{ overflowX: 'auto' }}>
+              <div style={{ minWidth: 130 + chartW }}>
+                <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+                  <div style={{ width: 130, flexShrink: 0, padding: '4px 10px', fontSize: 9, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)', position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 3 }}>ลูกค้า</div>
+                  <div style={{ flex: 1, position: 'relative', height: 20 }}>
+                    {hourMarks.map(h => (
+                      <span key={h} style={{ position: 'absolute', left: `${((h * 60 - tStart) / span) * 100}%`, fontSize: 9, color: 'var(--muted)', transform: 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
+                        {String(h).padStart(2, '0')}:00
+                      </span>
+                    ))}
+                  </div>
                 </div>
-                <div style={{ flex: 1, position: 'relative', minHeight: 40 }}>
-                  {hourMarks.map(h => (
-                    <div key={h} style={{ position: 'absolute', top: 0, bottom: 0, left: `${((h * 60 - tStart) / span) * 100}%`, width: 1, background: 'var(--border)' }} />
-                  ))}
-                  {isToday && nowMins >= tStart && nowMins <= tEnd && (
-                    <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${((nowMins - tStart) / span) * 100}%`, width: 1.5, background: 'rgba(77,159,255,0.8)', zIndex: 2 }} />
-                  )}
-                  {list.map(o => {
-                    const tm = timeMins(o.ship_time);
-                    const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
-                    const od = isOverdue(o);
-                    const color = od ? '#ef4444' : st.color;
-                    const left = tm == null ? 0 : ((tm - tStart) / span) * 100;
-                    return (
-                      <div key={o.id}
-                        title={`${o.ship_time || 'ไม่ระบุเวลา'} · ${o.order_no || ''} ${o.mat_no} · ${fmt(o.qty)} ชิ้น · ${st.label}${od ? ' · 🔴 เลยเวลาแล้วยังไม่ส่ง' : ''}`}
-                        style={{
-                          position: 'absolute', top: 5, bottom: 5, left: `calc(${Math.min(left, 96)}% )`, minWidth: 54, maxWidth: 110,
-                          background: `${color}22`, border: `1.5px solid ${color}cc`, borderRadius: 6, zIndex: 1,
-                          display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 6px', overflow: 'hidden', cursor: 'default',
-                          boxShadow: od ? `0 0 6px ${color}55` : 'none',
-                        }}>
-                        <div style={{ fontSize: 9, fontWeight: 800, color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {o.ship_time || '—'} {o.status === 'shipped' ? '✅' : od ? '🔴' : ''}
-                        </div>
-                        <div style={{ fontSize: 8, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: 'monospace' }}>{o.mat_no}</div>
+                {Object.entries(byCustomer).map(([cust, list]) => {
+                  const lanes = lanesByCustomer[cust] || { map: {}, count: 1 };
+                  const rowH = 10 + lanes.count * LANE_H;
+                  return (
+                    <div key={cust} style={{ display: 'flex', borderTop: '1px solid var(--border)' }}>
+                      <div style={{ width: 130, flexShrink: 0, padding: '6px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text2)', borderRight: '1px solid var(--border2)', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', position: 'sticky', left: 0, background: 'var(--card)', zIndex: 3 }}>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cust}</span>
+                        <span style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 600 }}>{list.length} รอบ</span>
                       </div>
-                    );
-                  })}
-                </div>
+                      <div style={{ flex: 1, position: 'relative', height: rowH }}>
+                        {hourMarks.map(h => (
+                          <div key={h} style={{ position: 'absolute', top: 0, bottom: 0, left: `${((h * 60 - tStart) / span) * 100}%`, width: 1, background: 'var(--border)' }} />
+                        ))}
+                        {isToday && nowMins >= tStart && nowMins <= tEnd && (
+                          <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${((nowMins - tStart) / span) * 100}%`, width: 1.5, background: 'rgba(77,159,255,0.8)', zIndex: 2 }} />
+                        )}
+                        {list.map(o => {
+                          const tm = timeMins(o.ship_time);
+                          const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
+                          const od = isOverdue(o);
+                          const color = od ? '#ef4444' : st.color;
+                          const left = tm == null ? 0 : ((tm - tStart) / span) * 100;
+                          const lane = lanes.map[o.id] || 0;
+                          return (
+                            <div key={o.id}
+                              title={`${o.ship_time || 'ไม่ระบุเวลา'} · ${o.order_no || ''} ${o.mat_no} · ${fmt(o.qty)} ชิ้น · ${st.label}${od ? ' · 🔴 เลยเวลาแล้วยังไม่ส่ง' : ''}`}
+                              style={{
+                                position: 'absolute', top: 5 + lane * LANE_H, height: LANE_H - 4,
+                                left: `${left}%`, width: `${(SPAN_MIN / span) * 100}%`, minWidth: 52, maxWidth: 120,
+                                background: `${color}22`, border: `1.5px solid ${color}cc`, borderRadius: 6, zIndex: 1,
+                                display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 6px', overflow: 'hidden', cursor: 'default', boxSizing: 'border-box',
+                                boxShadow: od ? `0 0 6px ${color}55` : 'none',
+                              }}>
+                              <div style={{ fontSize: 9, fontWeight: 800, color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {o.ship_time || '—'} · {fmt(o.qty)} {o.status === 'shipped' ? '✅' : od ? '🔴' : ''}
+                              </div>
+                              <div style={{ fontSize: 8, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: 'monospace' }}>{o.mat_no}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            ))}
+            </div>
           </div>
 
-          {/* รายการรอบส่ง + ปุ่มอัปเดตสถานะ */}
+          {/* รายการรอบส่ง + ปุ่มอัปเดตสถานะ — กรองให้เห็นเฉพาะที่ต้องทำก่อน */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {[
+              { id: 'todo',    label: `🕐 ต้องทำ (${orders.filter(o => o.status !== 'shipped').length})` },
+              { id: 'overdue', label: `🔴 เลยเวลา (${overdueCount})` },
+              { id: 'shipped', label: `✅ ส่งแล้ว (${shippedCount})` },
+              { id: 'all',     label: `ทั้งหมด (${orders.length})` },
+            ].map(f => <button key={f.id} onClick={() => setCardFilter(f.id)} style={btn(cardFilter === f.id)}>{f.label}</button>)}
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
-            {orders.map(o => {
+            {orders.filter(o =>
+              cardFilter === 'all' ? true
+              : cardFilter === 'shipped' ? o.status === 'shipped'
+              : cardFilter === 'overdue' ? isOverdue(o)
+              : o.status !== 'shipped'
+            ).map(o => {
               const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
               const od = isOverdue(o);
               return (
