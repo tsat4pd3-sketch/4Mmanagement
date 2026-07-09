@@ -77,7 +77,7 @@ function ThumbMap({ imageUrl, alt, markers }) {
               }}>
                 {m.img
                   ? <img src={m.img} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: m.color }}>{m.initial}</div>
+                  : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: m.color }}>{m.initial}</div>
                 }
               </div>
             </div>
@@ -629,7 +629,7 @@ export default function Dashboard() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
             {selectedShift !== 'all' && (
               <span style={{
-                padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+                padding: '3px 10px', borderRadius: 20, fontSize: 13, fontWeight: 700,
                 background: selectedShift === 'day' ? 'rgba(245,158,11,0.15)' : 'rgba(77,159,255,0.15)',
                 color: selectedShift === 'day' ? '#f59e0b' : '#4d9fff',
                 border: `1px solid ${selectedShift === 'day' ? 'rgba(245,158,11,0.3)' : 'rgba(77,159,255,0.3)'}`,
@@ -638,7 +638,7 @@ export default function Dashboard() {
                 {isToday && selectedShift === (shiftInfo.isDay ? 'day' : 'night') && ' · กะปัจจุบัน'}
               </span>
             )}
-            <span style={{ fontSize: 12, color: 'var(--muted)', fontFamily: 'var(--font-display)' }}>
+            <span style={{ fontSize: 14, color: 'var(--muted)', fontFamily: 'var(--font-display)' }}>
               {isToday
                 ? now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
                 : selectedDate}
@@ -654,7 +654,7 @@ export default function Dashboard() {
               onChange={e => changeSection(e.target.value)}
               style={{
                 background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10,
-                padding: '7px 12px', fontSize: 12, fontWeight: 700, color: 'var(--text)',
+                padding: '7px 12px', fontSize: 14, fontWeight: 700, color: 'var(--text)',
                 cursor: 'pointer', outline: 'none',
               }}>
               <option value="all">🏭 ทุกส่วนงาน</option>
@@ -670,7 +670,7 @@ export default function Dashboard() {
             ].map(s => (
               <button key={s.val} onClick={() => setSelectedShift(s.val)}
                 style={{
-                  padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                  padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
                   background: selectedShift === s.val ? s.active : 'transparent',
                   color: selectedShift === s.val ? s.color : 'var(--muted)',
                   transition: 'all 0.15s',
@@ -685,9 +685,9 @@ export default function Dashboard() {
             background: 'var(--card)', border: '1px solid var(--border2)',
             padding: '8px 14px', borderRadius: 10,
           }}>
-            <span style={{ fontSize: 13, color: 'var(--muted)' }}>📅</span>
+            <span style={{ fontSize: 15, color: 'var(--muted)' }}>📅</span>
             <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
-              style={{ border: 'none', background: 'transparent', color: 'var(--accent)', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, outline: 'none', padding: 0 }} />
+              style={{ border: 'none', background: 'transparent', color: 'var(--accent)', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, outline: 'none', padding: 0 }} />
           </div>
         </motion.div>
       </div>
@@ -737,25 +737,25 @@ export default function Dashboard() {
               <div style={{ position: 'absolute', top: 14, right: 16, opacity: 0.12, fontSize: isWide ? 56 : 42, lineHeight: 1, userSelect: 'none' }}>
                 {kpi.icon}
               </div>
-              <div style={{ fontSize: isWide ? 12 : 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+              <div style={{ fontSize: isWide ? 14 : 13, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
                 {kpi.label}
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginTop: 4 }}>
                 {kpi.radial !== null ? (
                   <div style={{ position: 'relative', width: isWide ? 72 : 60, height: isWide ? 72 : 60, flexShrink: 0 }}>
                     <RadialProgress pct={kpi.radial} size={isWide ? 72 : 60} stroke={isWide ? 7 : 6} color={kpi.accent} />
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isWide ? 15 : 13, fontWeight: 800, color: kpi.accent, fontFamily: 'var(--font-display)' }}>
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isWide ? 17 : 15, fontWeight: 800, color: kpi.accent, fontFamily: 'var(--font-display)' }}>
                       {kpi.value}
                     </div>
                   </div>
                 ) : (
                   <div style={{ fontSize: isWide ? 42 : 36, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1 }}>
                     {loading ? '—' : kpi.value}
-                    <span style={{ fontSize: isWide ? 16 : 14, fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>{kpi.unit}</span>
+                    <span style={{ fontSize: isWide ? 18 : 16, fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>{kpi.unit}</span>
                   </div>
                 )}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{kpi.sub}</div>
+              <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>{kpi.sub}</div>
             </div>
           </motion.div>
         ))}
@@ -791,7 +791,7 @@ export default function Dashboard() {
         });
         return (
           <motion.div {...stagger(7)} style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
               สถานะไลน์ผลิต
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isUltra ? 'repeat(auto-fill, minmax(200px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(180px, 1fr))' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: isMobile ? 10 : 14 }}>
@@ -815,11 +815,11 @@ export default function Dashboard() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                            {line._hasChildren && <span style={{ fontSize: 13 }}>📂</span>}
-                            <div style={{ fontSize: isWide ? 14 : 13, fontWeight: 700, color: 'var(--text)' }}>{line.name}</div>
+                            {line._hasChildren && <span style={{ fontSize: 15 }}>📂</span>}
+                            <div style={{ fontSize: isWide ? 16 : 15, fontWeight: 700, color: 'var(--text)' }}>{line.name}</div>
                           </div>
                           {line.section && (
-                            <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 2, fontWeight: 600 }}>
+                            <div style={{ fontSize: 12, color: '#4d9fff', marginTop: 2, fontWeight: 600 }}>
                               {line.section}{line._hasChildren && ` · รวม ${line._children.length} ไลน์ย่อย`}
                             </div>
                           )}
@@ -827,7 +827,7 @@ export default function Dashboard() {
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                           <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, boxShadow: `0 0 6px ${color}` }} />
                           {line.lineAlerts > 0 && (
-                            <div style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(231,76,60,0.15)', color: '#e74c3c', border: '1px solid rgba(231,76,60,0.3)' }}>
+                            <div style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(231,76,60,0.15)', color: '#e74c3c', border: '1px solid rgba(231,76,60,0.3)' }}>
                               🚨 {line.lineAlerts}
                             </div>
                           )}
@@ -837,15 +837,15 @@ export default function Dashboard() {
                         <span style={{ fontSize: isWide ? 32 : 24, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
                           {line.linePresent}
                         </span>
-                        <span style={{ fontSize: isWide ? 13 : 11, color: 'var(--muted)' }}>/ {line.lineTotal} คน{line._hasChildren && ' (รวมย่อย)'}</span>
+                        <span style={{ fontSize: isWide ? 15 : 13, color: 'var(--muted)' }}>/ {line.lineTotal} คน{line._hasChildren && ' (รวมย่อย)'}</span>
                       </div>
                       <MiniBar value={line.linePresent} max={line.lineTotal} color={color} />
                       <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, color }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color }}>
                           {line.lineTotal === 0 ? 'ไม่มีข้อมูล' : `${line.rate}% Attendance ${healthy ? '· ✓ Normal' : line.lineAlerts > 0 ? '· ⚠ Risk' : ''}`}
                         </span>
                         {line._hasChildren && (
-                          <span style={{ fontSize: 9, fontWeight: 800, color: 'var(--accent)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--accent)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 3 }}>
                             {isExpanded ? 'ซ่อนไลน์ย่อย' : 'ดูไลน์ย่อย'}
                             <span style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
                           </span>
@@ -863,7 +863,7 @@ export default function Dashboard() {
                       borderLeft: '4px solid var(--accent)',
                       borderRadius: 12, padding: isWide ? '14px 16px' : '12px 14px',
                     }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <span>↳ ไลน์ย่อยของ</span>
                         <span style={{ color: 'var(--accent)' }}>{line.name}</span>
                         <span>({line._children.length})</span>
@@ -877,13 +877,13 @@ export default function Dashboard() {
                             <div key={cs.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, padding: isWide ? '12px 14px' : '10px 12px' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <div>
-                                  <span style={{ fontSize: 8, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.12)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>ไลน์ย่อย</span>
-                                  <div style={{ fontSize: isWide ? 13 : 12, fontWeight: 600, color: 'var(--text)', marginTop: 4 }}>{cs.name}</div>
+                                  <span style={{ fontSize: 10, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.12)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>ไลน์ย่อย</span>
+                                  <div style={{ fontSize: isWide ? 15 : 14, fontWeight: 600, color: 'var(--text)', marginTop: 4 }}>{cs.name}</div>
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                                   <div style={{ width: 7, height: 7, borderRadius: '50%', background: cColor, boxShadow: `0 0 6px ${cColor}` }} />
                                   {cs.lineAlerts > 0 && (
-                                    <div style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(231,76,60,0.15)', color: '#e74c3c', border: '1px solid rgba(231,76,60,0.3)' }}>
+                                    <div style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(231,76,60,0.15)', color: '#e74c3c', border: '1px solid rgba(231,76,60,0.3)' }}>
                                       🚨 {cs.lineAlerts}
                                     </div>
                                   )}
@@ -891,10 +891,10 @@ export default function Dashboard() {
                               </div>
                               <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                                 <span style={{ fontSize: isWide ? 26 : 20, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>{cs.linePresent}</span>
-                                <span style={{ fontSize: isWide ? 12 : 10, color: 'var(--muted)' }}>/ {cs.lineTotal} คน</span>
+                                <span style={{ fontSize: isWide ? 14 : 12, color: 'var(--muted)' }}>/ {cs.lineTotal} คน</span>
                               </div>
                               <MiniBar value={cs.linePresent} max={cs.lineTotal} color={cColor} />
-                              <div style={{ marginTop: 6, fontSize: 9, fontWeight: 700, color: cColor }}>
+                              <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, color: cColor }}>
                                 {cs.lineTotal === 0 ? 'ไม่มีข้อมูล' : `${cs.rate}% Attendance ${cHealthy ? '· ✓ Normal' : cs.lineAlerts > 0 ? '· ⚠ Risk' : ''}`}
                               </div>
                             </div>
@@ -936,7 +936,7 @@ export default function Dashboard() {
 
         return (
           <motion.div {...stagger(8)} style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
               📊 Heijunka Board — ไทม์ไลน์การผลิต
             </div>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 12, padding: '6px 10px', background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border2)' }}>
@@ -949,8 +949,8 @@ export default function Dashboard() {
                 { c: '#6b7280', icon: '⏪', label: 'ยิงย้อนหลัง (backfill)' },
               ].map(item => (
                 <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ width: 14, height: 14, borderRadius: 3, background: `${item.c}28`, border: `1.5px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
-                  <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
+                  <span style={{ width: 14, height: 14, borderRadius: 3, background: `${item.c}28`, border: `1.5px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
+                  <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
                 </div>
               ))}
             </div>
@@ -982,16 +982,16 @@ export default function Dashboard() {
                   {/* ── Line header ── */}
                   <div style={{ padding: '9px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{lineName}</span>
+                      <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{lineName}</span>
                       {totalDelayed > 0 && (
-                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
+                        <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
                           ⚠️ ดีเลย์ {totalDelayed} ใบ
                         </span>
                       )}
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {sessions.map(s => (
-                        <span key={s.id} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700,
+                        <span key={s.id} style={{ fontSize: 12, padding: '2px 8px', borderRadius: 20, fontWeight: 700,
                           background: s.status === 'open' ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.12)',
                           color: s.status === 'open' ? '#22c55e' : '#888' }}>
                           {s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} {s.status === 'open' ? '● Live' : '✓ ปิดแล้ว'}
@@ -1057,7 +1057,7 @@ export default function Dashboard() {
 
                     const hourHeader = (hours, halfStartMs) => (
                       <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
-                        <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '5px 8px', fontSize: 9, fontWeight: 700, color: 'var(--muted)' }}>
+                        <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '5px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>
                           กะ / ผลิต
                         </div>
                         {hours.map((h, i) => {
@@ -1067,7 +1067,7 @@ export default function Dashboard() {
                           return (
                             <div key={i} style={{
                               flex: 1, minWidth: 0, textAlign: 'center',
-                              fontSize: 9, fontWeight: isNow ? 800 : isShiftBound ? 600 : 400,
+                              fontSize: 11, fontWeight: isNow ? 800 : isShiftBound ? 600 : 400,
                               color: isNow ? '#4d9fff' : isShiftBound ? 'var(--text2)' : 'var(--muted)',
                               padding: '5px 0', lineHeight: 1,
                               borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
@@ -1257,7 +1257,7 @@ export default function Dashboard() {
                                     zIndex: 0, pointerEvents: 'none',
                                     display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'hidden',
                                   }}>
-                                  <span style={{ fontSize: 6, fontWeight: 700, color: 'var(--muted)', writingMode: widthPct < 3 ? 'vertical-rl' : 'horizontal-tb', whiteSpace: 'nowrap', marginBottom: 1 }}>
+                                  <span style={{ fontSize: 8, fontWeight: 700, color: 'var(--muted)', writingMode: widthPct < 3 ? 'vertical-rl' : 'horizontal-tb', whiteSpace: 'nowrap', marginBottom: 1 }}>
                                     🚫{p.name_th || p.name_en}
                                   </span>
                                 </div>
@@ -1296,10 +1296,10 @@ export default function Dashboard() {
                               }}>
                               <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`, background: `${statusColor}22`, transition: 'width 0.5s ease' }} />
                               <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 3px', overflow: 'hidden' }}>
-                                <div style={{ fontSize: 8, fontWeight: 800, color: statusColor, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                <div style={{ fontSize: 10, fontWeight: 800, color: statusColor, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {icon} {o.prod_no || (oi + 1)}
                                 </div>
-                                <div style={{ fontSize: 7, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                <div style={{ fontSize: 9, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {o.qty}ชิ้น
                                 </div>
                               </div>
@@ -1346,14 +1346,14 @@ export default function Dashboard() {
                                 {row.img && <img src={row.img} alt="" style={{ width: 24, height: 24, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />}
                                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, minWidth: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                                  <span style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: LEFT_W - 16 }}>{row.label}</span>
-                                  {delayed > 0 && <span style={{ fontSize: 8, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}ใบ</span>}
-                                  {isOpen && delayed === 0 && <span style={{ fontSize: 7, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
+                                  <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: LEFT_W - 16 }}>{row.label}</span>
+                                  {delayed > 0 && <span style={{ fontSize: 10, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}ใบ</span>}
+                                  {isOpen && delayed === 0 && <span style={{ fontSize: 9, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
-                                  <span style={{ fontSize: 12, fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
-                                  <span style={{ fontSize: 8, color: 'var(--muted)' }}>/{rowDemand} ชิ้น</span>
-                                  <span style={{ fontSize: 8, color: 'var(--muted)' }}>{doneCount}/{row.cards.length}ใบ</span>
+                                  <span style={{ fontSize: 14, fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
+                                  <span style={{ fontSize: 10, color: 'var(--muted)' }}>/{rowDemand} ชิ้น</span>
+                                  <span style={{ fontSize: 10, color: 'var(--muted)' }}>{doneCount}/{row.cards.length}ใบ</span>
                                 </div>
                                 </div>
                               </div>
@@ -1379,15 +1379,15 @@ export default function Dashboard() {
                         <div key={s.id} style={{ flex: '1 1 200px', minWidth: 180 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
                             <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-                              <span style={{ fontSize: 10, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'}</span>
+                              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'}</span>
                               <span style={{ fontSize: 20, fontWeight: 900, color: barColor, lineHeight: 1 }}>{s.actual}</span>
-                              <span style={{ fontSize: 11, color: 'var(--muted)' }}>/ {s.demand} ชิ้น</span>
-                              <span style={{ fontSize: 10, color: 'var(--muted)' }}>{doneCount}/{s.orders.length} ใบ</span>
+                              <span style={{ fontSize: 13, color: 'var(--muted)' }}>/ {s.demand} ชิ้น</span>
+                              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{doneCount}/{s.orders.length} ใบ</span>
                             </div>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                              {s.target > 0 && <span style={{ fontSize: 10, color: tpct >= 100 ? '#22c55e' : 'var(--muted)' }}>เป้า {tpct.toFixed(0)}%</span>}
-                              <span style={{ fontSize: 13, fontWeight: 800, color: barColor }}>{pct.toFixed(0)}%</span>
-                              {oee && <span style={{ fontSize: 13, fontWeight: 800, color: oeeColor }}>OEE {oee.oee != null ? `${(oee.oee * 100).toFixed(0)}%` : 'N/A'}</span>}
+                              {s.target > 0 && <span style={{ fontSize: 12, color: tpct >= 100 ? '#22c55e' : 'var(--muted)' }}>เป้า {tpct.toFixed(0)}%</span>}
+                              <span style={{ fontSize: 15, fontWeight: 800, color: barColor }}>{pct.toFixed(0)}%</span>
+                              {oee && <span style={{ fontSize: 15, fontWeight: 800, color: oeeColor }}>OEE {oee.oee != null ? `${(oee.oee * 100).toFixed(0)}%` : 'N/A'}</span>}
                             </div>
                           </div>
                           <div style={{ height: 5, borderRadius: 3, background: 'var(--border2)', overflow: 'hidden' }}>
@@ -1398,7 +1398,7 @@ export default function Dashboard() {
                               {[{ l: 'A', v: oee.A, t: 'Availability' }, { l: 'P', v: oee.P, t: 'Performance' }, { l: 'Q', v: oee.Q, t: 'Quality' }].map(k => {
                                 const c = k.v == null ? '#888' : k.v >= 0.85 ? '#22c55e' : k.v >= 0.65 ? '#f59e0b' : '#ef4444';
                                 return (
-                                  <span key={k.l} title={k.t} style={{ fontSize: 10, color: c, fontWeight: 700 }}>
+                                  <span key={k.l} title={k.t} style={{ fontSize: 12, color: c, fontWeight: 700 }}>
                                     {k.l} {k.v != null ? `${(k.v * 100).toFixed(0)}%` : 'N/A'}
                                   </span>
                                 );
@@ -1423,11 +1423,11 @@ export default function Dashboard() {
         {/* Line Floor Maps */}
         <motion.div {...stagger(12)}>
           <div className="card" style={{ padding: 20, height: '100%' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
               🏭 Line Floor Maps
             </div>
             {visibleLayouts.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 13 }}>
+              <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 15 }}>
                 ยังไม่มีผัง — ไปตั้งค่าที่หน้า <strong>ตั้งค่าผังไลน์</strong>
               </div>
             ) : (
@@ -1469,12 +1469,12 @@ export default function Dashboard() {
                       />
                       {/* Line label */}
                       <div style={{ padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg3)' }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60%' }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60%' }}>
                           {layout.line_name}
                         </span>
                         <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
-                          <span style={{ fontSize: 10, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.12)', padding: '2px 6px', borderRadius: 4 }}>✓ {footerPresent}/{footerTotal}</span>
-                          {footerAbsent > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#e74c3c', background: 'rgba(231,76,60,0.12)', padding: '2px 6px', borderRadius: 4 }}>✗ {footerAbsent}</span>}
+                          <span style={{ fontSize: 12, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.12)', padding: '2px 6px', borderRadius: 4 }}>✓ {footerPresent}/{footerTotal}</span>
+                          {footerAbsent > 0 && <span style={{ fontSize: 12, fontWeight: 700, color: '#e74c3c', background: 'rgba(231,76,60,0.12)', padding: '2px 6px', borderRadius: 4 }}>✗ {footerAbsent}</span>}
                         </div>
                       </div>
                     </div>
@@ -1488,7 +1488,7 @@ export default function Dashboard() {
         {/* 4M Activity Feed */}
         <motion.div {...stagger(13)}>
           <div className="card" style={{ padding: 20, height: '100%' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
               4M Activity Feed
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: isWide ? 600 : 420, overflowY: 'auto' }}>
@@ -1496,8 +1496,8 @@ export default function Dashboard() {
                 {visibleFourMLogs.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '48px 20px' }}>
                     <div style={{ fontSize: 28, marginBottom: 8 }}>✅</div>
-                    <div style={{ fontSize: 13, color: 'var(--muted)' }}>ไม่มีการแจ้งเตือน 4M</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, opacity: 0.6 }}>สถานะปกติ</div>
+                    <div style={{ fontSize: 15, color: 'var(--muted)' }}>ไม่มีการแจ้งเตือน 4M</div>
+                    <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4, opacity: 0.6 }}>สถานะปกติ</div>
                   </div>
                 ) : visibleFourMLogs.map((log, i) => {
                   const meta = getCatMeta(log.category);
@@ -1509,17 +1509,17 @@ export default function Dashboard() {
                         border: `1px solid ${meta.color}22`,
                         display: 'flex', gap: 10, alignItems: 'flex-start',
                       }}>
-                        <div style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{meta.icon}</div>
+                        <div style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>{meta.icon}</div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: meta.color }}>{log.category}</span>
-                            <span style={{ fontSize: 10, color: 'var(--muted)', flexShrink: 0 }}>{log.line_name}</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: meta.color }}>{log.category}</span>
+                            <span style={{ fontSize: 12, color: 'var(--muted)', flexShrink: 0 }}>{log.line_name}</span>
                           </div>
-                          <div style={{ fontSize: 12, color: 'var(--text)', marginTop: 3, lineHeight: 1.4 }}>
+                          <div style={{ fontSize: 14, color: 'var(--text)', marginTop: 3, lineHeight: 1.4 }}>
                             {log.description}
                           </div>
                           {log.created_at && (
-                            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+                            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
                               {new Date(log.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                             </div>
                           )}
@@ -1550,16 +1550,16 @@ export default function Dashboard() {
               style={{
                 background: 'var(--card)',
                 borderRadius: 14,
-                padding: 20,
-                width: 'min(80vw, 1200px)',
-                maxWidth: '80vw',
-                maxHeight: '88vh',
+                padding: 16,
+                width: 'min(97vw, 2200px)',
+                maxWidth: '97vw',
+                maxHeight: '96vh',
                 overflow: 'auto',
                 boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, color: 'var(--text)' }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 20, color: 'var(--text)' }}>
                   🏭 {expandedLine}
                 </div>
                 <button
@@ -1615,7 +1615,14 @@ export default function Dashboard() {
                     }
                     if (!moved) break;
                   }
+                  // clamp ไม่ให้การ์ด (avatar+ชื่อ+badge) ตกขอบรูป — การ์ดถูก translate(-50%,-50%)
+                  // จึงเผื่อครึ่งกว้างซ้าย/ขวา และด้านล่างเผื่อมากกว่าเพราะมีป้ายชื่อ+fit ต่อท้าย
+                  const EDGE_X = 58, EDGE_TOP = 52, EDGE_BOTTOM = 92;
                   for (const m of pxMarkers) {
+                    const fx = Math.min(Math.max(m.px + m.dox, EDGE_X), boxW - EDGE_X);
+                    const fy = Math.min(Math.max(m.py + m.doy, EDGE_TOP), boxH - EDGE_BOTTOM);
+                    m.dox = fx - m.px;
+                    m.doy = fy - m.py;
                     m.ox = (m.dox / boxW) * 100;
                     m.oy = (m.doy / boxH) * 100;
                   }
@@ -1652,29 +1659,29 @@ export default function Dashboard() {
                               transition: 'z-index 0s',
                             }}>
                             <div style={{
-                              width: 'clamp(48px, 6vw, 84px)', height: 'clamp(48px, 6vw, 84px)', borderRadius: '50%',
+                              width: 'clamp(60px, 6.5vw, 100px)', height: 'clamp(60px, 6.5vw, 100px)', borderRadius: '50%',
                               border: `clamp(3px, 0.4vw, 5px) solid ${color}`,
                               boxShadow: `0 0 10px ${color}99`,
                               overflow: 'hidden', background: '#1a1a1a',
                             }}>
                               {emp.image_url
                                 ? <img src={emp.image_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'clamp(14px, 1.8vw, 26px)', fontWeight: 800, color }}>{(emp.name || '?')[0]}</div>
+                                : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'clamp(18px, 2vw, 32px)', fontWeight: 800, color }}>{(emp.name || '?')[0]}</div>
                               }
                             </div>
                             <div style={{
                               background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
                               borderRadius: 4, padding: 'clamp(1px, 0.3vw, 4px) clamp(6px, 0.8vw, 12px)',
-                              fontSize: 'clamp(10px, 1.3vw, 17px)', fontWeight: 700, color: '#fff',
-                              whiteSpace: 'nowrap', maxWidth: 'clamp(70px, 9vw, 130px)',
+                              fontSize: 'clamp(13px, 1.5vw, 20px)', fontWeight: 700, color: '#fff',
+                              whiteSpace: 'nowrap', maxWidth: 'clamp(90px, 10vw, 160px)',
                               overflow: 'hidden', textOverflow: 'ellipsis',
                               marginTop: 'clamp(-6px, -0.5vw, -3px)', position: 'relative', zIndex: 1,
                             }}>{shortName}</div>
                             {fit !== null && (
-                              <div style={{ fontSize: 'clamp(9px, 1.1vw, 15px)', fontWeight: 800, color, background: `${color}25`, padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>{fit}%</div>
+                              <div style={{ fontSize: 'clamp(12px, 1.3vw, 18px)', fontWeight: 800, color, background: `${color}25`, padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>{fit}%</div>
                             )}
                             {emp.has_extended_ot && (
-                              <div style={{ fontSize: 'clamp(9px, 1.1vw, 15px)', fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>OT+23</div>
+                              <div style={{ fontSize: 'clamp(12px, 1.3vw, 18px)', fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>OT+23</div>
                             )}
                           </div>
                         );
@@ -1685,17 +1692,17 @@ export default function Dashboard() {
               </div>
               {/* Legend — same as skill matrix */}
               <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 4 }}>Skill Fit:</span>
+                <span style={{ fontSize: 15, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 4 }}>Skill Fit:</span>
                 {SKILL_LEVELS.map(lv => (
                   <div key={lv.min} style={{ display: 'flex', alignItems: 'center', gap: 5, background: lv.bg, borderRadius: 6, padding: '3px 8px' }}>
-                    <div style={{ width: 9, height: 9, borderRadius: '50%', background: lv.color, boxShadow: `0 0 4px ${lv.color}` }} />
-                    <span style={{ fontSize: 10, fontWeight: 700, color: lv.color }}>{lv.min}</span>
-                    <span style={{ fontSize: 10, color: 'var(--muted)' }}>{lv.label}</span>
+                    <div style={{ width: 11, height: 11, borderRadius: '50%', background: lv.color, boxShadow: `0 0 4px ${lv.color}` }} />
+                    <span style={{ fontSize: 15, fontWeight: 700, color: lv.color }}>{lv.min}</span>
+                    <span style={{ fontSize: 15, color: 'var(--muted)' }}>{lv.label}</span>
                   </div>
                 ))}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, borderRadius: 6, padding: '3px 8px', background: 'rgba(128,128,128,0.1)' }}>
-                  <div style={{ width: 9, height: 9, borderRadius: '50%', background: '#aaa' }} />
-                  <span style={{ fontSize: 10, color: 'var(--muted)' }}>ไม่มีข้อกำหนด</span>
+                  <div style={{ width: 11, height: 11, borderRadius: '50%', background: '#aaa' }} />
+                  <span style={{ fontSize: 15, color: 'var(--muted)' }}>ไม่มีข้อกำหนด</span>
                 </div>
               </div>
             </div>
@@ -1709,7 +1716,7 @@ export default function Dashboard() {
 function Pill({ label, color }) {
   return (
     <div style={{
-      fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20,
+      fontSize: 13, fontWeight: 700, padding: '3px 9px', borderRadius: 20,
       color, background: `${color}18`, border: `1px solid ${color}40`,
     }}>{label}</div>
   );
@@ -1718,7 +1725,7 @@ function Pill({ label, color }) {
 function AttendCol({ title, color, items, absent }) {
   return (
     <div>
-      <div style={{ fontSize: 11, fontWeight: 700, color, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
         {title} ({items.length})
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 300, overflowY: 'auto' }}>
@@ -1733,22 +1740,22 @@ function AttendCol({ title, color, items, absent }) {
               width: 26, height: 26, borderRadius: '50%',
               background: `${color}20`, border: `1px solid ${color}40`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 10, fontWeight: 800, color, flexShrink: 0,
+              fontSize: 12, fontWeight: 800, color, flexShrink: 0,
             }}>
               {(l.employees?.name || '?').charAt(0).toUpperCase()}
             </div>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {l.employees?.name || '—'}
               </div>
-              <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                 {absent ? 'ขาดงาน' : (l.has_helmet && l.has_boots && l.has_gloves ? '🟢 PPE ครบ' : '🟡 PPE ไม่ครบ')}
               </div>
             </div>
           </div>
         ))}
         {items.length === 0 && (
-          <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', padding: '16px 0' }}>ไม่มีข้อมูล</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center', padding: '16px 0' }}>ไม่มีข้อมูล</div>
         )}
       </div>
     </div>
