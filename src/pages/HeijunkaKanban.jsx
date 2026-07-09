@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 
 /* ─── HEIJUNKA KANBAN — Subcomponent Part Demand ──────────────────────────
@@ -87,7 +88,7 @@ function getRoundStatus(r, confirmedSet, receivedMap, workDate, nowMs) {
 }
 
 /* ─── Store Board View ───────────────────────────────────────────────────── */
-function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confirming, onReceive, fmt, lineMap, workDate, nowMs }) {
+function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confirming, onReceive, fmt, lineMap, workDate, nowMs, canOperate }) {
   const [expanded, setExpanded] = useState(null);
   const { groupDemand, roundAlloc } = view;
 
@@ -173,13 +174,13 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
                       {confirmedBy && (
                         <div style={{ fontSize: 10, color: '#22c55e', marginTop: 4 }}>✓ {confirmedBy}</div>
                       )}
-                      {needAction && (
+                      {canOperate && needAction && (
                         <button onClick={e => { e.stopPropagation(); onConfirm(r, alloc.parts); }} disabled={confirming === r.id}
                           style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
                           {confirming === r.id ? '...' : '✅ ยืนยันส่งแล้ว'}
                         </button>
                       )}
-                      {isConf && !isReceived && (
+                      {canOperate && isConf && !isReceived && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 8 }} onClick={e => e.stopPropagation()}>
                           <button onClick={() => onReceive(r, alloc.parts, 'full')}
                             style={{ flex: 1, padding: '6px 4px', borderRadius: 8, fontSize: 10, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
@@ -476,7 +477,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
 }
 
 /* ─── Delivery Rounds Panel (compact, for cards/table views) ─────────────── */
-function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onReceive, roundAlloc, workDate, nowMs }) {
+function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onReceive, roundAlloc, workDate, nowMs, canOperate }) {
   const [collapsed, setCollapsed] = useState(false);
 
   const confirmedSet = useMemo(() => {
@@ -534,13 +535,13 @@ function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onRece
                         ตัดยอด {r.cutoff_time?.slice(0,5) || '—'} → ส่ง {r.delivery_time?.slice(0,5) || '—'} · 🎴 {alloc.totalKanban} การ์ด
                       </div>
                       {confirmedBy && <div style={{ fontSize: 10, color: '#22c55e', marginTop: 3 }}>✓ {confirmedBy}</div>}
-                      {!isConf && (
+                      {canOperate && !isConf && (
                         <button onClick={() => onConfirm(r, parts)} disabled={confirming === r.id}
                           style={{ marginTop: 6, width: '100%', padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
                           {confirming === r.id ? '...' : '✅ ยืนยันส่งแล้ว'}
                         </button>
                       )}
-                      {isConf && !isReceived && (
+                      {canOperate && isConf && !isReceived && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                           <button onClick={() => onReceive(r, parts, 'full')}
                             style={{ flex: 1, padding: '5px 4px', borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: 'pointer', background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
@@ -754,7 +755,7 @@ const LOT_STATUS = {
   producing: { label: '🔧 กำลังผลิต', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)',  border: 'rgba(14,165,233,0.3)', next: 'done',      nextLabel: '✔ ผลิตเสร็จ' },
   done:      { label: '✅ เสร็จแล้ว',  color: '#22c55e', bg: 'rgba(34,197,94,0.1)',   border: 'rgba(34,197,94,0.3)', next: null,        nextLabel: null },
 };
-function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, onAdvanceLot, onIssueRaw, onReorder, fmt }) {
+function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, onAdvanceLot, onIssueRaw, onReorder, fmt, canOperate }) {
   const rawByLot = useMemo(() => {
     const m = {};
     rawRequests.forEach(r => { (m[r.lot_request_id] = m[r.lot_request_id] || []).push(r); });
@@ -826,7 +827,7 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, on
                   const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
                   const raws = rawByLot[lot.id] || [];
                   const qIdx = queue.findIndex(l => l.id === lot.id);
-                  const canReorder = lot.status !== 'done' && queue.length > 1;
+                  const canReorder = canOperate && lot.status !== 'done' && queue.length > 1;
                   return (
                     <div key={lot.id} style={{ background: st.bg, border: `1px solid ${st.border}`, borderRadius: 12, overflow: 'hidden' }}>
                       <div style={{ padding: '10px 14px' }}>
@@ -854,7 +855,7 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, on
                         <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
                           {lot.work_date || ''}{lot.source_prod_no ? ` · จาก FG ${lot.source_prod_no}` : ''}
                         </div>
-                        {st.next && (
+                        {canOperate && st.next && (
                           <button onClick={() => onAdvanceLot(lot, st.next)} disabled={busy === lot.id}
                             style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(0,0,0,0.12)', color: st.color, border: `1px solid ${st.border}`, fontFamily: 'var(--font-body)' }}>
                             {busy === lot.id ? '...' : st.nextLabel}
@@ -874,10 +875,12 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, on
                                 </div>
                                 {issued
                                   ? <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 700 }}>✔ จ่ายแล้ว</span>
-                                  : <button onClick={() => onIssueRaw(r)} disabled={busy === r.id}
-                                      style={{ padding: '3px 9px', borderRadius: 7, fontSize: 10, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
-                                      {busy === r.id ? '...' : 'จ่าย'}
-                                    </button>}
+                                  : canOperate
+                                    ? <button onClick={() => onIssueRaw(r)} disabled={busy === r.id}
+                                        style={{ padding: '3px 9px', borderRadius: 7, fontSize: 10, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
+                                        {busy === r.id ? '...' : 'จ่าย'}
+                                      </button>
+                                    : null}
                               </div>
                             );
                           })}
@@ -944,7 +947,7 @@ const RACK_STATUS = {
   received:  { label: '✅ รับแล้ว', color: '#22c55e', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.3)', next: null },
 };
 function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfirm, confirming, onReceive,
-  lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, busy, onAdvanceLot, onIssueRaw, onAdvanceRack, onIssuePkg, onAdvanceWip, fmt, workDate, nowMs }) {
+  lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, busy, onAdvanceLot, onIssueRaw, onAdvanceRack, onIssuePkg, onAdvanceWip, fmt, workDate, nowMs, canOperate }) {
 
   const { roundAlloc } = view;
   const confirmedSet = useMemo(() => { const s = new Set(); deliveries.forEach(d => s.add(`${d.line_name}|${d.shift}|${d.round_no}`)); return s; }, [deliveries]);
@@ -986,7 +989,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
               <QueueCard key={r.id} code={`${r.shift === 'night' ? '🌙' : '☀️'} รอบ ${r.round_no}`} name={r.line_name}
                 qty={alloc.totalKanban} unit="การ์ด" destination={r.line_name}
                 statusLabel={status.label} statusColor={status.top} statusBg={status.bg} statusBorder={status.border}
-                actionLabel={needAction ? '✅ ยืนยันส่งแล้ว' : (isConf && !isReceived ? '✔️ รับครบ' : null)}
+                actionLabel={canOperate ? (needAction ? '✅ ยืนยันส่งแล้ว' : (isConf && !isReceived ? '✔️ รับครบ' : null)) : null}
                 busy={confirming === r.id}
                 onAction={() => needAction ? onConfirm(r, alloc.parts) : onReceive(r, alloc.parts, 'full')}
                 meta={`ส่ง ${r.delivery_time?.slice(0,5) || '—'} · ตัดยอด ${r.cutoff_time?.slice(0,5) || '—'} · ${alloc.parts.length} พาร์ท`} />
@@ -1004,7 +1007,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
               <QueueCard key={lot.id} code={lot.child_mat_no} name={lot.part_name}
                 qty={fmt(lot.lot_qty)} unit="ชิ้น/ล็อต" destination={lot.source_line || 'ของซื้อ'}
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
-                actionLabel={st.nextLabel} busy={busy === lot.id} onAction={() => onAdvanceLot(lot, st.next)}
+                actionLabel={canOperate ? st.nextLabel : null} busy={busy === lot.id} onAction={() => onAdvanceLot(lot, st.next)}
                 meta={lot.source_prod_no ? `จาก FG ${lot.source_prod_no}` : ''} />
             );
           })}
@@ -1022,7 +1025,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                 qty={fmt(r.qty)} unit="" destination={parentLot?.source_line || '—'}
                 statusLabel={issued ? '✔ จ่ายแล้ว' : '🆕 รอจ่าย'} statusColor={issued ? '#22c55e' : '#f59e0b'}
                 statusBg={issued ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)'} statusBorder={issued ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}
-                actionLabel={issued ? null : 'จ่ายวัตถุดิบ'} busy={busy === r.id} onAction={() => onIssueRaw(r)}
+                actionLabel={issued || !canOperate ? null : 'จ่ายวัตถุดิบ'} busy={busy === r.id} onAction={() => onIssueRaw(r)}
                 meta={`สำหรับ ${r.lot_request_id ? parentLot?.child_mat_no || '' : ''}`} />
             );
           })}
@@ -1040,7 +1043,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                   <QueueCard key={r.id} code={r.container_type_id || 'ภาชนะ'} name={null}
                     qty={r.qty} unit="ใบ" destination={r.line_name}
                     statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
-                    actionLabel={st.next} busy={busy === r.id} onAction={() => onAdvanceRack(r)}
+                    actionLabel={canOperate ? st.next : null} busy={busy === r.id} onAction={() => onAdvanceRack(r)}
                     meta={r.note || ''} />
                 );
               })}
@@ -1056,7 +1059,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                     qty={p.qty} unit="" destination={p.source_line || '—'}
                     statusLabel={issued ? '✔ จ่ายแล้ว' : '🆕 รอจ่าย'} statusColor={issued ? '#22c55e' : '#f59e0b'}
                     statusBg={issued ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)'} statusBorder={issued ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}
-                    actionLabel={issued ? null : 'จ่าย Packaging'} busy={busy === p.id} onAction={() => onIssuePkg(p)}
+                    actionLabel={issued || !canOperate ? null : 'จ่าย Packaging'} busy={busy === p.id} onAction={() => onIssuePkg(p)}
                     meta={[p.product_name, p.source_prod_no ? `FG ${p.source_prod_no}` : ''].filter(Boolean).join(' · ')} />
                 );
               })}
@@ -1075,7 +1078,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
               <QueueCard key={w.id} code={code} name={w.point_name}
                 qty={fmt(w.request_qty)} unit="" destination={w.line_name}
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
-                actionLabel={st.next} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
+                actionLabel={canOperate ? st.next : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
                 meta={w.point_type === 'packaging' ? '📦 packaging' : '🧱 material'} />
             );
           })}
@@ -1086,7 +1089,8 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
 }
 
 export default function HeijunkaKanban() {
-  const { fullName } = useContext(UserContext);
+  const { fullName, role } = useContext(UserContext);
+  const canOperate = can('heijunka', 'operate', role);
   const [workDate, setWorkDate]   = useState(getWorkDate());
   const [shiftFilter, setShiftFilter] = useState('all');
   const [matFilter, setMatFilter] = useState('');            // '' | '200' | '300' | '500' — กรอง view เดียวกันทั้งฝั่งผลิต/store
@@ -1743,13 +1747,13 @@ export default function HeijunkaKanban() {
             onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
             lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests}
             busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} onAdvanceRack={advanceRack} onIssuePkg={issuePkg} onAdvanceWip={advanceWip}
-            fmt={fmt} workDate={workDate} nowMs={nowMs}
+            fmt={fmt} workDate={workDate} nowMs={nowMs} canOperate={canOperate}
           />
         ) : viewMode === 'board' ? (
           <StoreBoardView
             rounds={rounds} deliveries={deliveries} view={view}
             kanbanStd={kanbanStd} onConfirm={confirmRound} confirming={confirming}
-            onReceive={openReceive} fmt={fmt} lineMap={lineMap} workDate={workDate} nowMs={nowMs}
+            onReceive={openReceive} fmt={fmt} lineMap={lineMap} workDate={workDate} nowMs={nowMs} canOperate={canOperate}
           />
         ) : viewMode === 'timeline' ? (
           <DeliveryTimelineBoard
@@ -1760,7 +1764,7 @@ export default function HeijunkaKanban() {
           <PullBoard
             lotRequests={lotRequests} rawRequests={rawRequests} accumulator={accumulator}
             lotSizeMap={lotSizeMap} busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw}
-            onReorder={reorderLot} fmt={fmt}
+            onReorder={reorderLot} fmt={fmt} canOperate={canOperate}
           />
         ) : view.cols.length === 0 ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีกะ/แผนผลิตในวันที่ {workDate}</div>
@@ -1832,7 +1836,7 @@ export default function HeijunkaKanban() {
       {/* Delivery Rounds Panel — only for cards/table view, board has it built-in */}
       {viewMode !== 'board' && viewMode !== 'pull' && viewMode !== 'unified' && (
         <DeliveryRoundsPanel rounds={rounds} deliveries={deliveries} onConfirm={confirmRound} confirming={confirming}
-          onReceive={openReceive} roundAlloc={view.roundAlloc} workDate={workDate} nowMs={nowMs} />
+          onReceive={openReceive} roundAlloc={view.roundAlloc} workDate={workDate} nowMs={nowMs} canOperate={canOperate} />
       )}
 
       {receiveModal && (
