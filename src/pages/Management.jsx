@@ -1675,6 +1675,12 @@ export default function Management() {
                 const RING    = Math.max(2, Math.round(MK * 0.06));  // ring border width
                 const BADGE   = Math.max(14, Math.round(MK * 0.3));  // corner chip size
                 const PILL_MAXW = Math.round(MK * 1.8);
+                // clamp ตำแหน่ง "แสดงผล" ไม่ให้วงกลม+ป้ายตกขอบผัง — ตำแหน่งจริงใน DB ไม่เปลี่ยน
+                // (จุดที่ตั้งใน Line Setup ชิดขอบได้ แต่ marker ที่ใหญ่กว่าจุดต้องไม่โดนตัด)
+                const clampPos = (x, y, size) => ({
+                  x: Math.min(Math.max(x, imgBox.offsetX + size * 0.55), imgBox.offsetX + imgBox.rw - size * 0.55),
+                  y: Math.min(Math.max(y, imgBox.offsetY + size * 0.55), imgBox.offsetY + imgBox.rh - size * 1.35),
+                });
                 // จุดตั้งค่าในหน้า Line Setup เป็นแค่หมุดตำแหน่งจริง อาจอยู่ใกล้กันมากกว่าขนาด marker จริง
                 // ที่นี่ต้องผลัก marker ที่จะทับกัน (วงกลม + name pill + fit badge) ออกจากกันในพิกเซลจริง
                 // แล้วโยงเส้นกลับไปยังตำแหน่งจริงที่ตั้งไว้ ไม่ขยับตำแหน่งจริงใน DB
@@ -1705,6 +1711,11 @@ export default function Management() {
                     }
                   }
                   if (!moved) break;
+                }
+                for (const m of raw) {
+                  const c = clampPos(m.px + m.dox, m.py + m.doy, MK);
+                  m.dox = c.x - m.px;
+                  m.doy = c.y - m.py;
                 }
 
                 return (
@@ -1900,11 +1911,12 @@ export default function Management() {
                       const wTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const wLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
                       const WK = Math.round(MK * 0.8); // WIP/machine เดิม render เล็กกว่าจุดคน — คงสัดส่วนนั้นไว้
+                      const wcl = clampPos(wLeft, wTop, WK);
                       const wc = isLow ? '#ef4444' : 'rgba(34,197,94,0.85)';
                       return (
                         <div key={`wip-${p.id}`} title={`${p.point_type === 'packaging' ? '📦' : '🧱'} ${p.point_name}${p.point_type === 'packaging' ? (p.packaging_no ? ` (${p.packaging_no})` : '') : (p.mat_no ? ` (${p.mat_no})` : '')} — ${p.current_qty ?? 0}/${p.min_qty ?? 0}–${p.max_qty ?? 0}`}
                           style={{
-                            position: 'absolute', top: wTop, left: wLeft, transform: 'translate(-50%, -50%)',
+                            position: 'absolute', top: wcl.y, left: wcl.x, transform: 'translate(-50%, -50%)',
                             zIndex: 4, display: 'flex', flexDirection: 'column', alignItems: 'center',
                           }}>
                           <div style={{
@@ -1938,6 +1950,7 @@ export default function Management() {
                       const mTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const mLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
                       const MKS = Math.round(MK * 0.8); // เครื่องจักรเดิม render เล็กกว่าจุดคน — คงสัดส่วนนั้นไว้
+                      const mcl = clampPos(mLeft, mTop, MKS);
                       const firstAlarm = alarms?.[0];
                       const elapsed = firstAlarm ? dtElapsedMin(firstAlarm) : null;
                       const ongoing = firstAlarm && !firstAlarm.ended_at && firstAlarm.duration_min == null;
@@ -1947,7 +1960,7 @@ export default function Management() {
                       return (
                         <div key={`mc-${p.id}`} title={title}
                           style={{
-                            position: 'absolute', top: mTop, left: mLeft, transform: 'translate(-50%, -50%)',
+                            position: 'absolute', top: mcl.y, left: mcl.x, transform: 'translate(-50%, -50%)',
                             zIndex: alarms ? 6 : 4, display: 'flex', flexDirection: 'column', alignItems: 'center',
                           }}>
                           {/* alarm blink อยู่บนวงกลม — วงแหวนแดงกระพริบขณะ Downtime ยังไม่ปิดรายการ */}
