@@ -131,10 +131,15 @@ export default function QAInspectionSetup() {
   const [itemModal, setItemModal] = useState(null);   // { ...form, id?, pos_x?, pos_y? }
   const [placingId, setPlacingId] = useState(null);   // item id ที่กำลังรอคลิกวางตำแหน่ง
   const [uploading, setUploading] = useState(false);
-  const fileRef = useRef(null);
+  const [drawings, setDrawings] = useState([]);        // หลายแผ่น/มุมมองต่อ part (qa_part_drawings)
+  const [activeDwgId, setActiveDwgId] = useState(null);
+  const [prodImg, setProdImg] = useState(null);        // รูป product จาก BOM/Product Master (dr_products.image_url)
+  const fileRef = useRef(null);                        // input เพิ่ม drawing ใหม่
+  const replaceRef = useRef(null);                     // input เปลี่ยนรูปแผ่นที่เปิดอยู่
 
   const sel = parts.find(p => p.id === selId) || null;
-  const isPdf = sel?.drawing_url?.toLowerCase().includes('.pdf');
+  const activeDwg = drawings.find(d => d.id === activeDwgId) || null;
+  const isPdf = activeDwg?.drawing_url?.toLowerCase().includes('.pdf');
 
   const loadParts = useCallback(async () => {
     const { data } = await supabase.from('qa_parts').select('*').order('part_no');
@@ -154,7 +159,30 @@ export default function QAInspectionSetup() {
       .eq('part_id', partId);
     setItems((data || []).sort(balloonSort));
   }, []);
-  useEffect(() => { loadItems(selId); setPlacingId(null); }, [selId, loadItems]);
+  const loadDrawings = useCallback(async (partId) => {
+    if (!partId) { setDrawings([]); setActiveDwgId(null); return; }
+    const { data } = await supabase.from('qa_part_drawings').select('*')
+      .eq('part_id', partId).order('sort').order('created_at');
+    setDrawings(data || []);
+    setActiveDwgId(prev => (data || []).some(d => d.id === prev) ? prev : (data?.[0]?.id ?? null));
+  }, []);
+
+  useEffect(() => { loadItems(selId); loadDrawings(selId); setPlacingId(null); }, [selId, loadItems, loadDrawings]);
+
+  /* รูป product จาก BOM/Product Master — จับคู่ part_no ↔ mat_no/p_no/code ของ dr_products
+     ช่วยพนักงานจำหน้าตาชิ้นงานได้โดยไม่ต้องอัพโหลดซ้ำ */
+  useEffect(() => {
+    setProdImg(null);
+    const pn = sel?.part_no?.trim();
+    if (!pn || pn.includes(',')) return;
+    let alive = true;
+    supabaseDR.from('dr_products').select('image_url')
+      .or(`mat_no.eq.${pn},p_no.eq.${pn},code.eq.${pn}`)
+      .not('image_url', 'is', null)
+      .limit(1)
+      .then(({ data }) => { if (alive) setProdImg(data?.[0]?.image_url || null); });
+    return () => { alive = false; };
+  }, [sel?.part_no]);
 
   /* ตัวเลือกพาร์ทจากฐานข้อมูล BOM ฝั่ง DR (dr_products + bom_items) —
      อ่านอย่างเดียวผ่าน supabaseDR (anon), โหลด lazy ครั้งแรกที่เปิด modal เพิ่ม Part */
@@ -256,26 +284,65 @@ export default function QAInspectionSetup() {
     loadParts();
   };
 
-  /* ── Drawing upload ── */
-  const uploadDrawing = async (file) => {
-    if (!sel || !file) return;
-    if (!/^image\/|application\/pdf$/.test(file.type)) { toast.error('รองรับเฉพาะไฟล์รูปภาพหรือ PDF'); return; }
-    if (file.size > 20 * 1024 * 1024) { toast.error('ไฟล์ใหญ่เกิน 20MB'); return; }
-    setUploading(true);
+  /* ── Drawings (หลายแผ่น/มุมมองต่อ part) ── */
+  const uploadFile = async (file) => {
+    if (!/^image\/|application\/pdf$/.test(file.type)) { toast.error('รองรับเฉพาะไฟล์รูปภาพหรือ PDF'); return null; }
+    if (file.size > 20 * 1024 * 1024) { toast.error('ไฟล์ใหญ่เกิน 20MB'); return null; }
     const ext = file.name.split('.').pop().toLowerCase();
     const path = `parts/${sel.id}/${Date.now()}.${ext}`;
-    const { error: upErr } = await supabase.storage.from('qa-drawings').upload(path, file, { upsert: true });
-    if (upErr) { toast.error(`อัพโหลดไม่สำเร็จ: ${upErr.message}`); setUploading(false); return; }
-    const { data: { publicUrl } } = supabase.storage.from('qa-drawings').getPublicUrl(path);
-    const rev = window.prompt('Revision ของแบบ (เช่น Rev.C) — เว้นว่างได้', sel.drawing_rev || '');
-    const { error } = await supabase.from('qa_parts').update({
-      drawing_url: publicUrl, drawing_rev: (rev || '').trim() || sel.drawing_rev || null,
-      drawing_updated_at: new Date().toISOString(),
-    }).eq('id', sel.id);
+    const { error } = await supabase.storage.from('qa-drawings').upload(path, file, { upsert: true });
+    if (error) { toast.error(`อัพโหลดไม่สำเร็จ: ${error.message}`); return null; }
+    return supabase.storage.from('qa-drawings').getPublicUrl(path).data.publicUrl;
+  };
+
+  const addDrawing = async (file) => {
+    if (!sel || !file) return;
+    const title = window.prompt('ชื่อแผ่น/มุมมอง (เช่น View A, Section B-B, มุมบน)', `Drawing ${drawings.length + 1}`);
+    if (title === null) return;
+    setUploading(true);
+    const url = await uploadFile(file);
+    if (!url) { setUploading(false); return; }
+    const { data, error } = await supabase.from('qa_part_drawings').insert({
+      part_id: sel.id, title: title.trim() || `Drawing ${drawings.length + 1}`,
+      drawing_url: url, sort: drawings.length,
+    }).select().single();
     setUploading(false);
     if (error) { toast.error(error.message); return; }
-    toast.success('อัพโหลด Drawing แล้ว ✓');
-    loadParts();
+    supabase.from('qa_parts').update({ drawing_updated_at: new Date().toISOString() }).eq('id', sel.id).then(() => loadParts());
+    toast.success(`เพิ่ม drawing "${data.title}" แล้ว ✓`);
+    await loadDrawings(sel.id);
+    setActiveDwgId(data.id);
+  };
+
+  const replaceDrawing = async (file) => {
+    if (!activeDwg || !file) return;
+    setUploading(true);
+    const url = await uploadFile(file);
+    if (!url) { setUploading(false); return; }
+    const { error } = await supabase.from('qa_part_drawings').update({ drawing_url: url }).eq('id', activeDwg.id);
+    setUploading(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`เปลี่ยนรูปแผ่น "${activeDwg.title}" แล้ว ✓`);
+    loadDrawings(sel.id);
+  };
+
+  const renameDrawing = async (dwg) => {
+    const title = window.prompt('เปลี่ยนชื่อแผ่น/มุมมอง', dwg.title);
+    if (title === null || !title.trim()) return;
+    const { error } = await supabase.from('qa_part_drawings').update({ title: title.trim() }).eq('id', dwg.id);
+    if (error) { toast.error(error.message); return; }
+    loadDrawings(sel.id);
+  };
+
+  const deleteDrawing = async (dwg) => {
+    const cnt = items.filter(i => i.drawing_id === dwg.id).length;
+    if (!window.confirm(`ลบแผ่น "${dwg.title}"?${cnt ? `\nballoon ${cnt} จุดบนแผ่นนี้จะถูกถอดตำแหน่ง (ตัวจุดตรวจไม่หาย)` : ''}`)) return;
+    if (cnt) await supabase.from('qa_inspection_items').update({ pos_x: null, pos_y: null, drawing_id: null }).eq('drawing_id', dwg.id);
+    const { error } = await supabase.from('qa_part_drawings').delete().eq('id', dwg.id);
+    if (error) { toast.error(error.message); return; }
+    toast.success('ลบแผ่นแล้ว');
+    loadDrawings(sel.id);
+    loadItems(sel.id);
   };
 
   /* ── Item CRUD ── */
@@ -287,6 +354,7 @@ export default function QAInspectionSetup() {
       part_id: sel.id,
       balloon_no: String(f.balloon_no).trim() || nextBalloon || '1',
       pos_x: f.pos_x ?? null, pos_y: f.pos_y ?? null,
+      drawing_id: f.drawing_id ?? null,
       item_type: f.item_type, characteristic: f.characteristic.trim(),
       spec_text: f.spec_text.trim() || null,
       nominal: f.item_type === 'variable' && f.nominal !== '' ? Number(f.nominal) : null,
@@ -332,20 +400,21 @@ export default function QAInspectionSetup() {
     toast.success(`สร้างจุดควบคุม SPC "${it.characteristic}" แล้ว — บันทึกค่าวัดที่ Quality Control Center ✓`);
   };
 
-  /* คลิกบน drawing: วางตำแหน่ง balloon (โหมดวาง) หรือเพิ่มจุดตรวจใหม่ตรงนั้น */
+  /* คลิกบน drawing (แผ่นที่เปิดอยู่): วางตำแหน่ง balloon (โหมดวาง) หรือเพิ่มจุดตรวจใหม่ตรงนั้น */
   const onDrawingClick = async (e) => {
-    if (!canManage || isPdf) return;
+    if (!canManage || isPdf || !activeDwg) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = +((e.clientX - rect.left) / rect.width * 100).toFixed(2);
     const y = +((e.clientY - rect.top) / rect.height * 100).toFixed(2);
     if (placingId) {
-      const { error } = await supabase.from('qa_inspection_items').update({ pos_x: x, pos_y: y }).eq('id', placingId);
+      // วาง/ย้าย balloon — เปลี่ยนแผ่นได้ด้วย: เปิดแผ่นที่ต้องการแล้วคลิก
+      const { error } = await supabase.from('qa_inspection_items').update({ pos_x: x, pos_y: y, drawing_id: activeDwg.id }).eq('id', placingId);
       if (error) { toast.error(error.message); return; }
       setPlacingId(null);
-      toast.success('วางตำแหน่ง balloon แล้ว ✓');
+      toast.success(`วาง balloon บนแผ่น "${activeDwg.title}" แล้ว ✓`);
       loadItems(sel.id);
     } else {
-      setItemModal({ ...EMPTY_ITEM, balloon_no: nextBalloon, pos_x: x, pos_y: y });
+      setItemModal({ ...EMPTY_ITEM, balloon_no: nextBalloon, pos_x: x, pos_y: y, drawing_id: activeDwg.id });
     }
   };
 
@@ -384,7 +453,7 @@ export default function QAInspectionSetup() {
                   opacity: p.is_active ? 1 : 0.5,
                 }}>
                 <div style={{ fontWeight: 800, fontSize: 13, color: p.id === selId ? 'var(--accent)' : 'var(--text)' }}>
-                  {p.part_no}{p.drawing_url ? ' 📎' : ''}{p.is_active ? '' : ' (ปิด)'}
+                  {p.part_no}{p.is_active ? '' : ' (ปิด)'}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {[p.part_name, p.customer].filter(Boolean).join(' · ') || '—'}
@@ -402,6 +471,14 @@ export default function QAInspectionSetup() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
             {/* header */}
             <div style={{ ...cardSt, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+              {prodImg && (
+                <a href={prodImg} target="_blank" rel="noreferrer" title="รูปจาก Product Master/BOM — คลิกเปิดเต็มจอ" style={{ flexShrink: 0 }}>
+                  <img src={prodImg} alt={sel.part_no} style={{
+                    width: 72, height: 72, objectFit: 'cover', borderRadius: 10,
+                    border: '1px solid var(--border2)', background: 'var(--bg2)', display: 'block',
+                  }} />
+                </a>
+              )}
               <div style={{ flex: 1, minWidth: 200 }}>
                 <div style={{ fontWeight: 900, fontSize: 17, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   {sel.part_no} <span style={{ fontWeight: 500, color: 'var(--text2)' }}>{sel.part_name || ''}</span>
@@ -419,9 +496,11 @@ export default function QAInspectionSetup() {
               {canManage && (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <input ref={fileRef} type="file" accept="image/*,application/pdf" style={{ display: 'none' }}
-                    onChange={e => { uploadDrawing(e.target.files?.[0]); e.target.value = ''; }} />
+                    onChange={e => { addDrawing(e.target.files?.[0]); e.target.value = ''; }} />
+                  <input ref={replaceRef} type="file" accept="image/*,application/pdf" style={{ display: 'none' }}
+                    onChange={e => { replaceDrawing(e.target.files?.[0]); e.target.value = ''; }} />
                   <button style={btnSt('#4d9fff')} disabled={uploading} onClick={() => fileRef.current?.click()}>
-                    {uploading ? '⏳ กำลังอัพโหลด…' : (sel.drawing_url ? '🔄 เปลี่ยน Drawing' : '📎 อัพโหลด Drawing')}
+                    {uploading ? '⏳ กำลังอัพโหลด…' : '📎 เพิ่ม Drawing'}
                   </button>
                   <button style={ghostBtn} onClick={() => setPartModal({
                     ...EMPTY_PART, ...sel,
@@ -434,35 +513,65 @@ export default function QAInspectionSetup() {
               )}
             </div>
 
-            {/* drawing + balloons */}
+            {/* drawings (หลายแผ่น/มุมมอง) + balloons */}
             <div style={cardSt}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
-                <div style={{ fontWeight: 800, fontSize: 13.5 }}>🖼 Drawing {sel.drawing_rev ? `(${sel.drawing_rev})` : ''}</div>
-                {canManage && sel.drawing_url && !isPdf && (
+                <div style={{ fontWeight: 800, fontSize: 13.5 }}>🖼 Drawings ({drawings.length} แผ่น){sel.drawing_rev ? ` · Rev ${sel.drawing_rev}` : ''}</div>
+                {canManage && activeDwg && !isPdf && (
                   <div style={{ fontSize: 11.5, color: placingId ? '#f59e0b' : 'var(--muted)', fontWeight: placingId ? 800 : 400 }}>
                     {placingId
-                      ? '👆 คลิกบนแบบเพื่อวางตำแหน่ง balloon ที่เลือก (Esc/คลิกปุ่มอีกครั้งเพื่อยกเลิก)'
+                      ? '👆 เปิดแผ่นที่ต้องการ แล้วคลิกบนแบบเพื่อวาง balloon (คลิกปุ่ม 📍 อีกครั้งเพื่อยกเลิก)'
                       : 'คลิกบนแบบ = เพิ่มจุดตรวจใหม่ตรงตำแหน่งนั้น · คลิก balloon = แก้ไขจุดตรวจ'}
                   </div>
                 )}
               </div>
-              {!sel.drawing_url ? (
+
+              {/* แถบเลือกแผ่น/มุมมอง */}
+              {drawings.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+                  {drawings.map(d => {
+                    const cnt = items.filter(i => i.pos_x != null && (i.drawing_id === d.id || (!i.drawing_id && drawings[0]?.id === d.id))).length;
+                    const active = d.id === activeDwgId;
+                    return (
+                      <button key={d.id} onClick={() => { setActiveDwgId(d.id); }}
+                        style={{
+                          ...ghostBtn, padding: '6px 12px',
+                          ...(active ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderColor: 'var(--accent)', fontWeight: 800 } : {}),
+                        }}>
+                        🖼 {d.title}{cnt ? ` (${cnt})` : ''}
+                      </button>
+                    );
+                  })}
+                  {canManage && activeDwg && (
+                    <div style={{ display: 'flex', gap: 4, marginLeft: 4 }}>
+                      <button title={`เปลี่ยนชื่อ "${activeDwg.title}"`} onClick={() => renameDrawing(activeDwg)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>
+                      <button title={`เปลี่ยนรูปแผ่น "${activeDwg.title}"`} disabled={uploading} onClick={() => replaceRef.current?.click()}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>🔄</button>
+                      <button title={`ลบแผ่น "${activeDwg.title}"`} onClick={() => deleteDrawing(activeDwg)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#ef4444' }}>🗑</button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!activeDwg ? (
                 <div style={{ padding: 46, textAlign: 'center', color: 'var(--muted)', fontSize: 13, border: '2px dashed var(--border2)', borderRadius: 10 }}>
-                  ยังไม่มี drawing — {canManage ? 'กด "📎 อัพโหลด Drawing" (รูปภาพหรือ PDF ≤20MB)' : 'รอ QA อัพโหลด'}
+                  ยังไม่มี drawing — {canManage ? 'กด "📎 เพิ่ม Drawing" ได้หลายแผ่น/หลายมุมมอง (รูปภาพหรือ PDF ≤20MB)' : 'รอ QA อัพโหลด'}
                 </div>
               ) : isPdf ? (
                 <div>
-                  <iframe src={sel.drawing_url} title="drawing" style={{ width: '100%', height: 520, border: '1px solid var(--border2)', borderRadius: 10, background: '#fff' }} />
+                  <iframe src={activeDwg.drawing_url} title={activeDwg.title} style={{ width: '100%', height: 520, border: '1px solid var(--border2)', borderRadius: 10, background: '#fff' }} />
                   <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
-                    ไฟล์ PDF วาง balloon บนแบบไม่ได้ — ถ้าต้องการ balloon ให้อัพโหลดเป็นรูปภาพ (PNG/JPG) · <a href={sel.drawing_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>เปิดเต็มจอ ↗</a>
+                    ไฟล์ PDF วาง balloon บนแบบไม่ได้ — ถ้าต้องการ balloon ให้อัพโหลดเป็นรูปภาพ (PNG/JPG) · <a href={activeDwg.drawing_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>เปิดเต็มจอ ↗</a>
                   </div>
                 </div>
               ) : (
                 <div
                   onClick={onDrawingClick}
                   style={{ position: 'relative', display: 'inline-block', maxWidth: '100%', cursor: canManage ? 'crosshair' : 'default', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border2)' }}>
-                  <img src={sel.drawing_url} alt={sel.part_no} style={{ display: 'block', maxWidth: '100%' }} />
-                  {items.filter(i => i.pos_x != null && i.pos_y != null).map(i => (
+                  <img src={activeDwg.drawing_url} alt={activeDwg.title} style={{ display: 'block', maxWidth: '100%' }} />
+                  {items.filter(i => i.pos_x != null && i.pos_y != null && (i.drawing_id === activeDwg.id || (!i.drawing_id && drawings[0]?.id === activeDwg.id))).map(i => (
                     <div key={i.id}
                       title={`#${i.balloon_no} ${i.characteristic}${i.spec_text ? ` · ${i.spec_text}` : ''}`}
                       onClick={e => { e.stopPropagation(); if (canManage) openEditItem(i); }}
@@ -505,6 +614,11 @@ export default function QAInspectionSetup() {
                         <td style={{ ...tdSt, fontWeight: 900, whiteSpace: 'nowrap' }}>
                           <span style={{ color: it.rank ? RANK[it.rank]?.color : '#4d9fff' }}>{it.rank ? '◆' : '●'} {it.balloon_no}</span>
                           {it.pos_x == null && <span title="ยังไม่วางบน drawing" style={{ marginLeft: 4, fontSize: 10, color: 'var(--muted)' }}>∅</span>}
+                          {it.pos_x != null && drawings.length > 1 && (
+                            <div style={{ fontSize: 9.5, color: 'var(--muted)', fontWeight: 500, marginTop: 1 }}>
+                              🖼 {drawings.find(d => d.id === it.drawing_id)?.title || drawings[0]?.title || '—'}
+                            </div>
+                          )}
                         </td>
                         <td style={tdSt}>{it.characteristic}{it.remark ? <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{it.remark}</div> : null}</td>
                         <td style={tdSt}><Chip label={it.item_type === 'variable' ? 'Variable' : 'Attribute'} color={it.item_type === 'variable' ? '#4d9fff' : '#a78bfa'} /></td>
@@ -520,8 +634,8 @@ export default function QAInspectionSetup() {
                         <td style={tdSt}>{[it.frequency, it.sample_size != null ? `n=${it.sample_size}` : null].filter(Boolean).join(' · ') || '—'}</td>
                         {canManage && (
                           <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
-                            {!isPdf && sel.drawing_url && (
-                              <button title="วาง/ย้ายตำแหน่งบน drawing" onClick={() => setPlacingId(p => p === it.id ? null : it.id)}
+                            {activeDwg && !isPdf && (
+                              <button title="วาง/ย้ายตำแหน่ง balloon — เปิดแผ่นที่ต้องการก่อนแล้วคลิกบนแบบ" onClick={() => setPlacingId(p => p === it.id ? null : it.id)}
                                 style={{ background: placingId === it.id ? '#f59e0b' : 'none', border: 'none', cursor: 'pointer', fontSize: 13, borderRadius: 5, padding: '2px 4px' }}>📍</button>
                             )}
                             <button title="แก้ไข" onClick={() => openEditItem(it)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>
