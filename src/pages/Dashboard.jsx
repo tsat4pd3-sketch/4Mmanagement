@@ -780,7 +780,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── KPI Row ─────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: isWide ? 'repeat(5, 1fr)' : 'repeat(auto-fit, minmax(140px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isWide ? 'repeat(5, 1fr)' : 'repeat(auto-fit, minmax(175px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
         {[
           {
             label: 'พนักงานทั้งหมด', value: totalCapacity, unit: 'คน',
@@ -811,38 +811,39 @@ export default function Dashboard() {
             accent: visibleFourMLogs.length > 0 ? '#e74c3c' : '#22c55e', icon: '🚨', radial: null,
           },
         ].map((kpi, i) => (
-          <motion.div key={kpi.label} {...stagger(i + 2)}>
+          <motion.div key={kpi.label} {...stagger(i + 2)} style={{ height: '100%' }}>
             <div style={{
               background: 'var(--card)', border: '1px solid var(--border2)',
               borderRadius: 14, padding: isMobile ? '14px 14px' : isWide ? '22px 24px' : '18px 20px',
               boxShadow: 'var(--shadow-sm)',
               borderTop: `3px solid ${kpi.accent}`,
-              display: 'flex', flexDirection: 'column', gap: 4,
+              display: 'flex', flexDirection: 'column', gap: 4, justifyContent: 'space-between',
               position: 'relative', overflow: 'hidden',
-              minHeight: isWide ? 130 : undefined,
+              height: '100%', boxSizing: 'border-box',
+              minHeight: isMobile ? 120 : isWide ? 160 : 140,
             }}>
               <div style={{ position: 'absolute', top: 14, right: 16, opacity: 0.12, fontSize: isWide ? 56 : 42, lineHeight: 1, userSelect: 'none' }}>
                 {kpi.icon}
               </div>
-              <div style={{ fontSize: isWide ? 14 : 13, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+              <div style={{ fontSize: isWide ? 16 : 15, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
                 {kpi.label}
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginTop: 4 }}>
                 {kpi.radial !== null ? (
-                  <div style={{ position: 'relative', width: isWide ? 72 : 60, height: isWide ? 72 : 60, flexShrink: 0 }}>
-                    <RadialProgress pct={kpi.radial} size={isWide ? 72 : 60} stroke={isWide ? 7 : 6} color={kpi.accent} />
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isWide ? 17 : 15, fontWeight: 800, color: kpi.accent, fontFamily: 'var(--font-display)' }}>
+                  <div style={{ position: 'relative', width: isWide ? 92 : 72, height: isWide ? 92 : 72, flexShrink: 0 }}>
+                    <RadialProgress pct={kpi.radial} size={isWide ? 92 : 72} stroke={isWide ? 8 : 7} color={kpi.accent} />
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isWide ? 24 : 19, fontWeight: 800, color: kpi.accent, fontFamily: 'var(--font-display)' }}>
                       {kpi.value}
                     </div>
                   </div>
                 ) : (
-                  <div style={{ fontSize: isWide ? 42 : 36, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1 }}>
+                  <div style={{ fontSize: isWide ? 54 : 44, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1 }}>
                     {loading ? '—' : kpi.value}
-                    <span style={{ fontSize: isWide ? 18 : 16, fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>{kpi.unit}</span>
+                    <span style={{ fontSize: isWide ? 22 : 18, fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>{kpi.unit}</span>
                   </div>
                 )}
               </div>
-              <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>{kpi.sub}</div>
+              <div style={{ fontSize: isWide ? 15 : 14, color: 'var(--muted)', marginTop: 2 }}>{kpi.sub}</div>
             </div>
           </motion.div>
         ))}
@@ -912,7 +913,7 @@ export default function Dashboard() {
             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
               สถานะไลน์ผลิต
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: isUltra ? 'repeat(auto-fill, minmax(200px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(180px, 1fr))' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: isMobile ? 10 : 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isUltra ? 'repeat(auto-fill, minmax(250px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(230px, 1fr))' : 'repeat(auto-fill, minmax(200px, 1fr))', gap: isMobile ? 10 : 14 }}>
               {renderOrder.flatMap((line, i) => {
                 const healthy = line.rate >= 80 && line.lineAlerts === 0;
                 const warn    = line.lineAlerts > 0 || (line.rate > 0 && line.rate < 80);
@@ -922,7 +923,7 @@ export default function Dashboard() {
                 const cardDT = [line.name, ...(line._children?.map(c => c.name) || [])]
                   .flatMap(n => dtAlarmByLine[n] || []);
                 const card = (
-                  <motion.div key={line.id} {...stagger(8 + i)}>
+                  <motion.div key={line.id} {...stagger(8 + i)} style={{ height: '100%' }}>
                     <div
                       onClick={line._hasChildren ? () => toggleExpand(line.name) : undefined}
                       style={{
@@ -932,15 +933,18 @@ export default function Dashboard() {
                         borderRadius: 12, padding: isWide ? '18px 20px' : '14px 16px',
                         boxShadow: 'var(--shadow-sm)',
                         cursor: line._hasChildren ? 'pointer' : 'default',
+                        height: '100%', boxSizing: 'border-box',
+                        minHeight: isWide ? 190 : 165,
+                        display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
                       }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                            {line._hasChildren && <span style={{ fontSize: 15 }}>📂</span>}
-                            <div style={{ fontSize: isWide ? 16 : 15, fontWeight: 700, color: 'var(--text)' }}>{line.name}</div>
+                            {line._hasChildren && <span style={{ fontSize: 17 }}>📂</span>}
+                            <div style={{ fontSize: isWide ? 19 : 17, fontWeight: 700, color: 'var(--text)', lineHeight: 1.25 }}>{line.name}</div>
                           </div>
                           {line.section && (
-                            <div style={{ fontSize: 12, color: '#4d9fff', marginTop: 2, fontWeight: 600 }}>
+                            <div style={{ fontSize: isWide ? 14 : 13, color: '#4d9fff', marginTop: 2, fontWeight: 600 }}>
                               {line.section}{line._hasChildren && ` · รวม ${line._children.length} ไลน์ย่อย`}
                             </div>
                           )}
@@ -961,18 +965,18 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                        <span style={{ fontSize: isWide ? 32 : 24, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
+                        <span style={{ fontSize: isWide ? 42 : 34, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
                           {line.linePresent}
                         </span>
-                        <span style={{ fontSize: isWide ? 15 : 13, color: 'var(--muted)' }}>/ {line.lineTotal} คน{line._hasChildren && ' (รวมย่อย)'}</span>
+                        <span style={{ fontSize: isWide ? 17 : 15, color: 'var(--muted)' }}>/ {line.lineTotal} คน{line._hasChildren && ' (รวมย่อย)'}</span>
                       </div>
                       <MiniBar value={line.linePresent} max={line.lineTotal} color={color} />
                       <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color }}>
+                        <span style={{ fontSize: isWide ? 15 : 14, fontWeight: 700, color }}>
                           {line.lineTotal === 0 ? 'ไม่มีข้อมูล' : `${line.rate}% Attendance ${healthy ? '· ✓ Normal' : line.lineAlerts > 0 ? '· ⚠ Risk' : ''}`}
                         </span>
                         {line._hasChildren && (
-                          <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--accent)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 3 }}>
                             {isExpanded ? 'ซ่อนไลน์ย่อย' : 'ดูไลน์ย่อย'}
                             <span style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
                           </span>
