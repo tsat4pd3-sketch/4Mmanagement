@@ -6,6 +6,7 @@ import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFor
 import { toast } from '../components/Toast';
 import tsLogoUrl from '../assets/TS logo.png';
 import { can } from '../utils/permissions';
+import { inSectionScope } from '../utils/sectionScope';
 
 // โหลดโลโก้บริษัท (เหมือนหน้าเว็บ) เป็น base64 ครั้งเดียวสำหรับฝัง PDF
 let tsLogoDataUrlPromise = null;
@@ -162,7 +163,7 @@ export default function DailyReport() {
    LIVE TAB
 ═══════════════════════════════════════════════════════════════ */
 function LiveTab({ role }) {
-  const { fullName, section: userSection, lineId: userLineId } = useContext(UserContext);
+  const { fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const [lines, setLines]           = useState([]);
   const [lineMap, setLineMap]       = useState({});
   const [products, setProducts]     = useState([]);
@@ -227,6 +228,9 @@ function LiveTab({ role }) {
   const [machines, setMachines]             = useState([]);
   // Carry-over step: map of prod_order.id → 'carry' | 'cancel' | null
   const [carryOverDecisions, setCarryOverDecisions] = useState({});
+  // Downtime เปิดค้างตอนปิดกะ: ต่อรายการ dtId → 'close' (เครื่องกลับมาแล้ว กรอกเวลาจบ) | 'carry' (ยังซ่อมอยู่ ตัดยอดข้ามกะ)
+  const [dtCarryDecisions, setDtCarryDecisions] = useState({});
+  const [dtCloseTimes,     setDtCloseTimes]     = useState({}); // dtId → 'HH:MM' เวลาที่เครื่องกลับมา
   // qty_actual produced this shift for each open order (before carry-over)
   const [carryQtyActual, setCarryQtyActual] = useState({});
   // เวลาหยุดผลิตจริงต่อออเดอร์ (ใช้แทนเวลาปิดกะรวมตอนคำนวณสรุปแยกตามชิ้นงาน เผื่อพาร์ทนี้หยุดไม่ตรงกับเวลาปิดกะ)
@@ -302,10 +306,11 @@ function LiveTab({ role }) {
     }
 
     let { data: ss } = await sq;
-    if (role === 'supervisor' && userSection) {
+    if (role !== 'leader' && scopeSecs.length) {
+      // role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
       ss = (ss || []).filter(s => {
         const liveSection = lm[s.line_name]?.section;
-        return normSection(liveSection) === normSection(userSection) || normSection(s.section) === normSection(userSection);
+        return inSectionScope(scopeSecs, liveSection) || inSectionScope(scopeSecs, s.section);
       });
     }
 
@@ -315,17 +320,17 @@ function LiveTab({ role }) {
       .in('status', ['open', 'pending_close'])
       .lt('work_date', today());
     setOverdueAlert((overdue || []).filter(o => {
-      if (role === 'admin' || role === 'manager') return true;
-      if (role === 'supervisor') {
-        if (!userSection) return true;
-        const liveSection = lm[o.line_name]?.section;
-        return normSection(liveSection) === normSection(userSection) || normSection(o.section) === normSection(userSection);
-      }
+      if (role === 'admin') return true;
       if (role === 'leader') {
         const myLine = (ln || []).find(l => l.id === userLineId);
         return myLine && o.line_name === myLine.name;
       }
-      return false;
+      if (scopeSecs.length) {
+        const liveSection = lm[o.line_name]?.section;
+        return inSectionScope(scopeSecs, liveSection) || inSectionScope(scopeSecs, o.section);
+      }
+      // ไม่มี scope: manager เห็นหมดเหมือนเดิม / supervisor ที่ไม่มี section = เห็นหมด (พฤติกรรมเดิม)
+      return role === 'manager' || role === 'supervisor';
     }));
 
     setSessions(ss || []);
@@ -335,7 +340,7 @@ function LiveTab({ role }) {
       setSelSession(null);
     }
     setLoading(false);
-  }, [role, userSection, userLineId]);
+  }, [role, scopeSecs, userLineId]);
 
   const loadDT = useCallback(async (sessionId) => {
     if (!sessionId) return;
@@ -461,11 +466,48 @@ function LiveTab({ role }) {
     }).select('*, dr_products(name, cycle_time_sec, target_per_shift, process_type)').single();
     if (error) { toast.error('เปิดกะไม่สำเร็จ: ' + error.message); return; }
     toast.success('เปิดกะสำเร็จ');
+
+    // ── รับ Downtime ที่ตัดยอดข้ามกะจากกะล่าสุดของไลน์นี้ (เครื่องยังซ่อมไม่เสร็จ) มาเปิดต่ออัตโนมัติ ──
+    // ดูเฉพาะ session ล่าสุด 1 กะ — carry เก่ากว่านั้นถือว่าจบไปแล้ว ไม่ปลุกขึ้นมาใหม่
+    try {
+      const { data: prevSess } = await supabaseDR.from('production_sessions')
+        .select('id').eq('line_name', openForm.line_name).neq('id', data.id)
+        .order('created_at', { ascending: false }).limit(1);
+      if (prevSess?.length) {
+        const { data: carryDts } = await supabaseDR.from('downtime_logs')
+          .select('*, dr_downtime_types(name_th)')
+          .eq('session_id', prevSess[0].id).eq('carry_over', true);
+        if (carryDts?.length) {
+          // ข้ามรายการที่มีตัวต่อเนื่องแล้ว (กันสร้างซ้ำถ้าเปิดกะ→ลบกะ→เปิดใหม่)
+          const { data: conts } = await supabaseDR.from('downtime_logs')
+            .select('carried_from_id').in('carried_from_id', carryDts.map(d => d.id));
+          const done = new Set((conts || []).map(c => c.carried_from_id));
+          const pending = carryDts.filter(d => !done.has(d.id));
+          if (pending.length) {
+            const startISO = new Date(`${openForm.work_date}T${(openForm.start_time || '08:00').slice(0, 5)}:00`).toISOString();
+            const { error: contErr } = await supabaseDR.from('downtime_logs').insert(pending.map(d => ({
+              session_id:       data.id,
+              downtime_type_id: d.downtime_type_id,
+              machine_no:       d.machine_no,
+              mat_no:           d.mat_no,
+              description:      d.description,
+              started_at:       startISO,
+              carried_from_id:  d.id,
+              reported_by_name: fullName,
+              reported_by_uid:  user?.id,
+            })));
+            if (!contErr) toast.info(`⏩ รับ Downtime ต่อเนื่องจากกะก่อน ${pending.length} รายการ — เครื่องยังซ่อมไม่เสร็จ`);
+          }
+        }
+      }
+    } catch { /* การรับ DT ต่อเนื่องล้มเหลวต้องไม่ล้มการเปิดกะ */ }
+
     setShowOpen(false);
     setSessions(s => [data, ...s]);
     setSelSession(data);
     setDtLogs([]);
     setProdOrders([]);
+    loadDT(data.id);
   };
 
   const handleSaveQty = async () => {
@@ -644,7 +686,12 @@ function LiveTab({ role }) {
       const orig = dtLogs.find(x => x.id === dtForm.id);
       const wasOpen   = orig && !orig.ended_at && orig.duration_min == null;
       const nowClosed = endedAt != null || durMin != null;
-      if (wasOpen && nowClosed) notifyDowntime(notifyBase, 'downtime_recovered');
+      if (wasOpen && nowClosed) {
+        notifyDowntime({
+          ...notifyBase,
+          description: [dtForm.description, orig.carried_from_id ? '(ต่อเนื่องจากกะก่อน)' : ''].filter(Boolean).join(' ') || null,
+        }, 'downtime_recovered');
+      }
     }
 
     toast.success(dtForm.id ? 'แก้ไข Downtime แล้ว' : 'บันทึก Downtime แล้ว');
@@ -684,9 +731,9 @@ function LiveTab({ role }) {
   // นาที Downtime ที่ทับซ้อนกับช่วงเวลา [startMs, endMs] — ใช้หักจาก "เวลาที่ MAT.NO นี้วิ่งจริง" ก่อนเทียบ %P
   // เทียบด้วยช่วงเวลาจริง (started_at/ended_at) ไม่ใช่แค่ d.mat_no ตรงกัน เพราะ Downtime ของไลน์ร่วม (ไม่ระบุ MAT.NO)
   // ก็กระทบ MAT.NO ที่วิ่งซ้อนอยู่ในช่วงนั้นด้วย — ถ้าไม่หัก จะนับเวลาผลิตจริงเกิน ทำให้ %P เพี้ยน (เช่นเกิน 100%)
-  const dtOverlapMin = (startMs, endMs, pred = () => true) => {
+  const dtOverlapMin = (startMs, endMs, pred = () => true, logs = dtLogs) => {
     if (!startMs || !endMs || endMs <= startMs) return 0;
-    return dtLogs.filter(pred).reduce((sum, d) => {
+    return logs.filter(pred).reduce((sum, d) => {
       if (!d.started_at) return sum;
       const s0 = new Date(d.started_at).getTime();
       const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + (d.duration_min || 0) * 60000;
@@ -1162,7 +1209,9 @@ function LiveTab({ role }) {
     }, 0);
   };
 
-  const computeOEE = (ngQtyOverride, endTimeOverride, startTimeOverride) => {
+  // dtLogsOverride: ใช้ตอนปิดกะที่เพิ่งปิด/ตัดยอด Downtime เปิดค้างไปใน call เดียวกัน — state dtLogs ยังเป็นค่าเก่า
+  const computeOEE = (ngQtyOverride, endTimeOverride, startTimeOverride, dtLogsOverride) => {
+    const dtl = dtLogsOverride || dtLogs;
     const confirmedQty = prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
     // Also count qty_actual from open orders being carried over
     const carryActualQty = prodOrders.filter(o => o.status === 'open').reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || 0), 0);
@@ -1181,8 +1230,8 @@ function LiveTab({ role }) {
       if (openedAt && closedAt < openedAt) closedAt = new Date(closedAt.getTime() + 86400000); // กะดึกข้ามวัน
     }
     const shiftMin  = openedAt ? Math.round((closedAt - openedAt) / 60000) : 0;
-    const loggedPlannedDT  = dtLogs.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
-    const loggedUnplannedDT = dtLogs.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
+    const loggedPlannedDT  = dtl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
+    const loggedUnplannedDT = dtl.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
     const sessionShift  = selSession?.shift || 'day';
     const processType   = sessionProcessType();
     const policyBreakMin = computePolicyBreakMin(openedAt, closedAt, sessionShift, processType);
@@ -1228,8 +1277,8 @@ function LiveTab({ role }) {
       if (matStartMs == null || matEndMs == null || matEndMs <= matStartMs) return;
       const windowMin = (matEndMs - matStartMs) / 60000;
       const matPolicyBreakMin = computePolicyBreakMin(new Date(matStartMs), new Date(matEndMs), sessionShift, processType);
-      const matLoggedPlanned   = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category === 'planned');
-      const matLoggedUnplanned = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category !== 'planned');
+      const matLoggedPlanned   = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category === 'planned', dtl);
+      const matLoggedUnplanned = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category !== 'planned', dtl);
       const matNetAvail = Math.max(0, windowMin - matPolicyBreakMin - matLoggedPlanned);
       const matRunMin   = Math.max(0, matNetAvail - matLoggedUnplanned);
       totalNetAvailByMat += matNetAvail;
@@ -1321,11 +1370,13 @@ function LiveTab({ role }) {
       return;
     }
 
-    // Downtime ที่ยังไม่ระบุระยะเวลา (เริ่มไว้แต่ยังไม่กดปิด) ต้องปิดให้ครบก่อน
+    // Downtime ที่ยังเปิดค้าง (เริ่มไว้แต่ยังไม่ปิดรายการ) — ต้องตัดสินใจต่อรายการก่อนปิดกะ:
+    //   'close' = เครื่องกลับมาแล้ว กรอกเวลาจบจริง | 'carry' = ยังซ่อมอยู่ ตัดยอดด้วยเวลาปิดกะแล้วเปิดต่อกะถัดไป
     // ไม่งั้นช่วงเวลานั้นจะไม่ถูกหักออกจาก Availability ตอนคำนวณ OEE (duration_min เป็น null = นับเป็น 0 นาที)
     const openDT = dtLogs.filter(d => d.duration_min == null);
-    if (openDT.length > 0) {
-      toast.error(`มี Downtime ${openDT.length} รายการที่ยังไม่ระบุระยะเวลา/เวลาสิ้นสุด กรุณาปิดให้ครบก่อนปิดกะ`);
+    const dtUndecided = openDT.filter(d => !dtCarryDecisions[d.id] || (dtCarryDecisions[d.id] === 'close' && !dtCloseTimes[d.id]));
+    if (dtUndecided.length > 0) {
+      toast.error(`มี Downtime เปิดค้าง ${dtUndecided.length} รายการ — เลือก "เครื่องกลับมาแล้ว" (พร้อมเวลาจบ) หรือ "ยังซ่อมอยู่ ตัดยอดข้ามกะ" ในหัวข้อ Downtime เปิดค้างก่อน`);
       return;
     }
 
@@ -1337,6 +1388,36 @@ function LiveTab({ role }) {
     }
 
     setSavingClose(true);
+
+    // ── ปิด/ตัดยอด Downtime ที่เปิดค้าง ก่อนคำนวณ OEE (นาทีต้องเข้าไปหักใน %A ของกะนี้) ──
+    const closeEndStr = closeEndTime || nowTime();
+    let updatedDtLogs = dtLogs;
+    for (const d of openDT) {
+      if (!d.started_at) continue; // รายการเปิดค้างต้องมีเวลาเริ่มเสมอ (validation ตอนบันทึกบังคับ) — กันพังเฉยๆ
+      const decision = dtCarryDecisions[d.id];
+      const endStr   = decision === 'carry' ? closeEndStr : dtCloseTimes[d.id];
+      const startMs  = new Date(d.started_at).getTime();
+      let endMs = new Date(`${selSession.work_date}T${endStr.slice(0, 5)}:00`).getTime();
+      if (endMs < startMs) endMs += 86400000; // ข้ามเที่ยงคืน (กะดึก)
+      const dur = Math.max(1, Math.round((endMs - startMs) / 60000));
+      const patch = { ended_at: new Date(endMs).toISOString(), duration_min: dur, carry_over: decision === 'carry' };
+      const { error: dtErr } = await supabaseDR.from('downtime_logs').update(patch).eq('id', d.id);
+      if (dtErr) { toast.error('ปิดรายการ Downtime ไม่สำเร็จ: ' + dtErr.message); setSavingClose(false); return; }
+      updatedDtLogs = updatedDtLogs.map(x => x.id === d.id ? { ...x, ...patch } : x);
+      // เครื่องกลับมาจริง → แจ้ง ✅ / ตัดยอดข้ามกะ = เครื่องยังไม่กลับมา ห้ามแจ้ง recovered
+      if (decision === 'close') {
+        const hm = (ms) => { const t = new Date(ms); return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`; };
+        notifyDowntime({
+          line_name: selSession.line_name, shift: selSession.shift, work_date: selSession.work_date,
+          machine_no: d.machine_no,
+          machine_name: machines.find(m => m.machine_no === d.machine_no)?.machine_name || '',
+          type_name: d.dr_downtime_types?.name_th || '',
+          start_time: hm(startMs), end_time: hm(endMs), duration_min: dur,
+          mat_no: d.mat_no || null, description: d.description || null, reported_by: fullName,
+        }, 'downtime_recovered');
+      }
+    }
+    if (openDT.length) setDtLogs(updatedDtLogs);
 
     // Process carry-over decisions
     const { data: { user } } = await supabase.auth.getUser();
@@ -1405,7 +1486,7 @@ function LiveTab({ role }) {
     const totalProducedFinal = confirmed.reduce((s, o) => s + o.qty, 0) + carryActual;
     const totalQtyOk      = Math.max(0, totalProducedFinal - totalQtyNg - totalQtySuspect - totalQtyRepair);
 
-    const { A, P, Q, oee, shiftMin } = computeOEE(totalQtyNg + totalQtySuspect, closeEndTime, closeStartTime);
+    const { A, P, Q, oee, shiftMin } = computeOEE(totalQtyNg + totalQtySuspect, closeEndTime, closeStartTime, updatedDtLogs);
     const startTimeChanged = closeStartTime && closeStartTime !== selSession.start_time;
     // Leader → request close (pending_close), SV+ → close directly
     const isLeaderRequest = role === 'leader';
@@ -1479,15 +1560,19 @@ function LiveTab({ role }) {
           ? { mat_no: o.mat_no, part_name: o.part_name, qty: o.qty }
           : { mat_no: o.mat_no, part_name: o.part_name, qty: parseInt(carryQtyActual[o.id]) || 0, carry: true }),
       ]),
-      downtimes:    summarizeDowntimes(dtLogs),
-      dt_total_min: Math.round(dtLogs.reduce((s, d) => s + (d.duration_min || 0), 0)),
-      dt_count:     dtLogs.length,
+      downtimes:    summarizeDowntimes(updatedDtLogs),
+      dt_total_min: Math.round(updatedDtLogs.reduce((s, d) => s + (d.duration_min || 0), 0)),
+      dt_count:     updatedDtLogs.length,
+      dt_carry:     openDT.filter(d => dtCarryDecisions[d.id] === 'carry')
+        .map(d => ({ machine_no: d.machine_no, type_name: d.dr_downtime_types?.name_th || '' })),
     });
     setShowCloseShift(false);
     setCarryOverDecisions({});
     setCarryQtyActual({});
     setCarryStopTime({});
     setMatTimeOverride({});
+    setDtCarryDecisions({});
+    setDtCloseTimes({});
     load();
     setSelSession(null);
     setDtLogs([]);
@@ -1711,7 +1796,7 @@ function LiveTab({ role }) {
 
                   {/* open — request/direct close button */}
                   {selSession.status === 'open' && canRequestClose && (
-                    <button onClick={() => { setCloseNg('0'); setCloseEndTime(guessCloseEndTime()); setCloseStartTime(selSession.start_time || ''); setShowCloseShift(true); }}
+                    <button onClick={() => { setCloseNg('0'); setCloseEndTime(guessCloseEndTime()); setCloseStartTime(selSession.start_time || ''); setDtCarryDecisions({}); setDtCloseTimes({}); setShowCloseShift(true); }}
                       style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
                       {role === 'leader' ? '📋 ขอปิดกะ' : '🔒 ปิดกะ'}
                     </button>
@@ -2040,6 +2125,8 @@ function LiveTab({ role }) {
                           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{d.dr_downtime_types?.name_th || '—'}</span>
                           {d.machine_no && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {d.machine_no}</span>}
                           {d.mat_no && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9' }}>{d.mat_no}</span>}
+                          {d.carry_over && <span title="เครื่องยังซ่อมไม่เสร็จตอนปิดกะ — เปิดต่อในกะถัดไปอัตโนมัติ" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>🔁 ยกข้ามกะ</span>}
+                          {d.carried_from_id && <span title="รายการต่อเนื่องจาก Downtime ที่ตัดยอดมาจากกะก่อน" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>⏩ ต่อจากกะก่อน</span>}
                         </div>
                         {d.description && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{d.description}</div>}
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
@@ -2403,7 +2490,19 @@ function LiveTab({ role }) {
 
         {showCloseShift && selSession && (() => {
           const ng = parseInt(closeNg) || 0;
-          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty } = computeOEE(ng, closeEndTime, closeStartTime);
+          // Downtime เปิดค้าง: ถ้าตัดสินใจแล้ว ให้ OEE preview คิดนาทีตามการตัดสินใจทันที (ยังไม่เขียน DB จนกดปิดกะ)
+          const modalOpenDT = dtLogs.filter(d => d.duration_min == null);
+          const previewDtLogs = !modalOpenDT.length ? dtLogs : dtLogs.map(d => {
+            if (d.duration_min != null || !d.started_at) return d;
+            const decision = dtCarryDecisions[d.id];
+            const endStr = decision === 'carry' ? closeEndTime : (decision === 'close' ? dtCloseTimes[d.id] : null);
+            if (!endStr) return d;
+            const startMs = new Date(d.started_at).getTime();
+            let endMs = new Date(`${selSession.work_date}T${endStr.slice(0, 5)}:00`).getTime();
+            if (endMs < startMs) endMs += 86400000;
+            return { ...d, ended_at: new Date(endMs).toISOString(), duration_min: Math.max(1, Math.round((endMs - startMs) / 60000)) };
+          });
+          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty } = computeOEE(ng, closeEndTime, closeStartTime, previewDtLogs);
           const oeeColor = oee == null ? 'var(--muted)' : oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
           return (
             <div className="overlay" style={{ zIndex: 2000 }}>
@@ -2429,11 +2528,65 @@ function LiveTab({ role }) {
                   </Field>
                 </div>
 
+                {/* Downtime เปิดค้าง — ต้องตัดสินใจต่อรายการก่อนปิดกะ (เครื่องกลับมาแล้ว / ยังซ่อมอยู่ ตัดยอดข้ามกะ) */}
+                {modalOpenDT.length > 0 && (
+                  <div style={{ marginBottom: 16, padding: '12px 14px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: '#ef4444', marginBottom: 4 }}>
+                      🚨 Downtime เปิดค้าง {modalOpenDT.length} รายการ — ต้องตัดสินใจก่อนปิดกะ
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 10 }}>
+                      ถ้าเครื่องยังซ่อมไม่เสร็จ เลือก "ตัดยอดข้ามกะ" — ระบบจะปิดรายการของกะนี้ด้วยเวลาปิดกะ แล้วเปิดรายการต่อเนื่องให้อัตโนมัติเมื่อกะถัดไปของไลน์นี้เปิด (OEE ถูกต้องทั้งสองกะ)
+                    </div>
+                    {modalOpenDT.map(d => {
+                      const decision = dtCarryDecisions[d.id];
+                      return (
+                        <div key={d.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'var(--bg2)', borderRadius: 8, marginBottom: 6 }}>
+                          <div style={{ minWidth: 160, flex: 1 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>⚙️ {d.machine_no || '-'} · {d.dr_downtime_types?.name_th || 'Downtime'}</div>
+                            <div style={{ fontSize: 10, color: 'var(--muted)' }}>เริ่มหยุด {d.started_at ? fmtTime(d.started_at) : '-'}{d.description ? ` — ${d.description}` : ''}</div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <button onClick={() => setDtCarryDecisions(p => ({ ...p, [d.id]: 'close' }))}
+                              style={{
+                                fontSize: 11, fontWeight: 700, padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
+                                border: decision === 'close' ? '1px solid #22c55e' : '1px solid var(--border)',
+                                background: decision === 'close' ? 'rgba(34,197,94,0.15)' : 'var(--bg)',
+                                color: decision === 'close' ? '#22c55e' : 'var(--text2)',
+                              }}>
+                              ✅ เครื่องกลับมาแล้ว
+                            </button>
+                            {decision === 'close' && (
+                              <TimeInput24 value={dtCloseTimes[d.id] || ''} onChange={e => setDtCloseTimes(p => ({ ...p, [d.id]: e.target.value }))} style={{ fontSize: 13 }} />
+                            )}
+                            <button onClick={() => setDtCarryDecisions(p => ({ ...p, [d.id]: 'carry' }))}
+                              style={{
+                                fontSize: 11, fontWeight: 700, padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
+                                border: decision === 'carry' ? '1px solid #ef4444' : '1px solid var(--border)',
+                                background: decision === 'carry' ? 'rgba(239,68,68,0.15)' : 'var(--bg)',
+                                color: decision === 'carry' ? '#ef4444' : 'var(--text2)',
+                              }}>
+                              🔁 ยังซ่อมอยู่ — ตัดยอดข้ามกะ
+                            </button>
+                          </div>
+                          {decision === 'carry' && (
+                            <div style={{ width: '100%', fontSize: 10, color: '#f59e0b' }}>
+                              ปิดรายการของกะนี้ด้วยเวลาปิดกะ ({closeEndTime || '-'}) → เปิดต่อในกะถัดไปอัตโนมัติ · ไม่แจ้ง "เครื่องกลับมารันได้" จนกว่าจะปิดจริง
+                            </div>
+                          )}
+                          {decision === 'close' && !dtCloseTimes[d.id] && (
+                            <div style={{ width: '100%', fontSize: 10, color: '#ef4444' }}>กรอกเวลาที่เครื่องกลับมาทำงานด้วย</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {/* Summary stats — แยกหยุดในแผน(เพิ่มเติมจากนโยบาย)/นอกแผนออกจากกัน ให้บวกกันแล้วเท่ากับเวลากะเป๊ะๆ
                     (เวลากะ = หยุดนโยบาย + หยุดในแผน + หยุดนอกแผน + Run Time) ไม่งั้นจะดูเหมือนเวลารวมเกิน 12 ชม. */}
                 {(() => {
-                  const loggedPlannedDT   = dtLogs.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
-                  const loggedUnplannedDT = totalDT - loggedPlannedDT;
+                  const loggedPlannedDT   = previewDtLogs.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
+                  const loggedUnplannedDT = previewDtLogs.reduce((s, d) => s + (d.duration_min || 0), 0) - loggedPlannedDT;
                   return (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(90px,1fr))', gap: 10, marginBottom: 16 }}>
                       {[
@@ -3411,7 +3564,7 @@ function LiveTab({ role }) {
    HISTORY TAB
 ═══════════════════════════════════════════════════════════════ */
 function HistoryTab({ role }) {
-  const { section: userSection, lineId: userLineId } = useContext(UserContext);
+  const { lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const [sessions, setSessions]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState({ date: '', line_name: '' });
@@ -3449,8 +3602,8 @@ function HistoryTab({ role }) {
     if (role === 'leader' && userLineId) {
       const myLine = (ln || []).find(l => l.id === userLineId);
       allowedLineNames = myLine ? [myLine.name, ...(pcm[myLine.name] || [])] : [];
-    } else if (role === 'supervisor' && userSection) {
-      allowedLineNames = (ln || []).filter(l => normSection(l.section) === normSection(userSection)).map(l => l.name);
+    } else if (role !== 'admin' && scopeSecs.length) {
+      allowedLineNames = (ln || []).filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name);
     }
 
     let q = supabaseDR.from('production_sessions')
@@ -3465,7 +3618,7 @@ function HistoryTab({ role }) {
     setSessions(ss || []);
     setLineNames(allowedLineNames ?? (ln || []).map(l => l.name));
     setLoading(false);
-  }, [filter, role, userSection, userLineId]);
+  }, [filter, role, scopeSecs, userLineId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -3713,7 +3866,7 @@ function HistoryTab({ role }) {
    EXPORT TAB
 ═══════════════════════════════════════════════════════════════ */
 function ExportTab() {
-  const { role, section: userSection, lineId: userLineId } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
   const firstOfMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; };
 
@@ -3734,13 +3887,13 @@ function ExportTab() {
         if (role === 'leader' && userLineId) {
           const myLine = ln.find(l => l.id === userLineId);
           allowed = myLine ? [myLine.name, ...(pcm[myLine.name] || [])] : [];
-        } else if (role === 'supervisor' && userSection) {
-          allowed = ln.filter(l => normSection(l.section) === normSection(userSection)).map(l => l.name);
+        } else if (role !== 'admin' && scopeSecs.length) {
+          allowed = ln.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name);
         }
         setAllowedLineNames(allowed);
         setLineNames(allowed ?? ln.map(l => l.name));
       });
-  }, [role, userSection, userLineId]);
+  }, [role, scopeSecs, userLineId]);
 
   // ── fetch all raw data ──────────────────────────────────────────
   const fetchData = async () => {

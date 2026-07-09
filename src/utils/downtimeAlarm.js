@@ -1,16 +1,12 @@
 import { supabaseDR } from '../supabaseClient';
 
 // ─── Downtime Alarm ──────────────────────────────────────────────
-// เครื่องจักรถือว่า "กำลัง Alarm" เมื่อมี downtime ที่:
-//   1. ยังไม่ปิดรายการ (ไม่มี ended_at และไม่มี duration_min) — เครื่องยังหยุดอยู่จริง
-//   2. หรือเพิ่งถูกบันทึกเข้ามาไม่เกิน RECENT_ALARM_MIN นาที (กรณีลงย้อนหลังแบบระบุเวลาจบแล้ว
-//      ก็ให้กระพริบเตือนช่วงสั้นๆ เพื่อให้หน้าจอส่วนกลางเห็นว่าเพิ่งมีเหตุการณ์)
-export const RECENT_ALARM_MIN = 10;
-
-export function isAlarmingDT(d, nowMs = Date.now()) {
-  const stillOpen  = !d.ended_at && d.duration_min == null;
-  const justLogged = d.created_at && (nowMs - new Date(d.created_at).getTime()) < RECENT_ALARM_MIN * 60000;
-  return stillOpen || justLogged;
+// เครื่องจักรถือว่า "กำลัง Alarm" เมื่อมี downtime ที่ยังไม่ปิดรายการ
+// (ไม่มี ended_at และไม่มี duration_min) = เครื่องยังหยุดอยู่จริง เท่านั้น
+// ปิดรายการเมื่อไหร่ต้องดับทันที — เคยมีกฎ "เพิ่งบันทึกภายใน 10 นาทีให้กระพริบต่อ"
+// แต่ทำให้เครื่องที่ซ่อมเสร็จแล้วยังกระพริบค้าง คนหน้างานสับสน จึงถอดออก
+export function isAlarmingDT(d) {
+  return !d.ended_at && d.duration_min == null;
 }
 
 // work date เดียวกับกฎทั้งระบบ: ก่อน 08:00 นับเป็นวันก่อนหน้า (กะดึกข้ามวัน)
@@ -38,9 +34,8 @@ export async function fetchActiveDowntimes(lineNames = null) {
     .select('id, session_id, machine_no, mat_no, description, started_at, ended_at, duration_min, created_at, dr_downtime_types(name_th, category, color)')
     .in('session_id', sessions.map(s => s.id));
 
-  const nowMs = Date.now();
   const list = (dts || [])
-    .filter(d => isAlarmingDT(d, nowMs))
+    .filter(isAlarmingDT)
     .map(d => ({ ...d, line_name: sessById[d.session_id]?.line_name, shift: sessById[d.session_id]?.shift }));
 
   const byMachine = {}, byLine = {};

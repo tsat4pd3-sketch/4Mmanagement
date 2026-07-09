@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { can } from '../utils/permissions'
@@ -7,6 +7,7 @@ import { toast } from '../components/Toast'
 import { getSpcStatus, STATUS_COLOR } from '../lib/spc'
 import { getOrCreateChecklist } from '../lib/pmChecklists'
 import { notifyDepartment, createNotification } from '../lib/pmNotify'
+import { handleDailyPmSave } from '../lib/pmDailyAlarm'
 import { exportInspectionExcel } from '../lib/pmExportExcel'
 import { exportInspectionPDF, resolveSignatureDataUrl } from '../lib/pmExportPDF'
 import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } from '../lib/pmTaxonomy'
@@ -76,6 +77,17 @@ const S = {
   },
 }
 
+// รูปอ้างอิงต่อจุด (คอลัมน์ Picture ของฟอร์ม) — คลิกเปิดเต็มจอ
+function CpImage({ cp }) {
+  if (!cp.image_path) return null
+  const url = getPublicUrl(cp.image_path)
+  return (
+    <a href={url} target="_blank" rel="noreferrer" title="เปิดรูปเต็มจอ">
+      <img src={url} alt="" style={{ height: 52, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', display: 'block' }} />
+    </a>
+  )
+}
+
 // ─── Variable Row ───────────────────────────────────────────────────────────
 function VariableRow({ cp, idx, r, onChange, methodIndex }) {
   const avg = computeAvg(r.v1, r.v2, r.v3)
@@ -88,6 +100,7 @@ function VariableRow({ cp, idx, r, onChange, methodIndex }) {
         {cp.x_pos != null && <span style={{ width: 16, height: 16, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
         {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}{cp.axis && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 4px' }}>{cp.axis}</span>}</p>
+        <CpImage cp={cp} />
         {c && <span style={{ fontSize: 10, fontWeight: 700, color: c.text }}>{status === 'pass' ? '●' : status === 'warning' ? '⚠' : '✕'}</span>}
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -121,6 +134,7 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
         {cp.x_pos != null && <span style={{ width: 16, height: 16, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
         {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}</p>
+        <CpImage cp={cp} />
         <div style={{ display: 'flex', gap: 4 }}>
           {['ok', 'ng'].map(v => (
             <button key={v} onClick={() => onChangeAttr(v === value ? '' : v)} style={{
@@ -132,6 +146,11 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
           ))}
         </div>
       </div>
+      {cp.description && (
+        <p style={{ fontSize: 11.5, color: 'var(--text2)', whiteSpace: 'pre-line', margin: '0 0 0 24px', lineHeight: 1.5 }}>
+          📐 {cp.description}
+        </p>
+      )}
       {cp.type === 'note' && <input value={note} onChange={e => onChangeNote(e.target.value)} placeholder="หมายเหตุ (ถ้ามี)..." />}
     </div>
   )
@@ -279,7 +298,8 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} onClick={onClose} />
+      {/* ตั้งใจไม่ปิดเมื่อคลิกพื้นหลัง — ข้างในมีฟอร์ม NG action/re-check กันเผลอกดแล้วหาย */}
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} />
       <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
         style={{ position: 'relative', zIndex: 10, width: '100%', maxWidth: 520, maxHeight: '90vh', display: 'flex', flexDirection: 'column', borderRadius: 12, background: 'var(--bg2)', border: '1px solid var(--border2)', boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -314,6 +334,7 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
                         </p>
                       ) : (
                         <>
+                          {cp.description && <p style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'pre-line', margin: '2px 0 0' }}>{cp.description}</p>}
                           <p style={{ fontSize: 12, color: 'var(--muted)', margin: '2px 0 0' }}>{r.value_attribute?.toUpperCase()}</p>
                         </>
                       )}
@@ -363,6 +384,7 @@ export default function PMCheckData() {
 
   const [userId, setUserId] = useState(null)
   const [userRole, setUserRole] = useState(null)
+  const canRecord = can('pm', 'record', userRole)
   const [jigs, setJigs] = useState([])
   const [selectedJig, setSelectedJig] = useState(null)
   const [checklistId, setChecklistId] = useState(null)
@@ -388,12 +410,51 @@ export default function PMCheckData() {
     fetchCheckingMethods().then(rows => setMethodIndex(indexByCode(rows)))
   }, [])
 
+  // ── โหมดฝ่ายผลิต: รายการเครื่องซ้ายมือต้องเป็น "เครื่องที่ลงทะเบียน Daily PM" เท่านั้น ──
+  // จัดกลุ่มตามไลน์ + สถานะว่ากะนี้ตรวจแล้วหรือยัง — ไม่ใช่เครื่องทุกตัวทุกแผนกแบบแท็บซ่อมบำรุง
+  const [dailyLineByJig, setDailyLineByJig] = useState(null)   // jig_id -> [line_name] (null = แท็บอื่น)
+  const [checkedThisShift, setCheckedThisShift] = useState({}) // jig_id -> 'pass' | 'fail'
+  useEffect(() => {
+    if (department !== 'production') { setDailyLineByJig(null); setCheckedThisShift({}); return }
+    let cancelled = false
+    ;(async () => {
+      const [{ data: tg }, { data: prodCls }] = await Promise.all([
+        supabaseDR.from('pm_daily_line_targets').select('jig_id, line_name').eq('is_active', true),
+        supabaseDR.from('checklists').select('id').eq('module', 'mtn').eq('department', 'production'),
+      ])
+      // จุดเริ่มกะปัจจุบัน (เช้า 08:00 / ดึก 20:00, ก่อน 08:00 = กะดึกของวันก่อน)
+      const now = new Date()
+      const isDay = now.getHours() >= 8 && now.getHours() < 20
+      const ws = new Date(now)
+      if (now.getHours() < 8) ws.setDate(ws.getDate() - 1)
+      ws.setHours(isDay ? 8 : 20, 0, 0, 0)
+      const clIds = new Set((prodCls ?? []).map(c => c.id))
+      const { data: insp } = await supabaseDR.from('inspections')
+        .select('jig_id, status, checklist_id')
+        .gte('inspected_at', ws.toISOString())
+        .order('inspected_at', { ascending: false })
+      if (cancelled) return
+      const st = {}
+      for (const i of insp ?? []) {
+        if (!clIds.has(i.checklist_id)) continue
+        if (!st[i.jig_id]) st[i.jig_id] = i.status // ล่าสุดชนะ (เรียง desc แล้ว)
+      }
+      const byJig = {}
+      ;(tg ?? []).forEach(t => { (byJig[t.jig_id] ||= []).push(t.line_name) })
+      setDailyLineByJig(byJig)
+      setCheckedThisShift(st)
+    })()
+    return () => { cancelled = true }
+  }, [department])
+
   useEffect(() => {
     if (!equipParam || jigs.length === 0) { setSelectedJig(null); return }
     setSelectedJig(jigs.find(j => j.id === equipParam) ?? null)
   }, [equipParam, jigs])
 
-  const selectJig = (jig) => setSearchParams({ dept: department, equip: jig.id })
+  // คง line filter (?line=) ไว้ตอนเลือกเครื่อง — มาจากปุ่ม "ไปหน้าตรวจ" ของ Daily PM รายไลน์
+  const lineFilter = searchParams.get('line')
+  const selectJig = (jig) => setSearchParams({ dept: department, equip: jig.id, ...(lineFilter ? { line: lineFilter } : {}) })
   const setDept = (d) => setSearchParams({ dept: d, ...(equipParam ? { equip: equipParam } : {}) })
 
   const fetchHistory = async (jigId) => {
@@ -462,6 +523,16 @@ export default function PMCheckData() {
         notifyDepartment(department, { title: 'พบผลตรวจไม่ผ่าน (NG)', body: `${selectedJig.name} — ${formatDate(insp.inspected_at)}`, type: 'error', refTable: 'inspections', refId: insp.id }, userId).catch(() => {})
       }
 
+      // Daily PM line alarm (green when the line is complete & all pass, red on NG).
+      const ngTopics = checkpoints.filter(cp => {
+        const r = results[cp.id]
+        if (!r) return false
+        return cp.type === 'variable' ? getSpcStatus(computeAvg(r.v1, r.v2, r.v3), cp) === 'fail' : r.attr === 'ng'
+      }).map(cp => cp.name)
+      handleDailyPmSave({ jig: selectedJig, department, overall, ngTopics }).catch(() => {})
+      // อัปเดตป้าย "ตรวจแล้ว/รอตรวจ" ในรายการซ้ายทันที ไม่ต้องรอโหลดใหม่
+      if (department === 'production') setCheckedThisShift(prev => ({ ...prev, [selectedJig.id]: overall }))
+
       toast.success('บันทึกผลการตรวจสำเร็จ')
       const init = {}
       checkpoints.forEach(c => { init[c.id] = { v1: '', v2: '', v3: '', attr: '', note: '' } })
@@ -495,13 +566,65 @@ export default function PMCheckData() {
           {DEPT_OPTIONS.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, DEPT_COLORS[d.key] ?? '#3dd65c')}>{d.label}</button>)}
         </div>
         <div style={S.jigList}>
-          {jigs.length === 0 && <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20 }}>ยังไม่มีอุปกรณ์</p>}
-          {jigs.map(jig => (
-            <div key={jig.id} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{jig.name}</p>
-              {jig.line_name && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>📍 {jig.line_name}</p>}
-            </div>
-          ))}
+          {department === 'production' ? (() => {
+            // แท็บฝ่ายผลิต: เฉพาะเครื่องที่ลงทะเบียน Daily PM จัดกลุ่มตามไลน์ + สถานะกะนี้
+            if (dailyLineByJig == null) return <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20 }}>กำลังโหลด...</p>
+            const lineParam = searchParams.get('line')
+            const byLine = {}
+            jigs.forEach(j => {
+              const lns = dailyLineByJig[j.id]
+              if (!lns) return
+              lns.forEach(ln => {
+                if (lineParam && ln !== lineParam) return
+                ;(byLine[ln] ||= []).push(j)
+              })
+            })
+            const lineNames = Object.keys(byLine).sort()
+            if (!lineNames.length) return (
+              <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>
+                {lineParam ? `ไลน์ ${lineParam} ยังไม่ได้ลงทะเบียนเครื่องตรวจ` : 'ยังไม่มีเครื่องที่ลงทะเบียน Daily PM'}<br />
+                <Link to="/daily-pm" style={{ color: 'var(--accent)', fontWeight: 700 }}>ไปลงทะเบียนที่หน้า Daily PM →</Link>
+              </p>
+            )
+            return (<>
+              {lineParam && (
+                <div style={{ fontSize: 11, color: 'var(--muted)', padding: '0 4px 6px' }}>
+                  กรองเฉพาะไลน์ {lineParam} · <span onClick={() => setSearchParams({ dept: department, ...(equipParam ? { equip: equipParam } : {}) })} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>ดูทุกไลน์</span>
+                </div>
+              )}
+              {lineNames.map(ln => (
+                <div key={ln} style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: deptColor, padding: '2px 4px 4px' }}>🏭 {ln} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· ตรวจแล้ว {byLine[ln].filter(j => checkedThisShift[j.id]).length}/{byLine[ln].length}</span></div>
+                  {byLine[ln].map(jig => {
+                    const st = checkedThisShift[jig.id]
+                    return (
+                      <div key={`${ln}-${jig.id}`} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{jig.name}</p>
+                          <span style={{
+                            flexShrink: 0, fontSize: 10, fontWeight: 800, padding: '1px 7px', borderRadius: 20,
+                            background: st === 'fail' ? 'rgba(224,92,74,0.15)' : st ? 'rgba(61,214,92,0.15)' : 'rgba(245,158,11,0.15)',
+                            color: st === 'fail' ? '#e05c4a' : st ? '#3dd65c' : '#f59e0b',
+                          }}>
+                            {st === 'fail' ? '✗ NG' : st ? '✓ ตรวจแล้ว' : 'รอตรวจ'}
+                          </span>
+                        </div>
+                        {jig.machine_no && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>{jig.machine_no}</p>}
+                      </div>
+                    )
+                  })}
+                </div>
+              ))}
+            </>)
+          })() : (<>
+            {jigs.length === 0 && <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20 }}>ยังไม่มีอุปกรณ์</p>}
+            {jigs.map(jig => (
+              <div key={jig.id} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{jig.name}</p>
+                {jig.line_name && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>📍 {jig.line_name}</p>}
+              </div>
+            ))}
+          </>)}
         </div>
       </div>
 
@@ -546,17 +669,37 @@ export default function PMCheckData() {
                     <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 0' }}>ยังไม่มีจุดตรวจสอบ — ไปตั้งค่าที่ PM Setup ก่อน</p>
                   ) : (
                     <>
-                      {checkpoints.map((cp, idx) => cp.type === 'variable' ? (
-                        <VariableRow key={cp.id} cp={cp} idx={idx} r={results[cp.id] ?? { v1: '', v2: '', v3: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex} />
-                      ) : (
-                        <AttrRow key={cp.id} cp={cp} idx={idx} methodIndex={methodIndex}
-                          value={results[cp.id]?.attr ?? ''} note={results[cp.id]?.note ?? ''}
-                          onChangeAttr={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], attr: v } }))}
-                          onChangeNote={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], note: v } }))} />
-                      ))}
+                      {(() => {
+                        // เลข Item ต่อกลุ่ม (group_name) — sort_order จาก PM Setup จัดกลุ่มมาให้ต่อเนื่องแล้ว
+                        const groupNo = {}
+                        let gN = 0
+                        checkpoints.forEach(c => { const g = (c.group_name || '').trim(); if (g && groupNo[g] == null) groupNo[g] = ++gN })
+                        return checkpoints.map((cp, idx) => {
+                          const g = (cp.group_name || '').trim()
+                          const prevG = ((checkpoints[idx - 1]?.group_name) || '').trim()
+                          const header = g && g !== prevG ? (
+                            <div style={{ padding: '7px 12px', borderRadius: 8, marginBottom: 8, background: 'var(--accent-dim)', border: '1px solid var(--border2)', fontSize: 12.5, fontWeight: 800, color: 'var(--accent)' }}>
+                              Item {groupNo[g]} — {g}
+                            </div>
+                          ) : (!g && prevG ? (
+                            <div style={{ padding: '7px 12px', borderRadius: 8, marginBottom: 8, background: 'var(--bg3)', border: '1px solid var(--border)', fontSize: 12.5, fontWeight: 800, color: 'var(--muted)' }}>
+                              อื่นๆ
+                            </div>
+                          ) : null)
+                          const row = cp.type === 'variable' ? (
+                            <VariableRow cp={cp} idx={idx} r={results[cp.id] ?? { v1: '', v2: '', v3: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex} />
+                          ) : (
+                            <AttrRow cp={cp} idx={idx} methodIndex={methodIndex}
+                              value={results[cp.id]?.attr ?? ''} note={results[cp.id]?.note ?? ''}
+                              onChangeAttr={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], attr: v } }))}
+                              onChangeNote={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], note: v } }))} />
+                          )
+                          return <div key={cp.id}>{header}{row}</div>
+                        })
+                      })()}
                       <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="หมายเหตุ (ถ้ามี)..." style={{ marginTop: 8 }} />
-                      <button onClick={handleSave} disabled={saving} style={{ ...S.saveBtn, opacity: saving ? 0.6 : isFormReady ? 1 : 0.75 }}>
-                        {saving ? 'กำลังบันทึก...' : isFormReady ? 'บันทึกผลการตรวจ' : `บันทึก (ยังไม่ครบ ${checkpoints.filter(cp => { const r = results[cp.id]; return cp.type === 'variable' ? !(r?.v1 !== '' && r?.v2 !== '' && r?.v3 !== '') : !r?.attr }).length} จุด)`}
+                      <button onClick={handleSave} disabled={saving || !canRecord} style={{ ...S.saveBtn, opacity: (saving || !canRecord) ? 0.6 : isFormReady ? 1 : 0.75 }}>
+                        {saving ? 'กำลังบันทึก...' : !canRecord ? '🔒 ไม่มีสิทธิ์บันทึกผลตรวจ' : isFormReady ? 'บันทึกผลการตรวจ' : `บันทึก (ยังไม่ครบ ${checkpoints.filter(cp => { const r = results[cp.id]; return cp.type === 'variable' ? !(r?.v1 !== '' && r?.v2 !== '' && r?.v3 !== '') : !r?.attr }).length} จุด)`}
                       </button>
                     </>
                   )}

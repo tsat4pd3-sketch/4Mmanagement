@@ -5,6 +5,7 @@ import { toast } from '../components/Toast';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
+import { inSectionScope } from '../utils/sectionScope';
 
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
@@ -50,9 +51,12 @@ const getEmpGrade = (code = '') => {
 };
 
 export default function Operator() {
-  const { role, lineId: userLineId, section: userSection } = useContext(UserContext);
+  const { role, lineId: userLineId, section: userSection, sections: scopeSecs = [] } = useContext(UserContext);
   const isLeader = role === 'leader';
   const isSupervisor = role === 'supervisor';
+  // ถ้าขอบเขตเหลือ section เดียว → ล็อกฟิลด์ Section ตอนแก้ไขพนักงาน (พฤติกรรม supervisor เดิม)
+  // หลาย section → เปิดให้เลือกได้เฉพาะใน scope ตัวเอง
+  const lockedScopeSec = scopeSecs.length === 1 ? scopeSecs[0] : null;
 
   const [tab, setTab] = useState(0);
   const [skillDefs, setSkillDefs] = useState([]);
@@ -198,7 +202,7 @@ export default function Operator() {
     const makeBase = () => {
       let q = supabase.from('employees').select('*, employee_skills(skill_name, score, pending_level)');
       if (isLeader && userLineId)       q = q.eq('line_id', userLineId);
-      if (isSupervisor && userSection)  q = q.eq('section', userSection);
+      else if (scopeSecs.length)        q = q.in('section', scopeSecs);
       return q;
     };
     const [{ data: active }, { data: inactive }] = await Promise.all([
@@ -275,7 +279,7 @@ export default function Operator() {
         name:       editingEmp.name,
         position:   editingEmp.position   || null,
         department: editingEmp.department,
-        section:    isSupervisor ? (userSection || null) : (editingEmp.section || null),
+        section:    lockedScopeSec || editingEmp.section || null,
         group_name: editingEmp.group_name || null,
         team:       editingEmp.team       || null,
         line_id:    editingEmp.line_id    || null,
@@ -437,13 +441,13 @@ export default function Operator() {
             )}
           </button>
         ))}
-        {isSupervisor && userSection && (
+        {scopeSecs.length > 0 && (
           <div style={{
             fontSize: 11, color: '#4d9fff', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
             padding: '4px 8px', borderRadius: 6,
             background: 'rgba(77,159,255,0.1)', border: '1px solid rgba(77,159,255,0.25)',
           }}>
-            🏢 {userSection}
+            🏢 {scopeSecs.join(', ')}
           </div>
         )}
         {isLeader && myLineName && (
@@ -550,14 +554,14 @@ export default function Operator() {
             className="skill-table-wrap">
             <div style={{ height: 1, width: tableWrapRef.current?.scrollWidth || 2000 }} />
           </div>
-          <div ref={tableWrapRef} className="card skill-table-wrap"
+          <div ref={tableWrapRef} className="card skill-table-wrap table-sticky"
             style={{ overflowX: 'auto', borderRadius: '0 0 8px 8px', marginTop: 0 }}>
             <table style={{ minWidth: 560, borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  <th style={{ position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 2 }}>โปรไฟล์</th>
-                  <th style={{ position: 'sticky', left: 58, background: 'var(--bg2)', zIndex: 2 }}>ID</th>
-                  <th style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 2, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>ชื่อ</th>
+                  <th style={{ position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 12 }}>โปรไฟล์</th>
+                  <th style={{ position: 'sticky', left: 58, background: 'var(--bg2)', zIndex: 12 }}>ID</th>
+                  <th style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 12, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>ชื่อ</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Section</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>แผนก</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Group</th>
@@ -569,7 +573,7 @@ export default function Operator() {
                       {sd.scope_section && <div style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 400 }}>📍{sd.scope_section}</div>}
                     </th>
                   ))}
-                  <th style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 2, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>จัดการ</th>
+                  <th style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 12, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>จัดการ</th>
                 </tr>
               </thead>
               <tbody>
@@ -1072,19 +1076,20 @@ export default function Operator() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <label style={labelSt}>Section / ส่วน</label>
-                  {isSupervisor ? (
-                    <input type="text" value={userSection || ''} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+                  {lockedScopeSec ? (
+                    <input type="text" value={lockedScopeSec} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                   ) : (
                     <select value={editingEmp.section || ''} onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value, department: '' })}>
                       <option value="">— เลือก —</option>
-                      {orgSectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+                      {(scopeSecs.length ? orgSectionOpts.filter(s => inSectionScope(scopeSecs, s)) : orgSectionOpts)
+                        .map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   )}
                 </div>
                 <div>
                   <label style={labelSt}>Department / แผนก</label>
                   {(() => {
-                    const empSection = isSupervisor ? userSection : editingEmp.section;
+                    const empSection = lockedScopeSec || editingEmp.section;
                     const secNode = orgSectionNodes.find(s => (s.code || s.name) === empSection);
                     const deptOpts = secNode ? orgDeptNodes.filter(d => d.parent_id === secNode.id) : [];
                     return (
@@ -1123,7 +1128,7 @@ export default function Operator() {
                     setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
                   }}>
                     <option value="">— เลือก Line —</option>
-                    {(isSupervisor && userSection ? lines.filter(l => l.section === userSection) : lines)
+                    {(scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
                       .map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                   </select>
                 )}
