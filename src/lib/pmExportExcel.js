@@ -69,7 +69,9 @@ function colLetter(n) {
 
 // Category meta comes from the user-managed taxonomy (passed as `categories`).
 function hexToArgb(hex) {
-  const m = /^#?([a-f\d]{6})$/i.exec(hex ?? '')
+  let h = (hex ?? '').trim().replace(/^#/, '')
+  if (/^[a-f\d]{3}$/i.test(h)) h = h.split('').map(c => c + c).join('')  // #f00 → ff0000
+  const m = /^([a-f\d]{6})/i.exec(h)  // first 6 hex; any trailing alpha is ignored
   return m ? 'FF' + m[1].toUpperCase() : 'FF6B7280'
 }
 function buildCategoryMeta(categories) {

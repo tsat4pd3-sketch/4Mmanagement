@@ -17,6 +17,7 @@ const Operator     = lazy(() => import('./pages/operator'));
 const LineSetup    = lazy(() => import('./pages/LineSetup'));
 const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
+const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
 const Report       = lazy(() => import('./pages/Report'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
@@ -32,7 +33,9 @@ const OrgSetup        = lazy(() => import('./pages/OrgSetup'));
 const PMSetup     = lazy(() => import('./pages/PMSetup'));
 const PMCheckData = lazy(() => import('./pages/PMCheckData'));
 const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
+const DailyPM     = lazy(() => import('./pages/DailyPM'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
+const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 
 /* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null, signatureUrl: null, fullName: null });
@@ -44,6 +47,7 @@ const ROLE_LABELS = {
   leader:     '⭐ Leader',
   qa:         '🔍 QA',
   document_control: '🗂 Doc Control',
+  sale:       '💼 Sale',
   display:    '📺 Display',
 };
 
@@ -57,10 +61,12 @@ const NAV_ITEMS = [
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     roles: null, group: 'ฝ่ายผลิต' },
   { to: '/daily-report',   icon: '📊', label: 'Daily Report',      roles: null, group: 'ฝ่ายผลิต' },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                roles: null, group: 'ฝ่ายผลิต' },
+  { to: '/daily-pm',       icon: '✅', label: 'Daily PM ฝ่ายผลิต',   roles: null, group: 'ฝ่ายผลิต' },
 
   { to: '/line-stock',      icon: '📦', label: 'Store management',       roles: null, group: 'Logistic - Store' },
   { to: '/heijunka',       icon: '🎴', label: 'Kanban Board',             roles: null, group: 'Logistic - Store' },
   { to: '/rack-center',    icon: '🗃️', label: 'Rack Center management',  roles: null, group: 'Logistic - Store' },
+  { to: '/customer-demand', icon: '🚚', label: 'Customer Demand & Shipping', roles: null, group: 'Logistic - Store' },
 
   { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-schedule', icon: '📅', label: 'แผน PM อุปกรณ์เครื่องจักร',        roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
@@ -78,6 +84,7 @@ const NAV_ITEMS = [
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         roles: ['admin', 'manager', 'supervisor'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    roles: null, group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       roles: ['admin'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', roles: ['admin'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
 ];
 
 const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'รายงาน', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
@@ -769,11 +776,17 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/permissions" element={
                 <RoleRoute path="/permissions" userRole={role}><PermissionsManagement /></RoleRoute>
               } />
+              <Route path="/notification-config" element={
+                <RoleRoute path="/notification-config" userRole={role}><NotificationConfig /></RoleRoute>
+              } />
               <Route path="/daily-report"  element={
                 <RoleRoute path="/daily-report" userRole={role}><DailyReport /></RoleRoute>
               } />
               <Route path="/oee-analytics" element={
                 <RoleRoute path="/oee-analytics" userRole={role}><OEEAnalytics /></RoleRoute>
+              } />
+              <Route path="/daily-pm" element={
+                <RoleRoute path="/daily-pm" userRole={role}><DailyPM /></RoleRoute>
               } />
               <Route path="/event-log" element={
                 <RoleRoute path="/event-log" userRole={role}><EventLog /></RoleRoute>
@@ -786,6 +799,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/heijunka"  element={
                 <RoleRoute path="/heijunka" userRole={role}><HeijunkaKanban /></RoleRoute>
+              } />
+              <Route path="/customer-demand" element={
+                <RoleRoute path="/customer-demand" userRole={role}><CustomerDemand /></RoleRoute>
               } />
               <Route path="/rack-center" element={
                 <RoleRoute path="/rack-center" userRole={role}><RackCenter /></RoleRoute>

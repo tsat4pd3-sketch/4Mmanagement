@@ -6,6 +6,8 @@ import { toast } from '../components/Toast';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
 import { hasPermission } from '../utils/permissions';
 import { getLineFamilyNames, getLineFamilyIds, getAncestorNames, toHierarchicalOptions } from '../utils/lineHierarchy';
+import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
+import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
   return new Promise((resolve) => {
@@ -144,6 +146,7 @@ export default function Management() {
   const isSupervisor = role === 'supervisor';
 
   const [workers,        setWorkers]        = useState([]);
+  const [ppeAlerts,      setPpeAlerts]      = useState([]); // เช็คชื่อแล้วแต่ PPE ไม่ครบ (ไม่อยู่ใน workers)
   const [fourMLogs,      setFourMLogs]      = useState([]);
   const [dynamicStations,setDynamicStations]= useState([]);
   const [wipPoints,      setWipPoints]      = useState([]);
@@ -185,6 +188,7 @@ export default function Management() {
   const [docImagePreview, setDocImagePreview] = useState(null);
   const [isSavingDoc,     setIsSavingDoc]     = useState(false);
   const [lineProdData,    setLineProdData]    = useState(null); // heijunka data for selected line
+  const [boardDate,       setBoardDate]       = useState(() => getWorkDate()); // วันที่ mini Heijunka board — เลือกดูย้อนหลังได้
   const [imgBox,         setImgBox]         = useState(null); // actual rendered image bounds inside objectFit:contain
   const imgRef = useRef(null);
   const recalcImgBox = useCallback(() => {
@@ -245,11 +249,11 @@ export default function Management() {
 
   const fetchLineProd = useCallback(async (lineNames) => {
     if (!lineNames?.length) { setLineProdData(null); return; }
-    const todayStr = getWorkDate();
+    const dateStr = boardDate;
     const { data: sessions } = await supabaseDR
       .from('production_sessions')
       .select('id, line_name, shift, status, work_date, created_at, dr_products(name, target_per_shift, cycle_time_sec)')
-      .eq('work_date', todayStr)
+      .eq('work_date', dateStr)
       .in('line_name', lineNames);
     if (!sessions?.length) { setLineProdData(null); return; }
     const sessionIds = sessions.map(s => s.id);
@@ -272,10 +276,16 @@ export default function Management() {
     }
     const ordersBySession = {};
     (orders || []).forEach(o => { (ordersBySession[o.session_id] ||= []).push(o); });
-    const enriched = sessions.map(s => ({ ...s, orders: ordersBySession[s.id] || [] }));
+    // downtime ของ session เหล่านี้ — ใช้วาดแถบ ⛔ บนไทม์ไลน์ และบอกสาเหตุใน tooltip ของใบที่ดีเลย์
+    const { data: dtLogs } = await supabaseDR.from('downtime_logs')
+      .select('session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(category, name_th)')
+      .in('session_id', sessionIds);
+    const dtBySession = {};
+    (dtLogs || []).forEach(d => { (dtBySession[d.session_id] ||= []).push(d); });
+    const enriched = sessions.map(s => ({ ...s, orders: ordersBySession[s.id] || [], dtLogs: dtBySession[s.id] || [] }));
     const { data: breakPolicies } = await supabaseDR.from('break_policies').select('*').eq('is_active', true);
-    setLineProdData({ sessions: enriched, workDate: todayStr, ctByMatNo: ctMap, nameByMatNo: nameMap, imgByMatNo: imgMap, breakPolicies: breakPolicies || [] });
-  }, []);
+    setLineProdData({ sessions: enriched, workDate: dateStr, ctByMatNo: ctMap, nameByMatNo: nameMap, imgByMatNo: imgMap, breakPolicies: breakPolicies || [] });
+  }, [boardDate]);
 
   useEffect(() => {
     if (!selectedLine) return;
@@ -283,6 +293,24 @@ export default function Management() {
     const t = setInterval(() => fetchLineProd(viewLineNames), 30000);
     return () => clearInterval(t);
   }, [selectedLine, viewKey, fetchLineProd]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Downtime alarm — จุดเครื่องจักรบนผังกระพริบแดงเมื่อมี downtime ค้างอยู่ ──
+  // realtime: พนักงานบันทึก downtime ที่หน้า Daily Report แล้วผังหน้านี้ต้องกระพริบทันที
+  // interval 60s: เอาไว้ปลด alarm "เพิ่งบันทึก" ที่หมดอายุตามเวลา (RECENT_ALARM_MIN)
+  const [dtAlarms, setDtAlarms] = useState({ byMachine: {}, byLine: {}, list: [] });
+  useEffect(() => {
+    if (!selectedLine) { setDtAlarms({ byMachine: {}, byLine: {}, list: [] }); return; }
+    let debounceTimer = null;
+    const refresh = () => fetchActiveDowntimes(viewLineNames).then(setDtAlarms).catch(() => {});
+    const debounced = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(refresh, 1000); };
+    refresh();
+    const t = setInterval(refresh, 60000);
+    const ch = supabaseDR.channel('mgmt-dt-alarm')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       debounced)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, debounced)
+      .subscribe();
+    return () => { clearInterval(t); clearTimeout(debounceTimer); supabaseDR.removeChannel(ch); };
+  }, [selectedLine, viewKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth <= 768);
@@ -356,6 +384,13 @@ export default function Management() {
       .from('daily_production_logs')
       .select('id, assigned_line, employee_id, employees(id, employee_id_code, name, image_url, team, section, line_id, employee_skills(skill_name, score))')
       .eq('work_date', today).eq('shift', getCurrentShift()).eq('is_present', true).eq('has_helmet', true).eq('has_boots', true).eq('has_gloves', true);
+    // คนที่เช็คชื่อแล้วแต่ PPE ไม่ครบ — ไม่เข้า pool (ห้ามจัดลงสถานี) แต่ต้องกระพริบเตือนบนหัวผัง
+    const { data: ppeData } = await supabase
+      .from('daily_production_logs')
+      .select('id, employee_id, has_helmet, has_boots, has_gloves, employees(id, name, image_url, team, line_id)')
+      .eq('work_date', today).eq('shift', getCurrentShift()).eq('is_present', true)
+      .or('has_helmet.eq.false,has_boots.eq.false,has_gloves.eq.false');
+    setPpeAlerts(ppeData || []);
     const { data: mData } = await supabase.from('four_m_logs').select('*').eq('work_date', today);
     const { data: homeData } = await supabase.from('employee_home_positions').select('employee_id, station_id');
     const { data: stData } = await supabase.from('operator_special_tasks').select('*').eq('work_date', today);
@@ -748,6 +783,8 @@ export default function Management() {
   /* ── Station worker ── */
   const StationWorker = ({ worker, fit, stationName }) => {
     const fc = fitColor(fit.score);
+    // ย้ายจุด/ข้ามไลน์แล้ว 4M Man ยังรออนุมัติ → วงแหวนเหลืองกระพริบจนกว่าจะอนุมัติ
+    const pend4m = man4mPendingFor(worker.employees?.name);
     return (
       <div
         draggable={!isMobile}
@@ -759,11 +796,13 @@ export default function Management() {
       >
         {/* photo only — score & name now live exclusively in the hover popup card so the
             small on-map circle isn't cropped/obscured by an overlaid number */}
-        <div style={{ position: 'relative', width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, flexShrink: 0 }}>
+        <div style={{ position: 'relative', width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, flexShrink: 0 }}
+          title={pend4m ? `⏳ รออนุมัติ 4M — ${pend4m.description}` : undefined}>
           {worker.employees?.image_url
-            ? <img src={worker.employees.image_url} style={{ width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `2px solid ${fc}`, boxShadow: `0 0 8px ${fc}88`, display: 'block' }} />
-            : <div style={{ width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, borderRadius: '50%', background: `${fc}22`, border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>👤</div>
+            ? <img src={worker.employees.image_url} className={pend4m ? 'person-alarm-amber' : undefined} style={{ width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `2px solid ${fc}`, boxShadow: `0 0 8px ${fc}88`, display: 'block' }} />
+            : <div className={pend4m ? 'person-alarm-amber' : undefined} style={{ width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, borderRadius: '50%', background: `${fc}22`, border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>👤</div>
           }
+          {pend4m && <span style={{ position: 'absolute', top: -6, right: -6, fontSize: 10, lineHeight: 1 }}>⏳</span>}
         </div>
       </div>
     );
@@ -777,6 +816,13 @@ export default function Management() {
       pendingDocByLine[m.line_name].push(m);
     }
   }
+
+  /* ── Person alarm ── */
+  // 4M Man ที่ยังรออนุมัติ → StationWorker วงแหวนเหลืองกระพริบ (จับคู่ด้วยชื่อใน description)
+  const man4mPendingFor = buildMan4mPendingMatcher(fourMLogs);
+  // PPE ไม่ครบ เฉพาะครอบครัวไลน์ที่กำลังดู — แถบแดงกระพริบเหนือผัง
+  const viewLineFamilyIds = selectedLine ? getLineFamilyIds(allLines, selectedLine) : new Set();
+  const ppeAlertsInView = ppeAlerts.filter(p => p.employees?.line_id != null && viewLineFamilyIds.has(p.employees.line_id));
 
   /* ── Layout ── */
   const poolW = isMobile ? '100%' : panelCollapsed ? 44 : isUltra ? 280 : isWide ? 248 : 220;
@@ -972,6 +1018,9 @@ export default function Management() {
           const nowMs = nowForBoard.current.getTime();
           const wd = lineProdData.workDate;
           const gridStartMs = new Date(`${wd}T08:00:00`).getTime();
+          const gridEndMs   = gridStartMs + 24 * 3600000;
+          const isHistorical = nowMs >= gridEndMs;   // วันงานที่ดูอยู่จบไปแล้ว (โหมดย้อนหลัง)
+          const isFutureDay  = nowMs < gridStartMs;
           const pctPerMs = 100 / (12 * 3600000);
           const HALVES = [
             { key: 'am', hours: HOURS.slice(0, 12), startMs: gridStartMs },
@@ -1021,6 +1070,21 @@ export default function Management() {
             const openCards = filtered.filter(o => !(o.isDone && o.confirmed_at))
               .sort((a, b) => a.orderStartMs - b.orderStartMs);
             const sorted = [...doneCards, ...openCards];
+            // ── ชุดสแกนปิดรวด (batch confirm) ──────────────────────────────────────
+            // เครื่องจักรยังไม่ส่งสัญญาณจบทีละใบ พนักงานจึงสแกนปิดทั้งล็อตรวดเดียว (เช่น 9 ใบติดกัน)
+            // ถ้าตัดสิน "ปิดช้า" รายใบจาก confirmed_at ใบแรก ๆ ของชุดจะกลายเป็นส้มเกินจริงเสมอ
+            // จึงจัดกลุ่มใบที่สแกนห่างกันไม่เกิน 5 นาทีเป็นชุดเดียว แล้วตัดสินความช้าที่ใบสุดท้ายของชุด
+            // (เทียบเวลาสแกนจบชุด กับเวลาจบตามทฤษฎีของงานทั้งชุด)
+            const BATCH_GAP_MS = 5 * 60000;
+            const batchIdOf = new Map();
+            let curBatchId = 0;
+            doneCards.forEach((o, i) => {
+              if (i > 0 && new Date(o.confirmed_at).getTime() - new Date(doneCards[i - 1].confirmed_at).getTime() > BATCH_GAP_MS) curBatchId++;
+              batchIdOf.set(o, curBatchId);
+            });
+            const batchCount = new Map();
+            doneCards.forEach(o => { const b = batchIdOf.get(o); batchCount.set(b, (batchCount.get(b) || 0) + 1); });
+            const batchSeen = new Map();
             // เงื่อนไขผสม: ใบที่ยังไม่ปิด+เกินเวลาจะตีแดงก็ต่อเมื่อ "ยอดรวมจริงของแถวนี้ยังไม่ทันเป้าตามเวลา" ด้วย
             // ถ้ายอดรวมทันเป้าอยู่ (แค่สแกนปิดไม่ตรง FIFO) จะไม่ตีแดง เพราะงานยังผลิตได้ตามแผนจริง
             const ctSec = ctByMatNo[byOpenTime[0]?.mat_no] || 0;
@@ -1068,7 +1132,17 @@ export default function Management() {
               // ดังนั้นถ้าปิดงานเร็วกว่าทฤษฎี (confirmed_at < endMs) จะไม่บีบ/เลื่อนตำแหน่งตาม confirmed_at เลย —
               // ปล่อยให้การ์ดอยู่ตามคิว (queueFloor + durationMs) เหมือนเดิม ใช้ confirmed_at แค่ตัดสินสี/ไอคอนเท่านั้น
               // ส่วนกรณีปิดงานช้ากว่าทฤษฎี (isLateDone) ปล่อยให้ endMs เดิม + แสดง "หาง" ของความช้าแยกต่างหาก (ไม่ขยับการ์ดหลัก)
-              const isLateDone = o.isDone && !!o.confirmed_at && new Date(o.confirmed_at).getTime() > endMs;
+              // ปิดช้า: ใบเดี่ยวตัดสินตามเดิม · ใบในชุดสแกนรวดเดียวตัดสินเฉพาะใบสุดท้ายของชุด
+              // (ใบแรก ๆ ของชุดถือว่าจบตามคิวทฤษฎี เพราะเวลาสแกนไม่ใช่เวลาผลิตจบจริงของใบนั้น)
+              let isLateDone = false;
+              if (o.isDone && o.confirmed_at) {
+                const bid = batchIdOf.get(o);
+                const size = batchCount.get(bid) || 1;
+                const seen = (batchSeen.get(bid) || 0) + 1;
+                batchSeen.set(bid, seen);
+                if (size === 1 || seen === size)
+                  isLateDone = new Date(o.confirmed_at).getTime() > endMs + (size > 1 ? BATCH_GAP_MS : 0);
+              }
               let occupiedEndMs = endMs;
               if (isLateDone) {
                 occupiedEndMs = new Date(o.confirmed_at).getTime();
@@ -1106,7 +1180,7 @@ export default function Management() {
               tailLeftPct = tLeft;
               tailWidthPct = Math.max(0, tRight - tLeft);
             }
-            return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone };
+            return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs };
           };
 
           const buildCards = (sessList) => {
@@ -1130,13 +1204,32 @@ export default function Management() {
                 const productKey = (nameByMatNo[o.mat_no] || s.dr_products?.name || '').trim().toUpperCase() || o.mat_no || 'unknown';
                 const productLabel = nameByMatNo[o.mat_no] || s.dr_products?.name || o.mat_no || 'ไม่ทราบ P/N';
                 const productImg = imgByMatNo[o.mat_no] || '';
-                cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, productImg, sessionOpen: s.status === 'open' });
+                cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, productImg, shift: s.shift, sessionOpen: s.status === 'open' });
               });
             });
             return cards;
           };
 
           const allCards = buildCards(sessions);
+
+          // ── Downtime ของไลน์นี้ — แถบ ⛔ บนไทม์ไลน์ + สาเหตุใน tooltip ของใบที่ดีเลย์/ปิดช้า ──
+          const dtWindows = sessions.flatMap(sx => (sx.dtLogs || []).map(d => {
+            const ds = d.started_at ? new Date(d.started_at).getTime() : null;
+            if (ds == null) return null;
+            const de = d.ended_at ? new Date(d.ended_at).getTime() : ds + (d.duration_min || 0) * 60000;
+            return {
+              s: ds, e: Math.max(de, ds + 60000), name: d.dr_downtime_types?.name_th || 'Downtime',
+              machine: d.machine_no || '', desc: d.description || '',
+              planned: d.dr_downtime_types?.category === 'planned',
+              min: d.duration_min || Math.round((de - ds) / 60000),
+            };
+          }).filter(Boolean)).sort((a, b) => a.s - b.s);
+          const dtLabel = (w) => `⛔ ${w.name}${w.machine ? ` @${w.machine}` : ''} ${fmtMs(w.s)}–${fmtMs(w.e)} (${w.min}น.)${w.desc ? ` — ${w.desc}` : ''}`;
+          const dtTooltip = (a, b) => {
+            const hits = dtWindows.filter(w => w.s < b && w.e > a);
+            return hits.length ? ` · สาเหตุที่เป็นไปได้: ${hits.map(dtLabel).join(' · ')}` : ' · ไม่มีบันทึก downtime ในช่วงนี้';
+          };
+
           // แยกแถวตาม mat_no/product — ไม่ให้ product ต่างกัน (เช่น RH/LH) ปนแถวเดียวกัน
           const groups = {};
           allCards.forEach(c => {
@@ -1154,6 +1247,99 @@ export default function Management() {
           }));
           const matNoChips = Object.entries(openByMatNo);
 
+          // ── Smart planner: คาดการณ์เวลาเสร็จ + คำแนะนำ OT (logic เดียวกับ Dashboard) ──
+          // กะเช้า: OT ต่อท้ายกะ (เลิก 17:30, OT ถึง 20:00) · กะดึก: OT อยู่หัวกะ (เข้าปกติ 22:30, เปิด OT = เข้า 20:00)
+          const plannerChips = (() => {
+            const DAY_REG_END  = gridStartMs + 9.5  * 3600000;  // 17:30
+            const DAY_OT_END   = gridStartMs + 12   * 3600000;  // 20:00
+            const NIGHT_OT_IN  = gridStartMs + 12   * 3600000;  // 20:00 (เข้าแบบเปิด OT)
+            const NIGHT_REG_IN = gridStartMs + 14.5 * 3600000;  // 22:30 (เข้าปกติ)
+            const FRAME_END    = gridEndMs;                     // 08:00
+            const finishFrom = (startMs, workMs) => {
+              const breaks = allBreaksOnce();
+              let end = startMs + workMs;
+              const consumed = new Set();
+              let ext = true;
+              while (ext) {
+                ext = false;
+                breaks.forEach(([bs, be], i) => {
+                  if (consumed.has(i)) return;
+                  if (bs < end && be > startMs) { consumed.add(i); end += be - bs; ext = true; }
+                });
+              }
+              return end;
+            };
+            const chips = [];
+            ['day', 'night'].forEach(shift => {
+              let remainCards = 0, remainQty = 0, projEndMs = null, noCt = 0, workMs = 0, started = false;
+              productRows.forEach(row => {
+                computeQueuedPositionsFull(row.cards).forEach(item => {
+                  if (item.o.shift !== shift) return;
+                  if (item.o.isDone || (item.o.qty_actual || 0) > 0) started = true;
+                  if (item.o.isDone || item.o.isCarry) return;
+                  remainCards++;
+                  const rq = Math.max(0, (item.o.qty || 0) - (item.o.qty_actual || 0));
+                  remainQty += rq;
+                  const ct = ctByMatNo[item.o.mat_no] || 0;
+                  if (ct > 0) workMs += rq * ct * 1000; else noCt++;
+                  const end = Math.max(item.endMs, item.occupiedEndMs);
+                  projEndMs = projEndMs == null ? end : Math.max(projEndMs, end);
+                });
+              });
+              if (!remainCards) return;
+              const sLabel = shift === 'day' ? '☀️' : '🌙';
+              if (isHistorical) {
+                chips.push({ color: '#ef4444', text: `${sLabel} งานไม่จบในกะ ${remainCards} ใบ (~${remainQty.toLocaleString()} ชิ้น)` });
+                return;
+              }
+              if (isFutureDay || projEndMs == null) return;
+              if (noCt === remainCards) {
+                chips.push({ color: 'var(--muted)', text: `${sLabel} คาดการณ์ไม่ได้ — งานค้าง ${remainCards} ใบไม่มี cycle time` });
+                return;
+              }
+              if (shift === 'day') {
+                const projLabel = `~${fmtMs(projEndMs)}`;
+                const otMin = Math.ceil((projEndMs - DAY_REG_END) / 60000);
+                if (projEndMs <= DAY_REG_END) {
+                  chips.push({ color: '#22c55e', text: `${sLabel} คาดเสร็จ ${projLabel} — จบในเวลาปกติ (ก่อน 17:30) ไม่ต้องเปิด OT` });
+                } else if (projEndMs <= DAY_OT_END) {
+                  chips.push({ color: '#f59e0b', text: `${sLabel} คาดเสร็จ ${projLabel} — ⏰ ต้องเปิด OT ~${otMin} นาที (เลิก 17:30 → ผลิตถึง ${projLabel})` });
+                } else {
+                  chips.push({ color: '#ef4444', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
+                }
+                return;
+              }
+              // กะดึก — ก่อนเริ่มกะ: ตัดสินใจว่าต้องเรียกเข้า 20:00 มั้ย · เริ่มแล้ว: เทียบคิวจริงกับ 08:00
+              if (nowMs < NIGHT_REG_IN && !started) {
+                const normalFinish = finishFrom(Math.max(NIGHT_REG_IN, nowMs), workMs);
+                if (normalFinish <= FRAME_END) {
+                  chips.push({ color: '#22c55e', text: `${sLabel} เข้างานปกติ 22:30 ทัน — คาดเสร็จ ~${fmtMs(normalFinish)} (ก่อน 08:00) ไม่ต้องเปิด OT` });
+                } else {
+                  const otFinish = finishFrom(Math.max(NIGHT_OT_IN, nowMs), workMs);
+                  if (otFinish <= FRAME_END) {
+                    chips.push({ color: '#f59e0b', text: `${sLabel} ⏰ ต้องเปิด OT เข้า 20:00 — คาดเสร็จ ~${fmtMs(otFinish)} (ถ้าเข้า 22:30 จะจบ ~${fmtMs(normalFinish)} เกิน 08:00)` });
+                  } else {
+                    chips.push({ color: '#ef4444', text: `${sLabel} 🚨 เกินกำลังกะดึกแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(otFinish)}) — ควรวางแผนยกยอด/เพิ่มกำลัง` });
+                  }
+                }
+                return;
+              }
+              const projLabel = `~${fmtMs(projEndMs)}`;
+              if (projEndMs <= FRAME_END) {
+                chips.push({ color: '#22c55e', text: `${sLabel} คาดเสร็จ ${projLabel} — จบภายในกะ (ก่อน 08:00)` });
+              } else {
+                chips.push({ color: '#ef4444', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
+              }
+            });
+            return chips;
+          })();
+          const todayWd = getWorkDate();
+          const shiftBoardDate = (days) => {
+            const d = new Date(`${boardDate}T12:00:00`);
+            d.setDate(d.getDate() + days);
+            setBoardDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+          };
+
           return (
             <div style={{
               marginBottom: 10,
@@ -1163,16 +1349,39 @@ export default function Management() {
             }}>
               {/* Header */}
               <div style={{ padding: '6px 12px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg2)' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>📊 Heijunka — {selectedLine}</span>
-                <div style={{ display: 'flex', gap: 6 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>
+                  📊 Heijunka — {selectedLine}
+                  {isHistorical && <span style={{ marginLeft: 6, fontSize: 8, padding: '1px 6px', borderRadius: 10, background: 'rgba(168,85,247,0.15)', color: '#a855f7' }}>📅 ย้อนหลัง {boardDate}</span>}
+                </span>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <button onClick={() => shiftBoardDate(-1)} style={{ padding: '1px 7px', borderRadius: 6, cursor: 'pointer', fontSize: 9, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>◀</button>
+                  <input type="date" value={boardDate} max={todayWd} onChange={e => e.target.value && setBoardDate(e.target.value)}
+                    style={{ padding: '1px 5px', borderRadius: 6, fontSize: 9, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
+                  <button onClick={() => shiftBoardDate(1)} disabled={boardDate >= todayWd} style={{ padding: '1px 7px', borderRadius: 6, cursor: boardDate >= todayWd ? 'default' : 'pointer', fontSize: 9, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)', opacity: boardDate >= todayWd ? 0.4 : 1 }}>▶</button>
+                  {boardDate !== todayWd && (
+                    <button onClick={() => setBoardDate(todayWd)} style={{ padding: '1px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 9, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: '#08130a' }}>วันนี้</button>
+                  )}
                   {totalDelayed > 0 && <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, fontWeight: 700, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>⚠️ ดีเลย์ {totalDelayed} ใบ</span>}
-                  {sessions.map(s => (
-                    <span key={s.id} style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, fontWeight: 700,
-                      background: s.status === 'open' ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.12)',
-                      color: s.status === 'open' ? '#22c55e' : '#888' }}>
-                      {s.shift === 'day' ? '☀️' : '🌙'} {s.status === 'open' ? '● Live' : '✓ ปิด'}
-                    </span>
-                  ))}
+                  {(() => {
+                    // hierarchy: 1 ชิปต่อไลน์ย่อย แทนป้ายต่อ session
+                    const byChild = {};
+                    sessions.forEach(sx => { (byChild[sx.line_name] = byChild[sx.line_name] || []).push(sx); });
+                    const names = Object.keys(byChild).sort();
+                    const multi = names.length > 1 || (names.length === 1 && names[0] !== selectedLine);
+                    return names.map(ln => {
+                      const list = [...byChild[ln]].sort((a, b) => (a.shift === b.shift ? 0 : a.shift === 'day' ? -1 : 1));
+                      const anyOpen = list.some(sx => sx.status === 'open');
+                      return (
+                        <span key={ln} style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, fontWeight: 700,
+                          background: anyOpen ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.12)',
+                          color: anyOpen ? '#22c55e' : '#888' }}>
+                          {multi && <span style={{ fontWeight: 800 }}>{ln} · </span>}
+                          {list.map(sx => `${sx.shift === 'day' ? '☀️' : '🌙'}${sx.status === 'open' ? '●' : '✓'}`).join(' ')}
+                          {anyOpen ? ' Live' : ' ปิด'}
+                        </span>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
               {/* Kanban ที่เปิดอยู่ ต่อ MAT.NO */}
@@ -1195,6 +1404,7 @@ export default function Management() {
                   { c: '#ef4444', icon: '!', label: 'ล่าช้า' },
                   { c: '#f59e0b', icon: '↷', label: 'ยกยอดข้ามกะ' },
                   { c: '#6b7280', icon: '⏪', label: 'ยิงย้อนหลัง' },
+                  { c: '#ef4444', icon: '⛔', label: 'Downtime (แถบบนแถว)' },
                 ].map(item => (
                   <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <span style={{ width: 11, height: 11, borderRadius: 2, background: `${item.c}28`, border: `1.2px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 6, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
@@ -1202,6 +1412,17 @@ export default function Management() {
                   </div>
                 ))}
               </div>
+              {/* 🧠 Smart planner — คาดการณ์เวลาเสร็จ / คำแนะนำ OT */}
+              {plannerChips.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '5px 12px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+                  <span style={{ fontSize: 8, fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>🧠 PLANNER</span>
+                  {plannerChips.map((c, i) => (
+                    <span key={i} style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: `${c.color === 'var(--muted)' ? 'rgba(148,163,184,0.12)' : c.color + '1f'}`, color: c.color, border: `1px solid ${c.color === 'var(--muted)' ? 'rgba(148,163,184,0.3)' : c.color + '55'}` }}>
+                      {c.text}
+                    </span>
+                  ))}
+                </div>
+              )}
               {/* Timeline: 2 แถว × 12 ชม. แยกแถวตาม product (mat_no) */}
               {HALVES.map(half => (
                 <div key={half.key} style={{ borderTop: half.key === 'pm' ? '2px solid var(--border2)' : 'none' }}>
@@ -1284,18 +1505,34 @@ export default function Management() {
                                 );
                               });
                           })()}
+                          {/* ⛔ แถบ downtime — ชิดขอบบนแถว ชี้เมาส์ดูรายละเอียด */}
+                          {dtWindows.map((w, di) => {
+                            const l = Math.max(0, (w.s - half.startMs) * pctPerMs);
+                            const rgt = Math.min(100, (w.e - half.startMs) * pctPerMs);
+                            if (rgt <= 0 || l >= 100 || rgt <= l) return null;
+                            return (
+                              <div key={`dt-${di}`} title={dtLabel(w)}
+                                style={{
+                                  position: 'absolute', top: 0, height: 4, left: `${l}%`, width: `${Math.max(rgt - l, 0.4)}%`,
+                                  background: w.planned ? '#94a3b8' : '#ef4444', opacity: 0.85,
+                                  borderRadius: '0 0 3px 3px', zIndex: 3, cursor: 'help',
+                                }} />
+                            );
+                          })}
                           {(() => {
                             const positioned = computeQueuedPositionsFull(row.cards).map(item => pctForHalf(item, half)).filter(Boolean);
-                            return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone }, oi) => {
+                            return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs }, oi) => {
                             if (leftPct >= 100) return null;
                             const sc = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : o.is_backfill ? '#6b7280' : '#4d9fff';
                             const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : o.is_backfill ? '⏪' : '▶';
                             const doneQty = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
                             const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
+                            const causeText = isLateDone ? dtTooltip(startMs, new Date(o.confirmed_at).getTime())
+                              : isDelayed ? dtTooltip(startMs, Math.min(nowMs, gridEndMs)) : '';
                             return (
                               <Fragment key={o.prod_no || oi}>
                               <div
-                                title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs - realEndMs) / 60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}`}
+                                title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs - realEndMs) / 60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${causeText}`}
                                 style={{
                                   position: 'absolute', top: 3, bottom: 3, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 22,
                                   background: `${sc}28`, border: `1.5px solid ${sc}${o.isDone && !isLateDone ? 'cc' : (isDelayed || isLateDone) ? 'dd' : '88'}`,
@@ -1339,6 +1576,24 @@ export default function Management() {
             </div>
           );
         })()}
+
+        {/* PPE alarm — เช็คชื่อแล้วแต่ PPE ไม่ครบ: ไม่เข้า pool จึงไม่โผล่บนผัง ต้องมีแถบกระพริบเตือนแทน */}
+        {ppeAlertsInView.length > 0 && (
+          <div className="dt-alarm-banner" style={{ border: '1px solid rgba(239,68,68,0.45)', borderRadius: 10, padding: '8px 12px', marginBottom: 8, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: '#ef4444' }}>
+              <span className="dt-alarm-icon">⛑</span> PPE ไม่ครบ {ppeAlertsInView.length} คน — ห้ามเข้าไลน์จนกว่าจะครบ
+            </span>
+            {ppeAlertsInView.map(p => (
+              <span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px', borderRadius: 6, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(239,68,68,0.4)' }}>
+                {p.employees?.image_url
+                  ? <img src={p.employees.image_url} className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid #ef4444' }} />
+                  : <span className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid #ef4444', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>👤</span>}
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>{p.employees?.name?.split(' ')[0] || '?'}</span>
+                <span style={{ fontSize: 10, color: '#fca5a5' }}>ขาด: {ppeMissingList(p).join(', ')}</span>
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Canvas */}
         <div style={{
@@ -1584,22 +1839,38 @@ export default function Management() {
                         </div>
                       );
                     })}
-                    {filterMachine && machinePoints.map(p => {
+                    {machinePoints.map(p => {
+                      const alarms = dtAlarms.byMachine[p.machine_no];
+                      // เครื่องที่กำลัง Downtime ต้องโชว์เสมอแม้ปิด filter MACHINE — เป็น alarm ไม่ใช่แค่ข้อมูลผัง
+                      if (!filterMachine && !alarms) return null;
                       const mc = drMachines.find(m => m.machine_no === p.machine_no);
                       const mTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const mLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
+                      const firstAlarm = alarms?.[0];
+                      const elapsed = firstAlarm ? dtElapsedMin(firstAlarm) : null;
+                      const ongoing = firstAlarm && !firstAlarm.ended_at && firstAlarm.duration_min == null;
+                      const title = alarms
+                        ? `🚨 ${p.machine_no} ${mc?.machine_name || ''} — DOWNTIME\n${alarms.map(d => `${d.dr_downtime_types?.name_th || 'Downtime'}${d.description ? ` — ${d.description}` : ''}`).join('\n')}`
+                        : `⚙️ ${p.machine_no} ${mc?.machine_name || ''}`;
                       return (
-                        <div key={`mc-${p.id}`} title={`⚙️ ${p.machine_no} ${mc?.machine_name || ''}`}
+                        <div key={`mc-${p.id}`} title={title}
+                          className={alarms ? 'dt-alarm-blink' : undefined}
                           style={{
                             position: 'absolute', top: mTop, left: mLeft, transform: 'translate(-50%, -50%)',
-                            width: 54, height: 40, zIndex: 4,
-                            border: '2px solid rgba(245,158,11,0.85)', borderRadius: 7,
+                            minWidth: 54, maxWidth: alarms ? 90 : 54, height: 40, zIndex: alarms ? 6 : 4,
+                            border: alarms ? '2px solid #ef4444' : '2px solid rgba(245,158,11,0.85)', borderRadius: 7,
                             backgroundColor: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(2px)',
                             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                            padding: '2px 2px 1px',
+                            padding: '2px 3px 1px',
                           }}>
-                          <div style={{ fontSize: 8, fontWeight: 700, color: '#e0e0e0', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>⚙️ {p.machine_no}</div>
-                          <div style={{ fontSize: 7, color: '#a3a3a3', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{mc?.machine_name || ''}</div>
+                          <div style={{ fontSize: 8, fontWeight: 700, color: alarms ? '#fff' : '#e0e0e0', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {alarms ? '🚨' : '⚙️'} {p.machine_no}
+                          </div>
+                          <div style={{ fontSize: 7, color: alarms ? '#fecaca' : '#a3a3a3', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {alarms
+                              ? `${firstAlarm.dr_downtime_types?.name_th || 'Downtime'}${ongoing && elapsed != null ? ` ${elapsed}น.` : ''}`
+                              : (mc?.machine_name || '')}
+                          </div>
                         </div>
                       );
                     })}

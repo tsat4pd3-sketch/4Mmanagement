@@ -25,6 +25,13 @@ const btn = (bg, color='#fff') => ({ padding:'8px 16px', borderRadius:8, border:
 const TYPE_LABEL = { issue:'📦 จ่ายเข้าไลน์', consume:'⚙️ ใช้ผลิต (Auto)', return:'↩️ คืน Store', adjust:'🔧 ปรับยอด' };
 const TYPE_COLOR = { issue:'#22c55e', consume:'#94a3b8', return:'#f59e0b', adjust:'#a855f7' };
 
+/* ประเภท manual movement ที่ต้องผ่านการอนุมัติ (store review) ก่อนมีผลต่อ on-hand
+   — เพิ่ม/ลดได้ที่นี่จุดเดียว. auto movement (consume/issue จาก Heijunka/close กะ/trigger)
+   ไม่เข้าคิว review เพราะ insert โดยไม่ระบุ status → ได้ 'approved' อัตโนมัติ */
+const REVIEW_TYPES = ['adjust'];
+const STATUS_LABEL = { pending:'⏳ รออนุมัติ', approved:'อนุมัติแล้ว', rejected:'❌ ปฏิเสธ' };
+const STATUS_COLOR = { pending:'#f59e0b', approved:'#22c55e', rejected:'#ef4444' };
+
 const EMPTY_FORM = { line_name:'', mat_no:'', part_name:'', qty:'', type:'issue', note:'', work_date: getToday() };
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -33,6 +40,7 @@ const EMPTY_FORM = { line_name:'', mat_no:'', part_name:'', qty:'', type:'issue'
 function StockTab({ role }) {
   const { fullName } = useContext(UserContext);
   const canIssue = can('line_stock', 'issue', role);
+  const canApprove = can('line_stock', 'approve', role);
 
   const [lines,   setLines]   = useState([]);
   const [stock,   setStock]   = useState([]);
@@ -48,6 +56,13 @@ function StockTab({ role }) {
   const [form,       setForm]       = useState(EMPTY_FORM);
   const [saving,     setSaving]     = useState(false);
   const [matSearch,  setMatSearch]  = useState('');
+
+  // ── store review queue ──
+  const [pending,     setPending]     = useState([]);   // manual movements รออนุมัติ
+  const [showPending, setShowPending] = useState(false);
+  const [reviewing,   setReviewing]   = useState(null);  // txn id ที่กำลังอนุมัติ/ปฏิเสธ
+  const [rejectTx,    setRejectTx]    = useState(null);  // txn ที่กำลังกรอกเหตุผลปฏิเสธ
+  const [rejectReason,setRejectReason]= useState('');
 
   const load = useCallback(async () => {
     const [{ data: ln }, { data: stk }, { data: boms }, { data: prods }] = await Promise.all([
@@ -76,14 +91,38 @@ function StockTab({ role }) {
     setTxns(data || []);
   }, [lineFilter]);
 
+  const loadPending = useCallback(async () => {
+    const { data } = await supabaseDR.from('line_stock_transactions')
+      .select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(200);
+    setPending(data || []);
+  }, []);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadPending(); }, [loadPending]);
   useEffect(() => { if (showTxn) loadTxns(); }, [showTxn, loadTxns, lineFilter]);
+
+  // อนุมัติ/ปฏิเสธ movement ที่ pending — .eq('status','pending') ทำให้ปลอดภัยจากการกดซ้ำ/สองคน
+  const reviewTxn = async (txn, decision, reason) => {
+    setReviewing(txn.id);
+    const patch = decision === 'approved'
+      ? { status:'approved', reviewed_by: fullName, reviewed_at: new Date().toISOString(), reject_reason: null }
+      : { status:'rejected', reviewed_by: fullName, reviewed_at: new Date().toISOString(), reject_reason: (reason || '').trim() || 'ไม่ระบุเหตุผล' };
+    const { error } = await supabaseDR.from('line_stock_transactions')
+      .update(patch).eq('id', txn.id).eq('status', 'pending');
+    setReviewing(null);
+    if (error) { toast.error(error.message); return; }
+    toast.success(decision === 'approved' ? '✅ อนุมัติแล้ว — เข้า stock' : '❌ ปฏิเสธแล้ว');
+    setRejectTx(null); setRejectReason('');
+    loadPending(); load(); if (showTxn) loadTxns();
+  };
 
   const handleSave = async () => {
     if (!form.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
     if (!form.mat_no.trim()) { toast.error('กรอก Mat No.'); return; }
     const qty = parseFloat(form.qty);
     if (!qty || qty <= 0) { toast.error('จำนวนต้องมากกว่า 0'); return; }
+    // ประเภทที่ต้อง review → บันทึกเป็น pending (ยังไม่มีผลต่อ on-hand จนกว่าจะอนุมัติ)
+    const needsReview = REVIEW_TYPES.includes(form.type);
     setSaving(true);
     const { error } = await supabaseDR.from('line_stock_transactions').insert({
       line_name:  form.line_name,
@@ -91,17 +130,20 @@ function StockTab({ role }) {
       part_name:  form.part_name.trim() || bomMap[form.mat_no.trim().toUpperCase()] || null,
       qty,
       type:       form.type,
+      status:     needsReview ? 'pending' : 'approved',
       work_date:  form.work_date,
       note:       form.note.trim() || null,
       created_by: fullName,
     });
     setSaving(false);
     if (error) { toast.error(error.message); return; }
-    toast.success(TYPE_LABEL[form.type] + ' — บันทึกแล้ว');
+    toast[needsReview ? 'info' : 'success'](
+      needsReview ? `${TYPE_LABEL[form.type]} — ส่งคำขอแล้ว รออนุมัติ` : `${TYPE_LABEL[form.type]} — บันทึกแล้ว`);
     setShowForm(false);
     setForm(EMPTY_FORM);
     setBomProduct('');
     load();
+    loadPending();
     if (showTxn) loadTxns();
   };
 
@@ -138,6 +180,13 @@ function StockTab({ role }) {
           </p>
         </div>
         <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          {(pending.length > 0 || canApprove) && (
+            <button onClick={() => setShowPending(v => !v)}
+              style={{ ...btn(showPending ? '#f59e0b' : 'var(--bg2)', showPending ? '#1a1206' : 'var(--text)'),
+                border: pending.length > 0 ? '1px solid #f59e0b' : '1px solid var(--border)' }}>
+              ⏳ รออนุมัติ{pending.length > 0 ? ` (${pending.length})` : ''}
+            </button>
+          )}
           <button onClick={() => setShowTxn(v => !v)} style={btn(showTxn ? 'var(--accent)' : 'var(--bg2)', showTxn ? '#08130a' : 'var(--text)')}>
             {showTxn ? '📊 ดู Stock' : '📋 ประวัติ Transaction'}
           </button>
@@ -148,6 +197,60 @@ function StockTab({ role }) {
           )}
         </div>
       </div>
+
+      {/* ── คิวอนุมัติ (store review) ── */}
+      {showPending && (
+        <div style={{ ...card, padding:0, overflow:'hidden', marginBottom:16, borderColor:'rgba(245,158,11,0.4)' }}>
+          <div style={{ padding:'12px 16px', background:'rgba(245,158,11,0.08)', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
+            <div style={{ fontWeight:800, fontSize:14, color:'#f59e0b' }}>⏳ รายการรออนุมัติ ({pending.length})</div>
+            <div style={{ fontSize:11, color:'var(--muted)' }}>
+              {canApprove ? 'อนุมัติแล้วจึงมีผลต่อ stock คงเหลือ' : 'เฉพาะผู้มีสิทธิ์ (admin/manager) อนุมัติได้'}
+            </div>
+          </div>
+          <div style={{ overflowX:'auto' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead>
+                <tr style={{ background:'var(--bg2)' }}>
+                  {['วันที่','ไลน์','Mat SAP','Part Name','ประเภท','จำนวน','หมายเหตุ','โดย', canApprove ? 'จัดการ' : 'สถานะ'].map(h => (
+                    <th key={h} style={{ padding:'8px 12px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {pending.length === 0 && (
+                  <tr><td colSpan={9} style={{ padding:30, textAlign:'center', color:'var(--muted)', fontSize:13 }}>ไม่มีรายการรออนุมัติ</td></tr>
+                )}
+                {pending.map(t => (
+                  <tr key={t.id}>
+                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>{t.work_date}</td>
+                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:13, fontWeight:600 }}>{t.line_name}</td>
+                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:12, color:'#0ea5e9', fontWeight:700 }}>{t.mat_no}</td>
+                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--text2)' }}>{t.part_name || '—'}</td>
+                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)' }}>
+                      <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background:`${TYPE_COLOR[t.type]}18`, color:TYPE_COLOR[t.type] }}>{TYPE_LABEL[t.type]}</span>
+                    </td>
+                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontWeight:800, fontSize:14, textAlign:'right' }}>{parseFloat(t.qty).toLocaleString()}</td>
+                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)' }}>{t.note || '—'}</td>
+                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)' }}>{t.created_by || '—'}</td>
+                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', whiteSpace:'nowrap' }}>
+                      {canApprove ? (
+                        <div style={{ display:'flex', gap:6 }}>
+                          <button onClick={() => reviewTxn(t, 'approved')} disabled={reviewing === t.id}
+                            style={{ ...btn('#16a34a'), padding:'4px 10px', fontSize:11, opacity: reviewing === t.id ? 0.6 : 1 }}>อนุมัติ</button>
+                          <button onClick={() => { setRejectTx(t); setRejectReason(''); }} disabled={reviewing === t.id}
+                            style={{ ...btn('var(--bg)', '#ef4444'), border:'1px solid #ef444440', padding:'4px 10px', fontSize:11 }}>ปฏิเสธ</button>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background:`${STATUS_COLOR.pending}18`, color:STATUS_COLOR.pending }}>{STATUS_LABEL.pending}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Summary chips */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:10, marginBottom:16 }}>
@@ -273,8 +376,11 @@ function StockTab({ role }) {
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--text2)' }}>{t.part_name || '—'}</td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)' }}>
                       <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background:`${TYPE_COLOR[t.type]}18`, color:TYPE_COLOR[t.type] }}>{TYPE_LABEL[t.type]}</span>
+                      {t.status && t.status !== 'approved' && (
+                        <span title={t.reject_reason || ''} style={{ marginLeft:6, fontSize:10, padding:'2px 6px', borderRadius:8, fontWeight:700, background:`${STATUS_COLOR[t.status]}18`, color:STATUS_COLOR[t.status] }}>{STATUS_LABEL[t.status]}</span>
+                      )}
                     </td>
-                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontWeight:800, fontSize:14, color: t.type === 'consume' ? '#94a3b8' : t.type === 'return' ? '#f59e0b' : '#22c55e', textAlign:'right' }}>
+                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontWeight:800, fontSize:14, color: t.status !== 'approved' ? 'var(--muted)' : t.type === 'consume' ? '#94a3b8' : t.type === 'return' ? '#f59e0b' : '#22c55e', textAlign:'right', opacity: t.status !== 'approved' ? 0.55 : 1 }}>
                       {t.type === 'consume' || t.type === 'return' ? '-' : '+'}{parseFloat(t.qty).toLocaleString()}
                     </td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)' }}>{t.note || '—'}</td>
@@ -404,6 +510,25 @@ function StockTab({ role }) {
               <button onClick={handleSave} disabled={saving} style={{ ...btn(TYPE_COLOR[form.type]), opacity:saving ? 0.6 : 1 }}>
                 {saving ? '...' : '💾 บันทึก'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Reject reason modal ── */}
+      {rejectTx && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:1001, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }} onClick={() => setRejectTx(null)}>
+          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(420px,100%)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:6, fontFamily:'var(--font-display)' }}>❌ ปฏิเสธคำขอ</div>
+            <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>
+              {TYPE_LABEL[rejectTx.type]} · <span style={{ fontFamily:'monospace', color:'#0ea5e9' }}>{rejectTx.mat_no}</span> · {rejectTx.line_name} · {parseFloat(rejectTx.qty).toLocaleString()}
+            </div>
+            <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>เหตุผลที่ปฏิเสธ</label>
+            <input style={inputSt} value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="เช่น ยอดไม่ตรงกับการนับจริง" autoFocus />
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
+              <button onClick={() => setRejectTx(null)} style={{ ...btn('var(--bg2)', 'var(--text)'), border:'1px solid var(--border)' }}>ยกเลิก</button>
+              <button onClick={() => reviewTxn(rejectTx, 'rejected', rejectReason)} disabled={reviewing === rejectTx.id}
+                style={{ ...btn('#ef4444'), opacity: reviewing === rejectTx.id ? 0.6 : 1 }}>ยืนยันปฏิเสธ</button>
             </div>
           </div>
         </div>

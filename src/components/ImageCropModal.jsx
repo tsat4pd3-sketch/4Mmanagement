@@ -134,8 +134,10 @@ export default function ImageCropModal({
           ลากรูปเพื่อขยับตำแหน่ง • เลื่อนแถบเพื่อซูม — กรอบนี้คือพื้นที่จริงที่จะแสดงผล
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-          <button onClick={onCancel} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-          <button onClick={handleConfirm} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>✓ ใช้รูปนี้</button>
+          {/* type="button" จำเป็น — modal นี้ถูก render อยู่ใน <form> ของหน้า Register/Operator
+              ถ้าไม่ระบุ ปุ่มจะเป็น submit โดย default ทำให้ฟอร์มถูกบันทึกทันทีก่อนรูปถูกแนบ (รูปหายเงียบๆ) */}
+          <button type="button" onClick={onCancel} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+          <button type="button" onClick={handleConfirm} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>✓ ใช้รูปนี้</button>
         </div>
       </div>
     </div>

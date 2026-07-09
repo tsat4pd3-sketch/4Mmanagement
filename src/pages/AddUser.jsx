@@ -8,6 +8,7 @@ const ROLES = [
   { value: 'leader',     label: 'Leader',     color: '#22c55e', desc: 'ภาพรวม + ไลน์ตัวเอง + พนักงานในไลน์' },
   { value: 'qa',         label: 'QA',         color: '#c084fc', desc: 'Approve/Reject 4M Changes + ดูรายงาน' },
   { value: 'document_control', label: 'Document Control', color: '#fb923c', desc: 'ดูแลปฏิทินบริษัท + เอกสารควบคุม (วันทำงาน/วันหยุด/กะ)' },
+  { value: 'sale', label: 'Sale', color: '#38bdf8', desc: 'อัพโหลด Forecast/Order ลูกค้า + ดู Customer Demand & Shipping' },
   { value: 'display',    label: 'Display',    color: '#94a3b8', desc: '📺 สำหรับจอแสดงผล/TV — ดูได้อย่างเดียว ไม่มี Auto-Logout' },
 ];
 const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', section: '', lineId: '', team: '', notifyEmail: '' };

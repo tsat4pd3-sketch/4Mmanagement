@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
+import { isAlarmingDT, dtElapsedMin } from '../utils/downtimeAlarm';
+import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -69,17 +71,33 @@ function ThumbMap({ imageUrl, alt, markers }) {
       {box && (
         <div style={{ position: 'absolute', left: box.ox, top: box.oy, width: box.rw, height: box.rh, pointerEvents: 'none' }}>
           {markers.map(m => (
-            <div key={m.id} style={{ position: 'absolute', top: m.top, left: m.left, transform: 'translate(-50%, -50%)', zIndex: 2 }}>
-              <div style={{
-                width: 26, height: 26, borderRadius: '50%',
-                border: `2px solid ${m.color}`, boxShadow: `0 0 6px ${m.color}88`,
-                overflow: 'hidden', background: '#1a1a1a',
-              }}>
-                {m.img
-                  ? <img src={m.img} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: m.color }}>{m.initial}</div>
-                }
-              </div>
+            <div key={m.id} style={{ position: 'absolute', top: m.top, left: m.left, transform: 'translate(-50%, -50%)', zIndex: m.alarm ? 3 : 2 }}>
+              {m.alarm ? (
+                <div className="dt-alarm-blink" style={{
+                  border: '2px solid #ef4444', borderRadius: 6, padding: '2px 6px',
+                  fontSize: 10, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap',
+                }}>
+                  🚨 {m.label}
+                </div>
+              ) : (
+                <div style={{ position: 'relative' }} title={m.personAlarm?.label}>
+                  <div
+                    className={m.personAlarm ? (m.personAlarm.kind === 'red' ? 'person-alarm-red' : 'person-alarm-amber') : undefined}
+                    style={{
+                      width: 26, height: 26, borderRadius: '50%',
+                      border: `2px solid ${m.color}`, boxShadow: `0 0 6px ${m.color}88`,
+                      overflow: 'hidden', background: '#1a1a1a',
+                    }}>
+                    {m.img
+                      ? <img src={m.img} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: m.color }}>{m.initial}</div>
+                    }
+                  </div>
+                  {m.personAlarm && (
+                    <div style={{ position: 'absolute', top: -5, right: -5, fontSize: 11, lineHeight: 1 }}>{m.personAlarm.icon}</div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -182,6 +200,7 @@ export default function Dashboard() {
 
   const [layouts,       setLayouts]       = useState([]);
   const [workstations,  setWorkstations]  = useState([]);
+  const [machinePoints, setMachinePoints] = useState([]);
   const [stationEmpMap, setStationEmpMap] = useState({});
   const [expandedLine,  setExpandedLine]  = useState(null);
   const [expandedLines, setExpandedLines] = useState(new Set()); // ชื่อไลน์หลักที่กดขยายดูไลน์ย่อยในการ์ดสถานะไลน์ผลิต
@@ -207,34 +226,61 @@ export default function Dashboard() {
   const [nameByMatNo,   setNameByMatNo]   = useState({});
   const [imgByMatNo,    setImgByMatNo]    = useState({});
   const [breakPolicies, setBreakPolicies] = useState([]);
+  // วันที่ของ Heijunka Board — เลือกดูย้อนหลังได้ (default = วันงานปัจจุบัน)
+  const [boardDate,     setBoardDate]     = useState(() => getWorkDateStr(new Date()));
+  const [lineByMat,     setLineByMat]     = useState({});   // mat_no → line_name (จาก dr_products)
+  const [ediOrders,     setEdiOrders]     = useState([]);   // รอบส่งลูกค้า (EDI 862) วันนี้+พรุ่งนี้ ที่ยังไม่ส่ง
+  const [fgStockByMat,  setFgStockByMat]  = useState({});   // mat_no → stock FG พร้อมส่งรวมทุกคลัง
 
   // โหลดเฉพาะข้อมูลผลิต/OEE จาก DR — เบากว่า fetchAll มาก ใช้กับ realtime
   const fetchProdStatus = useCallback(async () => {
-    const todayStr = getWorkDateStr(new Date());
     const [{ data: sessions }, { data: breakPolicies }, { data: products }] = await Promise.all([
       supabaseDR
         .from('production_sessions')
         .select('id, line_name, shift, status, work_date, start_time, created_at, dr_products(name, target_per_shift, cycle_time_sec, process_type)')
-        .eq('work_date', todayStr),
+        .eq('work_date', boardDate),
       supabaseDR.from('break_policies').select('*').eq('is_active', true),
-      supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, image_url').not('mat_no', 'is', null),
+      supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, image_url, line_name').not('mat_no', 'is', null),
     ]);
     // production_sessions.product_id ไม่ได้ตั้งค่าเสมอ (กะนึงมีได้หลาย mat_no) — ใช้ map นี้
     // เป็น fallback หา cycle_time_sec รายออเดอร์จาก mat_no ตรง ๆ แทนการพึ่ง session.dr_products
     const ctMap = {};
     const nameMap = {};
     const imgMap = {};
-    (products || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; nameMap[p.mat_no] = p.name || ''; imgMap[p.mat_no] = p.image_url || ''; });
+    const lineMap = {};
+    (products || []).forEach(p => {
+      ctMap[p.mat_no] = p.cycle_time_sec || 0; nameMap[p.mat_no] = p.name || ''; imgMap[p.mat_no] = p.image_url || '';
+      if (p.line_name) lineMap[p.mat_no] = p.line_name;
+    });
     setCtByMatNo(ctMap);
     setNameByMatNo(nameMap);
     setImgByMatNo(imgMap);
+    setLineByMat(lineMap);
     setBreakPolicies(breakPolicies || []);
+    // 📡 รอบส่งลูกค้า (EDI 862) ของวันนี้→พรุ่งนี้ ที่ยังไม่ส่ง — ใช้พยากรณ์กะดึกล่วงหน้าแม้ยังไม่เปิดใบผลิต
+    {
+      const nd = new Date(`${boardDate}T12:00:00`);
+      nd.setDate(nd.getDate() + 1);
+      const nextDay = `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, '0')}-${String(nd.getDate()).padStart(2, '0')}`;
+      const { data: shipOrders } = await supabaseDR.from('customer_shipping_orders')
+        .select('mat_no, qty, due_date, ship_time, customer, status')
+        .gte('due_date', boardDate).lte('due_date', nextDay).neq('status', 'shipped');
+      setEdiOrders(shipOrders || []);
+      // stock FG พร้อมส่งของ mat เหล่านั้น — planner จะหักออกก่อนคำนวณว่าต้องผลิตคืนนี้เท่าไหร่
+      const shipMats = [...new Set((shipOrders || []).map(o => o.mat_no))];
+      if (shipMats.length) {
+        const { data: st } = await supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand').in('mat_no', shipMats);
+        const fg = {};
+        (st || []).forEach(r => { fg[r.mat_no] = (fg[r.mat_no] || 0) + (parseFloat(r.qty_on_hand) || 0); });
+        setFgStockByMat(fg);
+      } else setFgStockByMat({});
+    }
     const sessionIds = (sessions || []).map(s => s.id);
     let ordersBySession = {}, dtBySession = {}, defectBySession = {};
     if (sessionIds.length > 0) {
       const [{ data: orders }, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
         supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, prod_no, part_name, mat_no, opened_at, confirmed_at').in('session_id', sessionIds),
-        supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', sessionIds),
+        supabaseDR.from('downtime_logs').select('id, session_id, machine_no, description, duration_min, started_at, ended_at, created_at, dr_downtime_types(category, name_th)').in('session_id', sessionIds),
         supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessionIds),
       ]);
       (orders     || []).forEach(o => { (ordersBySession[o.session_id]  ||= []).push(o); });
@@ -338,10 +384,14 @@ export default function Dashboard() {
       const actual  = active.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty_ok ?? o.qty ?? 0), 0);
       const target  = s.dr_products?.target_per_shift || 0;
       const oeeData = s.status === 'open' ? computeSessionOEE(s) : null;
-      return { ...s, orders: active, demand, actual, target, oeeData };
+      // downtime ที่กำลัง alarm (ยังไม่ปิดรายการ หรือเพิ่งบันทึกเข้ามา) — เฉพาะกะที่ยังไม่ปิด
+      const activeDT = ['open', 'pending_close'].includes(s.status)
+        ? (dtBySession[s.id] || []).filter(d => isAlarmingDT(d))
+        : [];
+      return { ...s, orders: active, demand, actual, target, oeeData, activeDT, dtLogs: dtBySession[s.id] || [] };
     });
     setProdStatus(ps);
-  }, []);
+  }, [boardDate]);
 
   const fetchAll = useCallback(async (date) => {
     setLoading(true);
@@ -356,6 +406,7 @@ export default function Dashboard() {
       { data: layoutData },
       { data: wsData },
       { data: hpData },
+      { data: mpData },
     ] = await Promise.all([
       supabase.from('daily_production_logs')
         .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, shift, assigned_line, employees!inner(id, name, image_url, employee_id_code, line_id, team, is_active, employee_skills(skill_name, score))')
@@ -370,6 +421,7 @@ export default function Dashboard() {
       supabase.from('line_layouts').select('line_name, image_url'),
       supabase.from('workstations').select('id, line_name, station_name, pos_top, pos_left, station_requirements(skill_name, min_score)'),
       supabase.from('employee_home_positions').select('employee_id, station_id, employees(id, name, image_url, position, employee_skills(skill_name, score))'),
+      supabase.from('machine_points').select('id, line_name, machine_no, pos_top, pos_left'),
     ]);
 
     // Build per-line day_team map
@@ -416,6 +468,7 @@ export default function Dashboard() {
     setEmpCounts(counts);
     setLayouts(layoutData || []);
     setWorkstations(wsData || []);
+    setMachinePoints(mpData || []);
 
     // Build skill fit lookups from NESTED data (same source as Management page,
     // avoids the 1000-row truncation that flat queries hit).
@@ -460,6 +513,9 @@ export default function Dashboard() {
         is_present:      att ? att.is_present      : null,
         has_ot:          att?.has_ot          ?? false,
         has_extended_ot: att?.has_extended_ot ?? false,
+        has_helmet:      att?.has_helmet      ?? true,
+        has_boots:       att?.has_boots       ?? true,
+        has_gloves:      att?.has_gloves      ?? true,
         assignedShift:   att?.assignedShift   ?? null,
         fitScore:        computeFit(hp.employee_id, hp.station_id),
       };
@@ -477,6 +533,9 @@ export default function Dashboard() {
         is_present:      l.is_present,
         has_ot:          l.has_ot          ?? false,
         has_extended_ot: l.has_extended_ot ?? false,
+        has_helmet:      l.has_helmet      ?? true,
+        has_boots:       l.has_boots       ?? true,
+        has_gloves:      l.has_gloves      ?? true,
         assignedShift:   l.assignedShift   ?? null,
         fitScore:        computeFit(l.employees.id, l.assigned_line),
       };
@@ -537,6 +596,34 @@ export default function Dashboard() {
     () => selectedSection === 'all' ? layouts : layouts.filter(l => visibleLineNames.has(l.line_name)),
     [layouts, selectedSection, visibleLineNames],
   );
+
+  // ── Downtime alarm — รวม downtime ที่ยังค้าง/เพิ่งบันทึกจากทุกกะที่มองเห็น ──
+  // ใช้ขับ banner ด้านบน, ป้ายบนการ์ดสถานะไลน์ และจุดเครื่องจักรกระพริบบนผัง
+  const dtAlarmList = useMemo(
+    () => visibleProdStatus.flatMap(s => (s.activeDT || []).map(d => ({ ...d, line_name: s.line_name, shift: s.shift }))),
+    [visibleProdStatus],
+  );
+  const dtAlarmByMachine = useMemo(() => {
+    const m = {};
+    dtAlarmList.forEach(d => { if (d.machine_no) (m[d.machine_no] ||= []).push(d); });
+    return m;
+  }, [dtAlarmList]);
+  const dtAlarmByLine = useMemo(() => {
+    const m = {};
+    dtAlarmList.forEach(d => { (m[d.line_name] ||= []).push(d); });
+    return m;
+  }, [dtAlarmList]);
+
+  // ── Person alarm — คนกระพริบบนผัง: แดง = PPE ไม่ครบ, เหลือง = ย้ายจุดแล้ว 4M ยังรออนุมัติ ──
+  const man4mPendingFor = useMemo(() => buildMan4mPendingMatcher(fourMLogs), [fourMLogs]);
+  const personAlarmOf = useCallback((emp) => {
+    if (!emp || emp.is_present !== true) return null;
+    const ppeMiss = ppeMissingList(emp);
+    if (ppeMiss.length) return { kind: 'red', icon: '⛑', label: `PPE ไม่ครบ (${ppeMiss.join(', ')})` };
+    const pend = man4mPendingFor(emp.name);
+    if (pend) return { kind: 'amber', icon: '⏳', label: `รออนุมัติ 4M — ${pend.description}` };
+    return null;
+  }, [man4mPendingFor]);
 
   // ไลน์ย่อย (เช่น HDF1, LASER123 ใต้ HYDROFORM) ที่ไม่มีรูปผังของตัวเอง — จริงๆ อยู่พื้นที่เดียวกับไลน์หลัก
   // ให้รวมจุดงาน/คนของมันเข้าไปในการ์ดของไลน์หลักแทนที่จะแยกการ์ด (ซึ่งจะไม่มีรูปให้แสดงอยู่แล้ว)
@@ -761,6 +848,39 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {/* ── Downtime Alarm Banner — เครื่องจักรหยุด กระพริบเตือนทั้งแถบ ── */}
+      {dtAlarmList.length > 0 && (
+        <motion.div {...stagger(6)} className="dt-alarm-banner"
+          style={{ border: '1px solid rgba(239,68,68,0.45)', borderRadius: 12, padding: isMobile ? '12px 14px' : '14px 18px', marginBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+            <span className="dt-alarm-icon" style={{ fontSize: 20 }}>🚨</span>
+            <span style={{ fontSize: 16, fontWeight: 800, color: '#ef4444', fontFamily: 'var(--font-display)' }}>
+              เครื่องจักร Downtime {dtAlarmList.length} รายการ
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {dtAlarmList.map(d => {
+              const elapsed = dtElapsedMin(d, now.getTime());
+              const ongoing = !d.ended_at && d.duration_min == null;
+              return (
+                <div key={d.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8,
+                  background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(239,68,68,0.4)',
+                }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: '#fca5a5' }}>⚙️ {d.machine_no || d.line_name}</span>
+                  <span style={{ fontSize: 13, color: 'var(--text2)' }}>{d.line_name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#ef4444' }}>{d.dr_downtime_types?.name_th || 'Downtime'}</span>
+                  {ongoing && elapsed != null && (
+                    <span style={{ fontSize: 13, fontWeight: 800, color: '#fbbf24' }}>⏱ {elapsed} นาที</span>
+                  )}
+                  {!ongoing && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ปิดรายการแล้ว (เพิ่งบันทึก)</span>}
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
+
       {/* ── Line Status Grid ─────────────────────────────── */}
       {(() => {
         // ไลน์หลักที่มีไลน์ย่อย → รวมยอดคนของไลน์หลัก+ย่อยเข้าเป็นการ์ดเดียว (กันเลข "0/14" ซ้ำกันทุกไลน์ย่อย)
@@ -800,6 +920,9 @@ export default function Dashboard() {
                 const warn    = line.lineAlerts > 0 || (line.rate > 0 && line.rate < 80);
                 const color   = healthy ? '#22c55e' : warn ? '#f59e0b' : '#555';
                 const isExpanded = line._hasChildren && expandedLines.has(line.name);
+                // downtime alarm ของไลน์นี้ + ไลน์ย่อยที่ถูกรวมเข้าการ์ดเดียวกัน
+                const cardDT = [line.name, ...(line._children?.map(c => c.name) || [])]
+                  .flatMap(n => dtAlarmByLine[n] || []);
                 const card = (
                   <motion.div key={line.id} {...stagger(8 + i)}>
                     <div
@@ -829,6 +952,12 @@ export default function Dashboard() {
                           {line.lineAlerts > 0 && (
                             <div style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(231,76,60,0.15)', color: '#e74c3c', border: '1px solid rgba(231,76,60,0.3)' }}>
                               🚨 {line.lineAlerts}
+                            </div>
+                          )}
+                          {cardDT.length > 0 && (
+                            <div className="dt-alarm-blink" title={cardDT.map(d => `${d.machine_no || '-'} · ${d.dr_downtime_types?.name_th || 'Downtime'}`).join('\n')}
+                              style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, color: '#fff', border: '1px solid #ef4444' }}>
+                              ⚙️ DT {cardDT.length}
                             </div>
                           )}
                         </div>
@@ -873,6 +1002,7 @@ export default function Dashboard() {
                           const cHealthy = cs.rate >= 80 && cs.lineAlerts === 0;
                           const cWarn    = cs.lineAlerts > 0 || (cs.rate > 0 && cs.rate < 80);
                           const cColor   = cHealthy ? '#22c55e' : cWarn ? '#f59e0b' : '#555';
+                          const csDT     = dtAlarmByLine[cs.name] || [];
                           return (
                             <div key={cs.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, padding: isWide ? '12px 14px' : '10px 12px' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -885,6 +1015,12 @@ export default function Dashboard() {
                                   {cs.lineAlerts > 0 && (
                                     <div style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(231,76,60,0.15)', color: '#e74c3c', border: '1px solid rgba(231,76,60,0.3)' }}>
                                       🚨 {cs.lineAlerts}
+                                    </div>
+                                  )}
+                                  {csDT.length > 0 && (
+                                    <div className="dt-alarm-blink" title={csDT.map(d => `${d.machine_no || '-'} · ${d.dr_downtime_types?.name_th || 'Downtime'}`).join('\n')}
+                                      style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, color: '#fff', border: '1px solid #ef4444' }}>
+                                      ⚙️ DT {csDT.length}
                                     </div>
                                   )}
                                 </div>
@@ -917,8 +1053,11 @@ export default function Dashboard() {
         const LEFT_W  = 136;
         const nowMs   = now.getTime();
 
-        const wd = visibleProdStatus[0]?.work_date || new Date().toISOString().slice(0, 10);
+        const wd = visibleProdStatus[0]?.work_date || boardDate;
         const gridStartMs = new Date(`${wd}T08:00:00`).getTime();
+        const gridEndMs   = gridStartMs + 24 * 3600000;
+        const isHistorical = nowMs >= gridEndMs;   // ดูวันย้อนหลัง — วันงานนั้นจบไปแล้ว
+        const isFutureDay  = nowMs < gridStartMs;
 
         const fmtMs = (ms) => {
           const d = new Date(ms);
@@ -934,10 +1073,34 @@ export default function Dashboard() {
           (byLine[key] = byLine[key] || []).push(s);
         });
 
+        const shiftDate = (days) => {
+          const d = new Date(`${boardDate}T12:00:00`);
+          d.setDate(d.getDate() + days);
+          setBoardDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+        };
+        const todayStr = getWorkDateStr(new Date());
+        const dateBtn = {
+          padding: '4px 10px', borderRadius: 7, cursor: 'pointer', fontSize: 13, fontWeight: 700,
+          background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text2)', fontFamily: 'var(--font-body)',
+        };
+
         return (
           <motion.div {...stagger(8)} style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
-              📊 Heijunka Board — ไทม์ไลน์การผลิต
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                📊 Heijunka Board — ไทม์ไลน์การผลิต
+                {isHistorical && <span style={{ marginLeft: 8, fontSize: 12, padding: '2px 8px', borderRadius: 10, background: 'rgba(168,85,247,0.15)', color: '#a855f7', letterSpacing: 0 }}>📅 ย้อนหลัง {boardDate}</span>}
+                {isFutureDay && <span style={{ marginLeft: 8, fontSize: 12, padding: '2px 8px', borderRadius: 10, background: 'rgba(148,163,184,0.15)', color: 'var(--muted)', letterSpacing: 0 }}>📅 ล่วงหน้า {boardDate}</span>}
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button onClick={() => shiftDate(-1)} style={dateBtn}>◀</button>
+                <input type="date" value={boardDate} max={todayStr} onChange={e => e.target.value && setBoardDate(e.target.value)}
+                  style={{ padding: '4px 8px', borderRadius: 7, fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
+                <button onClick={() => shiftDate(1)} disabled={boardDate >= todayStr} style={{ ...dateBtn, opacity: boardDate >= todayStr ? 0.4 : 1, cursor: boardDate >= todayStr ? 'default' : 'pointer' }}>▶</button>
+                {boardDate !== todayStr && (
+                  <button onClick={() => setBoardDate(todayStr)} style={{ ...dateBtn, background: 'var(--accent)', color: '#08130a', border: '1px solid var(--accent)' }}>วันนี้</button>
+                )}
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 12, padding: '6px 10px', background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border2)' }}>
               {[
@@ -947,6 +1110,7 @@ export default function Dashboard() {
                 { c: '#ef4444', icon: '!', label: 'ล่าช้า' },
                 { c: '#f59e0b', icon: '↷', label: 'ยกยอดข้ามกะ' },
                 { c: '#6b7280', icon: '⏪', label: 'ยิงย้อนหลัง (backfill)' },
+                { c: '#ef4444', icon: '⛔', label: 'Downtime (แถบบนแถว)' },
               ].map(item => (
                 <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                   <span style={{ width: 14, height: 14, borderRadius: 3, background: `${item.c}28`, border: `1.5px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
@@ -990,13 +1154,26 @@ export default function Dashboard() {
                       )}
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {sessions.map(s => (
-                        <span key={s.id} style={{ fontSize: 12, padding: '2px 8px', borderRadius: 20, fontWeight: 700,
-                          background: s.status === 'open' ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.12)',
-                          color: s.status === 'open' ? '#22c55e' : '#888' }}>
-                          {s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} {s.status === 'open' ? '● Live' : '✓ ปิดแล้ว'}
-                        </span>
-                      ))}
+                      {/* hierarchy: ยุบป้ายกะเป็น 1 ชิปต่อไลน์ย่อย (☀️/🌙 อยู่ในชิปเดียวกัน) แทนป้ายต่อ session ที่รกเมื่อมีหลายไลน์ลูก */}
+                      {(() => {
+                        const byChild = {};
+                        sessions.forEach(s => { (byChild[s.line_name] = byChild[s.line_name] || []).push(s); });
+                        const names = Object.keys(byChild).sort();
+                        const multi = names.length > 1 || (names.length === 1 && names[0] !== lineName);
+                        return names.map(ln => {
+                          const list = [...byChild[ln]].sort((a, b) => (a.shift === b.shift ? 0 : a.shift === 'day' ? -1 : 1));
+                          const anyOpen = list.some(s => s.status === 'open');
+                          return (
+                            <span key={ln} style={{ fontSize: 12, padding: '2px 8px', borderRadius: 20, fontWeight: 700,
+                              background: anyOpen ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.12)',
+                              color: anyOpen ? '#22c55e' : '#888' }}>
+                              {multi && <span style={{ fontWeight: 800 }}>{ln} · </span>}
+                              {list.map(s => `${s.shift === 'day' ? '☀️' : '🌙'}${s.status === 'open' ? '●' : '✓'}`).join(' ')}
+                              {anyOpen ? ' Live' : ' ปิดแล้ว'}
+                            </span>
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
 
@@ -1046,6 +1223,28 @@ export default function Dashboard() {
                     };
 
                     const allCards = buildCards(sessions);
+
+                    // ── Downtime ของไลน์นี้ (จาก downtime_logs ทุก session ของวันนั้น) ──
+                    // ใช้วาดแถบ ⛔ บนไทม์ไลน์ และผูกเข้า tooltip ของใบที่ดีเลย์/ปิดช้า เพื่อบอก "สาเหตุ" ของการหลุดแผน
+                    const dtWindows = sessions.flatMap(s => (s.dtLogs || []).map(d => {
+                      const ds = d.started_at ? new Date(d.started_at).getTime() : null;
+                      if (ds == null) return null;
+                      const de = d.ended_at ? new Date(d.ended_at).getTime() : ds + (d.duration_min || 0) * 60000;
+                      return {
+                        s: ds, e: Math.max(de, ds + 60000), name: d.dr_downtime_types?.name_th || 'Downtime',
+                        machine: d.machine_no || '', desc: d.description || '',
+                        planned: d.dr_downtime_types?.category === 'planned',
+                        min: d.duration_min || Math.round((de - ds) / 60000),
+                      };
+                    }).filter(Boolean)).sort((a, b) => a.s - b.s);
+                    const dtLabel = (w) => `⛔ ${w.name}${w.machine ? ` @${w.machine}` : ''} ${fmtMs(w.s)}–${fmtMs(w.e)} (${w.min}น.)${w.desc ? ` — ${w.desc}` : ''}`;
+                    // downtime ที่คาบเกี่ยวช่วงเวลา [a,b] ของใบกัมบัง — ใช้อธิบายสาเหตุดีเลย์ใน tooltip
+                    const dtTooltip = (a, b) => {
+                      const hits = dtWindows.filter(w => w.s < b && w.e > a);
+                      return hits.length
+                        ? ` · สาเหตุที่เป็นไปได้: ${hits.map(dtLabel).join(' · ')}`
+                        : ' · ไม่มีบันทึก downtime ในช่วงนี้';
+                    };
 
                     // แยกแถวตามชื่อ product (ไม่ใช่ mat_no) — เพื่อไม่ให้ product ต่างกัน (เช่น RH60 / LH61) ปนแถวเดียวกัน
                     // แต่ part เดียวกันที่ต่าง mat_no/customer เท่านั้น (เช่น FVL/FTM/AAT) ให้รวมแถวเดียว
@@ -1124,6 +1323,21 @@ export default function Dashboard() {
                       const openCards = filtered.filter(o => !(o.isDone && o.confirmed_at))
                         .sort((a, b) => a.orderStartMs - b.orderStartMs);
                       const sorted = [...doneCards, ...openCards];
+                      // ── ชุดสแกนปิดรวด (batch confirm) ──────────────────────────────────────
+                      // เครื่องจักรยังไม่ส่งสัญญาณจบทีละใบ พนักงานจึงสแกนปิดทั้งล็อตรวดเดียว (เช่น 9 ใบติดกัน)
+                      // ถ้าตัดสิน "ปิดช้า" รายใบจาก confirmed_at ใบแรก ๆ ของชุดจะกลายเป็นส้มเกินจริงเสมอ
+                      // จึงจัดกลุ่มใบที่สแกนห่างกันไม่เกิน 5 นาทีเป็นชุดเดียว แล้วตัดสินความช้าที่ใบสุดท้ายของชุด
+                      // (เทียบเวลาสแกนจบชุด กับเวลาจบตามทฤษฎีของงานทั้งชุด)
+                      const BATCH_GAP_MS = 5 * 60000;
+                      const batchIdOf = new Map();
+                      let curBatchId = 0;
+                      doneCards.forEach((o, i) => {
+                        if (i > 0 && new Date(o.confirmed_at).getTime() - new Date(doneCards[i - 1].confirmed_at).getTime() > BATCH_GAP_MS) curBatchId++;
+                        batchIdOf.set(o, curBatchId);
+                      });
+                      const batchCount = new Map();
+                      doneCards.forEach(o => { const b = batchIdOf.get(o); batchCount.set(b, (batchCount.get(b) || 0) + 1); });
+                      const batchSeen = new Map();
                       // เงื่อนไขผสม: ใบที่ยังไม่ปิด+เกินเวลาจะตีแดงก็ต่อเมื่อ "ยอดรวมจริงของแถวนี้ยังไม่ทันเป้าตามเวลา" ด้วย
                       // ถ้ายอดรวมทันเป้าอยู่ (แค่สแกนปิดไม่ตรง FIFO) จะไม่ตีแดง เพราะงานยังผลิตได้ตามแผนจริง
                       const ctSec = ctByMatNo[byOpenTime[0]?.mat_no] || 0;
@@ -1173,7 +1387,17 @@ export default function Dashboard() {
                         // ดังนั้นถ้าปิดงานเร็วกว่าทฤษฎี (confirmed_at < endMs) จะไม่บีบ/เลื่อนตำแหน่งตาม confirmed_at เลย —
                         // ปล่อยให้การ์ดอยู่ตามคิว (queueFloor + durationMs) เหมือนเดิม ใช้ confirmed_at แค่ตัดสินสี/ไอคอนเท่านั้น
                         // ส่วนกรณีปิดงานช้ากว่าทฤษฎี (isLateDone) ปล่อยให้ endMs เดิม + แสดง "หาง" ของความช้าแยกต่างหาก (ไม่ขยับการ์ดหลัก)
-                        const isLateDone = o.isDone && !!o.confirmed_at && new Date(o.confirmed_at).getTime() > endMs;
+                        // ปิดช้า: ใบเดี่ยวตัดสินตามเดิม · ใบในชุดสแกนรวดเดียวตัดสินเฉพาะใบสุดท้ายของชุด
+                        // (ใบแรก ๆ ของชุดถือว่าจบตามคิวทฤษฎี เพราะเวลาสแกนไม่ใช่เวลาผลิตจบจริงของใบนั้น)
+                        let isLateDone = false;
+                        if (o.isDone && o.confirmed_at) {
+                          const bid = batchIdOf.get(o);
+                          const size = batchCount.get(bid) || 1;
+                          const seen = (batchSeen.get(bid) || 0) + 1;
+                          batchSeen.set(bid, seen);
+                          if (size === 1 || seen === size)
+                            isLateDone = new Date(o.confirmed_at).getTime() > endMs + (size > 1 ? BATCH_GAP_MS : 0);
+                        }
                         // เวลาที่ "ครองไลน์" จริง สำหรับผลักคิวถัดไป (ไม่ใช่แค่เวลาจบตามแผน):
                         // - ถ้าปิดงานแล้ว ใช้เวลาปิดจริง (confirmed_at) เสมอ
                         // - ถ้ายังไม่ปิดแต่เลยกำหนดจบไปแล้ว ถือว่ายังครองไลน์อยู่จนถึงเวลาปัจจุบัน
@@ -1215,7 +1439,7 @@ export default function Dashboard() {
                         tailLeftPct = tLeft;
                         tailWidthPct = Math.max(0, tRight - tLeft);
                       }
-                      return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone };
+                      return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs, occupiedEndMs: item.occupiedEndMs };
                     };
 
                     // เรียงตามเวลาเริ่มจริง แล้วต่อคิวในแถวเดียวกัน (ไม่สร้างแถวใหม่) — แต่ละการ์ดเริ่มได้ไม่ก่อนการ์ดก่อนหน้าสิ้นสุด
@@ -1264,6 +1488,20 @@ export default function Dashboard() {
                               );
                             });
                         })()}
+                        {/* ⛔ แถบ downtime — วางชิดขอบบนแถว ไม่บังใบกัมบัง ชี้เมาส์ดูรายละเอียดได้ */}
+                        {dtWindows.map((w, di) => {
+                          const l = Math.max(0, (w.s - half.startMs) * pctPerMs);
+                          const rgt = Math.min(100, (w.e - half.startMs) * pctPerMs);
+                          if (rgt <= 0 || l >= 100 || rgt <= l) return null;
+                          return (
+                            <div key={`dt-${di}`} title={dtLabel(w)}
+                              style={{
+                                position: 'absolute', top: 0, height: 5, left: `${l}%`, width: `${Math.max(rgt - l, 0.4)}%`,
+                                background: w.planned ? '#94a3b8' : '#ef4444', opacity: 0.85,
+                                borderRadius: '0 0 3px 3px', zIndex: 3, cursor: 'help',
+                              }} />
+                          );
+                        })}
                         {(() => {
                           const positioned = computeQueuedPositionsFull(cards).map(item => pctForHalf(item, half)).filter(Boolean);
                           // MIN_W_PCT บวกความกว้างขั้นต่ำให้การ์ดบาง ๆ มองเห็นได้ แต่ถ้าการ์ดสองใบต่อคิวกันพอดี
@@ -1276,15 +1514,18 @@ export default function Dashboard() {
                               positioned[i].widthPct = Math.max(0, maxRight - positioned[i].leftPct);
                             }
                           }
-                          return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone }, oi) => {
+                          return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs }, oi) => {
                           if (leftPct >= 100) return null;
                           const statusColor = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
                           const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : '▶';
                           const doneQty  = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
                           const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
+                          // ใบที่หลุดแผน (ดีเลย์/ปิดช้า) — แนบ downtime ที่คาบเกี่ยวช่วงเวลาของใบนั้นเข้า tooltip เป็นสาเหตุ
+                          const causeText = isLateDone ? dtTooltip(startMs, new Date(o.confirmed_at).getTime())
+                            : isDelayed ? dtTooltip(startMs, Math.min(nowMs, gridEndMs)) : '';
                           return (
                             <Fragment key={o.prod_no || oi}>
-                            <div title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs-realEndMs)/60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}`}
+                            <div title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs-realEndMs)/60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${causeText}`}
                               style={{
                                 position: 'absolute', top: 4, bottom: 4,
                                 left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 24,
@@ -1327,7 +1568,172 @@ export default function Dashboard() {
                       </div>
                     );
 
-                    return HALVES.map(half => (
+                    // ── Smart planner: คาดการณ์เวลาเสร็จจากคิวจริง + คำแนะนำเปิด OT ──
+                    // กะเช้า: OT ต่อท้ายกะ — เลิกปกติ 17:30, OT ได้ถึง 20:00
+                    // กะดึก: OT อยู่หัวกะ — เข้าปกติ 22:30–08:00 แต่ถ้าเปิด OT จะเข้า 20:00 แทน
+                    //   คำถามที่ต้องตอบก่อนกะดึกเริ่ม: งานที่เห็นทั้งหมด เข้า 22:30 ทันก่อน 08:00 มั้ย ถ้าไม่ทันต้องเรียกเข้า 20:00
+                    const plannerChips = (() => {
+                      const DAY_REG_END   = gridStartMs + 9.5  * 3600000;  // 17:30
+                      const DAY_OT_END    = gridStartMs + 12   * 3600000;  // 20:00
+                      const NIGHT_OT_IN   = gridStartMs + 12   * 3600000;  // 20:00 (เข้าแบบเปิด OT)
+                      const NIGHT_REG_IN  = gridStartMs + 14.5 * 3600000;  // 22:30 (เข้าปกติ)
+                      const FRAME_END     = gridEndMs;                     // 08:00
+                      // จำลองเวลาเสร็จ: เริ่มจาก startMs ใส่เนื้องาน workMs แล้วยืดคร่อมช่วงพักที่ทับ
+                      const finishFrom = (startMs, workMs) => {
+                        const breaks = allBreaksOnce();
+                        let end = startMs + workMs;
+                        const consumed = new Set();
+                        let ext = true;
+                        while (ext) {
+                          ext = false;
+                          breaks.forEach(([bs, be], i) => {
+                            if (consumed.has(i)) return;
+                            if (bs < end && be > startMs) { consumed.add(i); end += be - bs; ext = true; }
+                          });
+                        }
+                        return end;
+                      };
+                      const chips = [];
+                      ['day', 'night'].forEach(shift => {
+                        let remainCards = 0, remainQty = 0, projEndMs = null, noCt = 0, workMs = 0, started = false;
+                        productRows.forEach(row => {
+                          computeQueuedPositionsFull(row.cards).forEach(item => {
+                            if (item.o.shift !== shift) return;
+                            if (item.o.isDone || (item.o.qty_actual || 0) > 0) started = true;
+                            if (item.o.isDone || item.o.isCarry) return;
+                            remainCards++;
+                            const rq = Math.max(0, (item.o.qty || 0) - (item.o.qty_actual || 0));
+                            remainQty += rq;
+                            const ct = ctByMatNo[item.o.mat_no] || 0;
+                            if (ct > 0) workMs += rq * ct * 1000; else noCt++;
+                            const end = Math.max(item.endMs, item.occupiedEndMs);
+                            projEndMs = projEndMs == null ? end : Math.max(projEndMs, end);
+                          });
+                        });
+                        // 📡 EDI fallback: กะดึกยังไม่เปิดใบผลิตเลย — ใช้รอบส่งลูกค้าของพรุ่งนี้ตอบว่าต้องเรียกเข้า 20:00 มั้ย
+                        if (shift === 'night' && !remainCards && !isHistorical && !isFutureDay && nowMs < gridStartMs + 14.5 * 3600000) {
+                          const ediForLine = ediOrders.filter(o => {
+                            const ln = lineByMat[o.mat_no];
+                            return ln && (childParentMap[ln] || ln) === lineName && o.due_date > boardDate;
+                          });
+                          // หัก stock FG พร้อมส่งใน warehouse ออกก่อน — ต้องผลิตคืนนี้เฉพาะส่วนที่ขาดจริง
+                          const demandByMat = {};
+                          ediForLine.forEach(o => { demandByMat[o.mat_no] = (demandByMat[o.mat_no] || 0) + Number(o.qty); });
+                          let ediQty = 0, w = 0, noCtQty = 0, stockUsed = 0;
+                          Object.entries(demandByMat).forEach(([mat, q]) => {
+                            const used = Math.min(fgStockByMat[mat] || 0, q);
+                            stockUsed += used;
+                            const net = q - used;
+                            if (net <= 0) return;
+                            ediQty += net;
+                            const ct = ctByMatNo[mat] || 0;
+                            if (ct > 0) w += net * ct * 1000; else noCtQty += net;
+                          });
+                          const grossQty = Object.values(demandByMat).reduce((a, q) => a + q, 0);
+                          if (ediQty <= 0 && stockUsed > 0) {
+                            chips.push({ color: '#22c55e', text: `🌙📡 EDI ส่งพรุ่งนี้ ${grossQty.toLocaleString()} ชิ้น — 📦 stock พร้อมส่งครอบทั้งหมด ไม่ต้องผลิตเพิ่มคืนนี้` });
+                          }
+                          if (ediQty > 0) {
+                            const NIGHT_OT_IN2 = gridStartMs + 12 * 3600000, NIGHT_REG_IN2 = gridStartMs + 14.5 * 3600000;
+                            const stockNote = stockUsed > 0 ? ` · หัก stock ${stockUsed.toLocaleString()} แล้ว` : '';
+                            const finishFrom2 = (startMs, workMs) => {
+                              const breaks = allBreaksOnce();
+                              let end = startMs + workMs;
+                              const consumed = new Set();
+                              let ext = true;
+                              while (ext) {
+                                ext = false;
+                                breaks.forEach(([bs, be], i) => {
+                                  if (consumed.has(i)) return;
+                                  if (bs < end && be > startMs) { consumed.add(i); end += be - bs; ext = true; }
+                                });
+                              }
+                              return end;
+                            };
+                            if (w <= 0) {
+                              chips.push({ color: 'var(--muted)', text: `🌙📡 EDI: งานส่งพรุ่งนี้ ${ediQty.toLocaleString()} ชิ้น แต่ไม่มี cycle time — คาดการณ์ไม่ได้${stockNote}` });
+                            } else {
+                              const nf = finishFrom2(Math.max(NIGHT_REG_IN2, nowMs), w);
+                              const tail = noCtQty > 0 ? ` (+${noCtQty.toLocaleString()} ชิ้นไม่มี CT)` : '';
+                              if (nf <= gridEndMs) {
+                                chips.push({ color: '#22c55e', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — เข้าปกติ 22:30 ทัน คาดเสร็จ ~${fmtMs(nf)}${tail}` });
+                              } else {
+                                const of2 = finishFrom2(Math.max(NIGHT_OT_IN2, nowMs), w);
+                                if (of2 <= gridEndMs) {
+                                  chips.push({ color: '#f59e0b', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — ⏰ ควรเรียกเข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)} · ถ้าเข้า 22:30 จบ ~${fmtMs(nf)})${tail}` });
+                                } else {
+                                  chips.push({ color: '#ef4444', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — 🚨 เกินกำลังแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)}) วางแผนล่วงหน้า${tail}` });
+                                }
+                              }
+                            }
+                          }
+                          return;
+                        }
+                        if (!remainCards) return;
+                        const sLabel = shift === 'day' ? '☀️' : '🌙';
+                        if (isHistorical) {
+                          chips.push({ color: '#ef4444', text: `${sLabel} งานไม่จบในกะ ${remainCards} ใบ (~${remainQty.toLocaleString()} ชิ้น)` });
+                          return;
+                        }
+                        if (isFutureDay || projEndMs == null) return;
+                        if (noCt === remainCards) {
+                          chips.push({ color: 'var(--muted)', text: `${sLabel} คาดการณ์ไม่ได้ — งานค้าง ${remainCards} ใบไม่มี cycle time` });
+                          return;
+                        }
+                        if (shift === 'day') {
+                          const projLabel = `~${fmtMs(projEndMs)}`;
+                          const otMin = Math.ceil((projEndMs - DAY_REG_END) / 60000);
+                          if (projEndMs <= DAY_REG_END) {
+                            chips.push({ color: '#22c55e', text: `${sLabel} คาดเสร็จ ${projLabel} — จบในเวลาปกติ (ก่อน 17:30) ไม่ต้องเปิด OT` });
+                          } else if (projEndMs <= DAY_OT_END) {
+                            chips.push({ color: '#f59e0b', text: `${sLabel} คาดเสร็จ ${projLabel} — ⏰ ต้องเปิด OT ~${otMin} นาที (เลิก 17:30 → ผลิตถึง ${projLabel})` });
+                          } else {
+                            chips.push({ color: '#ef4444', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
+                          }
+                          return;
+                        }
+                        // ── กะดึก ──
+                        if (nowMs < NIGHT_REG_IN && !started) {
+                          // ยังไม่เริ่มกะดึก → โหมดตัดสินใจ: เข้า 22:30 ทันมั้ย หรือต้องเรียกเข้า 20:00 (เปิด OT หัวกะ)
+                          const normalFinish = finishFrom(Math.max(NIGHT_REG_IN, nowMs), workMs);
+                          if (normalFinish <= FRAME_END) {
+                            chips.push({ color: '#22c55e', text: `${sLabel} เข้างานปกติ 22:30 ทัน — คาดเสร็จ ~${fmtMs(normalFinish)} (ก่อน 08:00) ไม่ต้องเปิด OT` });
+                          } else {
+                            const otFinish = finishFrom(Math.max(NIGHT_OT_IN, nowMs), workMs);
+                            if (otFinish <= FRAME_END) {
+                              chips.push({ color: '#f59e0b', text: `${sLabel} ⏰ ต้องเปิด OT เข้า 20:00 — คาดเสร็จ ~${fmtMs(otFinish)} (ถ้าเข้า 22:30 จะจบ ~${fmtMs(normalFinish)} เกิน 08:00)` });
+                            } else {
+                              chips.push({ color: '#ef4444', text: `${sLabel} 🚨 เกินกำลังกะดึกแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(otFinish)}) — ควรวางแผนยกยอด/เพิ่มกำลัง` });
+                            }
+                          }
+                          return;
+                        }
+                        // กะดึกเริ่มผลิตแล้ว → ใช้คิวจริงเทียบขอบกะ 08:00
+                        const projLabel = `~${fmtMs(projEndMs)}`;
+                        if (projEndMs <= FRAME_END) {
+                          chips.push({ color: '#22c55e', text: `${sLabel} คาดเสร็จ ${projLabel} — จบภายในกะ (ก่อน 08:00)` });
+                        } else {
+                          chips.push({ color: '#ef4444', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
+                        }
+                      });
+                      return chips;
+                    })();
+
+                    const plannerStrip = plannerChips.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '6px 10px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>🧠 PLANNER</span>
+                        {plannerChips.map((c, i) => (
+                          <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: `${c.color === 'var(--muted)' ? 'rgba(148,163,184,0.12)' : c.color + '1f'}`, color: c.color, border: `1px solid ${c.color === 'var(--muted)' ? 'rgba(148,163,184,0.3)' : c.color + '55'}` }}>
+                            {c.text}
+                          </span>
+                        ))}
+                      </div>
+                    );
+
+                    return (
+                      <Fragment>
+                        {plannerStrip}
+                        {HALVES.map(half => (
                       <div key={half.key} style={{ borderTop: half.key === 'pm' ? '2px solid var(--border2)' : 'none' }}>
                         {hourHeader(half.hours, half.startMs)}
                         {productRows.map((row, ri) => {
@@ -1362,12 +1768,37 @@ export default function Dashboard() {
                           );
                         })}
                       </div>
-                    ));
+                        ))}
+                      </Fragment>
+                    );
                   })()}
 
-                  {/* ── Footer: per-session progress + OEE ── */}
-                  <div style={{ padding: '8px 14px 10px', borderTop: '1px solid var(--border2)', display: 'flex', flexWrap: 'wrap', gap: 14 }}>
-                    {sessions.map(s => {
+                  {/* ── Footer: per-session progress + OEE — จัดกลุ่มตามไลน์ย่อย (hierarchy) ── */}
+                  {(() => {
+                    const byChild = {};
+                    sessions.forEach(s => { (byChild[s.line_name] = byChild[s.line_name] || []).push(s); });
+                    const childNames = Object.keys(byChild).sort();
+                    const multi = childNames.length > 1 || (childNames.length === 1 && childNames[0] !== lineName);
+                    // ไม่รวมยอดข้ามโปรดัก (RH/LH คนละพาร์ท) — แต่ละบล็อกกะบอกชื่อโปรดักที่ผลิตแทน
+                    return (
+                  <div style={{ padding: '8px 14px 10px', borderTop: '1px solid var(--border2)' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+                    {childNames.map(childName => {
+                      const childSessions = [...byChild[childName]].sort((a, b) => (a.shift === b.shift ? 0 : a.shift === 'day' ? -1 : 1));
+                      const active = childSessions.filter(s => (s.demand || 0) > 0 || (s.actual || 0) > 0);
+                      const emptyCount = childSessions.length - active.length;
+                      return (
+                        <div key={childName} style={{ flex: '1 1 220px', minWidth: 200, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {multi && (
+                            <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', borderBottom: '1px solid var(--border)', paddingBottom: 3 }}>
+                              🏭 {childName}
+                              {emptyCount > 0 && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}> · {emptyCount} กะไม่มีแผน</span>}
+                            </div>
+                          )}
+                          {active.length === 0 && (
+                            <div style={{ fontSize: 13, color: 'var(--muted)' }}>ไม่มีแผนผลิต</div>
+                          )}
+                          {active.map(s => {
                       const pct      = s.demand > 0 ? Math.min((s.actual / s.demand) * 100, 100) : 0;
                       const tpct     = s.target > 0 ? Math.min((s.actual / s.target) * 100, 100) : 0;
                       const barColor = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
@@ -1376,13 +1807,22 @@ export default function Dashboard() {
                       const doneCount = s.orders.filter(o => o.status === 'confirmed').length;
 
                       return (
-                        <div key={s.id} style={{ flex: '1 1 200px', minWidth: 180 }}>
+                        <div key={s.id} style={{ minWidth: 180 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
                             <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
                               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'}</span>
                               <span style={{ fontSize: 20, fontWeight: 900, color: barColor, lineHeight: 1 }}>{s.actual}</span>
                               <span style={{ fontSize: 13, color: 'var(--muted)' }}>/ {s.demand} ชิ้น</span>
                               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{doneCount}/{s.orders.length} ใบ</span>
+                              {(() => {
+                                const prods = [...new Set(s.orders.map(o => nameByMatNo[o.mat_no] || o.mat_no).filter(Boolean))];
+                                if (!prods.length) return null;
+                                return (
+                                  <span title={prods.join(' · ')} style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {prods[0]}{prods.length > 1 ? ` +${prods.length - 1}` : ''}
+                                  </span>
+                                );
+                              })()}
                             </div>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                               {s.target > 0 && <span style={{ fontSize: 12, color: tpct >= 100 ? '#22c55e' : 'var(--muted)' }}>เป้า {tpct.toFixed(0)}%</span>}
@@ -1407,8 +1847,14 @@ export default function Dashboard() {
                           )}
                         </div>
                       );
+                          })}
+                        </div>
+                      );
                     })}
+                    </div>
                   </div>
+                    );
+                  })()}
 
                 </div>
               );
@@ -1451,21 +1897,31 @@ export default function Dashboard() {
                       <ThumbMap
                         imageUrl={layout.image_url}
                         alt={layout.line_name}
-                        markers={lineWs.map(ws => {
-                          const emp = stationEmpMap[String(ws.id)];
-                          if (!emp) return null;
-                          if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
-                          // Only show employees who are present
-                          if (emp.is_present !== true) return null;
-                          const fitLv = getFitLevel(emp.fitScore);
-                          return {
-                            id: ws.id,
-                            top: ws.pos_top, left: ws.pos_left,
-                            color: fitLv ? fitLv.color : '#aaa',
-                            img: emp.image_url,
-                            initial: (emp.name || '?')[0],
-                          };
-                        }).filter(Boolean)}
+                        markers={[
+                          ...lineWs.map(ws => {
+                            const emp = stationEmpMap[String(ws.id)];
+                            if (!emp) return null;
+                            if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
+                            // Only show employees who are present
+                            if (emp.is_present !== true) return null;
+                            const fitLv = getFitLevel(emp.fitScore);
+                            return {
+                              id: ws.id,
+                              top: ws.pos_top, left: ws.pos_left,
+                              color: fitLv ? fitLv.color : '#aaa',
+                              img: emp.image_url,
+                              initial: (emp.name || '?')[0],
+                              personAlarm: personAlarmOf(emp),
+                            };
+                          }).filter(Boolean),
+                          // จุดเครื่องจักรที่กำลัง Downtime — กระพริบแดงบนผังย่อ
+                          ...machinePoints
+                            .filter(p => cardLineNames.includes(p.line_name) && dtAlarmByMachine[p.machine_no])
+                            .map(p => ({
+                              id: `mc-${p.id}`, alarm: true, label: p.machine_no,
+                              top: `${parseFloat(p.pos_top) || 0}%`, left: `${parseFloat(p.pos_left) || 0}%`,
+                            })),
+                        ]}
                       />
                       {/* Line label */}
                       <div style={{ padding: '8px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg3)' }}>
@@ -1550,7 +2006,7 @@ export default function Dashboard() {
               style={{
                 background: 'var(--card)',
                 borderRadius: 14,
-                padding: 16,
+                padding: 20,
                 width: 'min(97vw, 2200px)',
                 maxWidth: '97vw',
                 maxHeight: '96vh',
@@ -1559,7 +2015,7 @@ export default function Dashboard() {
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 20, color: 'var(--text)' }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 18, color: 'var(--text)' }}>
                   🏭 {expandedLine}
                 </div>
                 <button
@@ -1616,7 +2072,6 @@ export default function Dashboard() {
                     if (!moved) break;
                   }
                   // clamp ไม่ให้การ์ด (avatar+ชื่อ+badge) ตกขอบรูป — การ์ดถูก translate(-50%,-50%)
-                  // จึงเผื่อครึ่งกว้างซ้าย/ขวา และด้านล่างเผื่อมากกว่าเพราะมีป้ายชื่อ+fit ต่อท้าย
                   const EDGE_X = 58, EDGE_TOP = 52, EDGE_BOTTOM = 92;
                   for (const m of pxMarkers) {
                     const fx = Math.min(Math.max(m.px + m.dox, EDGE_X), boxW - EDGE_X);
@@ -1648,22 +2103,26 @@ export default function Dashboard() {
                         const fitLv = getFitLevel(fit);
                         const color = fitLv ? fitLv.color : '#aaa';
                         const shortName = (emp.name || '').split(' ')[0];
+                        const pAlarm = personAlarmOf(emp);
                         return (
                           <div key={ws.id}
                             onMouseEnter={e => { e.currentTarget.style.zIndex = 50; }}
                             onMouseLeave={e => { e.currentTarget.style.zIndex = 2; }}
+                            title={pAlarm?.label}
                             style={{
                               position: 'absolute', top: `${top + oy}%`, left: `${left + ox}%`,
                               transform: 'translate(-50%, -50%)',
-                              zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0,
+                              zIndex: pAlarm ? 4 : 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0,
                               transition: 'z-index 0s',
                             }}>
-                            <div style={{
-                              width: 'clamp(60px, 6.5vw, 100px)', height: 'clamp(60px, 6.5vw, 100px)', borderRadius: '50%',
-                              border: `clamp(3px, 0.4vw, 5px) solid ${color}`,
-                              boxShadow: `0 0 10px ${color}99`,
-                              overflow: 'hidden', background: '#1a1a1a',
-                            }}>
+                            <div
+                              className={pAlarm ? (pAlarm.kind === 'red' ? 'person-alarm-red' : 'person-alarm-amber') : undefined}
+                              style={{
+                                width: 'clamp(60px, 6.5vw, 100px)', height: 'clamp(60px, 6.5vw, 100px)', borderRadius: '50%',
+                                border: `clamp(3px, 0.4vw, 5px) solid ${color}`,
+                                boxShadow: `0 0 10px ${color}99`,
+                                overflow: 'hidden', background: '#1a1a1a',
+                              }}>
                               {emp.image_url
                                 ? <img src={emp.image_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                 : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'clamp(18px, 2vw, 32px)', fontWeight: 800, color }}>{(emp.name || '?')[0]}</div>
@@ -1683,26 +2142,67 @@ export default function Dashboard() {
                             {emp.has_extended_ot && (
                               <div style={{ fontSize: 'clamp(12px, 1.3vw, 18px)', fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>OT+23</div>
                             )}
+                            {pAlarm && (
+                              <div style={{
+                                fontSize: 'clamp(9px, 1.1vw, 14px)', fontWeight: 800, whiteSpace: 'nowrap',
+                                color: pAlarm.kind === 'red' ? '#fca5a5' : '#fde68a',
+                                background: pAlarm.kind === 'red' ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)',
+                                padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 2,
+                              }}>
+                                {pAlarm.icon} {pAlarm.kind === 'red' ? 'PPE ไม่ครบ' : 'รอ 4M'}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
+                      {/* จุดเครื่องจักรบนผัง — เฉพาะเครื่องที่กำลัง Downtime กระพริบแดงพร้อมชื่อสาเหตุ */}
+                      {machinePoints
+                        .filter(p => cardLineNames.includes(p.line_name) && dtAlarmByMachine[p.machine_no])
+                        .map(p => {
+                          const alarms = dtAlarmByMachine[p.machine_no];
+                          const first = alarms[0];
+                          const elapsed = dtElapsedMin(first, now.getTime());
+                          const ongoing = !first.ended_at && first.duration_min == null;
+                          return (
+                            <div key={`mc-${p.id}`}
+                              title={alarms.map(d => `${d.dr_downtime_types?.name_th || 'Downtime'}${d.description ? ` — ${d.description}` : ''}`).join('\n')}
+                              style={{
+                                position: 'absolute', top: `${parseFloat(p.pos_top) || 0}%`, left: `${parseFloat(p.pos_left) || 0}%`,
+                                transform: 'translate(-50%, -50%)', zIndex: 5,
+                                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                              }}>
+                              <div className="dt-alarm-blink" style={{
+                                border: '2px solid #ef4444', borderRadius: 8, padding: '4px 8px',
+                                fontSize: 'clamp(10px, 1.2vw, 15px)', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap',
+                              }}>
+                                🚨 {p.machine_no}
+                              </div>
+                              <div style={{
+                                background: 'rgba(0,0,0,0.8)', borderRadius: 4, padding: '2px 6px',
+                                fontSize: 'clamp(9px, 1vw, 13px)', fontWeight: 700, color: '#fca5a5', whiteSpace: 'nowrap',
+                              }}>
+                                {first.dr_downtime_types?.name_th || 'Downtime'}{ongoing && elapsed != null ? ` · ${elapsed} นาที` : ''}
+                              </div>
+                            </div>
+                          );
+                        })}
                     </>
                   );
                 })()}
               </div>
               {/* Legend — same as skill matrix */}
               <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontSize: 15, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 4 }}>Skill Fit:</span>
+                <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginRight: 4 }}>Skill Fit:</span>
                 {SKILL_LEVELS.map(lv => (
                   <div key={lv.min} style={{ display: 'flex', alignItems: 'center', gap: 5, background: lv.bg, borderRadius: 6, padding: '3px 8px' }}>
-                    <div style={{ width: 11, height: 11, borderRadius: '50%', background: lv.color, boxShadow: `0 0 4px ${lv.color}` }} />
-                    <span style={{ fontSize: 15, fontWeight: 700, color: lv.color }}>{lv.min}</span>
-                    <span style={{ fontSize: 15, color: 'var(--muted)' }}>{lv.label}</span>
+                    <div style={{ width: 9, height: 9, borderRadius: '50%', background: lv.color, boxShadow: `0 0 4px ${lv.color}` }} />
+                    <span style={{ fontSize: 12, fontWeight: 700, color: lv.color }}>{lv.min}</span>
+                    <span style={{ fontSize: 12, color: 'var(--muted)' }}>{lv.label}</span>
                   </div>
                 ))}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, borderRadius: 6, padding: '3px 8px', background: 'rgba(128,128,128,0.1)' }}>
-                  <div style={{ width: 11, height: 11, borderRadius: '50%', background: '#aaa' }} />
-                  <span style={{ fontSize: 15, color: 'var(--muted)' }}>ไม่มีข้อกำหนด</span>
+                  <div style={{ width: 9, height: 9, borderRadius: '50%', background: '#aaa' }} />
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีข้อกำหนด</span>
                 </div>
               </div>
             </div>

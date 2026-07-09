@@ -11,7 +11,9 @@ const M = 5     // page margin mm
 // `categories`); these maps are built per-export. Fallback keeps old codes
 // rendering if the taxonomy row was removed.
 function hexToRgb(hex) {
-  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex ?? '')
+  let h = (hex ?? '').trim().replace(/^#/, '')
+  if (/^[a-f\d]{3}$/i.test(h)) h = h.split('').map(c => c + c).join('')  // #f00 → ff0000
+  const m = /^([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})?$/i.exec(h)  // trailing group = optional alpha, ignored
   return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [107, 114, 128]
 }
 function buildCatMaps(categories) {

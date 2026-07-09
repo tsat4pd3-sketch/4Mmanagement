@@ -10,6 +10,7 @@ import {
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 import { hasPermission, can } from '../utils/permissions';
 import { loadCompanyCalendar, getDayType, DAY_TYPE_META } from '../utils/companyCalendar';
+import { getLineFamilyNames, getLineFamilyIds } from '../utils/lineHierarchy';
 import tsLogoUrl from '../assets/TS logo.png';
 import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/changePointChecklist';
 
@@ -1149,7 +1150,9 @@ function FourMTab() {
     if (role === 'leader') {
       const myLine = lines.find(l => l.id === userLineId);
       if (!myLine) return false;
-      return log.line_name === myLine.name || childLineNamesOf(myLine.name).includes(log.line_name);
+      // ครอบครัวไลน์ (ตัวเอง + ไลน์หลัก + ไลน์ย่อย) — leader ไลน์ย่อยต้องอนุมัติ log ที่เกิดจาก
+      // การจัดคนลงจุดของไลน์หลัก (พื้นที่เดียวกัน) ได้ด้วย ไม่ใช่แค่สายลงอย่างเดียว
+      return lineFamilyOf(myLine.name).includes(log.line_name);
     }
     if (role === 'supervisor') {
       if (!userSection) return false;
@@ -1183,13 +1186,17 @@ function FourMTab() {
   const canManageDoc = can('four_m', 'manage_docs', role);
 
   const normSection = (s) => (s || '').trim().toLowerCase();
-  const childLineNamesOf = (lineName) => lines.filter(l => l.parent_line_name === lineName).map(l => l.name);
+  // ครอบครัวไลน์ตามลำดับชั้น (ตัวเอง + สายบน + สายล่าง) — fallback เป็นชื่อเดิมถ้า lines ยังไม่โหลด
+  const lineFamilyOf = (lineName) => {
+    const fam = getLineFamilyNames(lines, lineName);
+    return fam.length ? fam : [lineName];
+  };
 
   // supervisor/leader เห็น 4M log เฉพาะไลน์/ส่วนงานตัวเอง (เดิมเห็นข้ามไลน์ได้หมด)
   const allowedLineNames = useMemo(() => {
     if (role === 'leader' && userLineId) {
       const myLine = lines.find(l => l.id === userLineId);
-      return myLine ? [myLine.name, ...childLineNamesOf(myLine.name)] : [];
+      return myLine ? getLineFamilyNames(lines, myLine.name) : [];
     }
     if (role === 'supervisor' && userSection) {
       return lines.filter(l => normSection(l.section) === normSection(userSection)).map(l => l.name);
@@ -1212,7 +1219,7 @@ function FourMTab() {
       .order('work_date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(5000);
-    if (line)         q = q.eq('line_name', line);
+    if (line)         q = q.in('line_name', lineFamilyOf(line)); // เลือกไลน์ = เห็นทั้งครอบครัวไลน์ (หลัก↔ย่อย)
     if (cat)          q = q.eq('category', cat);
     if (statusFilter) q = q.eq('status', statusFilter);
     if (allowedLineNames) q = q.in('line_name', allowedLineNames.length ? allowedLineNames : ['__none__']);
@@ -1309,7 +1316,7 @@ function FourMTab() {
 
     const { data: monthLogs } = await supabase.from('four_m_logs')
       .select('id, work_date, line_name, category, description, status, created_at, created_by, sv_approved_by, approved_by')
-      .eq('line_name', line).eq('status', 'approved')
+      .in('line_name', lineFamilyOf(line)).eq('status', 'approved')
       .gte('work_date', monthStart).lte('work_date', monthEnd)
       .limit(5000);
 
@@ -2133,11 +2140,18 @@ function SkillMatrixTab() {
   const [selectedEmp,    setSelectedEmp]    = useState(null);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section').order('name').then(({ data }) => setLines(data || []));
+    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name').then(({ data }) => setLines(data || []));
     load();
   }, []);
 
-  useEffect(() => { load(); }, [filterLine, filterSection, filterTeam, filterDept]);
+  // lines อยู่ใน deps ด้วย — scope ครอบครัวไลน์ของ leader ต้อง re-apply หลัง lines โหลดเสร็จ
+  useEffect(() => { load(); }, [filterLine, filterSection, filterTeam, filterDept, lines]);
+
+  // กรองด้วยไลน์ = ทั้งครอบครัวไลน์ (ตัวเอง + ไลน์หลัก + ไลน์ย่อย) — fallback id เดิมถ้า lines ยังไม่โหลด
+  const lineFamilyIdsOf = (lineId) => {
+    const ids = getLineFamilyIds(lines, Number(lineId));
+    return ids.size ? [...ids] : [lineId];
+  };
 
   const load = async () => {
     setLoading(true);
@@ -2145,9 +2159,9 @@ function SkillMatrixTab() {
     let q = supabase.from('employees').select(baseSelect).eq('is_active', true);
     // leader/supervisor เห็นเฉพาะไลน์/ส่วนงานตัวเองเสมอ ไม่ว่า filter ที่เลือกไว้จะเป็นอะไร —
     // บังคับ scope นี้เพิ่มเติมจาก filter อิสระ กันดูข้ามไลน์/ส่วนงานที่ตัวเองไม่ได้ดูแล
-    if (role === 'leader' && userLineId) q = q.eq('line_id', userLineId);
+    if (role === 'leader' && userLineId) q = q.in('line_id', lineFamilyIdsOf(userLineId));
     else if (role === 'supervisor' && userSection) q = q.eq('section', userSection);
-    if (filterLine) q = q.eq('line_id', filterLine);
+    if (filterLine) q = q.in('line_id', lineFamilyIdsOf(filterLine));
     else if (filterSection) q = q.eq('section', filterSection);
     if (filterTeam) q = q.eq('team', filterTeam);
     if (filterDept) q = q.eq('department', filterDept);
@@ -2654,7 +2668,7 @@ function MultiSkillFormTab() {
   }, [role, ctxFullName, ctxSigUrl]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section').order('name')
+    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
       .then(({ data }) => setLines(data || []));
     supabase.from('skill_definitions').select('*').order('sort_order')
       .then(({ data }) => setSkillDefs(data || []));
@@ -2682,14 +2696,20 @@ function MultiSkillFormTab() {
       });
   }, [filterLine, lines]);
 
+  // กรองด้วยไลน์ = ทั้งครอบครัวไลน์ (ตัวเอง + ไลน์หลัก + ไลน์ย่อย) — fallback id เดิมถ้า lines ยังไม่โหลด
+  const lineFamilyIdsOf = (lineId) => {
+    const ids = getLineFamilyIds(lines, Number(lineId));
+    return ids.size ? [...ids] : [lineId];
+  };
+
   const load = async () => {
     setLoading(true);
     const sel = 'id, name, employee_id_code, position, section, department, team, start_date, employee_skills(skill_name, score)';
     let q = supabase.from('employees').select(sel).eq('is_active', true);
     // leader/supervisor เห็นเฉพาะไลน์/ส่วนงานตัวเองเสมอ ไม่ว่า filter ที่เลือกไว้จะเป็นอะไร
-    if (role === 'leader' && userLineId) q = q.eq('line_id', userLineId);
+    if (role === 'leader' && userLineId) q = q.in('line_id', lineFamilyIdsOf(userLineId));
     else if (role === 'supervisor' && userSection) q = q.eq('section', userSection);
-    if (filterLine) q = q.eq('line_id', filterLine);
+    if (filterLine) q = q.in('line_id', lineFamilyIdsOf(filterLine));
     else if (filterSection) q = q.eq('section', filterSection);
     if (filterTeam) q = q.eq('team', filterTeam);
     if (filterDept) q = q.eq('department', filterDept);
@@ -3306,7 +3326,7 @@ function SkillAllowanceTab() {
   const [signerHRM,      setSignerHRM]     = useState('');
 
   useEffect(() => {
-    supabase.from('production_lines').select('name, section, cost_center, head_name').order('name')
+    supabase.from('production_lines').select('name, section, cost_center, head_name, parent_line_name').order('name')
       .then(({ data }) => setLines(data || []));
     supabase.from('skill_definitions').select('category, allowance_type').eq('category', 'allowance_skill')
       .then(({ data }) => setSkillDefs(data || []));
@@ -3352,7 +3372,11 @@ function SkillAllowanceTab() {
     let stQ = supabase.from('workstations').select('id, station_name, line_name')
       .eq('skill_allowance', true)
       .eq('skill_allowance_type', workType);
-    if (line) stQ = stQ.eq('line_name', line);
+    // เลือกไลน์ = ทั้งครอบครัวไลน์ (หลัก↔ย่อย) — สถานีค่าฝีมืออาจถูก set ไว้ที่ไลน์ย่อยของไลน์ที่เลือก
+    if (line) {
+      const fam = getLineFamilyNames(lines, line);
+      stQ = stQ.in('line_name', fam.length ? fam : [line]);
+    }
     const { data: stations } = await stQ;
     if (!stations?.length) { setRows([]); setLoading(false); return; }
 
@@ -3804,7 +3828,7 @@ function AttendanceFormTab() {
   const [calLoaded, setCalLoaded] = useState(false);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section').order('name')
+    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
       .then(({ data }) => setLines(data || []));
     loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
@@ -3848,10 +3872,11 @@ function AttendanceFormTab() {
     const endDate   = `${year}-${pad(month)}-${pad(days[days.length - 1])}`;
 
     // Step 1: get employees matching current filters from employees table (server-side)
-    const selectedLineId = line ? (lines.find(l => l.name === line)?.id ?? null) : null;
+    // เลือกไลน์ = ทั้งครอบครัวไลน์ (หลัก↔ย่อย) — พนักงานอาจผูกกับไลน์หลักแต่ทำงานไลน์ย่อย หรือกลับกัน
+    const familyIds = line ? [...getLineFamilyIds(lines, line)] : [];
     let empQ = supabase.from('employees')
       .select('id, name, employee_id_code, section, department, team, line_id');
-    if (selectedLineId) empQ = empQ.eq('line_id', selectedLineId);
+    if (line && familyIds.length) empQ = empQ.in('line_id', familyIds);
     if (dept)           empQ = empQ.eq('section', dept);
     if (empDept)        empQ = empQ.eq('department', empDept);
     if (team)           empQ = empQ.eq('team', team);

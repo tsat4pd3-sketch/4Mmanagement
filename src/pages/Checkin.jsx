@@ -1069,7 +1069,7 @@ export default function Checkin() {
         </div>
       )}
 
-      <div className="card" style={{ overflowX: 'auto' }}>
+      <div className="card table-sticky">
         <table style={{ minWidth: 820 }}>
           <thead>
             <tr>
