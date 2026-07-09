@@ -2015,11 +2015,12 @@ export default function Dashboard() {
               style={{
                 background: 'var(--card)',
                 borderRadius: 14,
-                padding: 20,
-                width: 'min(97vw, 2200px)',
+                padding: 16,
+                // หด modal ตามขนาดรูปจริง — รูปถูกจำกัดทั้งกว้าง/สูงให้พอดีจอเดียว (ห้ามมี scroll)
+                width: 'fit-content',
                 maxWidth: '97vw',
-                maxHeight: '96vh',
-                overflow: 'auto',
+                maxHeight: '97vh',
+                overflow: 'hidden',
                 boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
               }}
             >
@@ -2032,13 +2033,20 @@ export default function Dashboard() {
                   style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--muted)', padding: '0 4px' }}
                 >✕</button>
               </div>
-              <div style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', background: '#111' }}>
+              {/* inline-block ให้กรอบหดเท่ารูปจริง — img จำกัดทั้งสองแกน (ไม่ใช้ object-fit
+                  เพื่อให้กล่อง img = รูปที่เห็นจริง แล้วพิกัด % ของ marker ตรงเสมอ) */}
+              <div style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', background: '#111', display: 'inline-block', maxWidth: '100%' }}>
                 <img
                   ref={mapImgRef}
                   src={layout.image_url}
                   alt={expandedLine}
                   onLoad={e => setMapBox({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight })}
-                  style={{ width: '100%', display: 'block', opacity: 0.7 }}
+                  style={{
+                    maxWidth: 'min(95vw, 2200px)',
+                    maxHeight: 'calc(97vh - 150px)', // เผื่อ header + legend + padding ของ modal
+                    width: 'auto', height: 'auto',
+                    display: 'block', opacity: 0.7,
+                  }}
                 />
                 {(() => {
                   // เก็บ marker ที่จะแสดง + ตำแหน่งจริง (anchor) จาก pos_top/pos_left (เป็น %)

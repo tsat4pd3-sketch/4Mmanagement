@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useContext } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import imageCompression from 'browser-image-compression'
 import { supabase, supabaseDR } from '../supabaseClient'
+import { UserContext } from '../App'
+import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { FREQ_LABEL, DEPT_LABEL, EQUIP_TYPE_LABEL } from '../lib/pmSchedule'
 import { getOrCreateChecklist, setChecklistFrequency } from '../lib/pmChecklists'
@@ -596,7 +598,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
 }
 
 // ─── EquipmentCard ────────────────────────────────────────────────────────────
-function EquipmentCard({ jig, cpCount, hasPins, onEdit, onDelete }) {
+function EquipmentCard({ jig, cpCount, hasPins, onEdit, onDelete, canSetup }) {
   const typeColor = { jig: '#3dd65c', die: '#4d9fff', machine: '#f59a3f', fixture: '#9b8de8', tool: '#e05c4a' }
   const color = typeColor[jig.equipment_type] ?? '#527855'
   const catMeta = CATEGORY_TYPE_META[jig.equipment_category] ?? CATEGORY_TYPE_META.production
@@ -626,10 +628,12 @@ function EquipmentCard({ jig, cpCount, hasPins, onEdit, onDelete }) {
             <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{cpCount}</span> จุดตรวจ
             {hasPins && <span style={{ marginLeft: 6 }}>📍</span>}
           </div>
-          <div style={S.actions}>
-            <button onClick={onEdit} style={S.btnSm('var(--accent)')}>แก้ไข</button>
-            <button onClick={onDelete} style={S.btnSm('var(--red)')}>ลบ</button>
-          </div>
+          {canSetup && (
+            <div style={S.actions}>
+              <button onClick={onEdit} style={S.btnSm('var(--accent)')}>แก้ไข</button>
+              <button onClick={onDelete} style={S.btnSm('var(--red)')}>ลบ</button>
+            </div>
+          )}
         </div>
       </div>
     </motion.div>
@@ -638,6 +642,8 @@ function EquipmentCard({ jig, cpCount, hasPins, onEdit, onDelete }) {
 
 // ─── PMSetup (main) ───────────────────────────────────────────────────────────
 export default function PMSetup() {
+  const { role } = useContext(UserContext)
+  const canSetup = can('pm', 'setup', role)
   const [searchParams, setSearchParams] = useSearchParams()
   const department = searchParams.get('dept') || 'maintenance'
   const [jigs, setJigs] = useState([])
@@ -712,11 +718,13 @@ export default function PMSetup() {
           <h1 style={S.h1}>PM Setup — อุปกรณ์ & จุดตรวจ</h1>
           <p style={S.sub}>{jigs.length} อุปกรณ์ · แผนก {DEPT_LABEL[department] ?? department}</p>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button onClick={() => setTaxModal('category')} style={S.btnSm('var(--muted)')}>⚙ ประเภท</button>
-          <button onClick={() => setTaxModal('method')} style={S.btnSm('var(--muted)')}>⚙ วิธีตรวจ</button>
-          <button onClick={openCreate} style={S.primaryBtn}>+ เพิ่มอุปกรณ์</button>
-        </div>
+        {canSetup && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={() => setTaxModal('category')} style={S.btnSm('var(--muted)')}>⚙ ประเภท</button>
+            <button onClick={() => setTaxModal('method')} style={S.btnSm('var(--muted)')}>⚙ วิธีตรวจ</button>
+            <button onClick={openCreate} style={S.primaryBtn}>+ เพิ่มอุปกรณ์</button>
+          </div>
+        )}
       </div>
 
       <div style={S.deptBar}>
@@ -732,12 +740,12 @@ export default function PMSetup() {
           <div style={{ fontSize: 40, marginBottom: 12 }}>🔩</div>
           <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>ยังไม่มีอุปกรณ์</p>
           <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>กดปุ่ม "เพิ่มอุปกรณ์" เพื่อเริ่มต้น</p>
-          <button onClick={openCreate} style={S.primaryBtn}>+ เพิ่มอุปกรณ์</button>
+          {canSetup && <button onClick={openCreate} style={S.primaryBtn}>+ เพิ่มอุปกรณ์</button>}
         </div>
       ) : (
         <div style={S.grid}>
           {jigs.map(jig => (
-            <EquipmentCard key={jig.id} jig={jig} cpCount={cpCounts[jig.id] ?? 0} hasPins={!!pinFlags[jig.id]}
+            <EquipmentCard key={jig.id} jig={jig} canSetup={canSetup} cpCount={cpCounts[jig.id] ?? 0} hasPins={!!pinFlags[jig.id]}
               onEdit={() => openEdit(jig)} onDelete={() => handleDelete(jig)} />
           ))}
         </div>
