@@ -126,6 +126,20 @@ git push origin main
 - การเตือน "เลยเวลา" ฝั่ง client ถูกถอด — scanner เป็นคนแจ้งแทน (ทำงานแม้ไม่มีใครเปิดหน้า)
 - Rollback โค้ด: `git revert -m 1 <merge-sha รอบ 10>` + unschedule cron ถ้าไม่อยากให้แจ้งต่อ
 
+## รอบแก้ที่ 11 — บอร์ดเวลาภายในโรงงาน (Rack Center + Store)
+
+- ไฟล์แก้: `src/pages/RackCenter.jsx`, `src/pages/LineStock.jsx` ·
+  ไฟล์ใหม่: `src/components/InternalTimeBoard.jsx` (บอร์ดเวลา reusable กรอบ 08:00→08:00),
+  `src/utils/timeFrame.js` (helper แปลงเวลาเป็นนาทีบนกรอบวันงาน)
+- Rack Center: เพิ่มปุ่มสลับ 3 มุมมอง (📋 บอร์ดสถานะเดิม / 🕐 บอร์ดเวลา / ⚙️ ตั้งค่า SLA)
+  — มุมมองเดิมไม่ถูกแตะ แค่ห่อด้วยเงื่อนไข view
+- Store (Line Stock): เพิ่ม tab ใหม่ 🕐 บอร์ดเวลา (read-only monitor รอบส่ง kanban)
+  — tab เดิมทั้งสองไม่ถูกแตะ
+- **DB (โปรเจค DR):** ตารางใหม่ `internal_delivery_sla` (เกณฑ์ SLA rack: เตรียม 15 นาที /
+  ส่งถึง 45 นาที, RLS to public ตามกฎ DR) — migration: `20260710_internal_delivery_sla.sql`
+  ถอนได้ด้วย `drop table if exists internal_delivery_sla;`
+- Rollback เฉพาะรอบนี้: `git revert -m 1 <merge-sha รอบ 11>` — ไม่มีผลกับข้อมูล kanban/rack เดิม
+
 ## สิ่งที่ต้องรู้ตอน rollback
 
 1. **ยอดสต็อกจาก "ยืนยันส่ง" ต่างกันสองเวอร์ชัน** — เวอร์ชันใหม่บันทึก `line_stock_transactions`
