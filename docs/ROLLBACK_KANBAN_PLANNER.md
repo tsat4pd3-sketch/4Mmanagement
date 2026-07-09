@@ -112,6 +112,20 @@ git push origin main
   + คอลัมน์ `customer_shipping_orders.overdue_notified_at` (DR)
 - Rollback โค้ด: `git revert -m 1 <merge-sha รอบ 9>` — event จะไม่ถูกยิงอีก edge function มี handler ค้างไว้ไม่เป็นไร
 
+## รอบแก้ที่ 10 — Standard Workflow ส่งงาน (walkback 4 activity) + scanner cron
+
+- ไฟล์แก้: `src/pages/CustomerDemand.jsx`, `src/pages/NotificationConfig.jsx`,
+  ไฟล์ใหม่: `supabase/functions/shipping-phase-scan/index.ts` + migrations 20260710_*
+- **DB (DR):** ตาราง `shipping_workflow_steps` (4 เฟส default: ยืนยันออเดอร์ 240 → เตรียม 120
+  → โหลด 60 → ถึงลูกค้า 0 นาที, override รายลูกค้าได้) + `shipping_phase_alerts` (dedup)
+  + สถานะ order เพิ่ม 'confirmed', 'loaded' — ถอน: drop 2 ตาราง + คืน check constraint เดิม
+- **Edge functions:** `shipping-phase-scan` (DR, v2) รันทุก 10 นาทีผ่าน pg_cron
+  (`select cron.unschedule('shipping-phase-scan');` เพื่อหยุด) ·
+  `send-notification` (หลัก) deploy v29 เพิ่ม event `shipping_phase_alert`
+- rule ใหม่: `shipping_phase_alert` (logistic, ผูก Smart Logistic แล้ว)
+- การเตือน "เลยเวลา" ฝั่ง client ถูกถอด — scanner เป็นคนแจ้งแทน (ทำงานแม้ไม่มีใครเปิดหน้า)
+- Rollback โค้ด: `git revert -m 1 <merge-sha รอบ 10>` + unschedule cron ถ้าไม่อยากให้แจ้งต่อ
+
 ## สิ่งที่ต้องรู้ตอน rollback
 
 1. **ยอดสต็อกจาก "ยืนยันส่ง" ต่างกันสองเวอร์ชัน** — เวอร์ชันใหม่บันทึก `line_stock_transactions`
