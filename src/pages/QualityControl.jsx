@@ -170,7 +170,7 @@ function KpiCard({ label, value, sub, color = 'var(--text)' }) {
     <div style={{ ...cardSt, padding: '13px 16px', minWidth: 130, flex: '1 1 130px' }}>
       <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 24, fontWeight: 900, color, lineHeight: 1.1 }}>{value ?? '—'}</div>
-      {sub && <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{sub}</div>}
     </div>
   );
 }
@@ -333,8 +333,8 @@ function QualityDashboard() {
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={stat.ppmTrend} margin={{ top: 6, right: 12, left: -8, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted)' }} />
-              <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
+              <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} />
               <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }} />
               <Line type="monotone" dataKey="ppm" name="PPM" stroke="#ef4444" strokeWidth={2} dot={{ r: 2.5 }} connectNulls />
             </LineChart>
@@ -349,9 +349,9 @@ function QualityDashboard() {
             <ResponsiveContainer width="100%" height={240}>
               <ComposedChart data={stat.pareto} margin={{ top: 6, right: 8, left: -8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="name" tick={{ fontSize: 9, fill: 'var(--muted)' }} interval={0} angle={-18} textAnchor="end" height={52} />
-                <YAxis yAxisId="l" tick={{ fontSize: 10, fill: 'var(--muted)' }} />
-                <YAxis yAxisId="r" orientation="right" domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--muted)' }} unit="%" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--muted)' }} interval={0} angle={-18} textAnchor="end" height={52} />
+                <YAxis yAxisId="l" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
+                <YAxis yAxisId="r" orientation="right" domain={[0, 100]} tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="%" />
                 <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }} />
                 <Bar yAxisId="l" dataKey="qty" name="จำนวน (ชิ้น)" radius={[3, 3, 0, 0]}>
                   {stat.pareto.map((p, i) => <Cell key={i} fill={p.color} />)}
@@ -371,12 +371,12 @@ function QualityDashboard() {
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={stat.lineRows} margin={{ top: 14, right: 12, left: -8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="line" tick={{ fontSize: 9, fill: 'var(--muted)' }} interval={0} angle={-18} textAnchor="end" height={52} />
-                <YAxis tick={{ fontSize: 10, fill: 'var(--muted)' }} />
+                <XAxis dataKey="line" tick={{ fontSize: 11, fill: 'var(--muted)' }} interval={0} angle={-18} textAnchor="end" height={52} />
+                <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} />
                 <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }}
                   formatter={(v, name) => [name === 'PPM' ? Number(v).toLocaleString() : v, name]} />
                 <Bar dataKey="ng" name="NG (ชิ้น)" fill="#ef4444" opacity={0.85} radius={[3, 3, 0, 0]}>
-                  <LabelList dataKey="ppm" position="top" formatter={v => v ? `${Number(v).toLocaleString()} ppm` : ''} style={{ fontSize: 9, fill: 'var(--muted)' }} />
+                  <LabelList dataKey="ppm" position="top" formatter={v => v ? `${Number(v).toLocaleString()} ppm` : ''} style={{ fontSize: 11, fill: 'var(--muted)' }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -562,15 +562,15 @@ function SPCTab({ lines, canRecord, canManage }) {
                 <ResponsiveContainer width="100%" height={230}>
                   <LineChart data={spc.points} margin={{ top: 6, right: 42, left: -4, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="idx" tick={{ fontSize: 10, fill: 'var(--muted)' }} />
-                    <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10, fill: 'var(--muted)' }} tickFormatter={v => Number(v).toFixed(2)} />
+                    <XAxis dataKey="idx" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
+                    <YAxis domain={['auto', 'auto']} tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={v => Number(v).toFixed(2)} />
                     <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }}
                       labelFormatter={i => `กลุ่ม #${i}`} />
-                    <ReferenceLine y={spc.uclX} stroke="#ef4444" strokeDasharray="5 3" label={{ value: `UCL ${fmtNum(spc.uclX)}`, fontSize: 9, fill: '#ef4444', position: 'right' }} />
-                    <ReferenceLine y={spc.xbarbar} stroke="#22c55e" label={{ value: `CL ${fmtNum(spc.xbarbar)}`, fontSize: 9, fill: '#22c55e', position: 'right' }} />
-                    <ReferenceLine y={spc.lclX} stroke="#ef4444" strokeDasharray="5 3" label={{ value: `LCL ${fmtNum(spc.lclX)}`, fontSize: 9, fill: '#ef4444', position: 'right' }} />
-                    {spc.usl != null && <ReferenceLine y={spc.usl} stroke="#f59e0b" strokeDasharray="2 3" label={{ value: 'USL', fontSize: 9, fill: '#f59e0b', position: 'right' }} />}
-                    {spc.lsl != null && <ReferenceLine y={spc.lsl} stroke="#f59e0b" strokeDasharray="2 3" label={{ value: 'LSL', fontSize: 9, fill: '#f59e0b', position: 'right' }} />}
+                    <ReferenceLine y={spc.uclX} stroke="#ef4444" strokeDasharray="5 3" label={{ value: `UCL ${fmtNum(spc.uclX)}`, fontSize: 11, fill: '#ef4444', position: 'right' }} />
+                    <ReferenceLine y={spc.xbarbar} stroke="#22c55e" label={{ value: `CL ${fmtNum(spc.xbarbar)}`, fontSize: 11, fill: '#22c55e', position: 'right' }} />
+                    <ReferenceLine y={spc.lclX} stroke="#ef4444" strokeDasharray="5 3" label={{ value: `LCL ${fmtNum(spc.lclX)}`, fontSize: 11, fill: '#ef4444', position: 'right' }} />
+                    {spc.usl != null && <ReferenceLine y={spc.usl} stroke="#f59e0b" strokeDasharray="2 3" label={{ value: 'USL', fontSize: 11, fill: '#f59e0b', position: 'right' }} />}
+                    {spc.lsl != null && <ReferenceLine y={spc.lsl} stroke="#f59e0b" strokeDasharray="2 3" label={{ value: 'LSL', fontSize: 11, fill: '#f59e0b', position: 'right' }} />}
                     <Line type="monotone" dataKey="xbar" name={sel.subgroup_size === 1 ? 'X' : 'X̄'} stroke="#4d9fff" strokeWidth={2} dot={dot('xbar')} isAnimationActive={false} />
                   </LineChart>
                 </ResponsiveContainer>
@@ -584,12 +584,12 @@ function SPCTab({ lines, canRecord, canManage }) {
                 <ResponsiveContainer width="100%" height={230}>
                   <LineChart data={spc.points} margin={{ top: 6, right: 42, left: -4, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="idx" tick={{ fontSize: 10, fill: 'var(--muted)' }} />
-                    <YAxis domain={[0, 'auto']} tick={{ fontSize: 10, fill: 'var(--muted)' }} tickFormatter={v => Number(v).toFixed(2)} />
+                    <XAxis dataKey="idx" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
+                    <YAxis domain={[0, 'auto']} tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={v => Number(v).toFixed(2)} />
                     <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }}
                       labelFormatter={i => `กลุ่ม #${i}`} />
-                    {spc.uclR != null && <ReferenceLine y={spc.uclR} stroke="#ef4444" strokeDasharray="5 3" label={{ value: `UCL ${fmtNum(spc.uclR)}`, fontSize: 9, fill: '#ef4444', position: 'right' }} />}
-                    {spc.rbar != null && <ReferenceLine y={spc.rbar} stroke="#22c55e" label={{ value: `CL ${fmtNum(spc.rbar)}`, fontSize: 9, fill: '#22c55e', position: 'right' }} />}
+                    {spc.uclR != null && <ReferenceLine y={spc.uclR} stroke="#ef4444" strokeDasharray="5 3" label={{ value: `UCL ${fmtNum(spc.uclR)}`, fontSize: 11, fill: '#ef4444', position: 'right' }} />}
+                    {spc.rbar != null && <ReferenceLine y={spc.rbar} stroke="#22c55e" label={{ value: `CL ${fmtNum(spc.rbar)}`, fontSize: 11, fill: '#22c55e', position: 'right' }} />}
                     <Line type="monotone" dataKey="range" name="R" stroke="#a78bfa" strokeWidth={2} dot={dot('range')} isAnimationActive={false} connectNulls />
                   </LineChart>
                 </ResponsiveContainer>
@@ -603,8 +603,8 @@ function SPCTab({ lines, canRecord, canManage }) {
                 <ResponsiveContainer width="100%" height={230}>
                   <BarChart data={hist} margin={{ top: 6, right: 12, left: -8, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="x" tick={{ fontSize: 9, fill: 'var(--muted)' }} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: 'var(--muted)' }} />
+                    <XAxis dataKey="x" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted)' }} />
                     <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }}
                       formatter={(v) => [v, 'จำนวนค่า']}
                       labelFormatter={(x, p) => p?.[0] ? `${fmtNum(p[0].payload.from, 3)} – ${fmtNum(p[0].payload.to, 3)}` : x} />

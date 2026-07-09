@@ -638,14 +638,14 @@ export default function QAInspectionSetup() {
                       <tr key={it.id} style={{ opacity: it.is_active ? 1 : 0.45 }}>
                         <td style={{ ...tdSt, fontWeight: 900, whiteSpace: 'nowrap' }}>
                           <span style={{ color: it.rank ? RANK[it.rank]?.color : '#4d9fff' }}>{it.rank ? '◆' : '●'} {it.balloon_no}</span>
-                          {it.pos_x == null && <span title="ยังไม่วางบน drawing" style={{ marginLeft: 4, fontSize: 10, color: 'var(--muted)' }}>∅</span>}
+                          {it.pos_x == null && <span title="ยังไม่วางบน drawing" style={{ marginLeft: 4, fontSize: 11, color: 'var(--muted)' }}>∅</span>}
                           {it.pos_x != null && drawings.length > 1 && (
-                            <div style={{ fontSize: 9.5, color: 'var(--muted)', fontWeight: 500, marginTop: 1 }}>
+                            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500, marginTop: 1 }}>
                               🖼 {drawings.find(d => d.id === it.drawing_id)?.title || drawings[0]?.title || '—'}
                             </div>
                           )}
                         </td>
-                        <td style={tdSt}>{it.characteristic}{it.remark ? <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{it.remark}</div> : null}</td>
+                        <td style={tdSt}>{it.characteristic}{it.remark ? <div style={{ fontSize: 11, color: 'var(--muted)' }}>{it.remark}</div> : null}</td>
                         <td style={tdSt}><Chip label={it.item_type === 'variable' ? 'Variable' : 'Attribute'} color={it.item_type === 'variable' ? '#4d9fff' : '#a78bfa'} /></td>
                         <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                           {it.spec_text || (it.item_type === 'variable'
@@ -740,7 +740,7 @@ export default function QAInspectionSetup() {
                     <Chip label={o.tag} color={o.tag === 'BOM' ? '#f59e0b' : '#4d9fff'} />
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>{o.part_no || '—'} <span style={{ fontWeight: 500, color: 'var(--text2)' }}>{o.part_name}</span></div>
-                      {o.sub && <div style={{ fontSize: 10.5, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.sub}</div>}
+                      {o.sub && <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.sub}</div>}
                     </div>
                   </button>
                 ))}

@@ -35,7 +35,7 @@ const MK = Math.round(Math.max(34, Math.min(84, renderedMapWidth * 0.055)));
 1. **Anchor** = `translate(-50%, -50%)` ที่พิกัดจริง (pos_top/pos_left เป็น % ของรูปจริง — ระวัง letterbox จาก object-fit: contain ต้องคูณกับ offset+rendered size ไม่ใช่ขนาด container)
 2. **De-overlap**: marker ที่ทับกันให้ผลักออกจากกันในพิกเซลจริง + วาดเส้นประโยงกลับตำแหน่งจริง (ดู Dashboard modal / Management เป็นต้นแบบ) — ห้ามแก้ตำแหน่งใน DB
 3. **Edge clamp**: ตำแหน่ง*แสดงผล*ต้องถูก clamp ไม่ให้วงกลม+ป้ายตกขอบรูป — เผื่อซ้าย/ขวา/บน `size*0.55`, ล่าง `size*1.35` (มีป้ายห้อย) — ตำแหน่งจริงใน DB ไม่เปลี่ยน
-4. Hover card แสดงเฉพาะอุปกรณ์ที่ hover ได้จริง: `window.matchMedia('(hover: hover)').matches` — จอทัชให้ใช้ modal ที่มีปุ่มปิด + popup ทุกชนิดต้องมีทางปิดเสมอ (คลิกนอกกรอบ/✕/auto-hide)
+4. Hover card แสดงเฉพาะอุปกรณ์ที่ hover ได้จริง: `window.matchMedia('(hover: hover)').matches` — จอทัชให้ใช้ modal ที่มีปุ่มปิด + popup ทุกชนิดต้องมีทางปิดเสมอ (✕/auto-hide — กติกา backdrop click ดู section 5)
 
 หน้าอ้างอิง (ต้นแบบที่ทำถูกแล้ว): `Dashboard.jsx` (modal ผังขยาย + ผังย่อ), `Management.jsx`, `LineSetup.jsx`
 
@@ -71,10 +71,34 @@ const MK = Math.round(Math.max(34, Math.min(84, renderedMapWidth * 0.055)));
 
 ---
 
-## 5. Modal ที่โชว์รูปผัง
+## 5. Modal & Popup
 
+### Modal ที่มีฟอร์มกรอกข้อมูล (คำสั่ง user 2026-07-09)
+- **ห้ามปิดจากการคลิกพื้นหลัง (backdrop)** — เผลอแตะแล้วข้อมูลที่พิมพ์อยู่หายทั้งฟอร์ม ปิดได้จากปุ่ม ✕ / ยกเลิก เท่านั้น
+- popup ที่**แสดงผลอย่างเดียว** (ไม่มี input) ปิดจากคลิกนอกกรอบ/auto-hide ได้ตามเดิม
+- ต้นแบบ: `QualityControl.jsx`, `QAInspectionSetup.jsx` (Modal กลาง), `PMCheckData.jsx` (HistoryModal)
+
+### Modal ที่โชว์รูปผัง
 - ต้อง fit **จอเดียว ไม่มี scroll**: `width: fit-content; maxWidth: 97vw; maxHeight: 97vh; overflow: hidden` + รูป `maxWidth/maxHeight + width/height: auto` (จำกัดสองแกน)
 - **ห้ามใช้ object-fit บน img ที่มี marker ทับ** — กล่อง img ต้องเท่ารูปจริงเสมอ ไม่งั้นพิกัด % เพี้ยน
+
+## 5.1 Balloon จุดตรวจบน drawing/รูปอ้างอิง (QA `/qa-setup` · PM Setup)
+
+คนละอย่างกับ marker บนผังไลน์ (section 1) — อันนี้คือหมุดเลขจุดตรวจบนแบบชิ้นงาน/รูปอุปกรณ์:
+
+- รูปทรง: **วงกลม/pill ป้ายเลข** `minWidth` + `padding + borderRadius: 999` เพื่อรองรับ label หลายตัวอักษร (H35, A1, 1.3) — ห้าม fix width วงกลมจนตัวอักษรล้น
+- พิกัดเก็บเป็น **% ของรูป** (`pos_x/pos_y` 0–100 ฝั่ง QA, `x_pos/y_pos` 0–1 ฝั่ง PM) anchor `translate(-50%,-50%)`
+- 1 part/อุปกรณ์มี**หลายรูปได้** — balloon ต้องผูกกับรูปที่มันอยู่ (`drawing_id`/`image_id`) ลบรูป = ถอดตำแหน่ง balloon แต่**ห้ามลบตัวจุดตรวจ**
+- เลขจุดตรวจแบบ text เรียงด้วย natural sort (`localeCompare(..., { numeric: true })`) — H2 มาก่อน H10
+- สี: จุด control พิเศษ (Rank M/SC) = แดง/amber, จุดทั่วไป = น้ำเงิน `#4d9fff`, กำลังวางตำแหน่ง = amber
+- ชื่อแผ่น drawing ฝั่ง QA ให้เลือกจาก **view มาตรฐาน** (Front/Back/Top/Bottom View, Side View LH/RH, Isometric, Section, Detail) ผ่าน picker — พิมพ์เองได้เฉพาะกรณีพิเศษ
+
+## 5.2 ฟอร์ม master data ต้องมี picker จากฐานที่มีอยู่
+
+ฟิลด์ที่ข้อมูลมีอยู่แล้วในฐานอื่น ให้มี**ช่องค้นหา-เลือกเติมอัตโนมัติ** ไม่ปล่อยให้พิมพ์ซ้ำ (พิมพ์เองได้เป็น fallback):
+- เพิ่ม Part ฝั่ง QA → ดึงจาก `dr_products` + `bom_items` (ดู `QAInspectionSetup.jsx`)
+- เพิ่มอุปกรณ์ฝั่ง PM → ดึงจาก machine master (ดู `PMSetup.jsx` addMode workstation)
+- รูปชิ้นงานที่อัพไว้ใน Product Master (`dr_products.image_url`) ให้ดึงมาแสดงซ้ำได้เลย ไม่อัพใหม่
 
 ## 6. เบ็ดเตล็ดที่เคยกัด
 
