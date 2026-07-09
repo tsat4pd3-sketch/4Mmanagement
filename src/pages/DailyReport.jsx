@@ -6,6 +6,7 @@ import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFor
 import { toast } from '../components/Toast';
 import tsLogoUrl from '../assets/TS logo.png';
 import { can } from '../utils/permissions';
+import { inSectionScope } from '../utils/sectionScope';
 
 // โหลดโลโก้บริษัท (เหมือนหน้าเว็บ) เป็น base64 ครั้งเดียวสำหรับฝัง PDF
 let tsLogoDataUrlPromise = null;
@@ -162,7 +163,7 @@ export default function DailyReport() {
    LIVE TAB
 ═══════════════════════════════════════════════════════════════ */
 function LiveTab({ role }) {
-  const { fullName, section: userSection, lineId: userLineId } = useContext(UserContext);
+  const { fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const [lines, setLines]           = useState([]);
   const [lineMap, setLineMap]       = useState({});
   const [products, setProducts]     = useState([]);
@@ -305,10 +306,11 @@ function LiveTab({ role }) {
     }
 
     let { data: ss } = await sq;
-    if (role === 'supervisor' && userSection) {
+    if (role !== 'leader' && scopeSecs.length) {
+      // role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
       ss = (ss || []).filter(s => {
         const liveSection = lm[s.line_name]?.section;
-        return normSection(liveSection) === normSection(userSection) || normSection(s.section) === normSection(userSection);
+        return inSectionScope(scopeSecs, liveSection) || inSectionScope(scopeSecs, s.section);
       });
     }
 
@@ -318,17 +320,17 @@ function LiveTab({ role }) {
       .in('status', ['open', 'pending_close'])
       .lt('work_date', today());
     setOverdueAlert((overdue || []).filter(o => {
-      if (role === 'admin' || role === 'manager') return true;
-      if (role === 'supervisor') {
-        if (!userSection) return true;
-        const liveSection = lm[o.line_name]?.section;
-        return normSection(liveSection) === normSection(userSection) || normSection(o.section) === normSection(userSection);
-      }
+      if (role === 'admin') return true;
       if (role === 'leader') {
         const myLine = (ln || []).find(l => l.id === userLineId);
         return myLine && o.line_name === myLine.name;
       }
-      return false;
+      if (scopeSecs.length) {
+        const liveSection = lm[o.line_name]?.section;
+        return inSectionScope(scopeSecs, liveSection) || inSectionScope(scopeSecs, o.section);
+      }
+      // ไม่มี scope: manager เห็นหมดเหมือนเดิม / supervisor ที่ไม่มี section = เห็นหมด (พฤติกรรมเดิม)
+      return role === 'manager' || role === 'supervisor';
     }));
 
     setSessions(ss || []);
@@ -338,7 +340,7 @@ function LiveTab({ role }) {
       setSelSession(null);
     }
     setLoading(false);
-  }, [role, userSection, userLineId]);
+  }, [role, scopeSecs, userLineId]);
 
   const loadDT = useCallback(async (sessionId) => {
     if (!sessionId) return;
@@ -3562,7 +3564,7 @@ function LiveTab({ role }) {
    HISTORY TAB
 ═══════════════════════════════════════════════════════════════ */
 function HistoryTab({ role }) {
-  const { section: userSection, lineId: userLineId } = useContext(UserContext);
+  const { lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const [sessions, setSessions]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState({ date: '', line_name: '' });
@@ -3600,8 +3602,8 @@ function HistoryTab({ role }) {
     if (role === 'leader' && userLineId) {
       const myLine = (ln || []).find(l => l.id === userLineId);
       allowedLineNames = myLine ? [myLine.name, ...(pcm[myLine.name] || [])] : [];
-    } else if (role === 'supervisor' && userSection) {
-      allowedLineNames = (ln || []).filter(l => normSection(l.section) === normSection(userSection)).map(l => l.name);
+    } else if (role !== 'admin' && scopeSecs.length) {
+      allowedLineNames = (ln || []).filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name);
     }
 
     let q = supabaseDR.from('production_sessions')
@@ -3616,7 +3618,7 @@ function HistoryTab({ role }) {
     setSessions(ss || []);
     setLineNames(allowedLineNames ?? (ln || []).map(l => l.name));
     setLoading(false);
-  }, [filter, role, userSection, userLineId]);
+  }, [filter, role, scopeSecs, userLineId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -3864,7 +3866,7 @@ function HistoryTab({ role }) {
    EXPORT TAB
 ═══════════════════════════════════════════════════════════════ */
 function ExportTab() {
-  const { role, section: userSection, lineId: userLineId } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
   const firstOfMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; };
 
@@ -3885,13 +3887,13 @@ function ExportTab() {
         if (role === 'leader' && userLineId) {
           const myLine = ln.find(l => l.id === userLineId);
           allowed = myLine ? [myLine.name, ...(pcm[myLine.name] || [])] : [];
-        } else if (role === 'supervisor' && userSection) {
-          allowed = ln.filter(l => normSection(l.section) === normSection(userSection)).map(l => l.name);
+        } else if (role !== 'admin' && scopeSecs.length) {
+          allowed = ln.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name);
         }
         setAllowedLineNames(allowed);
         setLineNames(allowed ?? ln.map(l => l.name));
       });
-  }, [role, userSection, userLineId]);
+  }, [role, scopeSecs, userLineId]);
 
   // ── fetch all raw data ──────────────────────────────────────────
   const fetchData = async () => {

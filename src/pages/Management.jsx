@@ -6,6 +6,7 @@ import { toast } from '../components/Toast';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
 import { hasPermission } from '../utils/permissions';
 import { getLineFamilyNames, getLineFamilyIds, getAncestorNames, toHierarchicalOptions } from '../utils/lineHierarchy';
+import { inSectionScope } from '../utils/sectionScope';
 import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 
@@ -141,7 +142,7 @@ const MAN_CASE_META = {
 };
 
 export default function Management() {
-  const { role, lineId: userLineId, team: userTeam, section: userSection, fullName, user } = useContext(UserContext);
+  const { role, lineId: userLineId, team: userTeam, sections: scopeSecs = [], fullName, user } = useContext(UserContext);
   const isLeader = role === 'leader';
   const isSupervisor = role === 'supervisor';
 
@@ -333,8 +334,9 @@ export default function Management() {
         const famNames = new Set(getLineFamilyNames(all, userLineId));
         visible = all.filter(l => famNames.has(l.name));
         if (!visible.length) visible = all.filter(l => l.id === userLineId);
-      } else if (isSupervisor && userSection) {
-        visible = all.filter(l => l.section === userSection);
+      } else if (scopeSecs.length) {
+        // ทุก role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
+        visible = all.filter(l => inSectionScope(scopeSecs, l.section));
       }
       setLines(visible);
 
@@ -638,11 +640,8 @@ export default function Management() {
       if (leaderFamilyIds && !leaderFamilyIds.has(w.employees?.line_id)) return false;
       return true;
     }
-    if (isSupervisor) {
-      // Supervisor เห็นเฉพาะพนักงานในส่วนงานตัวเอง (เหมือน operator.jsx)
-      if (userSection && w.employees?.section !== userSection) return false;
-      return true;
-    }
+    // role ที่ถูกจำกัดขอบเขตส่วนงาน เห็นเฉพาะพนักงานในส่วนงานตัวเอง (เหมือน operator.jsx)
+    if (scopeSecs.length) return inSectionScope(scopeSecs, w.employees?.section);
     return true;
   };
 
