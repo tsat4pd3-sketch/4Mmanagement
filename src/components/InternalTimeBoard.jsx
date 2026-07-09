@@ -58,13 +58,13 @@ export default function InternalTimeBoard({ title, hint, groups, nowMin, breaks 
     <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
       <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{title}</span>
-        {hint && <span style={{ fontSize: 10, color: 'var(--muted)' }}>{hint}</span>}
+        {hint && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{hint}</span>}
       </div>
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
-        <div style={{ width: LEFT_W, flexShrink: 0, padding: '3px 10px', fontSize: 9, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)' }}>ปลายทาง · คลิกเพื่อย่อ/ขยาย</div>
-        <div style={{ flex: 1, position: 'relative', height: 18 }}>
+        <div style={{ width: LEFT_W, flexShrink: 0, padding: '3px 10px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)' }}>ปลายทาง · คลิกเพื่อย่อ/ขยาย</div>
+        <div style={{ flex: 1, position: 'relative', height: 22 }}>
           {hourMarks.map((m, i) => (i % 2 === 0 &&
-            <span key={m} style={{ position: 'absolute', left: `${pct(m)}%`, fontSize: 8, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
+            <span key={m} style={{ position: 'absolute', left: `${pct(m)}%`, fontSize: 11, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
               {String(Math.floor(m / 60) % 24).padStart(2, '0')}
             </span>
           ))}
@@ -91,7 +91,7 @@ export default function InternalTimeBoard({ title, hint, groups, nowMin, breaks 
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 <span style={{ color: 'var(--muted)', marginRight: 4 }}>{isCol ? '▸' : '▾'}</span>{g.label}
               </span>
-              {g.sub && <span style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 600 }}>{g.sub}</span>}
+              {g.sub && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{g.sub}</span>}
             </div>
             <div style={{ flex: 1, position: 'relative', height: rowH }}>
               {hourMarks.map(m => (
@@ -110,12 +110,12 @@ export default function InternalTimeBoard({ title, hint, groups, nowMin, breaks 
                   <div key={it.id} onClick={e => onItemClick?.(it.data, e.clientX, e.clientY)} title={it.title}
                     style={{
                       position: 'absolute', top: 5 + (lanes.map[it.id] || 0) * LANE_H, height: LANE_H - 6,
-                      left: `${Math.min(Math.max(left, 0), 97)}%`, width: `${(SPAN_MIN / SPAN) * 100}%`, minWidth: 44,
+                      left: `${Math.min(Math.max(left, 0), 97)}%`, width: `${(SPAN_MIN / SPAN) * 100}%`, minWidth: 48,
                       background: `${it.color}22`, border: `1.5px solid ${it.color}cc`, borderRadius: 5, zIndex: 1,
                       display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
                       cursor: onItemClick ? 'pointer' : 'default', boxSizing: 'border-box',
                     }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: it.color, whiteSpace: 'nowrap', lineHeight: 1 }}>{it.text}</span>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: it.color, whiteSpace: 'nowrap', lineHeight: 1 }}>{it.text}</span>
                   </div>
                 );
               })}
