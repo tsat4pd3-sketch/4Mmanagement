@@ -70,7 +70,7 @@ const STATUS_META = {
 };
 
 export default function Checkin() {
-  const { role, lineId, team, section: userSection, fullName } = useContext(UserContext);
+  const { role, lineId, team, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const canRecord = can('checkin', 'record', role);
 
   const [employees,      setEmployees]      = useState([]);
@@ -149,8 +149,9 @@ export default function Checkin() {
     if (role === 'leader') {
       if (lineId) empQ = empQ.eq('line_id', lineId);
       if (team)   empQ = empQ.eq('team', team);
-    } else if (role === 'supervisor') {
-      if (userSection) empQ = empQ.eq('section', userSection);
+    } else if (scopeSecs.length) {
+      // ทุก role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
+      empQ = empQ.in('section', scopeSecs);
     }
 
     const [
