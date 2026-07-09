@@ -219,15 +219,25 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
         zIndex: 1000,
         boxShadow: isOpen ? '4px 0 30px rgba(0,0,0,0.3)' : 'none',
       }}>
-        {/* Logo */}
-        <div style={{ padding: '18px 6px 16px', borderBottom: '1px solid var(--border)', marginBottom: 10, whiteSpace: 'nowrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {/* Logo + ปุ่มพับ sidebar (อยู่ในหัวแถบ ไม่ลอยทับเนื้อหา) */}
+        <div style={{ padding: '18px 6px 16px', borderBottom: '1px solid var(--border)', marginBottom: 10, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <img src={tsLogo} alt="Thai Summit Group" width={28} height={28} style={{ borderRadius: 3, flexShrink: 0 }} />
             <div>
               <div style={{ fontSize: 10, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
               <div style={{ fontSize: 9, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>ESM · Shopfloor</div>
             </div>
           </div>
+          <button
+            onClick={onClose}
+            title="พับเมนู"
+            style={{
+              width: 28, height: 28, borderRadius: 7, flexShrink: 0,
+              background: 'var(--bg3)', border: '1px solid var(--border2)',
+              color: 'var(--text2)', fontSize: 13, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >⟨</button>
         </div>
 
         {/* Links */}
@@ -535,26 +545,26 @@ function NotificationBell({ userId }) {
   );
 }
 
-/* ─── Toggle Button ──────────────────────────────────────────── */
-function ToggleBtn({ isOpen, sidebarW, onClick }) {
+/* ─── Toggle Button — โผล่เฉพาะตอน sidebar พับอยู่ (ปุ่มพับอยู่ในหัว sidebar แล้ว) ─── */
+function ToggleBtn({ isOpen, onClick }) {
+  if (isOpen) return null;
   return (
     <button
       onClick={onClick}
+      title="เปิดเมนู"
       style={{
-        position: 'fixed', top: 14,
-        left: isOpen ? sidebarW + 10 : 14,
+        position: 'fixed', top: 14, left: 14,
         zIndex: 1100,
         width: 34, height: 34, borderRadius: 8,
         background: 'var(--bg3)',
         border: '1px solid var(--border2)',
         color: 'var(--text2)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 15,
-        transition: 'left 0.3s cubic-bezier(0.4,0,0.2,1)',
+        fontSize: 15, cursor: 'pointer',
         boxShadow: 'var(--shadow-sm)',
       }}
     >
-      {isOpen ? '✕' : '☰'}
+      ☰
     </button>
   );
 }
@@ -718,7 +728,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
-        <ToggleBtn isOpen={isOpen} sidebarW={sidebarPx} onClick={() => setIsOpen(o => !o)} />
+        <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />
         <NotificationBell userId={userId} />
         <Sidebar
           isOpen={isOpen}
