@@ -81,9 +81,7 @@ function getPeriodStartDate(period, workDate) {
   return d;
 }
 
-const CARD_W = 70;
-const CARD_H = 58;
-const STATION_PHOTO_SZ = 36; // photo size inside the on-map mini card — must fit CARD_H alongside the header row
+const STATION_PHOTO_SZ = 36; // fallback circle size for StationWorker when no map-scaled size is passed
 const POOL_PHOTO_SZ = 44;    // photo size in sidebar pool/special-task cards — independent of map marker size
 
 // skill_definitions has rows that share the same display label under different skill_name keys
@@ -779,9 +777,10 @@ export default function Management() {
     );
   };
 
-  /* ── Station worker ── */
-  const StationWorker = ({ worker, fit, stationName }) => {
+  /* ── Station worker — round avatar (Dashboard line-map style), scales with the rendered map ── */
+  const StationWorker = ({ worker, fit, stationName, size = STATION_PHOTO_SZ }) => {
     const fc = fitColor(fit.score);
+    const ring = Math.max(2, Math.round(size * 0.06));
     // ย้ายจุด/ข้ามไลน์แล้ว 4M Man ยังรออนุมัติ → วงแหวนเหลืองกระพริบจนกว่าจะอนุมัติ
     const pend4m = man4mPendingFor(worker.employees?.name);
     return (
@@ -791,18 +790,15 @@ export default function Management() {
         onDragEnd={!isMobile ? handleDragEnd : undefined}
         onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker, fit, stationName) : undefined}
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
-        style={{ width: '100%', flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isMobile ? 'pointer' : 'grab', userSelect: 'none' }}
+        style={{ position: 'relative', width: size, height: size, cursor: isMobile ? 'pointer' : 'grab', userSelect: 'none' }}
+        title={pend4m ? `⏳ รออนุมัติ 4M — ${pend4m.description}` : undefined}
       >
-        {/* photo only — score & name now live exclusively in the hover popup card so the
-            small on-map circle isn't cropped/obscured by an overlaid number */}
-        <div style={{ position: 'relative', width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, flexShrink: 0 }}
-          title={pend4m ? `⏳ รออนุมัติ 4M — ${pend4m.description}` : undefined}>
-          {worker.employees?.image_url
-            ? <img src={worker.employees.image_url} className={pend4m ? 'person-alarm-amber' : undefined} style={{ width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `2px solid ${fc}`, boxShadow: `0 0 8px ${fc}88`, display: 'block' }} />
-            : <div className={pend4m ? 'person-alarm-amber' : undefined} style={{ width: STATION_PHOTO_SZ, height: STATION_PHOTO_SZ, borderRadius: '50%', background: `${fc}22`, border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>👤</div>
-          }
-          {pend4m && <span style={{ position: 'absolute', top: -6, right: -6, fontSize: 10, lineHeight: 1 }}>⏳</span>}
-        </div>
+        {/* photo only — score & name live in the hover popup card + the fit badge below the pill */}
+        {worker.employees?.image_url
+          ? <img src={worker.employees.image_url} className={pend4m ? 'person-alarm-amber' : undefined} style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `${ring}px solid ${fc}`, boxShadow: `0 0 8px ${fc}88`, display: 'block', background: '#1a1a1a' }} />
+          : <div className={pend4m ? 'person-alarm-amber' : undefined} style={{ width: size, height: size, borderRadius: '50%', background: `${fc}22`, border: `${ring}px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.max(14, Math.round(size * 0.4)), fontWeight: 800, color: fc }}>{(worker.employees?.name || '?')[0]}</div>
+        }
+        {pend4m && <span style={{ position: 'absolute', bottom: -3, left: '50%', transform: 'translateX(-50%)', fontSize: Math.max(10, Math.round(size * 0.22)), lineHeight: 1, zIndex: 3 }}>⏳</span>}
       </div>
     );
   };
@@ -1653,8 +1649,16 @@ export default function Management() {
                 }
               `}</style>
               {imgBox && (() => {
-                // จุดตั้งค่าในหน้า Line Setup เป็นแค่หมุดตำแหน่งจริง อาจอยู่ใกล้กันมากกว่าขนาดการ์ดจริง
-                // ที่นี่ต้องผลักการ์ดที่จะทับกัน (เต็มขนาด CARD_W x CARD_H) ออกจากกันในพิกเซลจริง
+                // ขนาด marker วงกลม scale ตามความกว้างจริงของรูปผังที่ render (imgBox.rw)
+                // ให้สเกลสอดคล้องกับ modal ขยายผังของ Dashboard — clamp 34..84px
+                const MK = Math.round(Math.max(34, Math.min(84, (imgBox.rw || 800) * 0.055)));
+                const PILL_F  = Math.max(11, Math.round(MK * 0.24)); // pill font
+                const FIT_F   = Math.max(10, Math.round(MK * 0.2));  // fit% badge font
+                const RING    = Math.max(2, Math.round(MK * 0.06));  // ring border width
+                const BADGE   = Math.max(14, Math.round(MK * 0.3));  // corner chip size
+                const PILL_MAXW = Math.round(MK * 1.8);
+                // จุดตั้งค่าในหน้า Line Setup เป็นแค่หมุดตำแหน่งจริง อาจอยู่ใกล้กันมากกว่าขนาด marker จริง
+                // ที่นี่ต้องผลัก marker ที่จะทับกัน (วงกลม + name pill + fit badge) ออกจากกันในพิกเซลจริง
                 // แล้วโยงเส้นกลับไปยังตำแหน่งจริงที่ตั้งไว้ ไม่ขยับตำแหน่งจริงใน DB
                 const raw = dynamicStations.map(st => ({
                   st,
@@ -1662,7 +1666,7 @@ export default function Management() {
                   py: imgBox.offsetY + (parseFloat(st.pos_top) / 100) * imgBox.rh,
                   dox: 0, doy: 0,
                 }));
-                const MIN_PX_X = CARD_W, MIN_PX_Y = CARD_H;
+                const MIN_PX_X = Math.round(MK * 1.6), MIN_PX_Y = Math.round(MK * 1.9);
                 for (let pass = 0; pass < 60; pass++) {
                   let moved = false;
                   for (let i = 0; i < raw.length; i++) {
@@ -1718,6 +1722,13 @@ export default function Management() {
                            : (workerFit ? fitColor(workerFit.score) : null);
             const isPulse = isMobile && selectedWorker && !workerAtStation;
 
+            const chipStyle = (pos) => ({
+              position: 'absolute', ...pos, width: BADGE, height: BADGE, borderRadius: '50%',
+              background: 'rgba(8,8,14,0.85)', border: '1px solid rgba(255,255,255,0.25)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: Math.round(BADGE * 0.58), lineHeight: 1, zIndex: 3, padding: 0,
+            });
+
             return (
               <div
                 key={st.id}
@@ -1726,10 +1737,10 @@ export default function Management() {
                 onDragLeave={!isMobile ? (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOverStation(null); } : undefined}
                 onDrop={!isMobile ? (e) => handleDrop(e, st.id) : undefined}
                 onClick={() => handleStationClick(st)}
-                /* outer: anchor point only — fixed size so translate(-50%,-50%) is always consistent */
+                /* outer: anchor + hit-area (circle + pill) — translate(-50%,-50%) centers the whole column */
                 style={{
                   position: 'absolute', top: stTop, left: stLeft, transform: 'translate(-50%, -50%)',
-                  width: CARD_W, height: CARD_H,
+                  display: 'flex', flexDirection: 'column', alignItems: 'center',
                   cursor: isMobile ? 'pointer' : 'default',
                   zIndex: isOver ? 20 : 5,
                   opacity: isDimmed ? 0.28 : 1,
@@ -1737,87 +1748,102 @@ export default function Management() {
                   transition: 'opacity 0.2s, filter 0.2s',
                 }}
               >
-                {/* inner: visual card — clips content to fixed height */}
+                {/* circle + corner badge chips — open-4M highlight becomes an outer halo ring */}
                 <div style={{
-                  width: '100%', height: '100%', overflow: 'hidden',
-                  borderTop:    `1px solid ${highlightColor ? highlightColor : activeFc ? `${activeFc}55` : 'rgba(255,255,255,0.18)'}`,
-                  borderRight:  `1px solid ${highlightColor ? highlightColor : activeFc ? `${activeFc}55` : 'rgba(255,255,255,0.18)'}`,
-                  borderBottom: `1px solid ${highlightColor ? highlightColor : activeFc ? `${activeFc}55` : 'rgba(255,255,255,0.18)'}`,
-                  borderLeft:   `4px solid ${highlightColor ? highlightColor : activeFc || 'rgba(255,255,255,0.25)'}`,
-                  borderRadius: 8,
-                  backgroundColor: isOver || isPulse ? `${activeFc || '#4d9fff'}1a` : 'rgba(8,8,14,0.88)',
-                  backdropFilter: 'blur(3px)',
-                  animation: isPulse ? 'pulse-ring 1.4s ease-in-out infinite' : 'none',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  padding: '3px 3px 2px',
-                  transition: 'background-color 0.18s, border-color 0.18s',
+                  position: 'relative', width: MK, height: MK, flexShrink: 0, borderRadius: '50%',
+                  boxShadow: highlightColor ? `0 0 0 2px ${highlightColor}` : 'none',
                 }}>
-                  <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2, flexShrink: 0 }}>
-                    <span title={st.station_name} style={{ fontSize: isWide ? 10 : 9, fontWeight: 700, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: activeFc || '#c8c8d0' }}>
-                      {st.station_name}
-                    </span>
-                    <div style={{ display: 'flex', gap: 1, flexShrink: 0, alignItems: 'center' }}>
-                      {workerAtStation?.employee_id && homePositions[workerAtStation.employee_id] === String(st.id) && (
-                        <span style={{ fontSize: 8, lineHeight: 1 }} title="ตำแหน่งประจำ">🏠</span>
-                      )}
-                      {hasMan && <span title="มีบันทึก 4M หมวด Man" style={{ width: 6, height: 6, borderRadius: '50%', background: '#4d9fff', display: 'inline-block', flexShrink: 0 }} />}
-                      {has4M  && <span title="มีบันทึก 4M" style={{ width: 6, height: 6, borderRadius: '50%', background: '#e74c3c', display: 'inline-block', flexShrink: 0 }} />}
-                      {(pendingDocByLine[st.line_name]?.length > 0) && (() => {
-                        const workerEmpId = workerAtStation?.employee_id;
-                        const isHomeStation = workerEmpId && homePositions[workerEmpId] === String(st.id);
-                        const logsForLine = pendingDocByLine[st.line_name] ?? [];
-                        const relevantLog = logsForLine.find(l =>
-                          workerAtStation && l.description?.includes(workerAtStation.employees?.name)
-                        ) || (isHomeStation && logsForLine[0]);
-                        if (!relevantLog) return null;
-                        return (
-                          <span key="pending-doc-badge"
-                            onClick={(e) => { e.stopPropagation(); setPendingDocModal({ log: relevantLog }); setDocImageFile(null); setDocImagePreview(null); }}
-                            title="ค้างแนบเอกสาร OJT — คลิกเพื่อแนบ"
-                            style={{ fontSize: 9, cursor: 'pointer', lineHeight: 1 }}
-                          >⚠️</span>
-                        );
-                      })()}
-                      {!workerAtStation && (() => {
-                        const logsForLine = pendingDocByLine[st.line_name] ?? [];
-                        if (!logsForLine.length) return null;
-                        const homeWorker = workers.find(w => w.employee_id && homePositions[w.employee_id] === String(st.id));
-                        if (!homeWorker) return null;
-                        const relevantLog = logsForLine.find(l => l.description?.includes(homeWorker.employees?.name));
-                        if (!relevantLog) return null;
-                        return (
-                          <span key="pending-doc-home-badge"
-                            onClick={(e) => { e.stopPropagation(); setPendingDocModal({ log: relevantLog }); setDocImageFile(null); setDocImagePreview(null); }}
-                            title="ค้างแนบเอกสาร OJT — คลิกเพื่อแนบ"
-                            style={{ fontSize: 9, cursor: 'pointer', lineHeight: 1 }}
-                          >⚠️</span>
-                        );
-                      })()}
-                      {!isMobile && (
-                        <button onClick={(e) => { e.stopPropagation(); setShow4MModal({ stationId: st.id, lineName: st.line_name }); setLog4MForm({ category: 'Man', description: '' }); }}
-                          title="บันทึก 4M"
-                          style={{ width: 14, height: 14, background: 'rgba(255,255,255,0.12)', border: 'none', borderRadius: '50%', color: 'white', fontSize: 10, fontWeight: 700, cursor: 'pointer', padding: 0, lineHeight: '14px', textAlign: 'center' }}>+</button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* content — worker fills top-down; empty + centered */}
                   {workerAtStation
-                    ? <StationWorker worker={workerAtStation} fit={workerFit} stationName={st.station_name} />
-                    : isPulse
-                      ? (
-                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
-                          <div style={{ fontSize: 18, opacity: 0.7 }}>👆</div>
-                          {touchPreviewFit && (
-                            <div style={{ background: fitColor(touchPreviewFit.score), color: '#fff', fontSize: 10, fontWeight: 900, padding: '1px 6px', borderRadius: 4 }}>
-                              {touchPreviewFit.score}
-                            </div>
-                          )}
-                        </div>
-                      )
-                      : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: isOver ? activeFc : 'rgba(255,255,255,0.22)', fontSize: 20 }}>+</div>
-                  }
+                    ? <StationWorker worker={workerAtStation} fit={workerFit} stationName={st.station_name} size={MK} />
+                    : (
+                      /* vacant: dashed circle, still the drop/click target via the outer wrapper */
+                      <div style={{
+                        width: MK, height: MK, borderRadius: '50%',
+                        border: `${Math.max(2, RING - 1)}px dashed ${isOver ? (activeFc || '#4d9fff') : 'var(--border2)'}`,
+                        backgroundColor: isOver || isPulse ? `${activeFc || '#4d9fff'}1a` : 'rgba(8,8,14,0.55)',
+                        backdropFilter: 'blur(2px)',
+                        animation: isPulse ? 'pulse-ring 1.4s ease-in-out infinite' : 'none',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: isOver ? activeFc : 'rgba(255,255,255,0.55)',
+                        fontSize: Math.max(14, Math.round(MK * (isPulse ? 0.4 : 0.5))), fontWeight: 300, lineHeight: 1,
+                        transition: 'background-color 0.18s, border-color 0.18s',
+                      }}>
+                        {isPulse ? '👆' : '+'}
+                      </div>
+                    )}
+                  {/* top-left: home position */}
+                  {workerAtStation?.employee_id && homePositions[workerAtStation.employee_id] === String(st.id) && (
+                    <span title="ตำแหน่งประจำ" style={chipStyle({ top: -4, left: -4 })}>🏠</span>
+                  )}
+                  {/* top-right: pending OJT doc */}
+                  {(pendingDocByLine[st.line_name]?.length > 0) && (() => {
+                    const workerEmpId = workerAtStation?.employee_id;
+                    const isHomeStation = workerEmpId && homePositions[workerEmpId] === String(st.id);
+                    const logsForLine = pendingDocByLine[st.line_name] ?? [];
+                    const relevantLog = logsForLine.find(l =>
+                      workerAtStation && l.description?.includes(workerAtStation.employees?.name)
+                    ) || (isHomeStation && logsForLine[0]);
+                    if (!relevantLog) return null;
+                    return (
+                      <span key="pending-doc-badge"
+                        onClick={(e) => { e.stopPropagation(); setPendingDocModal({ log: relevantLog }); setDocImageFile(null); setDocImagePreview(null); }}
+                        title="ค้างแนบเอกสาร OJT — คลิกเพื่อแนบ"
+                        style={{ ...chipStyle({ top: -4, right: -4 }), cursor: 'pointer' }}
+                      >⚠️</span>
+                    );
+                  })()}
+                  {!workerAtStation && (() => {
+                    const logsForLine = pendingDocByLine[st.line_name] ?? [];
+                    if (!logsForLine.length) return null;
+                    const homeWorker = workers.find(w => w.employee_id && homePositions[w.employee_id] === String(st.id));
+                    if (!homeWorker) return null;
+                    const relevantLog = logsForLine.find(l => l.description?.includes(homeWorker.employees?.name));
+                    if (!relevantLog) return null;
+                    return (
+                      <span key="pending-doc-home-badge"
+                        onClick={(e) => { e.stopPropagation(); setPendingDocModal({ log: relevantLog }); setDocImageFile(null); setDocImagePreview(null); }}
+                        title="ค้างแนบเอกสาร OJT — คลิกเพื่อแนบ"
+                        style={{ ...chipStyle({ top: -4, right: -4 }), cursor: 'pointer' }}
+                      >⚠️</span>
+                    );
+                  })()}
+                  {/* bottom-right: บันทึก 4M */}
+                  {!isMobile && (
+                    <button onClick={(e) => { e.stopPropagation(); setShow4MModal({ stationId: st.id, lineName: st.line_name }); setLog4MForm({ category: 'Man', description: '' }); }}
+                      title="บันทึก 4M"
+                      style={{ ...chipStyle({ bottom: -4, right: -4 }), color: 'white', fontWeight: 700, cursor: 'pointer' }}>+</button>
+                  )}
+                  {/* left-middle: 4M category dots */}
+                  {(hasMan || has4M) && (
+                    <div style={{ position: 'absolute', left: -5, top: '50%', transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: 2, zIndex: 3 }}>
+                      {hasMan && <span title="มีบันทึก 4M หมวด Man" style={{ width: Math.max(6, Math.round(MK * 0.14)), height: Math.max(6, Math.round(MK * 0.14)), borderRadius: '50%', background: '#4d9fff', border: '1px solid rgba(0,0,0,0.5)', display: 'inline-block' }} />}
+                      {has4M  && <span title="มีบันทึก 4M" style={{ width: Math.max(6, Math.round(MK * 0.14)), height: Math.max(6, Math.round(MK * 0.14)), borderRadius: '50%', background: '#e74c3c', border: '1px solid rgba(0,0,0,0.5)', display: 'inline-block' }} />}
+                    </div>
+                  )}
                 </div>
+
+                {/* station-name pill below the circle */}
+                <div title={st.station_name} style={{
+                  marginTop: 3, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
+                  border: `1px solid ${activeFc ? `${activeFc}88` : 'transparent'}`,
+                  borderRadius: 4, padding: '1px 6px',
+                  fontSize: PILL_F, fontWeight: 700, color: '#fff',
+                  whiteSpace: 'nowrap', maxWidth: PILL_MAXW,
+                  overflow: 'hidden', textOverflow: 'ellipsis',
+                }}>{st.station_name}</div>
+
+                {/* fit% badge below the pill */}
+                {workerAtStation && workerFit && (
+                  <div style={{ marginTop: 2, fontSize: FIT_F, fontWeight: 800, color: fitColor(workerFit.score), background: `${fitColor(workerFit.score)}25`, padding: '0 5px', borderRadius: 3, lineHeight: 1.5 }}>
+                    {workerFit.score}%
+                  </div>
+                )}
+                {/* mobile tap-invite fit preview */}
+                {!workerAtStation && isPulse && touchPreviewFit && (
+                  <div style={{ marginTop: 2, background: fitColor(touchPreviewFit.score), color: '#fff', fontSize: FIT_F, fontWeight: 900, padding: '1px 6px', borderRadius: 4, lineHeight: 1.4 }}>
+                    {touchPreviewFit.score}
+                  </div>
+                )}
 
                 {/* Desktop drag-preview fit popup — outside inner div so overflow:hidden doesn't clip it */}
                 {previewFit && !isMobile && (
@@ -1855,18 +1881,34 @@ export default function Management() {
                       const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
                       const wTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const wLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
+                      const WK = Math.round(MK * 0.8); // WIP/machine เดิม render เล็กกว่าจุดคน — คงสัดส่วนนั้นไว้
+                      const wc = isLow ? '#ef4444' : 'rgba(34,197,94,0.85)';
                       return (
                         <div key={`wip-${p.id}`} title={`${p.point_type === 'packaging' ? '📦' : '🧱'} ${p.point_name}${p.point_type === 'packaging' ? (p.packaging_no ? ` (${p.packaging_no})` : '') : (p.mat_no ? ` (${p.mat_no})` : '')} — ${p.current_qty ?? 0}/${p.min_qty ?? 0}–${p.max_qty ?? 0}`}
                           style={{
                             position: 'absolute', top: wTop, left: wLeft, transform: 'translate(-50%, -50%)',
-                            width: 54, height: 40, zIndex: 4,
-                            border: isLow ? '2px solid #ef4444' : '2px solid rgba(34,197,94,0.85)',
-                            borderRadius: 7, backgroundColor: isLow ? 'rgba(239,68,68,0.22)' : 'rgba(0,0,0,0.78)',
-                            backdropFilter: 'blur(2px)', display: 'flex', flexDirection: 'column',
-                            alignItems: 'center', justifyContent: 'center', padding: '2px 2px 1px',
+                            zIndex: 4, display: 'flex', flexDirection: 'column', alignItems: 'center',
                           }}>
-                          <div style={{ fontSize: 8, fontWeight: 700, color: isLow ? '#fecaca' : '#e0e0e0', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.point_type === 'packaging' ? '📦' : '🧱'} {p.point_name}</div>
-                          <div style={{ fontSize: 7, color: isLow ? '#fca5a5' : '#a3a3a3' }}>{p.current_qty ?? 0}/{p.min_qty ?? 0}–{p.max_qty ?? 0}</div>
+                          <div style={{
+                            width: WK, height: WK, borderRadius: '50%',
+                            border: `${Math.max(2, RING - 1)}px solid ${wc}`,
+                            backgroundColor: isLow ? 'rgba(239,68,68,0.22)' : 'rgba(0,0,0,0.78)',
+                            backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: Math.max(13, Math.round(WK * 0.44)), lineHeight: 1,
+                          }}>{p.point_type === 'packaging' ? '📦' : '🧱'}</div>
+                          <div style={{
+                            marginTop: 3, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
+                            borderRadius: 4, padding: '1px 6px',
+                            fontSize: Math.max(10, Math.round(WK * 0.24)), fontWeight: 700,
+                            color: isLow ? '#fecaca' : '#fff',
+                            whiteSpace: 'nowrap', maxWidth: Math.round(WK * 1.8), overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}>{p.point_name}</div>
+                          <div style={{
+                            marginTop: 2, fontSize: Math.max(9, Math.round(WK * 0.2)), fontWeight: isLow ? 800 : 600,
+                            color: isLow ? '#fca5a5' : '#a3a3a3',
+                            background: isLow ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.55)',
+                            padding: '0 5px', borderRadius: 3, lineHeight: 1.5, whiteSpace: 'nowrap',
+                          }}>{isLow ? '⚠ ' : ''}{p.current_qty ?? 0}/{p.min_qty ?? 0}–{p.max_qty ?? 0}</div>
                         </div>
                       );
                     })}
@@ -1877,6 +1919,7 @@ export default function Management() {
                       const mc = drMachines.find(m => m.machine_no === p.machine_no);
                       const mTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const mLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
+                      const MKS = Math.round(MK * 0.8); // เครื่องจักรเดิม render เล็กกว่าจุดคน — คงสัดส่วนนั้นไว้
                       const firstAlarm = alarms?.[0];
                       const elapsed = firstAlarm ? dtElapsedMin(firstAlarm) : null;
                       const ongoing = firstAlarm && !firstAlarm.ended_at && firstAlarm.duration_min == null;
@@ -1885,19 +1928,33 @@ export default function Management() {
                         : `⚙️ ${p.machine_no} ${mc?.machine_name || ''}`;
                       return (
                         <div key={`mc-${p.id}`} title={title}
-                          className={alarms ? 'dt-alarm-blink' : undefined}
                           style={{
                             position: 'absolute', top: mTop, left: mLeft, transform: 'translate(-50%, -50%)',
-                            minWidth: 54, maxWidth: alarms ? 90 : 54, height: 40, zIndex: alarms ? 6 : 4,
-                            border: alarms ? '2px solid #ef4444' : '2px solid rgba(245,158,11,0.85)', borderRadius: 7,
-                            backgroundColor: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(2px)',
-                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                            padding: '2px 3px 1px',
+                            zIndex: alarms ? 6 : 4, display: 'flex', flexDirection: 'column', alignItems: 'center',
                           }}>
-                          <div style={{ fontSize: 8, fontWeight: 700, color: alarms ? '#fff' : '#e0e0e0', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {alarms ? '🚨' : '⚙️'} {p.machine_no}
-                          </div>
-                          <div style={{ fontSize: 7, color: alarms ? '#fecaca' : '#a3a3a3', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {/* alarm blink อยู่บนวงกลม — วงแหวนแดงกระพริบขณะ Downtime ยังไม่ปิดรายการ */}
+                          <div className={alarms ? 'dt-alarm-blink' : undefined}
+                            style={{
+                              width: MKS, height: MKS, borderRadius: '50%',
+                              border: `${Math.max(2, RING - 1)}px solid ${alarms ? '#ef4444' : 'rgba(245,158,11,0.85)'}`,
+                              backgroundColor: alarms ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.78)',
+                              backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: Math.max(13, Math.round(MKS * 0.44)), lineHeight: 1,
+                            }}>{alarms ? '🚨' : '⚙️'}</div>
+                          <div style={{
+                            marginTop: 3, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
+                            borderRadius: 4, padding: '1px 6px',
+                            fontSize: Math.max(10, Math.round(MKS * 0.24)), fontWeight: 700,
+                            color: alarms ? '#fecaca' : '#fff',
+                            whiteSpace: 'nowrap', maxWidth: Math.round(MKS * 1.8), overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}>{p.machine_no}</div>
+                          <div style={{
+                            marginTop: 2, fontSize: Math.max(9, Math.round(MKS * 0.2)), fontWeight: alarms ? 800 : 600,
+                            color: alarms ? '#fca5a5' : '#a3a3a3',
+                            background: alarms ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.55)',
+                            padding: '0 5px', borderRadius: 3, lineHeight: 1.5,
+                            whiteSpace: 'nowrap', maxWidth: Math.round(MKS * 2), overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}>
                             {alarms
                               ? `${firstAlarm.dr_downtime_types?.name_th || 'Downtime'}${ongoing && elapsed != null ? ` ${elapsed}น.` : ''}`
                               : (mc?.machine_name || '')}

@@ -637,6 +637,23 @@ export default function LineSetup() {
     if (!error) fetchLineData();
   };
 
+  // ขนาดหมุดวงกลมบนผัง — สเกลตามความกว้างของรูปที่ render จริง (สูตรเดียวกับ Dashboard/Management)
+  // หมุดเป็นวงกลม + ป้ายชื่อ (pill) ด้านล่าง — ชื่อเต็มไม่ถูกตัดเหลือไม่กี่ตัวอักษรเหมือนการ์ดแบบเดิม
+  const MK = Math.round(Math.max(30, Math.min(72, (imgBox?.rw || 800) * 0.05)));
+  const PILL_FONT = Math.max(11, Math.round(MK * 0.26));
+  const pillSt = {
+    background: 'rgba(0,0,0,0.78)', borderRadius: 4, padding: '1px 6px',
+    fontWeight: 700, color: '#fff', whiteSpace: 'nowrap',
+    overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: MK * 2,
+    fontSize: PILL_FONT, lineHeight: 1.35,
+  };
+  // แถบป้ายใต้วงกลม — เกาะขอบล่างของวงกลม (อยู่ใน hit area เดียวกับหมุด: คลิก/ลากที่ป้ายได้)
+  const pillStackSt = {
+    position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
+    marginTop: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+  };
+  const pinIconSz = Math.round(MK * 0.42);
+
   return (
     <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12, height: isMobile ? 'auto' : 'calc(100vh - 40px)' }}>
       {selectedLine && (
@@ -724,24 +741,27 @@ export default function LineSetup() {
                     onMouseDown={(e) => startDrag(e, 'station', st.id)}
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
-                      width: CARD_W, height: CARD_H,
+                      width: MK, height: MK, borderRadius: '50%',
                       border: isSelected ? '2px solid var(--green)' : '2px solid rgba(255,255,255,0.75)',
-                      borderRadius: 10,
                       backgroundColor: isSelected ? 'rgba(34,197,94,0.18)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
                       boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
-                      cursor: isDragging ? 'grabbing' : 'grab', display: 'flex', flexDirection: 'column',
+                      cursor: isDragging ? 'grabbing' : 'grab', display: 'flex',
                       alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto',
-                      padding: '4px 4px 2px', zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
+                      zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
                     title={canEdit ? 'คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง' : st.station_name}
                   >
-                    <div style={{ fontSize: 12, fontWeight: 700, color: isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {st.station_name}
-                    </div>
-                    {st.skill_allowance && <div style={{ fontSize: 9, color: '#22c55e', fontWeight: 800, lineHeight: '14px', textAlign: 'center' }}>💰 {st.skill_allowance_type || ''}</div>}
-                    <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
-                      <div style={{ color: isSelected ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.25)', fontSize: 20, lineHeight: '24px' }}>+</div>
+                    <span style={{ fontSize: pinIconSz, lineHeight: 1 }}>📍</span>
+                    <div style={pillStackSt}>
+                      <div style={{ ...pillSt, color: isSelected ? 'var(--green)' : '#fff' }}>
+                        {st.station_name}
+                      </div>
+                      {st.skill_allowance && (
+                        <div style={{ ...pillSt, fontSize: Math.max(9, Math.round(MK * 0.2)), color: '#22c55e', fontWeight: 800 }}>
+                          💰 {st.skill_allowance_type || ''}
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -749,9 +769,9 @@ export default function LineSetup() {
               {activeTab === 'stations' && tempPos && (
                 <div style={{
                   position: 'absolute', top: tempPos.top, left: tempPos.left, transform: 'translate(-50%, -50%)',
-                  width: CARD_W, height: CARD_H,
+                  width: MK, height: MK, borderRadius: '50%',
                   border: '1px dashed var(--accent)', backgroundColor: 'rgba(61,214,92,0.1)',
-                  zIndex: 10, pointerEvents: 'none', borderRadius: 8,
+                  zIndex: 10, pointerEvents: 'none',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   <div style={{ color: 'var(--accent)', fontSize: 14 }}>+</div>
@@ -771,33 +791,34 @@ export default function LineSetup() {
                     title={canEdit ? 'คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง' : p.point_name}
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
-                      width: POINT_W, height: POINT_H,
+                      width: MK, height: MK, borderRadius: '50%',
                       border: isSelected ? '2px solid var(--green)' : isLow ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.75)',
-                      borderRadius: 7,
                       backgroundColor: isLow ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
                       boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isLow ? '0 0 8px rgba(239,68,68,0.6)' : '0 2px 6px rgba(0,0,0,0.6)',
-                      cursor: isDragging ? 'grabbing' : 'grab', display: 'flex', flexDirection: 'column',
+                      cursor: isDragging ? 'grabbing' : 'grab', display: 'flex',
                       alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto',
-                      padding: '2px 2px 1px', zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
+                      zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
                   >
-                    <div style={{ fontSize: 8, fontWeight: 700, color: isLow ? '#fecaca' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      📦 {p.point_name}
+                    <span style={{ fontSize: pinIconSz, lineHeight: 1 }}>📦</span>
+                    <div style={pillStackSt}>
+                      <div style={{ ...pillSt, color: isLow ? '#fecaca' : '#fff' }}>
+                        {p.point_name}
+                      </div>
+                      <div style={{ ...pillSt, fontSize: Math.max(9, Math.round(MK * 0.2)), fontWeight: isLow ? 800 : 700, color: isLow ? '#fca5a5' : '#a3a3a3' }}>
+                        {p.current_qty ?? 0}/{p.min_qty ?? 0}–{p.max_qty ?? 0}{isLow ? ' ⚠️ ต่ำ' : ''}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 7, color: isLow ? '#fca5a5' : '#a3a3a3', textAlign: 'center' }}>
-                      {p.current_qty ?? 0}/{p.min_qty ?? 0}–{p.max_qty ?? 0}
-                    </div>
-                    {isLow && <div style={{ fontSize: 7, color: '#fca5a5', fontWeight: 800 }}>⚠️ ต่ำ</div>}
                   </div>
                 );
               })}
               {activeTab === 'wip' && wipTempPos && (
                 <div style={{
                   position: 'absolute', top: wipTempPos.top, left: wipTempPos.left, transform: 'translate(-50%, -50%)',
-                  width: POINT_W, height: POINT_H,
+                  width: MK, height: MK, borderRadius: '50%',
                   border: '1px dashed var(--accent)', backgroundColor: 'rgba(61,214,92,0.1)',
-                  zIndex: 10, pointerEvents: 'none', borderRadius: 6,
+                  zIndex: 10, pointerEvents: 'none',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   <div style={{ color: 'var(--accent)', fontSize: 12 }}>+</div>
@@ -836,37 +857,41 @@ export default function LineSetup() {
                     title={!canEdit ? p.machine_no : connectMode ? 'คลิกเพื่อเชื่อมต่อสายงาน' : 'คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง'}
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
-                      width: POINT_W, height: POINT_H,
+                      width: MK, height: MK, borderRadius: '50%',
                       border: isConnectSource ? '2px solid #f97316' : isSelected ? '2px solid var(--green)' : p.redundancy_group ? '2px dashed #a855f7' : '2px solid rgba(255,255,255,0.75)',
-                      borderRadius: 7,
                       backgroundColor: isConnectSource ? 'rgba(249,115,22,0.22)' : isSelected ? 'rgba(34,197,94,0.18)' : p.redundancy_group ? 'rgba(168,85,247,0.15)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
                       boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isConnectSource ? '0 0 8px rgba(249,115,22,0.7)' : isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
-                      cursor: isDragging ? 'grabbing' : connectMode ? 'pointer' : 'grab', display: 'flex', flexDirection: 'column',
+                      cursor: isDragging ? 'grabbing' : connectMode ? 'pointer' : 'grab', display: 'flex',
                       alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto',
-                      padding: '2px 2px 1px', zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
+                      zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
                   >
-                    <div style={{ fontSize: 8, fontWeight: 700, color: isConnectSource ? '#f97316' : isSelected ? 'var(--green)' : '#e0e0e0', textAlign: 'center', width: '100%', padding: '0 1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      ⚙️ {p.machine_no}
-                    </div>
-                    <div style={{ fontSize: 7, color: '#a3a3a3', textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {mc?.machine_name || ''}
-                    </div>
-                    {p.redundancy_group && (
-                      <div style={{ fontSize: 6, color: '#d8b4fe', fontWeight: 700, textAlign: 'center', width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        🔀 {p.redundancy_group}
+                    <span style={{ fontSize: pinIconSz, lineHeight: 1 }}>⚙️</span>
+                    <div style={pillStackSt}>
+                      <div style={{ ...pillSt, color: isConnectSource ? '#f97316' : isSelected ? 'var(--green)' : '#fff' }}>
+                        {p.machine_no}
                       </div>
-                    )}
+                      {mc?.machine_name && (
+                        <div style={{ ...pillSt, fontSize: Math.max(9, Math.round(MK * 0.2)), color: '#a3a3a3' }}>
+                          {mc.machine_name}
+                        </div>
+                      )}
+                      {p.redundancy_group && (
+                        <div style={{ ...pillSt, fontSize: Math.max(9, Math.round(MK * 0.2)), color: '#d8b4fe' }}>
+                          🔀 {p.redundancy_group}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })}
               {activeTab === 'machines' && machineTempPos && (
                 <div style={{
                   position: 'absolute', top: machineTempPos.top, left: machineTempPos.left, transform: 'translate(-50%, -50%)',
-                  width: POINT_W, height: POINT_H,
+                  width: MK, height: MK, borderRadius: '50%',
                   border: '1px dashed var(--accent)', backgroundColor: 'rgba(61,214,92,0.1)',
-                  zIndex: 10, pointerEvents: 'none', borderRadius: 6,
+                  zIndex: 10, pointerEvents: 'none',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   <div style={{ color: 'var(--accent)', fontSize: 12 }}>+</div>
