@@ -36,6 +36,7 @@ const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
 const DailyPM     = lazy(() => import('./pages/DailyPM'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
+const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 
 /* ─── Role System ──────────────────────────────────────────── */
@@ -74,6 +75,7 @@ const NAV_ITEMS = [
   { to: '/pm-setup',    icon: '🔩', label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร', roles: ['admin', 'manager', 'supervisor'], group: 'การตรวจสอบและซ่อมบำรุง' },
 
   { to: '/qa',             icon: '🔍', label: 'Quality Control Center', roles: ['admin', 'manager', 'supervisor', 'leader', 'qa', 'document_control'], group: 'ควบคุมคุณภาพ QA/QC' },
+  { to: '/qa-setup',       icon: '📐', label: 'มาตรฐานการตรวจ & Drawing', roles: ['admin', 'manager', 'qa'], group: 'ควบคุมคุณภาพ QA/QC' },
   { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', roles: ['admin', 'manager', 'supervisor', 'leader', 'qa'], group: 'ควบคุมคุณภาพ QA/QC' },
 
   { to: '/report',        icon: '📋', label: 'รายงาน',            roles: null, group: 'รายงาน' },
@@ -796,6 +798,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/qa" element={
                 <RoleRoute path="/qa" userRole={role}><QualityControl /></RoleRoute>
+              } />
+              <Route path="/qa-setup" element={
+                <RoleRoute path="/qa-setup" userRole={role}><QAInspectionSetup /></RoleRoute>
               } />
               <Route path="/products"   element={
                 <RoleRoute path="/products" userRole={role}><ProductMaster /></RoleRoute>
