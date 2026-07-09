@@ -671,6 +671,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
   const [busy, setBusy] = useState(null);
   const [fgStock, setFgStock] = useState({});   // mat_no → { total, lines } — stock FG พร้อมส่งใน warehouse
   const [cardFilter, setCardFilter] = useState('todo');   // 'todo' | 'overdue' | 'shipped' | 'all'
+  const [sortMode, setSortMode] = useState('urgent');     // 'urgent' = ใกล้ดิว/หลุดเฟสขึ้นก่อน · 'time' = ตามเวลาส่ง
   const [wfSteps, setWfSteps] = useState([]);              // standard workflow (walkback) — deadline ต่อเฟส
   const [popup, setPopup] = useState(null);     // { o, x, y } — popup รายละเอียดเมื่อคลิกบล็อกบนชาร์ต
   const [highlightId, setHighlightId] = useState(null);
@@ -746,7 +747,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
       const m = ((dl % 1440) + 1440) % 1440;
       const done = (SHIP_RANK[o.status] ?? 0) >= (SHIP_RANK[st.requires_status] ?? 9);
       const missed = !done && isToday && nowW > dl;
-      return { ...st, deadline: `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`, done, missed };
+      return { ...st, dlW: dl, deadline: `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`, done, missed };
     });
   };
   const phaseLate = (o) => o.status !== 'shipped' && !isOverdue(o) && phaseList(o).some(ph => ph.missed);
@@ -823,6 +824,18 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
 
   const shippedCount = orders.filter(o => o.status === 'shipped').length;
   const overdueCount = orders.filter(isOverdue).length;
+
+  // 🎯 ranking ความเร่งด่วน = deadline ของเฟสที่ยังไม่เสร็จ ที่เก่าสุด/ใกล้สุด
+  // (ใบที่หลุดเฟสมานานสุดขึ้นแถวบนสุด → ใบที่ deadline ถัดไปใกล้เข้ามา → ใบที่ยังมีเวลา)
+  const urgencyKey = (o) => {
+    if (o.status === 'shipped') return Number.MAX_SAFE_INTEGER;
+    const unmet = phaseList(o).filter(ph => !ph.done);
+    if (unmet.length) return Math.min(...unmet.map(ph => ph.dlW));
+    return wrapMins(o.ship_time) ?? Number.MAX_SAFE_INTEGER - 1;
+  };
+  const cardsSorted = sortMode === 'urgent'
+    ? [...orders].sort((a, b) => urgencyKey(a) - urgencyKey(b))
+    : orders;
 
   // การเตือน 'เลยเวลา/หลุดเฟส' ย้ายไปอยู่ที่ shipping-phase-scan (pg_cron ทุก 10 นาที) — ทำงานแม้ไม่มีใครเปิดหน้านี้
 
@@ -1032,16 +1045,20 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
           })()}
 
           {/* รายการรอบส่ง + ปุ่มอัปเดตสถานะ — กรองให้เห็นเฉพาะที่ต้องทำก่อน */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
             {[
               { id: 'todo',    label: `🕐 ต้องทำ (${orders.filter(o => o.status !== 'shipped').length})` },
               { id: 'overdue', label: `🔴 เลยเวลา (${overdueCount})` },
               { id: 'shipped', label: `✅ ส่งแล้ว (${shippedCount})` },
               { id: 'all',     label: `ทั้งหมด (${orders.length})` },
             ].map(f => <button key={f.id} onClick={() => setCardFilter(f.id)} style={btn(cardFilter === f.id)}>{f.label}</button>)}
+            <span style={{ width: 1, height: 20, background: 'var(--border)' }} />
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)' }}>เรียง:</span>
+            <button onClick={() => setSortMode('urgent')} style={btn(sortMode === 'urgent')} title="ใบที่หลุดเฟส/deadline ใกล้สุดขึ้นแถวบน">⚡ ใกล้ดิวก่อน</button>
+            <button onClick={() => setSortMode('time')} style={btn(sortMode === 'time')}>🕐 ตามเวลาส่ง</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
-            {orders.filter(o =>
+            {cardsSorted.filter(o =>
               cardFilter === 'all' ? true
               : cardFilter === 'shipped' ? o.status === 'shipped'
               : cardFilter === 'overdue' ? isOverdue(o)
