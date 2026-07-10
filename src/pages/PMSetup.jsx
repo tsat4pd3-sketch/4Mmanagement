@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useContext } from 'react'
+import { useState, useEffect, useRef, useContext, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import imageCompression from 'browser-image-compression'
@@ -12,6 +12,7 @@ import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmT
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
 import SpinAnnotator from '../components/SpinAnnotator'
 import { fileToGlb, modelExt, modelReason, MODEL_REJECT, MODEL_ACCEPT } from '../lib/model3d'
+import Model3DViewer from '../components/Model3DViewer'
 import useImgBox from '../utils/useImgBox'
 
 const DEPT_COLORS = {
@@ -508,13 +509,23 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     try {
       const glb = await fileToGlb(file)
       const mb = glb.size / 1048576
+      const lbl = mb < 1 ? `${Math.round(mb * 1024)} KB` : `${mb.toFixed(1)} MB`
       setModel3d({ _glb: glb, format: ext, sizeMb: mb })
-      if (mb > 15) toast.info(`โมเดลค่อนข้างใหญ่ (${mb.toFixed(1)} MB) — ประหยัด storage ได้ถ้า export STEP แบบ simplified หรือลดรายละเอียด`)
-      else toast.success(`เตรียมโมเดล 3D แล้ว (${mb.toFixed(1)} MB) — กดบันทึกเพื่อจัดเก็บ`)
+      if (mb > 15) toast.info(`แปลงสำเร็จ (${lbl}) แต่ค่อนข้างใหญ่ — ประหยัด storage ได้ถ้า export STEP แบบ simplified`)
+      else toast.success(`แปลงเป็น 3D สำเร็จ (${lbl}) — ดูพรีวิวด้านล่าง แล้วกดบันทึก`)
     } catch (err) { toast.error(err.message || 'แปลงโมเดลไม่สำเร็จ') }
     finally { setModelBusy(false) }
   }
   const removeModel = () => setModel3d(null)
+
+  // URL สำหรับพรีวิว 3D ในหน้า setup — ไฟล์ใหม่ใช้ blob, ของเดิมใช้ public url
+  const modelPreviewUrl = useMemo(() => {
+    if (model3d?._glb) return URL.createObjectURL(model3d._glb)
+    if (model3d?.path) return getPublicUrl(model3d.path)
+    return null
+  }, [model3d])
+  useEffect(() => () => { if (modelPreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(modelPreviewUrl) }, [modelPreviewUrl])
+  const modelSizeLabel = model3d?.sizeMb != null ? (model3d.sizeMb < 1 ? `${Math.round(model3d.sizeMb * 1024)} KB` : `${model3d.sizeMb.toFixed(1)} MB`) : ''
 
   const handleSave = async () => {
     if (!name.trim()) { setError('กรุณาใส่ชื่ออุปกรณ์'); return }
@@ -857,7 +868,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                 <span style={{ fontSize: 18 }}>🧊</span>
                 <span style={{ flex: 1, fontSize: 12.5, color: 'var(--text)' }}>
                   {model3d._glb ? 'โมเดลใหม่พร้อมบันทึก' : 'มีโมเดล 3D แล้ว'}
-                  <span style={{ color: 'var(--muted)', marginLeft: 6 }}>({(model3d.format || 'glb').toUpperCase()}{model3d.sizeMb != null ? ` · ${model3d.sizeMb.toFixed(1)} MB` : ''})</span>
+                  <span style={{ color: 'var(--muted)', marginLeft: 6 }}>({(model3d.format || 'glb').toUpperCase()}{modelSizeLabel ? ` · ${modelSizeLabel}` : ''})</span>
                 </span>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', cursor: modelBusy ? 'default' : 'pointer' }}>
                   <input type="file" accept={MODEL_ACCEPT} hidden disabled={modelBusy} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; pickModel(f) }} />
@@ -872,6 +883,12 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
               </label>
             )}
             <p style={{ fontSize: 10.5, color: 'var(--muted)', margin: '4px 0 0' }}>รองรับ STEP/IGES/STL/OBJ/GLB (แปลงเป็น GLB ให้อัตโนมัติ) · .prt/.sldprt เปิดบนเว็บไม่ได้ ต้อง export เป็น STEP/IGES ก่อน</p>
+            {/* พรีวิว 3D ทันทีหลังแปลง — ถ้าว่างเปล่าแปลว่าไฟล์แปลงไม่ครบ */}
+            {modelPreviewUrl && (
+              <div style={{ marginTop: 8 }}>
+                <Model3DViewer url={modelPreviewUrl} height={260} />
+              </div>
+            )}
           </div>
 
           <div>
