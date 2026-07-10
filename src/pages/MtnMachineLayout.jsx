@@ -160,7 +160,11 @@ export default function MtnMachineLayout() {
   }
   const deleteArea = async (id) => {
     if (!window.confirm('ลบโซนนี้? (อุปกรณ์ที่วางบนโซนนี้จะถูกเอาออกจากผัง แต่ตัวอุปกรณ์+ประวัติ PM ไม่หาย)')) return
-    await supabaseDR.from('pm_facility_areas').delete().eq('id', id)
+    const oldPath = areas.find(a => a.id === id)?.image_path
+    const { error } = await supabaseDR.from('pm_facility_areas').delete().eq('id', id)
+    if (error) return toast.error(error.message)
+    // ลบ row สำเร็จแล้วค่อยเก็บกวาดไฟล์รูปผังโซน กันไฟล์กำพร้าใน storage (best-effort)
+    if (oldPath) supabaseDR.storage.from('jig-images').remove([oldPath]).then(() => {}, () => {})
     setAreaId(prev => prev === id ? null : prev); await reloadAreas()
   }
   const uploadImage = async (e) => {
@@ -175,6 +179,9 @@ export default function MtnMachineLayout() {
       const { error: upErr } = await supabaseDR.storage.from('jig-images').upload(path, compressed, { upsert: true })
       if (upErr) throw upErr
       await supabaseDR.from('pm_facility_areas').update({ image_path: path }).eq('id', areaId)
+      // path ผูกกับนามสกุลไฟล์ — อัปโหลด .png ทับโซนที่เดิมเป็น .jpg จะไม่ทับไฟล์เดิม ต้องลบทิ้ง (best-effort)
+      const prevPath = areas.find(a => a.id === areaId)?.image_path
+      if (prevPath && prevPath !== path) supabaseDR.storage.from('jig-images').remove([prevPath]).then(() => {}, () => {})
       await reloadAreas()
       setFacImage(`${publicUrl(path)}?v=${file.size}`)
       toast.success('อัปโหลดรูปผังแล้ว')

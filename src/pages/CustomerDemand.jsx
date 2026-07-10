@@ -3,7 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
-import { breaksToFrame } from '../utils/timeFrame';
+import { FRAME_START, frameMin, breaksToFrame } from '../utils/timeFrame';
 
 /* ─── DELIVERY — Shipping Time Chart + Ship-to Config (Logistic) ──────────
    ติดตามรอบส่งงานลูกค้ารายวัน (walkback 4 activity, FG stock, ranking ดิว)
@@ -99,17 +99,11 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
     setDay(dateStr(d));
   };
 
-  /* เวลาบนกรอบวันงาน: นาทีแบบ wrap — ก่อน 08:00 บวก 24 ชม. เข้าท้ายกรอบ */
-  const FRAME_START = 8 * 60;
-  const wrapMins = (t) => {
-    if (!t) return null;
-    const m = Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
-    return m < FRAME_START ? m + 1440 : m;
-  };
+  /* เวลาบนกรอบวันงาน: ใช้ frameMin จาก utils/timeFrame (ห้ามเขียน wrap นาทีเองซ้ำ — UI-CONVENTIONS §6) */
   const now = new Date();
   const isToday = day === workDateStr();
-  const nowW = wrapMins(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
-  const isOverdue = (o) => isToday && o.status !== 'shipped' && wrapMins(o.ship_time) != null && wrapMins(o.ship_time) < nowW;
+  const nowW = frameMin(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+  const isOverdue = (o) => isToday && o.status !== 'shipped' && frameMin(o.ship_time) != null && frameMin(o.ship_time) < nowW;
 
   // ── Standard workflow (walkback): deadline ต่อเฟส = เวลาส่ง − offset_min ──
   const stepsForCust = (customer) => {
@@ -117,7 +111,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
     return own.length ? own : wfSteps.filter(st => st.customer == null);
   };
   const phaseList = (o) => {
-    const tw = wrapMins(o.ship_time);
+    const tw = frameMin(o.ship_time);
     if (tw == null || !wfSteps.length) return [];
     return stepsForCust(o.customer).map(st => {
       const dl = tw - st.offset_min;
@@ -209,7 +203,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
     if (o.status === 'shipped') return Number.MAX_SAFE_INTEGER;
     const unmet = phaseList(o).filter(ph => !ph.done);
     if (unmet.length) return Math.min(...unmet.map(ph => ph.dlW));
-    return wrapMins(o.ship_time) ?? Number.MAX_SAFE_INTEGER - 1;
+    return frameMin(o.ship_time) ?? Number.MAX_SAFE_INTEGER - 1;
   };
   const cardsSorted = sortMode === 'urgent'
     ? [...orders].sort((a, b) => urgencyKey(a) - urgencyKey(b))
@@ -230,7 +224,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
       const laneEnd = [];
       const map = {};
       list.forEach(o => {
-        const t = wrapMins(o.ship_time) ?? (tStart + span);
+        const t = frameMin(o.ship_time) ?? (tStart + span);
         let li = laneEnd.findIndex(end => t >= end);
         if (li < 0) { li = laneEnd.length; laneEnd.push(0); }
         laneEnd[li] = t + SPAN_MIN;
@@ -340,7 +334,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                       <div className="now-line" style={{ left: `${((nowW - tStart) / span) * 100}%` }} />
                     )}
                     {list.map(o => {
-                      const tw = wrapMins(o.ship_time);
+                      const tw = frameMin(o.ship_time);
                       const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
                       const od = isOverdue(o);
                       const pl = phaseLate(o);

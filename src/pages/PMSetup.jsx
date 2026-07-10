@@ -1032,6 +1032,8 @@ export default function PMSetup() {
       const { data: files } = await supabaseDR.storage.from('jig-images').list(folder, { limit: 1000 })
       const paths = (files ?? []).map(f => `${folder}/${f.name}`)
       if (jig.image_path && !paths.includes(jig.image_path)) paths.push(jig.image_path) // เผื่อ path เก่านอกโฟลเดอร์ (legacy)
+      // โมเดล 3D อยู่นอกโฟลเดอร์ (models/<jigId>.glb — ไฟล์ละได้ถึง ~15MB) ต้องเก็บกวาดด้วย
+      if (jig.model_path && !paths.includes(jig.model_path)) paths.push(jig.model_path)
       if (paths.length) await supabaseDR.storage.from('jig-images').remove(paths)
     } catch { /* ลบรูปพลาดไม่ต้องกระทบ flow หลัก */ }
     toast.success('ลบแล้ว')

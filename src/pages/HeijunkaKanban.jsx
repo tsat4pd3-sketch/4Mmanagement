@@ -1665,6 +1665,7 @@ export default function HeijunkaKanban() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} style={{
+            width: 140, /* input ใน flex row ต้องกำหนด width — index.css ตั้ง input{width:100%} จะดันปุ่มแตกแถว */
             padding: '8px 10px', borderRadius: 8, fontSize: 13, background: 'var(--bg2)',
             border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)',
           }} />

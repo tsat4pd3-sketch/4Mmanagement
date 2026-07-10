@@ -121,7 +121,8 @@
 
 | Group (sidebar) | Route | Component | Role (seed default) |
 |---|---|---|---|
-| ภาพรวม | `/`, `/dashboard` | Dashboard | ทุก role |
+| ภาพรวม | `/` | DeptHub — หน้า Hub เลือกโมดูล (เต็มจอ ไม่มี sidebar, ชิปเมนูดึงจาก NAV_ITEMS) | ทุก role |
+| ภาพรวม | `/dashboard` | Dashboard | ทุก role |
 | ฝ่ายผลิต | `/checkin` | Checkin | ทุก role |
 | ฝ่ายผลิต | `/management` | Management | ทุก role |
 | ฝ่ายผลิต | `/daily-report` | DailyReport | ทุก role |
@@ -131,6 +132,7 @@
 | Logistic - Store | `/heijunka` | HeijunkaKanban | ทุก role |
 | Logistic - Store | `/rack-center` | RackCenter | ทุก role |
 | Logistic - Store | `/planner-sales` | PlannerSales | manager/supervisor/leader/qa/sale |
+| Logistic - Store | `/rundown-stock` | RundownStock | manager/supervisor/leader/qa/sale |
 | Logistic - Store | `/customer-demand` | CustomerDemand (Delivery) | manager/supervisor/leader/qa/sale |
 | การตรวจสอบและซ่อมบำรุง | `/pm-check` | PMCheckData | ทุก role |
 | การตรวจสอบและซ่อมบำรุง | `/pm-schedule` | PMSchedule | ทุก role |
@@ -287,31 +289,32 @@ Reject → status: "rejected" + reject_reason
 
 ## File Structure
 
+> รายชื่อไฟล์เต็มดูของจริงใน `src/` — ด้านล่างคือ "ไฟล์โครงสร้าง/ของกลาง" ที่ทุก session ควรรู้จัก
+> (เลิกลิสต์ pages ทั้งหมดในเอกสาร — เคยลิสต์แล้วล้าสมัยตลอด · pages ปัจจุบัน ~33 ไฟล์ ดูตาราง Pages & Routes ข้างบน)
+
 ```
 src/
-├── App.jsx                    # Router + Sidebar + Auth + UserContext
-├── index.css                  # Theme CSS variables (dark/light)
-├── supabaseClient.js          # Supabase init
-├── components/
-│   ├── Toast.jsx              # Global toast singleton
-│   ├── SignatureModal.jsx     # วาด/อัปโหลดลายเซ็น
-│   └── ChangePasswordModal.jsx
-└── pages/
-    ├── Dashboard.jsx
-    ├── Management.jsx
-    ├── Checkin.jsx
-    ├── LineSetup.jsx
-    ├── Register.jsx
-    ├── Operator.jsx
-    ├── Report.jsx
-    ├── ShiftOrganize.jsx
-    ├── AddUser.jsx
-    └── Login.jsx
+├── App.jsx            # Router + Sidebar + UserContext + NAV_ITEMS (source of truth เมนู/หมวด)
+│                      #   exports: UserContext, navItemsForGroups, focusSidebarGroups, accessSummaryForRole
+├── main.jsx           # bootstrap + RootErrorBoundary + vite:preloadError auto-reload (ห้ามถอด)
+├── index.css          # theme variables + CSS กลาง (.now-line/.now-chip, .dt-alarm-*, .person-alarm-*, .table-sticky)
+├── supabaseClient.js  # 2 clients: supabase (Main) / supabaseDR (DR — anon เสมอ)
+├── components/        # ของกลาง: Toast, ImageCropModal, MachineFloorMap, SpinAnnotator,
+│                      #   InternalTimeBoard, SignatureModal, TaxonomyManagerModal, ChangePasswordModal
+├── utils/             # กฎ/สูตรกลาง — permissions.js (can/canAccessPage), sectionScope.js,
+│                      #   markerScale.js, timeFrame.js, downtimeAlarm.js, personAlarm.js,
+│                      #   lineHierarchy.js, companyCalendar.js, otPeriods.js, dateFormat.js, useImgBox.js
+├── lib/               # logic เฉพาะโดเมน (pmNotify, pmDailyAlarm, pmExportPDF/Excel, changePointChecklist)
+└── pages/             # ~33 หน้า — ชื่อไฟล์ตรงกับ route (⚠️ operator.jsx ตัวพิมพ์เล็ก)
 
 supabase/
-└── functions/
-    └── send-notification/
-        └── index.ts           # Telegram + in-app notifications
+├── migrations/        # ทุกการเปลี่ยน schema ต้องมีไฟล์ที่นี่ (ดู docs/sql/00_schema_snapshot_*.sql = โครงตารางทั้งหมด)
+└── functions/         # 7 ตัว: send-notification, send-cqi15-notification, daily-4m-summary,
+                       #   create-user (deploy แล้วแต่ซอร์สอยู่บน dashboard), pm-daily-scan,
+                       #   pm-plan-reminder, shipping-phase-scan, cleanup-orphan-photos
+
+docs/                  # UI-CONVENTIONS.md (บังคับอ่านก่อนแก้ UI) · PERMISSIONS-DESIGN.md ·
+                       #   ROLLBACK_*.md · sql/ (schema snapshot + seed อ้างอิง)
 ```
 
 ---

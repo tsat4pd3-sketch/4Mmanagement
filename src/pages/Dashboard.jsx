@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'rea
 import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { isAlarmingDT, dtElapsedMin } from '../utils/downtimeAlarm';
+import { markerScale } from '../utils/markerScale';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
@@ -2208,8 +2209,8 @@ export default function Dashboard() {
                   // กันการ์ดซ้อนทับกัน: ผลักออกจากกันใน "พิกเซลจริง" ของภาพที่ render
                   // (แปลง % เป็น px ตามขนาดจริงของ mapBox ก่อนคำนวณ แล้วแปลงกลับเป็น % ตอน render)
                   const boxW = mapBox.w || 800, boxH = mapBox.h || 450;
-                  // MK = ขนาด marker สเกลตามความกว้างผังจริง — สูตรเดียวกับหน้า Management/LineSetup
-                  const MK = Math.round(Math.max(34, Math.min(84, boxW * 0.055)));
+                  // ขนาด marker จาก util กลาง (ห้ามตั้งสูตรเองในหน้า — UI-CONVENTIONS §1)
+                  const { MK, SUB } = markerScale(boxW);
                   const MIN_PX_X = MK * 1.2, MIN_PX_Y = MK * 1.6; // ระยะห่างขั้นต่ำรวม nametag+badge
                   const pxMarkers = markers.map(m => ({ ...m, px: m.left / 100 * boxW, py: m.top / 100 * boxH, dox: 0, doy: 0 }));
                   for (let pass = 0; pass < 60; pass++) {
@@ -2302,14 +2303,14 @@ export default function Dashboard() {
                               marginTop: 'clamp(-6px, -0.5vw, -3px)', position: 'relative', zIndex: 1,
                             }}>{shortName}</div>
                             {fit !== null && (
-                              <div style={{ fontSize: Math.max(10, Math.round(MK * 0.2)), fontWeight: 800, color, background: `${color}25`, padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>{fit}%</div>
+                              <div style={{ fontSize: Math.max(11, Math.round(MK * 0.2)), fontWeight: 800, color, background: `${color}25`, padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>{fit}%</div>
                             )}
                             {emp.has_extended_ot && (
-                              <div style={{ fontSize: Math.max(10, Math.round(MK * 0.2)), fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>OT+23</div>
+                              <div style={{ fontSize: Math.max(11, Math.round(MK * 0.2)), fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>OT+23</div>
                             )}
                             {pAlarm && (
                               <div style={{
-                                fontSize: 'clamp(11px, 1.1vw, 14px)', fontWeight: 800, whiteSpace: 'nowrap',
+                                fontSize: Math.max(11, Math.round(MK * 0.22)), fontWeight: 800, whiteSpace: 'nowrap',
                                 color: pAlarm.kind === 'red' ? '#fca5a5' : '#fde68a',
                                 background: pAlarm.kind === 'red' ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)',
                                 padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 2,
@@ -2322,7 +2323,7 @@ export default function Dashboard() {
                         );
                       })}
                       {/* จุดเครื่องจักรบนผัง — เฉพาะเครื่องที่กำลัง Downtime กระพริบแดงพร้อมชื่อสาเหตุ
-                          รูปทรงตาม UI-CONVENTIONS ข้อ 1: วงกลม 0.8×MK + ป้ายใต้ พร้อม edge clamp ไม่ให้ตกขอบรูป */}
+                          รูปทรงตาม UI-CONVENTIONS ข้อ 1: วงกลมขนาด SUB (0.6×MK จาก markerScale) + ป้ายใต้ พร้อม edge clamp ไม่ให้ตกขอบรูป */}
                       {machinePoints
                         .filter(p => cardLineNames.includes(p.line_name) && dtAlarmByMachine[p.machine_no])
                         .map(p => {
@@ -2330,7 +2331,7 @@ export default function Dashboard() {
                           const first = alarms[0];
                           const elapsed = dtElapsedMin(first, now.getTime());
                           const ongoing = !first.ended_at && first.duration_min == null;
-                          const MKS = Math.round(MK * 0.8);
+                          const MKS = SUB;
                           const rawL = (parseFloat(p.pos_left) || 0) / 100 * boxW;
                           const rawT = (parseFloat(p.pos_top) || 0) / 100 * boxH;
                           const leftPct = Math.min(Math.max(rawL, MKS * 0.55), boxW - MKS * 0.55) / boxW * 100;
@@ -2361,7 +2362,7 @@ export default function Dashboard() {
                               </div>
                               <div style={{
                                 background: 'rgba(239,68,68,0.25)', borderRadius: 3, padding: '0 5px',
-                                fontSize: Math.max(10, Math.round(MKS * 0.2)), fontWeight: 700, color: '#fca5a5',
+                                fontSize: Math.max(11, Math.round(MKS * 0.2)), fontWeight: 700, color: '#fca5a5',
                                 whiteSpace: 'nowrap', maxWidth: MKS * 2, overflow: 'hidden', textOverflow: 'ellipsis',
                               }}>
                                 {first.dr_downtime_types?.name_th || 'Downtime'}{ongoing && elapsed != null ? ` · ${elapsed} นาที` : ''}
