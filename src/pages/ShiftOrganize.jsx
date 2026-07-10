@@ -2,6 +2,7 @@ import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
+import { toast } from '../components/Toast';
 
 function getWeekDates(refDate) {
   const d = new Date(refDate);
@@ -133,7 +134,7 @@ export default function ShiftOrganize() {
       .from('shift_schedules')
       .upsert(rows, { onConflict: 'work_date,line_id' });
 
-    if (error) alert('เกิดข้อผิดพลาด: ' + error.message);
+    if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
     else fetchSchedules();
     setIsSaving(false);
   };
@@ -148,7 +149,7 @@ export default function ShiftOrganize() {
       reason:      ovrReason || null,
       created_by:  userData?.user?.id,
     }], { onConflict: 'work_date,employee_id' });
-    if (error) alert('เกิดข้อผิดพลาด: ' + error.message);
+    if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
     else { setShowOvrModal(false); setOvrEmpId(''); setOvrReason(''); fetchOverrides(); }
   };
 
@@ -182,7 +183,7 @@ export default function ShiftOrganize() {
       created_by:   userData?.user?.id,
     };
     const { error } = await supabase.from('shift_merge_events').insert([payload]);
-    if (error) alert('เกิดข้อผิดพลาด: ' + error.message);
+    if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
     else {
       setShowMergeModal(false);
       setMrgSection(''); setMrgLineId(''); setMrgReason('');
