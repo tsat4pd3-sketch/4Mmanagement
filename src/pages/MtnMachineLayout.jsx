@@ -205,13 +205,13 @@ export default function MtnMachineLayout() {
       return prodPoints.map(p => {
         const info = machineInfo[p.machine_no] || { name: '', checklists: [] }
         const c = colorFor(info.checklists)
-        return { id: p.id, pos_top: p.pos_top, pos_left: p.pos_left, label: p.machine_no, sub: info.name, color: c.color, dim: c.dim }
+        return { id: p.id, pos_top: p.pos_top, pos_left: p.pos_left, label: p.machine_no, sub: info.name, color: c.color, dim: c.dim, alwaysLabel: c.worst === 'overdue' }
       })
     }
     return facPoints.map(p => {
       const info = jigInfo[p.jig_id] || { name: '', jig_no: '', checklists: [] }
       const c = colorFor(info.checklists)
-      return { id: p.id, pos_top: p.pos_top, pos_left: p.pos_left, label: info.jig_no || info.name, sub: info.jig_no ? info.name : '', color: c.color, dim: c.dim }
+      return { id: p.id, pos_top: p.pos_top, pos_left: p.pos_left, label: info.jig_no || info.name, sub: info.jig_no ? info.name : '', color: c.color, dim: c.dim, alwaysLabel: c.worst === 'overdue' }
     })
   }, [view, prodPoints, machineInfo, facPoints, jigInfo, dept])
 

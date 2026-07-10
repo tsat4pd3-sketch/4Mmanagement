@@ -19,7 +19,7 @@
 | เครื่องจักร (Downtime ค้าง) | class `dt-alarm-blink` ขอบ/พื้นแดง | 🚨 หรือ ⚙️ | machine_no + สาเหตุ + นาทีที่ค้าง |
 | WIP | ขอบเขียว `#22c55e` (แดงเมื่อ `current < min`) — 0.6×MK | 📦 (packaging) / 🧱 (material) | point_name + ป้ายจำนวน `cur/min–max` |
 | จุดงาน (LineSetup) | ขอบขาว/เขียวเมื่อเลือก | 📍 | station_name เต็ม (+💰 ถ้ามีค่าฝีมือ) |
-| เครื่องจักร/อุปกรณ์ (ผัง MTN – สถานะ PM) | ขอบ**สีตามสถานะ PM** (แดงเกินกำหนด / ส้มใกล้ครบ / เขียวปกติ / ม่วงยังไม่ตรวจ) — 0.8×MK | ⚙️ | machine_no/jig_no (+ป้ายรอง: ชื่อเครื่อง) |
+| เครื่องจักร/อุปกรณ์ (ผัง MTN – สถานะ PM) | ขอบ**สีตามสถานะ PM** (แดงเกินกำหนด / ส้มใกล้ครบ / เขียวปกติ / ม่วงยังไม่ตรวจ) — SUB (density-aware) · จุด**เกินกำหนด**ป้ายโชว์เสมอ | ⚙️ | machine_no/jig_no (+ป้ายรอง: ชื่อเครื่อง) |
 
 **ป้าย (pill) spec:** `background: rgba(0,0,0,0.75-0.78)` · `borderRadius: 4` · ตัวหนังสือขาว bold · `whiteSpace: nowrap` + `overflow: hidden` + `textOverflow: ellipsis` · `maxWidth ≈ 1.8–2 × เส้นผ่านศูนย์กลางวงกลม`
 
