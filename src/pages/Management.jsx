@@ -172,6 +172,10 @@ export default function Management() {
   const [stationModal,   setStationModal]   = useState(null);
   const [homePositions,  setHomePositions]  = useState({});
   const [radarWorker,    setRadarWorker]    = useState(null);
+  // การ์ดรายละเอียดจุดเครื่องจักร/WIP บนผัง — เปิดด้วยคลิก/แตะ (ห้ามพึ่ง hover — จอ touch ใช้ไม่ได้)
+  const [pointDetail,    setPointDetail]    = useState(null); // { kind:'machine'|'wip', point, machine?, loading, jig?, mtype?, part? }
+  const machineTypesRef = useRef(null);   // machine_types map (id → {label,color,icon}) — โหลดครั้งเดียวตอนเปิดการ์ดเครื่องแรก
+  const pointDetailCache = useRef({});    // 'jig:<machineId>' / 'part:<mat_no>' → row (null = เคยหาแล้วไม่เจอ) กัน refetch ซ้ำ
   const [isSaving4M,     setIsSaving4M]     = useState(false);
   const [reqImageFile,   setReqImageFile]   = useState(null);
   const [reqImagePreview,setReqImagePreview]= useState(null);
@@ -374,7 +378,7 @@ export default function Management() {
     setWipPoints(wipData || []);
     const { data: mpData } = await supabase.from('machine_points').select('*').in('line_name', viewLineNames);
     setMachinePoints(mpData || []);
-    const { data: drMc } = await supabaseDR.from('machines').select('id, machine_no, machine_name').in('line_name', viewLineNames).eq('is_active', true);
+    const { data: drMc } = await supabaseDR.from('machines').select('id, machine_no, machine_name, process_type, machine_type_id, line_name').in('line_name', viewLineNames).eq('is_active', true);
     setDrMachines(drMc || []);
   };
 
@@ -552,6 +556,55 @@ export default function Management() {
       clearTimeout(t);
     };
   }, [hoverCard]);
+
+  /* ── การ์ดรายละเอียดจุดเครื่องจักร/WIP (เปิดด้วยคลิก — ใช้ได้ทั้งเมาส์และจอ touch) ──
+     เปิดการ์ดทันทีพร้อมข้อมูลที่มีในมือ แล้วค่อย fetch ส่วนเสริม (jig/parts_master) แบบ async
+     ผล fetch เก็บใน pointDetailCache — เปิดจุดเดิมซ้ำไม่ยิง query ซ้ำ */
+  const openMachineDetail = async (p) => {
+    const mc = drMachines.find(m => m.machine_no === p.machine_no) || null;
+    setPointDetail({ kind: 'machine', point: p, machine: mc, loading: !!mc, jig: null, mtype: null });
+    if (!mc) return;
+    try {
+      if (!machineTypesRef.current) {
+        const { data: mts } = await supabaseDR.from('machine_types').select('id, label, color, icon');
+        machineTypesRef.current = Object.fromEntries((mts || []).map(t => [t.id, t]));
+      }
+      const cacheKey = `jig:${mc.id}`;
+      let jig = pointDetailCache.current[cacheKey];
+      if (jig === undefined) {
+        const { data: jigs } = await supabaseDR.from('jigs')
+          .select('name, jig_no, image_path, process, model, part_name, part_no')
+          .eq('machine_id', mc.id).limit(1);
+        jig = jigs?.[0] || null;
+        pointDetailCache.current[cacheKey] = jig;
+      }
+      const mtype = mc.machine_type_id ? (machineTypesRef.current[mc.machine_type_id] || null) : null;
+      // อัพเดตเฉพาะเมื่อการ์ดที่เปิดอยู่ยังเป็นจุดเดิม (user อาจกดจุดอื่น/ปิดไปแล้วระหว่าง fetch)
+      setPointDetail(prev => (prev?.kind === 'machine' && prev.point.id === p.id)
+        ? { ...prev, loading: false, jig, mtype } : prev);
+    } catch {
+      setPointDetail(prev => (prev?.kind === 'machine' && prev.point.id === p.id) ? { ...prev, loading: false } : prev);
+    }
+  };
+  const openWipDetail = async (p) => {
+    const isMaterial = p.point_type !== 'packaging';
+    setPointDetail({ kind: 'wip', point: p, loading: isMaterial && !!p.mat_no, part: null });
+    if (!isMaterial || !p.mat_no) return;
+    try {
+      const cacheKey = `part:${p.mat_no}`;
+      let part = pointDetailCache.current[cacheKey];
+      if (part === undefined) {
+        const { data: parts } = await supabaseDR.from('parts_master')
+          .select('mat_no, part_name, part_no, uom, qty_per_pkg, supplier, note, image_url')
+          .eq('mat_no', p.mat_no).limit(1);
+        part = parts?.[0] || null;
+        pointDetailCache.current[cacheKey] = part;
+      }
+      setPointDetail(prev => (prev?.kind === 'wip' && prev.point.id === p.id) ? { ...prev, loading: false, part } : prev);
+    } catch {
+      setPointDetail(prev => (prev?.kind === 'wip' && prev.point.id === p.id) ? { ...prev, loading: false } : prev);
+    }
+  };
 
   /* ── Touch tap on pool card ── */
   const handlePoolTap = (worker) => {
@@ -1912,14 +1965,15 @@ export default function Management() {
                       const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
                       const wTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const wLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
-                      const WK = Math.round(MK * 0.8); // WIP/machine เดิม render เล็กกว่าจุดคน — คงสัดส่วนนั้นไว้
+                      const WK = Math.round(MK * 0.6); // WIP เป็นแค่ไอคอน ไม่ใช่รูปคน — เล็กกว่าจุดคนชัดเจน กันผังแน่น
                       const wcl = clampPos(wLeft, wTop, WK);
                       const wc = isLow ? '#ef4444' : 'rgba(34,197,94,0.85)';
                       return (
                         <div key={`wip-${p.id}`} title={`${p.point_type === 'packaging' ? '📦' : '🧱'} ${p.point_name}${p.point_type === 'packaging' ? (p.packaging_no ? ` (${p.packaging_no})` : '') : (p.mat_no ? ` (${p.mat_no})` : '')} — ${p.current_qty ?? 0}/${p.min_qty ?? 0}–${p.max_qty ?? 0}`}
+                          onClick={(e) => { e.stopPropagation(); openWipDetail(p); }}
                           style={{
                             position: 'absolute', top: wcl.y, left: wcl.x, transform: 'translate(-50%, -50%)',
-                            zIndex: 4, display: 'flex', flexDirection: 'column', alignItems: 'center',
+                            zIndex: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer',
                           }}>
                           <div style={{
                             width: WK, height: WK, borderRadius: '50%',
@@ -1953,7 +2007,7 @@ export default function Management() {
                       const mc = drMachines.find(m => m.machine_no === p.machine_no);
                       const mTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const mLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
-                      const MKS = Math.round(MK * 0.8); // เครื่องจักรเดิม render เล็กกว่าจุดคน — คงสัดส่วนนั้นไว้
+                      const MKS = Math.round(MK * 0.6); // เครื่องจักรเป็นแค่ไอคอนเฟือง — เล็กกว่าจุดคนชัดเจน กันผังแน่น
                       const mcl = clampPos(mLeft, mTop, MKS);
                       const firstAlarm = alarms?.[0];
                       const elapsed = firstAlarm ? dtElapsedMin(firstAlarm) : null;
@@ -1963,9 +2017,10 @@ export default function Management() {
                         : `⚙️ ${p.machine_no} ${mc?.machine_name || ''}`;
                       return (
                         <div key={`mc-${p.id}`} title={title}
+                          onClick={(e) => { e.stopPropagation(); openMachineDetail(p); }}
                           style={{
                             position: 'absolute', top: mcl.y, left: mcl.x, transform: 'translate(-50%, -50%)',
-                            zIndex: alarms ? 6 : 4, display: 'flex', flexDirection: 'column', alignItems: 'center',
+                            zIndex: alarms ? 6 : 4, display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer',
                           }}>
                           {/* alarm blink อยู่บนวงกลม — วงแหวนแดงกระพริบขณะ Downtime ยังไม่ปิดรายการ */}
                           <div className={alarms ? 'dt-alarm-blink' : undefined}
@@ -2108,6 +2163,15 @@ export default function Management() {
             )}
           </div>
         </div>
+      , document.body)}
+
+      {/* ── การ์ดรายละเอียดจุดเครื่องจักร/WIP (คลิกจุดบนผัง — ปิดด้วย ✕ หรือคลิกนอกการ์ด) ── */}
+      {pointDetail && createPortal(
+        <PointDetailCard
+          detail={pointDetail}
+          alarms={pointDetail.kind === 'machine' ? dtAlarms.byMachine[pointDetail.point.machine_no] : null}
+          onClose={() => setPointDetail(null)}
+        />
       , document.body)}
 
       {/* ── Desktop hover card ── */}
@@ -2719,6 +2783,155 @@ function FitPopup({ fitPopup, onClose }) {
         </div>
       ))}
       <button onClick={onClose} style={{ position: 'absolute', top: 10, right: 12, background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', fontSize: 18, cursor: 'pointer' }}>×</button>
+    </div>
+  );
+}
+
+/* ── การ์ดรายละเอียดจุดเครื่องจักร/WIP บนผัง ──
+   modal กลางจอ (portal ที่ตัว caller) — เปิดด้วยคลิก/แตะ ปิดด้วย ✕ หรือคลิก backdrop
+   ตาม UI convention: จอ touch พึ่ง hover ไม่ได้ popup ต้องเปิด-ปิดด้วยคลิกเท่านั้น */
+function PointDetailCard({ detail, alarms, onClose }) {
+  const { kind, point, machine, loading, jig, mtype, part } = detail;
+  const isMachine = kind === 'machine';
+  const isPackaging = !isMachine && point.point_type === 'packaging';
+  const isLow = !isMachine && (point.current_qty ?? 0) < (point.min_qty ?? 0);
+  const accent = isMachine
+    ? (alarms ? '#ef4444' : '#f59e0b')
+    : (isLow ? '#ef4444' : '#22c55e');
+
+  const imgUrl = isMachine
+    ? (jig?.image_path ? supabaseDR.storage.from('jig-images').getPublicUrl(jig.image_path).data.publicUrl : null)
+    : (part?.image_url || null);
+
+  const chipSt = (color) => ({
+    fontSize: 11, fontWeight: 700, color, background: `${color}18`,
+    border: `1px solid ${color}45`, borderRadius: 5, padding: '2px 8px', whiteSpace: 'nowrap',
+  });
+  const InfoRow = ({ label, value }) => (value == null || value === '') ? null : (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 9px' }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', textAlign: 'right', overflowWrap: 'anywhere' }}>{value}</span>
+    </div>
+  );
+
+  // สรุปแถวข้อมูลตามชนิดจุด — jig ของเครื่อง / parts_master ของ WIP material / field ตัวเองของ packaging
+  const infoRows = isMachine
+    ? (jig ? [
+        ['Jig',       jig.name ? `${jig.name}${jig.jig_no ? ` (${jig.jig_no})` : ''}` : jig.jig_no],
+        ['Process',   jig.process],
+        ['Model',     jig.model],
+        ['Part Name', jig.part_name],
+        ['Part No.',  jig.part_no],
+      ] : [])
+    : isPackaging
+      ? [
+          ['Packaging Type', point.packaging_type],
+          ['Packaging No.',  point.packaging_no],
+        ]
+      : (part ? [
+          ['Part Name', part.part_name],
+          ['Part No.',  part.part_no],
+          ['MAT No.',   part.mat_no],
+          ['UOM',       part.uom],
+          ['Qty/Pkg',   part.qty_per_pkg],
+          ['Supplier',  part.supplier],
+          ['หมายเหตุ',  part.note],
+        ] : []);
+
+  // WIP material ที่หา parts_master ไม่เจอ (หรือไม่มี mat_no) / เครื่องที่ไม่อยู่ใน machines ฝั่ง DR
+  const notRegistered = !loading && (
+    isMachine ? !machine : (!isPackaging && !part)
+  );
+
+  return (
+    <div onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--card)', border: `1px solid ${accent}55`, borderRadius: 16, padding: '16px 18px', width: 'min(92vw, 400px)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', boxShadow: 'var(--shadow-lg)', animation: 'pdIn 0.18s ease' }}>
+        <style>{`@keyframes pdIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
+
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+          <div style={{ fontSize: 26, lineHeight: 1.2, flexShrink: 0 }}>{isMachine ? (alarms ? '🚨' : '⚙️') : (isPackaging ? '📦' : '🧱')}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', lineHeight: 1.25, overflowWrap: 'anywhere' }}>
+              {isMachine ? point.machine_no : point.point_name}
+            </div>
+            {isMachine && machine?.machine_name && (
+              <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>{machine.machine_name}</div>
+            )}
+            <div style={{ display: 'flex', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
+              {isMachine ? (
+                <>
+                  {mtype && <span style={chipSt(mtype.color || '#4d9fff')}>{mtype.icon ? `${mtype.icon} ` : ''}{mtype.label}</span>}
+                  {machine?.line_name && <span style={chipSt('#a78bfa')}>📍 {machine.line_name}</span>}
+                  {machine?.process_type && <span style={chipSt('#4d9fff')}>{machine.process_type}</span>}
+                </>
+              ) : (
+                <>
+                  <span style={chipSt(isPackaging ? '#4d9fff' : '#f59e0b')}>{isPackaging ? '📦 Packaging' : '🧱 Material'}</span>
+                  {!isPackaging && point.material_category && <span style={chipSt('#a78bfa')}>{point.material_category}</span>}
+                  <span style={chipSt(isLow ? '#ef4444' : '#22c55e')}>
+                    {isLow ? '⚠ ' : ''}{point.current_qty ?? 0} / min {point.min_qty ?? 0} – max {point.max_qty ?? 0}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', padding: '0 4px', flexShrink: 0, lineHeight: 1 }}>✕</button>
+        </div>
+
+        {/* สต๊อกต่ำกว่า min — เตือนแดงชัดๆ */}
+        {isLow && (
+          <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 8, padding: '7px 10px', marginBottom: 10, fontSize: 12, fontWeight: 800, color: '#ef4444' }}>
+            ⚠ สต๊อกต่ำกว่าขั้นต่ำ — {point.current_qty ?? 0} จาก min {point.min_qty ?? 0}
+          </div>
+        )}
+
+        {/* Downtime ที่ยังเปิดค้างของเครื่องนี้ */}
+        {isMachine && alarms && (
+          <div className="dt-alarm-blink" style={{ background: 'rgba(239,68,68,0.12)', border: '1.5px solid #ef4444', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 900, color: '#ef4444', marginBottom: 4 }}>🚨 DOWNTIME</div>
+            {alarms.map((d, i) => {
+              const ongoing = !d.ended_at && d.duration_min == null;
+              const elapsed = dtElapsedMin(d);
+              return (
+                <div key={i} style={{ fontSize: 12, fontWeight: 700, color: '#fca5a5', lineHeight: 1.5 }}>
+                  {d.dr_downtime_types?.name_th || 'Downtime'}
+                  {d.description ? ` — ${d.description}` : ''}
+                  {ongoing && elapsed != null ? ` · ผ่านมา ${elapsed} นาที` : ''}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* รูปจาก jig (เครื่อง) / parts_master (WIP material) */}
+        {imgUrl && (
+          <img src={imgUrl} alt=""
+            style={{ width: '100%', maxHeight: 180, objectFit: 'cover', borderRadius: 10, border: '1px solid var(--border2)', marginBottom: 10, display: 'block' }}
+            onError={e => { e.currentTarget.style.display = 'none'; }} />
+        )}
+
+        {/* Info rows */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {infoRows.map(([label, value]) => <InfoRow key={label} label={label} value={value} />)}
+        </div>
+
+        {loading && (
+          <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', padding: '8px 0 2px' }}>กำลังโหลดข้อมูล...</div>
+        )}
+        {notRegistered && (
+          <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '10px 12px', marginTop: infoRows.length ? 8 : 0 }}>
+            ยังไม่ลงทะเบียนในฐานข้อมูล
+          </div>
+        )}
+        {isMachine && machine && !loading && !jig && (
+          <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', padding: '8px 0 2px' }}>
+            ยังไม่มีข้อมูล Jig/PM ผูกกับเครื่องนี้
+          </div>
+        )}
+      </div>
     </div>
   );
 }

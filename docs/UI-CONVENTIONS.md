@@ -3,7 +3,7 @@
 > **ทุก session ที่แก้ UI ต้องอ่านไฟล์นี้ก่อนลงมือ และเมื่อสร้าง/เปลี่ยน pattern ที่ใช้ร่วมกันหลายหน้า ต้องอัพเดทไฟล์นี้ในคอมมิทเดียวกัน**
 > เหตุผล: หลาย session ทำงานขนานกัน ถ้าไม่มีมาตรฐานกลาง จะได้ UI คนละทรง (เคยเกิดแล้ว: จุดเครื่องจักรฝั่ง MTN ทำเป็นเหลี่ยม ขณะที่ระบบหลักเป็นวงกลม)
 
-อัพเดทล่าสุด: 2026-07-10 (เพิ่มกฎ anchor วงกลม)
+อัพเดทล่าสุด: 2026-07-10 (anchor วงกลม · ขนาดเครื่อง/WIP 0.6×MK · layout เดี่ยวต้อง fit จอ · popup รายละเอียดเครื่อง/WIP · paddingTop 14)
 
 ---
 
@@ -15,9 +15,9 @@
 |---|---|---|---|
 | คน (มีคนประจำ) | เส้นขอบสีตามระดับ skill fit | รูปพนักงาน (objectFit: cover) หรืออักษรแรก | ชื่อสถานี · fit% badge ต่อท้ายอีกป้าย |
 | คน (สถานีว่าง) | เส้นประ สีเทา — เป็น drop target | "+" | ชื่อสถานี |
-| เครื่องจักร | ขอบ amber `#f59e0b` — ขนาด 0.8×MK | ⚙️ | machine_no (+ป้ายรอง: ชื่อเครื่อง/สาเหตุ downtime) |
+| เครื่องจักร | ขอบ amber `#f59e0b` — ขนาด 0.6×MK | ⚙️ | machine_no (+ป้ายรอง: ชื่อเครื่อง/สาเหตุ downtime) |
 | เครื่องจักร (Downtime ค้าง) | class `dt-alarm-blink` ขอบ/พื้นแดง | 🚨 หรือ ⚙️ | machine_no + สาเหตุ + นาทีที่ค้าง |
-| WIP | ขอบเขียว `#22c55e` (แดงเมื่อ `current < min`) — 0.8×MK | 📦 (packaging) / 🧱 (material) | point_name + ป้ายจำนวน `cur/min–max` |
+| WIP | ขอบเขียว `#22c55e` (แดงเมื่อ `current < min`) — 0.6×MK | 📦 (packaging) / 🧱 (material) | point_name + ป้ายจำนวน `cur/min–max` |
 | จุดงาน (LineSetup) | ขอบขาว/เขียวเมื่อเลือก | 📍 | station_name เต็ม (+💰 ถ้ามีค่าฝีมือ) |
 | เครื่องจักร/อุปกรณ์ (ผัง MTN – สถานะ PM) | ขอบ**สีตามสถานะ PM** (แดงเกินกำหนด / ส้มใกล้ครบ / เขียวปกติ / ม่วงยังไม่ตรวจ) — 0.8×MK | ⚙️ | machine_no/jig_no (+ป้ายรอง: ชื่อเครื่อง) |
 
@@ -29,7 +29,7 @@
 const MK = Math.round(Math.max(34, Math.min(84, renderedMapWidth * 0.055)));
 // LineSetup ใช้ 0.05 / min 30 ได้ (จุดตั้งค่าเล็กกว่าเล็กน้อย)
 // ฟอนต์: pill = max(11, MK*0.24) · badge = max(10, MK*0.2) · ขอบวง = max(2, MK*0.06)
-// เครื่องจักร/WIP = 0.8×MK
+// เครื่องจักร/WIP = 0.6×MK (Management) / 0.75×MK (LineSetup) — เป็นไอคอน ไม่ใช่รูปคน ให้เล็กกว่าจุดคนชัดเจน กันผังแน่น
 ```
 
 ### กติกาที่ต้องมีเสมอ
@@ -87,7 +87,9 @@ const MK = Math.round(Math.max(34, Math.min(84, renderedMapWidth * 0.055)));
 
 ### Modal ที่โชว์รูปผัง
 - ต้อง fit **จอเดียว ไม่มี scroll**: `width: fit-content; maxWidth: 97vw; maxHeight: 97vh; overflow: hidden` + รูป `maxWidth/maxHeight + width/height: auto` (จำกัดสองแกน)
+- **หน้าที่แสดง layout เดี่ยวเพื่อ visualize** (เช่น ผังเครื่องจักร PM) บนจอ landscape (PC/tablet/TV) รูปผังต้องเห็นครบใน viewport เดียว **ห้ามให้ต้อง scroll ลงไปดูครึ่งล่าง**: จำกัด `maxHeight: calc(100vh - ความสูง header จริง)` + `width: auto` แล้วจัดกึ่งกลาง
 - **ห้ามใช้ object-fit บน img ที่มี marker ทับ** — กล่อง img ต้องเท่ารูปจริงเสมอ ไม่งั้นพิกัด % เพี้ยน
+- **Hover/คลิกจุดเครื่องจักร และ WIP ต้องเปิดการ์ดรายละเอียดจากฐานข้อมูล** (คอนเซปเดียวกับ hover การ์ดสกิลพนักงาน): เครื่องจักร → machines + machine_types + รูป/ข้อมูลจาก jigs ที่ลิงก์ผ่าน machine_id (bucket `jig-images`) · WIP material → parts_master ตาม mat_no (มี image_url) · เปิดด้วยคลิก (จอทัชใช้ได้) ปิดด้วย ✕/คลิกนอกกรอบ
 
 ## 5.1 Balloon จุดตรวจบน drawing/รูปอ้างอิง (QA `/qa-setup` · PM Setup)
 
@@ -149,6 +151,7 @@ pattern ร่วมของทุกบอร์ดที่วางราย
 ## 7. เบ็ดเตล็ดที่เคยกัด
 
 - `index.css` ตั้ง `input{width:100%}` ทั้งแอป — input ใน flex row ต้องกำหนด width เอง (checkbox/radio มี rule ยกเว้น `width:auto` แล้ว — ห้ามลบ)
+- พื้นที่ว่างแนวบนของทุกหน้า: `main` ใช้ `paddingTop: 14` (ไม่ใช่ 60) — มีแค่ icon cluster fixed มุมขวาบน; แถบควบคุมที่ชิดขวาบนของหน้า ให้เผื่อ `paddingRight` ~52px กันชนไอคอน
 - ปุ่มพับ sidebar อยู่**ในหัว sidebar** (ปุ่ม ⟨ ข้างโลโก้) — ปุ่มลอย ☰ โชว์เฉพาะตอนพับ ห้ามมีปุ่มลอยทับเนื้อหา
 - สิทธิ์ action ใช้ `can(resource, action, role)` จาก `src/utils/permissions.js` — ห้าม hardcode `['admin',...].includes(role)` เพิ่ม (ดู docs/PERMISSIONS-DESIGN.md)
 - วันที่งาน: `getWorkDate()` เท่านั้น (ก่อน 08:00 = วันก่อนหน้า) ห้าม `toISOString()`
