@@ -10,6 +10,7 @@ import {
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 import { hasPermission, can } from '../utils/permissions';
 import { loadCompanyCalendar, getDayType, DAY_TYPE_META } from '../utils/companyCalendar';
+import { otPeriodMeta, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyNames, getLineFamilyIds } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import tsLogoUrl from '../assets/TS logo.png';
@@ -210,9 +211,11 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   const [section, setSection] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
   const [showMaster, setShowMaster] = useState(!!autoOpenMaster && canManageMaster);
+  const [calReady, setCalReady] = useState(false);
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name, section').then(({ data }) => setLines(data || []));
+    loadCompanyCalendar().then(() => setCalReady(true));
   }, []);
 
   useEffect(() => { load(); }, [date]);
@@ -221,7 +224,7 @@ function OtTransportBookingTab({ autoOpenMaster }) {
     setLoading(true);
     const { data } = await supabase
       .from('ot_night_bookings')
-      .select(`id, employee_id, shift, created_at,
+      .select(`id, employee_id, shift, ot_period, created_at,
         employees(name, employee_id_code, line_id, section, department, bus_routes(code, name)),
         ot_task_types(name)`)
       .eq('work_date', date)
@@ -230,10 +233,21 @@ function OtTransportBookingTab({ autoOpenMaster }) {
     setLoading(false);
   };
 
+  const dayType = calReady ? getDayType(date) : 'working';
+  const isHoliday = dayType !== 'working';
+
   const lineName = (lineId) => lines.find(l => String(l.id) === String(lineId))?.name || '';
   const busRouteLabel = (r) => r.employees?.bus_routes ? `${r.employees.bus_routes.code} ${r.employees.bus_routes.name}` : '—';
   const taskLabel = (r) => r.ot_task_types?.name || '—';
   const shiftLabel = (s) => s === 'day' ? '☀️ เช้า' : s === 'night' ? '🌙 ดึก' : '—';
+  /* ช่วงเวลา OT: วันหยุด → ตามรูปแบบที่จองไว้ (8/10 ชม.) · วันทำงานปกติ → ช่วงต่อท้ายกะมาตรฐาน
+     จองวันหยุดที่ไม่มี ot_period (จองเก่าก่อนมีฟีเจอร์) → คืน '' ให้แสดง "ไม่ระบุ" เตือนธุรการ */
+  const otTimeLabel = (r) => {
+    const m = otPeriodMeta(r.ot_period);
+    if (m) return `${m.time} · ${m.hours} ชม.`;
+    if (isHoliday) return '';
+    return WEEKDAY_OT_TIME[r.shift] || '—';
+  };
 
   // mandatory scope ก่อน (leader → ไลน์ตัวเอง, role ที่ถูกจำกัด sections → เฉพาะส่วนงานใน scope) แล้วค่อย filter อิสระทับ
   const filteredRows = rows
@@ -254,13 +268,14 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   const handleExportCsv = () => {
     downloadCSV(
       `จองรถ_OT_${date}.csv`,
-      ['ลำดับ', 'รหัสพนักงาน', 'ชื่อ-สกุล', 'ไลน์/แผนก', 'กะ', 'สายรถ', 'งานที่ทำ'],
+      ['ลำดับ', 'รหัสพนักงาน', 'ชื่อ-สกุล', 'ไลน์/แผนก', 'กะ', 'ช่วงเวลา OT', 'สายรถ', 'งานที่ทำ'],
       filteredRows.map((r, i) => [
         i + 1,
         r.employees?.employee_id_code || '',
         r.employees?.name || '',
         lineName(r.employees?.line_id) || r.employees?.section || r.employees?.department || '',
         shiftLabel(r.shift),
+        otTimeLabel(r) || 'ไม่ระบุ',
         busRouteLabel(r),
         taskLabel(r),
       ])
@@ -275,6 +290,7 @@ function OtTransportBookingTab({ autoOpenMaster }) {
       <td style="border:1px solid #ccc;padding:3px 6px">${r.employees?.name || ''}</td>
       <td style="border:1px solid #ccc;padding:3px 6px">${lineName(r.employees?.line_id) || r.employees?.section || r.employees?.department || ''}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${shiftLabel(r.shift)}</td>
+      <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${otTimeLabel(r) || 'ไม่ระบุ'}</td>
       <td style="border:1px solid #ccc;padding:3px 6px">${busRouteLabel(r)}</td>
       <td style="border:1px solid #ccc;padding:3px 6px">${taskLabel(r)}</td>
     </tr>`).join('');
@@ -285,13 +301,14 @@ table{border-collapse:collapse;width:100%}
 @media print{@page{size:A4 portrait;margin:10mm}body{-webkit-print-color-adjust:exact}}</style>
 </head><body style="padding:10mm">
 <h2 style="margin:0 0 4px;font-size:16px">รายชื่อพนักงานจองมาทำ OT (สำหรับจองรถรับส่ง)</h2>
-<p style="color:#666;margin:0 0 12px;font-size:10px">วันที่ทำ OT: ${date} · พิมพ์วันที่: ${printedAt} · รวม ${filteredRows.length} คน</p>
+<p style="color:#666;margin:0 0 12px;font-size:10px">วันที่ทำ OT: ${date} (${DAY_TYPE_META[dayType].label}) · พิมพ์วันที่: ${printedAt} · รวม ${filteredRows.length} คน</p>
 <table><thead><tr style="background:#f3f4f6">
 <th style="border:1px solid #ccc;padding:4px">#</th>
 <th style="border:1px solid #ccc;padding:4px">รหัส</th>
 <th style="border:1px solid #ccc;padding:4px">ชื่อ</th>
 <th style="border:1px solid #ccc;padding:4px">ไลน์/แผนก</th>
 <th style="border:1px solid #ccc;padding:4px">กะ</th>
+<th style="border:1px solid #ccc;padding:4px">ช่วงเวลา OT</th>
 <th style="border:1px solid #ccc;padding:4px">สายรถ</th>
 <th style="border:1px solid #ccc;padding:4px">งานที่ทำ</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
@@ -304,6 +321,16 @@ table{border-collapse:collapse;width:100%}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
         <label style={lbSt}>วันที่ทำ OT</label>
         <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }} />
+        {calReady && (
+          <span style={{
+            fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999, whiteSpace: 'nowrap',
+            color: isHoliday ? DAY_TYPE_META[dayType].color : 'var(--text2)',
+            background: isHoliday ? 'rgba(245,158,11,0.12)' : 'var(--bg3)',
+            border: `1px solid ${isHoliday ? 'rgba(245,158,11,0.4)' : 'var(--border)'}`,
+          }}>
+            {isHoliday ? '🔶 ' : ''}{DAY_TYPE_META[dayType].label}
+          </span>
+        )}
         <select value={shiftFilter} onChange={e => setShiftFilter(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
           <option value="all">— ทุกกะ —</option>
           <option value="day">☀️ กะเช้า</option>
@@ -349,6 +376,7 @@ table{border-collapse:collapse;width:100%}
               <th style={{ minWidth: 180 }}>ชื่อ-สกุล</th>
               <th style={{ minWidth: 140 }}>ไลน์/แผนก</th>
               <th style={{ minWidth: 70, textAlign: 'center' }}>กะ</th>
+              <th style={{ minWidth: 130, textAlign: 'center' }}>ช่วงเวลา OT</th>
               <th style={{ minWidth: 160 }}>สายรถ</th>
               <th style={{ minWidth: 160 }}>งานที่ทำ</th>
             </tr>
@@ -361,12 +389,15 @@ table{border-collapse:collapse;width:100%}
                 <td>{r.employees?.name}</td>
                 <td>{lineName(r.employees?.line_id) || r.employees?.section || r.employees?.department || '—'}</td>
                 <td style={{ textAlign: 'center' }}>{shiftLabel(r.shift)}</td>
+                <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                  {otTimeLabel(r) || <span style={{ color: '#f59e0b', fontWeight: 700 }}>⚠️ ไม่ระบุ</span>}
+                </td>
                 <td>{busRouteLabel(r)}</td>
                 <td>{taskLabel(r)}</td>
               </tr>
             ))}
             {!loading && filteredRows.length === 0 && (
-              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>ไม่มีพนักงานจอง OT สำหรับวันนี้</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>ไม่มีพนักงานจอง OT สำหรับวันนี้</td></tr>
             )}
           </tbody>
         </table>

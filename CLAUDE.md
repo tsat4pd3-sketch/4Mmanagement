@@ -74,6 +74,8 @@
 | Table | คำอธิบาย | Fields สำคัญ |
 |-------|---------|-------------|
 | `daily_production_logs` | เช็คชื่อ + PPE | work_date, employee_id, is_present, has_helmet, has_boots, has_gloves, assigned_line, shift, has_ot, has_extended_ot |
+| `ot_night_bookings` | จองรถ OT ล่วงหน้า (ธุรการจองรถรับส่ง) | work_date, shift (day/night), employee_id, task_type_id, ot_period (วันหยุด 8/10 ชม. — null = OT ปกติ), booked_by · unique(employee_id, work_date, shift) |
+| `bus_routes` / `ot_task_types` | master สายรถ / งาน OT (จัดการจากแท็บจองรถใน Report) | code, name, is_active, sort_order |
 | `attendances` | บันทึกเข้างาน | - |
 | `operator_special_tasks` | งานนอกไลน์ | employee_id, work_date, task_type |
 
@@ -437,6 +439,22 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 - **Team A/B** — หมุนกะสลับกัน
 - **Team C** — กะเช้าตลอด ไม่หมุน
 - **Work date:** ก่อน 08:00 = นับเป็นวันก่อนหน้า
+
+### OT วันหยุด (2026-07-10)
+
+ตาราง OT ด้านบนใช้เฉพาะ**วันทำงานปกติ** — วันหยุด (`company_calendar.day_type != 'working'`) การมาทำ OT คือมาทั้งกะ มี 4 รูปแบบ:
+
+| รูปแบบ | เวลา | ค่าใน `ot_night_bookings.ot_period` |
+|---|---|---|
+| เช้า 8 ชม. | 08:00–17:00 | `holiday_day_8h` |
+| เช้า 10 ชม. | 08:00–20:00 | `holiday_day_10h` |
+| ดึก 10 ชม. | 20:00–08:00 | `holiday_night_10h` |
+| ดึก 8 ชม. | 22:00–08:00 | `holiday_night_8h` |
+
+- source of truth เดียว: `src/utils/otPeriods.js` (label/ตัวเลือกตามกะ/ค่า default) — ห้าม hardcode ช่วงเวลาซ้ำในหน้า
+- `ot_period = null` = OT ต่อท้ายกะวันทำงานปกติ (และการจองเก่าก่อนมีฟีเจอร์นี้ — Report แสดง "⚠️ ไม่ระบุ" เมื่อวันนั้นเป็นวันหยุด)
+- จุดจองทุกทางในหน้าเช็คชื่อ (กะดึกจองพรุ่งนี้ / has_ot กะเช้า / ช่องวันหยุดล่วงหน้า 🔶 / modal จองรถ OT อิสระ) จะโชว์ select ช่วงเวลาอัตโนมัติเมื่อวันที่จองเป็นวันหยุด — default 8 ชม. ของกะนั้น
+- migration: `20260710_ot_booking_holiday_period.sql` (Main project)
 
 ---
 
