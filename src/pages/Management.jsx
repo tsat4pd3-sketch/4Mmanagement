@@ -9,6 +9,7 @@ import { getLineFamilyNames, getLineFamilyIds, getAncestorNames, toHierarchicalO
 import { inSectionScope } from '../utils/sectionScope';
 import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
+import { markerScale } from '../utils/markerScale';
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
   return new Promise((resolve) => {
@@ -188,6 +189,7 @@ export default function Management() {
   const [filterMan,       setFilterMan]       = useState(true);
   const [filterMachine,   setFilterMachine]   = useState(false);
   const [filterWip,       setFilterWip]       = useState(false);
+  const [forcePills,      setForcePills]      = useState(false); // บังคับโชว์ป้ายชื่อเครื่อง/WIP เมื่อผังแน่นจนป้ายถูกซ่อนอัตโนมัติ
   const [docImagePreview, setDocImagePreview] = useState(null);
   const [isSavingDoc,     setIsSavingDoc]     = useState(false);
   const [lineProdData,    setLineProdData]    = useState(null); // heijunka data for selected line
@@ -942,6 +944,24 @@ export default function Management() {
             )}
           </button>
         ))}
+        {/* ผังแน่น (>18 เครื่อง) — ป้ายชื่อเครื่อง/WIP ถูกซ่อนอัตโนมัติ ปุ่มนี้บังคับเปิดทั้งหมด (alarm/below-min โชว์เสมอไม่ต้องกด) */}
+        {machinePoints.length > 18 && (
+          <button
+            onClick={() => setForcePills(v => !v)}
+            title="ผังแน่น — ป้ายชื่อเครื่องจักร/WIP ถูกซ่อนอัตโนมัติ กดเพื่อบังคับแสดงป้ายทั้งหมด"
+            style={{
+              height: 36, borderRadius: 8, padding: '0 10px',
+              background: forcePills ? 'rgba(148,163,184,0.28)' : 'var(--bg3)',
+              border: forcePills ? '1px solid #94a3b8' : '1px solid var(--border2)',
+              color: forcePills ? 'var(--text)' : 'var(--text2)',
+              fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+              cursor: 'pointer', boxShadow: 'var(--shadow-sm)',
+            }}
+          >
+            🏷️ ป้ายชื่อ
+          </button>
+        )}
       </div>
 
       {/* ── Pool Panel ── */}
@@ -1719,12 +1739,11 @@ export default function Management() {
                 }
               `}</style>
               {imgBox && (() => {
-                // ขนาด marker วงกลม scale ตามความกว้างจริงของรูปผังที่ render (imgBox.rw)
-                // ให้สเกลสอดคล้องกับ modal ขยายผังของ Dashboard — clamp 34..84px
-                const MK = Math.round(Math.max(34, Math.min(84, (imgBox.rw || 800) * 0.055)));
-                const PILL_F  = Math.max(11, Math.round(MK * 0.24)); // pill font
-                const FIT_F   = Math.max(10, Math.round(MK * 0.2));  // fit% badge font
-                const RING    = Math.max(2, Math.round(MK * 0.06));  // ring border width
+                // ขนาด marker ทั้งหมดมาจาก util กลาง (WYSIWYG เดียวกับ LineSetup) — density-aware ตามจำนวนเครื่อง
+                const { MK, SUB, showSubPills, ring: RING, subRing: SUB_RING, pillFont: PILL_F, subPillFont: SUB_PILL_F, badgeFont: FIT_F } =
+                  markerScale(imgBox.rw, { machineCount: machinePoints.length });
+                // ป้ายชื่อเครื่อง/WIP: auto-hide เมื่อผังแน่น — ผู้ใช้กด 🏷️ บังคับเปิดได้ (alarm/below-min โชว์เสมอ)
+                const pillsOn = showSubPills || forcePills;
                 const BADGE   = Math.max(14, Math.round(MK * 0.3));  // corner chip size
                 const PILL_MAXW = Math.round(MK * 1.8);
                 // clamp ตำแหน่ง "แสดงผล" ไม่ให้วงกลม+ป้ายตกขอบผัง — ตำแหน่งจริงใน DB ไม่เปลี่ยน
@@ -1965,7 +1984,7 @@ export default function Management() {
                       const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
                       const wTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const wLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
-                      const WK = Math.round(MK * 0.6); // WIP เป็นแค่ไอคอน ไม่ใช่รูปคน — เล็กกว่าจุดคนชัดเจน กันผังแน่น
+                      const WK = SUB; // WIP เป็นแค่ไอคอน ไม่ใช่รูปคน — ขนาดจาก markerScale (density-aware)
                       const wcl = clampPos(wLeft, wTop, WK);
                       const wc = isLow ? '#ef4444' : 'rgba(34,197,94,0.85)';
                       return (
@@ -1977,26 +1996,29 @@ export default function Management() {
                           }}>
                           <div style={{
                             width: WK, height: WK, borderRadius: '50%',
-                            border: `${Math.max(2, RING - 1)}px solid ${wc}`,
+                            border: `${SUB_RING}px solid ${wc}`,
                             backgroundColor: isLow ? 'rgba(239,68,68,0.22)' : 'rgba(0,0,0,0.78)',
                             backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center',
                             fontSize: Math.max(13, Math.round(WK * 0.44)), lineHeight: 1,
                           }}>{p.point_type === 'packaging' ? '📦' : '🧱'}</div>
+                          {/* ป้าย: โชว์เมื่อเปิดป้าย (auto/บังคับ) หรือของต่ำกว่า min — warning ต้องเห็นเสมอ */}
+                          {(pillsOn || isLow) && (
                           <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2 }}>
                           <div style={{
                             marginTop: 3, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
                             borderRadius: 4, padding: '1px 6px',
-                            fontSize: Math.max(10, Math.round(WK * 0.24)), fontWeight: 700,
+                            fontSize: SUB_PILL_F, fontWeight: 700,
                             color: isLow ? '#fecaca' : '#fff',
                             whiteSpace: 'nowrap', maxWidth: Math.round(WK * 1.8), overflow: 'hidden', textOverflow: 'ellipsis',
                           }}>{p.point_name}</div>
                           <div style={{
-                            marginTop: 2, fontSize: Math.max(9, Math.round(WK * 0.2)), fontWeight: isLow ? 800 : 600,
+                            marginTop: 2, fontSize: SUB_PILL_F, fontWeight: isLow ? 800 : 600,
                             color: isLow ? '#fca5a5' : '#a3a3a3',
                             background: isLow ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.55)',
                             padding: '0 5px', borderRadius: 3, lineHeight: 1.5, whiteSpace: 'nowrap',
                           }}>{isLow ? '⚠ ' : ''}{p.current_qty ?? 0}/{p.min_qty ?? 0}–{p.max_qty ?? 0}</div>
                           </div>
+                          )}
                         </div>
                       );
                     })}
@@ -2007,7 +2029,7 @@ export default function Management() {
                       const mc = drMachines.find(m => m.machine_no === p.machine_no);
                       const mTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const mLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
-                      const MKS = Math.round(MK * 0.6); // เครื่องจักรเป็นแค่ไอคอนเฟือง — เล็กกว่าจุดคนชัดเจน กันผังแน่น
+                      const MKS = SUB; // เครื่องจักรเป็นแค่ไอคอนเฟือง — ขนาดจาก markerScale (density-aware)
                       const mcl = clampPos(mLeft, mTop, MKS);
                       const firstAlarm = alarms?.[0];
                       const elapsed = firstAlarm ? dtElapsedMin(firstAlarm) : null;
@@ -2026,21 +2048,23 @@ export default function Management() {
                           <div className={alarms ? 'dt-alarm-blink' : undefined}
                             style={{
                               width: MKS, height: MKS, borderRadius: '50%',
-                              border: `${Math.max(2, RING - 1)}px solid ${alarms ? '#ef4444' : 'rgba(245,158,11,0.85)'}`,
+                              border: `${SUB_RING}px solid ${alarms ? '#ef4444' : 'rgba(245,158,11,0.85)'}`,
                               backgroundColor: alarms ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.78)',
                               backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center',
                               fontSize: Math.max(13, Math.round(MKS * 0.44)), lineHeight: 1,
                             }}>{alarms ? '🚨' : '⚙️'}</div>
+                          {/* ป้าย: โชว์เมื่อเปิดป้าย (auto/บังคับ) หรือมี downtime ค้าง — alarm ต้องเห็นเสมอ */}
+                          {(pillsOn || alarms) && (
                           <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2 }}>
                           <div style={{
                             marginTop: 3, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
                             borderRadius: 4, padding: '1px 6px',
-                            fontSize: Math.max(10, Math.round(MKS * 0.24)), fontWeight: 700,
+                            fontSize: SUB_PILL_F, fontWeight: 700,
                             color: alarms ? '#fecaca' : '#fff',
                             whiteSpace: 'nowrap', maxWidth: Math.round(MKS * 1.8), overflow: 'hidden', textOverflow: 'ellipsis',
                           }}>{p.machine_no}</div>
                           <div style={{
-                            marginTop: 2, fontSize: Math.max(9, Math.round(MKS * 0.2)), fontWeight: alarms ? 800 : 600,
+                            marginTop: 2, fontSize: SUB_PILL_F, fontWeight: alarms ? 800 : 600,
                             color: alarms ? '#fca5a5' : '#a3a3a3',
                             background: alarms ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.55)',
                             padding: '0 5px', borderRadius: 3, lineHeight: 1.5,
@@ -2051,6 +2075,7 @@ export default function Management() {
                               : (mc?.machine_name || '')}
                           </div>
                           </div>
+                          )}
                         </div>
                       );
                     })}
