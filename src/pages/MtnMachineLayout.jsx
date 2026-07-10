@@ -167,7 +167,9 @@ export default function MtnMachineLayout() {
     const file = e.target.files?.[0]; if (!file || !areaId) return
     setBusy(true)
     try {
-      const compressed = await imageCompression(file, { maxSizeMB: 0.5, maxWidthOrHeight: 1600 })
+      // รูปผัง/layout มีจำนวนน้อย (ไม่เกิน ~20 รูปทั้งระบบ) แต่ต้องซูมอ่านรายละเอียดได้ —
+      // บีบเบากว่ารูปพนักงานมาก (2560px/2.5MB q0.9) อย่าลดกลับไป 1600px/0.5MB เคยเบลอจนใช้งานไม่ได้
+      const compressed = await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 })
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
       const path = `facility/${areaId}.${ext}`
       const { error: upErr } = await supabaseDR.storage.from('jig-images').upload(path, compressed, { upsert: true })
@@ -279,6 +281,7 @@ export default function MtnMachineLayout() {
                 imageUrl={view === 'production' ? prodImage : facImage}
                 points={enrichedPoints} selectedId={selId} onSelect={p => setSelId(p.id)}
                 editable={view === 'facility'} armed={!!armedJig}
+                height="clamp(360px, calc(100vh - 260px), 1100px)"
                 onImageClick={placeJig} onMarkerDragEnd={movePoint} onMarkerRemove={removePoint} />}
 
           {sel && selInfo && (
