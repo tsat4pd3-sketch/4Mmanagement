@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase, supabaseDR } from '../supabaseClient'
@@ -78,34 +78,103 @@ const S = {
   },
 }
 
-// รูป JIG + pin จุดตรวจ — pin สเกล/clamp อิง "กล่องรูปจริง" หัก letterbox ของ
-// objectFit:contain (docs/UI-CONVENTIONS.md §5.1 — pattern เดียวกับ MachineFloorMap)
-function JigPinMap({ imgUrl, checkpoints }) {
-  const { imgRef, imgBox, recalc } = useImgBox([imgUrl])
-  const PK = Math.round(Math.max(20, Math.min(36, (imgBox?.rw || 500) * 0.04)))
-  const pkFont = Math.max(11, Math.round(PK * 0.45))
+// สีหมุด = สถานะการตรวจ (dynamic) — เขียวผ่าน / แดง NG / เหลืองเฝ้าระวัง / ยังไม่ตรวจ = สีหมวด
+const PIN_STATUS_COLOR = { ok: '#3dd65c', ng: '#e05c4a', warning: '#f59a3f' }
+function cpCheckStatus(cp, r) {
+  if (!r) return null
+  if (cp.type === 'variable') {
+    if (r.v1 === '' || r.v2 === '' || r.v3 === '' || r.v1 == null || r.v2 == null || r.v3 == null) return null
+    const s = getSpcStatus(computeAvg(r.v1, r.v2, r.v3), cp)
+    return s === 'fail' ? 'ng' : s === 'warning' ? 'warning' : 'ok'
+  }
+  return r.attr === 'ok' ? 'ok' : r.attr === 'ng' ? 'ng' : null
+}
+
+// รูป JIG (รองรับ 360° spin หลายเฟรม) + pin จุดตรวจที่ sync กับ checklist:
+//   • ลากซ้าย/ขวา (หรือกดจุดใต้ภาพ) เพื่อหมุนดูรอบเครื่อง — pin โชว์เฉพาะเฟรมที่วางไว้ (image_id)
+//   • สีหมุด = สถานะตรวจจริง (OK/NG) · คลิกหมุด → เลื่อน+ไฮไลต์แถวเช็คของจุดนั้น (activeCpId)
+// pin สเกล/clamp อิง "กล่องรูปจริง" หัก letterbox (docs/UI-CONVENTIONS.md §5.1)
+function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick }) {
+  const [frameIdx, setFrameIdx] = useState(0)
+  useEffect(() => { setFrameIdx(0) }, [frames])
+  const boxRef = useRef(null)
+  const drag = useRef(null) // { startX, startIdx, moved }
+  const spin = frames.length >= 2
+  const cur = frames[frameIdx] || frames[0] || null
+  const { imgRef, imgBox, recalc } = useImgBox([cur?.url])
+  useEffect(() => { frames.forEach(f => { if (f.url) { const im = new Image(); im.src = f.url } }) }, [frames])
+
+  const firstId0 = frames[0]?.id
+  // เลือกจุดจาก checklist → ถ้าเป็น spin ให้หมุนไปเฟรมที่จุดนั้นถูกวางไว้อัตโนมัติ
+  useEffect(() => {
+    if (!activeCpId) return
+    const c = checkpoints.find(x => x.id === activeCpId)
+    if (!c || c.x_pos == null) return
+    const idx = frames.findIndex(f => f.id === (c.image_id ?? firstId0))
+    if (idx >= 0) setFrameIdx(idx)
+  }, [activeCpId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const PK = Math.round(Math.max(22, Math.min(40, (imgBox?.rw || 500) * 0.045)))
+  const pkFont = Math.max(11, Math.round(PK * 0.42))
   const padX = imgBox ? (PK * 0.7 / imgBox.rw) * 100 : 0
   const padTop = imgBox ? ((PK + 4) / imgBox.rh) * 100 : 0
   const clampPct = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
+  const cpIndex = {}; checkpoints.forEach((c, i) => { cpIndex[c.id] = i })
+  const firstId = frames[0]?.id
+  // pin ของเฟรมปัจจุบัน (image_id ว่าง = ผูกเฟรมแรก ตาม backfill)
+  const framePins = checkpoints.filter(c => c.x_pos != null && c.y_pos != null && ((c.image_id ?? firstId) === cur?.id))
+
+  const pointerDown = (e) => {
+    if (!spin) return
+    drag.current = { startX: e.clientX, startIdx: frameIdx, moved: false }
+    const move = (ev) => {
+      if (!drag.current) return
+      const dx = ev.clientX - drag.current.startX
+      if (Math.abs(dx) > 3) drag.current.moved = true
+      const w = boxRef.current?.clientWidth || 300
+      const step = Math.round((dx / w) * frames.length)
+      let idx = (drag.current.startIdx - step) % frames.length
+      if (idx < 0) idx += frames.length
+      setFrameIdx(idx)
+    }
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); setTimeout(() => { drag.current = null }, 0) }
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
+  }
+
   return (
-    <div style={{ position: 'relative', marginBottom: 16, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
-      <img ref={imgRef} src={imgUrl} alt="" onLoad={recalc} style={{ width: '100%', maxHeight: 300, objectFit: 'contain', background: 'var(--bg2)', display: 'block' }} />
-      {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้ ไม่ใช่ % ของ container */}
-      {imgBox && (
-        <div style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
-          {checkpoints.map((c, i) => {
-            if (c.x_pos == null || c.y_pos == null) return null
-            return (
-              <div key={c.id} style={{
-                position: 'absolute',
-                left: `${clampPct(c.x_pos * 100, padX, 100 - padX)}%`,
-                top: `${clampPct(c.y_pos * 100, padTop, 100)}%`,
-                transform: 'translate(-50%,-100%)',
-              }}>
-                <div style={{ minWidth: PK, height: PK, padding: `0 ${Math.round(PK * 0.15)}px`, borderRadius: 999, background: categoryColor(c.category), color: '#fff', fontSize: pkFont, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff', boxShadow: '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>{i + 1}</div>
-              </div>
-            )
-          })}
+    <div style={{ marginBottom: 16 }}>
+      <div ref={boxRef} onPointerDown={pointerDown}
+        style={{ position: 'relative', userSelect: 'none', touchAction: 'none', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', cursor: spin ? 'grab' : 'default' }}>
+        <img ref={imgRef} src={cur?.url} alt="" draggable={false} onLoad={recalc} style={{ width: '100%', maxHeight: 320, objectFit: 'contain', background: 'var(--bg2)', display: 'block' }} />
+        {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้ */}
+        {imgBox && (
+          <div style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
+            {framePins.map(c => {
+              const st = cpCheckStatus(c, results[c.id])
+              const col = st ? PIN_STATUS_COLOR[st] : categoryColor(c.category)
+              const active = c.id === activeCpId
+              return (
+                <button key={c.id} onClick={e => { e.stopPropagation(); onPinClick?.(c.id) }} title={`${cpIndex[c.id] + 1}. ${c.name}${st ? ` — ${st.toUpperCase()}` : ''}`}
+                  style={{ position: 'absolute', left: `${clampPct(c.x_pos * 100, padX, 100 - padX)}%`, top: `${clampPct(c.y_pos * 100, padTop, 100)}%`, transform: 'translate(-50%,-100%)', zIndex: active ? 12 : 10, cursor: 'pointer', background: 'none', border: 'none', padding: 0, pointerEvents: 'auto' }}>
+                  <div style={{ minWidth: PK, height: PK, padding: `0 ${Math.round(PK * 0.15)}px`, borderRadius: 999, background: col, color: '#fff', fontSize: pkFont, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff', boxShadow: active ? '0 0 0 3px rgba(61,214,92,0.75), 0 2px 6px rgba(0,0,0,0.5)' : '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap', transform: active ? 'scale(1.18)' : 'none', transition: 'transform .12s' }}>{cpIndex[c.id] + 1}</div>
+                </button>
+              )
+            })}
+          </div>
+        )}
+        {spin && (
+          <>
+            <div style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 12, padding: '2px 9px', pointerEvents: 'none' }}>🔄 {frameIdx + 1}/{frames.length}</div>
+            <div style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 11, fontWeight: 600, borderRadius: 12, padding: '3px 12px', pointerEvents: 'none' }}>🔄 ลากซ้าย/ขวาเพื่อหมุนดูรอบเครื่อง</div>
+          </>
+        )}
+      </div>
+      {spin && (
+        <div style={{ display: 'flex', gap: 5, justifyContent: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+          {frames.map((f, i) => (
+            <button key={f.id} onClick={() => setFrameIdx(i)} title={`เฟรม ${i + 1}`}
+              style={{ width: 10, height: 10, borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0, background: i === frameIdx ? 'var(--accent)' : 'var(--border2)' }} />
+          ))}
         </div>
       )}
     </div>
@@ -424,6 +493,9 @@ export default function PMCheckData() {
   const [selectedJig, setSelectedJig] = useState(null)
   const [checklistId, setChecklistId] = useState(null)
   const [checkpoints, setCheckpoints] = useState([])
+  const [frames, setFrames] = useState([])          // jig_images (360° spin) ของอุปกรณ์ที่เลือก
+  const [activeCpId, setActiveCpId] = useState(null) // จุดที่กำลังโฟกัส (sync รูป ↔ checklist)
+  const rowRefs = useRef({})                          // แถวเช็คแต่ละจุด (เลื่อนหาเมื่อคลิกหมุด)
   const [tab, setTab] = useState('record')
   const [results, setResults] = useState({})
   const [notes, setNotes] = useState('')
@@ -499,7 +571,13 @@ export default function PMCheckData() {
 
   useEffect(() => {
     if (!selectedJig || !userId) return
-    setResults({}); setNotes(''); setTab('record')
+    setResults({}); setNotes(''); setTab('record'); setActiveCpId(null)
+    // เฟรมรูป 360° (ถ้าไม่มี jig_images → ใช้รูปหลัก image_path เป็นเฟรมเดียว)
+    supabaseDR.from('jig_images').select('id, image_path, sort').eq('jig_id', selectedJig.id).order('sort').then(({ data }) => {
+      let fr = (data ?? []).map(im => ({ id: im.id, url: getPublicUrl(im.image_path) }))
+      if (!fr.length && selectedJig.image_path) fr = [{ id: 'legacy', url: getPublicUrl(selectedJig.image_path) }]
+      setFrames(fr)
+    })
     getOrCreateChecklist(selectedJig.id, 'mtn', department, userId).then(async (cl) => {
       setChecklistId(cl.id)
       const { data } = await supabaseDR.from('jig_checkpoints').select('*').eq('checklist_id', cl.id).order('sort_order')
@@ -511,6 +589,11 @@ export default function PMCheckData() {
     })
     fetchHistory(selectedJig.id)
   }, [selectedJig, department, userId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // คลิกหมุดบนรูป → เลื่อนไปแถวเช็คของจุดนั้น
+  useEffect(() => {
+    if (activeCpId && rowRefs.current[activeCpId]) rowRefs.current[activeCpId].scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [activeCpId])
 
   const computeOverall = () => {
     let hasFail = false, hasEmpty = false
@@ -686,8 +769,8 @@ export default function PMCheckData() {
             <div style={S.body}>
               {tab === 'record' && (
                 <div style={{ maxWidth: 680, margin: '0 auto' }}>
-                  {jigImg && selectedJig.layout_type !== 'list' && (
-                    <JigPinMap imgUrl={jigImg} checkpoints={checkpoints} />
+                  {frames.length > 0 && selectedJig.layout_type !== 'list' && (
+                    <JigSpinCheck frames={frames} checkpoints={checkpoints} results={results} activeCpId={activeCpId} onPinClick={setActiveCpId} />
                   )}
 
                   {checkpoints.length === 0 ? (
@@ -719,7 +802,15 @@ export default function PMCheckData() {
                               onChangeAttr={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], attr: v } }))}
                               onChangeNote={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], note: v } }))} />
                           )
-                          return <div key={cp.id}>{header}{row}</div>
+                          return (
+                            <div key={cp.id}>
+                              {header}
+                              <div ref={el => { rowRefs.current[cp.id] = el }} onClick={() => setActiveCpId(cp.id)}
+                                style={{ borderRadius: 10, outline: activeCpId === cp.id ? '2px solid var(--accent)' : '2px solid transparent', outlineOffset: 1, transition: 'outline-color .15s' }}>
+                                {row}
+                              </div>
+                            </div>
+                          )
                         })
                       })()}
                       <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="หมายเหตุ (ถ้ามี)..." style={{ marginTop: 8 }} />
