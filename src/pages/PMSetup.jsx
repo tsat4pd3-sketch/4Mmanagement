@@ -507,8 +507,10 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     setModelBusy(true)
     try {
       const glb = await fileToGlb(file)
-      setModel3d({ _glb: glb, format: ext })
-      toast.success('เตรียมโมเดล 3D แล้ว — กดบันทึกเพื่อจัดเก็บ')
+      const mb = glb.size / 1048576
+      setModel3d({ _glb: glb, format: ext, sizeMb: mb })
+      if (mb > 15) toast.info(`โมเดลค่อนข้างใหญ่ (${mb.toFixed(1)} MB) — ประหยัด storage ได้ถ้า export STEP แบบ simplified หรือลดรายละเอียด`)
+      else toast.success(`เตรียมโมเดล 3D แล้ว (${mb.toFixed(1)} MB) — กดบันทึกเพื่อจัดเก็บ`)
     } catch (err) { toast.error(err.message || 'แปลงโมเดลไม่สำเร็จ') }
     finally { setModelBusy(false) }
   }
@@ -855,7 +857,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                 <span style={{ fontSize: 18 }}>🧊</span>
                 <span style={{ flex: 1, fontSize: 12.5, color: 'var(--text)' }}>
                   {model3d._glb ? 'โมเดลใหม่พร้อมบันทึก' : 'มีโมเดล 3D แล้ว'}
-                  <span style={{ color: 'var(--muted)', marginLeft: 6 }}>({(model3d.format || 'glb').toUpperCase()})</span>
+                  <span style={{ color: 'var(--muted)', marginLeft: 6 }}>({(model3d.format || 'glb').toUpperCase()}{model3d.sizeMb != null ? ` · ${model3d.sizeMb.toFixed(1)} MB` : ''})</span>
                 </span>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', cursor: modelBusy ? 'default' : 'pointer' }}>
                   <input type="file" accept={MODEL_ACCEPT} hidden disabled={modelBusy} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; pickModel(f) }} />
