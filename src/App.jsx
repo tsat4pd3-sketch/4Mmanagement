@@ -108,6 +108,14 @@ export function navItemsForGroups(groups, role) {
   return NAV_ITEMS.filter(i => i.to !== '/' && groups.includes(i.group) && canAccessPage(i.to, role));
 }
 
+// สรุปสิทธิ์เข้าหน้าของ role จากตารางสิทธิ์จริง (role_permissions) — ใช้โชว์ในหน้า จัดการผู้ใช้งาน
+// เพื่อไม่ต้อง hardcode รายชื่อโมดูลต่อ role (เคย hardcode แล้ว drift ตามโมดูลที่เพิ่มไม่ทัน)
+export function accessSummaryForRole(role) {
+  const pages = NAV_ITEMS.filter(i => i.to !== '/' && canAccessPage(i.to, role));
+  const groups = NAV_GROUP_ORDER.filter(g => pages.some(p => p.group === g));
+  return { total: pages.length, all: pages.length >= NAV_ITEMS.length - 1, groups };
+}
+
 // เข้าโมดูลจากหน้าหลัก (DeptHub) → กาง sidebar เฉพาะหมวดของโมดูลนั้น หมวดอื่นพับ
 // เพื่อให้เห็นเมนูของโมดูลที่เลือกทันที ไม่ต้องไล่หาในเมนูที่กางหมดทุกหมวด
 // (user ยังพับ/กางเองต่อได้ตามปกติ ค่าที่ตั้งจาก hub จะถูกจำต่อใน localStorage เดียวกัน)

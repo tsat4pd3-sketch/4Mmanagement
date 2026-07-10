@@ -1,15 +1,19 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import { accessSummaryForRole } from '../App';
 
+// desc = "ลักษณะ/ขอบเขตอำนาจ" ของ role เท่านั้น (ไม่เปลี่ยนตามเวลา) — ห้ามพิมพ์รายชื่อโมดูล/หน้า
+// เพราะหน้าเข้าได้จริงเป็น data-driven จาก role_permissions (แสดงอัตโนมัติผ่าน accessSummaryForRole
+// และปรับได้ที่หน้า จัดการสิทธิ์) เคย hardcode รายชื่อโมดูลแล้ว drift ตามโมดูลใหม่ไม่ทัน
 const ROLES = [
-  { value: 'admin',      label: 'Admin',      color: 'var(--accent)', desc: 'ทุกหน้า + ตั้งค่าระบบ + จัดการผู้ใช้' },
-  { value: 'manager',    label: 'Manager',    color: '#f59e0b', desc: 'ภาพรวม + Cross Section + ตั้งค่าไลน์ + พนักงาน' },
-  { value: 'supervisor', label: 'Supervisor', color: '#4d9fff', desc: 'ภาพรวม + Cross Line + ตั้งค่าไลน์ + เช็คชื่อ' },
-  { value: 'leader',     label: 'Leader',     color: '#22c55e', desc: 'ภาพรวม + ไลน์ตัวเอง + พนักงานในไลน์' },
-  { value: 'qa',         label: 'QA',         color: '#c084fc', desc: 'Approve/Reject 4M Changes + ดูรายงาน' },
-  { value: 'document_control', label: 'Document Control', color: '#fb923c', desc: 'ดูแลปฏิทินบริษัท + เอกสารควบคุม (วันทำงาน/วันหยุด/กะ)' },
-  { value: 'sale', label: 'Sale', color: '#38bdf8', desc: 'อัพโหลด Forecast/Order ลูกค้า + ดู Customer Demand & Shipping' },
-  { value: 'display',    label: 'Display',    color: '#94a3b8', desc: '📺 สำหรับจอแสดงผล/TV — ดูได้อย่างเดียว ไม่มี Auto-Logout' },
+  { value: 'admin',      label: 'Admin',      color: 'var(--accent)', desc: 'ทุกอย่าง + จัดการผู้ใช้และสิทธิ์' },
+  { value: 'manager',    label: 'Manager',    color: '#f59e0b', desc: 'ผู้จัดการ — เห็นกว้างทุกโมดูล (จำกัดบางส่วนงานได้ด้วย Section)' },
+  { value: 'supervisor', label: 'Supervisor', color: '#4d9fff', desc: 'หัวหน้าส่วน — จัดการข้อมูลภายใน Section ตัวเอง' },
+  { value: 'leader',     label: 'Leader',     color: '#22c55e', desc: 'หัวหน้าไลน์ — เฉพาะไลน์ + ทีมตัวเอง' },
+  { value: 'qa',         label: 'QA',         color: '#c084fc', desc: 'งานคุณภาพ — อนุมัติ 4M/CQI-15 + QA Center' },
+  { value: 'document_control', label: 'Document Control', color: '#fb923c', desc: 'ปฏิทินบริษัท + เอกสารควบคุม' },
+  { value: 'sale', label: 'Sale', color: '#38bdf8', desc: 'ทีมขาย/จัดส่ง — Forecast, Delivery, Kanban' },
+  { value: 'display',    label: 'Display',    color: '#94a3b8', desc: '📺 จอแสดงผล/TV — ดูอย่างเดียว ไม่มี Auto-Logout' },
 ];
 // sections = ขอบเขตส่วนงาน (เลือกได้หลายอัน ทุก role) — ว่าง = เห็นทุกส่วนงาน
 // profiles.section (เดี่ยว) ยังถูกเขียนเป็นตัวแรกของ sections เสมอ เพื่อให้ rollback โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope
@@ -257,19 +261,27 @@ export default function AddUser() {
         </table>
       </div>
 
-      {/* Role reference */}
+      {/* Role reference — หมวดที่เข้าได้ดึงจากตารางสิทธิ์จริง (role_permissions) ไม่ hardcode */}
       <div style={{ padding: '12px 16px', background: 'var(--bg3)', borderRadius: 10, border: '1px solid var(--border2)' }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>สิทธิ์การเข้าถึง</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 6 }}>
-          {ROLES.map(r => (
-            <div key={r.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: r.color, flexShrink: 0, marginTop: 4 }} />
-              <div>
-                <span style={{ fontSize: 12, fontWeight: 700, color: r.color }}>{r.label}</span>
-                <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{r.desc}</span>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          สิทธิ์การเข้าถึง <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— หมวดที่เข้าได้อ่านจากตารางสิทธิ์ปัจจุบัน ปรับรายหน้าได้ที่เมนู 🔐 จัดการสิทธิ์</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 8 }}>
+          {ROLES.map(r => {
+            const sum = accessSummaryForRole(r.value);
+            return (
+              <div key={r.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: r.color, flexShrink: 0, marginTop: 5 }} />
+                <div style={{ minWidth: 0 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: r.color }}>{r.label}</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{r.desc}</span>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>
+                    {sum.all ? '✅ เข้าได้ทุกหน้า' : sum.total === 0 ? '— ยังไม่เปิดสิทธิ์หน้าไหน' : `เข้าได้ ${sum.total} หน้า: ${sum.groups.join(' · ')}`}
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -311,6 +323,19 @@ export default function AddUser() {
                     <option key={r.value} value={r.value}>{r.label} — {r.desc}</option>
                   ))}
                 </select>
+                {/* สรุปหน้าเข้าได้จริงของ role ที่เลือก — อ่านสดจากตารางสิทธิ์ ไม่ hardcode */}
+                {(() => {
+                  const sum = accessSummaryForRole(form.role);
+                  return (
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5, lineHeight: 1.5 }}>
+                      {sum.all
+                        ? '✅ role นี้เข้าได้ทุกหน้า'
+                        : sum.total === 0
+                          ? '⚠️ role นี้ยังไม่ถูกเปิดสิทธิ์หน้าไหนเลย — ไปเปิดที่เมนู 🔐 จัดการสิทธิ์'
+                          : <>เข้าได้ <b>{sum.total} หน้า</b> ในหมวด: {sum.groups.join(' · ')} — ปรับรายหน้าได้ที่เมนู 🔐 จัดการสิทธิ์</>}
+                    </div>
+                  );
+                })()}
               </div>
 
               <div>
@@ -342,6 +367,7 @@ export default function AddUser() {
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
                   เลือกได้หลายส่วนงาน — user จะเห็นข้อมูลเฉพาะส่วนงานที่ติ๊กไว้ (ใช้ได้กับทุก role เช่น Manager ที่ดูแลเฉพาะบางส่วน) · ไม่ติ๊กเลย = เห็นทุกส่วนงาน
+                  <br />💡 ขอบเขตนี้มีผลกับ<b>ข้อมูลฝ่ายผลิต</b> (พนักงาน/ไลน์/เช็คชื่อ/รายงาน) — สาย Logistic/Store/ขาย <b>ไม่ต้องติ๊ก</b> เพราะโมดูล Logistic ไม่ได้แบ่งข้อมูลตามส่วนงาน ใช้ Role คุมการเข้าหน้าแทน
                 </div>
               </div>
 

@@ -136,6 +136,9 @@ const ROLE_LABELS = {
   supervisor: '🎯 Supervisor',
   leader:     '⭐ Leader',
   qa:         '🔍 QA',
+  document_control: '🗂 Doc Control',
+  sale:       '💼 Sale',
+  display:    '📺 Display',
 };
 
 export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, userRole }) {
