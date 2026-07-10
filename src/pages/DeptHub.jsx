@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { focusSidebarGroups } from '../App';
 
 const DEPT_CSS = `
   @keyframes hub-fade-up {
@@ -50,6 +51,7 @@ const DEPTS = [
     border: 'rgba(61,214,92,0.35)',
     bg: 'rgba(61,214,92,0.06)',
     route: '/dashboard',
+    navGroups: ['ภาพรวม', 'ฝ่ายผลิต'], // หมวด sidebar ที่กางไว้เมื่อเข้าจากการ์ดนี้ (หมวดอื่นพับหมด)
     available: true,
     desc: 'เช็คชื่อ-PPE, จัดการไลน์ผลิต, Daily Report, OEE, Daily PM',
     modules: ['Dashboard', 'เช็คชื่อ & PPE', 'จัดการไลน์ผลิต', 'Daily Report', 'OEE', 'Daily PM ฝ่ายผลิต'],
@@ -64,6 +66,7 @@ const DEPTS = [
     border: 'rgba(245,158,11,0.35)',
     bg: 'rgba(245,158,11,0.06)',
     route: '/line-stock',
+    navGroups: ['Logistic - Store'],
     available: true,
     desc: 'Stock ในไลน์, Kanban Board, เรียกภาชนะ, Customer Demand',
     modules: ['Store management', 'Kanban Board', 'Rack Center', 'Customer Demand & Shipping'],
@@ -78,6 +81,7 @@ const DEPTS = [
     border: 'rgba(251,146,60,0.35)',
     bg: 'rgba(251,146,60,0.06)',
     route: '/pm-check?dept=maintenance',
+    navGroups: ['การตรวจสอบและซ่อมบำรุง'],
     available: true,
     desc: 'ตรวจสอบอุปกรณ์/เครื่องจักร, แผน PM, ซ่อมบำรุง & JIG',
     modules: ['ตรวจสอบอุปกรณ์เครื่องจักร', 'แผน PM', 'PM Setup', 'JIG Maintenance'],
@@ -92,6 +96,7 @@ const DEPTS = [
     border: 'rgba(77,159,255,0.35)',
     bg: 'rgba(77,159,255,0.06)',
     route: '/qa',
+    navGroups: ['ควบคุมคุณภาพ QA/QC'],
     available: true,
     desc: 'Quality Control Center, มาตรฐานการตรวจ & Drawing, CQI-15',
     modules: ['Quality Control Center', 'มาตรฐานการตรวจ & Drawing', 'CQI-15 Event Log'],
@@ -106,6 +111,7 @@ const DEPTS = [
     border: 'rgba(192,132,252,0.35)',
     bg: 'rgba(192,132,252,0.06)',
     route: '/report',
+    navGroups: ['รายงาน'],
     available: true,
     desc: 'รายงานเช็คชื่อ/สรุป, อนุมัติ 4M, Skill Matrix, เอกสาร HR (PDF/CSV)',
     modules: ['รายวัน/รายพนักงาน', '4M Changes', 'Skill Matrix', 'ค่าฝีมือ/ใบบันทึก', 'จองรถ OT'],
@@ -120,6 +126,7 @@ const DEPTS = [
     border: 'rgba(52,211,153,0.35)',
     bg: 'rgba(52,211,153,0.06)',
     route: '/products',
+    navGroups: ['ตั้งค่าโปรแกรม,ฐานข้อมูล'],
     available: true,
     desc: 'Product Master, พนักงาน, ผังไลน์, เครื่องจักร, ตารางกะ, สิทธิ์',
     modules: ['Product Master', 'ฐานข้อมูลพนักงาน', 'ตั้งค่าผังไลน์', 'ฐานข้อมูลเครื่องจักร', 'ตารางกะ', 'ปฏิทินบริษัท'],
@@ -260,7 +267,11 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
               animationDelay: `${0.08 * i}s`,
               animation: 'hub-fade-up 0.55s ease both',
             }}
-            onClick={() => d.available && navigate(d.route)}
+            onClick={() => {
+              if (!d.available) return;
+              if (d.navGroups) focusSidebarGroups(d.navGroups); // กาง sidebar เฉพาะหมวดของโมดูลนี้
+              navigate(d.route);
+            }}
           >
             {/* Coming Soon badge */}
             {!d.available && (
