@@ -58,17 +58,23 @@ async function cadToGroup(file, ext, THREE) {
   // คุมความละเอียด mesh ให้ไฟล์ไม่บวม (สำคัญกับ storage/egress free tier) — ยังคมพอสำหรับดูภาพรวม
   const params = { linearDeflectionType: 'bounding_box_ratio', linearDeflection: 0.002, angularDeflection: 0.4 }
   const result = ['igs', 'iges'].includes(ext) ? occt.ReadIgesFile(buf, params) : occt.ReadStepFile(buf, params)
-  if (!result || !result.success || !result.meshes?.length) throw new Error('อ่านไฟล์ CAD ไม่สำเร็จ หรือไม่มี geometry (STEP/IGES)')
+  if (!result || !result.success) throw new Error('อ่านไฟล์ CAD ไม่สำเร็จ — ไฟล์อาจเสีย หรือไม่ใช่ STEP/IGES ที่ถูกต้อง')
+  if (!result.meshes?.length) throw new Error('ไฟล์นี้ไม่มี geometry แบบตัน (solid/surface) ที่ทำเป็น 3D ได้ — ลอง export เป็น STEP แบบ solid หรือใช้ STL/GLB แทน')
   const group = new THREE.Group()
+  let totalVerts = 0
   for (const m of result.meshes) {
+    const posArr = m.attributes?.position?.array
+    if (!posArr?.length) continue
+    totalVerts += posArr.length / 3
     const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(m.attributes.position.array, 3))
-    if (m.attributes.normal) geo.setAttribute('normal', new THREE.Float32BufferAttribute(m.attributes.normal.array, 3))
-    if (m.index) geo.setIndex(new THREE.BufferAttribute(new Uint32Array(m.index.array), 1))
-    if (!m.attributes.normal) geo.computeVertexNormals()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(posArr, 3))
+    if (m.attributes.normal?.array?.length) geo.setAttribute('normal', new THREE.Float32BufferAttribute(m.attributes.normal.array, 3))
+    if (m.index?.array?.length) geo.setIndex(new THREE.BufferAttribute(new Uint32Array(m.index.array), 1))
+    if (!m.attributes.normal?.array?.length) geo.computeVertexNormals()
     const col = m.color ? new THREE.Color(m.color[0], m.color[1], m.color[2]) : new THREE.Color(0xb4bcc6)
     group.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: col, metalness: 0.15, roughness: 0.65 })))
   }
+  if (totalVerts === 0) throw new Error('แปลงแล้วไม่มีพื้นผิว 3D (อาจเป็นไฟล์ที่มีแต่เส้น/จุด หรือ assembly ว่าง) — ลอง export เป็น STL/GLB จากโปรแกรม CAD แทน')
   return group
 }
 
