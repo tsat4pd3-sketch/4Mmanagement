@@ -181,6 +181,15 @@ git push origin main
 - Rollback: `git revert -m 1 <merge-sha รอบ 14>` + SQL rollback ท้าย migration file
   (drop trigger/function/table — แถวที่ post แล้วลบได้จากหน้า Line Stock, created_by = 'auto')
 
+## รอบแก้ที่ 15 — Rundown Stock tab + ทำให้คลัง FG/STORE หาเจอในหน้า Store
+
+- ไฟล์แก้: `src/pages/CustomerDemand.jsx` (tab ใหม่ 📉 Rundown Stock ในหน้า Delivery),
+  `src/pages/LineStock.jsx` (dropdown กรองไลน์รวมคลังปลายทาง 🏬 + การ์ดคลังขึ้นก่อนไลน์ผลิต)
+- Rundown = Balance FG รายวัน 14 วัน (ตาม format ไฟล์ rundown stock ของหน้างาน):
+  stock พร้อมส่งตอนนี้ − order ค้างส่งสะสมรายวัน, ติดลบ = แดง, ค้างส่งเก่ารวมเข้าวันนี้,
+  จัดอันดับพาร์ทที่จะขาดเร็วสุดขึ้นบน — อ่านอย่างเดียว ไม่มี schema ใหม่
+- Rollback เฉพาะรอบนี้: `git revert -m 1 <merge-sha รอบ 15>`
+
 ## สิ่งที่ต้องรู้ตอน rollback
 
 1. **ยอดสต็อกจาก "ยืนยันส่ง" ต่างกันสองเวอร์ชัน** — เวอร์ชันใหม่บันทึก `line_stock_transactions`
