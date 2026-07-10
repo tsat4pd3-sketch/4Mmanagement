@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useContext, useMemo } from 'react'
+import { useState, useEffect, useRef, useContext } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import imageCompression from 'browser-image-compression'
@@ -11,8 +11,6 @@ import { getOrCreateChecklist, setChecklistFrequency } from '../lib/pmChecklists
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
 import SpinAnnotator from '../components/SpinAnnotator'
-import { fileToGlb, modelExt, modelReason, MODEL_REJECT, MODEL_ACCEPT } from '../lib/model3d'
-import Model3DViewer from '../components/Model3DViewer'
 import useImgBox from '../utils/useImgBox'
 
 const DEPT_COLORS = {
@@ -370,8 +368,6 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [frameIdx, setFrameIdx] = useState(0)
   const [imgBusy, setImgBusy] = useState(false)
   // โมเดล 3D (ถ้ามี) — { path, format } = ของเดิม · _glb = ไฟล์ใหม่ที่แปลงเป็น GLB แล้ว รอ upload
-  const [model3d, setModel3d] = useState(null) // { path?, format, _glb? } | null
-  const [modelBusy, setModelBusy] = useState(false)
   const [activePinKey, setActivePinKey] = useState(null)
 
   const [saving, setSaving] = useState(false)
@@ -412,11 +408,10 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         setUsageLine(plan.usage_source_line ?? '')
       }
     })
-    setModel3d(editJig.model_path ? { path: editJig.model_path, format: editJig.model_format || 'glb' } : null)
   }, [editJig, department, userId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!isEdit) { setCheckpoints([newCheckpoint()]); setModel3d(null) }
+    if (!isEdit) setCheckpoints([newCheckpoint()])
   }, [isEdit])
 
   const machinesByLine = machineOptions.reduce((acc, m) => {
@@ -500,33 +495,6 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     if (activePinKey) setActivePinKey(null)
   }
 
-  // โมเดล 3D — แปลงเป็น GLB ตอนเลือก (STEP/IGES/STL/OBJ → GLB), เก็บ blob รอ upload ตอน save
-  const pickModel = async (file) => {
-    if (!file) return
-    const ext = modelExt(file.name)
-    if (MODEL_REJECT[ext]) { toast.error(modelReason(ext)); return }
-    setModelBusy(true)
-    try {
-      const glb = await fileToGlb(file)
-      const mb = glb.size / 1048576
-      const lbl = mb < 1 ? `${Math.round(mb * 1024)} KB` : `${mb.toFixed(1)} MB`
-      setModel3d({ _glb: glb, format: ext, sizeMb: mb })
-      if (mb > 15) toast.info(`แปลงสำเร็จ (${lbl}) แต่ค่อนข้างใหญ่ — ประหยัด storage ได้ถ้า export STEP แบบ simplified`)
-      else toast.success(`แปลงเป็น 3D สำเร็จ (${lbl}) — ดูพรีวิวด้านล่าง แล้วกดบันทึก`)
-    } catch (err) { toast.error(err.message || 'แปลงโมเดลไม่สำเร็จ') }
-    finally { setModelBusy(false) }
-  }
-  const removeModel = () => setModel3d(null)
-
-  // URL สำหรับพรีวิว 3D ในหน้า setup — ไฟล์ใหม่ใช้ blob, ของเดิมใช้ public url
-  const modelPreviewUrl = useMemo(() => {
-    if (model3d?._glb) return URL.createObjectURL(model3d._glb)
-    if (model3d?.path) return getPublicUrl(model3d.path)
-    return null
-  }, [model3d])
-  useEffect(() => () => { if (modelPreviewUrl?.startsWith('blob:')) URL.revokeObjectURL(modelPreviewUrl) }, [modelPreviewUrl])
-  const modelSizeLabel = model3d?.sizeMb != null ? (model3d.sizeMb < 1 ? `${Math.round(model3d.sizeMb * 1024)} KB` : `${model3d.sizeMb.toFixed(1)} MB`) : ''
-
   const handleSave = async () => {
     if (!name.trim()) { setError('กรุณาใส่ชื่ออุปกรณ์'); return }
     if (addMode === 'workstation' && !isEdit && !machineId) { setError('กรุณาเลือกเครื่องจักรจาก Floor Map'); return }
@@ -553,17 +521,6 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
       }
       const imagePath = layoutType === 'list' ? null : (resolvedFrames[0]?.path ?? null)
 
-      // ── 3D model: upload new GLB / keep existing / clear ──
-      let modelPath = null, modelFormat = null
-      if (model3d?._glb) {
-        modelPath = `models/${jigId}.glb`
-        const { error: mErr } = await supabaseDR.storage.from('jig-images').upload(modelPath, model3d._glb, { upsert: true, contentType: 'model/gltf-binary' })
-        if (mErr) throw mErr
-        modelFormat = model3d.format || 'glb'
-      } else if (model3d?.path) {
-        modelPath = model3d.path; modelFormat = model3d.format || 'glb'
-      }
-
       const { error: jigErr } = await supabaseDR.from('jigs').upsert({
         id: jigId, name: name.trim(), description: description.trim() || null,
         image_path: imagePath,
@@ -573,13 +530,8 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         part_no: partNo.trim() || null, line_name: lineName || null,
         machine_no: machineNo || null, machine_id: machineId || null,
         equipment_type: equipType, equipment_category: equipCategory,
-        model_path: modelPath, model_format: modelFormat,
       })
       if (jigErr) throw jigErr
-      // ลบไฟล์โมเดลเก่าถ้าถูกเอาออก (best-effort หลัง upsert สำเร็จ)
-      if (editJig?.model_path && editJig.model_path !== modelPath) {
-        supabaseDR.storage.from('jig-images').remove([editJig.model_path]).catch(() => {})
-      }
 
       // ── replace jig_images (spin frames) → map each frameKey to its new row id ──
       const frameIdByKey = {}
@@ -859,37 +811,6 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
               {activePinKey && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>✦ หมุนไปเฟรมที่เห็นจุดชัด แล้วคลิกวางตำแหน่ง</p>}
             </div>
           )}
-
-          {/* โมเดล 3D (ทางเลือก) — .glb .gltf .stl .obj .stp/.step .igs/.iges (แปลงเป็น GLB อัตโนมัติ) */}
-          <div>
-            <label style={S.label}>โมเดล 3D (ทางเลือก)</label>
-            {model3d ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)' }}>
-                <span style={{ fontSize: 18 }}>🧊</span>
-                <span style={{ flex: 1, fontSize: 12.5, color: 'var(--text)' }}>
-                  {model3d._glb ? 'โมเดลใหม่พร้อมบันทึก' : 'มีโมเดล 3D แล้ว'}
-                  <span style={{ color: 'var(--muted)', marginLeft: 6 }}>({(model3d.format || 'glb').toUpperCase()}{modelSizeLabel ? ` · ${modelSizeLabel}` : ''})</span>
-                </span>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', cursor: modelBusy ? 'default' : 'pointer' }}>
-                  <input type="file" accept={MODEL_ACCEPT} hidden disabled={modelBusy} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; pickModel(f) }} />
-                  {modelBusy ? 'กำลังแปลง…' : 'เปลี่ยน'}
-                </label>
-                <button onClick={removeModel} disabled={modelBusy} title="เอาโมเดลออก" style={{ background: 'transparent', border: 'none', color: '#e05c4a', cursor: 'pointer', fontSize: 13 }}>✕</button>
-              </div>
-            ) : (
-              <label style={{ display: 'block', textAlign: 'center', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '10px', fontSize: 12.5, color: 'var(--text2)', cursor: modelBusy ? 'default' : 'pointer' }}>
-                <input type="file" accept={MODEL_ACCEPT} hidden disabled={modelBusy} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; pickModel(f) }} />
-                {modelBusy ? '⏳ กำลังแปลงเป็น GLB…' : '🧊 อัปโหลดโมเดล 3D — .glb .gltf .stl .obj .stp .igs'}
-              </label>
-            )}
-            <p style={{ fontSize: 10.5, color: 'var(--muted)', margin: '4px 0 0' }}>รองรับ STEP/IGES/STL/OBJ/GLB (แปลงเป็น GLB ให้อัตโนมัติ) · .prt/.sldprt เปิดบนเว็บไม่ได้ ต้อง export เป็น STEP/IGES ก่อน</p>
-            {/* พรีวิว 3D ทันทีหลังแปลง — ถ้าว่างเปล่าแปลว่าไฟล์แปลงไม่ครบ */}
-            {modelPreviewUrl && (
-              <div style={{ marginTop: 8 }}>
-                <Model3DViewer url={modelPreviewUrl} height={260} />
-              </div>
-            )}
-          </div>
 
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
