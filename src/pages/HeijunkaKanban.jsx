@@ -1048,7 +1048,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
               {rackRequests.map(r => {
                 const st = RACK_STATUS[r.status] || RACK_STATUS.requested;
                 return (
-                  <QueueCard key={r.id} code={r.container_type_id || 'ภาชนะ'} name={null}
+                  <QueueCard key={r.id} code={r.container_name || 'ภาชนะ'} name={null}
                     qty={r.qty} unit="ใบ" destination={r.line_name}
                     statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
                     actionLabel={canOperate ? st.next : null} busy={busy === r.id} onAction={() => onAdvanceRack(r)}
@@ -1154,7 +1154,8 @@ export default function HeijunkaKanban() {
     setLotRequests(lots || []);
     setRawRequests(raws || []);
     setAccumulator(acc || []);
-    setRackRequests(racks || []);
+    // กรองใบยกเลิกออก — ให้เห็นชุดเดียวกับบอร์ดหน้า Rack Center เป๊ะ (เคยโชว์ใบ cancelled เป็น "เรียกแล้ว" หลอกตา)
+    setRackRequests((racks || []).filter(r => r.status !== 'cancelled'));
     setPkgRequests(pkgs || []);
     setWipRequests(wips || []);
     const lm = {};
