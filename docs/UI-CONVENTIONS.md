@@ -41,6 +41,8 @@ const { MK, SUB, showSubPills, ... } = markerScale(renderedMapWidth, { machineCo
 4. Hover card แสดงเฉพาะอุปกรณ์ที่ hover ได้จริง: `window.matchMedia('(hover: hover)').matches` — จอทัชให้ใช้ modal ที่มีปุ่มปิด + popup ทุกชนิดต้องมีทางปิดเสมอ (✕/auto-hide — กติกา backdrop click ดู section 5)
 
 **Component กลาง (2026-07-10):** `src/components/MachineFloorMap.jsx` — ผัง object-fit:contain + marker วงกลม+ป้าย ตามสูตร MK/edge-clamp ข้างบนครบ (โหมด read-only และ editable: คลิกวาง/ลากย้าย/✕ ถอด). หน้า `/mtn-layout` (`MtnMachineLayout.jsx`) ใช้ component นี้ทั้งมุมมองไลน์ผลิตและ Facility — **ขอบวงกลมใช้สีสถานะ PM** (จงใจต่างจาก amber ในตารางข้อ 1 เพราะทั้งผังสื่อสาร "สถานะ" เป็นหลัก) หน้าใหม่ที่ต้องการผัง+marker ให้ reuse `MachineFloorMap` แทนเขียนใหม่
+- **prop `height`** ใช้บังคับผังให้ fit จอเดียว (เช่น `clamp(360px, calc(100vh - 260px), 1100px)`) — ถ้าส่ง height, component จะปิด flex-grow ให้เอง (flex:1 basis 0% จะชนะ height ใน column ทำให้ล้นจอ — เคยพลาดมาแล้ว)
+- **จุดที่ไม่เข้าฟิลเตอร์ (dim)**: opacity 0.1 + ไม่แสดงป้ายชื่อ — ให้เห็นชัดว่าถูกกรองออก (0.28 เดิมแยกไม่ออกจากจุดปกติ = ฟิลเตอร์ดูเหมือนไม่ทำงาน)
 
 หน้าอ้างอิง (ต้นแบบที่ทำถูกแล้ว): `Dashboard.jsx` (modal ผังขยาย + ผังย่อ), `Management.jsx`, `LineSetup.jsx`, `MtnMachineLayout.jsx`
 

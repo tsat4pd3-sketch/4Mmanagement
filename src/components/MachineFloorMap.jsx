@@ -114,7 +114,8 @@ export default function MachineFloorMap({
   }
 
   return (
-    <div style={{ position: 'relative', flex: 1, minHeight: 320, height: height || undefined, background: '#0a0f0b', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border)' }}>
+    // height prop ต้องปิด flex-grow ด้วย — flex:1 (basis 0%) ใน column จะชนะ height ทำให้ผังสูงตามรูปจนล้นจอ
+    <div style={{ position: 'relative', flex: height ? '0 0 auto' : 1, minHeight: 320, height: height || undefined, background: '#0a0f0b', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border)' }}>
       <img ref={imgRef} src={imageUrl} onLoad={recalc} draggable={false}
         onClick={(e) => { if (editable && armed) { const pct = toPct(e); if (pct) onImageClick?.(pct) } }}
         style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', cursor: editable && armed ? 'crosshair' : 'default' }} />
@@ -140,7 +141,8 @@ export default function MachineFloorMap({
                   boxShadow: d ? '0 0 12px rgba(61,214,92,0.8)' : sel ? '0 0 10px rgba(61,214,92,0.6)' : `0 0 8px ${color}66`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   pointerEvents: 'auto', cursor: editable ? (d ? 'grabbing' : 'grab') : 'pointer',
-                  opacity: p.dim ? 0.28 : (d ? 0.92 : 1), zIndex: (sel || d) ? 15 : 5,
+                  // dim (ไม่เข้าฟิลเตอร์แผนก) ต้องจางจนเห็นชัดว่าถูกกรองออก — 0.28 เดิมแยกไม่ออกจากจุดปกติ
+                  opacity: p.dim ? 0.1 : (d ? 0.92 : 1), zIndex: (sel || d) ? 15 : 5,
                 }}>
                 <span style={{ fontSize: iconFont, lineHeight: 1 }}>⚙️</span>
 
@@ -151,7 +153,7 @@ export default function MachineFloorMap({
                 )}
 
                 {/* name pill(s) underneath the circle — ซ่อนเมื่อผังแน่น ยกเว้นถูกเลือก/ลาก/จุดที่ caller บังคับ (เช่น PM เกินกำหนด) */}
-                {(pillsOn || sel || d || p.alwaysLabel) && (
+                {!p.dim && (pillsOn || sel || d || p.alwaysLabel) && (
                 <div style={{ position: 'absolute', top: 'calc(100% + 3px)', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                   <div style={{ maxWidth: size * 2, background: sel ? 'rgba(34,197,94,0.9)' : 'rgba(0,0,0,0.78)', color: '#fff', fontSize: pillFont, fontWeight: 800, lineHeight: 1.2, padding: '1px 6px', borderRadius: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {p.label}
