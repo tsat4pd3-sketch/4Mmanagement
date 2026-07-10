@@ -5,6 +5,8 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { fmtDate } from '../utils/dateFormat';
 import { can } from '../utils/permissions';
+import { inSectionScope } from '../utils/sectionScope';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
 
 /* ─── TimeInput24 — native time picker (spinner arrows + clock UI) ─── */
 function TimeInput24({ value = '', onChange, style = {} }) {
@@ -76,7 +78,7 @@ function getApprovedAt(log) {
 
 /* ─── Main Component ─────────────────────────────────────────── */
 export default function EventLog() {
-  const { role, fullName } = useContext(UserContext);
+  const { role, fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const [tab, setTab] = useState('list');           // list | create
   const [logs, setLogs]           = useState([]);
   const [eventDefs, setEventDefs] = useState([]);
@@ -123,15 +125,30 @@ export default function EventLog() {
       supabase.from('cqi15_event_definitions').select('*').order('event_no'),
       supabase.from('cqi15_check_items').select('*').order('check_no'),
       supabase.from('cqi15_event_check_matrix').select('*'),
-      supabase.from('production_lines').select('id, name').order('name'),
+      supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
     ]);
-    setLogs(logData || []);
+    // mandatory scope ก่อนแสดง (แบบเดียวกับ 4M ใน Report): leader → ครอบครัวไลน์ตัวเอง ·
+    // role ที่ถูกจำกัด sections → เฉพาะไลน์ในส่วนงาน scope — กันเห็น/อนุมัติ event ข้ามส่วนงาน
+    const norm = (s) => (s || '').trim().toLowerCase();
+    let visibleLogs = logData || [];
+    let visibleLines = lineData || [];
+    if (role === 'leader' && userLineId) {
+      const myLine = (lineData || []).find(l => String(l.id) === String(userLineId));
+      const famSet = new Set((myLine ? getLineFamilyNames(lineData || [], myLine.name) : []).map(norm));
+      visibleLogs = visibleLogs.filter(l => famSet.has(norm(l.line_name)));
+      visibleLines = visibleLines.filter(l => famSet.has(norm(l.name)));
+    } else if (scopeSecs.length) {
+      const okSet = new Set((lineData || []).filter(l => inSectionScope(scopeSecs, l.section)).map(l => norm(l.name)));
+      visibleLogs = visibleLogs.filter(l => okSet.has(norm(l.line_name)));
+      visibleLines = visibleLines.filter(l => okSet.has(norm(l.name)));
+    }
+    setLogs(visibleLogs);
     setEventDefs(defData || []);
     setCheckItems(chkData || []);
     setMatrix(matData || []);
-    setLines(lineData || []);
+    setLines(visibleLines);
     setLoading(false);
-  }, []);
+  }, [role, userLineId, scopeSecs]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 

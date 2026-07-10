@@ -2224,7 +2224,7 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
 }
 
 /* ── Shared Filter Bar for employee tabs ── */
-const selSt = { padding: '7px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', minWidth: 120 };
+const selSt = { width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', minWidth: 120 }; // width:auto กัน index.css select{width:100%} ยืดเต็ม toolbar
 
 function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilterLine, filterTeam, setFilterTeam, filterDept, setFilterDept }) {
   const orgSectionList = useOrgSections();

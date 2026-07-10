@@ -2235,7 +2235,7 @@ export default function Dashboard() {
                     if (!moved) break;
                   }
                   // clamp ไม่ให้การ์ด (avatar+ชื่อ+badge) ตกขอบรูป — การ์ดถูก translate(-50%,-50%)
-                  const EDGE_X = MK * 0.9, EDGE_TOP = MK * 0.7, EDGE_BOTTOM = MK * 1.5;
+                  const EDGE_X = MK * 0.55, EDGE_TOP = MK * 0.55, EDGE_BOTTOM = MK * 1.35; // ค่ามาตรฐาน UI-CONVENTIONS §1.3
                   for (const m of pxMarkers) {
                     const fx = Math.min(Math.max(m.px + m.dox, EDGE_X), boxW - EDGE_X);
                     const fy = Math.min(Math.max(m.py + m.doy, EDGE_TOP), boxH - EDGE_BOTTOM);
@@ -2296,24 +2296,24 @@ export default function Dashboard() {
                             <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
                             <div style={{
                               background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
-                              borderRadius: 4, padding: 'clamp(1px, 0.3vw, 4px) clamp(6px, 0.8vw, 12px)',
+                              borderRadius: 4, padding: '2px 8px',
                               fontSize: Math.max(11, Math.round(MK * 0.24)), fontWeight: 700, color: '#fff',
                               whiteSpace: 'nowrap', maxWidth: MK * 1.9,
                               overflow: 'hidden', textOverflow: 'ellipsis',
-                              marginTop: 'clamp(-6px, -0.5vw, -3px)', position: 'relative', zIndex: 1,
+                              marginTop: -4, position: 'relative', zIndex: 1,
                             }}>{shortName}</div>
                             {fit !== null && (
-                              <div style={{ fontSize: Math.max(11, Math.round(MK * 0.2)), fontWeight: 800, color, background: `${color}25`, padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>{fit}%</div>
+                              <div style={{ fontSize: Math.max(11, Math.round(MK * 0.2)), fontWeight: 800, color, background: `${color}25`, padding: '1px 6px', borderRadius: 3, marginTop: -2 }}>{fit}%</div>
                             )}
                             {emp.has_extended_ot && (
-                              <div style={{ fontSize: Math.max(11, Math.round(MK * 0.2)), fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 'clamp(-3px, -0.25vw, -1px)' }}>OT+23</div>
+                              <div style={{ fontSize: Math.max(11, Math.round(MK * 0.2)), fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: '1px 6px', borderRadius: 3, marginTop: -2 }}>OT+23</div>
                             )}
                             {pAlarm && (
                               <div style={{
                                 fontSize: Math.max(11, Math.round(MK * 0.22)), fontWeight: 800, whiteSpace: 'nowrap',
                                 color: pAlarm.kind === 'red' ? '#fca5a5' : '#fde68a',
                                 background: pAlarm.kind === 'red' ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)',
-                                padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 2,
+                                padding: '1px 6px', borderRadius: 3, marginTop: 2,
                               }}>
                                 {pAlarm.icon} {pAlarm.kind === 'red' ? 'PPE ไม่ครบ' : 'รอ 4M'}
                               </div>

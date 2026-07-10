@@ -125,7 +125,8 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, ma
     if (idx >= 0) setFrameIdx(idx)
   }, [activeCpId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const PK = Math.round(Math.max(22, Math.min(40, (imgBox?.rw || 500) * 0.045)))
+  // สูตร balloon ต้องเท่ากับ PMSetup/SpinAnnotator เป๊ะ (docs §5.1 — WYSIWYG จอวางกับจอตรวจ)
+  const PK = Math.round(Math.max(20, Math.min(36, (imgBox?.rw || 500) * 0.04)))
   const pkFont = Math.max(11, Math.round(PK * 0.42))
   const padX = imgBox ? (PK * 0.7 / imgBox.rw) * 100 : 0
   const padTop = imgBox ? ((PK + 4) / imgBox.rh) * 100 : 0
