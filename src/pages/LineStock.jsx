@@ -164,8 +164,10 @@ function StockTab({ role }) {
     filteredStock.forEach(s => {
       (map[s.line_name] = map[s.line_name] || []).push(s);
     });
-    return map;
-  }, [filteredStock]);
+    // คลัง (FG WAREHOUSE/STORE — ไม่ใช่ไลน์ผลิต) ขึ้นก่อนเสมอ หาเจอง่าย
+    const isWh = (n) => !lines.some(l => l.name === n);
+    return Object.fromEntries(Object.entries(map).sort(([a], [b]) => (isWh(b) - isWh(a)) || a.localeCompare(b)));
+  }, [filteredStock, lines]);
 
   const totalLow = filteredStock.filter(s => (s.qty_on_hand || 0) <= 0).length;
 
@@ -269,7 +271,10 @@ function StockTab({ role }) {
         <div style={{ ...card, padding:'10px 16px' }}>
           <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, marginBottom:4 }}>🔍 กรองไลน์</div>
           <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, padding:'5px 8px' }}>
-            <option value="">ทุกไลน์</option>
+            <option value="">ทุกไลน์/คลัง</option>
+            {/* คลังปลายทางที่มีของแต่ไม่ใช่ไลน์ผลิต (เช่น FG WAREHOUSE, STORE) ต้องกรองได้ด้วย */}
+            {[...new Set(stock.map(s => s.line_name))].filter(n => !lines.some(l => l.name === n)).sort()
+              .map(n => <option key={n} value={n}>🏬 {n}</option>)}
             {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
           </select>
         </div>
@@ -288,7 +293,9 @@ function StockTab({ role }) {
               return (
                 <div key={lineName} style={{ ...card, padding:0, overflow:'hidden' }}>
                   <div style={{ padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', background:'var(--bg2)', borderBottom:'1px solid var(--border)' }}>
-                    <div style={{ fontWeight:800, fontSize:15, fontFamily:'var(--font-display)', color:'var(--text)' }}>📍 {lineName}</div>
+                    <div style={{ fontWeight:800, fontSize:15, fontFamily:'var(--font-display)', color:'var(--text)' }}>
+                      {lines.some(l => l.name === lineName) ? '📍' : '🏬'} {lineName}
+                    </div>
                     <div style={{ display:'flex', gap:8, alignItems:'center' }}>
                       {lowParts.length > 0 && <span style={{ fontSize:11, padding:'2px 9px', borderRadius:10, background:'rgba(239,68,68,0.12)', color:'#ef4444', fontWeight:700 }}>⚠️ {lowParts.length} รายการหมด</span>}
                       <span style={{ fontSize:11, color:'var(--muted)' }}>{parts.length} พาร์ท</span>
