@@ -205,13 +205,13 @@ export default function MtnMachineLayout() {
       return prodPoints.map(p => {
         const info = machineInfo[p.machine_no] || { name: '', checklists: [] }
         const c = colorFor(info.checklists)
-        return { id: p.id, pos_top: p.pos_top, pos_left: p.pos_left, label: p.machine_no, sub: info.name, color: c.color, dim: c.dim }
+        return { id: p.id, pos_top: p.pos_top, pos_left: p.pos_left, label: p.machine_no, sub: info.name, color: c.color, dim: c.dim, alwaysLabel: c.worst === 'overdue' }
       })
     }
     return facPoints.map(p => {
       const info = jigInfo[p.jig_id] || { name: '', jig_no: '', checklists: [] }
       const c = colorFor(info.checklists)
-      return { id: p.id, pos_top: p.pos_top, pos_left: p.pos_left, label: info.jig_no || info.name, sub: info.jig_no ? info.name : '', color: c.color, dim: c.dim }
+      return { id: p.id, pos_top: p.pos_top, pos_left: p.pos_left, label: info.jig_no || info.name, sub: info.jig_no ? info.name : '', color: c.color, dim: c.dim, alwaysLabel: c.worst === 'overdue' }
     })
   }, [view, prodPoints, machineInfo, facPoints, jigInfo, dept])
 
@@ -298,7 +298,7 @@ export default function MtnMachineLayout() {
                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, borderTop: i ? '1px dashed var(--border)' : 'none', paddingTop: i ? 6 : 0 }}>
                         <span style={{ width: 9, height: 9, borderRadius: '50%', background: m.color, flexShrink: 0 }} />
                         <span style={{ fontWeight: 700, color: 'var(--text)' }}>{c.eqName ?? selInfo.name}</span>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: '#4d9fff', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>{DEPT_ICON[c.dept]} {DEPT_LABEL[c.dept] ?? c.dept}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>{DEPT_ICON[c.dept]} {DEPT_LABEL[c.dept] ?? c.dept}</span>
                         <span style={{ color: m.color, fontWeight: 700 }}>{m.label}</span>
                         <span style={{ color: 'var(--muted)' }}>{c.nextDue ? `ครบ ${c.nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })}${dd != null ? (dd < 0 ? ` (เกิน ${Math.abs(dd)} วัน)` : ` (อีก ${dd} วัน)`) : ''}` : 'ไม่มีรอบตายตัว'}</span>
                       </div>

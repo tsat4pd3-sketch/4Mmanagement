@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef, useMemo, useContext } from 'react';
+import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
+import { markerScale } from '../utils/markerScale';
+import { toast } from '../components/Toast';
 
 const TABS = [
   { key: 'stations', label: '📍 จุดงาน' },
@@ -50,6 +53,7 @@ export default function LineSetup() {
   const [skillDefs, setSkillDefs] = useState([]);
   const [sectionOpts, setSectionOpts] = useState([]);
   const [activeTab, setActiveTab] = useState('stations'); // 'stations' | 'wip' | 'machines'
+  const [forcePills, setForcePills] = useState(false); // บังคับแสดงป้ายชื่อหมุดรอง (เครื่องจักร/WIP) เมื่อถูกซ่อนอัตโนมัติเพราะผังแน่น
 
   // ลากย้ายจุดที่มีอยู่แล้วได้ (ไม่ต้องลบสร้างใหม่) — drag เกินระยะนิดเดียวถือเป็นการลาก ไม่ใช่คลิกแก้ไข
   const imgRef = useRef(null);
@@ -177,7 +181,7 @@ export default function LineSetup() {
 
   const handleSaveSigners = async () => {
     const lineObj = lines.find(l => l.name === selectedLine);
-    if (!lineObj?.section) return alert('ไลน์นี้ยังไม่ได้กำหนดส่วนงาน (section)');
+    if (!lineObj?.section) return toast.error('ไลน์นี้ยังไม่ได้กำหนดส่วนงาน (section)');
     setSignersSaving(true);
     const { error } = await supabase.from('section_signers').upsert({
       section: lineObj.section,
@@ -186,7 +190,7 @@ export default function LineSetup() {
       hrm_name: signerHRM || null,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'section' });
-    if (error) alert('Error: ' + error.message);
+    if (error) toast.error('Error: ' + error.message);
     setSignersSaving(false);
   };
 
@@ -198,7 +202,7 @@ export default function LineSetup() {
       .from('production_lines')
       .update({ std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0, cost_center: costCenter || null, head_name: signerHead || null })
       .eq('id', lineObj.id);
-    if (error) alert('Error: ' + error.message);
+    if (error) toast.error('Error: ' + error.message);
     else await fetchLines();
     setMpSaving(false);
   };
@@ -213,7 +217,7 @@ export default function LineSetup() {
     if (!name) return;
     setIsAddingLine(true);
     const { error } = await supabase.from('production_lines').insert([{ name, section: newLineSection || null, parent_line_name: newLineParent || null }]);
-    if (error) { alert('Error: ' + error.message); }
+    if (error) { toast.error('Error: ' + error.message); }
     else {
       setNewLineName('');
       setNewLineSection('');
@@ -254,7 +258,7 @@ export default function LineSetup() {
     const name = newName.trim();
     if (!name || name === line.name) { setEditingLineId(null); return; }
     if (lines.some(l => l.id !== line.id && l.name === name)) {
-      alert(`มีไลน์ชื่อ "${name}" อยู่แล้ว`); return;
+      toast.error(`มีไลน์ชื่อ "${name}" อยู่แล้ว`); return;
     }
     const old = line.name;
     // Update production_lines (name + children's parent_line_name)
@@ -281,7 +285,15 @@ export default function LineSetup() {
       const fileExt = file.name.split('.').pop();
       const safeLineName = selectedLine.replace(/[^a-zA-Z0-9]/g, '_');
       const fileName = `layout_${safeLineName}_${Date.now()}.${fileExt}`;
-      const { error: uploadError } = await supabase.storage.from('employee-photos').upload(`layouts/${fileName}`, file);
+      // บีบรูปผังก่อนอัปโหลด — ผังไลน์ต้องคมชัดกว่ารูปคน (1600px / ~0.5MB) · GIF ส่งทั้งไฟล์คงการเคลื่อนไหว
+      const isGif = file.type === 'image/gif' || /^gif$/i.test(fileExt);
+      if (isGif && file.size > 2 * 1024 * 1024) {
+        toast.error('ไฟล์ GIF ต้องไม่เกิน 2MB (กฎเดียวกับ ImageCropModal — GIF บีบไม่ได้)');
+        setIsUploading(false);
+        return;
+      }
+      const uploadBlob = isGif ? file : await imageCompression(file, { maxSizeMB: 0.5, maxWidthOrHeight: 1600 });
+      const { error: uploadError } = await supabase.storage.from('employee-photos').upload(`layouts/${fileName}`, uploadBlob);
       if (uploadError) throw uploadError;
       const { data } = supabase.storage.from('employee-photos').getPublicUrl(`layouts/${fileName}`);
       await supabase.from('line_layouts').upsert({ line_name: selectedLine, image_url: data.publicUrl }, { onConflict: 'line_name' });
@@ -289,11 +301,11 @@ export default function LineSetup() {
       // (เฉพาะผังของตัวเองเท่านั้น — ผังที่ยืมแสดงจากไลน์แม่ห้ามลบ เพราะไลน์แม่ยังใช้อยู่)
       if (!usingParentLayout && layoutImage?.includes('/employee-photos/layouts/')) {
         const oldName = decodeURIComponent(layoutImage.split('/employee-photos/')[1] || '');
-        if (oldName.startsWith('layouts/')) supabase.storage.from('employee-photos').remove([oldName]);
+        if (oldName.startsWith('layouts/')) supabase.storage.from('employee-photos').remove([oldName]).catch(() => {});
       }
       setLayoutImage(data.publicUrl);
       setUsingParentLayout(false);
-    } catch (error) { alert('Error: ' + error.message); }
+    } catch (error) { toast.error('Error: ' + error.message); }
     finally { setIsUploading(false); }
   };
 
@@ -479,7 +491,7 @@ export default function LineSetup() {
   };
 
   const handleSaveStation = async () => {
-    if (!formData.name) return alert('กรุณาระบุชื่อจุดงาน');
+    if (!formData.name) return toast.error('กรุณาระบุชื่อจุดงาน');
     const existingStation = stations.find(s => s.id === formData.id);
     const payload = {
       line_name: selectedLine,
@@ -492,10 +504,10 @@ export default function LineSetup() {
     let stationId = formData.id;
     if (stationId) {
       const { error } = await supabase.from('workstations').update(payload).eq('id', stationId);
-      if (error) return alert('Error: ' + error.message);
+      if (error) return toast.error('Error: ' + error.message);
     } else {
       const { data, error } = await supabase.from('workstations').insert([payload]).select().single();
-      if (error) return alert('Error: ' + error.message);
+      if (error) return toast.error('Error: ' + error.message);
       stationId = data.id;
     }
 
@@ -540,7 +552,7 @@ export default function LineSetup() {
   };
 
   const handleSaveWip = async () => {
-    if (!wipForm.point_name) return alert('กรุณาระบุชื่อจุด WIP');
+    if (!wipForm.point_name) return toast.error('กรุณาระบุชื่อจุด WIP');
     const existing = wipPoints.find(p => p.id === wipForm.id);
     const isMaterial = wipForm.point_type === 'material';
     const payload = {
@@ -561,7 +573,7 @@ export default function LineSetup() {
     const { error } = wipForm.id
       ? await supabase.from('wip_buffer_points').update(payload).eq('id', wipForm.id)
       : await supabase.from('wip_buffer_points').insert([payload]);
-    if (error) return alert('Error: ' + error.message);
+    if (error) return toast.error('Error: ' + error.message);
     fetchLineData();
     setWipTempPos(null);
     setWipForm(emptyWipForm);
@@ -577,7 +589,7 @@ export default function LineSetup() {
   const requestWipReplenish = async (p) => {
     const { data: existing } = await supabase.from('wip_replenish_requests')
       .select('id').eq('wip_point_id', p.id).in('status', ['pending', 'preparing']).limit(1);
-    if (existing?.length) { alert('มีคำขอเติมจุดนี้ค้างอยู่แล้ว รอเจ้าหน้าที่ดำเนินการ'); return; }
+    if (existing?.length) { toast.error('มีคำขอเติมจุดนี้ค้างอยู่แล้ว รอเจ้าหน้าที่ดำเนินการ'); return; }
     const qty = Math.max(0, (p.max_qty ?? 0) - (p.current_qty ?? 0)) || (p.min_qty ?? 0);
     const { error } = await supabase.from('wip_replenish_requests').insert({
       wip_point_id: p.id, line_name: selectedLine, point_name: p.point_name, point_type: p.point_type,
@@ -585,8 +597,8 @@ export default function LineSetup() {
       packaging_type: p.packaging_type || null, packaging_no: p.packaging_no || null,
       request_qty: qty || 1,
     });
-    if (error) { alert(error.message); return; }
-    alert(`🔔 เรียกเติม "${p.point_name}" แล้ว — ดูสถานะได้ที่ Heijunka Kanban → ตู้ Kanban รวม → 🔄 WIP Point`);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`🔔 เรียกเติม "${p.point_name}" แล้ว — ดูสถานะได้ที่ Heijunka Kanban → ตู้ Kanban รวม → 🔄 WIP Point`);
   };
 
   /* ── จุดเครื่องจักร ── */
@@ -596,7 +608,7 @@ export default function LineSetup() {
   };
 
   const handleSaveMachine = async () => {
-    if (!machineForm.machine_no) return alert('กรุณาเลือกเครื่องจักร');
+    if (!machineForm.machine_no) return toast.error('กรุณาเลือกเครื่องจักร');
     const existing = machinePoints.find(p => p.id === machineForm.id);
     const payload = {
       line_name:   selectedLine,
@@ -608,7 +620,7 @@ export default function LineSetup() {
     const { error } = machineForm.id
       ? await supabase.from('machine_points').update(payload).eq('id', machineForm.id)
       : await supabase.from('machine_points').insert([payload]);
-    if (error) return alert('Error: ' + error.message);
+    if (error) return toast.error('Error: ' + error.message);
     fetchLineData();
     setMachineTempPos(null);
     setMachineForm({ id: null, machine_no: '', redundancy_group: '' });
@@ -633,7 +645,7 @@ export default function LineSetup() {
     const { error } = await supabase.from('machine_flow_links').insert([{
       line_name: selectedLine, from_machine_point_id: connectFrom, to_machine_point_id: id,
     }]);
-    if (error) return alert('Error: ' + error.message);
+    if (error) return toast.error('Error: ' + error.message);
     fetchLineData();
   };
 
@@ -643,22 +655,27 @@ export default function LineSetup() {
     if (!error) fetchLineData();
   };
 
-  // ขนาดหมุดวงกลมบนผัง — สเกลตามความกว้างของรูปที่ render จริง (สูตรเดียวกับ Dashboard/Management)
-  // หมุดเป็นวงกลม + ป้ายชื่อ (pill) ด้านล่าง — ชื่อเต็มไม่ถูกตัดเหลือไม่กี่ตัวอักษรเหมือนการ์ดแบบเดิม
-  const MK = Math.round(Math.max(30, Math.min(72, (imgBox?.rw || 800) * 0.05)));
-  const PILL_FONT = Math.max(11, Math.round(MK * 0.26));
+  // ขนาดหมุดวงกลมบนผัง — ใช้สูตรกลาง markerScale (src/utils/markerScale.js) ตัวเดียวกับหน้าแสดงผล
+  // เพื่อให้ WYSIWYG: ขนาดหมุด + พฤติกรรมป้ายชื่อตอนจัดผัง ตรงกับที่ Management/Dashboard แสดงจริงเป๊ะ
+  // MK = จุดงานหลัก · SUB = หมุดรอง (เครื่องจักร/WIP) ย่อตามความแน่น · showSubPills = ป้ายหมุดรองซ่อนอัตโนมัติเมื่อแน่น
+  const { MK, SUB, showSubPills, pillFont: PILL_FONT, subPillFont, badgeFont } =
+    markerScale(imgBox?.rw, { machineCount: machinePoints.length });
+  const pillsOn = showSubPills || forcePills; // ป้ายเครื่องจักร/WIP แสดงเมื่อผังไม่แน่น หรือผู้ใช้กด 🏷️ บังคับเปิด
   const pillSt = {
     background: 'rgba(0,0,0,0.78)', borderRadius: 4, padding: '1px 6px',
     fontWeight: 700, color: '#fff', whiteSpace: 'nowrap',
     overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: MK * 2,
     fontSize: PILL_FONT, lineHeight: 1.35,
   };
+  // ป้ายของหมุดรอง (เครื่องจักร/WIP) — ฟอนต์/ความกว้างสเกลตามวง SUB
+  const subPillSt = { ...pillSt, fontSize: subPillFont, maxWidth: SUB * 2 };
   // แถบป้ายใต้วงกลม — เกาะขอบล่างของวงกลม (อยู่ใน hit area เดียวกับหมุด: คลิก/ลากที่ป้ายได้)
   const pillStackSt = {
     position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
     marginTop: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
   };
   const pinIconSz = Math.round(MK * 0.42);
+  const subPinIconSz = Math.round(SUB * 0.5);
 
   return (
     <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12, height: isMobile ? 'auto' : 'calc(100vh - 40px)' }}>
@@ -676,6 +693,20 @@ export default function LineSetup() {
               {t.label}
             </button>
           ))}
+          {!showSubPills && (
+            <button
+              onClick={() => setForcePills(v => !v)}
+              title="ผังแน่น — ป้ายชื่อเครื่องจักร/WIP ถูกซ่อนอัตโนมัติ (เหมือนหน้าแสดงผลจริง) กดเพื่อบังคับแสดงทั้งหมด"
+              style={{
+                padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                marginLeft: 'auto',
+                border: `1px solid ${forcePills ? 'var(--accent)' : 'var(--border2)'}`,
+                background: forcePills ? 'var(--accent-dim)' : 'var(--bg2)',
+                color: forcePills ? 'var(--accent)' : 'var(--text2)',
+              }}>
+              🏷️ ป้ายชื่อ
+            </button>
+          )}
         </div>
       )}
     <div style={{
@@ -764,7 +795,7 @@ export default function LineSetup() {
                         {st.station_name}
                       </div>
                       {st.skill_allowance && (
-                        <div style={{ ...pillSt, fontSize: Math.max(9, Math.round(MK * 0.2)), color: '#22c55e', fontWeight: 800 }}>
+                        <div style={{ ...pillSt, fontSize: badgeFont, color: '#22c55e', fontWeight: 800 }}>
                           💰 {st.skill_allowance_type || ''}
                         </div>
                       )}
@@ -794,10 +825,10 @@ export default function LineSetup() {
                   <div
                     key={p.id}
                     onMouseDown={(e) => startDrag(e, 'wip', p.id)}
-                    title={canEdit ? 'คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง' : p.point_name}
+                    title={canEdit ? `${p.point_name} — คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง` : p.point_name}
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
-                      width: MK, height: MK, borderRadius: '50%',
+                      width: SUB, height: SUB, borderRadius: '50%',
                       border: isSelected ? '2px solid var(--green)' : isLow ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.75)',
                       backgroundColor: isLow ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
@@ -807,22 +838,24 @@ export default function LineSetup() {
                       zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
                   >
-                    <span style={{ fontSize: pinIconSz, lineHeight: 1 }}>📦</span>
-                    <div style={pillStackSt}>
-                      <div style={{ ...pillSt, color: isLow ? '#fecaca' : '#fff' }}>
-                        {p.point_name}
+                    <span style={{ fontSize: subPinIconSz, lineHeight: 1 }}>📦</span>
+                    {(pillsOn || isSelected || isLow) && (
+                      <div style={pillStackSt}>
+                        <div style={{ ...subPillSt, color: isLow ? '#fecaca' : '#fff' }}>
+                          {p.point_name}
+                        </div>
+                        <div style={{ ...subPillSt, fontWeight: isLow ? 800 : 700, color: isLow ? '#fca5a5' : '#a3a3a3' }}>
+                          {p.current_qty ?? 0}/{p.min_qty ?? 0}–{p.max_qty ?? 0}{isLow ? ' ⚠️ ต่ำ' : ''}
+                        </div>
                       </div>
-                      <div style={{ ...pillSt, fontSize: Math.max(9, Math.round(MK * 0.2)), fontWeight: isLow ? 800 : 700, color: isLow ? '#fca5a5' : '#a3a3a3' }}>
-                        {p.current_qty ?? 0}/{p.min_qty ?? 0}–{p.max_qty ?? 0}{isLow ? ' ⚠️ ต่ำ' : ''}
-                      </div>
-                    </div>
+                    )}
                   </div>
                 );
               })}
               {activeTab === 'wip' && wipTempPos && (
                 <div style={{
                   position: 'absolute', top: wipTempPos.top, left: wipTempPos.left, transform: 'translate(-50%, -50%)',
-                  width: MK, height: MK, borderRadius: '50%',
+                  width: SUB, height: SUB, borderRadius: '50%',
                   border: '1px dashed var(--accent)', backgroundColor: 'rgba(61,214,92,0.1)',
                   zIndex: 10, pointerEvents: 'none',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -860,10 +893,10 @@ export default function LineSetup() {
                   <div
                     key={p.id}
                     onMouseDown={(e) => startDrag(e, 'machine', p.id)}
-                    title={!canEdit ? p.machine_no : connectMode ? 'คลิกเพื่อเชื่อมต่อสายงาน' : 'คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง'}
+                    title={!canEdit ? p.machine_no : connectMode ? `${p.machine_no} — คลิกเพื่อเชื่อมต่อสายงาน` : `${p.machine_no} — คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง`}
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
-                      width: MK, height: MK, borderRadius: '50%',
+                      width: SUB, height: SUB, borderRadius: '50%',
                       border: isConnectSource ? '2px solid #f97316' : isSelected ? '2px solid var(--green)' : p.redundancy_group ? '2px dashed #a855f7' : '2px solid rgba(255,255,255,0.75)',
                       backgroundColor: isConnectSource ? 'rgba(249,115,22,0.22)' : isSelected ? 'rgba(34,197,94,0.18)' : p.redundancy_group ? 'rgba(168,85,247,0.15)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
@@ -873,29 +906,31 @@ export default function LineSetup() {
                       zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
                   >
-                    <span style={{ fontSize: pinIconSz, lineHeight: 1 }}>⚙️</span>
-                    <div style={pillStackSt}>
-                      <div style={{ ...pillSt, color: isConnectSource ? '#f97316' : isSelected ? 'var(--green)' : '#fff' }}>
-                        {p.machine_no}
+                    <span style={{ fontSize: subPinIconSz, lineHeight: 1 }}>⚙️</span>
+                    {(pillsOn || isSelected || isConnectSource) && (
+                      <div style={pillStackSt}>
+                        <div style={{ ...subPillSt, color: isConnectSource ? '#f97316' : isSelected ? 'var(--green)' : '#fff' }}>
+                          {p.machine_no}
+                        </div>
+                        {mc?.machine_name && (
+                          <div style={{ ...subPillSt, color: '#a3a3a3' }}>
+                            {mc.machine_name}
+                          </div>
+                        )}
+                        {p.redundancy_group && (
+                          <div style={{ ...subPillSt, color: '#d8b4fe' }}>
+                            🔀 {p.redundancy_group}
+                          </div>
+                        )}
                       </div>
-                      {mc?.machine_name && (
-                        <div style={{ ...pillSt, fontSize: Math.max(9, Math.round(MK * 0.2)), color: '#a3a3a3' }}>
-                          {mc.machine_name}
-                        </div>
-                      )}
-                      {p.redundancy_group && (
-                        <div style={{ ...pillSt, fontSize: Math.max(9, Math.round(MK * 0.2)), color: '#d8b4fe' }}>
-                          🔀 {p.redundancy_group}
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </div>
                 );
               })}
               {activeTab === 'machines' && machineTempPos && (
                 <div style={{
                   position: 'absolute', top: machineTempPos.top, left: machineTempPos.left, transform: 'translate(-50%, -50%)',
-                  width: MK, height: MK, borderRadius: '50%',
+                  width: SUB, height: SUB, borderRadius: '50%',
                   border: '1px dashed var(--accent)', backgroundColor: 'rgba(61,214,92,0.1)',
                   zIndex: 10, pointerEvents: 'none',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -954,8 +989,8 @@ export default function LineSetup() {
                   }}
                   onClick={() => { setSelectedLine(l.name); setTempPos(null); setFormData({ id: null, name: '', requirements: {} }); }}
                 >
-                  {l._isChild && <span style={{ fontSize: 10, color: 'var(--muted)', flexShrink: 0 }}>└</span>}
-                  {l._isParent && <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>▼</span>}
+                  {l._isChild && <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>└</span>}
+                  {l._isParent && <span style={{ fontSize: 11, color: 'var(--accent)', flexShrink: 0 }}>▼</span>}
                   {editingLineId === l.id ? (
                     <input
                       autoFocus
@@ -972,7 +1007,7 @@ export default function LineSetup() {
                   ) : (
                     <span style={{ fontSize: 13, flex: 1, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {l.name}
-                      {l._orphan && <span style={{ fontSize: 9, color: '#ef4444', marginLeft: 4 }}>!parent missing</span>}
+                      {l._orphan && <span style={{ fontSize: 11, color: '#ef4444', marginLeft: 4 }}>!parent missing</span>}
                     </span>
                   )}
                   {editingLineId === l.id ? (
@@ -991,7 +1026,7 @@ export default function LineSetup() {
                         value={l.section || ''}
                         onClick={e => e.stopPropagation()}
                         onChange={e => { e.stopPropagation(); handleUpdateSection(l, e.target.value); }}
-                        style={{ fontSize: 10, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0, maxWidth: 68 }}
+                        style={{ fontSize: 11, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0, maxWidth: 68 }}
                       >
                         <option value="">Section</option>
                         {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
@@ -1003,7 +1038,7 @@ export default function LineSetup() {
                           onClick={e => e.stopPropagation()}
                           onChange={e => { e.stopPropagation(); handleUpdateParent(l, e.target.value); }}
                           title="ไลน์หลัก (parent)"
-                          style={{ fontSize: 10, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: l.parent_line_name ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', flexShrink: 0, maxWidth: 76 }}
+                          style={{ fontSize: 11, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: l.parent_line_name ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', flexShrink: 0, maxWidth: 76 }}
                         >
                           <option value="">ไม่มีหลัก</option>
                           {lines.filter(p => p.name !== l.name && !p.parent_line_name).map(p => (
@@ -1084,8 +1119,8 @@ export default function LineSetup() {
                       return (
                         <div key={catKey}>
                           <div style={{ marginBottom: 4, paddingBottom: 3, borderBottom: `1px solid ${catMeta.color}33`, display: 'flex', alignItems: 'baseline', gap: 7 }}>
-                            <span style={{ fontSize: 10, fontWeight: 800, color: catMeta.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{catMeta.icon} {catMeta.label}</span>
-                            {catMeta.desc && <span style={{ fontSize: 9, color: catMeta.color, opacity: 0.7 }}>{catMeta.desc}</span>}
+                            <span style={{ fontSize: 11, fontWeight: 800, color: catMeta.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{catMeta.icon} {catMeta.label}</span>
+                            {catMeta.desc && <span style={{ fontSize: 11, color: catMeta.color, opacity: 0.7 }}>{catMeta.desc}</span>}
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                             {catSkills.map(skill => {
@@ -1109,7 +1144,7 @@ export default function LineSetup() {
                                         value={formData.requirements[skill.name]}
                                         onChange={e => setSkillScore(skill.name, e.target.value)}
                                         style={{ width: 46, fontSize: 11, padding: '2px 4px', textAlign: 'center' }} />
-                                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>%</span>
+                                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>%</span>
                                     </div>
                                   )}
                                 </div>
@@ -1130,7 +1165,7 @@ export default function LineSetup() {
                     style={{ width: 16, height: 16, accentColor: '#22c55e' }} />
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: formData.skill_allowance ? '#22c55e' : 'var(--text2)' }}>💰 จุดงานได้ค่าฝีมือ</div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>พนักงานที่ถูก assign จุดนี้จะได้ค่าฝีมือรายวัน</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>พนักงานที่ถูก assign จุดนี้จะได้ค่าฝีมือรายวัน</div>
                   </div>
                 </label>
                 {formData.skill_allowance && (
@@ -1172,9 +1207,9 @@ export default function LineSetup() {
                   <div onClick={() => canEdit && editStation(st)} style={{ cursor: canEdit ? 'pointer' : 'default', flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 5 }}>
                       {st.station_name}
-                      {st.skill_allowance && <span style={{ fontSize: 10, background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>💰 ค่าฝีมือ{st.skill_allowance_type ? ` (${st.skill_allowance_type})` : ''}</span>}
+                      {st.skill_allowance && <span style={{ fontSize: 11, background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>💰 ค่าฝีมือ{st.skill_allowance_type ? ` (${st.skill_allowance_type})` : ''}</span>}
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                       {reqs.length > 0
                         ? reqs.map(r => {
                             const def = skillDefs.find(d => d.name === r.skill_name);
@@ -1291,9 +1326,9 @@ export default function LineSetup() {
                     <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div onClick={() => canEdit && editWipPoint(p)} style={{ cursor: canEdit ? 'pointer' : 'default', flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
-                          {p.point_type === 'packaging' ? '📦' : '🧱'} {p.point_name} {isLow && <span style={{ fontSize: 10, background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>⚠️ ต่ำกว่า min</span>}
+                          {p.point_type === 'packaging' ? '📦' : '🧱'} {p.point_name} {isLow && <span style={{ fontSize: 11, background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>⚠️ ต่ำกว่า min</span>}
                         </div>
-                        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                           {p.point_type === 'packaging'
                             ? `${p.packaging_type ? `${p.packaging_type} · ` : ''}${p.packaging_no ? `${p.packaging_no} · ` : ''}`
                             : `${p.material_category ? `cat.${p.material_category} · ` : ''}${p.mat_no ? `${p.mat_no} · ` : ''}`}
@@ -1327,7 +1362,7 @@ export default function LineSetup() {
                   background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 14 }}>
                 <div>
                   <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>🏭 ฐานข้อมูลเครื่องจักร</div>
-                  <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 1 }}>{drMachines.length} เครื่องในไลน์นี้ · เพิ่ม/แก้ไข/กำหนดประเภทเครื่องจักรที่นี่</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>{drMachines.length} เครื่องในไลน์นี้ · เพิ่ม/แก้ไข/กำหนดประเภทเครื่องจักรที่นี่</div>
                 </div>
                 <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700, flexShrink: 0 }}>เปิดหน้า ↗</span>
               </a>
@@ -1369,7 +1404,7 @@ export default function LineSetup() {
                         <option key={g} value={g} />
                       ))}
                     </datalist>
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
                       ใส่ชื่อกลุ่มเดียวกันให้เครื่องที่ทำงานคู่ขนานแบบ balance cycle time (เช่น Laser1/2/3) — ถ้าตัวใดหยุด ระบบจะลดกำลังผลิตตามสัดส่วน (1/จำนวนเครื่องในกลุ่ม) ไม่ใช่หยุดทั้งไลน์
                     </div>
                   </div>
@@ -1398,9 +1433,9 @@ export default function LineSetup() {
                     <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div onClick={() => canEdit && editMachinePoint(p)} style={{ cursor: canEdit ? 'pointer' : 'default', flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{p.machine_no}</div>
-                        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{mc?.machine_name || ''}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{mc?.machine_name || ''}</div>
                         {p.redundancy_group && (
-                          <div style={{ fontSize: 10, color: '#a855f7', fontWeight: 700, marginTop: 2 }}>🔀 {p.redundancy_group}</div>
+                          <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 700, marginTop: 2 }}>🔀 {p.redundancy_group}</div>
                         )}
                       </div>
                       {canEdit && <button onClick={() => deleteMachinePoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
@@ -1430,7 +1465,7 @@ export default function LineSetup() {
                   </button>
                   )}
                 </div>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
                   เชื่อมเครื่องจักรที่ทำงาน <b>ต่อเนื่องกัน (Sequential)</b> — ถ้าเครื่องหนึ่งหยุด อีกเครื่องในสายต้องหยุดด้วย<br />
                   เครื่องที่ <b>ไม่เชื่อม</b> ถือว่าทำงานแบบ Parallel — Downtime จะกระทบแค่เครื่องนั้นเครื่องเดียว
                 </div>
@@ -1525,7 +1560,7 @@ export default function LineSetup() {
           </h4>
           {lines.find(l => l.name === selectedLine)?.section ? (
             <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 14 }}>
-              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
                 ใช้ดึงอัตโนมัติในใบสรุปค่าฝีมือ — กรอกครั้งเดียวต่อส่วนงาน ใช้ร่วมกันทุกไลน์ในส่วนนี้ (หัวหน้างานแยกตามไลน์ ตั้งค่าด้านบนในช่อง Standard Manpower)
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>

@@ -114,6 +114,11 @@ const { can } = usePerms();               // bind role จาก UserContext ใ
 ```
 Phase 2 จะไล่แทนที่ `hasPermission('manage_master_data', role)` และ `['admin',...].includes(role)` ทีละหน้า
 
+ความคืบหน้า Phase 2 (2026-07-10): Management.jsx — hardcode role array 3 จุด (ปุ่มกำหนด/ถอด/มอบหมาย
+งานนอกไลน์) แทนด้วย `can('management','assign_special_task')` แล้ว (migration:
+`20260710_management_special_task_permission.sql` — apply กับ DB จริงแล้ว seed ตรงพฤติกรรมเดิม a/m/s/l)
+· ที่เหลือคือ `manage_master_data` 3 จุด (Management ×2, Report ×1) ตามแผนเดิม
+
 ### 4.3 Cache & การมีผลทันที
 - `loadPermissions()` โหลดครั้งเดียวตอน login (มีอยู่แล้ว)
 - Phase 1: หน้า จัดการสิทธิ์ save → `loadPermissions(true)` + Supabase Realtime broadcast บน `role_permissions` → client อื่น reload cache → มีผลโดยไม่ต้อง refresh

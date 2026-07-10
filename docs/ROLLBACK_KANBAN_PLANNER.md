@@ -167,6 +167,41 @@ git push origin main
 - Rollback โค้ด: `git revert -m 1 <merge-sha รอบ 13>` — ถ้า revert โค้ดโดยไม่ลบแถว DB
   ก็ไม่มีผลข้างเคียง (โค้ดเก่าไม่อ่าน key พวกนี้)
 
+## รอบแก้ที่ 14 — รับงานเข้า stock อัตโนมัติเมื่อปิดออเดอร์ (FG → warehouse, child → store)
+
+- **DB (โปรเจค DR):** migration `20260710_stock_inflow_on_confirm.sql` —
+  ตาราง `stock_inflow_rules` (กฎปลายทาง: prefix 1 → FG WAREHOUSE, prefix 2 → STORE, ปรับได้) +
+  trigger `trg_post_confirmed_output` บน `prod_orders` (สแกนปิดออเดอร์ → insert
+  `line_stock_transactions` type issue เข้าปลายทางทันที ไม่ต้องรอปิดกะ, กันซ้ำด้วย `ref_order_id`) +
+  คอลัมน์ใหม่ `line_stock_transactions.ref_order_id/ref_session_id` (nullable)
+- ไฟล์แก้: `src/pages/LineStock.jsx` — tab ใหม่ ⚙️ รับเข้าอัตโนมัติ (CRUD กฎ, สิทธิ์แก้ =
+  `can('line_stock','manage_rounds')` เดียวกับจัดการรอบจัดส่ง)
+- วงจรครบ: ปิดออเดอร์ → FG เข้า warehouse → Shipping Chart เห็น stock พร้อมส่ง →
+  กด "ส่งแล้ว" หักออกอัตโนมัติ (ของเดิมรอบ 8)
+- Rollback: `git revert -m 1 <merge-sha รอบ 14>` + SQL rollback ท้าย migration file
+  (drop trigger/function/table — แถวที่ post แล้วลบได้จากหน้า Line Stock, created_by = 'auto')
+
+## รอบแก้ที่ 15 — Rundown Stock tab + ทำให้คลัง FG/STORE หาเจอในหน้า Store
+
+- ไฟล์แก้: `src/pages/CustomerDemand.jsx` (tab ใหม่ 📉 Rundown Stock ในหน้า Delivery),
+  `src/pages/LineStock.jsx` (dropdown กรองไลน์รวมคลังปลายทาง 🏬 + การ์ดคลังขึ้นก่อนไลน์ผลิต)
+- Rundown = Balance FG รายวัน 14 วัน (ตาม format ไฟล์ rundown stock ของหน้างาน):
+  stock พร้อมส่งตอนนี้ − order ค้างส่งสะสมรายวัน, ติดลบ = แดง, ค้างส่งเก่ารวมเข้าวันนี้,
+  จัดอันดับพาร์ทที่จะขาดเร็วสุดขึ้นบน — อ่านอย่างเดียว ไม่มี schema ใหม่
+- Rollback เฉพาะรอบนี้: `git revert -m 1 <merge-sha รอบ 15>`
+
+## รอบแก้ที่ 16 — Rundown Stock เป็นหน้าแยก + seed ยอดตั้งต้น + แก้ป้าย "ไม่ระ"
+
+- **Rundown Stock ย้ายจาก tab ในหน้า Delivery → หน้าใหม่ `/rundown-stock`**
+  (`src/pages/RundownStock.jsx` · เมนูอยู่ถัดจาก Planner & Sales กลุ่ม Logistic - Store)
+  — tab ในหน้า Delivery ถูกถอดออก · สิทธิ์ seed copy จาก `/planner-sales`
+  (ถอน: `delete from role_permissions where permission_key='page:/rundown-stock';`)
+- แก้บั๊กการ์ดรอบส่งที่ไม่ระบุเวลาโชว์ "ไม่ระ" (โดน slice) → "⏳ ไม่ระบุเวลา"
+- **Seed ยอด stock ตั้งต้น (DR):** แถว `line_stock_transactions` type adjust/approved
+  เข้า `FG WAREHOUSE` 7 พาร์ทจากไฟล์ Rundown Stock ของหน้างาน (`created_by = 'seed:rundown'`,
+  note ระบุ sheet ต้นทาง) — ลบทั้งชุด: `delete from line_stock_transactions where created_by='seed:rundown';`
+- Rollback โค้ด: `git revert -m 1 <merge-sha รอบ 16>`
+
 ## สิ่งที่ต้องรู้ตอน rollback
 
 1. **ยอดสต็อกจาก "ยืนยันส่ง" ต่างกันสองเวอร์ชัน** — เวอร์ชันใหม่บันทึก `line_stock_transactions`

@@ -20,6 +20,7 @@ const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
 const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
 const PlannerSales   = lazy(() => import('./pages/PlannerSales'));
+const RundownStock   = lazy(() => import('./pages/RundownStock'));
 const Report       = lazy(() => import('./pages/Report'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
@@ -72,6 +73,7 @@ const NAV_ITEMS = [
   { to: '/heijunka',       icon: '🎴', label: 'Kanban Board',             roles: null, group: 'Logistic - Store' },
   { to: '/rack-center',    icon: '🗃️', label: 'Rack Center management',  roles: null, group: 'Logistic - Store' },
   { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           roles: null, group: 'Logistic - Store' },
+  { to: '/rundown-stock',   icon: '📉', label: 'Rundown Stock',             roles: null, group: 'Logistic - Store' },
   { to: '/customer-demand', icon: '🚚', label: 'Delivery',                  roles: null, group: 'Logistic - Store' },
 
   { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
@@ -98,6 +100,17 @@ const NAV_ITEMS = [
 ];
 
 const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'รายงาน', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
+
+// เข้าโมดูลจากหน้าหลัก (DeptHub) → กาง sidebar เฉพาะหมวดของโมดูลนั้น หมวดอื่นพับ
+// เพื่อให้เห็นเมนูของโมดูลที่เลือกทันที ไม่ต้องไล่หาในเมนูที่กางหมดทุกหมวด
+// (user ยังพับ/กางเองต่อได้ตามปกติ ค่าที่ตั้งจาก hub จะถูกจำต่อใน localStorage เดียวกัน)
+export function focusSidebarGroups(groups) {
+  const collapsed = {};
+  NAV_GROUP_ORDER.forEach(g => { if (!groups.includes(g)) collapsed[g] = true; });
+  try { localStorage.setItem('nav_collapsed_groups', JSON.stringify(collapsed)); } catch { /* ignore */ }
+  // Sidebar mount อยู่ตลอด — แจ้งให้ sync state จาก localStorage ใหม่
+  window.dispatchEvent(new Event('nav-groups-changed'));
+}
 
 /* ─── Role Route Guard ────────────────────────────────────────────────
    สิทธิ์เข้าถึงแต่ละหน้าเก็บอยู่ใน role_permissions (ตาราง) ไม่ใช่ array ในโค้ดอีกต่อไป
@@ -144,7 +157,7 @@ function SplashScreen({ onDone }) {
             color: 'rgba(255,255,255,0.9)',
           }}>Thai Summit Group</div>
           <div style={{
-            fontFamily: 'var(--font-display)', fontSize: 10,
+            fontFamily: 'var(--font-display)', fontSize: 11,
             letterSpacing: '2px', textTransform: 'uppercase',
             color: 'rgba(255,255,255,0.35)',
           }}>VX Production System</div>
@@ -190,6 +203,15 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
 
   useEffect(() => { setSigUrl(userSignatureUrl); }, [userSignatureUrl]);
 
+  // hub สั่งโฟกัสหมวด (focusSidebarGroups) → โหลดค่าพับ/กางจาก localStorage ใหม่
+  useEffect(() => {
+    const sync = () => {
+      try { setCollapsedGroups(JSON.parse(localStorage.getItem('nav_collapsed_groups') || '{}')); } catch { /* ignore */ }
+    };
+    window.addEventListener('nav-groups-changed', sync);
+    return () => window.removeEventListener('nav-groups-changed', sync);
+  }, []);
+
   const toggleGroup = (g) => {
     setCollapsedGroups(prev => {
       const next = { ...prev, [g]: !prev[g] };
@@ -229,8 +251,8 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <img src={tsLogo} alt="Thai Summit Group" width={28} height={28} style={{ borderRadius: 3, flexShrink: 0 }} />
             <div>
-              <div style={{ fontSize: 10, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
-              <div style={{ fontSize: 9, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>ESM · Shopfloor</div>
+              <div style={{ fontSize: 11, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
+              <div style={{ fontSize: 11, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>ESM · Shopfloor</div>
             </div>
           </div>
           <button
@@ -258,11 +280,11 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
                     background: 'none', border: 'none', cursor: 'pointer', padding: '8px 10px 4px',
                     color: groupHasActive ? 'var(--accent)' : 'var(--muted)',
-                    fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase',
+                    fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase',
                   }}
                 >
                   <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</span>
-                  <span style={{ fontSize: 10, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
+                  <span style={{ fontSize: 11, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
                 </button>
                 {!collapsed && items.map(item => (
                   <Link
@@ -325,7 +347,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
               </div>
             </div>
             <div style={{
-              fontSize: 10, fontWeight: 700, padding: '2px 6px',
+              fontSize: 11, fontWeight: 700, padding: '2px 6px',
               borderRadius: 4, flexShrink: 0,
               background: userRole === 'admin' ? 'var(--accent-dim)' :
                           userRole === 'manager' ? 'var(--accent2-dim)' :
@@ -485,8 +507,8 @@ function NotificationBell({ userId }) {
           <span style={{
             position: 'absolute', top: -4, right: -4,
             background: '#ef4444', color: '#fff',
-            fontSize: 10, fontWeight: 800,
-            minWidth: 17, height: 17, borderRadius: 9,
+            fontSize: 11, fontWeight: 800,
+            minWidth: 18, height: 18, borderRadius: 9,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             padding: '0 3px', lineHeight: 1,
           }}>
@@ -536,7 +558,7 @@ function NotificationBell({ userId }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: n.is_read ? 400 : 700, color: 'var(--text)', lineHeight: 1.4 }}>{n.title}</div>
                     {n.body && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.body}</div>}
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
                       {fmtDateTime(n.created_at)}
                     </div>
                   </div>
@@ -752,7 +774,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
           flex: 1,
           marginLeft,
           minHeight: '100vh',
-          paddingTop: 60,
+          paddingTop: 14,
           background: 'var(--bg)',
           transition: 'margin-left 0.3s cubic-bezier(0.4,0,0.2,1)',
           overflow: 'auto',
@@ -831,6 +853,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/planner-sales" element={
                 <RoleRoute path="/planner-sales" userRole={role}><PlannerSales /></RoleRoute>
+              } />
+              <Route path="/rundown-stock" element={
+                <RoleRoute path="/rundown-stock" userRole={role}><RundownStock /></RoleRoute>
               } />
               <Route path="/rack-center" element={
                 <RoleRoute path="/rack-center" userRole={role}><RackCenter /></RoleRoute>

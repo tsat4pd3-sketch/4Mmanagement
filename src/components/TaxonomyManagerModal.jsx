@@ -91,7 +91,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{r.label}</span>
                     <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{r.code}</span>
-                    {!r.is_active && <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 6 }}>(ปิดใช้งาน)</span>}
+                    {!r.is_active && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>(ปิดใช้งาน)</span>}
                   </div>
                   <button onClick={() => openEdit(r)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>แก้ไข</button>
                   <button onClick={() => remove(r)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '1px solid rgba(224,92,74,0.3)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', cursor: 'pointer' }}>ลบ</button>

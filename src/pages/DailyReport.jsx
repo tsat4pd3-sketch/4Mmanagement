@@ -95,9 +95,14 @@ function TimeInput24({ value = '', onChange, style = {} }) {
 
 /* ─── Helpers ────────────────────────────────────────────────── */
 // ✅ local Thai date — never toISOString() which returns UTC
-const today = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const localDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const today = () => localDateStr(new Date());
+// work date ตามกฎ CLAUDE.md: ก่อน 08:00 = วันก่อนหน้า (กะดึกข้ามวัน) — ใช้กับทุกจุดที่เป็น work_date semantics
+// ส่ง Date เข้าไปได้เพื่อหา work date ของเวลานั้นๆ (default = ตอนนี้)
+const workDate = (at = new Date()) => {
+  const d = new Date(at);
+  if (d.getHours() < 8) d.setDate(d.getDate() - 1);
+  return localDateStr(d);
 };
 const nowTime = () => new Date().toTimeString().slice(0, 5);
 // กะเช้าเริ่ม 08:00, กะดึกเริ่ม 20:00 — ใช้เป็น default start_time เสมอ
@@ -179,7 +184,7 @@ function LiveTab({ role }) {
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
 
   const [showOpen, setShowOpen] = useState(false);
-  const [openForm, setOpenForm] = useState(() => { const s = currentShift(); return { work_date: today(), line_name: '', shift: s, product_id: '', start_time: shiftStart(s) }; });
+  const [openForm, setOpenForm] = useState(() => { const s = currentShift(); return { work_date: workDate(), line_name: '', shift: s, product_id: '', start_time: shiftStart(s) }; });
 
   const [showDT, setShowDT]   = useState(false);
   const [dtForm, setDtForm]   = useState({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
@@ -189,7 +194,22 @@ function LiveTab({ role }) {
   const [prodOrders, setProdOrders]       = useState([]);
   const [carryOrders, setCarryOrders]     = useState([]); // pending carry-over from prev session
   const [kanbanStds, setKanbanStds]       = useState([]);
-  const [prodOrdersOpen, setProdOrdersOpen] = useState(true); // minimize/expand ทั้ง board
+  // minimize/expand แต่ละ section ใหญ่บนแท็บ Live — จำสถานะใน localStorage (dr_live_collapse_<section>)
+  // ค่า default = กางเหมือนเดิม ยกเว้น section ที่ว่างเปล่าเริ่มแบบพับ (autoCollapsed)
+  const [liveCollapse, setLiveCollapse] = useState(() => {
+    const out = {};
+    ['prod_orders', 'defects', 'downtime', 'mat_breakdown'].forEach(k => {
+      try { const v = localStorage.getItem(`dr_live_collapse_${k}`); if (v != null) out[k] = v === '1'; } catch { /* localStorage ปิดใช้งาน — ใช้ default */ }
+    });
+    return out;
+  });
+  const liveCollapsed = (key, autoCollapsed = false) => liveCollapse[key] ?? autoCollapsed;
+  const toggleLiveCollapse = (key, autoCollapsed = false) => setLiveCollapse(c => {
+    const next = !(c[key] ?? autoCollapsed);
+    try { localStorage.setItem(`dr_live_collapse_${key}`, next ? '1' : '0'); } catch { /* localStorage ปิดใช้งาน */ }
+    return { ...c, [key]: next };
+  });
+  const prodOrdersOpen = !liveCollapsed('prod_orders'); // minimize/expand ทั้ง board (ว่างก็กางไว้ — มีปุ่ม Scan/hint ในตัว)
   const [showClosedOrders, setShowClosedOrders] = useState(false); // แยกซ่อน/แสดง order ที่ปิดแล้ว/ยกเลิก
 
   // Scan Open modal
@@ -318,7 +338,7 @@ function LiveTab({ role }) {
     const { data: overdue } = await supabaseDR.from('production_sessions')
       .select('id, line_name, shift, work_date, section')
       .in('status', ['open', 'pending_close'])
-      .lt('work_date', today());
+      .lt('work_date', workDate()); // เทียบกับ work date (ตัด 08:00) — ไม่งั้นกะดึกหลังเที่ยงคืนโดนแจ้ง "ค้างปิดกะ" ทั้งที่ยังรันอยู่
     setOverdueAlert((overdue || []).filter(o => {
       if (role === 'admin') return true;
       if (role === 'leader') {
@@ -1193,9 +1213,9 @@ function LiveTab({ role }) {
     const matchProc  = (p) => p.process_type === 'common' || p.process_type === processType;
     return breakPolicies.filter(p => matchShift(p) && matchProc(p)).reduce((sum, p) => {
       // Build policy window anchored to the session's work date
-      const workDate = selSession?.work_date || openedAt.toISOString().split('T')[0];
+      const sessWorkDate = selSession?.work_date || workDate(openedAt);
       const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
-      let pStart = new Date(`${workDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`);
+      let pStart = new Date(`${sessWorkDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`);
       let pEnd = new Date(pStart.getTime() + p.duration_min * 60000);
       // For night shift break that crosses midnight, shift the whole window forward a day if it ended before session start
       if (pEnd < openedAt) {
@@ -1691,7 +1711,7 @@ function LiveTab({ role }) {
             return Object.entries(groups).map(([groupName, groupSessions]) => (
               <div key={groupName}>
                 {groupSessions.some(s => lineMap[s.line_name]?.parent_line_name) && (
-                  <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--muted)', padding: '6px 4px 2px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', padding: '6px 4px 2px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
                     {groupName}
                   </div>
                 )}
@@ -1702,7 +1722,7 @@ function LiveTab({ role }) {
                       background: selSession?.id === s.id ? 'var(--accent-dim)' : 'var(--card)', cursor: 'pointer', textAlign: 'left' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{s.line_name}</div>
-                      {s.status === 'pending_close' && <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 5px', borderRadius: 10, background: 'rgba(245,158,11,0.2)', color: '#f59e0b' }}>⏳</span>}
+                      {s.status === 'pending_close' && <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 5px', borderRadius: 10, background: 'rgba(245,158,11,0.2)', color: '#f59e0b' }}>⏳</span>}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(s.work_date)}</div>
                   </button>
@@ -1746,9 +1766,9 @@ function LiveTab({ role }) {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
                     {selSession.status === 'pending_close' ? (
-                      <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', animation: 'pulse 2s infinite' }}>⏳ รออนุมัติปิดกะ</span>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>⏳ รออนุมัติปิดกะ</span>
                     ) : (
-                      <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>● LIVE</span>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>● LIVE</span>
                     )}
                     <span style={{ fontSize: 12, color: 'var(--muted)' }}>
                       {selSession.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(selSession.work_date)} · เริ่ม {selSession.start_time}
@@ -1849,11 +1869,16 @@ function LiveTab({ role }) {
 
               return (
                 <>
-                  {productRows.length > 0 && (
+                  {productRows.length > 0 && (() => {
+                    const matOpen = !liveCollapsed('mat_breakdown');
+                    return (
                     <div style={{ marginBottom: 16 }}>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>
+                      <div onClick={() => toggleLiveCollapse('mat_breakdown')}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: matOpen ? 8 : 0, cursor: 'pointer', userSelect: 'none' }}>
+                        <span style={{ fontSize: 11, color: 'var(--muted)', transform: matOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
                         🔩 แยกตามชิ้นงาน ({productRows.length} MAT.NO)
                       </div>
+                      {matOpen && (<>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {productRows.map(r => {
                           const rowClr = r.rowPct >= 100 ? '#22c55e' : r.rowPct >= 60 ? '#f59e0b' : '#4d9fff';
@@ -1863,16 +1888,16 @@ function LiveTab({ role }) {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                   <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{r.matNo}</span>
                                   {r.name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{r.name}</span>}
-                                  {r.ct > 0 && <span style={{ fontSize: 10, color: 'var(--muted)' }}>· CT {r.ct}s</span>}
+                                  {r.ct > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· CT {r.ct}s</span>}
                                   {r.actualStart && (
-                                    <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', fontWeight: 700 }}>
+                                    <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', fontWeight: 700 }}>
                                       🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}
                                     </span>
                                   )}
-                                  <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontWeight: 700 }}>เปิด {r.openCnt}</span>
-                                  <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700 }}>ปิด {r.closedCnt}</span>
-                                  {r.ng > 0 && <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontWeight: 700 }}>🔴 NG {r.ng}</span>}
-                                  {r.dt > 0 && <span style={{ fontSize: 9, padding: '1px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>⏱ {fmtMin(r.dt)}</span>}
+                                  <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontWeight: 700 }}>เปิด {r.openCnt}</span>
+                                  <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700 }}>ปิด {r.closedCnt}</span>
+                                  {r.ng > 0 && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontWeight: 700 }}>🔴 NG {r.ng}</span>}
+                                  {r.dt > 0 && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>⏱ {fmtMin(r.dt)}</span>}
                                 </div>
                                 <span style={{ fontSize: 13, fontWeight: 800, color: rowClr }}>{r.confirmed} / {r.target} ชิ้น ({r.rowPct}%)</span>
                               </div>
@@ -1886,8 +1911,10 @@ function LiveTab({ role }) {
                       {unassignedDT > 0 && (
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>⏱ Downtime ที่ไม่ระบุชิ้นงาน: {fmtMin(unassignedDT)}</div>
                       )}
+                      </>)}
                     </div>
-                  )}
+                    );
+                  })()}
 
                   {/* ภาพรวมทั้งกะ (รวมทุกชิ้นงาน) */}
                   <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>📊 ภาพรวมทั้งกะ</div>
@@ -1902,9 +1929,9 @@ function LiveTab({ role }) {
                       { label: 'นอกแผน',   value: fmtMin(unplannedDT), unit: '', color: '#ef4444', small: true },
                     ].map(k => (
                       <div key={k.label} style={{ background: 'var(--card)', border: `1px solid ${k.color}25`, borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
-                        <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{k.label}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{k.label}</div>
                         <div style={{ fontSize: k.small ? 13 : 22, fontWeight: 800, color: k.color, lineHeight: 1 }}>{k.value ?? 0}</div>
-                        {k.unit && <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>{k.unit}</div>}
+                        {k.unit && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{k.unit}</div>}
                       </div>
                     ))}
                     {/* Overall progress bar */}
@@ -1927,7 +1954,7 @@ function LiveTab({ role }) {
             {/* Prod Orders panel */}
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: prodOrdersOpen ? 12 : 0, flexWrap: 'wrap', gap: 8 }}>
-                <div onClick={() => setProdOrdersOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--text)', cursor: 'pointer', userSelect: 'none' }}>
+                <div onClick={() => toggleLiveCollapse('prod_orders')} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--text)', cursor: 'pointer', userSelect: 'none' }}>
                   <span style={{ fontSize: 11, color: 'var(--muted)', transform: prodOrdersOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
                   📦 Prod Orders ({prodOrders.length} ใบ)
                 </div>
@@ -1960,7 +1987,7 @@ function LiveTab({ role }) {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <div>
                       <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>➡ มียอดค้างจากกะก่อน {carryOrders.length} Order (เหลือ {carryOrders.reduce((s,o) => s + Math.max(0, o.qty - (o.qty_actual || 0)), 0)} ชิ้น)</div>
-                      <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{carryOrders.map(o => o.prod_no).join(', ')}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{carryOrders.map(o => o.prod_no).join(', ')}</div>
                     </div>
                     <button onClick={handleImportCarryOrders}
                       style={{ background: '#a78bfa', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
@@ -1993,25 +2020,25 @@ function LiveTab({ role }) {
                           <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{o.prod_no}</span>
                           <span style={{ fontSize: 12, color: 'var(--muted)' }}>{o.mat_no}</span>
                           {o.part_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {o.part_name}</span>}
-                          {o.customer && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>{o.customer}</span>}
+                          {o.customer && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>{o.customer}</span>}
                           {isCarried && (
-                            <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(167,139,250,0.15)', color: '#a78bfa', fontWeight: 700 }}
+                            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(167,139,250,0.15)', color: '#a78bfa', fontWeight: 700 }}
                               title={o.carry_over_note || 'ยกยอดมาจากกะก่อน'}>
                               ➡ ยกยอดมา {o.carry_over_note ? `(${o.carry_over_note.match(/\d+\/\d+/)?.[0] || ''})` : ''}
                             </span>
                           )}
-                          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: `${statusColor}20`, color: statusColor }}>
+                          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: `${statusColor}20`, color: statusColor }}>
                             {statusLabel}
                           </span>
                         </div>
-                        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                           เปิด {fmtTime(new Date(o.opened_at))} {o.opened_by && `· ${o.opened_by}`}
                           {confirmed && o.confirmed_at && ` · ปิด ${fmtTime(new Date(o.confirmed_at))} · ${o.confirmed_by}`}
                         </div>
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <div style={{ fontSize: 20, fontWeight: 900, color: statusColor, lineHeight: 1 }}>{o.qty}</div>
-                        <div style={{ fontSize: 9, color: 'var(--muted)' }}>ชิ้น</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น</div>
                       </div>
                       {/* ออเดอร์ที่ confirmed ห้ามลบเด็ดขาด (เป็นยอดผลิตจริงที่ปิดแล้ว) — ส่วนออเดอร์ที่ยกยอด (carry_over)
                           ปกติ leader แก้ไม่ได้แล้วเพราะตัดสินใจไปแล้วตอนปิดกะ แต่ถ้าตกค้างผิดปกติ (เช่นกะเก่าปิดไม่สำเร็จ)
@@ -2037,7 +2064,7 @@ function LiveTab({ role }) {
                       <div style={{ marginTop: activeOrders.length > 0 ? 10 : 0 }}>
                         <div onClick={() => setShowClosedOrders(s => !s)}
                           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 4px', cursor: 'pointer', userSelect: 'none', fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>
-                          <span style={{ fontSize: 10, transform: showClosedOrders ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
+                          <span style={{ fontSize: 11, transform: showClosedOrders ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
                           ปิดแล้ว / ยกเลิก ({closedOrders.length} ใบ)
                         </div>
                         {showClosedOrders && (
@@ -2054,16 +2081,20 @@ function LiveTab({ role }) {
             </div>
 
             {/* Defect Logs panel */}
-            {defectLogs.length > 0 && (
+            {defectLogs.length > 0 && (() => {
+              const defOpen = !liveCollapsed('defects');
+              return (
               <div style={{ background: 'var(--card)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#ef4444' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: defOpen ? 10 : 0 }}>
+                  <div onClick={() => toggleLiveCollapse('defects')} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#ef4444', cursor: 'pointer', userSelect: 'none' }}>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', transform: defOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
                     🔴 บันทึกงานเสีย ({defectLogs.length} รายการ)
                     <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>
                       NG: {defectLogs.reduce((s,d)=>s+(d.qty_ng||0),0)} · สงสัย: {defectLogs.reduce((s,d)=>s+(d.qty_suspect||0),0)} · ซ่อม: {defectLogs.reduce((s,d)=>s+(d.qty_repair||0),0)}
                     </span>
                   </div>
                 </div>
+                {defOpen && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {defectLogs.map(d => (
                     <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${d.dr_defect_types?.color || '#ef4444'}` }}>
@@ -2071,12 +2102,12 @@ function LiveTab({ role }) {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{d.dr_defect_types?.name_th || '—'}</span>
                           {d.prod_orders?.mat_no && (
-                            <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9', fontWeight: 700, fontFamily: 'monospace' }}>
+                            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9', fontWeight: 700, fontFamily: 'monospace' }}>
                               {d.prod_orders.mat_no}
                             </span>
                           )}
                           {d.prod_orders?.prod_no && (
-                            <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(74,222,128,0.1)', color: '#22c55e', fontWeight: 700, fontFamily: 'monospace' }}>
+                            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(74,222,128,0.1)', color: '#22c55e', fontWeight: 700, fontFamily: 'monospace' }}>
                               {d.prod_orders.prod_no}
                             </span>
                           )}
@@ -2085,7 +2116,7 @@ function LiveTab({ role }) {
                           {d.qty_repair  > 0 && <span style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700 }}>ซ่อม {d.qty_repair}</span>}
                         </div>
                         {d.description && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.description}</div>}
-                        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
                           {fmtTime(new Date(d.logged_at))}
                           {d.reported_by_name && ` · ${d.reported_by_name}`}
                         </div>
@@ -2101,18 +2132,29 @@ function LiveTab({ role }) {
                     </div>
                   ))}
                 </div>
+                )}
               </div>
-            )}
+              );
+            })()}
 
             {/* Downtime list */}
+            {(() => {
+              const dtOpen = !liveCollapsed('downtime', dtLogs.length === 0);
+              return (
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>⏱ Downtime ({dtLogs.length} รายการ)</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: dtOpen ? 12 : 0, flexWrap: 'wrap', gap: 8 }}>
+                <div onClick={() => toggleLiveCollapse('downtime', dtLogs.length === 0)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--text)', cursor: 'pointer', userSelect: 'none' }}>
+                  <span style={{ fontSize: 11, color: 'var(--muted)', transform: dtOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
+                  ⏱ Downtime ({dtLogs.length} รายการ)
+                </div>
+                {dtOpen && (
                 <button onClick={() => { setShowDT(true); setDtForm({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' }); }}
                   style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                   + บันทึก Downtime
                 </button>
+                )}
               </div>
+              {dtOpen && (<>
               {dtLogs.length === 0 && <div style={{ textAlign: 'center', padding: '20px', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มี Downtime ในกะนี้</div>}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {dtLogs.map(d => {
@@ -2121,12 +2163,12 @@ function LiveTab({ role }) {
                     <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${d.dr_downtime_types?.color || '#aaa'}` }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: cat.bg, color: cat.color }}>{cat.label}</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: cat.bg, color: cat.color }}>{cat.label}</span>
                           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{d.dr_downtime_types?.name_th || '—'}</span>
                           {d.machine_no && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {d.machine_no}</span>}
-                          {d.mat_no && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9' }}>{d.mat_no}</span>}
-                          {d.carry_over && <span title="เครื่องยังซ่อมไม่เสร็จตอนปิดกะ — เปิดต่อในกะถัดไปอัตโนมัติ" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>🔁 ยกข้ามกะ</span>}
-                          {d.carried_from_id && <span title="รายการต่อเนื่องจาก Downtime ที่ตัดยอดมาจากกะก่อน" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>⏩ ต่อจากกะก่อน</span>}
+                          {d.mat_no && <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9' }}>{d.mat_no}</span>}
+                          {d.carry_over && <span title="เครื่องยังซ่อมไม่เสร็จตอนปิดกะ — เปิดต่อในกะถัดไปอัตโนมัติ" style={{ fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>🔁 ยกข้ามกะ</span>}
+                          {d.carried_from_id && <span title="รายการต่อเนื่องจาก Downtime ที่ตัดยอดมาจากกะก่อน" style={{ fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>⏩ ต่อจากกะก่อน</span>}
                         </div>
                         {d.description && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{d.description}</div>}
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
@@ -2165,7 +2207,10 @@ function LiveTab({ role }) {
                   );
                 })}
               </div>
+              </>)}
             </div>
+              );
+            })()}
           </>
         )}
 
@@ -2221,9 +2266,11 @@ function LiveTab({ role }) {
           const confirmedOrders  = prodOrders.filter(o => o.status === 'confirmed');
           const carryOrdersList  = prodOrders.filter(o => o.status === 'carry_over');
           const cancelledOrders  = prodOrders.filter(o => o.status === 'cancelled');
+          // จอ landscape กว้าง → แผ่เนื้อหาเป็น 2 คอลัมน์แทนการยืดสูงจน scroll (layout อย่างเดียว ไม่แตะ logic)
+          const twoCol = typeof window !== 'undefined' && window.innerWidth >= 1100 && (defectLogs.length > 0 || dtLogs.length > 0) && prodOrders.length > 0;
           return (
             <div className="overlay" style={{ zIndex: 2100 }}>
-              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.5)', borderRadius: 14, padding: 24, width: 'min(95vw,820px)', maxHeight: '90vh', overflowY: 'auto' }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.5)', borderRadius: 14, padding: 24, width: 'min(96vw,1500px)', maxHeight: '94vh', overflowY: 'auto' }}>
                 <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: '#f59e0b' }}>🔍 ตรวจสอบคำขอปิดกะ</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
                   {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)}
@@ -2247,12 +2294,15 @@ function LiveTab({ role }) {
                     { label: 'OEE',      value: selSession.oee != null ? `${selSession.oee}%` : 'N/A', color: oeeColor },
                   ].map(k => (
                     <div key={k.label} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
-                      <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{k.label}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{k.label}</div>
                       <div style={{ fontSize: 14, fontWeight: 800, color: k.color, marginTop: 2 }}>{k.value}</div>
                     </div>
                   ))}
                 </div>
 
+                {/* จอกว้าง: งานเสีย+Downtime คอลัมน์ซ้าย · สรุปแยกตามชิ้นงาน คอลัมน์ขวา — จอแคบเรียงลงเหมือนเดิม */}
+                <div style={{ display: 'grid', gridTemplateColumns: twoCol ? '1fr 1fr' : '1fr', gap: twoCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ minWidth: 0 }}>
                 {defectLogs.length > 0 && (
                   <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>🔴 รายการงานเสีย ({defectLogs.length})</div>
@@ -2281,6 +2331,8 @@ function LiveTab({ role }) {
                   </div>
                 )}
 
+                </div>{/* /คอลัมน์ซ้าย */}
+                <div style={{ minWidth: 0 }}>
                 {/* Per-product breakdown — เหมือนหน้าที่ leader เห็นตอนขอปิดกะ ใช้ end_time ของกะที่บันทึกไว้แล้ว (ไม่มี order สถานะ open เหลือแล้วตอนนี้) */}
                 {(() => {
                   const matNos = Array.from(new Set(prodOrders.map(o => o.mat_no)));
@@ -2330,44 +2382,44 @@ function LiveTab({ role }) {
                                 <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{r.matNo}</div>
                                 {r.partName && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.partName}</div>}
                                 {r.actualStart && (
-                                  <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 1 }}>🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}</div>
+                                  <div style={{ fontSize: 11, color: '#4d9fff', marginTop: 1 }}>🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}</div>
                                 )}
                               </div>
                               <div style={{ textAlign: 'center', minWidth: 40 }}>
-                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>NG</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)' }}>NG</div>
                                 <div style={{ fontSize: 13, fontWeight: 800, color: r.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{r.ng}</div>
                               </div>
                               <div style={{ textAlign: 'center', minWidth: 60 }}>
-                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>Downtime</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)' }}>Downtime</div>
                                 <div style={{ fontSize: 13, fontWeight: 800, color: r.dt > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtMin(Math.round(r.dt))}</div>
                               </div>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
                               <div style={{ textAlign: 'center', padding: '4px 0', background: 'var(--bg2)', borderRadius: 6 }}>
-                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>เป้าหมาย</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)' }}>เป้าหมาย</div>
                                 <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{r.target}</div>
                               </div>
                               <div style={{ textAlign: 'center', padding: '4px 0', background: 'rgba(168,85,247,0.1)', borderRadius: 6 }}>
-                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>ควรได้ (เต็มเวลา)</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)' }}>ควรได้ (เต็มเวลา)</div>
                                 <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa' }}>{r.achievable != null ? r.achievable : '—'}</div>
                               </div>
                               <div style={{ textAlign: 'center', padding: '4px 0', background: 'rgba(34,197,94,0.1)', borderRadius: 6 }}>
-                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>ผลิตได้จริง</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)' }}>ผลิตได้จริง</div>
                                 <div style={{ fontSize: 13, fontWeight: 800, color: '#22c55e' }}>{r.qty}</div>
                               </div>
                             </div>
                             {r.achievable > 0 && (
-                              <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4, textAlign: 'right' }}>
+                              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, textAlign: 'right' }}>
                                 %P พาร์ทนี้ ≈ {Math.min(100, Math.round(r.qty / r.achievable * 100))}%
                               </div>
                             )}
                             {r.overCt && r.observedCtSec != null && (
-                              <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 4, padding: '4px 6px', background: 'rgba(245,158,11,0.1)', borderRadius: 6 }}>
+                              <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, padding: '4px 6px', background: 'rgba(245,158,11,0.1)', borderRadius: 6 }}>
                                 ⚠ ผลิตเกิน CT ที่ตั้งไว้ ({r.ctSec} วิ) — CT จริงที่สังเกตได้กะนี้ ≈ {r.observedCtSec.toFixed(1)} วิ/ชิ้น
                               </div>
                             )}
                             {overage && overage.overCount >= 3 && (
-                              <div style={{ fontSize: 10, color: '#ef4444', marginTop: 4, padding: '4px 6px', background: 'rgba(239,68,68,0.1)', borderRadius: 6, fontWeight: 700 }}>
+                              <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4, padding: '4px 6px', background: 'rgba(239,68,68,0.1)', borderRadius: 6, fontWeight: 700 }}>
                                 🔁 เกิน CT ซ้ำ {overage.overCount}/{overage.checked} กะล่าสุด — แนะนำปรับ CT ใน Product Master เป็น ~{overage.avgObservedCt?.toFixed(1)} วิ/ชิ้น
                               </div>
                             )}
@@ -2384,7 +2436,10 @@ function LiveTab({ role }) {
                   );
                 })()}
 
-                {/* Timeline: machine run / policy break / planned-unplanned downtime — รายละเอียดของ %A, ใช้เวลาเริ่ม-ปิดกะที่บันทึกไว้แล้ว */}
+                </div>{/* /คอลัมน์ขวา */}
+                </div>{/* /grid 2 คอลัมน์ */}
+
+                {/* Timeline: machine run / policy break / planned-unplanned downtime — รายละเอียดของ %A, ใช้เวลาเริ่ม-ปิดกะที่บันทึกไว้แล้ว (full-width) */}
                 {(() => {
                   if (!selSession?.work_date || !selSession.start_time) return null;
                   const winStart = new Date(`${selSession.work_date}T${selSession.start_time.slice(0,5)}:00`).getTime();
@@ -2436,7 +2491,7 @@ function LiveTab({ role }) {
                             style={{ width: `${(s.end - s.start) / totalMs * 100}%`, background: s.color, minWidth: 2 }} />
                         ))}
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--muted)', marginTop: 3 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
                         <span>{fmtTime(new Date(winStart))}</span>
                         <span>{fmtTime(new Date(winEnd))}</span>
                       </div>
@@ -2447,14 +2502,14 @@ function LiveTab({ role }) {
                           { label: 'หยุดในแผน', color: '#f59e0b' },
                           { label: 'หยุดนอกแผน', color: '#ef4444' },
                         ].map(k => (
-                          <div key={k.label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--muted)' }}>
+                          <div key={k.label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--muted)' }}>
                             <span style={{ width: 9, height: 9, borderRadius: 2, background: k.color, display: 'inline-block' }} />
                             {k.label}
                           </div>
                         ))}
                       </div>
                       {dtLogs.some(d => !d.started_at) && (
-                        <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ มี Downtime บางรายการไม่ได้ระบุเวลาเริ่ม/จบ จึงไม่แสดงในไทม์ไลน์ (นับรวมในยอด Downtime ด้านบนแล้ว)</div>
+                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>⚠ มี Downtime บางรายการไม่ได้ระบุเวลาเริ่ม/จบ จึงไม่แสดงในไทม์ไลน์ (นับรวมในยอด Downtime ด้านบนแล้ว)</div>
                       )}
                     </div>
                   );
@@ -2504,9 +2559,13 @@ function LiveTab({ role }) {
           });
           const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty } = computeOEE(ng, closeEndTime, closeStartTime, previewDtLogs);
           const oeeColor = oee == null ? 'var(--muted)' : oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
+          // จอ landscape กว้าง → แผ่เนื้อหาเป็น 2 คอลัมน์แทนการยืดสูงจน scroll (layout อย่างเดียว ไม่แตะ logic/การคำนวณ)
+          const twoCol = typeof window !== 'undefined' && window.innerWidth >= 1100;
+          const hasOpenOrdersCol = twoCol && prodOrders.some(o => o.status === 'open');
+          const hasOpenDTCol = twoCol && modalOpenDT.length > 0;
           return (
             <div className="overlay" style={{ zIndex: 2000 }}>
-              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,820px)', maxHeight: '90vh', overflowY: 'auto' }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: 14, padding: 24, width: 'min(96vw,1500px)', maxHeight: '94vh', overflowY: 'auto' }}>
                 <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#ef4444' }}>
                   {role === 'leader' ? '📋 ขอปิดกะ — สรุปผลและ OEE' : '🔒 ปิดกะ — สรุปผลและ OEE'}
                 </div>
@@ -2528,13 +2587,16 @@ function LiveTab({ role }) {
                   </Field>
                 </div>
 
+                {/* จอกว้าง: Downtime เปิดค้าง (ต้องตัดสินใจ) คอลัมน์ซ้าย · สรุปตัวเลขกะ คอลัมน์ขวา — จอแคบเรียงลงเหมือนเดิม */}
+                <div style={{ display: 'grid', gridTemplateColumns: hasOpenDTCol ? '1fr 1fr' : '1fr', gap: hasOpenDTCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ minWidth: 0 }}>
                 {/* Downtime เปิดค้าง — ต้องตัดสินใจต่อรายการก่อนปิดกะ (เครื่องกลับมาแล้ว / ยังซ่อมอยู่ ตัดยอดข้ามกะ) */}
                 {modalOpenDT.length > 0 && (
                   <div style={{ marginBottom: 16, padding: '12px 14px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 10 }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: '#ef4444', marginBottom: 4 }}>
                       🚨 Downtime เปิดค้าง {modalOpenDT.length} รายการ — ต้องตัดสินใจก่อนปิดกะ
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
                       ถ้าเครื่องยังซ่อมไม่เสร็จ เลือก "ตัดยอดข้ามกะ" — ระบบจะปิดรายการของกะนี้ด้วยเวลาปิดกะ แล้วเปิดรายการต่อเนื่องให้อัตโนมัติเมื่อกะถัดไปของไลน์นี้เปิด (OEE ถูกต้องทั้งสองกะ)
                     </div>
                     {modalOpenDT.map(d => {
@@ -2543,7 +2605,7 @@ function LiveTab({ role }) {
                         <div key={d.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'var(--bg2)', borderRadius: 8, marginBottom: 6 }}>
                           <div style={{ minWidth: 160, flex: 1 }}>
                             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>⚙️ {d.machine_no || '-'} · {d.dr_downtime_types?.name_th || 'Downtime'}</div>
-                            <div style={{ fontSize: 10, color: 'var(--muted)' }}>เริ่มหยุด {d.started_at ? fmtTime(d.started_at) : '-'}{d.description ? ` — ${d.description}` : ''}</div>
+                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>เริ่มหยุด {d.started_at ? fmtTime(d.started_at) : '-'}{d.description ? ` — ${d.description}` : ''}</div>
                           </div>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                             <button onClick={() => setDtCarryDecisions(p => ({ ...p, [d.id]: 'close' }))}
@@ -2569,12 +2631,12 @@ function LiveTab({ role }) {
                             </button>
                           </div>
                           {decision === 'carry' && (
-                            <div style={{ width: '100%', fontSize: 10, color: '#f59e0b' }}>
+                            <div style={{ width: '100%', fontSize: 11, color: '#f59e0b' }}>
                               ปิดรายการของกะนี้ด้วยเวลาปิดกะ ({closeEndTime || '-'}) → เปิดต่อในกะถัดไปอัตโนมัติ · ไม่แจ้ง "เครื่องกลับมารันได้" จนกว่าจะปิดจริง
                             </div>
                           )}
                           {decision === 'close' && !dtCloseTimes[d.id] && (
-                            <div style={{ width: '100%', fontSize: 10, color: '#ef4444' }}>กรอกเวลาที่เครื่องกลับมาทำงานด้วย</div>
+                            <div style={{ width: '100%', fontSize: 11, color: '#ef4444' }}>กรอกเวลาที่เครื่องกลับมาทำงานด้วย</div>
                           )}
                         </div>
                       );
@@ -2582,6 +2644,8 @@ function LiveTab({ role }) {
                   </div>
                 )}
 
+                </div>{/* /คอลัมน์ซ้าย (DT เปิดค้าง) */}
+                <div style={{ minWidth: 0 }}>
                 {/* Summary stats — แยกหยุดในแผน(เพิ่มเติมจากนโยบาย)/นอกแผนออกจากกัน ให้บวกกันแล้วเท่ากับเวลากะเป๊ะๆ
                     (เวลากะ = หยุดนโยบาย + หยุดในแผน + หยุดนอกแผน + Run Time) ไม่งั้นจะดูเหมือนเวลารวมเกิน 12 ชม. */}
                 {(() => {
@@ -2600,7 +2664,7 @@ function LiveTab({ role }) {
                         { label: 'NG',           value: `${ng} ชิ้น`,        color: '#f97316' },
                       ].map(k => (
                         <div key={k.label} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
-                          <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{k.label}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{k.label}</div>
                           <div style={{ fontSize: 14, fontWeight: 800, color: k.color, marginTop: 2 }}>{k.value}</div>
                         </div>
                       ))}
@@ -2629,7 +2693,10 @@ function LiveTab({ role }) {
                   );
                 })()}
 
-                {/* Per-product breakdown — separates shared lines (e.g. APRON ASSY) that run multiple MAT.NO at once */}
+                </div>{/* /คอลัมน์ขวา (สรุปตัวเลข) */}
+                </div>{/* /grid 2 คอลัมน์ ชุดบน */}
+
+                {/* Per-product breakdown — separates shared lines (e.g. APRON ASSY) that run multiple MAT.NO at once (full-width) */}
                 {(() => {
                   const matNos = Array.from(new Set(prodOrders.filter(o => o.status === 'confirmed' || o.status === 'open').map(o => o.mat_no)));
                   if (!matNos.length) return null;
@@ -2709,52 +2776,52 @@ function LiveTab({ role }) {
                                         value={matTimeOverride[r.matNo]?.start ?? fmtTime(r.actualStart)}
                                         onChange={e => setMatTimeOverride(m => ({ ...m, [r.matNo]: { ...m[r.matNo], start: e.target.value } }))}
                                         style={{ fontSize: 11, padding: '1px 3px', width: 64 }} />
-                                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>–</span>
+                                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>–</span>
                                       <TimeInput24
                                         value={matTimeOverride[r.matNo]?.end ?? (r.actualEnd ? fmtTime(r.actualEnd) : '')}
                                         onChange={e => setMatTimeOverride(m => ({ ...m, [r.matNo]: { ...m[r.matNo], end: e.target.value } }))}
                                         style={{ fontSize: 11, padding: '1px 3px', width: 64 }} />
                                     </div>
                                   ) : (
-                                    <div style={{ fontSize: 10, color: '#4d9fff', marginTop: 1 }}>🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}</div>
+                                    <div style={{ fontSize: 11, color: '#4d9fff', marginTop: 1 }}>🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}</div>
                                   )
                                 )}
                               </div>
                               <div style={{ textAlign: 'center', minWidth: 40 }}>
-                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>NG</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)' }}>NG</div>
                                 <div style={{ fontSize: 13, fontWeight: 800, color: r.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{r.ng}</div>
                               </div>
                               <div style={{ textAlign: 'center', minWidth: 60 }}>
-                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>Downtime</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)' }}>Downtime</div>
                                 <div style={{ fontSize: 13, fontWeight: 800, color: r.dt > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtMin(Math.round(r.dt))}</div>
                               </div>
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
                               <div style={{ textAlign: 'center', padding: '4px 0', background: 'var(--bg2)', borderRadius: 6 }}>
-                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>เป้าหมาย</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)' }}>เป้าหมาย</div>
                                 <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{r.target}</div>
                               </div>
                               <div style={{ textAlign: 'center', padding: '4px 0', background: 'rgba(168,85,247,0.1)', borderRadius: 6 }}>
-                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>ควรได้ (เต็มเวลา)</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)' }}>ควรได้ (เต็มเวลา)</div>
                                 <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa' }}>{r.achievable != null ? r.achievable : '—'}</div>
                               </div>
                               <div style={{ textAlign: 'center', padding: '4px 0', background: 'rgba(34,197,94,0.1)', borderRadius: 6 }}>
-                                <div style={{ fontSize: 9, color: 'var(--muted)' }}>ผลิตได้จริง</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)' }}>ผลิตได้จริง</div>
                                 <div style={{ fontSize: 13, fontWeight: 800, color: '#22c55e' }}>{r.qty}</div>
                               </div>
                             </div>
                             {r.achievable > 0 && (
-                              <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4, textAlign: 'right' }}>
+                              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, textAlign: 'right' }}>
                                 %P พาร์ทนี้ ≈ {Math.min(100, Math.round(r.qty / r.achievable * 100))}%
                               </div>
                             )}
                             {r.overCt && r.observedCtSec != null && (
-                              <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 4, padding: '4px 6px', background: 'rgba(245,158,11,0.1)', borderRadius: 6 }}>
+                              <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, padding: '4px 6px', background: 'rgba(245,158,11,0.1)', borderRadius: 6 }}>
                                 ⚠ ผลิตเกิน CT ที่ตั้งไว้ ({r.ctSec} วิ) — CT จริงที่สังเกตได้กะนี้ ≈ {r.observedCtSec.toFixed(1)} วิ/ชิ้น
                               </div>
                             )}
                             {overage && overage.overCount >= 3 && (
-                              <div style={{ fontSize: 10, color: '#ef4444', marginTop: 4, padding: '4px 6px', background: 'rgba(239,68,68,0.1)', borderRadius: 6, fontWeight: 700 }}>
+                              <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4, padding: '4px 6px', background: 'rgba(239,68,68,0.1)', borderRadius: 6, fontWeight: 700 }}>
                                 🔁 เกิน CT ซ้ำ {overage.overCount}/{overage.checked} กะล่าสุด — แนะนำปรับ CT ใน Product Master เป็น ~{overage.avgObservedCt?.toFixed(1)} วิ/ชิ้น
                               </div>
                             )}
@@ -2825,7 +2892,7 @@ function LiveTab({ role }) {
                             style={{ width: `${(s.end - s.start) / totalMs * 100}%`, background: s.color, minWidth: 2 }} />
                         ))}
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--muted)', marginTop: 3 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
                         <span>{fmtTime(new Date(winStart))}</span>
                         <span>{fmtTime(new Date(winEnd))}</span>
                       </div>
@@ -2836,19 +2903,22 @@ function LiveTab({ role }) {
                           { label: 'หยุดในแผน', color: '#f59e0b' },
                           { label: 'หยุดนอกแผน', color: '#ef4444' },
                         ].map(k => (
-                          <div key={k.label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--muted)' }}>
+                          <div key={k.label} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--muted)' }}>
                             <span style={{ width: 9, height: 9, borderRadius: 2, background: k.color, display: 'inline-block' }} />
                             {k.label}
                           </div>
                         ))}
                       </div>
                       {dtLogs.some(d => !d.started_at) && (
-                        <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ มี Downtime บางรายการไม่ได้ระบุเวลาเริ่ม/จบ จึงไม่แสดงในไทม์ไลน์ (นับรวมในยอด Downtime ด้านบนแล้ว)</div>
+                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>⚠ มี Downtime บางรายการไม่ได้ระบุเวลาเริ่ม/จบ จึงไม่แสดงในไทม์ไลน์ (นับรวมในยอด Downtime ด้านบนแล้ว)</div>
                       )}
                     </div>
                   );
                 })()}
 
+                {/* จอกว้าง: รายการตัดสินใจ Order ที่ยังไม่ปิด คอลัมน์ซ้าย · OEE preview คอลัมน์ขวา (เห็นผลจากการตัดสินใจข้างๆ กันทันที) */}
+                <div style={{ display: 'grid', gridTemplateColumns: hasOpenOrdersCol ? '1fr 1fr' : '1fr', gap: hasOpenOrdersCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ minWidth: 0 }}>
                 {/* Carry-over: handle open orders */}
                 {(() => {
                   const openOrders = prodOrders.filter(o => o.status === 'open');
@@ -2907,7 +2977,7 @@ function LiveTab({ role }) {
                               {(dec === 'carry' || dec === 'cancel') && (
                                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
                                   <div style={{ flex: 1, minWidth: 90 }}>
-                                    <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, marginBottom: 3 }}>
+                                    <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 3 }}>
                                       ✏️ ยอดที่ทำได้จริงในกะนี้ (ชิ้น) — กรอกเองตามของจริง
                                     </div>
                                     <input type="number" min="0" max={o.qty} value={qActual}
@@ -2918,7 +2988,7 @@ function LiveTab({ role }) {
                                         color:       qA > 0 ? '#22c55e' : 'var(--text)' }} />
                                   </div>
                                   <div style={{ minWidth: 110 }}>
-                                    <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, marginBottom: 3 }}>
+                                    <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 3 }}>
                                       ⏱ เวลาหยุดผลิตจริง
                                     </div>
                                     <TimeInput24
@@ -2946,6 +3016,8 @@ function LiveTab({ role }) {
                   );
                 })()}
 
+                </div>{/* /คอลัมน์ซ้าย (ตัดสินใจ Order) */}
+                <div style={{ minWidth: 0 }}>
                 {/* OEE live preview */}
                 <div style={{ padding: '14px 16px', background: `${oeeColor}18`, border: `1px solid ${oeeColor}40`, borderRadius: 10 }}>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, fontWeight: 700 }}>OEE PREVIEW (APQ)</div>
@@ -2957,23 +3029,26 @@ function LiveTab({ role }) {
                         { label: 'Q (Qual.)',  value: `${(Q * 100).toFixed(1)}%` },
                       ].map(k => (
                         <div key={k.label} style={{ textAlign: 'center' }}>
-                          <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>{k.label}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{k.label}</div>
                           <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{k.value}</div>
                         </div>
                       ))}
                     </div>
                     <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>OEE รวม</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>OEE รวม</div>
                       <div style={{ fontSize: 36, fontWeight: 900, color: oeeColor, lineHeight: 1 }}>{oee != null ? `${(oee * 100).toFixed(1)}%` : 'N/A'}</div>
                     </div>
                   </div>
                   {knownQty === 0 && unknownQty > 0 && (
-                    <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ ไม่มี Cycle Time ใน Product Master ของ MAT.NO ที่ผลิตในกะนี้เลย — P/OEE คำนวณไม่ได้ (จะถูกบันทึกเป็น N/A ไม่ใช่ 100%)</div>
+                    <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>⚠ ไม่มี Cycle Time ใน Product Master ของ MAT.NO ที่ผลิตในกะนี้เลย — P/OEE คำนวณไม่ได้ (จะถูกบันทึกเป็น N/A ไม่ใช่ 100%)</div>
                   )}
                   {knownQty > 0 && unknownQty > 0 && (
-                    <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ มี {unknownQty} ชิ้น จาก MAT.NO ที่ไม่มี Cycle Time ใน Product Master — P/OEE คำนวณจาก standard time ของ {knownQty} ชิ้นที่มี CT หารด้วย run time ทั้งกะ (ค่าจริงจะต่ำกว่าถ้านับ MAT.NO ที่ขาด CT ด้วย)</div>
+                    <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>⚠ มี {unknownQty} ชิ้น จาก MAT.NO ที่ไม่มี Cycle Time ใน Product Master — P/OEE คำนวณจาก standard time ของ {knownQty} ชิ้นที่มี CT หารด้วย run time ทั้งกะ (ค่าจริงจะต่ำกว่าถ้านับ MAT.NO ที่ขาด CT ด้วย)</div>
                   )}
                 </div>
+
+                </div>{/* /คอลัมน์ขวา (OEE preview) */}
+                </div>{/* /grid 2 คอลัมน์ ชุดล่าง */}
 
                 <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
                   <button onClick={() => { setShowCloseShift(false); setCarryOverDecisions({}); }} style={cancelBtnStyle}>ยกเลิก</button>
@@ -3263,7 +3338,7 @@ function LiveTab({ role }) {
                         </div>
                         <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
                           <div style={{ fontSize: 28, fontWeight: 900, color: '#22c55e', lineHeight: 1 }}>{closeMatch.qty}</div>
-                          <div style={{ fontSize: 10, color: 'var(--muted)' }}>ชิ้น</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น</div>
                         </div>
                       </div>
                       <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)', background: 'rgba(34,197,94,0.06)', borderRadius: 6, padding: '6px 10px' }}>
@@ -3355,7 +3430,7 @@ function LiveTab({ role }) {
                     { key: 'qty_repair',  label: '🔧 ซ่อม/Rework',  color: '#a78bfa' },
                   ].map(q => (
                     <div key={q.key}>
-                      <div style={{ fontSize: 9, color: q.color, fontWeight: 700, marginBottom: 3 }}>{q.label}</div>
+                      <div style={{ fontSize: 11, color: q.color, fontWeight: 700, marginBottom: 3 }}>{q.label}</div>
                       <input type="number" min="0" value={defectForm[q.key]}
                         onChange={e => setDefectForm(f => ({ ...f, [q.key]: e.target.value }))}
                         style={{ ...inputStyle, textAlign: 'center', fontWeight: 800, fontSize: 18,
@@ -3474,23 +3549,23 @@ function LiveTab({ role }) {
                     <div style={{ padding: '10px 14px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 9 }}>
                       <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
                         <div style={{ textAlign: 'center' }}>
-                          <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>🔴 เริ่มหยุด</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>🔴 เริ่มหยุด</div>
                           <div style={{ fontSize: 18, fontWeight: 900, color: '#ef4444', lineHeight: 1.1 }}>{fmtTime(startedAt)}</div>
-                          {isNextDay(startedAt) && <div style={{ fontSize: 9, color: '#f59e0b', fontWeight: 700 }}>+1 วัน · {fmtDate(startedAt)}</div>}
+                          {isNextDay(startedAt) && <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>+1 วัน · {fmtDate(startedAt)}</div>}
                         </div>
                         <div style={{ fontSize: 18, color: 'var(--muted)' }}>→</div>
                         <div style={{ textAlign: 'center' }}>
-                          <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>🟢 กลับมา</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>🟢 กลับมา</div>
                           <div style={{ fontSize: 18, fontWeight: 900, color: '#22c55e', lineHeight: 1.1 }}>{fmtTime(endedAt)}</div>
-                          {isNextDay(endedAt) && <div style={{ fontSize: 9, color: '#f59e0b', fontWeight: 700 }}>+1 วัน · {fmtDate(endedAt)}</div>}
+                          {isNextDay(endedAt) && <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>+1 วัน · {fmtDate(endedAt)}</div>}
                         </div>
                         <div style={{ marginLeft: 'auto', textAlign: 'center' }}>
-                          <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>รวม</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>รวม</div>
                           <div style={{ fontSize: 22, fontWeight: 900, color: '#f59e0b' }}>{durMin ? `${Math.round(durMin * 10) / 10} นาที` : '—'}</div>
                         </div>
                       </div>
                       {(isNextDay(startedAt) || isNextDay(endedAt)) && (
-                        <div style={{ marginTop: 8, fontSize: 10, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', borderRadius: 6, padding: '4px 8px' }}>
+                        <div style={{ marginTop: 8, fontSize: 11, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', borderRadius: 6, padding: '4px 8px' }}>
                           ⚠ เวลาข้ามคืน — บันทึกเป็นวันถัดไปอัตโนมัติ (กะดึกเริ่ม {fmtDate(selSession.work_date)})
                         </div>
                       )}
@@ -3688,7 +3763,7 @@ function HistoryTab({ role }) {
                   <Stat label="DT"    value={fmtMin(totalDT)}       color="#a855f7" small />
                   {oeeVal != null && (
                     <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>OEE</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>OEE</div>
                       <div style={{ fontSize: 15, fontWeight: 900, color: oeeColor }}>{oeeVal.toFixed(1)}%</div>
                     </div>
                   )}
@@ -3716,13 +3791,13 @@ function HistoryTab({ role }) {
                         const c = (k.value||0) >= 85 ? '#22c55e' : (k.value||0) >= 65 ? '#f59e0b' : '#ef4444';
                         return (
                           <div key={k.label} style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>{k.label}</div>
+                            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{k.label}</div>
                             <div style={{ fontSize: 16, fontWeight: 800, color: c }}>{k.value != null ? `${k.value.toFixed(1)}%` : '—'}</div>
                           </div>
                         );
                       })}
                       <div style={{ textAlign: 'center', marginLeft: 'auto' }}>
-                        <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700 }}>OEE</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>OEE</div>
                         <div style={{ fontSize: 22, fontWeight: 900, color: oeeColor }}>{s.oee.toFixed(1)}%</div>
                       </div>
                     </div>
@@ -3769,7 +3844,7 @@ function HistoryTab({ role }) {
                       <div
                         onClick={() => setOrdersMinimized(m => ({ ...m, [s.id]: !minimized }))}
                         style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, userSelect: 'none' }}>
-                        <span style={{ fontSize: 10 }}>{minimized ? '▶' : '▼'}</span>
+                        <span style={{ fontSize: 11 }}>{minimized ? '▶' : '▼'}</span>
                         📋 Prod Orders ({orders.length} ใบ)
                       </div>
                       {!minimized && (
@@ -3783,7 +3858,7 @@ function HistoryTab({ role }) {
                               <span style={{ fontSize: 11, color: 'var(--muted)' }}>{o.mat_no}</span>
                               {o.part_name && <span style={{ fontSize: 11, color: 'var(--muted)', flex: 1 }}>· {o.part_name}</span>}
                               {!o.part_name && <span style={{ flex: 1 }} />}
-                              <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: `${statusColor}20`, color: statusColor, fontWeight: 700 }}>{statusLabel}</span>
+                              <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: `${statusColor}20`, color: statusColor, fontWeight: 700 }}>{statusLabel}</span>
                               <span style={{ fontSize: 12, fontWeight: 800, color: statusColor, minWidth: 40, textAlign: 'right' }}>{o.qty}</span>
                             </div>
                           );
@@ -3804,7 +3879,7 @@ function HistoryTab({ role }) {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', flex: 1 }}>{d.dr_defect_types?.name_th || '—'}</span>
                               {d.prod_orders?.prod_no && (
-                                <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(74,222,128,0.1)', color: '#22c55e', fontWeight: 700, fontFamily: 'monospace' }}>
+                                <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(74,222,128,0.1)', color: '#22c55e', fontWeight: 700, fontFamily: 'monospace' }}>
                                   {d.prod_orders.prod_no}
                                 </span>
                               )}
@@ -3813,7 +3888,7 @@ function HistoryTab({ role }) {
                               {d.qty_repair  > 0 && <span style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700 }}>ซ่อม {d.qty_repair}</span>}
                             </div>
                             {d.description && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.description}</div>}
-                            <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                               {fmtTime(new Date(d.logged_at))}{d.reported_by_name && ` · ${d.reported_by_name}`}
                             </div>
                           </div>
@@ -3834,14 +3909,14 @@ function HistoryTab({ role }) {
                           return (
                             <div key={d.id} style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, borderLeft: `3px solid ${d.dr_downtime_types?.color || '#aaa'}` }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: cat.bg, color: cat.color, fontWeight: 700 }}>{cat.label}</span>
+                                <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: cat.bg, color: cat.color, fontWeight: 700 }}>{cat.label}</span>
                                 <span style={{ fontSize: 12, color: 'var(--text)', flex: 1 }}>{d.dr_downtime_types?.name_th}</span>
                                 {d.machine_no && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {d.machine_no}</span>}
-                                {d.mat_no && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9' }}>{d.mat_no}</span>}
+                                {d.mat_no && <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9' }}>{d.mat_no}</span>}
                                 <span style={{ fontSize: 12, fontWeight: 700, color: d.dr_downtime_types?.color || '#aaa' }}>{fmtMin(d.duration_min)}</span>
                               </div>
                               {d.description && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.description}</div>}
-                              <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+                              <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                                 {d.started_at && fmtTime(new Date(d.started_at))}
                                 {d.ended_at && ` – ${fmtTime(new Date(d.ended_at))}`}
                                 {d.reported_by_name && ` · ${d.reported_by_name}`}
@@ -4494,7 +4569,7 @@ function DefectTypeSetup({ role }) {
                   <div style={{ width: 12, height: 12, borderRadius: '50%', background: item.color, flexShrink: 0 }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{item.name_th}</div>
-                    {!item.is_active && <div style={{ fontSize: 10, color: '#ef4444' }}>(ปิดใช้)</div>}
+                    {!item.is_active && <div style={{ fontSize: 11, color: '#ef4444' }}>(ปิดใช้)</div>}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>#{item.sort_order}</div>
                   {canEdit && (
@@ -4620,9 +4695,9 @@ function BreakPolicySetup({ role }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{item.name_th}</span>
                 {item.name_en && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{item.name_en}</span>}
-                <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', fontWeight: 700 }}>{SHIFT_LABEL[item.shift]}</span>
-                <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, background: 'rgba(99,102,241,0.15)', color: '#a78bfa', fontWeight: 700 }}>{PROC_LABEL[item.process_type]}</span>
-                {!item.is_active && <span style={{ fontSize: 10, color: '#ef4444' }}>(ปิดใช้)</span>}
+                <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', fontWeight: 700 }}>{SHIFT_LABEL[item.shift]}</span>
+                <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(99,102,241,0.15)', color: '#a78bfa', fontWeight: 700 }}>{PROC_LABEL[item.process_type]}</span>
+                {!item.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}>(ปิดใช้)</span>}
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
                 เริ่ม {(item.start_time || '').slice(0,5)} น. · <strong style={{ color: '#22c55e' }}>{item.duration_min} นาที</strong>
@@ -4746,7 +4821,7 @@ function ProductSetup({ role }) {
   const openEC = (item) => {
     setEcSource(item);
     setEditing('new');
-    setForm({ name: item.name, code: item.code || '', mat_no: '', p_no: '', customer: item.customer || '', line_name: item.line_name || '', cycle_time_sec: item.cycle_time_sec || '', target_per_shift: item.target_per_shift || '', process_type: item.process_type || 'welding_assembly', is_active: true, effective_from: new Date().toISOString().slice(0, 10) });
+    setForm({ name: item.name, code: item.code || '', mat_no: '', p_no: '', customer: item.customer || '', line_name: item.line_name || '', cycle_time_sec: item.cycle_time_sec || '', target_per_shift: item.target_per_shift || '', process_type: item.process_type || 'welding_assembly', is_active: true, effective_from: today() });
   };
 
   const handleSave = async () => {
@@ -4775,7 +4850,7 @@ function ProductSetup({ role }) {
       if (ecSource) {
         await supabaseDR.from('dr_products').update({
           is_active: false,
-          superseded_at: form.effective_from || new Date().toISOString().slice(0, 10),
+          superseded_at: form.effective_from || today(),
           superseded_by: inserted.id,
         }).eq('id', ecSource.id);
       }
@@ -4877,24 +4952,24 @@ function ProductSetup({ role }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{item.name}</div>
-                    <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20,
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20,
                       background: item.process_type === 'metal_forming' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.12)',
                       color: item.process_type === 'metal_forming' ? '#fbbf24' : '#22c55e' }}>
                       {item.process_type === 'metal_forming' ? '⚙ Metal Forming' : '🔥 Welding/Assy'}
                     </span>
                     {members.length > 1 && (
-                      <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>
+                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>
                         🔄 {members.length} revisions
                       </span>
                     )}
-                    {!active && <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(107,114,128,0.15)', color: '#6b7280', fontWeight: 700 }}>ปิดใช้งาน</span>}
+                    {!active && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(107,114,128,0.15)', color: '#6b7280', fontWeight: 700 }}>ปิดใช้งาน</span>}
                   </div>
 
                   {/* Current MAT.NO / P.NO */}
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 4 }}>
                     {item.mat_no && <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{item.mat_no}</span>}
                     {item.p_no   && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {item.p_no}</span>}
-                    {item.customer && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', color: '#60a5fa' }}>{item.customer}</span>}
+                    {item.customer && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', color: '#60a5fa' }}>{item.customer}</span>}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                     {item.line_name && `📍 ${item.line_name}`}
@@ -4925,13 +5000,13 @@ function ProductSetup({ role }) {
               {/* Revision history (archived) */}
               {showHistory && archived.length > 0 && (
                 <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg2)', padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>📋 ประวัติ Revision</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>📋 ประวัติ Revision</div>
                   {archived.map(rev => (
                     <div key={rev.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, color: 'var(--muted)', opacity: 0.75 }}>
                       <span style={{ fontFamily: 'monospace', color: '#64748b' }}>{rev.mat_no || '—'}</span>
                       {rev.p_no && <span style={{ color: '#475569' }}>P.NO: {rev.p_no}</span>}
                       <span style={{ color: '#374151' }}>{rev.effective_from || '?'} → {rev.superseded_at || '?'}</span>
-                      <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.15)', color: '#6b7280' }}>superseded</span>
+                      <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.15)', color: '#6b7280' }}>superseded</span>
                     </div>
                   ))}
                 </div>
@@ -4948,7 +5023,7 @@ function ProductSetup({ role }) {
                       onClick={() => setExpandedFamilies(prev => ({ ...prev, [family_id]: !isExpanded }))}
                       style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'var(--bg2)', border: 'none', cursor: 'pointer', color: 'var(--text2)', fontSize: 12, fontWeight: 700 }}>
                       <span>📦 Kanban Standards ({stds.length})</span>
-                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>{isExpanded ? '▲' : '▼'}</span>
+                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>{isExpanded ? '▲' : '▼'}</span>
                     </button>
                     {isExpanded && (
                       <div style={{ padding: '8px 12px', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -4963,13 +5038,13 @@ function ProductSetup({ role }) {
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                   <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: isOldRev ? 'var(--muted)' : '#0ea5e9' }}>{std.mat_no}</span>
-                                  {isOldRev && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.12)', color: '#6b7280' }}>rev เก่า</span>}
-                                  {!std.is_active && <span style={{ fontSize: 9, color: '#ef4444' }}>ปิด</span>}
+                                  {isOldRev && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.12)', color: '#6b7280' }}>rev เก่า</span>}
+                                  {!std.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}>ปิด</span>}
                                 </div>
                               </div>
                               <div style={{ textAlign: 'right', flexShrink: 0 }}>
                                 <span style={{ fontSize: 18, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>{std.qty_per_kanban}</span>
-                                <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 3 }}>ชิ้น/ใบ</span>
+                                <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 3 }}>ชิ้น/ใบ</span>
                               </div>
                               {canEdit && (
                                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
@@ -5157,7 +5232,7 @@ function DowntimeTypeSetup({ role }) {
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{item.name_th}</div>
           {item.name_en && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{item.name_en}</div>}
         </div>
-        <div style={{ fontSize: 10, color: 'var(--muted)', background: item.category === 'unplanned' ? 'rgba(239,68,68,0.12)' : 'rgba(59,130,246,0.12)', borderRadius: 4, padding: '2px 6px' }}>
+        <div style={{ fontSize: 11, color: 'var(--muted)', background: item.category === 'unplanned' ? 'rgba(239,68,68,0.12)' : 'rgba(59,130,246,0.12)', borderRadius: 4, padding: '2px 6px' }}>
           {item.category === 'unplanned' ? '⚠ นอกแผน' : '📋 ในแผน'}
         </div>
         <div style={{ fontSize: 11, color: 'var(--muted)' }}>#{item.sort_order}</div>
@@ -5366,19 +5441,19 @@ function _KanbanStandardSetup_REMOVED({ role }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'monospace' }}>{d.matno}</span>
                   {item.dr_products && (
-                    <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: '#34d399', fontWeight: 700 }}>🔗 linked</span>
+                    <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', color: '#34d399', fontWeight: 700 }}>🔗 linked</span>
                   )}
                   <span style={{ fontSize: 12, color: 'var(--muted)' }}>{d.name}</span>
                   {d.customer && (
-                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>{d.customer}</span>
+                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>{d.customer}</span>
                   )}
-                  {!item.is_active && <span style={{ fontSize: 10, color: '#ef4444' }}>(ปิดใช้งาน)</span>}
+                  {!item.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}>(ปิดใช้งาน)</span>}
                 </div>
                 {d.pno && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>P.NO: {d.pno}</div>}
               </div>
               <div style={{ textAlign: 'center', minWidth: 80 }}>
                 <div style={{ fontSize: 22, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>{item.qty_per_kanban}</div>
-                <div style={{ fontSize: 10, color: 'var(--muted)' }}>ชิ้น / Kanban</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น / Kanban</div>
               </div>
               {canEdit && (
                 <div style={{ display: 'flex', gap: 6 }}>
@@ -5468,7 +5543,7 @@ function ScanLenHint({ value }) {
 function Stat({ label, value, color, small }) {
   return (
     <div style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{label}</div>
       <div style={{ fontSize: small ? 12 : 16, fontWeight: 800, color }}>{value ?? 0}</div>
     </div>
   );

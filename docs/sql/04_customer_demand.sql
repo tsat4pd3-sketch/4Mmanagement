@@ -78,3 +78,10 @@ create policy "customer_shipping_orders_all" on customer_shipping_orders for all
 -- select role, 'page:/planner-sales', allowed from role_permissions
 -- where permission_key = 'page:/customer-demand'
 -- on conflict (role, permission_key) do nothing;
+
+-- ── เพิ่มเติม (2026-07-10) — หน้าใหม่ Rundown Stock (/rundown-stock) ──
+-- โปรเจคหลัก: seed สิทธิ์ copy จาก /planner-sales (applied ผ่าน MCP แล้ว)
+-- insert into role_permissions (role, permission_key, allowed)
+-- select role, 'page:/rundown-stock', allowed from role_permissions
+-- where permission_key = 'page:/planner-sales'
+-- on conflict (role, permission_key) do nothing;

@@ -3,7 +3,7 @@
 > **ทุก session ที่แก้ UI ต้องอ่านไฟล์นี้ก่อนลงมือ และเมื่อสร้าง/เปลี่ยน pattern ที่ใช้ร่วมกันหลายหน้า ต้องอัพเดทไฟล์นี้ในคอมมิทเดียวกัน**
 > เหตุผล: หลาย session ทำงานขนานกัน ถ้าไม่มีมาตรฐานกลาง จะได้ UI คนละทรง (เคยเกิดแล้ว: จุดเครื่องจักรฝั่ง MTN ทำเป็นเหลี่ยม ขณะที่ระบบหลักเป็นวงกลม)
 
-อัพเดทล่าสุด: 2026-07-10
+อัพเดทล่าสุด: 2026-07-10 (anchor วงกลม · ขนาดเครื่อง/WIP 0.6×MK · layout เดี่ยวต้อง fit จอ · popup รายละเอียดเครื่อง/WIP · paddingTop 14)
 
 ---
 
@@ -15,25 +15,27 @@
 |---|---|---|---|
 | คน (มีคนประจำ) | เส้นขอบสีตามระดับ skill fit | รูปพนักงาน (objectFit: cover) หรืออักษรแรก | ชื่อสถานี · fit% badge ต่อท้ายอีกป้าย |
 | คน (สถานีว่าง) | เส้นประ สีเทา — เป็น drop target | "+" | ชื่อสถานี |
-| เครื่องจักร | ขอบ amber `#f59e0b` — ขนาด 0.8×MK | ⚙️ | machine_no (+ป้ายรอง: ชื่อเครื่อง/สาเหตุ downtime) |
+| เครื่องจักร | ขอบ amber `#f59e0b` — ขนาด 0.6×MK | ⚙️ | machine_no (+ป้ายรอง: ชื่อเครื่อง/สาเหตุ downtime) |
 | เครื่องจักร (Downtime ค้าง) | class `dt-alarm-blink` ขอบ/พื้นแดง | 🚨 หรือ ⚙️ | machine_no + สาเหตุ + นาทีที่ค้าง |
-| WIP | ขอบเขียว `#22c55e` (แดงเมื่อ `current < min`) — 0.8×MK | 📦 (packaging) / 🧱 (material) | point_name + ป้ายจำนวน `cur/min–max` |
+| WIP | ขอบเขียว `#22c55e` (แดงเมื่อ `current < min`) — 0.6×MK | 📦 (packaging) / 🧱 (material) | point_name + ป้ายจำนวน `cur/min–max` |
 | จุดงาน (LineSetup) | ขอบขาว/เขียวเมื่อเลือก | 📍 | station_name เต็ม (+💰 ถ้ามีค่าฝีมือ) |
-| เครื่องจักร/อุปกรณ์ (ผัง MTN – สถานะ PM) | ขอบ**สีตามสถานะ PM** (แดงเกินกำหนด / ส้มใกล้ครบ / เขียวปกติ / ม่วงยังไม่ตรวจ) — 0.8×MK | ⚙️ | machine_no/jig_no (+ป้ายรอง: ชื่อเครื่อง) |
+| เครื่องจักร/อุปกรณ์ (ผัง MTN – สถานะ PM) | ขอบ**สีตามสถานะ PM** (แดงเกินกำหนด / ส้มใกล้ครบ / เขียวปกติ / ม่วงยังไม่ตรวจ) — SUB (density-aware) · จุด**เกินกำหนด**ป้ายโชว์เสมอ | ⚙️ | machine_no/jig_no (+ป้ายรอง: ชื่อเครื่อง) |
 
 **ป้าย (pill) spec:** `background: rgba(0,0,0,0.75-0.78)` · `borderRadius: 4` · ตัวหนังสือขาว bold · `whiteSpace: nowrap` + `overflow: hidden` + `textOverflow: ellipsis` · `maxWidth ≈ 1.8–2 × เส้นผ่านศูนย์กลางวงกลม`
 
-### สูตรขนาด (MK) — บังคับใช้ทุกหน้า
+### สูตรขนาด — ใช้ util กลาง `src/utils/markerScale.js` เท่านั้น (2026-07-10)
 ```js
-// ขนาด marker สเกลตามความกว้างรูปผังที่ RENDER จริง (ไม่ใช่ vw / ไม่ใช่ค่าตายตัว)
-const MK = Math.round(Math.max(34, Math.min(84, renderedMapWidth * 0.055)));
-// LineSetup ใช้ 0.05 / min 30 ได้ (จุดตั้งค่าเล็กกว่าเล็กน้อย)
-// ฟอนต์: pill = max(11, MK*0.24) · badge = max(10, MK*0.2) · ขอบวง = max(2, MK*0.06)
-// เครื่องจักร/WIP = 0.8×MK
+const { MK, SUB, showSubPills, ... } = markerScale(renderedMapWidth, { machineCount });
+// MK  = จุดคน/จุดงาน (max(34, min(84, w*0.055)))
+// SUB = เครื่องจักร/WIP — density-aware: ≤18 เครื่อง 0.6×MK · 19-32 → 0.5× · >32 → 0.42×
+// showSubPills = ป้ายชื่อหมุดรองซ่อนอัตโนมัติเมื่อ >18 เครื่อง (หน้าต้องมีปุ่ม 🏷️ ป้ายชื่อ ให้ override)
 ```
+- **ห้ามตั้งสูตรเองในหน้า** — ทุกหน้าที่วาดผัง (Setup + ทุกหน้าโชว์) เรียก util นี้ → **WYSIWYG: ตอน setup เห็นขนาด/ป้ายเหมือนตอนแสดงผลจริงทุกหน้า** (เคยพัง: setup ใช้ 0.75× ป้ายเดียว / Management ใช้ 0.6× + ป้ายรอง → ตอนวางดูไม่ทับ ตอนโชว์ทับเละ)
+- ป้ายที่**ห้ามซ่อนแม้โหมดแน่น**: เครื่องที่กำลัง Downtime (alarm), WIP ต่ำกว่า min, หมุดที่กำลังเลือก/แก้ไข
+- ฟอนต์ห้ามต่ำกว่า 11px เพื่อแก้ป้ายทับกัน — ให้ซ่อนป้าย (ดูจาก tooltip/คลิกการ์ดรายละเอียด) แทนการย่อฟอนต์
 
 ### กติกาที่ต้องมีเสมอ
-1. **Anchor** = `translate(-50%, -50%)` ที่พิกัดจริง (pos_top/pos_left เป็น % ของรูปจริง — ระวัง letterbox จาก object-fit: contain ต้องคูณกับ offset+rendered size ไม่ใช่ขนาด container)
+1. **Anchor = ศูนย์กลางวงกลมต้องตรงพิกัดจริงเป๊ะ** — wrapper ที่ใส่ `translate(-50%,-50%)` ต้องสูงเท่า*วงกลมเท่านั้น* และ**ป้าย/badge ทุกอันต้องเป็น `position:absolute; top:100%` ห้อยใต้** (ห้ามใส่ใน flex column ปกติ — จะทำให้จุดกึ่งกลางเลื่อนขึ้นครึ่งป้าย marker ลอยเหนือตำแหน่งจริง/ตกขอบบน — เคยพังที่ Management มาแล้ว) · pos_top/pos_left เป็น % ของรูปจริง ระวัง letterbox จาก object-fit: contain ต้องคูณ offset+rendered size
 2. **De-overlap**: marker ที่ทับกันให้ผลักออกจากกันในพิกเซลจริง + วาดเส้นประโยงกลับตำแหน่งจริง (ดู Dashboard modal / Management เป็นต้นแบบ) — ห้ามแก้ตำแหน่งใน DB
 3. **Edge clamp**: ตำแหน่ง*แสดงผล*ต้องถูก clamp ไม่ให้วงกลม+ป้ายตกขอบรูป — เผื่อซ้าย/ขวา/บน `size*0.55`, ล่าง `size*1.35` (มีป้ายห้อย) — ตำแหน่งจริงใน DB ไม่เปลี่ยน
 4. Hover card แสดงเฉพาะอุปกรณ์ที่ hover ได้จริง: `window.matchMedia('(hover: hover)').matches` — จอทัชให้ใช้ modal ที่มีปุ่มปิด + popup ทุกชนิดต้องมีทางปิดเสมอ (✕/auto-hide — กติกา backdrop click ดู section 5)
@@ -87,7 +89,17 @@ const MK = Math.round(Math.max(34, Math.min(84, renderedMapWidth * 0.055)));
 
 ### Modal ที่โชว์รูปผัง
 - ต้อง fit **จอเดียว ไม่มี scroll**: `width: fit-content; maxWidth: 97vw; maxHeight: 97vh; overflow: hidden` + รูป `maxWidth/maxHeight + width/height: auto` (จำกัดสองแกน)
+- **หน้าที่แสดง layout เดี่ยวเพื่อ visualize** (เช่น ผังเครื่องจักร PM) บนจอ landscape (PC/tablet/TV) รูปผังต้องเห็นครบใน viewport เดียว **ห้ามให้ต้อง scroll ลงไปดูครึ่งล่าง**: จำกัด `maxHeight: calc(100vh - ความสูง header จริง)` + `width: auto` แล้วจัดกึ่งกลาง
 - **ห้ามใช้ object-fit บน img ที่มี marker ทับ** — กล่อง img ต้องเท่ารูปจริงเสมอ ไม่งั้นพิกัด % เพี้ยน
+- **Hover/คลิกจุดเครื่องจักร และ WIP ต้องเปิดการ์ดรายละเอียดจากฐานข้อมูล** (คอนเซปเดียวกับ hover การ์ดสกิลพนักงาน): เครื่องจักร → machines + machine_types + รูป/ข้อมูลจาก jigs ที่ลิงก์ผ่าน machine_id (bucket `jig-images`) · WIP material → parts_master ตาม mat_no (มี image_url) · เปิดด้วยคลิก (จอทัชใช้ได้) ปิดด้วย ✕/คลิกนอกกรอบ
+
+### Popup/Modal ต้อง "ขยายกว้าง" ก่อนยอมสูงเกินจอ (2026-07-10)
+- จอ landscape (PC/tablet/TV): modal ที่เนื้อหายาว **ห้ามทำทรงแคบสูงแล้วให้ scroll แนวตั้ง** — ให้ขยายกว้าง `width: min(96vw, 1400-1500px)` แล้วจัดเนื้อหาเป็น **2 คอลัมน์** (`gridTemplateColumns: '1fr 1fr'` เมื่อจอ ≥1100px; header/ปุ่มยืนยัน full-width ด้วย `gridColumn: '1 / -1'`) · `maxHeight: 94vh + overflowY: auto` เป็นแค่ fallback สุดท้าย
+- ต้นแบบ: modal ตรวจสอบคำขอปิดกะ / ปิดกะ ใน `DailyReport.jsx`
+
+### Section ยาวในหน้า ต้องย่อ/ขยายได้ (minimize/maximize)
+- section รายการยาว (Prod Orders, Downtime, งานเสีย ฯลฯ) ต้องมีปุ่มพับ ▼ ที่หัว section (หัวแสดงชื่อ+จำนวนเสมอ) — จำสถานะใน `localStorage` (`dr_live_collapse_<section>` ฯลฯ) · default = ขยาย ยกเว้น section ว่าง
+- ลด vertical overflow ของหน้าหลักให้เห็นภาพรวมได้ในจอเดียว แล้วค่อยกดขยายส่วนที่สนใจ
 
 ## 5.1 Balloon จุดตรวจบน drawing/รูปอ้างอิง (QA `/qa-setup` · PM Setup)
 
@@ -100,6 +112,7 @@ const MK = Math.round(Math.max(34, Math.min(84, renderedMapWidth * 0.055)));
   // ฟอนต์เลขใน balloon = max(11, BK*0.42-0.45) · ขอบขาว = max(2, BK*0.07)
   ```
 - **Edge clamp**: ตำแหน่ง*แสดงผล*ต้อง clamp ไม่ให้ balloon ตกขอบรูป (เผื่อ `BK*0.7` ทุกด้าน; anchor แบบห้อยลง `translate(-50%,-100%)` เผื่อหัวบน `BK+4px`) — **ค่าจริงใน DB ไม่เปลี่ยน**
+- **หัก letterbox เสมอ (2026-07-10)**: `<img objectFit:'contain'>` ที่โดน `maxHeight`/สัดส่วน container บีบจะเกิดแถบว่างซ้าย-ขวา/บน-ล่าง → **% ของ container ≠ % ของรูปจริง** ห้ามวาง balloon เป็น % ของ container ตรงๆ — ต้องวัดกล่องรูปจริง (naturalWidth/Height เทียบกล่อง render) ได้ `{ox, oy, rw, rh}` แล้ววาง balloon ใน layer `position:absolute; left:ox; top:oy; width:rw; height:rh` (ใช้ % ของ layer นี้) และ**การแปลงตำแหน่งคลิกวาง pin ต้องวัดจาก layer เดียวกัน** · ใช้ hook กลาง `src/utils/useImgBox.js` (คณิตเดียวกับ `MachineFloorMap.jsx`) — ทั้ง 3 renderer ฝั่ง PM ใช้แล้ว และ `maxHeight` ของรูปทั้ง 3 = **300 เท่ากัน** (จอวางกับจอดูเห็นสัดส่วนเดียวกัน)
 - พิกัดเก็บเป็น **% ของรูป** (`pos_x/pos_y` 0–100 ฝั่ง QA, `x_pos/y_pos` 0–1 ฝั่ง PM)
   - **anchor ฝั่ง QA = `translate(-50%,-50%)`** (จุดกึ่งกลาง balloon = พิกัด — ดู `QAInspectionSetup.jsx`)
   - **anchor ฝั่ง PM = `translate(-50%,-100%)`** (map-pin: ปลายล่าง balloon = พิกัด) — ใช้เหมือนกัน**ทั้ง 3 renderer**: ตอนวาง (`SpinAnnotator.jsx`), ตอนตั้งค่า (`PMSetup.jsx`), ตอนตรวจ/ดูผล (`PMCheckData.jsx`) เพราะทั้งหมดอ่าน `jig_checkpoints.x_pos/y_pos` ตัวเดียวกัน — **ห้ามแก้ anchor แค่ไฟล์เดียว** ไม่งั้น pin จะเลื่อนครึ่งความสูงระหว่างจอวางกับจอดู (แก้ต้องแก้พร้อมกันทั้ง 3)
@@ -149,10 +162,12 @@ pattern ร่วมของทุกบอร์ดที่วางราย
 ## 7. เบ็ดเตล็ดที่เคยกัด
 
 - `index.css` ตั้ง `input{width:100%}` ทั้งแอป — input ใน flex row ต้องกำหนด width เอง (checkbox/radio มี rule ยกเว้น `width:auto` แล้ว — ห้ามลบ)
+- พื้นที่ว่างแนวบนของทุกหน้า: `main` ใช้ `paddingTop: 14` (ไม่ใช่ 60) — มีแค่ icon cluster fixed มุมขวาบน; แถบควบคุมที่ชิดขวาบนของหน้า ให้เผื่อ `paddingRight` ~52px กันชนไอคอน
 - ปุ่มพับ sidebar อยู่**ในหัว sidebar** (ปุ่ม ⟨ ข้างโลโก้) — ปุ่มลอย ☰ โชว์เฉพาะตอนพับ ห้ามมีปุ่มลอยทับเนื้อหา
+- เข้าโมดูลจากหน้าหลัก (DeptHub) → sidebar กาง**เฉพาะหมวดของโมดูลที่กด** หมวดอื่นพับอัตโนมัติ (2026-07-10) — การ์ดใน DeptHub ผูกหมวดผ่าน `navGroups` + เรียก `focusSidebarGroups()` จาก App.jsx · เพิ่มการ์ด/หมวดใหม่ต้องใส่ `navGroups` ด้วยเสมอ (ชื่อต้องตรงกับ `NAV_GROUP_ORDER`) · user ยังพับ/กางเองต่อได้ตามปกติ
 - สิทธิ์ action ใช้ `can(resource, action, role)` จาก `src/utils/permissions.js` — ห้าม hardcode `['admin',...].includes(role)` เพิ่ม (ดู docs/PERMISSIONS-DESIGN.md)
 - วันที่งาน: `getWorkDate()` เท่านั้น (ก่อน 08:00 = วันก่อนหน้า) ห้าม `toISOString()`
-- อัปโหลดรูป: ผ่าน `ImageCropModal` เท่านั้น (รูปนิ่งบีบอัตโนมัติ · GIF ส่งทั้งไฟล์ ≤2MB คงการขยับ — ห้ามถอด cap) + เปลี่ยนรูปแล้วลบไฟล์เก่าจาก storage เสมอ (2026-07-09 — ดู CLAUDE.md "Storage & รูปภาพ")
+- อัปโหลดรูป: ผ่าน `ImageCropModal` (รูปนิ่งบีบอัตโนมัติ · GIF ส่งทั้งไฟล์ ≤2MB คงการขยับ — ห้ามถอด cap) — ยกเว้นรูปที่ crop ไม่เหมาะ (ผัง/drawing/หลักฐาน) ให้บีบก่อนอัปโหลดแทน ห้ามส่งรูปดิบ + เปลี่ยน/ลบรูปแล้วลบไฟล์เก่าจาก storage เสมอ (2026-07-10 — รายชื่อหน้า+ข้อยกเว้นดู CLAUDE.md "Storage & รูปภาพ")
 - หน้าที่ query ตาม section: กรองด้วย `sections` array จาก UserContext (`inSectionScope` / `.in('section', ...)`) ไม่ใช่ `section` เดี่ยว (2026-07-09 — ดู CLAUDE.md "Section/Line/Team Scoping")
 
 ---

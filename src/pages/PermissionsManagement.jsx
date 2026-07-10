@@ -29,6 +29,7 @@ const PAGE_GROUPS = [
       { key: 'page:/checkin',       label: 'เช็คชื่อ & PPE' },
       { key: 'page:/management',   label: 'จัดการไลน์ผลิต' },
       { key: 'page:/daily-report', label: 'Daily Report' },
+      { key: 'page:/daily-pm',     label: 'Daily PM ฝ่ายผลิต' },
       { key: 'page:/oee-analytics', label: 'OEE' },
     ],
   },
@@ -39,6 +40,7 @@ const PAGE_GROUPS = [
       { key: 'page:/heijunka',     label: 'Kanban Board' },
       { key: 'page:/rack-center',  label: 'Rack Center management' },
       { key: 'page:/planner-sales', label: 'Planner & Sales' },
+      { key: 'page:/rundown-stock', label: 'Rundown Stock' },
       { key: 'page:/customer-demand', label: 'Delivery' },
     ],
   },
@@ -48,6 +50,14 @@ const PAGE_GROUPS = [
       { key: 'page:/pm-check',    label: 'ตรวจสอบอุปกรณ์เครื่องจักร' },
       { key: 'page:/pm-schedule', label: 'แผน PM อุปกรณ์เครื่องจักร' },
       { key: 'page:/pm-setup',    label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร' },
+      { key: 'page:/mtn-layout',  label: 'ผังเครื่องจักร (ซ่อมบำรุง)' },
+    ],
+  },
+  {
+    group: 'ควบคุมคุณภาพ QA/QC',
+    pages: [
+      { key: 'page:/qa',       label: 'Quality Control Center' },
+      { key: 'page:/qa-setup', label: 'มาตรฐานการตรวจ & Drawing' },
     ],
   },
   {
@@ -68,6 +78,7 @@ const PAGE_GROUPS = [
       { key: 'page:/machine-database',  label: 'ฐานข้อมูลเครื่องจักร' },
       { key: 'page:/shift-organize',    label: 'ตารางกะ' },
       { key: 'page:/company-calendar',  label: 'ปฏิทินบริษัท' },
+      { key: 'page:/notification-config', label: 'ตั้งค่าการแจ้งเตือน' },
       { key: 'page:/add-user',          label: 'จัดการผู้ใช้งาน' },
       { key: 'page:/permissions',       label: 'จัดการสิทธิ์ (หน้านี้)' },
     ],

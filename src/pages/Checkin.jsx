@@ -5,6 +5,7 @@ import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { loadCompanyCalendar, getDayType } from '../utils/companyCalendar';
 import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy';
+import { inSectionScope } from '../utils/sectionScope';
 
 const LEAVE_TYPES = ['ลากิจ', 'ลาป่วย', 'ลาพักร้อน', 'อื่นๆ'];
 const LEAVE_DURATION_OPTS = [
@@ -660,7 +661,14 @@ export default function Checkin() {
       const days = [];
       for (let d = dayFrom; d <= dayTo; d++) days.push(d);
 
-      let empQ = supabase.from('employees').select('id, employee_id_code, name, position, line_id').eq('is_active', true).order('employee_id_code');
+      let empQ = supabase.from('employees').select('id, employee_id_code, name, position, line_id, section').eq('is_active', true).order('employee_id_code');
+      // mandatory scope filter ก่อน แล้วค่อยกรองตามส่วนงานที่เลือกใน modal (pattern เดียวกับ fetchData)
+      if (role === 'leader') {
+        if (lineId) empQ = empQ.eq('line_id', lineId);
+        if (team)   empQ = empQ.eq('team', team);
+      } else if (scopeSecs.length) {
+        empQ = empQ.in('section', scopeSecs);
+      }
       const { data: empData } = await empQ;
       const lineIds = exportSection ? lines.filter(l => l.section === exportSection).map(l => l.id) : null;
       const scopedEmp = (empData || []).filter(e => !lineIds || lineIds.includes(e.line_id));
@@ -1161,7 +1169,7 @@ export default function Checkin() {
                           onClick={() => toggle(emp.id, 'has_extended_ot')}
                         >
                           <div style={{
-                            fontSize: 9, fontWeight: 700, letterSpacing: '0.05em',
+                            fontSize: 11, fontWeight: 700, letterSpacing: '0.05em',
                             padding: '2px 5px', borderRadius: 4,
                             background: rec.has_extended_ot ? 'rgba(239,68,68,0.15)' : 'var(--bg2)',
                             color: rec.has_extended_ot ? '#ef4444' : 'var(--muted)',
@@ -1218,7 +1226,7 @@ export default function Checkin() {
                               key={opt.value}
                               onClick={() => setLeaveDuration(emp.id, opt.value)}
                               style={{
-                                flex: 1, padding: '3px 0', fontSize: 10, fontWeight: 700,
+                                flex: 1, padding: '3px 0', fontSize: 11, fontWeight: 700,
                                 borderRadius: 5, border: 'none', cursor: 'pointer',
                                 background: rec.leave_duration === opt.value ? '#a855f7' : 'var(--bg2)',
                                 color: rec.leave_duration === opt.value ? '#fff' : 'var(--text2)',
@@ -1240,7 +1248,7 @@ export default function Checkin() {
                               onClick={() => setField(emp.id, 'leave_period', opt.value)}
                               title={opt.sub}
                               style={{
-                                flex: 1, padding: '3px 4px', fontSize: 10, fontWeight: 700,
+                                flex: 1, padding: '3px 4px', fontSize: 11, fontWeight: 700,
                                 borderRadius: 5, border: 'none', cursor: 'pointer',
                                 background: rec.leave_period === opt.value ? '#0ea5e9' : 'var(--bg2)',
                                 color: rec.leave_period === opt.value ? '#fff' : 'var(--text2)',
@@ -1248,7 +1256,7 @@ export default function Checkin() {
                               }}
                             >
                               {opt.label}
-                              <div style={{ fontSize: 8, opacity: 0.8, fontWeight: 400 }}>{opt.sub}</div>
+                              <div style={{ fontSize: 11, opacity: 0.8, fontWeight: 400 }}>{opt.sub}</div>
                             </button>
                           ))}
                         </div>
@@ -1286,12 +1294,12 @@ export default function Checkin() {
                   <td style={{ textAlign: 'center', fontWeight: 700, color: meta.color, whiteSpace: 'nowrap', fontSize: 12 }}>
                     {meta.label}
                     {hasLeave && rec.leave_type && (
-                      <div style={{ fontSize: 10, fontWeight: 600, color: meta.color, marginTop: 1, opacity: 0.8 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: meta.color, marginTop: 1, opacity: 0.8 }}>
                         {rec.leave_type}
                       </div>
                     )}
                     {hasLeave && rec.leave_duration === 'hours' && rec.leave_hours && (
-                      <div style={{ fontSize: 10, fontWeight: 400, color: 'var(--muted)', marginTop: 1 }}>
+                      <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)', marginTop: 1 }}>
                         {rec.leave_hours} ชม.
                       </div>
                     )}
@@ -1300,7 +1308,7 @@ export default function Checkin() {
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
                       {shiftInfo.shift === 'night' ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                          <span style={{ fontSize: 9, color: 'var(--muted)' }}>{shortDateLabel(addDaysToDateStr(shiftInfo.workDateStr, 1))}</span>
+                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{shortDateLabel(addDaysToDateStr(shiftInfo.workDateStr, 1))}</span>
                           <input
                             type="checkbox"
                             style={{ transform: 'scale(1.4)', accentColor: '#06b6d4', width: 'auto' }}
@@ -1334,7 +1342,7 @@ export default function Checkin() {
                       {/* จองรถล่วงหน้าเพิ่ม — วันหยุดต่อเนื่อง */}
                       {extraAdvanceDates.map(d => (
                         <div key={d} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 4, borderTop: '1px dashed var(--border)' }}>
-                          <span style={{ fontSize: 9, color: '#f59e0b', fontWeight: 700 }}>{shortDateLabel(d)} 🔶</span>
+                          <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>{shortDateLabel(d)} 🔶</span>
                           <input
                             type="checkbox"
                             style={{ transform: 'scale(1.3)', accentColor: '#f59e0b', width: 'auto' }}
@@ -1479,8 +1487,10 @@ export default function Checkin() {
             <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>ส่วนงาน</label>
             <select value={exportSection} onChange={e => setExportSection(e.target.value)}
               style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', marginBottom: 18, background: 'var(--bg)', color: 'var(--text)' }}>
-              <option value="">— ทุกส่วนงาน —</option>
-              {sections.map(s => <option key={s} value={s}>{s}</option>)}
+              {/* จำกัดตัวเลือกตาม scope — "ทุกส่วนงาน" เฉพาะ user ที่ไม่ถูกจำกัดขอบเขต (query ใน handleExportForms กรอง scope ซ้ำอีกชั้นเสมอ) */}
+              <option value="">{scopeSecs.length ? '— ทุกส่วนงานใน scope —' : '— ทุกส่วนงาน —'}</option>
+              {(scopeSecs.length ? sections.filter(s => inSectionScope(scopeSecs, s)) : sections)
+                .map(s => <option key={s} value={s}>{s}</option>)}
             </select>
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
