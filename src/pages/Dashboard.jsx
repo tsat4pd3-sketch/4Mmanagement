@@ -737,7 +737,7 @@ export default function Dashboard() {
           </div>
         </motion.div>
 
-        <motion.div {...stagger(1)} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <motion.div {...stagger(1)} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', paddingRight: 52 }}>
           {/* Section filter — สำหรับจอ TV ดูเฉพาะส่วนงานตัวเอง */}
           {sections.length > 1 && (
             <select

@@ -640,6 +640,7 @@ export default function LineSetup() {
   // ขนาดหมุดวงกลมบนผัง — สเกลตามความกว้างของรูปที่ render จริง (สูตรเดียวกับ Dashboard/Management)
   // หมุดเป็นวงกลม + ป้ายชื่อ (pill) ด้านล่าง — ชื่อเต็มไม่ถูกตัดเหลือไม่กี่ตัวอักษรเหมือนการ์ดแบบเดิม
   const MK = Math.round(Math.max(30, Math.min(72, (imgBox?.rw || 800) * 0.05)));
+  const MKM = Math.round(MK * 0.75); // WIP/เครื่องจักร = ไอคอน ไม่ใช่หมุดหลัก — เล็กลงกันผังแน่น (สอดคล้อง Management 0.6×MK ของจุดคน)
   const PILL_FONT = Math.max(11, Math.round(MK * 0.26));
   const pillSt = {
     background: 'rgba(0,0,0,0.78)', borderRadius: 4, padding: '1px 6px',
@@ -791,7 +792,7 @@ export default function LineSetup() {
                     title={canEdit ? 'คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง' : p.point_name}
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
-                      width: MK, height: MK, borderRadius: '50%',
+                      width: MKM, height: MKM, borderRadius: '50%',
                       border: isSelected ? '2px solid var(--green)' : isLow ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.75)',
                       backgroundColor: isLow ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
@@ -816,7 +817,7 @@ export default function LineSetup() {
               {activeTab === 'wip' && wipTempPos && (
                 <div style={{
                   position: 'absolute', top: wipTempPos.top, left: wipTempPos.left, transform: 'translate(-50%, -50%)',
-                  width: MK, height: MK, borderRadius: '50%',
+                  width: MKM, height: MKM, borderRadius: '50%',
                   border: '1px dashed var(--accent)', backgroundColor: 'rgba(61,214,92,0.1)',
                   zIndex: 10, pointerEvents: 'none',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -857,7 +858,7 @@ export default function LineSetup() {
                     title={!canEdit ? p.machine_no : connectMode ? 'คลิกเพื่อเชื่อมต่อสายงาน' : 'คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง'}
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
-                      width: MK, height: MK, borderRadius: '50%',
+                      width: MKM, height: MKM, borderRadius: '50%',
                       border: isConnectSource ? '2px solid #f97316' : isSelected ? '2px solid var(--green)' : p.redundancy_group ? '2px dashed #a855f7' : '2px solid rgba(255,255,255,0.75)',
                       backgroundColor: isConnectSource ? 'rgba(249,115,22,0.22)' : isSelected ? 'rgba(34,197,94,0.18)' : p.redundancy_group ? 'rgba(168,85,247,0.15)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
@@ -889,7 +890,7 @@ export default function LineSetup() {
               {activeTab === 'machines' && machineTempPos && (
                 <div style={{
                   position: 'absolute', top: machineTempPos.top, left: machineTempPos.left, transform: 'translate(-50%, -50%)',
-                  width: MK, height: MK, borderRadius: '50%',
+                  width: MKM, height: MKM, borderRadius: '50%',
                   border: '1px dashed var(--accent)', backgroundColor: 'rgba(61,214,92,0.1)',
                   zIndex: 10, pointerEvents: 'none',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',

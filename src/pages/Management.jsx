@@ -1913,7 +1913,7 @@ export default function Management() {
                       const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
                       const wTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const wLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
-                      const WK = Math.round(MK * 0.8); // WIP/machine เดิม render เล็กกว่าจุดคน — คงสัดส่วนนั้นไว้
+                      const WK = Math.round(MK * 0.6); // WIP เป็นแค่ไอคอน ไม่ใช่รูปคน — เล็กกว่าจุดคนชัดเจน กันผังแน่น
                       const wcl = clampPos(wLeft, wTop, WK);
                       const wc = isLow ? '#ef4444' : 'rgba(34,197,94,0.85)';
                       return (
@@ -1954,7 +1954,7 @@ export default function Management() {
                       const mc = drMachines.find(m => m.machine_no === p.machine_no);
                       const mTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const mLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
-                      const MKS = Math.round(MK * 0.8); // เครื่องจักรเดิม render เล็กกว่าจุดคน — คงสัดส่วนนั้นไว้
+                      const MKS = Math.round(MK * 0.6); // เครื่องจักรเป็นแค่ไอคอนเฟือง — เล็กกว่าจุดคนชัดเจน กันผังแน่น
                       const mcl = clampPos(mLeft, mTop, MKS);
                       const firstAlarm = alarms?.[0];
                       const elapsed = firstAlarm ? dtElapsedMin(firstAlarm) : null;
