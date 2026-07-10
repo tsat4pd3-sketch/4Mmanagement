@@ -23,14 +23,16 @@
 
 **ป้าย (pill) spec:** `background: rgba(0,0,0,0.75-0.78)` · `borderRadius: 4` · ตัวหนังสือขาว bold · `whiteSpace: nowrap` + `overflow: hidden` + `textOverflow: ellipsis` · `maxWidth ≈ 1.8–2 × เส้นผ่านศูนย์กลางวงกลม`
 
-### สูตรขนาด (MK) — บังคับใช้ทุกหน้า
+### สูตรขนาด — ใช้ util กลาง `src/utils/markerScale.js` เท่านั้น (2026-07-10)
 ```js
-// ขนาด marker สเกลตามความกว้างรูปผังที่ RENDER จริง (ไม่ใช่ vw / ไม่ใช่ค่าตายตัว)
-const MK = Math.round(Math.max(34, Math.min(84, renderedMapWidth * 0.055)));
-// LineSetup ใช้ 0.05 / min 30 ได้ (จุดตั้งค่าเล็กกว่าเล็กน้อย)
-// ฟอนต์: pill = max(11, MK*0.24) · badge = max(10, MK*0.2) · ขอบวง = max(2, MK*0.06)
-// เครื่องจักร/WIP = 0.6×MK (Management) / 0.75×MK (LineSetup) — เป็นไอคอน ไม่ใช่รูปคน ให้เล็กกว่าจุดคนชัดเจน กันผังแน่น
+const { MK, SUB, showSubPills, ... } = markerScale(renderedMapWidth, { machineCount });
+// MK  = จุดคน/จุดงาน (max(34, min(84, w*0.055)))
+// SUB = เครื่องจักร/WIP — density-aware: ≤18 เครื่อง 0.6×MK · 19-32 → 0.5× · >32 → 0.42×
+// showSubPills = ป้ายชื่อหมุดรองซ่อนอัตโนมัติเมื่อ >18 เครื่อง (หน้าต้องมีปุ่ม 🏷️ ป้ายชื่อ ให้ override)
 ```
+- **ห้ามตั้งสูตรเองในหน้า** — ทุกหน้าที่วาดผัง (Setup + ทุกหน้าโชว์) เรียก util นี้ → **WYSIWYG: ตอน setup เห็นขนาด/ป้ายเหมือนตอนแสดงผลจริงทุกหน้า** (เคยพัง: setup ใช้ 0.75× ป้ายเดียว / Management ใช้ 0.6× + ป้ายรอง → ตอนวางดูไม่ทับ ตอนโชว์ทับเละ)
+- ป้ายที่**ห้ามซ่อนแม้โหมดแน่น**: เครื่องที่กำลัง Downtime (alarm), WIP ต่ำกว่า min, หมุดที่กำลังเลือก/แก้ไข
+- ฟอนต์ห้ามต่ำกว่า 11px เพื่อแก้ป้ายทับกัน — ให้ซ่อนป้าย (ดูจาก tooltip/คลิกการ์ดรายละเอียด) แทนการย่อฟอนต์
 
 ### กติกาที่ต้องมีเสมอ
 1. **Anchor = ศูนย์กลางวงกลมต้องตรงพิกัดจริงเป๊ะ** — wrapper ที่ใส่ `translate(-50%,-50%)` ต้องสูงเท่า*วงกลมเท่านั้น* และ**ป้าย/badge ทุกอันต้องเป็น `position:absolute; top:100%` ห้อยใต้** (ห้ามใส่ใน flex column ปกติ — จะทำให้จุดกึ่งกลางเลื่อนขึ้นครึ่งป้าย marker ลอยเหนือตำแหน่งจริง/ตกขอบบน — เคยพังที่ Management มาแล้ว) · pos_top/pos_left เป็น % ของรูปจริง ระวัง letterbox จาก object-fit: contain ต้องคูณ offset+rendered size
