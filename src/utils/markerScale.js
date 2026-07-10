@@ -30,6 +30,6 @@ export function markerScale(renderedMapWidth, { machineCount = 0 } = {}) {
     subRing: Math.max(2, Math.round(SUB * 0.08)),
     pillFont: Math.max(11, Math.round(MK * 0.24)),
     subPillFont: Math.max(11, Math.round(SUB * 0.3)),
-    badgeFont: Math.max(10, Math.round(MK * 0.2)),
+    badgeFont: Math.max(11, Math.round(MK * 0.2)),
   };
 }

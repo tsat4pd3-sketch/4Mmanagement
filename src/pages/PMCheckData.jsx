@@ -24,6 +24,9 @@ const DEPT_OPTIONS = [
   { key: 'die_maintenance', label: 'Die Maintenance' },
   { key: 'production', label: 'ฝ่ายผลิต' },
 ]
+// ความรับผิดชอบตามแผนก → ชนิดอุปกรณ์: mtn=machine · jig mtn=jig · die mtn=die
+// ฝ่ายผลิต (production) = Autonomous Maintenance เห็น "ทุกชนิด" (ไม่กรอง)
+const DEPT_EQUIP_TYPE = { maintenance: 'machine', jig_maintenance: 'jig', die_maintenance: 'die' }
 
 function getPublicUrl(path) {
   if (!path) return null
@@ -95,7 +98,7 @@ function cpCheckStatus(cp, r) {
 //   • ลากซ้าย/ขวา (หรือกดจุดใต้ภาพ) เพื่อหมุนดูรอบเครื่อง — pin โชว์เฉพาะเฟรมที่วางไว้ (image_id)
 //   • สีหมุด = สถานะตรวจจริง (OK/NG) · คลิกหมุด → เลื่อน+ไฮไลต์แถวเช็คของจุดนั้น (activeCpId)
 // pin สเกล/clamp อิง "กล่องรูปจริง" หัก letterbox (docs/UI-CONVENTIONS.md §5.1)
-function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick }) {
+function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, maxH = 300 }) {
   const [frameIdx, setFrameIdx] = useState(0)
   const [playing, setPlaying] = useState(false)
   useEffect(() => { setFrameIdx(0); setPlaying(false) }, [frames])
@@ -155,7 +158,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick }) 
     <div style={{ marginBottom: 16 }}>
       <div ref={boxRef} onPointerDown={pointerDown}
         style={{ position: 'relative', userSelect: 'none', touchAction: 'none', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', cursor: spin ? 'grab' : 'default' }}>
-        <img ref={imgRef} src={cur?.url} alt="" draggable={false} onLoad={recalc} style={{ width: '100%', maxHeight: 320, objectFit: 'contain', background: 'var(--bg2)', display: 'block' }} />
+        <img ref={imgRef} src={cur?.url} alt="" draggable={false} onLoad={recalc} style={{ width: '100%', maxHeight: maxH, objectFit: 'contain', background: 'var(--bg2)', display: 'block' }} />
         {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้ */}
         {imgBox && (
           <div style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
@@ -513,11 +516,12 @@ export default function PMCheckData() {
   const rowRefs = useRef({})                          // แถวเช็คแต่ละจุด (เลื่อนหาเมื่อคลิกหมุด)
   // มือถือ/แท็บเล็ต: master-detail — โชว์ "ลิสต์อุปกรณ์" หรือ "ฟอร์มเช็ค" ทีละอัน (ไม่อัด 2 คอลัมน์)
   const [isNarrow, setIsNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches)
+  const [isWide, setIsWide] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1180px)').matches)
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 860px)')
-    const on = () => setIsNarrow(mq.matches)
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
+    const mqN = window.matchMedia('(max-width: 860px)'), mqW = window.matchMedia('(min-width: 1180px)')
+    const on = () => { setIsNarrow(mqN.matches); setIsWide(mqW.matches) }
+    mqN.addEventListener('change', on); mqW.addEventListener('change', on)
+    return () => { mqN.removeEventListener('change', on); mqW.removeEventListener('change', on) }
   }, [])
   const [tab, setTab] = useState('record')
   const [results, setResults] = useState({})
@@ -696,6 +700,11 @@ export default function PMCheckData() {
 
   const deptColor = DEPT_COLORS[department] ?? '#3dd65c'
   const jigImg = selectedJig ? getPublicUrl(selectedJig.image_path) : null
+  // กรองอุปกรณ์ตามความรับผิดชอบของแผนก (ผลิต=ทุกชนิด · แผนก mtn เห็นเฉพาะชนิดที่รับผิดชอบ)
+  // อุปกรณ์เก่าที่ยังไม่ได้ระบุชนิด → นับเป็น machine (โผล่ใต้ "ซ่อมบำรุง")
+  const deptJigs = department === 'production'
+    ? jigs
+    : jigs.filter(j => (j.equipment_type || 'machine') === DEPT_EQUIP_TYPE[department])
 
   // จอแคบ: โชว์ทีละคอลัมน์ (ยังไม่เลือก=ลิสต์ · เลือกแล้ว=ฟอร์ม) · desktop โชว์ทั้งคู่เหมือนเดิม
   const showSidebar = !isNarrow || !selectedJig
@@ -764,8 +773,8 @@ export default function PMCheckData() {
               ))}
             </>)
           })() : (<>
-            {jigs.length === 0 && <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20 }}>ยังไม่มีอุปกรณ์</p>}
-            {jigs.map(jig => (
+            {deptJigs.length === 0 && <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ไม่มีอุปกรณ์ในความรับผิดชอบของแผนกนี้<br /><span style={{ fontSize: 11 }}>({DEPT_OPTIONS.find(d => d.key === department)?.label} = เฉพาะ {DEPT_EQUIP_TYPE[department]})</span></p>}
+            {deptJigs.map(jig => (
               <div key={jig.id} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{jig.name}</p>
                 {jig.line_name && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>📍 {jig.line_name}</p>}
@@ -801,27 +810,28 @@ export default function PMCheckData() {
             </div>
 
             <div style={{ ...S.body, ...(isNarrow ? { padding: 12 } : null) }}>
-              {tab === 'record' && (
-                <div style={{ maxWidth: 680, margin: '0 auto' }}>
-                  {(() => {
-                    const modelUrl = selectedJig.model_path ? getPublicUrl(selectedJig.model_path) : null
-                    const showPhoto = frames.length > 0 && selectedJig.layout_type !== 'list'
-                    if (!modelUrl && !showPhoto) return null
-                    return (
-                      <>
-                        {modelUrl && showPhoto && (
-                          <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)', marginBottom: 10 }}>
-                            <button onClick={() => setViewMode('photo')} style={S.tabBtn(viewMode === 'photo')}>📷 รูป</button>
-                            <button onClick={() => setViewMode('3d')} style={S.tabBtn(viewMode === '3d')}>🧊 3D</button>
-                          </div>
-                        )}
-                        {modelUrl && (viewMode === '3d' || !showPhoto)
-                          ? <Model3DViewer url={modelUrl} />
-                          : showPhoto && <JigSpinCheck frames={frames} checkpoints={checkpoints} results={results} activeCpId={activeCpId} onPinClick={setActiveCpId} />}
-                      </>
-                    )
-                  })()}
+              {tab === 'record' && (() => {
+                const modelUrl = selectedJig.model_path ? getPublicUrl(selectedJig.model_path) : null
+                const showPhoto = frames.length > 0 && selectedJig.layout_type !== 'list'
+                const hasViewer = !!modelUrl || showPhoto
+                // จอกว้าง (≥1180px) + มีรูป/โมเดล → 2 คอลัมน์ (รูปซ้ายค้างไว้ · รายการเช็คขวา) ใช้พื้นที่เต็ม
+                const twoCol = isWide && hasViewer
+                const viewerNode = hasViewer ? (
+                  <>
+                    {modelUrl && showPhoto && (
+                      <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)', marginBottom: 10 }}>
+                        <button onClick={() => setViewMode('photo')} style={S.tabBtn(viewMode === 'photo')}>📷 รูป</button>
+                        <button onClick={() => setViewMode('3d')} style={S.tabBtn(viewMode === '3d')}>🧊 3D</button>
+                      </div>
+                    )}
+                    {modelUrl && (viewMode === '3d' || !showPhoto)
+                      ? <Model3DViewer url={modelUrl} height={twoCol ? 460 : 340} />
+                      : showPhoto && <JigSpinCheck frames={frames} checkpoints={checkpoints} results={results} activeCpId={activeCpId} onPinClick={setActiveCpId} maxH={twoCol ? 460 : 300} />}
+                  </>
+                ) : null
 
+                const formNode = (
+                  <>
                   {checkpoints.length === 0 ? (
                     <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 0' }}>ยังไม่มีจุดตรวจสอบ — ไปตั้งค่าที่ PM Setup ก่อน</p>
                   ) : (
@@ -868,8 +878,21 @@ export default function PMCheckData() {
                       </button>
                     </>
                   )}
-                </div>
-              )}
+                  </>
+                )
+
+                return twoCol ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(360px, 1fr) minmax(420px, 640px)', gap: 24, alignItems: 'start', maxWidth: 1500, margin: '0 auto' }}>
+                    <div style={{ position: 'sticky', top: 0 }}>{viewerNode}</div>
+                    <div>{formNode}</div>
+                  </div>
+                ) : (
+                  <div style={{ maxWidth: hasViewer ? 760 : 720, margin: '0 auto' }}>
+                    {viewerNode}
+                    {formNode}
+                  </div>
+                )
+              })()}
 
               {tab === 'history' && (
                 <div style={{ maxWidth: 680, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
