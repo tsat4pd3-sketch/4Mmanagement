@@ -12,6 +12,7 @@ import { exportInspectionExcel } from '../lib/pmExportExcel'
 import { exportInspectionPDF, resolveSignatureDataUrl } from '../lib/pmExportPDF'
 import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } from '../lib/pmTaxonomy'
 import useImgBox from '../utils/useImgBox'
+import Model3DViewer from '../components/Model3DViewer'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -96,11 +97,19 @@ function cpCheckStatus(cp, r) {
 // pin สเกล/clamp อิง "กล่องรูปจริง" หัก letterbox (docs/UI-CONVENTIONS.md §5.1)
 function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick }) {
   const [frameIdx, setFrameIdx] = useState(0)
-  useEffect(() => { setFrameIdx(0) }, [frames])
+  const [playing, setPlaying] = useState(false)
+  useEffect(() => { setFrameIdx(0); setPlaying(false) }, [frames])
   const boxRef = useRef(null)
   const drag = useRef(null) // { startX, startIdx, moved }
   const spin = frames.length >= 2
   const cur = frames[frameIdx] || frames[0] || null
+
+  // auto-play หมุนวนอัตโนมัติ (Task A) — หยุดเมื่อผู้ใช้ลากเอง / เลือกจุด
+  useEffect(() => {
+    if (!playing || !spin) return
+    const t = setInterval(() => setFrameIdx(i => (i + 1) % frames.length), 650)
+    return () => clearInterval(t)
+  }, [playing, spin, frames.length])
   const { imgRef, imgBox, recalc } = useImgBox([cur?.url])
   useEffect(() => { frames.forEach(f => { if (f.url) { const im = new Image(); im.src = f.url } }) }, [frames])
 
@@ -126,6 +135,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick }) 
 
   const pointerDown = (e) => {
     if (!spin) return
+    setPlaying(false) // ผู้ใช้ลากเอง → หยุด auto-play
     drag.current = { startX: e.clientX, startIdx: frameIdx, moved: false }
     const move = (ev) => {
       if (!drag.current) return
@@ -165,6 +175,10 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick }) 
         {spin && (
           <>
             <div style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 12, padding: '2px 9px', pointerEvents: 'none' }}>🔄 {frameIdx + 1}/{frames.length}</div>
+            <button onClick={e => { e.stopPropagation(); setPlaying(p => !p) }} title={playing ? 'หยุดหมุน' : 'หมุนอัตโนมัติ'}
+              style={{ position: 'absolute', top: 8, left: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', borderRadius: 999, padding: '3px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+              {playing ? '⏸ หยุด' : '▶ หมุนเอง'}
+            </button>
             <div style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 11, fontWeight: 600, borderRadius: 12, padding: '3px 12px', pointerEvents: 'none' }}>🔄 ลากซ้าย/ขวาเพื่อหมุนดูรอบเครื่อง</div>
           </>
         )}
@@ -495,6 +509,7 @@ export default function PMCheckData() {
   const [checkpoints, setCheckpoints] = useState([])
   const [frames, setFrames] = useState([])          // jig_images (360° spin) ของอุปกรณ์ที่เลือก
   const [activeCpId, setActiveCpId] = useState(null) // จุดที่กำลังโฟกัส (sync รูป ↔ checklist)
+  const [viewMode, setViewMode] = useState('photo')  // 'photo' | '3d'
   const rowRefs = useRef({})                          // แถวเช็คแต่ละจุด (เลื่อนหาเมื่อคลิกหมุด)
   const [tab, setTab] = useState('record')
   const [results, setResults] = useState({})
@@ -571,7 +586,7 @@ export default function PMCheckData() {
 
   useEffect(() => {
     if (!selectedJig || !userId) return
-    setResults({}); setNotes(''); setTab('record'); setActiveCpId(null)
+    setResults({}); setNotes(''); setTab('record'); setActiveCpId(null); setViewMode('photo')
     // เฟรมรูป 360° (ถ้าไม่มี jig_images → ใช้รูปหลัก image_path เป็นเฟรมเดียว)
     supabaseDR.from('jig_images').select('id, image_path, sort').eq('jig_id', selectedJig.id).order('sort').then(({ data }) => {
       let fr = (data ?? []).map(im => ({ id: im.id, url: getPublicUrl(im.image_path) }))
@@ -769,9 +784,24 @@ export default function PMCheckData() {
             <div style={S.body}>
               {tab === 'record' && (
                 <div style={{ maxWidth: 680, margin: '0 auto' }}>
-                  {frames.length > 0 && selectedJig.layout_type !== 'list' && (
-                    <JigSpinCheck frames={frames} checkpoints={checkpoints} results={results} activeCpId={activeCpId} onPinClick={setActiveCpId} />
-                  )}
+                  {(() => {
+                    const modelUrl = selectedJig.model_path ? getPublicUrl(selectedJig.model_path) : null
+                    const showPhoto = frames.length > 0 && selectedJig.layout_type !== 'list'
+                    if (!modelUrl && !showPhoto) return null
+                    return (
+                      <>
+                        {modelUrl && showPhoto && (
+                          <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)', marginBottom: 10 }}>
+                            <button onClick={() => setViewMode('photo')} style={S.tabBtn(viewMode === 'photo')}>📷 รูป</button>
+                            <button onClick={() => setViewMode('3d')} style={S.tabBtn(viewMode === '3d')}>🧊 3D</button>
+                          </div>
+                        )}
+                        {modelUrl && (viewMode === '3d' || !showPhoto)
+                          ? <Model3DViewer url={modelUrl} />
+                          : showPhoto && <JigSpinCheck frames={frames} checkpoints={checkpoints} results={results} activeCpId={activeCpId} onPinClick={setActiveCpId} />}
+                      </>
+                    )
+                  })()}
 
                   {checkpoints.length === 0 ? (
                     <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 0' }}>ยังไม่มีจุดตรวจสอบ — ไปตั้งค่าที่ PM Setup ก่อน</p>
