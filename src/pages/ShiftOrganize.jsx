@@ -473,7 +473,7 @@ export default function ShiftOrganize() {
                   <td>
                     <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{scopeLabel}</span>
                     {cnt !== null && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--muted)' }}>({cnt} คน)</span>}
-                    {isActive && <span style={{ marginLeft: 6, fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontWeight: 700 }}>กำลังใช้งาน</span>}
+                    {isActive && <span style={{ marginLeft: 6, fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontWeight: 700 }}>กำลังใช้งาน</span>}
                   </td>
                   <td style={{ textAlign: 'center', fontSize: 13, whiteSpace: 'nowrap' }}>{evt.start_date}</td>
                   <td style={{ textAlign: 'center', fontSize: 13, whiteSpace: 'nowrap' }}>{evt.end_date}</td>

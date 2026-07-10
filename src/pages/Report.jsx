@@ -1788,20 +1788,20 @@ function FourMTab() {
                     <td><span style={{ background: m.bg, color: m.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{m.icon} {l.category}</span></td>
                     <td style={{ fontSize: 13 }}>
                       {l.description}
-                      {l.change_subtype && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                      {l.change_subtype && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                         {{ replace: '🔄 Replace', change: '⚠️ Change', same_ok: '🟢 ไลน์เดิม/ผ่านเกณฑ์', cross_skill_ok: '🟡 ข้ามไลน์/skill OK', cross_needs_ojt: '🔴 ข้ามไลน์/ต้อง OJT' }[l.change_subtype] ?? l.change_subtype}
                       </div>}
                       {l.reject_reason && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>เหตุผล: {l.reject_reason}</div>}
                       <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                         {l.request_image_url && (
                           <button onClick={() => setImageViewModal({ url: l.request_image_url, title: '📎 รูปจากผู้แจ้ง' })}
-                            style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', background: 'rgba(168,85,247,0.12)', color: '#a855f7', border: '1px solid rgba(168,85,247,0.3)', fontWeight: 600 }}>
+                            style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', background: 'rgba(168,85,247,0.12)', color: '#a855f7', border: '1px solid rgba(168,85,247,0.3)', fontWeight: 600 }}>
                             📎 รูปแจ้ง
                           </button>
                         )}
                         {l.qa_image_url && (
                           <button onClick={() => setImageViewModal({ url: l.qa_image_url, title: '🔍 รูป QA ยืนยัน' })}
-                            style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 600 }}>
+                            style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 600 }}>
                             🔍 รูป QA
                           </button>
                         )}
@@ -1810,13 +1810,13 @@ function FourMTab() {
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <span style={{ background: sm.bg, color: sm.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{sm.label}</span>
-                        {svName && <span style={{ fontSize: 9, color: 'var(--muted)' }}>SV: {svName}</span>}
-                        {qaName && <span style={{ fontSize: 9, color: 'var(--muted)' }}>QA: {qaName}</span>}
-                        {l.approved_at && <span style={{ fontSize: 9, color: 'var(--muted)' }}>{new Date(l.approved_at).toLocaleDateString('th-TH')}</span>}
+                        {svName && <span style={{ fontSize: 11, color: 'var(--muted)' }}>SV: {svName}</span>}
+                        {qaName && <span style={{ fontSize: 11, color: 'var(--muted)' }}>QA: {qaName}</span>}
+                        {l.approved_at && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{new Date(l.approved_at).toLocaleDateString('th-TH')}</span>}
                       </div>
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 5,
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 5,
                         background: needsQA ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
                         color: needsQA ? '#ef4444' : '#22c55e' }}>
                         {needsQA ? '🔴 QA' : '🟢 SV'}
@@ -1836,14 +1836,14 @@ function FourMTab() {
                             </button>
                           </div>
                         ) : (
-                          <span style={{ fontSize: 10, color: 'var(--muted)' }}>
+                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                             {l.status === 'pending_qa' ? 'รอ QA' : needsQA ? 'รอ SV → QA' : 'รอหัวหน้า'}
                           </span>
                         )
                       ) : (
                         can('four_m', 'reset', role) && (
                           <button onClick={() => supabase.from('four_m_logs').update({ status: 'pending', sv_approved_by: null, sv_approved_at: null, approved_by: null, approved_at: null, reject_reason: null }).eq('id', l.id).then(load)}
-                            style={{ padding: '3px 8px', borderRadius: 5, fontSize: 10, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
+                            style={{ padding: '3px 8px', borderRadius: 5, fontSize: 11, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
                             Reset
                           </button>
                         )
@@ -2026,8 +2026,8 @@ function RadarTooltipContent({ active, payload }) {
   return (
     <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 12px', fontSize: 12 }}>
       <div style={{ fontWeight: 700, color: 'var(--text)' }}>{subject}</div>
-      <div style={{ color: lv.color, fontWeight: 800, fontSize: 15 }}>{value}<span style={{ fontSize: 10, fontWeight: 400, marginLeft: 2 }}>/ 100</span></div>
-      <div style={{ fontSize: 10, color: lv.color }}>{lv.label}</div>
+      <div style={{ color: lv.color, fontWeight: 800, fontSize: 15 }}>{value}<span style={{ fontSize: 11, fontWeight: 400, marginLeft: 2 }}>/ 100</span></div>
+      <div style={{ fontSize: 11, color: lv.color }}>{lv.label}</div>
     </div>
   );
 }
@@ -2099,7 +2099,7 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
             <div style={{
               position: 'absolute', bottom: -6, right: -6,
               background: glowColor, color: '#fff',
-              borderRadius: 8, padding: '1px 6px', fontSize: 10, fontWeight: 800,
+              borderRadius: 8, padding: '1px 6px', fontSize: 11, fontWeight: 800,
               border: '2px solid var(--bg2)',
             }}>{avg}</div>
           </div>
@@ -2107,8 +2107,8 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
             <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text)', lineHeight: 1.2 }}>{emp.name}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{emp.employee_id_code}</div>
             <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {emp.group_name && <span style={{ fontSize: 10, background: 'var(--bg3)', color: 'var(--text2)', borderRadius: 5, padding: '2px 7px', border: '1px solid var(--border2)' }}>{emp.group_name}</span>}
-              <span style={{ fontSize: 10, background: `${glowColor}22`, color: glowColor, borderRadius: 5, padding: '2px 7px', border: `1px solid ${glowColor}44`, fontWeight: 700 }}>
+              {emp.group_name && <span style={{ fontSize: 11, background: 'var(--bg3)', color: 'var(--text2)', borderRadius: 5, padding: '2px 7px', border: '1px solid var(--border2)' }}>{emp.group_name}</span>}
+              <span style={{ fontSize: 11, background: `${glowColor}22`, color: glowColor, borderRadius: 5, padding: '2px 7px', border: `1px solid ${glowColor}44`, fontWeight: 700 }}>
                 {overall.label}
               </span>
             </div>
@@ -2123,7 +2123,7 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
             const lv = getLevel(d.value);
             return (
               <div key={d.subject} style={{ background: 'var(--bg3)', borderRadius: 8, padding: '8px 10px', border: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 9, color: 'var(--muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.subject}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.subject}</div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: lv.color, fontFamily: 'var(--font-display)' }}>{d.value}</div>
                 <div style={{ height: 3, background: 'var(--border2)', borderRadius: 2, marginTop: 4 }}>
                   <div style={{ height: '100%', width: `${d.value}%`, background: lv.color, borderRadius: 2, transition: 'width 0.6s ease' }} />
@@ -2136,7 +2136,7 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
 
         {/* Radar Chart */}
         <div style={{ padding: '0 12px 16px' }}>
-          <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Skill Radar</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Skill Radar</div>
           <ResponsiveContainer width="100%" height={240}>
             <RadarChart data={radarData} margin={{ top: 10, right: 30, bottom: 10, left: 30 }}>
               <PolarGrid stroke="var(--border2)" />
@@ -2166,8 +2166,8 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
             return (
               <div key={g.key}>
                 <div style={{ marginBottom: 6, borderBottom: `1px solid ${g.color}33`, paddingBottom: 3 }}>
-                  <span style={{ fontSize: 9, fontWeight: 800, color: g.color, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{g.icon} {g.label}</span>
-                  {g.desc && <span style={{ fontSize: 8, color: g.color, opacity: 0.7, marginLeft: 6 }}>{g.desc}</span>}
+                  <span style={{ fontSize: 11, fontWeight: 800, color: g.color, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{g.icon} {g.label}</span>
+                  {g.desc && <span style={{ fontSize: 11, color: g.color, opacity: 0.7, marginLeft: 6 }}>{g.desc}</span>}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                   {gSkills.map(d => {
@@ -2402,7 +2402,7 @@ ${catHeaderCells}
                         const score = skillMap[s.name];
                         const lv = getLevel(score);
                         return (
-                          <span key={s.name} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: lv.bg, color: lv.color, border: `1px solid ${lv.color}33` }}>
+                          <span key={s.name} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, background: lv.bg, color: lv.color, border: `1px solid ${lv.color}33` }}>
                             {s.label} {score}
                           </span>
                         );
@@ -2427,8 +2427,8 @@ ${catHeaderCells}
                       style={{ textAlign: 'center', color: g.color,
                         background: `${g.color}10`, borderBottom: `2px solid ${g.color}44`,
                         padding: '5px 4px', borderLeft: `2px solid ${g.color}33` }}>
-                      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.06em' }}>{g.icon} {g.label}</div>
-                      {g.desc && <div style={{ fontSize: 8, fontWeight: 400, opacity: 0.75, marginTop: 1 }}>{g.desc}</div>}
+                      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em' }}>{g.icon} {g.label}</div>
+                      {g.desc && <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.75, marginTop: 1 }}>{g.desc}</div>}
                     </th>
                   ))}
                 </tr>
@@ -2441,7 +2441,7 @@ ${catHeaderCells}
                       minWidth: 56,
                       maxWidth: 70,
                       textAlign: 'center',
-                      fontSize: 9,
+                      fontSize: 11,
                       verticalAlign: 'bottom',
                       padding: '4px 3px 6px',
                       borderLeft: si === 0 ? `2px solid ${g.color}33` : undefined,
@@ -2475,9 +2475,9 @@ ${catHeaderCells}
                       </td>
                       <td style={{ position: 'sticky', left: 52, zIndex: 2, background: 'var(--bg)' }}>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>{emp.name}</div>
-                        <div style={{ fontSize: 10, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
                         {avg !== null && (
-                          <div style={{ marginTop: 3, display: 'inline-block', fontSize: 9, fontWeight: 700, color: avgLv.color, background: avgLv.bg, borderRadius: 4, padding: '1px 5px' }}>
+                          <div style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700, color: avgLv.color, background: avgLv.bg, borderRadius: 4, padding: '1px 5px' }}>
                             avg {avg}
                           </div>
                         )}
@@ -2494,7 +2494,7 @@ ${catHeaderCells}
                           <td key={s.name} style={{ textAlign: 'center', padding: '6px 4px', borderLeft: si === 0 ? `2px solid ${g.color}22` : undefined }}>
                             <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', background: lv.bg, borderRadius: 4, padding: '3px 4px', minWidth: 36 }}>
                               <span style={{ fontSize: 12, fontWeight: 700, color: lv.color }}>{score}</span>
-                              <span style={{ fontSize: 7, color: lv.color }}>{lv.label}</span>
+                              <span style={{ fontSize: 11, color: lv.color }}>{lv.label}</span>
                             </div>
                           </td>
                         );
@@ -2956,7 +2956,7 @@ function MultiSkillFormTab() {
                 <div key={label} style={{ border: '1px solid var(--border2)', borderRadius: 8, padding: 10, background: 'var(--bg2)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                     <span style={lbSt}>{label}</span>
-                    <span style={{ fontSize: 9, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 4, padding: '1px 5px' }}>{autoRole}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 4, padding: '1px 5px' }}>{autoRole}</span>
                   </div>
                   <input value={name} onChange={e => setName(e.target.value)}
                     placeholder="ชื่อ-นามสกุล"
@@ -2965,7 +2965,7 @@ function MultiSkillFormTab() {
                     <div style={{ position: 'relative' }}>
                       <img src={sig} alt="sig" style={{ width: '100%', height: 48, objectFit: 'contain', borderRadius: 4, background: '#fff', border: '1px solid var(--border2)' }} />
                       <button onClick={() => setSig(null)}
-                        style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff', borderRadius: 4, fontSize: 10, cursor: 'pointer', padding: '1px 5px' }}>✕</button>
+                        style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff', borderRadius: 4, fontSize: 11, cursor: 'pointer', padding: '1px 5px' }}>✕</button>
                     </div>
                   ) : (
                     <label style={{ display: 'block', cursor: 'pointer' }}>
@@ -3002,7 +3002,7 @@ function MultiSkillFormTab() {
               {MS_LEVELS.map(lv => (
                 <div key={lv.level} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 8, background: lv.level > 0 ? lv.bg + "33" : 'var(--bg3)', border: `1px solid ${lv.level > 0 ? lv.border : 'var(--border)'}` }}>
                   <SkillGauge level={lv.level} size={20} />
-                  <span style={{ fontSize: 10, color: lv.level > 0 ? lv.color : 'var(--muted)', fontWeight: lv.level > 0 ? 700 : 400 }}>
+                  <span style={{ fontSize: 11, color: lv.level > 0 ? lv.color : 'var(--muted)', fontWeight: lv.level > 0 ? 700 : 400 }}>
                     {lv.pct} · {lv.label}
                   </span>
                 </div>
@@ -3030,7 +3030,7 @@ function MultiSkillFormTab() {
                           const lv = levels[si];
                           const m = msStyle(lv);
                           return (
-                            <span key={s.name} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, background: m.bg + '55', color: m.color, border: `1px solid ${m.border}55` }}>
+                            <span key={s.name} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, background: m.bg + '55', color: m.color, border: `1px solid ${m.border}55` }}>
                               {s.label} L{lv}
                             </span>
                           );
@@ -3050,11 +3050,11 @@ function MultiSkillFormTab() {
                   <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 80, position: 'sticky', left: 150, zIndex: 3 }}>ตำแหน่ง</th>
                   {msVisibleGroups.map(g => (
                     <th key={g.key} colSpan={g.skills.length} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: `${g.color}15`, color: g.color, textAlign: 'center' }}>
-                      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.04em' }}>{g.icon} {g.label}</div>
-                      {g.desc && <div style={{ fontSize: 8, fontWeight: 400, color: g.color, opacity: 0.75, marginTop: 1 }}>{g.desc}</div>}
+                      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.04em' }}>{g.icon} {g.label}</div>
+                      {g.desc && <div style={{ fontSize: 11, fontWeight: 400, color: g.color, opacity: 0.75, marginTop: 1 }}>{g.desc}</div>}
                     </th>
                   ))}
-                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'rgba(34,197,94,0.12)', color: '#22c55e', width: 44, textAlign: 'center', fontSize: 9, verticalAlign: 'bottom' }}>ทักษะโดยรวม</th>
+                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'rgba(34,197,94,0.12)', color: '#22c55e', width: 44, textAlign: 'center', fontSize: 11, verticalAlign: 'bottom' }}>ทักษะโดยรวม</th>
                 </tr>
                 <tr>
                   {msVisibleDefs.map((s, si) => {
@@ -3062,7 +3062,7 @@ function MultiSkillFormTab() {
                     const firstInGroup = g && g.skills[0].name === s.name;
                     return (
                       <th key={s.name} style={{
-                        minWidth: 56, maxWidth: 70, textAlign: 'center', fontSize: 9, verticalAlign: 'bottom',
+                        minWidth: 56, maxWidth: 70, textAlign: 'center', fontSize: 11, verticalAlign: 'bottom',
                         padding: '4px 3px 6px', border: '1px solid var(--border2)', background: 'var(--bg3)',
                         borderLeft: firstInGroup ? `2px solid ${g.color}44` : undefined,
                       }}>
@@ -3113,15 +3113,15 @@ function MultiSkillFormTab() {
                     <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 60 }}>ระดับ</th>
                     <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 120 }}>ความหมาย</th>
                     {msVisibleGroups.map(g => (
-                      <th key={g.key} colSpan={g.skills.length} style={{ border: '1px solid var(--border2)', padding: '3px 4px', background: `${g.color}15`, color: g.color, textAlign: 'center', fontSize: 10, fontWeight: 800 }}>
+                      <th key={g.key} colSpan={g.skills.length} style={{ border: '1px solid var(--border2)', padding: '3px 4px', background: `${g.color}15`, color: g.color, textAlign: 'center', fontSize: 11, fontWeight: 800 }}>
                         {g.icon} {g.label}
                       </th>
                     ))}
-                    <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'rgba(34,197,94,0.12)', color: '#22c55e', width: 68, textAlign: 'center', fontSize: 10 }}>รวม</th>
+                    <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'rgba(34,197,94,0.12)', color: '#22c55e', width: 68, textAlign: 'center', fontSize: 11 }}>รวม</th>
                   </tr>
                   <tr>
                     {msVisibleDefs.map(s => (
-                      <th key={s.name} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 44, textAlign: 'center', fontSize: 9 }}>{s.label}</th>
+                      <th key={s.name} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 44, textAlign: 'center', fontSize: 11 }}>{s.label}</th>
                     ))}
                   </tr>
                 </thead>
@@ -3133,7 +3133,7 @@ function MultiSkillFormTab() {
                         <td style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '4px 6px', background: lv.level > 0 ? lv.bg + "33" : '' }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                             <SkillGauge level={lv.level} size={22} />
-                            <span style={{ fontSize: 10, color: 'var(--muted)' }}>{lv.pct}</span>
+                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{lv.pct}</span>
                           </div>
                         </td>
                         <td style={{ border: '1px solid var(--border2)', padding: '3px 8px', fontSize: 11, color: 'var(--text2)' }}>{lv.label}</td>
@@ -3384,7 +3384,7 @@ const Thumb = ({ src }) => (
 
 const StatusBadge = ({ ok, label }) => (
   <span style={{
-    display: 'inline-block', fontSize: 10, borderRadius: 4, padding: '1px 5px', marginRight: 3,
+    display: 'inline-block', fontSize: 11, borderRadius: 4, padding: '1px 5px', marginRight: 3,
     background: ok ? 'rgba(34,197,94,0.15)' : 'rgba(231,76,60,0.15)',
     color: ok ? 'var(--green)' : 'var(--red)',
     border: `1px solid ${ok ? 'rgba(34,197,94,0.3)' : 'rgba(231,76,60,0.3)'}`,
@@ -3880,7 +3880,7 @@ function SkillAllowanceTab() {
                 <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120 }}>ชื่อ - สกุล</th>
                 <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)' }}>กะ</th>
                 {days.map(d => (
-                  <th key={d} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 24, textAlign: 'center', fontSize: 10 }}>{d}</th>
+                  <th key={d} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 24, textAlign: 'center', fontSize: 11 }}>{d}</th>
                 ))}
                 <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', textAlign: 'center' }}>รวม</th>
               </tr>
@@ -4417,7 +4417,7 @@ function AttendanceFormTab() {
                 <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 100 }}>ชื่อ - สกุล</th>
                 <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)' }}>รหัส</th>
                 {days.map(d => (
-                  <th key={d} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: isSunday(d) ? 'rgba(245,200,50,0.35)' : 'var(--bg3)', width: 22, textAlign: 'center', fontSize: 10 }}>{d}</th>
+                  <th key={d} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: isSunday(d) ? 'rgba(245,200,50,0.35)' : 'var(--bg3)', width: 22, textAlign: 'center', fontSize: 11 }}>{d}</th>
                 ))}
                 <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', textAlign: 'center' }}>รวม</th>
                 <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'rgba(255,150,50,0.15)', textAlign: 'center', color: '#c05000' }}>OT (ชม.)</th>
@@ -4438,9 +4438,9 @@ function AttendanceFormTab() {
                       return (
                         <td key={d} style={{ border: '1px solid var(--border2)', textAlign: 'center', background: sunBg }}>
                           {info?.present ? <span style={{ color: '#22c55e', fontWeight: 700 }}>✓</span>
-                            : info?.leave ? <span style={{ color: '#f59e0b', fontSize: 9 }}>{info.leave}</span>
+                            : info?.leave ? <span style={{ color: '#f59e0b', fontSize: 11 }}>{info.leave}</span>
                             : ''}
-                          {info?.ot ? <span style={{ color: '#c05000', fontSize: 8, display: 'block' }}>OT</span> : ''}
+                          {info?.ot ? <span style={{ color: '#c05000', fontSize: 11, display: 'block' }}>OT</span> : ''}
                         </td>
                       );
                     })}
