@@ -1767,7 +1767,7 @@ function LiveTab({ role }) {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
                     {selSession.status === 'pending_close' ? (
-                      <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', animation: 'pulse 2s infinite' }}>⏳ รออนุมัติปิดกะ</span>
+                      <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>⏳ รออนุมัติปิดกะ</span>
                     ) : (
                       <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>● LIVE</span>
                     )}

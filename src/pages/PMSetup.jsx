@@ -1015,7 +1015,6 @@ export default function PMSetup() {
         )}
       </AnimatePresence>
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
   )
 }

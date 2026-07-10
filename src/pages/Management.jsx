@@ -2477,11 +2477,11 @@ export default function Management() {
                 try {
                   let publicUrl = null;
                   if (docImageFile) {
-                    const ext = docImageFile.name.split('.').pop();
-                    const path = `4m-requests/${Date.now()}.${ext}`;
-                    const { error: upErr } = await supabase.storage.from('4m-images').upload(path, docImageFile, { upsert: true });
+                    const resized = await resizeImage(docImageFile);
+                    const path = `4m-requests/${Date.now()}.jpg`;
+                    const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: true });
                     if (upErr) throw upErr;
-                    publicUrl = supabase.storage.from('4m-images').getPublicUrl(path).data.publicUrl;
+                    publicUrl = supabase.storage.from('four-m-images').getPublicUrl(path).data.publicUrl;
                   }
                   const { error: updErr } = await supabase.from('four_m_logs').update({
                     status: 'pending',
