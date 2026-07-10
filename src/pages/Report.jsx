@@ -49,10 +49,14 @@ function resizeImage(file, maxPx = 1280, quality = 0.85) {
   });
 }
 
+function toLocalDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function getWorkDate() {
   const now = new Date();
   if (now.getHours() < 8) now.setDate(now.getDate() - 1);
-  return now.toISOString().split('T')[0];
+  return toLocalDateStr(now); // ห้าม toISOString() — UTC จะลบวันซ้ำอีกชั้นช่วง 00:00-06:59
 }
 
 /* ── Signature URL to DataURL helper ── */
@@ -196,11 +200,7 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   const orgSectionList = useOrgSections();
   const orgDeptList    = useOrgDepts();
 
-  const todayStr = (() => {
-    const d = new Date();
-    if (d.getHours() < 8) d.setDate(d.getDate() - 1); // align กับ getWorkDate()
-    return d.toISOString().split('T')[0];
-  })();
+  const todayStr = getWorkDate();
 
   const [date, setDate] = useState(todayStr);
   const [shiftFilter, setShiftFilter] = useState('all'); // 'all' | 'day' | 'night'
@@ -670,7 +670,7 @@ function PerEmployeeTab() {
   const [selected, setSelected] = useState('');
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [month, setMonth] = useState(toLocalDateStr(new Date()).slice(0, 7));
   const [stationMap, setStationMap] = useState({});
   const [empSection, setEmpSection] = useState('');
   const [empDept,    setEmpDept]    = useState('');
@@ -822,7 +822,7 @@ function StationLogTab() {
   const today = getWorkDate();
   const [stations, setStations] = useState([]);
   const [selectedStation, setSelectedStation] = useState('');
-  const [from, setFrom] = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
+  const [from, setFrom] = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return toLocalDateStr(d); });
   const [to, setTo] = useState(today);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1008,7 +1008,7 @@ function RangeTab() {
   const { role } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const today = getWorkDate();
-  const [from, setFrom] = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
+  const [from, setFrom] = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return toLocalDateStr(d); });
   const [to, setTo] = useState(today);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1186,7 +1186,7 @@ function FourMTab() {
   };
 
   const today = getWorkDate();
-  const [from,        setFrom]        = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
+  const [from,        setFrom]        = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return toLocalDateStr(d); });
   const [to,          setTo]          = useState(today);
   const [line,        setLine]        = useState('');
   const [cat,         setCat]         = useState('');

@@ -409,11 +409,8 @@ export default function OEEAnalytics() {
   const [period,     setPeriod]     = useState('monthly'); // daily|monthly|yearly
   const [selLine,    setSelLine]    = useState('');
   const [selShift,   setSelShift]   = useState('');
-  const [dateFrom,   setDateFrom]   = useState(() => {
-    const d = new Date(); d.setMonth(d.getMonth() - 3);
-    return d.toISOString().slice(0, 10);
-  });
-  const [dateTo,     setDateTo]     = useState(() => new Date().toISOString().slice(0, 10));
+  const [dateFrom,   setDateFrom]   = useState(() => dateStrAdd(getWorkDateStr(), -90));
+  const [dateTo,     setDateTo]     = useState(() => getWorkDateStr());
 
   // ── Load data ──────────────────────────────────────────────────
   const loadData = useCallback(async () => {

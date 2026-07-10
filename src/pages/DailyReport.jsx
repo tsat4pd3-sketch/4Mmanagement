@@ -99,6 +99,12 @@ const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 };
+// work date ตามกฎ CLAUDE.md: ก่อน 08:00 = วันก่อนหน้า (กะดึกข้ามวัน) — ใช้กับทุกจุดที่เป็น work_date semantics
+const workDate = () => {
+  const d = new Date();
+  if (d.getHours() < 8) d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+};
 const nowTime = () => new Date().toTimeString().slice(0, 5);
 // กะเช้าเริ่ม 08:00, กะดึกเริ่ม 20:00 — ใช้เป็น default start_time เสมอ
 const shiftStart = (shift) => shift === 'night' ? '20:00' : '08:00';
@@ -179,7 +185,7 @@ function LiveTab({ role }) {
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
 
   const [showOpen, setShowOpen] = useState(false);
-  const [openForm, setOpenForm] = useState(() => { const s = currentShift(); return { work_date: today(), line_name: '', shift: s, product_id: '', start_time: shiftStart(s) }; });
+  const [openForm, setOpenForm] = useState(() => { const s = currentShift(); return { work_date: workDate(), line_name: '', shift: s, product_id: '', start_time: shiftStart(s) }; });
 
   const [showDT, setShowDT]   = useState(false);
   const [dtForm, setDtForm]   = useState({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
@@ -333,7 +339,7 @@ function LiveTab({ role }) {
     const { data: overdue } = await supabaseDR.from('production_sessions')
       .select('id, line_name, shift, work_date, section')
       .in('status', ['open', 'pending_close'])
-      .lt('work_date', today());
+      .lt('work_date', workDate()); // เทียบกับ work date (ตัด 08:00) — ไม่งั้นกะดึกหลังเที่ยงคืนโดนแจ้ง "ค้างปิดกะ" ทั้งที่ยังรันอยู่
     setOverdueAlert((overdue || []).filter(o => {
       if (role === 'admin') return true;
       if (role === 'leader') {

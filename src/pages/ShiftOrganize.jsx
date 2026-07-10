@@ -17,7 +17,8 @@ function getWeekDates(refDate) {
 }
 
 function toDateStr(d) {
-  return d.toISOString().split('T')[0];
+  // ห้าม toISOString() — UTC ทำให้วันที่ถอยหลัง 1 วันช่วง 00:00-06:59 เวลาไทย
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export default function ShiftOrganize() {
