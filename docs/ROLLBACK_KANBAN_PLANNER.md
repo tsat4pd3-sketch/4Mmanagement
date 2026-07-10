@@ -190,6 +190,18 @@ git push origin main
   จัดอันดับพาร์ทที่จะขาดเร็วสุดขึ้นบน — อ่านอย่างเดียว ไม่มี schema ใหม่
 - Rollback เฉพาะรอบนี้: `git revert -m 1 <merge-sha รอบ 15>`
 
+## รอบแก้ที่ 16 — Rundown Stock เป็นหน้าแยก + seed ยอดตั้งต้น + แก้ป้าย "ไม่ระ"
+
+- **Rundown Stock ย้ายจาก tab ในหน้า Delivery → หน้าใหม่ `/rundown-stock`**
+  (`src/pages/RundownStock.jsx` · เมนูอยู่ถัดจาก Planner & Sales กลุ่ม Logistic - Store)
+  — tab ในหน้า Delivery ถูกถอดออก · สิทธิ์ seed copy จาก `/planner-sales`
+  (ถอน: `delete from role_permissions where permission_key='page:/rundown-stock';`)
+- แก้บั๊กการ์ดรอบส่งที่ไม่ระบุเวลาโชว์ "ไม่ระ" (โดน slice) → "⏳ ไม่ระบุเวลา"
+- **Seed ยอด stock ตั้งต้น (DR):** แถว `line_stock_transactions` type adjust/approved
+  เข้า `FG WAREHOUSE` 7 พาร์ทจากไฟล์ Rundown Stock ของหน้างาน (`created_by = 'seed:rundown'`,
+  note ระบุ sheet ต้นทาง) — ลบทั้งชุด: `delete from line_stock_transactions where created_by='seed:rundown';`
+- Rollback โค้ด: `git revert -m 1 <merge-sha รอบ 16>`
+
 ## สิ่งที่ต้องรู้ตอน rollback
 
 1. **ยอดสต็อกจาก "ยืนยันส่ง" ต่างกันสองเวอร์ชัน** — เวอร์ชันใหม่บันทึก `line_stock_transactions`
