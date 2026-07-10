@@ -870,7 +870,7 @@ export default function Management() {
           ? <img src={worker.employees.image_url} className={pend4m ? 'person-alarm-amber' : undefined} style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `${ring}px solid ${fc}`, boxShadow: `0 0 8px ${fc}88`, display: 'block', background: '#1a1a1a' }} />
           : <div className={pend4m ? 'person-alarm-amber' : undefined} style={{ width: size, height: size, borderRadius: '50%', background: `${fc}22`, border: `${ring}px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.max(14, Math.round(size * 0.4)), fontWeight: 800, color: fc }}>{(worker.employees?.name || '?')[0]}</div>
         }
-        {pend4m && <span style={{ position: 'absolute', bottom: -3, left: '50%', transform: 'translateX(-50%)', fontSize: Math.max(10, Math.round(size * 0.22)), lineHeight: 1, zIndex: 3 }}>⏳</span>}
+        {pend4m && <span style={{ position: 'absolute', bottom: -3, left: '50%', transform: 'translateX(-50%)', fontSize: Math.max(11, Math.round(size * 0.22)), lineHeight: 1, zIndex: 3 }}>⏳</span>}
       </div>
     );
   };
@@ -1826,7 +1826,7 @@ export default function Management() {
               position: 'absolute', ...pos, width: BADGE, height: BADGE, borderRadius: '50%',
               background: 'rgba(8,8,14,0.85)', border: '1px solid rgba(255,255,255,0.25)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: Math.max(10, Math.round(BADGE * 0.58)), lineHeight: 1, zIndex: 3, padding: 0,
+              fontSize: Math.max(11, Math.round(BADGE * 0.58)), lineHeight: 1, zIndex: 3, padding: 0,
             });
 
             return (

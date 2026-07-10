@@ -1,10 +1,13 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import {
   LineChart, Line, BarChart, Bar, ComposedChart, PieChart, Pie,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   Cell, ReferenceLine, LabelList,
 } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { UserContext } from '../App';
+import { inSectionScope } from '../utils/sectionScope';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
 
 // ── Colour helpers ───────────────────────────────────────────────
 const oeeColor  = v => v >= 80 ? '#22c55e' : v >= 60 ? '#f59e0b' : '#ef4444';
@@ -161,15 +164,28 @@ const STATUS_BADGE = {
 
 // ── Main Component ───────────────────────────────────────────────
 export default function OEEAnalytics() {
+  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const [viewTab, setViewTab] = useState('today'); // today | trend
 
+  // mandatory scope (แบบเดียวกับ DailyReport): leader → ครอบครัวไลน์ตัวเอง ·
+  // role ที่ถูกจำกัด sections → เฉพาะไลน์ในส่วนงาน scope — filter อิสระของหน้า apply ทับอีกที
+  const isScoped = (role === 'leader' && !!userLineId) || scopeSecs.length > 0;
+
   // ══════════════════════════ Shared line/org data ══════════════════════════
-  const [linesFull, setLinesFull] = useState([]); // [{id,name,section,parent_line_name}]
+  const [linesFull, setLinesFull] = useState([]); // [{id,name,section,parent_line_name}] — ถูก scope แล้ว
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name, section, parent_line_name').order('name').then(({ data }) => {
-      const rows = data || [];
+      let rows = data || [];
+      if (role === 'leader' && userLineId) {
+        const myLine = rows.find(l => String(l.id) === String(userLineId));
+        const norm = (s) => (s || '').trim().toLowerCase();
+        const famSet = new Set((myLine ? getLineFamilyNames(rows, myLine.name) : []).map(norm));
+        rows = rows.filter(l => famSet.has(norm(l.name)));
+      } else if (scopeSecs.length) {
+        rows = rows.filter(l => inSectionScope(scopeSecs, l.section));
+      }
       setLinesFull(rows);
       const pcm = {};
       rows.forEach(l => {
@@ -222,12 +238,15 @@ export default function OEEAnalytics() {
     if (tdLine) return [tdLine];
     if (tdDept) return parentChildrenMap[tdDept] ? [tdDept, ...parentChildrenMap[tdDept]] : [tdDept];
     if (tdSection) return linesFull.filter(l => l.section === tdSection).map(l => l.name);
-    return null; // ทุกไลน์
-  }, [tdLine, tdDept, tdSection, linesFull, parentChildrenMap]);
+    // ไม่เลือก filter: role ที่ถูก scope → จำกัดที่ไลน์ใน scope เสมอ (linesFull ถูก scope แล้ว) · ไม่ scope → ทุกไลน์
+    return isScoped ? linesFull.map(l => l.name) : null;
+  }, [tdLine, tdDept, tdSection, linesFull, parentChildrenMap, isScoped]);
 
   const tdScopeLabel = tdLine || tdDept || tdSection || 'ทุกไลน์';
 
   const loadToday = useCallback(async () => {
+    // scope แล้วแต่รายชื่อไลน์ยังไม่มา (หรือไม่มีไลน์ใน scope) — ห้าม query แบบไม่กรอง
+    if (isScoped && !(tdScopeLines || []).length) { setTdSessions([]); setTdDowntimes([]); setTdDefects([]); return; }
     setTdLoading(true);
     try {
       let q = supabaseDR.from('production_sessions')
@@ -263,9 +282,10 @@ export default function OEEAnalytics() {
     } finally {
       setTdLoading(false);
     }
-  }, [tdDate, tdShift, tdScopeLines]);
+  }, [tdDate, tdShift, tdScopeLines, isScoped]);
 
   const loadTdHistory = useCallback(async () => {
+    if (isScoped && !(tdScopeLines || []).length) { setTdHistory([]); return; }
     const startStr = dateStrAdd(tdDate, -9);
     let q = supabaseDR.from('production_sessions')
       .select('work_date, oee, oee_a, oee_p, oee_q, status, line_name, shift')
@@ -277,7 +297,7 @@ export default function OEEAnalytics() {
     if (tdShift) q = q.eq('shift', tdShift);
     const { data } = await q;
     setTdHistory(data || []);
-  }, [tdDate, tdShift, tdScopeLines]);
+  }, [tdDate, tdShift, tdScopeLines, isScoped]);
 
   // ทีมตามตาราง shift_schedules (A/B สลับกันตามวัน, C กะเช้าตลอด) — best effort, ถ้าไม่มีข้อมูลจะไม่ระบุ
   useEffect(() => {
@@ -419,9 +439,13 @@ export default function OEEAnalytics() {
       const pcm = parentChildrenMap; // pre-loaded by shared effect above
 
       // Expand selLine: if it's a parent, include all its children
+      // ไม่เลือกไลน์: role ที่ถูก scope → จำกัดที่ไลน์ใน scope เสมอ (linesFull ถูก scope แล้ว)
       const expandedLines = selLine
         ? (pcm[selLine] ? [selLine, ...pcm[selLine]] : [selLine])
-        : null;
+        : (isScoped ? linesFull.map(l => l.name) : null);
+      if (isScoped && !expandedLines?.length) {
+        setSessions([]); setDowntimes([]); setDefects([]); setLoading(false); return;
+      }
 
       let q = supabaseDR.from('production_sessions')
         .select('*')
@@ -455,12 +479,17 @@ export default function OEEAnalytics() {
       setDtTypes(dtt || []);
       setDefectTypes(deft || []);
 
-      const uniqueLines = [...new Set((linesData || []).map(r => r.line_name).filter(Boolean))].sort();
+      // dropdown ไลน์ของแท็บ trend มาจากชื่อไลน์ใน sessions — ต้องกรองตาม scope ด้วย
+      const normLn = (s) => (s || '').trim().toLowerCase();
+      const allowedSet = isScoped ? new Set(linesFull.map(l => normLn(l.name))) : null;
+      const uniqueLines = [...new Set((linesData || []).map(r => r.line_name).filter(Boolean))]
+        .filter(n => !allowedSet || allowedSet.has(normLn(n)))
+        .sort();
       setLines(uniqueLines);
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, selLine, selShift, parentChildrenMap]);
+  }, [dateFrom, dateTo, selLine, selShift, parentChildrenMap, isScoped, linesFull]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -542,7 +571,7 @@ export default function OEEAnalytics() {
     page:    { padding: '20px 24px', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' },
     section: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px', marginBottom: 16 },
     title:   { fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 12 },
-    sel:     { background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--text)', fontSize: 13, width: 'auto', minWidth: 120 }, // width:auto กัน input{width:100%} จาก index.css ดัน toolbar แตกแถว
+    sel:     { width: 'auto', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--text)', fontSize: 13 }, // width:auto กัน index.css input/select {width:100%} ยืดเต็ม filter bar
     tab:     active => ({ padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700,
                 background: active ? 'var(--accent)' : 'var(--bg2)', color: active ? '#000' : 'var(--text)' }),
   };

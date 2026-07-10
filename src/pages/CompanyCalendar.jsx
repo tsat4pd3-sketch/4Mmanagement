@@ -162,8 +162,9 @@ export default function CompanyCalendar() {
               เพิ่มวันหยุดพิเศษ/ประเพณีนิยม/แลกเปลี่ยน
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <input type="date" value={singleDate} onChange={e => setSingleDate(e.target.value)} />
-              <select value={singleType} onChange={e => setSingleType(e.target.value)}>
+              {/* width กัน index.css input/select {width:100%} ยืดเต็ม toolbar (กับดัก CSS ใน CLAUDE.md) */}
+              <input type="date" value={singleDate} onChange={e => setSingleDate(e.target.value)} style={{ width: 150 }} />
+              <select value={singleType} onChange={e => setSingleType(e.target.value)} style={{ width: 'auto' }}>
                 {DAY_TYPES.filter(t => t !== 'working').map(t => <option key={t} value={t}>{DAY_TYPE_META[t].label}</option>)}
               </select>
               <input placeholder="หมายเหตุ เช่น วันสงกรานต์" value={singleNote} onChange={e => setSingleNote(e.target.value)} style={{ width: 180 }} />
