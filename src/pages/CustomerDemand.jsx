@@ -69,11 +69,8 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
       ...(d1 || []).filter(o => !o.ship_time || o.ship_time.slice(0, 5) >= '08:00'),
       ...(d2 || []),
     ];
-    const wrapKey = (o) => {
-      if (!o.ship_time) return 100000;
-      const m = Number(o.ship_time.slice(0, 2)) * 60 + Number(o.ship_time.slice(3, 5));
-      return m < 480 ? m + 1440 : m;
-    };
+    // เรียงตามเวลาบนกรอบวันงาน — ใช้ frameMin จาก utils/timeFrame (ห้ามเขียน wrap นาทีเองซ้ำ — UI-CONVENTIONS §6) · ไม่ระบุเวลา = ท้ายสุด
+    const wrapKey = (o) => frameMin(o.ship_time?.slice(0, 5)) ?? 100000;
     list.sort((a, b) => wrapKey(a) - wrapKey(b));
     setOrders(list);
     setPopup(null);
