@@ -286,7 +286,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
 @media (max-width: 768px) {
   html, body { font-size: 14px; }
-  th { font-size: 10px; padding: 9px 10px; }
+  th { font-size: 11px; padding: 9px 10px; }
   td { padding: 9px 10px; font-size: 13px; }
 }
 
@@ -344,7 +344,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   white-space: nowrap;
 }
 .vx-section-header .tag {
-  font-size: 10px; font-weight: 700;
+  font-size: 11px; font-weight: 700;
   padding: 2px 8px; border-radius: var(--radius-sm);
   background: var(--accent-dim);
   color: var(--accent);
@@ -367,7 +367,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 }
 .vx-footer span {
   font-family: var(--font-display);
-  font-size: 9px; letter-spacing: 2px;
+  font-size: 11px; letter-spacing: 2px;
   color: var(--muted); text-transform: uppercase;
 }
 
@@ -376,7 +376,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   :root { --sidebar-w: var(--sidebar-w-tablet); }
   .page-content { padding: 18px 20px; }
   .card { padding: 16px; }
-  th { font-size: 10px; padding: 8px 10px; }
+  th { font-size: 11px; padding: 8px 10px; }
   td { padding: 8px 10px; font-size: 13px; }
 }
 
@@ -407,8 +407,14 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   /* KPI cards: single column */
   .stat-grid-4 { grid-template-columns: 1fr 1fr !important; }
 
-  th { font-size: 9px; padding: 7px 8px; }
+  th { font-size: 11px; padding: 7px 8px; }
   td { padding: 7px 8px; font-size: 12px; }
+}
+
+/* ─── Loading spinner กลาง — ใช้ animation: 'spin ...' ได้ทุกหน้า (ห้าม define ซ้ำต่อหน้า) ── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
 /* ─── Downtime alarm — จุดเครื่องจักรกระพริบสีแดงเมื่อมี downtime ค้างอยู่ ── */

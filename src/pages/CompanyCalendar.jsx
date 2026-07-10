@@ -162,8 +162,9 @@ export default function CompanyCalendar() {
               เพิ่มวันหยุดพิเศษ/ประเพณีนิยม/แลกเปลี่ยน
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <input type="date" value={singleDate} onChange={e => setSingleDate(e.target.value)} />
-              <select value={singleType} onChange={e => setSingleType(e.target.value)}>
+              {/* width กัน index.css input/select {width:100%} ยืดเต็ม toolbar (กับดัก CSS ใน CLAUDE.md) */}
+              <input type="date" value={singleDate} onChange={e => setSingleDate(e.target.value)} style={{ width: 150 }} />
+              <select value={singleType} onChange={e => setSingleType(e.target.value)} style={{ width: 'auto' }}>
                 {DAY_TYPES.filter(t => t !== 'working').map(t => <option key={t} value={t}>{DAY_TYPE_META[t].label}</option>)}
               </select>
               <input placeholder="หมายเหตุ เช่น วันสงกรานต์" value={singleNote} onChange={e => setSingleNote(e.target.value)} style={{ width: 180 }} />
@@ -189,7 +190,7 @@ export default function CompanyCalendar() {
               <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)', marginBottom: 8 }}>{name}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginBottom: 4 }}>
                 {WEEKDAY_HEAD.map(w => (
-                  <div key={w} style={{ fontSize: 9, color: 'var(--muted)', textAlign: 'center' }}>{w}</div>
+                  <div key={w} style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>{w}</div>
                 ))}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
@@ -206,7 +207,7 @@ export default function CompanyCalendar() {
                       title={isDirty ? `${meta.label} (ยังไม่บันทึก)` : meta.label}
                       style={{
                         position: 'relative',
-                        fontSize: 10, textAlign: 'center', padding: '4px 0', borderRadius: 5,
+                        fontSize: 11, textAlign: 'center', padding: '4px 0', borderRadius: 5,
                         background: type === 'working' ? 'transparent' : meta.color + '33',
                         color: type === 'working' ? 'var(--text2)' : meta.color,
                         fontWeight: type === 'working' ? 400 : 700,

@@ -20,6 +20,7 @@ const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
 const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
 const PlannerSales   = lazy(() => import('./pages/PlannerSales'));
+const RundownStock   = lazy(() => import('./pages/RundownStock'));
 const Report       = lazy(() => import('./pages/Report'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
@@ -58,46 +59,75 @@ const ROLE_LABELS = {
 
 // null roles = accessible to every role
 // group ใช้จัดหมวดหมู่ในแถบ sidebar (มี minimize/expand ต่อหมวด)
+// สิทธิ์เข้าหน้าอ่านจาก role_permissions ผ่าน canAccessPage() เท่านั้น (data-driven)
+// — จึงไม่มีฟิลด์ roles ในนี้ (เคยมี แต่เป็น dead field ไม่ถูกอ่าน ลบออก 2026-07-10 กันเข้าใจผิดว่าเป็น source of truth)
 const NAV_ITEMS = [
-  { to: '/',            icon: '🏠', label: 'หน้าหลัก',           roles: null, group: 'ภาพรวม' },
-  { to: '/dashboard',   icon: '📊', label: 'Dashboard',           roles: null, group: 'ภาพรวม' },
+  { to: '/',            icon: '🏠', label: 'หน้าหลัก',           group: 'ภาพรวม' },
+  { to: '/dashboard',   icon: '📊', label: 'Dashboard',           group: 'ภาพรวม' },
 
-  { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     roles: null, group: 'ฝ่ายผลิต' },
-  { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     roles: null, group: 'ฝ่ายผลิต' },
-  { to: '/daily-report',   icon: '📊', label: 'Daily Report',      roles: null, group: 'ฝ่ายผลิต' },
-  { to: '/oee-analytics',  icon: '📈', label: 'OEE',                roles: null, group: 'ฝ่ายผลิต' },
-  { to: '/daily-pm',       icon: '✅', label: 'Daily PM ฝ่ายผลิต',   roles: null, group: 'ฝ่ายผลิต' },
+  { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
+  { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
+  { to: '/daily-report',   icon: '📊', label: 'Daily Report',      group: 'ฝ่ายผลิต' },
+  { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'ฝ่ายผลิต' },
+  { to: '/daily-pm',       icon: '✅', label: 'Daily PM ฝ่ายผลิต',   group: 'ฝ่ายผลิต' },
 
-  { to: '/line-stock',      icon: '📦', label: 'Store management',       roles: null, group: 'Logistic - Store' },
-  { to: '/heijunka',       icon: '🎴', label: 'Kanban Board',             roles: null, group: 'Logistic - Store' },
-  { to: '/rack-center',    icon: '🗃️', label: 'Rack Center management',  roles: null, group: 'Logistic - Store' },
-  { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           roles: null, group: 'Logistic - Store' },
-  { to: '/customer-demand', icon: '🚚', label: 'Delivery',                  roles: null, group: 'Logistic - Store' },
+  { to: '/line-stock',      icon: '📦', label: 'Store management',       group: 'Logistic - Store' },
+  { to: '/heijunka',       icon: '🎴', label: 'Kanban Board',             group: 'Logistic - Store' },
+  { to: '/rack-center',    icon: '🗃️', label: 'Rack Center management',  group: 'Logistic - Store' },
+  { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: 'Logistic - Store' },
+  { to: '/rundown-stock',   icon: '📉', label: 'Rundown Stock',             group: 'Logistic - Store' },
+  { to: '/customer-demand', icon: '🚚', label: 'Delivery',                  group: 'Logistic - Store' },
 
-  { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/pm-schedule', icon: '📅', label: 'แผน PM อุปกรณ์เครื่องจักร',        roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/pm-setup',    icon: '🔩', label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร', roles: ['admin', 'manager', 'supervisor'], group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/pm-schedule', icon: '📅', label: 'แผน PM อุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/pm-setup',    icon: '🔩', label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร', group: 'การตรวจสอบและซ่อมบำรุง' },
 
-  { to: '/qa',             icon: '🔍', label: 'Quality Control Center', roles: ['admin', 'manager', 'supervisor', 'leader', 'qa', 'document_control'], group: 'ควบคุมคุณภาพ QA/QC' },
-  { to: '/qa-setup',       icon: '📐', label: 'มาตรฐานการตรวจ & Drawing', roles: ['admin', 'manager', 'qa'], group: 'ควบคุมคุณภาพ QA/QC' },
-  { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', roles: ['admin', 'manager', 'supervisor', 'leader', 'qa'], group: 'ควบคุมคุณภาพ QA/QC' },
+  { to: '/qa',             icon: '🔍', label: 'Quality Control Center', group: 'ควบคุมคุณภาพ QA/QC' },
+  { to: '/qa-setup',       icon: '📐', label: 'มาตรฐานการตรวจ & Drawing', group: 'ควบคุมคุณภาพ QA/QC' },
+  { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', group: 'ควบคุมคุณภาพ QA/QC' },
 
-  { to: '/report',        icon: '📋', label: 'รายงาน',            roles: null, group: 'รายงาน' },
+  { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'รายงาน' },
 
-  { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     roles: ['admin'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      roles: ['admin', 'manager', 'supervisor'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager', 'supervisor', 'leader'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/products',        icon: '🔩', label: 'Product Master',    roles: null, group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   roles: ['admin', 'manager', 'supervisor'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', roles: ['admin', 'manager', 'supervisor'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         roles: ['admin', 'manager', 'supervisor'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    roles: null, group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       roles: ['admin'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', roles: ['admin'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/products',        icon: '🔩', label: 'Product Master',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
 ];
 
 const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'รายงาน', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
+
+// เมนูจริงของหมวด sidebar สำหรับ DeptHub — การ์ดหน้าหลักดึงไปแสดงเป็นชิปที่คลิกเข้าหน้าได้เลย
+// อิง NAV_ITEMS ตัวเดียวกับ sidebar เสมอ (single source of truth — ห้ามพิมพ์รายชื่อเมนูซ้ำใน DeptHub)
+// และกรองตามสิทธิ์ role เดียวกับ sidebar เพื่อให้ชิปตรงกับเมนูที่ user คนนั้นเห็นจริง
+export function navItemsForGroups(groups, role) {
+  return NAV_ITEMS.filter(i => i.to !== '/' && groups.includes(i.group) && canAccessPage(i.to, role));
+}
+
+// สรุปสิทธิ์เข้าหน้าของ role จากตารางสิทธิ์จริง (role_permissions) — ใช้โชว์ในหน้า จัดการผู้ใช้งาน
+// เพื่อไม่ต้อง hardcode รายชื่อโมดูลต่อ role (เคย hardcode แล้ว drift ตามโมดูลที่เพิ่มไม่ทัน)
+export function accessSummaryForRole(role) {
+  const pages = NAV_ITEMS.filter(i => i.to !== '/' && canAccessPage(i.to, role));
+  const groups = NAV_GROUP_ORDER.filter(g => pages.some(p => p.group === g));
+  return { total: pages.length, all: pages.length >= NAV_ITEMS.length - 1, groups };
+}
+
+// เข้าโมดูลจากหน้าหลัก (DeptHub) → กาง sidebar เฉพาะหมวดของโมดูลนั้น หมวดอื่นพับ
+// เพื่อให้เห็นเมนูของโมดูลที่เลือกทันที ไม่ต้องไล่หาในเมนูที่กางหมดทุกหมวด
+// (user ยังพับ/กางเองต่อได้ตามปกติ ค่าที่ตั้งจาก hub จะถูกจำต่อใน localStorage เดียวกัน)
+export function focusSidebarGroups(groups) {
+  const collapsed = {};
+  NAV_GROUP_ORDER.forEach(g => { if (!groups.includes(g)) collapsed[g] = true; });
+  try { localStorage.setItem('nav_collapsed_groups', JSON.stringify(collapsed)); } catch { /* ignore */ }
+  // Sidebar mount อยู่ตลอด — แจ้งให้ sync state จาก localStorage ใหม่
+  window.dispatchEvent(new Event('nav-groups-changed'));
+}
 
 /* ─── Role Route Guard ────────────────────────────────────────────────
    สิทธิ์เข้าถึงแต่ละหน้าเก็บอยู่ใน role_permissions (ตาราง) ไม่ใช่ array ในโค้ดอีกต่อไป
@@ -144,7 +174,7 @@ function SplashScreen({ onDone }) {
             color: 'rgba(255,255,255,0.9)',
           }}>Thai Summit Group</div>
           <div style={{
-            fontFamily: 'var(--font-display)', fontSize: 10,
+            fontFamily: 'var(--font-display)', fontSize: 11,
             letterSpacing: '2px', textTransform: 'uppercase',
             color: 'rgba(255,255,255,0.35)',
           }}>VX Production System</div>
@@ -178,7 +208,7 @@ function SplashScreen({ onDone }) {
 }
 
 /* ─── Sidebar ──────────────────────────────────────────────── */
-function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl }) {
+function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition }) {
   const location = useLocation();
   const isMobile = window.innerWidth <= 768;
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
@@ -189,6 +219,15 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   });
 
   useEffect(() => { setSigUrl(userSignatureUrl); }, [userSignatureUrl]);
+
+  // hub สั่งโฟกัสหมวด (focusSidebarGroups) → โหลดค่าพับ/กางจาก localStorage ใหม่
+  useEffect(() => {
+    const sync = () => {
+      try { setCollapsedGroups(JSON.parse(localStorage.getItem('nav_collapsed_groups') || '{}')); } catch { /* ignore */ }
+    };
+    window.addEventListener('nav-groups-changed', sync);
+    return () => window.removeEventListener('nav-groups-changed', sync);
+  }, []);
 
   const toggleGroup = (g) => {
     setCollapsedGroups(prev => {
@@ -229,8 +268,8 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <img src={tsLogo} alt="Thai Summit Group" width={28} height={28} style={{ borderRadius: 3, flexShrink: 0 }} />
             <div>
-              <div style={{ fontSize: 10, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
-              <div style={{ fontSize: 9, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>ESM · Shopfloor</div>
+              <div style={{ fontSize: 11, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
+              <div style={{ fontSize: 11, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>ESM · Shopfloor</div>
             </div>
           </div>
           <button
@@ -258,11 +297,11 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
                     background: 'none', border: 'none', cursor: 'pointer', padding: '8px 10px 4px',
                     color: groupHasActive ? 'var(--accent)' : 'var(--muted)',
-                    fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase',
+                    fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase',
                   }}
                 >
                   <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</span>
-                  <span style={{ fontSize: 10, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
+                  <span style={{ fontSize: 11, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
                 </button>
                 {!collapsed && items.map(item => (
                   <Link
@@ -321,11 +360,11 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
                 {userFullName || (userEmail?.split('@')[0]) || 'Unknown'}
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {userEmail || ''}
+                {[userPosition, userEmail].filter(Boolean).join(' · ')}
               </div>
             </div>
             <div style={{
-              fontSize: 10, fontWeight: 700, padding: '2px 6px',
+              fontSize: 11, fontWeight: 700, padding: '2px 6px',
               borderRadius: 4, flexShrink: 0,
               background: userRole === 'admin' ? 'var(--accent-dim)' :
                           userRole === 'manager' ? 'var(--accent2-dim)' :
@@ -485,8 +524,8 @@ function NotificationBell({ userId }) {
           <span style={{
             position: 'absolute', top: -4, right: -4,
             background: '#ef4444', color: '#fff',
-            fontSize: 10, fontWeight: 800,
-            minWidth: 17, height: 17, borderRadius: 9,
+            fontSize: 11, fontWeight: 800,
+            minWidth: 18, height: 18, borderRadius: 9,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             padding: '0 3px', lineHeight: 1,
           }}>
@@ -536,7 +575,7 @@ function NotificationBell({ userId }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: n.is_read ? 400 : 700, color: 'var(--text)', lineHeight: 1.4 }}>{n.title}</div>
                     {n.body && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.body}</div>}
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
                       {fmtDateTime(n.created_at)}
                     </div>
                   </div>
@@ -685,7 +724,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userEmail, userFullName, userNotifyEmail, userSignatureUrl }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
   const [isOpen, setIsOpen] = useState(!isMobile);
@@ -719,16 +758,16 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
     return (
-      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
+      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
-          <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} />
+          <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} userPosition={userPosition} />
         </Suspense>
       </UserContext.Provider>
     );
   }
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
+    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
       {warnSecsLeft !== null && (
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
@@ -743,6 +782,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
           onToggleTheme={onToggleTheme}
           userRole={role}
           userLineId={userLineId}
+          userPosition={userPosition}
           userEmail={userEmail}
           userFullName={userFullName}
           userSignatureUrl={userSignatureUrl}
@@ -752,7 +792,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
           flex: 1,
           marginLeft,
           minHeight: '100vh',
-          paddingTop: 60,
+          paddingTop: 14,
           background: 'var(--bg)',
           transition: 'margin-left 0.3s cubic-bezier(0.4,0,0.2,1)',
           overflow: 'auto',
@@ -832,6 +872,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/planner-sales" element={
                 <RoleRoute path="/planner-sales" userRole={role}><PlannerSales /></RoleRoute>
               } />
+              <Route path="/rundown-stock" element={
+                <RoleRoute path="/rundown-stock" userRole={role}><RundownStock /></RoleRoute>
+              } />
               <Route path="/rack-center" element={
                 <RoleRoute path="/rack-center" userRole={role}><RackCenter /></RoleRoute>
               } />
@@ -865,6 +908,7 @@ export default function App() {
   const [userLineId,   setUserLineId]   = useState(null);
   const [userTeam,     setUserTeam]     = useState(null);
   const [userSection,  setUserSection]  = useState(null);
+  const [userPosition, setUserPosition] = useState(null); // ตำแหน่งงานจริง (แสดงผลเท่านั้น ไม่เกี่ยวกับสิทธิ์)
   // ขอบเขตหลายส่วนงาน (จาก profiles.sections + fallback section เดี่ยวของ supervisor) — [] = ไม่จำกัด
   const [userSections, setUserSections] = useState([]);
   const [userEmail,        setUserEmail]        = useState(null);
@@ -889,12 +933,13 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const { data } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, notify_email, signature_url').eq('id', user.id).single();
+    const { data } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, position, notify_email, signature_url').eq('id', user.id).single();
     setUserRole(data?.role ?? null);
     setUserLineId(data?.line_id ?? null);
     setUserFullName(data?.full_name ?? null);
     setUserTeam(data?.team ?? null);
     setUserSection(data?.section ?? null);
+    setUserPosition(data?.position ?? null);
     setUserSections(effectiveSections(data?.role, data?.sections, data?.section));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
@@ -915,7 +960,7 @@ export default function App() {
         fetchProfile(s.user);
         loadPermissions().then(() => setPermsLoaded(true));
       } else {
-        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null);
+        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserPosition(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null);
         setProfileLoaded(false); setPermsLoaded(false);
       }
     });
@@ -966,6 +1011,7 @@ export default function App() {
                 userTeam={userTeam}
                 userSection={userSection}
                 userSections={userSections}
+                userPosition={userPosition}
                 userEmail={userEmail}
                 userFullName={userFullName}
                 userNotifyEmail={userNotifyEmail}

@@ -6,6 +6,9 @@ import { toast } from '../components/Toast';
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
 
+// วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
+const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+
 /* ─── PRODUCT MASTER ─────────────────────────────────────────────────────────
    ฐานข้อมูลกลางของ Product/Model ที่ใช้ร่วมกันในทุกโมดูล
    - Daily Report  → เลือก product ตอนเปิดกะ
@@ -44,8 +47,8 @@ const BLANK = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', l
 function RelatedLinks({ matNo, productId }) {
   return (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-      <Link to="/heijunka" title="ดู Heijunka Kanban demand" style={{ fontSize: 10, padding: '2px 9px', borderRadius: 10, background: 'rgba(245,158,11,0.1)', color: '#f59e0b', textDecoration: 'none', fontWeight: 700 }}>🎴 Kanban</Link>
-      <Link to="/daily-report" title="บันทึกการผลิต" style={{ fontSize: 10, padding: '2px 9px', borderRadius: 10, background: 'rgba(14,165,233,0.1)', color: '#38bdf8', textDecoration: 'none', fontWeight: 700 }}>📊 Daily Report</Link>
+      <Link to="/heijunka" title="ดู Heijunka Kanban demand" style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'rgba(245,158,11,0.1)', color: '#f59e0b', textDecoration: 'none', fontWeight: 700 }}>🎴 Kanban</Link>
+      <Link to="/daily-report" title="บันทึกการผลิต" style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'rgba(14,165,233,0.1)', color: '#38bdf8', textDecoration: 'none', fontWeight: 700 }}>📊 Daily Report</Link>
     </div>
   );
 }
@@ -146,7 +149,7 @@ export default function ProductMaster() {
       process_type: item.process_type || 'welding_assembly',
       posting_mode: item.posting_mode || 'immediate', lot_accumulate_threshold: item.lot_accumulate_threshold || '',
       is_active: true,
-      effective_from: new Date().toISOString().slice(0, 10),
+      effective_from: localDateStr(),
       image_url: item.image_url || '',
     });
   };
@@ -193,13 +196,25 @@ export default function ProductMaster() {
         if (ecSource) {
           await supabaseDR.from('dr_products').update({
             is_active: false,
-            superseded_at: form.effective_from || new Date().toISOString().slice(0, 10),
+            superseded_at: form.effective_from || localDateStr(),
             superseded_by: inserted.id,
           }).eq('id', ecSource.id);
         }
       } else {
         const { error } = await supabaseDR.from('dr_products').update(payload).eq('id', editing);
         if (error) { toast.error(error.message); return; }
+      }
+      // อัปโหลดรูปใหม่ + DB update สำเร็จแล้ว ค่อยลบไฟล์รูปเดิมทิ้ง กันไฟล์กำพร้าสะสมใน storage (best-effort)
+      // ลบเฉพาะเมื่อ URL เดิมชี้ bucket product-images และไม่มีสินค้าอื่นใช้รูปเดียวกันอยู่ (สินค้าชื่อเดียวกันแชร์รูปกัน)
+      if (imageFile && editing !== 'new') {
+        const oldUrl = items.find(i => i.id === editing)?.image_url;
+        if (oldUrl && oldUrl !== imageUrl && oldUrl.includes('/product-images/')) {
+          const stillUsed = items.some(i => i.id !== editing && i.image_url === oldUrl);
+          const oldPath = decodeURIComponent(oldUrl.split('/product-images/')[1] || '');
+          if (!stillUsed && oldPath) {
+            supabaseDR.storage.from('product-images').remove([oldPath]).catch(() => {});
+          }
+        }
       }
       // ผูกคู่ RH/LH สองทาง — ถ้าเปลี่ยน/ยกเลิกคู่เดิม ให้เลิกผูกฝั่งคู่เดิมด้วย
       const oldPairMatNo = editing !== 'new' ? items.find(i => i.id === editing)?.pair_mat_no : null;
@@ -505,30 +520,30 @@ export default function ProductMaster() {
                     {!indented && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
                         <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{item.name}</span>
-                        <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: item.process_type === 'metal_forming' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.12)', color: item.process_type === 'metal_forming' ? '#fbbf24' : '#22c55e' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: item.process_type === 'metal_forming' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.12)', color: item.process_type === 'metal_forming' ? '#fbbf24' : '#22c55e' }}>
                           {item.process_type === 'metal_forming' ? '⚙ Metal Forming' : '🔥 Welding/Assy'}
                         </span>
-                        <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: item.posting_mode === 'lot_accumulate' ? 'rgba(168,85,247,0.15)' : 'rgba(56,189,248,0.12)', color: item.posting_mode === 'lot_accumulate' ? '#a855f7' : '#38bdf8' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: item.posting_mode === 'lot_accumulate' ? 'rgba(168,85,247,0.15)' : 'rgba(56,189,248,0.12)', color: item.posting_mode === 'lot_accumulate' ? '#a855f7' : '#38bdf8' }}>
                           {item.posting_mode === 'lot_accumulate' ? `📥 สะสม Lot ≥${item.lot_accumulate_threshold ?? '?'}` : '📌 มีกัมบังก็ผลิต'}
                         </span>
-                        {members.length > 1 && <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {members.length} revisions</span>}
-                        {!active && <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(107,114,128,0.15)', color: '#6b7280', fontWeight: 700 }}>ปิดใช้งาน</span>}
+                        {members.length > 1 && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {members.length} revisions</span>}
+                        {!active && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(107,114,128,0.15)', color: '#6b7280', fontWeight: 700 }}>ปิดใช้งาน</span>}
                       </div>
                     )}
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 4 }}>
                       {item.mat_no && <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{item.mat_no}</span>}
                       {item.p_no   && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {item.p_no}</span>}
-                      {item.customer && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', color: '#60a5fa' }}>{item.customer}</span>}
-                      {item.code && <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--muted)' }}>{item.code}</span>}
-                      {members.length > 1 && indented && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {members.length} rev</span>}
+                      {item.customer && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', color: '#60a5fa' }}>{item.customer}</span>}
+                      {item.code && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--muted)' }}>{item.code}</span>}
+                      {members.length > 1 && indented && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {members.length} rev</span>}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                       {[item.line_name && `📍 ${item.line_name}`, item.cycle_time_sec && `CT ${item.cycle_time_sec}s`, item.target_per_shift && `Target ${item.target_per_shift}/กะ`, !indented && item.effective_from && `ใช้ตั้งแต่ ${item.effective_from}`].filter(Boolean).join(' · ')}
                     </div>
                     <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                       {totalQty > 0 && <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>📦 ยอดสะสม {totalQty.toLocaleString()} ชิ้น</span>}
-                      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: totalBom > 0 ? 'rgba(61,214,92,0.1)' : 'rgba(107,114,128,0.08)', color: totalBom > 0 ? 'var(--accent)' : 'var(--muted)', fontWeight: 700 }}>📦 BOM: {totalBom > 0 ? `${totalBom} พาร์ท` : 'ยังไม่มี'}</span>
-                      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: stds.filter(s => s.is_active).length > 0 ? 'rgba(245,158,11,0.1)' : 'rgba(107,114,128,0.08)', color: stds.filter(s => s.is_active).length > 0 ? '#f59e0b' : 'var(--muted)', fontWeight: 700 }}>🎴 Kanban: {stds.filter(s => s.is_active).length > 0 ? `${stds.filter(s => s.is_active).length} mat` : 'ยังไม่มี'}</span>
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: totalBom > 0 ? 'rgba(61,214,92,0.1)' : 'rgba(107,114,128,0.08)', color: totalBom > 0 ? 'var(--accent)' : 'var(--muted)', fontWeight: 700 }}>📦 BOM: {totalBom > 0 ? `${totalBom} พาร์ท` : 'ยังไม่มี'}</span>
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: stds.filter(s => s.is_active).length > 0 ? 'rgba(245,158,11,0.1)' : 'rgba(107,114,128,0.08)', color: stds.filter(s => s.is_active).length > 0 ? '#f59e0b' : 'var(--muted)', fontWeight: 700 }}>🎴 Kanban: {stds.filter(s => s.is_active).length > 0 ? `${stds.filter(s => s.is_active).length} mat` : 'ยังไม่มี'}</span>
                     </div>
                     <RelatedLinks matNo={item.mat_no} productId={item.id} />
                   </div>
@@ -542,13 +557,13 @@ export default function ProductMaster() {
                 </div>
                 {showHistory && archived.length > 0 && (
                   <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg2)', padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>📋 ประวัติ Revision</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>📋 ประวัติ Revision</div>
                     {archived.map(rev => (
                       <div key={rev.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, color: 'var(--muted)', opacity: 0.75 }}>
                         <span style={{ fontFamily: 'monospace', color: '#64748b' }}>{rev.mat_no || '—'}</span>
                         {rev.p_no && <span style={{ color: '#475569' }}>P.NO: {rev.p_no}</span>}
                         <span>{rev.effective_from || '?'} → {rev.superseded_at || '?'}</span>
-                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.15)', color: '#6b7280' }}>superseded</span>
+                        <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.15)', color: '#6b7280' }}>superseded</span>
                       </div>
                     ))}
                   </div>
@@ -557,7 +572,7 @@ export default function ProductMaster() {
                   <button onClick={() => setExpandedFamilies(prev => ({ ...prev, [family_id]: !isExpandedKanban }))}
                     style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'var(--bg2)', border: 'none', cursor: 'pointer', color: 'var(--text2)', fontSize: 12, fontWeight: 700 }}>
                     <span>🎴 Kanban Standards ({stds.length})</span>
-                    <span style={{ fontSize: 10, color: 'var(--muted)' }}>{isExpandedKanban ? '▲' : '▼'}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{isExpandedKanban ? '▲' : '▼'}</span>
                   </button>
                   {isExpandedKanban && (
                     <div style={{ padding: '8px 12px', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -570,13 +585,13 @@ export default function ProductMaster() {
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: isOldRev ? 'var(--muted)' : '#0ea5e9' }}>{std.mat_no}</span>
-                                {isOldRev && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.12)', color: '#6b7280' }}>rev เก่า</span>}
-                                {!std.is_active && <span style={{ fontSize: 9, color: '#ef4444' }}>ปิด</span>}
+                                {isOldRev && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.12)', color: '#6b7280' }}>rev เก่า</span>}
+                                {!std.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}>ปิด</span>}
                               </div>
                             </div>
                             <div style={{ textAlign: 'right', flexShrink: 0 }}>
                               <span style={{ fontSize: 18, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>{std.qty_per_kanban}</span>
-                              <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 3 }}>ชิ้น/ใบ</span>
+                              <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 3 }}>ชิ้น/ใบ</span>
                             </div>
                             {(canEdit || canDelete) && (
                               <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
@@ -624,15 +639,15 @@ export default function ProductMaster() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
                       <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{partName}</span>
-                      <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: repItem.process_type === 'metal_forming' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.12)', color: repItem.process_type === 'metal_forming' ? '#fbbf24' : '#22c55e' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: repItem.process_type === 'metal_forming' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.12)', color: repItem.process_type === 'metal_forming' ? '#fbbf24' : '#22c55e' }}>
                         {repItem.process_type === 'metal_forming' ? '⚙ Metal Forming' : '🔥 Welding/Assy'}
                       </span>
-                      <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: repItem.posting_mode === 'lot_accumulate' ? 'rgba(168,85,247,0.15)' : 'rgba(56,189,248,0.12)', color: repItem.posting_mode === 'lot_accumulate' ? '#a855f7' : '#38bdf8' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: repItem.posting_mode === 'lot_accumulate' ? 'rgba(168,85,247,0.15)' : 'rgba(56,189,248,0.12)', color: repItem.posting_mode === 'lot_accumulate' ? '#a855f7' : '#38bdf8' }}>
                         {repItem.posting_mode === 'lot_accumulate' ? `📥 สะสม Lot ≥${repItem.lot_accumulate_threshold ?? '?'}` : '📌 มีกัมบังก็ผลิต'}
                       </span>
-                      <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>👥 {nameFamilies.length} ลูกค้า</span>
-                      {totalBomAll > 0 && <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: 'rgba(61,214,92,0.1)', color: 'var(--accent)', fontWeight: 700 }}>📦 BOM: {totalBomAll}</span>}
-                      <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20, background: stds.filter(s => s.is_active).length > 0 ? 'rgba(245,158,11,0.1)' : 'rgba(107,114,128,0.08)', color: stds.filter(s => s.is_active).length > 0 ? '#f59e0b' : 'var(--muted)', fontWeight: 700 }}>🎴 Kanban: {stds.filter(s => s.is_active).length > 0 ? `${stds.filter(s => s.is_active).length} mat` : 'ยังไม่มี'}</span>
+                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>👥 {nameFamilies.length} ลูกค้า</span>
+                      {totalBomAll > 0 && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(61,214,92,0.1)', color: 'var(--accent)', fontWeight: 700 }}>📦 BOM: {totalBomAll}</span>}
+                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: stds.filter(s => s.is_active).length > 0 ? 'rgba(245,158,11,0.1)' : 'rgba(107,114,128,0.08)', color: stds.filter(s => s.is_active).length > 0 ? '#f59e0b' : 'var(--muted)', fontWeight: 700 }}>🎴 Kanban: {stds.filter(s => s.is_active).length > 0 ? `${stds.filter(s => s.is_active).length} mat` : 'ยังไม่มี'}</span>
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                       {[repItem.line_name && `📍 ${repItem.line_name}`, repItem.cycle_time_sec && `CT ${repItem.cycle_time_sec}s`, repItem.target_per_shift && `Target ${repItem.target_per_shift}/กะ`].filter(Boolean).join(' · ')}
@@ -654,12 +669,12 @@ export default function ProductMaster() {
                         {v.image_url
                           ? <img src={v.image_url} alt="" loading="lazy" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', flexShrink: 0 }} />
                           : <div style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }} />}
-                        <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', color: '#60a5fa', fontWeight: 700, flexShrink: 0 }}>{v.customer || '—'}</span>
+                        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', color: '#60a5fa', fontWeight: 700, flexShrink: 0 }}>{v.customer || '—'}</span>
                         <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: '#0ea5e9' }}>{v.mat_no}</span>
                         {v.p_no && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {v.p_no}</span>}
                         {v.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>📍 {v.line_name}</span>}
-                        {v.revCount > 1 && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {v.revCount} rev</span>}
-                        <span style={{ fontSize: 10, padding: '1px 7px', borderRadius: 10, background: (bomCounts[v.id] || 0) > 0 ? 'rgba(61,214,92,0.1)' : 'rgba(107,114,128,0.08)', color: (bomCounts[v.id] || 0) > 0 ? 'var(--accent)' : 'var(--muted)', fontWeight: 700 }}>📦 {(bomCounts[v.id] || 0) > 0 ? `${bomCounts[v.id]} พาร์ท` : 'ไม่มี BOM'}</span>
+                        {v.revCount > 1 && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {v.revCount} rev</span>}
+                        <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 10, background: (bomCounts[v.id] || 0) > 0 ? 'rgba(61,214,92,0.1)' : 'rgba(107,114,128,0.08)', color: (bomCounts[v.id] || 0) > 0 ? 'var(--accent)' : 'var(--muted)', fontWeight: 700 }}>📦 {(bomCounts[v.id] || 0) > 0 ? `${bomCounts[v.id]} พาร์ท` : 'ไม่มี BOM'}</span>
                         {(canEdit || canDelete) && (
                           <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', flexShrink: 0 }}>
                             {canEdit && <button onClick={() => openEC(v)} title="Engineering Change" style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: '#a855f7', fontWeight: 700 }}>🔄 EC</button>}
@@ -676,7 +691,7 @@ export default function ProductMaster() {
                     <button onClick={() => setExpandedFamilies(prev => ({ ...prev, [nameKey]: !isExpandedKanban }))}
                       style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'var(--bg2)', border: 'none', cursor: 'pointer', color: 'var(--text2)', fontSize: 12, fontWeight: 700 }}>
                       <span>🎴 Kanban Standards ({stds.length})</span>
-                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>{isExpandedKanban ? '▲' : '▼'}</span>
+                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>{isExpandedKanban ? '▲' : '▼'}</span>
                     </button>
                     {isExpandedKanban && (
                       <div style={{ padding: '8px 12px', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -685,14 +700,14 @@ export default function ProductMaster() {
                           const v = variantById.get(std.product_id);
                           return (
                             <div key={std.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 7, opacity: std.is_active ? 1 : 0.5 }}>
-                              {v?.customer && <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', color: '#60a5fa', fontWeight: 700, flexShrink: 0 }}>{v.customer}</span>}
+                              {v?.customer && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', color: '#60a5fa', fontWeight: 700, flexShrink: 0 }}>{v.customer}</span>}
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: '#0ea5e9' }}>{std.mat_no}</span>
-                                {!std.is_active && <span style={{ fontSize: 9, color: '#ef4444', marginLeft: 6 }}>ปิด</span>}
+                                {!std.is_active && <span style={{ fontSize: 11, color: '#ef4444', marginLeft: 6 }}>ปิด</span>}
                               </div>
                               <div style={{ textAlign: 'right', flexShrink: 0 }}>
                                 <span style={{ fontSize: 18, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>{std.qty_per_kanban}</span>
-                                <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 3 }}>ชิ้น/ใบ</span>
+                                <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 3 }}>ชิ้น/ใบ</span>
                               </div>
                               {(canEdit || canDelete) && (
                                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
@@ -1164,7 +1179,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
               <div key={p.id} onClick={() => setSelProduct(p)} style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: active ? 'rgba(61,214,92,0.1)' : 'var(--bg2)', border: `1px solid ${active ? 'rgba(61,214,92,0.4)' : 'var(--border)'}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                  <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 10, flexShrink: 0, background: n > 0 ? 'rgba(61,214,92,0.15)' : 'rgba(255,255,255,0.06)', color: n > 0 ? 'var(--accent)' : 'var(--muted)' }}>{n > 0 ? `${n} พาร์ท` : 'ยังไม่มี'}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 10, flexShrink: 0, background: n > 0 ? 'rgba(61,214,92,0.15)' : 'rgba(255,255,255,0.06)', color: n > 0 ? 'var(--accent)' : 'var(--muted)' }}>{n > 0 ? `${n} พาร์ท` : 'ยังไม่มี'}</span>
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{[p.mat_no, p.line_name, p.customer].filter(Boolean).join(' · ')}</div>
               </div>
@@ -1282,7 +1297,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                     </div>
                     {sel && (
                       <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                        <label style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap' }}>QTY/ชิ้น</label>
+                        <label style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap' }}>QTY/ชิ้น</label>
                         <input type="number" min="0.001" step="any" value={sel.qty_per_unit}
                           onChange={e => setPickQty(p.id, e.target.value)}
                           style={{ ...inputSt, width: 72, textAlign: 'center', fontSize: 14, fontWeight: 800, padding: '4px 8px', background: 'var(--bg)' }} />
@@ -1604,6 +1619,14 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
         ({ error: err } = await supabaseDR.from('parts_master').insert(payload));
       }
       if (err) { toast.error(err.message); return; }
+      // อัปโหลดรูปใหม่ + DB update สำเร็จแล้ว ค่อยลบไฟล์รูปเดิมทิ้ง กันไฟล์กำพร้าใน storage (best-effort)
+      if (imageFile && editPart?.image_url && editPart.image_url !== imageUrl && editPart.image_url.includes('/product-images/')) {
+        const stillUsed = parts.some(p => p.id !== editPart.id && p.image_url === editPart.image_url);
+        const oldPath = decodeURIComponent(editPart.image_url.split('/product-images/')[1] || '');
+        if (!stillUsed && oldPath) {
+          supabaseDR.storage.from('product-images').remove([oldPath]).catch(() => {});
+        }
+      }
       toast.success(editPart ? 'อัปเดตสำเร็จ' : 'เพิ่มพาร์ทสำเร็จ');
       setShowModal(false);
       load();
@@ -1686,7 +1709,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                   <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 800, color: matColor(p.mat_no) }}>{p.mat_no}</span>
-                      {matTypeLabel(p.mat_no) && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: `${matColor(p.mat_no)}22`, color: matColor(p.mat_no), fontWeight: 700 }}>{matTypeLabel(p.mat_no)}</span>}
+                      {matTypeLabel(p.mat_no) && <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 8, background: `${matColor(p.mat_no)}22`, color: matColor(p.mat_no), fontWeight: 700 }}>{matTypeLabel(p.mat_no)}</span>}
                     </div>
                   </td>
                   <td style={{ padding: '8px 12px', fontSize: 13, color: 'var(--text)', fontWeight: 600, borderTop: '1px solid var(--border)' }}>{p.part_name}</td>
@@ -1733,7 +1756,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
               {MAT_PREFIXES.map(m => (
                 <button key={m.prefix} onClick={() => setForm(f => ({ ...f, mat_no: f.mat_no.startsWith(m.prefix) ? f.mat_no : m.prefix }))}
-                  style={{ fontSize: 10, padding: '2px 10px', borderRadius: 10, border: `1px solid ${m.color}`, background: form.mat_no.startsWith(m.prefix) ? `${m.color}22` : 'transparent', color: m.color, cursor: 'pointer', fontWeight: 700 }}>
+                  style={{ fontSize: 11, padding: '2px 10px', borderRadius: 10, border: `1px solid ${m.color}`, background: form.mat_no.startsWith(m.prefix) ? `${m.color}22` : 'transparent', color: m.color, cursor: 'pointer', fontWeight: 700 }}>
                   {m.prefix}…
                 </button>
               ))}
@@ -1922,7 +1945,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
                 <div key={p.id} onClick={() => setSelProduct(p)} style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: active ? 'rgba(61,214,92,0.1)' : 'var(--bg2)', border: `1px solid ${active ? 'rgba(61,214,92,0.4)' : 'var(--border)'}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
                     <span style={{ fontSize: 13, fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                    <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 10, flexShrink: 0, background: n > 0 ? 'rgba(61,214,92,0.15)' : 'rgba(255,255,255,0.06)', color: n > 0 ? 'var(--accent)' : 'var(--muted)' }}>{n > 0 ? `${n} pkg` : 'ยังไม่ผูก'}</span>
+                    <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 10, flexShrink: 0, background: n > 0 ? 'rgba(61,214,92,0.15)' : 'rgba(255,255,255,0.06)', color: n > 0 ? 'var(--accent)' : 'var(--muted)' }}>{n > 0 ? `${n} pkg` : 'ยังไม่ผูก'}</span>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{[p.mat_no, p.line_name].filter(Boolean).join(' · ')}</div>
                 </div>
@@ -1985,7 +2008,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>จำนวนชิ้น FG ต่อ 1 บรรจุภัณฑ์ *</label>
                 <input type="number" min="1" step="1" style={{ ...inputSt, textAlign: 'center', fontWeight: 900, fontSize: 16 }} value={linkForm.pcs_per_pkg} onChange={e => setLinkForm(f => ({ ...f, pcs_per_pkg: e.target.value }))} />
-                <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>เช่น 100 = 1 กล่องใส่ได้ 100 ชิ้น → ผลิต 200 ชิ้น เบิก 2 กล่อง</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>เช่น 100 = 1 กล่องใส่ได้ 100 ชิ้น → ผลิต 200 ชิ้น เบิก 2 กล่อง</div>
               </div>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>
@@ -2008,13 +2031,13 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12 }}>ฐานข้อมูลเดียวกับที่ Rack Center ใช้</div>
             {canEdit && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 1fr 1fr auto', gap: 8, alignItems: 'end', marginBottom: 14 }}>
-                <div><label style={{ fontSize: 10, color: 'var(--muted)' }}>Code *</label><input style={inputSt} value={masterForm.code} onChange={e => setMasterForm(f => ({ ...f, code: e.target.value }))} placeholder="BOX-A" /></div>
-                <div><label style={{ fontSize: 10, color: 'var(--muted)' }}>ชื่อ *</label><input style={inputSt} value={masterForm.name} onChange={e => setMasterForm(f => ({ ...f, name: e.target.value }))} /></div>
-                <div><label style={{ fontSize: 10, color: 'var(--muted)' }}>ประเภท</label>
+                <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>Code *</label><input style={inputSt} value={masterForm.code} onChange={e => setMasterForm(f => ({ ...f, code: e.target.value }))} placeholder="BOX-A" /></div>
+                <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>ชื่อ *</label><input style={inputSt} value={masterForm.name} onChange={e => setMasterForm(f => ({ ...f, name: e.target.value }))} /></div>
+                <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>ประเภท</label>
                   <select style={inputSt} value={masterForm.category} onChange={e => setMasterForm(f => ({ ...f, category: e.target.value }))}>
                     {PKG_CATEGORIES.map(t => <option key={t} value={t}>{t}</option>)}
                   </select></div>
-                <div><label style={{ fontSize: 10, color: 'var(--muted)' }}>Supplier</label><input style={inputSt} value={masterForm.supplier} onChange={e => setMasterForm(f => ({ ...f, supplier: e.target.value }))} /></div>
+                <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>Supplier</label><input style={inputSt} value={masterForm.supplier} onChange={e => setMasterForm(f => ({ ...f, supplier: e.target.value }))} /></div>
                 <button onClick={saveMaster} disabled={saving} style={{ ...btnPrimary, padding: '8px 14px' }}>{editMaster ? '💾' : '+'}</button>
               </div>
             )}
@@ -2166,7 +2189,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
                       {row.ks ? (
                         <span title={row.ks.updated_by || ''}>
                           {row.ks.updated_at ? new Date(row.ks.updated_at).toLocaleDateString('th-TH') : '—'}
-                          {row.ks.updated_by ? <span style={{ display: 'block', fontSize: 10 }}>{row.ks.updated_by}</span> : null}
+                          {row.ks.updated_by ? <span style={{ display: 'block', fontSize: 11 }}>{row.ks.updated_by}</span> : null}
                         </span>
                       ) : '—'}
                     </td>

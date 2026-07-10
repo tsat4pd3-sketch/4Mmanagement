@@ -305,8 +305,15 @@ export default function QAInspectionSetup() {
   const delPart = async () => {
     if (!sel) return;
     if (!window.confirm(`ลบ ${sel.part_no} พร้อมจุดตรวจทั้งหมด ${items.length} จุด?`)) return;
+    const partId = sel.id;
     const { error } = await supabase.from('qa_parts').delete().eq('id', sel.id);
     if (error) { toast.error(error.message); return; }
+    // ลบ part สำเร็จแล้ว เก็บกวาดไฟล์ drawing ทั้งโฟลเดอร์ของ part นี้ กันไฟล์กำพร้าใน storage (best-effort)
+    try {
+      const { data: files } = await supabase.storage.from('qa-drawings').list(`parts/${partId}`, { limit: 1000 });
+      const paths = (files || []).map(f => `parts/${partId}/${f.name}`);
+      if (paths.length) await supabase.storage.from('qa-drawings').remove(paths);
+    } catch { /* ลบไฟล์พลาดไม่ต้องกระทบ flow หลัก */ }
     toast.success('ลบแล้ว');
     setSelId(null);
     loadParts();
@@ -321,6 +328,12 @@ export default function QAInspectionSetup() {
     const { error } = await supabase.storage.from('qa-drawings').upload(path, file, { upsert: true });
     if (error) { toast.error(`อัพโหลดไม่สำเร็จ: ${error.message}`); return null; }
     return supabase.storage.from('qa-drawings').getPublicUrl(path).data.publicUrl;
+  };
+
+  // แปลง public URL กลับเป็น storage path ใน bucket qa-drawings (null = ไม่ใช่ไฟล์ของ bucket นี้)
+  const qaDrawingPath = (url) => {
+    const p = url?.split('/qa-drawings/')[1];
+    return p ? decodeURIComponent(p) : null;
   };
 
   /* เลือกไฟล์แล้ว → เปิด picker ตั้งชื่อ view มาตรฐานก่อน ค่อยอัพโหลดจริง */
@@ -349,11 +362,17 @@ export default function QAInspectionSetup() {
   const replaceDrawing = async (file) => {
     if (!activeDwg || !file) return;
     setUploading(true);
+    const oldUrl = activeDwg.drawing_url;
     const url = await uploadFile(file);
     if (!url) { setUploading(false); return; }
     const { error } = await supabase.from('qa_part_drawings').update({ drawing_url: url }).eq('id', activeDwg.id);
     setUploading(false);
     if (error) { toast.error(error.message); return; }
+    // อัปโหลด+update สำเร็จแล้ว ค่อยลบไฟล์ drawing เดิมทิ้ง กันไฟล์กำพร้าใน storage (best-effort)
+    const oldPath = qaDrawingPath(oldUrl);
+    if (oldPath && oldUrl !== url) {
+      supabase.storage.from('qa-drawings').remove([oldPath]).catch(() => {});
+    }
     toast.success(`เปลี่ยนรูปแผ่น "${activeDwg.title}" แล้ว ✓`);
     loadDrawings(sel.id);
   };
@@ -385,6 +404,9 @@ export default function QAInspectionSetup() {
     if (cnt) await supabase.from('qa_inspection_items').update({ pos_x: null, pos_y: null, drawing_id: null }).eq('drawing_id', dwg.id);
     const { error } = await supabase.from('qa_part_drawings').delete().eq('id', dwg.id);
     if (error) { toast.error(error.message); return; }
+    // ลบ row สำเร็จแล้ว ค่อยลบไฟล์จาก storage ด้วย กันไฟล์กำพร้า (best-effort)
+    const dwgPath = qaDrawingPath(dwg.drawing_url);
+    if (dwgPath) supabase.storage.from('qa-drawings').remove([dwgPath]).catch(() => {});
     toast.success('ลบแผ่นแล้ว');
     loadDrawings(sel.id);
     loadItems(sel.id);

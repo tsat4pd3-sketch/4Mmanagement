@@ -11,6 +11,7 @@ import { handleDailyPmSave } from '../lib/pmDailyAlarm'
 import { exportInspectionExcel } from '../lib/pmExportExcel'
 import { exportInspectionPDF, resolveSignatureDataUrl } from '../lib/pmExportPDF'
 import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } from '../lib/pmTaxonomy'
+import useImgBox from '../utils/useImgBox'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -22,6 +23,9 @@ const DEPT_OPTIONS = [
   { key: 'die_maintenance', label: 'Die Maintenance' },
   { key: 'production', label: 'ฝ่ายผลิต' },
 ]
+// ความรับผิดชอบตามแผนก → ชนิดอุปกรณ์: mtn=machine · jig mtn=jig · die mtn=die
+// ฝ่ายผลิต (production) = Autonomous Maintenance เห็น "ทุกชนิด" (ไม่กรอง)
+const DEPT_EQUIP_TYPE = { maintenance: 'machine', jig_maintenance: 'jig', die_maintenance: 'die' }
 
 function getPublicUrl(path) {
   if (!path) return null
@@ -77,41 +81,119 @@ const S = {
   },
 }
 
-// รูป JIG + pin จุดตรวจ — pin สเกลตามความกว้างรูปที่ render จริง + clamp ไม่ให้ตกขอบ
-// (docs/UI-CONVENTIONS.md 5.1)
-function JigPinMap({ imgUrl, checkpoints }) {
-  const wrapRef = useRef(null)
-  const [box, setBox] = useState({ w: 0, h: 0 })
+// สีหมุด = สถานะการตรวจ (dynamic) — เขียวผ่าน / แดง NG / เหลืองเฝ้าระวัง / ยังไม่ตรวจ = สีหมวด
+const PIN_STATUS_COLOR = { ok: '#3dd65c', ng: '#e05c4a', warning: '#f59a3f' }
+function cpCheckStatus(cp, r) {
+  if (!r) return null
+  if (cp.type === 'variable') {
+    if (r.v1 === '' || r.v2 === '' || r.v3 === '' || r.v1 == null || r.v2 == null || r.v3 == null) return null
+    const s = getSpcStatus(computeAvg(r.v1, r.v2, r.v3), cp)
+    return s === 'fail' ? 'ng' : s === 'warning' ? 'warning' : 'ok'
+  }
+  return r.attr === 'ok' ? 'ok' : r.attr === 'ng' ? 'ng' : null
+}
+
+// รูป JIG (รองรับ 360° spin หลายเฟรม) + pin จุดตรวจที่ sync กับ checklist:
+//   • ลากซ้าย/ขวา (หรือกดจุดใต้ภาพ) เพื่อหมุนดูรอบเครื่อง — pin โชว์เฉพาะเฟรมที่วางไว้ (image_id)
+//   • สีหมุด = สถานะตรวจจริง (OK/NG) · คลิกหมุด → เลื่อน+ไฮไลต์แถวเช็คของจุดนั้น (activeCpId)
+// pin สเกล/clamp อิง "กล่องรูปจริง" หัก letterbox (docs/UI-CONVENTIONS.md §5.1)
+function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, maxH = 300 }) {
+  const [frameIdx, setFrameIdx] = useState(0)
+  const [playing, setPlaying] = useState(false)
+  useEffect(() => { setFrameIdx(0); setPlaying(false) }, [frames])
+  const boxRef = useRef(null)
+  const drag = useRef(null) // { startX, startIdx, moved }
+  const spin = frames.length >= 2
+  const cur = frames[frameIdx] || frames[0] || null
+
+  // auto-play หมุนวนอัตโนมัติ (Task A) — หยุดเมื่อผู้ใช้ลากเอง / เลือกจุด
   useEffect(() => {
-    const el = wrapRef.current
-    if (!el) return
-    const measure = () => setBox({ w: el.clientWidth || 0, h: el.clientHeight || 0 })
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    measure()
-    return () => ro.disconnect()
-  }, [imgUrl])
-  const PK = Math.round(Math.max(20, Math.min(36, (box.w || 500) * 0.04)))
-  const pkFont = Math.max(11, Math.round(PK * 0.45))
-  const padX = box.w ? (PK * 0.7 / box.w) * 100 : 0
-  const padTop = box.h ? ((PK + 4) / box.h) * 100 : 0
+    if (!playing || !spin) return
+    const t = setInterval(() => setFrameIdx(i => (i + 1) % frames.length), 650)
+    return () => clearInterval(t)
+  }, [playing, spin, frames.length])
+  const { imgRef, imgBox, recalc } = useImgBox([cur?.url])
+  useEffect(() => { frames.forEach(f => { if (f.url) { const im = new Image(); im.src = f.url } }) }, [frames])
+
+  const firstId0 = frames[0]?.id
+  // เลือกจุดจาก checklist → ถ้าเป็น spin ให้หมุนไปเฟรมที่จุดนั้นถูกวางไว้อัตโนมัติ
+  useEffect(() => {
+    if (!activeCpId) return
+    const c = checkpoints.find(x => x.id === activeCpId)
+    if (!c || c.x_pos == null) return
+    const idx = frames.findIndex(f => f.id === (c.image_id ?? firstId0))
+    if (idx >= 0) setFrameIdx(idx)
+  }, [activeCpId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // สูตร balloon ต้องเท่ากับ PMSetup/SpinAnnotator เป๊ะ (docs §5.1 — WYSIWYG จอวางกับจอตรวจ)
+  const PK = Math.round(Math.max(20, Math.min(36, (imgBox?.rw || 500) * 0.04)))
+  const pkFont = Math.max(11, Math.round(PK * 0.42))
+  const padX = imgBox ? (PK * 0.7 / imgBox.rw) * 100 : 0
+  const padTop = imgBox ? ((PK + 4) / imgBox.rh) * 100 : 0
   const clampPct = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
+  const cpIndex = {}; checkpoints.forEach((c, i) => { cpIndex[c.id] = i })
+  const firstId = frames[0]?.id
+  // pin ของเฟรมปัจจุบัน (image_id ว่าง = ผูกเฟรมแรก ตาม backfill)
+  const framePins = checkpoints.filter(c => c.x_pos != null && c.y_pos != null && ((c.image_id ?? firstId) === cur?.id))
+
+  const pointerDown = (e) => {
+    if (!spin) return
+    setPlaying(false) // ผู้ใช้ลากเอง → หยุด auto-play
+    drag.current = { startX: e.clientX, startIdx: frameIdx, moved: false }
+    const move = (ev) => {
+      if (!drag.current) return
+      const dx = ev.clientX - drag.current.startX
+      if (Math.abs(dx) > 3) drag.current.moved = true
+      const w = boxRef.current?.clientWidth || 300
+      const step = Math.round((dx / w) * frames.length)
+      let idx = (drag.current.startIdx - step) % frames.length
+      if (idx < 0) idx += frames.length
+      setFrameIdx(idx)
+    }
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); setTimeout(() => { drag.current = null }, 0) }
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
+  }
+
   return (
-    <div ref={wrapRef} style={{ position: 'relative', marginBottom: 16, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
-      <img src={imgUrl} alt="" style={{ width: '100%', maxHeight: 260, objectFit: 'contain', background: 'var(--bg2)', display: 'block' }} />
-      {checkpoints.map((c, i) => {
-        if (c.x_pos == null || c.y_pos == null) return null
-        return (
-          <div key={c.id} style={{
-            position: 'absolute',
-            left: `${clampPct(c.x_pos * 100, padX, 100 - padX)}%`,
-            top: `${clampPct(c.y_pos * 100, padTop, 100)}%`,
-            transform: 'translate(-50%,-100%)',
-          }}>
-            <div style={{ minWidth: PK, height: PK, padding: `0 ${Math.round(PK * 0.15)}px`, borderRadius: 999, background: categoryColor(c.category), color: '#fff', fontSize: pkFont, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff', boxShadow: '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>{i + 1}</div>
+    <div style={{ marginBottom: 16 }}>
+      <div ref={boxRef} onPointerDown={pointerDown}
+        style={{ position: 'relative', userSelect: 'none', touchAction: 'none', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', cursor: spin ? 'grab' : 'default' }}>
+        <img ref={imgRef} src={cur?.url} alt="" draggable={false} onLoad={recalc} style={{ width: '100%', maxHeight: maxH, objectFit: 'contain', background: 'var(--bg2)', display: 'block' }} />
+        {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้ */}
+        {imgBox && (
+          <div style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
+            {framePins.map(c => {
+              const st = cpCheckStatus(c, results[c.id])
+              const col = st ? PIN_STATUS_COLOR[st] : categoryColor(c.category)
+              const active = c.id === activeCpId
+              return (
+                <button key={c.id} onClick={e => { e.stopPropagation(); onPinClick?.(c.id) }} title={`${cpIndex[c.id] + 1}. ${c.name}${st ? ` — ${st.toUpperCase()}` : ''}`}
+                  style={{ position: 'absolute', left: `${clampPct(c.x_pos * 100, padX, 100 - padX)}%`, top: `${clampPct(c.y_pos * 100, padTop, 100)}%`, transform: 'translate(-50%,-100%)', zIndex: active ? 12 : 10, cursor: 'pointer', background: 'none', border: 'none', padding: 0, pointerEvents: 'auto' }}>
+                  <div style={{ minWidth: PK, height: PK, padding: `0 ${Math.round(PK * 0.15)}px`, borderRadius: 999, background: col, color: '#fff', fontSize: pkFont, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff', boxShadow: active ? '0 0 0 3px rgba(61,214,92,0.75), 0 2px 6px rgba(0,0,0,0.5)' : '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap', transform: active ? 'scale(1.18)' : 'none', transition: 'transform .12s' }}>{cpIndex[c.id] + 1}</div>
+                </button>
+              )
+            })}
           </div>
-        )
-      })}
+        )}
+        {spin && (
+          <>
+            <div style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 12, padding: '2px 9px', pointerEvents: 'none' }}>🔄 {frameIdx + 1}/{frames.length}</div>
+            <button onClick={e => { e.stopPropagation(); setPlaying(p => !p) }} title={playing ? 'หยุดหมุน' : 'หมุนอัตโนมัติ'}
+              style={{ position: 'absolute', top: 8, left: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', borderRadius: 999, padding: '3px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+              {playing ? '⏸ หยุด' : '▶ หมุนเอง'}
+            </button>
+            <div style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 11, fontWeight: 600, borderRadius: 12, padding: '3px 12px', pointerEvents: 'none' }}>🔄 ลากซ้าย/ขวาเพื่อหมุนดูรอบเครื่อง</div>
+          </>
+        )}
+      </div>
+      {spin && (
+        <div style={{ display: 'flex', gap: 5, justifyContent: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+          {frames.map((f, i) => (
+            <button key={f.id} onClick={() => setFrameIdx(i)} title={`เฟรม ${i + 1}`}
+              style={{ width: 10, height: 10, borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0, background: i === frameIdx ? 'var(--accent)' : 'var(--border2)' }} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -136,25 +218,25 @@ function VariableRow({ cp, idx, r, onChange, methodIndex }) {
   return (
     <div style={S.cpRow(status)}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {cp.x_pos != null && <span style={{ width: 16, height: 16, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
+        {cp.x_pos != null && <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
         {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
-        <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}{cp.axis && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 4px' }}>{cp.axis}</span>}</p>
+        <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}{cp.axis && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 4px' }}>{cp.axis}</span>}</p>
         <CpImage cp={cp} />
-        {c && <span style={{ fontSize: 10, fontWeight: 700, color: c.text }}>{status === 'pass' ? '●' : status === 'warning' ? '⚠' : '✕'}</span>}
+        {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{status === 'pass' ? '●' : status === 'warning' ? '⚠' : '✕'}</span>}
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         {['v1', 'v2', 'v3'].map((k, i) => (
           <div key={k}>
-            <div style={{ fontSize: 9, color: 'var(--muted)', textAlign: 'center', marginBottom: 2 }}>{['①', '②', '③'][i]}</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginBottom: 2 }}>{['①', '②', '③'][i]}</div>
             <input type="number" value={r[k]} onChange={e => onChange({ ...r, [k]: e.target.value })} placeholder="—" style={S.input} />
           </div>
         ))}
         <div>
-          <div style={{ fontSize: 9, color: 'var(--muted)', textAlign: 'center', marginBottom: 2 }}>Avg</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginBottom: 2 }}>Avg</div>
           <div style={{ ...S.input, padding: '6px 0', borderRadius: 6, border: `1px solid ${c?.border ?? 'var(--border)'}`, color: c?.text ?? 'var(--muted)', fontWeight: 700 }}>{avg != null ? fmt(avg) : '—'}</div>
         </div>
         {cp.unit && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{cp.unit}</span>}
-        <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 'auto' }}>
+        <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>
           {cp.nominal != null && <>N:{fmt(cp.nominal)} </>}
           {cp.lsl != null && <span style={{ color: '#e05c4a' }}>L:{fmt(cp.lsl)} </span>}
           {cp.usl != null && <span style={{ color: '#e05c4a' }}>U:{fmt(cp.usl)}</span>}
@@ -170,7 +252,7 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
   return (
     <div style={S.cpRow(null)}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {cp.x_pos != null && <span style={{ width: 16, height: 16, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 8, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
+        {cp.x_pos != null && <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
         {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}</p>
         <CpImage cp={cp} />
@@ -223,7 +305,7 @@ function NgRecheckPanel({ result, cp, onSaved }) {
   if (done) {
     return (
       <div style={{ marginTop: 6, borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)', padding: '8px 12px' }}>
-        <p style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>Action taken</p>
+        <p style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>Action taken</p>
         {result.action_text && <p style={{ fontSize: 12, color: 'var(--text)', margin: '2px 0' }}>{result.action_text}</p>}
         {cp.type === 'variable' && result.recheck_avg != null && (
           <p style={{ fontSize: 12, color: 'var(--text2)', fontFamily: 'monospace', margin: 0 }}>
@@ -237,17 +319,17 @@ function NgRecheckPanel({ result, cp, onSaved }) {
 
   return (
     <div style={{ marginTop: 6, borderRadius: 8, background: 'rgba(224,92,74,0.06)', border: '1px solid rgba(224,92,74,0.25)', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <p style={{ fontSize: 10, color: '#e05c4a', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>NG — ต้องการ action</p>
+      <p style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>NG — ต้องการ action</p>
       <textarea value={action} onChange={e => setAction(e.target.value)} rows={2} placeholder="อธิบายการแก้ไข..." />
       {cp.type === 'variable' && (
         <div>
-          <p style={{ fontSize: 10, color: 'var(--muted)', margin: '0 0 4px' }}>วัดใหม่ 3 ครั้ง</p>
+          <p style={{ fontSize: 11, color: 'var(--muted)', margin: '0 0 4px' }}>วัดใหม่ 3 ครั้ง</p>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             {[[rv1, setRv1, '①'], [rv2, setRv2, '②'], [rv3, setRv3, '③']].map(([v, set, label], i) => (
-              <div key={i}><div style={{ fontSize: 9, color: 'var(--muted)', textAlign: 'center' }}>{label}</div>
+              <div key={i}><div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>{label}</div>
                 <input type="number" value={v} onChange={e => set(e.target.value)} placeholder="—" style={S.input} /></div>
             ))}
-            <div><div style={{ fontSize: 9, color: 'var(--muted)', textAlign: 'center' }}>Avg</div>
+            <div><div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>Avg</div>
               <div style={{ ...S.input, padding: '6px 0', color: finalStatus === 'pass' ? 'var(--accent)' : '#e05c4a', fontWeight: 700 }}>{recheckAvg != null ? fmt(recheckAvg) : '—'}</div></div>
           </div>
         </div>
@@ -345,9 +427,9 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
           <div>
             <p style={{ fontWeight: 700, color: 'var(--text)', margin: 0, fontSize: 14 }}>{formatDate(insp.inspected_at)}</p>
             <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: insp.status === 'pass' ? 'var(--accent-dim)' : insp.status === 'fail' ? 'rgba(224,92,74,0.12)' : 'var(--bg3)', color: insp.status === 'pass' ? 'var(--accent)' : insp.status === 'fail' ? '#e05c4a' : 'var(--muted)' }}>{insp.status?.toUpperCase()}</span>
-              {insp.approval_status === 'approved' && <span style={{ fontSize: 10, color: 'var(--accent)', border: '1px solid var(--accent)', padding: '2px 6px', borderRadius: 10 }}>✓ อนุมัติแล้ว</span>}
-              {insp.approval_status === 'rejected' && <span style={{ fontSize: 10, color: '#e05c4a', border: '1px solid #e05c4a', padding: '2px 6px', borderRadius: 10 }}>✕ ตีกลับ</span>}
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: insp.status === 'pass' ? 'var(--accent-dim)' : insp.status === 'fail' ? 'rgba(224,92,74,0.12)' : 'var(--bg3)', color: insp.status === 'pass' ? 'var(--accent)' : insp.status === 'fail' ? '#e05c4a' : 'var(--muted)' }}>{insp.status?.toUpperCase()}</span>
+              {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)', border: '1px solid var(--accent)', padding: '2px 6px', borderRadius: 10 }}>✓ อนุมัติแล้ว</span>}
+              {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a', border: '1px solid #e05c4a', padding: '2px 6px', borderRadius: 10 }}>✕ ตีกลับ</span>}
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
@@ -364,7 +446,7 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
                 <div style={{ borderRadius: 8, border: `1px solid ${c?.border ?? 'var(--border)'}`, background: c?.bg ?? 'var(--card)', padding: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                     <div>
-                      <p style={{ fontSize: 13, color: 'var(--text)', fontWeight: 600, margin: 0 }}>{cp.name}{cp.axis && <span style={{ marginLeft: 4, fontSize: 9, color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 3px' }}>{cp.axis}</span>}</p>
+                      <p style={{ fontSize: 13, color: 'var(--text)', fontWeight: 600, margin: 0 }}>{cp.name}{cp.axis && <span style={{ marginLeft: 4, fontSize: 11, color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 3px' }}>{cp.axis}</span>}</p>
                       {cp.type === 'variable' ? (
                         <p style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace', margin: '2px 0 0' }}>
                           {fmt(r.value_1)} / {fmt(r.value_2)} / {fmt(r.value_3)}
@@ -428,6 +510,18 @@ export default function PMCheckData() {
   const [selectedJig, setSelectedJig] = useState(null)
   const [checklistId, setChecklistId] = useState(null)
   const [checkpoints, setCheckpoints] = useState([])
+  const [frames, setFrames] = useState([])          // jig_images (360° spin) ของอุปกรณ์ที่เลือก
+  const [activeCpId, setActiveCpId] = useState(null) // จุดที่กำลังโฟกัส (sync รูป ↔ checklist)
+  const rowRefs = useRef({})                          // แถวเช็คแต่ละจุด (เลื่อนหาเมื่อคลิกหมุด)
+  // มือถือ/แท็บเล็ต: master-detail — โชว์ "ลิสต์อุปกรณ์" หรือ "ฟอร์มเช็ค" ทีละอัน (ไม่อัด 2 คอลัมน์)
+  const [isNarrow, setIsNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches)
+  const [isWide, setIsWide] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1180px)').matches)
+  useEffect(() => {
+    const mqN = window.matchMedia('(max-width: 860px)'), mqW = window.matchMedia('(min-width: 1180px)')
+    const on = () => { setIsNarrow(mqN.matches); setIsWide(mqW.matches) }
+    mqN.addEventListener('change', on); mqW.addEventListener('change', on)
+    return () => { mqN.removeEventListener('change', on); mqW.removeEventListener('change', on) }
+  }, [])
   const [tab, setTab] = useState('record')
   const [results, setResults] = useState({})
   const [notes, setNotes] = useState('')
@@ -494,6 +588,7 @@ export default function PMCheckData() {
   // คง line filter (?line=) ไว้ตอนเลือกเครื่อง — มาจากปุ่ม "ไปหน้าตรวจ" ของ Daily PM รายไลน์
   const lineFilter = searchParams.get('line')
   const selectJig = (jig) => setSearchParams({ dept: department, equip: jig.id, ...(lineFilter ? { line: lineFilter } : {}) })
+  const clearJig = () => setSearchParams({ dept: department, ...(lineFilter ? { line: lineFilter } : {}) }) // กลับไปลิสต์ (จอแคบ)
   const setDept = (d) => setSearchParams({ dept: d, ...(equipParam ? { equip: equipParam } : {}) })
 
   const fetchHistory = async (jigId) => {
@@ -503,7 +598,13 @@ export default function PMCheckData() {
 
   useEffect(() => {
     if (!selectedJig || !userId) return
-    setResults({}); setNotes(''); setTab('record')
+    setResults({}); setNotes(''); setTab('record'); setActiveCpId(null)
+    // เฟรมรูป 360° (ถ้าไม่มี jig_images → ใช้รูปหลัก image_path เป็นเฟรมเดียว)
+    supabaseDR.from('jig_images').select('id, image_path, sort').eq('jig_id', selectedJig.id).order('sort').then(({ data }) => {
+      let fr = (data ?? []).map(im => ({ id: im.id, url: getPublicUrl(im.image_path) }))
+      if (!fr.length && selectedJig.image_path) fr = [{ id: 'legacy', url: getPublicUrl(selectedJig.image_path) }]
+      setFrames(fr)
+    })
     getOrCreateChecklist(selectedJig.id, 'mtn', department, userId).then(async (cl) => {
       setChecklistId(cl.id)
       const { data } = await supabaseDR.from('jig_checkpoints').select('*').eq('checklist_id', cl.id).order('sort_order')
@@ -515,6 +616,11 @@ export default function PMCheckData() {
     })
     fetchHistory(selectedJig.id)
   }, [selectedJig, department, userId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // คลิกหมุดบนรูป → เลื่อนไปแถวเช็คของจุดนั้น
+  useEffect(() => {
+    if (activeCpId && rowRefs.current[activeCpId]) rowRefs.current[activeCpId].scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [activeCpId])
 
   const computeOverall = () => {
     let hasFail = false, hasEmpty = false
@@ -593,11 +699,21 @@ export default function PMCheckData() {
 
   const deptColor = DEPT_COLORS[department] ?? '#3dd65c'
   const jigImg = selectedJig ? getPublicUrl(selectedJig.image_path) : null
+  // กรองอุปกรณ์ตามความรับผิดชอบของแผนก (ผลิต=ทุกชนิด · แผนก mtn เห็นเฉพาะชนิดที่รับผิดชอบ)
+  // อุปกรณ์เก่าที่ยังไม่ได้ระบุชนิด → นับเป็น machine (โผล่ใต้ "ซ่อมบำรุง")
+  const deptJigs = department === 'production'
+    ? jigs
+    : jigs.filter(j => (j.equipment_type || 'machine') === DEPT_EQUIP_TYPE[department])
+
+  // จอแคบ: โชว์ทีละคอลัมน์ (ยังไม่เลือก=ลิสต์ · เลือกแล้ว=ฟอร์ม) · desktop โชว์ทั้งคู่เหมือนเดิม
+  const showSidebar = !isNarrow || !selectedJig
+  const showMain = !isNarrow || !!selectedJig
 
   return (
     <div style={S.page}>
-      {/* Sidebar */}
-      <div style={S.sidebar}>
+      {/* Sidebar (จอแคบ = เต็มความกว้าง) */}
+      {showSidebar && (
+      <div style={{ ...S.sidebar, ...(isNarrow ? { width: '100%', borderRight: 'none' } : null) }}>
         <div style={S.sidebarHead}>
           <h2 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', margin: 0, fontFamily: 'var(--font-display)' }}>PM ตรวจสอบ</h2>
         </div>
@@ -641,7 +757,7 @@ export default function PMCheckData() {
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
                           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{jig.name}</p>
                           <span style={{
-                            flexShrink: 0, fontSize: 10, fontWeight: 800, padding: '1px 7px', borderRadius: 20,
+                            flexShrink: 0, fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 20,
                             background: st === 'fail' ? 'rgba(224,92,74,0.15)' : st ? 'rgba(61,214,92,0.15)' : 'rgba(245,158,11,0.15)',
                             color: st === 'fail' ? '#e05c4a' : st ? '#3dd65c' : '#f59e0b',
                           }}>
@@ -656,8 +772,8 @@ export default function PMCheckData() {
               ))}
             </>)
           })() : (<>
-            {jigs.length === 0 && <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20 }}>ยังไม่มีอุปกรณ์</p>}
-            {jigs.map(jig => (
+            {deptJigs.length === 0 && <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ไม่มีอุปกรณ์ในความรับผิดชอบของแผนกนี้<br /><span style={{ fontSize: 11 }}>({DEPT_OPTIONS.find(d => d.key === department)?.label} = เฉพาะ {DEPT_EQUIP_TYPE[department]})</span></p>}
+            {deptJigs.map(jig => (
               <div key={jig.id} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{jig.name}</p>
                 {jig.line_name && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>📍 {jig.line_name}</p>}
@@ -666,8 +782,10 @@ export default function PMCheckData() {
           </>)}
         </div>
       </div>
+      )}
 
       {/* Main */}
+      {showMain && (
       <div style={S.main}>
         {!selectedJig ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -675,7 +793,10 @@ export default function PMCheckData() {
           </div>
         ) : (
           <>
-            <div style={S.header}>
+            <div style={{ ...S.header, ...(isNarrow ? { padding: '10px 12px', flexWrap: 'wrap' } : null) }}>
+              {isNarrow && (
+                <button onClick={clearJig} title="กลับไปเลือกอุปกรณ์" style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', borderRadius: 8, padding: '6px 10px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>← อุปกรณ์</button>
+              )}
               {jigImg && <img src={jigImg} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'contain', background: 'var(--bg2)', border: '1px solid var(--border)' }} />}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <h1 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{selectedJig.name}</h1>
@@ -687,13 +808,17 @@ export default function PMCheckData() {
               </div>
             </div>
 
-            <div style={S.body}>
-              {tab === 'record' && (
-                <div style={{ maxWidth: 680, margin: '0 auto' }}>
-                  {jigImg && selectedJig.layout_type !== 'list' && (
-                    <JigPinMap imgUrl={jigImg} checkpoints={checkpoints} />
-                  )}
+            <div style={{ ...S.body, ...(isNarrow ? { padding: 12 } : null) }}>
+              {tab === 'record' && (() => {
+                const showPhoto = frames.length > 0 && selectedJig.layout_type !== 'list'
+                // จอกว้าง (≥1180px) + มีรูป → 2 คอลัมน์ (รูปซ้ายค้างไว้ · รายการเช็คขวา) ใช้พื้นที่เต็ม
+                const twoCol = isWide && showPhoto
+                const viewerNode = showPhoto
+                  ? <JigSpinCheck frames={frames} checkpoints={checkpoints} results={results} activeCpId={activeCpId} onPinClick={setActiveCpId} maxH={twoCol ? 460 : 300} />
+                  : null
 
+                const formNode = (
+                  <>
                   {checkpoints.length === 0 ? (
                     <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 0' }}>ยังไม่มีจุดตรวจสอบ — ไปตั้งค่าที่ PM Setup ก่อน</p>
                   ) : (
@@ -723,7 +848,15 @@ export default function PMCheckData() {
                               onChangeAttr={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], attr: v } }))}
                               onChangeNote={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], note: v } }))} />
                           )
-                          return <div key={cp.id}>{header}{row}</div>
+                          return (
+                            <div key={cp.id}>
+                              {header}
+                              <div ref={el => { rowRefs.current[cp.id] = el }} onClick={() => setActiveCpId(cp.id)}
+                                style={{ borderRadius: 10, outline: activeCpId === cp.id ? '2px solid var(--accent)' : '2px solid transparent', outlineOffset: 1, transition: 'outline-color .15s' }}>
+                                {row}
+                              </div>
+                            </div>
+                          )
                         })
                       })()}
                       <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="หมายเหตุ (ถ้ามี)..." style={{ marginTop: 8 }} />
@@ -732,8 +865,21 @@ export default function PMCheckData() {
                       </button>
                     </>
                   )}
-                </div>
-              )}
+                  </>
+                )
+
+                return twoCol ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(360px, 1fr) minmax(420px, 640px)', gap: 24, alignItems: 'start', maxWidth: 1500, margin: '0 auto' }}>
+                    <div style={{ position: 'sticky', top: 0 }}>{viewerNode}</div>
+                    <div>{formNode}</div>
+                  </div>
+                ) : (
+                  <div style={{ maxWidth: showPhoto ? 760 : 720, margin: '0 auto' }}>
+                    {viewerNode}
+                    {formNode}
+                  </div>
+                )
+              })()}
 
               {tab === 'history' && (
                 <div style={{ maxWidth: 680, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -744,10 +890,10 @@ export default function PMCheckData() {
                       <div>
                         <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: 0 }}>{formatDate(insp.inspected_at)}</p>
                         <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: insp.status === 'pass' ? 'var(--accent-dim)' : insp.status === 'fail' ? 'rgba(224,92,74,0.12)' : 'var(--bg3)', color: insp.status === 'pass' ? 'var(--accent)' : insp.status === 'fail' ? '#e05c4a' : 'var(--muted)' }}>{insp.status?.toUpperCase()}</span>
-                          {insp.approval_status === 'approved' && <span style={{ fontSize: 10, color: 'var(--accent)' }}>✓ อนุมัติแล้ว</span>}
-                          {insp.approval_status === 'rejected' && <span style={{ fontSize: 10, color: '#e05c4a' }}>✕ ตีกลับ</span>}
-                          {insp.approval_status === 'pending' && <span style={{ fontSize: 10, color: 'var(--muted)' }}>รออนุมัติ</span>}
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: insp.status === 'pass' ? 'var(--accent-dim)' : insp.status === 'fail' ? 'rgba(224,92,74,0.12)' : 'var(--bg3)', color: insp.status === 'pass' ? 'var(--accent)' : insp.status === 'fail' ? '#e05c4a' : 'var(--muted)' }}>{insp.status?.toUpperCase()}</span>
+                          {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)' }}>✓ อนุมัติแล้ว</span>}
+                          {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a' }}>✕ ตีกลับ</span>}
+                          {insp.approval_status === 'pending' && <span style={{ fontSize: 11, color: 'var(--muted)' }}>รออนุมัติ</span>}
                         </div>
                       </div>
                       <span style={{ color: 'var(--muted)' }}>›</span>
@@ -759,6 +905,7 @@ export default function PMCheckData() {
           </>
         )}
       </div>
+      )}
 
       <AnimatePresence>
         {viewInspection && (

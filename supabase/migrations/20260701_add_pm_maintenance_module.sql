@@ -1,3 +1,8 @@
+-- ⚠️ DEPRECATED (2026-07-10 — QC audit): ตาราง pm_equipment / pm_checklists / pm_checkpoints
+-- ชุดนี้ไม่มีโค้ดใน src/ ใช้แล้ว — โมดูล PM จริงย้ายไปใช้ jigs/checklists/jig_checkpoints/inspections
+-- ฝั่ง DR project (eyhclzkifitbhbljgoav) แทนทั้งหมด อย่าสับสนชื่อที่ใกล้กัน: `pm_checklists` (Main,
+-- ตกค้าง) ≠ `checklists` (DR, ใช้งานจริง) — เก็บไฟล์ไว้เป็นประวัติ ยังไม่ drop ตารางจนกว่าจะยืนยันไม่มีข้อมูลค้าง
+--
 -- PM Maintenance Module — tables for preventive maintenance workflows
 -- Merged from Preventive-Maintenance-Online project into 4M's primary Supabase.
 -- All tables use pm_ prefix to avoid conflicts with 4M's existing schema.

@@ -117,15 +117,15 @@ export default function Operator() {
   }, []);
 
   const fetchLevelUpRequests = async () => {
-    let q = supabase.from('skill_level_up_requests')
+    const { data } = await supabase.from('skill_level_up_requests')
       .select('*, employees(id, name, employee_id_code, section, line_id)')
       .eq('status', 'pending')
       .order('requested_at', { ascending: true });
-    if (isSupervisor && userSection) {
-      // fetch employee ids in this section first then filter
-    }
-    const { data } = await q;
-    setLevelUpRequests(data || []);
+    // mandatory scope filter — leader ก่อน แล้วค่อย section scope (pattern เดียวกับ fetchEmployees)
+    let rows = data || [];
+    if (isLeader && userLineId)  rows = rows.filter(r => r.employees?.line_id === userLineId);
+    else if (scopeSecs.length)   rows = rows.filter(r => inSectionScope(scopeSecs, r.employees?.section));
+    setLevelUpRequests(rows);
   };
 
   const handleRunWeeklyUpdate = async () => {
@@ -444,7 +444,7 @@ export default function Operator() {
           }}>
             {t}
             {i === 2 && levelUpRequests.length > 0 && (
-              <span style={{ position: 'absolute', top: -4, right: -4, background: '#ef4444', color: '#fff', borderRadius: '50%', width: 16, height: 16, fontSize: 9, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ position: 'absolute', top: -4, right: -4, background: '#ef4444', color: '#fff', borderRadius: '50%', width: 18, height: 18, fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {levelUpRequests.length}
               </span>
             )}
@@ -534,7 +534,7 @@ export default function Operator() {
           {/* Scroll hint chip */}
           {!scrollState.hinted && scrollState.right && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--accent)', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 20, padding: '3px 10px', animation: 'pulse 2s ease-in-out infinite' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--accent)', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 20, padding: '3px 10px' }}>
                 ← เลื่อนดูสกิลเพิ่มเติม →
               </div>
             </div>
@@ -571,15 +571,15 @@ export default function Operator() {
                   <th style={{ position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 12 }}>โปรไฟล์</th>
                   <th style={{ position: 'sticky', left: 58, background: 'var(--bg2)', zIndex: 12 }}>ID</th>
                   <th style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 12, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>ชื่อ</th>
-                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Section</th>
-                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>แผนก</th>
-                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Group</th>
-                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Team</th>
-                  <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>วันเริ่มงาน</th>
+                  <th style={{ fontSize: 11, whiteSpace: 'nowrap' }}>Section</th>
+                  <th style={{ fontSize: 11, whiteSpace: 'nowrap' }}>แผนก</th>
+                  <th style={{ fontSize: 11, whiteSpace: 'nowrap' }}>Group</th>
+                  <th style={{ fontSize: 11, whiteSpace: 'nowrap' }}>Team</th>
+                  <th style={{ fontSize: 11, whiteSpace: 'nowrap' }}>วันเริ่มงาน</th>
                   {activeSkillDefs.map(sd => (
-                    <th key={sd.name} style={{ fontSize: 10, color: sd.color, whiteSpace: 'nowrap' }}>
+                    <th key={sd.name} style={{ fontSize: 11, color: sd.color, whiteSpace: 'nowrap' }}>
                       <div>{{ hard_skill:'🔧', machine_skill:'⚙️', product_skill:'📦', soft_skill:'🧠' }[sd.category || 'hard_skill']} {sd.label}</div>
-                      {sd.scope_section && <div style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 400 }}>📍{sd.scope_section}</div>}
+                      {sd.scope_section && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>📍{sd.scope_section}</div>}
                     </th>
                   ))}
                   <th style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 12, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>จัดการ</th>
@@ -626,7 +626,7 @@ export default function Operator() {
                       </div>
                       <div style={{
                         display: 'inline-block', marginTop: 3,
-                        fontSize: 9, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase',
+                        fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase',
                         padding: '1px 7px', borderRadius: 4,
                         background: grade.badge, color: grade.text, border: `1px solid ${grade.border}`,
                       }}>
@@ -654,7 +654,7 @@ export default function Operator() {
                           {hasRecord ? (
                             <>
                               <div style={{ fontWeight: 700, fontSize: 13, color: lv.color }}>{score}</div>
-                              <div style={{ fontSize: 9, background: lv.bg, color: lv.color, borderRadius: 4, padding: '1px 5px', marginTop: 2, whiteSpace: 'nowrap' }}>
+                              <div style={{ fontSize: 11, background: lv.bg, color: lv.color, borderRadius: 4, padding: '1px 5px', marginTop: 2, whiteSpace: 'nowrap' }}>
                                 {lv.label}
                               </div>
                             </>
@@ -662,7 +662,7 @@ export default function Operator() {
                             <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
                           )}
                           {pending && (
-                            <div style={{ fontSize: 8, color: '#f59e0b', fontWeight: 700, marginTop: 2, animation: 'pulse 1.5s infinite' }}>
+                            <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 2 }}>
                               ⏳ Lv.{pending}
                             </div>
                           )}
@@ -740,7 +740,7 @@ export default function Operator() {
               <div key={g.key} style={{ marginBottom: 20 }}>
                 <div style={{ marginBottom: 8, display: 'flex', alignItems: 'baseline', gap: 8 }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.icon} {g.label}</span>
-                  {g.desc && <span style={{ fontSize: 10, color: g.color, opacity: 0.7 }}>{g.desc}</span>}
+                  {g.desc && <span style={{ fontSize: 11, color: g.color, opacity: 0.7 }}>{g.desc}</span>}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
                   {g.skills.map(sd => (
@@ -751,16 +751,16 @@ export default function Operator() {
                           <div style={{ fontWeight: 700, fontSize: 13 }}>{sd.label}</div>
                           <div style={{ display: 'flex', gap: 4, marginTop: 2, flexWrap: 'wrap' }}>
                             {sd.scope_section && (
-                              <span style={{ fontSize: 9, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
+                              <span style={{ fontSize: 11, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
                                 📍 {sd.scope_section}
                               </span>
                             )}
                             {sd.allowance_type && (
-                              <span style={{ fontSize: 9, background: 'rgba(34,197,94,0.12)', color: '#22c55e', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
+                              <span style={{ fontSize: 11, background: 'rgba(34,197,94,0.12)', color: '#22c55e', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
                                 💰 {sd.allowance_type}
                               </span>
                             )}
-                            <span style={{ fontSize: 9, color: 'var(--muted)' }}>{sd.name}</span>
+                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{sd.name}</span>
                           </div>
                         </div>
                       </div>
@@ -842,7 +842,7 @@ export default function Operator() {
                     <span style={{ fontWeight: 800, color: lv.color, fontSize: 15, minWidth: 28 }}>{lv.min}</span>
                     <div>
                       <div style={{ fontSize: 11, color: lv.color, fontWeight: 700 }}>{lv.label}</div>
-                      <div style={{ fontSize: 9, color: 'var(--muted)' }}>{lv.desc}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{lv.desc}</div>
                     </div>
                   </div>
                 ))}
@@ -961,7 +961,7 @@ export default function Operator() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
                         <span style={{ fontWeight: 700, fontSize: 14 }}>{emp?.name}</span>
                         <span style={{ fontSize: 11, color: 'var(--muted)' }}>{emp?.employee_id_code}</span>
-                        {emp?.section && <span style={{ fontSize: 10, background: 'rgba(77,159,255,0.1)', color: '#4d9fff', borderRadius: 4, padding: '1px 6px' }}>{emp.section}</span>}
+                        {emp?.section && <span style={{ fontSize: 11, background: 'rgba(77,159,255,0.1)', color: '#4d9fff', borderRadius: 4, padding: '1px 6px' }}>{emp.section}</span>}
                       </div>
                       <div style={{ fontSize: 13, marginBottom: 4 }}>
                         ทักษะ: <strong style={{ color: 'var(--accent)' }}>{skillDefs.find(s => s.name === req.skill_name)?.label ?? req.skill_name}</strong>
@@ -1019,7 +1019,7 @@ export default function Operator() {
                       </div>
                     )}
                     {!canApprove && (
-                      <span style={{ fontSize: 11, color: 'var(--muted)', fontSize: 10 }}>
+                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                         {req.to_level === 100 ? 'รอ Manager' : 'รอ Supervisor'}
                       </span>
                     )}
@@ -1167,8 +1167,8 @@ export default function Operator() {
                   return grouped.map(g => (
                     <div key={g.key} style={{ marginBottom: 14 }}>
                       <div style={{ marginBottom: 6, display: 'flex', alignItems: 'baseline', gap: 7 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.icon} {g.label}</span>
-                        {g.desc && <span style={{ fontSize: 9, color: g.color, opacity: 0.7 }}>{g.desc}</span>}
+                        <span style={{ fontSize: 11, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.icon} {g.label}</span>
+                        {g.desc && <span style={{ fontSize: 11, color: g.color, opacity: 0.7 }}>{g.desc}</span>}
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))', gap: 8 }}>
                         {g.skills.map(sd => {
@@ -1186,21 +1186,21 @@ export default function Operator() {
                                     skillEnabled: { ...editingEmp.skillEnabled, [sd.name]: e.target.checked },
                                   })}
                                   style={{ width: 14, height: 14, cursor: 'pointer' }} />
-                                <span style={{ fontSize: 10, fontWeight: 600, color: enabled ? sd.color : 'var(--muted)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: enabled ? sd.color : 'var(--muted)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {sd.label}
                                   {sd.scope_section && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {sd.scope_section}</span>}
                                 </span>
                                 {enabled && lv && (
-                                  <span style={{ background: lv.bg, color: lv.color, borderRadius: 4, padding: '1px 5px', fontSize: 8, fontWeight: 700, flexShrink: 0 }}>
+                                  <span style={{ background: lv.bg, color: lv.color, borderRadius: 4, padding: '1px 5px', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
                                     {lv.label}
                                   </span>
                                 )}
                                 {!enabled && (
-                                  <span style={{ fontSize: 8, color: 'var(--muted)', flexShrink: 0 }}>N/A</span>
+                                  <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>N/A</span>
                                 )}
                               </label>
                               {enabled && g.key === 'allowance_skill' ? (
-                                <div style={{ fontSize: 10, color: '#22c55e', fontWeight: 700, textAlign: 'center', padding: '4px 0' }}>✓ มีใบเซอร์</div>
+                                <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, textAlign: 'center', padding: '4px 0' }}>✓ มีใบเซอร์</div>
                               ) : enabled ? (
                                 <input type="number" value={score}
                                   onChange={e => setEditingEmp({
@@ -1210,10 +1210,10 @@ export default function Operator() {
                                   min={0} max={100}
                                   style={{ width: '100%', boxSizing: 'border-box' }} />
                               ) : (
-                                <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center', padding: '4px 0' }}>ไม่เกี่ยวข้อง</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', padding: '4px 0' }}>ไม่เกี่ยวข้อง</div>
                               )}
                               {pending && (
-                                <div style={{ fontSize: 8, color: '#f59e0b', fontWeight: 700, marginTop: 3 }}>⏳ รอ approve Lv.{pending}</div>
+                                <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 3 }}>⏳ รอ approve Lv.{pending}</div>
                               )}
                             </div>
                           );

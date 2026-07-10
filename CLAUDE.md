@@ -67,13 +67,15 @@
 |-------|---------|-------------|
 | `employees` | ข้อมูลพนักงาน | id, employee_id_code, name, image_url, line_id, team (A/B/C), section, is_active, position |
 | `production_lines` | ไลน์ผลิต | id, name, section, parent_line_name, std_day_shift, std_night_shift |
-| `profiles` | User roles + scope | id, email, role, full_name, line_id, section, notify_email, signature_url |
+| `profiles` | User roles + scope | id, email, role, **position** (ตำแหน่งจริง — แสดงผลเท่านั้น), full_name, line_id, section, sections[], notify_email, signature_url |
 | `role_permissions` | สิทธิ์เข้าหน้า/action ตาม role (data-driven) | role, permission_key, allowed |
 
 ### การผลิตรายวัน
 | Table | คำอธิบาย | Fields สำคัญ |
 |-------|---------|-------------|
 | `daily_production_logs` | เช็คชื่อ + PPE | work_date, employee_id, is_present, has_helmet, has_boots, has_gloves, assigned_line, shift, has_ot, has_extended_ot |
+| `ot_night_bookings` | จองรถ OT ล่วงหน้า (ธุรการจองรถรับส่ง) | work_date, shift (day/night), employee_id, task_type_id, ot_period (วันหยุด 8/10 ชม. — null = OT ปกติ), booked_by · unique(employee_id, work_date, shift) |
+| `bus_routes` / `ot_task_types` | master สายรถ / งาน OT (จัดการจากแท็บจองรถใน Report) | code, name, is_active, sort_order |
 | `attendances` | บันทึกเข้างาน | - |
 | `operator_special_tasks` | งานนอกไลน์ | employee_id, work_date, task_type |
 
@@ -119,19 +121,27 @@
 
 | Group (sidebar) | Route | Component | Role (seed default) |
 |---|---|---|---|
-| ภาพรวม | `/`, `/dashboard` | Dashboard | ทุก role |
+| ภาพรวม | `/` | DeptHub — หน้า Hub เลือกโมดูล (เต็มจอ ไม่มี sidebar, ชิปเมนูดึงจาก NAV_ITEMS) | ทุก role |
+| ภาพรวม | `/dashboard` | Dashboard | ทุก role |
 | ฝ่ายผลิต | `/checkin` | Checkin | ทุก role |
 | ฝ่ายผลิต | `/management` | Management | ทุก role |
 | ฝ่ายผลิต | `/daily-report` | DailyReport | ทุก role |
 | ฝ่ายผลิต | `/oee-analytics` | OEEAnalytics | ทุก role |
+| ฝ่ายผลิต | `/daily-pm` | DailyPM | ทุก role |
 | Logistic - Store | `/line-stock` | LineStock | ทุก role |
 | Logistic - Store | `/heijunka` | HeijunkaKanban | ทุก role |
 | Logistic - Store | `/rack-center` | RackCenter | ทุก role |
+| Logistic - Store | `/planner-sales` | PlannerSales | manager/supervisor/leader/qa/sale |
+| Logistic - Store | `/rundown-stock` | RundownStock | manager/supervisor/leader/qa/sale |
+| Logistic - Store | `/customer-demand` | CustomerDemand (Delivery) | manager/supervisor/leader/qa/sale |
 | การตรวจสอบและซ่อมบำรุง | `/pm-check` | PMCheckData | ทุก role |
 | การตรวจสอบและซ่อมบำรุง | `/pm-schedule` | PMSchedule | ทุก role |
+| การตรวจสอบและซ่อมบำรุง | `/mtn-layout` | MtnMachineLayout | ทุก role |
 | การตรวจสอบและซ่อมบำรุง | `/pm-setup` | PMSetup | admin/manager/supervisor |
+| ควบคุมคุณภาพ QA/QC | `/qa` | QualityControl | admin/manager/supervisor/leader/qa/doc_control |
+| ควบคุมคุณภาพ QA/QC | `/qa-setup` | QAInspectionSetup | admin/manager/qa |
+| ควบคุมคุณภาพ QA/QC | `/event-log` | EventLog | admin/manager/supervisor/leader/qa (CQI-15 + Approval) |
 | รายงาน | `/report` | Report | ทุก role (10 tabs + CSV export) |
-| รายงาน | `/event-log` | EventLog | admin/manager/supervisor/leader/qa (CQI-15 + Approval) |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/org-setup` | OrgSetup | admin |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/register` | Register | admin/manager/supervisor |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/operator` | Operator | admin/manager/supervisor/leader |
@@ -140,6 +150,7 @@
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/machine-database` | MachineDatabase | admin/manager/supervisor |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/shift-organize` | ShiftOrganize | admin/manager/supervisor |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/company-calendar` | CompanyCalendar | ทุก role |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/notification-config` | NotificationConfig | admin เท่านั้น |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/permissions` | PermissionsManagement | admin เท่านั้น |
 | (ไม่อยู่ใน sidebar) | `/add-user` | AddUser | admin เท่านั้น |
 | (ไม่อยู่ใน sidebar) | `/login` | Login | ไม่ต้อง auth |
@@ -177,7 +188,14 @@
 
 ## Role System
 
-7 roles ใน enum `user_role`: `admin, manager, supervisor, leader, qa, document_control, display`
+> **role = "ชุดสิทธิ์ใช้ระบบ" ไม่ใช่ตำแหน่งงาน (2026-07-10)** — ตำแหน่งจริงในโรงงาน
+> (ผู้จัดการฝ่าย/หัวหน้าแผนก/หัวหน้าส่วน/วิศวกร/เจ้าหน้าที่/ช่างเทคนิค ฯลฯ) เก็บที่ `profiles.position`
+> (text อิสระ มี datalist แนะนำใน AddUser) ใช้แสดงตัวตน/รายงาน/ลายเซ็นเท่านั้น **ไม่มีผลต่อ permission**
+> ตัวอย่าง: คน QA ทุกระดับ (technician→manager) ใช้ role `qa` เหมือนกันถ้าทำงานในระบบเหมือนกัน
+> ต่างกันแค่ position · ถ้าวันหน้าระดับต่างกันต้องได้**สิทธิ์**ต่างกันจริง ค่อยเพิ่ม role ใหม่ + แถวใน
+> role_permissions (ระบบรองรับ) — **ห้ามเพิ่ม role ตามชื่อตำแหน่งโดยที่ชุดสิทธิ์ไม่ต่างจาก role เดิม**
+
+8 roles ใน enum `user_role`: `admin, manager, supervisor, leader, qa, document_control, sale, display`
 
 | Role | สิทธิ์หลัก |
 |------|-----------|
@@ -187,6 +205,7 @@
 | `leader` | เห็นเฉพาะ line/team ของตัวเอง |
 | `qa` | ดู Dashboard + Report, อนุมัติ 4M step QA |
 | `document_control` | จัดการเอกสาร CQI-15 |
+| `sale` | ทีมขาย — Planner & Sales, Delivery, Kanban, Dashboard (seed: `20260708_sale_role_demand_page_permissions.sql`) |
 | `display` | ดูอย่างเดียว (จอแสดงผลลอย ไม่ login เป็นคน) |
 
 ### สิทธิ์ตามหน้า/action — `role_permissions` (data-driven, ไม่ hardcode)
@@ -208,7 +227,7 @@
 - UserContext ส่ง `sections` = array ผลลัพธ์สุดท้าย (`[]` = ไม่จำกัด) — ในหน้าเช็คด้วย `scopeSecs.length` แล้วกรองด้วย `inSectionScope(scopeSecs, value)` (เทียบ trim+lowercase) หรือ `.in('section', scopeSecs)` ใน query
 - `leader` ยังผูก `profiles.line_id` + `team` เหมือนเดิม ไม่เกี่ยวกับ sections — เช็ค branch ของ leader **ก่อน** branch ของ scope เสมอ
 - AddUser.jsx: ช่อง Section เป็น checkbox เลือกหลายอันได้ทุก role และ**ยังเขียน `section` เดี่ยว (= ตัวแรกที่ติ๊ก) คู่กันเสมอ — ห้ามเลิกเขียน** เพื่อให้ revert โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope · supervisor ยังบังคับติ๊กอย่างน้อย 1 (Edge Function `create-user` ยังไม่รู้จัก sections — AddUser update ตามหลังด้วย id ที่ได้กลับมา)
-- หน้าที่ปิดช่องโหว่แล้ว: Management, Checkin, operator, Register, DailyReport (Live/History/Export), Report (4M + สิทธิ์อนุมัติ SV / Skill Matrix / Multi-Skill Form) — pattern: mandatory scope filter ก่อน แล้วค่อย apply free-text filter ทับ
+- หน้าที่ปิดช่องโหว่แล้ว: Management, Checkin, operator, Register, DailyReport (Live/History/Export), Report (ครบทั้ง 10 แท็บ — รายวัน/รายพนักงาน/Log จุดงาน/สรุปช่วงเวลา/4M + สิทธิ์อนุมัติ SV/Skill Matrix/ค่าฝีมือ/ใบบันทึก/Multi-Skill Form/จองรถ OT — 2026-07-10), ShiftOrganize (ตารางกะ/override/merge event/dropdown ใน modal — 2026-07-10) — pattern: mandatory scope filter ก่อน แล้วค่อย apply free-text filter ทับ
 - หน้าใหม่ที่ query ข้อมูลตาม line/section **ต้องเพิ่ม scope filter แบบเดียวกัน** ไม่งั้นเห็นข้อมูลข้ามส่วนงานโดยไม่ตั้งใจ
 - Rollback: `docs/ROLLBACK_MULTI_SECTION_SCOPE.md` — **ห้าม drop คอลัมน์ `sections` ก่อน revert โค้ด** (App.jsx select คอลัมน์นี้ตอน login ถ้า drop ก่อนจะ login ไม่ได้ทั้งระบบ)
 
@@ -246,6 +265,16 @@ Reject → status: "rejected" + reject_reason
   - `TELEGRAM_BOT_TOKEN` — จาก @BotFather
   - `TELEGRAM_CHAT_ID` — Group Chat ID (เลขติดลบ เช่น `-5279077923`)
 
+### Functions อื่นๆ ที่ deploy อยู่ (สรุปย่อ — เพิ่มเอกสาร 2026-07-10)
+
+| Function | Project | ทำอะไร |
+|---|---|---|
+| `daily-4m-summary` | Main | สรุป 4M รายวันส่ง Telegram (เวลา Bangkok) |
+| `send-cqi15-notification` | Main | แจ้งเตือน CQI-15 Event Log + approval แยกจาก send-notification |
+| `pm-daily-scan` | DR (pg_cron) | สแกน Daily PM alarm สีส้ม (เช็คไม่เสร็จตามเวลา) — เขียว/แดง event-driven จากแอป |
+| `pm-plan-reminder` | DR (pg_cron รายวัน) | เตือน Planned PM ตามขั้น 30/14/3 วัน/เกินกำหนด → POST ไป send-notification ฝั่ง Main |
+| `shipping-phase-scan` | DR (pg_cron ทุก 10 นาที) | สแกน shipping walkback phase misses บนกรอบวันงาน 08:00→08:00 |
+
 ### `cleanup-orphan-photos` (Main project — 2026-07-09)
 - ล้างไฟล์กำพร้าใน bucket `employee-photos` = ไฟล์ที่ไม่มี `employees.image_url` / `line_layouts.image_url` ชี้ถึงแล้ว
 - `POST /functions/v1/cleanup-orphan-photos?dry_run=1` + header `x-cleanup-token` (token ฝังในซอร์ส function) — **รัน dry_run ดูรายงานก่อนลบจริงเสมอ**, มี safety ข้ามไฟล์ที่อัปโหลดภายใน 24 ชม.
@@ -257,39 +286,43 @@ Reject → status: "rejected" + reject_reason
 ## Storage & รูปภาพ (กติกาสำคัญ — 2026-07-09)
 
 - **อัปโหลดรูปทุกหน้าต้องผ่าน `ImageCropModal`** — รูปนิ่งถูก crop + บีบเป็น JPEG 480px q0.85 (~100KB) อัตโนมัติ
-- **GIF (รูปขยับ) ถูกส่งทั้งไฟล์โดยไม่แปลง** เพื่อคงการเคลื่อนไหว (วาดลง canvas จะเหลือเฟรมแรกเฟรมเดียว = การขยับหายเงียบๆ) — จำกัด ≤ 2MB ใน modal **ห้ามถอด cap ออก** (GIF ไม่จำกัดขนาดเฉลี่ย ~4MB เคยกินครึ่ง bucket)
-- **เปลี่ยนรูปแล้วต้องลบไฟล์เก่าจาก storage เสมอ** — ทำแล้วใน operator.jsx (รูปพนักงาน หลัง DB update สำเร็จ) และ LineSetup.jsx (ผังไลน์ — เฉพาะผังของตัวเอง **ห้ามลบผังที่ยืมแสดงจากไลน์แม่**) · หน้าใหม่ที่มีการเปลี่ยนรูปต้องทำแบบเดียวกัน ไม่งั้นไฟล์กำพร้าสะสม (เคยค้าง 117 ไฟล์ / 100MB เพราะอัปโหลดชื่อใหม่ `emp_<timestamp>` โดยไม่ลบของเดิม)
-- **Quota Free plan (ต่อ project):** DB 500MB · Storage 1GB · Egress 5GB/เดือน — ตรวจล่าสุด 2026-07-09: Main DB 22MB (~4%), DR DB 18MB (~4%), Storage หลัก ~156MB (~15%) → พนักงาน ≤300 คน + อัตราข้อมูลโตปัจจุบัน อยู่ได้อีกหลายปี ถ้าใกล้เต็มค่อยอัป Pro ($25/เดือน = DB 8GB + Storage 100GB) โดยไม่ต้องย้ายระบบ
+  - **ข้อยกเว้นที่ตั้งใจ (crop ไม่เหมาะ):** รูปที่ต้องเห็นทั้งใบ/คมชัด ให้**บีบก่อนอัปโหลดแทน** — รูป jig/checkpoint (PMSetup), รูปหลักฐาน 4M/QA/เอกสาร level-up (Management/Report/operator: helper `resizeImage` 1280px q0.85) · drawing ฝั่ง QA รับ PDF ด้วยจึงไม่บีบ (≤20MB) · **ห้ามอัปโหลดรูปดิบโดยไม่บีบเลย**
+  - **รูปผัง/layout (LineSetup, MtnMachineLayout) บีบเบากว่ารูปอื่น: 2560px / 2.5MB / q0.9** (2026-07-10) — layout มีจำนวนน้อยทั้งระบบ (≤20 รูป) แต่ต้องซูมอ่านรายละเอียดผังได้ **ห้ามลดกลับไป 1600px/0.5MB** เคยบีบแรงจนเบลอใช้งานไม่ได้ (รูปเดิมที่เบลอไปแล้วต้องอัปโหลดต้นฉบับซ้ำ ระบบไม่มีต้นฉบับเก็บไว้)
+- **GIF (รูปขยับ) ถูกส่งทั้งไฟล์โดยไม่แปลง** เพื่อคงการเคลื่อนไหว (วาดลง canvas จะเหลือเฟรมแรกเฟรมเดียว = การขยับหายเงียบๆ) — จำกัด ≤ 2MB **ทุกจุดที่รับ GIF** (ImageCropModal + LineSetup) **ห้ามถอด cap ออก** (GIF ไม่จำกัดขนาดเฉลี่ย ~4MB เคยกินครึ่ง bucket)
+- **เปลี่ยน/ลบรูปแล้วต้องลบไฟล์เก่าจาก storage เสมอ** (ลบ**หลัง** DB update สำเร็จเท่านั้น + best-effort ห้ามทำ flow หลักพัง) — ทำแล้วใน: operator.jsx (รูปพนักงาน), LineSetup.jsx (ผังไลน์ — เฉพาะผังของตัวเอง **ห้ามลบผังที่ยืมแสดงจากไลน์แม่**), ProductMaster.jsx (dr_products + parts_master — มี guard ไม่ลบรูปที่สินค้า/พาร์ทอื่นแชร์ URL เดียวกัน), QAInspectionSetup.jsx (replace/delete drawing + ลบทั้งโฟลเดอร์ตอนลบ part), PMSetup.jsx (ลบ jig = ลบรูปทั้งชุด frame-*/cp-*), SignatureModal.jsx (ลายเซ็นเก่า — เฉพาะโฟลเดอร์ user ตัวเอง) · หน้าใหม่ที่มีการเปลี่ยนรูปต้องทำแบบเดียวกัน ไม่งั้นไฟล์กำพร้าสะสม (เคยค้าง 117 ไฟล์ / 100MB เพราะอัปโหลดชื่อใหม่ `emp_<timestamp>` โดยไม่ลบของเดิม)
+- **อุปกรณ์ PM ใช้ "รูปหลายมุม (spin)" เท่านั้น — ไม่มีโมเดล 3D แล้ว** (ถอดออก 2026-07-10 เพราะเกินจำเป็น + dep หนัก three/occt wasm 7.6MB): PMSetup อัปหลายรูปมุมต่างๆ (SpinAnnotator) ปักหมุดจุดตรวจต่อเฟรม, หน้าตรวจ (JigSpinCheck) ปัดหมุน+auto-play+หมุด sync checklist · คอลัมน์ vestigial `jigs.model_path`/`model_format` และ bucket `jig-images` (cap 40MB + mime GLB) ยังคงอยู่จาก migration เดิม (additive ไม่กระทบ) แต่**ไม่มีโค้ดใช้แล้ว** — ถ้าจะรื้อ 3D กลับมาให้ดู git history (`src/lib/model3d.js`, `src/components/Model3DViewer.jsx`)
+- **Quota Free plan (ต่อ project):** DB 500MB · Storage 1GB · Egress 5GB/เดือน — ตรวจล่าสุด 2026-07-10: Main DB 22MB (~4%), DR DB 18MB (~4%), Storage หลัก ~156MB (~15%) → พนักงาน ≤300 คน + อัตราข้อมูลโตปัจจุบัน อยู่ได้อีกหลายปี ถ้าใกล้เต็มค่อยอัป Pro ($25/เดือน = DB 8GB + Storage 100GB) โดยไม่ต้องย้ายระบบ
 
 ---
 
 ## File Structure
 
+> รายชื่อไฟล์เต็มดูของจริงใน `src/` — ด้านล่างคือ "ไฟล์โครงสร้าง/ของกลาง" ที่ทุก session ควรรู้จัก
+> (เลิกลิสต์ pages ทั้งหมดในเอกสาร — เคยลิสต์แล้วล้าสมัยตลอด · pages ปัจจุบัน ~33 ไฟล์ ดูตาราง Pages & Routes ข้างบน)
+
 ```
 src/
-├── App.jsx                    # Router + Sidebar + Auth + UserContext
-├── index.css                  # Theme CSS variables (dark/light)
-├── supabaseClient.js          # Supabase init
-├── components/
-│   ├── Toast.jsx              # Global toast singleton
-│   ├── SignatureModal.jsx     # วาด/อัปโหลดลายเซ็น
-│   └── ChangePasswordModal.jsx
-└── pages/
-    ├── Dashboard.jsx
-    ├── Management.jsx
-    ├── Checkin.jsx
-    ├── LineSetup.jsx
-    ├── Register.jsx
-    ├── Operator.jsx
-    ├── Report.jsx
-    ├── ShiftOrganize.jsx
-    ├── AddUser.jsx
-    └── Login.jsx
+├── App.jsx            # Router + Sidebar + UserContext + NAV_ITEMS (source of truth เมนู/หมวด)
+│                      #   exports: UserContext, navItemsForGroups, focusSidebarGroups, accessSummaryForRole
+├── main.jsx           # bootstrap + RootErrorBoundary + vite:preloadError auto-reload (ห้ามถอด)
+├── index.css          # theme variables + CSS กลาง (.now-line/.now-chip, .dt-alarm-*, .person-alarm-*, .table-sticky)
+├── supabaseClient.js  # 2 clients: supabase (Main) / supabaseDR (DR — anon เสมอ)
+├── components/        # ของกลาง: Toast, ImageCropModal, MachineFloorMap, SpinAnnotator,
+│                      #   InternalTimeBoard, SignatureModal, TaxonomyManagerModal, ChangePasswordModal
+├── utils/             # กฎ/สูตรกลาง — permissions.js (can/canAccessPage), sectionScope.js,
+│                      #   markerScale.js, timeFrame.js, downtimeAlarm.js, personAlarm.js,
+│                      #   lineHierarchy.js, companyCalendar.js, otPeriods.js, dateFormat.js, useImgBox.js
+├── lib/               # logic เฉพาะโดเมน (pmNotify, pmDailyAlarm, pmExportPDF/Excel, changePointChecklist)
+└── pages/             # ~33 หน้า — ชื่อไฟล์ตรงกับ route (⚠️ operator.jsx ตัวพิมพ์เล็ก)
 
 supabase/
-└── functions/
-    └── send-notification/
-        └── index.ts           # Telegram + in-app notifications
+├── migrations/        # ทุกการเปลี่ยน schema ต้องมีไฟล์ที่นี่ (ดู docs/sql/00_schema_snapshot_*.sql = โครงตารางทั้งหมด)
+└── functions/         # 7 ตัว: send-notification, send-cqi15-notification, daily-4m-summary,
+                       #   create-user (deploy แล้วแต่ซอร์สอยู่บน dashboard), pm-daily-scan,
+                       #   pm-plan-reminder, shipping-phase-scan, cleanup-orphan-photos
+
+docs/                  # UI-CONVENTIONS.md (บังคับอ่านก่อนแก้ UI) · PERMISSIONS-DESIGN.md ·
+                       #   ROLLBACK_*.md · sql/ (schema snapshot + seed อ้างอิง)
 ```
 
 ---
@@ -358,6 +391,19 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 3. **อัพเดทกฎหลังทำ** — งานที่สร้าง/เปลี่ยน pattern, schema, สิทธิ์, หรือ workflow ที่ session อื่นต้องรู้ → อัพเดทเอกสารที่เกี่ยวข้อง (CLAUDE.md / UI-CONVENTIONS.md / PERMISSIONS-DESIGN.md) **ในคอมมิทเดียวกัน** พร้อมวันที่
 4. build ผ่าน (`npm run build`) ก่อน commit เสมอ · merge เข้า `main` = deploy จริง
 
+### QC Agent — ตรวจโค้ดขัดกฎโปรเจค (2026-07-10)
+
+- **Agent:** `.claude/agents/qc-project-rules.md` (subagent_type: `qc-project-rules`, read-only — ห้ามแก้โค้ด)
+  มี checklist กฎ 7 หมวด: A Date/Time · B Supabase 2 projects · C Permissions · D Section scoping ·
+  E Storage/รูป · F UI Conventions · G Workflow/เอกสาร — แต่ละข้อ map กลับมาที่ CLAUDE.md /
+  docs/UI-CONVENTIONS.md / docs/PERMISSIONS-DESIGN.md (checklist เป็นแค่แผนที่ ตัว agent ต้องอ่านเอกสารจริงก่อนตรวจเสมอ)
+- **Slash command:** `/qc-audit` (`.claude/commands/qc-audit.md`) — ไม่มี argument = ตรวจทุกหมวดทั้งโปรเจค
+  (fan-out 4 subagents ขนาน), ระบุหมวด (`/qc-audit B D`) หรือไฟล์ (`/qc-audit src/pages/X.jsx`) ได้
+- รายงานแบ่ง 🔴 ขัดกฎเหล็ก / 🟡 ขัด convention / 🔵 legacy-ข้อสังเกต / ✅ ผ่าน พร้อม file:line + วิธีแก้
+- **เมื่อเพิ่ม/เปลี่ยนกฎใน CLAUDE.md หรือ docs/** ที่ตรวจอัตโนมัติได้ → อัพเดท checklist ใน
+  `.claude/agents/qc-project-rules.md` ในคอมมิทเดียวกันด้วย ไม่งั้น QC agent จะตรวจไม่ครบ
+- แนะนำรัน `/qc-audit` ก่อน merge งานใหญ่เข้า main และรันเต็มเป็นระยะเพื่อจับ drift ระหว่าง session ขนาน
+
 ## Design System
 
 > ### ⚠️ บังคับอ่านก่อนแก้ UI ทุกครั้ง: `docs/UI-CONVENTIONS.md`
@@ -406,6 +452,22 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 - **Team C** — กะเช้าตลอด ไม่หมุน
 - **Work date:** ก่อน 08:00 = นับเป็นวันก่อนหน้า
 
+### OT วันหยุด (2026-07-10)
+
+ตาราง OT ด้านบนใช้เฉพาะ**วันทำงานปกติ** — วันหยุด (`company_calendar.day_type != 'working'`) การมาทำ OT คือมาทั้งกะ มี 4 รูปแบบ:
+
+| รูปแบบ | เวลา | ค่าใน `ot_night_bookings.ot_period` |
+|---|---|---|
+| เช้า 8 ชม. | 08:00–17:00 | `holiday_day_8h` |
+| เช้า 10 ชม. | 08:00–20:00 | `holiday_day_10h` |
+| ดึก 10 ชม. | 20:00–08:00 | `holiday_night_10h` |
+| ดึก 8 ชม. | 22:00–08:00 | `holiday_night_8h` |
+
+- source of truth เดียว: `src/utils/otPeriods.js` (label/ตัวเลือกตามกะ/ค่า default) — ห้าม hardcode ช่วงเวลาซ้ำในหน้า
+- `ot_period = null` = OT ต่อท้ายกะวันทำงานปกติ (และการจองเก่าก่อนมีฟีเจอร์นี้ — Report แสดง "⚠️ ไม่ระบุ" เมื่อวันนั้นเป็นวันหยุด)
+- จุดจองทุกทางในหน้าเช็คชื่อ (กะดึกจองพรุ่งนี้ / has_ot กะเช้า / ช่องวันหยุดล่วงหน้า 🔶 / modal จองรถ OT อิสระ) จะโชว์ select ช่วงเวลาอัตโนมัติเมื่อวันที่จองเป็นวันหยุด — default 8 ชม. ของกะนั้น
+- migration: `20260710_ot_booking_holiday_period.sql` (Main project)
+
 ---
 
 ## Deploy
@@ -421,6 +483,11 @@ Environment Variables:
   VITE_SUPABASE_URL=https://ewhdfqwfwofivojtsizn.supabase.co
   VITE_SUPABASE_ANON_KEY=<key from Supabase dashboard>
 ```
+
+> ⚠️ **กับดักหลัง deploy — จอดำในแท็บที่เปิดค้าง (แก้แล้ว 2026-07-10):** ทุกหน้าเป็น lazy chunk ชื่อไฟล์มี hash
+> deploy ใหม่ = ไฟล์เก่าหายจาก server → แท็บเก่าเปลี่ยนหน้าแล้วโหลด chunk พัง → React ล่มเป็นจอดำเงียบๆ
+> `src/main.jsx` มีตัวจัดการแล้ว: `vite:preloadError` → auto reload 1 ครั้ง (กัน loop 30 วิ) + `RootErrorBoundary`
+> แสดงหน้า "โหลดหน้าใหม่" แทนจอดำ — **ห้ามถอดออก** และ error อื่นที่ไม่ใช่ chunk จะโชว์ข้อความ error ให้ debug ได้
 
 ---
 

@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { focusSidebarGroups, navItemsForGroups } from '../App';
 
 const DEPT_CSS = `
   @keyframes hub-fade-up {
@@ -31,14 +32,17 @@ const DEPT_CSS = `
     pointer-events: none;
   }
   .dept-chip {
-    display: inline-flex; align-items: center; gap: 4px;
-    font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
-    padding: 2px 8px; border-radius: 20px;
-    text-transform: uppercase;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.03em;
+    padding: 4px 10px; border-radius: 20px;
+    cursor: pointer;
+    transition: transform 0.12s ease, filter 0.12s ease;
   }
+  .dept-chip:hover { transform: translateY(-1px); filter: brightness(1.35); }
 `;
 
-// 6 หมวดตรงกับกลุ่มเมนูใน sidebar (NAV_GROUP_ORDER ใน App.jsx ไม่รวม "ภาพรวม")
+// 6 หมวดตรงกับกลุ่มเมนูใน sidebar — เมนูย่อยบนการ์ดดึงจาก NAV_ITEMS ผ่าน navGroups อัตโนมัติ
+// (ห้ามพิมพ์รายชื่อเมนูซ้ำที่นี่ — เคยมี list มือแล้ว drift ไม่ตรงกับ sidebar)
 const DEPTS = [
   {
     key: 'production',
@@ -50,9 +54,9 @@ const DEPTS = [
     border: 'rgba(61,214,92,0.35)',
     bg: 'rgba(61,214,92,0.06)',
     route: '/dashboard',
+    navGroups: ['ภาพรวม', 'ฝ่ายผลิต'], // หมวด sidebar ที่กางไว้เมื่อเข้าจากการ์ดนี้ (หมวดอื่นพับหมด)
     available: true,
     desc: 'เช็คชื่อ-PPE, จัดการไลน์ผลิต, Daily Report, OEE, Daily PM',
-    modules: ['Dashboard', 'เช็คชื่อ & PPE', 'จัดการไลน์ผลิต', 'Daily Report', 'OEE', 'Daily PM ฝ่ายผลิต'],
   },
   {
     key: 'logistic',
@@ -64,9 +68,9 @@ const DEPTS = [
     border: 'rgba(245,158,11,0.35)',
     bg: 'rgba(245,158,11,0.06)',
     route: '/line-stock',
+    navGroups: ['Logistic - Store'],
     available: true,
     desc: 'Stock ในไลน์, Kanban Board, เรียกภาชนะ, Customer Demand',
-    modules: ['Store management', 'Kanban Board', 'Rack Center', 'Customer Demand & Shipping'],
   },
   {
     key: 'maintenance',
@@ -78,9 +82,9 @@ const DEPTS = [
     border: 'rgba(251,146,60,0.35)',
     bg: 'rgba(251,146,60,0.06)',
     route: '/pm-check?dept=maintenance',
+    navGroups: ['การตรวจสอบและซ่อมบำรุง'],
     available: true,
     desc: 'ตรวจสอบอุปกรณ์/เครื่องจักร, แผน PM, ซ่อมบำรุง & JIG',
-    modules: ['ตรวจสอบอุปกรณ์เครื่องจักร', 'แผน PM', 'PM Setup', 'JIG Maintenance'],
   },
   {
     key: 'qa',
@@ -92,9 +96,9 @@ const DEPTS = [
     border: 'rgba(77,159,255,0.35)',
     bg: 'rgba(77,159,255,0.06)',
     route: '/qa',
+    navGroups: ['ควบคุมคุณภาพ QA/QC'],
     available: true,
     desc: 'Quality Control Center, มาตรฐานการตรวจ & Drawing, CQI-15',
-    modules: ['Quality Control Center', 'มาตรฐานการตรวจ & Drawing', 'CQI-15 Event Log'],
   },
   {
     key: 'report',
@@ -106,9 +110,9 @@ const DEPTS = [
     border: 'rgba(192,132,252,0.35)',
     bg: 'rgba(192,132,252,0.06)',
     route: '/report',
+    navGroups: ['รายงาน'],
     available: true,
     desc: 'รายงานเช็คชื่อ/สรุป, อนุมัติ 4M, Skill Matrix, เอกสาร HR (PDF/CSV)',
-    modules: ['รายวัน/รายพนักงาน', '4M Changes', 'Skill Matrix', 'ค่าฝีมือ/ใบบันทึก', 'จองรถ OT'],
   },
   {
     key: 'settings',
@@ -120,9 +124,9 @@ const DEPTS = [
     border: 'rgba(52,211,153,0.35)',
     bg: 'rgba(52,211,153,0.06)',
     route: '/products',
+    navGroups: ['ตั้งค่าโปรแกรม,ฐานข้อมูล'],
     available: true,
     desc: 'Product Master, พนักงาน, ผังไลน์, เครื่องจักร, ตารางกะ, สิทธิ์',
-    modules: ['Product Master', 'ฐานข้อมูลพนักงาน', 'ตั้งค่าผังไลน์', 'ฐานข้อมูลเครื่องจักร', 'ตารางกะ', 'ปฏิทินบริษัท'],
   },
 ];
 
@@ -132,10 +136,22 @@ const ROLE_LABELS = {
   supervisor: '🎯 Supervisor',
   leader:     '⭐ Leader',
   qa:         '🔍 QA',
+  document_control: '🗂 Doc Control',
+  sale:       '💼 Sale',
+  display:    '📺 Display',
 };
 
-export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, userRole }) {
+export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, userRole, userPosition }) {
   const navigate = useNavigate();
+
+  // ชิปเมนูย่อยบนการ์ด = เมนูจริงจาก NAV_ITEMS (sidebar) กรองตามสิทธิ์ role — ตรงกับ sidebar เสมอ
+  const menuItemsOf = (d) => (d.navGroups ? navItemsForGroups(d.navGroups, userRole) : []);
+
+  const openMenu = (e, d, to) => {
+    e.stopPropagation(); // อย่าให้ card onClick ยิงซ้ำ
+    if (d.navGroups) focusSidebarGroups(d.navGroups);
+    navigate(to);
+  };
 
   return (
     <div style={{
@@ -165,7 +181,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             </span>
             {userRole && (
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                {ROLE_LABELS[userRole] ?? userRole}
+                {userPosition ? `${userPosition} · ` : ''}{ROLE_LABELS[userRole] ?? userRole}
               </span>
             )}
           </div>
@@ -260,13 +276,17 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
               animationDelay: `${0.08 * i}s`,
               animation: 'hub-fade-up 0.55s ease both',
             }}
-            onClick={() => d.available && navigate(d.route)}
+            onClick={() => {
+              if (!d.available) return;
+              if (d.navGroups) focusSidebarGroups(d.navGroups); // กาง sidebar เฉพาะหมวดของโมดูลนี้
+              navigate(d.route);
+            }}
           >
             {/* Coming Soon badge */}
             {!d.available && (
               <div style={{
                 position: 'absolute', top: 14, right: 14,
-                fontSize: 9, fontWeight: 800, letterSpacing: '0.1em',
+                fontSize: 11, fontWeight: 800, letterSpacing: '0.1em',
                 padding: '3px 9px', borderRadius: 20,
                 background: 'rgba(255,255,255,0.07)',
                 color: 'var(--muted)',
@@ -314,22 +334,26 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
               fontSize: 12,
               color: 'var(--text2)',
               lineHeight: 1.6,
-              marginBottom: d.modules.length > 0 ? 14 : 0,
+              marginBottom: menuItemsOf(d).length > 0 ? 14 : 0,
             }}>
               {d.desc}
             </div>
 
-            {/* Module chips */}
-            {d.modules.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                {d.modules.map(m => (
-                  <span key={m} className="dept-chip" style={{
-                    background: `${d.color}15`,
-                    color: d.color,
-                    border: `1px solid ${d.color}30`,
-                  }}>
-                    {m}
-                  </span>
+            {/* Module chips — เมนูจริงจาก sidebar (NAV_ITEMS) คลิกเข้าหน้านั้นได้เลย */}
+            {menuItemsOf(d).length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {menuItemsOf(d).map(item => (
+                  <button key={item.to} type="button" className="dept-chip"
+                    title={`เปิด ${item.label}`}
+                    onClick={e => openMenu(e, d, item.to)}
+                    style={{
+                      background: `${d.color}15`,
+                      color: d.color,
+                      border: `1px solid ${d.color}30`,
+                    }}>
+                    <span style={{ fontSize: 12 }}>{item.icon}</span>
+                    {item.label}
+                  </button>
                 ))}
               </div>
             )}

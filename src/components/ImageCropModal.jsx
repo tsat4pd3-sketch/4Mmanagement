@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { toast } from './Toast';
 
 /* ─── ImageCropModal ───────────────────────────────────────────────────────
    Crop/reposition + zoom รูปก่อนอัปโหลด ให้เห็นกรอบจริงที่จะถูกใช้แสดงผล
@@ -37,7 +38,7 @@ export default function ImageCropModal({
   useEffect(() => {
     if (!file) return;
     if (isGif && file.size > GIF_MAX_BYTES) {
-      alert(`รูปขยับ (GIF) ต้องมีขนาดไม่เกิน 2 MB (ไฟล์นี้ ${(file.size / 1024 / 1024).toFixed(1)} MB)\nลองใช้ GIF ที่สั้นลง/เล็กลง หรือย่อไฟล์ก่อนอัปโหลด`);
+      toast.error(`รูปขยับ (GIF) ต้องมีขนาดไม่เกิน 2 MB (ไฟล์นี้ ${(file.size / 1024 / 1024).toFixed(1)} MB) — ลองใช้ GIF ที่สั้นลง/เล็กลง หรือย่อไฟล์ก่อนอัปโหลด`);
       onCancel?.();
       return;
     }
@@ -54,7 +55,7 @@ export default function ImageCropModal({
     img.onerror = () => {
       // เบราว์เซอร์ไม่รองรับฟอร์แมตไฟล์นี้ (เช่นรูป .heic จากกล้อง iPhone) — ถ้าไม่ดักไว้
       // กรอบครอบรูปจะว่างเปล่าแบบไม่มี error ใดๆ ผู้ใช้กดยืนยันไปได้โดยไม่มีรูปติดไปด้วย
-      alert('ไม่สามารถแสดงตัวอย่างรูปนี้ได้ ไฟล์อาจเป็นฟอร์แมตที่ไม่รองรับ (เช่น .heic จากกล้อง iPhone)\nกรุณาเปลี่ยนรูปเป็น JPG หรือ PNG แล้วลองใหม่');
+      toast.error('ไม่สามารถแสดงตัวอย่างรูปนี้ได้ ไฟล์อาจเป็นฟอร์แมตที่ไม่รองรับ (เช่น .heic จากกล้อง iPhone) — กรุณาเปลี่ยนรูปเป็น JPG หรือ PNG แล้วลองใหม่');
       onCancel?.();
     };
     img.src = url;
@@ -113,7 +114,7 @@ export default function ImageCropModal({
       }, 'image/jpeg', quality);
     };
     img.onerror = () => {
-      alert('ไม่สามารถใช้รูปนี้ได้ ไฟล์อาจเป็นฟอร์แมตที่ไม่รองรับ (เช่น .heic จากกล้อง iPhone)\nกรุณาเปลี่ยนรูปเป็น JPG หรือ PNG แล้วลองใหม่');
+      toast.error('ไม่สามารถใช้รูปนี้ได้ ไฟล์อาจเป็นฟอร์แมตที่ไม่รองรับ (เช่น .heic จากกล้อง iPhone) — กรุณาเปลี่ยนรูปเป็น JPG หรือ PNG แล้วลองใหม่');
       onCancel?.();
     };
     img.src = imgUrl;
@@ -147,7 +148,7 @@ export default function ImageCropModal({
           <input type="range" min={minScale * 0.4} max={minScale * 4} step={0.01} value={scale}
             onChange={e => onScaleChange(Number(e.target.value))} style={{ flex: 1 }} />
         </div>
-        <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center', marginTop: 6 }}>
+        <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 6 }}>
           {isGif
             ? '🎞️ รูปขยับ (GIF) จะถูกใช้ทั้งภาพเพื่อคงการเคลื่อนไหว — การ crop/ซูมในกรอบนี้ไม่มีผลกับไฟล์จริง'
             : 'ลากรูปเพื่อขยับตำแหน่ง • เลื่อนแถบเพื่อซูม — กรอบนี้คือพื้นที่จริงที่จะแสดงผล'}

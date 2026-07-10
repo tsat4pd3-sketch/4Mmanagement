@@ -68,7 +68,7 @@ export default function Login() {
             4M · VX Production System
           </div>
           <div style={{
-            fontSize: 10, color: 'var(--muted)', marginTop: 4,
+            fontSize: 11, color: 'var(--muted)', marginTop: 4,
             letterSpacing: '2px', textTransform: 'uppercase',
             fontFamily: 'var(--font-display)',
           }}>
@@ -128,7 +128,7 @@ export default function Login() {
         {/* Brand footer */}
         <div style={{
           marginTop: 28, textAlign: 'center',
-          fontSize: 9, color: 'var(--muted2)',
+          fontSize: 11, color: 'var(--muted2)',
           fontFamily: 'var(--font-display)',
           letterSpacing: '1.5px', textTransform: 'uppercase',
         }}>

@@ -1,10 +1,13 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import {
   LineChart, Line, BarChart, Bar, ComposedChart, PieChart, Pie,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   Cell, ReferenceLine, LabelList,
 } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { UserContext } from '../App';
+import { inSectionScope } from '../utils/sectionScope';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
 
 // ── Colour helpers ───────────────────────────────────────────────
 const oeeColor  = v => v >= 80 ? '#22c55e' : v >= 60 ? '#f59e0b' : '#ef4444';
@@ -124,7 +127,7 @@ function GaugeRing({ value, size = 168, stroke = 15, color = '#22c55e' }) {
 // ── Mini sparkline bar (under A/P/Q kpi) ──────────────────────────
 function MiniTrend({ data, dataKey, color, target }) {
   const hasData = data.some(d => d[dataKey] != null);
-  if (!hasData) return <div style={{ height: 54, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: 'var(--muted)' }}>ไม่มีข้อมูล</div>;
+  if (!hasData) return <div style={{ height: 54, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>ไม่มีข้อมูล</div>;
   return (
     <ResponsiveContainer width="100%" height={54}>
       <BarChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
@@ -161,15 +164,28 @@ const STATUS_BADGE = {
 
 // ── Main Component ───────────────────────────────────────────────
 export default function OEEAnalytics() {
+  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const [viewTab, setViewTab] = useState('today'); // today | trend
 
+  // mandatory scope (แบบเดียวกับ DailyReport): leader → ครอบครัวไลน์ตัวเอง ·
+  // role ที่ถูกจำกัด sections → เฉพาะไลน์ในส่วนงาน scope — filter อิสระของหน้า apply ทับอีกที
+  const isScoped = (role === 'leader' && !!userLineId) || scopeSecs.length > 0;
+
   // ══════════════════════════ Shared line/org data ══════════════════════════
-  const [linesFull, setLinesFull] = useState([]); // [{id,name,section,parent_line_name}]
+  const [linesFull, setLinesFull] = useState([]); // [{id,name,section,parent_line_name}] — ถูก scope แล้ว
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name, section, parent_line_name').order('name').then(({ data }) => {
-      const rows = data || [];
+      let rows = data || [];
+      if (role === 'leader' && userLineId) {
+        const myLine = rows.find(l => String(l.id) === String(userLineId));
+        const norm = (s) => (s || '').trim().toLowerCase();
+        const famSet = new Set((myLine ? getLineFamilyNames(rows, myLine.name) : []).map(norm));
+        rows = rows.filter(l => famSet.has(norm(l.name)));
+      } else if (scopeSecs.length) {
+        rows = rows.filter(l => inSectionScope(scopeSecs, l.section));
+      }
       setLinesFull(rows);
       const pcm = {};
       rows.forEach(l => {
@@ -222,12 +238,15 @@ export default function OEEAnalytics() {
     if (tdLine) return [tdLine];
     if (tdDept) return parentChildrenMap[tdDept] ? [tdDept, ...parentChildrenMap[tdDept]] : [tdDept];
     if (tdSection) return linesFull.filter(l => l.section === tdSection).map(l => l.name);
-    return null; // ทุกไลน์
-  }, [tdLine, tdDept, tdSection, linesFull, parentChildrenMap]);
+    // ไม่เลือก filter: role ที่ถูก scope → จำกัดที่ไลน์ใน scope เสมอ (linesFull ถูก scope แล้ว) · ไม่ scope → ทุกไลน์
+    return isScoped ? linesFull.map(l => l.name) : null;
+  }, [tdLine, tdDept, tdSection, linesFull, parentChildrenMap, isScoped]);
 
   const tdScopeLabel = tdLine || tdDept || tdSection || 'ทุกไลน์';
 
   const loadToday = useCallback(async () => {
+    // scope แล้วแต่รายชื่อไลน์ยังไม่มา (หรือไม่มีไลน์ใน scope) — ห้าม query แบบไม่กรอง
+    if (isScoped && !(tdScopeLines || []).length) { setTdSessions([]); setTdDowntimes([]); setTdDefects([]); return; }
     setTdLoading(true);
     try {
       let q = supabaseDR.from('production_sessions')
@@ -263,9 +282,10 @@ export default function OEEAnalytics() {
     } finally {
       setTdLoading(false);
     }
-  }, [tdDate, tdShift, tdScopeLines]);
+  }, [tdDate, tdShift, tdScopeLines, isScoped]);
 
   const loadTdHistory = useCallback(async () => {
+    if (isScoped && !(tdScopeLines || []).length) { setTdHistory([]); return; }
     const startStr = dateStrAdd(tdDate, -9);
     let q = supabaseDR.from('production_sessions')
       .select('work_date, oee, oee_a, oee_p, oee_q, status, line_name, shift')
@@ -277,7 +297,7 @@ export default function OEEAnalytics() {
     if (tdShift) q = q.eq('shift', tdShift);
     const { data } = await q;
     setTdHistory(data || []);
-  }, [tdDate, tdShift, tdScopeLines]);
+  }, [tdDate, tdShift, tdScopeLines, isScoped]);
 
   // ทีมตามตาราง shift_schedules (A/B สลับกันตามวัน, C กะเช้าตลอด) — best effort, ถ้าไม่มีข้อมูลจะไม่ระบุ
   useEffect(() => {
@@ -409,11 +429,8 @@ export default function OEEAnalytics() {
   const [period,     setPeriod]     = useState('monthly'); // daily|monthly|yearly
   const [selLine,    setSelLine]    = useState('');
   const [selShift,   setSelShift]   = useState('');
-  const [dateFrom,   setDateFrom]   = useState(() => {
-    const d = new Date(); d.setMonth(d.getMonth() - 3);
-    return d.toISOString().slice(0, 10);
-  });
-  const [dateTo,     setDateTo]     = useState(() => new Date().toISOString().slice(0, 10));
+  const [dateFrom,   setDateFrom]   = useState(() => dateStrAdd(getWorkDateStr(), -90));
+  const [dateTo,     setDateTo]     = useState(() => getWorkDateStr());
 
   // ── Load data ──────────────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -422,9 +439,13 @@ export default function OEEAnalytics() {
       const pcm = parentChildrenMap; // pre-loaded by shared effect above
 
       // Expand selLine: if it's a parent, include all its children
+      // ไม่เลือกไลน์: role ที่ถูก scope → จำกัดที่ไลน์ใน scope เสมอ (linesFull ถูก scope แล้ว)
       const expandedLines = selLine
         ? (pcm[selLine] ? [selLine, ...pcm[selLine]] : [selLine])
-        : null;
+        : (isScoped ? linesFull.map(l => l.name) : null);
+      if (isScoped && !expandedLines?.length) {
+        setSessions([]); setDowntimes([]); setDefects([]); setLoading(false); return;
+      }
 
       let q = supabaseDR.from('production_sessions')
         .select('*')
@@ -458,12 +479,17 @@ export default function OEEAnalytics() {
       setDtTypes(dtt || []);
       setDefectTypes(deft || []);
 
-      const uniqueLines = [...new Set((linesData || []).map(r => r.line_name).filter(Boolean))].sort();
+      // dropdown ไลน์ของแท็บ trend มาจากชื่อไลน์ใน sessions — ต้องกรองตาม scope ด้วย
+      const normLn = (s) => (s || '').trim().toLowerCase();
+      const allowedSet = isScoped ? new Set(linesFull.map(l => normLn(l.name))) : null;
+      const uniqueLines = [...new Set((linesData || []).map(r => r.line_name).filter(Boolean))]
+        .filter(n => !allowedSet || allowedSet.has(normLn(n)))
+        .sort();
       setLines(uniqueLines);
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, selLine, selShift, parentChildrenMap]);
+  }, [dateFrom, dateTo, selLine, selShift, parentChildrenMap, isScoped, linesFull]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -545,7 +571,7 @@ export default function OEEAnalytics() {
     page:    { padding: '20px 24px', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' },
     section: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px', marginBottom: 16 },
     title:   { fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 12 },
-    sel:     { background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--text)', fontSize: 13 },
+    sel:     { width: 'auto', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--text)', fontSize: 13 }, // width:auto กัน index.css input/select {width:100%} ยืดเต็ม filter bar
     tab:     active => ({ padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700,
                 background: active ? 'var(--accent)' : 'var(--bg2)', color: active ? '#000' : 'var(--text)' }),
   };
@@ -625,7 +651,7 @@ export default function OEEAnalytics() {
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>OEE รวมวันนี้</div>
                   <div style={{ fontSize: 34, fontWeight: 900, color: tdKpi.oee != null ? oeeColor(tdKpi.oee) : 'var(--muted)' }}>{tdKpi.oee ?? '—'}{tdKpi.oee != null ? '%' : ''}</div>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>TARGET {TARGET.oee}%</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>TARGET {TARGET.oee}%</div>
                 </div>
               </div>
               {['a', 'p', 'q'].map(k => (
@@ -633,7 +659,7 @@ export default function OEEAnalytics() {
                   <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{METRIC_LABEL[k]}</div>
                   <div style={{ fontSize: 26, fontWeight: 900, color: tdKpi[k] != null ? METRIC_COLOR_FN[k](tdKpi[k]) : 'var(--muted)' }}>{tdKpi[k] ?? '—'}{tdKpi[k] != null ? '%' : ''}</div>
                   <MiniTrend data={tdHistoryGrouped} dataKey={k} color={METRIC_COLOR[k]} target={TARGET[k]} />
-                  <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'right' }}>TARGET {TARGET[k]}%</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}>TARGET {TARGET[k]}%</div>
                 </div>
               ))}
             </div>
@@ -662,7 +688,7 @@ export default function OEEAnalytics() {
                     <div style={{ fontSize: 28, fontWeight: 900, color: tdLiveRow?.calcOEE != null ? oeeColor(tdLiveRow.calcOEE) : 'var(--muted)' }}>
                       {tdLiveRow?.calcOEE ?? '—'}{tdLiveRow?.calcOEE != null ? '%' : ''}
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>TARGET {TARGET.oee}%</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>TARGET {TARGET.oee}%</div>
                   </div>
                   <div style={{ display: 'flex', gap: 14 }}>
                     <MetricColumn label="A" value={tdLiveRow?.calcA} target={TARGET.a} color={METRIC_COLOR.a} />
@@ -689,7 +715,7 @@ export default function OEEAnalytics() {
                   <GaugeRing value={tdKpi.targetQty > 0 ? Math.min(100, tdKpi.totalQty / tdKpi.targetQty * 100) : 0} color="#4d9fff" size={140} stroke={13} />
                   <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                     <div style={{ fontSize: 24, fontWeight: 900, color: '#4d9fff' }}>{tdKpi.targetQty > 0 ? Math.round(Math.min(100, tdKpi.totalQty / tdKpi.targetQty * 100)) : 0}%</div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>เทียบเป้าหมาย</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>เทียบเป้าหมาย</div>
                   </div>
                 </div>
               </div>
@@ -706,9 +732,9 @@ export default function OEEAnalytics() {
                 <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="%" />
                 <Tooltip content={<OEETooltip />} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <ReferenceLine y={TARGET.oee} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} label={{ value: `TARGET ${TARGET.oee}%`, fill: '#22c55e', fontSize: 10, position: 'insideTopRight' }} />
+                <ReferenceLine y={TARGET.oee} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} label={{ value: `TARGET ${TARGET.oee}%`, fill: '#22c55e', fontSize: 11, position: 'insideTopRight' }} />
                 <Bar dataKey="oee" name="OEE %" fill="#22c55e" opacity={0.85} radius={[3, 3, 0, 0]}>
-                  <LabelList dataKey="oee" position="top" formatter={v => v != null ? `${v}%` : ''} style={{ fontSize: 10, fill: 'var(--text)' }} />
+                  <LabelList dataKey="oee" position="top" formatter={v => v != null ? `${v}%` : ''} style={{ fontSize: 11, fill: 'var(--text)' }} />
                 </Bar>
                 <Line type="monotone" dataKey="a" name="A%" stroke="#22c55e" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
                 <Line type="monotone" dataKey="p" name="P%" stroke="#f59e0b" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
@@ -728,7 +754,7 @@ export default function OEEAnalytics() {
                   <GaugeRing value={tdKpi.totalShiftMin > 0 ? Math.min(100, tdKpi.totalDT / tdKpi.totalShiftMin * 100) : 0} color="#a855f7" size={120} stroke={11} />
                   <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                     <div style={{ fontSize: 22, fontWeight: 900, color: '#a855f7' }}>{tdKpi.totalDT.toLocaleString()}</div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>นาที</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>นาที</div>
                   </div>
                 </div>
                 <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
@@ -872,7 +898,7 @@ export default function OEEAnalytics() {
                 <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="%" />
                 <Tooltip content={<OEETooltip />} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <ReferenceLine y={85} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} label={{ value: '85%', fill: '#22c55e', fontSize: 10 }} />
+                <ReferenceLine y={85} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} label={{ value: '85%', fill: '#22c55e', fontSize: 11 }} />
                 <Line type="monotone" dataKey="oee" name="OEE" stroke="#4d9fff" strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
                 <Line type="monotone" dataKey="a"   name="A%"  stroke="#22c55e" strokeWidth={1.5} dot={false} strokeDasharray="5 3" connectNulls />
                 <Line type="monotone" dataKey="p"   name="P%"  stroke="#f59e0b" strokeWidth={1.5} dot={false} strokeDasharray="5 3" connectNulls />
@@ -894,8 +920,8 @@ export default function OEEAnalytics() {
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={dtPareto} layout="vertical" margin={{ left: 10, right: 30, top: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--muted)' }} unit="m" />
-                  <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fill: 'var(--muted)' }} width={120} />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="m" />
+                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: 'var(--muted)' }} width={120} />
                   <Tooltip formatter={(v) => [`${v} นาที`]} contentStyle={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }} />
                   <Bar dataKey="min" name="นาที" radius={[0, 4, 4, 0]}>
                     {dtPareto.map((d, i) => <Cell key={i} fill={d.color} />)}
@@ -907,7 +933,7 @@ export default function OEEAnalytics() {
           {dtPareto.length > 0 && (
             <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {dtPareto.slice(0, 6).map((d, i) => (
-                <span key={i} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: `${d.color}22`, border: `1px solid ${d.color}55`, color: d.color, fontWeight: 700 }}>
+                <span key={i} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: `${d.color}22`, border: `1px solid ${d.color}55`, color: d.color, fontWeight: 700 }}>
                   {d.name}: {d.min.toLocaleString()}m
                 </span>
               ))}
@@ -924,8 +950,8 @@ export default function OEEAnalytics() {
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={defectBreakdown} layout="vertical" margin={{ left: 10, right: 30, top: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--muted)' }} unit="ชิ้น" />
-                  <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fill: 'var(--muted)' }} width={120} />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="ชิ้น" />
+                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: 'var(--muted)' }} width={120} />
                   <Tooltip formatter={(v) => [`${v} ชิ้น`]} contentStyle={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }} />
                   <Bar dataKey="qty" name="ชิ้น" radius={[0, 4, 4, 0]}>
                     {defectBreakdown.map((d, i) => <Cell key={i} fill={d.color} />)}
@@ -937,7 +963,7 @@ export default function OEEAnalytics() {
           {defectBreakdown.length > 0 && (
             <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {defectBreakdown.map((d, i) => (
-                <span key={i} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: `${d.color}22`, border: `1px solid ${d.color}55`, color: d.color, fontWeight: 700 }}>
+                <span key={i} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: `${d.color}22`, border: `1px solid ${d.color}55`, color: d.color, fontWeight: 700 }}>
                   {d.name}: {d.qty.toLocaleString()}
                 </span>
               ))}

@@ -168,7 +168,7 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
           {/* Strength bar */}
           {next.length > 0 && (
             <div>
-              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 4 }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
                 ความแข็งแกร่ง: {next.length < 6 ? '⚠ อ่อน' : next.length < 10 ? '🟡 พอใช้' : '🟢 แข็งแกร่ง'}
               </div>
               <div style={{ height: 3, borderRadius: 2, background: 'var(--border2)', overflow: 'hidden' }}>

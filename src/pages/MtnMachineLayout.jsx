@@ -1,6 +1,8 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useContext } from 'react'
 import imageCompression from 'browser-image-compression'
 import { supabase, supabaseDR } from '../supabaseClient'
+import { UserContext } from '../App'
+import { can } from '../utils/permissions'
 import { dueStatus, STATUS_META, DEPT_LABEL, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
 import { toast } from '../components/Toast'
 import MachineFloorMap from '../components/MachineFloorMap'
@@ -66,6 +68,9 @@ const S = {
 }
 
 export default function MtnMachineLayout() {
+  const { role } = useContext(UserContext)
+  // แก้ผัง facility (เพิ่ม/ลบโซน อัปโหลดผัง วาง/ย้ายจุด) ใช้สิทธิ์เดียวกับ PM Setup — ห้าม hardcode role array
+  const canEdit = can('pm', 'setup', role)
   const [view, setView] = useState('production') // 'production' | 'facility'
   const [dept, setDept] = useState('all')
   const [selId, setSelId] = useState(null)
@@ -152,6 +157,7 @@ export default function MtnMachineLayout() {
   }
 
   const addArea = async () => {
+    if (!canEdit) return
     const name = window.prompt('ชื่อโซน facility (เช่น ห้องปั๊มลม, โซน MDB, ระบบน้ำ RO)')
     if (!name?.trim()) return
     const { data, error } = await supabaseDR.from('pm_facility_areas').insert({ name: name.trim(), sort_order: areas.length }).select().single()
@@ -159,36 +165,48 @@ export default function MtnMachineLayout() {
     await reloadAreas(); setAreaId(data.id)
   }
   const deleteArea = async (id) => {
+    if (!canEdit) return
     if (!window.confirm('ลบโซนนี้? (อุปกรณ์ที่วางบนโซนนี้จะถูกเอาออกจากผัง แต่ตัวอุปกรณ์+ประวัติ PM ไม่หาย)')) return
-    await supabaseDR.from('pm_facility_areas').delete().eq('id', id)
+    const oldPath = areas.find(a => a.id === id)?.image_path
+    const { error } = await supabaseDR.from('pm_facility_areas').delete().eq('id', id)
+    if (error) return toast.error(error.message)
+    // ลบ row สำเร็จแล้วค่อยเก็บกวาดไฟล์รูปผังโซน กันไฟล์กำพร้าใน storage (best-effort)
+    if (oldPath) supabaseDR.storage.from('jig-images').remove([oldPath]).then(() => {}, () => {})
     setAreaId(prev => prev === id ? null : prev); await reloadAreas()
   }
   const uploadImage = async (e) => {
-    const file = e.target.files?.[0]; if (!file || !areaId) return
+    const file = e.target.files?.[0]; if (!file || !areaId || !canEdit) return
     setBusy(true)
     try {
-      const compressed = await imageCompression(file, { maxSizeMB: 0.5, maxWidthOrHeight: 1600 })
+      // รูปผัง/layout มีจำนวนน้อย (ไม่เกิน ~20 รูปทั้งระบบ) แต่ต้องซูมอ่านรายละเอียดได้ —
+      // บีบเบากว่ารูปพนักงานมาก (2560px/2.5MB q0.9) อย่าลดกลับไป 1600px/0.5MB เคยเบลอจนใช้งานไม่ได้
+      const compressed = await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 })
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
       const path = `facility/${areaId}.${ext}`
       const { error: upErr } = await supabaseDR.storage.from('jig-images').upload(path, compressed, { upsert: true })
       if (upErr) throw upErr
       await supabaseDR.from('pm_facility_areas').update({ image_path: path }).eq('id', areaId)
+      // path ผูกกับนามสกุลไฟล์ — อัปโหลด .png ทับโซนที่เดิมเป็น .jpg จะไม่ทับไฟล์เดิม ต้องลบทิ้ง (best-effort)
+      const prevPath = areas.find(a => a.id === areaId)?.image_path
+      if (prevPath && prevPath !== path) supabaseDR.storage.from('jig-images').remove([prevPath]).then(() => {}, () => {})
       await reloadAreas()
       setFacImage(`${publicUrl(path)}?v=${file.size}`)
       toast.success('อัปโหลดรูปผังแล้ว')
     } catch (err) { toast.error(err.message) } finally { setBusy(false); if (fileRef.current) fileRef.current.value = '' }
   }
   const placeJig = async (pct) => {
-    if (!armedJig || !areaId) return
+    if (!armedJig || !areaId || !canEdit) return
     const { error } = await supabaseDR.from('pm_facility_points').insert({ area_id: areaId, jig_id: armedJig, pos_top: pct.top, pos_left: pct.left })
     if (error) return toast.error(error.message.includes('duplicate') ? 'อุปกรณ์นี้อยู่บนโซนนี้แล้ว' : error.message)
     setArmedJig(null); loadFacilityArea()
   }
   const movePoint = async (pointId, pct) => {
+    if (!canEdit) return
     setFacPoints(prev => prev.map(p => p.id === pointId ? { ...p, pos_top: pct.top, pos_left: pct.left } : p))
     await supabaseDR.from('pm_facility_points').update({ pos_top: pct.top, pos_left: pct.left }).eq('id', pointId)
   }
   const removePoint = async (pointId) => {
+    if (!canEdit) return
     setFacPoints(prev => prev.filter(p => p.id !== pointId))
     await supabaseDR.from('pm_facility_points').delete().eq('id', pointId)
   }
@@ -205,13 +223,13 @@ export default function MtnMachineLayout() {
       return prodPoints.map(p => {
         const info = machineInfo[p.machine_no] || { name: '', checklists: [] }
         const c = colorFor(info.checklists)
-        return { id: p.id, pos_top: p.pos_top, pos_left: p.pos_left, label: p.machine_no, sub: info.name, color: c.color, dim: c.dim }
+        return { id: p.id, pos_top: p.pos_top, pos_left: p.pos_left, label: p.machine_no, sub: info.name, color: c.color, dim: c.dim, alwaysLabel: c.worst === 'overdue' }
       })
     }
     return facPoints.map(p => {
       const info = jigInfo[p.jig_id] || { name: '', jig_no: '', checklists: [] }
       const c = colorFor(info.checklists)
-      return { id: p.id, pos_top: p.pos_top, pos_left: p.pos_left, label: info.jig_no || info.name, sub: info.jig_no ? info.name : '', color: c.color, dim: c.dim }
+      return { id: p.id, pos_top: p.pos_top, pos_left: p.pos_left, label: info.jig_no || info.name, sub: info.jig_no ? info.name : '', color: c.color, dim: c.dim, alwaysLabel: c.worst === 'overdue' }
     })
   }, [view, prodPoints, machineInfo, facPoints, jigInfo, dept])
 
@@ -278,7 +296,8 @@ export default function MtnMachineLayout() {
             : <MachineFloorMap
                 imageUrl={view === 'production' ? prodImage : facImage}
                 points={enrichedPoints} selectedId={selId} onSelect={p => setSelId(p.id)}
-                editable={view === 'facility'} armed={!!armedJig}
+                editable={view === 'facility' && canEdit} armed={!!armedJig}
+                height="clamp(360px, calc(100vh - 260px), 1100px)"
                 onImageClick={placeJig} onMarkerDragEnd={movePoint} onMarkerRemove={removePoint} />}
 
           {sel && selInfo && (
@@ -298,7 +317,7 @@ export default function MtnMachineLayout() {
                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, borderTop: i ? '1px dashed var(--border)' : 'none', paddingTop: i ? 6 : 0 }}>
                         <span style={{ width: 9, height: 9, borderRadius: '50%', background: m.color, flexShrink: 0 }} />
                         <span style={{ fontWeight: 700, color: 'var(--text)' }}>{c.eqName ?? selInfo.name}</span>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: '#4d9fff', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>{DEPT_ICON[c.dept]} {DEPT_LABEL[c.dept] ?? c.dept}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>{DEPT_ICON[c.dept]} {DEPT_LABEL[c.dept] ?? c.dept}</span>
                         <span style={{ color: m.color, fontWeight: 700 }}>{m.label}</span>
                         <span style={{ color: 'var(--muted)' }}>{c.nextDue ? `ครบ ${c.nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })}${dd != null ? (dd < 0 ? ` (เกิน ${Math.abs(dd)} วัน)` : ` (อีก ${dd} วัน)`) : ''}` : 'ไม่มีรอบตายตัว'}</span>
                       </div>
@@ -322,13 +341,13 @@ export default function MtnMachineLayout() {
           <div style={S.side}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>โซน Facility ({areas.length})</span>
-              <button onClick={addArea} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 6, padding: '3px 9px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ โซน</button>
+              {canEdit && <button onClick={addArea} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 6, padding: '3px 9px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ โซน</button>}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 12 }}>
               {areas.map(a => (
                 <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <div onClick={() => setAreaId(a.id)} style={{ ...S.rowBtn(areaId === a.id, false), flex: 1 }}>{a.image_path ? '🗺️' : '▫️'} {a.name}</div>
-                  <button onClick={() => deleteArea(a.id)} title="ลบโซน" style={{ background: 'transparent', border: 'none', color: '#e05c4a', cursor: 'pointer', fontSize: 12 }}>✕</button>
+                  {canEdit && <button onClick={() => deleteArea(a.id)} title="ลบโซน" style={{ background: 'transparent', border: 'none', color: '#e05c4a', cursor: 'pointer', fontSize: 12 }}>✕</button>}
                 </div>
               ))}
               {!areas.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีโซน — กด “+ โซน” เพื่อเริ่ม</div>}
@@ -336,19 +355,21 @@ export default function MtnMachineLayout() {
 
             {areaId && (
               <>
-                <label style={{ display: 'block', marginBottom: 12 }}>
-                  <input ref={fileRef} type="file" accept="image/*" hidden onChange={uploadImage} disabled={busy} />
-                  <span style={{ display: 'block', textAlign: 'center', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '8px', fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
-                    {busy ? 'อัปโหลด...' : facImage ? '🖼️ เปลี่ยนรูปผังโซน' : '📷 อัปโหลดรูปผังโซน'}
-                  </span>
-                </label>
+                {canEdit && (
+                  <label style={{ display: 'block', marginBottom: 12 }}>
+                    <input ref={fileRef} type="file" accept="image/*" hidden onChange={uploadImage} disabled={busy} />
+                    <span style={{ display: 'block', textAlign: 'center', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '8px', fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
+                      {busy ? 'อัปโหลด...' : facImage ? '🖼️ เปลี่ยนรูปผังโซน' : '📷 อัปโหลดรูปผังโซน'}
+                    </span>
+                  </label>
+                )}
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>อุปกรณ์ที่ยังไม่วาง ({unplacedJigs.length})</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {unplacedJigs.map(([id, info]) => {
                     const c = colorFor(info.checklists)
                     return (
-                      <div key={id} onClick={() => facImage ? setArmedJig(id) : toast.error('อัปโหลดรูปผังโซนก่อน')}
-                        title={facImage ? 'คลิกแล้วไปคลิกบนผังเพื่อวาง' : 'อัปโหลดรูปผังก่อน'}
+                      <div key={id} onClick={() => { if (!canEdit) return; facImage ? setArmedJig(id) : toast.error('อัปโหลดรูปผังโซนก่อน') }}
+                        title={!canEdit ? 'ไม่มีสิทธิ์แก้ผัง' : facImage ? 'คลิกแล้วไปคลิกบนผังเพื่อวาง' : 'อัปโหลดรูปผังก่อน'}
                         style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', borderRadius: 7, cursor: 'pointer', fontSize: 12,
                           border: `1px solid ${armedJig === id ? 'var(--accent)' : 'var(--border)'}`, background: armedJig === id ? 'var(--accent-dim)' : 'var(--bg3)' }}>
                         <span style={{ width: 9, height: 9, borderRadius: '50%', background: c.color, flexShrink: 0 }} />

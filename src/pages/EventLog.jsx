@@ -5,6 +5,8 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { fmtDate } from '../utils/dateFormat';
 import { can } from '../utils/permissions';
+import { inSectionScope } from '../utils/sectionScope';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
 
 /* ─── TimeInput24 — native time picker (spinner arrows + clock UI) ─── */
 function TimeInput24({ value = '', onChange, style = {} }) {
@@ -76,7 +78,7 @@ function getApprovedAt(log) {
 
 /* ─── Main Component ─────────────────────────────────────────── */
 export default function EventLog() {
-  const { role, fullName } = useContext(UserContext);
+  const { role, fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const [tab, setTab] = useState('list');           // list | create
   const [logs, setLogs]           = useState([]);
   const [eventDefs, setEventDefs] = useState([]);
@@ -86,8 +88,12 @@ export default function EventLog() {
   const [loading, setLoading]     = useState(true);
   const [selectedLog, setSelectedLog] = useState(null);  // for detail modal
 
-  // Create form state
-  const today = new Date().toISOString().split('T')[0];
+  // Create form state — work_date ตามกฎ getWorkDate(): local time + ก่อน 08:00 นับเป็นวันก่อนหน้า
+  const today = (() => {
+    const d = new Date();
+    if (d.getHours() < 8) d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
   const [form, setForm] = useState({
     work_date: today,
     event_time: new Date().toTimeString().slice(0,5),
@@ -119,15 +125,30 @@ export default function EventLog() {
       supabase.from('cqi15_event_definitions').select('*').order('event_no'),
       supabase.from('cqi15_check_items').select('*').order('check_no'),
       supabase.from('cqi15_event_check_matrix').select('*'),
-      supabase.from('production_lines').select('id, name').order('name'),
+      supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
     ]);
-    setLogs(logData || []);
+    // mandatory scope ก่อนแสดง (แบบเดียวกับ 4M ใน Report): leader → ครอบครัวไลน์ตัวเอง ·
+    // role ที่ถูกจำกัด sections → เฉพาะไลน์ในส่วนงาน scope — กันเห็น/อนุมัติ event ข้ามส่วนงาน
+    const norm = (s) => (s || '').trim().toLowerCase();
+    let visibleLogs = logData || [];
+    let visibleLines = lineData || [];
+    if (role === 'leader' && userLineId) {
+      const myLine = (lineData || []).find(l => String(l.id) === String(userLineId));
+      const famSet = new Set((myLine ? getLineFamilyNames(lineData || [], myLine.name) : []).map(norm));
+      visibleLogs = visibleLogs.filter(l => famSet.has(norm(l.line_name)));
+      visibleLines = visibleLines.filter(l => famSet.has(norm(l.name)));
+    } else if (scopeSecs.length) {
+      const okSet = new Set((lineData || []).filter(l => inSectionScope(scopeSecs, l.section)).map(l => norm(l.name)));
+      visibleLogs = visibleLogs.filter(l => okSet.has(norm(l.line_name)));
+      visibleLines = visibleLines.filter(l => okSet.has(norm(l.name)));
+    }
+    setLogs(visibleLogs);
     setEventDefs(defData || []);
     setCheckItems(chkData || []);
     setMatrix(matData || []);
-    setLines(lineData || []);
+    setLines(visibleLines);
     setLoading(false);
-  }, []);
+  }, [role, userLineId, scopeSecs]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -270,7 +291,7 @@ export default function EventLog() {
           { label: 'Cat C (ฉุกเฉิน)', value: stats.catC,    color: '#ef4444' },
         ].map(k => (
           <div key={k.label} className="card" style={{ borderTop: `3px solid ${k.color}`, padding: '14px 18px' }}>
-            <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{k.label}</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{k.label}</div>
             <div style={{ fontSize: 32, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1.2, marginTop: 4 }}>{k.value}</div>
           </div>
         ))}
@@ -411,7 +432,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
               { k: 'qty_scrap',  label: 'Scrap',    color: '#a855f7' },
             ].map(q => (
               <div key={q.k} style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 9, fontWeight: 700, color: q.color, marginBottom: 4 }}>{q.label}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: q.color, marginBottom: 4 }}>{q.label}</div>
                 <input type="number" min={0} value={form[q.k]}
                   onChange={e => f(q.k, e.target.value)}
                   style={{ textAlign: 'center', padding: '6px 4px', fontSize: 14, fontWeight: 700 }} />
@@ -455,19 +476,19 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
               return (
                 <div key={rk}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: rm.bg, color: rm.color, border: `1px solid ${rm.color}40` }}>
+                    <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: rm.bg, color: rm.color, border: `1px solid ${rm.color}40` }}>
                       {rk} · {rm.label}
                     </span>
-                    <span style={{ fontSize: 10, color: 'var(--muted)' }}>{items.length} รายการ</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{items.length} รายการ</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {items.map(item => (
                       <div key={item.check_no} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 10px', borderRadius: 6, background: 'var(--bg3)', borderLeft: `3px solid ${rm.color}` }}>
-                        <span style={{ fontSize: 10, fontWeight: 800, color: rm.color, minWidth: 20, marginTop: 1 }}>#{item.check_no}</span>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: rm.color, minWidth: 20, marginTop: 1 }}>#{item.check_no}</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 11, color: 'var(--text)', lineHeight: 1.4 }}>{item.name_th}</div>
                           {item.is_critical && (
-                            <span style={{ fontSize: 9, color: '#ef4444', fontWeight: 700 }}>⚠ ต้องตรวจสอบชิ้นงานหลัง event</span>
+                            <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>⚠ ต้องตรวจสอบชิ้นงานหลัง event</span>
                           )}
                         </div>
                       </div>
@@ -501,7 +522,8 @@ function fmtTime(isoOrTime) {
 function exportExcel(logs) {
   if (!logs.length) { toast.info('ไม่มีข้อมูลที่จะส่งออก'); return; }
 
-  const today = new Date().toISOString().split('T')[0];
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   // 21 columns: A–U
   const COL_COUNT = 21;
 
@@ -867,7 +889,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
                         const approvedAt = getApprovedAt(log);
                         const dur = calcDuration(log.work_date, log.event_time, approvedAt);
                         return dur ? (
-                          <div style={{ fontSize: 10, color: '#22c55e', fontWeight: 700, marginTop: 2 }}>⏱ {dur}</div>
+                          <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginTop: 2 }}>⏱ {dur}</div>
                         ) : null;
                       })()}
                     </td>
@@ -876,7 +898,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
                     <td>
                       {cm && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 7px', borderRadius: 20, background: cm.bg, color: cm.color, whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 20, background: cm.bg, color: cm.color, whiteSpace: 'nowrap' }}>
                             {cm.icon} Cat {cat}
                           </span>
                           <span style={{ fontSize: 11, color: 'var(--text2)' }}>#{def?.event_no}</span>
@@ -902,7 +924,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
                           const rm = ROLE_META[a.role_key] || { color: '#aaa', bg: '' };
                           const icon = a.status === 'approved' ? '✓' : a.status === 'rejected' ? '✗' : '…';
                           return (
-                            <span key={a.role_key} style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4,
+                            <span key={a.role_key} style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 4,
                               background: a.status === 'approved' ? rm.bg : a.status === 'rejected' ? 'rgba(239,68,68,0.12)' : 'var(--bg3)',
                               color: a.status === 'approved' ? rm.color : a.status === 'rejected' ? '#ef4444' : 'var(--muted)',
                               border: `1px solid ${a.status === 'approved' ? rm.color + '40' : 'transparent'}` }}>
@@ -913,7 +935,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
                       </div>
                     </td>
                     <td>
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: sm.bg, color: sm.color }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: sm.bg, color: sm.color }}>
                         {sm.label}
                       </span>
                     </td>
@@ -1078,8 +1100,8 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-              {cm && <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: cm.bg, color: cm.color }}>{cm.icon} Category {cat} · {cm.labelTh}</span>}
-              <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: sm.bg, color: sm.color }}>{sm.label}</span>
+              {cm && <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: cm.bg, color: cm.color }}>{cm.icon} Category {cat} · {cm.labelTh}</span>}
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: sm.bg, color: sm.color }}>{sm.label}</span>
             </div>
             <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>Event #{def?.event_no} · {def?.name_th}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{log.line_name} · {log.station_number || 'ไม่ระบุ Station'} · {fmtDate(log.work_date)} {log.event_time || ''}</div>
@@ -1136,7 +1158,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
             { label: 'Scrap',       value: log.qty_scrap, color: '#a855f7' },
           ].map(q => (
             <div key={q.label} style={{ background: 'var(--card)', borderRadius: 8, padding: '10px 14px', textAlign: 'center', border: `1px solid ${q.color}30` }}>
-              <div style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{q.label}</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{q.label}</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: q.color, fontFamily: 'var(--font-display)' }}>{q.value}</div>
             </div>
           ))}
@@ -1144,7 +1166,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
 
         {log.issue_description && (
           <div style={{ padding: '10px 14px', background: 'var(--card)', borderRadius: 8, marginBottom: 20, borderLeft: '3px solid var(--amber)' }}>
-            <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>ISSUE</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>ISSUE</div>
             <div style={{ fontSize: 13, color: 'var(--text)' }}>{log.issue_description}</div>
           </div>
         )}
@@ -1168,22 +1190,22 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                 <div key={appr.role_key} style={{ background: 'var(--card)', borderRadius: 10, padding: '14px 16px', border: `1px solid ${appr.status === 'approved' ? rm.color + '40' : appr.status === 'rejected' ? '#ef444440' : 'var(--border)'}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                     <span style={{ fontSize: 11, fontWeight: 800, color: rm.color }}>{appr.role_key}</span>
-                    <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
                       background: appr.status === 'approved' ? rm.bg : appr.status === 'rejected' ? 'rgba(239,68,68,0.12)' : 'var(--bg3)',
                       color: appr.status === 'approved' ? rm.color : appr.status === 'rejected' ? '#ef4444' : 'var(--muted)' }}>
                       {appr.status === 'approved' ? '✓ อนุมัติ' : appr.status === 'rejected' ? '✗ ปฏิเสธ' : '⋯ รอ'}
                     </span>
                   </div>
-                  <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 10 }}>{rm.label}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>{rm.label}</div>
                   {appr.status !== 'pending' && appr.profiles?.full_name && (
-                    <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 6 }}>โดย: {appr.profiles.full_name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 6 }}>โดย: {appr.profiles.full_name}</div>
                   )}
                   {appr.notes && (
-                    <div style={{ fontSize: 10, color: '#ef4444', marginBottom: 6, fontStyle: 'italic' }}>หมายเหตุ: {appr.notes}</div>
+                    <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 6, fontStyle: 'italic' }}>หมายเหตุ: {appr.notes}</div>
                   )}
                   {/* Checklist progress for this role */}
                   {canApprove && checklistItems.length > 0 && (
-                    <div style={{ fontSize: 10, marginBottom: 8, color: checklistDone ? '#22c55e' : '#f59e0b', fontWeight: 600 }}>
+                    <div style={{ fontSize: 11, marginBottom: 8, color: checklistDone ? '#22c55e' : '#f59e0b', fontWeight: 600 }}>
                       {checklistDone
                         ? `✓ Checklist ครบ (${doneCount}/${checklistItems.length})`
                         : `⚠ ต้องทำ Checklist ก่อน (${doneCount}/${checklistItems.length} เสร็จ)`}
@@ -1249,7 +1271,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                 return (
                   <div key={rk}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: rm.bg, color: rm.color, border: `1px solid ${rm.color}40` }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: rm.bg, color: rm.color, border: `1px solid ${rm.color}40` }}>
                         {rk} · {rm.label}
                       </span>
                     </div>
@@ -1261,17 +1283,17 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                           <div key={item.check_no} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8,
                             background: result === 'ok' ? 'rgba(34,197,94,0.08)' : result === 'ng' ? 'rgba(239,68,68,0.08)' : result === 'na' ? 'rgba(128,128,128,0.06)' : 'var(--card)',
                             border: `1px solid ${result === 'ok' ? '#22c55e30' : result === 'ng' ? '#ef444430' : 'var(--border)'}` }}>
-                            <span style={{ fontSize: 10, fontWeight: 800, color: rm.color, minWidth: 22 }}>#{item.check_no}</span>
+                            <span style={{ fontSize: 11, fontWeight: 800, color: rm.color, minWidth: 22 }}>#{item.check_no}</span>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 12, color: 'var(--text)', lineHeight: 1.4 }}>{item.name_th}</div>
-                              {item.is_critical && <div style={{ fontSize: 9, color: '#ef4444', fontWeight: 700 }}>⚠ ตรวจสอบชิ้นงานหลัง event</div>}
-                              {comp?.profiles?.full_name && <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>โดย: {comp.profiles.full_name}</div>}
+                              {item.is_critical && <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>⚠ ตรวจสอบชิ้นงานหลัง event</div>}
+                              {comp?.profiles?.full_name && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>โดย: {comp.profiles.full_name}</div>}
                             </div>
                             {canCheck ? (
                               <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                                 {[['ok','✓','#22c55e'],['ng','✗','#ef4444'],['na','N/A','#aaa']].map(([r,lbl,c]) => (
                                   <button key={r} onClick={() => handleCheckResult(item.check_no, r)}
-                                    style={{ padding: '4px 8px', borderRadius: 5, border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 700,
+                                    style={{ padding: '4px 8px', borderRadius: 5, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
                                       background: result === r ? `${c}22` : 'var(--bg3)',
                                       color: result === r ? c : 'var(--muted)',
                                       outline: result === r ? `2px solid ${c}` : 'none' }}>

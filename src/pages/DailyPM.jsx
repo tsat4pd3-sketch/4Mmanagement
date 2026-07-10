@@ -167,12 +167,22 @@ export default function DailyPM() {
     return s
   }, [targets])
 
-  // กำหนดไลน์ให้อุปกรณ์ที่ยังไม่ระบุ — แก้จากหน้านี้ได้เลย ไม่ต้องวิ่งไปหน้าตั้งค่า PM
+  // กำหนด/ย้ายไลน์ให้อุปกรณ์ — แก้จากหน้านี้ได้เลย ไม่ต้องวิ่งไปหน้าตั้งค่า PM
+  // ใช้ทั้งเคสยังไม่ระบุไลน์ และเคสเลือกไลน์ผิดแล้วต้องย้าย
   const assignJigLine = async (jig, line_name) => {
-    if (!canManage || !line_name) return
+    if (!canManage || !line_name || line_name === jig.line_name) return
     const { error } = await supabaseDR.from('jigs').update({ line_name }).eq('id', jig.id)
     if (error) return toast.error(error.message)
-    toast.success(`ย้าย ${jig.name} เข้าไลน์ ${line_name} แล้ว — ติ๊กลงทะเบียนได้เลย`)
+    // ย้ายรายการลงทะเบียนที่มีอยู่ตามไปด้วย — ไม่งั้นแถวเก่าค้างที่ไลน์เดิม สถานะไลน์เดิมจะเตือนค้างทั้งที่เครื่องย้ายไปแล้ว
+    const movedReg = targets.some(t => t.jig_id === jig.id)
+    if (movedReg) {
+      const { error: e2 } = await supabaseDR.from('pm_daily_line_targets').update({ line_name }).eq('jig_id', jig.id)
+      if (e2) return toast.error(e2.message)
+      setTargets(prev => prev.map(t => (t.jig_id === jig.id ? { ...t, line_name } : t)))
+    }
+    toast.success(jig.line_name
+      ? `ย้าย ${jig.name}: ${jig.line_name} → ${line_name}${movedReg ? ' (ย้ายรายการลงทะเบียนตามด้วยแล้ว)' : ''}`
+      : `ย้าย ${jig.name} เข้าไลน์ ${line_name} แล้ว — ติ๊กลงทะเบียนได้เลย`)
     setJigs(prev => prev.map(j => (j.id === jig.id ? { ...j, line_name } : j)))
   }
 
@@ -363,11 +373,22 @@ export default function DailyPM() {
                             <div style={{ minWidth: 0, flex: 1 }}>
                               {/* ชื่อเต็ม ตัดได้ไม่เกิน 2 บรรทัด — ห้ามตัดจนเหลือตัวเดียวแบบ nowrap เดิม */}
                               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', lineHeight: 1.35, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>{j.name}</div>
-                              {(j.machine_no || j.jig_no) && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 1 }}>{[j.machine_no, j.jig_no].filter(Boolean).join(' · ')}</div>}
+                              {(j.machine_no || j.jig_no) && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>{[j.machine_no, j.jig_no].filter(Boolean).join(' · ')}</div>}
                               {noLine && canManage && (
                                 <select defaultValue="" onClick={e => e.preventDefault()} onChange={e => assignJigLine(j, e.target.value)}
                                   style={{ width: '100%', marginTop: 6, padding: '4px 8px', fontSize: 12, borderRadius: 6, background: 'var(--bg)', border: '1px solid rgba(245,158,11,0.5)', color: 'var(--text)' }}>
                                   <option value="" disabled>📍 เลือกไลน์ให้เครื่องนี้…</option>
+                                  {prodLines.map(l => (
+                                    <option key={l.name} value={l.name}>{l.parent_line_name ? `↳ ${l.name}` : l.name}</option>
+                                  ))}
+                                </select>
+                              )}
+                              {/* เลือกไลน์ผิด → ย้ายจากตรงนี้ได้เลย รายการลงทะเบียนย้ายตามอัตโนมัติ */}
+                              {!noLine && canManage && (
+                                <select value={line} onClick={e => e.preventDefault()} onChange={e => assignJigLine(j, e.target.value)}
+                                  title="ย้ายเครื่องนี้ไปไลน์อื่น — เลือกไลน์ผิดแก้ตรงนี้ได้เลย"
+                                  style={{ width: '100%', marginTop: 6, padding: '3px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
+                                  {!prodLines.some(l => l.name === line) && <option value={line}>{line}</option>}
                                   {prodLines.map(l => (
                                     <option key={l.name} value={l.name}>{l.parent_line_name ? `↳ ${l.name}` : l.name}</option>
                                   ))}

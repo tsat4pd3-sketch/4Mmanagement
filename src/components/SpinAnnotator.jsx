@@ -1,4 +1,5 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect } from 'react'
+import useImgBox from '../utils/useImgBox'
 
 /* 360° spin annotator for PM equipment setup.
    Multiple photo frames of one piece of equipment; drag left/right to rotate
@@ -19,24 +20,18 @@ export default function SpinAnnotator({
   onPlace, onRemovePin, onAddFrames, onRemoveFrame, busy,
 }) {
   const boxRef = useRef(null)
+  const layerRef = useRef(null)
   const drag = useRef(null) // { startX, startIdx, moved }
   const spin = frames.length >= 2
   const cur = frames[frameIdx] || frames[0] || null
 
-  // pin สเกลตามความกว้างรูปที่ render จริง + clamp ไม่ให้ตกขอบ (docs/UI-CONVENTIONS.md §5.1)
-  const [box, setBox] = useState({ w: 0, h: 0 })
-  useEffect(() => {
-    const el = boxRef.current
-    if (!el) return
-    const measure = () => setBox({ w: el.clientWidth || 0, h: el.clientHeight || 0 })
-    const ro = new ResizeObserver(measure)
-    ro.observe(el); measure()
-    return () => ro.disconnect()
-  }, [cur])
-  const PK = Math.round(Math.max(20, Math.min(36, (box.w || 500) * 0.04)))
+  // pin สเกล/clamp/วางตำแหน่ง อิง "กล่องรูปจริง" หัก letterbox ของ objectFit:contain
+  // (docs/UI-CONVENTIONS.md §5.1 — pattern เดียวกับ MachineFloorMap)
+  const { imgRef, imgBox, recalc } = useImgBox([cur?._preview])
+  const PK = Math.round(Math.max(20, Math.min(36, (imgBox?.rw || 500) * 0.04)))
   const pkFont = Math.max(11, Math.round(PK * 0.45))
-  const padX = box.w ? (PK * 0.7 / box.w) * 100 : 0
-  const padTop = box.h ? ((PK + 4) / box.h) * 100 : 0 // anchor ห้อยลง (translate -100%) เผื่อหัวบน
+  const padX = imgBox ? (PK * 0.7 / imgBox.rw) * 100 : 0
+  const padTop = imgBox ? ((PK + 4) / imgBox.rh) * 100 : 0 // anchor ห้อยลง (translate -100%) เผื่อหัวบน
   const clampPct = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
   // preload every frame so rotation is instant
@@ -60,10 +55,12 @@ export default function SpinAnnotator({
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
   }
 
+  // แปลงตำแหน่งคลิก → 0..1 ของ "รูปจริง" (หัก letterbox) — วัดจาก layer เดียวกับที่วาด pin
   const click = (e) => {
     if (drag.current?.moved) return
-    if (!arming || !boxRef.current) return
-    const r = boxRef.current.getBoundingClientRect()
+    if (!arming || !layerRef.current) return
+    const r = layerRef.current.getBoundingClientRect()
+    if (!r.width || !r.height) return
     const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
     const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
     onPlace?.(x, y)
@@ -75,15 +72,20 @@ export default function SpinAnnotator({
         style={{ position: 'relative', userSelect: 'none', touchAction: 'none', borderRadius: 8, overflow: 'hidden',
           border: `2px solid ${arming ? 'var(--accent)' : 'var(--border)'}`, cursor: arming ? 'crosshair' : spin ? 'grab' : 'default' }}>
         {cur
-          ? <img src={cur._preview} alt="frame" draggable={false} style={{ width: '100%', maxHeight: 300, objectFit: 'contain', background: 'var(--bg2)', display: 'block' }} />
+          ? <img ref={imgRef} src={cur._preview} alt="frame" draggable={false} onLoad={recalc} style={{ width: '100%', maxHeight: 300, objectFit: 'contain', background: 'var(--bg2)', display: 'block' }} />
           : <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีรูป — อัปโหลดเฟรมด้านล่าง</div>}
 
-        {pins.map(p => (
-          <button key={p.key} onClick={e => { e.stopPropagation(); onRemovePin?.(p.key) }} title={`${p.label} — คลิกเพื่อลบ`}
-            style={{ position: 'absolute', left: `${clampPct(p.x * 100, padX, 100 - padX)}%`, top: `${clampPct(p.y * 100, padTop, 100)}%`, transform: 'translate(-50%,-100%)', zIndex: 10, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}>
-            <div style={{ minWidth: PK, height: PK, padding: `0 ${Math.round(PK * 0.15)}px`, borderRadius: 999, background: p.color || 'var(--accent)', border: '2px solid #fff', color: '#fff', fontSize: pkFont, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>{p.label}</div>
-          </button>
-        ))}
+        {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้ ไม่ใช่ % ของ container */}
+        {imgBox && (
+          <div ref={layerRef} style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
+            {pins.map(p => (
+              <button key={p.key} onClick={e => { e.stopPropagation(); onRemovePin?.(p.key) }} title={`${p.label} — คลิกเพื่อลบ`}
+                style={{ position: 'absolute', left: `${clampPct(p.x * 100, padX, 100 - padX)}%`, top: `${clampPct(p.y * 100, padTop, 100)}%`, transform: 'translate(-50%,-100%)', zIndex: 10, cursor: 'pointer', background: 'none', border: 'none', padding: 0, pointerEvents: 'auto' }}>
+                <div style={{ minWidth: PK, height: PK, padding: `0 ${Math.round(PK * 0.15)}px`, borderRadius: 999, background: p.color || 'var(--accent)', border: '2px solid #fff', color: '#fff', fontSize: pkFont, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>{p.label}</div>
+              </button>
+            ))}
+          </div>
+        )}
 
         {spin && (
           <div style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 12, padding: '2px 9px', pointerEvents: 'none' }}>
@@ -105,7 +107,7 @@ export default function SpinAnnotator({
               border: `2px solid ${i === frameIdx ? 'var(--accent)' : 'var(--border)'}` }}>
             <img src={f._preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             <button onClick={e => { e.stopPropagation(); onRemoveFrame?.(f._key) }} title="ลบเฟรม"
-              style={{ position: 'absolute', top: -1, right: -1, width: 15, height: 15, borderRadius: '0 0 0 5px', background: '#e05c4a', color: '#fff', fontSize: 10, lineHeight: '15px', textAlign: 'center', border: 'none', cursor: 'pointer' }}>✕</button>
+              style={{ position: 'absolute', top: -1, right: -1, width: 16, height: 16, borderRadius: '0 0 0 5px', background: '#e05c4a', color: '#fff', fontSize: 11, lineHeight: '16px', textAlign: 'center', border: 'none', cursor: 'pointer' }}>✕</button>
             <span style={{ position: 'absolute', bottom: 0, left: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, padding: '0 4px', borderRadius: '0 4px 0 0' }}>{i + 1}</span>
           </div>
         ))}
@@ -115,7 +117,7 @@ export default function SpinAnnotator({
         </label>
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-        {spin ? '🔄 โหมด spin — ลากรูปซ้าย/ขวาเพื่อหมุน · pin ผูกกับเฟรมที่วาง' : frames.length === 1 ? '🖼️ รูปเดียว — เพิ่มเฟรม (+) ≥8 รูปเพื่อทำเป็น spin หมุนรอบตัว' : 'เพิ่มรูปเฟรม (+) — รูปเดียว = ปกติ, ≥8 เฟรม = spin 360°'}
+        {spin ? '🔄 หลายมุม — ลากรูปซ้าย/ขวาปัดดูรอบเครื่อง · pin ผูกกับเฟรมที่วาง (ยิ่งเยอะยิ่งลื่น)' : frames.length === 1 ? '🖼️ รูปเดียว — เพิ่มรูป (+) หลายมุมเพื่อปัดดูรอบเครื่องได้ (ไม่บังคับจำนวน)' : 'เพิ่มรูปหลายมุม (+) — 1 รูป = ปกติ, ตั้งแต่ 2 รูปปัดดูรอบเครื่องได้'}
       </div>
     </div>
   )

@@ -116,10 +116,23 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
         contentType = 'image/png';
       } else {
         if (!uploadFile) { toast.error('กรุณาเลือกไฟล์'); setSaving(false); return; }
-        const ext = uploadFile.name.split('.').pop();
-        filePath = `${user.id}/${ts}.${ext}`;
-        fileBlob = uploadFile;
-        contentType = uploadFile.type;
+        // บีบรูปก่อนอัปโหลดเสมอ (กฎ Storage: ห้ามส่งรูปดิบ) — รูปถ่ายลายเซ็นจากมือถืออาจหลาย MB
+        // ย่อเหลือกว้าง ≤800px PNG (คงพื้นหลังโปร่งของไฟล์ลายเซ็นได้) — ลายเซ็นแสดงผลเล็ก ไม่ต้องละเอียดกว่านี้
+        fileBlob = await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => {
+            const scale = Math.min(1, 800 / img.width);
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(img.width * scale);
+            canvas.height = Math.round(img.height * scale);
+            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob(b => b ? resolve(b) : reject(new Error('บีบรูปไม่สำเร็จ')), 'image/png');
+          };
+          img.onerror = () => reject(new Error('ไฟล์นี้ไม่ใช่รูปที่รองรับ (ลองใช้ JPG/PNG)'));
+          img.src = URL.createObjectURL(uploadFile);
+        });
+        filePath = `${user.id}/${ts}.png`;
+        contentType = 'image/png';
       }
 
       const { error: upErr } = await supabase.storage
@@ -134,6 +147,15 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
         .update({ signature_url: publicUrl })
         .eq('id', user.id);
       if (dbErr) { toast.error('บันทึกไม่สำเร็จ: ' + dbErr.message); setSaving(false); return; }
+
+      // อัปเดต signature_url สำเร็จแล้ว ค่อยลบไฟล์ลายเซ็นเดิมทิ้ง กันไฟล์กำพร้าใน storage
+      // ลบเฉพาะไฟล์ใน bucket signatures ที่อยู่ในโฟลเดอร์ของ user เอง (best-effort)
+      if (currentSignatureUrl?.includes('/signatures/')) {
+        const oldPath = decodeURIComponent(currentSignatureUrl.split('/signatures/')[1] || '').split('?')[0];
+        if (oldPath && oldPath.startsWith(`${user.id}/`) && oldPath !== filePath) {
+          supabase.storage.from('signatures').remove([oldPath]).catch(() => {});
+        }
+      }
 
       toast.success('บันทึกลายเซ็นเรียบร้อย');
       onSaved(publicUrl);
