@@ -3,6 +3,7 @@ import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
+import { inSectionScope } from '../utils/sectionScope';
 import { markerScale } from '../utils/markerScale';
 import { toast } from '../components/Toast';
 
@@ -31,7 +32,7 @@ const POINT_H = 46;
 
 export default function LineSetup() {
   // สิทธิ์แก้ไข — role ที่ไม่มี line_setup:edit เห็นหน้าแบบอ่านอย่างเดียว (ดูผัง/รายการได้ แก้ไม่ได้)
-  const { role } = useContext(UserContext);
+  const { role, sections: scopeSecs = [] } = useContext(UserContext);
   const canEdit = can('line_setup', 'edit', role);
   const [lines, setLines] = useState([]);
   const [selectedLine, setSelectedLine] = useState('');
@@ -112,10 +113,16 @@ export default function LineSetup() {
 
   const skillAllowanceTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
 
+  // ตัวเลือก Section จำกัดตามขอบเขตส่วนงานของ user (scope ว่าง = เลือกได้ทุกส่วน)
+  const sectionOptsInScope = scopeSecs.length ? sectionOpts.filter(s => inSectionScope(scopeSecs, s)) : sectionOpts;
+
   const fetchLines = async () => {
     const { data } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name').order('name');
-    setLines(data || []);
-    if (data?.length > 0 && !selectedLine) setSelectedLine(data[0].name);
+    // mandatory scope filter — role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor/manager ที่ตั้ง sections)
+    // เห็น/แก้ได้เฉพาะไลน์ในส่วนงานตัวเอง — หน้านี้เป็นหน้า edit master data ห้ามเห็นข้ามส่วนงาน
+    const visible = scopeSecs.length ? (data || []).filter(l => inSectionScope(scopeSecs, l.section)) : (data || []);
+    setLines(visible);
+    if (visible.length > 0 && !selectedLine) setSelectedLine(visible[0].name);
   };
 
   useEffect(() => {
@@ -215,6 +222,11 @@ export default function LineSetup() {
   const handleAddLine = async () => {
     const name = newLineName.trim();
     if (!name) return;
+    // ไลน์ใหม่ของ user ที่ถูก scope ต้องอยู่ในส่วนงานตัวเองเท่านั้น (ไม่งั้นสร้างเสร็จตัวเองก็มองไม่เห็น)
+    if (scopeSecs.length && !inSectionScope(scopeSecs, newLineSection)) {
+      toast.error(`ต้องเลือก Section ในขอบเขตส่วนงานของคุณ (${scopeSecs.join(', ')})`);
+      return;
+    }
     setIsAddingLine(true);
     const { error } = await supabase.from('production_lines').insert([{ name, section: newLineSection || null, parent_line_name: newLineParent || null }]);
     if (error) { toast.error('Error: ' + error.message); }
@@ -285,7 +297,7 @@ export default function LineSetup() {
       const fileExt = file.name.split('.').pop();
       const safeLineName = selectedLine.replace(/[^a-zA-Z0-9]/g, '_');
       const fileName = `layout_${safeLineName}_${Date.now()}.${fileExt}`;
-      // บีบรูปผังก่อนอัปโหลด — ผังไลน์ต้องคมชัดกว่ารูปคน (1600px / ~0.5MB) · GIF ส่งทั้งไฟล์คงการเคลื่อนไหว
+      // บีบรูปผังก่อนอัปโหลด — ผังไลน์บีบเบา 2560px/2.5MB q0.9 (ดู CLAUDE.md "Storage & รูปภาพ") · GIF ส่งทั้งไฟล์คงการเคลื่อนไหว
       const isGif = file.type === 'image/gif' || /^gif$/i.test(fileExt);
       if (isGif && file.size > 2 * 1024 * 1024) {
         toast.error('ไฟล์ GIF ต้องไม่เกิน 2MB (กฎเดียวกับ ImageCropModal — GIF บีบไม่ได้)');
@@ -1030,7 +1042,7 @@ export default function LineSetup() {
                         style={{ fontSize: 11, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0, maxWidth: 68 }}
                       >
                         <option value="">Section</option>
-                        {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+                        {sectionOptsInScope.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                       {/* Parent line selector — can't assign parent to a line that already has children */}
                       {!l._isParent && (
@@ -1069,7 +1081,7 @@ export default function LineSetup() {
               <select value={newLineSection} onChange={e => setNewLineSection(e.target.value)}
                 style={{ fontSize: 12, padding: '8px 8px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', flexShrink: 0, width: 'auto' }}>
                 <option value="">Section</option>
-                {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+                {sectionOptsInScope.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
             <select value={newLineParent} onChange={e => setNewLineParent(e.target.value)}

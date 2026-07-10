@@ -288,12 +288,13 @@ export default function AddUser() {
       {/* Create / Edit Modal */}
       {showModal && (
         <div className="overlay">
-          <div className="modal" style={{ maxWidth: 460 }}>
+          {/* จอ desktop: ขยายกว้าง 2 คอลัมน์ ห้ามทรงแคบสูงจนล้นจอ (UI-CONVENTIONS "ขยายกว้างก่อนยอมสูงเกินจอ") */}
+          <div className="modal" style={{ width: 'min(96vw, 920px)', maxWidth: 920, maxHeight: '94vh', overflowY: 'auto' }}>
             <h3 style={{ marginTop: 0, marginBottom: 18, fontFamily: 'var(--font-display)', color: 'var(--text)', fontSize: 17 }}>
               {modalMode === 'create' ? '➕ เพิ่มผู้ใช้ใหม่' : '✏️ แก้ไขข้อมูลผู้ใช้'}
             </h3>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 13, alignItems: 'start' }}>
               {modalMode === 'create' ? (
                 <>
                   <div>
@@ -338,7 +339,7 @@ export default function AddUser() {
                 })()}
               </div>
 
-              <div>
+              <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelSt}>
                   ขอบเขตส่วนงาน (Section) {form.role === 'supervisor' && <span style={{ color: 'var(--red)' }}>* จำเป็นอย่างน้อย 1</span>}
                 </label>
@@ -388,14 +389,14 @@ export default function AddUser() {
               </div>
 
               {(form.role === 'supervisor' || form.role === 'leader') && (
-                <div style={{ fontSize: 11, color: 'var(--muted)', padding: '8px 10px', background: 'var(--bg3)', borderRadius: 6, lineHeight: 1.5 }}>
+                <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', padding: '8px 10px', background: 'var(--bg3)', borderRadius: 6, lineHeight: 1.5 }}>
                   ⚠️ {form.role === 'supervisor'
                     ? 'Supervisor เห็นเฉพาะข้อมูลใน Section ที่ติ๊กไว้ — ถ้าไม่กำหนดจะเห็นทุกส่วนงานเหมือน admin'
                     : 'Leader เห็นเฉพาะข้อมูลในไลน์+Team ที่กำหนด — ถ้าไม่กำหนดจะเห็นทุกไลน์เหมือน admin'}
                 </div>
               )}
 
-              <div>
+              <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelSt}>📬 Notify Email (รับการแจ้งเตือน)</label>
                 <input
                   type="email"
@@ -409,12 +410,12 @@ export default function AddUser() {
               </div>
 
               {error && (
-                <div style={{ padding: '8px 12px', background: 'rgba(231,76,60,0.08)', border: '1px solid rgba(231,76,60,0.2)', borderRadius: 7, color: 'var(--red)', fontSize: 13 }}>
+                <div style={{ gridColumn: '1 / -1', padding: '8px 12px', background: 'rgba(231,76,60,0.08)', border: '1px solid rgba(231,76,60,0.2)', borderRadius: 7, color: 'var(--red)', fontSize: 13 }}>
                   ❌ {error}
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, marginTop: 4 }}>
                 <button
                   onClick={modalMode === 'create' ? handleCreate : handleUpdate}
                   disabled={loading}
