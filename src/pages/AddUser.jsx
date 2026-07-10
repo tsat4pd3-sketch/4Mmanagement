@@ -17,7 +17,11 @@ const ROLES = [
 ];
 // sections = ขอบเขตส่วนงาน (เลือกได้หลายอัน ทุก role) — ว่าง = เห็นทุกส่วนงาน
 // profiles.section (เดี่ยว) ยังถูกเขียนเป็นตัวแรกของ sections เสมอ เพื่อให้ rollback โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope
-const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', sections: [], lineId: '', team: '', notifyEmail: '' };
+const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], lineId: '', team: '', notifyEmail: '' };
+
+// ตำแหน่งงานจริงในโรงงาน (แสดงตัวตน/รายงาน/ลายเซ็น) — คนละมิติกับ role ซึ่งเป็น "ชุดสิทธิ์ใช้ระบบ"
+// เป็น datalist: เลือกจากรายการหรือพิมพ์เองได้ ไม่ล็อกตายตัว (ตำแหน่งใหม่ไม่ต้องแก้โค้ด)
+const POSITION_SUGGESTIONS = ['ผู้จัดการฝ่าย', 'หัวหน้าแผนก', 'หัวหน้าส่วน', 'หัวหน้าไลน์', 'วิศวกร', 'เจ้าหน้าที่', 'ช่างเทคนิค', 'ธุรการ'];
 
 export default function AddUser() {
   const [users,         setUsers]         = useState([]);
@@ -49,7 +53,7 @@ export default function AddUser() {
     setFetchingUsers(true);
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name, role, line_id, section, sections, team, notify_email');
+      .select('id, full_name, role, position, line_id, section, sections, team, notify_email');
     const { data: authUsers } = await supabase.rpc('get_auth_users');
 
     const emailMap = {};
@@ -84,6 +88,7 @@ export default function AddUser() {
       password:    '',
       fullName:    u.full_name    || '',
       role:        u.role         || 'supervisor',
+      position:    u.position     || '',
       sections:    (u.sections?.length ? u.sections : (u.section ? [u.section] : [])),
       lineId:      u.line_id      ? String(u.line_id) : '',
       team:        u.team         || '',
@@ -128,9 +133,12 @@ export default function AddUser() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
 
-      // Edge Function create-user ยังไม่รู้จัก sections (array) — อัปเดตตามหลังด้วย id ที่ได้กลับมา
-      if (data.user?.id && form.sections.length) {
-        await supabase.from('profiles').update({ sections: form.sections }).eq('id', data.user.id);
+      // Edge Function create-user ยังไม่รู้จัก sections/position — อัปเดตตามหลังด้วย id ที่ได้กลับมา
+      if (data.user?.id && (form.sections.length || form.position)) {
+        await supabase.from('profiles').update({
+          sections: form.sections.length ? form.sections : null,
+          position: form.position || null,
+        }).eq('id', data.user.id);
       }
 
       setMessage(`สร้าง user "${form.email}" (${form.role}) สำเร็จ`);
@@ -153,6 +161,7 @@ export default function AddUser() {
       const { error: err } = await supabase.from('profiles').update({
         full_name:    form.fullName    || null,
         role:         form.role,
+        position:     form.position    || null,
         section:      form.sections[0] || null,
         sections:     form.sections.length ? form.sections : null,
         team:         form.team        || null,
@@ -200,7 +209,8 @@ export default function AddUser() {
           <thead>
             <tr>
               <th style={{ minWidth: 200 }}>ชื่อ / อีเมล</th>
-              <th style={{ textAlign: 'center', minWidth: 100 }}>สิทธิ์</th>
+              <th style={{ textAlign: 'center', minWidth: 100 }}>ตำแหน่ง</th>
+              <th style={{ textAlign: 'center', minWidth: 100 }}>ชุดสิทธิ์</th>
               <th style={{ textAlign: 'center', minWidth: 80 }}>Section</th>
               <th style={{ minWidth: 140 }}>ไลน์ / Group</th>
               <th style={{ textAlign: 'center', minWidth: 80 }}>Team</th>
@@ -210,9 +220,9 @@ export default function AddUser() {
           </thead>
           <tbody>
             {fetchingUsers ? (
-              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>กำลังโหลด...</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>กำลังโหลด...</td></tr>
             ) : users.length === 0 ? (
-              <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบข้อมูลผู้ใช้</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบข้อมูลผู้ใช้</td></tr>
             ) : users.map(u => {
               const rc      = ROLES.find(r => r.value === u.role);
               const lineName = lines.find(l => l.id === u.line_id)?.name || '—';
@@ -221,6 +231,9 @@ export default function AddUser() {
                   <td>
                     <div style={{ fontWeight: 600, fontSize: 14 }}>{u.full_name || <span style={{ color: 'var(--muted)', fontWeight: 400 }}>ไม่ระบุชื่อ</span>}</div>
                     <div style={{ fontSize: 12, color: 'var(--muted)' }}>{u.email}</div>
+                  </td>
+                  <td style={{ textAlign: 'center', fontSize: 13, color: u.position ? 'var(--text)' : 'var(--muted)' }}>
+                    {u.position || '—'}
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     <span style={{
@@ -318,7 +331,19 @@ export default function AddUser() {
               </div>
 
               <div>
-                <label style={labelSt}>สิทธิ์การใช้งาน (Role)</label>
+                <label style={labelSt}>ตำแหน่งงาน (Position)</label>
+                <input type="text" list="position-suggestions" placeholder="เช่น วิศวกร, หัวหน้าแผนก, ช่างเทคนิค"
+                  value={form.position} onChange={e => setF('position', e.target.value)} />
+                <datalist id="position-suggestions">
+                  {POSITION_SUGGESTIONS.map(p => <option key={p} value={p} />)}
+                </datalist>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                  ตำแหน่งจริงในโรงงาน — ใช้แสดงตัวตน/รายงาน/ลายเซ็น ไม่มีผลต่อสิทธิ์ (สิทธิ์ดูช่องถัดไป)
+                </div>
+              </div>
+
+              <div>
+                <label style={labelSt}>ชุดสิทธิ์การใช้งาน (Role) <span style={{ fontWeight: 400, textTransform: 'none' }}>— ไม่ใช่ตำแหน่งงาน</span></label>
                 <select value={form.role} onChange={e => setF('role', e.target.value)}>
                   {ROLES.map(r => (
                     <option key={r.value} value={r.value}>{r.label} — {r.desc}</option>

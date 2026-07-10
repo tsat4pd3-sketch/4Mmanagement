@@ -141,7 +141,7 @@ const ROLE_LABELS = {
   display:    '📺 Display',
 };
 
-export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, userRole }) {
+export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, userRole, userPosition }) {
   const navigate = useNavigate();
 
   // ชิปเมนูย่อยบนการ์ด = เมนูจริงจาก NAV_ITEMS (sidebar) กรองตามสิทธิ์ role — ตรงกับ sidebar เสมอ
@@ -181,7 +181,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             </span>
             {userRole && (
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                {ROLE_LABELS[userRole] ?? userRole}
+                {userPosition ? `${userPosition} · ` : ''}{ROLE_LABELS[userRole] ?? userRole}
               </span>
             )}
           </div>

@@ -208,7 +208,7 @@ function SplashScreen({ onDone }) {
 }
 
 /* ─── Sidebar ──────────────────────────────────────────────── */
-function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl }) {
+function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition }) {
   const location = useLocation();
   const isMobile = window.innerWidth <= 768;
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
@@ -360,7 +360,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
                 {userFullName || (userEmail?.split('@')[0]) || 'Unknown'}
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {userEmail || ''}
+                {[userPosition, userEmail].filter(Boolean).join(' · ')}
               </div>
             </div>
             <div style={{
@@ -724,7 +724,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userEmail, userFullName, userNotifyEmail, userSignatureUrl }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
   const [isOpen, setIsOpen] = useState(!isMobile);
@@ -758,16 +758,16 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
     return (
-      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
+      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
-          <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} />
+          <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} userPosition={userPosition} />
         </Suspense>
       </UserContext.Provider>
     );
   }
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
+    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
       {warnSecsLeft !== null && (
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
@@ -782,6 +782,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
           onToggleTheme={onToggleTheme}
           userRole={role}
           userLineId={userLineId}
+          userPosition={userPosition}
           userEmail={userEmail}
           userFullName={userFullName}
           userSignatureUrl={userSignatureUrl}
@@ -907,6 +908,7 @@ export default function App() {
   const [userLineId,   setUserLineId]   = useState(null);
   const [userTeam,     setUserTeam]     = useState(null);
   const [userSection,  setUserSection]  = useState(null);
+  const [userPosition, setUserPosition] = useState(null); // ตำแหน่งงานจริง (แสดงผลเท่านั้น ไม่เกี่ยวกับสิทธิ์)
   // ขอบเขตหลายส่วนงาน (จาก profiles.sections + fallback section เดี่ยวของ supervisor) — [] = ไม่จำกัด
   const [userSections, setUserSections] = useState([]);
   const [userEmail,        setUserEmail]        = useState(null);
@@ -931,12 +933,13 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const { data } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, notify_email, signature_url').eq('id', user.id).single();
+    const { data } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, position, notify_email, signature_url').eq('id', user.id).single();
     setUserRole(data?.role ?? null);
     setUserLineId(data?.line_id ?? null);
     setUserFullName(data?.full_name ?? null);
     setUserTeam(data?.team ?? null);
     setUserSection(data?.section ?? null);
+    setUserPosition(data?.position ?? null);
     setUserSections(effectiveSections(data?.role, data?.sections, data?.section));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
@@ -957,7 +960,7 @@ export default function App() {
         fetchProfile(s.user);
         loadPermissions().then(() => setPermsLoaded(true));
       } else {
-        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null);
+        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserPosition(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null);
         setProfileLoaded(false); setPermsLoaded(false);
       }
     });
@@ -1008,6 +1011,7 @@ export default function App() {
                 userTeam={userTeam}
                 userSection={userSection}
                 userSections={userSections}
+                userPosition={userPosition}
                 userEmail={userEmail}
                 userFullName={userFullName}
                 userNotifyEmail={userNotifyEmail}
