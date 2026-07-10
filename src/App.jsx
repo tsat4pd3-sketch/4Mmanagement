@@ -101,6 +101,13 @@ const NAV_ITEMS = [
 
 const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'รายงาน', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
 
+// เมนูจริงของหมวด sidebar สำหรับ DeptHub — การ์ดหน้าหลักดึงไปแสดงเป็นชิปที่คลิกเข้าหน้าได้เลย
+// อิง NAV_ITEMS ตัวเดียวกับ sidebar เสมอ (single source of truth — ห้ามพิมพ์รายชื่อเมนูซ้ำใน DeptHub)
+// และกรองตามสิทธิ์ role เดียวกับ sidebar เพื่อให้ชิปตรงกับเมนูที่ user คนนั้นเห็นจริง
+export function navItemsForGroups(groups, role) {
+  return NAV_ITEMS.filter(i => i.to !== '/' && groups.includes(i.group) && canAccessPage(i.to, role));
+}
+
 // เข้าโมดูลจากหน้าหลัก (DeptHub) → กาง sidebar เฉพาะหมวดของโมดูลนั้น หมวดอื่นพับ
 // เพื่อให้เห็นเมนูของโมดูลที่เลือกทันที ไม่ต้องไล่หาในเมนูที่กางหมดทุกหมวด
 // (user ยังพับ/กางเองต่อได้ตามปกติ ค่าที่ตั้งจาก hub จะถูกจำต่อใน localStorage เดียวกัน)
