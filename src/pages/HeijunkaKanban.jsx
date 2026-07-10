@@ -908,15 +908,27 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, on
 
 /* ─── Unified Store Board — ตู้ Kanban รวมของทุกสโตร์ ─────────────────────────
    หน้างานจริงมีหลายสโตร์แยกกัน แต่ละสโตร์มี "ของ" และ "ปลายทาง" ต่างกัน:
-   🏭 Store FG (parent 100) → ไลน์ประกอบ · 🔧 Store Child (200/300) → Production Child
-   🧱 Store Raw (500) → Production Child · 📦 Rack Center (ภาชนะ+packaging) → ทุกไลน์
+   🏭 Store FG (parent 100) → ไลน์ประกอบ · 🔧 Store Child (200 ผลิตเอง) → เริ่มผลิต
+   🛒 จัดซื้อ (300/500 ซื้อ supplier) → รับเข้าสโตร์ · 📦 Rack Center (ภาชนะ+packaging) → ทุกไลน์
    ทุกสโตร์ใช้การ์ดหน้าตาเดียวกัน: สถานะ → ปลายทาง → ปุ่มขยับสถานะ ────────────── */
 const STORE_TABS = [
-  { key: 'fg',    icon: '🏭', label: 'Store FG',        desc: 'พาร์ทแม่ (100) → ไลน์ประกอบ' },
-  { key: 'child', icon: '🔧', label: 'Store Child',     desc: 'พาร์ทย่อย (200/300) → Production Child' },
-  { key: 'raw',   icon: '🧱', label: 'Store Raw Mat',   desc: 'วัตถุดิบ (500) → Production Child' },
-  { key: 'rack',  icon: '📦', label: 'Rack Center',     desc: 'ภาชนะ + Packaging → ทุกไลน์' },
-  { key: 'wip',   icon: '🔄', label: 'WIP Point',       desc: 'จุด WIP ในไลน์ที่เรียกเติม → ไลน์นั้น' },
+  { key: 'fg',       icon: '🏭', label: 'Store FG',      desc: 'พาร์ทแม่ (100) → ไลน์ประกอบ' },
+  { key: 'child',    icon: '🔧', label: 'Store Child',   desc: 'พาร์ทย่อยผลิตเอง (200) → เริ่มผลิต' },
+  { key: 'purchase', icon: '🛒', label: 'จัดซื้อ',       desc: 'ของซื้อ (300/500) → รับเข้าสโตร์' },
+  { key: 'raw',      icon: '🧱', label: 'Store Raw Mat', desc: 'เบิกวัตถุดิบเข้าการผลิต child' },
+  { key: 'rack',     icon: '📦', label: 'Rack Center',   desc: 'ภาชนะ + Packaging → ทุกไลน์' },
+  { key: 'wip',      icon: '🔄', label: 'WIP Point',     desc: 'จุด WIP ในไลน์ที่เรียกเติม → ไลน์นั้น' },
+];
+// ของซื้อจาก supplier (300 child ซื้อ / 500 raw) — 2 สเต็ป: สั่งซื้อ → รับเข้า (เติม stock)
+const PURCHASE_STATUS = {
+  pending:  { label: '🆕 รอสั่งซื้อ',  color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)', next: 'ordered',  nextLabel: '🛒 สั่งซื้อแล้ว' },
+  ordered:  { label: '🚚 รอของเข้า',   color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', border: 'rgba(14,165,233,0.3)', next: 'received', nextLabel: '✅ รับเข้าสโตร์' },
+  received: { label: '✅ รับเข้าแล้ว',  color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  border: 'rgba(34,197,94,0.3)',  next: null,       nextLabel: null },
+};
+const PURCHASE_FILTERS = [
+  { key: '',    label: 'ทั้งหมด' },
+  { key: '300', label: '🟠 Child ซื้อ (300)' },
+  { key: '500', label: '🟣 Raw Mat (500)' },
 ];
 const WIP_STATUS = {
   pending:   { label: '🔔 เรียกแล้ว',   color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)', next: '🔧 เริ่มเตรียม' },
@@ -955,19 +967,23 @@ const RACK_STATUS = {
   received:  { label: '✅ รับแล้ว', color: '#22c55e', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.3)', next: null },
 };
 function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfirm, confirming, onReceive,
-  lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, busy, onAdvanceLot, onIssueRaw, onAdvanceRack, onIssuePkg, onAdvanceWip, fmt, workDate, nowMs, canOperate }) {
+  lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, busy, onAdvanceLot, onIssueRaw, onAdvanceRack, onIssuePkg, onAdvanceWip, onAdvancePurchase, fmt, workDate, nowMs, canOperate }) {
 
   const { roundAlloc } = view;
+  const [buyFilter, setBuyFilter] = useState('');   // '' | '300' | '500'
   const confirmedSet = useMemo(() => { const s = new Set(); deliveries.forEach(d => s.add(`${d.line_name}|${d.shift}|${d.round_no}`)); return s; }, [deliveries]);
   const receivedMap  = useMemo(() => { const m = {}; deliveries.forEach(d => { m[`${d.line_name}|${d.shift}|${d.round_no}`] = d; }); return m; }, [deliveries]);
 
+  const openPurchases = purchaseRequests.filter(p => p.status !== 'received' && p.status !== 'cancelled');
   const counts = {
     fg: rounds.filter(r => !confirmedSet.has(`${r.line_name}|${r.shift}|${r.round_no}`)).length,
     child: lotRequests.filter(l => l.status !== 'done').length,
+    purchase: openPurchases.length,
     raw: rawRequests.filter(r => r.status !== 'issued').length,
     rack: rackRequests.filter(r => r.status !== 'received').length + pkgRequests.filter(p => p.status !== 'issued').length,
     wip: wipRequests.filter(w => w.status !== 'delivered').length,
   };
+  const filteredPurchases = buyFilter ? purchaseRequests.filter(p => (p.mat_no || '').startsWith(buyFilter[0])) : purchaseRequests;
 
   return (
     <div style={{ padding: 16 }}>
@@ -1020,6 +1036,33 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
             );
           })}
         </div>
+      )}
+
+      {store === 'purchase' && (
+        <>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+            {PURCHASE_FILTERS.map(f => (
+              <button key={f.key} onClick={() => setBuyFilter(f.key)}
+                style={{ padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+                  background: buyFilter === f.key ? 'var(--accent)' : 'var(--bg2)', color: buyFilter === f.key ? '#08130a' : 'var(--text2)',
+                  border: `1px solid ${buyFilter === f.key ? 'var(--accent)' : 'var(--border)'}` }}>{f.label}</button>
+            ))}
+          </div>
+          {filteredPurchases.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีรายการจัดซื้อ — เกิดอัตโนมัติเมื่อของซื้อ (300/500) ในสโตร์ไม่พอต่อแผนผลิต</div> : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12 }}>
+              {filteredPurchases.map(pr => {
+                const st = PURCHASE_STATUS[pr.status] || PURCHASE_STATUS.pending;
+                return (
+                  <QueueCard key={pr.id} code={pr.mat_no} name={pr.part_name}
+                    qty={fmt(pr.qty)} unit="ชิ้น" destination={pr.dest_line || '—'}
+                    statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
+                    actionLabel={canOperate ? st.nextLabel : null} busy={busy === pr.id} onAction={() => onAdvancePurchase(pr, st.next)}
+                    meta={[pr.supplier ? `🏢 ${pr.supplier}` : '', pr.source_prod_no ? `FG ${pr.source_prod_no}` : ''].filter(Boolean).join(' · ')} />
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
       {store === 'raw' && (
@@ -1126,7 +1169,8 @@ export default function HeijunkaKanban() {
   const [rackRequests, setRackRequests] = useState([]);
   const [pkgRequests, setPkgRequests]   = useState([]);
   const [wipRequests, setWipRequests]   = useState([]);
-  const [unifiedStore, setUnifiedStore] = useState('fg'); // 'fg' | 'child' | 'raw' | 'rack' | 'wip'
+  const [purchaseRequests, setPurchaseRequests] = useState([]);   // ของซื้อ 300/500
+  const [unifiedStore, setUnifiedStore] = useState('fg'); // 'fg' | 'child' | 'purchase' | 'raw' | 'rack' | 'wip'
   const [breakPolicies, setBreakPolicies] = useState([]);
 
   useEffect(() => {
@@ -1142,7 +1186,7 @@ export default function HeijunkaKanban() {
   }, []);
 
   const loadPull = useCallback(async () => {
-    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }, { data: racks }, { data: pkgs }, { data: wips }] = await Promise.all([
+    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }, { data: racks }, { data: pkgs }, { data: wips }, { data: purchases }] = await Promise.all([
       supabaseDR.from('child_lot_requests').select('*').order('created_at', { ascending: false }).limit(200),
       supabaseDR.from('raw_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(400),
       supabaseDR.from('child_demand_accumulator').select('*').gt('pending_qty', 0).order('pending_qty', { ascending: false }),
@@ -1150,6 +1194,7 @@ export default function HeijunkaKanban() {
       supabaseDR.from('rack_requests').select('*').order('requested_at', { ascending: false }).limit(200),
       supabaseDR.from('packaging_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(200),
       supabase.from('wip_replenish_requests').select('*').order('requested_at', { ascending: false }).limit(200),
+      supabaseDR.from('purchase_requests').select('*').order('created_at', { ascending: false }).limit(300),
     ]);
     setLotRequests(lots || []);
     setRawRequests(raws || []);
@@ -1157,6 +1202,7 @@ export default function HeijunkaKanban() {
     setRackRequests(racks || []);
     setPkgRequests(pkgs || []);
     setWipRequests(wips || []);
+    setPurchaseRequests(purchases || []);
     const lm = {};
     (ks || []).forEach(s => { if (s.lot_size != null) lm[s.mat_no] = s.lot_size; });
     setLotSizeMap(lm);
@@ -1193,7 +1239,38 @@ export default function HeijunkaKanban() {
         // ใบเบิกวัตถุดิบที่ผูกไว้ → issued
         await supabaseDR.from('raw_withdrawal_requests').update({ status: 'issued' }).eq('lot_request_id', lot.id).eq('status', 'pending');
       }
-      toast.success(next === 'done' ? `✅ ผลิตเสร็จ ${lot.child_mat_no} · เติมสต็อกสโตร์ +${lot.lot_qty}` : `อัปเดตล็อต ${lot.child_mat_no} → ${next}`);
+      // toast ตามจริง: เติมสต็อกเฉพาะเมื่อมี source_line (ผลิตเองแล้วของกลับเข้าสโตร์)
+      toast.success(next === 'done'
+        ? (lot.source_line ? `✅ ผลิตเสร็จ ${lot.child_mat_no} · เติมสต็อกสโตร์ +${lot.lot_qty}` : `✅ ปิดล็อต ${lot.child_mat_no}`)
+        : `อัปเดตล็อต ${lot.child_mat_no} → ${next}`);
+      await loadPull();
+      await load();
+    } catch (err) { toast.error(err.message); }
+    setPullBusy(null);
+  };
+
+  // จัดซื้อ (ของ 300/500): pending → ordered (สั่งซื้อแล้ว) → received (รับเข้า = เติม stock ที่ dest_line)
+  const advancePurchase = async (pr, next) => {
+    if (pr.status === next) return;
+    setPullBusy(pr.id);
+    try {
+      const patch = { status: next };
+      if (next === 'ordered')  { patch.ordered_by = fullName || 'จัดซื้อ'; patch.ordered_at = new Date().toISOString(); }
+      if (next === 'received') { patch.received_by = fullName || 'สโตร์'; patch.received_at = new Date().toISOString(); }
+      // อัปเดตแบบมีเงื่อนไข กันกดซ้ำ/สองแท็บ ไม่ให้เติม stock ซ้ำ
+      const { data: updated, error } = await supabaseDR.from('purchase_requests')
+        .update(patch).eq('id', pr.id).neq('status', next).select('id');
+      if (error) throw error;
+      if (!updated || updated.length === 0) { await loadPull(); setPullBusy(null); return; }
+      if (next === 'received' && pr.dest_line) {
+        const { error: e2 } = await supabaseDR.from('line_stock_transactions').insert({
+          line_name: pr.dest_line, mat_no: pr.mat_no, part_name: pr.part_name, qty: pr.qty,
+          type: 'issue', work_date: pr.work_date || getWorkDate(),
+          note: `รับของซื้อเข้าสโตร์${pr.supplier ? ' · ' + pr.supplier : ''}`, created_by: fullName || 'สโตร์',
+        });
+        if (e2) throw e2;
+      }
+      toast.success(next === 'ordered' ? `🛒 บันทึกสั่งซื้อ ${pr.mat_no}` : `✅ รับเข้าสโตร์ ${pr.mat_no} +${pr.qty}`);
       await loadPull();
       await load();
     } catch (err) { toast.error(err.message); }
@@ -1753,8 +1830,8 @@ export default function HeijunkaKanban() {
             store={unifiedStore} setStore={setUnifiedStore}
             rounds={rounds} deliveries={deliveries} view={view}
             onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
-            lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests}
-            busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} onAdvanceRack={advanceRack} onIssuePkg={issuePkg} onAdvanceWip={advanceWip}
+            lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests} purchaseRequests={purchaseRequests}
+            busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} onAdvanceRack={advanceRack} onIssuePkg={issuePkg} onAdvanceWip={advanceWip} onAdvancePurchase={advancePurchase}
             fmt={fmt} workDate={workDate} nowMs={nowMs} canOperate={canOperate}
           />
         ) : viewMode === 'board' ? (
