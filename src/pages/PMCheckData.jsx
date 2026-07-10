@@ -511,6 +511,14 @@ export default function PMCheckData() {
   const [activeCpId, setActiveCpId] = useState(null) // จุดที่กำลังโฟกัส (sync รูป ↔ checklist)
   const [viewMode, setViewMode] = useState('photo')  // 'photo' | '3d'
   const rowRefs = useRef({})                          // แถวเช็คแต่ละจุด (เลื่อนหาเมื่อคลิกหมุด)
+  // มือถือ/แท็บเล็ต: master-detail — โชว์ "ลิสต์อุปกรณ์" หรือ "ฟอร์มเช็ค" ทีละอัน (ไม่อัด 2 คอลัมน์)
+  const [isNarrow, setIsNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 860px)')
+    const on = () => setIsNarrow(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
   const [tab, setTab] = useState('record')
   const [results, setResults] = useState({})
   const [notes, setNotes] = useState('')
@@ -577,6 +585,7 @@ export default function PMCheckData() {
   // คง line filter (?line=) ไว้ตอนเลือกเครื่อง — มาจากปุ่ม "ไปหน้าตรวจ" ของ Daily PM รายไลน์
   const lineFilter = searchParams.get('line')
   const selectJig = (jig) => setSearchParams({ dept: department, equip: jig.id, ...(lineFilter ? { line: lineFilter } : {}) })
+  const clearJig = () => setSearchParams({ dept: department, ...(lineFilter ? { line: lineFilter } : {}) }) // กลับไปลิสต์ (จอแคบ)
   const setDept = (d) => setSearchParams({ dept: d, ...(equipParam ? { equip: equipParam } : {}) })
 
   const fetchHistory = async (jigId) => {
@@ -688,10 +697,15 @@ export default function PMCheckData() {
   const deptColor = DEPT_COLORS[department] ?? '#3dd65c'
   const jigImg = selectedJig ? getPublicUrl(selectedJig.image_path) : null
 
+  // จอแคบ: โชว์ทีละคอลัมน์ (ยังไม่เลือก=ลิสต์ · เลือกแล้ว=ฟอร์ม) · desktop โชว์ทั้งคู่เหมือนเดิม
+  const showSidebar = !isNarrow || !selectedJig
+  const showMain = !isNarrow || !!selectedJig
+
   return (
     <div style={S.page}>
-      {/* Sidebar */}
-      <div style={S.sidebar}>
+      {/* Sidebar (จอแคบ = เต็มความกว้าง) */}
+      {showSidebar && (
+      <div style={{ ...S.sidebar, ...(isNarrow ? { width: '100%', borderRight: 'none' } : null) }}>
         <div style={S.sidebarHead}>
           <h2 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', margin: 0, fontFamily: 'var(--font-display)' }}>PM ตรวจสอบ</h2>
         </div>
@@ -760,8 +774,10 @@ export default function PMCheckData() {
           </>)}
         </div>
       </div>
+      )}
 
       {/* Main */}
+      {showMain && (
       <div style={S.main}>
         {!selectedJig ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -769,7 +785,10 @@ export default function PMCheckData() {
           </div>
         ) : (
           <>
-            <div style={S.header}>
+            <div style={{ ...S.header, ...(isNarrow ? { padding: '10px 12px', flexWrap: 'wrap' } : null) }}>
+              {isNarrow && (
+                <button onClick={clearJig} title="กลับไปเลือกอุปกรณ์" style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', borderRadius: 8, padding: '6px 10px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>← อุปกรณ์</button>
+              )}
               {jigImg && <img src={jigImg} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'contain', background: 'var(--bg2)', border: '1px solid var(--border)' }} />}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <h1 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{selectedJig.name}</h1>
@@ -781,7 +800,7 @@ export default function PMCheckData() {
               </div>
             </div>
 
-            <div style={S.body}>
+            <div style={{ ...S.body, ...(isNarrow ? { padding: 12 } : null) }}>
               {tab === 'record' && (
                 <div style={{ maxWidth: 680, margin: '0 auto' }}>
                   {(() => {
@@ -876,6 +895,7 @@ export default function PMCheckData() {
           </>
         )}
       </div>
+      )}
 
       <AnimatePresence>
         {viewInspection && (
