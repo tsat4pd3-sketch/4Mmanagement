@@ -91,6 +91,14 @@ const MK = Math.round(Math.max(34, Math.min(84, renderedMapWidth * 0.055)));
 - **ห้ามใช้ object-fit บน img ที่มี marker ทับ** — กล่อง img ต้องเท่ารูปจริงเสมอ ไม่งั้นพิกัด % เพี้ยน
 - **Hover/คลิกจุดเครื่องจักร และ WIP ต้องเปิดการ์ดรายละเอียดจากฐานข้อมูล** (คอนเซปเดียวกับ hover การ์ดสกิลพนักงาน): เครื่องจักร → machines + machine_types + รูป/ข้อมูลจาก jigs ที่ลิงก์ผ่าน machine_id (bucket `jig-images`) · WIP material → parts_master ตาม mat_no (มี image_url) · เปิดด้วยคลิก (จอทัชใช้ได้) ปิดด้วย ✕/คลิกนอกกรอบ
 
+### Popup/Modal ต้อง "ขยายกว้าง" ก่อนยอมสูงเกินจอ (2026-07-10)
+- จอ landscape (PC/tablet/TV): modal ที่เนื้อหายาว **ห้ามทำทรงแคบสูงแล้วให้ scroll แนวตั้ง** — ให้ขยายกว้าง `width: min(96vw, 1400-1500px)` แล้วจัดเนื้อหาเป็น **2 คอลัมน์** (`gridTemplateColumns: '1fr 1fr'` เมื่อจอ ≥1100px; header/ปุ่มยืนยัน full-width ด้วย `gridColumn: '1 / -1'`) · `maxHeight: 94vh + overflowY: auto` เป็นแค่ fallback สุดท้าย
+- ต้นแบบ: modal ตรวจสอบคำขอปิดกะ / ปิดกะ ใน `DailyReport.jsx`
+
+### Section ยาวในหน้า ต้องย่อ/ขยายได้ (minimize/maximize)
+- section รายการยาว (Prod Orders, Downtime, งานเสีย ฯลฯ) ต้องมีปุ่มพับ ▼ ที่หัว section (หัวแสดงชื่อ+จำนวนเสมอ) — จำสถานะใน `localStorage` (`dr_live_collapse_<section>` ฯลฯ) · default = ขยาย ยกเว้น section ว่าง
+- ลด vertical overflow ของหน้าหลักให้เห็นภาพรวมได้ในจอเดียว แล้วค่อยกดขยายส่วนที่สนใจ
+
 ## 5.1 Balloon จุดตรวจบน drawing/รูปอ้างอิง (QA `/qa-setup` · PM Setup)
 
 คนละอย่างกับ marker บนผังไลน์ (section 1) — อันนี้คือหมุดเลขจุดตรวจบนแบบชิ้นงาน/รูปอุปกรณ์:
