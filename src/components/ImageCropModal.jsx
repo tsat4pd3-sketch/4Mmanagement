@@ -147,7 +147,7 @@ export default function ImageCropModal({
           <input type="range" min={minScale * 0.4} max={minScale * 4} step={0.01} value={scale}
             onChange={e => onScaleChange(Number(e.target.value))} style={{ flex: 1 }} />
         </div>
-        <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center', marginTop: 6 }}>
+        <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 6 }}>
           {isGif
             ? '🎞️ รูปขยับ (GIF) จะถูกใช้ทั้งภาพเพื่อคงการเคลื่อนไหว — การ crop/ซูมในกรอบนี้ไม่มีผลกับไฟล์จริง'
             : 'ลากรูปเพื่อขยับตำแหน่ง • เลื่อนแถบเพื่อซูม — กรอบนี้คือพื้นที่จริงที่จะแสดงผล'}

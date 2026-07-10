@@ -107,7 +107,7 @@ export default function SpinAnnotator({
               border: `2px solid ${i === frameIdx ? 'var(--accent)' : 'var(--border)'}` }}>
             <img src={f._preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             <button onClick={e => { e.stopPropagation(); onRemoveFrame?.(f._key) }} title="ลบเฟรม"
-              style={{ position: 'absolute', top: -1, right: -1, width: 15, height: 15, borderRadius: '0 0 0 5px', background: '#e05c4a', color: '#fff', fontSize: 10, lineHeight: '15px', textAlign: 'center', border: 'none', cursor: 'pointer' }}>✕</button>
+              style={{ position: 'absolute', top: -1, right: -1, width: 16, height: 16, borderRadius: '0 0 0 5px', background: '#e05c4a', color: '#fff', fontSize: 11, lineHeight: '16px', textAlign: 'center', border: 'none', cursor: 'pointer' }}>✕</button>
             <span style={{ position: 'absolute', bottom: 0, left: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, padding: '0 4px', borderRadius: '0 4px 0 0' }}>{i + 1}</span>
           </div>
         ))}

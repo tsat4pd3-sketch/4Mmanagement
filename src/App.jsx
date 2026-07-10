@@ -157,7 +157,7 @@ function SplashScreen({ onDone }) {
             color: 'rgba(255,255,255,0.9)',
           }}>Thai Summit Group</div>
           <div style={{
-            fontFamily: 'var(--font-display)', fontSize: 10,
+            fontFamily: 'var(--font-display)', fontSize: 11,
             letterSpacing: '2px', textTransform: 'uppercase',
             color: 'rgba(255,255,255,0.35)',
           }}>VX Production System</div>
@@ -251,8 +251,8 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <img src={tsLogo} alt="Thai Summit Group" width={28} height={28} style={{ borderRadius: 3, flexShrink: 0 }} />
             <div>
-              <div style={{ fontSize: 10, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
-              <div style={{ fontSize: 9, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>ESM · Shopfloor</div>
+              <div style={{ fontSize: 11, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
+              <div style={{ fontSize: 11, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>ESM · Shopfloor</div>
             </div>
           </div>
           <button
@@ -280,11 +280,11 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
                     background: 'none', border: 'none', cursor: 'pointer', padding: '8px 10px 4px',
                     color: groupHasActive ? 'var(--accent)' : 'var(--muted)',
-                    fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase',
+                    fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase',
                   }}
                 >
                   <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</span>
-                  <span style={{ fontSize: 10, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
+                  <span style={{ fontSize: 11, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
                 </button>
                 {!collapsed && items.map(item => (
                   <Link
@@ -347,7 +347,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
               </div>
             </div>
             <div style={{
-              fontSize: 10, fontWeight: 700, padding: '2px 6px',
+              fontSize: 11, fontWeight: 700, padding: '2px 6px',
               borderRadius: 4, flexShrink: 0,
               background: userRole === 'admin' ? 'var(--accent-dim)' :
                           userRole === 'manager' ? 'var(--accent2-dim)' :
@@ -507,8 +507,8 @@ function NotificationBell({ userId }) {
           <span style={{
             position: 'absolute', top: -4, right: -4,
             background: '#ef4444', color: '#fff',
-            fontSize: 10, fontWeight: 800,
-            minWidth: 17, height: 17, borderRadius: 9,
+            fontSize: 11, fontWeight: 800,
+            minWidth: 18, height: 18, borderRadius: 9,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             padding: '0 3px', lineHeight: 1,
           }}>
@@ -558,7 +558,7 @@ function NotificationBell({ userId }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: n.is_read ? 400 : 700, color: 'var(--text)', lineHeight: 1.4 }}>{n.title}</div>
                     {n.body && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{n.body}</div>}
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
                       {fmtDateTime(n.created_at)}
                     </div>
                   </div>

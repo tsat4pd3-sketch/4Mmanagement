@@ -151,7 +151,7 @@ export default function OrgSetup() {
               <div key={s.id} style={itemStyle(selSection === s.id)} onClick={() => setSelSection(s.id)}>
                 <span style={{ fontSize: 13, color: s.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: s.is_active ? 'none' : 'line-through' }}>
                   {s.name}
-                  <span style={{ fontSize: 10, color: 'var(--muted)' }}> ({deptsOf(s.id).length} แผนก)</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({deptsOf(s.id).length} แผนก)</span>
                   {s.cost_center && <CostBadge code={s.cost_center} />}
                 </span>
                 <RowActions node={s} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
@@ -162,7 +162,7 @@ export default function OrgSetup() {
               <div style={itemStyle(selSection === ORPHAN)} onClick={() => setSelSection(ORPHAN)}>
                 <span style={{ fontSize: 13, color: '#f59e0b' }}>
                   ⚠️ ไม่มี Section
-                  <span style={{ fontSize: 10, color: 'var(--muted)' }}> ({orphanDepts.length} แผนก)</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({orphanDepts.length} แผนก)</span>
                 </span>
               </div>
             )}
@@ -178,7 +178,7 @@ export default function OrgSetup() {
               <div key={d.id} style={itemStyle(selDept === d.id)} onClick={() => setSelDept(d.id)}>
                 <span style={{ fontSize: 13, color: d.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: d.is_active ? 'none' : 'line-through' }}>
                   {d.name}
-                  <span style={{ fontSize: 10, color: 'var(--muted)' }}> ({linesOf(d.id).length} กลุ่ม)</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({linesOf(d.id).length} กลุ่ม)</span>
                   {d.cost_center && <CostBadge code={d.cost_center} />}
                 </span>
                 <RowActions node={d} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
@@ -196,7 +196,7 @@ export default function OrgSetup() {
             {!selDept ? <Empty text="เลือกแผนกก่อน" /> : currentLines.map(l => (
               <div key={l.id} style={itemStyle(false)}>
                 <span style={{ fontSize: 13, color: l.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: l.is_active ? 'none' : 'line-through' }}>
-                  {l.name} {!l.ref_line_id && <span style={{ fontSize: 10, color: '#f59e0b' }}>(ไม่ผูก production_lines)</span>}
+                  {l.name} {!l.ref_line_id && <span style={{ fontSize: 11, color: '#f59e0b' }}>(ไม่ผูก production_lines)</span>}
                   {l.cost_center && <CostBadge code={l.cost_center} />}
                 </span>
                 <RowActions node={l} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
@@ -273,7 +273,7 @@ function RowActions({ node, onEdit, onToggle, onDelete }) {
 
 function CostBadge({ code }) {
   return (
-    <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 6px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border2)' }}>
+    <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border2)' }}>
       💰{code}
     </span>
   );

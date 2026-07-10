@@ -1029,7 +1029,7 @@ export default function Dashboard() {
                             <div key={cs.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, padding: isWide ? '12px 14px' : '10px 12px' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <div>
-                                  <span style={{ fontSize: 10, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.12)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>ไลน์ย่อย</span>
+                                  <span style={{ fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.12)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>ไลน์ย่อย</span>
                                   <div style={{ fontSize: isWide ? 15 : 14, fontWeight: 600, color: 'var(--text)', marginTop: 4 }}>{cs.name}</div>
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
@@ -1144,7 +1144,7 @@ export default function Dashboard() {
                 { c: '#ef4444', icon: '⛔', label: 'Downtime (แถบบนแถว)' },
               ].map(item => (
                 <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ width: 14, height: 14, borderRadius: 3, background: `${item.c}28`, border: `1.5px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
+                  <span style={{ width: 16, height: 16, borderRadius: 3, background: `${item.c}28`, border: `1.5px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
                   <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
                 </div>
               ))}
@@ -1491,7 +1491,7 @@ export default function Dashboard() {
                                     zIndex: 0, pointerEvents: 'none',
                                     display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'hidden',
                                   }}>
-                                  <span style={{ fontSize: 8, fontWeight: 700, color: 'var(--muted)', writingMode: widthPct < 3 ? 'vertical-rl' : 'horizontal-tb', whiteSpace: 'nowrap', marginBottom: 1 }}>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', writingMode: widthPct < 3 ? 'vertical-rl' : 'horizontal-tb', whiteSpace: 'nowrap', marginBottom: 1 }}>
                                     🚫{p.name_th || p.name_en}
                                   </span>
                                 </div>
@@ -1553,10 +1553,10 @@ export default function Dashboard() {
                               }}>
                               <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`, background: `${statusColor}22`, transition: 'width 0.5s ease' }} />
                               <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 3px', overflow: 'hidden' }}>
-                                <div style={{ fontSize: 10, fontWeight: 800, color: statusColor, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                <div style={{ fontSize: 11, fontWeight: 800, color: statusColor, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {icon} {o.prod_no || (oi + 1)}
                                 </div>
-                                <div style={{ fontSize: 9, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {o.qty}ชิ้น
                                 </div>
                               </div>
@@ -1751,7 +1751,7 @@ export default function Dashboard() {
                         {/* พาร์ทละ 1 บล็อก — ป้าย/รูปใหญ่อันเดียวครอบ 2 แถบเวลา (☀️ 08–20 บน / 🌙 20–08 ล่าง)
                             หัวชั่วโมงแสดงเวลาคู่บน-ล่างในคอลัมน์เดียวกัน (โครงเดียวกับบอร์ดหน้าจัดการไลน์) */}
                         <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
-                          <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 10, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1 }}>
+                          <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1 }}>
                             <span>☀️ กะเช้า (แถบบน)</span>
                             <span>🌙 กะดึก (แถบล่าง)</span>
                           </div>
@@ -1778,8 +1778,8 @@ export default function Dashboard() {
                                 borderRight: '1px solid var(--border)',
                                 background: (isNowAm || isNowPm) ? 'rgba(77,159,255,0.12)' : 'transparent',
                               }}>
-                                <div style={{ fontSize: 10, fontWeight: isNowAm ? 800 : 500, color: isNowAm ? '#4d9fff' : 'var(--text2)' }}>{String(h).padStart(2, '0')}:00</div>
-                                <div style={{ fontSize: 9, fontWeight: isNowPm ? 800 : 400, color: isNowPm ? '#4d9fff' : 'var(--muted)' }}>{String(hPm).padStart(2, '0')}:00</div>
+                                <div style={{ fontSize: 11, fontWeight: isNowAm ? 800 : 500, color: isNowAm ? '#4d9fff' : 'var(--text2)' }}>{String(h).padStart(2, '0')}:00</div>
+                                <div style={{ fontSize: 11, fontWeight: isNowPm ? 800 : 400, color: isNowPm ? '#4d9fff' : 'var(--muted)' }}>{String(hPm).padStart(2, '0')}:00</div>
                               </div>
                             );
                           })}
@@ -1802,9 +1802,9 @@ export default function Dashboard() {
                                   <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>{row.label}</div>
                                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexWrap: 'wrap' }}>
                                     <span style={{ fontSize: 15, fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
-                                    <span style={{ fontSize: 10, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
-                                    {delayed > 0 && <span style={{ fontSize: 10, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}ใบ</span>}
-                                    {isOpen && delayed === 0 && <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
+                                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
+                                    {delayed > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}ใบ</span>}
+                                    {isOpen && delayed === 0 && <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
                                   </div>
                                 </div>
                               </div>
@@ -1812,7 +1812,7 @@ export default function Dashboard() {
                                 {HALVES.map(half => (
                                   <div key={half.key} style={{ height: 36, display: 'flex', position: 'relative', borderTop: half.key === 'pm' ? '1px dashed var(--border)' : 'none' }}>
                                     {renderTimeline(row.cards, half, `${half.key}-${ri}`)}
-                                    <span style={{ position: 'absolute', left: 3, bottom: 1, fontSize: 9, opacity: 0.55, zIndex: 2, pointerEvents: 'none' }}>{half.key === 'am' ? '☀️' : '🌙'}</span>
+                                    <span style={{ position: 'absolute', left: 3, bottom: 1, fontSize: 11, opacity: 0.55, zIndex: 2, pointerEvents: 'none' }}>{half.key === 'am' ? '☀️' : '🌙'}</span>
                                   </div>
                                 ))}
                               </div>
@@ -2309,7 +2309,7 @@ export default function Dashboard() {
                             )}
                             {pAlarm && (
                               <div style={{
-                                fontSize: 'clamp(9px, 1.1vw, 14px)', fontWeight: 800, whiteSpace: 'nowrap',
+                                fontSize: 'clamp(11px, 1.1vw, 14px)', fontWeight: 800, whiteSpace: 'nowrap',
                                 color: pAlarm.kind === 'red' ? '#fca5a5' : '#fde68a',
                                 background: pAlarm.kind === 'red' ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)',
                                 padding: 'clamp(1px, 0.3vw, 4px) clamp(5px, 0.6vw, 9px)', borderRadius: 3, marginTop: 2,

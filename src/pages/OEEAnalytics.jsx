@@ -124,7 +124,7 @@ function GaugeRing({ value, size = 168, stroke = 15, color = '#22c55e' }) {
 // ── Mini sparkline bar (under A/P/Q kpi) ──────────────────────────
 function MiniTrend({ data, dataKey, color, target }) {
   const hasData = data.some(d => d[dataKey] != null);
-  if (!hasData) return <div style={{ height: 54, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: 'var(--muted)' }}>ไม่มีข้อมูล</div>;
+  if (!hasData) return <div style={{ height: 54, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>ไม่มีข้อมูล</div>;
   return (
     <ResponsiveContainer width="100%" height={54}>
       <BarChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
@@ -622,7 +622,7 @@ export default function OEEAnalytics() {
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>OEE รวมวันนี้</div>
                   <div style={{ fontSize: 34, fontWeight: 900, color: tdKpi.oee != null ? oeeColor(tdKpi.oee) : 'var(--muted)' }}>{tdKpi.oee ?? '—'}{tdKpi.oee != null ? '%' : ''}</div>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>TARGET {TARGET.oee}%</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>TARGET {TARGET.oee}%</div>
                 </div>
               </div>
               {['a', 'p', 'q'].map(k => (
@@ -630,7 +630,7 @@ export default function OEEAnalytics() {
                   <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{METRIC_LABEL[k]}</div>
                   <div style={{ fontSize: 26, fontWeight: 900, color: tdKpi[k] != null ? METRIC_COLOR_FN[k](tdKpi[k]) : 'var(--muted)' }}>{tdKpi[k] ?? '—'}{tdKpi[k] != null ? '%' : ''}</div>
                   <MiniTrend data={tdHistoryGrouped} dataKey={k} color={METRIC_COLOR[k]} target={TARGET[k]} />
-                  <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'right' }}>TARGET {TARGET[k]}%</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}>TARGET {TARGET[k]}%</div>
                 </div>
               ))}
             </div>
@@ -659,7 +659,7 @@ export default function OEEAnalytics() {
                     <div style={{ fontSize: 28, fontWeight: 900, color: tdLiveRow?.calcOEE != null ? oeeColor(tdLiveRow.calcOEE) : 'var(--muted)' }}>
                       {tdLiveRow?.calcOEE ?? '—'}{tdLiveRow?.calcOEE != null ? '%' : ''}
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>TARGET {TARGET.oee}%</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>TARGET {TARGET.oee}%</div>
                   </div>
                   <div style={{ display: 'flex', gap: 14 }}>
                     <MetricColumn label="A" value={tdLiveRow?.calcA} target={TARGET.a} color={METRIC_COLOR.a} />
@@ -686,7 +686,7 @@ export default function OEEAnalytics() {
                   <GaugeRing value={tdKpi.targetQty > 0 ? Math.min(100, tdKpi.totalQty / tdKpi.targetQty * 100) : 0} color="#4d9fff" size={140} stroke={13} />
                   <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                     <div style={{ fontSize: 24, fontWeight: 900, color: '#4d9fff' }}>{tdKpi.targetQty > 0 ? Math.round(Math.min(100, tdKpi.totalQty / tdKpi.targetQty * 100)) : 0}%</div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>เทียบเป้าหมาย</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>เทียบเป้าหมาย</div>
                   </div>
                 </div>
               </div>
@@ -703,9 +703,9 @@ export default function OEEAnalytics() {
                 <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="%" />
                 <Tooltip content={<OEETooltip />} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <ReferenceLine y={TARGET.oee} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} label={{ value: `TARGET ${TARGET.oee}%`, fill: '#22c55e', fontSize: 10, position: 'insideTopRight' }} />
+                <ReferenceLine y={TARGET.oee} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} label={{ value: `TARGET ${TARGET.oee}%`, fill: '#22c55e', fontSize: 11, position: 'insideTopRight' }} />
                 <Bar dataKey="oee" name="OEE %" fill="#22c55e" opacity={0.85} radius={[3, 3, 0, 0]}>
-                  <LabelList dataKey="oee" position="top" formatter={v => v != null ? `${v}%` : ''} style={{ fontSize: 10, fill: 'var(--text)' }} />
+                  <LabelList dataKey="oee" position="top" formatter={v => v != null ? `${v}%` : ''} style={{ fontSize: 11, fill: 'var(--text)' }} />
                 </Bar>
                 <Line type="monotone" dataKey="a" name="A%" stroke="#22c55e" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
                 <Line type="monotone" dataKey="p" name="P%" stroke="#f59e0b" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
@@ -725,7 +725,7 @@ export default function OEEAnalytics() {
                   <GaugeRing value={tdKpi.totalShiftMin > 0 ? Math.min(100, tdKpi.totalDT / tdKpi.totalShiftMin * 100) : 0} color="#a855f7" size={120} stroke={11} />
                   <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                     <div style={{ fontSize: 22, fontWeight: 900, color: '#a855f7' }}>{tdKpi.totalDT.toLocaleString()}</div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>นาที</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>นาที</div>
                   </div>
                 </div>
                 <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
@@ -869,7 +869,7 @@ export default function OEEAnalytics() {
                 <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="%" />
                 <Tooltip content={<OEETooltip />} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <ReferenceLine y={85} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} label={{ value: '85%', fill: '#22c55e', fontSize: 10 }} />
+                <ReferenceLine y={85} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} label={{ value: '85%', fill: '#22c55e', fontSize: 11 }} />
                 <Line type="monotone" dataKey="oee" name="OEE" stroke="#4d9fff" strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
                 <Line type="monotone" dataKey="a"   name="A%"  stroke="#22c55e" strokeWidth={1.5} dot={false} strokeDasharray="5 3" connectNulls />
                 <Line type="monotone" dataKey="p"   name="P%"  stroke="#f59e0b" strokeWidth={1.5} dot={false} strokeDasharray="5 3" connectNulls />
@@ -891,8 +891,8 @@ export default function OEEAnalytics() {
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={dtPareto} layout="vertical" margin={{ left: 10, right: 30, top: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--muted)' }} unit="m" />
-                  <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fill: 'var(--muted)' }} width={120} />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="m" />
+                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: 'var(--muted)' }} width={120} />
                   <Tooltip formatter={(v) => [`${v} นาที`]} contentStyle={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }} />
                   <Bar dataKey="min" name="นาที" radius={[0, 4, 4, 0]}>
                     {dtPareto.map((d, i) => <Cell key={i} fill={d.color} />)}
@@ -904,7 +904,7 @@ export default function OEEAnalytics() {
           {dtPareto.length > 0 && (
             <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {dtPareto.slice(0, 6).map((d, i) => (
-                <span key={i} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: `${d.color}22`, border: `1px solid ${d.color}55`, color: d.color, fontWeight: 700 }}>
+                <span key={i} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: `${d.color}22`, border: `1px solid ${d.color}55`, color: d.color, fontWeight: 700 }}>
                   {d.name}: {d.min.toLocaleString()}m
                 </span>
               ))}
@@ -921,8 +921,8 @@ export default function OEEAnalytics() {
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={defectBreakdown} layout="vertical" margin={{ left: 10, right: 30, top: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 10, fill: 'var(--muted)' }} unit="ชิ้น" />
-                  <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fill: 'var(--muted)' }} width={120} />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="ชิ้น" />
+                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: 'var(--muted)' }} width={120} />
                   <Tooltip formatter={(v) => [`${v} ชิ้น`]} contentStyle={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }} />
                   <Bar dataKey="qty" name="ชิ้น" radius={[0, 4, 4, 0]}>
                     {defectBreakdown.map((d, i) => <Cell key={i} fill={d.color} />)}
@@ -934,7 +934,7 @@ export default function OEEAnalytics() {
           {defectBreakdown.length > 0 && (
             <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {defectBreakdown.map((d, i) => (
-                <span key={i} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: `${d.color}22`, border: `1px solid ${d.color}55`, color: d.color, fontWeight: 700 }}>
+                <span key={i} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: `${d.color}22`, border: `1px solid ${d.color}55`, color: d.color, fontWeight: 700 }}>
                   {d.name}: {d.qty.toLocaleString()}
                 </span>
               ))}

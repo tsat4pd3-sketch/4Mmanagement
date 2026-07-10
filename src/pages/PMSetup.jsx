@@ -89,7 +89,7 @@ const S = {
   cardTitle: { fontSize: 14, fontWeight: 700, color: 'var(--text)', margin: 0 },
   tag: (color) => ({
     display: 'inline-flex', alignItems: 'center',
-    padding: '2px 8px', borderRadius: 12, fontSize: 10, fontWeight: 700,
+    padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 700,
     background: `${color}18`, color, border: `1px solid ${color}30`,
   }),
   meta: { fontSize: 11, color: 'var(--muted)', margin: 0 },
@@ -214,7 +214,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
     <div style={{ ...S.cpCard, borderColor: isPinning ? 'var(--accent)' : 'var(--border)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ minWidth: 20, height: 20, padding: '0 4px', borderRadius: 10, background: 'var(--bg3)', color: 'var(--muted)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{label}</span>
+          <span style={{ minWidth: 20, height: 20, padding: '0 4px', borderRadius: 10, background: 'var(--bg3)', color: 'var(--muted)', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{label}</span>
           <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>จุดตรวจสอบ</span>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
@@ -273,10 +273,10 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
       {isVar && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <span style={{ fontSize: 10, color: 'var(--muted)', marginRight: 4, textTransform: 'uppercase' }}>Axis</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)', marginRight: 4, textTransform: 'uppercase' }}>Axis</span>
             {[null, 'X', 'Y'].map(a => (
               <button key={String(a)} onClick={() => onChange({ axis: a })} style={{
-                padding: '3px 10px', borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: 'pointer',
+                padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
                 border: `1.5px solid ${cp.axis === a ? 'var(--accent)' : 'var(--border)'}`,
                 background: cp.axis === a ? 'var(--accent-dim)' : 'var(--bg3)',
                 color: cp.axis === a ? 'var(--accent)' : 'var(--muted)',
