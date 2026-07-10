@@ -12,6 +12,11 @@ import { useState, useRef, useEffect } from 'react';
          onConfirm={(croppedFile) => { setImageFile(croppedFile); setCropFile(null); }} />
      )}
    ─────────────────────────────────────────────────────────────────────────── */
+// GIF (รูปขยับ): การวาดลง canvas ได้เฟรมแรกเฟรมเดียว = การเคลื่อนไหวหาย
+// จึงส่งไฟล์ต้นฉบับผ่านไปทั้งไฟล์แทน แลกกับการจำกัดขนาด ไม่งั้น storage บวม
+// (เคยเจอ GIF เฉลี่ยไฟล์ละ ~4MB ใหญ่กว่ารูปนิ่งที่บีบแล้ว ~30 เท่า)
+const GIF_MAX_BYTES = 2 * 1024 * 1024;
+
 export default function ImageCropModal({
   file, aspect = 1, shape = 'rect', outputSize = 480,
   title = 'จัดตำแหน่งรูปภาพให้ตรงกรอบ', quality = 0.85,
@@ -27,8 +32,15 @@ export default function ImageCropModal({
   const FRAME_W = 300;
   const FRAME_H = Math.round(FRAME_W / aspect);
 
+  const isGif = file?.type === 'image/gif';
+
   useEffect(() => {
     if (!file) return;
+    if (isGif && file.size > GIF_MAX_BYTES) {
+      alert(`รูปขยับ (GIF) ต้องมีขนาดไม่เกิน 2 MB (ไฟล์นี้ ${(file.size / 1024 / 1024).toFixed(1)} MB)\nลองใช้ GIF ที่สั้นลง/เล็กลง หรือย่อไฟล์ก่อนอัปโหลด`);
+      onCancel?.();
+      return;
+    }
     const url = URL.createObjectURL(file);
     setImgUrl(url);
     const img = new Image();
@@ -78,6 +90,11 @@ export default function ImageCropModal({
   };
 
   const handleConfirm = () => {
+    if (isGif) {
+      // ส่งต้นฉบับทั้งไฟล์เพื่อคงการเคลื่อนไหว (ขนาดถูกเช็คแล้วตอนเลือกไฟล์)
+      onConfirm(file);
+      return;
+    }
     const canvas = document.createElement('canvas');
     canvas.width = outputSize;
     canvas.height = Math.round(outputSize / aspect);
@@ -131,11 +148,15 @@ export default function ImageCropModal({
             onChange={e => onScaleChange(Number(e.target.value))} style={{ flex: 1 }} />
         </div>
         <div style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center', marginTop: 6 }}>
-          ลากรูปเพื่อขยับตำแหน่ง • เลื่อนแถบเพื่อซูม — กรอบนี้คือพื้นที่จริงที่จะแสดงผล
+          {isGif
+            ? '🎞️ รูปขยับ (GIF) จะถูกใช้ทั้งภาพเพื่อคงการเคลื่อนไหว — การ crop/ซูมในกรอบนี้ไม่มีผลกับไฟล์จริง'
+            : 'ลากรูปเพื่อขยับตำแหน่ง • เลื่อนแถบเพื่อซูม — กรอบนี้คือพื้นที่จริงที่จะแสดงผล'}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-          <button onClick={onCancel} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-          <button onClick={handleConfirm} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>✓ ใช้รูปนี้</button>
+          {/* type="button" จำเป็น — modal นี้ถูก render อยู่ใน <form> ของหน้า Register/Operator
+              ถ้าไม่ระบุ ปุ่มจะเป็น submit โดย default ทำให้ฟอร์มถูกบันทึกทันทีก่อนรูปถูกแนบ (รูปหายเงียบๆ) */}
+          <button type="button" onClick={onCancel} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+          <button type="button" onClick={handleConfirm} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>✓ ใช้รูปนี้</button>
         </div>
       </div>
     </div>

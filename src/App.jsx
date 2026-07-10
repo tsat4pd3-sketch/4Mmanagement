@@ -7,6 +7,8 @@ import { ToastContainer } from './components/Toast';
 import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
+import { loadPermissions, canAccessPage } from './utils/permissions';
+import { effectiveSections } from './utils/sectionScope';
 
 const Register     = lazy(() => import('./pages/Register'));
 const Checkin      = lazy(() => import('./pages/Checkin'));
@@ -16,6 +18,8 @@ const Operator     = lazy(() => import('./pages/operator'));
 const LineSetup    = lazy(() => import('./pages/LineSetup'));
 const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
+const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
+const PlannerSales   = lazy(() => import('./pages/PlannerSales'));
 const Report       = lazy(() => import('./pages/Report'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
@@ -31,6 +35,12 @@ const OrgSetup        = lazy(() => import('./pages/OrgSetup'));
 const PMSetup     = lazy(() => import('./pages/PMSetup'));
 const PMCheckData = lazy(() => import('./pages/PMCheckData'));
 const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
+const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
+const DailyPM     = lazy(() => import('./pages/DailyPM'));
+const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
+const QualityControl = lazy(() => import('./pages/QualityControl'));
+const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
+const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 
 /* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null, signatureUrl: null, fullName: null });
@@ -42,6 +52,7 @@ const ROLE_LABELS = {
   leader:     '⭐ Leader',
   qa:         '🔍 QA',
   document_control: '🗂 Doc Control',
+  sale:       '💼 Sale',
   display:    '📺 Display',
 };
 
@@ -51,38 +62,49 @@ const NAV_ITEMS = [
   { to: '/',            icon: '🏠', label: 'หน้าหลัก',           roles: null, group: 'ภาพรวม' },
   { to: '/dashboard',   icon: '📊', label: 'Dashboard',           roles: null, group: 'ภาพรวม' },
 
-  { to: '/management',  icon: '🔄', label: 'จัดการสายผลิต',      roles: null, group: 'การผลิต' },
-  { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     roles: null, group: 'การผลิต' },
-  { to: '/daily-report',   icon: '📊', label: 'Daily Report',      roles: null, group: 'การผลิต' },
-  { to: '/oee-analytics',  icon: '📈', label: 'OEE Analytics',      roles: null, group: 'การผลิต' },
-  { to: '/line-stock',      icon: '📦', label: 'Line Stock',         roles: null, group: 'การผลิต' },
-  { to: '/heijunka',       icon: '🎴', label: 'Heijunka Kanban',   roles: null, group: 'การผลิต' },
-  { to: '/rack-center',    icon: '🗃️', label: 'Rack Center',       roles: null, group: 'การผลิต' },
+  { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     roles: null, group: 'ฝ่ายผลิต' },
+  { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     roles: null, group: 'ฝ่ายผลิต' },
+  { to: '/daily-report',   icon: '📊', label: 'Daily Report',      roles: null, group: 'ฝ่ายผลิต' },
+  { to: '/oee-analytics',  icon: '📈', label: 'OEE',                roles: null, group: 'ฝ่ายผลิต' },
+  { to: '/daily-pm',       icon: '✅', label: 'Daily PM ฝ่ายผลิต',   roles: null, group: 'ฝ่ายผลิต' },
 
-  { to: '/report',        icon: '📋', label: 'รายงาน',            roles: null, group: 'รายงาน/คุณภาพ' },
-  { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', roles: ['admin', 'manager', 'supervisor', 'leader', 'qa'], group: 'รายงาน/คุณภาพ' },
+  { to: '/line-stock',      icon: '📦', label: 'Store management',       roles: null, group: 'Logistic - Store' },
+  { to: '/heijunka',       icon: '🎴', label: 'Kanban Board',             roles: null, group: 'Logistic - Store' },
+  { to: '/rack-center',    icon: '🗃️', label: 'Rack Center management',  roles: null, group: 'Logistic - Store' },
+  { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           roles: null, group: 'Logistic - Store' },
+  { to: '/customer-demand', icon: '🚚', label: 'Delivery',                  roles: null, group: 'Logistic - Store' },
 
-  { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     roles: ['admin'], group: 'บริหารจัดการ' },
-  { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
-  { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager', 'supervisor', 'leader'], group: 'บริหารจัดการ' },
-  { to: '/products',        icon: '🔩', label: 'Product Master',    roles: null, group: 'บริหารจัดการ' },
-  { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
-  { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
-  { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         roles: ['admin', 'manager', 'supervisor'], group: 'บริหารจัดการ' },
-  { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    roles: null, group: 'บริหารจัดการ' },
+  { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/pm-schedule', icon: '📅', label: 'แผน PM อุปกรณ์เครื่องจักร',        roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/pm-setup',    icon: '🔩', label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร', roles: ['admin', 'manager', 'supervisor'], group: 'การตรวจสอบและซ่อมบำรุง' },
 
-  { to: '/pm-setup',    icon: '🔩', label: 'PM Setup',      roles: ['admin', 'manager', 'supervisor'], group: 'ซ่อมบำรุง' },
-  { to: '/pm-check',    icon: '✅', label: 'PM ตรวจสอบ',    roles: null, group: 'ซ่อมบำรุง' },
-  { to: '/pm-schedule', icon: '📅', label: 'แผน PM',         roles: null, group: 'ซ่อมบำรุง' },
+  { to: '/qa',             icon: '🔍', label: 'Quality Control Center', roles: ['admin', 'manager', 'supervisor', 'leader', 'qa', 'document_control'], group: 'ควบคุมคุณภาพ QA/QC' },
+  { to: '/qa-setup',       icon: '📐', label: 'มาตรฐานการตรวจ & Drawing', roles: ['admin', 'manager', 'qa'], group: 'ควบคุมคุณภาพ QA/QC' },
+  { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', roles: ['admin', 'manager', 'supervisor', 'leader', 'qa'], group: 'ควบคุมคุณภาพ QA/QC' },
+
+  { to: '/report',        icon: '📋', label: 'รายงาน',            roles: null, group: 'รายงาน' },
+
+  { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     roles: ['admin'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      roles: ['admin', 'manager', 'supervisor'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager', 'supervisor', 'leader'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/products',        icon: '🔩', label: 'Product Master',    roles: null, group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   roles: ['admin', 'manager', 'supervisor'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', roles: ['admin', 'manager', 'supervisor'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         roles: ['admin', 'manager', 'supervisor'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    roles: null, group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       roles: ['admin'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', roles: ['admin'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
 ];
 
-const NAV_GROUP_ORDER = ['ภาพรวม', 'การผลิต', 'รายงาน/คุณภาพ', 'บริหารจัดการ', 'ซ่อมบำรุง'];
+const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'รายงาน', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
 
-const canAccess = (role, roles) => !roles || roles.includes(role ?? 'admin');
-
-/* ─── Role Route Guard ────────────────────────────────────── */
-function RoleRoute({ children, allow, userRole }) {
-  if (!allow.includes(userRole ?? 'admin')) return <Navigate to="/" replace />;
+/* ─── Role Route Guard ────────────────────────────────────────────────
+   สิทธิ์เข้าถึงแต่ละหน้าเก็บอยู่ใน role_permissions (ตาราง) ไม่ใช่ array ในโค้ดอีกต่อไป
+   จัดการได้จากหน้า "จัดการสิทธิ์" (admin เท่านั้น) — ดู src/utils/permissions.js
+   admin bypass เสมอ กันกรณี config ผิดจนตัวเองเข้าไม่ได้ ── */
+function RoleRoute({ children, path, userRole }) {
+  if (!canAccessPage(path, userRole)) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -176,7 +198,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
     });
   };
 
-  const visibleItems = NAV_ITEMS.filter(item => canAccess(userRole, item.roles));
+  const visibleItems = NAV_ITEMS.filter(item => canAccessPage(item.to, userRole));
   const groupedItems = NAV_GROUP_ORDER
     .map(g => ({ group: g, items: visibleItems.filter(i => i.group === g) }))
     .filter(g => g.items.length > 0);
@@ -202,15 +224,25 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
         zIndex: 1000,
         boxShadow: isOpen ? '4px 0 30px rgba(0,0,0,0.3)' : 'none',
       }}>
-        {/* Logo */}
-        <div style={{ padding: '18px 6px 16px', borderBottom: '1px solid var(--border)', marginBottom: 10, whiteSpace: 'nowrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {/* Logo + ปุ่มพับ sidebar (อยู่ในหัวแถบ ไม่ลอยทับเนื้อหา) */}
+        <div style={{ padding: '18px 6px 16px', borderBottom: '1px solid var(--border)', marginBottom: 10, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <img src={tsLogo} alt="Thai Summit Group" width={28} height={28} style={{ borderRadius: 3, flexShrink: 0 }} />
             <div>
               <div style={{ fontSize: 10, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
               <div style={{ fontSize: 9, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>ESM · Shopfloor</div>
             </div>
           </div>
+          <button
+            onClick={onClose}
+            title="พับเมนู"
+            style={{
+              width: 28, height: 28, borderRadius: 7, flexShrink: 0,
+              background: 'var(--bg3)', border: '1px solid var(--border2)',
+              color: 'var(--text2)', fontSize: 13, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >⟨</button>
         </div>
 
         {/* Links */}
@@ -250,7 +282,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             );
           })}
 
-          {canAccess(userRole, ['admin']) && (
+          {canAccessPage('/add-user', userRole) && (
             <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6 }}>
               <Link
                 to="/add-user"
@@ -518,26 +550,26 @@ function NotificationBell({ userId }) {
   );
 }
 
-/* ─── Toggle Button ──────────────────────────────────────────── */
-function ToggleBtn({ isOpen, sidebarW, onClick }) {
+/* ─── Toggle Button — โผล่เฉพาะตอน sidebar พับอยู่ (ปุ่มพับอยู่ในหัว sidebar แล้ว) ─── */
+function ToggleBtn({ isOpen, onClick }) {
+  if (isOpen) return null;
   return (
     <button
       onClick={onClick}
+      title="เปิดเมนู"
       style={{
-        position: 'fixed', top: 14,
-        left: isOpen ? sidebarW + 10 : 14,
+        position: 'fixed', top: 14, left: 14,
         zIndex: 1100,
         width: 34, height: 34, borderRadius: 8,
         background: 'var(--bg3)',
         border: '1px solid var(--border2)',
         color: 'var(--text2)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 15,
-        transition: 'left 0.3s cubic-bezier(0.4,0,0.2,1)',
+        fontSize: 15, cursor: 'pointer',
         boxShadow: 'var(--shadow-sm)',
       }}
     >
-      {isOpen ? '✕' : '☰'}
+      ☰
     </button>
   );
 }
@@ -651,7 +683,9 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 }
 
 /* ─── Protected Layout ─────────────────────────────────────────────── */
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userEmail, userFullName, userNotifyEmail, userSignatureUrl }) {
+// permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
+// (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userEmail, userFullName, userNotifyEmail, userSignatureUrl }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
   const [isOpen, setIsOpen] = useState(!isMobile);
@@ -680,12 +714,12 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
 
   const sidebarPx  = isTV ? 280 : 240;
   const marginLeft = (!isMobile && isOpen) ? sidebarPx : 0;
-  const role       = userRole ?? 'admin';
+  const role       = userRole; // ไม่ fallback เป็น 'admin' อีกต่อไป — profileLoaded gate ด้านบนรับประกันว่า role ถูก resolve แล้วก่อนถึงจุดนี้
 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
     return (
-      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
+      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
           <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} />
         </Suspense>
@@ -694,12 +728,12 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   }
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
+    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
       {warnSecsLeft !== null && (
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
-        <ToggleBtn isOpen={isOpen} sidebarW={sidebarPx} onClick={() => setIsOpen(o => !o)} />
+        <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />
         <NotificationBell userId={userId} />
         <Sidebar
           isOpen={isOpen}
@@ -726,42 +760,96 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
         }}>
           <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
             <Routes>
-              <Route path="/dashboard"  element={<Dashboard />} />
-              <Route path="/management" element={<Management />} />
-              <Route path="/checkin"    element={<Checkin />} />
-              <Route path="/report"     element={<Report />} />
+              <Route path="/dashboard"  element={
+                <RoleRoute path="/dashboard" userRole={role}><Dashboard /></RoleRoute>
+              } />
+              <Route path="/management" element={
+                <RoleRoute path="/management" userRole={role}><Management /></RoleRoute>
+              } />
+              <Route path="/checkin"    element={
+                <RoleRoute path="/checkin" userRole={role}><Checkin /></RoleRoute>
+              } />
+              <Route path="/report"     element={
+                <RoleRoute path="/report" userRole={role}><Report /></RoleRoute>
+              } />
               <Route path="/register"   element={
-                <RoleRoute allow={['admin', 'supervisor']} userRole={role}><Register /></RoleRoute>
+                <RoleRoute path="/register" userRole={role}><Register /></RoleRoute>
               } />
               <Route path="/operator"   element={
-                <RoleRoute allow={['admin', 'manager', 'supervisor', 'leader']} userRole={role}><Operator /></RoleRoute>
+                <RoleRoute path="/operator" userRole={role}><Operator /></RoleRoute>
               } />
               <Route path="/linesetup"  element={
-                <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}><LineSetup /></RoleRoute>
+                <RoleRoute path="/linesetup" userRole={role}><LineSetup /></RoleRoute>
               } />
               <Route path="/machine-database" element={
-                <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}><MachineDatabase /></RoleRoute>
+                <RoleRoute path="/machine-database" userRole={role}><MachineDatabase /></RoleRoute>
               } />
               <Route path="/add-user"   element={
-                <RoleRoute allow={['admin']} userRole={role}><AddUser /></RoleRoute>
+                <RoleRoute path="/add-user" userRole={role}><AddUser /></RoleRoute>
               } />
               <Route path="/org-setup"  element={
-                <RoleRoute allow={['admin']} userRole={role}><OrgSetup /></RoleRoute>
+                <RoleRoute path="/org-setup" userRole={role}><OrgSetup /></RoleRoute>
               } />
               <Route path="/shift-organize" element={
-                <RoleRoute allow={['admin', 'manager', 'supervisor']} userRole={role}><ShiftOrganize /></RoleRoute>
+                <RoleRoute path="/shift-organize" userRole={role}><ShiftOrganize /></RoleRoute>
               } />
-              <Route path="/daily-report"  element={<DailyReport />} />
-              <Route path="/oee-analytics" element={<OEEAnalytics />} />
-              <Route path="/event-log" element={<EventLog />} />
-              <Route path="/products"   element={<ProductMaster />} />
-              <Route path="/line-stock" element={<LineStock />} />
-              <Route path="/heijunka"  element={<HeijunkaKanban />} />
-              <Route path="/rack-center" element={<RackCenter />} />
-              <Route path="/company-calendar" element={<CompanyCalendar />} />
-              <Route path="/pm-setup"    element={<PMSetup />} />
-              <Route path="/pm-check"    element={<PMCheckData />} />
-              <Route path="/pm-schedule" element={<PMSchedule />} />
+              <Route path="/permissions" element={
+                <RoleRoute path="/permissions" userRole={role}><PermissionsManagement /></RoleRoute>
+              } />
+              <Route path="/notification-config" element={
+                <RoleRoute path="/notification-config" userRole={role}><NotificationConfig /></RoleRoute>
+              } />
+              <Route path="/daily-report"  element={
+                <RoleRoute path="/daily-report" userRole={role}><DailyReport /></RoleRoute>
+              } />
+              <Route path="/oee-analytics" element={
+                <RoleRoute path="/oee-analytics" userRole={role}><OEEAnalytics /></RoleRoute>
+              } />
+              <Route path="/daily-pm" element={
+                <RoleRoute path="/daily-pm" userRole={role}><DailyPM /></RoleRoute>
+              } />
+              <Route path="/event-log" element={
+                <RoleRoute path="/event-log" userRole={role}><EventLog /></RoleRoute>
+              } />
+              <Route path="/qa" element={
+                <RoleRoute path="/qa" userRole={role}><QualityControl /></RoleRoute>
+              } />
+              <Route path="/qa-setup" element={
+                <RoleRoute path="/qa-setup" userRole={role}><QAInspectionSetup /></RoleRoute>
+              } />
+              <Route path="/products"   element={
+                <RoleRoute path="/products" userRole={role}><ProductMaster /></RoleRoute>
+              } />
+              <Route path="/line-stock" element={
+                <RoleRoute path="/line-stock" userRole={role}><LineStock /></RoleRoute>
+              } />
+              <Route path="/heijunka"  element={
+                <RoleRoute path="/heijunka" userRole={role}><HeijunkaKanban /></RoleRoute>
+              } />
+              <Route path="/customer-demand" element={
+                <RoleRoute path="/customer-demand" userRole={role}><CustomerDemand /></RoleRoute>
+              } />
+              <Route path="/planner-sales" element={
+                <RoleRoute path="/planner-sales" userRole={role}><PlannerSales /></RoleRoute>
+              } />
+              <Route path="/rack-center" element={
+                <RoleRoute path="/rack-center" userRole={role}><RackCenter /></RoleRoute>
+              } />
+              <Route path="/company-calendar" element={
+                <RoleRoute path="/company-calendar" userRole={role}><CompanyCalendar /></RoleRoute>
+              } />
+              <Route path="/pm-setup"    element={
+                <RoleRoute path="/pm-setup" userRole={role}><PMSetup /></RoleRoute>
+              } />
+              <Route path="/pm-check"    element={
+                <RoleRoute path="/pm-check" userRole={role}><PMCheckData /></RoleRoute>
+              } />
+              <Route path="/pm-schedule" element={
+                <RoleRoute path="/pm-schedule" userRole={role}><PMSchedule /></RoleRoute>
+              } />
+              <Route path="/mtn-layout" element={
+                <RoleRoute path="/mtn-layout" userRole={role}><MtnMachineLayout /></RoleRoute>
+              } />
             </Routes>
           </Suspense>
         </main>
@@ -777,12 +865,20 @@ export default function App() {
   const [userLineId,   setUserLineId]   = useState(null);
   const [userTeam,     setUserTeam]     = useState(null);
   const [userSection,  setUserSection]  = useState(null);
+  // ขอบเขตหลายส่วนงาน (จาก profiles.sections + fallback section เดี่ยวของ supervisor) — [] = ไม่จำกัด
+  const [userSections, setUserSections] = useState([]);
   const [userEmail,        setUserEmail]        = useState(null);
   const [userFullName,     setUserFullName]     = useState(null);
   const [userNotifyEmail,  setUserNotifyEmail]  = useState(null);
   const [userSignatureUrl, setUserSignatureUrl] = useState(null);
   const [showSplash,   setShowSplash]   = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
+  // ต้อง resolve ทั้ง profile (role จริง) และ permissions ก่อนค่อย render route tree —
+  // ป้องกัน fail-open: ห้าม fallback เป็น 'admin' ระหว่างรอโหลด (เคยเป็นช่องโหว่)
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [permsLoaded,   setPermsLoaded]   = useState(false);
+  // bump เมื่อ role_permissions เปลี่ยน (realtime) เพื่อให้ sidebar/route ที่อ่าน cache แบบ sync re-render
+  const [permsVersion,  setPermsVersion]  = useState(0);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -793,28 +889,51 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const { data } = await supabase.from('profiles').select('role, line_id, full_name, team, section, notify_email, signature_url').eq('id', user.id).single();
-    setUserRole(data?.role ?? 'admin');
+    const { data } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, notify_email, signature_url').eq('id', user.id).single();
+    setUserRole(data?.role ?? null);
     setUserLineId(data?.line_id ?? null);
     setUserFullName(data?.full_name ?? null);
     setUserTeam(data?.team ?? null);
     setUserSection(data?.section ?? null);
+    setUserSections(effectiveSections(data?.role, data?.sections, data?.section));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
+    setProfileLoaded(true);
   };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session?.user) fetchProfile(session.user);
+      if (session?.user) {
+        fetchProfile(session.user);
+        loadPermissions().then(() => setPermsLoaded(true));
+      }
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
-      if (s?.user) fetchProfile(s.user);
-      else { setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null); }
+      if (s?.user) {
+        fetchProfile(s.user);
+        loadPermissions().then(() => setPermsLoaded(true));
+      } else {
+        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null);
+        setProfileLoaded(false); setPermsLoaded(false);
+      }
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  // admin แก้สิทธิ์ที่หน้า จัดการสิทธิ์ → ทุกเครื่องที่เปิดอยู่รีเฟรช cache + re-render ทันที
+  useEffect(() => {
+    if (!session?.user) return;
+    const ch = supabase
+      .channel('role-permissions-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, async () => {
+        await loadPermissions(true);
+        setPermsVersion(v => v + 1);
+      })
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [session?.user?.id]);
 
   return (
     <>
@@ -828,7 +947,7 @@ export default function App() {
         }} />
       )}
 
-      {session === undefined ? (
+      {session === undefined || (session && (!profileLoaded || !permsLoaded)) ? (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--muted)', fontFamily: 'var(--font-display)', fontSize: 14 }}>
           กำลังโหลด...
         </div>
@@ -841,10 +960,12 @@ export default function App() {
                 session={session}
                 theme={theme}
                 onToggleTheme={toggleTheme}
+                permsVersion={permsVersion}
                 userRole={userRole}
                 userLineId={userLineId}
                 userTeam={userTeam}
                 userSection={userSection}
+                userSections={userSections}
                 userEmail={userEmail}
                 userFullName={userFullName}
                 userNotifyEmail={userNotifyEmail}

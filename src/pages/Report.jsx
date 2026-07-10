@@ -8,7 +8,10 @@ import {
   ResponsiveContainer, Tooltip,
 } from 'recharts';
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
+import { hasPermission, can } from '../utils/permissions';
 import { loadCompanyCalendar, getDayType, DAY_TYPE_META } from '../utils/companyCalendar';
+import { getLineFamilyNames, getLineFamilyIds } from '../utils/lineHierarchy';
+import { inSectionScope } from '../utils/sectionScope';
 import tsLogoUrl from '../assets/TS logo.png';
 import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/changePointChecklist';
 
@@ -82,6 +85,8 @@ function downloadCSV(filename, headers, rows) {
 }
 
 function CsvBtn({ onClick, style = {} }) {
+  const { role } = useContext(UserContext);
+  if (!can('report', 'export', role)) return null;
   return (
     <button onClick={onClick} style={{
       padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
@@ -186,7 +191,8 @@ export default function Report() {
 
 function OtTransportBookingTab({ autoOpenMaster }) {
   const { role } = useContext(UserContext);
-  const canManageMaster = ['admin', 'manager', 'supervisor'].includes(role);
+  const canManageMaster = hasPermission('manage_master_data', role);
+  const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
   const orgDeptList    = useOrgDepts();
 
@@ -310,10 +316,12 @@ table{border-collapse:collapse;width:100%}
             }}>⚙️ จัดการสายรถ/งาน OT</button>
           )}
           <CsvBtn onClick={handleExportCsv} />
-          <button onClick={handlePrint} style={{
-            padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)',
-          }}>🖨️ พิมพ์</button>
+          {canExport && (
+            <button onClick={handlePrint} style={{
+              padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)',
+            }}>🖨️ พิมพ์</button>
+          )}
         </div>
       </div>
 
@@ -464,6 +472,8 @@ function OtMasterDataPanel() {
 }
 
 function DailyTab() {
+  const { role } = useContext(UserContext);
+  const canExport = can('report', 'export', role);
   const now = new Date();
   const isDay = (now.getHours() * 60 + now.getMinutes()) >= 480 && (now.getHours() * 60 + now.getMinutes()) < 1200;
   const orgSectionList = useOrgSections();
@@ -613,9 +623,11 @@ table{border-collapse:collapse;width:100%}
             {DAY_TYPE_META[getDayType(date)].label}
           </span>
         )}
-        <button onClick={handlePrintDaily} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
-          🖨️ PDF
-        </button>
+        {canExport && (
+          <button onClick={handlePrintDaily} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            🖨️ PDF
+          </button>
+        )}
         <CsvBtn onClick={() => downloadCSV(
           `daily_${date}_${shift}.csv`,
           ['วันที่', 'ประเภทวัน', 'กะ', 'รหัสพนักงาน', 'ชื่อ', 'แผนก', 'ทีม', 'หมวก', 'รองเท้า', 'ถุงมือ', 'OT'],
@@ -650,6 +662,8 @@ table{border-collapse:collapse;width:100%}
 }
 
 function PerEmployeeTab() {
+  const { role } = useContext(UserContext);
+  const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
   const orgDeptList    = useOrgDepts();
   const [employees, setEmployees] = useState([]);
@@ -764,9 +778,11 @@ table{border-collapse:collapse;width:100%}
         </select>
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>มา {logs.filter(l => l.is_present).length} วัน</span>
-        <button onClick={handlePrintPerEmp} disabled={logs.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: logs.length === 0 ? 0.5 : 1 }}>
-          🖨️ PDF
-        </button>
+        {canExport && (
+          <button onClick={handlePrintPerEmp} disabled={logs.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: logs.length === 0 ? 0.5 : 1 }}>
+            🖨️ PDF
+          </button>
+        )}
         <CsvBtn onClick={() => {
           const emp = employees.find(e => e.id === selected);
           downloadCSV(
@@ -801,6 +817,8 @@ table{border-collapse:collapse;width:100%}
 }
 
 function StationLogTab() {
+  const { role } = useContext(UserContext);
+  const canExport = can('report', 'export', role);
   const today = getWorkDate();
   const [stations, setStations] = useState([]);
   const [selectedStation, setSelectedStation] = useState('');
@@ -923,9 +941,11 @@ table{border-collapse:collapse;width:100%}
           <option value="night">🌙 กะดึก</option>
         </select>
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>{filteredRows.length} รายการ</span>
-        <button onClick={handlePrintStation} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
-          🖨️ PDF
-        </button>
+        {canExport && (
+          <button onClick={handlePrintStation} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
+            🖨️ PDF
+          </button>
+        )}
         <CsvBtn onClick={() => downloadCSV(
           `station_${station?.station_name || selectedStation}_${from}_${to}.csv`,
           ['วันที่', 'ประเภทวัน', 'รหัส', 'ชื่อ', 'ทีม', 'กะ', 'สังกัด', 'มาทำงาน', 'PPE ครบ'],
@@ -985,6 +1005,8 @@ table{border-collapse:collapse;width:100%}
 }
 
 function RangeTab() {
+  const { role } = useContext(UserContext);
+  const canExport = can('report', 'export', role);
   const today = getWorkDate();
   const [from, setFrom] = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; });
   const [to, setTo] = useState(today);
@@ -1088,9 +1110,11 @@ table{border-collapse:collapse;width:100%}
           <option value="C">Team C</option>
         </select>
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>{filteredRows.length} คน</span>
-        <button onClick={handlePrintRange} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
-          🖨️ PDF
-        </button>
+        {canExport && (
+          <button onClick={handlePrintRange} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
+            🖨️ PDF
+          </button>
+        )}
         <CsvBtn onClick={() => downloadCSV(
           `summary_${from}_${to}.csv`,
           ['รหัสพนักงาน', 'ชื่อ', 'วันที่มา', 'วันทั้งหมด', '%การมาทำงาน'],
@@ -1133,15 +1157,32 @@ const STATUS_META = {
 };
 
 function FourMTab() {
-  const { role } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const orgSectionList = useOrgSections();
 
   // Determine if the current user can act on this log at its current stage
+  // supervisor/leader อนุมัติได้เฉพาะ log ของไลน์/ส่วนงานตัวเอง — กันอนุมัติข้ามไลน์ที่ตัวเองไม่ได้ดูแล
   const canApproveLog = (log) => {
-    if (['admin', 'manager'].includes(role)) return true;
-    if (log.status === 'pending')    return ['supervisor', 'leader'].includes(role);
-    if (log.status === 'pending_qa') return role === 'qa';
-    return false;
+    // QA step — action gate ผ่านตาราง permission (admin/manager/qa ไม่ scope เหมือนเดิม)
+    if (log.status === 'pending_qa') return can('four_m', 'approve_qa', role);
+    if (log.status !== 'pending') return false;
+    // SV step — สิทธิ์ action มาจาก can() ส่วน scoping ยังเป็นตาม role เดิมทุกประการ
+    if (!can('four_m', 'approve_sv', role)) return false;
+    if (role === 'admin') return true;
+    if (role === 'leader') {
+      const myLine = lines.find(l => l.id === userLineId);
+      if (!myLine) return false;
+      // ครอบครัวไลน์ (ตัวเอง + ไลน์หลัก + ไลน์ย่อย) — leader ไลน์ย่อยต้องอนุมัติ log ที่เกิดจาก
+      // การจัดคนลงจุดของไลน์หลัก (พื้นที่เดียวกัน) ได้ด้วย ไม่ใช่แค่สายลงอย่างเดียว
+      return lineFamilyOf(myLine.name).includes(log.line_name);
+    }
+    // role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections) — อนุมัติได้เฉพาะใน scope
+    if (scopeSecs.length) {
+      const logLine = lines.find(l => l.name === log.line_name);
+      return inSectionScope(scopeSecs, logLine?.section);
+    }
+    if (role === 'manager') return true; // manager ไม่กำหนด scope = ไม่จำกัด เหมือนเดิม
+    return false; // supervisor ที่ไม่มี section = fail-closed เหมือนเดิม
   };
 
   const today = getWorkDate();
@@ -1165,14 +1206,34 @@ function FourMTab() {
   const [cpcExporting, setCpcExporting] = useState(false);
   const [imageViewModal, setImageViewModal] = useState(null); // { url, title }
   const [showDocPanel, setShowDocPanel] = useState(false);
-  const canManageDoc = ['admin', 'manager'].includes(role);
+  const canManageDoc = can('four_m', 'manage_docs', role);
+  const canExport = can('report', 'export', role);
+
+  const normSection = (s) => (s || '').trim().toLowerCase();
+  // ครอบครัวไลน์ตามลำดับชั้น (ตัวเอง + สายบน + สายล่าง) — fallback เป็นชื่อเดิมถ้า lines ยังไม่โหลด
+  const lineFamilyOf = (lineName) => {
+    const fam = getLineFamilyNames(lines, lineName);
+    return fam.length ? fam : [lineName];
+  };
+
+  // supervisor/leader เห็น 4M log เฉพาะไลน์/ส่วนงานตัวเอง (เดิมเห็นข้ามไลน์ได้หมด)
+  const allowedLineNames = useMemo(() => {
+    if (role === 'leader' && userLineId) {
+      const myLine = lines.find(l => l.id === userLineId);
+      return myLine ? getLineFamilyNames(lines, myLine.name) : [];
+    }
+    if (scopeSecs.length) {
+      return lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name);
+    }
+    return null;
+  }, [role, scopeSecs, userLineId, lines]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('name, section').order('name').then(({ data }) => setLines(data || []));
+    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name').then(({ data }) => setLines(data || []));
     loadCompanyCalendar();
   }, []);
 
-  useEffect(() => { load(); }, [from, to, line, cat, statusFilter]);
+  useEffect(() => { load(); }, [from, to, line, cat, statusFilter, allowedLineNames]);
 
   const load = async () => {
     setLoading(true);
@@ -1182,9 +1243,10 @@ function FourMTab() {
       .order('work_date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(5000);
-    if (line)         q = q.eq('line_name', line);
+    if (line)         q = q.in('line_name', lineFamilyOf(line)); // เลือกไลน์ = เห็นทั้งครอบครัวไลน์ (หลัก↔ย่อย)
     if (cat)          q = q.eq('category', cat);
     if (statusFilter) q = q.eq('status', statusFilter);
+    if (allowedLineNames) q = q.in('line_name', allowedLineNames.length ? allowedLineNames : ['__none__']);
     const { data } = await q;
     setLogs(data || []);
 
@@ -1278,7 +1340,7 @@ function FourMTab() {
 
     const { data: monthLogs } = await supabase.from('four_m_logs')
       .select('id, work_date, line_name, category, description, status, created_at, created_by, sv_approved_by, approved_by')
-      .eq('line_name', line).eq('status', 'approved')
+      .in('line_name', lineFamilyOf(line)).eq('status', 'approved')
       .gte('work_date', monthStart).lte('work_date', monthEnd)
       .limit(5000);
 
@@ -1567,8 +1629,11 @@ function FourMTab() {
         <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
         <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }} />
         {(() => {
-          const fourMSections = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
-          const fourMVisibleLines = fourMSection ? lines.filter(l => l.section === fourMSection) : lines;
+          const scopedLines = allowedLineNames ? lines.filter(l => allowedLineNames.includes(l.name)) : lines;
+          const fourMSections = allowedLineNames
+            ? [...new Set(scopedLines.map(l => l.section).filter(Boolean))].sort()
+            : (orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort());
+          const fourMVisibleLines = fourMSection ? scopedLines.filter(l => l.section === fourMSection) : scopedLines;
           return (<>
             <select value={fourMSection} onChange={e => { setFourMSection(e.target.value); setLine(''); }} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
               <option value="">ทุกส่วนงาน</option>
@@ -1601,15 +1666,19 @@ function FourMTab() {
           ['วันที่', 'ประเภทวัน', 'ไลน์', 'ประเภท', 'ประเภทย่อย', 'รายละเอียด', 'สถานะ', 'เวลาสร้าง'],
           logs.map(l => [l.work_date, DAY_TYPE_META[getDayType(l.work_date)].label, l.line_name, l.category, l.change_subtype || '', l.description, l.status, l.created_at ? fmtDateTime(l.created_at) : ''])
         )} />
-        <span style={{ width: 1, alignSelf: 'stretch', background: 'var(--border)', margin: '0 2px' }} />
-        <input type="month" value={cpcMonth} onChange={e => setCpcMonth(e.target.value)} style={{ padding: '6px 8px', borderRadius: 7, fontSize: 12 }} />
-        <button onClick={handleExportChangePointPdf} disabled={cpcExporting || !line}
-          title={!line ? 'เลือกไลน์ก่อน' : 'Export ใบบันทึกการเปลี่ยนแปลง (Changing Point Control Record)'}
-          style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            background: 'rgba(234,179,8,0.15)', color: '#ca8a04', border: '1px solid rgba(234,179,8,0.4)',
-            opacity: (cpcExporting || !line) ? 0.5 : 1 }}>
-          {cpcExporting ? 'กำลังสร้าง...' : '📅 Export Changing Point'}
-        </button>
+        {canExport && (
+          <>
+            <span style={{ width: 1, alignSelf: 'stretch', background: 'var(--border)', margin: '0 2px' }} />
+            <input type="month" value={cpcMonth} onChange={e => setCpcMonth(e.target.value)} style={{ padding: '6px 8px', borderRadius: 7, fontSize: 12 }} />
+            <button onClick={handleExportChangePointPdf} disabled={cpcExporting || !line}
+              title={!line ? 'เลือกไลน์ก่อน' : 'Export ใบบันทึกการเปลี่ยนแปลง (Changing Point Control Record)'}
+              style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                background: 'rgba(234,179,8,0.15)', color: '#ca8a04', border: '1px solid rgba(234,179,8,0.4)',
+                opacity: (cpcExporting || !line) ? 0.5 : 1 }}>
+              {cpcExporting ? 'กำลังสร้าง...' : '📅 Export Changing Point'}
+            </button>
+          </>
+        )}
         {canManageDoc && (
           <button onClick={() => setShowDocPanel(v => !v)} style={{
             padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
@@ -1700,7 +1769,7 @@ function FourMTab() {
                           </span>
                         )
                       ) : (
-                        ['admin','manager'].includes(role) && (
+                        can('four_m', 'reset', role) && (
                           <button onClick={() => supabase.from('four_m_logs').update({ status: 'pending', sv_approved_by: null, sv_approved_at: null, approved_by: null, approved_at: null, reject_reason: null }).eq('id', l.id).then(load)}
                             style={{ padding: '3px 8px', borderRadius: 5, fontSize: 10, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
                             Reset
@@ -2086,6 +2155,8 @@ function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilt
 }
 
 function SkillMatrixTab() {
+  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const canExport = can('report', 'export', role);
   const vw = useWidth();
   const [skillDefs,      setSkillDefs]      = useState([]);
   const [employees,      setEmployees]      = useState([]);
@@ -2098,17 +2169,28 @@ function SkillMatrixTab() {
   const [selectedEmp,    setSelectedEmp]    = useState(null);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section').order('name').then(({ data }) => setLines(data || []));
+    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name').then(({ data }) => setLines(data || []));
     load();
   }, []);
 
-  useEffect(() => { load(); }, [filterLine, filterSection, filterTeam, filterDept]);
+  // lines อยู่ใน deps ด้วย — scope ครอบครัวไลน์ของ leader ต้อง re-apply หลัง lines โหลดเสร็จ
+  useEffect(() => { load(); }, [filterLine, filterSection, filterTeam, filterDept, lines]);
+
+  // กรองด้วยไลน์ = ทั้งครอบครัวไลน์ (ตัวเอง + ไลน์หลัก + ไลน์ย่อย) — fallback id เดิมถ้า lines ยังไม่โหลด
+  const lineFamilyIdsOf = (lineId) => {
+    const ids = getLineFamilyIds(lines, Number(lineId));
+    return ids.size ? [...ids] : [lineId];
+  };
 
   const load = async () => {
     setLoading(true);
     const baseSelect = 'id, name, employee_id_code, image_url, group_name, line_id, section, department, team, employee_skills(skill_name, score)';
     let q = supabase.from('employees').select(baseSelect).eq('is_active', true);
-    if (filterLine) q = q.eq('line_id', filterLine);
+    // leader/supervisor เห็นเฉพาะไลน์/ส่วนงานตัวเองเสมอ ไม่ว่า filter ที่เลือกไว้จะเป็นอะไร —
+    // บังคับ scope นี้เพิ่มเติมจาก filter อิสระ กันดูข้ามไลน์/ส่วนงานที่ตัวเองไม่ได้ดูแล
+    if (role === 'leader' && userLineId) q = q.in('line_id', lineFamilyIdsOf(userLineId));
+    else if (scopeSecs.length) q = q.in('section', scopeSecs);
+    if (filterLine) q = q.in('line_id', lineFamilyIdsOf(filterLine));
     else if (filterSection) q = q.eq('section', filterSection);
     if (filterTeam) q = q.eq('team', filterTeam);
     if (filterDept) q = q.eq('department', filterDept);
@@ -2136,6 +2218,7 @@ function SkillMatrixTab() {
         <FilterBar lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>{employees.length} คน · {skillDefs.length} สกิล</span>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>· คลิกที่พนักงานเพื่อดู Radar Chart</span>
+        {canExport && (
         <button onClick={() => {
           const groups = groupSkillsByCategory(skillDefs);
           const ordered = groups.flatMap(g => g.skills);
@@ -2178,6 +2261,7 @@ ${catHeaderCells}
         }} disabled={employees.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: employees.length === 0 ? 0.5 : 1 }}>
           🖨️ PDF
         </button>
+        )}
         <CsvBtn onClick={() => {
           const groups = groupSkillsByCategory(skillDefs);
           const ordered = groups.flatMap(g => g.skills);
@@ -2574,7 +2658,8 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
 
 function MultiSkillFormTab() {
   const vw = useWidth();
-  const { role, signatureUrl: ctxSigUrl, fullName: ctxFullName } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], signatureUrl: ctxSigUrl, fullName: ctxFullName } = useContext(UserContext);
+  const canExport = can('report', 'export', role);
 
   const [skillDefs,     setSkillDefs]     = useState([]);
   const [employees,     setEmployees]     = useState([]);
@@ -2615,7 +2700,7 @@ function MultiSkillFormTab() {
   }, [role, ctxFullName, ctxSigUrl]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section').order('name')
+    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
       .then(({ data }) => setLines(data || []));
     supabase.from('skill_definitions').select('*').order('sort_order')
       .then(({ data }) => setSkillDefs(data || []));
@@ -2643,11 +2728,20 @@ function MultiSkillFormTab() {
       });
   }, [filterLine, lines]);
 
+  // กรองด้วยไลน์ = ทั้งครอบครัวไลน์ (ตัวเอง + ไลน์หลัก + ไลน์ย่อย) — fallback id เดิมถ้า lines ยังไม่โหลด
+  const lineFamilyIdsOf = (lineId) => {
+    const ids = getLineFamilyIds(lines, Number(lineId));
+    return ids.size ? [...ids] : [lineId];
+  };
+
   const load = async () => {
     setLoading(true);
     const sel = 'id, name, employee_id_code, position, section, department, team, start_date, employee_skills(skill_name, score)';
     let q = supabase.from('employees').select(sel).eq('is_active', true);
-    if (filterLine) q = q.eq('line_id', filterLine);
+    // leader/supervisor เห็นเฉพาะไลน์/ส่วนงานตัวเองเสมอ ไม่ว่า filter ที่เลือกไว้จะเป็นอะไร
+    if (role === 'leader' && userLineId) q = q.in('line_id', lineFamilyIdsOf(userLineId));
+    else if (scopeSecs.length) q = q.in('section', scopeSecs);
+    if (filterLine) q = q.in('line_id', lineFamilyIdsOf(filterLine));
     else if (filterSection) q = q.eq('section', filterSection);
     if (filterTeam) q = q.eq('team', filterTeam);
     if (filterDept) q = q.eq('department', filterDept);
@@ -2824,9 +2918,11 @@ function MultiSkillFormTab() {
                 <span style={{ fontWeight: 700, fontSize: 15 }}>MULTI SKILL OF OPERATORS</span>
                 <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 10 }}>{employees.length} คน · {skillDefs.length} ทักษะ</span>
               </div>
-              <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                🖨️ Export PDF
-              </button>
+              {canExport && (
+                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  🖨️ Export PDF
+                </button>
+              )}
             </div>
 
             {/* Legend */}
@@ -3241,6 +3337,8 @@ const SHIFT_DEFS = [
 ];
 
 function SkillAllowanceTab() {
+  const { role } = useContext(UserContext);
+  const canExport = can('report', 'export', role);
   const today = new Date();
   const [year,   setYear]   = useState(today.getFullYear());
   const [month,  setMonth]  = useState(today.getMonth() + 1);
@@ -3264,7 +3362,7 @@ function SkillAllowanceTab() {
   const [signerHRM,      setSignerHRM]     = useState('');
 
   useEffect(() => {
-    supabase.from('production_lines').select('name, section, cost_center, head_name').order('name')
+    supabase.from('production_lines').select('name, section, cost_center, head_name, parent_line_name').order('name')
       .then(({ data }) => setLines(data || []));
     supabase.from('skill_definitions').select('category, allowance_type').eq('category', 'allowance_skill')
       .then(({ data }) => setSkillDefs(data || []));
@@ -3310,7 +3408,11 @@ function SkillAllowanceTab() {
     let stQ = supabase.from('workstations').select('id, station_name, line_name')
       .eq('skill_allowance', true)
       .eq('skill_allowance_type', workType);
-    if (line) stQ = stQ.eq('line_name', line);
+    // เลือกไลน์ = ทั้งครอบครัวไลน์ (หลัก↔ย่อย) — สถานีค่าฝีมืออาจถูก set ไว้ที่ไลน์ย่อยของไลน์ที่เลือก
+    if (line) {
+      const fam = getLineFamilyNames(lines, line);
+      stQ = stQ.in('line_name', fam.length ? fam : [line]);
+    }
     const { data: stations } = await stQ;
     if (!stations?.length) { setRows([]); setLoading(false); return; }
 
@@ -3679,9 +3781,11 @@ function SkillAllowanceTab() {
               <span style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>
                 {rows.length} คน
               </span>
-              <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                🖨️ Export PDF
-              </button>
+              {canExport && (
+                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  🖨️ Export PDF
+                </button>
+              )}
             </div>
           </div>
           <table style={{ minWidth: 600, borderCollapse: 'collapse', fontSize: 12 }}>
@@ -3745,6 +3849,8 @@ function SkillAllowanceTab() {
    📋 AttendanceFormTab — ใบบันทึกการมาทำงาน
    ══════════════════════════════════════════════════════════════ */
 function AttendanceFormTab() {
+  const { role } = useContext(UserContext);
+  const canExport = can('report', 'export', role);
   const today   = new Date();
   const orgSectionList = useOrgSections();
   const orgDeptList    = useOrgDepts();
@@ -3762,7 +3868,7 @@ function AttendanceFormTab() {
   const [calLoaded, setCalLoaded] = useState(false);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section').order('name')
+    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
       .then(({ data }) => setLines(data || []));
     loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
@@ -3806,10 +3912,11 @@ function AttendanceFormTab() {
     const endDate   = `${year}-${pad(month)}-${pad(days[days.length - 1])}`;
 
     // Step 1: get employees matching current filters from employees table (server-side)
-    const selectedLineId = line ? (lines.find(l => l.name === line)?.id ?? null) : null;
+    // เลือกไลน์ = ทั้งครอบครัวไลน์ (หลัก↔ย่อย) — พนักงานอาจผูกกับไลน์หลักแต่ทำงานไลน์ย่อย หรือกลับกัน
+    const familyIds = line ? [...getLineFamilyIds(lines, line)] : [];
     let empQ = supabase.from('employees')
       .select('id, name, employee_id_code, section, department, team, line_id');
-    if (selectedLineId) empQ = empQ.eq('line_id', selectedLineId);
+    if (line && familyIds.length) empQ = empQ.in('line_id', familyIds);
     if (dept)           empQ = empQ.eq('section', dept);
     if (empDept)        empQ = empQ.eq('department', empDept);
     if (team)           empQ = empQ.eq('team', team);
@@ -4202,9 +4309,11 @@ function AttendanceFormTab() {
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>
                 งวดวันที่ {days[0]}-{days[days.length-1]} {THAI_MONTHS[month]} {year+543} · {empRows.length} คน
               </span>
-              <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                🖨️ Export PDF
-              </button>
+              {canExport && (
+                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  🖨️ Export PDF
+                </button>
+              )}
             </div>
           </div>
           <table style={{ borderCollapse: 'collapse', fontSize: 11 }}>

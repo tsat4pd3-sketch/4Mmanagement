@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
+import InternalTimeBoard from '../components/InternalTimeBoard';
+import { frameMin, frameMinFromIso, breaksToFrame } from '../utils/timeFrame';
 
 /* ─── RACK CENTER — เรียกภาชนะ/แร็คเปล่าคืนกลับมาใช้ ──────────────────────
    ไลน์ผลิตส่งกล่อง/ถาด/แร็คเปล่ากลับ rack center → ขอภาชนะชุดใหม่กลับมาใช้
@@ -34,7 +37,8 @@ function timeAgo(iso) {
 const EMPTY_FORM = { line_name: '', container_type_id: '', qty: '1', note: '' };
 
 export default function RackCenter() {
-  const { fullName } = useContext(UserContext);
+  const { fullName, role } = useContext(UserContext);
+  const canOperate = can('rack_center', 'operate', role);
 
   const [lines,          setLines]          = useState([]);
   const [containerTypes, setContainerTypes] = useState([]);
@@ -47,18 +51,26 @@ export default function RackCenter() {
   const [showDone,       setShowDone]       = useState(false);
   const [pkgReqs,        setPkgReqs]        = useState([]);   // packaging_withdrawal_requests
   const [pkgBusy,        setPkgBusy]        = useState(null);
+  const [view,           setView]           = useState('board');   // 'board' | 'time' | 'sla'
+  const [sla,            setSla]            = useState({ prepare_within_min: 15, deliver_within_min: 45 });
+  const [slaDraft,       setSlaDraft]       = useState(null);
+  const [popup,          setPopup]          = useState(null);      // { r, x, y } — คลิกบล็อกบนบอร์ดเวลา
+  const [nowMs,          setNowMs]          = useState(() => Date.now());   // นาฬิกาบอร์ดเวลา/SLA
+  const [breakPolicies,  setBreakPolicies]  = useState([]);        // เงาเวลาพักบนบอร์ดเวลา
 
   const load = useCallback(async () => {
-    const [{ data: ln }, { data: ct }, { data: req }, { data: pkg }] = await Promise.all([
+    const [{ data: ln }, { data: ct }, { data: req }, { data: pkg }, { data: slaRow }] = await Promise.all([
       supabase.from('production_lines').select('name').order('name'),
       supabaseDR.from('container_types').select('*').eq('is_active', true).order('name'),
       supabaseDR.from('rack_requests').select('*').order('requested_at', { ascending: false }).limit(200),
       supabaseDR.from('packaging_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(200),
+      supabaseDR.from('internal_delivery_sla').select('*').eq('kind', 'rack').maybeSingle(),
     ]);
     setLines(ln || []);
     setContainerTypes(ct || []);
     setRequests(req || []);
     setPkgReqs(pkg || []);
+    if (slaRow) setSla(slaRow);
   }, []);
 
   const issuePkg = async (p) => {
@@ -73,6 +85,14 @@ export default function RackCenter() {
   };
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    supabaseDR.from('break_policies').select('*').eq('is_active', true)
+      .then(({ data }) => setBreakPolicies(data || []));
+  }, []);
 
   // live refresh เมื่อมีไลน์/rack center อื่นกดเปลี่ยนสถานะ
   useEffect(() => {
@@ -158,6 +178,13 @@ export default function RackCenter() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          {[{ id: 'board', label: '📋 บอร์ดสถานะ' }, { id: 'time', label: '🕐 บอร์ดเวลา' }, { id: 'sla', label: '⚙️ SLA' }].map(v => (
+            <button key={v.id} onClick={() => setView(v.id)}
+              style={{ padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+                background: view === v.id ? 'var(--accent)' : 'var(--bg2)', color: view === v.id ? '#08130a' : 'var(--text2)',
+                border: `1px solid ${view === v.id ? 'var(--accent)' : 'var(--border)'}` }}>{v.label}</button>
+          ))}
+          <span style={{ width: 1, height: 22, background: 'var(--border)' }} />
           <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, width: 160 }}>
             <option value="">ทุกไลน์</option>
             {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
@@ -166,9 +193,11 @@ export default function RackCenter() {
             <input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} />
             แสดงที่รับแล้ว
           </label>
-          <button onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineFilter }); setShowForm(true); }} style={btn('#16a34a')}>
-            🔔 เรียกภาชนะ
-          </button>
+          {canOperate && (
+            <button onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineFilter }); setShowForm(true); }} style={btn('#16a34a')}>
+              🔔 เรียกภาชนะ
+            </button>
+          )}
         </div>
       </div>
 
@@ -193,10 +222,10 @@ export default function RackCenter() {
                     {p.source_line ? `🏭 ${p.source_line}` : ''}{p.product_name ? ` · ${p.product_name}` : ''}
                     {p.source_prod_no ? ` · FG ${p.source_prod_no}` : ''}
                   </div>
-                  <button onClick={() => issuePkg(p)} disabled={pkgBusy === p.id}
+                  {canOperate && <button onClick={() => issuePkg(p)} disabled={pkgBusy === p.id}
                     style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
                     {pkgBusy === p.id ? '...' : '✔ จ่าย Packaging'}
-                  </button>
+                  </button>}
                 </div>
               ))}
             </div>
@@ -204,7 +233,82 @@ export default function RackCenter() {
         );
       })()}
 
+      {/* 🕐 บอร์ดเวลา — สไตล์ Shipping Chart ปลายทางเป็นไลน์ภายใน + SLA walkforward จากเวลาเรียก */}
+      {view === 'time' && (() => {
+        const fs = new Date(nowMs);
+        if (fs.getHours() < 8) fs.setDate(fs.getDate() - 1);
+        fs.setHours(8, 0, 0, 0);
+        const fe = fs.getTime() + 24 * 3600000;
+        const inFrame = filtered.filter(r => r.status !== 'cancelled' && r.requested_at
+          && new Date(r.requested_at).getTime() >= fs.getTime() && new Date(r.requested_at).getTime() < fe);
+        const slaState = (r) => {
+          if (r.status === 'received' || r.status === 'delivered') return null;
+          const req = new Date(r.requested_at).getTime();
+          if (nowMs > req + (sla.deliver_within_min || 45) * 60000) return 'deliver';   // เลย SLA ส่งถึงไลน์
+          if (r.status === 'requested' && nowMs > req + (sla.prepare_within_min || 15) * 60000) return 'prepare';
+          return null;
+        };
+        const colorOf = (r) => {
+          const b = slaState(r);
+          if (b === 'deliver') return '#ef4444';
+          if (b === 'prepare') return '#f97316';
+          return (STATUS_COLS.find(c => c.key === r.status) || STATUS_COLS[0]).color;
+        };
+        const byLine = {};
+        inFrame.forEach(r => { (byLine[r.line_name] = byLine[r.line_name] || []).push(r); });
+        const groups = Object.keys(byLine).sort().map(lnName => ({
+          key: lnName, label: lnName,
+          sub: `${byLine[lnName].length} รายการ · ✅ ${byLine[lnName].filter(x => x.status === 'received').length}`,
+          items: byLine[lnName].map(r => {
+            const tm = frameMinFromIso(r.requested_at);
+            const hhmm = new Date(r.requested_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+            return { id: r.id, timeMin: tm ?? 480, color: colorOf(r), text: `${hhmm}${r.status === 'received' ? ' ✅' : ''}`,
+              title: `${hhmm} · ${r.container_name} ×${r.qty} · ${r.line_name}`, data: r };
+          }),
+        }));
+        const nowD = new Date(nowMs);
+        const nm = frameMin(`${String(nowD.getHours()).padStart(2, '0')}:${String(nowD.getMinutes()).padStart(2, '0')}`);
+        return (
+          <InternalTimeBoard
+            title={`🕐 บอร์ดเวลาเรียกภาชนะ — วันงานปัจจุบัน`}
+            hint={`SLA: เริ่มเตรียมใน ${sla.prepare_within_min} นาที · ส่งถึงไลน์ใน ${sla.deliver_within_min} นาที (🟠 เลยเตรียม · 🔴 เลยส่ง)`}
+            groups={groups} nowMin={nm} breaks={breaksToFrame(breakPolicies)}
+            onItemClick={(r, x, y) => setPopup({ r, x, y })}
+          />
+        );
+      })()}
+
+      {/* ⚙️ SLA config — ปรับได้เหมือน ship-to config */}
+      {view === 'sla' && (
+        <div style={{ ...card, maxWidth: 560 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>⚙️ SLA การส่งภาชนะภายในโรงงาน</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
+            นับจากเวลาที่ไลน์กดเรียก — เกินกำหนดแล้วยังไม่ถึงสถานะ บล็อกบนบอร์ดเวลาจะเปลี่ยนเป็น 🟠/🔴 ให้เห็นทันที
+          </div>
+          {[
+            { k: 'prepare_within_min', label: '🔧 ต้องเริ่มเตรียมภายใน (นาที)' },
+            { k: 'deliver_within_min', label: '🚚 ต้องส่งถึงไลน์ภายใน (นาที)' },
+          ].map(f => (
+            <div key={f.k} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+              <span style={{ fontSize: 13, color: 'var(--text2)', flex: 1 }}>{f.label}</span>
+              <input type="number" min="1" value={(slaDraft ?? sla)[f.k]} disabled={!canOperate}
+                onChange={e => setSlaDraft(d => ({ ...(d ?? sla), [f.k]: e.target.value }))}
+                style={{ ...inputSt, width: 110, textAlign: 'center', fontWeight: 800 }} />
+            </div>
+          ))}
+          {canOperate && slaDraft && (
+            <button onClick={async () => {
+              const payload = { prepare_within_min: Math.max(1, parseInt(slaDraft.prepare_within_min) || 15), deliver_within_min: Math.max(1, parseInt(slaDraft.deliver_within_min) || 45), updated_at: new Date().toISOString() };
+              const { error } = await supabaseDR.from('internal_delivery_sla').update(payload).eq('kind', 'rack');
+              if (error) toast.error(error.message);
+              else { setSla(x => ({ ...x, ...payload })); setSlaDraft(null); toast.success('บันทึก SLA แล้ว'); }
+            }} style={btn('#16a34a')}>💾 บันทึก SLA</button>
+          )}
+        </div>
+      )}
+
       {/* Kanban board: 4 status columns */}
+      {view === 'board' && (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 14 }}>
         {STATUS_COLS.map(col => (
           <div key={col.key} style={{ ...card, padding: 0, overflow: 'hidden' }}>
@@ -224,10 +328,10 @@ export default function RackCenter() {
                     </div>
                     <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>{r.container_name}</div>
                     {r.note && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>📝 {r.note}</div>}
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
                       {r.requested_by ? `โดย ${r.requested_by} · ` : ''}{timeAgo(r.requested_at)}
                     </div>
-                    {col.key !== 'received' && (
+                    {canOperate && col.key !== 'received' && (
                       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                         <button onClick={() => advance(r)} disabled={busyId === r.id}
                           style={{ ...btn(col.color), flex: 1, padding: '6px 10px', fontSize: 12, opacity: busyId === r.id ? 0.6 : 1 }}>
@@ -248,6 +352,48 @@ export default function RackCenter() {
           </div>
         ))}
       </div>
+      )}
+
+      {/* popup รายละเอียดจากบอร์ดเวลา */}
+      {popup && (() => {
+        const r = popup.r;
+        const col = STATUS_COLS.find(c => c.key === r.status) || STATUS_COLS[0];
+        const W = 260;
+        const left = Math.max(8, Math.min(popup.x - W / 2, window.innerWidth - W - 12));
+        const top = Math.min(popup.y + 12, window.innerHeight - 240);
+        return (
+          <>
+            <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 999, background: 'var(--bg3)', border: `1px solid ${col.color}66`, borderRadius: 12, boxShadow: '0 8px 28px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
+              <div style={{ height: 4, background: col.color }} />
+              <div style={{ padding: '10px 14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)' }}>📍 {r.line_name}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: col.color }}>{col.label}</span>
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>{r.container_name} <b>×{r.qty}</b></div>
+                {r.note && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>📝 {r.note}</div>}
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
+                  🔔 {r.requested_by || '-'} · {timeAgo(r.requested_at)}
+                  {r.delivered_by ? ` · 🚚 ${r.delivered_by}` : ''}{r.received_by ? ` · ✅ ${r.received_by}` : ''}
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                  {canOperate && r.status !== 'received' && (
+                    <button onClick={() => { advance(r); setPopup(null); }} disabled={busyId === r.id}
+                      style={{ ...btn(col.color), flex: 1, padding: '7px 8px', fontSize: 11 }}>
+                      {ACTION_LABEL[r.status] || '...'}
+                    </button>
+                  )}
+                  {canOperate && ['requested', 'preparing'].includes(r.status) && (
+                    <button onClick={() => { cancel(r); setPopup(null); }}
+                      style={{ ...btn('rgba(239,68,68,0.1)', '#ef4444'), border: '1px solid rgba(239,68,68,0.3)', padding: '7px 10px', fontSize: 11 }}>✕</button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Request modal */}
       {showForm && (

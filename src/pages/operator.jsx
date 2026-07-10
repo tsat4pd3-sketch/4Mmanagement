@@ -4,6 +4,8 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
+import { can } from '../utils/permissions';
+import { inSectionScope } from '../utils/sectionScope';
 
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
@@ -49,9 +51,12 @@ const getEmpGrade = (code = '') => {
 };
 
 export default function Operator() {
-  const { role, lineId: userLineId, section: userSection } = useContext(UserContext);
+  const { role, lineId: userLineId, section: userSection, sections: scopeSecs = [] } = useContext(UserContext);
   const isLeader = role === 'leader';
   const isSupervisor = role === 'supervisor';
+  // ถ้าขอบเขตเหลือ section เดียว → ล็อกฟิลด์ Section ตอนแก้ไขพนักงาน (พฤติกรรม supervisor เดิม)
+  // หลาย section → เปิดให้เลือกได้เฉพาะใน scope ตัวเอง
+  const lockedScopeSec = scopeSecs.length === 1 ? scopeSecs[0] : null;
 
   const [tab, setTab] = useState(0);
   const [skillDefs, setSkillDefs] = useState([]);
@@ -197,7 +202,7 @@ export default function Operator() {
     const makeBase = () => {
       let q = supabase.from('employees').select('*, employee_skills(skill_name, score, pending_level)');
       if (isLeader && userLineId)       q = q.eq('line_id', userLineId);
-      if (isSupervisor && userSection)  q = q.eq('section', userSection);
+      else if (scopeSecs.length)        q = q.in('section', scopeSecs);
       return q;
     };
     const [{ data: active }, { data: inactive }] = await Promise.all([
@@ -274,7 +279,7 @@ export default function Operator() {
         name:       editingEmp.name,
         position:   editingEmp.position   || null,
         department: editingEmp.department,
-        section:    isSupervisor ? (userSection || null) : (editingEmp.section || null),
+        section:    lockedScopeSec || editingEmp.section || null,
         group_name: editingEmp.group_name || null,
         team:       editingEmp.team       || null,
         line_id:    editingEmp.line_id    || null,
@@ -283,6 +288,15 @@ export default function Operator() {
         start_date: editingEmp.start_date || null,
       }).eq('id', editingEmp.id);
       if (error) throw error;
+
+      // เปลี่ยนรูปสำเร็จแล้วค่อยลบไฟล์รูปเดิมทิ้ง — ไฟล์ใหม่ได้ชื่อใหม่เสมอ (emp_<timestamp>)
+      // ถ้าไม่ลบ ไฟล์เก่าจะกองเป็นขยะใน storage (เคยสะสมกว่า 100MB) · fire-and-forget ลบพลาดไม่ต้อง error
+      if (editingEmp.newPhoto && editingEmp.image_url?.includes('/employee-photos/')) {
+        const oldName = decodeURIComponent(editingEmp.image_url.split('/employee-photos/')[1] || '');
+        if (oldName && !oldName.startsWith('layouts/')) {
+          supabase.storage.from('employee-photos').remove([oldName]);
+        }
+      }
 
       // Skills marked as enabled → upsert; disabled (N/A) → delete record
       const enabledSkills = skillDefs.filter(sd => editingEmp.skillEnabled?.[sd.name]);
@@ -436,13 +450,13 @@ export default function Operator() {
             )}
           </button>
         ))}
-        {isSupervisor && userSection && (
+        {scopeSecs.length > 0 && (
           <div style={{
             fontSize: 11, color: '#4d9fff', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
             padding: '4px 8px', borderRadius: 6,
             background: 'rgba(77,159,255,0.1)', border: '1px solid rgba(77,159,255,0.25)',
           }}>
-            🏢 {userSection}
+            🏢 {scopeSecs.join(', ')}
           </div>
         )}
         {isLeader && myLineName && (
@@ -549,14 +563,14 @@ export default function Operator() {
             className="skill-table-wrap">
             <div style={{ height: 1, width: tableWrapRef.current?.scrollWidth || 2000 }} />
           </div>
-          <div ref={tableWrapRef} className="card skill-table-wrap"
+          <div ref={tableWrapRef} className="card skill-table-wrap table-sticky"
             style={{ overflowX: 'auto', borderRadius: '0 0 8px 8px', marginTop: 0 }}>
             <table style={{ minWidth: 560, borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  <th style={{ position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 2 }}>โปรไฟล์</th>
-                  <th style={{ position: 'sticky', left: 58, background: 'var(--bg2)', zIndex: 2 }}>ID</th>
-                  <th style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 2, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>ชื่อ</th>
+                  <th style={{ position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 12 }}>โปรไฟล์</th>
+                  <th style={{ position: 'sticky', left: 58, background: 'var(--bg2)', zIndex: 12 }}>ID</th>
+                  <th style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 12, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>ชื่อ</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Section</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>แผนก</th>
                   <th style={{ fontSize: 10, whiteSpace: 'nowrap' }}>Group</th>
@@ -568,7 +582,7 @@ export default function Operator() {
                       {sd.scope_section && <div style={{ fontSize: 8, color: 'var(--muted)', fontWeight: 400 }}>📍{sd.scope_section}</div>}
                     </th>
                   ))}
-                  <th style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 2, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>จัดการ</th>
+                  <th style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 12, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>จัดการ</th>
                 </tr>
               </thead>
               <tbody>
@@ -582,16 +596,28 @@ export default function Operator() {
                         background: !emp.is_active ? 'var(--border2)' : grade.gradient,
                         boxShadow: !emp.is_active ? 'none' : `0 0 10px ${grade.glow}`,
                       }}>
-                        <img
-                          src={emp.image_url || ''}
-                          alt=""
-                          style={{
-                            width: 42, height: 42, borderRadius: 9,
-                            objectFit: 'cover', display: 'block',
-                            filter: !emp.is_active ? 'grayscale(1)' : 'none',
-                            background: 'var(--bg3)',
-                          }}
-                        />
+                        {emp.image_url ? (
+                          <img
+                            src={emp.image_url}
+                            alt=""
+                            style={{
+                              width: 42, height: 42, borderRadius: 9,
+                              objectFit: 'cover', display: 'block',
+                              filter: !emp.is_active ? 'grayscale(1)' : 'none',
+                              background: 'var(--bg3)',
+                            }}
+                          />
+                        ) : (
+                          <div
+                            title="ยังไม่มีรูป — กด ✏️ แก้ไขเพื่ออัปโหลดรูป"
+                            style={{
+                              width: 42, height: 42, borderRadius: 9,
+                              background: 'var(--bg3)', display: 'flex',
+                              alignItems: 'center', justifyContent: 'center', fontSize: 20,
+                            }}>
+                            👤
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td style={{ position: 'sticky', left: 58, background: 'var(--bg2)', zIndex: 1 }}>
@@ -646,6 +672,7 @@ export default function Operator() {
                     <td style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 1, boxShadow: '-2px 0 8px rgba(0,0,0,0.18)', padding: '0 8px' }}>
                       {emp.is_active ? (
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
+                          {can('employees', 'edit', role) && (
                           <button title="แก้ไขข้อมูล" onClick={() => openEdit(emp)} style={{
                             width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
                             background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
@@ -656,6 +683,8 @@ export default function Operator() {
                             onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245,158,11,0.12)'; e.currentTarget.style.transform = 'scale(1)'; }}>
                             ✏️
                           </button>
+                          )}
+                          {can('employees', 'deactivate', role) && (
                           <button title="ปิดใช้งาน" onClick={() => handleDeactivate(emp.id, emp.name)} style={{
                             width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
                             background: 'rgba(239,68,68,0.1)', color: '#ef4444',
@@ -666,8 +695,9 @@ export default function Operator() {
                             onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; e.currentTarget.style.transform = 'scale(1)'; }}>
                             🚫
                           </button>
+                          )}
                         </div>
-                      ) : (
+                      ) : can('employees', 'deactivate', role) ? (
                         <button title="เปิดใช้งานอีกครั้ง" onClick={() => handleReactivate(emp.id)} style={{
                           width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
                           background: 'rgba(34,197,94,0.12)', color: '#22c55e',
@@ -679,7 +709,7 @@ export default function Operator() {
                           onMouseLeave={e => { e.currentTarget.style.background = 'rgba(34,197,94,0.12)'; e.currentTarget.style.transform = 'scale(1)'; }}>
                           ↩
                         </button>
-                      )}
+                      ) : null}
                     </td>
                   </tr>
                   );
@@ -735,11 +765,11 @@ export default function Operator() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                        {['admin','manager','supervisor'].includes(role) && (
+                        {can('skills', 'edit', role) && (
                           <button onClick={() => setEditingSkill({ ...sd, scope_section: sd.scope_section || '' })}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>✏️</button>
                         )}
-                        {['admin','manager'].includes(role) && (
+                        {can('skills', 'delete', role) && (
                           <button onClick={() => handleDeleteSkill(sd)}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>🗑️</button>
                         )}
@@ -891,7 +921,7 @@ export default function Operator() {
             <div style={{ fontSize: 13, color: 'var(--muted)' }}>
               คำขออัพระดับทักษะที่รอการอนุมัติ ({levelUpRequests.length} รายการ)
             </div>
-            {['admin','manager'].includes(role) && (
+            {can('skills', 'run_weekly_update', role) && (
               <button onClick={handleRunWeeklyUpdate} disabled={runningWeekly}
                 style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
                   background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)',
@@ -923,8 +953,8 @@ export default function Operator() {
                 const toLv = SKILL_LEVELS.find(l => l.min === req.to_level);
                 const needsDoc = req.to_level === 100;
                 const canApprove = req.to_level === 100
-                  ? ['admin','manager'].includes(role)
-                  : ['admin','manager','supervisor'].includes(role);
+                  ? can('skills', 'approve_levelup_100', role)
+                  : can('skills', 'approve_levelup', role);
                 return (
                   <div key={req.id} className="card" style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '14px 16px' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -1055,19 +1085,20 @@ export default function Operator() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <label style={labelSt}>Section / ส่วน</label>
-                  {isSupervisor ? (
-                    <input type="text" value={userSection || ''} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+                  {lockedScopeSec ? (
+                    <input type="text" value={lockedScopeSec} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                   ) : (
                     <select value={editingEmp.section || ''} onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value, department: '' })}>
                       <option value="">— เลือก —</option>
-                      {orgSectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+                      {(scopeSecs.length ? orgSectionOpts.filter(s => inSectionScope(scopeSecs, s)) : orgSectionOpts)
+                        .map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   )}
                 </div>
                 <div>
                   <label style={labelSt}>Department / แผนก</label>
                   {(() => {
-                    const empSection = isSupervisor ? userSection : editingEmp.section;
+                    const empSection = lockedScopeSec || editingEmp.section;
                     const secNode = orgSectionNodes.find(s => (s.code || s.name) === empSection);
                     const deptOpts = secNode ? orgDeptNodes.filter(d => d.parent_id === secNode.id) : [];
                     return (
@@ -1106,7 +1137,7 @@ export default function Operator() {
                     setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
                   }}>
                     <option value="">— เลือก Line —</option>
-                    {(isSupervisor && userSection ? lines.filter(l => l.section === userSection) : lines)
+                    {(scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
                       .map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                   </select>
                 )}

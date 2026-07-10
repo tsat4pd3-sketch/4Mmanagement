@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { fmtDate } from '../utils/dateFormat';
+import { can } from '../utils/permissions';
 
 /* ─── TimeInput24 — native time picker (spinner arrows + clock UI) ─── */
 function TimeInput24({ value = '', onChange, style = {} }) {
@@ -42,15 +43,6 @@ const ROLE_META = {
   QT:  { label: 'Quality Technician',    color: '#a855f7', bg: 'rgba(168,85,247,0.12)'  },
   JME: { label: 'JIG Maintenance',       color: '#f97316', bg: 'rgba(249,115,22,0.12)'  },
   ME:  { label: 'Manufacturing Eng.',    color: '#22c55e', bg: 'rgba(34,197,94,0.12)'   },
-};
-
-// Map system role → CQI role keys they can approve
-const ROLE_CAN_APPROVE = {
-  admin:      ['O','QT','JME','ME'],
-  manager:    ['O','QT','JME','ME'],
-  supervisor: ['O','JME'],
-  leader:     ['O'],
-  qa:         ['QT'],
 };
 
 function toLocalDateStr(d = new Date()) {
@@ -109,6 +101,8 @@ export default function EventLog() {
   });
   const [submitting, setSubmitting] = useState(false);
 
+  const canCreate = can('event_log', 'create', role);
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
     const [
@@ -139,6 +133,10 @@ export default function EventLog() {
 
   /* ── Submit new event ── */
   const handleSubmit = async () => {
+    if (!canCreate) {
+      toast.error('คุณไม่มีสิทธิ์บันทึก Event ใหม่');
+      return;
+    }
     if (!form.line_name || !form.event_no) {
       toast.error('กรุณาเลือก ไลน์ผลิต และ Event ให้ครบ');
       return;
@@ -254,11 +252,13 @@ export default function EventLog() {
           </div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>งานเชื่อม · บันทึกเหตุการณ์ตาม Welding Event Matrix</div>
         </div>
-        <button
-          onClick={() => setTab(tab === 'create' ? 'list' : 'create')}
-          style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'create' ? 'var(--bg3)' : '#16a34a', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
-          {tab === 'create' ? '← กลับรายการ' : '+ บันทึก Event ใหม่'}
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => setTab(tab === 'create' ? 'list' : 'create')}
+            style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'create' ? 'var(--bg3)' : '#16a34a', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+            {tab === 'create' ? '← กลับรายการ' : '+ บันทึก Event ใหม่'}
+          </button>
+        )}
       </div>
 
       {/* KPI row */}
@@ -276,7 +276,7 @@ export default function EventLog() {
         ))}
       </div>
 
-      {tab === 'create' ? (
+      {tab === 'create' && canCreate ? (
         <CreateEventForm
           form={form} setForm={setForm}
           groupedEvents={groupedEvents} lines={lines}
@@ -949,7 +949,9 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
   const cm   = cat ? CAT_META[cat] : null;
   const sm   = STATUS_META[log.overall_status] || STATUS_META.pending;
 
-  const myApproveKeys = ROLE_CAN_APPROVE[role] || [];
+  // Action-level permission gates (role_permissions table via src/utils/permissions.js)
+  const canActForCqiRole = (cqiRole) => can('event_log', `approve_${cqiRole.toLowerCase()}`, role);
+  const canDelete = can('event_log', 'delete', role);
 
   useEffect(() => {
     const loadData = async () => {
@@ -1101,13 +1103,13 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
             })()}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {role === 'admin' && !confirmDelete && (
+            {canDelete && !confirmDelete && (
               <button onClick={() => setConfirmDelete(true)}
                 style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                 🗑 ลบ
               </button>
             )}
-            {role === 'admin' && confirmDelete && (
+            {canDelete && confirmDelete && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>ยืนยันลบ?</span>
                 <button onClick={handleDelete} disabled={deleting}
@@ -1155,7 +1157,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10 }}>
             {approvals.map(appr => {
               const rm = ROLE_META[appr.role_key] || { label: appr.role_key, color: '#aaa', bg: 'rgba(128,128,128,0.1)' };
-              const canApprove = myApproveKeys.includes(appr.role_key) && appr.status === 'pending';
+              const canApprove = canActForCqiRole(appr.role_key) && appr.status === 'pending';
               const checklistDone = isChecklistDone(appr.role_key);
               const checklistItems = checksByRole[appr.role_key] || [];
               const doneCount = checklistItems.filter(item => {
@@ -1243,7 +1245,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {Object.entries(checksByRole).map(([rk, items]) => {
                 const rm = ROLE_META[rk] || { label: rk, color: '#aaa', bg: 'rgba(128,128,128,0.1)' };
-                const canCheck = myApproveKeys.includes(rk);
+                const canCheck = canActForCqiRole(rk);
                 return (
                   <div key={rk}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>

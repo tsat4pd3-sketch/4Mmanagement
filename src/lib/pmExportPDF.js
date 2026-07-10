@@ -11,7 +11,9 @@ const M = 5     // page margin mm
 // `categories`); these maps are built per-export. Fallback keeps old codes
 // rendering if the taxonomy row was removed.
 function hexToRgb(hex) {
-  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex ?? '')
+  let h = (hex ?? '').trim().replace(/^#/, '')
+  if (/^[a-f\d]{3}$/i.test(h)) h = h.split('').map(c => c + c).join('')  // #f00 → ff0000
+  const m = /^([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})?$/i.exec(h)  // trailing group = optional alpha, ignored
   return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [107, 114, 128]
 }
 function buildCatMaps(categories) {
@@ -94,7 +96,7 @@ export async function exportInspectionPDF({
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
   doc.setFont('helvetica', 'normal')
 
-  const datePart = new Date(inspection.inspected_at).toISOString().slice(0, 10)
+  const datePart = new Date(inspection.inspected_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' })
   const dateDisplay = fmtDate(inspection.inspected_at)
 
   let jigImg = null
@@ -103,12 +105,44 @@ export async function exportInspectionPDF({
     jigImg = await urlToBase64(url)
   }
 
+  // ถ้ามี group_name (Item หัวข้อจากฟอร์มจริง) จัดกลุ่มตามนั้น ไม่งั้นตาม category แบบเดิม
+  const useNamed = checkpoints.some(c => (c.group_name ?? '').trim())
   const groupOrder = []
   const groupMap = {}
   for (const cp of checkpoints) {
-    const cat = cp.category ?? '__none__'
+    const cat = useNamed ? ((cp.group_name ?? '').trim() || '__none__') : (cp.category ?? '__none__')
     if (!groupMap[cat]) { groupMap[cat] = []; groupOrder.push(cat) }
     groupMap[cat].push(cp)
+  }
+  const namedKeys = groupOrder.filter(k => k !== '__none__')
+
+  // preload รูปอ้างอิงต่อ checkpoint (คอลัมน์ Picture)
+  const cpImgs = {}
+  await Promise.all(checkpoints.filter(c => c.image_path).map(async (c) => {
+    const url = supabaseDR.storage.from('jig-images').getPublicUrl(c.image_path).data.publicUrl
+    cpImgs[c.id] = await urlToBase64(url)
+  }))
+
+  // One item number shared by the image pins and every table row, numbered in
+  // table order (by category group). X/Y measurements of one variable share a
+  // number (deduped by base name within the group); attributes get one each —
+  // so a pin labelled "5" always points at table item 5.
+  const itemNoMap = {}
+  {
+    let n = 0
+    for (const cat of groupOrder) {
+      const seenBase = {}
+      for (const cp of groupMap[cat]) {
+        if (cp.type === 'variable') {
+          const base = (cp.name ?? '').replace(/\s+[XY]$/i, '').trim()
+          if (seenBase[base] == null) { n += 1; seenBase[base] = n }
+          itemNoMap[cp.id] = seenBase[base]
+        } else {
+          n += 1
+          itemNoMap[cp.id] = n
+        }
+      }
+    }
   }
 
   // SECTION 1: HEADER BLOCK
@@ -209,6 +243,7 @@ export async function exportInspectionPDF({
 
   checkpoints.forEach((cp, i) => {
     if (cp.x_pos == null || cp.y_pos == null) return
+    const num = itemNoMap[cp.id] ?? (i + 1)
 
     const pinX = M + 0.5 + cp.x_pos * (IMG_W - 1)
     const pinY = IMG_Y + 0.5 + cp.y_pos * (IMG_H - 1)
@@ -237,10 +272,10 @@ export async function exportInspectionPDF({
     doc.line(cx - 1.15, cy + PIN_R - 0.45, cx, pinY)
     doc.line(cx + 1.15, cy + PIN_R - 0.45, cx, pinY)
 
-    doc.setFontSize(i + 1 > 9 ? 4 : 5)
+    doc.setFontSize(num > 9 ? 4 : 5)
     doc.setFont('helvetica', 'bold')
     doc.setTextColor(255, 255, 255)
-    doc.text(String(i + 1), cx, cy, { align: 'center', baseline: 'middle' })
+    doc.text(String(num), cx, cy, { align: 'center', baseline: 'middle' })
   })
 
   const DP_X = M + IMG_W + 2
@@ -261,35 +296,39 @@ export async function exportInspectionPDF({
   let curY = IMG_Y + IMG_H + 1
 
   for (const cat of groupOrder) {
-    const cps = groupMap[cat]
-    const col = catColor(cat)
-    const label = CAT_LABEL[cat] ?? (cat === '__none__' ? 'Other' : cat)
-    const isVar = cps[0]?.type === 'variable'
+    const allCps = groupMap[cat]
+    const col = useNamed ? [55, 65, 81] : catColor(cat)
+    const label = useNamed
+      ? (cat === '__none__' ? 'Other' : `Item ${namedKeys.indexOf(cat) + 1} — ${cat}`)
+      : (CAT_LABEL[cat] ?? (cat === '__none__' ? 'Other' : cat))
 
     drawRect(doc, M, curY, W - 2 * M, 5, { fill: col })
     doc.setDrawColor(...col)
     doc.rect(M, curY, W - 2 * M, 5, 'S')
-    txt(doc, `${cat !== '__none__' ? `[${cat}]  ` : ''}${label}`, W / 2, curY + 2.5, {
+    txt(doc, `${!useNamed && cat !== '__none__' ? `[${cat}]  ` : ''}${label}`, W / 2, curY + 2.5, {
       size: 7, bold: true, align: 'center', color: [255, 255, 255],
     })
     curY += 5
 
-    if (isVar) {
+    const varSubset = allCps.filter(c => c.type === 'variable')
+    const attrSubset = allCps.filter(c => c.type !== 'variable')
+
+    if (varSubset.length) {
+      const cps = varSubset
       const rows = []
-      let itemNo = 1
       const seenBase = {}
       for (const cp of cps) {
-        const base = cp.name.replace(/\s+[XY]$/i, '').trim()
+        const base = (cp.name ?? '').replace(/\s+[XY]$/i, '').trim()
         const r = results[cp.id]
         const ok = r?.status === 'pass' ? 'OK' : r?.status === 'fail' ? 'NG' : ''
         const finalOk = r?.final_status === 'pass' ? 'OK'
           : r?.final_status === 'fail' ? 'NG' : ok
 
         const isFirst = !seenBase[base]
-        if (isFirst) { seenBase[base] = itemNo; itemNo++ }
+        if (isFirst) seenBase[base] = true
 
         rows.push({
-          item:     isFirst ? String(seenBase[base]) : '',
+          item:     isFirst ? String(itemNoMap[cp.id]) : '',
           name:     isFirst ? base : '',
           axis:     cp.axis ?? '',
           std:      cp.nominal != null ? `Ø ${fmtN(cp.nominal)}` : '',
@@ -366,14 +405,19 @@ export async function exportInspectionPDF({
         },
       })
 
-    } else {
-      const rows = cps.map((cp, idx) => {
+      curY = doc.lastAutoTable.finalY + 1
+    }
+
+    if (attrSubset.length) {
+      const cps = attrSubset
+      const rows = cps.map((cp) => {
         const r = results[cp.id]
         const ok = r?.value_attribute === 'ok' ? 'OK' : r?.value_attribute === 'ng' ? 'NG' : ''
         return {
-          item: String(idx + 1), name: cp.name, std: cp.name, checking: '', picture: '',
+          // Standard = เกณฑ์ตัดสินหลายบรรทัด (description) ถ้าไม่มีใช้ชื่อจุดแบบเดิม
+          item: String(itemNoMap[cp.id]), name: cp.name, std: cp.description || cp.name, checking: '', picture: '',
           okng: ok, action: r?.action_text ?? '', date: '', results: '', approve: '',
-          remark: r?.note_text ?? '', _ng: ok === 'NG',
+          remark: '', _ng: ok === 'NG', _img: cpImgs[cp.id] ?? null,
         }
       })
 
@@ -408,11 +452,26 @@ export async function exportInspectionPDF({
             data.cell.styles.textColor = [180, 0, 0]
           }
           if (!row._ng && data.column.dataKey === 'okng' && data.cell.raw === 'OK') data.cell.styles.textColor = [0, 140, 0]
+          if (row._img && data.section === 'body') data.cell.styles.minCellHeight = 14
+        },
+        didDrawCell(data) {
+          // วาดรูปอ้างอิงต่อจุดลงคอลัมน์ Picture
+          if (data.section !== 'body' || data.column.dataKey !== 'picture') return
+          const img = data.row.raw?._img
+          if (!img) return
+          const pad = 0.6
+          const w = Math.min(36, data.cell.width - 2 * pad)
+          const h = data.cell.height - 2 * pad
+          try { doc.addImage(img, 'JPEG', data.cell.x + pad, data.cell.y + pad, w, h) } catch {
+            try { doc.addImage(img, 'PNG', data.cell.x + pad, data.cell.y + pad, w, h) } catch { /* ข้ามรูปเสีย */ }
+          }
         },
       })
+
+      curY = doc.lastAutoTable.finalY + 1
     }
 
-    curY = doc.lastAutoTable.finalY + 1.5
+    curY += 0.5
   }
 
   // SECTION 5: LEGEND

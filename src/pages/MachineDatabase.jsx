@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { can } from '../utils/permissions';
 
 /* ─── shared little UI bits ─────────────────────────────────── */
 function Field({ label, children }) {
@@ -35,7 +36,9 @@ const TYPE_COLORS  = ['#4d9fff', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#e
 ═══════════════════════════════════════════════════════════════ */
 export default function MachineDatabase() {
   const { role } = useContext(UserContext);
-  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
+  const canCreate = can('machines', 'create', role);
+  const canEdit   = can('machines', 'edit', role);
+  const canDelete = can('machines', 'delete', role);
 
   const [machines, setMachines]     = useState([]);
   const [lines, setLines]           = useState([]);
@@ -120,8 +123,8 @@ export default function MachineDatabase() {
   };
 
   const handleDelete = async (item) => {
-    if (!window.confirm(`ลบเครื่องจักร "${item.machine_no}" ?\n\nจุดบนผังไลน์และประวัติ Downtime ที่อ้างอิงเครื่องนี้จะยังอยู่ แต่จะเลือกเครื่องนี้ใหม่ไม่ได้`)) return;
-    const { error } = await supabaseDR.from('machines').delete().eq('id', item.id);
+    if (!window.confirm(`ปิดใช้งานเครื่องจักร "${item.machine_no}" ?\n\nจุดบนผังไลน์และประวัติ Downtime ที่อ้างอิงเครื่องนี้จะยังอยู่ แต่จะเลือกเครื่องนี้ใหม่ไม่ได้ (เปิดใช้กลับได้ภายหลัง)`)) return;
+    const { error } = await supabaseDR.from('machines').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', item.id);
     if (error) { toast.error(error.message); return; }
     load();
   };
@@ -139,10 +142,10 @@ export default function MachineDatabase() {
             รายการเครื่องจักรทุกไลน์ · {machines.filter(m => m.is_active).length} เครื่องที่ใช้งานอยู่
           </div>
         </div>
-        {canEdit && (
+        {(canEdit || canCreate) && (
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => setShowTypeManager(true)} style={cancelBtnStyle}>🏷️ จัดการประเภทเครื่องจักร</button>
-            <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มเครื่องจักร</button>
+            {canEdit && <button onClick={() => setShowTypeManager(true)} style={cancelBtnStyle}>🏷️ จัดการประเภทเครื่องจักร</button>}
+            {canCreate && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มเครื่องจักร</button>}
           </div>
         )}
       </div>
@@ -198,10 +201,10 @@ export default function MachineDatabase() {
                     {!item.is_active && <span style={{ fontSize: 10, color: '#ef4444' }}>(ปิดใช้)</span>}
                   </div>
                 </div>
-                {canEdit && (
+                {(canEdit || canDelete) && (
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                    <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                    <button onClick={() => handleDelete(item)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
+                    {canEdit && <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
+                    {canDelete && <button onClick={() => handleDelete(item)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>}
                   </div>
                 )}
               </div>

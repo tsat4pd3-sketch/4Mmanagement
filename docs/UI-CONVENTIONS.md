@@ -1,0 +1,165 @@
+# 🎨 UI Conventions — ESM Design System กลาง
+
+> **ทุก session ที่แก้ UI ต้องอ่านไฟล์นี้ก่อนลงมือ และเมื่อสร้าง/เปลี่ยน pattern ที่ใช้ร่วมกันหลายหน้า ต้องอัพเดทไฟล์นี้ในคอมมิทเดียวกัน**
+> เหตุผล: หลาย session ทำงานขนานกัน ถ้าไม่มีมาตรฐานกลาง จะได้ UI คนละทรง (เคยเกิดแล้ว: จุดเครื่องจักรฝั่ง MTN ทำเป็นเหลี่ยม ขณะที่ระบบหลักเป็นวงกลม)
+
+อัพเดทล่าสุด: 2026-07-10 (เพิ่มกฎ anchor วงกลม)
+
+---
+
+## 1. จุด/Marker บนผังไลน์ (Floor-map markers) — ใช้ทุกหน้าที่มีผัง
+
+**รูปแบบเดียวเท่านั้น: วงกลม + ป้ายชื่อใต้ (circle + name pill)** — ห้ามทำเป็นกล่องเหลี่ยม
+
+| ชนิดจุด | วงกลม | ไอคอน/เนื้อหาในวงกลม | ป้ายใต้ (pill) |
+|---|---|---|---|
+| คน (มีคนประจำ) | เส้นขอบสีตามระดับ skill fit | รูปพนักงาน (objectFit: cover) หรืออักษรแรก | ชื่อสถานี · fit% badge ต่อท้ายอีกป้าย |
+| คน (สถานีว่าง) | เส้นประ สีเทา — เป็น drop target | "+" | ชื่อสถานี |
+| เครื่องจักร | ขอบ amber `#f59e0b` — ขนาด 0.8×MK | ⚙️ | machine_no (+ป้ายรอง: ชื่อเครื่อง/สาเหตุ downtime) |
+| เครื่องจักร (Downtime ค้าง) | class `dt-alarm-blink` ขอบ/พื้นแดง | 🚨 หรือ ⚙️ | machine_no + สาเหตุ + นาทีที่ค้าง |
+| WIP | ขอบเขียว `#22c55e` (แดงเมื่อ `current < min`) — 0.8×MK | 📦 (packaging) / 🧱 (material) | point_name + ป้ายจำนวน `cur/min–max` |
+| จุดงาน (LineSetup) | ขอบขาว/เขียวเมื่อเลือก | 📍 | station_name เต็ม (+💰 ถ้ามีค่าฝีมือ) |
+| เครื่องจักร/อุปกรณ์ (ผัง MTN – สถานะ PM) | ขอบ**สีตามสถานะ PM** (แดงเกินกำหนด / ส้มใกล้ครบ / เขียวปกติ / ม่วงยังไม่ตรวจ) — 0.8×MK | ⚙️ | machine_no/jig_no (+ป้ายรอง: ชื่อเครื่อง) |
+
+**ป้าย (pill) spec:** `background: rgba(0,0,0,0.75-0.78)` · `borderRadius: 4` · ตัวหนังสือขาว bold · `whiteSpace: nowrap` + `overflow: hidden` + `textOverflow: ellipsis` · `maxWidth ≈ 1.8–2 × เส้นผ่านศูนย์กลางวงกลม`
+
+### สูตรขนาด (MK) — บังคับใช้ทุกหน้า
+```js
+// ขนาด marker สเกลตามความกว้างรูปผังที่ RENDER จริง (ไม่ใช่ vw / ไม่ใช่ค่าตายตัว)
+const MK = Math.round(Math.max(34, Math.min(84, renderedMapWidth * 0.055)));
+// LineSetup ใช้ 0.05 / min 30 ได้ (จุดตั้งค่าเล็กกว่าเล็กน้อย)
+// ฟอนต์: pill = max(11, MK*0.24) · badge = max(10, MK*0.2) · ขอบวง = max(2, MK*0.06)
+// เครื่องจักร/WIP = 0.8×MK
+```
+
+### กติกาที่ต้องมีเสมอ
+1. **Anchor = ศูนย์กลางวงกลมต้องตรงพิกัดจริงเป๊ะ** — wrapper ที่ใส่ `translate(-50%,-50%)` ต้องสูงเท่า*วงกลมเท่านั้น* และ**ป้าย/badge ทุกอันต้องเป็น `position:absolute; top:100%` ห้อยใต้** (ห้ามใส่ใน flex column ปกติ — จะทำให้จุดกึ่งกลางเลื่อนขึ้นครึ่งป้าย marker ลอยเหนือตำแหน่งจริง/ตกขอบบน — เคยพังที่ Management มาแล้ว) · pos_top/pos_left เป็น % ของรูปจริง ระวัง letterbox จาก object-fit: contain ต้องคูณ offset+rendered size
+2. **De-overlap**: marker ที่ทับกันให้ผลักออกจากกันในพิกเซลจริง + วาดเส้นประโยงกลับตำแหน่งจริง (ดู Dashboard modal / Management เป็นต้นแบบ) — ห้ามแก้ตำแหน่งใน DB
+3. **Edge clamp**: ตำแหน่ง*แสดงผล*ต้องถูก clamp ไม่ให้วงกลม+ป้ายตกขอบรูป — เผื่อซ้าย/ขวา/บน `size*0.55`, ล่าง `size*1.35` (มีป้ายห้อย) — ตำแหน่งจริงใน DB ไม่เปลี่ยน
+4. Hover card แสดงเฉพาะอุปกรณ์ที่ hover ได้จริง: `window.matchMedia('(hover: hover)').matches` — จอทัชให้ใช้ modal ที่มีปุ่มปิด + popup ทุกชนิดต้องมีทางปิดเสมอ (✕/auto-hide — กติกา backdrop click ดู section 5)
+
+**Component กลาง (2026-07-10):** `src/components/MachineFloorMap.jsx` — ผัง object-fit:contain + marker วงกลม+ป้าย ตามสูตร MK/edge-clamp ข้างบนครบ (โหมด read-only และ editable: คลิกวาง/ลากย้าย/✕ ถอด). หน้า `/mtn-layout` (`MtnMachineLayout.jsx`) ใช้ component นี้ทั้งมุมมองไลน์ผลิตและ Facility — **ขอบวงกลมใช้สีสถานะ PM** (จงใจต่างจาก amber ในตารางข้อ 1 เพราะทั้งผังสื่อสาร "สถานะ" เป็นหลัก) หน้าใหม่ที่ต้องการผัง+marker ให้ reuse `MachineFloorMap` แทนเขียนใหม่
+
+หน้าอ้างอิง (ต้นแบบที่ทำถูกแล้ว): `Dashboard.jsx` (modal ผังขยาย + ผังย่อ), `Management.jsx`, `LineSetup.jsx`, `MtnMachineLayout.jsx`
+
+---
+
+## 2. ไฟ Andon — สีตามความรุนแรง (ห้ามแดงหมด)
+
+| ระดับ | เงื่อนไข | การแสดงผล |
+|---|---|---|
+| 🔴 แดง | เครื่องจักร Downtime **ยังค้างอยู่** | กระพริบ (`dt-alarm-blink`) + ขอบแดง — เท่านั้นที่กระพริบ |
+| 🟡 เหลือง | มีรายการ**รออนุมัติ/รอดำเนินการ** (เช่น 4M pending) หรือ DT เพิ่งปิด | ขอบ/ป้ายเหลือง `#f59e0b` นิ่ง |
+| 🟢 เขียว | ทุกอย่างอนุมัติแล้ว / ปกติ | เขียว `#22c55e` |
+
+- ป้ายนับ 4M บนการ์ด: 🚨 แดงเฉพาะเมื่อมี pending, อนุมัติครบ = 🟡
+- ป้าย alarm ต้อง**คลิกได้** → เปิด Andon panel เจาะรายละเอียด (ดูต้นแบบใน Dashboard)
+- สถานะรายการ 4M: approved=เขียว / pending·pending_qa=เหลือง / rejected=แดง
+- CSS กลาง (2026-07-09): `.dt-alarm-blink` `.dt-alarm-banner` `.dt-alarm-icon` (แดงกระพริบ) ·
+  `.person-alarm-red` (แดงกระพริบ) · `.person-alarm-amber` (เหลือง **นิ่ง+เรืองแสง**) — ใช้ของกลาง ห้ามเขียน keyframes ใหม่ต่อหน้า
+- จุดเครื่องจักรบนผัง: กระพริบเฉพาะรายการ downtime ที่**ยังเปิดค้าง** (เครื่องหยุดจริง) — ปิดรายการ = ดับทันที
+  (`src/utils/downtimeAlarm.js` เป็น source of truth ห้ามเพิ่มเงื่อนไขเวลาอื่น เช่น "เพิ่งบันทึกใน X นาที")
+
+---
+
+## 3. การ์ด (Cards) ใน grid
+
+- การ์ดในหมวด/แถวเดียวกันต้อง**สูงเท่ากัน**: wrapper `height: 100%` + การ์ด `height: 100%` + `minHeight` เดียวกัน + `display:flex; flexDirection:column; justifyContent:space-between`
+- ทั้งการ์ด**ไม่ใช่**จุดคลิก — action ต้องเป็นปุ่ม/ป้ายเฉพาะจุดที่เห็นชัด (เช่นปุ่ม "ดูไลน์ย่อย ▾")
+- แถวขยายลูก (nested) ให้ทำเป็น panel เต็มแถว `gridColumn: '1 / -1'` ขอบประ + หัวข้อบอกว่าเป็นลูกของอะไร ไม่ปนใน grid เดียวกับการ์ดหลัก
+
+---
+
+## 4. ตัวหนังสือ (จอโรงงาน/TV เป็นหลัก)
+
+- **ขั้นต่ำ 11-12px** — ห้ามใช้ 6-10px แม้พื้นที่จะแคบ (เคยไล่แก้ทั้ง Dashboard มาแล้ว: สเกล 6→8 … 16→18)
+- ชิป/ป้าย 12-13px · ข้อความรอง 14-15px · หัวข้อ 15px+ · ตัวเลขใหญ่ในการ์ด 34px+ (wide 42px+)
+- responsive ใช้ `isWide`/`isUltra` ternary หรือสเกลจากขนาด container — ไม่ใช้ vw กับ marker
+
+---
+
+## 5. Modal & Popup
+
+### Modal ที่มีฟอร์มกรอกข้อมูล (คำสั่ง user 2026-07-09)
+- **ห้ามปิดจากการคลิกพื้นหลัง (backdrop)** — เผลอแตะแล้วข้อมูลที่พิมพ์อยู่หายทั้งฟอร์ม ปิดได้จากปุ่ม ✕ / ยกเลิก เท่านั้น
+- popup ที่**แสดงผลอย่างเดียว** (ไม่มี input) ปิดจากคลิกนอกกรอบ/auto-hide ได้ตามเดิม
+- ต้นแบบ: `QualityControl.jsx`, `QAInspectionSetup.jsx` (Modal กลาง), `PMCheckData.jsx` (HistoryModal)
+
+### Modal ที่โชว์รูปผัง
+- ต้อง fit **จอเดียว ไม่มี scroll**: `width: fit-content; maxWidth: 97vw; maxHeight: 97vh; overflow: hidden` + รูป `maxWidth/maxHeight + width/height: auto` (จำกัดสองแกน)
+- **ห้ามใช้ object-fit บน img ที่มี marker ทับ** — กล่อง img ต้องเท่ารูปจริงเสมอ ไม่งั้นพิกัด % เพี้ยน
+
+## 5.1 Balloon จุดตรวจบน drawing/รูปอ้างอิง (QA `/qa-setup` · PM Setup)
+
+คนละอย่างกับ marker บนผังไลน์ (section 1) — อันนี้คือหมุดเลขจุดตรวจบนแบบชิ้นงาน/รูปอุปกรณ์:
+
+- รูปทรง: **วงกลม/pill ป้ายเลข** `minWidth` + `padding + borderRadius: 999` เพื่อรองรับ label หลายตัวอักษร (H35, A1, 1.3) — ห้าม fix width วงกลมจนตัวอักษรล้น · ฟอนต์ ≥ 11px (ตามข้อ 4)
+- **ขนาดสเกลตามความกว้างรูปที่ RENDER จริง** (สูตรเดียวกับ MK ของผังไลน์ แต่เพดานเล็กกว่า) — วัดด้วย `ResizeObserver` บน wrapper:
+  ```js
+  const BK = Math.round(Math.max(20-24, Math.min(36-44, renderedImgWidth * 0.04)));
+  // ฟอนต์เลขใน balloon = max(11, BK*0.42-0.45) · ขอบขาว = max(2, BK*0.07)
+  ```
+- **Edge clamp**: ตำแหน่ง*แสดงผล*ต้อง clamp ไม่ให้ balloon ตกขอบรูป (เผื่อ `BK*0.7` ทุกด้าน; anchor แบบห้อยลง `translate(-50%,-100%)` เผื่อหัวบน `BK+4px`) — **ค่าจริงใน DB ไม่เปลี่ยน**
+- พิกัดเก็บเป็น **% ของรูป** (`pos_x/pos_y` 0–100 ฝั่ง QA, `x_pos/y_pos` 0–1 ฝั่ง PM)
+  - **anchor ฝั่ง QA = `translate(-50%,-50%)`** (จุดกึ่งกลาง balloon = พิกัด — ดู `QAInspectionSetup.jsx`)
+  - **anchor ฝั่ง PM = `translate(-50%,-100%)`** (map-pin: ปลายล่าง balloon = พิกัด) — ใช้เหมือนกัน**ทั้ง 3 renderer**: ตอนวาง (`SpinAnnotator.jsx`), ตอนตั้งค่า (`PMSetup.jsx`), ตอนตรวจ/ดูผล (`PMCheckData.jsx`) เพราะทั้งหมดอ่าน `jig_checkpoints.x_pos/y_pos` ตัวเดียวกัน — **ห้ามแก้ anchor แค่ไฟล์เดียว** ไม่งั้น pin จะเลื่อนครึ่งความสูงระหว่างจอวางกับจอดู (แก้ต้องแก้พร้อมกันทั้ง 3)
+- 1 part/อุปกรณ์มี**หลายรูป/หลายเฟรมได้** — balloon ต้องผูกกับรูปที่มันอยู่ (`drawing_id`/`image_id`) ลบรูป = ถอดตำแหน่ง balloon แต่**ห้ามลบตัวจุดตรวจ** · ฝั่ง PM รองรับ 360° spin (หลายเฟรม/อุปกรณ์) ผ่าน component กลาง `src/components/SpinAnnotator.jsx` — pin ผูกกับเฟรมที่วาง (`image_id`), ลากรูปหมุนเฟรม, reuse component นี้แทนเขียน annotator ใหม่
+- เลขจุดตรวจแบบ text เรียงด้วย natural sort (`localeCompare(..., { numeric: true })`) — H2 มาก่อน H10
+- สี: จุด control พิเศษ (Rank M/SC) = แดง/amber, จุดทั่วไป = น้ำเงิน `#4d9fff`, กำลังวางตำแหน่ง = amber
+- ชื่อแผ่น drawing ฝั่ง QA ให้เลือกจาก **view มาตรฐาน** (Front/Back/Top/Bottom View, Side View LH/RH, Isometric, Section, Detail) ผ่าน picker — พิมพ์เองได้เฉพาะกรณีพิเศษ
+
+## 5.2 ฟอร์ม master data ต้องมี picker จากฐานที่มีอยู่
+
+ฟิลด์ที่ข้อมูลมีอยู่แล้วในฐานอื่น ให้มี**ช่องค้นหา-เลือกเติมอัตโนมัติ** ไม่ปล่อยให้พิมพ์ซ้ำ (พิมพ์เองได้เป็น fallback):
+- เพิ่ม Part ฝั่ง QA → ดึงจาก `dr_products` + `bom_items` (ดู `QAInspectionSetup.jsx`)
+- เพิ่มอุปกรณ์ฝั่ง PM → ดึงจาก machine master (ดู `PMSetup.jsx` addMode workstation)
+- รูปชิ้นงานที่อัพไว้ใน Product Master (`dr_products.image_url`) ให้ดึงมาแสดงซ้ำได้เลย ไม่อัพใหม่
+
+## 6. บอร์ดเวลา (Time boards) — Heijunka / Shipping Chart / Rack Center / Store
+
+pattern ร่วมของทุกบอร์ดที่วางรายการบนแกนเวลา (เพิ่ม 2026-07-10):
+
+- **กรอบวันงาน 08:00 → 08:00 วันถัดไป** เต็ม 24 ชม.ในจอเดียว ไม่มี scroll แนวนอน —
+  เวลาก่อนตี 8 = ช่วงกะดึกของวันงานเดิม (นาทีแบบ wrap: h<8 บวก 1440) ใช้ helper
+  `frameMin`/`frameMinFromIso` จาก `src/utils/timeFrame.js`
+- **เส้นเวลาปัจจุบัน**: class `.now-line` (playhead ชมพู #ec4899 กระพริบเรืองแสง —
+  สีชมพูจงใจไม่ซ้ำสีสถานะใดๆ) + ป้ายเวลา `.now-chip` (⏱ HH:MM) ลอยบนหัวตาราง —
+  สอง class นี้อยู่ใน `index.css` ห้ามวาดเส้นเองด้วยสีอื่น
+- **เงาเวลาเบรค**: แถบลายเฉียง `repeating-linear-gradient(45deg, rgba(148,163,184,0.18) …)`
+  + ขอบประซ้าย/ขวา จากตาราง `break_policies` (DR, is_active) — แปลงเป็นช่วงนาทีบนกรอบ
+  ด้วย `breaksToFrame()` ใน `src/utils/timeFrame.js` · ชี้เมาส์เห็นชื่อช่วงพัก
+- **เวลาชนกันแยกเลนอัตโนมัติ** (รายการห่างกัน < 40 นาทีถือว่าชน) — ห้ามวางทับกัน
+- **ย่อ/ขยายรายแถว**: คลิกชื่อปลายทาง/ลูกค้า → โหมดย่อเหลือจุดสถานะ 9px ตามตำแหน่งเวลา
+- **คลิกบล็อก → popup** รายละเอียด + ปุ่ม action (ตามข้อ 1.4: ต้องมีทางปิดเสมอ)
+- ฟอนต์: ป้ายชั่วโมงบนแกน/ป้ายรอง ≥ 11px · ตัวเลขเวลาในบล็อก 12px (ตามข้อ 4)
+- บอร์ดภายในโรงงาน (ปลายทาง = ไลน์) ให้ใช้ component กลาง
+  `src/components/InternalTimeBoard.jsx` — อย่าเขียนบอร์ดใหม่จากศูนย์
+
+- **โครงบอร์ด Heijunka 2 กะ "พาร์ทละ 1 บล็อก"** (2026-07-09): ป้าย+รูปพาร์ทใหญ่ 1 อันครอบ 2 แถบเวลา
+  (☀️ 08–20 บน / 🌙 20–08 ล่าง) หัวชั่วโมงแสดงเวลาคู่บน-ล่างในคอลัมน์เดียวกัน —
+  ห้ามกลับไปวาดแยกบล็อกเช้า/ดึกซ้ำป้ายพาร์ท (ต้นแบบ: Heijunka บน Dashboard และหน้าจัดการไลน์)
+- **Downtime/สาเหตุดีเลย์บนบอร์ดต้องผูกกับ sub-line ของใบงานนั้น** (`line_name`) ห้ามจับคู่ด้วยเวลาทับซ้อนอย่างเดียว
+  (เคยพัง: เหตุของ Line 61 โผล่เป็นสาเหตุบนแถวของ Line 60)
+
+หน้าอ้างอิง: `HeijunkaKanban.jsx` (ต้นแบบ now-line/เงาเบรค), `CustomerDemand.jsx`
+(Shipping Chart), `RackCenter.jsx` + `LineStock.jsx` (ใช้ InternalTimeBoard)
+
+---
+
+## 7. เบ็ดเตล็ดที่เคยกัด
+
+- `index.css` ตั้ง `input{width:100%}` ทั้งแอป — input ใน flex row ต้องกำหนด width เอง (checkbox/radio มี rule ยกเว้น `width:auto` แล้ว — ห้ามลบ)
+- ปุ่มพับ sidebar อยู่**ในหัว sidebar** (ปุ่ม ⟨ ข้างโลโก้) — ปุ่มลอย ☰ โชว์เฉพาะตอนพับ ห้ามมีปุ่มลอยทับเนื้อหา
+- สิทธิ์ action ใช้ `can(resource, action, role)` จาก `src/utils/permissions.js` — ห้าม hardcode `['admin',...].includes(role)` เพิ่ม (ดู docs/PERMISSIONS-DESIGN.md)
+- วันที่งาน: `getWorkDate()` เท่านั้น (ก่อน 08:00 = วันก่อนหน้า) ห้าม `toISOString()`
+- อัปโหลดรูป: ผ่าน `ImageCropModal` เท่านั้น (รูปนิ่งบีบอัตโนมัติ · GIF ส่งทั้งไฟล์ ≤2MB คงการขยับ — ห้ามถอด cap) + เปลี่ยนรูปแล้วลบไฟล์เก่าจาก storage เสมอ (2026-07-09 — ดู CLAUDE.md "Storage & รูปภาพ")
+- หน้าที่ query ตาม section: กรองด้วย `sections` array จาก UserContext (`inSectionScope` / `.in('section', ...)`) ไม่ใช่ `section` เดี่ยว (2026-07-09 — ดู CLAUDE.md "Section/Line/Team Scoping")
+
+---
+
+## วิธีอัพเดทไฟล์นี้
+
+เมื่อ session ไหนสร้าง/เปลี่ยน pattern ที่กระทบมากกว่า 1 หน้า (marker, สี alarm, รูปแบบการ์ด, ฟอนต์มาตรฐาน, modal ฯลฯ):
+1. แก้โค้ดให้สอดคล้องกับ convention เดิม — ถ้าจำเป็นต้องเปลี่ยน convention ให้แก้**ทุกหน้า**ที่ใช้ pattern นั้นด้วย
+2. อัพเดท section ที่เกี่ยวข้องในไฟล์นี้ + วันที่ "อัพเดทล่าสุด" ในคอมมิทเดียวกัน
+3. ถ้าเพิ่ม pattern ใหม่ ให้เพิ่ม section ใหม่พร้อมระบุหน้าอ้างอิง (ต้นแบบ)

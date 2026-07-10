@@ -1,11 +1,19 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabaseDR } from '../supabaseClient'
-import { FREQ_LABEL, DEPT_LABEL, dueStatus, STATUS_META, computeNextDue } from '../lib/pmSchedule'
+import { FREQ_LABEL, DEPT_LABEL, dueStatus, STATUS_META, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
   production: '#3dd65c', qa: '#9b8de8',
+}
+
+// Parse a 'YYYY-MM-DD' date (from pm_plans.next_due_date) as local midnight, not
+// UTC, so the day-based due-status math stays aligned with the local calendar.
+function parseLocalDate(s) {
+  if (!s) return null
+  const [y, m, d] = s.split('-').map(Number)
+  return new Date(y, m - 1, d)
 }
 
 const DEPT_OPTIONS = [
@@ -77,9 +85,12 @@ export default function PMSchedule() {
     const clIds = checklists.map(c => c.id)
     const eqIds = [...new Set(checklists.map(c => c.equipment_id))]
 
-    const [{ data: jigs }, { data: inspections }] = await Promise.all([
+    const [{ data: jigs }, { data: inspections }, { data: plans }] = await Promise.all([
       supabaseDR.from('jigs').select('id, name, jig_no, line_name, machine_no, equipment_type').in('id', eqIds),
-      supabaseDR.from('inspections').select('checklist_id, inspected_at').in('checklist_id', clIds).order('inspected_at', { ascending: false }),
+      supabaseDR.from('inspections').select('checklist_id, inspected_at').in('checklist_id', clIds).neq('approval_status', 'rejected').order('inspected_at', { ascending: false }),
+      // Server-materialized plan (pm_plans, Phase 1). If the table isn't there yet
+      // the query just returns null and we fall back to computing due dates live.
+      supabaseDR.from('pm_plans').select('checklist_id, next_due_date, next_due_reason, last_done_at, health_score, plan_type').in('checklist_id', clIds),
     ])
 
     const jigMap = {}
@@ -87,13 +98,19 @@ export default function PMSchedule() {
     // most recent inspection per checklist (inspections already ordered desc)
     const lastInspMap = {}
     ;(inspections ?? []).forEach(i => { if (!lastInspMap[i.checklist_id]) lastInspMap[i.checklist_id] = i.inspected_at })
+    const planMap = {}
+    ;(plans ?? []).forEach(p => { planMap[p.checklist_id] = p })
 
     const built = checklists.map(cl => {
       const eq = jigMap[cl.equipment_id] ?? {}
-      const lastDone = lastInspMap[cl.id] ?? null
-      const nextDue = computeNextDue(lastDone, cl.frequency)
+      const plan = planMap[cl.id]
+      const lastDone = plan?.last_done_at ?? lastInspMap[cl.id] ?? null
+      // Prefer the server-materialized next_due_date; fall back to live compute
+      // when there's no plan row (or the migration hasn't run yet).
+      const nextDue = plan?.next_due_date ? parseLocalDate(plan.next_due_date) : computeNextDue(lastDone, cl.frequency)
       const status = dueStatus(nextDue, cl.frequency)
-      return { cl, eq, lastDone, nextDue, status }
+      return { cl, eq, lastDone, nextDue, status, reason: plan?.next_due_reason ?? 'time',
+               planType: plan?.plan_type ?? 'time', health: plan?.health_score ?? null }
     })
 
     built.sort((a, b) => {
@@ -170,9 +187,11 @@ export default function PMSchedule() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ cl, eq, lastDone, nextDue, status }) => {
+              {rows.map(({ cl, eq, lastDone, nextDue, status, reason, planType, health }) => {
                 const meta = STATUS_META[status] ?? STATUS_META.ok
                 const isOverdue = status === 'overdue'
+                const isUsage = planType === 'usage' || planType === 'hybrid'
+                const healthColor = health == null ? 'var(--muted)' : health >= 60 ? '#3dd65c' : health >= 30 ? '#e0b34a' : '#e05c4a'
                 return (
                   <tr key={cl.id} style={{ background: isOverdue ? 'rgba(224,92,74,0.04)' : undefined }}>
                     <td>
@@ -185,13 +204,28 @@ export default function PMSchedule() {
                     </td>
                     <td style={{ fontSize: 13, color: 'var(--muted)' }}>{FREQ_LABEL[cl.frequency] ?? cl.frequency}</td>
                     <td style={{ fontSize: 13, color: 'var(--text2)' }}>
-                      {lastDone ? new Date(lastDone).toLocaleDateString('th-TH') : <span style={{ color: 'var(--muted)' }}>—</span>}
+                      {lastDone ? new Date(lastDone).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' }) : <span style={{ color: 'var(--muted)' }}>—</span>}
                     </td>
                     <td style={{ fontSize: 13, color: isOverdue ? '#e05c4a' : 'var(--text2)', fontWeight: isOverdue ? 700 : 400 }}>
-                      {nextDue ? nextDue.toLocaleDateString('th-TH') : <span style={{ color: 'var(--muted)' }}>—</span>}
+                      {nextDue ? nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' }) : <span style={{ color: 'var(--muted)' }}>—</span>}
                       {isOverdue && nextDue && (
                         <div style={{ fontSize: 11, color: '#e05c4a' }}>
-                          เกิน {Math.abs(Math.floor((nextDue - new Date()) / 86400000))} วัน
+                          เกิน {Math.abs(daysUntilDue(nextDue))} วัน
+                        </div>
+                      )}
+                      {isUsage && (
+                        <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: reason === 'usage' ? '#4aa3e0' : 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>
+                            {reason === 'usage' ? '📈 ตามการใช้งาน' : '🗓️ ตามเวลา'}
+                          </span>
+                          {health != null && (
+                            <span title="สุขภาพ (ยิ่งต่ำยิ่งใกล้ครบตามยอดผลิต)" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ width: 44, height: 5, background: 'var(--bg2)', borderRadius: 3, overflow: 'hidden', display: 'inline-block' }}>
+                                <span style={{ display: 'block', height: '100%', width: `${Math.max(0, Math.min(100, health))}%`, background: healthColor }} />
+                              </span>
+                              <span style={{ fontSize: 10, color: healthColor }}>{Math.round(health)}%</span>
+                            </span>
+                          )}
                         </div>
                       )}
                     </td>

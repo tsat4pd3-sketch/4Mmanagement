@@ -5,6 +5,8 @@ import { UserContext } from '../App';
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
 import { toast } from '../components/Toast';
 import tsLogoUrl from '../assets/TS logo.png';
+import { can } from '../utils/permissions';
+import { inSectionScope } from '../utils/sectionScope';
 
 // โหลดโลโก้บริษัท (เหมือนหน้าเว็บ) เป็น base64 ครั้งเดียวสำหรับฝัง PDF
 let tsLogoDataUrlPromise = null;
@@ -28,6 +30,43 @@ function notifyProdClose(payload) {
     headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
     body: JSON.stringify({ event: 'prod_close', session: payload }),
   }).catch(() => {});
+}
+
+// แจ้งเตือน Telegram ทันทีที่พนักงานบันทึก Downtime — fire-and-forget ไม่บล็อกการบันทึก
+// event: 'downtime' (เครื่องหยุดใหม่) | 'downtime_recovered' (ปิดรายการที่เปิดค้าง = เครื่องกลับมารันได้)
+function notifyDowntime(payload, event = 'downtime') {
+  fetch(`https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-notification`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
+    body: JSON.stringify({ event, downtime: payload }),
+  }).catch(() => {});
+}
+
+// สรุปชิ้นงาน/Downtime ของกะ สำหรับแนบในข้อความแจ้งเตือนปิดกะ (Telegram)
+// entries: [{ mat_no, part_name, qty, carry }] — carry = ยอดยกไปกะถัดไป
+function summarizeParts(entries) {
+  const map = {};
+  entries.forEach(e => {
+    if (!e || (!e.qty && !e.carry)) return;
+    const key = e.mat_no || e.part_name || '-';
+    const p = (map[key] ||= { mat_no: key, name: e.part_name || '', qty: 0, carry_qty: 0 });
+    if (e.carry) p.carry_qty += e.qty || 0; else p.qty += e.qty || 0;
+  });
+  return Object.values(map).filter(p => p.qty > 0 || p.carry_qty > 0);
+}
+
+function summarizeDowntimes(dtLogs) {
+  const map = {};
+  (dtLogs || []).forEach(d => {
+    const key = d.dr_downtime_types?.name_th || 'ไม่ระบุสาเหตุ';
+    const a = (map[key] ||= { name: key, min: 0, count: 0, machines: [] });
+    a.min += d.duration_min || 0;
+    a.count += 1;
+    if (d.machine_no && !a.machines.includes(d.machine_no)) a.machines.push(d.machine_no);
+  });
+  return Object.values(map)
+    .map(a => ({ ...a, min: Math.round(a.min), machines: a.machines.slice(0, 3) }))
+    .sort((x, y) => y.min - x.min);
 }
 
 /* ─── TimeInput24 — native time picker (spinner arrows + clock UI) ───
@@ -82,7 +121,7 @@ export default function DailyReport() {
   const { role } = useContext(UserContext);
   const [tab, setTab] = useState('live');
 
-  const canSetup = ['admin', 'manager', 'supervisor'].includes(role);
+  const canSetup = can('daily_report', 'setup', role);
 
   return (
     <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
@@ -124,7 +163,7 @@ export default function DailyReport() {
    LIVE TAB
 ═══════════════════════════════════════════════════════════════ */
 function LiveTab({ role }) {
-  const { fullName, section: userSection, lineId: userLineId } = useContext(UserContext);
+  const { fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const [lines, setLines]           = useState([]);
   const [lineMap, setLineMap]       = useState({});
   const [products, setProducts]     = useState([]);
@@ -189,6 +228,9 @@ function LiveTab({ role }) {
   const [machines, setMachines]             = useState([]);
   // Carry-over step: map of prod_order.id → 'carry' | 'cancel' | null
   const [carryOverDecisions, setCarryOverDecisions] = useState({});
+  // Downtime เปิดค้างตอนปิดกะ: ต่อรายการ dtId → 'close' (เครื่องกลับมาแล้ว กรอกเวลาจบ) | 'carry' (ยังซ่อมอยู่ ตัดยอดข้ามกะ)
+  const [dtCarryDecisions, setDtCarryDecisions] = useState({});
+  const [dtCloseTimes,     setDtCloseTimes]     = useState({}); // dtId → 'HH:MM' เวลาที่เครื่องกลับมา
   // qty_actual produced this shift for each open order (before carry-over)
   const [carryQtyActual, setCarryQtyActual] = useState({});
   // เวลาหยุดผลิตจริงต่อออเดอร์ (ใช้แทนเวลาปิดกะรวมตอนคำนวณสรุปแยกตามชิ้นงาน เผื่อพาร์ทนี้หยุดไม่ตรงกับเวลาปิดกะ)
@@ -199,11 +241,11 @@ function LiveTab({ role }) {
   const [showEditTimes, setShowEditTimes] = useState(false);
   const [savingTimes, setSavingTimes]     = useState(false);
 
-  const canManage        = ['admin', 'manager', 'supervisor'].includes(role);
-  const canOpen          = ['admin', 'manager', 'supervisor', 'leader'].includes(role); // open new shift
-  const canRequestClose  = ['admin', 'manager', 'supervisor', 'leader'].includes(role); // request or direct-close
-  const canApproveClose  = ['admin', 'manager', 'supervisor'].includes(role);           // approve pending_close
-  const canScan          = ['admin', 'manager', 'supervisor', 'leader'].includes(role);
+  const canManage        = can('daily_report', 'close_shift', role);
+  const canOpen          = can('daily_report', 'open_shift', role);    // open new shift
+  const canRequestClose  = can('daily_report', 'request_close', role); // request or direct-close
+  const canApproveClose  = can('daily_report', 'approve_close', role); // approve pending_close
+  const canScan          = can('daily_report', 'record', role);        // scan open/close, defects, downtime
   // leader แก้ไข/ลบ order, defect, downtime ได้เฉพาะตอนกะยังเปิดอยู่ (ยังไม่ส่งขออนุมัติปิดกะ) —
   // ถ้าส่งขอปิดกะแล้ว (pending_close) ต้องรอ SV อนุมัติ/ปฏิเสธก่อน ถ้าโดนปฏิเสธ สถานะจะกลับเป็น open ให้แก้ไขได้อีก
   const canEditRecords   = canManage || (role === 'leader' && selSession?.status === 'open');
@@ -264,10 +306,11 @@ function LiveTab({ role }) {
     }
 
     let { data: ss } = await sq;
-    if (role === 'supervisor' && userSection) {
+    if (role !== 'leader' && scopeSecs.length) {
+      // role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
       ss = (ss || []).filter(s => {
         const liveSection = lm[s.line_name]?.section;
-        return normSection(liveSection) === normSection(userSection) || normSection(s.section) === normSection(userSection);
+        return inSectionScope(scopeSecs, liveSection) || inSectionScope(scopeSecs, s.section);
       });
     }
 
@@ -277,17 +320,17 @@ function LiveTab({ role }) {
       .in('status', ['open', 'pending_close'])
       .lt('work_date', today());
     setOverdueAlert((overdue || []).filter(o => {
-      if (role === 'admin' || role === 'manager') return true;
-      if (role === 'supervisor') {
-        if (!userSection) return true;
-        const liveSection = lm[o.line_name]?.section;
-        return normSection(liveSection) === normSection(userSection) || normSection(o.section) === normSection(userSection);
-      }
+      if (role === 'admin') return true;
       if (role === 'leader') {
         const myLine = (ln || []).find(l => l.id === userLineId);
         return myLine && o.line_name === myLine.name;
       }
-      return false;
+      if (scopeSecs.length) {
+        const liveSection = lm[o.line_name]?.section;
+        return inSectionScope(scopeSecs, liveSection) || inSectionScope(scopeSecs, o.section);
+      }
+      // ไม่มี scope: manager เห็นหมดเหมือนเดิม / supervisor ที่ไม่มี section = เห็นหมด (พฤติกรรมเดิม)
+      return role === 'manager' || role === 'supervisor';
     }));
 
     setSessions(ss || []);
@@ -297,7 +340,7 @@ function LiveTab({ role }) {
       setSelSession(null);
     }
     setLoading(false);
-  }, [role, userSection, userLineId]);
+  }, [role, scopeSecs, userLineId]);
 
   const loadDT = useCallback(async (sessionId) => {
     if (!sessionId) return;
@@ -423,11 +466,48 @@ function LiveTab({ role }) {
     }).select('*, dr_products(name, cycle_time_sec, target_per_shift, process_type)').single();
     if (error) { toast.error('เปิดกะไม่สำเร็จ: ' + error.message); return; }
     toast.success('เปิดกะสำเร็จ');
+
+    // ── รับ Downtime ที่ตัดยอดข้ามกะจากกะล่าสุดของไลน์นี้ (เครื่องยังซ่อมไม่เสร็จ) มาเปิดต่ออัตโนมัติ ──
+    // ดูเฉพาะ session ล่าสุด 1 กะ — carry เก่ากว่านั้นถือว่าจบไปแล้ว ไม่ปลุกขึ้นมาใหม่
+    try {
+      const { data: prevSess } = await supabaseDR.from('production_sessions')
+        .select('id').eq('line_name', openForm.line_name).neq('id', data.id)
+        .order('created_at', { ascending: false }).limit(1);
+      if (prevSess?.length) {
+        const { data: carryDts } = await supabaseDR.from('downtime_logs')
+          .select('*, dr_downtime_types(name_th)')
+          .eq('session_id', prevSess[0].id).eq('carry_over', true);
+        if (carryDts?.length) {
+          // ข้ามรายการที่มีตัวต่อเนื่องแล้ว (กันสร้างซ้ำถ้าเปิดกะ→ลบกะ→เปิดใหม่)
+          const { data: conts } = await supabaseDR.from('downtime_logs')
+            .select('carried_from_id').in('carried_from_id', carryDts.map(d => d.id));
+          const done = new Set((conts || []).map(c => c.carried_from_id));
+          const pending = carryDts.filter(d => !done.has(d.id));
+          if (pending.length) {
+            const startISO = new Date(`${openForm.work_date}T${(openForm.start_time || '08:00').slice(0, 5)}:00`).toISOString();
+            const { error: contErr } = await supabaseDR.from('downtime_logs').insert(pending.map(d => ({
+              session_id:       data.id,
+              downtime_type_id: d.downtime_type_id,
+              machine_no:       d.machine_no,
+              mat_no:           d.mat_no,
+              description:      d.description,
+              started_at:       startISO,
+              carried_from_id:  d.id,
+              reported_by_name: fullName,
+              reported_by_uid:  user?.id,
+            })));
+            if (!contErr) toast.info(`⏩ รับ Downtime ต่อเนื่องจากกะก่อน ${pending.length} รายการ — เครื่องยังซ่อมไม่เสร็จ`);
+          }
+        }
+      }
+    } catch { /* การรับ DT ต่อเนื่องล้มเหลวต้องไม่ล้มการเปิดกะ */ }
+
     setShowOpen(false);
     setSessions(s => [data, ...s]);
     setSelSession(data);
     setDtLogs([]);
     setProdOrders([]);
+    loadDT(data.id);
   };
 
   const handleSaveQty = async () => {
@@ -577,6 +657,43 @@ function LiveTab({ role }) {
         });
     setSavingDT(false);
     if (error) { toast.error(error.message); return; }
+
+    // แจ้งเตือน Telegram:
+    //   - รายการใหม่ → 🚨 เครื่อง Downtime (แก้ไขทั่วไปไม่แจ้งซ้ำ ไม่ให้ข้อความรกกลุ่ม)
+    //   - แก้ไขรายการที่เปิดค้างอยู่ (ยังไม่มีเวลาจบ/ระยะเวลา) แล้วครั้งนี้ปิดรายการ → ✅ เครื่องกลับมารันได้
+    const dtType = dtTypes.find(t => t.id === dtForm.downtime_type_id);
+    const mcName = machines.find(m => m.machine_no === dtForm.machine_no && m.line_name === selSession.line_name)?.machine_name
+      || machines.find(m => m.machine_no === dtForm.machine_no)?.machine_name || '';
+    const fmtHM = (d) => d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : null;
+    const notifyBase = {
+      line_name:    selSession.line_name,
+      shift:        selSession.shift,
+      work_date:    selSession.work_date,
+      machine_no:   dtForm.machine_no,
+      machine_name: mcName,
+      type_name:    dtType?.name_th || '',
+      category:     dtType?.category || '',
+      start_time:   fmtHM(startedAt),
+      end_time:     fmtHM(endedAt),
+      duration_min: durMin != null ? Math.round(durMin) : null,
+      mat_no:       dtForm.mat_no || null,
+      description:  dtForm.description || null,
+      reported_by:  fullName,
+    };
+    if (!dtForm.id) {
+      notifyDowntime(notifyBase);
+    } else {
+      const orig = dtLogs.find(x => x.id === dtForm.id);
+      const wasOpen   = orig && !orig.ended_at && orig.duration_min == null;
+      const nowClosed = endedAt != null || durMin != null;
+      if (wasOpen && nowClosed) {
+        notifyDowntime({
+          ...notifyBase,
+          description: [dtForm.description, orig.carried_from_id ? '(ต่อเนื่องจากกะก่อน)' : ''].filter(Boolean).join(' ') || null,
+        }, 'downtime_recovered');
+      }
+    }
+
     toast.success(dtForm.id ? 'แก้ไข Downtime แล้ว' : 'บันทึก Downtime แล้ว');
     setShowDT(false);
     setDtForm({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
@@ -614,9 +731,9 @@ function LiveTab({ role }) {
   // นาที Downtime ที่ทับซ้อนกับช่วงเวลา [startMs, endMs] — ใช้หักจาก "เวลาที่ MAT.NO นี้วิ่งจริง" ก่อนเทียบ %P
   // เทียบด้วยช่วงเวลาจริง (started_at/ended_at) ไม่ใช่แค่ d.mat_no ตรงกัน เพราะ Downtime ของไลน์ร่วม (ไม่ระบุ MAT.NO)
   // ก็กระทบ MAT.NO ที่วิ่งซ้อนอยู่ในช่วงนั้นด้วย — ถ้าไม่หัก จะนับเวลาผลิตจริงเกิน ทำให้ %P เพี้ยน (เช่นเกิน 100%)
-  const dtOverlapMin = (startMs, endMs, pred = () => true) => {
+  const dtOverlapMin = (startMs, endMs, pred = () => true, logs = dtLogs) => {
     if (!startMs || !endMs || endMs <= startMs) return 0;
-    return dtLogs.filter(pred).reduce((sum, d) => {
+    return logs.filter(pred).reduce((sum, d) => {
       if (!d.started_at) return sum;
       const s0 = new Date(d.started_at).getTime();
       const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + (d.duration_min || 0) * 60000;
@@ -1092,7 +1209,9 @@ function LiveTab({ role }) {
     }, 0);
   };
 
-  const computeOEE = (ngQtyOverride, endTimeOverride, startTimeOverride) => {
+  // dtLogsOverride: ใช้ตอนปิดกะที่เพิ่งปิด/ตัดยอด Downtime เปิดค้างไปใน call เดียวกัน — state dtLogs ยังเป็นค่าเก่า
+  const computeOEE = (ngQtyOverride, endTimeOverride, startTimeOverride, dtLogsOverride) => {
+    const dtl = dtLogsOverride || dtLogs;
     const confirmedQty = prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
     // Also count qty_actual from open orders being carried over
     const carryActualQty = prodOrders.filter(o => o.status === 'open').reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || 0), 0);
@@ -1111,8 +1230,8 @@ function LiveTab({ role }) {
       if (openedAt && closedAt < openedAt) closedAt = new Date(closedAt.getTime() + 86400000); // กะดึกข้ามวัน
     }
     const shiftMin  = openedAt ? Math.round((closedAt - openedAt) / 60000) : 0;
-    const loggedPlannedDT  = dtLogs.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
-    const loggedUnplannedDT = dtLogs.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
+    const loggedPlannedDT  = dtl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
+    const loggedUnplannedDT = dtl.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
     const sessionShift  = selSession?.shift || 'day';
     const processType   = sessionProcessType();
     const policyBreakMin = computePolicyBreakMin(openedAt, closedAt, sessionShift, processType);
@@ -1158,8 +1277,8 @@ function LiveTab({ role }) {
       if (matStartMs == null || matEndMs == null || matEndMs <= matStartMs) return;
       const windowMin = (matEndMs - matStartMs) / 60000;
       const matPolicyBreakMin = computePolicyBreakMin(new Date(matStartMs), new Date(matEndMs), sessionShift, processType);
-      const matLoggedPlanned   = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category === 'planned');
-      const matLoggedUnplanned = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category !== 'planned');
+      const matLoggedPlanned   = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category === 'planned', dtl);
+      const matLoggedUnplanned = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category !== 'planned', dtl);
       const matNetAvail = Math.max(0, windowMin - matPolicyBreakMin - matLoggedPlanned);
       const matRunMin   = Math.max(0, matNetAvail - matLoggedUnplanned);
       totalNetAvailByMat += matNetAvail;
@@ -1228,6 +1347,11 @@ function LiveTab({ role }) {
     const oee = P != null ? A * P * Q : null;
     return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty, knownQty, unknownQty };
   };
+  // NOTE: การหัก Line Stock (child parts) ทำโดย DB trigger trg_explode_child_demand
+  // บน prod_orders — backflush ตอน order เปลี่ยนเป็น 'confirmed' (ระเบิด BOM → หัก
+  // least(on_hand, gross) จาก mini-store ของไลน์ → ส่วนขาดเข้า accumulator → ถึง lot
+  // สั่งผลิต child 200 + เบิก raw 500 + packaging). ไม่หักที่หน้าปิดกะอีกแล้ว เพื่อไม่ให้
+  // order ที่ confirmed ถูกหักซ้ำ (order ที่ยกยอดจะถูก backflush เมื่อ confirmed ในกะถัดไป).
 
   const handleCloseSession = async () => {
     if (!selSession) return;
@@ -1246,11 +1370,13 @@ function LiveTab({ role }) {
       return;
     }
 
-    // Downtime ที่ยังไม่ระบุระยะเวลา (เริ่มไว้แต่ยังไม่กดปิด) ต้องปิดให้ครบก่อน
+    // Downtime ที่ยังเปิดค้าง (เริ่มไว้แต่ยังไม่ปิดรายการ) — ต้องตัดสินใจต่อรายการก่อนปิดกะ:
+    //   'close' = เครื่องกลับมาแล้ว กรอกเวลาจบจริง | 'carry' = ยังซ่อมอยู่ ตัดยอดด้วยเวลาปิดกะแล้วเปิดต่อกะถัดไป
     // ไม่งั้นช่วงเวลานั้นจะไม่ถูกหักออกจาก Availability ตอนคำนวณ OEE (duration_min เป็น null = นับเป็น 0 นาที)
     const openDT = dtLogs.filter(d => d.duration_min == null);
-    if (openDT.length > 0) {
-      toast.error(`มี Downtime ${openDT.length} รายการที่ยังไม่ระบุระยะเวลา/เวลาสิ้นสุด กรุณาปิดให้ครบก่อนปิดกะ`);
+    const dtUndecided = openDT.filter(d => !dtCarryDecisions[d.id] || (dtCarryDecisions[d.id] === 'close' && !dtCloseTimes[d.id]));
+    if (dtUndecided.length > 0) {
+      toast.error(`มี Downtime เปิดค้าง ${dtUndecided.length} รายการ — เลือก "เครื่องกลับมาแล้ว" (พร้อมเวลาจบ) หรือ "ยังซ่อมอยู่ ตัดยอดข้ามกะ" ในหัวข้อ Downtime เปิดค้างก่อน`);
       return;
     }
 
@@ -1262,6 +1388,36 @@ function LiveTab({ role }) {
     }
 
     setSavingClose(true);
+
+    // ── ปิด/ตัดยอด Downtime ที่เปิดค้าง ก่อนคำนวณ OEE (นาทีต้องเข้าไปหักใน %A ของกะนี้) ──
+    const closeEndStr = closeEndTime || nowTime();
+    let updatedDtLogs = dtLogs;
+    for (const d of openDT) {
+      if (!d.started_at) continue; // รายการเปิดค้างต้องมีเวลาเริ่มเสมอ (validation ตอนบันทึกบังคับ) — กันพังเฉยๆ
+      const decision = dtCarryDecisions[d.id];
+      const endStr   = decision === 'carry' ? closeEndStr : dtCloseTimes[d.id];
+      const startMs  = new Date(d.started_at).getTime();
+      let endMs = new Date(`${selSession.work_date}T${endStr.slice(0, 5)}:00`).getTime();
+      if (endMs < startMs) endMs += 86400000; // ข้ามเที่ยงคืน (กะดึก)
+      const dur = Math.max(1, Math.round((endMs - startMs) / 60000));
+      const patch = { ended_at: new Date(endMs).toISOString(), duration_min: dur, carry_over: decision === 'carry' };
+      const { error: dtErr } = await supabaseDR.from('downtime_logs').update(patch).eq('id', d.id);
+      if (dtErr) { toast.error('ปิดรายการ Downtime ไม่สำเร็จ: ' + dtErr.message); setSavingClose(false); return; }
+      updatedDtLogs = updatedDtLogs.map(x => x.id === d.id ? { ...x, ...patch } : x);
+      // เครื่องกลับมาจริง → แจ้ง ✅ / ตัดยอดข้ามกะ = เครื่องยังไม่กลับมา ห้ามแจ้ง recovered
+      if (decision === 'close') {
+        const hm = (ms) => { const t = new Date(ms); return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`; };
+        notifyDowntime({
+          line_name: selSession.line_name, shift: selSession.shift, work_date: selSession.work_date,
+          machine_no: d.machine_no,
+          machine_name: machines.find(m => m.machine_no === d.machine_no)?.machine_name || '',
+          type_name: d.dr_downtime_types?.name_th || '',
+          start_time: hm(startMs), end_time: hm(endMs), duration_min: dur,
+          mat_no: d.mat_no || null, description: d.description || null, reported_by: fullName,
+        }, 'downtime_recovered');
+      }
+    }
+    if (openDT.length) setDtLogs(updatedDtLogs);
 
     // Process carry-over decisions
     const { data: { user } } = await supabase.auth.getUser();
@@ -1330,7 +1486,7 @@ function LiveTab({ role }) {
     const totalProducedFinal = confirmed.reduce((s, o) => s + o.qty, 0) + carryActual;
     const totalQtyOk      = Math.max(0, totalProducedFinal - totalQtyNg - totalQtySuspect - totalQtyRepair);
 
-    const { A, P, Q, oee, shiftMin } = computeOEE(totalQtyNg + totalQtySuspect, closeEndTime, closeStartTime);
+    const { A, P, Q, oee, shiftMin } = computeOEE(totalQtyNg + totalQtySuspect, closeEndTime, closeStartTime, updatedDtLogs);
     const startTimeChanged = closeStartTime && closeStartTime !== selSession.start_time;
     // Leader → request close (pending_close), SV+ → close directly
     const isLeaderRequest = role === 'leader';
@@ -1376,28 +1532,7 @@ function LiveTab({ role }) {
     setSavingClose(false);
     if (error) { toast.error(error.message); return; }
 
-    // ── Auto-consume Line Stock ────────────────────────────────────────────
-    // เมื่อปิดกะจริง (SV+ close โดยตรง) ให้หัก stock พาร์ทย่อยตาม BOM × qty_ok
-    if (!isLeaderRequest && totalQtyOk > 0 && selSession.product_id) {
-      const { data: bomItems } = await supabaseDR
-        .from('bom_items').select('mat_no, part_name, qty_per_unit')
-        .eq('product_id', selSession.product_id).eq('is_active', true);
-      if (bomItems?.length) {
-        const consumeRows = bomItems.map(b => ({
-          line_name:      selSession.line_name,
-          mat_no:         b.mat_no,
-          part_name:      b.part_name,
-          qty:            parseFloat((totalQtyOk * Number(b.qty_per_unit)).toFixed(4)),
-          type:           'consume',
-          ref_session_id: selSession.id,
-          work_date:      selSession.work_date,
-          note:           `Auto: close กะ ${selSession.shift === 'day' ? 'เช้า' : 'ดึก'} qty_ok=${totalQtyOk}`,
-          created_by:     fullName,
-        }));
-        await supabaseDR.from('line_stock_transactions').insert(consumeRows);
-      }
-    }
-    // ────────────────────────────────────────────────────────────────────────
+    // Line Stock ถูกหักโดย DB trigger บน prod_orders (backflush ตอน confirmed) — ดูหมายเหตุด้านบน
 
     const oeeLabel = oee != null ? `${(oee * 100).toFixed(1)}%` : 'N/A (ไม่มี Cycle Time)';
     if (isLeaderRequest) {
@@ -1410,12 +1545,34 @@ function LiveTab({ role }) {
       line_name: selSession.line_name, shift: selSession.shift, work_date: selSession.work_date,
       actor: fullName, qty_ok: totalQtyOk, qty_ng: totalQtyNg, qty_suspect: totalQtySuspect,
       oee: oee != null ? parseFloat((oee * 100).toFixed(1)) : null,
+      // รายละเอียดเพิ่มเติม — ให้ข้อความ Telegram ครอบคลุมเท่าหน้าสรุปปิดกะ
+      start_time:   (closeStartTime || selSession.start_time || '').slice(0, 5) || null,
+      end_time:     (closeEndTime || '').slice(0, 5) || null,
+      shift_min:    shiftMin,
+      qty_repair:   totalQtyRepair,
+      total_qty:    totalProducedFinal,
+      oee_a:        parseFloat((A * 100).toFixed(1)),
+      oee_p:        P != null ? parseFloat((P * 100).toFixed(1)) : null,
+      oee_q:        parseFloat((Q * 100).toFixed(1)),
+      parts: summarizeParts([
+        ...confirmed.map(o => ({ mat_no: o.mat_no, part_name: o.part_name, qty: o.qty })),
+        ...openOrders.map(o => carryOverDecisions[o.id] === 'confirm'
+          ? { mat_no: o.mat_no, part_name: o.part_name, qty: o.qty }
+          : { mat_no: o.mat_no, part_name: o.part_name, qty: parseInt(carryQtyActual[o.id]) || 0, carry: true }),
+      ]),
+      downtimes:    summarizeDowntimes(updatedDtLogs),
+      dt_total_min: Math.round(updatedDtLogs.reduce((s, d) => s + (d.duration_min || 0), 0)),
+      dt_count:     updatedDtLogs.length,
+      dt_carry:     openDT.filter(d => dtCarryDecisions[d.id] === 'carry')
+        .map(d => ({ machine_no: d.machine_no, type_name: d.dr_downtime_types?.name_th || '' })),
     });
     setShowCloseShift(false);
     setCarryOverDecisions({});
     setCarryQtyActual({});
     setCarryStopTime({});
     setMatTimeOverride({});
+    setDtCarryDecisions({});
+    setDtCloseTimes({});
     load();
     setSelSession(null);
     setDtLogs([]);
@@ -1434,24 +1591,7 @@ function LiveTab({ role }) {
     }).eq('id', selSession.id);
     if (error) { toast.error(error.message); return; }
 
-    // Auto-consume เมื่อ SV approve close
-    const qtyOk = selSession.qty_ok || 0;
-    if (qtyOk > 0 && selSession.product_id) {
-      const { data: bomItems } = await supabaseDR
-        .from('bom_items').select('mat_no, part_name, qty_per_unit')
-        .eq('product_id', selSession.product_id).eq('is_active', true);
-      if (bomItems?.length) {
-        await supabaseDR.from('line_stock_transactions').insert(
-          bomItems.map(b => ({
-            line_name: selSession.line_name, mat_no: b.mat_no, part_name: b.part_name,
-            qty: parseFloat((qtyOk * Number(b.qty_per_unit)).toFixed(4)),
-            type: 'consume', ref_session_id: selSession.id,
-            work_date: selSession.work_date,
-            note: `Auto: SV อนุมัติปิดกะ qty_ok=${qtyOk}`, created_by: fullName,
-          }))
-        );
-      }
-    }
+    // Line Stock หักโดย DB trigger บน prod_orders (backflush ตอน confirmed) — ไม่หักซ้ำที่นี่
 
     toast.success(`อนุมัติปิดกะแล้ว ✓ (ขอโดย ${selSession.close_requested_by_name || '—'})`);
     notifyProdClose({
@@ -1459,6 +1599,24 @@ function LiveTab({ role }) {
       work_date: selSession.work_date, actor: fullName,
       requested_by: selSession.close_requested_by_name,
       qty_ok: selSession.qty_ok, qty_ng: selSession.qty_ng, oee: selSession.oee,
+      // รายละเอียดเพิ่มเติม — อ่านจากค่าที่บันทึกไว้ตอนขอปิดกะ + ข้อมูลกะที่โหลดอยู่
+      start_time:   (selSession.start_time || '').slice(0, 5) || null,
+      end_time:     (selSession.end_time || '').slice(0, 5) || null,
+      shift_min:    selSession.shift_min,
+      qty_suspect:  selSession.qty_suspect,
+      qty_repair:   selSession.qty_repair,
+      total_qty:    selSession.actual_qty,
+      oee_a:        selSession.oee_a,
+      oee_p:        selSession.oee_p,
+      oee_q:        selSession.oee_q,
+      parts: summarizeParts(prodOrders.map(o => o.status === 'confirmed'
+        ? { mat_no: o.mat_no, part_name: o.part_name, qty: o.qty }
+        : o.status === 'carry_over'
+          ? { mat_no: o.mat_no, part_name: o.part_name, qty: o.qty_actual || 0, carry: true }
+          : null).filter(Boolean)),
+      downtimes:    summarizeDowntimes(dtLogs),
+      dt_total_min: Math.round(dtLogs.reduce((s, d) => s + (d.duration_min || 0), 0)),
+      dt_count:     dtLogs.length,
     });
     load();
     setSelSession(null);
@@ -1638,7 +1796,7 @@ function LiveTab({ role }) {
 
                   {/* open — request/direct close button */}
                   {selSession.status === 'open' && canRequestClose && (
-                    <button onClick={() => { setCloseNg('0'); setCloseEndTime(guessCloseEndTime()); setCloseStartTime(selSession.start_time || ''); setShowCloseShift(true); }}
+                    <button onClick={() => { setCloseNg('0'); setCloseEndTime(guessCloseEndTime()); setCloseStartTime(selSession.start_time || ''); setDtCarryDecisions({}); setDtCloseTimes({}); setShowCloseShift(true); }}
                       style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
                       {role === 'leader' ? '📋 ขอปิดกะ' : '🔒 ปิดกะ'}
                     </button>
@@ -1967,6 +2125,8 @@ function LiveTab({ role }) {
                           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{d.dr_downtime_types?.name_th || '—'}</span>
                           {d.machine_no && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {d.machine_no}</span>}
                           {d.mat_no && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9' }}>{d.mat_no}</span>}
+                          {d.carry_over && <span title="เครื่องยังซ่อมไม่เสร็จตอนปิดกะ — เปิดต่อในกะถัดไปอัตโนมัติ" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>🔁 ยกข้ามกะ</span>}
+                          {d.carried_from_id && <span title="รายการต่อเนื่องจาก Downtime ที่ตัดยอดมาจากกะก่อน" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>⏩ ต่อจากกะก่อน</span>}
                         </div>
                         {d.description && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{d.description}</div>}
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
@@ -2330,7 +2490,19 @@ function LiveTab({ role }) {
 
         {showCloseShift && selSession && (() => {
           const ng = parseInt(closeNg) || 0;
-          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty } = computeOEE(ng, closeEndTime, closeStartTime);
+          // Downtime เปิดค้าง: ถ้าตัดสินใจแล้ว ให้ OEE preview คิดนาทีตามการตัดสินใจทันที (ยังไม่เขียน DB จนกดปิดกะ)
+          const modalOpenDT = dtLogs.filter(d => d.duration_min == null);
+          const previewDtLogs = !modalOpenDT.length ? dtLogs : dtLogs.map(d => {
+            if (d.duration_min != null || !d.started_at) return d;
+            const decision = dtCarryDecisions[d.id];
+            const endStr = decision === 'carry' ? closeEndTime : (decision === 'close' ? dtCloseTimes[d.id] : null);
+            if (!endStr) return d;
+            const startMs = new Date(d.started_at).getTime();
+            let endMs = new Date(`${selSession.work_date}T${endStr.slice(0, 5)}:00`).getTime();
+            if (endMs < startMs) endMs += 86400000;
+            return { ...d, ended_at: new Date(endMs).toISOString(), duration_min: Math.max(1, Math.round((endMs - startMs) / 60000)) };
+          });
+          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty } = computeOEE(ng, closeEndTime, closeStartTime, previewDtLogs);
           const oeeColor = oee == null ? 'var(--muted)' : oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
           return (
             <div className="overlay" style={{ zIndex: 2000 }}>
@@ -2356,11 +2528,65 @@ function LiveTab({ role }) {
                   </Field>
                 </div>
 
+                {/* Downtime เปิดค้าง — ต้องตัดสินใจต่อรายการก่อนปิดกะ (เครื่องกลับมาแล้ว / ยังซ่อมอยู่ ตัดยอดข้ามกะ) */}
+                {modalOpenDT.length > 0 && (
+                  <div style={{ marginBottom: 16, padding: '12px 14px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: '#ef4444', marginBottom: 4 }}>
+                      🚨 Downtime เปิดค้าง {modalOpenDT.length} รายการ — ต้องตัดสินใจก่อนปิดกะ
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 10 }}>
+                      ถ้าเครื่องยังซ่อมไม่เสร็จ เลือก "ตัดยอดข้ามกะ" — ระบบจะปิดรายการของกะนี้ด้วยเวลาปิดกะ แล้วเปิดรายการต่อเนื่องให้อัตโนมัติเมื่อกะถัดไปของไลน์นี้เปิด (OEE ถูกต้องทั้งสองกะ)
+                    </div>
+                    {modalOpenDT.map(d => {
+                      const decision = dtCarryDecisions[d.id];
+                      return (
+                        <div key={d.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'var(--bg2)', borderRadius: 8, marginBottom: 6 }}>
+                          <div style={{ minWidth: 160, flex: 1 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>⚙️ {d.machine_no || '-'} · {d.dr_downtime_types?.name_th || 'Downtime'}</div>
+                            <div style={{ fontSize: 10, color: 'var(--muted)' }}>เริ่มหยุด {d.started_at ? fmtTime(d.started_at) : '-'}{d.description ? ` — ${d.description}` : ''}</div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <button onClick={() => setDtCarryDecisions(p => ({ ...p, [d.id]: 'close' }))}
+                              style={{
+                                fontSize: 11, fontWeight: 700, padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
+                                border: decision === 'close' ? '1px solid #22c55e' : '1px solid var(--border)',
+                                background: decision === 'close' ? 'rgba(34,197,94,0.15)' : 'var(--bg)',
+                                color: decision === 'close' ? '#22c55e' : 'var(--text2)',
+                              }}>
+                              ✅ เครื่องกลับมาแล้ว
+                            </button>
+                            {decision === 'close' && (
+                              <TimeInput24 value={dtCloseTimes[d.id] || ''} onChange={e => setDtCloseTimes(p => ({ ...p, [d.id]: e.target.value }))} style={{ fontSize: 13 }} />
+                            )}
+                            <button onClick={() => setDtCarryDecisions(p => ({ ...p, [d.id]: 'carry' }))}
+                              style={{
+                                fontSize: 11, fontWeight: 700, padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
+                                border: decision === 'carry' ? '1px solid #ef4444' : '1px solid var(--border)',
+                                background: decision === 'carry' ? 'rgba(239,68,68,0.15)' : 'var(--bg)',
+                                color: decision === 'carry' ? '#ef4444' : 'var(--text2)',
+                              }}>
+                              🔁 ยังซ่อมอยู่ — ตัดยอดข้ามกะ
+                            </button>
+                          </div>
+                          {decision === 'carry' && (
+                            <div style={{ width: '100%', fontSize: 10, color: '#f59e0b' }}>
+                              ปิดรายการของกะนี้ด้วยเวลาปิดกะ ({closeEndTime || '-'}) → เปิดต่อในกะถัดไปอัตโนมัติ · ไม่แจ้ง "เครื่องกลับมารันได้" จนกว่าจะปิดจริง
+                            </div>
+                          )}
+                          {decision === 'close' && !dtCloseTimes[d.id] && (
+                            <div style={{ width: '100%', fontSize: 10, color: '#ef4444' }}>กรอกเวลาที่เครื่องกลับมาทำงานด้วย</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {/* Summary stats — แยกหยุดในแผน(เพิ่มเติมจากนโยบาย)/นอกแผนออกจากกัน ให้บวกกันแล้วเท่ากับเวลากะเป๊ะๆ
                     (เวลากะ = หยุดนโยบาย + หยุดในแผน + หยุดนอกแผน + Run Time) ไม่งั้นจะดูเหมือนเวลารวมเกิน 12 ชม. */}
                 {(() => {
-                  const loggedPlannedDT   = dtLogs.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
-                  const loggedUnplannedDT = totalDT - loggedPlannedDT;
+                  const loggedPlannedDT   = previewDtLogs.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
+                  const loggedUnplannedDT = previewDtLogs.reduce((s, d) => s + (d.duration_min || 0), 0) - loggedPlannedDT;
                   return (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(90px,1fr))', gap: 10, marginBottom: 16 }}>
                       {[
@@ -3338,6 +3564,7 @@ function LiveTab({ role }) {
    HISTORY TAB
 ═══════════════════════════════════════════════════════════════ */
 function HistoryTab({ role }) {
+  const { lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const [sessions, setSessions]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState({ date: '', line_name: '' });
@@ -3349,7 +3576,7 @@ function HistoryTab({ role }) {
   const [deleting, setDeleting]   = useState(null);
   const [ordersMinimized, setOrdersMinimized] = useState({});
 
-  const isAdmin = role === 'admin';
+  const canDeleteSession = can('daily_report', 'delete_session', role);
 
   const handleDelete = async (s) => {
     if (!window.confirm(`ลบกะ ${s.line_name} ${s.shift === 'day' ? 'กะเช้า' : 'กะดึก'} วันที่ ${fmtDate(s.work_date)} ?\n(ข้อมูล Order, Downtime, Defect จะถูกลบทั้งหมด)`)) return;
@@ -3363,6 +3590,22 @@ function HistoryTab({ role }) {
 
   const load = useCallback(async () => {
     setLoading(true);
+    const { data: ln } = await supabase.from('production_lines').select('id, name, section, parent_line_name').order('name');
+    const lm = {};
+    (ln || []).forEach(l => { lm[l.name] = l; });
+    const pcm = {};
+    (ln || []).forEach(l => { if (l.parent_line_name) (pcm[l.parent_line_name] ||= []).push(l.name); });
+    const normSection = (s) => (s || '').trim().toLowerCase();
+
+    // ไลน์ที่ role นี้มีสิทธิ์เห็นประวัติ — leader/supervisor เห็นเฉพาะของตัวเอง เหมือน LiveTab
+    let allowedLineNames = null;
+    if (role === 'leader' && userLineId) {
+      const myLine = (ln || []).find(l => l.id === userLineId);
+      allowedLineNames = myLine ? [myLine.name, ...(pcm[myLine.name] || [])] : [];
+    } else if (role !== 'admin' && scopeSecs.length) {
+      allowedLineNames = (ln || []).filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name);
+    }
+
     let q = supabaseDR.from('production_sessions')
       .select('*, dr_products(name)')
       .eq('status', 'closed')
@@ -3370,14 +3613,12 @@ function HistoryTab({ role }) {
       .limit(100);
     if (filter.date)      q = q.eq('work_date', filter.date);
     if (filter.line_name) q = q.eq('line_name', filter.line_name);
-    const [{ data: ss }, { data: ln }] = await Promise.all([
-      q,
-      supabase.from('production_lines').select('name').order('name'),
-    ]);
+    if (allowedLineNames) q = q.in('line_name', allowedLineNames.length ? allowedLineNames : ['__none__']);
+    const { data: ss } = await q;
     setSessions(ss || []);
-    setLineNames((ln || []).map(l => l.name));
+    setLineNames(allowedLineNames ?? (ln || []).map(l => l.name));
     setLoading(false);
-  }, [filter]);
+  }, [filter, role, scopeSecs, userLineId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -3452,7 +3693,7 @@ function HistoryTab({ role }) {
                     </div>
                   )}
                   <span style={{ color: 'var(--muted)', fontSize: 16 }}>{expanded === s.id ? '▲' : '▼'}</span>
-                  {isAdmin && (
+                  {canDeleteSession && (
                     <button
                       onClick={e => { e.stopPropagation(); handleDelete(s); }}
                       disabled={deleting === s.id}
@@ -3625,18 +3866,34 @@ function HistoryTab({ role }) {
    EXPORT TAB
 ═══════════════════════════════════════════════════════════════ */
 function ExportTab() {
+  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
   const firstOfMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; };
 
   const [filter, setFilter]       = useState({ date_from: firstOfMonth(), date_to: today(), line_name: '' });
   const [lineNames, setLineNames] = useState([]);
+  const [allowedLineNames, setAllowedLineNames] = useState(null); // null = ไม่จำกัด (admin/manager/qa/...)
   const [loading, setLoading]     = useState(false);
   const [preview, setPreview]     = useState(null); // { type, rows, cols }
 
   useEffect(() => {
-    supabase.from('production_lines').select('name').order('name')
-      .then(({ data }) => setLineNames((data || []).map(l => l.name)));
-  }, []);
+    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
+      .then(({ data }) => {
+        const ln = data || [];
+        const normSection = (s) => (s || '').trim().toLowerCase();
+        const pcm = {};
+        ln.forEach(l => { if (l.parent_line_name) (pcm[l.parent_line_name] ||= []).push(l.name); });
+        let allowed = null;
+        if (role === 'leader' && userLineId) {
+          const myLine = ln.find(l => l.id === userLineId);
+          allowed = myLine ? [myLine.name, ...(pcm[myLine.name] || [])] : [];
+        } else if (role !== 'admin' && scopeSecs.length) {
+          allowed = ln.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name);
+        }
+        setAllowedLineNames(allowed);
+        setLineNames(allowed ?? ln.map(l => l.name));
+      });
+  }, [role, scopeSecs, userLineId]);
 
   // ── fetch all raw data ──────────────────────────────────────────
   const fetchData = async () => {
@@ -3652,6 +3909,7 @@ function ExportTab() {
       .order('work_date', { ascending: true })
       .order('shift', { ascending: true });
     if (filter.line_name) q = q.eq('line_name', filter.line_name);
+    if (allowedLineNames) q = q.in('line_name', allowedLineNames.length ? allowedLineNames : ['__none__']);
     const { data, error } = await q;
     setLoading(false);
     if (error) { toast.error(error.message); return null; }
@@ -4161,7 +4419,7 @@ function SetupTab({ role }) {
 
 /* ── Defect Type Setup ── */
 function DefectTypeSetup({ role }) {
-  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
+  const canEdit = can('daily_report', 'setup', role);
   const [items, setItems]     = useState([]);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving]   = useState(false);
@@ -4298,7 +4556,7 @@ function DefectTypeSetup({ role }) {
 
 /* ── Break Policy Setup ── */
 function BreakPolicySetup({ role }) {
-  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
+  const canEdit = can('daily_report', 'setup', role);
   const [items, setItems]   = useState([]);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -4540,7 +4798,7 @@ function ProductSetup({ role }) {
     load();
   };
 
-  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
+  const canEdit = can('daily_report', 'setup', role);
 
   // ── Kanban CRUD ──────────────────────────────────────────────
   const openKanbanEdit = (std = null, defaultProductId = '') => {
@@ -4883,7 +5141,7 @@ function DowntimeTypeSetup({ role }) {
     load();
   };
 
-  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
+  const canEdit = can('daily_report', 'setup', role);
 
   const processGroups = [
     { key: 'welding_assembly', label: '🔥 Welding / Assembly', color: '#f97316' },
@@ -5060,7 +5318,7 @@ function _KanbanStandardSetup_REMOVED({ role }) {
     load();
   };
 
-  const canEdit = ['admin', 'manager', 'supervisor'].includes(role);
+  const canEdit = can('daily_report', 'setup', role);
 
   const getItemDisplay = (item) => {
     const prod = item.dr_products;

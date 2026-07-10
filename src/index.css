@@ -208,6 +208,20 @@ td {
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: var(--accent-dim); }
 
+/* ─── Sticky-header table ───────────────────────────────────────────
+   ครอบตาราง matrix ยาวๆ (เช็คชื่อ, จัดการสิทธิ์, สกิล) ให้หัวตารางค้างไว้ตอนเลื่อนลง
+   ใช้: <div className="table-sticky"> (มัก + .card) — ปรับความสูงด้วย style={{maxHeight}} ได้ */
+.table-sticky { overflow: auto; max-height: calc(100vh - 210px); }
+.table-sticky thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--card);
+  box-shadow: 0 1px 0 var(--border);
+}
+/* หัวคอลัมน์ที่ sticky ซ้ายอยู่แล้ว (เช่นชื่อพนักงาน/ชื่อสิทธิ์) ต้องลอยเหนือหัวคอลัมน์อื่นตรงมุม */
+.table-sticky thead th[style*="sticky"] { z-index: 12; }
+
 /* ─── Input / Select ────────────────────────────────────────────────────── */
 input, select, textarea {
   background: var(--bg3);
@@ -220,6 +234,12 @@ input, select, textarea {
   width: 100%;
   outline: none;
   transition: border-color 0.2s;
+}
+/* checkbox/radio ต้องไม่โดน width:100% ด้านบน — ไม่งั้นมันยืดเต็ม container แล้วบีบ label ข้างๆ จนหาย
+   (เคยกัดที่หน้า Daily PM: ชื่อเครื่องในการ์ดลงทะเบียนถูกบีบจนมองไม่เห็น) */
+input[type="checkbox"], input[type="radio"] {
+  width: auto;
+  padding: 0;
 }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 input::placeholder, textarea::placeholder { color: var(--muted); }
@@ -389,4 +409,79 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
   th { font-size: 9px; padding: 7px 8px; }
   td { padding: 7px 8px; font-size: 12px; }
+}
+
+/* ─── Downtime alarm — จุดเครื่องจักรกระพริบสีแดงเมื่อมี downtime ค้างอยู่ ── */
+@keyframes dtAlarmBlink {
+  0%, 100% { background-color: rgba(239, 68, 68, 0.92); box-shadow: 0 0 4px 1px rgba(239, 68, 68, 0.55); }
+  50%      { background-color: rgba(127, 29, 29, 0.92); box-shadow: 0 0 16px 6px rgba(239, 68, 68, 0.95); }
+}
+.dt-alarm-blink {
+  animation: dtAlarmBlink 0.9s ease-in-out infinite;
+  border-color: #ef4444 !important;
+}
+@keyframes dtAlarmBannerPulse {
+  0%, 100% { background-color: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.45); }
+  50%      { background-color: rgba(239, 68, 68, 0.28); border-color: #ef4444; }
+}
+.dt-alarm-banner {
+  animation: dtAlarmBannerPulse 1.2s ease-in-out infinite;
+}
+@keyframes dtAlarmIconShake {
+  0%, 100% { transform: rotate(0deg); }
+  20%      { transform: rotate(-12deg); }
+  40%      { transform: rotate(10deg); }
+  60%      { transform: rotate(-8deg); }
+  80%      { transform: rotate(6deg); }
+}
+.dt-alarm-icon {
+  display: inline-block;
+  animation: dtAlarmIconShake 0.9s ease-in-out infinite;
+}
+
+/* ─── Person alarm — วงแหวนคนกระพริบ: แดง = PPE ไม่ครบ, เหลือง = รออนุมัติ 4M ── */
+@keyframes personAlarmRed {
+  0%, 100% { box-shadow: 0 0 3px 1px rgba(239, 68, 68, 0.5); border-color: #ef4444; }
+  50%      { box-shadow: 0 0 14px 5px rgba(239, 68, 68, 0.95); border-color: #fecaca; }
+}
+.person-alarm-red {
+  animation: personAlarmRed 0.9s ease-in-out infinite;
+  border-color: #ef4444 !important;
+}
+/* เหลือง = "ต้องสนใจ" ตาม Andon → นิ่ง+เรืองแสง ห้ามกระพริบ (กระพริบสงวนให้สีแดงเท่านั้น
+   — ดู docs/UI-CONVENTIONS.md ข้อ 2) */
+.person-alarm-amber {
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 10px 2px rgba(245, 158, 11, 0.75);
+}
+
+/* ─── Now marker (playhead) บนบอร์ดไทม์ไลน์ทุกหน้า ─────────────────
+   สีชมพู #ec4899 จงใจไม่ซ้ำกับสีสถานะใดๆ บนบอร์ด (น้ำเงิน=กำลังผลิต เขียว=เสร็จ
+   แดง=ช้า เหลือง=ยกยอด เทา=หยุดตามแผน) — เส้นหนา + จุดหัวเรืองแสงกระพริบ
+   คู่กับ .now-chip ป้ายเวลาปัจจุบันลอยบนหัวตาราง */
+@keyframes nowLinePulse {
+  0%, 100% { box-shadow: 0 0 3px 0 rgba(236, 72, 153, 0.9); }
+  50%      { box-shadow: 0 0 12px 3px rgba(236, 72, 153, 0.85); }
+}
+.now-line {
+  position: absolute; top: 0; bottom: 0; width: 2px;
+  background: linear-gradient(180deg, #ec4899, rgba(236, 72, 153, 0.45));
+  z-index: 4; pointer-events: none;
+  animation: nowLinePulse 1.5s ease-in-out infinite;
+}
+.now-line::before {
+  content: ''; position: absolute; top: 0; left: 50%; transform: translate(-50%, -1px);
+  border-left: 5px solid transparent; border-right: 5px solid transparent;
+  border-top: 6px solid #ec4899;
+}
+@keyframes nowChipGlow {
+  0%, 100% { box-shadow: 0 0 6px rgba(236, 72, 153, 0.55); }
+  50%      { box-shadow: 0 0 14px rgba(236, 72, 153, 0.95); }
+}
+.now-chip {
+  position: absolute; top: 50%; transform: translate(-50%, -50%);
+  background: #ec4899; color: #fff; font-weight: 800; font-size: 11px;
+  padding: 2px 9px; border-radius: 20px; z-index: 5; pointer-events: none;
+  white-space: nowrap; line-height: 1.4;
+  animation: nowChipGlow 1.5s ease-in-out infinite;
 }

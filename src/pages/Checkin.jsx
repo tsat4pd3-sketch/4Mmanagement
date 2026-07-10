@@ -1,8 +1,10 @@
 import { useState, useEffect, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { loadCompanyCalendar, getDayType } from '../utils/companyCalendar';
+import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy';
 
 const LEAVE_TYPES = ['ลากิจ', 'ลาป่วย', 'ลาพักร้อน', 'อื่นๆ'];
 const LEAVE_DURATION_OPTS = [
@@ -68,7 +70,8 @@ const STATUS_META = {
 };
 
 export default function Checkin() {
-  const { role, lineId, team, fullName } = useContext(UserContext);
+  const { role, lineId, team, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  const canRecord = can('checkin', 'record', role);
 
   const [employees,      setEmployees]      = useState([]);
   const [lines,          setLines]          = useState([]);
@@ -146,6 +149,9 @@ export default function Checkin() {
     if (role === 'leader') {
       if (lineId) empQ = empQ.eq('line_id', lineId);
       if (team)   empQ = empQ.eq('team', team);
+    } else if (scopeSecs.length) {
+      // ทุก role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
+      empQ = empQ.in('section', scopeSecs);
     }
 
     const [
@@ -799,13 +805,24 @@ export default function Checkin() {
   const sections = orgSections.length ? orgSections : [...new Set(lines.map(l => l.section))].sort();
   const linesForSection = selSection ? lines.filter(l => l.section === selSection) : lines;
 
+  // เลือกไลน์ = มองแบบเป็นขั้น (hierarchy): ไลน์หลักเห็นรวมพนักงานของไลน์ย่อยทุกไลน์,
+  // ไลน์ย่อยเห็นของตัวเอง + พนักงานที่ผูกกับไลน์หลัก (พื้นที่เดียวกัน) — ไม่ใช่กรอง line_id ตรงเป๊ะ
+  const selLineFamilyIds = selLine ? getLineFamilyIds(lines, Number(selLine)) : null;
+
+  // "ทุกไลน์ใน section" ต้องขยายเป็นครอบครัวไลน์แบบเดียวกับตอนเลือกไลน์เจาะจง —
+  // ไลน์แม่/ไลน์ย่อยบางไลน์ไม่ได้กรอก section ของตัวเอง ถ้ากรองแค่ section ตรงเป๊ะ
+  // พนักงานที่ผูกกับไลน์เหล่านั้นจะหายทั้งที่เลือกไลน์ตรงๆ แล้วเห็น (เคยเกิดกับไลน์ย่อยที่มี
+  // section แต่ไลน์แม่ไม่มี — เลือกไลน์ย่อยเจอคน เลือกทุกไลน์กลับว่าง)
+  const sectionFamilyIds = selSection ? (() => {
+    const s = new Set();
+    linesForSection.forEach(l => { getLineFamilyIds(lines, l.id).forEach(id => s.add(id)); });
+    return s;
+  })() : null;
+
   const displayed = employees.filter(emp => {
     if (filterShift && emp.assignedShift && emp.assignedShift !== shiftInfo.shift) return false;
-    if (selLine)    return emp.line_id === Number(selLine);
-    if (selSection) {
-      const lineIds = linesForSection.map(l => l.id);
-      return lineIds.includes(emp.line_id);
-    }
+    if (selLine)    return selLineFamilyIds?.size ? selLineFamilyIds.has(emp.line_id) : emp.line_id === Number(selLine);
+    if (selSection) return sectionFamilyIds.has(emp.line_id);
     return true;
   });
 
@@ -939,17 +956,17 @@ export default function Checkin() {
           </button>
           <button
             onClick={handleSave}
-            disabled={isSaving || previewNight}
-            title={previewNight ? 'ปิดโหมด Preview ก่อนบันทึก' : undefined}
+            disabled={isSaving || previewNight || !canRecord}
+            title={previewNight ? 'ปิดโหมด Preview ก่อนบันทึก' : !canRecord ? 'บัญชีของคุณไม่มีสิทธิ์บันทึกเช็คชื่อ' : undefined}
             style={{
               padding: '10px 22px',
-              background: isSaving || previewNight ? 'var(--muted)' : 'var(--accent)',
+              background: (isSaving || previewNight || !canRecord) ? 'var(--muted)' : 'var(--accent)',
               color: '#fff', border: 'none', borderRadius: 8,
               fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14,
-              cursor: previewNight ? 'not-allowed' : 'pointer',
+              cursor: (previewNight || !canRecord) ? 'not-allowed' : 'pointer',
             }}
           >
-            {isSaving ? '⏳ กำลังบันทึก...' : previewNight ? '🔒 ปิด Preview ก่อนบันทึก' : '💾 บันทึก'}
+            {isSaving ? '⏳ กำลังบันทึก...' : previewNight ? '🔒 ปิด Preview ก่อนบันทึก' : !canRecord ? '🔒 ไม่มีสิทธิ์บันทึก' : '💾 บันทึก'}
           </button>
         </div>
       </div>
@@ -1000,7 +1017,9 @@ export default function Checkin() {
                 style={{ padding: '6px 10px', borderRadius: 6, fontSize: 13, width: 'auto', minWidth: 180 }}
               >
                 <option value="">— ทุกไลน์ใน {selSection} —</option>
-                {linesForSection.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {toHierarchicalOptions(linesForSection).map(({ line: l, depth }) => (
+                  <option key={l.id} value={l.id}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+                ))}
               </select>
             </div>
           )}
@@ -1060,7 +1079,7 @@ export default function Checkin() {
         </div>
       )}
 
-      <div className="card" style={{ overflowX: 'auto' }}>
+      <div className="card table-sticky">
         <table style={{ minWidth: 820 }}>
           <thead>
             <tr>
@@ -1428,7 +1447,7 @@ export default function Checkin() {
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setShowOtBookModal(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
-              <button onClick={handleSaveOtBookModal} disabled={otBookSaving || !otBookLineId}
+              <button onClick={handleSaveOtBookModal} disabled={otBookSaving || !otBookLineId || !canRecord}
                 style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: otBookSaving || !otBookLineId ? 'not-allowed' : 'pointer', opacity: otBookSaving || !otBookLineId ? 0.6 : 1 }}>
                 {otBookSaving ? '⏳ กำลังบันทึก...' : '💾 บันทึกการจอง'}
               </button>

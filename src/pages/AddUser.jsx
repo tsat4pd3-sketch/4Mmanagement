@@ -8,9 +8,12 @@ const ROLES = [
   { value: 'leader',     label: 'Leader',     color: '#22c55e', desc: 'ภาพรวม + ไลน์ตัวเอง + พนักงานในไลน์' },
   { value: 'qa',         label: 'QA',         color: '#c084fc', desc: 'Approve/Reject 4M Changes + ดูรายงาน' },
   { value: 'document_control', label: 'Document Control', color: '#fb923c', desc: 'ดูแลปฏิทินบริษัท + เอกสารควบคุม (วันทำงาน/วันหยุด/กะ)' },
+  { value: 'sale', label: 'Sale', color: '#38bdf8', desc: 'อัพโหลด Forecast/Order ลูกค้า + ดู Customer Demand & Shipping' },
   { value: 'display',    label: 'Display',    color: '#94a3b8', desc: '📺 สำหรับจอแสดงผล/TV — ดูได้อย่างเดียว ไม่มี Auto-Logout' },
 ];
-const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', section: '', lineId: '', team: '', notifyEmail: '' };
+// sections = ขอบเขตส่วนงาน (เลือกได้หลายอัน ทุก role) — ว่าง = เห็นทุกส่วนงาน
+// profiles.section (เดี่ยว) ยังถูกเขียนเป็นตัวแรกของ sections เสมอ เพื่อให้ rollback โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope
+const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', sections: [], lineId: '', team: '', notifyEmail: '' };
 
 export default function AddUser() {
   const [users,         setUsers]         = useState([]);
@@ -42,7 +45,7 @@ export default function AddUser() {
     setFetchingUsers(true);
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name, role, line_id, section, team, notify_email');
+      .select('id, full_name, role, line_id, section, sections, team, notify_email');
     const { data: authUsers } = await supabase.rpc('get_auth_users');
 
     const emailMap = {};
@@ -53,6 +56,14 @@ export default function AddUser() {
   };
 
   const setF = (key, val) => setForm(f => ({ ...f, [key]: val }));
+
+  // ป้องกันบั๊ก fail-open: ถ้า supervisor/leader ไม่มี section/line_id ทุกหน้าที่กรองข้อมูลตาม
+  // section/line_id จะข้าม condition แล้วโชว์ข้อมูลทุกไลน์ทุกแผนกเหมือน admin โดยไม่มีอะไรเตือน
+  const validateScope = () => {
+    if (form.role === 'supervisor' && !form.sections.length) return 'Supervisor ต้องกำหนด Section อย่างน้อย 1 ส่วนงาน ไม่งั้นจะเห็นข้อมูลทุกส่วนงานเหมือน admin';
+    if (form.role === 'leader' && (!form.lineId || !form.team)) return 'Leader ต้องกำหนดทั้งไลน์ผลิตและ Team ไม่งั้นจะเห็นข้อมูลทุกไลน์เหมือน admin';
+    return null;
+  };
 
   const openCreate = () => {
     setForm(emptyForm);
@@ -69,7 +80,7 @@ export default function AddUser() {
       password:    '',
       fullName:    u.full_name    || '',
       role:        u.role         || 'supervisor',
-      section:     u.section      || '',
+      sections:    (u.sections?.length ? u.sections : (u.section ? [u.section] : [])),
       lineId:      u.line_id      ? String(u.line_id) : '',
       team:        u.team         || '',
       notifyEmail: u.notify_email || '',
@@ -83,6 +94,8 @@ export default function AddUser() {
 
   const handleCreate = async () => {
     if (!form.email || !form.password) return setError('กรุณากรอก Email และรหัสผ่าน');
+    const scopeErr = validateScope();
+    if (scopeErr) return setError(scopeErr);
     setLoading(true);
     setMessage(null);
     setError(null);
@@ -102,7 +115,7 @@ export default function AddUser() {
             password:  form.password,
             role:      form.role,
             full_name: form.fullName || null,
-            section:   form.section  || null,
+            section:   form.sections[0] || null,
             team:      form.team     || null,
             line_id:   form.lineId   ? Number(form.lineId) : null,
           }),
@@ -110,6 +123,11 @@ export default function AddUser() {
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
+
+      // Edge Function create-user ยังไม่รู้จัก sections (array) — อัปเดตตามหลังด้วย id ที่ได้กลับมา
+      if (data.user?.id && form.sections.length) {
+        await supabase.from('profiles').update({ sections: form.sections }).eq('id', data.user.id);
+      }
 
       setMessage(`สร้าง user "${form.email}" (${form.role}) สำเร็จ`);
       setShowModal(false);
@@ -122,6 +140,8 @@ export default function AddUser() {
   };
 
   const handleUpdate = async () => {
+    const scopeErr = validateScope();
+    if (scopeErr) return setError(scopeErr);
     setLoading(true);
     setMessage(null);
     setError(null);
@@ -129,7 +149,8 @@ export default function AddUser() {
       const { error: err } = await supabase.from('profiles').update({
         full_name:    form.fullName    || null,
         role:         form.role,
-        section:      form.section     || null,
+        section:      form.sections[0] || null,
+        sections:     form.sections.length ? form.sections : null,
         team:         form.team        || null,
         line_id:      form.lineId      ? Number(form.lineId) : null,
         notify_email: form.notifyEmail || null,
@@ -207,8 +228,8 @@ export default function AddUser() {
                       {u.role?.toUpperCase() || '—'}
                     </span>
                   </td>
-                  <td style={{ textAlign: 'center', fontSize: 13, color: u.section ? 'var(--text)' : 'var(--muted)' }}>
-                    {u.section || '—'}
+                  <td style={{ textAlign: 'center', fontSize: 13, color: (u.sections?.length || u.section) ? 'var(--text)' : 'var(--muted)' }}>
+                    {u.sections?.length ? u.sections.join(', ') : (u.section || '—')}
                   </td>
                   <td style={{ fontSize: 13, color: u.line_id ? 'var(--text)' : 'var(--muted)' }}>
                     {lineName}
@@ -292,30 +313,61 @@ export default function AddUser() {
                 </select>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <label style={labelSt}>Section</label>
-                  <select value={form.section} onChange={e => setF('section', e.target.value)}>
-                    <option value="">— เลือก —</option>
-                    {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
+              <div>
+                <label style={labelSt}>
+                  ขอบเขตส่วนงาน (Section) {form.role === 'supervisor' && <span style={{ color: 'var(--red)' }}>* จำเป็นอย่างน้อย 1</span>}
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border2)' }}>
+                  {sectionOpts.length === 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีข้อมูล Section</span>}
+                  {sectionOpts.map(s => {
+                    const checked = form.sections.includes(s);
+                    return (
+                      <label key={s} style={{
+                        display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer',
+                        padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, userSelect: 'none',
+                        background: checked ? 'rgba(77,159,255,0.15)' : 'var(--bg2)',
+                        border: `1px solid ${checked ? 'rgba(77,159,255,0.5)' : 'var(--border2)'}`,
+                        color: checked ? '#4d9fff' : 'var(--text2)',
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => setF('sections', checked ? form.sections.filter(x => x !== s) : [...form.sections, s])}
+                          style={{ margin: 0 }}
+                        />
+                        {s}
+                      </label>
+                    );
+                  })}
                 </div>
-                <div>
-                  <label style={labelSt}>Team</label>
-                  <select value={form.team} onChange={e => setF('team', e.target.value)}>
-                    <option value="">— เลือก —</option>
-                    {teamOpts.map(t => <option key={t} value={t}>Team {t}</option>)}
-                  </select>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                  เลือกได้หลายส่วนงาน — user จะเห็นข้อมูลเฉพาะส่วนงานที่ติ๊กไว้ (ใช้ได้กับทุก role เช่น Manager ที่ดูแลเฉพาะบางส่วน) · ไม่ติ๊กเลย = เห็นทุกส่วนงาน
                 </div>
               </div>
 
               <div>
-                <label style={labelSt}>ไลน์ผลิต / Group</label>
+                <label style={labelSt}>Team {form.role === 'leader' && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}</label>
+                <select value={form.team} onChange={e => setF('team', e.target.value)}>
+                  <option value="">— เลือก —</option>
+                  {teamOpts.map(t => <option key={t} value={t}>Team {t}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label style={labelSt}>ไลน์ผลิต / Group {form.role === 'leader' && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}</label>
                 <select value={form.lineId} onChange={e => setF('lineId', e.target.value)}>
                   <option value="">— เลือกไลน์ —</option>
                   {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select>
               </div>
+
+              {(form.role === 'supervisor' || form.role === 'leader') && (
+                <div style={{ fontSize: 11, color: 'var(--muted)', padding: '8px 10px', background: 'var(--bg3)', borderRadius: 6, lineHeight: 1.5 }}>
+                  ⚠️ {form.role === 'supervisor'
+                    ? 'Supervisor เห็นเฉพาะข้อมูลใน Section ที่ติ๊กไว้ — ถ้าไม่กำหนดจะเห็นทุกส่วนงานเหมือน admin'
+                    : 'Leader เห็นเฉพาะข้อมูลในไลน์+Team ที่กำหนด — ถ้าไม่กำหนดจะเห็นทุกไลน์เหมือน admin'}
+                </div>
+              )}
 
               <div>
                 <label style={labelSt}>📬 Notify Email (รับการแจ้งเตือน)</label>
