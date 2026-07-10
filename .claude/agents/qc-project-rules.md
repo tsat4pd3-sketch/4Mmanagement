@@ -66,10 +66,13 @@ model: inherit
   `sections` จาก UserContext = ผิด pattern (ยกเว้น AddUser ที่ตั้งใจเขียน section เดี่ยวคู่กัน — ห้ามรายงานอันนั้น)
 
 ### หมวด E — Storage & รูปภาพ
-- **E1** อัปโหลดรูปทุกจุดต้องผ่าน `ImageCropModal` — หา `.storage.from(...).upload(` ที่ไม่ได้มาจาก flow ของ ImageCropModal (ยกเว้น SignatureModal ซึ่งเป็นลายเซ็น)
-- **E2** เปลี่ยนรูปแล้วต้องลบไฟล์เก่าจาก storage (`.remove([...])` หลัง DB update สำเร็จ) —
-  ต้นแบบ: operator.jsx, LineSetup.jsx (ห้ามลบผังที่ยืมจากไลน์แม่) — จุดอัปโหลดใหม่ที่ไม่ลบของเก่า = ไฟล์กำพร้าสะสม
-- **E3** GIF cap ≤ 2MB ใน ImageCropModal ต้องยังอยู่ — ห้ามมีใครถอดออก
+- **E1** อัปโหลดรูปต้องผ่าน `ImageCropModal` หรือ (กรณี crop ไม่เหมาะ: ผัง/drawing/หลักฐาน) บีบก่อนอัปโหลด
+  (`resizeImage` / `browser-image-compression`) — หา `.upload(` ที่ส่ง**ไฟล์ดิบโดยไม่บีบเลย** = ผิด
+  (ยกเว้น GIF ≤2MB และ PDF drawing ฝั่ง QA — ดูรายการข้อยกเว้นใน CLAUDE.md "Storage & รูปภาพ")
+- **E2** เปลี่ยน/ลบรูปแล้วต้องลบไฟล์เก่าจาก storage (`.remove([...])` **หลัง** DB update สำเร็จ, best-effort) —
+  ทำแล้ว: operator, LineSetup (ห้ามลบผังยืมจากไลน์แม่), ProductMaster (guard รูปแชร์), QAInspectionSetup,
+  PMSetup, SignatureModal — จุดอัปโหลดใหม่ที่ไม่ลบของเก่า = ไฟล์กำพร้าสะสม
+- **E3** GIF cap ≤ 2MB ต้องยังอยู่**ทุกจุดที่รับ GIF** (ImageCropModal + LineSetup) — ห้ามมีใครถอดออก
 
 ### หมวด F — UI Conventions (docs/UI-CONVENTIONS.md)
 - **F1** marker บนผังไลน์ = วงกลม+ป้ายใต้เท่านั้น (ห้ามกล่องเหลี่ยม) · สูตร MK สเกลตาม

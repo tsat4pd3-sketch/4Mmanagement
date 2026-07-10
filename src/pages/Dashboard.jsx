@@ -73,14 +73,15 @@ function ThumbMap({ imageUrl, alt, markers }) {
           {markers.map(m => (
             <div key={m.id} style={{ position: 'absolute', top: m.top, left: m.left, transform: 'translate(-50%, -50%)', zIndex: m.alarm ? 3 : 2 }}>
               {m.alarm ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                /* wrapper สูงเท่าวงกลมเท่านั้น — ป้ายห้อยใต้แบบ absolute กันจุดกึ่งกลางเลื่อน (UI-CONVENTIONS §1.1) */
+                <div style={{ position: 'relative', width: 26, height: 26 }}>
                   <div className="dt-alarm-blink" style={{
                     width: 26, height: 26, borderRadius: '50%',
                     border: '2px solid #ef4444', boxShadow: '0 0 8px #ef4444',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 13, background: 'rgba(0,0,0,0.6)',
                   }}>⚙️</div>
-                  <div style={{ background: 'rgba(239,68,68,0.9)', borderRadius: 4, padding: '0px 5px', fontSize: 10, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', maxWidth: 64, overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{m.label}</div>
+                  <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 1, background: 'rgba(239,68,68,0.9)', borderRadius: 4, padding: '0px 5px', fontSize: 11, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.label}</div>
                 </div>
               ) : (
                 <div style={{ position: 'relative' }} title={m.personAlarm?.label}>
@@ -2271,9 +2272,11 @@ export default function Dashboard() {
                             onMouseLeave={e => { e.currentTarget.style.zIndex = 2; }}
                             title={pAlarm?.label}
                             style={{
+                              // wrapper สูงเท่าวงกลมเท่านั้น — ป้ายทั้งหมดห้อยใต้แบบ absolute
+                              // กันจุดกึ่งกลางวงกลมเลื่อนขึ้นครึ่งป้าย (UI-CONVENTIONS §1.1)
                               position: 'absolute', top: `${top + oy}%`, left: `${left + ox}%`,
-                              transform: 'translate(-50%, -50%)',
-                              zIndex: pAlarm ? 4 : 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0,
+                              transform: 'translate(-50%, -50%)', width: MK, height: MK,
+                              zIndex: pAlarm ? 4 : 2,
                               transition: 'z-index 0s',
                             }}>
                             <div
@@ -2289,6 +2292,7 @@ export default function Dashboard() {
                                 : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.round(MK * 0.38), fontWeight: 800, color }}>{(emp.name || '?')[0]}</div>
                               }
                             </div>
+                            <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
                             <div style={{
                               background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
                               borderRadius: 4, padding: 'clamp(1px, 0.3vw, 4px) clamp(6px, 0.8vw, 12px)',
@@ -2313,6 +2317,7 @@ export default function Dashboard() {
                                 {pAlarm.icon} {pAlarm.kind === 'red' ? 'PPE ไม่ครบ' : 'รอ 4M'}
                               </div>
                             )}
+                            </div>
                           </div>
                         );
                       })}
@@ -2334,9 +2339,10 @@ export default function Dashboard() {
                             <div key={`mc-${p.id}`}
                               title={alarms.map(d => `${d.dr_downtime_types?.name_th || 'Downtime'}${d.description ? ` — ${d.description}` : ''}`).join('\n')}
                               style={{
+                                // wrapper สูงเท่าวงกลม — ป้ายห้อยใต้แบบ absolute (UI-CONVENTIONS §1.1)
                                 position: 'absolute', top: `${topPct}%`, left: `${leftPct}%`,
                                 transform: 'translate(-50%, -50%)', zIndex: 5,
-                                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                                width: MKS, height: MKS,
                               }}>
                               <div className="dt-alarm-blink" style={{
                                 width: MKS, height: MKS, borderRadius: '50%',
@@ -2345,6 +2351,7 @@ export default function Dashboard() {
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 fontSize: Math.max(13, Math.round(MKS * 0.44)), lineHeight: 1,
                               }}>🚨</div>
+                              <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, marginTop: 2 }}>
                               <div style={{
                                 background: 'rgba(0,0,0,0.8)', borderRadius: 4, padding: '1px 6px',
                                 fontSize: Math.max(11, Math.round(MKS * 0.24)), fontWeight: 800, color: '#fff',
@@ -2358,6 +2365,7 @@ export default function Dashboard() {
                                 whiteSpace: 'nowrap', maxWidth: MKS * 2, overflow: 'hidden', textOverflow: 'ellipsis',
                               }}>
                                 {first.dr_downtime_types?.name_th || 'Downtime'}{ongoing && elapsed != null ? ` · ${elapsed} นาที` : ''}
+                              </div>
                               </div>
                             </div>
                           );
