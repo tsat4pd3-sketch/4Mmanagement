@@ -363,7 +363,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [usageLine, setUsageLine] = useState('')
   const [checkpoints, setCheckpoints] = useState([])
   const [layoutType, setLayoutType] = useState(editJig?.layout_type ?? 'image_pin')
-  // 360° spin: multiple photo frames per equipment (1 frame = single image, ≥8 = spin)
+  // รูปหลายมุมต่ออุปกรณ์ (1 รูป = ปกติ, ≥2 รูป = ปัดดูรอบเครื่อง — ไม่บังคับจำนวน)
   const [frames, setFrames] = useState([])   // [{ _key, id?, image_path?, _file?, _preview, title }]
   const [frameIdx, setFrameIdx] = useState(0)
   const [imgBusy, setImgBusy] = useState(false)
@@ -498,9 +498,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     if (!name.trim()) { setError('กรุณาใส่ชื่ออุปกรณ์'); return }
     if (addMode === 'workstation' && !isEdit && !machineId) { setError('กรุณาเลือกเครื่องจักรจาก Floor Map'); return }
     if (checkpoints.some(c => !c.name.trim())) { setError('กรุณาใส่ชื่อทุกจุดตรวจสอบ'); return }
-    if (layoutType === 'image_pin' && frames.length >= 2 && frames.length < 8) {
-      setError(`โหมด spin ต้องมีอย่างน้อย 8 เฟรม (ตอนนี้ ${frames.length}) — เพิ่มให้ครบ หรือลบให้เหลือรูปเดียว`); return
-    }
+    // รูปหลายมุมได้ตั้งแต่ 1 รูปขึ้นไป ไม่บังคับจำนวน — 2 รูปขึ้นไปปัดดูรอบเครื่องได้ ยิ่งเยอะยิ่งลื่น
     setSaving(true); setError('')
     try {
       const jigId = editJig?.id ?? crypto.randomUUID()
@@ -796,7 +794,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           {layoutType === 'image_pin' && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <label style={{ ...S.label, marginBottom: 0 }}>รูป / เฟรม 360° + จุดตรวจ</label>
+                <label style={{ ...S.label, marginBottom: 0 }}>รูปอุปกรณ์ (หลายมุม) + จุดตรวจ</label>
                 {frames.length > 0 && pinnedCount > 0 && <span style={{ fontSize: 11, color: 'var(--accent)' }}>📍 {pinnedCount}/{checkpoints.length} จุดวางแล้ว</span>}
               </div>
               <SpinAnnotator
