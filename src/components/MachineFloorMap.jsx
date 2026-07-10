@@ -27,6 +27,7 @@ import { markerScale } from '../utils/markerScale'
 export default function MachineFloorMap({
   imageUrl, points = [], selectedId, onSelect,
   editable = false, armed = false, onImageClick, onMarkerDragEnd, onMarkerRemove,
+  height, // จำกัดความสูงผังให้ fit จอเดียว (เช่น 'calc(100vh - 260px)') — ไม่ส่ง = สูงตามรูปแบบเดิม
 }) {
   const imgRef = useRef(null)
   const overlayRef = useRef(null)
@@ -113,7 +114,7 @@ export default function MachineFloorMap({
   }
 
   return (
-    <div style={{ position: 'relative', flex: 1, minHeight: 320, background: '#0a0f0b', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border)' }}>
+    <div style={{ position: 'relative', flex: 1, minHeight: 320, height: height || undefined, background: '#0a0f0b', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border)' }}>
       <img ref={imgRef} src={imageUrl} onLoad={recalc} draggable={false}
         onClick={(e) => { if (editable && armed) { const pct = toPct(e); if (pct) onImageClick?.(pct) } }}
         style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', cursor: editable && armed ? 'crosshair' : 'default' }} />
