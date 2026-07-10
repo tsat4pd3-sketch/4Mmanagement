@@ -12,7 +12,6 @@ import { exportInspectionExcel } from '../lib/pmExportExcel'
 import { exportInspectionPDF, resolveSignatureDataUrl } from '../lib/pmExportPDF'
 import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } from '../lib/pmTaxonomy'
 import useImgBox from '../utils/useImgBox'
-import Model3DViewer from '../components/Model3DViewer'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -512,7 +511,6 @@ export default function PMCheckData() {
   const [checkpoints, setCheckpoints] = useState([])
   const [frames, setFrames] = useState([])          // jig_images (360° spin) ของอุปกรณ์ที่เลือก
   const [activeCpId, setActiveCpId] = useState(null) // จุดที่กำลังโฟกัส (sync รูป ↔ checklist)
-  const [viewMode, setViewMode] = useState('photo')  // 'photo' | '3d'
   const rowRefs = useRef({})                          // แถวเช็คแต่ละจุด (เลื่อนหาเมื่อคลิกหมุด)
   // มือถือ/แท็บเล็ต: master-detail — โชว์ "ลิสต์อุปกรณ์" หรือ "ฟอร์มเช็ค" ทีละอัน (ไม่อัด 2 คอลัมน์)
   const [isNarrow, setIsNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches)
@@ -599,7 +597,7 @@ export default function PMCheckData() {
 
   useEffect(() => {
     if (!selectedJig || !userId) return
-    setResults({}); setNotes(''); setTab('record'); setActiveCpId(null); setViewMode('photo')
+    setResults({}); setNotes(''); setTab('record'); setActiveCpId(null)
     // เฟรมรูป 360° (ถ้าไม่มี jig_images → ใช้รูปหลัก image_path เป็นเฟรมเดียว)
     supabaseDR.from('jig_images').select('id, image_path, sort').eq('jig_id', selectedJig.id).order('sort').then(({ data }) => {
       let fr = (data ?? []).map(im => ({ id: im.id, url: getPublicUrl(im.image_path) }))
@@ -811,24 +809,12 @@ export default function PMCheckData() {
 
             <div style={{ ...S.body, ...(isNarrow ? { padding: 12 } : null) }}>
               {tab === 'record' && (() => {
-                const modelUrl = selectedJig.model_path ? getPublicUrl(selectedJig.model_path) : null
                 const showPhoto = frames.length > 0 && selectedJig.layout_type !== 'list'
-                const hasViewer = !!modelUrl || showPhoto
-                // จอกว้าง (≥1180px) + มีรูป/โมเดล → 2 คอลัมน์ (รูปซ้ายค้างไว้ · รายการเช็คขวา) ใช้พื้นที่เต็ม
-                const twoCol = isWide && hasViewer
-                const viewerNode = hasViewer ? (
-                  <>
-                    {modelUrl && showPhoto && (
-                      <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)', marginBottom: 10 }}>
-                        <button onClick={() => setViewMode('photo')} style={S.tabBtn(viewMode === 'photo')}>📷 รูป</button>
-                        <button onClick={() => setViewMode('3d')} style={S.tabBtn(viewMode === '3d')}>🧊 3D</button>
-                      </div>
-                    )}
-                    {modelUrl && (viewMode === '3d' || !showPhoto)
-                      ? <Model3DViewer url={modelUrl} height={twoCol ? 460 : 340} />
-                      : showPhoto && <JigSpinCheck frames={frames} checkpoints={checkpoints} results={results} activeCpId={activeCpId} onPinClick={setActiveCpId} maxH={twoCol ? 460 : 300} />}
-                  </>
-                ) : null
+                // จอกว้าง (≥1180px) + มีรูป → 2 คอลัมน์ (รูปซ้ายค้างไว้ · รายการเช็คขวา) ใช้พื้นที่เต็ม
+                const twoCol = isWide && showPhoto
+                const viewerNode = showPhoto
+                  ? <JigSpinCheck frames={frames} checkpoints={checkpoints} results={results} activeCpId={activeCpId} onPinClick={setActiveCpId} maxH={twoCol ? 460 : 300} />
+                  : null
 
                 const formNode = (
                   <>
@@ -887,7 +873,7 @@ export default function PMCheckData() {
                     <div>{formNode}</div>
                   </div>
                 ) : (
-                  <div style={{ maxWidth: hasViewer ? 760 : 720, margin: '0 auto' }}>
+                  <div style={{ maxWidth: showPhoto ? 760 : 720, margin: '0 auto' }}>
                     {viewerNode}
                     {formNode}
                   </div>
