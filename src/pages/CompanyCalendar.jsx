@@ -189,7 +189,7 @@ export default function CompanyCalendar() {
               <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)', marginBottom: 8 }}>{name}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginBottom: 4 }}>
                 {WEEKDAY_HEAD.map(w => (
-                  <div key={w} style={{ fontSize: 9, color: 'var(--muted)', textAlign: 'center' }}>{w}</div>
+                  <div key={w} style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>{w}</div>
                 ))}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
@@ -206,7 +206,7 @@ export default function CompanyCalendar() {
                       title={isDirty ? `${meta.label} (ยังไม่บันทึก)` : meta.label}
                       style={{
                         position: 'relative',
-                        fontSize: 10, textAlign: 'center', padding: '4px 0', borderRadius: 5,
+                        fontSize: 11, textAlign: 'center', padding: '4px 0', borderRadius: 5,
                         background: type === 'working' ? 'transparent' : meta.color + '33',
                         color: type === 'working' ? 'var(--text2)' : meta.color,
                         fontWeight: type === 'working' ? 400 : 700,
