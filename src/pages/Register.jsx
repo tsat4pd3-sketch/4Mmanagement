@@ -4,6 +4,7 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import ImageCropModal from '../components/ImageCropModal';
+import { toast } from '../components/Toast';
 
 export default function Register() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
@@ -70,7 +71,7 @@ export default function Register() {
     try {
       const { data: userData } = await supabase.auth.getUser();
       const userId = userData?.user?.id;
-      if (!userId) { alert('กรุณา Login ก่อนเพิ่มพนักงาน'); setIsUploading(false); return; }
+      if (!userId) { toast.error('กรุณา Login ก่อนเพิ่มพนักงาน'); setIsUploading(false); return; }
 
       let photoUrl = null;
       if (photo) {
@@ -98,14 +99,14 @@ export default function Register() {
       }]);
       if (insertError) throw insertError;
 
-      alert('เพิ่มพนักงานสำเร็จ!');
+      toast.success('เพิ่มพนักงานสำเร็จ!');
       setEmpCode(''); setName(''); setPosition(''); setDepartment('');
       setSection(lockedSection || '');
       setGroupName(''); setLineId(null); setBusRouteId('');
       setTeam(''); setStartDate(''); setPhoto(null);
       document.getElementById('photo-upload').value = '';
     } catch (err) {
-      alert('เกิดข้อผิดพลาด: ' + err.message);
+      toast.error('เกิดข้อผิดพลาด: ' + err.message);
     } finally {
       setIsUploading(false);
     }

@@ -135,6 +135,15 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
         .eq('id', user.id);
       if (dbErr) { toast.error('บันทึกไม่สำเร็จ: ' + dbErr.message); setSaving(false); return; }
 
+      // อัปเดต signature_url สำเร็จแล้ว ค่อยลบไฟล์ลายเซ็นเดิมทิ้ง กันไฟล์กำพร้าใน storage
+      // ลบเฉพาะไฟล์ใน bucket signatures ที่อยู่ในโฟลเดอร์ของ user เอง (best-effort)
+      if (currentSignatureUrl?.includes('/signatures/')) {
+        const oldPath = decodeURIComponent(currentSignatureUrl.split('/signatures/')[1] || '').split('?')[0];
+        if (oldPath && oldPath.startsWith(`${user.id}/`) && oldPath !== filePath) {
+          supabase.storage.from('signatures').remove([oldPath]).catch(() => {});
+        }
+      }
+
       toast.success('บันทึกลายเซ็นเรียบร้อย');
       onSaved(publicUrl);
       onClose();

@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useMemo, useContext } from 'react';
+import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { markerScale } from '../utils/markerScale';
+import { toast } from '../components/Toast';
 
 const TABS = [
   { key: 'stations', label: '📍 จุดงาน' },
@@ -179,7 +181,7 @@ export default function LineSetup() {
 
   const handleSaveSigners = async () => {
     const lineObj = lines.find(l => l.name === selectedLine);
-    if (!lineObj?.section) return alert('ไลน์นี้ยังไม่ได้กำหนดส่วนงาน (section)');
+    if (!lineObj?.section) return toast.error('ไลน์นี้ยังไม่ได้กำหนดส่วนงาน (section)');
     setSignersSaving(true);
     const { error } = await supabase.from('section_signers').upsert({
       section: lineObj.section,
@@ -188,7 +190,7 @@ export default function LineSetup() {
       hrm_name: signerHRM || null,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'section' });
-    if (error) alert('Error: ' + error.message);
+    if (error) toast.error('Error: ' + error.message);
     setSignersSaving(false);
   };
 
@@ -200,7 +202,7 @@ export default function LineSetup() {
       .from('production_lines')
       .update({ std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0, cost_center: costCenter || null, head_name: signerHead || null })
       .eq('id', lineObj.id);
-    if (error) alert('Error: ' + error.message);
+    if (error) toast.error('Error: ' + error.message);
     else await fetchLines();
     setMpSaving(false);
   };
@@ -215,7 +217,7 @@ export default function LineSetup() {
     if (!name) return;
     setIsAddingLine(true);
     const { error } = await supabase.from('production_lines').insert([{ name, section: newLineSection || null, parent_line_name: newLineParent || null }]);
-    if (error) { alert('Error: ' + error.message); }
+    if (error) { toast.error('Error: ' + error.message); }
     else {
       setNewLineName('');
       setNewLineSection('');
@@ -256,7 +258,7 @@ export default function LineSetup() {
     const name = newName.trim();
     if (!name || name === line.name) { setEditingLineId(null); return; }
     if (lines.some(l => l.id !== line.id && l.name === name)) {
-      alert(`มีไลน์ชื่อ "${name}" อยู่แล้ว`); return;
+      toast.error(`มีไลน์ชื่อ "${name}" อยู่แล้ว`); return;
     }
     const old = line.name;
     // Update production_lines (name + children's parent_line_name)
@@ -283,7 +285,15 @@ export default function LineSetup() {
       const fileExt = file.name.split('.').pop();
       const safeLineName = selectedLine.replace(/[^a-zA-Z0-9]/g, '_');
       const fileName = `layout_${safeLineName}_${Date.now()}.${fileExt}`;
-      const { error: uploadError } = await supabase.storage.from('employee-photos').upload(`layouts/${fileName}`, file);
+      // บีบรูปผังก่อนอัปโหลด — ผังไลน์ต้องคมชัดกว่ารูปคน (1600px / ~0.5MB) · GIF ส่งทั้งไฟล์คงการเคลื่อนไหว
+      const isGif = file.type === 'image/gif' || /^gif$/i.test(fileExt);
+      if (isGif && file.size > 2 * 1024 * 1024) {
+        toast.error('ไฟล์ GIF ต้องไม่เกิน 2MB (กฎเดียวกับ ImageCropModal — GIF บีบไม่ได้)');
+        setIsUploading(false);
+        return;
+      }
+      const uploadBlob = isGif ? file : await imageCompression(file, { maxSizeMB: 0.5, maxWidthOrHeight: 1600 });
+      const { error: uploadError } = await supabase.storage.from('employee-photos').upload(`layouts/${fileName}`, uploadBlob);
       if (uploadError) throw uploadError;
       const { data } = supabase.storage.from('employee-photos').getPublicUrl(`layouts/${fileName}`);
       await supabase.from('line_layouts').upsert({ line_name: selectedLine, image_url: data.publicUrl }, { onConflict: 'line_name' });
@@ -291,11 +301,11 @@ export default function LineSetup() {
       // (เฉพาะผังของตัวเองเท่านั้น — ผังที่ยืมแสดงจากไลน์แม่ห้ามลบ เพราะไลน์แม่ยังใช้อยู่)
       if (!usingParentLayout && layoutImage?.includes('/employee-photos/layouts/')) {
         const oldName = decodeURIComponent(layoutImage.split('/employee-photos/')[1] || '');
-        if (oldName.startsWith('layouts/')) supabase.storage.from('employee-photos').remove([oldName]);
+        if (oldName.startsWith('layouts/')) supabase.storage.from('employee-photos').remove([oldName]).catch(() => {});
       }
       setLayoutImage(data.publicUrl);
       setUsingParentLayout(false);
-    } catch (error) { alert('Error: ' + error.message); }
+    } catch (error) { toast.error('Error: ' + error.message); }
     finally { setIsUploading(false); }
   };
 
@@ -481,7 +491,7 @@ export default function LineSetup() {
   };
 
   const handleSaveStation = async () => {
-    if (!formData.name) return alert('กรุณาระบุชื่อจุดงาน');
+    if (!formData.name) return toast.error('กรุณาระบุชื่อจุดงาน');
     const existingStation = stations.find(s => s.id === formData.id);
     const payload = {
       line_name: selectedLine,
@@ -494,10 +504,10 @@ export default function LineSetup() {
     let stationId = formData.id;
     if (stationId) {
       const { error } = await supabase.from('workstations').update(payload).eq('id', stationId);
-      if (error) return alert('Error: ' + error.message);
+      if (error) return toast.error('Error: ' + error.message);
     } else {
       const { data, error } = await supabase.from('workstations').insert([payload]).select().single();
-      if (error) return alert('Error: ' + error.message);
+      if (error) return toast.error('Error: ' + error.message);
       stationId = data.id;
     }
 
@@ -542,7 +552,7 @@ export default function LineSetup() {
   };
 
   const handleSaveWip = async () => {
-    if (!wipForm.point_name) return alert('กรุณาระบุชื่อจุด WIP');
+    if (!wipForm.point_name) return toast.error('กรุณาระบุชื่อจุด WIP');
     const existing = wipPoints.find(p => p.id === wipForm.id);
     const isMaterial = wipForm.point_type === 'material';
     const payload = {
@@ -563,7 +573,7 @@ export default function LineSetup() {
     const { error } = wipForm.id
       ? await supabase.from('wip_buffer_points').update(payload).eq('id', wipForm.id)
       : await supabase.from('wip_buffer_points').insert([payload]);
-    if (error) return alert('Error: ' + error.message);
+    if (error) return toast.error('Error: ' + error.message);
     fetchLineData();
     setWipTempPos(null);
     setWipForm(emptyWipForm);
@@ -579,7 +589,7 @@ export default function LineSetup() {
   const requestWipReplenish = async (p) => {
     const { data: existing } = await supabase.from('wip_replenish_requests')
       .select('id').eq('wip_point_id', p.id).in('status', ['pending', 'preparing']).limit(1);
-    if (existing?.length) { alert('มีคำขอเติมจุดนี้ค้างอยู่แล้ว รอเจ้าหน้าที่ดำเนินการ'); return; }
+    if (existing?.length) { toast.error('มีคำขอเติมจุดนี้ค้างอยู่แล้ว รอเจ้าหน้าที่ดำเนินการ'); return; }
     const qty = Math.max(0, (p.max_qty ?? 0) - (p.current_qty ?? 0)) || (p.min_qty ?? 0);
     const { error } = await supabase.from('wip_replenish_requests').insert({
       wip_point_id: p.id, line_name: selectedLine, point_name: p.point_name, point_type: p.point_type,
@@ -587,8 +597,8 @@ export default function LineSetup() {
       packaging_type: p.packaging_type || null, packaging_no: p.packaging_no || null,
       request_qty: qty || 1,
     });
-    if (error) { alert(error.message); return; }
-    alert(`🔔 เรียกเติม "${p.point_name}" แล้ว — ดูสถานะได้ที่ Heijunka Kanban → ตู้ Kanban รวม → 🔄 WIP Point`);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`🔔 เรียกเติม "${p.point_name}" แล้ว — ดูสถานะได้ที่ Heijunka Kanban → ตู้ Kanban รวม → 🔄 WIP Point`);
   };
 
   /* ── จุดเครื่องจักร ── */
@@ -598,7 +608,7 @@ export default function LineSetup() {
   };
 
   const handleSaveMachine = async () => {
-    if (!machineForm.machine_no) return alert('กรุณาเลือกเครื่องจักร');
+    if (!machineForm.machine_no) return toast.error('กรุณาเลือกเครื่องจักร');
     const existing = machinePoints.find(p => p.id === machineForm.id);
     const payload = {
       line_name:   selectedLine,
@@ -610,7 +620,7 @@ export default function LineSetup() {
     const { error } = machineForm.id
       ? await supabase.from('machine_points').update(payload).eq('id', machineForm.id)
       : await supabase.from('machine_points').insert([payload]);
-    if (error) return alert('Error: ' + error.message);
+    if (error) return toast.error('Error: ' + error.message);
     fetchLineData();
     setMachineTempPos(null);
     setMachineForm({ id: null, machine_no: '', redundancy_group: '' });
@@ -635,7 +645,7 @@ export default function LineSetup() {
     const { error } = await supabase.from('machine_flow_links').insert([{
       line_name: selectedLine, from_machine_point_id: connectFrom, to_machine_point_id: id,
     }]);
-    if (error) return alert('Error: ' + error.message);
+    if (error) return toast.error('Error: ' + error.message);
     fetchLineData();
   };
 

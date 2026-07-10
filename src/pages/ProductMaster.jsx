@@ -201,6 +201,18 @@ export default function ProductMaster() {
         const { error } = await supabaseDR.from('dr_products').update(payload).eq('id', editing);
         if (error) { toast.error(error.message); return; }
       }
+      // อัปโหลดรูปใหม่ + DB update สำเร็จแล้ว ค่อยลบไฟล์รูปเดิมทิ้ง กันไฟล์กำพร้าสะสมใน storage (best-effort)
+      // ลบเฉพาะเมื่อ URL เดิมชี้ bucket product-images และไม่มีสินค้าอื่นใช้รูปเดียวกันอยู่ (สินค้าชื่อเดียวกันแชร์รูปกัน)
+      if (imageFile && editing !== 'new') {
+        const oldUrl = items.find(i => i.id === editing)?.image_url;
+        if (oldUrl && oldUrl !== imageUrl && oldUrl.includes('/product-images/')) {
+          const stillUsed = items.some(i => i.id !== editing && i.image_url === oldUrl);
+          const oldPath = decodeURIComponent(oldUrl.split('/product-images/')[1] || '');
+          if (!stillUsed && oldPath) {
+            supabaseDR.storage.from('product-images').remove([oldPath]).catch(() => {});
+          }
+        }
+      }
       // ผูกคู่ RH/LH สองทาง — ถ้าเปลี่ยน/ยกเลิกคู่เดิม ให้เลิกผูกฝั่งคู่เดิมด้วย
       const oldPairMatNo = editing !== 'new' ? items.find(i => i.id === editing)?.pair_mat_no : null;
       if (oldPairMatNo && oldPairMatNo !== payload.pair_mat_no) {
@@ -1604,6 +1616,14 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
         ({ error: err } = await supabaseDR.from('parts_master').insert(payload));
       }
       if (err) { toast.error(err.message); return; }
+      // อัปโหลดรูปใหม่ + DB update สำเร็จแล้ว ค่อยลบไฟล์รูปเดิมทิ้ง กันไฟล์กำพร้าใน storage (best-effort)
+      if (imageFile && editPart?.image_url && editPart.image_url !== imageUrl && editPart.image_url.includes('/product-images/')) {
+        const stillUsed = parts.some(p => p.id !== editPart.id && p.image_url === editPart.image_url);
+        const oldPath = decodeURIComponent(editPart.image_url.split('/product-images/')[1] || '');
+        if (!stillUsed && oldPath) {
+          supabaseDR.storage.from('product-images').remove([oldPath]).catch(() => {});
+        }
+      }
       toast.success(editPart ? 'อัปเดตสำเร็จ' : 'เพิ่มพาร์ทสำเร็จ');
       setShowModal(false);
       load();

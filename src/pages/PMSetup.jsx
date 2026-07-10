@@ -946,8 +946,16 @@ export default function PMSetup() {
 
   const handleDelete = async (jig) => {
     if (!confirm(`ลบ "${jig.name}" ?`)) return
-    if (jig.image_path) await supabaseDR.storage.from('jig-images').remove([jig.image_path])
-    await supabaseDR.from('jigs').delete().eq('id', jig.id)
+    const { error } = await supabaseDR.from('jigs').delete().eq('id', jig.id)
+    if (error) { toast.error(error.message); return }
+    // ลบ jig สำเร็จแล้ว เก็บกวาดรูปทั้งชุดของ jig นี้ (frame-*/cp-* อยู่ใต้ jigs/<id>/) กันไฟล์กำพร้าใน storage (best-effort)
+    try {
+      const folder = `jigs/${jig.id}`
+      const { data: files } = await supabaseDR.storage.from('jig-images').list(folder, { limit: 1000 })
+      const paths = (files ?? []).map(f => `${folder}/${f.name}`)
+      if (jig.image_path && !paths.includes(jig.image_path)) paths.push(jig.image_path) // เผื่อ path เก่านอกโฟลเดอร์ (legacy)
+      if (paths.length) await supabaseDR.storage.from('jig-images').remove(paths)
+    } catch { /* ลบรูปพลาดไม่ต้องกระทบ flow หลัก */ }
     toast.success('ลบแล้ว')
     fetchData()
   }
