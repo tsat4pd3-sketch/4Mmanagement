@@ -6,6 +6,9 @@ import { toast } from '../components/Toast';
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
 
+// วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
+const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+
 /* ─── PRODUCT MASTER ─────────────────────────────────────────────────────────
    ฐานข้อมูลกลางของ Product/Model ที่ใช้ร่วมกันในทุกโมดูล
    - Daily Report  → เลือก product ตอนเปิดกะ
@@ -146,7 +149,7 @@ export default function ProductMaster() {
       process_type: item.process_type || 'welding_assembly',
       posting_mode: item.posting_mode || 'immediate', lot_accumulate_threshold: item.lot_accumulate_threshold || '',
       is_active: true,
-      effective_from: new Date().toISOString().slice(0, 10),
+      effective_from: localDateStr(),
       image_url: item.image_url || '',
     });
   };
@@ -193,7 +196,7 @@ export default function ProductMaster() {
         if (ecSource) {
           await supabaseDR.from('dr_products').update({
             is_active: false,
-            superseded_at: form.effective_from || new Date().toISOString().slice(0, 10),
+            superseded_at: form.effective_from || localDateStr(),
             superseded_by: inserted.id,
           }).eq('id', ecSource.id);
         }

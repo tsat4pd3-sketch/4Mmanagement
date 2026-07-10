@@ -2338,7 +2338,7 @@ ${catHeaderCells}
           const groups = groupSkillsByCategory(skillDefs);
           const ordered = groups.flatMap(g => g.skills);
           downloadCSV(
-            `skill_matrix_${new Date().toISOString().slice(0,10)}.csv`,
+            `skill_matrix_${toLocalDateStr(new Date())}.csv`,
             ['รหัส', 'ชื่อ', 'ส่วนงาน', 'Team', ...ordered.map(s => s.label), 'เฉลี่ย'],
             employees.map(emp => {
               const sm = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
@@ -2910,7 +2910,7 @@ function MultiSkillFormTab() {
           <CsvBtn onClick={() => {
             const ordered = msCatGroups.flatMap(g => g.skills);
             downloadCSV(
-              `multi_skill_${new Date().toISOString().slice(0,10)}.csv`,
+              `multi_skill_${toLocalDateStr(new Date())}.csv`,
               ['รหัส', 'ชื่อ', 'ตำแหน่ง', 'ส่วนงาน', 'Team', 'อายุงาน', ...ordered.map(s => s.label), 'ทักษะโดยรวม'],
               empLevelRows.map(({ emp, levels, overall }) => [
                 emp.employee_id_code || '',

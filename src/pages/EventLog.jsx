@@ -505,7 +505,8 @@ function fmtTime(isoOrTime) {
 function exportExcel(logs) {
   if (!logs.length) { toast.info('ไม่มีข้อมูลที่จะส่งออก'); return; }
 
-  const today = new Date().toISOString().split('T')[0];
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   // 21 columns: A–U
   const COL_COUNT = 21;
 
