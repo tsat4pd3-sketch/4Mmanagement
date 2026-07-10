@@ -1766,7 +1766,7 @@ export default function Management() {
                 onDragLeave={!isMobile ? (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOverStation(null); } : undefined}
                 onDrop={!isMobile ? (e) => handleDrop(e, st.id) : undefined}
                 onClick={() => handleStationClick(st)}
-                /* outer: anchor + hit-area (circle + pill) — translate(-50%,-50%) centers the whole column */
+                /* outer: anchor + hit-area — สูงเท่าวงกลมเท่านั้น (ป้ายเป็น absolute ห้อยใต้) → translate(-50%,-50%) ทำให้ศูนย์กลางวงกลมตรงพิกัดจริง */
                 style={{
                   position: 'absolute', top: stTop, left: stLeft, transform: 'translate(-50%, -50%)',
                   display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -1851,6 +1851,8 @@ export default function Management() {
                   )}
                 </div>
 
+                {/* ป้ายห้อยใต้แบบ absolute — ไม่ดัน layout เพื่อให้ศูนย์กลางวงกลม = พิกัดจริง (กัน marker ลอยเหนือจุด) */}
+                <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2 }}>
                 {/* station-name pill below the circle */}
                 <div title={st.station_name} style={{
                   marginTop: 3, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
@@ -1873,11 +1875,12 @@ export default function Management() {
                     {touchPreviewFit.score}
                   </div>
                 )}
+                </div>
 
                 {/* Desktop drag-preview fit popup — outside inner div so overflow:hidden doesn't clip it */}
                 {previewFit && !isMobile && (
                   <div style={{
-                    position: 'absolute', top: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)',
+                    position: 'absolute', top: `calc(100% + ${Math.round(MK * 0.55)}px)`, left: '50%', transform: 'translateX(-50%)',
                     background: 'rgba(6,6,12,0.97)', border: `1px solid ${activeFc}`, borderRadius: 8, padding: '8px 10px',
                     zIndex: 100, minWidth: 116, pointerEvents: 'none', boxShadow: `0 4px 24px rgba(0,0,0,0.7)`,
                   }}>
@@ -1926,6 +1929,7 @@ export default function Management() {
                             backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center',
                             fontSize: Math.max(13, Math.round(WK * 0.44)), lineHeight: 1,
                           }}>{p.point_type === 'packaging' ? '📦' : '🧱'}</div>
+                          <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2 }}>
                           <div style={{
                             marginTop: 3, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
                             borderRadius: 4, padding: '1px 6px',
@@ -1939,6 +1943,7 @@ export default function Management() {
                             background: isLow ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.55)',
                             padding: '0 5px', borderRadius: 3, lineHeight: 1.5, whiteSpace: 'nowrap',
                           }}>{isLow ? '⚠ ' : ''}{p.current_qty ?? 0}/{p.min_qty ?? 0}–{p.max_qty ?? 0}</div>
+                          </div>
                         </div>
                       );
                     })}
@@ -1972,6 +1977,7 @@ export default function Management() {
                               backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center',
                               fontSize: Math.max(13, Math.round(MKS * 0.44)), lineHeight: 1,
                             }}>{alarms ? '🚨' : '⚙️'}</div>
+                          <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2 }}>
                           <div style={{
                             marginTop: 3, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
                             borderRadius: 4, padding: '1px 6px',
@@ -1989,6 +1995,7 @@ export default function Management() {
                             {alarms
                               ? `${firstAlarm.dr_downtime_types?.name_th || 'Downtime'}${ongoing && elapsed != null ? ` ${elapsed}น.` : ''}`
                               : (mc?.machine_name || '')}
+                          </div>
                           </div>
                         </div>
                       );
