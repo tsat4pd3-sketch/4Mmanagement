@@ -59,44 +59,46 @@ const ROLE_LABELS = {
 
 // null roles = accessible to every role
 // group ใช้จัดหมวดหมู่ในแถบ sidebar (มี minimize/expand ต่อหมวด)
+// สิทธิ์เข้าหน้าอ่านจาก role_permissions ผ่าน canAccessPage() เท่านั้น (data-driven)
+// — จึงไม่มีฟิลด์ roles ในนี้ (เคยมี แต่เป็น dead field ไม่ถูกอ่าน ลบออก 2026-07-10 กันเข้าใจผิดว่าเป็น source of truth)
 const NAV_ITEMS = [
-  { to: '/',            icon: '🏠', label: 'หน้าหลัก',           roles: null, group: 'ภาพรวม' },
-  { to: '/dashboard',   icon: '📊', label: 'Dashboard',           roles: null, group: 'ภาพรวม' },
+  { to: '/',            icon: '🏠', label: 'หน้าหลัก',           group: 'ภาพรวม' },
+  { to: '/dashboard',   icon: '📊', label: 'Dashboard',           group: 'ภาพรวม' },
 
-  { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     roles: null, group: 'ฝ่ายผลิต' },
-  { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     roles: null, group: 'ฝ่ายผลิต' },
-  { to: '/daily-report',   icon: '📊', label: 'Daily Report',      roles: null, group: 'ฝ่ายผลิต' },
-  { to: '/oee-analytics',  icon: '📈', label: 'OEE',                roles: null, group: 'ฝ่ายผลิต' },
-  { to: '/daily-pm',       icon: '✅', label: 'Daily PM ฝ่ายผลิต',   roles: null, group: 'ฝ่ายผลิต' },
+  { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
+  { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
+  { to: '/daily-report',   icon: '📊', label: 'Daily Report',      group: 'ฝ่ายผลิต' },
+  { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'ฝ่ายผลิต' },
+  { to: '/daily-pm',       icon: '✅', label: 'Daily PM ฝ่ายผลิต',   group: 'ฝ่ายผลิต' },
 
-  { to: '/line-stock',      icon: '📦', label: 'Store management',       roles: null, group: 'Logistic - Store' },
-  { to: '/heijunka',       icon: '🎴', label: 'Kanban Board',             roles: null, group: 'Logistic - Store' },
-  { to: '/rack-center',    icon: '🗃️', label: 'Rack Center management',  roles: null, group: 'Logistic - Store' },
-  { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           roles: null, group: 'Logistic - Store' },
-  { to: '/rundown-stock',   icon: '📉', label: 'Rundown Stock',             roles: null, group: 'Logistic - Store' },
-  { to: '/customer-demand', icon: '🚚', label: 'Delivery',                  roles: null, group: 'Logistic - Store' },
+  { to: '/line-stock',      icon: '📦', label: 'Store management',       group: 'Logistic - Store' },
+  { to: '/heijunka',       icon: '🎴', label: 'Kanban Board',             group: 'Logistic - Store' },
+  { to: '/rack-center',    icon: '🗃️', label: 'Rack Center management',  group: 'Logistic - Store' },
+  { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: 'Logistic - Store' },
+  { to: '/rundown-stock',   icon: '📉', label: 'Rundown Stock',             group: 'Logistic - Store' },
+  { to: '/customer-demand', icon: '🚚', label: 'Delivery',                  group: 'Logistic - Store' },
 
-  { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/pm-schedule', icon: '📅', label: 'แผน PM อุปกรณ์เครื่องจักร',        roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      roles: null, group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/pm-setup',    icon: '🔩', label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร', roles: ['admin', 'manager', 'supervisor'], group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/pm-schedule', icon: '📅', label: 'แผน PM อุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/pm-setup',    icon: '🔩', label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร', group: 'การตรวจสอบและซ่อมบำรุง' },
 
-  { to: '/qa',             icon: '🔍', label: 'Quality Control Center', roles: ['admin', 'manager', 'supervisor', 'leader', 'qa', 'document_control'], group: 'ควบคุมคุณภาพ QA/QC' },
-  { to: '/qa-setup',       icon: '📐', label: 'มาตรฐานการตรวจ & Drawing', roles: ['admin', 'manager', 'qa'], group: 'ควบคุมคุณภาพ QA/QC' },
-  { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', roles: ['admin', 'manager', 'supervisor', 'leader', 'qa'], group: 'ควบคุมคุณภาพ QA/QC' },
+  { to: '/qa',             icon: '🔍', label: 'Quality Control Center', group: 'ควบคุมคุณภาพ QA/QC' },
+  { to: '/qa-setup',       icon: '📐', label: 'มาตรฐานการตรวจ & Drawing', group: 'ควบคุมคุณภาพ QA/QC' },
+  { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', group: 'ควบคุมคุณภาพ QA/QC' },
 
-  { to: '/report',        icon: '📋', label: 'รายงาน',            roles: null, group: 'รายงาน' },
+  { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'รายงาน' },
 
-  { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     roles: ['admin'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      roles: ['admin', 'manager', 'supervisor'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  roles: ['admin', 'manager', 'supervisor', 'leader'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/products',        icon: '🔩', label: 'Product Master',    roles: null, group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   roles: ['admin', 'manager', 'supervisor'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', roles: ['admin', 'manager', 'supervisor'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         roles: ['admin', 'manager', 'supervisor'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    roles: null, group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       roles: ['admin'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', roles: ['admin'], group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/products',        icon: '🔩', label: 'Product Master',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
 ];
 
 const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'รายงาน', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
