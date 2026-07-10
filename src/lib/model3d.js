@@ -55,7 +55,9 @@ async function cadToGroup(file, ext, THREE) {
   const wasmUrl = (await import('occt-import-js/dist/occt-import-js.wasm?url')).default
   const occt = await occtimportjs({ locateFile: () => wasmUrl })
   const buf = new Uint8Array(await file.arrayBuffer())
-  const result = ['igs', 'iges'].includes(ext) ? occt.ReadIgesFile(buf, null) : occt.ReadStepFile(buf, null)
+  // คุมความละเอียด mesh ให้ไฟล์ไม่บวม (สำคัญกับ storage/egress free tier) — ยังคมพอสำหรับดูภาพรวม
+  const params = { linearDeflectionType: 'bounding_box_ratio', linearDeflection: 0.002, angularDeflection: 0.4 }
+  const result = ['igs', 'iges'].includes(ext) ? occt.ReadIgesFile(buf, params) : occt.ReadStepFile(buf, params)
   if (!result || !result.success || !result.meshes?.length) throw new Error('อ่านไฟล์ CAD ไม่สำเร็จ หรือไม่มี geometry (STEP/IGES)')
   const group = new THREE.Group()
   for (const m of result.meshes) {
