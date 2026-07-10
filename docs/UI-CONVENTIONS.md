@@ -145,6 +145,7 @@ pattern ร่วมของทุกบอร์ดที่วางราย
 
 - `index.css` ตั้ง `input{width:100%}` ทั้งแอป — input ใน flex row ต้องกำหนด width เอง (checkbox/radio มี rule ยกเว้น `width:auto` แล้ว — ห้ามลบ)
 - ปุ่มพับ sidebar อยู่**ในหัว sidebar** (ปุ่ม ⟨ ข้างโลโก้) — ปุ่มลอย ☰ โชว์เฉพาะตอนพับ ห้ามมีปุ่มลอยทับเนื้อหา
+- เข้าโมดูลจากหน้าหลัก (DeptHub) → sidebar กาง**เฉพาะหมวดของโมดูลที่กด** หมวดอื่นพับอัตโนมัติ (2026-07-10) — การ์ดใน DeptHub ผูกหมวดผ่าน `navGroups` + เรียก `focusSidebarGroups()` จาก App.jsx · เพิ่มการ์ด/หมวดใหม่ต้องใส่ `navGroups` ด้วยเสมอ (ชื่อต้องตรงกับ `NAV_GROUP_ORDER`) · user ยังพับ/กางเองต่อได้ตามปกติ
 - สิทธิ์ action ใช้ `can(resource, action, role)` จาก `src/utils/permissions.js` — ห้าม hardcode `['admin',...].includes(role)` เพิ่ม (ดู docs/PERMISSIONS-DESIGN.md)
 - วันที่งาน: `getWorkDate()` เท่านั้น (ก่อน 08:00 = วันก่อนหน้า) ห้าม `toISOString()`
 - อัปโหลดรูป: ผ่าน `ImageCropModal` เท่านั้น (รูปนิ่งบีบอัตโนมัติ · GIF ส่งทั้งไฟล์ ≤2MB คงการขยับ — ห้ามถอด cap) + เปลี่ยนรูปแล้วลบไฟล์เก่าจาก storage เสมอ (2026-07-09 — ดู CLAUDE.md "Storage & รูปภาพ")

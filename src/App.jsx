@@ -99,6 +99,17 @@ const NAV_ITEMS = [
 
 const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'รายงาน', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
 
+// เข้าโมดูลจากหน้าหลัก (DeptHub) → กาง sidebar เฉพาะหมวดของโมดูลนั้น หมวดอื่นพับ
+// เพื่อให้เห็นเมนูของโมดูลที่เลือกทันที ไม่ต้องไล่หาในเมนูที่กางหมดทุกหมวด
+// (user ยังพับ/กางเองต่อได้ตามปกติ ค่าที่ตั้งจาก hub จะถูกจำต่อใน localStorage เดียวกัน)
+export function focusSidebarGroups(groups) {
+  const collapsed = {};
+  NAV_GROUP_ORDER.forEach(g => { if (!groups.includes(g)) collapsed[g] = true; });
+  try { localStorage.setItem('nav_collapsed_groups', JSON.stringify(collapsed)); } catch { /* ignore */ }
+  // Sidebar mount อยู่ตลอด — แจ้งให้ sync state จาก localStorage ใหม่
+  window.dispatchEvent(new Event('nav-groups-changed'));
+}
+
 /* ─── Role Route Guard ────────────────────────────────────────────────
    สิทธิ์เข้าถึงแต่ละหน้าเก็บอยู่ใน role_permissions (ตาราง) ไม่ใช่ array ในโค้ดอีกต่อไป
    จัดการได้จากหน้า "จัดการสิทธิ์" (admin เท่านั้น) — ดู src/utils/permissions.js
@@ -189,6 +200,15 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   });
 
   useEffect(() => { setSigUrl(userSignatureUrl); }, [userSignatureUrl]);
+
+  // hub สั่งโฟกัสหมวด (focusSidebarGroups) → โหลดค่าพับ/กางจาก localStorage ใหม่
+  useEffect(() => {
+    const sync = () => {
+      try { setCollapsedGroups(JSON.parse(localStorage.getItem('nav_collapsed_groups') || '{}')); } catch { /* ignore */ }
+    };
+    window.addEventListener('nav-groups-changed', sync);
+    return () => window.removeEventListener('nav-groups-changed', sync);
+  }, []);
 
   const toggleGroup = (g) => {
     setCollapsedGroups(prev => {
