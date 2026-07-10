@@ -5,6 +5,7 @@ import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { loadCompanyCalendar, getDayType } from '../utils/companyCalendar';
 import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy';
+import { inSectionScope } from '../utils/sectionScope';
 
 const LEAVE_TYPES = ['ลากิจ', 'ลาป่วย', 'ลาพักร้อน', 'อื่นๆ'];
 const LEAVE_DURATION_OPTS = [
@@ -660,7 +661,14 @@ export default function Checkin() {
       const days = [];
       for (let d = dayFrom; d <= dayTo; d++) days.push(d);
 
-      let empQ = supabase.from('employees').select('id, employee_id_code, name, position, line_id').eq('is_active', true).order('employee_id_code');
+      let empQ = supabase.from('employees').select('id, employee_id_code, name, position, line_id, section').eq('is_active', true).order('employee_id_code');
+      // mandatory scope filter ก่อน แล้วค่อยกรองตามส่วนงานที่เลือกใน modal (pattern เดียวกับ fetchData)
+      if (role === 'leader') {
+        if (lineId) empQ = empQ.eq('line_id', lineId);
+        if (team)   empQ = empQ.eq('team', team);
+      } else if (scopeSecs.length) {
+        empQ = empQ.in('section', scopeSecs);
+      }
       const { data: empData } = await empQ;
       const lineIds = exportSection ? lines.filter(l => l.section === exportSection).map(l => l.id) : null;
       const scopedEmp = (empData || []).filter(e => !lineIds || lineIds.includes(e.line_id));
@@ -1479,8 +1487,10 @@ export default function Checkin() {
             <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>ส่วนงาน</label>
             <select value={exportSection} onChange={e => setExportSection(e.target.value)}
               style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', marginBottom: 18, background: 'var(--bg)', color: 'var(--text)' }}>
-              <option value="">— ทุกส่วนงาน —</option>
-              {sections.map(s => <option key={s} value={s}>{s}</option>)}
+              {/* จำกัดตัวเลือกตาม scope — "ทุกส่วนงาน" เฉพาะ user ที่ไม่ถูกจำกัดขอบเขต (query ใน handleExportForms กรอง scope ซ้ำอีกชั้นเสมอ) */}
+              <option value="">{scopeSecs.length ? '— ทุกส่วนงานใน scope —' : '— ทุกส่วนงาน —'}</option>
+              {(scopeSecs.length ? sections.filter(s => inSectionScope(scopeSecs, s)) : sections)
+                .map(s => <option key={s} value={s}>{s}</option>)}
             </select>
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

@@ -86,8 +86,12 @@ export default function EventLog() {
   const [loading, setLoading]     = useState(true);
   const [selectedLog, setSelectedLog] = useState(null);  // for detail modal
 
-  // Create form state
-  const today = new Date().toISOString().split('T')[0];
+  // Create form state — work_date ตามกฎ getWorkDate(): local time + ก่อน 08:00 นับเป็นวันก่อนหน้า
+  const today = (() => {
+    const d = new Date();
+    if (d.getHours() < 8) d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
   const [form, setForm] = useState({
     work_date: today,
     event_time: new Date().toTimeString().slice(0,5),

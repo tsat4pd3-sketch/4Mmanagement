@@ -95,9 +95,14 @@ function TimeInput24({ value = '', onChange, style = {} }) {
 
 /* ─── Helpers ────────────────────────────────────────────────── */
 // ✅ local Thai date — never toISOString() which returns UTC
-const today = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const localDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const today = () => localDateStr(new Date());
+// work date ตามกฎ CLAUDE.md: ก่อน 08:00 = วันก่อนหน้า (กะดึกข้ามวัน) — ใช้กับทุกจุดที่เป็น work_date semantics
+// ส่ง Date เข้าไปได้เพื่อหา work date ของเวลานั้นๆ (default = ตอนนี้)
+const workDate = (at = new Date()) => {
+  const d = new Date(at);
+  if (d.getHours() < 8) d.setDate(d.getDate() - 1);
+  return localDateStr(d);
 };
 const nowTime = () => new Date().toTimeString().slice(0, 5);
 // กะเช้าเริ่ม 08:00, กะดึกเริ่ม 20:00 — ใช้เป็น default start_time เสมอ
@@ -179,7 +184,7 @@ function LiveTab({ role }) {
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
 
   const [showOpen, setShowOpen] = useState(false);
-  const [openForm, setOpenForm] = useState(() => { const s = currentShift(); return { work_date: today(), line_name: '', shift: s, product_id: '', start_time: shiftStart(s) }; });
+  const [openForm, setOpenForm] = useState(() => { const s = currentShift(); return { work_date: workDate(), line_name: '', shift: s, product_id: '', start_time: shiftStart(s) }; });
 
   const [showDT, setShowDT]   = useState(false);
   const [dtForm, setDtForm]   = useState({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
@@ -333,7 +338,7 @@ function LiveTab({ role }) {
     const { data: overdue } = await supabaseDR.from('production_sessions')
       .select('id, line_name, shift, work_date, section')
       .in('status', ['open', 'pending_close'])
-      .lt('work_date', today());
+      .lt('work_date', workDate()); // เทียบกับ work date (ตัด 08:00) — ไม่งั้นกะดึกหลังเที่ยงคืนโดนแจ้ง "ค้างปิดกะ" ทั้งที่ยังรันอยู่
     setOverdueAlert((overdue || []).filter(o => {
       if (role === 'admin') return true;
       if (role === 'leader') {
@@ -1208,9 +1213,9 @@ function LiveTab({ role }) {
     const matchProc  = (p) => p.process_type === 'common' || p.process_type === processType;
     return breakPolicies.filter(p => matchShift(p) && matchProc(p)).reduce((sum, p) => {
       // Build policy window anchored to the session's work date
-      const workDate = selSession?.work_date || openedAt.toISOString().split('T')[0];
+      const sessWorkDate = selSession?.work_date || workDate(openedAt);
       const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
-      let pStart = new Date(`${workDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`);
+      let pStart = new Date(`${sessWorkDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`);
       let pEnd = new Date(pStart.getTime() + p.duration_min * 60000);
       // For night shift break that crosses midnight, shift the whole window forward a day if it ended before session start
       if (pEnd < openedAt) {
@@ -1761,7 +1766,7 @@ function LiveTab({ role }) {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
                     {selSession.status === 'pending_close' ? (
-                      <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', animation: 'pulse 2s infinite' }}>⏳ รออนุมัติปิดกะ</span>
+                      <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>⏳ รออนุมัติปิดกะ</span>
                     ) : (
                       <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>● LIVE</span>
                     )}
@@ -4816,7 +4821,7 @@ function ProductSetup({ role }) {
   const openEC = (item) => {
     setEcSource(item);
     setEditing('new');
-    setForm({ name: item.name, code: item.code || '', mat_no: '', p_no: '', customer: item.customer || '', line_name: item.line_name || '', cycle_time_sec: item.cycle_time_sec || '', target_per_shift: item.target_per_shift || '', process_type: item.process_type || 'welding_assembly', is_active: true, effective_from: new Date().toISOString().slice(0, 10) });
+    setForm({ name: item.name, code: item.code || '', mat_no: '', p_no: '', customer: item.customer || '', line_name: item.line_name || '', cycle_time_sec: item.cycle_time_sec || '', target_per_shift: item.target_per_shift || '', process_type: item.process_type || 'welding_assembly', is_active: true, effective_from: today() });
   };
 
   const handleSave = async () => {
@@ -4845,7 +4850,7 @@ function ProductSetup({ role }) {
       if (ecSource) {
         await supabaseDR.from('dr_products').update({
           is_active: false,
-          superseded_at: form.effective_from || new Date().toISOString().slice(0, 10),
+          superseded_at: form.effective_from || today(),
           superseded_by: inserted.id,
         }).eq('id', ecSource.id);
       }

@@ -117,15 +117,15 @@ export default function Operator() {
   }, []);
 
   const fetchLevelUpRequests = async () => {
-    let q = supabase.from('skill_level_up_requests')
+    const { data } = await supabase.from('skill_level_up_requests')
       .select('*, employees(id, name, employee_id_code, section, line_id)')
       .eq('status', 'pending')
       .order('requested_at', { ascending: true });
-    if (isSupervisor && userSection) {
-      // fetch employee ids in this section first then filter
-    }
-    const { data } = await q;
-    setLevelUpRequests(data || []);
+    // mandatory scope filter — leader ก่อน แล้วค่อย section scope (pattern เดียวกับ fetchEmployees)
+    let rows = data || [];
+    if (isLeader && userLineId)  rows = rows.filter(r => r.employees?.line_id === userLineId);
+    else if (scopeSecs.length)   rows = rows.filter(r => inSectionScope(scopeSecs, r.employees?.section));
+    setLevelUpRequests(rows);
   };
 
   const handleRunWeeklyUpdate = async () => {
@@ -534,7 +534,7 @@ export default function Operator() {
           {/* Scroll hint chip */}
           {!scrollState.hinted && scrollState.right && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--accent)', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 20, padding: '3px 10px', animation: 'pulse 2s ease-in-out infinite' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--accent)', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 20, padding: '3px 10px' }}>
                 ← เลื่อนดูสกิลเพิ่มเติม →
               </div>
             </div>
@@ -662,7 +662,7 @@ export default function Operator() {
                             <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
                           )}
                           {pending && (
-                            <div style={{ fontSize: 8, color: '#f59e0b', fontWeight: 700, marginTop: 2, animation: 'pulse 1.5s infinite' }}>
+                            <div style={{ fontSize: 8, color: '#f59e0b', fontWeight: 700, marginTop: 2 }}>
                               ⏳ Lv.{pending}
                             </div>
                           )}

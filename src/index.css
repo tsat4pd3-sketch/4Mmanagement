@@ -411,6 +411,12 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   td { padding: 7px 8px; font-size: 12px; }
 }
 
+/* ─── Loading spinner กลาง — ใช้ animation: 'spin ...' ได้ทุกหน้า (ห้าม define ซ้ำต่อหน้า) ── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 /* ─── Downtime alarm — จุดเครื่องจักรกระพริบสีแดงเมื่อมี downtime ค้างอยู่ ── */
 @keyframes dtAlarmBlink {
   0%, 100% { background-color: rgba(239, 68, 68, 0.92); box-shadow: 0 0 4px 1px rgba(239, 68, 68, 0.55); }
