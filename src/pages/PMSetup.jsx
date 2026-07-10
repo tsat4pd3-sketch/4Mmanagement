@@ -11,6 +11,7 @@ import { getOrCreateChecklist, setChecklistFrequency } from '../lib/pmChecklists
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
 import SpinAnnotator from '../components/SpinAnnotator'
+import useImgBox from '../utils/useImgBox'
 
 const DEPT_COLORS = {
   maintenance:     '#fb923c',
@@ -147,57 +148,56 @@ const S = {
 
 // ─── ImageAnnotator (upload + click-to-pin) ────────────────────────────────────
 function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageClick, onPinRemove }) {
-  const containerRef = useRef(null)
-  // pin สเกลตามความกว้างรูปที่ render จริง + clamp ไม่ให้ตกขอบ (docs/UI-CONVENTIONS.md 5.1)
-  const [box, setBox] = useState({ w: 0, h: 0 })
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const measure = () => setBox({ w: el.clientWidth || 0, h: el.clientHeight || 0 })
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    measure()
-    return () => ro.disconnect()
-  }, [imageUrl])
-  const PK = Math.round(Math.max(20, Math.min(36, (box.w || 500) * 0.04)))
+  const layerRef = useRef(null)
+  // pin สเกล/clamp/วางตำแหน่ง อิง "กล่องรูปจริง" หัก letterbox ของ objectFit:contain
+  // (docs/UI-CONVENTIONS.md §5.1 — pattern เดียวกับ MachineFloorMap)
+  const { imgRef, imgBox, recalc } = useImgBox([imageUrl])
+  const PK = Math.round(Math.max(20, Math.min(36, (imgBox?.rw || 500) * 0.04)))
   const pkFont = Math.max(11, Math.round(PK * 0.45))
-  const padX = box.w ? (PK * 0.7 / box.w) * 100 : 0
-  const padTop = box.h ? ((PK + 4) / box.h) * 100 : 0 // anchor ห้อยลง (translate -100%) เผื่อหัวบน
+  const padX = imgBox ? (PK * 0.7 / imgBox.rw) * 100 : 0
+  const padTop = imgBox ? ((PK + 4) / imgBox.rh) * 100 : 0 // anchor ห้อยลง (translate -100%) เผื่อหัวบน
   const clampPct = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
+  // แปลงตำแหน่งคลิก → 0..1 ของ "รูปจริง" (หัก letterbox) — วัดจาก layer เดียวกับที่วาด pin
   const handleClick = (e) => {
-    if (!activePinKey) return
-    const rect = containerRef.current.getBoundingClientRect()
+    if (!activePinKey || !layerRef.current) return
+    const rect = layerRef.current.getBoundingClientRect()
+    if (!rect.width || !rect.height) return
     const x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
     const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height))
     onImageClick(x, y)
   }
   return (
-    <div ref={containerRef} onClick={handleClick} style={{
+    <div onClick={handleClick} style={{
       position: 'relative', userSelect: 'none', borderRadius: 8, overflow: 'hidden',
       border: `2px solid ${activePinKey ? 'var(--accent)' : 'var(--border)'}`,
       cursor: activePinKey ? 'crosshair' : 'default',
     }}>
-      <img src={imageUrl} alt="JIG" style={{ width: '100%', maxHeight: 260, objectFit: 'contain', background: 'var(--bg2)', display: 'block' }} />
-      {checkpoints.map((cp, i) => {
-        if (cp.x_pos == null || cp.y_pos == null) return null
-        const isActive = activePinKey === cp._key
-        const col = isActive ? 'var(--accent)' : categoryColor(cp.category)
-        return (
-          <button key={cp._key}
-            style={{
-              position: 'absolute',
-              left: `${clampPct(cp.x_pos * 100, padX, 100 - padX)}%`,
-              top: `${clampPct(cp.y_pos * 100, padTop, 100)}%`,
-              transform: 'translate(-50%,-100%)', zIndex: 10, cursor: 'pointer', background: 'none', border: 'none', padding: 0,
-            }}
-            onClick={e => { e.stopPropagation(); onPinRemove(cp._key) }}
-            title={`${cp.name || `จุด ${i + 1}`} — คลิกเพื่อลบ`}
-          >
-            <div style={{ minWidth: PK, height: PK, padding: `0 ${Math.round(PK * 0.15)}px`, borderRadius: 999, background: col, border: '2px solid #fff', color: '#fff', fontSize: pkFont, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>{labels?.[i] ?? i + 1}</div>
-          </button>
-        )
-      })}
+      <img ref={imgRef} src={imageUrl} alt="JIG" onLoad={recalc} style={{ width: '100%', maxHeight: 300, objectFit: 'contain', background: 'var(--bg2)', display: 'block' }} />
+      {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้ ไม่ใช่ % ของ container */}
+      {imgBox && (
+        <div ref={layerRef} style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
+          {checkpoints.map((cp, i) => {
+            if (cp.x_pos == null || cp.y_pos == null) return null
+            const isActive = activePinKey === cp._key
+            const col = isActive ? 'var(--accent)' : categoryColor(cp.category)
+            return (
+              <button key={cp._key}
+                style={{
+                  position: 'absolute',
+                  left: `${clampPct(cp.x_pos * 100, padX, 100 - padX)}%`,
+                  top: `${clampPct(cp.y_pos * 100, padTop, 100)}%`,
+                  transform: 'translate(-50%,-100%)', zIndex: 10, cursor: 'pointer', background: 'none', border: 'none', padding: 0, pointerEvents: 'auto',
+                }}
+                onClick={e => { e.stopPropagation(); onPinRemove(cp._key) }}
+                title={`${cp.name || `จุด ${i + 1}`} — คลิกเพื่อลบ`}
+              >
+                <div style={{ minWidth: PK, height: PK, padding: `0 ${Math.round(PK * 0.15)}px`, borderRadius: 999, background: col, border: '2px solid #fff', color: '#fff', fontSize: pkFont, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>{labels?.[i] ?? i + 1}</div>
+              </button>
+            )
+          })}
+        </div>
+      )}
       {activePinKey && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 8, pointerEvents: 'none' }}>
           <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: '#071008', fontSize: 11, fontWeight: 700 }}>📍 คลิกที่รูปเพื่อวางตำแหน่ง</span>

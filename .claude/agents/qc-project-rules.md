@@ -89,6 +89,9 @@ model: inherit
 - **F7** playhead ไทม์ไลน์ใช้ `.now-line`/`.now-chip` — ห้ามวาดเส้นเวลาปัจจุบันเองสีอื่น
 - **F8** balloon จุดตรวจ: anchor ฝั่ง PM `translate(-50%,-100%)` ต้องเหมือนกันทั้ง 3 renderer
   (SpinAnnotator / PMSetup / PMCheckData) — ถ้าไฟล์ใดไฟล์หนึ่งต่าง = บั๊กร้ายแรง
+  · ทั้ง 3 ต้องหัก letterbox ผ่าน hook กลาง `src/utils/useImgBox.js` (วาง pin บน layer
+  ox/oy/rw/rh + แปลงคลิกจาก layer เดียวกัน) และ maxHeight รูป = 300 เท่ากัน —
+  grep: pin ที่วางเป็น % ของ container ตรงๆ บน img objectFit:contain
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่
