@@ -189,7 +189,22 @@ function LiveTab({ role }) {
   const [prodOrders, setProdOrders]       = useState([]);
   const [carryOrders, setCarryOrders]     = useState([]); // pending carry-over from prev session
   const [kanbanStds, setKanbanStds]       = useState([]);
-  const [prodOrdersOpen, setProdOrdersOpen] = useState(true); // minimize/expand ทั้ง board
+  // minimize/expand แต่ละ section ใหญ่บนแท็บ Live — จำสถานะใน localStorage (dr_live_collapse_<section>)
+  // ค่า default = กางเหมือนเดิม ยกเว้น section ที่ว่างเปล่าเริ่มแบบพับ (autoCollapsed)
+  const [liveCollapse, setLiveCollapse] = useState(() => {
+    const out = {};
+    ['prod_orders', 'defects', 'downtime', 'mat_breakdown'].forEach(k => {
+      try { const v = localStorage.getItem(`dr_live_collapse_${k}`); if (v != null) out[k] = v === '1'; } catch { /* localStorage ปิดใช้งาน — ใช้ default */ }
+    });
+    return out;
+  });
+  const liveCollapsed = (key, autoCollapsed = false) => liveCollapse[key] ?? autoCollapsed;
+  const toggleLiveCollapse = (key, autoCollapsed = false) => setLiveCollapse(c => {
+    const next = !(c[key] ?? autoCollapsed);
+    try { localStorage.setItem(`dr_live_collapse_${key}`, next ? '1' : '0'); } catch { /* localStorage ปิดใช้งาน */ }
+    return { ...c, [key]: next };
+  });
+  const prodOrdersOpen = !liveCollapsed('prod_orders'); // minimize/expand ทั้ง board (ว่างก็กางไว้ — มีปุ่ม Scan/hint ในตัว)
   const [showClosedOrders, setShowClosedOrders] = useState(false); // แยกซ่อน/แสดง order ที่ปิดแล้ว/ยกเลิก
 
   // Scan Open modal
@@ -1849,11 +1864,16 @@ function LiveTab({ role }) {
 
               return (
                 <>
-                  {productRows.length > 0 && (
+                  {productRows.length > 0 && (() => {
+                    const matOpen = !liveCollapsed('mat_breakdown');
+                    return (
                     <div style={{ marginBottom: 16 }}>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>
+                      <div onClick={() => toggleLiveCollapse('mat_breakdown')}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: matOpen ? 8 : 0, cursor: 'pointer', userSelect: 'none' }}>
+                        <span style={{ fontSize: 11, color: 'var(--muted)', transform: matOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
                         🔩 แยกตามชิ้นงาน ({productRows.length} MAT.NO)
                       </div>
+                      {matOpen && (<>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {productRows.map(r => {
                           const rowClr = r.rowPct >= 100 ? '#22c55e' : r.rowPct >= 60 ? '#f59e0b' : '#4d9fff';
@@ -1886,8 +1906,10 @@ function LiveTab({ role }) {
                       {unassignedDT > 0 && (
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>⏱ Downtime ที่ไม่ระบุชิ้นงาน: {fmtMin(unassignedDT)}</div>
                       )}
+                      </>)}
                     </div>
-                  )}
+                    );
+                  })()}
 
                   {/* ภาพรวมทั้งกะ (รวมทุกชิ้นงาน) */}
                   <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>📊 ภาพรวมทั้งกะ</div>
@@ -1927,7 +1949,7 @@ function LiveTab({ role }) {
             {/* Prod Orders panel */}
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: prodOrdersOpen ? 12 : 0, flexWrap: 'wrap', gap: 8 }}>
-                <div onClick={() => setProdOrdersOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--text)', cursor: 'pointer', userSelect: 'none' }}>
+                <div onClick={() => toggleLiveCollapse('prod_orders')} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--text)', cursor: 'pointer', userSelect: 'none' }}>
                   <span style={{ fontSize: 11, color: 'var(--muted)', transform: prodOrdersOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
                   📦 Prod Orders ({prodOrders.length} ใบ)
                 </div>
@@ -2054,16 +2076,20 @@ function LiveTab({ role }) {
             </div>
 
             {/* Defect Logs panel */}
-            {defectLogs.length > 0 && (
+            {defectLogs.length > 0 && (() => {
+              const defOpen = !liveCollapsed('defects');
+              return (
               <div style={{ background: 'var(--card)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#ef4444' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: defOpen ? 10 : 0 }}>
+                  <div onClick={() => toggleLiveCollapse('defects')} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#ef4444', cursor: 'pointer', userSelect: 'none' }}>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', transform: defOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
                     🔴 บันทึกงานเสีย ({defectLogs.length} รายการ)
                     <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>
                       NG: {defectLogs.reduce((s,d)=>s+(d.qty_ng||0),0)} · สงสัย: {defectLogs.reduce((s,d)=>s+(d.qty_suspect||0),0)} · ซ่อม: {defectLogs.reduce((s,d)=>s+(d.qty_repair||0),0)}
                     </span>
                   </div>
                 </div>
+                {defOpen && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {defectLogs.map(d => (
                     <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${d.dr_defect_types?.color || '#ef4444'}` }}>
@@ -2101,18 +2127,29 @@ function LiveTab({ role }) {
                     </div>
                   ))}
                 </div>
+                )}
               </div>
-            )}
+              );
+            })()}
 
             {/* Downtime list */}
+            {(() => {
+              const dtOpen = !liveCollapsed('downtime', dtLogs.length === 0);
+              return (
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>⏱ Downtime ({dtLogs.length} รายการ)</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: dtOpen ? 12 : 0, flexWrap: 'wrap', gap: 8 }}>
+                <div onClick={() => toggleLiveCollapse('downtime', dtLogs.length === 0)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--text)', cursor: 'pointer', userSelect: 'none' }}>
+                  <span style={{ fontSize: 11, color: 'var(--muted)', transform: dtOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
+                  ⏱ Downtime ({dtLogs.length} รายการ)
+                </div>
+                {dtOpen && (
                 <button onClick={() => { setShowDT(true); setDtForm({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' }); }}
                   style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                   + บันทึก Downtime
                 </button>
+                )}
               </div>
+              {dtOpen && (<>
               {dtLogs.length === 0 && <div style={{ textAlign: 'center', padding: '20px', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มี Downtime ในกะนี้</div>}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {dtLogs.map(d => {
@@ -2165,7 +2202,10 @@ function LiveTab({ role }) {
                   );
                 })}
               </div>
+              </>)}
             </div>
+              );
+            })()}
           </>
         )}
 
@@ -2221,9 +2261,11 @@ function LiveTab({ role }) {
           const confirmedOrders  = prodOrders.filter(o => o.status === 'confirmed');
           const carryOrdersList  = prodOrders.filter(o => o.status === 'carry_over');
           const cancelledOrders  = prodOrders.filter(o => o.status === 'cancelled');
+          // จอ landscape กว้าง → แผ่เนื้อหาเป็น 2 คอลัมน์แทนการยืดสูงจน scroll (layout อย่างเดียว ไม่แตะ logic)
+          const twoCol = typeof window !== 'undefined' && window.innerWidth >= 1100 && (defectLogs.length > 0 || dtLogs.length > 0) && prodOrders.length > 0;
           return (
             <div className="overlay" style={{ zIndex: 2100 }}>
-              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.5)', borderRadius: 14, padding: 24, width: 'min(95vw,820px)', maxHeight: '90vh', overflowY: 'auto' }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.5)', borderRadius: 14, padding: 24, width: 'min(96vw,1500px)', maxHeight: '94vh', overflowY: 'auto' }}>
                 <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: '#f59e0b' }}>🔍 ตรวจสอบคำขอปิดกะ</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
                   {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)}
@@ -2253,6 +2295,9 @@ function LiveTab({ role }) {
                   ))}
                 </div>
 
+                {/* จอกว้าง: งานเสีย+Downtime คอลัมน์ซ้าย · สรุปแยกตามชิ้นงาน คอลัมน์ขวา — จอแคบเรียงลงเหมือนเดิม */}
+                <div style={{ display: 'grid', gridTemplateColumns: twoCol ? '1fr 1fr' : '1fr', gap: twoCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ minWidth: 0 }}>
                 {defectLogs.length > 0 && (
                   <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>🔴 รายการงานเสีย ({defectLogs.length})</div>
@@ -2281,6 +2326,8 @@ function LiveTab({ role }) {
                   </div>
                 )}
 
+                </div>{/* /คอลัมน์ซ้าย */}
+                <div style={{ minWidth: 0 }}>
                 {/* Per-product breakdown — เหมือนหน้าที่ leader เห็นตอนขอปิดกะ ใช้ end_time ของกะที่บันทึกไว้แล้ว (ไม่มี order สถานะ open เหลือแล้วตอนนี้) */}
                 {(() => {
                   const matNos = Array.from(new Set(prodOrders.map(o => o.mat_no)));
@@ -2384,7 +2431,10 @@ function LiveTab({ role }) {
                   );
                 })()}
 
-                {/* Timeline: machine run / policy break / planned-unplanned downtime — รายละเอียดของ %A, ใช้เวลาเริ่ม-ปิดกะที่บันทึกไว้แล้ว */}
+                </div>{/* /คอลัมน์ขวา */}
+                </div>{/* /grid 2 คอลัมน์ */}
+
+                {/* Timeline: machine run / policy break / planned-unplanned downtime — รายละเอียดของ %A, ใช้เวลาเริ่ม-ปิดกะที่บันทึกไว้แล้ว (full-width) */}
                 {(() => {
                   if (!selSession?.work_date || !selSession.start_time) return null;
                   const winStart = new Date(`${selSession.work_date}T${selSession.start_time.slice(0,5)}:00`).getTime();
@@ -2504,9 +2554,13 @@ function LiveTab({ role }) {
           });
           const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty } = computeOEE(ng, closeEndTime, closeStartTime, previewDtLogs);
           const oeeColor = oee == null ? 'var(--muted)' : oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
+          // จอ landscape กว้าง → แผ่เนื้อหาเป็น 2 คอลัมน์แทนการยืดสูงจน scroll (layout อย่างเดียว ไม่แตะ logic/การคำนวณ)
+          const twoCol = typeof window !== 'undefined' && window.innerWidth >= 1100;
+          const hasOpenOrdersCol = twoCol && prodOrders.some(o => o.status === 'open');
+          const hasOpenDTCol = twoCol && modalOpenDT.length > 0;
           return (
             <div className="overlay" style={{ zIndex: 2000 }}>
-              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,820px)', maxHeight: '90vh', overflowY: 'auto' }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: 14, padding: 24, width: 'min(96vw,1500px)', maxHeight: '94vh', overflowY: 'auto' }}>
                 <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#ef4444' }}>
                   {role === 'leader' ? '📋 ขอปิดกะ — สรุปผลและ OEE' : '🔒 ปิดกะ — สรุปผลและ OEE'}
                 </div>
@@ -2528,6 +2582,9 @@ function LiveTab({ role }) {
                   </Field>
                 </div>
 
+                {/* จอกว้าง: Downtime เปิดค้าง (ต้องตัดสินใจ) คอลัมน์ซ้าย · สรุปตัวเลขกะ คอลัมน์ขวา — จอแคบเรียงลงเหมือนเดิม */}
+                <div style={{ display: 'grid', gridTemplateColumns: hasOpenDTCol ? '1fr 1fr' : '1fr', gap: hasOpenDTCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ minWidth: 0 }}>
                 {/* Downtime เปิดค้าง — ต้องตัดสินใจต่อรายการก่อนปิดกะ (เครื่องกลับมาแล้ว / ยังซ่อมอยู่ ตัดยอดข้ามกะ) */}
                 {modalOpenDT.length > 0 && (
                   <div style={{ marginBottom: 16, padding: '12px 14px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 10 }}>
@@ -2582,6 +2639,8 @@ function LiveTab({ role }) {
                   </div>
                 )}
 
+                </div>{/* /คอลัมน์ซ้าย (DT เปิดค้าง) */}
+                <div style={{ minWidth: 0 }}>
                 {/* Summary stats — แยกหยุดในแผน(เพิ่มเติมจากนโยบาย)/นอกแผนออกจากกัน ให้บวกกันแล้วเท่ากับเวลากะเป๊ะๆ
                     (เวลากะ = หยุดนโยบาย + หยุดในแผน + หยุดนอกแผน + Run Time) ไม่งั้นจะดูเหมือนเวลารวมเกิน 12 ชม. */}
                 {(() => {
@@ -2629,7 +2688,10 @@ function LiveTab({ role }) {
                   );
                 })()}
 
-                {/* Per-product breakdown — separates shared lines (e.g. APRON ASSY) that run multiple MAT.NO at once */}
+                </div>{/* /คอลัมน์ขวา (สรุปตัวเลข) */}
+                </div>{/* /grid 2 คอลัมน์ ชุดบน */}
+
+                {/* Per-product breakdown — separates shared lines (e.g. APRON ASSY) that run multiple MAT.NO at once (full-width) */}
                 {(() => {
                   const matNos = Array.from(new Set(prodOrders.filter(o => o.status === 'confirmed' || o.status === 'open').map(o => o.mat_no)));
                   if (!matNos.length) return null;
@@ -2849,6 +2911,9 @@ function LiveTab({ role }) {
                   );
                 })()}
 
+                {/* จอกว้าง: รายการตัดสินใจ Order ที่ยังไม่ปิด คอลัมน์ซ้าย · OEE preview คอลัมน์ขวา (เห็นผลจากการตัดสินใจข้างๆ กันทันที) */}
+                <div style={{ display: 'grid', gridTemplateColumns: hasOpenOrdersCol ? '1fr 1fr' : '1fr', gap: hasOpenOrdersCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ minWidth: 0 }}>
                 {/* Carry-over: handle open orders */}
                 {(() => {
                   const openOrders = prodOrders.filter(o => o.status === 'open');
@@ -2946,6 +3011,8 @@ function LiveTab({ role }) {
                   );
                 })()}
 
+                </div>{/* /คอลัมน์ซ้าย (ตัดสินใจ Order) */}
+                <div style={{ minWidth: 0 }}>
                 {/* OEE live preview */}
                 <div style={{ padding: '14px 16px', background: `${oeeColor}18`, border: `1px solid ${oeeColor}40`, borderRadius: 10 }}>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, fontWeight: 700 }}>OEE PREVIEW (APQ)</div>
@@ -2974,6 +3041,9 @@ function LiveTab({ role }) {
                     <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 6 }}>⚠ มี {unknownQty} ชิ้น จาก MAT.NO ที่ไม่มี Cycle Time ใน Product Master — P/OEE คำนวณจาก standard time ของ {knownQty} ชิ้นที่มี CT หารด้วย run time ทั้งกะ (ค่าจริงจะต่ำกว่าถ้านับ MAT.NO ที่ขาด CT ด้วย)</div>
                   )}
                 </div>
+
+                </div>{/* /คอลัมน์ขวา (OEE preview) */}
+                </div>{/* /grid 2 คอลัมน์ ชุดล่าง */}
 
                 <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
                   <button onClick={() => { setShowCloseShift(false); setCarryOverDecisions({}); }} style={cancelBtnStyle}>ยกเลิก</button>
