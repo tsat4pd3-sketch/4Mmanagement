@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
+import { markerScale } from '../utils/markerScale';
 
 const TABS = [
   { key: 'stations', label: '📍 จุดงาน' },
@@ -50,6 +51,7 @@ export default function LineSetup() {
   const [skillDefs, setSkillDefs] = useState([]);
   const [sectionOpts, setSectionOpts] = useState([]);
   const [activeTab, setActiveTab] = useState('stations'); // 'stations' | 'wip' | 'machines'
+  const [forcePills, setForcePills] = useState(false); // บังคับแสดงป้ายชื่อหมุดรอง (เครื่องจักร/WIP) เมื่อถูกซ่อนอัตโนมัติเพราะผังแน่น
 
   // ลากย้ายจุดที่มีอยู่แล้วได้ (ไม่ต้องลบสร้างใหม่) — drag เกินระยะนิดเดียวถือเป็นการลาก ไม่ใช่คลิกแก้ไข
   const imgRef = useRef(null);
@@ -643,23 +645,27 @@ export default function LineSetup() {
     if (!error) fetchLineData();
   };
 
-  // ขนาดหมุดวงกลมบนผัง — สเกลตามความกว้างของรูปที่ render จริง (สูตรเดียวกับ Dashboard/Management)
-  // หมุดเป็นวงกลม + ป้ายชื่อ (pill) ด้านล่าง — ชื่อเต็มไม่ถูกตัดเหลือไม่กี่ตัวอักษรเหมือนการ์ดแบบเดิม
-  const MK = Math.round(Math.max(30, Math.min(72, (imgBox?.rw || 800) * 0.05)));
-  const MKM = Math.round(MK * 0.75); // WIP/เครื่องจักร = ไอคอน ไม่ใช่หมุดหลัก — เล็กลงกันผังแน่น (สอดคล้อง Management 0.6×MK ของจุดคน)
-  const PILL_FONT = Math.max(11, Math.round(MK * 0.26));
+  // ขนาดหมุดวงกลมบนผัง — ใช้สูตรกลาง markerScale (src/utils/markerScale.js) ตัวเดียวกับหน้าแสดงผล
+  // เพื่อให้ WYSIWYG: ขนาดหมุด + พฤติกรรมป้ายชื่อตอนจัดผัง ตรงกับที่ Management/Dashboard แสดงจริงเป๊ะ
+  // MK = จุดงานหลัก · SUB = หมุดรอง (เครื่องจักร/WIP) ย่อตามความแน่น · showSubPills = ป้ายหมุดรองซ่อนอัตโนมัติเมื่อแน่น
+  const { MK, SUB, showSubPills, pillFont: PILL_FONT, subPillFont, badgeFont } =
+    markerScale(imgBox?.rw, { machineCount: machinePoints.length });
+  const pillsOn = showSubPills || forcePills; // ป้ายเครื่องจักร/WIP แสดงเมื่อผังไม่แน่น หรือผู้ใช้กด 🏷️ บังคับเปิด
   const pillSt = {
     background: 'rgba(0,0,0,0.78)', borderRadius: 4, padding: '1px 6px',
     fontWeight: 700, color: '#fff', whiteSpace: 'nowrap',
     overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: MK * 2,
     fontSize: PILL_FONT, lineHeight: 1.35,
   };
+  // ป้ายของหมุดรอง (เครื่องจักร/WIP) — ฟอนต์/ความกว้างสเกลตามวง SUB
+  const subPillSt = { ...pillSt, fontSize: subPillFont, maxWidth: SUB * 2 };
   // แถบป้ายใต้วงกลม — เกาะขอบล่างของวงกลม (อยู่ใน hit area เดียวกับหมุด: คลิก/ลากที่ป้ายได้)
   const pillStackSt = {
     position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
     marginTop: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
   };
   const pinIconSz = Math.round(MK * 0.42);
+  const subPinIconSz = Math.round(SUB * 0.5);
 
   return (
     <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12, height: isMobile ? 'auto' : 'calc(100vh - 40px)' }}>
@@ -677,6 +683,20 @@ export default function LineSetup() {
               {t.label}
             </button>
           ))}
+          {!showSubPills && (
+            <button
+              onClick={() => setForcePills(v => !v)}
+              title="ผังแน่น — ป้ายชื่อเครื่องจักร/WIP ถูกซ่อนอัตโนมัติ (เหมือนหน้าแสดงผลจริง) กดเพื่อบังคับแสดงทั้งหมด"
+              style={{
+                padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                marginLeft: 'auto',
+                border: `1px solid ${forcePills ? 'var(--accent)' : 'var(--border2)'}`,
+                background: forcePills ? 'var(--accent-dim)' : 'var(--bg2)',
+                color: forcePills ? 'var(--accent)' : 'var(--text2)',
+              }}>
+              🏷️ ป้ายชื่อ
+            </button>
+          )}
         </div>
       )}
     <div style={{
@@ -765,7 +785,7 @@ export default function LineSetup() {
                         {st.station_name}
                       </div>
                       {st.skill_allowance && (
-                        <div style={{ ...pillSt, fontSize: Math.max(9, Math.round(MK * 0.2)), color: '#22c55e', fontWeight: 800 }}>
+                        <div style={{ ...pillSt, fontSize: badgeFont, color: '#22c55e', fontWeight: 800 }}>
                           💰 {st.skill_allowance_type || ''}
                         </div>
                       )}
@@ -795,10 +815,10 @@ export default function LineSetup() {
                   <div
                     key={p.id}
                     onMouseDown={(e) => startDrag(e, 'wip', p.id)}
-                    title={canEdit ? 'คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง' : p.point_name}
+                    title={canEdit ? `${p.point_name} — คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง` : p.point_name}
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
-                      width: MKM, height: MKM, borderRadius: '50%',
+                      width: SUB, height: SUB, borderRadius: '50%',
                       border: isSelected ? '2px solid var(--green)' : isLow ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.75)',
                       backgroundColor: isLow ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
@@ -808,22 +828,24 @@ export default function LineSetup() {
                       zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
                   >
-                    <span style={{ fontSize: pinIconSz, lineHeight: 1 }}>📦</span>
-                    <div style={pillStackSt}>
-                      <div style={{ ...pillSt, color: isLow ? '#fecaca' : '#fff' }}>
-                        {p.point_name}
+                    <span style={{ fontSize: subPinIconSz, lineHeight: 1 }}>📦</span>
+                    {(pillsOn || isSelected || isLow) && (
+                      <div style={pillStackSt}>
+                        <div style={{ ...subPillSt, color: isLow ? '#fecaca' : '#fff' }}>
+                          {p.point_name}
+                        </div>
+                        <div style={{ ...subPillSt, fontWeight: isLow ? 800 : 700, color: isLow ? '#fca5a5' : '#a3a3a3' }}>
+                          {p.current_qty ?? 0}/{p.min_qty ?? 0}–{p.max_qty ?? 0}{isLow ? ' ⚠️ ต่ำ' : ''}
+                        </div>
                       </div>
-                      <div style={{ ...pillSt, fontSize: Math.max(9, Math.round(MK * 0.2)), fontWeight: isLow ? 800 : 700, color: isLow ? '#fca5a5' : '#a3a3a3' }}>
-                        {p.current_qty ?? 0}/{p.min_qty ?? 0}–{p.max_qty ?? 0}{isLow ? ' ⚠️ ต่ำ' : ''}
-                      </div>
-                    </div>
+                    )}
                   </div>
                 );
               })}
               {activeTab === 'wip' && wipTempPos && (
                 <div style={{
                   position: 'absolute', top: wipTempPos.top, left: wipTempPos.left, transform: 'translate(-50%, -50%)',
-                  width: MKM, height: MKM, borderRadius: '50%',
+                  width: SUB, height: SUB, borderRadius: '50%',
                   border: '1px dashed var(--accent)', backgroundColor: 'rgba(61,214,92,0.1)',
                   zIndex: 10, pointerEvents: 'none',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -861,10 +883,10 @@ export default function LineSetup() {
                   <div
                     key={p.id}
                     onMouseDown={(e) => startDrag(e, 'machine', p.id)}
-                    title={!canEdit ? p.machine_no : connectMode ? 'คลิกเพื่อเชื่อมต่อสายงาน' : 'คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง'}
+                    title={!canEdit ? p.machine_no : connectMode ? `${p.machine_no} — คลิกเพื่อเชื่อมต่อสายงาน` : `${p.machine_no} — คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง`}
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
-                      width: MKM, height: MKM, borderRadius: '50%',
+                      width: SUB, height: SUB, borderRadius: '50%',
                       border: isConnectSource ? '2px solid #f97316' : isSelected ? '2px solid var(--green)' : p.redundancy_group ? '2px dashed #a855f7' : '2px solid rgba(255,255,255,0.75)',
                       backgroundColor: isConnectSource ? 'rgba(249,115,22,0.22)' : isSelected ? 'rgba(34,197,94,0.18)' : p.redundancy_group ? 'rgba(168,85,247,0.15)' : 'rgba(0,0,0,0.82)',
                       backdropFilter: 'blur(2px)',
@@ -874,29 +896,31 @@ export default function LineSetup() {
                       zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
                   >
-                    <span style={{ fontSize: pinIconSz, lineHeight: 1 }}>⚙️</span>
-                    <div style={pillStackSt}>
-                      <div style={{ ...pillSt, color: isConnectSource ? '#f97316' : isSelected ? 'var(--green)' : '#fff' }}>
-                        {p.machine_no}
+                    <span style={{ fontSize: subPinIconSz, lineHeight: 1 }}>⚙️</span>
+                    {(pillsOn || isSelected || isConnectSource) && (
+                      <div style={pillStackSt}>
+                        <div style={{ ...subPillSt, color: isConnectSource ? '#f97316' : isSelected ? 'var(--green)' : '#fff' }}>
+                          {p.machine_no}
+                        </div>
+                        {mc?.machine_name && (
+                          <div style={{ ...subPillSt, color: '#a3a3a3' }}>
+                            {mc.machine_name}
+                          </div>
+                        )}
+                        {p.redundancy_group && (
+                          <div style={{ ...subPillSt, color: '#d8b4fe' }}>
+                            🔀 {p.redundancy_group}
+                          </div>
+                        )}
                       </div>
-                      {mc?.machine_name && (
-                        <div style={{ ...pillSt, fontSize: Math.max(9, Math.round(MK * 0.2)), color: '#a3a3a3' }}>
-                          {mc.machine_name}
-                        </div>
-                      )}
-                      {p.redundancy_group && (
-                        <div style={{ ...pillSt, fontSize: Math.max(9, Math.round(MK * 0.2)), color: '#d8b4fe' }}>
-                          🔀 {p.redundancy_group}
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </div>
                 );
               })}
               {activeTab === 'machines' && machineTempPos && (
                 <div style={{
                   position: 'absolute', top: machineTempPos.top, left: machineTempPos.left, transform: 'translate(-50%, -50%)',
-                  width: MKM, height: MKM, borderRadius: '50%',
+                  width: SUB, height: SUB, borderRadius: '50%',
                   border: '1px dashed var(--accent)', backgroundColor: 'rgba(61,214,92,0.1)',
                   zIndex: 10, pointerEvents: 'none',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
