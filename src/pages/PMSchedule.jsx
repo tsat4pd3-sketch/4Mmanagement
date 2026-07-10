@@ -215,7 +215,7 @@ export default function PMSchedule() {
                       )}
                       {isUsage && (
                         <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 10, fontWeight: 700, color: reason === 'usage' ? '#4aa3e0' : 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: reason === 'usage' ? '#4aa3e0' : 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>
                             {reason === 'usage' ? '📈 ตามการใช้งาน' : '🗓️ ตามเวลา'}
                           </span>
                           {health != null && (
@@ -223,7 +223,7 @@ export default function PMSchedule() {
                               <span style={{ width: 44, height: 5, background: 'var(--bg2)', borderRadius: 3, overflow: 'hidden', display: 'inline-block' }}>
                                 <span style={{ display: 'block', height: '100%', width: `${Math.max(0, Math.min(100, health))}%`, background: healthColor }} />
                               </span>
-                              <span style={{ fontSize: 10, color: healthColor }}>{Math.round(health)}%</span>
+                              <span style={{ fontSize: 11, color: healthColor }}>{Math.round(health)}%</span>
                             </span>
                           )}
                         </div>

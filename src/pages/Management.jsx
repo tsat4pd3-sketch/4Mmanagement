@@ -4,7 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
-import { hasPermission } from '../utils/permissions';
+import { hasPermission, can } from '../utils/permissions';
 import { getLineFamilyNames, getLineFamilyIds, getAncestorNames, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
@@ -775,17 +775,17 @@ export default function Management() {
           <div style={{ fontSize: isMobile ? 13 : 11, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: isMobile ? 'left' : 'center' }}>
             {isMobile ? (worker.employees?.name ?? '?') : (worker.employees?.name?.split(' ')[0] ?? '?')}
           </div>
-          <div style={{ fontSize: isMobile ? 11 : 9, color: '#f59e0b', fontWeight: 700, background: 'rgba(245,158,11,0.15)', borderRadius: 3, padding: isMobile ? '2px 6px' : '1px 6px', marginTop: 2, display: isMobile ? 'inline-block' : 'block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : '100%', whiteSpace: 'nowrap', textAlign: 'center' }}>
+          <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, background: 'rgba(245,158,11,0.15)', borderRadius: 3, padding: isMobile ? '2px 6px' : '1px 6px', marginTop: 2, display: isMobile ? 'inline-block' : 'block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : '100%', whiteSpace: 'nowrap', textAlign: 'center' }}>
             {task?.task_type || 'งานพิเศษ'}
           </div>
           {worker.employees?.section && (
-            <div style={{ fontSize: isMobile ? 10 : 9, color: '#a78bfa', background: 'rgba(167,139,250,0.12)', borderRadius: 3, padding: isMobile ? '1px 6px' : '1px 6px', marginTop: 2, display: isMobile ? 'inline-block' : 'block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : '100%', whiteSpace: 'nowrap', textAlign: 'center' }}>
+            <div style={{ fontSize: 11, color: '#a78bfa', background: 'rgba(167,139,250,0.12)', borderRadius: 3, padding: isMobile ? '1px 6px' : '1px 6px', marginTop: 2, display: isMobile ? 'inline-block' : 'block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : '100%', whiteSpace: 'nowrap', textAlign: 'center' }}>
               📍 {worker.employees.section}
             </div>
           )}
         </div>
         {/* remove button — leader+ */}
-        {['admin','manager','supervisor','leader'].includes(role) && (
+        {can('management', 'assign_special_task', role) && (
           <button onClick={(e) => { e.stopPropagation(); removeSpecialTask(worker); }}
             style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: '50%', background: 'rgba(239,68,68,0.85)', border: 'none', color: '#fff', fontSize: 11, lineHeight: '22px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
             ✕
@@ -838,7 +838,7 @@ export default function Management() {
           </div>
         )}
         {/* assign to special task */}
-        {['admin','manager','supervisor','leader'].includes(role) && (
+        {can('management', 'assign_special_task', role) && (
           <button onClick={(e) => { e.stopPropagation(); setSpecialModal(worker); setSpecialTaskType('5ส'); }}
             title="กำหนดงานนอกไลน์"
             style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: '50%', background: 'rgba(245,158,11,0.9)', border: '1px solid rgba(0,0,0,0.3)', color: '#fff', fontSize: 11, lineHeight: '22px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
@@ -934,8 +934,8 @@ export default function Management() {
               <span style={{
                 position: 'absolute', top: -4, right: -4,
                 background: f.color, color: '#fff',
-                fontSize: 10, fontWeight: 800,
-                minWidth: 17, height: 17, borderRadius: 9,
+                fontSize: 11, fontWeight: 800,
+                minWidth: 18, height: 18, borderRadius: 9,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 padding: '0 3px', lineHeight: 1,
               }}>
@@ -977,7 +977,7 @@ export default function Management() {
         )}
         {!panelCollapsed && (<>
         <div style={{ marginBottom: 10, flexShrink: 0 }}>
-          <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.08em' }}>ไลน์ผลิต</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.08em' }}>ไลน์ผลิต</div>
           {/* เลือกได้ทั้งไลน์หลัก (view รวมไลน์ย่อยทั้งหมด) และไลน์ย่อย (view ไลน์ย่อย+ไลน์หลัก)
               leader ก็สลับดูภายในครอบครัวไลน์ตัวเองได้ — รายการใน `lines` ถูก scope ไว้แล้วตอน fetch */}
           <select value={selectedLine} onChange={(e) => setSelectedLine(e.target.value)}
@@ -987,12 +987,12 @@ export default function Management() {
             ))}
           </select>
           {mergedChildNames.length > 0 && (
-            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
               🔗 รวมไลน์ย่อย: {mergedChildNames.join(', ')}
             </div>
           )}
           {mergedParentNames.length > 0 && (
-            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
               🔗 รวมจุดของไลน์หลัก: {mergedParentNames.join(', ')}
             </div>
           )}
@@ -1040,7 +1040,7 @@ export default function Management() {
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>{specialWorkers.length} คน</span>
             </div>
             {hasPermission('manage_master_data', role) && specialWorkers.length > 0 && (
-              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 5, fontStyle: 'italic' }}>drag กลับไลน์ผลิตได้</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5, fontStyle: 'italic' }}>drag กลับไลน์ผลิตได้</div>
             )}
           </div>
           <div
@@ -1055,10 +1055,10 @@ export default function Management() {
             style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: isUltra ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', flexDirection: 'column', gap: isWide ? 7 : 6, ...(isMobile ? { maxHeight: '15vh' } : { flex: '3 0 0', minHeight: 0 }) }}>
             {specialWorkers.map(w => <SpecialCard key={w.id} worker={w} />)}
             {specialWorkers.length === 0 && (
-              <div style={{ color: 'rgba(245,158,11,0.5)', fontSize: 10, textAlign: 'center', padding: '6px 0', gridColumn: '1/-1' }}>—</div>
+              <div style={{ color: 'rgba(245,158,11,0.5)', fontSize: 11, textAlign: 'center', padding: '6px 0', gridColumn: '1/-1' }}>—</div>
             )}
             {/* mobile: assign button */}
-            {isMobile && ['admin','manager','supervisor','leader'].includes(role) && selectedWorker && !specialEmpIds.has(selectedWorker.employee_id) && (
+            {isMobile && can('management', 'assign_special_task', role) && selectedWorker && !specialEmpIds.has(selectedWorker.employee_id) && (
               <button onClick={() => { setSpecialModal(selectedWorker); setSpecialTaskType('5ส'); }}
                 style={{ marginTop: 6, padding: '8px', borderRadius: 8, background: 'rgba(245,158,11,0.15)', border: '1px dashed rgba(245,158,11,0.5)', color: '#f59e0b', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                 🏷 กำหนดงานนอกไลน์ให้ผู้ถูกเลือก
@@ -1070,7 +1070,7 @@ export default function Management() {
         {/* 4M buttons — desktop only in sidebar */}
         {selectedLine && !isMobile && (
           <div style={{ paddingTop: 12, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
-            <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>บันทึก 4M ไลน์</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>บันทึก 4M ไลน์</div>
             {LINE_4M_CATEGORIES.map(cat => (
               <button key={cat} onClick={() => { setShow4MModal({ lineName: selectedLine }); setLog4MForm({ category: cat, description: '' }); }}
                 style={{
@@ -1498,7 +1498,7 @@ export default function Management() {
                   { c: '#ef4444', icon: '⛔', label: 'Downtime (แถบบนแถว)' },
                 ].map(item => (
                   <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 15, height: 15, borderRadius: 3, background: `${item.c}28`, border: `1.2px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
+                    <span style={{ width: 18, height: 18, borderRadius: 3, background: `${item.c}28`, border: `1.2px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
                     <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
                   </div>
                 ))}
@@ -1591,10 +1591,10 @@ export default function Management() {
                                 }}>
                                 <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`, background: `${sc}22` }} />
                                 <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 2px', overflow: 'hidden' }}>
-                                  <div style={{ fontSize: 10, fontWeight: 800, color: sc, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  <div style={{ fontSize: 11, fontWeight: 800, color: sc, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                     {icon} {o.prod_no || (oi + 1)}
                                   </div>
-                                  <div style={{ fontSize: 9, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.qty}ชิ้น</div>
+                                  <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.qty}ชิ้น</div>
                                 </div>
                               </div>
                               {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
@@ -1617,7 +1617,7 @@ export default function Management() {
                             <div className="now-line" style={{ left: `${(nowMs - half.startMs) * pctPerMs}%` }} />
                           )}
                           {/* ป้ายกะมุมซ้ายของแถบ — บอกว่าแถบนี้คือช่วงเช้าหรือดึก */}
-                          <span style={{ position: 'absolute', left: 3, bottom: 1, fontSize: 10, opacity: 0.55, zIndex: 2, pointerEvents: 'none' }}>{half.key === 'am' ? '☀️' : '🌙'}</span>
+                          <span style={{ position: 'absolute', left: 3, bottom: 1, fontSize: 11, opacity: 0.55, zIndex: 2, pointerEvents: 'none' }}>{half.key === 'am' ? '☀️' : '🌙'}</span>
                   </div>
                 );
                 return (
@@ -1652,7 +1652,7 @@ export default function Management() {
                             background: (isNowAm || isNowPm) ? 'rgba(77,159,255,0.12)' : 'transparent',
                           }}>
                             <div style={{ fontSize: 11, fontWeight: isNowAm ? 800 : 500, color: isNowAm ? '#4d9fff' : 'var(--text2)' }}>{String(h).padStart(2, '0')}:00</div>
-                            <div style={{ fontSize: 10, fontWeight: isNowPm ? 800 : 400, color: isNowPm ? '#4d9fff' : 'var(--muted)' }}>{String(hPm).padStart(2, '0')}:00</div>
+                            <div style={{ fontSize: 11, fontWeight: isNowPm ? 800 : 400, color: isNowPm ? '#4d9fff' : 'var(--muted)' }}>{String(hPm).padStart(2, '0')}:00</div>
                           </div>
                         );
                       })}
@@ -1671,12 +1671,12 @@ export default function Management() {
                           <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden' }}>
                             {row.img && <img src={row.img} alt="" style={{ width: 46, height: 46, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                             <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0 }}>
-                              <div style={{ fontSize: 10, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>{row.label}</div>
+                              <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>{row.label}</div>
                               <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: 14, fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
-                                <span style={{ fontSize: 9, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
-                                {delayed > 0 && <span style={{ fontSize: 9, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}</span>}
-                                {isOpen && delayed === 0 && <span style={{ fontSize: 9, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
+                                <span style={{ fontSize: 11, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
+                                {delayed > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}</span>}
+                                {isOpen && delayed === 0 && <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
                               </div>
                             </div>
                           </div>
@@ -1706,7 +1706,7 @@ export default function Management() {
                   ? <img src={p.employees.image_url} className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid #ef4444' }} />
                   : <span className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid #ef4444', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>👤</span>}
                 <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>{p.employees?.name?.split(' ')[0] || '?'}</span>
-                <span style={{ fontSize: 10, color: '#fca5a5' }}>ขาด: {ppeMissingList(p).join(', ')}</span>
+                <span style={{ fontSize: 11, color: '#fca5a5' }}>ขาด: {ppeMissingList(p).join(', ')}</span>
               </span>
             ))}
           </div>
@@ -1826,7 +1826,7 @@ export default function Management() {
               position: 'absolute', ...pos, width: BADGE, height: BADGE, borderRadius: '50%',
               background: 'rgba(8,8,14,0.85)', border: '1px solid rgba(255,255,255,0.25)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: Math.round(BADGE * 0.58), lineHeight: 1, zIndex: 3, padding: 0,
+              fontSize: Math.max(10, Math.round(BADGE * 0.58)), lineHeight: 1, zIndex: 3, padding: 0,
             });
 
             return (
@@ -1958,14 +1958,14 @@ export default function Management() {
                     <div style={{ textAlign: 'center', marginBottom: 4 }}>
                       <span style={{ display: 'inline-block', background: activeFc, color: '#fff', fontSize: 20, fontWeight: 900, padding: '2px 14px', borderRadius: 5 }}>{previewFit.score}</span>
                     </div>
-                    <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.45)', textAlign: 'center', marginBottom: 6 }}>{fitLabel(previewFit.score)}</div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', textAlign: 'center', marginBottom: 6 }}>{fitLabel(previewFit.score)}</div>
                     {previewFit.details.map(d => (
                       <div key={d.label} style={{ marginBottom: 5 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                          <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.75)', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', display: 'flex', alignItems: 'center', gap: 3 }}>
                             <span style={{ width: 5, height: 5, borderRadius: '50%', background: d.color, display: 'inline-block' }} />{d.label}
                           </span>
-                          <span style={{ fontSize: 8, fontWeight: 800, color: d.pass ? '#22c55e' : '#ef4444', marginLeft: 8 }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: d.pass ? '#22c55e' : '#ef4444', marginLeft: 8 }}>
                             {d.actual}<span style={{ fontWeight: 400, color: 'rgba(255,255,255,0.4)' }}>/{d.required}</span>
                           </span>
                         </div>
@@ -2117,7 +2117,7 @@ export default function Management() {
                         }
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.employees?.name?.split(' ')[0] || '?'}</div>
-                          <div style={{ fontSize: 9, color: 'var(--muted)' }}>{w.employees?.team ? `Team ${w.employees.team}` : ''}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{w.employees?.team ? `Team ${w.employees.team}` : ''}</div>
                         </div>
                       </div>
                     ))}
@@ -2157,8 +2157,8 @@ export default function Management() {
                 <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{radarWorker.employees?.name}</div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{radarWorker.employees?.employee_id_code}</div>
                 <div style={{ display: 'flex', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
-                  {radarWorker.employees?.team && <span style={{ fontSize: 10, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', borderRadius: 4, padding: '1px 6px' }}>Team {radarWorker.employees.team}</span>}
-                  {radarWorker.employees?.section && <span style={{ fontSize: 10, color: '#a78bfa', background: 'rgba(167,139,250,0.12)', borderRadius: 4, padding: '1px 6px' }}>📍 {radarWorker.employees.section}</span>}
+                  {radarWorker.employees?.team && <span style={{ fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', borderRadius: 4, padding: '1px 6px' }}>Team {radarWorker.employees.team}</span>}
+                  {radarWorker.employees?.section && <span style={{ fontSize: 11, color: '#a78bfa', background: 'rgba(167,139,250,0.12)', borderRadius: 4, padding: '1px 6px' }}>📍 {radarWorker.employees.section}</span>}
                 </div>
               </div>
               <button onClick={() => setRadarWorker(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', padding: '0 4px', alignSelf: 'flex-start' }}>✕</button>
@@ -2178,7 +2178,7 @@ export default function Management() {
                 <ResponsiveContainer width="100%" height={200}>
                   <RadarChart data={radarDataFiltered}>
                     <PolarGrid stroke="var(--border2)" />
-                    <PolarAngleAxis dataKey="subject" tick={{ fill: 'var(--text2)', fontSize: 10 }} />
+                    <PolarAngleAxis dataKey="subject" tick={{ fill: 'var(--text2)', fontSize: 11 }} />
                     <Radar name="ทักษะ" dataKey="score" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.25} strokeWidth={2} />
                   </RadarChart>
                 </ResponsiveContainer>
@@ -2339,7 +2339,7 @@ export default function Management() {
               {/* Current worker */}
               {workerHere && (
                 <div style={{ marginBottom: 12, padding: '10px 12px', background: `${fitColor(fitHere.score)}12`, border: `1px solid ${fitColor(fitHere.score)}40`, borderRadius: 12 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>ประจำอยู่ตอนนี้</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>ประจำอยู่ตอนนี้</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     {workerHere.employees?.image_url
                       ? <img src={workerHere.employees.image_url} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fitColor(fitHere.score)}`, flexShrink: 0 }} />
@@ -2373,7 +2373,7 @@ export default function Management() {
               )}
 
               {/* Pool workers sorted by fit */}
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
                 พนักงานใน Pool ({sortedPool.length} คน) — เรียงตาม Fit Score
               </div>
               <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -2396,9 +2396,9 @@ export default function Management() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 5 }}>
                           {w.employees?.name}
-                          {isHome && <span style={{ fontSize: 10 }} title="ตำแหน่งประจำ">🏠</span>}
+                          {isHome && <span style={{ fontSize: 11 }} title="ตำแหน่งประจำ">🏠</span>}
                         </div>
-                        <div style={{ fontSize: 10, color: 'var(--muted)' }}>{w.employees?.employee_id_code}{w.employees?.team ? ` · Team ${w.employees.team}` : ''}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{w.employees?.employee_id_code}{w.employees?.team ? ` · Team ${w.employees.team}` : ''}</div>
                       </div>
                       <div style={{ background: fc, color: '#fff', fontWeight: 900, fontSize: 16, padding: '3px 10px', borderRadius: 6, flexShrink: 0 }}>{w._fit.score}</div>
                     </div>
@@ -2543,7 +2543,7 @@ export default function Management() {
                           <input type="radio" name="moveType" value={opt.v} checked={log4MForm.moveType === opt.v}
                             onChange={() => setLog4MForm({ ...log4MForm, moveType: opt.v })} style={{ display: 'none' }} />
                           <span style={{ fontSize: 13, fontWeight: 700 }}>{opt.label}</span>
-                          <span style={{ fontSize: 10, color: 'var(--muted)', textAlign: 'center' }}>{opt.desc}</span>
+                          <span style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>{opt.desc}</span>
                         </label>
                       ))}
                     </div>
@@ -2712,14 +2712,14 @@ function WorkerHoverCard({ card, skillDefs }) {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', lineHeight: 1.2 }}>{emp?.name || '—'}</div>
-            <div style={{ fontSize: 10, color: 'var(--muted)' }}>{emp?.employee_id_code || ''}</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp?.employee_id_code || ''}</div>
             {stationName && (
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)' }}>→ {stationName}</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>→ {stationName}</div>
             )}
-            {fit && <div style={{ fontSize: 10, fontWeight: 700, color: fc }}>{fitLabel(fit.score)}</div>}
+            {fit && <div style={{ fontSize: 11, fontWeight: 700, color: fc }}>{fitLabel(fit.score)}</div>}
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-              {emp?.team && <span style={{ fontSize: 9, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
-              {emp?.section && <span style={{ fontSize: 9, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
+              {emp?.team && <span style={{ fontSize: 11, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
+              {emp?.section && <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
             </div>
           </div>
         </div>
@@ -2732,15 +2732,15 @@ function WorkerHoverCard({ card, skillDefs }) {
                 const sc = pass === false ? '#ef4444' : pass === true ? 'var(--accent)' : 'var(--text2)';
                 return (
                   <div key={s.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', border: `1px solid ${sc}33`, borderRadius: 5, padding: '4px 6px' }}>
-                    <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 4 }}>{s.label}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 4 }}>{s.label}</span>
                     <span style={{ fontSize: 11, fontWeight: 900, color: sc, fontFamily: 'var(--font-display)', flexShrink: 0 }}>
-                      {s.score > 0 ? s.score : '—'}{s.req ? <span style={{ fontSize: 9, opacity: 0.6 }}>/{s.req.required}</span> : ''}
+                      {s.score > 0 ? s.score : '—'}{s.req ? <span style={{ fontSize: 11, opacity: 0.6 }}>/{s.req.required}</span> : ''}
                     </span>
                   </div>
                 );
               })}
               {hiddenCount > 0 && (
-                <div style={{ fontSize: 9, color: 'var(--muted)', textAlign: 'center' }}>+{hiddenCount} ทักษะอื่นๆ</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>+{hiddenCount} ทักษะอื่นๆ</div>
               )}
             </div>
           )}
@@ -2751,12 +2751,12 @@ function WorkerHoverCard({ card, skillDefs }) {
           Thai skill labels don't clip past the card edges at high skill counts. */}
       {skillDefs.length > 0 && radarData.length > 0 && (
         <>
-          <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', textAlign: 'center', marginTop: 4, marginBottom: 2 }}>ภาพรวมทักษะ</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', textAlign: 'center', marginTop: 4, marginBottom: 2 }}>ภาพรวมทักษะ</div>
           <div style={{ width: '100%', height: 220 }}>
             <ResponsiveContainer width="100%" height="100%">
               <RadarChart data={radarData} margin={{ top: 16, right: 70, bottom: 16, left: 70 }}>
                 <PolarGrid stroke="var(--border2)" />
-                <PolarAngleAxis dataKey="skill" tick={{ fontSize: 10, fill: 'var(--muted)', fontWeight: 600 }} />
+                <PolarAngleAxis dataKey="skill" tick={{ fontSize: 11, fill: 'var(--muted)', fontWeight: 600 }} />
                 <Radar name="ทักษะ" dataKey="score" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.22} strokeWidth={1.5} dot={{ r: 2, fill: 'var(--accent)' }} />
                 {fit && (
                   <Radar name="required" dataKey={() => null}
@@ -2786,7 +2786,7 @@ function FitPopup({ fitPopup, onClose }) {
         <img src={fitPopup.worker.employees?.image_url || ''} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2.5px solid ${fc}`, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 13, color: '#f0f0f4' }}>{fitPopup.worker.employees?.name}</div>
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', marginTop: 1 }}>→ {fitPopup.station.station_name}</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 1 }}>→ {fitPopup.station.station_name}</div>
         </div>
         <div style={{ background: fc, color: '#fff', fontWeight: 900, fontSize: 22, padding: '4px 10px', borderRadius: 6, flexShrink: 0 }}>{fitPopup.fit.score}</div>
       </div>
@@ -2794,10 +2794,10 @@ function FitPopup({ fitPopup, onClose }) {
       {fitPopup.fit.details.map(d => (
         <div key={d.label} style={{ marginBottom: 7 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: d.color, display: 'inline-block' }} />{d.label}
             </span>
-            <span style={{ fontSize: 10, fontWeight: 800, color: d.pass ? '#22c55e' : '#ef4444' }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: d.pass ? '#22c55e' : '#ef4444' }}>
               {d.actual}<span style={{ color: 'rgba(255,255,255,0.35)', fontWeight: 400 }}>/{d.required}%</span> {d.pass ? '✓' : '✗'}
             </span>
           </div>

@@ -989,8 +989,8 @@ export default function LineSetup() {
                   }}
                   onClick={() => { setSelectedLine(l.name); setTempPos(null); setFormData({ id: null, name: '', requirements: {} }); }}
                 >
-                  {l._isChild && <span style={{ fontSize: 10, color: 'var(--muted)', flexShrink: 0 }}>└</span>}
-                  {l._isParent && <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>▼</span>}
+                  {l._isChild && <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>└</span>}
+                  {l._isParent && <span style={{ fontSize: 11, color: 'var(--accent)', flexShrink: 0 }}>▼</span>}
                   {editingLineId === l.id ? (
                     <input
                       autoFocus
@@ -1007,7 +1007,7 @@ export default function LineSetup() {
                   ) : (
                     <span style={{ fontSize: 13, flex: 1, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {l.name}
-                      {l._orphan && <span style={{ fontSize: 9, color: '#ef4444', marginLeft: 4 }}>!parent missing</span>}
+                      {l._orphan && <span style={{ fontSize: 11, color: '#ef4444', marginLeft: 4 }}>!parent missing</span>}
                     </span>
                   )}
                   {editingLineId === l.id ? (
@@ -1026,7 +1026,7 @@ export default function LineSetup() {
                         value={l.section || ''}
                         onClick={e => e.stopPropagation()}
                         onChange={e => { e.stopPropagation(); handleUpdateSection(l, e.target.value); }}
-                        style={{ fontSize: 10, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0, maxWidth: 68 }}
+                        style={{ fontSize: 11, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0, maxWidth: 68 }}
                       >
                         <option value="">Section</option>
                         {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
@@ -1038,7 +1038,7 @@ export default function LineSetup() {
                           onClick={e => e.stopPropagation()}
                           onChange={e => { e.stopPropagation(); handleUpdateParent(l, e.target.value); }}
                           title="ไลน์หลัก (parent)"
-                          style={{ fontSize: 10, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: l.parent_line_name ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', flexShrink: 0, maxWidth: 76 }}
+                          style={{ fontSize: 11, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: l.parent_line_name ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', flexShrink: 0, maxWidth: 76 }}
                         >
                           <option value="">ไม่มีหลัก</option>
                           {lines.filter(p => p.name !== l.name && !p.parent_line_name).map(p => (
@@ -1119,8 +1119,8 @@ export default function LineSetup() {
                       return (
                         <div key={catKey}>
                           <div style={{ marginBottom: 4, paddingBottom: 3, borderBottom: `1px solid ${catMeta.color}33`, display: 'flex', alignItems: 'baseline', gap: 7 }}>
-                            <span style={{ fontSize: 10, fontWeight: 800, color: catMeta.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{catMeta.icon} {catMeta.label}</span>
-                            {catMeta.desc && <span style={{ fontSize: 9, color: catMeta.color, opacity: 0.7 }}>{catMeta.desc}</span>}
+                            <span style={{ fontSize: 11, fontWeight: 800, color: catMeta.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{catMeta.icon} {catMeta.label}</span>
+                            {catMeta.desc && <span style={{ fontSize: 11, color: catMeta.color, opacity: 0.7 }}>{catMeta.desc}</span>}
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                             {catSkills.map(skill => {
@@ -1144,7 +1144,7 @@ export default function LineSetup() {
                                         value={formData.requirements[skill.name]}
                                         onChange={e => setSkillScore(skill.name, e.target.value)}
                                         style={{ width: 46, fontSize: 11, padding: '2px 4px', textAlign: 'center' }} />
-                                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>%</span>
+                                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>%</span>
                                     </div>
                                   )}
                                 </div>
@@ -1165,7 +1165,7 @@ export default function LineSetup() {
                     style={{ width: 16, height: 16, accentColor: '#22c55e' }} />
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: formData.skill_allowance ? '#22c55e' : 'var(--text2)' }}>💰 จุดงานได้ค่าฝีมือ</div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>พนักงานที่ถูก assign จุดนี้จะได้ค่าฝีมือรายวัน</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>พนักงานที่ถูก assign จุดนี้จะได้ค่าฝีมือรายวัน</div>
                   </div>
                 </label>
                 {formData.skill_allowance && (
@@ -1207,9 +1207,9 @@ export default function LineSetup() {
                   <div onClick={() => canEdit && editStation(st)} style={{ cursor: canEdit ? 'pointer' : 'default', flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 5 }}>
                       {st.station_name}
-                      {st.skill_allowance && <span style={{ fontSize: 10, background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>💰 ค่าฝีมือ{st.skill_allowance_type ? ` (${st.skill_allowance_type})` : ''}</span>}
+                      {st.skill_allowance && <span style={{ fontSize: 11, background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>💰 ค่าฝีมือ{st.skill_allowance_type ? ` (${st.skill_allowance_type})` : ''}</span>}
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                       {reqs.length > 0
                         ? reqs.map(r => {
                             const def = skillDefs.find(d => d.name === r.skill_name);
@@ -1326,9 +1326,9 @@ export default function LineSetup() {
                     <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div onClick={() => canEdit && editWipPoint(p)} style={{ cursor: canEdit ? 'pointer' : 'default', flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
-                          {p.point_type === 'packaging' ? '📦' : '🧱'} {p.point_name} {isLow && <span style={{ fontSize: 10, background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>⚠️ ต่ำกว่า min</span>}
+                          {p.point_type === 'packaging' ? '📦' : '🧱'} {p.point_name} {isLow && <span style={{ fontSize: 11, background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>⚠️ ต่ำกว่า min</span>}
                         </div>
-                        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                           {p.point_type === 'packaging'
                             ? `${p.packaging_type ? `${p.packaging_type} · ` : ''}${p.packaging_no ? `${p.packaging_no} · ` : ''}`
                             : `${p.material_category ? `cat.${p.material_category} · ` : ''}${p.mat_no ? `${p.mat_no} · ` : ''}`}
@@ -1404,7 +1404,7 @@ export default function LineSetup() {
                         <option key={g} value={g} />
                       ))}
                     </datalist>
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
                       ใส่ชื่อกลุ่มเดียวกันให้เครื่องที่ทำงานคู่ขนานแบบ balance cycle time (เช่น Laser1/2/3) — ถ้าตัวใดหยุด ระบบจะลดกำลังผลิตตามสัดส่วน (1/จำนวนเครื่องในกลุ่ม) ไม่ใช่หยุดทั้งไลน์
                     </div>
                   </div>
@@ -1433,9 +1433,9 @@ export default function LineSetup() {
                     <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div onClick={() => canEdit && editMachinePoint(p)} style={{ cursor: canEdit ? 'pointer' : 'default', flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{p.machine_no}</div>
-                        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{mc?.machine_name || ''}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{mc?.machine_name || ''}</div>
                         {p.redundancy_group && (
-                          <div style={{ fontSize: 10, color: '#a855f7', fontWeight: 700, marginTop: 2 }}>🔀 {p.redundancy_group}</div>
+                          <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 700, marginTop: 2 }}>🔀 {p.redundancy_group}</div>
                         )}
                       </div>
                       {canEdit && <button onClick={() => deleteMachinePoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
@@ -1560,7 +1560,7 @@ export default function LineSetup() {
           </h4>
           {lines.find(l => l.name === selectedLine)?.section ? (
             <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 14 }}>
-              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
                 ใช้ดึงอัตโนมัติในใบสรุปค่าฝีมือ — กรอกครั้งเดียวต่อส่วนงาน ใช้ร่วมกันทุกไลน์ในส่วนนี้ (หัวหน้างานแยกตามไลน์ ตั้งค่าด้านบนในช่อง Standard Manpower)
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>

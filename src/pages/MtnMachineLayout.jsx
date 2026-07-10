@@ -298,7 +298,7 @@ export default function MtnMachineLayout() {
                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, borderTop: i ? '1px dashed var(--border)' : 'none', paddingTop: i ? 6 : 0 }}>
                         <span style={{ width: 9, height: 9, borderRadius: '50%', background: m.color, flexShrink: 0 }} />
                         <span style={{ fontWeight: 700, color: 'var(--text)' }}>{c.eqName ?? selInfo.name}</span>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: '#4d9fff', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>{DEPT_ICON[c.dept]} {DEPT_LABEL[c.dept] ?? c.dept}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>{DEPT_ICON[c.dept]} {DEPT_LABEL[c.dept] ?? c.dept}</span>
                         <span style={{ color: m.color, fontWeight: 700 }}>{m.label}</span>
                         <span style={{ color: 'var(--muted)' }}>{c.nextDue ? `ครบ ${c.nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })}${dd != null ? (dd < 0 ? ` (เกิน ${Math.abs(dd)} วัน)` : ` (อีก ${dd} วัน)`) : ''}` : 'ไม่มีรอบตายตัว'}</span>
                       </div>

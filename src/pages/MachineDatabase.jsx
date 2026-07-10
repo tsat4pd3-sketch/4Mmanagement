@@ -193,12 +193,12 @@ export default function MachineDatabase() {
                     <span style={{ fontSize: 14, fontWeight: 800, fontFamily: 'monospace', color: 'var(--text)' }}>{item.machine_no}</span>
                     {item.machine_name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{item.machine_name}</span>}
                     {item.machine_types && (
-                      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: `${item.machine_types.color}22`, color: item.machine_types.color, fontWeight: 700 }}>
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: `${item.machine_types.color}22`, color: item.machine_types.color, fontWeight: 700 }}>
                         {item.machine_types.icon || ''} {item.machine_types.label}
                       </span>
                     )}
-                    {!item.machine_type_id && <span style={{ fontSize: 10, color: '#f59e0b' }}>ยังไม่ระบุประเภท</span>}
-                    {!item.is_active && <span style={{ fontSize: 10, color: '#ef4444' }}>(ปิดใช้)</span>}
+                    {!item.machine_type_id && <span style={{ fontSize: 11, color: '#f59e0b' }}>ยังไม่ระบุประเภท</span>}
+                    {!item.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}>(ปิดใช้)</span>}
                   </div>
                 </div>
                 {(canEdit || canDelete) && (

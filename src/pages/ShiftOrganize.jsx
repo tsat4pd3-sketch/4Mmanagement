@@ -2,6 +2,7 @@ import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
+import { inSectionScope } from '../utils/sectionScope';
 import { toast } from '../components/Toast';
 
 function getWeekDates(refDate) {
@@ -23,7 +24,7 @@ function toDateStr(d) {
 }
 
 export default function ShiftOrganize() {
-  const { role } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canEdit = can('shift_schedule', 'edit', role);
 
   const [weekRef,   setWeekRef]   = useState(new Date());
@@ -79,8 +80,15 @@ export default function ShiftOrganize() {
   };
 
   const fetchEmployees = async () => {
-    const { data } = await supabase.from('employees').select('id, name, employee_id_code, line_id, production_lines(section)').eq('is_active', true).order('name');
-    setEmployees(data || []);
+    let q = supabase.from('employees').select('id, name, employee_id_code, line_id, production_lines(section)').eq('is_active', true);
+    // mandatory scope: leader → ไลน์ตัวเอง (server-side), role ที่ถูกจำกัด sections → กรองหลัง join ด้วย inSectionScope
+    if (role === 'leader' && userLineId) q = q.eq('line_id', userLineId);
+    const { data } = await q.order('name');
+    let scoped = data || [];
+    if (!(role === 'leader' && userLineId) && scopeSecs.length) {
+      scoped = scoped.filter(e => inSectionScope(scopeSecs, e.production_lines?.section));
+    }
+    setEmployees(scoped);
   };
 
   const fetchSchedules = async () => {
@@ -98,11 +106,17 @@ export default function ShiftOrganize() {
   const fetchOverrides = async () => {
     const { data } = await supabase
       .from('shift_overrides')
-      .select('id, work_date, employee_id, shift, reason, employees(name, employee_id_code)')
+      .select('id, work_date, employee_id, shift, reason, employees(name, employee_id_code, line_id, production_lines(section))')
       .gte('work_date', weekStart)
       .lte('work_date', weekEnd)
       .order('work_date');
-    setOverrides(data || []);
+    // mandatory scope: leader → override ของพนักงานไลน์ตัวเอง, role ที่ถูกจำกัด sections → เฉพาะส่วนงานใน scope
+    const scoped = (data || []).filter(o => {
+      if (role === 'leader' && userLineId) return String(o.employees?.line_id) === String(userLineId);
+      if (scopeSecs.length) return inSectionScope(scopeSecs, o.employees?.production_lines?.section);
+      return true;
+    });
+    setOverrides(scoped);
   };
 
   const getTeam = (lineId) =>
@@ -204,6 +218,33 @@ export default function ShiftOrganize() {
     return null;
   };
 
+  // ── mandatory scope (CLAUDE.md "Section/Line/Team Scoping") — leader → ไลน์ตัวเอง, role ที่ถูกจำกัด
+  // sections → เฉพาะส่วนงานใน scope · scope ว่าง ([]) = ไม่จำกัด เห็นหมดเหมือนเดิม ──
+  const scopedLines = (role === 'leader' && userLineId)
+    ? lines.filter(l => String(l.id) === String(userLineId))
+    : scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines;
+
+  const allSections = orgSections.length ? orgSections : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+  const scopedSections = (role === 'leader' && userLineId)
+    ? [...new Set(scopedLines.map(l => l.section).filter(Boolean))].sort()
+    : scopeSecs.length ? allSections.filter(s => inSectionScope(scopeSecs, s)) : allSections;
+
+  // merge event อยู่ใน scope เมื่อ: ระบุไลน์ → ไลน์นั้นอยู่ใน scope / ระบุ section → section นั้นอยู่ใน scope
+  // (leader เห็น merge ระดับ section ของ section ตัวเองด้วย เพราะกระทบไลน์ตัวเอง)
+  const mergeEventInScope = (evt) => {
+    if (role === 'leader' && userLineId) {
+      if (evt.line_id) return String(evt.line_id) === String(userLineId);
+      const myLine = lines.find(l => String(l.id) === String(userLineId));
+      return !!myLine?.section && inSectionScope([myLine.section], evt.section);
+    }
+    if (scopeSecs.length) {
+      if (evt.line_id) return inSectionScope(scopeSecs, lines.find(l => l.id === evt.line_id)?.section);
+      return inSectionScope(scopeSecs, evt.section);
+    }
+    return true;
+  };
+  const visibleMergeEvents = mergeEvents.filter(mergeEventInScope);
+
   const prevWeek = () => { const d = new Date(weekRef); d.setDate(d.getDate() - 7); setWeekRef(d); };
   const nextWeek = () => { const d = new Date(weekRef); d.setDate(d.getDate() + 7); setWeekRef(d); };
   const goToday  = () => setWeekRef(new Date());
@@ -254,7 +295,7 @@ export default function ShiftOrganize() {
             </tr>
           </thead>
           <tbody>
-            {lines.map(line => {
+            {scopedLines.map(line => {
               const team  = getTeam(line.id);
               const night = team === 'A' ? 'B' : team === 'B' ? 'A' : null;
               const isPending = pending[line.id] !== undefined;
@@ -414,14 +455,14 @@ export default function ShiftOrganize() {
             </tr>
           </thead>
           <tbody>
-            {mergeEvents.length === 0 && (
+            {visibleMergeEvents.length === 0 && (
               <tr>
                 <td colSpan={canEdit ? 6 : 5} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>
                   ไม่มีเหตุการณ์ยุบกะที่ใช้งานอยู่
                 </td>
               </tr>
             )}
-            {mergeEvents.map(evt => {
+            {visibleMergeEvents.map(evt => {
               const cnt = affectedCount(evt);
               const scopeLabel = evt.line_id
                 ? `ไลน์ ${lines.find(l => l.id === evt.line_id)?.name || evt.line_id}`
@@ -432,7 +473,7 @@ export default function ShiftOrganize() {
                   <td>
                     <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{scopeLabel}</span>
                     {cnt !== null && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--muted)' }}>({cnt} คน)</span>}
-                    {isActive && <span style={{ marginLeft: 6, fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontWeight: 700 }}>กำลังใช้งาน</span>}
+                    {isActive && <span style={{ marginLeft: 6, fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontWeight: 700 }}>กำลังใช้งาน</span>}
                   </td>
                   <td style={{ textAlign: 'center', fontSize: 13, whiteSpace: 'nowrap' }}>{evt.start_date}</td>
                   <td style={{ textAlign: 'center', fontSize: 13, whiteSpace: 'nowrap' }}>{evt.end_date}</td>
@@ -493,7 +534,7 @@ export default function ShiftOrganize() {
                   <label style={labelSt}>Section</label>
                   <select value={mrgSection} onChange={e => setMrgSection(e.target.value)}>
                     <option value="">— เลือก Section —</option>
-                    {(orgSections.length ? orgSections : [...new Set(lines.map(l => l.section).filter(Boolean))].sort()).map(sec => (
+                    {scopedSections.map(sec => (
                       <option key={sec} value={sec}>{sec}</option>
                     ))}
                   </select>
@@ -503,7 +544,7 @@ export default function ShiftOrganize() {
                   <label style={labelSt}>ไลน์ผลิต</label>
                   <select value={mrgLineId} onChange={e => setMrgLineId(e.target.value)}>
                     <option value="">— เลือกไลน์ —</option>
-                    {lines.map(l => (
+                    {scopedLines.map(l => (
                       <option key={l.id} value={l.id}>{l.name} {l.section ? `(${l.section})` : ''}</option>
                     ))}
                   </select>

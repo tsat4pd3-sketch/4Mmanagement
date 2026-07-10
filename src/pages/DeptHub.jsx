@@ -33,7 +33,7 @@ const DEPT_CSS = `
   }
   .dept-chip {
     display: inline-flex; align-items: center; gap: 4px;
-    font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
     padding: 2px 8px; border-radius: 20px;
     text-transform: uppercase;
   }
@@ -277,7 +277,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             {!d.available && (
               <div style={{
                 position: 'absolute', top: 14, right: 14,
-                fontSize: 9, fontWeight: 800, letterSpacing: '0.1em',
+                fontSize: 11, fontWeight: 800, letterSpacing: '0.1em',
                 padding: '3px 9px', borderRadius: 20,
                 background: 'rgba(255,255,255,0.07)',
                 color: 'var(--muted)',
