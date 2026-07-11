@@ -2304,7 +2304,7 @@ export default function Dashboard() {
                               background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
                               borderRadius: 4, padding: '2px 8px',
                               fontSize: Math.max(11, Math.round(MK * 0.24)), fontWeight: 700, color: '#fff',
-                              whiteSpace: 'nowrap', maxWidth: MK * 1.9,
+                              whiteSpace: 'nowrap', maxWidth: Math.max(MK * 1.9, 96),
                               overflow: 'hidden', textOverflow: 'ellipsis',
                               marginTop: -4, position: 'relative', zIndex: 1,
                             }}>{shortName}</div>
@@ -2362,14 +2362,14 @@ export default function Dashboard() {
                               <div style={{
                                 background: 'rgba(0,0,0,0.8)', borderRadius: 4, padding: '1px 6px',
                                 fontSize: Math.max(11, Math.round(MKS * 0.24)), fontWeight: 800, color: '#fff',
-                                whiteSpace: 'nowrap', maxWidth: MKS * 1.9, overflow: 'hidden', textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap', maxWidth: Math.max(MKS * 1.9, 88), overflow: 'hidden', textOverflow: 'ellipsis',
                               }}>
                                 {p.machine_no}
                               </div>
                               <div style={{
                                 background: 'rgba(239,68,68,0.25)', borderRadius: 3, padding: '0 5px',
                                 fontSize: Math.max(11, Math.round(MKS * 0.2)), fontWeight: 700, color: '#fca5a5',
-                                whiteSpace: 'nowrap', maxWidth: MKS * 2, overflow: 'hidden', textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap', maxWidth: Math.max(MKS * 2, 88), overflow: 'hidden', textOverflow: 'ellipsis',
                               }}>
                                 {first.dr_downtime_types?.name_th || 'Downtime'}{ongoing && elapsed != null ? ` · ${elapsed} นาที` : ''}
                               </div>

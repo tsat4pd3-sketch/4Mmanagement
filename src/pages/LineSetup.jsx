@@ -56,8 +56,8 @@ export default function LineSetup() {
   const [skillDefs, setSkillDefs] = useState([]);
   const [sectionOpts, setSectionOpts] = useState([]);
   const [activeTab, setActiveTab] = useState('stations'); // 'stations' | 'wip' | 'machines'
-  // ป้ายชื่อบนผัง 3 สถานะ เหมือนหน้า Management เป๊ะ (WYSIWYG): 'auto' | 'all' | 'none'
-  const [pillMode, setPillMode] = useState('auto');
+  // ป้ายชื่อบนผัง: โชว์/ซ่อน อย่างเดียว เหมือนหน้า Management เป๊ะ (WYSIWYG)
+  const [showPills, setShowPills] = useState(true);
 
   // ลากย้ายจุดที่มีอยู่แล้วได้ (ไม่ต้องลบสร้างใหม่) — drag เกินระยะนิดเดียวถือเป็นการลาก ไม่ใช่คลิกแก้ไข
   const imgRef = useRef(null);
@@ -673,20 +673,20 @@ export default function LineSetup() {
 
   // ขนาดหมุดวงกลมบนผัง — ใช้สูตรกลาง markerScale (src/utils/markerScale.js) ตัวเดียวกับหน้าแสดงผล
   // เพื่อให้ WYSIWYG: ขนาดหมุด + พฤติกรรมป้ายชื่อตอนจัดผัง ตรงกับที่ Management/Dashboard แสดงจริงเป๊ะ
-  // MK = จุดงานหลัก · SUB = หมุดรอง (เครื่องจักร/WIP) ย่อตามความแน่น · showSubPills = ป้ายหมุดรองซ่อนอัตโนมัติเมื่อแน่น
-  const { MK, SUB, showSubPills, pillFont: PILL_FONT, subPillFont, badgeFont } =
+  // MK = จุดงานหลัก · SUB = หมุดรอง (เครื่องจักร/WIP) ย่อตามความแน่น
+  const { MK, SUB, pillFont: PILL_FONT, subPillFont, badgeFont, pillMaxW, subPillMaxW } =
     markerScale(imgBox?.rw, { machineCount: machinePoints.length });
-  // ป้ายเครื่องจักร/WIP: auto = ซ่อนเมื่อผังแน่น · ปุ่ม 🏷️ วน auto/all/none (หมุดที่เลือก/แก้ไขโชว์ป้ายเสมอ)
-  const pillsOn = pillMode === 'all' || (pillMode === 'auto' && showSubPills);
-  const stationPillsOn = pillMode !== 'none'; // ป้ายจุดงานโชว์เสมอ ยกเว้นเลือกซ่อนทุกป้าย
+  // ปุ่ม 🏷️ โชว์/ซ่อนป้ายทุกชนิดจุด (หมุดที่เลือก/แก้ไขโชว์ป้ายเสมอ)
+  const pillsOn = showPills;
+  const stationPillsOn = showPills;
   const pillSt = {
     background: 'rgba(0,0,0,0.78)', borderRadius: 4, padding: '1px 6px',
     fontWeight: 700, color: '#fff', whiteSpace: 'nowrap',
-    overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: MK * 2,
+    overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: pillMaxW,
     fontSize: PILL_FONT, lineHeight: 1.35,
   };
-  // ป้ายของหมุดรอง (เครื่องจักร/WIP) — ฟอนต์/ความกว้างสเกลตามวง SUB
-  const subPillSt = { ...pillSt, fontSize: subPillFont, maxWidth: SUB * 2 };
+  // ป้ายของหมุดรอง (เครื่องจักร/WIP) — ฟอนต์สเกลตามวง SUB · ความกว้างขั้นต่ำต้องอ่านชื่อออก (markerScale.subPillMaxW)
+  const subPillSt = { ...pillSt, fontSize: subPillFont, maxWidth: subPillMaxW };
   // แถบป้ายใต้วงกลม — เกาะขอบล่างของวงกลม (อยู่ใน hit area เดียวกับหมุด: คลิก/ลากที่ป้ายได้)
   const pillStackSt = {
     position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
@@ -698,7 +698,8 @@ export default function LineSetup() {
   return (
     <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12, height: isMobile ? 'auto' : 'calc(100vh - 40px)' }}>
       {selectedLine && (
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+        // paddingRight เว้นที่ให้กระดิ่งแจ้งเตือน (fixed มุมขวาบน) — ไม่งั้นปุ่ม 🏷️ ที่ชิดขวาสุดโดนกระดิ่งทับ
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0, paddingRight: 52 }}>
           {TABS.map(t => (
             <button key={t.key}
               onClick={() => { setActiveTab(t.key); setTempPos(null); setWipTempPos(null); setMachineTempPos(null); setConnectMode(false); setConnectFrom(null); }}
@@ -712,16 +713,16 @@ export default function LineSetup() {
             </button>
           ))}
           <button
-            onClick={() => setPillMode(m => (m === 'auto' ? 'all' : m === 'all' ? 'none' : 'auto'))}
-            title={'ป้ายชื่อบนผัง (เหมือนหน้าแสดงผลจริง) — กดสลับ: อัตโนมัติ (จุดงานโชว์เสมอ เครื่อง/WIP ซ่อนเมื่อผังแน่น) → โชว์ทั้งหมด → ซ่อนทั้งหมด\nหมุดที่กำลังเลือก/แก้ไขโชว์ป้ายเสมอ'}
+            onClick={() => setShowPills(v => !v)}
+            title={'แสดง/ซ่อนป้ายชื่อทุกจุดบนผัง (เหมือนหน้าแสดงผลจริง)\nหมุดที่กำลังเลือก/แก้ไขโชว์ป้ายเสมอ'}
             style={{
               padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
               marginLeft: 'auto',
-              border: `1px solid ${pillMode !== 'auto' ? 'var(--accent)' : 'var(--border2)'}`,
-              background: pillMode === 'all' ? 'var(--accent-dim)' : 'var(--bg2)',
-              color: pillMode !== 'auto' ? 'var(--accent)' : 'var(--text2)',
+              border: `1px solid ${showPills ? 'var(--accent)' : 'var(--border2)'}`,
+              background: showPills ? 'var(--accent-dim)' : 'var(--bg2)',
+              color: showPills ? 'var(--accent)' : 'var(--text2)',
             }}>
-            {pillMode === 'auto' ? '🏷️ ป้ายอัตโนมัติ' : pillMode === 'all' ? '🏷️ โชว์ทุกป้าย' : '🏷️ ซ่อนป้าย'}
+            {showPills ? '🏷️ ซ่อนป้าย' : '🏷️ โชว์ป้าย'}
           </button>
         </div>
       )}

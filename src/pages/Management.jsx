@@ -189,9 +189,9 @@ export default function Management() {
   const [filterMan,       setFilterMan]       = useState(true);
   const [filterMachine,   setFilterMachine]   = useState(false);
   const [filterWip,       setFilterWip]       = useState(false);
-  // ป้ายชื่อบนผัง 3 สถานะ (คุมทุกชนิดจุด: คน/เครื่องจักร/WIP — UI-CONVENTIONS §1):
-  // 'auto' = คนโชว์เสมอ, เครื่อง/WIP ซ่อนอัตโนมัติเมื่อผังแน่น · 'all' = โชว์ทุกป้าย · 'none' = ซ่อนทุกป้าย (ป้ายเตือน alarm/ต่ำกว่า min โชว์เสมอ)
-  const [pillMode,        setPillMode]        = useState('auto');
+  // ป้ายชื่อบนผัง: โชว์/ซ่อน อย่างเดียว คุมทุกชนิดจุด (คน/เครื่องจักร/WIP — UI-CONVENTIONS §1)
+  // ป้ายเตือน (เครื่อง Downtime / WIP ต่ำกว่า min / หมุดที่กำลังเลือก) โชว์เสมอแม้ซ่อนป้าย
+  const [showPills,       setShowPills]       = useState(true);
   const [docImagePreview, setDocImagePreview] = useState(null);
   const [isSavingDoc,     setIsSavingDoc]     = useState(false);
   const [lineProdData,    setLineProdData]    = useState(null); // heijunka data for selected line
@@ -946,22 +946,22 @@ export default function Management() {
             )}
           </button>
         ))}
-        {/* ป้ายชื่อทุกชนิดจุด (คน/เครื่องจักร/WIP) — กดวน 3 สถานะ: อัตโนมัติ → โชว์ทั้งหมด → ซ่อนทั้งหมด
-            (auto: คนโชว์เสมอ เครื่อง/WIP ซ่อนเมื่อผังแน่น >18 เครื่อง · ป้ายเตือน alarm/ต่ำกว่า min โชว์เสมอทุกสถานะ) */}
+        {/* ป้ายชื่อทุกชนิดจุด (คน/เครื่องจักร/WIP) — โชว์/ซ่อน อย่างเดียว label บอก action ที่จะเกิดเมื่อกด
+            (ป้ายเตือน alarm/ต่ำกว่า min โชว์เสมอแม้ซ่อนป้าย) */}
         <button
-          onClick={() => setPillMode(m => (m === 'auto' ? 'all' : m === 'all' ? 'none' : 'auto'))}
-          title={'ป้ายชื่อบนผัง — กดเพื่อสลับ: อัตโนมัติ (คนโชว์เสมอ เครื่อง/WIP ซ่อนเมื่อผังแน่น) → โชว์ทั้งหมด → ซ่อนทั้งหมด\nป้ายเตือน (เครื่อง Downtime / WIP ต่ำกว่า min) แสดงเสมอไม่ว่าสถานะไหน'}
+          onClick={() => setShowPills(v => !v)}
+          title={'แสดง/ซ่อนป้ายชื่อทุกจุดบนผัง (คน/เครื่องจักร/WIP)\nป้ายเตือน (เครื่อง Downtime / WIP ต่ำกว่า min) แสดงเสมอ'}
           style={{
             height: 36, borderRadius: 8, padding: '0 10px',
-            background: pillMode === 'all' ? 'rgba(148,163,184,0.28)' : 'var(--bg3)',
-            border: pillMode !== 'auto' ? '1px solid #94a3b8' : '1px solid var(--border2)',
-            color: pillMode !== 'auto' ? 'var(--text)' : 'var(--text2)',
+            background: showPills ? 'rgba(148,163,184,0.28)' : 'var(--bg3)',
+            border: showPills ? '1px solid #94a3b8' : '1px solid var(--border2)',
+            color: showPills ? 'var(--text)' : 'var(--text2)',
             fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
             cursor: 'pointer', boxShadow: 'var(--shadow-sm)',
           }}
         >
-          {pillMode === 'auto' ? '🏷️ ป้ายอัตโนมัติ' : pillMode === 'all' ? '🏷️ โชว์ทุกป้าย' : '🏷️ ซ่อนป้าย'}
+          {showPills ? '🏷️ ซ่อนป้าย' : '🏷️ โชว์ป้าย'}
         </button>
       </div>
 
@@ -1741,13 +1741,12 @@ export default function Management() {
               `}</style>
               {imgBox && (() => {
                 // ขนาด marker ทั้งหมดมาจาก util กลาง (WYSIWYG เดียวกับ LineSetup) — density-aware ตามจำนวนเครื่อง
-                const { MK, SUB, showSubPills, ring: RING, subRing: SUB_RING, pillFont: PILL_F, subPillFont: SUB_PILL_F, badgeFont: FIT_F } =
+                const { MK, SUB, ring: RING, subRing: SUB_RING, pillFont: PILL_F, subPillFont: SUB_PILL_F, badgeFont: FIT_F, pillMaxW: PILL_MAXW, subPillMaxW: SUB_PILL_MAXW } =
                   markerScale(imgBox.rw, { machineCount: machinePoints.length });
-                // ป้ายชื่อเครื่อง/WIP: auto = ซ่อนอัตโนมัติเมื่อผังแน่น · ปุ่ม 🏷️ วนสถานะ auto/all/none (alarm/below-min โชว์เสมอ)
-                const pillsOn = pillMode === 'all' || (pillMode === 'auto' && showSubPills);
-                const stationPillsOn = pillMode !== 'none'; // ป้ายชื่อจุดงาน (คน) โชว์เสมอ ยกเว้นผู้ใช้เลือกซ่อนทุกป้าย
+                // ป้ายชื่อทุกชนิดจุด: ปุ่ม 🏷️ โชว์/ซ่อน อย่างเดียว (ป้ายเตือน alarm/below-min โชว์เสมอ)
+                const pillsOn = showPills;
+                const stationPillsOn = showPills;
                 const BADGE   = Math.max(14, Math.round(MK * 0.3));  // corner chip size
-                const PILL_MAXW = Math.round(MK * 1.8);
                 // clamp ตำแหน่ง "แสดงผล" ไม่ให้วงกลม+ป้ายตกขอบผัง — ตำแหน่งจริงใน DB ไม่เปลี่ยน
                 // (จุดที่ตั้งใน Line Setup ชิดขอบได้ แต่ marker ที่ใหญ่กว่าจุดต้องไม่โดนตัด)
                 const clampPos = (x, y, size) => ({
@@ -2014,7 +2013,7 @@ export default function Management() {
                             borderRadius: 4, padding: '1px 6px',
                             fontSize: SUB_PILL_F, fontWeight: 700,
                             color: isLow ? '#fecaca' : '#fff',
-                            whiteSpace: 'nowrap', maxWidth: Math.round(WK * 1.8), overflow: 'hidden', textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap', maxWidth: SUB_PILL_MAXW, overflow: 'hidden', textOverflow: 'ellipsis',
                           }}>{p.point_name}</div>
                           <div style={{
                             marginTop: 2, fontSize: SUB_PILL_F, fontWeight: isLow ? 800 : 600,
@@ -2066,14 +2065,14 @@ export default function Management() {
                             borderRadius: 4, padding: '1px 6px',
                             fontSize: SUB_PILL_F, fontWeight: 700,
                             color: alarms ? '#fecaca' : '#fff',
-                            whiteSpace: 'nowrap', maxWidth: Math.round(MKS * 1.8), overflow: 'hidden', textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap', maxWidth: SUB_PILL_MAXW, overflow: 'hidden', textOverflow: 'ellipsis',
                           }}>{p.machine_no}</div>
                           <div style={{
                             marginTop: 2, fontSize: SUB_PILL_F, fontWeight: alarms ? 800 : 600,
                             color: alarms ? '#fca5a5' : '#a3a3a3',
                             background: alarms ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.55)',
                             padding: '0 5px', borderRadius: 3, lineHeight: 1.5,
-                            whiteSpace: 'nowrap', maxWidth: Math.round(MKS * 2), overflow: 'hidden', textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap', maxWidth: SUB_PILL_MAXW, overflow: 'hidden', textOverflow: 'ellipsis',
                           }}>
                             {alarms
                               ? `${firstAlarm.dr_downtime_types?.name_th || 'Downtime'}${ongoing && elapsed != null ? ` ${elapsed}น.` : ''}`
