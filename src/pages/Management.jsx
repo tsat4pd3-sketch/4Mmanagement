@@ -189,7 +189,9 @@ export default function Management() {
   const [filterMan,       setFilterMan]       = useState(true);
   const [filterMachine,   setFilterMachine]   = useState(false);
   const [filterWip,       setFilterWip]       = useState(false);
-  const [forcePills,      setForcePills]      = useState(false); // บังคับโชว์ป้ายชื่อเครื่อง/WIP เมื่อผังแน่นจนป้ายถูกซ่อนอัตโนมัติ
+  // ป้ายชื่อบนผัง 3 สถานะ (คุมทุกชนิดจุด: คน/เครื่องจักร/WIP — UI-CONVENTIONS §1):
+  // 'auto' = คนโชว์เสมอ, เครื่อง/WIP ซ่อนอัตโนมัติเมื่อผังแน่น · 'all' = โชว์ทุกป้าย · 'none' = ซ่อนทุกป้าย (ป้ายเตือน alarm/ต่ำกว่า min โชว์เสมอ)
+  const [pillMode,        setPillMode]        = useState('auto');
   const [docImagePreview, setDocImagePreview] = useState(null);
   const [isSavingDoc,     setIsSavingDoc]     = useState(false);
   const [lineProdData,    setLineProdData]    = useState(null); // heijunka data for selected line
@@ -944,24 +946,23 @@ export default function Management() {
             )}
           </button>
         ))}
-        {/* ผังแน่น (>18 เครื่อง) — ป้ายชื่อเครื่อง/WIP ถูกซ่อนอัตโนมัติ ปุ่มนี้บังคับเปิดทั้งหมด (alarm/below-min โชว์เสมอไม่ต้องกด) */}
-        {machinePoints.length > 18 && (
-          <button
-            onClick={() => setForcePills(v => !v)}
-            title="ผังแน่น — ป้ายชื่อเครื่องจักร/WIP ถูกซ่อนอัตโนมัติ กดเพื่อบังคับแสดงป้ายทั้งหมด"
-            style={{
-              height: 36, borderRadius: 8, padding: '0 10px',
-              background: forcePills ? 'rgba(148,163,184,0.28)' : 'var(--bg3)',
-              border: forcePills ? '1px solid #94a3b8' : '1px solid var(--border2)',
-              color: forcePills ? 'var(--text)' : 'var(--text2)',
-              fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-              cursor: 'pointer', boxShadow: 'var(--shadow-sm)',
-            }}
-          >
-            🏷️ ป้ายชื่อ
-          </button>
-        )}
+        {/* ป้ายชื่อทุกชนิดจุด (คน/เครื่องจักร/WIP) — กดวน 3 สถานะ: อัตโนมัติ → โชว์ทั้งหมด → ซ่อนทั้งหมด
+            (auto: คนโชว์เสมอ เครื่อง/WIP ซ่อนเมื่อผังแน่น >18 เครื่อง · ป้ายเตือน alarm/ต่ำกว่า min โชว์เสมอทุกสถานะ) */}
+        <button
+          onClick={() => setPillMode(m => (m === 'auto' ? 'all' : m === 'all' ? 'none' : 'auto'))}
+          title={'ป้ายชื่อบนผัง — กดเพื่อสลับ: อัตโนมัติ (คนโชว์เสมอ เครื่อง/WIP ซ่อนเมื่อผังแน่น) → โชว์ทั้งหมด → ซ่อนทั้งหมด\nป้ายเตือน (เครื่อง Downtime / WIP ต่ำกว่า min) แสดงเสมอไม่ว่าสถานะไหน'}
+          style={{
+            height: 36, borderRadius: 8, padding: '0 10px',
+            background: pillMode === 'all' ? 'rgba(148,163,184,0.28)' : 'var(--bg3)',
+            border: pillMode !== 'auto' ? '1px solid #94a3b8' : '1px solid var(--border2)',
+            color: pillMode !== 'auto' ? 'var(--text)' : 'var(--text2)',
+            fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+            cursor: 'pointer', boxShadow: 'var(--shadow-sm)',
+          }}
+        >
+          {pillMode === 'auto' ? '🏷️ ป้ายอัตโนมัติ' : pillMode === 'all' ? '🏷️ โชว์ทุกป้าย' : '🏷️ ซ่อนป้าย'}
+        </button>
       </div>
 
       {/* ── Pool Panel ── */}
@@ -1742,8 +1743,9 @@ export default function Management() {
                 // ขนาด marker ทั้งหมดมาจาก util กลาง (WYSIWYG เดียวกับ LineSetup) — density-aware ตามจำนวนเครื่อง
                 const { MK, SUB, showSubPills, ring: RING, subRing: SUB_RING, pillFont: PILL_F, subPillFont: SUB_PILL_F, badgeFont: FIT_F } =
                   markerScale(imgBox.rw, { machineCount: machinePoints.length });
-                // ป้ายชื่อเครื่อง/WIP: auto-hide เมื่อผังแน่น — ผู้ใช้กด 🏷️ บังคับเปิดได้ (alarm/below-min โชว์เสมอ)
-                const pillsOn = showSubPills || forcePills;
+                // ป้ายชื่อเครื่อง/WIP: auto = ซ่อนอัตโนมัติเมื่อผังแน่น · ปุ่ม 🏷️ วนสถานะ auto/all/none (alarm/below-min โชว์เสมอ)
+                const pillsOn = pillMode === 'all' || (pillMode === 'auto' && showSubPills);
+                const stationPillsOn = pillMode !== 'none'; // ป้ายชื่อจุดงาน (คน) โชว์เสมอ ยกเว้นผู้ใช้เลือกซ่อนทุกป้าย
                 const BADGE   = Math.max(14, Math.round(MK * 0.3));  // corner chip size
                 const PILL_MAXW = Math.round(MK * 1.8);
                 // clamp ตำแหน่ง "แสดงผล" ไม่ให้วงกลม+ป้ายตกขอบผัง — ตำแหน่งจริงใน DB ไม่เปลี่ยน
@@ -1922,7 +1924,9 @@ export default function Management() {
                   )}
                 </div>
 
-                {/* ป้ายห้อยใต้แบบ absolute — ไม่ดัน layout เพื่อให้ศูนย์กลางวงกลม = พิกัดจริง (กัน marker ลอยเหนือจุด) */}
+                {/* ป้ายห้อยใต้แบบ absolute — ไม่ดัน layout เพื่อให้ศูนย์กลางวงกลม = พิกัดจริง (กัน marker ลอยเหนือจุด)
+                    ซ่อนได้เมื่อผู้ใช้เลือก "ซ่อนป้าย" (🏷️) — แต่ตอนกำลังลาก/แตะเลือกคนต้องโชว์เสมอ (ต้องเห็น fit preview) */}
+                {(stationPillsOn || isOver || isPulse) && (
                 <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2 }}>
                 {/* station-name pill below the circle */}
                 <div title={st.station_name} style={{
@@ -1947,6 +1951,7 @@ export default function Management() {
                   </div>
                 )}
                 </div>
+                )}
 
                 {/* Desktop drag-preview fit popup — outside inner div so overflow:hidden doesn't clip it */}
                 {previewFit && !isMobile && (
