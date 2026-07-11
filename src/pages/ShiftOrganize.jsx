@@ -282,8 +282,8 @@ export default function ShiftOrganize() {
         </div>
       </div>
 
-      {/* Weekly Shift Table */}
-      <div className="card" style={{ marginBottom: 8 }}>
+      {/* Weekly Shift Table — overflowX: ตารางกว้าง ~610px ให้เลื่อนแนวนอนบนมือถือ (desktop ไม่มี scrollbar เพราะพื้นที่พอ) */}
+      <div className="card" style={{ marginBottom: 8, overflowX: 'auto' }}>
         <table>
           <thead>
             <tr>

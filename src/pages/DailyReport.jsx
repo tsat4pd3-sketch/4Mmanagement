@@ -4339,7 +4339,8 @@ function ExportTab() {
 
   const labelFor = key => REPORT_TYPES.find(r => r.key === key)?.label || key;
 
-  const sel = { background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--text)', fontSize: 13 };
+  // width:'auto' กัน trap index.css input{width:100%} ยืดช่องใน filter bar (pattern เดียวกับ OEEAnalytics)
+  const sel = { background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--text)', fontSize: 13, width: 'auto' };
   const btnSm = (color) => ({ padding: '7px 14px', borderRadius: 7, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 12, background: color, color: '#fff' });
 
   return (

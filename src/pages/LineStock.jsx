@@ -1254,13 +1254,16 @@ export default function LineStock() {
   return (
     <div style={{ padding:'clamp(12px,2vw,24px)', maxWidth:'min(96vw, 2000px)', margin:'0 auto' }}>
       {/* Tab bar */}
-      <div style={{ display:'flex', gap:4, marginBottom:20, borderBottom:'2px solid var(--border)', paddingBottom:0 }}>
+      {/* flexWrap: จอแคบแท็บตกบรรทัดใหม่ได้ ไม่ล้นจอ (desktop แถวเดียวพอ — เหมือนเดิม)
+          หมายเหตุ: ห้ามใช้ overflowX:'auto' ที่นี่ — ปุ่มมี marginBottom:-2 ซ้อนเส้นใต้ จะโดน clip */}
+      <div style={{ display:'flex', gap:4, marginBottom:20, borderBottom:'2px solid var(--border)', paddingBottom:0, flexWrap:'wrap' }}>
         {TABS.map(t => (
           <button
             key={t.key}
             onClick={() => setActiveTab(t.key)}
             style={{
               padding:'9px 20px',
+              whiteSpace:'nowrap',
               fontSize:13,
               fontWeight:700,
               fontFamily:'var(--font-body)',

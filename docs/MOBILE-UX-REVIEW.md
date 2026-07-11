@@ -99,12 +99,15 @@ padding 4-6px fontSize 11 ≈ สูง 24-28px · **วิธีแก้:** ru
 
 ## 4. แผนแก้แนะนำ (เรียงเป็นเฟส — ทุกเฟส build ผ่าน + desktop เดิมเป๊ะ)
 
-**เฟส 1 — Quick wins (แก้เล็ก ผลชัด ไม่มีความเสี่ยง):**
-1. `ShiftOrganize.jsx:286` ครอบตารางหลักด้วย `overflowX:'auto'`
-2. `ProductMaster.jsx:424` tab bar เพิ่ม `overflowX:'auto', maxWidth:'100%'`
-3. `LineStock.jsx:1197` + `HeijunkaKanban.jsx:1814` เพิ่ม `flexWrap:'wrap'`
-4. `Checkin.jsx:1587` → `width:'min(380px,94vw)'`
-5. trap width: `DailyReport.jsx:4342` (`width:'auto'`), `Dashboard.jsx:783` (`width:150`)
+**เฟส 1 — Quick wins (แก้เล็ก ผลชัด ไม่มีความเสี่ยง): ✅ ทำแล้ว 2026-07-11**
+1. ✅ `ShiftOrganize.jsx` ครอบตารางกะรายสัปดาห์ด้วย `overflowX:'auto'`
+2. ✅ `ProductMaster.jsx` tab bar เพิ่ม `overflowX:'auto', maxWidth:'100%'` + ปุ่ม nowrap
+3. ✅ `LineStock.jsx` tab bar + `HeijunkaKanban.jsx` view toggle → `flexWrap:'wrap'`
+   (⚠️ tab bar LineStock ใช้ overflowX ไม่ได้ — ปุ่มมี `marginBottom:-2` ซ้อนเส้นใต้ container,
+   overflow-x:auto จะบังคับ overflow-y:auto ไปด้วยแล้ว clip ส่วนที่จงใจล้น/เกิด scrollbar บน desktop)
+4. ✅ `Checkin.jsx` Export modal → `width:'min(380px,94vw)'`
+5. ✅ trap width: `DailyReport.jsx` object `sel` + `Dashboard.jsx` date picker → `width:'auto'`
+   (ใช้ `width:'auto'` ทั้งคู่ ไม่ fix ตัวเลข — คงขนาดตามเนื้อหาเท่า desktop เดิม)
 
 **เฟส 2 — หน้าใช้งานหน้างานจริง (มือถือ-need สูง):**
 6. `DailyReport.jsx:1699` session sidebar → isMobile `'1fr'`

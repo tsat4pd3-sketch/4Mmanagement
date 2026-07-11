@@ -779,8 +779,9 @@ export default function Dashboard() {
             padding: '8px 14px', borderRadius: 10,
           }}>
             <span style={{ fontSize: 15, color: 'var(--muted)' }}>📅</span>
+            {/* width:'auto' กัน trap index.css input{width:100%} ใน flex row (ดู "กับดัก CSS" ใน CLAUDE.md) */}
             <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
-              style={{ border: 'none', background: 'transparent', color: 'var(--accent)', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, outline: 'none', padding: 0 }} />
+              style={{ border: 'none', background: 'transparent', color: 'var(--accent)', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, outline: 'none', padding: 0, width: 'auto' }} />
           </div>
         </motion.div>
       </div>
