@@ -98,6 +98,13 @@ model: inherit
   · ทั้ง 3 ต้องหัก letterbox ผ่าน hook กลาง `src/utils/useImgBox.js` (วาง pin บน layer
   ox/oy/rw/rh + แปลงคลิกจาก layer เดียวกัน) และ maxHeight รูป = 300 เท่ากัน —
   grep: pin ที่วางเป็น % ของ container ตรงๆ บน img objectFit:contain
+- **F10** (2026-07-11) branch มือถือ: หน้าใหม่/แก้ใหม่ใช้ hook กลาง `src/utils/useIsMobile.js`
+  — grep `window.innerWidth <= 768` ที่คำนวณครั้งเดียวนอก hook = ผิด convention ·
+  branch มือถือต้องเป็น additive (จอ >768px render เหมือนเดิม) ·
+  ฟอร์ม grid หลายคอลัมน์ใน modal → ติด `className="mgrid"` · ปุ่มไอคอนเล็กในตาราง →
+  `className="tbtn"` · บอร์ดเวลา 24 ชม.: มือถืออนุญาต scroll แนวนอน (UI-CONVENTIONS §6)
+  แต่ desktop ห้าม scroll เหมือนเดิม · ลาก marker ใช้ pointer events (`onPointerDown` +
+  `touchAction:'none'`) ไม่ใช่ mouse events อย่างเดียว — grep `onMouseDown` ที่เริ่ม drag
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่

@@ -38,7 +38,7 @@ function dayKey(d) { const x = atMidnight(d); return `${x.getFullYear()}-${x.get
 const fmtDay = (d) => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'Asia/Bangkok' })
 
 const S = {
-  page: { padding: '28px 32px', minHeight: '100%', background: 'var(--bg)' },
+  page: { padding: 'clamp(12px,3vw,28px) clamp(14px,3.5vw,32px)', minHeight: '100%', background: 'var(--bg)' },
   h1: { fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 },
   sub: { fontSize: 13, color: 'var(--muted)', marginTop: 4, marginBottom: 20 },
   deptBar: { display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' },

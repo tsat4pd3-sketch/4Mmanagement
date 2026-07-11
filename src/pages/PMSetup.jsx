@@ -68,7 +68,7 @@ function getPublicUrl(path) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const S = {
-  page: { padding: '28px 32px', minHeight: '100%', background: 'var(--bg)' },
+  page: { padding: 'clamp(12px,3vw,28px) clamp(14px,3.5vw,32px)', minHeight: '100%', background: 'var(--bg)' },
   header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 },
   h1: { fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 },
   sub: { fontSize: 13, color: 'var(--muted)', marginTop: 4 },
@@ -236,13 +236,13 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+      <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
         <input value={cp.name} onChange={e => onChange({ name: e.target.value })} placeholder="ชื่อจุดตรวจสอบ เช่น LP1" />
         <input value={cp.group_name ?? ''} onChange={e => onChange({ group_name: e.target.value })}
           placeholder="กลุ่ม/หัวข้อ (Item) เช่น Locate Pin" list="cp-group-options" />
       </div>
 
-      <div style={S.inputRow}>
+      <div className="mgrid" style={S.inputRow}>
         <div style={{ marginBottom: 10 }}>
           <label style={S.label}>ประเภท (Category)</label>
           <select value={cp.category ?? ''} onChange={e => onChange({ category: e.target.value || null })}>
@@ -283,15 +283,15 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
               }}>{a === null ? '—' : a}</button>
             ))}
           </div>
-          <div style={S.inputRow}>
+          <div className="mgrid" style={S.inputRow}>
             <div><label style={S.label}>Nominal</label><input type="number" value={cp.nominal} onChange={e => onChange({ nominal: e.target.value })} placeholder="0" /></div>
             <div><label style={S.label}>Unit</label><input value={cp.unit} onChange={e => onChange({ unit: e.target.value })} placeholder="mm" /></div>
           </div>
-          <div style={S.inputRow}>
+          <div className="mgrid" style={S.inputRow}>
             <div><label style={{ ...S.label, color: '#e05c4a' }}>LSL</label><input type="number" value={cp.lsl} onChange={e => onChange({ lsl: e.target.value })} placeholder="—" /></div>
             <div><label style={{ ...S.label, color: '#e05c4a' }}>USL</label><input type="number" value={cp.usl} onChange={e => onChange({ usl: e.target.value })} placeholder="—" /></div>
           </div>
-          <div style={S.inputRow}>
+          <div className="mgrid" style={S.inputRow}>
             <div><label style={{ ...S.label, color: '#f59a3f' }}>LCL</label><input type="number" value={cp.lcl} onChange={e => onChange({ lcl: e.target.value })} placeholder="—" /></div>
             <div><label style={{ ...S.label, color: '#f59a3f' }}>UCL</label><input type="number" value={cp.ucl} onChange={e => onChange({ ucl: e.target.value })} placeholder="—" /></div>
           </div>
@@ -722,7 +722,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             <input value={description} onChange={e => setDescription(e.target.value)} placeholder="คำอธิบายเพิ่มเติม" />
           </div>
 
-          <div style={S.inputRow}>
+          <div className="mgrid" style={S.inputRow}>
             {[
               { label: 'No./รหัส', val: jigNo, set: setJigNo, ph: 'JIG-001' },
               { label: 'Process', val: process, set: setProcess, ph: 'Welding' },
@@ -764,7 +764,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
               </div>
             )}
             {(planType === 'usage' || planType === 'hybrid') && (
-              <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div className="mgrid" style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div>
                   <label style={S.label}>ครบเมื่อผลิตถึง (ชิ้น)</label>
                   <input type="number" min="1" value={usageThreshold} onChange={e => setUsageThreshold(e.target.value)} placeholder="เช่น 50000" />

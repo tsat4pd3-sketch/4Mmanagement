@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import useIsMobile from '../utils/useIsMobile';
 
 /* ─── Internal Time Board — บอร์ดเวลาสไตล์ Shipping Chart สำหรับงานส่งภายในโรงงาน ──
    ปลายทาง = ไลน์/จุดภายใน · กรอบวันงาน 08:00 → 08:00 · เต็ม 24 ชม.ในจอเดียว
@@ -14,6 +15,8 @@ import { useState } from 'react';
    - breaks: [{ s, e, label }] ช่วงเวลาพักบนกรอบเดียวกัน (จาก breaksToFrame ใน utils/timeFrame)
    - onItemClick(data, x, y)
    - hint: ข้อความช่วยเหลือมุมขวา */
+// มือถือ ≤768px: จอแคบเกินกว่าจะอัด 24 ชม.ในจอเดียว → บอร์ดเลื่อนแนวนอนได้ (minWidth ~780px = 1 ชม.≈28px)
+// + ป้ายปลายทาง sticky ซ้าย · desktop ยังเต็มจอเดียวไม่มี scroll ตาม UI-CONVENTIONS §6 เหมือนเดิมเป๊ะ
 const FRAME_START = 8 * 60;
 const SPAN = 1440;
 const SPAN_MIN = 40;
@@ -22,6 +25,9 @@ const LEFT_W = 130;
 
 export default function InternalTimeBoard({ title, hint, groups, nowMin, breaks = [], onItemClick }) {
   const [collapsed, setCollapsed] = useState({});
+  const isMobile = useIsMobile();
+  const leftW = isMobile ? 96 : LEFT_W;
+  const stickyLabel = (bg) => isMobile ? { position: 'sticky', left: 0, zIndex: 2, background: bg } : null;
   const hourMarks = Array.from({ length: 25 }, (_, i) => FRAME_START + i * 60);
   const showNow = nowMin != null && nowMin >= FRAME_START && nowMin <= FRAME_START + SPAN;
   const pct = (m) => ((m - FRAME_START) / SPAN) * 100;
@@ -60,8 +66,10 @@ export default function InternalTimeBoard({ title, hint, groups, nowMin, breaks 
         <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{title}</span>
         {hint && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{hint}</span>}
       </div>
+      <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
+      <div style={isMobile ? { minWidth: 780 } : undefined}>
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
-        <div style={{ width: LEFT_W, flexShrink: 0, padding: '3px 10px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)' }}>ปลายทาง · คลิกเพื่อย่อ/ขยาย</div>
+        <div style={{ width: leftW, flexShrink: 0, padding: '3px 10px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)', ...stickyLabel('var(--bg2)') }}>ปลายทาง · คลิกเพื่อย่อ/ขยาย</div>
         <div style={{ flex: 1, position: 'relative', height: 22 }}>
           {hourMarks.map((m, i) => (i % 2 === 0 &&
             <span key={m} style={{ position: 'absolute', left: `${pct(m)}%`, fontSize: 11, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: m === FRAME_START + SPAN ? 'translateX(-100%)' : 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
@@ -71,7 +79,7 @@ export default function InternalTimeBoard({ title, hint, groups, nowMin, breaks 
         </div>
         {/* ป้ายเวลาปัจจุบัน — มาตรฐานเดียวกับบอร์ด Heijunka */}
         {showNow && (
-          <div className="now-chip" style={{ left: `calc(${LEFT_W}px + (100% - ${LEFT_W}px) * ${(nowMin - FRAME_START) / SPAN})` }}>
+          <div className="now-chip" style={{ left: `calc(${leftW}px + (100% - ${leftW}px) * ${(nowMin - FRAME_START) / SPAN})` }}>
             ⏱ {String(Math.floor(nowMin / 60) % 24).padStart(2, '0')}:{String(nowMin % 60).padStart(2, '0')}
           </div>
         )}
@@ -87,7 +95,7 @@ export default function InternalTimeBoard({ title, hint, groups, nowMin, breaks 
           <div key={g.key} style={{ display: 'flex', borderTop: '1px solid var(--border)' }}>
             <div onClick={() => setCollapsed(m => ({ ...m, [g.key]: !m[g.key] }))}
               title={isCol ? 'คลิกเพื่อขยาย' : 'คลิกเพื่อย่อ'}
-              style={{ width: LEFT_W, flexShrink: 0, padding: '4px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text2)', borderRight: '1px solid var(--border2)', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', cursor: 'pointer', userSelect: 'none' }}>
+              style={{ width: leftW, flexShrink: 0, padding: '4px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text2)', borderRight: '1px solid var(--border2)', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', cursor: 'pointer', userSelect: 'none', ...stickyLabel('var(--card)') }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 <span style={{ color: 'var(--muted)', marginRight: 4 }}>{isCol ? '▸' : '▾'}</span>{g.label}
               </span>
@@ -125,6 +133,8 @@ export default function InternalTimeBoard({ title, hint, groups, nowMin, breaks 
           </div>
         );
       })}
+      </div>
+      </div>
     </div>
   );
 }

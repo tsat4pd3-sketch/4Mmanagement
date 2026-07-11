@@ -162,7 +162,7 @@ export default function PermissionsManagement() {
   };
 
   const s = {
-    page:    { padding: '20px 24px', maxWidth: 'min(96vw, 1400px)', margin: '0 auto' },
+    page:    { padding: 'clamp(10px,2.5vw,20px) clamp(12px,3vw,24px)', maxWidth: 'min(96vw, 1400px)', margin: '0 auto' },
     section: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px', marginBottom: 16 },
     groupTitle: { fontSize: 13, fontWeight: 800, color: 'var(--accent)', margin: '18px 0 8px', textTransform: 'uppercase', letterSpacing: '0.05em' },
     tabBtn: (active) => ({

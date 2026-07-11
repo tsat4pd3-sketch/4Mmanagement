@@ -3,7 +3,7 @@
 > **ทุก session ที่แก้ UI ต้องอ่านไฟล์นี้ก่อนลงมือ และเมื่อสร้าง/เปลี่ยน pattern ที่ใช้ร่วมกันหลายหน้า ต้องอัพเดทไฟล์นี้ในคอมมิทเดียวกัน**
 > เหตุผล: หลาย session ทำงานขนานกัน ถ้าไม่มีมาตรฐานกลาง จะได้ UI คนละทรง (เคยเกิดแล้ว: จุดเครื่องจักรฝั่ง MTN ทำเป็นเหลี่ยม ขณะที่ระบบหลักเป็นวงกลม)
 
-อัพเดทล่าสุด: 2026-07-11 (ปุ่ม 🏷️ ป้ายชื่อเหลือ โชว์/ซ่อน สองสถานะ · ป้ายมีความกว้างขั้นต่ำอ่านออก pillMaxW/subPillMaxW · ลำดับชนิดจุดมาตรฐาน คน→เครื่องจักร→WIP)
+อัพเดทล่าสุด: 2026-07-11 (ปุ่ม 🏷️ โชว์/ซ่อน สองสถานะ · pillMaxW/subPillMaxW · ลำดับจุด คน→เครื่องจักร→WIP · mobile: useIsMobile hook / time board เลื่อนแนวนอนบนมือถือ / mgrid·tbtn / pointer-drag)
 
 ---
 
@@ -89,6 +89,19 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 - **ขั้นต่ำ 11-12px** — ห้ามใช้ 6-10px แม้พื้นที่จะแคบ (เคยไล่แก้ทั้ง Dashboard มาแล้ว: สเกล 6→8 … 16→18)
 - ชิป/ป้าย 12-13px · ข้อความรอง 14-15px · หัวข้อ 15px+ · ตัวเลขใหญ่ในการ์ด 34px+ (wide 42px+)
 - responsive ใช้ `isWide`/`isUltra` ternary หรือสเกลจากขนาด container — ไม่ใช้ vw กับ marker
+- **branch มือถือใช้ hook กลาง `src/utils/useIsMobile.js`** (≤768px + listener อัพเดทตอนหมุนจอ) —
+  หน้าใหม่/แก้ใหม่ห้ามเขียน `window.innerWidth <= 768` แบบคำนวณครั้งเดียวเอง (2026-07-11)
+  และ branch มือถือต้องเป็น **additive เท่านั้น**: จอ >768px ต้อง render เหมือนโค้ดเดิมเป๊ะ
+- **CSS class กลางสำหรับมือถือ/จอทัช (2026-07-11 — อยู่ใน index.css):**
+  - `className="mgrid"` — ฟอร์ม grid หลายคอลัมน์ (`1fr 1fr`, `1fr 1fr 1fr` ฯลฯ มักอยู่ใน modal)
+    → จอ ≤600px ยุบเป็นคอลัมน์เดียวอัตโนมัติ (`!important` ชนะ inline เฉพาะจอแคบ) —
+    modal/ฟอร์มใหม่ที่มี grid หลายคอลัมน์**ต้องติด class นี้เสมอ**
+  - `className="tbtn"` — ปุ่มไอคอนเล็กในตาราง (✏️ 🗑️ ✕ 💾) → จอทัช (`pointer:coarse`)
+    ขยาย hit area ≥40px · เมาส์ไม่เปลี่ยน
+- **ลาก marker/หมุดต้องใช้ pointer events** (`onPointerDown` + window `pointermove/pointerup/pointercancel`
+  + `touchAction:'none'` บน element ระหว่างโหมดแก้ไข) — ห้ามใช้ mouse events อย่างเดียว
+  ไม่งั้นจอทัชลากไม่ได้ · ต้นแบบ: `MachineFloorMap.jsx` (2026-07-11), JigSpinCheck ใน `PMCheckData.jsx`
+  · ข้อยกเว้นที่ตั้งใจ: `LineSetup.jsx` ยังเป็น mouse-only (desktop authoring tool — มือถือดูผังได้อย่างเดียว)
 
 ---
 
@@ -148,6 +161,12 @@ pattern ร่วมของทุกบอร์ดที่วางราย
 - **กรอบวันงาน 08:00 → 08:00 วันถัดไป** เต็ม 24 ชม.ในจอเดียว ไม่มี scroll แนวนอน —
   เวลาก่อนตี 8 = ช่วงกะดึกของวันงานเดิม (นาทีแบบ wrap: h<8 บวก 1440) ใช้ helper
   `frameMin`/`frameMinFromIso` จาก `src/utils/timeFrame.js`
+  - **ข้อยกเว้นมือถือ ≤768px (2026-07-11):** จอแคบเกินกว่าจะอัด 24 ชม. (เหลือ ~10px/ชม. อ่านไม่ออก)
+    → อนุญาตให้บอร์ด**เลื่อนแนวนอน**เฉพาะมือถือ: ครอบส่วนตารางด้วย `overflowX:'auto'` + inner
+    `minWidth` (~780px เต็มวัน / ~620px ครึ่งวัน) + ลดป้ายซ้ายเหลือ ~96px + ป้ายซ้าย
+    `position:'sticky', left:0` (ใส่ background ทึบ) — ตรวจด้วย hook กลาง `src/utils/useIsMobile.js`
+    **desktop ห้ามมี scroll เหมือนเดิม** · ทำแล้วใน: InternalTimeBoard, CustomerDemand (Shipping
+    Chart), HeijunkaKanban (DeliveryTimelineBoard), Dashboard (Heijunka board)
 - **เส้นเวลาปัจจุบัน**: class `.now-line` (playhead ชมพู #ec4899 กระพริบเรืองแสง —
   สีชมพูจงใจไม่ซ้ำสีสถานะใดๆ) + ป้ายเวลา `.now-chip` (⏱ HH:MM) ลอยบนหัวตาราง —
   สอง class นี้อยู่ใน `index.css` ห้ามวาดเส้นเองด้วยสีอื่น

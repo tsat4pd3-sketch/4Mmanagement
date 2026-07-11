@@ -390,7 +390,7 @@ export default function RackCenter() {
                   )}
                   {canOperate && ['requested', 'preparing'].includes(r.status) && (
                     <button onClick={() => { cancel(r); setPopup(null); }}
-                      style={{ ...btn('rgba(239,68,68,0.1)', '#ef4444'), border: '1px solid rgba(239,68,68,0.3)', padding: '7px 10px', fontSize: 11 }}>✕</button>
+                      className="tbtn" style={{ ...btn('rgba(239,68,68,0.1)', '#ef4444'), border: '1px solid rgba(239,68,68,0.3)', padding: '7px 10px', fontSize: 11 }}>✕</button>
                   )}
                 </div>
               </div>

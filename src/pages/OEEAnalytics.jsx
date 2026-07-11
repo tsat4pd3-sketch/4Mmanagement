@@ -8,6 +8,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import useIsMobile from '../utils/useIsMobile';
 
 // ── Colour helpers ───────────────────────────────────────────────
 const oeeColor  = v => v >= 80 ? '#22c55e' : v >= 60 ? '#f59e0b' : '#ef4444';
@@ -165,6 +166,7 @@ const STATUS_BADGE = {
 // ── Main Component ───────────────────────────────────────────────
 export default function OEEAnalytics() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const isMobile = useIsMobile(); // ≤768px: grid วิเคราะห์ยุบเป็นคอลัมน์เดียว กันกราฟถูกตัด (desktop ไม่เปลี่ยน)
   const [viewTab, setViewTab] = useState('today'); // today | trend
 
   // mandatory scope (แบบเดียวกับ DailyReport): leader → ครอบครัวไลน์ตัวเอง ·
@@ -666,7 +668,7 @@ export default function OEEAnalytics() {
           </div>
 
           {/* Row: Live session + Production qty gauge */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr', gap: 16, marginBottom: 16 }}>
             {/* 1.1 Live session */}
             <div style={{ ...s.section, marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -746,7 +748,7 @@ export default function OEEAnalytics() {
           {/* 2. Downtime */}
           <div style={s.section}>
             <div style={s.title}>2. DOWNTIME</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '0.8fr 1.3fr 1.5fr', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '0.8fr 1.3fr 1.5fr', gap: 16 }}>
               {/* 2.1 Total */}
               <div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 10 }}>2.1 Downtime รวมของวันนี้</div>
@@ -910,7 +912,7 @@ export default function OEEAnalytics() {
       </div>
 
       {/* Downtime Pareto + Defect side-by-side */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
         {/* Downtime Pareto */}
         <div style={s.section}>
           <div style={s.title}>Pareto — Downtime รายประเภท (นาที)</div>

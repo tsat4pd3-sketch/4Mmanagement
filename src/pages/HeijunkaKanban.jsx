@@ -3,6 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
+import useIsMobile from '../utils/useIsMobile';
 
 /* ─── HEIJUNKA KANBAN — Subcomponent Part Demand ──────────────────────────
    แตกความต้องการพาร์ทย่อยจากแผนผลิตรายวัน (production_sessions + prod_orders)
@@ -237,7 +238,10 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
   const [expanded, setExpanded] = useState(null);
   const { groupDemand, roundAlloc } = view;
   const HOURS  = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
-  const LEFT_W = 130;
+  // มือถือ ≤768px: บอร์ดครึ่งวัน (12 ชม.) เลื่อนแนวนอนได้ + ป้ายซ้าย sticky (desktop เต็มจอเดียวเหมือนเดิม)
+  const isMobile = useIsMobile();
+  const LEFT_W = isMobile ? 96 : 130;
+  const stickyL = (bg) => isMobile ? { position: 'sticky', left: 0, zIndex: 2, background: bg } : null;
   // ยึด grid กับ workDate ที่เลือก (ไม่ใช่วันปฏิทินปัจจุบัน) — ช่วง 00:00–07:59 กะดึกยังอยู่ในกรอบวันงานเดิม
   const gridStartMs = dayFrameMs(workDate).startMs;
   const pctPerMs = 100 / (12 * 3600000);
@@ -277,7 +281,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
 
   const hourHeader = (hours, halfStartMs) => (
     <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
-      <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>รอบจัดส่ง</div>
+      <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', ...stickyL('var(--bg2)') }}>รอบจัดส่ง</div>
       {hours.map((h, i) => {
         const slotMs = halfStartMs + i * 3600000;
         const isNow = nowMs >= slotMs && nowMs < slotMs + 3600000;
@@ -439,17 +443,21 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
               <span style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>🏭 {lineName}</span>
               <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{demand.parts.length} พาร์ท · 🎴 {demand.totalKanban} การ์ด (ทั้งวัน)</span>
             </div>
+            <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
+            <div style={isMobile ? { minWidth: 620 } : undefined}>
             {HALVES.map(half => (
               <div key={half.key} style={{ borderTop: half.key === 'pm' ? '2px solid var(--border2)' : 'none' }}>
                 {hourHeader(half.hours, half.startMs)}
                 <div style={{ display: 'flex', minHeight: 36 }}>
-                  <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', alignItems: 'center', fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>
+                  <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', alignItems: 'center', fontSize: 11, color: 'var(--muted)', fontWeight: 700, ...stickyL('var(--card)') }}>
                     {lineRounds.length} รอบ
                   </div>
                   {renderTimeline(lineRounds, half, `${lineName}-${half.key}`)}
                 </div>
               </div>
             ))}
+            </div>
+            </div>
             {/* expanded round detail — demand เฉพาะรอบนั้น */}
             {lineRounds.map(r => {
               const expandKey = `${r.line_name}|${r.shift}|${r.round_no}`;

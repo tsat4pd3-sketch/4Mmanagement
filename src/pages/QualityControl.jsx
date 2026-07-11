@@ -503,7 +503,7 @@ function SPCTab({ lines, canRecord, canManage }) {
       {/* เลือกจุดควบคุม */}
       <div style={{ ...cardSt, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <Field label="จุดควบคุม (Part / Characteristic)">
-          <select value={selId || ''} onChange={e => setSelId(e.target.value || null)} style={{ ...inputSt, minWidth: 320 }}>
+          <select value={selId || ''} onChange={e => setSelId(e.target.value || null)} style={{ ...inputSt, minWidth: 'min(320px, 100%)' }}>
             {chars.length === 0 && <option value="">— ยังไม่มีจุดควบคุม กด "+ เพิ่มจุดควบคุม" —</option>}
             {chars.map(c => (
               <option key={c.id} value={c.id}>
@@ -666,7 +666,7 @@ function SPCTab({ lines, canRecord, canManage }) {
 
       {charModal && (
         <Modal title={charModal.id ? '✏️ แก้ไขจุดควบคุม' : '➕ เพิ่มจุดควบคุม SPC'} onClose={() => setCharModal(null)}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="Part No. *"><input style={inputSt} value={charModal.part_no} onChange={e => setCharModal(f => ({ ...f, part_no: e.target.value }))} /></Field>
             <Field label="Part Name"><input style={inputSt} value={charModal.part_name} onChange={e => setCharModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
             <Field label="จุดควบคุม / Characteristic *" span><input style={inputSt} placeholder="เช่น ความกว้างร่อง A หลังตัด" value={charModal.characteristic} onChange={e => setCharModal(f => ({ ...f, characteristic: e.target.value }))} /></Field>
@@ -808,7 +808,7 @@ function NCRTab({ lines, canRecord, canManage, onOpenCapa }) {
 
       {createModal && (
         <Modal title="🚨 เปิด NCR ใหม่" onClose={() => setCreateModal(null)}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="วันที่พบ"><input type="date" style={inputSt} value={createModal.report_date} onChange={e => setCreateModal(f => ({ ...f, report_date: e.target.value }))} /></Field>
             <Field label="ไลน์ผลิต">
               <select style={inputSt} value={createModal.line_name} onChange={e => setCreateModal(f => ({ ...f, line_name: e.target.value }))}>
@@ -848,7 +848,7 @@ function NCRTab({ lines, canRecord, canManage, onOpenCapa }) {
             <Chip label={NCR_SEV[detail.severity]?.label || detail.severity} color={NCR_SEV[detail.severity]?.color || '#6b7280'} />
             <Chip label={NCR_SOURCE[detail.source] || detail.source} color="#a78bfa" />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 13, marginBottom: 12 }}>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 13, marginBottom: 12 }}>
             <div><b>วันที่พบ:</b> {fmtD(detail.report_date)}</div>
             <div><b>ไลน์:</b> {detail.line_name || '—'}</div>
             <div><b>Part:</b> {detail.part_no || '—'} {detail.part_name || ''}</div>
@@ -866,7 +866,7 @@ function NCRTab({ lines, canRecord, canManage, onOpenCapa }) {
                 <textarea rows={2} style={{ ...inputSt, resize: 'vertical' }} value={edit.root_cause} onChange={e => setEdit(x => ({ ...x, root_cause: e.target.value }))} />
               </Field>
               {canManage && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <Field label="3) Disposition (เฉพาะ qa:manage)">
                     <select style={inputSt} value={edit.disposition} onChange={e => setEdit(x => ({ ...x, disposition: e.target.value }))}>
                       <option value="">— เลือก —</option>
@@ -1045,7 +1045,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
 
       {detail && (
         <Modal title={detail.id ? `🛠 ${detail.capa_no}` : '🛠 เปิด CAPA / 8D ใหม่'} onClose={() => setDetail(null)} width={700}>
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
             <Field label="หัวข้อ *"><input style={inputSt} value={detail.title} onChange={e => setDetail(f => ({ ...f, title: e.target.value }))} disabled={!canRecord} /></Field>
             <Field label="ผู้รับผิดชอบ"><input style={inputSt} value={detail.owner_name || ''} onChange={e => setDetail(f => ({ ...f, owner_name: e.target.value }))} disabled={!canRecord} /></Field>
             <Field label="กำหนดปิด (due date)"><input type="date" style={inputSt} value={detail.due_date || ''} onChange={e => setDetail(f => ({ ...f, due_date: e.target.value }))} disabled={!canRecord} /></Field>
@@ -1211,7 +1211,7 @@ function InstrumentTab({ lines, canManage }) {
 
       {modal && (
         <Modal title={modal.id ? `✏️ ${modal.code}` : '➕ เพิ่มเครื่องมือวัด'} onClose={() => setModal(null)} width={620}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <Field label="รหัส *"><input style={inputSt} value={modal.code} onChange={e => setModal(f => ({ ...f, code: e.target.value }))} /></Field>
             <Field label="ชื่อเครื่องมือ *"><input style={inputSt} value={modal.name} onChange={e => setModal(f => ({ ...f, name: e.target.value }))} /></Field>
             <Field label="ชนิด"><input style={inputSt} placeholder="caliper / micrometer / torque" value={modal.inst_type} onChange={e => setModal(f => ({ ...f, inst_type: e.target.value }))} /></Field>
