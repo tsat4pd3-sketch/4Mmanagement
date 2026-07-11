@@ -109,10 +109,11 @@ padding 4-6px fontSize 11 ≈ สูง 24-28px · **วิธีแก้:** ru
 5. ✅ trap width: `DailyReport.jsx` object `sel` + `Dashboard.jsx` date picker → `width:'auto'`
    (ใช้ `width:'auto'` ทั้งคู่ ไม่ fix ตัวเลข — คงขนาดตามเนื้อหาเท่า desktop เดิม)
 
-**เฟส 2 — หน้าใช้งานหน้างานจริง (มือถือ-need สูง):**
-6. `DailyReport.jsx:1699` session sidebar → isMobile `'1fr'`
-7. `OEEAnalytics.jsx:669,:749,:913` → media `1fr`
-8. Time boards §2.1 (InternalTimeBoard + CustomerDemand + Heijunka + Dashboard LEFT_W)
+**เฟส 2 — หน้าใช้งานหน้างานจริง (มือถือ-need สูง): ✅ ทำแล้ว 2026-07-11**
+6. ✅ `DailyReport.jsx` session sidebar → isMobile `'1fr'` (สร้าง hook กลาง `src/utils/useIsMobile.js`)
+7. ✅ `OEEAnalytics.jsx` grid 3 จุด → isMobile `'1fr'`
+8. ✅ Time boards: InternalTimeBoard + CustomerDemand + HeijunkaKanban + Dashboard —
+   มือถือเลื่อนแนวนอน + ป้ายซ้าย sticky (บันทึกเป็นข้อยกเว้นใน UI-CONVENTIONS §6 แล้ว)
 
 **เฟส 3 — Component กลาง + สองแพน:**
 9. `MachineFloorMap.jsx` pointer events (§2.2)

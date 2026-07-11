@@ -91,6 +91,9 @@ const { MK, SUB, showSubPills, ... } = markerScale(renderedMapWidth, { machineCo
 - **ขั้นต่ำ 11-12px** — ห้ามใช้ 6-10px แม้พื้นที่จะแคบ (เคยไล่แก้ทั้ง Dashboard มาแล้ว: สเกล 6→8 … 16→18)
 - ชิป/ป้าย 12-13px · ข้อความรอง 14-15px · หัวข้อ 15px+ · ตัวเลขใหญ่ในการ์ด 34px+ (wide 42px+)
 - responsive ใช้ `isWide`/`isUltra` ternary หรือสเกลจากขนาด container — ไม่ใช้ vw กับ marker
+- **branch มือถือใช้ hook กลาง `src/utils/useIsMobile.js`** (≤768px + listener อัพเดทตอนหมุนจอ) —
+  หน้าใหม่/แก้ใหม่ห้ามเขียน `window.innerWidth <= 768` แบบคำนวณครั้งเดียวเอง (2026-07-11)
+  และ branch มือถือต้องเป็น **additive เท่านั้น**: จอ >768px ต้อง render เหมือนโค้ดเดิมเป๊ะ
 
 ---
 
@@ -150,6 +153,12 @@ pattern ร่วมของทุกบอร์ดที่วางราย
 - **กรอบวันงาน 08:00 → 08:00 วันถัดไป** เต็ม 24 ชม.ในจอเดียว ไม่มี scroll แนวนอน —
   เวลาก่อนตี 8 = ช่วงกะดึกของวันงานเดิม (นาทีแบบ wrap: h<8 บวก 1440) ใช้ helper
   `frameMin`/`frameMinFromIso` จาก `src/utils/timeFrame.js`
+  - **ข้อยกเว้นมือถือ ≤768px (2026-07-11):** จอแคบเกินกว่าจะอัด 24 ชม. (เหลือ ~10px/ชม. อ่านไม่ออก)
+    → อนุญาตให้บอร์ด**เลื่อนแนวนอน**เฉพาะมือถือ: ครอบส่วนตารางด้วย `overflowX:'auto'` + inner
+    `minWidth` (~780px เต็มวัน / ~620px ครึ่งวัน) + ลดป้ายซ้ายเหลือ ~96px + ป้ายซ้าย
+    `position:'sticky', left:0` (ใส่ background ทึบ) — ตรวจด้วย hook กลาง `src/utils/useIsMobile.js`
+    **desktop ห้ามมี scroll เหมือนเดิม** · ทำแล้วใน: InternalTimeBoard, CustomerDemand (Shipping
+    Chart), HeijunkaKanban (DeliveryTimelineBoard), Dashboard (Heijunka board)
 - **เส้นเวลาปัจจุบัน**: class `.now-line` (playhead ชมพู #ec4899 กระพริบเรืองแสง —
   สีชมพูจงใจไม่ซ้ำสีสถานะใดๆ) + ป้ายเวลา `.now-chip` (⏱ HH:MM) ลอยบนหัวตาราง —
   สอง class นี้อยู่ใน `index.css` ห้ามวาดเส้นเองด้วยสีอื่น
