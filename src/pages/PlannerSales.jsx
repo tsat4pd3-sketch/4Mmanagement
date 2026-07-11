@@ -288,6 +288,11 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
     if (kind === 'forecast' && !wideMode && (mapping.period < 0 || mapping.qty < 0)) { toast.error('Forecast ต้อง map เดือน และ จำนวน (หรือใช้โหมดหลายคอลัมน์เดือน)'); return; }
     const { records, skipped } = buildRecords();
     if (!records.length) { toast.error('ไม่มีแถวที่นำเข้าได้ — ตรวจ mapping อีกครั้ง'); return; }
+    // กันนับซ้ำ: manual import เป็นการ "เพิ่มทับ" ไม่ใช่แทนที่ — ถ้ามีไฟล์ประเภทเดียวกันอยู่แล้ว เตือนก่อน
+    const sameKind = batches.filter(b => b.kind === kind);
+    if (sameKind.length && !window.confirm(
+      `มีไฟล์ ${kind === 'forecast' ? 'Forecast' : 'Orders'} นำเข้าไว้แล้ว ${sameKind.length} ไฟล์\n` +
+      `การนำเข้านี้จะ "เพิ่มทับ" ยอดเดิม (ไม่ได้แทนที่) — ถ้าเป็นไฟล์แก้ไข ให้ลบไฟล์เดิมก่อน\nยืนยันนำเข้าเพิ่ม?`)) return;
     setSaving(true);
     try {
       const { data: batch, error: e1 } = await supabaseDR.from('demand_upload_batches')
@@ -296,7 +301,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       if (e1) throw e1;
       const table = kind === 'forecast' ? 'customer_forecasts' : 'customer_shipping_orders';
       for (let i = 0; i < records.length; i += 500) {
-        const { error: e2 } = await supabaseDR.from(table).insert(records.slice(i, i + 500).map(x => ({ ...x, batch_id: batch.id })));
+        const { error: e2 } = await supabaseDR.from(table).insert(records.slice(i, i + 500).map(x => ({ source: 'manual', ...x, batch_id: batch.id })));
         if (e2) throw e2;
       }
       toast.success(`✅ นำเข้า ${records.length} แถวสำเร็จ${skipped ? ` (ข้าม ${skipped} แถวที่ข้อมูลไม่ครบ)` : ''}`);
