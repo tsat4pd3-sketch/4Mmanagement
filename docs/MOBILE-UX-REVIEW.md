@@ -115,14 +115,22 @@ padding 4-6px fontSize 11 ≈ สูง 24-28px · **วิธีแก้:** ru
 8. ✅ Time boards: InternalTimeBoard + CustomerDemand + HeijunkaKanban + Dashboard —
    มือถือเลื่อนแนวนอน + ป้ายซ้าย sticky (บันทึกเป็นข้อยกเว้นใน UI-CONVENTIONS §6 แล้ว)
 
-**เฟส 3 — Component กลาง + สองแพน:**
-9. `MachineFloorMap.jsx` pointer events (§2.2)
-10. `QAInspectionSetup.jsx:506`, `ProductMaster.jsx:1170,:1937` two-pane → stack
-11. Modal grids (QualityControl / PMSetup / operator / Register / LineStock)
+**เฟส 3 — Component กลาง + สองแพน: ✅ ทำแล้ว 2026-07-11**
+9. ✅ `MachineFloorMap.jsx` pointer events + `touchAction:'none'` (ลากหมุดบนจอทัชได้ —
+   ครอบคลุม MtnMachineLayout อัตโนมัติ) · `LineSetup.jsx` **ตั้งใจข้าม** (desktop authoring tool)
+10. ✅ `QAInspectionSetup` + `ProductMaster` (BOM/Packaging) two-pane → isMobile `'1fr'` + ปิด sticky
+11. ✅ Modal grids → class กลาง `mgrid` (≤600px ยุบ 1 คอลัมน์): QualityControl(6) PMSetup(7)
+    operator(3) Register(2) LineStock(4) MachineDatabase(1) Report(1) QAInspectionSetup(3)
+    + SPC select `minWidth:'min(320px,100%)'` + page padding fix เป็น clamp()
+    (PMSchedule/PMSetup/MtnMachineLayout/PermissionsManagement)
 
-**เฟส 4 — Polish:**
-12. Touch target กลาง `@media (pointer:coarse)` (§2.4)
-13. `Management.jsx:916` / `DeptHub.jsx:169` ตำแหน่ง fixed/absolute บนจอแคบ
+**เฟส 4 — Polish: ✅ ทำแล้ว 2026-07-11**
+12. ✅ Touch target: class กลาง `tbtn` (`pointer:coarse` ≥40px) ติดแล้ว: OrgSetup(3)
+    MachineDatabase(2) LineStock(2) RackCenter(1) operator(2) + `.cal-day` ปฏิทิน ≥34px
+13. ✅ `DeptHub` top bar → `.hub-topbar` static บน ≤768px ·
+    `Management` ปุ่ม filter ลอย **ตั้งใจข้าม** — คำนวณตำแหน่งแล้วไม่ทับ ☰/🔔 บนจอ 390px
+    (filter อยู่ x≈212-332, ☰ x≈14-48, 🔔 x≈340-376) และหน้านี้ mobile-optimized อยู่แล้ว
+    เปลี่ยนตำแหน่งเสี่ยงกว่าปล่อยไว้ — รอ feedback จากเครื่องจริงก่อน
 
 **หลังแก้แต่ละเฟส:** อัพเดท `docs/UI-CONVENTIONS.md` ถ้าเกิด pattern ใหม่
 (โดยเฉพาะข้อยกเว้น scroll แนวนอนของ time board §6 บนมือถือ) + อัพเดทไฟล์นี้

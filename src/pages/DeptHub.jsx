@@ -39,6 +39,11 @@ const DEPT_CSS = `
     transition: transform 0.12s ease, filter 0.12s ease;
   }
   .dept-chip:hover { transform: translateY(-1px); filter: brightness(1.35); }
+  /* มือถือ ≤768px: top bar (ชื่อ user/ธีม/ออกจากระบบ) เลิกลอย absolute — กลับเข้า flow ชิดขวา
+     กันทับ badge/หัวข้อกลางจอ (desktop ไม่เปลี่ยน: media ไม่ match) */
+  @media (max-width: 768px) {
+    .hub-topbar { position: static !important; align-self: flex-end; margin-bottom: 4px; }
+  }
 `;
 
 // 6 หมวดตรงกับกลุ่มเมนูใน sidebar — เมนูย่อยบนการ์ดดึงจาก NAV_ITEMS ผ่าน navGroups อัตโนมัติ
@@ -165,8 +170,8 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
     }}>
       <style>{DEPT_CSS}</style>
 
-      {/* Top bar — user info + theme toggle + logout */}
-      <div style={{
+      {/* Top bar — user info + theme toggle + logout (มือถือ: .hub-topbar ใน DEPT_CSS ดึงกลับเข้า flow) */}
+      <div className="hub-topbar" style={{
         position: 'absolute', top: 'clamp(16px, 3vw, 28px)', right: 'clamp(16px, 4vw, 40px)',
         display: 'flex', alignItems: 'center', gap: 10,
         animation: 'hub-fade-up 0.5s ease both',

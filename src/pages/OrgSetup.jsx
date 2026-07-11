@@ -264,9 +264,9 @@ export default function OrgSetup() {
 function RowActions({ node, onEdit, onToggle, onDelete }) {
   return (
     <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
-      <button onClick={() => onEdit(node)} title="แก้ไข" style={iconBtnSt}>✏️</button>
-      <button onClick={() => onToggle(node)} title={node.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'} style={iconBtnSt}>{node.is_active ? '🟢' : '⚪'}</button>
-      <button onClick={() => onDelete(node)} title="ลบ" style={iconBtnSt}>🗑️</button>
+      <button className="tbtn" onClick={() => onEdit(node)} title="แก้ไข" style={iconBtnSt}>✏️</button>
+      <button className="tbtn" onClick={() => onToggle(node)} title={node.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'} style={iconBtnSt}>{node.is_active ? '🟢' : '⚪'}</button>
+      <button className="tbtn" onClick={() => onDelete(node)} title="ลบ" style={iconBtnSt}>🗑️</button>
     </div>
   );
 }

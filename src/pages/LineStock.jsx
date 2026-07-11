@@ -466,7 +466,7 @@ function StockTab({ role }) {
                 </div>
               </div>
 
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+              <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>ไลน์การผลิต *</label>
                   <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inputSt}>
@@ -818,11 +818,11 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
                         {canEdit && (
                           <td style={{ padding:'8px 14px', borderTop:'1px solid var(--border)' }}>
                             <div style={{ display:'flex', gap:6 }}>
-                              <button onClick={() => openEdit(r)}
+                              <button className="tbtn" onClick={() => openEdit(r)}
                                 style={{ ...btn('rgba(2,132,199,0.1)', '#0284c7'), padding:'4px 8px', fontSize:11, border:'1px solid rgba(2,132,199,0.3)' }}>
                                 ✏️
                               </button>
-                              <button onClick={() => handleDelete(r.id)}
+                              <button className="tbtn" onClick={() => handleDelete(r.id)}
                                 style={{ ...btn('rgba(239,68,68,0.1)', '#ef4444'), padding:'4px 8px', fontSize:11, border:'1px solid rgba(239,68,68,0.3)' }}>
                                 🗑️
                               </button>
@@ -861,7 +861,7 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
                 </datalist>
               </div>
 
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+              <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>กะ *</label>
                   <select value={form.shift} onChange={e => setForm(f => ({ ...f, shift: e.target.value, round_no: editId ? f.round_no : String(nextRoundNo(f.line_name, e.target.value)) }))} style={inputSt}>
@@ -892,7 +892,7 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
               {/* Shipping time chart */}
               <div style={{ background:'var(--bg2)', borderRadius:8, padding:12, border:'1px solid var(--border)', display:'flex', flexDirection:'column', gap:10 }}>
                 <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.05em' }}>⏰ Shipping Time Chart</div>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                   <div>
                     <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>ตัดยอดรับออเดอร์</label>
                     <input type="time" style={{ ...inputSt, fontFamily:'monospace' }}
@@ -916,7 +916,7 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
                     />
                   </div>
                 </div>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10 }}>
+                <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10 }}>
                   <div>
                     <label style={{ fontSize:11, fontWeight:700, color:'var(--accent)', display:'block', marginBottom:4 }}>เวลาเริ่มส่ง *</label>
                     <input type="time" style={{ ...inputSt, fontFamily:'monospace', fontWeight:800, color:'var(--accent)' }}

@@ -15,6 +15,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
+import useIsMobile from '../utils/useIsMobile';
 
 const fmtDT = s => s ? new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -122,6 +123,7 @@ const EMPTY_ITEM = {
 };
 
 export default function QAInspectionSetup() {
+  const isMobile = useIsMobile(); // ≤768px: two-pane ยุบเป็นคอลัมน์เดียว + ปิด sticky (desktop ไม่เปลี่ยน)
   const { fullName } = useContext(UserContext);
   const { can } = usePerms();
   const canManage = can('qa', 'manage');
@@ -503,9 +505,9 @@ export default function QAInspectionSetup() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(230px, 290px) 1fr', gap: 14, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(230px, 290px) 1fr', gap: 14, alignItems: 'start' }}>
         {/* ── ซ้าย: รายการ part ── */}
-        <div style={{ ...cardSt, padding: 12, position: 'sticky', top: 70 }}>
+        <div style={{ ...cardSt, padding: 12, ...(isMobile ? null : { position: 'sticky', top: 70 }) }}>
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
             <input style={{ ...inputSt, flex: 1 }} placeholder="🔍 ค้นหา part…" value={search} onChange={e => setSearch(e.target.value)} />
             {canManage && <button style={{ ...btnSt(), padding: '8px 12px' }} title="เพิ่ม Part" onClick={() => setPartModal({ ...EMPTY_PART })}>＋</button>}
@@ -737,7 +739,7 @@ export default function QAInspectionSetup() {
         <Modal title={titlePicker.mode === 'add' ? '🖼 ตั้งชื่อแผ่น/มุมมองของ drawing ใหม่' : `✏️ เปลี่ยนชื่อแผ่น "${titlePicker.dwg.title}"`}
           onClose={() => setTitlePicker(null)} width={480}>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700, marginBottom: 8 }}>เลือก view มาตรฐาน</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 14 }}>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 14 }}>
             {STANDARD_VIEWS.map(v => {
               const used = drawings.some(d => d.title === v && d.id !== titlePicker.dwg?.id);
               return (
@@ -796,7 +798,7 @@ export default function QAInspectionSetup() {
               </div>
             )}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="Part No. *"><input style={inputSt} value={partModal.part_no} onChange={e => setPartModal(f => ({ ...f, part_no: e.target.value }))} /></Field>
             <Field label="Part Name"><input style={inputSt} value={partModal.part_name} onChange={e => setPartModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
             <Field label="ลูกค้า"><input style={inputSt} value={partModal.customer} onChange={e => setPartModal(f => ({ ...f, customer: e.target.value }))} /></Field>
@@ -840,7 +842,7 @@ export default function QAInspectionSetup() {
       {/* ── Item modal ── */}
       {itemModal && (
         <Modal title={itemModal.id ? `✏️ จุดตรวจ #${itemModal.balloon_no}` : `➕ เพิ่มจุดตรวจ #${itemModal.balloon_no}`} onClose={() => setItemModal(null)} width={620}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <Field label="No. (balloon)"><input style={inputSt} placeholder="เช่น H35, A1, 7" value={itemModal.balloon_no} onChange={e => setItemModal(f => ({ ...f, balloon_no: e.target.value }))} /></Field>
             <Field label="ชนิด">
               <select style={inputSt} value={itemModal.item_type} onChange={e => setItemModal(f => ({ ...f, item_type: e.target.value }))}>

@@ -63,17 +63,27 @@ export default function MachineFloorMap({
     return { top: `${t.toFixed(2)}%`, left: `${l.toFixed(2)}%` }
   }
 
+  // pointer events (แทน mouse events) — ลากได้ทั้งเมาส์และจอทัช (2026-07-11)
+  // desktop พฤติกรรมเดิมเป๊ะ: pointerdown/move/up ครอบ mouse อยู่แล้ว · touch ต้องคู่กับ touchAction:'none' ที่ marker
   const startDrag = (e, p) => {
     if (!editable) return
     e.preventDefault(); e.stopPropagation()
     const move = (ev) => { const pct = toPct(ev); if (pct) setDrag({ id: p.id, ...pct }) }
+    const cleanup = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', cancel)
+    }
     const up = (ev) => {
-      window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up)
+      cleanup()
       const pct = toPct(ev)
       setDrag(null)
       if (pct) onMarkerDragEnd?.(p.id, pct)
     }
-    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
+    const cancel = () => { cleanup(); setDrag(null) } // ระบบยกเลิก gesture (เช่น จอหมุน) — ไม่ commit ตำแหน่ง
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cancel)
   }
 
   if (!imageUrl) {
@@ -130,7 +140,7 @@ export default function MachineFloorMap({
             const pos = d ? { top: drag.top, left: drag.left } : clampPct(p.pos_top, p.pos_left)
             return (
               <div key={p.id}
-                onMouseDown={(e) => startDrag(e, p)}
+                onPointerDown={(e) => startDrag(e, p)}
                 onClick={(e) => { e.stopPropagation(); onSelect?.(p) }}
                 title={p.label}
                 style={{
@@ -141,13 +151,14 @@ export default function MachineFloorMap({
                   boxShadow: d ? '0 0 12px rgba(61,214,92,0.8)' : sel ? '0 0 10px rgba(61,214,92,0.6)' : `0 0 8px ${color}66`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   pointerEvents: 'auto', cursor: editable ? (d ? 'grabbing' : 'grab') : 'pointer',
+                  touchAction: editable ? 'none' : undefined, // โหมดแก้ไข: กันหน้าจอ scroll ระหว่างลากหมุดบนจอทัช
                   // dim (ไม่เข้าฟิลเตอร์แผนก) ต้องจางจนเห็นชัดว่าถูกกรองออก — 0.28 เดิมแยกไม่ออกจากจุดปกติ
                   opacity: p.dim ? 0.1 : (d ? 0.92 : 1), zIndex: (sel || d) ? 15 : 5,
                 }}>
                 <span style={{ fontSize: iconFont, lineHeight: 1 }}>⚙️</span>
 
                 {editable && (
-                  <div onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onMarkerRemove?.(p.id) }}
+                  <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onMarkerRemove?.(p.id) }}
                     title="เอาออกจากผัง"
                     style={{ position: 'absolute', top: -6, right: -6, width: 16, height: 16, borderRadius: '50%', background: '#e05c4a', color: '#fff', fontSize: 11, lineHeight: '16px', textAlign: 'center', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>✕</div>
                 )}

@@ -3,7 +3,7 @@
 > **ทุก session ที่แก้ UI ต้องอ่านไฟล์นี้ก่อนลงมือ และเมื่อสร้าง/เปลี่ยน pattern ที่ใช้ร่วมกันหลายหน้า ต้องอัพเดทไฟล์นี้ในคอมมิทเดียวกัน**
 > เหตุผล: หลาย session ทำงานขนานกัน ถ้าไม่มีมาตรฐานกลาง จะได้ UI คนละทรง (เคยเกิดแล้ว: จุดเครื่องจักรฝั่ง MTN ทำเป็นเหลี่ยม ขณะที่ระบบหลักเป็นวงกลม)
 
-อัพเดทล่าสุด: 2026-07-11 (ปุ่ม 🏷️ ป้ายชื่อ 3 สถานะ auto/all/none คุมทุกชนิดจุด · ลำดับชนิดจุดมาตรฐาน คน→เครื่องจักร→WIP)
+อัพเดทล่าสุด: 2026-07-11 (ปุ่ม 🏷️ ป้ายชื่อ 3 สถานะ · ลำดับจุด คน→เครื่องจักร→WIP · mobile: useIsMobile hook / time board เลื่อนแนวนอนบนมือถือ / mgrid·tbtn / pointer-drag)
 
 ---
 
@@ -94,6 +94,16 @@ const { MK, SUB, showSubPills, ... } = markerScale(renderedMapWidth, { machineCo
 - **branch มือถือใช้ hook กลาง `src/utils/useIsMobile.js`** (≤768px + listener อัพเดทตอนหมุนจอ) —
   หน้าใหม่/แก้ใหม่ห้ามเขียน `window.innerWidth <= 768` แบบคำนวณครั้งเดียวเอง (2026-07-11)
   และ branch มือถือต้องเป็น **additive เท่านั้น**: จอ >768px ต้อง render เหมือนโค้ดเดิมเป๊ะ
+- **CSS class กลางสำหรับมือถือ/จอทัช (2026-07-11 — อยู่ใน index.css):**
+  - `className="mgrid"` — ฟอร์ม grid หลายคอลัมน์ (`1fr 1fr`, `1fr 1fr 1fr` ฯลฯ มักอยู่ใน modal)
+    → จอ ≤600px ยุบเป็นคอลัมน์เดียวอัตโนมัติ (`!important` ชนะ inline เฉพาะจอแคบ) —
+    modal/ฟอร์มใหม่ที่มี grid หลายคอลัมน์**ต้องติด class นี้เสมอ**
+  - `className="tbtn"` — ปุ่มไอคอนเล็กในตาราง (✏️ 🗑️ ✕ 💾) → จอทัช (`pointer:coarse`)
+    ขยาย hit area ≥40px · เมาส์ไม่เปลี่ยน
+- **ลาก marker/หมุดต้องใช้ pointer events** (`onPointerDown` + window `pointermove/pointerup/pointercancel`
+  + `touchAction:'none'` บน element ระหว่างโหมดแก้ไข) — ห้ามใช้ mouse events อย่างเดียว
+  ไม่งั้นจอทัชลากไม่ได้ · ต้นแบบ: `MachineFloorMap.jsx` (2026-07-11), JigSpinCheck ใน `PMCheckData.jsx`
+  · ข้อยกเว้นที่ตั้งใจ: `LineSetup.jsx` ยังเป็น mouse-only (desktop authoring tool — มือถือดูผังได้อย่างเดียว)
 
 ---
 

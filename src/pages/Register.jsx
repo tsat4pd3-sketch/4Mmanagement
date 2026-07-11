@@ -151,7 +151,7 @@ export default function Register() {
             <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>ตำแหน่งงาน</label>
               <select value={position} onChange={e => setPosition(e.target.value)}>
@@ -176,7 +176,7 @@ export default function Register() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>Department / แผนก</label>
               <select value={department} onChange={e => { setDepartment(e.target.value); setGroupName(''); setLineId(null); }} disabled={!section}>
