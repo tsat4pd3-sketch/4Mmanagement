@@ -196,6 +196,10 @@ export default function Management() {
   const [isSavingDoc,     setIsSavingDoc]     = useState(false);
   const [lineProdData,    setLineProdData]    = useState(null); // heijunka data for selected line
   const [boardDate,       setBoardDate]       = useState(() => getWorkDate()); // วันที่ mini Heijunka board — เลือกดูย้อนหลังได้
+  // มือถือ: บอร์ด Heijunka default พับเป็นแถบสรุป (map-first — ผังคนได้พื้นที่เต็ม) · จำสถานะใน localStorage
+  const [mobileBoardOpen, setMobileBoardOpen] = useState(() => { try { return localStorage.getItem('mg_board_open_mobile') === '1'; } catch { return false; } });
+  const toggleMobileBoard = () => setMobileBoardOpen(v => { try { localStorage.setItem('mg_board_open_mobile', v ? '0' : '1'); } catch { /* private mode */ } return !v; });
+  const [showLegendMobile, setShowLegendMobile] = useState(false); // มือถือ: legend สถานะยุบเข้าปุ่ม ℹ️
   const [imgBox,         setImgBox]         = useState(null); // actual rendered image bounds inside objectFit:contain
   const imgRef = useRef(null);
   const recalcImgBox = useCallback(() => {
@@ -1012,6 +1016,12 @@ export default function Management() {
           onDrop={!isMobile ? (e) => handleDrop(e, 'Pool') : undefined}
           style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 0 }}
         >
+          {/* มือถือ + pool ว่างทั้งสองส่วน: ยุบเหลือแถบเดียว คืนพื้นที่ให้ผังคน (desktop เหมือนเดิม) */}
+          {isMobile && poolWorkers.length === 0 && specialWorkers.length === 0 ? (
+            <div style={{ fontSize: 11, color: 'var(--muted)', padding: '2px 0', display: 'flex', gap: 10, alignItems: 'center' }}>
+              <span>🔵 พร้อมทำงาน 0</span><span style={{ color: 'rgba(245,158,11,0.7)' }}>🟡 งานนอกไลน์ 0</span><span>— ไม่มีพนักงานใน Pool</span>
+            </div>
+          ) : (<>
           {/* Normal pool — 70% */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexShrink: 0 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🔵 พร้อมทำงาน</span>
@@ -1066,6 +1076,7 @@ export default function Management() {
               </button>
             )}
           </div>
+          </>)}
         </div>
 
         {/* 4M buttons — desktop only in sidebar */}
@@ -1100,7 +1111,7 @@ export default function Management() {
         {/* ── Mini Heijunka board ── */}
         {lineProdData && (() => {
           const HOURS = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
-          const LEFT_W = 170; // ป้ายพาร์ทใหญ่ขึ้น (รูป 46px + ชื่อ 2 บรรทัด) — ป้ายเดียวครอบ 2 แถบเวลา
+          const LEFT_W = isMobile ? 120 : 170; // ป้ายพาร์ทใหญ่ (รูป 46px + ชื่อ 2 บรรทัด) — มือถือแคบลง + บอร์ดเลื่อนแนวนอน
           const nowMs = nowForBoard.current.getTime();
           const wd = lineProdData.workDate;
           const gridStartMs = new Date(`${wd}T08:00:00`).getTime();
@@ -1425,6 +1436,24 @@ export default function Management() {
             return chips;
           })();
           const todayWd = getWorkDate();
+          // มือถือ + พับอยู่: แถบสรุปบรรทัดเดียว แตะเพื่อกางบอร์ด (desktop ไม่มีโหมดพับ — เหมือนเดิม)
+          if (isMobile && !mobileBoardOpen) {
+            return (
+              <button onClick={toggleMobileBoard} style={{
+                width: '100%', marginBottom: 10, padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
+                background: 'var(--card)', textAlign: 'left',
+                border: `1px solid ${totalDelayed > 0 ? 'rgba(239,68,68,0.45)' : hasOpen ? 'rgba(34,197,94,0.35)' : 'var(--border2)'}`,
+                display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+              }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>📊 Heijunka — {selectedLine}</span>
+                {totalDelayed > 0
+                  ? <span style={{ fontSize: 12, fontWeight: 800, color: '#ef4444' }}>⚠️ ดีเลย์ {totalDelayed} ใบ</span>
+                  : <span style={{ fontSize: 12, fontWeight: 700, color: hasOpen ? '#22c55e' : 'var(--muted)' }}>{hasOpen ? '● Live' : '✓ ปิดกะแล้ว'}</span>}
+                {isHistorical && <span style={{ fontSize: 11, color: '#a855f7', fontWeight: 700 }}>📅 {boardDate}</span>}
+                <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>▸ แตะเพื่อดูบอร์ด</span>
+              </button>
+            );
+          }
           const shiftBoardDate = (days) => {
             const d = new Date(`${boardDate}T12:00:00`);
             d.setDate(d.getDate() + days);
@@ -1474,6 +1503,18 @@ export default function Management() {
                       );
                     });
                   })()}
+                  {isMobile && (
+                    <button className="tbtn" onClick={() => setShowLegendMobile(v => !v)} title="สัญลักษณ์สถานะการ์ด"
+                      style={{ padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: showLegendMobile ? 'var(--accent-dim)' : 'var(--bg)', border: `1px solid ${showLegendMobile ? 'var(--accent)' : 'var(--border)'}`, color: showLegendMobile ? 'var(--accent)' : 'var(--text2)' }}>
+                      ℹ️
+                    </button>
+                  )}
+                  {isMobile && (
+                    <button className="tbtn" onClick={toggleMobileBoard} title="พับบอร์ด"
+                      style={{ padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>
+                      ▾ พับ
+                    </button>
+                  )}
                 </div>
               </div>
               {/* Kanban ที่เปิดอยู่ ต่อ MAT.NO */}
@@ -1487,7 +1528,8 @@ export default function Management() {
                   ))}
                 </div>
               )}
-              {/* Legend สีสถานะ kanban */}
+              {/* Legend สีสถานะ kanban — มือถือซ่อนไว้หลังปุ่ม ℹ️ (ประหยัดพื้นที่ 2-3 บรรทัด) */}
+              {(!isMobile || showLegendMobile) && (
               <div style={{ padding: '6px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', gap: 14, flexWrap: 'wrap', background: 'var(--bg)' }}>
                 {[
                   { c: '#4d9fff', icon: '▶', label: 'กำลังผลิต' },
@@ -1504,6 +1546,7 @@ export default function Management() {
                   </div>
                 ))}
               </div>
+              )}
               {/* 🧠 Smart planner — คาดการณ์เวลาเสร็จ / คำแนะนำ OT */}
               {plannerChips.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, padding: '7px 14px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
@@ -1622,12 +1665,14 @@ export default function Management() {
                   </div>
                 );
                 return (
+                  <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
+                  <div style={isMobile ? { minWidth: 640 } : undefined}>
                   <div>
                     {/* Hour header — เวลาคู่: บรรทัดบน ☀️ 08–19 / บรรทัดล่าง 🌙 20–07 คอลัมน์เดียวกัน */}
                     <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
-                      <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '3px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1 }}>
-                        <span>☀️ กะเช้า (แถบบน)</span>
-                        <span>🌙 กะดึก (แถบล่าง)</span>
+                      <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '3px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3, background: 'var(--bg2)' } : null) }}>
+                        <span>☀️ กะเช้า{isMobile ? '' : ' (แถบบน)'}</span>
+                        <span>🌙 กะดึก{isMobile ? '' : ' (แถบล่าง)'}</span>
                       </div>
                       {/* ป้ายเวลาปัจจุบัน ลอยตรงตำแหน่ง playhead (คอลัมน์ใช้ร่วม 2 กะ — ไอคอนบอกว่าอยู่กะไหน) */}
                       {(() => {
@@ -1669,7 +1714,7 @@ export default function Management() {
                       const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
                       return (
                         <div key={row.key} style={{ display: 'flex', borderTop: '1px solid var(--border2)', overflow: 'hidden' }}>
-                          <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden' }}>
+                          <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3, background: 'var(--card)' } : null) }}>
                             {row.img && <img src={row.img} alt="" style={{ width: 46, height: 46, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                             <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0 }}>
                               <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>{row.label}</div>
@@ -1688,6 +1733,8 @@ export default function Management() {
                         </div>
                       );
                     })}
+                  </div>
+                  </div>
                   </div>
                 );
               })()}
