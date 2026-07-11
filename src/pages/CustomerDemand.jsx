@@ -223,8 +223,9 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
     Object.entries(byCustomer).forEach(([cust, list]) => {
       const laneEnd = [];
       const map = {};
-      list.forEach(o => {
-        const t = frameMin(o.ship_time) ?? (tStart + span);
+      // order ที่ไม่ระบุเวลาไม่เข้าเลน — รวมเป็นชิป ⏳ ใบเดียวท้ายแถวแทน (เคยไปกองตกขอบขวาเป็นสิบเลน)
+      list.filter(o => frameMin(o.ship_time) != null).forEach(o => {
+        const t = frameMin(o.ship_time);
         let li = laneEnd.findIndex(end => t >= end);
         if (li < 0) { li = laneEnd.length; laneEnd.push(0); }
         laneEnd[li] = t + SPAN_MIN;
@@ -284,7 +285,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
               <div style={{ width: 130, flexShrink: 0, padding: '3px 10px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)' }}>ลูกค้า · คลิกชื่อเพื่อย่อ/ขยาย</div>
               <div style={{ flex: 1, position: 'relative', height: 22 }}>
                 {hourMarks.map((m, i) => (i % 2 === 0 &&
-                  <span key={m} style={{ position: 'absolute', left: `${((m - tStart) / span) * 100}%`, fontSize: 11, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
+                  <span key={m} style={{ position: 'absolute', left: `${((m - tStart) / span) * 100}%`, fontSize: 11, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: m === tStart + span ? 'translateX(-100%)' : 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
                     {String((m / 60) % 24 | 0).padStart(2, '0')}
                   </span>
                 ))}
@@ -333,13 +334,13 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                     {isToday && nowW >= tStart && nowW <= tStart + span && (
                       <div className="now-line" style={{ left: `${((nowW - tStart) / span) * 100}%` }} />
                     )}
-                    {list.map(o => {
+                    {list.filter(o => frameMin(o.ship_time) != null).map(o => {
                       const tw = frameMin(o.ship_time);
                       const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
                       const od = isOverdue(o);
                       const pl = phaseLate(o);
                       const color = od ? '#ef4444' : pl ? '#f97316' : st.color;
-                      const left = tw == null ? 99 : ((tw - tStart) / span) * 100;
+                      const left = ((tw - tStart) / span) * 100;
                       const lane = lanes.map[o.id] || 0;
                       const isSel = popup?.o?.id === o.id;
                       if (isCol) {
@@ -367,6 +368,28 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                         </div>
                       );
                     })}
+                    {/* order ที่ลูกค้าไม่ระบุเวลาส่ง — รวมเป็นชิปเดียวท้ายแถว ไม่ตกขอบ/ไม่กองสูง
+                        คลิกดูรายละเอียดทีละใบใน popup (ไล่จากการ์ดด้านล่างได้เหมือนเดิม) */}
+                    {(() => {
+                      const noTime = list.filter(o => frameMin(o.ship_time) == null);
+                      if (!noTime.length) return null;
+                      const doneAll = noTime.every(o => o.status === 'shipped');
+                      return (
+                        <div onClick={e => setPopup({ o: noTime[0], x: e.clientX, y: e.clientY })}
+                          title={`ไม่ระบุเวลาส่ง ${noTime.length} รายการ: ${noTime.map(o => `${o.mat_no} × ${fmt(o.qty)}`).join(' · ')}`}
+                          style={{
+                            position: 'absolute', top: isCol ? 2 : 5, right: 4, height: isCol ? 22 : LANE_H - 6,
+                            padding: '0 10px', display: 'flex', alignItems: 'center', gap: 4,
+                            background: doneAll ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)',
+                            border: `1.5px dashed ${doneAll ? '#22c55e' : '#f59e0b'}`, borderRadius: 5,
+                            cursor: 'pointer', zIndex: 2, boxSizing: 'border-box',
+                          }}>
+                          <span style={{ fontSize: 12, fontWeight: 800, color: doneAll ? '#22c55e' : '#f59e0b', whiteSpace: 'nowrap', lineHeight: 1 }}>
+                            ⏳ {noTime.length} ไม่ระบุเวลา{doneAll ? ' ✅' : ''}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               );
