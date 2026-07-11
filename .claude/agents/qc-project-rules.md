@@ -95,6 +95,9 @@ model: inherit
   grep: `maxWidth` ที่คูณ MK/SUB/size ตรงๆ โดยไม่มีขั้นต่ำ ในไฟล์ที่วาด marker
 - **F8** balloon จุดตรวจ: anchor ฝั่ง PM `translate(-50%,-100%)` ต้องเหมือนกันทั้ง 3 renderer
   (SpinAnnotator / PMSetup / PMCheckData) — ถ้าไฟล์ใดไฟล์หนึ่งต่าง = บั๊กร้ายแรง
+  · ทั้ง 3 ต้องหัก letterbox ผ่าน hook กลาง `src/utils/useImgBox.js` (วาง pin บน layer
+  ox/oy/rw/rh + แปลงคลิกจาก layer เดียวกัน) และ maxHeight รูป = 300 เท่ากัน —
+  grep: pin ที่วางเป็น % ของ container ตรงๆ บน img objectFit:contain
 - **F10** (2026-07-11) branch มือถือ: หน้าใหม่/แก้ใหม่ใช้ hook กลาง `src/utils/useIsMobile.js`
   — grep `window.innerWidth <= 768` ที่คำนวณครั้งเดียวนอก hook = ผิด convention ·
   branch มือถือต้องเป็น additive (จอ >768px render เหมือนเดิม) ·
@@ -102,9 +105,6 @@ model: inherit
   `className="tbtn"` · บอร์ดเวลา 24 ชม.: มือถืออนุญาต scroll แนวนอน (UI-CONVENTIONS §6)
   แต่ desktop ห้าม scroll เหมือนเดิม · ลาก marker ใช้ pointer events (`onPointerDown` +
   `touchAction:'none'`) ไม่ใช่ mouse events อย่างเดียว — grep `onMouseDown` ที่เริ่ม drag
-  · ทั้ง 3 ต้องหัก letterbox ผ่าน hook กลาง `src/utils/useImgBox.js` (วาง pin บน layer
-  ox/oy/rw/rh + แปลงคลิกจาก layer เดียวกัน) และ maxHeight รูป = 300 เท่ากัน —
-  grep: pin ที่วางเป็น % ของ container ตรงๆ บน img objectFit:contain
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่
