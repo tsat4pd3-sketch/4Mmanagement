@@ -80,7 +80,7 @@ padding 4-6px fontSize 11 ≈ สูง 24-28px · **วิธีแก้:** ru
 | **CustomerDemand** | กลาง | 🔴 | Shipping Chart inline (§2.1, :280-371) · ปุ่มตารางเล็ก (:644-747) | §2.1 · §2.4 |
 | **Checkin** | สูง (เช็คชื่อหน้างาน) | 🟡 | Export modal `width:380` fix ล้นจอเล็ก (:1587) · ตาราง minWidth 820 เลื่อนหนัก (:1135 — เลื่อนได้แล้ว) | `'min(380px,94vw)'` · (option) card view ต่อคนแบบ Report Skill Matrix |
 | **Dashboard** | สูง | 🟡 | Heijunka `LEFT_W=175` (:1084) · date input trap (:783) | isMobile → LEFT_W 96 / scroll · ตั้ง width |
-| **Management** | สูง | 🟢/🟡 | fixed filter ปุ่ม top-right อาจชน ☰/🔔 (:916) | media ปรับตำแหน่งเฉพาะ ≤768 |
+| **Management** | สูง | 🟢 ✅ | ~~บอร์ด Heijunka บีบ + ผังคนตกจอ~~ แก้แล้ว 2026-07-11 (map-first): มือถือบอร์ดพับเป็นแถบสรุป default (จำใน localStorage `mg_board_open_mobile`), กางแล้วเลื่อนแนวนอน + ป้าย sticky, legend ยุบเข้าปุ่ม ℹ️, Pool ว่างยุบเหลือแถบเดียว | — |
 | **QualityControl** | ต่ำ | 🟡 | grid ใน modal `'1fr 1fr 1fr'` (:1214), `'2fr 1fr 1fr'` (:1048) ไม่ยุบ · select `minWidth:320` (:506) | media → `1fr` · `min(320px,100%)` |
 | **PMSetup** | ต่ำ | 🟡 | modal grid `1fr 1fr` หลายจุดไม่ยุบ (:124,:239,:725-736) · page padding fix (:71) | media → `1fr` |
 | **PMSchedule** | กลาง | 🟡 | `S.page` padding `'28px 32px'` fix (:27) — ที่เหลือ scroll ได้แล้ว | media ลด padding 14 |
@@ -131,6 +131,15 @@ padding 4-6px fontSize 11 ≈ สูง 24-28px · **วิธีแก้:** ru
     `Management` ปุ่ม filter ลอย **ตั้งใจข้าม** — คำนวณตำแหน่งแล้วไม่ทับ ☰/🔔 บนจอ 390px
     (filter อยู่ x≈212-332, ☰ x≈14-48, 🔔 x≈340-376) และหน้านี้ mobile-optimized อยู่แล้ว
     เปลี่ยนตำแหน่งเสี่ยงกว่าปล่อยไว้ — รอ feedback จากเครื่องจริงก่อน
+
+**เก็บตกรอบ 2 (จาก feedback รูปถ่ายหน้างานจริง) — ✅ ทำแล้ว 2026-07-11:**
+14. ✅ `Management` แนวทาง "ก. Map-first + พับ section" บนมือถือ:
+    - บอร์ด Heijunka **default พับ**เป็นแถบสรุป (📊 ชื่อไลน์ · ⚠️ ดีเลย์ N ใบ / ● Live) แตะกาง —
+      จำสถานะใน `localStorage.mg_board_open_mobile` → ผังคนได้พื้นที่เกือบเต็มจอ
+    - บอร์ดตอนกาง: เลื่อนแนวนอน + ป้ายพาร์ท sticky ซ้าย (pattern เดียวกับ Dashboard — ปิดงานตกหล่นเฟส 2)
+    - legend สถานะ 7 ชิป ยุบเข้าปุ่ม ℹ️ ในหัวบอร์ด (เฉพาะมือถือ)
+    - Pool ว่างทั้งสองส่วน → ยุบเหลือแถบบรรทัดเดียว
+    - desktop/TV ทุกจุด render เหมือนเดิม (ไม่มีโหมดพับบน desktop)
 
 **หลังแก้แต่ละเฟส:** อัพเดท `docs/UI-CONVENTIONS.md` ถ้าเกิด pattern ใหม่
 (โดยเฉพาะข้อยกเว้น scroll แนวนอนของ time board §6 บนมือถือ) + อัพเดทไฟล์นี้
