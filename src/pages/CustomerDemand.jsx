@@ -49,6 +49,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
   const [highlightId, setHighlightId] = useState(null);
   const [collapsedCust, setCollapsedCust] = useState({});  // ย่อแถวลูกค้า (ข้อมูลเยอะ) — ยังเห็นจุดสถานะแบบย่อ
   const [breakPolicies, setBreakPolicies] = useState([]);  // เงาเวลาพักบนชาร์ต (มาตรฐานเดียวกับบอร์ด Heijunka)
+  const [pastDue, setPastDue] = useState([]);              // ใบค้างส่งจากวันงานก่อนหน้า (ย้อน 14 วัน)
   useEffect(() => {
     supabaseDR.from('break_policies').select('*').eq('is_active', true)
       .then(({ data }) => setBreakPolicies(data || []));
@@ -59,12 +60,18 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
   const load = useCallback(async () => {
     // วันงาน D = (D, เวลา ≥ 08:00 หรือไม่ระบุเวลา) + (D+1, เวลา < 08:00 = กะดึกข้ามคืน)
     const nd = nextDayOf(day);
-    const [{ data: d1 }, { data: d2 }, { data: wfs }] = await Promise.all([
+    const back = new Date(`${day}T12:00:00`);
+    back.setDate(back.getDate() - 14);
+    const [{ data: d1 }, { data: d2 }, { data: wfs }, { data: past }] = await Promise.all([
       supabaseDR.from('customer_shipping_orders').select('*').eq('due_date', day),
       supabaseDR.from('customer_shipping_orders').select('*').eq('due_date', nd).not('ship_time', 'is', null).lt('ship_time', '08:00'),
       supabaseDR.from('shipping_workflow_steps').select('*').eq('is_active', true).order('step_no'),
+      // ใบค้างส่งจากวันงานก่อนหน้า (ย้อน 14 วัน) — เตือนบนหัวหน้า ไม่ให้ของเก่าหายเงียบตอนข้ามวัน
+      supabaseDR.from('customer_shipping_orders').select('id, due_date')
+        .gte('due_date', dateStr(back)).lt('due_date', day).neq('status', 'shipped'),
     ]);
     setWfSteps(wfs || []);
+    setPastDue(past || []);
     const list = [
       ...(d1 || []).filter(o => !o.ship_time || o.ship_time.slice(0, 5) >= '08:00'),
       ...(d2 || []),
@@ -102,8 +109,12 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
   /* เวลาบนกรอบวันงาน: ใช้ frameMin จาก utils/timeFrame (ห้ามเขียน wrap นาทีเองซ้ำ — UI-CONVENTIONS §6) */
   const now = new Date();
   const isToday = day === workDateStr();
+  const isPastDay = day < workDateStr();   // ดูวันงานที่ผ่านมาแล้ว — deadline ทุกตัวของวันนั้นผ่านไปหมดแล้ว
   const nowW = frameMin(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
-  const isOverdue = (o) => isToday && o.status !== 'shipped' && frameMin(o.ship_time) != null && frameMin(o.ship_time) < nowW;
+  // เลยเวลา = ยังไม่ส่ง และ (วันงานนั้นผ่านไปแล้วทั้งวัน หรือ วันนี้แต่เลยเวลาส่งแล้ว)
+  // — เดิมเช็คเฉพาะ isToday ทำให้พอข้ามวัน ใบค้างส่งกลายเป็นเหลือง "รอยืนยัน" เฉยๆ ทั้งที่ตกดิวไปแล้ว
+  const isOverdue = (o) => o.status !== 'shipped'
+    && (isPastDay || (isToday && frameMin(o.ship_time) != null && frameMin(o.ship_time) < nowW));
 
   // ── Standard workflow (walkback): deadline ต่อเฟส = เวลาส่ง − offset_min ──
   const stepsForCust = (customer) => {
@@ -117,7 +128,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
       const dl = tw - st.offset_min;
       const m = ((dl % 1440) + 1440) % 1440;
       const done = (SHIP_RANK[o.status] ?? 0) >= (SHIP_RANK[st.requires_status] ?? 9);
-      const missed = !done && isToday && nowW > dl;
+      const missed = !done && (isPastDay || (isToday && nowW > dl));
       return { ...st, dlW: dl, deadline: `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`, done, missed };
     });
   };
@@ -267,6 +278,13 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
           {overdueCount > 0 && <span style={{ color: '#ef4444' }}> · 🔴 {overdueCount} เลยเวลา</span>}
           {shortCount > 0 && <span style={{ color: '#f59e0b' }}> · 📦 {shortCount} รอบ stock ไม่พอ</span>}
         </span>
+        {pastDue.length > 0 && (
+          <button onClick={() => setDay(pastDue.reduce((a, p) => (p.due_date > a ? p.due_date : a), pastDue[0].due_date))}
+            title="คลิกเพื่อกระโดดไปวันงานล่าสุดที่ยังมีใบค้างส่ง"
+            style={{ padding: '4px 12px', borderRadius: 8, border: '1.5px solid rgba(239,68,68,0.5)', background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0 }}>
+            ⏰ ค้างส่งจากวันก่อน {pastDue.length} ใบ — กดดู
+          </button>
+        )}
       </div>
 
       {orders.length === 0 ? (
