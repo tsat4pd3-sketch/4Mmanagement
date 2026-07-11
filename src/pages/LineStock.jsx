@@ -34,7 +34,7 @@ const REVIEW_TYPES = ['adjust'];
 const STATUS_LABEL = { pending:'⏳ รออนุมัติ', approved:'อนุมัติแล้ว', rejected:'❌ ปฏิเสธ' };
 const STATUS_COLOR = { pending:'#f59e0b', approved:'#22c55e', rejected:'#ef4444' };
 
-const EMPTY_FORM = { line_name:'', mat_no:'', part_name:'', qty:'', type:'issue', note:'', work_date: getToday() };
+const EMPTY_FORM = { line_name:'', mat_no:'', part_name:'', qty:'', type:'issue', dir:'up', note:'', work_date: getToday() };
 
 /* ─────────────────────────────────────────────────────────────────────────────
    TAB: STOCK (existing content)
@@ -48,6 +48,8 @@ function StockTab({ role }) {
   const [stock,   setStock]   = useState([]);
   const [txns,    setTxns]    = useState([]);
   const [bomMap,  setBomMap]  = useState({});
+  const [ksMap,   setKsMap]   = useState({});       // mat_no → { min, max } จาก kanban_standards
+  const [knownMats, setKnownMats] = useState(() => new Set()); // mat ที่มีในฐาน (parts_master/BOM) — กันสร้างของผี
   const [products, setProducts] = useState([]);     // [{id, name, mat_no, line_name}]
   const [productBom, setProductBom] = useState({}); // product_id → [{mat_no, part_name}]
   const [bomProduct, setBomProduct] = useState(''); // product_id ที่เลือกในฟอร์ม (เพื่อดึง MAT จาก BOM)
@@ -67,11 +69,13 @@ function StockTab({ role }) {
   const [rejectReason,setRejectReason]= useState('');
 
   const load = useCallback(async () => {
-    const [{ data: ln }, { data: stk }, { data: boms }, { data: prods }] = await Promise.all([
+    const [{ data: ln }, { data: stk }, { data: boms }, { data: prods }, { data: ks }, { data: pm }] = await Promise.all([
       supabase.from('production_lines').select('name').order('name'),
       supabaseDR.from('line_stock_summary').select('*').order('line_name').order('mat_no'),
       supabaseDR.from('bom_items').select('product_id, mat_no, part_name').eq('is_active', true),
       supabaseDR.from('dr_products').select('id, name, mat_no, line_name').eq('is_active', true).order('line_name').order('name'),
+      supabaseDR.from('kanban_standards').select('mat_no, min_qty, max_qty').eq('is_active', true),
+      supabaseDR.from('parts_master').select('mat_no').eq('is_active', true),
     ]);
     setLines(ln || []);
     setStock(stk || []);
@@ -84,7 +88,29 @@ function StockTab({ role }) {
     });
     setBomMap(bm);
     setProductBom(pb);
+    const km = {};
+    (ks || []).forEach(s => { km[s.mat_no] = { min: s.min_qty, max: s.max_qty }; });
+    setKsMap(km);
+    const known = new Set();
+    (pm || []).forEach(p => known.add(p.mat_no));
+    (boms || []).forEach(b => known.add(b.mat_no));
+    setKnownMats(known);
   }, []);
+
+  // สถานะ stock ตาม min/max จริง (kanban_standards) — ถ้าไม่มี min ตั้งไว้ fallback < 10
+  const stockStatus = useCallback((qty, mat_no) => {
+    const min = ksMap[mat_no]?.min;
+    if (qty <= 0) return { label:'🔴 หมด/ติดลบ', color:'#ef4444', bg:'rgba(239,68,68,0.1)', low:true };
+    if (min != null && qty <= min) return { label:`🟡 ต่ำกว่า min (${min})`, color:'#f59e0b', bg:'rgba(245,158,11,0.1)', low:true };
+    if (min == null && qty < 10)   return { label:'🟡 เหลือน้อย', color:'#f59e0b', bg:'rgba(245,158,11,0.1)', low:true };
+    return { label:'🟢 ปกติ', color:'#22c55e', bg:'rgba(34,197,94,0.1)', low:false };
+  }, [ksMap]);
+
+  // on-hand ปัจจุบันของ line+mat (จาก stock ที่โหลดมา) — ใช้โชว์ในฟอร์ม + กันติดลบ
+  const onHandOf = useCallback((line_name, mat_no) => {
+    const row = stock.find(s => s.line_name === line_name && s.mat_no === (mat_no || '').trim().toUpperCase());
+    return row ? (parseFloat(row.qty_on_hand) || 0) : 0;
+  }, [stock]);
 
   const loadTxns = useCallback(async () => {
     const q = supabaseDR.from('line_stock_transactions').select('*').order('created_at', { ascending: false }).limit(100);
@@ -123,14 +149,26 @@ function StockTab({ role }) {
     if (!form.mat_no.trim()) { toast.error('กรอก Mat No.'); return; }
     const qty = parseFloat(form.qty);
     if (!qty || qty <= 0) { toast.error('จำนวนต้องมากกว่า 0'); return; }
+    const matUpper = form.mat_no.trim().toUpperCase();
+    const isAdjustDown = form.type === 'adjust' && form.dir === 'down';
+    // กันสร้างของผี: MAT ที่ไม่มีในฐาน (parts master/BOM) ต้องยืนยันก่อน
+    if (!knownMats.has(matUpper) && !bomMap[matUpper]) {
+      if (!window.confirm(`MAT ${matUpper} ไม่มีในฐานข้อมูล (Parts Master / BOM)\nยืนยันสร้างรายการ stock ใหม่?`)) return;
+    }
+    // กัน stock ติดลบเงียบๆ สำหรับรายการที่หักออก (คืน Store / ปรับลด)
+    if (form.type === 'return' || isAdjustDown) {
+      const cur = onHandOf(form.line_name, matUpper);
+      const after = cur - qty;
+      if (after < 0 && !window.confirm(`คงเหลือปัจจุบัน ${cur.toLocaleString()} ชิ้น — ทำรายการนี้แล้วจะติดลบ (${after.toLocaleString()})\nยืนยันดำเนินการ?`)) return;
+    }
     // ประเภทที่ต้อง review → บันทึกเป็น pending (ยังไม่มีผลต่อ on-hand จนกว่าจะอนุมัติ)
     const needsReview = REVIEW_TYPES.includes(form.type);
     setSaving(true);
     const { error } = await supabaseDR.from('line_stock_transactions').insert({
       line_name:  form.line_name,
-      mat_no:     form.mat_no.trim().toUpperCase(),
-      part_name:  form.part_name.trim() || bomMap[form.mat_no.trim().toUpperCase()] || null,
-      qty,
+      mat_no:     matUpper,
+      part_name:  form.part_name.trim() || bomMap[matUpper] || null,
+      qty:        isAdjustDown ? -qty : qty,   // adjust ลด = เก็บ qty ติดลบ (view: adjust = +qty → ลบออกจริง)
       type:       form.type,
       status:     needsReview ? 'pending' : 'approved',
       work_date:  form.work_date,
@@ -305,8 +343,8 @@ function StockTab({ role }) {
                     <table style={{ width:'100%', borderCollapse:'collapse' }}>
                       <thead>
                         <tr style={{ background:'var(--bg2)' }}>
-                          {['Mat SAP','Part Name','คงเหลือ (ชิ้น)','สถานะ'].map(h => (
-                            <th key={h} style={{ padding:'8px 14px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign: h==='คงเหลือ (ชิ้น)' ? 'right' : 'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
+                          {['Mat SAP','Part Name','คงเหลือ (ชิ้น)','Min / Max','สถานะ'].map(h => (
+                            <th key={h} style={{ padding:'8px 14px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign: (h==='คงเหลือ (ชิ้น)'||h==='Min / Max') ? 'right' : 'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
                           ))}
                           {canIssue && <th style={{ padding:'8px 14px', width:90 }}></th>}
                         </tr>
@@ -314,17 +352,19 @@ function StockTab({ role }) {
                       <tbody>
                         {parts.map(p => {
                           const qty = parseFloat(p.qty_on_hand) || 0;
-                          const isLow = qty <= 0;
+                          const st = stockStatus(qty, p.mat_no);
+                          const ks = ksMap[p.mat_no];
                           return (
-                            <tr key={p.mat_no} style={{ opacity: isLow ? 0.7 : 1 }}>
+                            <tr key={p.mat_no} style={{ opacity: qty <= 0 ? 0.7 : 1 }}>
                               <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontWeight:700, color:'#0ea5e9', fontSize:13 }}>{p.mat_no}</td>
                               <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', fontSize:13, color:'var(--text)' }}>{p.part_name || bomMap[p.mat_no] || '—'}</td>
-                              <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', textAlign:'right', fontSize:16, fontWeight:900, color: isLow ? '#ef4444' : qty < 10 ? '#f59e0b' : 'var(--accent)' }}>{qty.toLocaleString()}</td>
+                              <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', textAlign:'right', fontSize:16, fontWeight:900, color: st.color }}>{qty.toLocaleString()}</td>
+                              <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', textAlign:'right', fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>
+                                {ks && (ks.min != null || ks.max != null) ? `${ks.min ?? '—'} / ${ks.max ?? '—'}` : '—'}
+                              </td>
                               <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)' }}>
-                                <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700,
-                                  background: isLow ? 'rgba(239,68,68,0.1)' : qty < 10 ? 'rgba(245,158,11,0.1)' : 'rgba(34,197,94,0.1)',
-                                  color: isLow ? '#ef4444' : qty < 10 ? '#f59e0b' : '#22c55e' }}>
-                                  {isLow ? '🔴 หมด/ติดลบ' : qty < 10 ? '🟡 เหลือน้อย' : '🟢 ปกติ'}
+                                <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background: st.bg, color: st.color }}>
+                                  {st.label}
                                 </span>
                               </td>
                               {canIssue && (
@@ -390,7 +430,7 @@ function StockTab({ role }) {
                       )}
                     </td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontWeight:800, fontSize:14, color: t.status !== 'approved' ? 'var(--muted)' : t.type === 'consume' ? '#94a3b8' : t.type === 'return' ? '#f59e0b' : '#22c55e', textAlign:'right', opacity: t.status !== 'approved' ? 0.55 : 1 }}>
-                      {t.type === 'consume' || t.type === 'return' ? '-' : '+'}{parseFloat(t.qty).toLocaleString()}
+                      {(() => { const q = parseFloat(t.qty) || 0; const s = (t.type === 'consume' || t.type === 'return') ? -Math.abs(q) : q; return (s >= 0 ? '+' : '') + s.toLocaleString(); })()}
                     </td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)' }}>{t.note || '—'}</td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)' }}>{t.created_by || '—'}</td>
@@ -502,8 +542,28 @@ function StockTab({ role }) {
                 <input style={inputSt} value={form.part_name} onChange={e => setForm(f => ({ ...f, part_name:e.target.value }))} placeholder="กรอกหรือเลือกจาก Mat SAP" />
               </div>
 
+              {/* ปรับยอด: เลือกทิศทาง เพิ่ม/ลด (stocktake ที่นับได้น้อยกว่าระบบก็ลดได้) */}
+              {form.type === 'adjust' && (
+                <div>
+                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:6 }}>ทิศทางปรับ</label>
+                  <div style={{ display:'flex', gap:6 }}>
+                    {[{ k:'up', l:'➕ เพิ่มยอด', c:'#22c55e' }, { k:'down', l:'➖ ลดยอด', c:'#ef4444' }].map(d => (
+                      <button key={d.k} type="button" onClick={() => setForm(f => ({ ...f, dir:d.k }))}
+                        style={{ flex:1, padding:'7px 10px', borderRadius:8, cursor:'pointer', fontSize:12, fontWeight:800, fontFamily:'var(--font-body)',
+                          background: form.dir===d.k ? `${d.c}18` : 'var(--bg2)', color: form.dir===d.k ? d.c : 'var(--muted)',
+                          border:`1px solid ${form.dir===d.k ? d.c : 'var(--border)'}` }}>{d.l}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div>
-                <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>จำนวน (ชิ้น) *</label>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:4 }}>
+                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)' }}>จำนวน (ชิ้น) *</label>
+                  {form.line_name && form.mat_no.trim() && (
+                    <span style={{ fontSize:11, color:'var(--muted)' }}>คงเหลือปัจจุบัน: <b style={{ color: onHandOf(form.line_name, form.mat_no) <= 0 ? '#ef4444' : 'var(--text)' }}>{onHandOf(form.line_name, form.mat_no).toLocaleString()}</b></span>
+                  )}
+                </div>
                 <input type="number" min="0.001" step="any" style={{ ...inputSt, fontSize:20, fontWeight:900, textAlign:'center' }}
                   value={form.qty} onChange={e => setForm(f => ({ ...f, qty:e.target.value }))} placeholder="0" />
               </div>
@@ -1194,13 +1254,16 @@ export default function LineStock() {
   return (
     <div style={{ padding:'clamp(12px,2vw,24px)', maxWidth:'min(96vw, 2000px)', margin:'0 auto' }}>
       {/* Tab bar */}
-      <div style={{ display:'flex', gap:4, marginBottom:20, borderBottom:'2px solid var(--border)', paddingBottom:0 }}>
+      {/* flexWrap: จอแคบแท็บตกบรรทัดใหม่ได้ ไม่ล้นจอ (desktop แถวเดียวพอ — เหมือนเดิม)
+          หมายเหตุ: ห้ามใช้ overflowX:'auto' ที่นี่ — ปุ่มมี marginBottom:-2 ซ้อนเส้นใต้ จะโดน clip */}
+      <div style={{ display:'flex', gap:4, marginBottom:20, borderBottom:'2px solid var(--border)', paddingBottom:0, flexWrap:'wrap' }}>
         {TABS.map(t => (
           <button
             key={t.key}
             onClick={() => setActiveTab(t.key)}
             style={{
               padding:'9px 20px',
+              whiteSpace:'nowrap',
               fontSize:13,
               fontWeight:700,
               fontFamily:'var(--font-body)',

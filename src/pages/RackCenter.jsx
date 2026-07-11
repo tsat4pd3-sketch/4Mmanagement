@@ -299,7 +299,11 @@ export default function RackCenter() {
           {canOperate && slaDraft && (
             <button onClick={async () => {
               const payload = { prepare_within_min: Math.max(1, parseInt(slaDraft.prepare_within_min) || 15), deliver_within_min: Math.max(1, parseInt(slaDraft.deliver_within_min) || 45), updated_at: new Date().toISOString() };
-              const { error } = await supabaseDR.from('internal_delivery_sla').update(payload).eq('kind', 'rack');
+              // upsert แบบไม่พึ่ง unique constraint: มี row → update, ไม่มี → insert (กัน update no-op เงียบๆ)
+              const { data: existing } = await supabaseDR.from('internal_delivery_sla').select('id').eq('kind', 'rack').maybeSingle();
+              const { error } = existing
+                ? await supabaseDR.from('internal_delivery_sla').update(payload).eq('kind', 'rack')
+                : await supabaseDR.from('internal_delivery_sla').insert({ ...payload, kind: 'rack' });
               if (error) toast.error(error.message);
               else { setSla(x => ({ ...x, ...payload })); setSlaDraft(null); toast.success('บันทึก SLA แล้ว'); }
             }} style={btn('#16a34a')}>💾 บันทึก SLA</button>
