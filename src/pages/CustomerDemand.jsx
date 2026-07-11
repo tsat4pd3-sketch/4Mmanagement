@@ -301,7 +301,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
               <div style={{ flex: 1, position: 'relative', height: 22 }}>
                 {hourMarks.map((m, i) => (i % 2 === 0 &&
                   <span key={m} style={{ position: 'absolute', left: `${((m - tStart) / span) * 100}%`, fontSize: 11, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: m === tStart + span ? 'translateX(-100%)' : 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
-                    {String((m / 60) % 24 | 0).padStart(2, '0')}
+                    {String((m / 60) % 24 | 0).padStart(2, '0')}:00
                   </span>
                 ))}
               </div>
