@@ -105,6 +105,9 @@ model: inherit
   `className="tbtn"` · บอร์ดเวลา 24 ชม.: มือถืออนุญาต scroll แนวนอน (UI-CONVENTIONS §6)
   แต่ desktop ห้าม scroll เหมือนเดิม · ลาก marker ใช้ pointer events (`onPointerDown` +
   `touchAction:'none'`) ไม่ใช่ mouse events อย่างเดียว — grep `onMouseDown` ที่เริ่ม drag
+- **F11** (2026-07-11) บอร์ดเวลา: ป้ายชั่วโมงบนแกนต้องเป็น `HH:00` (ไม่ใช่เลขเปล่า) และป้ายตัวสุดท้าย
+  ที่ตำแหน่ง 100% ต้อง `translateX(-100%)` กันโดนตัดครึ่ง · รายการไม่ระบุเวลาห้ามวางตำแหน่งปลอมบนแกน
+  (เช่น left 99%) — ต้องรวมเป็นชิป ⏳ ท้ายแถว (UI-CONVENTIONS §6)
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่
