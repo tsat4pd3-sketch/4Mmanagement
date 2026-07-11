@@ -64,7 +64,7 @@ export default function InternalTimeBoard({ title, hint, groups, nowMin, breaks 
         <div style={{ width: LEFT_W, flexShrink: 0, padding: '3px 10px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)' }}>ปลายทาง · คลิกเพื่อย่อ/ขยาย</div>
         <div style={{ flex: 1, position: 'relative', height: 22 }}>
           {hourMarks.map((m, i) => (i % 2 === 0 &&
-            <span key={m} style={{ position: 'absolute', left: `${pct(m)}%`, fontSize: 11, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
+            <span key={m} style={{ position: 'absolute', left: `${pct(m)}%`, fontSize: 11, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: m === FRAME_START + SPAN ? 'translateX(-100%)' : 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
               {String(Math.floor(m / 60) % 24).padStart(2, '0')}
             </span>
           ))}
