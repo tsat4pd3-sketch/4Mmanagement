@@ -7,10 +7,12 @@ import { inSectionScope } from '../utils/sectionScope';
 import { markerScale } from '../utils/markerScale';
 import { toast } from '../components/Toast';
 
+// ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร → WIP (ตามลำดับ 4M: Man, Machine, Material)
+// ให้ตรงกับปุ่ม filter MAN/MACHINE/WIP ที่หน้า Management — UI-CONVENTIONS §1
 const TABS = [
   { key: 'stations', label: '📍 จุดงาน' },
-  { key: 'wip',      label: '📦 จุด WIP' },
   { key: 'machines', label: '⚙️ เครื่องจักร' },
+  { key: 'wip',      label: '📦 จุด WIP' },
 ];
 
 
@@ -54,7 +56,8 @@ export default function LineSetup() {
   const [skillDefs, setSkillDefs] = useState([]);
   const [sectionOpts, setSectionOpts] = useState([]);
   const [activeTab, setActiveTab] = useState('stations'); // 'stations' | 'wip' | 'machines'
-  const [forcePills, setForcePills] = useState(false); // บังคับแสดงป้ายชื่อหมุดรอง (เครื่องจักร/WIP) เมื่อถูกซ่อนอัตโนมัติเพราะผังแน่น
+  // ป้ายชื่อบนผัง 3 สถานะ เหมือนหน้า Management เป๊ะ (WYSIWYG): 'auto' | 'all' | 'none'
+  const [pillMode, setPillMode] = useState('auto');
 
   // ลากย้ายจุดที่มีอยู่แล้วได้ (ไม่ต้องลบสร้างใหม่) — drag เกินระยะนิดเดียวถือเป็นการลาก ไม่ใช่คลิกแก้ไข
   const imgRef = useRef(null);
@@ -673,7 +676,9 @@ export default function LineSetup() {
   // MK = จุดงานหลัก · SUB = หมุดรอง (เครื่องจักร/WIP) ย่อตามความแน่น · showSubPills = ป้ายหมุดรองซ่อนอัตโนมัติเมื่อแน่น
   const { MK, SUB, showSubPills, pillFont: PILL_FONT, subPillFont, badgeFont } =
     markerScale(imgBox?.rw, { machineCount: machinePoints.length });
-  const pillsOn = showSubPills || forcePills; // ป้ายเครื่องจักร/WIP แสดงเมื่อผังไม่แน่น หรือผู้ใช้กด 🏷️ บังคับเปิด
+  // ป้ายเครื่องจักร/WIP: auto = ซ่อนเมื่อผังแน่น · ปุ่ม 🏷️ วน auto/all/none (หมุดที่เลือก/แก้ไขโชว์ป้ายเสมอ)
+  const pillsOn = pillMode === 'all' || (pillMode === 'auto' && showSubPills);
+  const stationPillsOn = pillMode !== 'none'; // ป้ายจุดงานโชว์เสมอ ยกเว้นเลือกซ่อนทุกป้าย
   const pillSt = {
     background: 'rgba(0,0,0,0.78)', borderRadius: 4, padding: '1px 6px',
     fontWeight: 700, color: '#fff', whiteSpace: 'nowrap',
@@ -706,20 +711,18 @@ export default function LineSetup() {
               {t.label}
             </button>
           ))}
-          {!showSubPills && (
-            <button
-              onClick={() => setForcePills(v => !v)}
-              title="ผังแน่น — ป้ายชื่อเครื่องจักร/WIP ถูกซ่อนอัตโนมัติ (เหมือนหน้าแสดงผลจริง) กดเพื่อบังคับแสดงทั้งหมด"
-              style={{
-                padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                marginLeft: 'auto',
-                border: `1px solid ${forcePills ? 'var(--accent)' : 'var(--border2)'}`,
-                background: forcePills ? 'var(--accent-dim)' : 'var(--bg2)',
-                color: forcePills ? 'var(--accent)' : 'var(--text2)',
-              }}>
-              🏷️ ป้ายชื่อ
-            </button>
-          )}
+          <button
+            onClick={() => setPillMode(m => (m === 'auto' ? 'all' : m === 'all' ? 'none' : 'auto'))}
+            title={'ป้ายชื่อบนผัง (เหมือนหน้าแสดงผลจริง) — กดสลับ: อัตโนมัติ (จุดงานโชว์เสมอ เครื่อง/WIP ซ่อนเมื่อผังแน่น) → โชว์ทั้งหมด → ซ่อนทั้งหมด\nหมุดที่กำลังเลือก/แก้ไขโชว์ป้ายเสมอ'}
+            style={{
+              padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              marginLeft: 'auto',
+              border: `1px solid ${pillMode !== 'auto' ? 'var(--accent)' : 'var(--border2)'}`,
+              background: pillMode === 'all' ? 'var(--accent-dim)' : 'var(--bg2)',
+              color: pillMode !== 'auto' ? 'var(--accent)' : 'var(--text2)',
+            }}>
+            {pillMode === 'auto' ? '🏷️ ป้ายอัตโนมัติ' : pillMode === 'all' ? '🏷️ โชว์ทุกป้าย' : '🏷️ ซ่อนป้าย'}
+          </button>
         </div>
       )}
     <div style={{
@@ -803,6 +806,7 @@ export default function LineSetup() {
                     title={canEdit ? 'คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง' : st.station_name}
                   >
                     <span style={{ fontSize: pinIconSz, lineHeight: 1 }}>📍</span>
+                    {(stationPillsOn || isSelected) && (
                     <div style={pillStackSt}>
                       <div style={{ ...pillSt, color: isSelected ? 'var(--green)' : '#fff' }}>
                         {st.station_name}
@@ -813,6 +817,7 @@ export default function LineSetup() {
                         </div>
                       )}
                     </div>
+                    )}
                   </div>
                 );
               })}

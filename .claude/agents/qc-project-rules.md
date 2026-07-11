@@ -87,6 +87,9 @@ model: inherit
 - **F5** input ใน flex row/toolbar ต้องกำหนด width เอง (index.css default width:100%)
 - **F6** hover card เฉพาะ `matchMedia('(hover: hover)')` · popup ทุกอันมีทางปิด
 - **F7** playhead ไทม์ไลน์ใช้ `.now-line`/`.now-chip` — ห้ามวาดเส้นเวลาปัจจุบันเองสีอื่น
+- **F9** ลำดับชนิดจุดที่แสดงเรียงกัน (แท็บ/ปุ่ม filter/legend) ต้องเป็น คน → เครื่องจักร → WIP
+  (ลำดับ 4M: Man, Machine, Material) · ปุ่ม 🏷️ ป้ายชื่อ = 3 สถานะ auto/all/none คุมทุกชนิดจุด
+  label บนปุ่มบอกสถานะปัจจุบัน (Management + LineSetup ต้อง behavior ตรงกัน — WYSIWYG)
 - **F8** balloon จุดตรวจ: anchor ฝั่ง PM `translate(-50%,-100%)` ต้องเหมือนกันทั้ง 3 renderer
   (SpinAnnotator / PMSetup / PMCheckData) — ถ้าไฟล์ใดไฟล์หนึ่งต่าง = บั๊กร้ายแรง
   · ทั้ง 3 ต้องหัก letterbox ผ่าน hook กลาง `src/utils/useImgBox.js` (วาง pin บน layer
