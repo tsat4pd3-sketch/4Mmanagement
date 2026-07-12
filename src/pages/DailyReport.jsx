@@ -225,6 +225,13 @@ function LiveTab({ role }) {
   // Overflow confirmation modal
   const [overflowInfo, setOverflowInfo]   = useState(null); // { prodNo, matNo, qty, std, overMin, remainMin, newOrderMin }
 
+  // ออเดอร์ manual — ไลน์ไม่มี kanban card (SAP ไม่ gen barcode) เช่น HDF1 → LASER CUT 123
+  // leader เปิด "เป้า" เอง แล้วพนักงานอัพเดทยอดสะสมทุกช่วงเบรค ปิดใบด้วยยอดจริงไม่ต้องสแกน
+  const [showManualOpen, setShowManualOpen] = useState(false);
+  const [manualForm, setManualForm]         = useState({ mat_no: '', qty: '' });
+  const [savingManual, setSavingManual]     = useState(false);
+  const [manualQtyDraft, setManualQtyDraft] = useState({}); // order id -> ค่าที่พิมพ์ในช่องอัพเดทยอด
+
   // Scan Close modal
   const [showScanClose, setShowScanClose] = useState(false);
   const [closeProdNo, setCloseProdNo]     = useState('');
@@ -1097,6 +1104,67 @@ function LiveTab({ role }) {
     await doConfirmCloseOrder(closeMatch);
   };
 
+  // ── ออเดอร์ manual (ไลน์ไม่มี kanban card) ─────────────────────
+  const handleManualOpen = async () => {
+    const matNo = manualForm.mat_no;
+    const qty = parseInt(manualForm.qty);
+    if (!matNo) { toast.error('เลือกสินค้าก่อน'); return; }
+    if (!qty || qty < 1) { toast.error('ระบุเป้าหมายผลิต (ชิ้น)'); return; }
+    setSavingManual(true);
+    const std = kanbanStds.find(s => s.mat_no === matNo);
+    const prod = products.find(p => p.mat_no === matNo);
+    const now = new Date();
+    const prodNo = `MANUAL-${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
+    const { error } = await supabaseDR.from('prod_orders').insert({
+      session_id: selSession.id,
+      prod_no:    prodNo,
+      mat_no:     matNo,
+      part_name:  std?.part_name || prod?.name || null,
+      p_no:       std?.p_no || prod?.p_no || null,
+      customer:   std?.customer || prod?.customer || null,
+      qty,
+      qty_target: qty,
+      qty_actual: 0,
+      is_manual:  true,
+      status:     'open',
+      opened_by:  fullName,
+    });
+    setSavingManual(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`เปิดเป้า ${matNo} · ${qty} ชิ้น ✓ — ให้พนักงานอัพเดทยอดสะสมทุกช่วงเบรค`);
+    setShowManualOpen(false);
+    setManualForm({ mat_no: '', qty: '' });
+    loadProdOrders(selSession.id, selSession.line_name);
+  };
+
+  const handleManualQtyUpdate = async (o) => {
+    const v = parseInt(manualQtyDraft[o.id]);
+    if (isNaN(v) || v < 0) { toast.error('กรอกยอดสะสม (ชิ้น) ก่อน'); return; }
+    const { error } = await supabaseDR.from('prod_orders')
+      .update({ qty_actual: v, qty_updated_at: new Date().toISOString() }).eq('id', o.id);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`อัพเดทยอด ${o.mat_no}: ${v}/${o.qty_target ?? o.qty} ชิ้น ✓`);
+    setManualQtyDraft(d => ({ ...d, [o.id]: '' }));
+    loadProdOrders(selSession.id, selSession.line_name);
+  };
+
+  // ปิดใบ manual ด้วยยอดผลิตจริง (แทนการสแกนปิด) — qty ถูกแทนด้วยยอดจริงเพื่อให้
+  // OEE/รายงาน/stock (trigger ใช้ coalesce(qty_ok, qty)) นับจากของที่ผลิตได้จริง
+  const handleManualClose = async (o) => {
+    const draft = parseInt(manualQtyDraft[o.id]);
+    const finalQty = !isNaN(draft) ? draft : (o.qty_actual || 0);
+    if (!window.confirm(`ปิดใบ ${o.prod_no} (${o.mat_no}) ด้วยยอดผลิตจริง ${finalQty} ชิ้น?\nเป้าที่ตั้งไว้ ${o.qty_target ?? o.qty} ชิ้น`)) return;
+    const nowIso = new Date().toISOString();
+    const { error } = await supabaseDR.from('prod_orders').update({
+      status: 'confirmed', confirmed_by: fullName, confirmed_at: nowIso,
+      qty: finalQty, qty_ok: finalQty, qty_actual: finalQty, qty_updated_at: nowIso,
+    }).eq('id', o.id);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`ปิดใบ ${o.prod_no} · ${finalQty} ชิ้น ✓`);
+    setManualQtyDraft(d => ({ ...d, [o.id]: '' }));
+    loadProdOrders(selSession.id, selSession.line_name);
+  };
+
   // ── บันทึกงานเสีย handler ──────────────────────────────────────
   const handleAddDefectLog = async () => {
     if (!selSession || !defectForm.defect_type_id) { toast.error('เลือกประเภทงานเสีย'); return; }
@@ -1966,6 +2034,11 @@ function LiveTab({ role }) {
                       style={{ background: '#f59e0b', color: '#000', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       📥 Scan เปิด Order
                     </button>
+                    <button onClick={() => { setShowManualOpen(true); setManualForm({ mat_no: '', qty: '' }); }}
+                      title="ไลน์ที่ไม่มี kanban card / SAP ไม่ gen barcode — เปิดเป้าเองแล้วอัพเดทยอดสะสม"
+                      style={{ background: 'rgba(96,165,250,0.15)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.5)', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                      ✍️ เปิดเป้า (ไม่มีบาร์โค้ด)
+                    </button>
                     <button onClick={() => { setShowScanClose(true); setCloseProdNo(''); setCloseMatch(null); }}
                       style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       📤 Scan ปิด / Confirm
@@ -2011,18 +2084,31 @@ function LiveTab({ role }) {
                   const carryOver   = o.status === 'carry_over';
                   const cancelled   = o.status === 'cancelled';
                   const isCarried   = !!o.carry_over_from_session_id;
+                  const isManual    = !!o.is_manual;
+                  const manualOpen  = isManual && o.status === 'open';
+                  // ใบ manual ที่ไม่ถูกอัพเดทยอดนาน (> 2 ชม.ครึ่ง = เลยรอบเบรคไปแล้ว) เตือนเหลืองนิ่ง
+                  const lastUpd     = manualOpen ? new Date(o.qty_updated_at || o.opened_at) : null;
+                  const manualStale = manualOpen && (Date.now() - lastUpd.getTime()) > 150 * 60000;
                   const statusColor = confirmed ? '#22c55e' : carryOver ? '#a78bfa' : cancelled ? '#666' : '#f59e0b';
                   const statusLabel = confirmed ? '✓ ปิดแล้ว' : carryOver ? '➡ ยกยอด' : cancelled ? '✕ ยกเลิก' : '● ผลิต';
                   return (
-                    <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'var(--bg2)', borderRadius: 8,
-                      border: `1px solid ${statusColor}40`, borderLeft: `4px solid ${statusColor}`,
+                    <div key={o.id} style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '9px 14px', background: 'var(--bg2)', borderRadius: 8,
+                      border: `1px solid ${manualStale ? '#f59e0b' : `${statusColor}40`}`, borderLeft: `4px solid ${statusColor}`,
+                      boxShadow: manualStale ? '0 0 8px 1px rgba(245,158,11,0.4)' : 'none',
                       opacity: cancelled ? 0.45 : 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{o.prod_no}</span>
                           <span style={{ fontSize: 12, color: 'var(--muted)' }}>{o.mat_no}</span>
                           {o.part_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {o.part_name}</span>}
                           {o.customer && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>{o.customer}</span>}
+                          {isManual && (
+                            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(96,165,250,0.15)', color: '#60a5fa', fontWeight: 700 }}
+                              title="ออเดอร์ manual — ไลน์ไม่มี kanban card เปิดเป้าเองไม่ได้สแกน">
+                              ✍️ manual
+                            </span>
+                          )}
                           {isCarried && (
                             <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(167,139,250,0.15)', color: '#a78bfa', fontWeight: 700 }}
                               title={o.carry_over_note || 'ยกยอดมาจากกะก่อน'}>
@@ -2036,11 +2122,24 @@ function LiveTab({ role }) {
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                           เปิด {fmtTime(new Date(o.opened_at))} {o.opened_by && `· ${o.opened_by}`}
                           {confirmed && o.confirmed_at && ` · ปิด ${fmtTime(new Date(o.confirmed_at))} · ${o.confirmed_by}`}
+                          {manualOpen && ` · อัพเดทยอดล่าสุด ${fmtTime(lastUpd)}`}
+                          {manualStale && <span style={{ color: '#f59e0b', fontWeight: 700 }}> ⚠ เกิน 2.5 ชม.แล้ว — อัพเดทยอดด้วย</span>}
                         </div>
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                        <div style={{ fontSize: 20, fontWeight: 900, color: statusColor, lineHeight: 1 }}>{o.qty}</div>
-                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น</div>
+                        {manualOpen ? (
+                          <>
+                            <div style={{ fontSize: 18, fontWeight: 900, color: statusColor, lineHeight: 1 }}>
+                              {o.qty_actual || 0}<span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>/{o.qty_target ?? o.qty}</span>
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>ทำได้/เป้า</div>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ fontSize: 20, fontWeight: 900, color: statusColor, lineHeight: 1 }}>{o.qty}</div>
+                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น{isManual && (o.qty_target ?? null) !== null ? ` (เป้า ${o.qty_target})` : ''}</div>
+                          </>
+                        )}
                       </div>
                       {/* ออเดอร์ที่ confirmed ห้ามลบเด็ดขาด (เป็นยอดผลิตจริงที่ปิดแล้ว) — ส่วนออเดอร์ที่ยกยอด (carry_over)
                           ปกติ leader แก้ไม่ได้แล้วเพราะตัดสินใจไปแล้วตอนปิดกะ แต่ถ้าตกค้างผิดปกติ (เช่นกะเก่าปิดไม่สำเร็จ)
@@ -2048,6 +2147,26 @@ function LiveTab({ role }) {
                       {!confirmed && (canManage || (canEditRecords && !carryOver)) && (
                         <button onClick={() => handleDeleteProdOrder(o.id)}
                           style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 2px' }}>✕</button>
+                      )}
+                      </div>
+                      {/* แถวอัพเดทยอดสะสมของใบ manual — พนักงานกรอกทุกช่วงเบรคตาม break policy */}
+                      {manualOpen && canScan && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingTop: 6, borderTop: '1px dashed var(--border)' }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ยอดสะสมตอนนี้:</span>
+                          {/* width กัน index.css input{width:100%} ดันปุ่มแตกแถว (กับดัก CSS ใน CLAUDE.md) */}
+                          <input type="number" min={0} inputMode="numeric" value={manualQtyDraft[o.id] ?? ''}
+                            placeholder={`${o.qty_actual || 0}`}
+                            onChange={e => setManualQtyDraft(d => ({ ...d, [o.id]: e.target.value }))}
+                            style={{ width: 100, padding: '6px 10px', fontSize: 13, fontWeight: 700, borderRadius: 7, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                          <button onClick={() => handleManualQtyUpdate(o)}
+                            style={{ background: '#60a5fa', color: '#08131f', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                            💾 อัพเดทยอด
+                          </button>
+                          <button onClick={() => handleManualClose(o)}
+                            style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.5)', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                            ✓ ปิดใบนี้ (ยอดจริง)
+                          </button>
+                        </div>
                       )}
                     </div>
                   );
@@ -3183,6 +3302,46 @@ function LiveTab({ role }) {
         )}
 
         {/* ── SCAN OPEN modal ─────────────────────────────────── */}
+        {/* ── เปิดเป้า manual — ไลน์ไม่มี kanban card (เช่น HDF1 → LASER CUT 123) ── */}
+        {showManualOpen && (
+          <div className="overlay" style={{ zIndex: 2000 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(96,165,250,0.45)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#60a5fa' }}>✍️ เปิดเป้าผลิต (ไม่มีบาร์โค้ด)</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
+                สำหรับไลน์ที่ SAP ไม่ gen order ให้สแกน — leader ตั้งเป้า แล้วพนักงาน<b>อัพเดทยอดสะสมทุกช่วงเบรค</b> ปิดใบด้วยยอดจริงตอนจบ
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <Field label="สินค้า (MAT.NO) *">
+                  <select value={manualForm.mat_no} onChange={e => setManualForm(f => ({ ...f, mat_no: e.target.value }))}>
+                    <option value="">— เลือกสินค้า —</option>
+                    {(() => {
+                      const lineProds = products.filter(p => p.mat_no && p.line_name === selSession?.line_name);
+                      return (lineProds.length ? lineProds : products.filter(p => p.mat_no)).map(p => (
+                        <option key={p.id} value={p.mat_no}>{p.mat_no} · {p.name}</option>
+                      ));
+                    })()}
+                  </select>
+                </Field>
+                <Field label="เป้าหมายผลิตของกะนี้ (ชิ้น) *">
+                  <input type="number" min={1} inputMode="numeric" value={manualForm.qty}
+                    onChange={e => setManualForm(f => ({ ...f, qty: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter') handleManualOpen(); }} />
+                </Field>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button disabled={savingManual} onClick={handleManualOpen}
+                    style={{ flex: 2, padding: 12, background: '#60a5fa', color: '#08131f', border: 'none', borderRadius: 8, fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: savingManual ? 0.6 : 1 }}>
+                    {savingManual ? 'กำลังบันทึก...' : '✍️ เปิดเป้า'}
+                  </button>
+                  <button onClick={() => setShowManualOpen(false)}
+                    style={{ flex: 1, padding: 12, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', borderRadius: 8, fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+                    ยกเลิก
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showScanOpen && (
           <div className="overlay" style={{ zIndex: 2000 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)' }}>
