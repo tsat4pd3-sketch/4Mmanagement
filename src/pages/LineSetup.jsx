@@ -251,8 +251,18 @@ export default function LineSetup() {
     if (childCount > 0) {
       await supabase.from('production_lines').update({ parent_line_name: null }).eq('parent_line_name', line.name);
     }
+    // อ่าน URL ผังก่อนลบ row — จะได้ลบไฟล์ใน storage ตามหลัง DB สำเร็จ (กติกา CLAUDE.md กันไฟล์กำพร้า)
+    const { data: delLayout } = await supabase.from('line_layouts').select('image_url').eq('line_name', line.name).maybeSingle();
     await supabase.from('workstations').delete().eq('line_name', line.name);
     await supabase.from('line_layouts').delete().eq('line_name', line.name);
+    // ลบเฉพาะไฟล์ของไลน์นี้เอง — ข้ามถ้าไลน์อื่น (เช่นไลน์แม่/ลูกที่ยืมผัง) ยังชี้ URL เดียวกันอยู่
+    if (delLayout?.image_url?.includes('/employee-photos/layouts/')) {
+      const { data: sharers } = await supabase.from('line_layouts').select('line_name').eq('image_url', delLayout.image_url).limit(1);
+      if (!sharers?.length) {
+        const oldName = decodeURIComponent(delLayout.image_url.split('/employee-photos/')[1] || '');
+        if (oldName.startsWith('layouts/')) supabase.storage.from('employee-photos').remove([oldName]).catch(() => {});
+      }
+    }
     await supabase.from('employees').update({ line_id: null }).eq('line_id', line.id);
     await supabase.from('production_lines').delete().eq('id', line.id);
     const remaining = lines.filter(l => l.id !== line.id);

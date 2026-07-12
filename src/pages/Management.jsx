@@ -2539,6 +2539,12 @@ export default function Management() {
                     ...(publicUrl ? { request_image_url: publicUrl } : {}),
                   }).eq('id', pendingDocModal.log.id);
                   if (updErr) throw updErr;
+                  // แนบรูปใหม่ทับสำเร็จแล้ว ค่อยลบไฟล์เก่า (best-effort — กติกา CLAUDE.md กันไฟล์กำพร้า)
+                  const oldReqUrl = pendingDocModal.log.request_image_url;
+                  if (publicUrl && oldReqUrl && oldReqUrl !== publicUrl && oldReqUrl.includes('/four-m-images/')) {
+                    const oldPath = decodeURIComponent(oldReqUrl.split('/four-m-images/')[1] || '');
+                    if (oldPath) supabase.storage.from('four-m-images').remove([oldPath]).catch(() => {});
+                  }
                   supabase.functions.invoke('send-notification', {
                     body: { event: 'status_change', log: { ...pendingDocModal.log, status: 'pending', request_image_url: publicUrl } }
                   }).catch(() => {});

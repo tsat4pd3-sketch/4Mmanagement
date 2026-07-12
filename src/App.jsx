@@ -38,6 +38,7 @@ const PMCheckData = lazy(() => import('./pages/PMCheckData'));
 const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
 const DailyPM     = lazy(() => import('./pages/DailyPM'));
+const Improvements = lazy(() => import('./pages/Improvements'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
@@ -63,13 +64,15 @@ const ROLE_LABELS = {
 // — จึงไม่มีฟิลด์ roles ในนี้ (เคยมี แต่เป็น dead field ไม่ถูกอ่าน ลบออก 2026-07-10 กันเข้าใจผิดว่าเป็น source of truth)
 const NAV_ITEMS = [
   { to: '/',            icon: '🏠', label: 'หน้าหลัก',           group: 'ภาพรวม' },
-  { to: '/dashboard',   icon: '📊', label: 'Dashboard',           group: 'ภาพรวม' },
 
+  // Dashboard ย้ายจากหมวด "ภาพรวม" → "ฝ่ายผลิต" (คำสั่ง user 2026-07-12 — เนื้อหาส่วนใหญ่เป็นรายละเอียดฝ่ายผลิต)
+  { to: '/dashboard',   icon: '📊', label: 'Dashboard',           group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
   { to: '/daily-report',   icon: '📊', label: 'Daily Report',      group: 'ฝ่ายผลิต' },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'ฝ่ายผลิต' },
   { to: '/daily-pm',       icon: '✅', label: 'Daily PM ฝ่ายผลิต',   group: 'ฝ่ายผลิต' },
+  { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
 
   { to: '/line-stock',      icon: '📦', label: 'Store management',       group: 'Logistic - Store' },
   { to: '/heijunka',       icon: '🎴', label: 'Kanban Board',             group: 'Logistic - Store' },
@@ -847,6 +850,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/daily-pm" element={
                 <RoleRoute path="/daily-pm" userRole={role}><DailyPM /></RoleRoute>
+              } />
+              <Route path="/improvements" element={
+                <RoleRoute path="/improvements" userRole={role}><Improvements /></RoleRoute>
               } />
               <Route path="/event-log" element={
                 <RoleRoute path="/event-log" userRole={role}><EventLog /></RoleRoute>

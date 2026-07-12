@@ -243,8 +243,17 @@ export default function ProductMaster() {
 
   const handleDelete = async (id) => {
     if (!window.confirm('ลบสินค้านี้?')) return;
+    const oldUrl = items.find(i => i.id === id)?.image_url;
     const { error } = await supabaseDR.from('dr_products').delete().eq('id', id);
     if (error) { toast.error(error.message); return; }
+    // ลบรูปหลัง DB สำเร็จ (best-effort) — ข้ามถ้าสินค้าอื่น/variant ยังแชร์ URL เดียวกัน (กติกา CLAUDE.md)
+    if (oldUrl?.includes('/product-images/')) {
+      const stillUsed = items.some(i => i.id !== id && i.image_url === oldUrl);
+      const oldPath = decodeURIComponent(oldUrl.split('/product-images/')[1] || '');
+      if (!stillUsed && oldPath) {
+        supabaseDR.storage.from('product-images').remove([oldPath]).catch(() => {});
+      }
+    }
     load();
   };
 
