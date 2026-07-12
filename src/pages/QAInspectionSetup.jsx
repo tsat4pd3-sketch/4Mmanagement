@@ -11,6 +11,7 @@
  * ตาราง: qa_parts, qa_inspection_items (MAIN project) — เขียนได้เฉพาะ qa:manage
  */
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
+import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
@@ -325,9 +326,18 @@ export default function QAInspectionSetup() {
   const uploadFile = async (file) => {
     if (!/^image\/|application\/pdf$/.test(file.type)) { toast.error('รองรับเฉพาะไฟล์รูปภาพหรือ PDF'); return null; }
     if (file.size > 20 * 1024 * 1024) { toast.error('ไฟล์ใหญ่เกิน 20MB'); return null; }
-    const ext = file.name.split('.').pop().toLowerCase();
+    // รูปภาพบีบก่อนอัปโหลด (สเปคเดียวกับผัง 2560px/2.5MB/q0.9 — drawing ต้องซูมอ่าน dimension ได้)
+    // PDF ส่งดิบตามเดิม — ข้อยกเว้นตาม CLAUDE.md "Storage & รูปภาพ"
+    let toUpload = file;
+    let ext = file.name.split('.').pop().toLowerCase();
+    if (file.type.startsWith('image/')) {
+      try {
+        toUpload = await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9, fileType: 'image/jpeg' });
+        ext = 'jpg';
+      } catch { /* บีบไม่ได้ (ฟอร์แมตแปลก) — ส่งไฟล์เดิมภายใต้ cap 20MB */ }
+    }
     const path = `parts/${sel.id}/${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from('qa-drawings').upload(path, file, { upsert: true });
+    const { error } = await supabase.storage.from('qa-drawings').upload(path, toUpload, { upsert: true });
     if (error) { toast.error(`อัพโหลดไม่สำเร็จ: ${error.message}`); return null; }
     return supabase.storage.from('qa-drawings').getPublicUrl(path).data.publicUrl;
   };
