@@ -96,13 +96,17 @@ export default function MachineDatabase() {
     return pcm;
   }, [scopedLines]);
 
-  const filtered = useMemo(() => machines
-    .filter(m => !scopeActive || scopedLineNames.has(m.line_name))
-    .filter(m => showInactive || m.is_active)
-    .filter(m => !filterLine || m.line_name === filterLine)
-    .filter(m => !filterType || m.machine_type_id === filterType)
-    .filter(m => !search.trim() || [m.machine_no, m.machine_name].some(v => (v || '').toLowerCase().includes(search.trim().toLowerCase())))
-  , [machines, scopeActive, scopedLineNames, showInactive, filterLine, filterType, search]);
+  const filtered = useMemo(() => {
+    // เลือกไลน์หลัก (parent) = เห็นเครื่องของไลน์ย่อยทั้งกลุ่มด้วย (ไม่งั้นได้ 0 เพราะเครื่องอยู่ที่ไลน์ย่อย)
+    const kids = parentChildrenMap[filterLine];
+    const inLine = (m) => !filterLine || m.line_name === filterLine || (kids && kids.includes(m.line_name));
+    return machines
+      .filter(m => !scopeActive || scopedLineNames.has(m.line_name)) // mandatory scope ก่อน filter อิสระเสมอ
+      .filter(m => showInactive || m.is_active)
+      .filter(inLine)
+      .filter(m => !filterType || m.machine_type_id === filterType)
+      .filter(m => !search.trim() || [m.machine_no, m.machine_name].some(v => (v || '').toLowerCase().includes(search.trim().toLowerCase())));
+  }, [machines, scopeActive, scopedLineNames, showInactive, filterLine, filterType, search, parentChildrenMap]);
 
   const grouped = useMemo(() => {
     const map = {};
@@ -177,7 +181,7 @@ export default function MachineDatabase() {
           {scopedLines.filter(l => !l.parent_line_name && !parentChildrenMap[l.name]).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
           {Object.entries(parentChildrenMap).map(([parent, children]) => (
             <optgroup key={parent} label={`▸ ${parent}`}>
-              <option value={parent}>{parent}</option>
+              <option value={parent}>{parent} — ทั้งกลุ่ม</option>
               {children.map(c => <option key={c} value={c}>{c}</option>)}
             </optgroup>
           ))}

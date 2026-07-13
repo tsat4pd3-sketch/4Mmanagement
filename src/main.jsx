@@ -25,6 +25,22 @@ window.addEventListener('vite:preloadError', (e) => {
   }
 });
 
+/* ── Version guard: แท็บที่ถือเวอร์ชันเก่า reload เป็นเวอร์ชันล่าสุดอัตโนมัติ ──
+   เปิดแท็บใหม่ (ctrl+click) เบราว์เซอร์อาจหยิบ index.html เก่าจาก cache (heuristic caching
+   เมื่อ server ไม่ส่ง Cache-Control ชัดเจน) → ได้แอปเวอร์ชันเก่าที่ chunk โดนลบไปแล้ว
+   คลิกอะไรก็พังเงียบๆ — เทียบ build ตัวเอง (__BUILD_ID__) กับ version.json บน server
+   (fetch แบบ no-store เสมอ ไม่โดน cache) ตอนเปิดแอป + ทุกครั้งที่กลับมาโฟกัสแท็บ */
+const checkVersion = async () => {
+  try {
+    const res = await fetch('/version.json', { cache: 'no-store' });
+    if (!res.ok) return; // dev/ไฟล์ไม่มี — ข้าม
+    const { build } = await res.json();
+    if (build && build !== __BUILD_ID__ && canAutoReload()) window.location.reload();
+  } catch { /* offline — ข้าม รอบหน้าค่อยเช็คใหม่ */ }
+};
+checkVersion();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkVersion(); });
+
 const isChunkError = (err) =>
   /dynamically imported module|Importing a module script failed|Loading chunk|error loading|Failed to fetch/i
     .test(err?.message || '');
