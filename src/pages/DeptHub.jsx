@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { focusSidebarGroups, navItemsForGroups } from '../App';
+import { roleLabel } from '../utils/roleMeta';
 
 const DEPT_CSS = `
   @keyframes hub-fade-up {
@@ -131,18 +132,6 @@ const DEPTS = [
   },
 ];
 
-const ROLE_LABELS = {
-  admin:      '👑 Admin',
-  manager:    '🏢 Manager',
-  supervisor: '🎯 Supervisor',
-  leader:     '⭐ Leader',
-  qa:         '🔍 QA',
-  document_control: '🗂 Doc Control',
-  sale:       '💼 Sale',
-  mtn:        '🔧 MTN',
-  display:    '📺 Display',
-};
-
 export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, userRole, userPosition }) {
   const navigate = useNavigate();
 
@@ -183,7 +172,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             </span>
             {userRole && (
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                {userPosition ? `${userPosition} · ` : ''}{ROLE_LABELS[userRole] ?? userRole}
+                {userPosition ? `${userPosition} · ` : ''}{roleLabel(userRole)}
               </span>
             )}
           </div>

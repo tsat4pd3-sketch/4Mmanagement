@@ -1020,7 +1020,7 @@ export default function Operator() {
                     )}
                     {!canApprove && (
                       <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                        {req.to_level === 100 ? 'รอ Manager' : 'รอ Supervisor'}
+                        {req.to_level === 100 ? 'รอชุดสิทธิ์ทั้งฝ่ายอนุมัติ' : 'รอชุดสิทธิ์ระดับส่วนอนุมัติ'}
                       </span>
                     )}
                   </div>

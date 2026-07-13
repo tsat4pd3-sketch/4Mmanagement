@@ -48,18 +48,6 @@ const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 /* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null, signatureUrl: null, fullName: null });
 
-const ROLE_LABELS = {
-  admin:      '👑 Admin',
-  manager:    '🏢 Manager',
-  supervisor: '🎯 Supervisor',
-  leader:     '⭐ Leader',
-  qa:         '🔍 QA',
-  document_control: '🗂 Doc Control',
-  sale:       '💼 Sale',
-  mtn:        '🔧 MTN',
-  display:    '📺 Display',
-};
-
 // null roles = accessible to every role
 // group ใช้จัดหมวดหมู่ในแถบ sidebar (มี minimize/expand ต่อหมวด)
 // สิทธิ์เข้าหน้าอ่านจาก role_permissions ผ่าน canAccessPage() เท่านั้น (data-driven)
