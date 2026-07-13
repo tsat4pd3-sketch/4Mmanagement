@@ -1,9 +1,12 @@
-import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, useContext, Fragment } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
+import { UserContext } from '../App';
 import { isAlarmingDT, dtElapsedMin } from '../utils/downtimeAlarm';
 import { markerScale } from '../utils/markerScale';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
+import { inSectionScope } from '../utils/sectionScope';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -168,6 +171,9 @@ function getWorkDateStr(date) {
 
 export default function Dashboard() {
   const now = useNow();
+  // scope ตาม user (คำสั่ง user 2026-07-12: "filter ได้ก็ไม่มีปัญหา ถ้าไม่ใช้ก็เหมือนไม่ filter")
+  // — leader เห็นเฉพาะ family ไลน์ตัวเอง · role ที่มี sections เห็นเฉพาะ section ตัวเอง · ที่เหลือเห็นหมดเหมือนเดิม
+  const { role, lineId: userLineId, sections: scopeSecs } = useContext(UserContext);
   const isMobile = useIsMobile();
   const vw = useWidth();
   const isWide = vw >= 1280;   // desktop / laptop
@@ -582,25 +588,43 @@ export default function Dashboard() {
   const inDayOTWindow      = nowMin >= 17 * 60 + 30 && nowMin < 20 * 60;
   const inExtendedOTWindow = nowMin >= 20 * 60 && nowMin < 23 * 60;
 
-  const sections = useMemo(() => orgSections.length ? orgSections : [...new Set(lines.map(l => l.section).filter(Boolean))].sort(), [lines, orgSections]);
+  // mandatory scope filter (pattern มาตรฐาน — CLAUDE.md "Section/Line/Team Scoping"):
+  // กรองก่อนเสมอ แล้วค่อยให้ dropdown section เลือกแคบลงทับอีกชั้น · user ไม่มี scope = เห็นหมดเหมือนเดิม
+  const scopeActive = (role === 'leader' && !!userLineId) || (scopeSecs?.length > 0);
+  const scopedLines = useMemo(() => {
+    if (role === 'leader' && userLineId) {
+      // เทียบ id ด้วย String() — lineId จาก profile อาจเป็นคนละ type กับ production_lines.id (pattern เดียวกับ EventLog)
+      const myLine = lines.find(l => String(l.id) === String(userLineId));
+      const fam = new Set(myLine ? getLineFamilyNames(lines, myLine.name) : []);
+      return fam.size ? lines.filter(l => fam.has(l.name)) : lines;
+    }
+    if (scopeSecs?.length) return lines.filter(l => inSectionScope(scopeSecs, l.section));
+    return lines;
+  }, [lines, role, userLineId, scopeSecs]);
+
+  const sections = useMemo(
+    () => (!scopeActive && orgSections.length) ? orgSections : [...new Set(scopedLines.map(l => l.section).filter(Boolean))].sort(),
+    [scopedLines, orgSections, scopeActive],
+  );
   const visibleLines = useMemo(
-    () => selectedSection === 'all' ? lines : lines.filter(l => l.section === selectedSection),
-    [lines, selectedSection],
+    () => selectedSection === 'all' ? scopedLines : scopedLines.filter(l => l.section === selectedSection),
+    [scopedLines, selectedSection],
   );
   const visibleLineNames = useMemo(() => new Set(visibleLines.map(l => l.name)), [visibleLines]);
   const visibleLineIds   = useMemo(() => new Set(visibleLines.map(l => l.id)), [visibleLines]);
 
+  const passAll = !scopeActive && selectedSection === 'all'; // ไม่มี scope + ไม่เลือก section = ไม่ต้องกรอง (พฤติกรรมเดิม)
   const visibleFourMLogs = useMemo(
-    () => selectedSection === 'all' ? fourMLogs : fourMLogs.filter(f => visibleLineNames.has(f.line_name)),
-    [fourMLogs, selectedSection, visibleLineNames],
+    () => passAll ? fourMLogs : fourMLogs.filter(f => visibleLineNames.has(f.line_name)),
+    [fourMLogs, passAll, visibleLineNames],
   );
   const visibleProdStatus = useMemo(
-    () => selectedSection === 'all' ? prodStatus : prodStatus.filter(s => visibleLineNames.has(s.line_name)),
-    [prodStatus, selectedSection, visibleLineNames],
+    () => passAll ? prodStatus : prodStatus.filter(s => visibleLineNames.has(s.line_name)),
+    [prodStatus, passAll, visibleLineNames],
   );
   const visibleLayouts = useMemo(
-    () => selectedSection === 'all' ? layouts : layouts.filter(l => visibleLineNames.has(l.line_name)),
-    [layouts, selectedSection, visibleLineNames],
+    () => passAll ? layouts : layouts.filter(l => visibleLineNames.has(l.line_name)),
+    [layouts, passAll, visibleLineNames],
   );
 
   // ── Downtime alarm — รวม downtime ที่ยังค้าง/เพิ่งบันทึกจากทุกกะที่มองเห็น ──
@@ -661,9 +685,9 @@ export default function Dashboard() {
   const shiftLogs = useMemo(
     () => {
       const base = selectedShift === 'all' ? logs : logs.filter(l => l.assignedShift === selectedShift);
-      return selectedSection === 'all' ? base : base.filter(l => visibleLineIds.has(l.employees?.line_id));
+      return passAll ? base : base.filter(l => visibleLineIds.has(l.employees?.line_id));
     },
-    [logs, selectedShift, selectedSection, visibleLineIds],
+    [logs, selectedShift, passAll, visibleLineIds],
   );
 
   const present  = useMemo(() => shiftLogs.filter(l =>  l.is_present), [shiftLogs]);

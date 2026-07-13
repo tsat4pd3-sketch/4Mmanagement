@@ -3,6 +3,8 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
+import { inSectionScope } from '../utils/sectionScope';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
 
 /* ─── shared little UI bits ─────────────────────────────────── */
 function Field({ label, children }) {
@@ -35,7 +37,7 @@ const TYPE_COLORS  = ['#4d9fff', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#e
    MAIN PAGE
 ═══════════════════════════════════════════════════════════════ */
 export default function MachineDatabase() {
-  const { role } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs } = useContext(UserContext);
   const canCreate = can('machines', 'create', role);
   const canEdit   = can('machines', 'edit', role);
   const canDelete = can('machines', 'delete', role);
@@ -68,23 +70,39 @@ export default function MachineDatabase() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // mandatory scope filter (คำสั่ง user 2026-07-12) — leader = family ไลน์ตัวเอง, มี sections = เฉพาะ section ตัวเอง
+  // user ไม่มี scope เห็นหมดเหมือนเดิม · กรองก่อน filter อิสระเสมอ (pattern มาตรฐาน CLAUDE.md)
+  const scopedLines = useMemo(() => {
+    if (role === 'leader' && userLineId) {
+      // เทียบ id ด้วย String() — lineId จาก profile อาจเป็นคนละ type กับ production_lines.id (pattern เดียวกับ EventLog)
+      const myLine = lines.find(l => String(l.id) === String(userLineId));
+      const fam = new Set(myLine ? getLineFamilyNames(lines, myLine.name) : []);
+      return fam.size ? lines.filter(l => fam.has(l.name)) : lines;
+    }
+    if (scopeSecs?.length) return lines.filter(l => inSectionScope(scopeSecs, l.section));
+    return lines;
+  }, [lines, role, userLineId, scopeSecs]);
+  const scopedLineNames = useMemo(() => new Set(scopedLines.map(l => l.name)), [scopedLines]);
+  const scopeActive = scopedLines.length !== lines.length;
+
   const parentChildrenMap = useMemo(() => {
     const pcm = {};
-    lines.forEach(l => {
+    scopedLines.forEach(l => {
       if (l.parent_line_name) {
         if (!pcm[l.parent_line_name]) pcm[l.parent_line_name] = [];
         pcm[l.parent_line_name].push(l.name);
       }
     });
     return pcm;
-  }, [lines]);
+  }, [scopedLines]);
 
   const filtered = useMemo(() => machines
+    .filter(m => !scopeActive || scopedLineNames.has(m.line_name))
     .filter(m => showInactive || m.is_active)
     .filter(m => !filterLine || m.line_name === filterLine)
     .filter(m => !filterType || m.machine_type_id === filterType)
     .filter(m => !search.trim() || [m.machine_no, m.machine_name].some(v => (v || '').toLowerCase().includes(search.trim().toLowerCase())))
-  , [machines, showInactive, filterLine, filterType, search]);
+  , [machines, scopeActive, scopedLineNames, showInactive, filterLine, filterType, search]);
 
   const grouped = useMemo(() => {
     const map = {};
@@ -156,7 +174,7 @@ export default function MachineDatabase() {
           style={{ ...inputStyle, width: 220 }} />
         <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ ...inputStyle, width: 180 }}>
           <option value="">— ทุกไลน์ —</option>
-          {lines.filter(l => !l.parent_line_name && !parentChildrenMap[l.name]).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+          {scopedLines.filter(l => !l.parent_line_name && !parentChildrenMap[l.name]).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
           {Object.entries(parentChildrenMap).map(([parent, children]) => (
             <optgroup key={parent} label={`▸ ${parent}`}>
               <option value={parent}>{parent}</option>
@@ -224,7 +242,7 @@ export default function MachineDatabase() {
               <Field label="ไลน์การผลิต *">
                 <select value={editing.line_name} onChange={e => setEditing(f => ({ ...f, line_name: e.target.value }))} style={inputStyle}>
                   <option value="">— เลือกไลน์ —</option>
-                  {lines.filter(l => !l.parent_line_name && !parentChildrenMap[l.name]).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                  {scopedLines.filter(l => !l.parent_line_name && !parentChildrenMap[l.name]).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                   {Object.entries(parentChildrenMap).map(([parent, children]) => (
                     <optgroup key={parent} label={`▸ ${parent}`}>
                       {children.map(c => <option key={c} value={c}>{c}</option>)}

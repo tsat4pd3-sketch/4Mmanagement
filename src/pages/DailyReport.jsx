@@ -7,6 +7,7 @@ import { toast } from '../components/Toast';
 import tsLogoUrl from '../assets/TS logo.png';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 
 // โหลดโลโก้บริษัท (เหมือนหน้าเว็บ) เป็น base64 ครั้งเดียวสำหรับฝัง PDF
@@ -3311,16 +3312,21 @@ function LiveTab({ role }) {
                 สำหรับไลน์ที่ SAP ไม่ gen order ให้สแกน — leader ตั้งเป้า แล้วพนักงาน<b>อัพเดทยอดสะสมทุกช่วงเบรค</b> ปิดใบด้วยยอดจริงตอนจบ
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <Field label="สินค้า (MAT.NO) *">
-                  <select value={manualForm.mat_no} onChange={e => setManualForm(f => ({ ...f, mat_no: e.target.value }))}>
-                    <option value="">— เลือกสินค้า —</option>
-                    {(() => {
-                      const lineProds = products.filter(p => p.mat_no && p.line_name === selSession?.line_name);
-                      return (lineProds.length ? lineProds : products.filter(p => p.mat_no)).map(p => (
-                        <option key={p.id} value={p.mat_no}>{p.mat_no} · {p.name}</option>
-                      ));
-                    })()}
-                  </select>
+                <Field label="สินค้า (MAT.NO) — เฉพาะที่ register กับไลน์นี้ *">
+                  {(() => {
+                    // เฉพาะสินค้าของ family ไลน์นี้ (ไลน์ตัวเอง + แม่ + ลูก เผื่อ register ไว้ที่ระดับไลน์หลัก)
+                    // ห้าม fallback โชว์ทุกสินค้า — เคยหลุดแล้ว user ทัก (2026-07-12)
+                    const fam = new Set(getLineFamilyNames(lines, selSession?.line_name || '').map(n => n.trim().toLowerCase()));
+                    const lineProds = products.filter(p => p.mat_no && fam.has((p.line_name || '').trim().toLowerCase()));
+                    return (
+                      <select value={manualForm.mat_no} onChange={e => setManualForm(f => ({ ...f, mat_no: e.target.value }))}>
+                        <option value="">{lineProds.length ? '— เลือกสินค้า —' : '— ไลน์นี้ยังไม่มีสินค้า register (เพิ่มที่ Product Master ก่อน) —'}</option>
+                        {lineProds.map(p => (
+                          <option key={p.id} value={p.mat_no}>{p.mat_no} · {p.name}</option>
+                        ))}
+                      </select>
+                    );
+                  })()}
                 </Field>
                 <Field label="เป้าหมายผลิตของกะนี้ (ชิ้น) *">
                   <input type="number" min={1} inputMode="numeric" value={manualForm.qty}
