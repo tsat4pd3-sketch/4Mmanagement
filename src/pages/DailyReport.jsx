@@ -665,6 +665,12 @@ function LiveTab({ role }) {
     if (lineStds.length && !dtForm.mat_no) { toast.error('เลือกชิ้นงาน'); return; }
     const { startedAt, endedAt, durMin } = computeDtTimes();
     if (!startedAt && !durMin) { toast.error('กรอกเวลาหรือระยะเวลาอย่างน้อย 1 อย่าง'); return; }
+    // ประเภท "อื่นๆ" เปล่าๆ บอกอะไรไม่ได้ในสรุปประชุมเช้า/รายงาน — บังคับระบุสาเหตุจริงเสมอ
+    const dtTypeName = dtTypes.find(t => t.id === dtForm.downtime_type_id)?.name_th || '';
+    if (dtTypeName.includes('อื่น') && !dtForm.description?.trim()) {
+      toast.error('ประเภท "อื่นๆ" ต้องระบุรายละเอียด/สาเหตุด้วย — เพื่อให้รายงานและประชุมเช้าอ่านรู้เรื่อง');
+      return;
+    }
     setSavingDT(true);
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -1177,6 +1183,12 @@ function LiveTab({ role }) {
     const suspect = parseInt(defectForm.qty_suspect) || 0;
     const repair  = parseInt(defectForm.qty_repair)  || 0;
     if (ng + suspect + repair === 0) { toast.error('กรอกจำนวนงานเสียอย่างน้อย 1 ช่อง'); return; }
+    // ประเภท "อื่นๆ" เปล่าๆ บอกอะไรไม่ได้ — บังคับระบุอาการ/สาเหตุจริงเสมอ (เหมือนกฎฝั่ง Downtime)
+    const defTypeName = defectTypes.find(t => t.id === defectForm.defect_type_id)?.name_th || '';
+    if (defTypeName.includes('อื่น') && !defectForm.description?.trim()) {
+      toast.error('ประเภท "อื่นๆ" ต้องระบุรายละเอียด/อาการด้วย — เพื่อให้รายงานและประชุมเช้าอ่านรู้เรื่อง');
+      return;
+    }
     setSavingDefect(true);
     const { data: { user } } = await supabase.auth.getUser();
     const matchedOrder = defectForm.mat_no
