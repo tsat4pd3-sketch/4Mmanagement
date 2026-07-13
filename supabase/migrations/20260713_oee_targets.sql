@@ -1,7 +1,8 @@
 -- ── Main project (ewhdfqwfwofivojtsizn) ──
--- Target OEE/A/P/Q ระดับ "กรุ๊ป" (production_lines ที่เป็น parent หรือไลน์เดี่ยวไม่มีแม่)
+-- Target A/P/Q ระดับ "กรุ๊ป" (production_lines ที่เป็น parent หรือไลน์เดี่ยวไม่มีแม่)
+-- ⚠️ target_oee เป็นคอลัมน์ vestigial — เป้า OEE ไม่ตั้ง/ไม่อ่านจาก DB, แอปคำนวณจาก A×P×Q เสมอ
+--    (เปลี่ยนกฎ 2026-07-13 หลังสร้างตาราง — คอลัมน์คงไว้แบบ additive, โค้ดเขียน null ทับตอนบันทึก)
 -- ระดับส่วน (section) ไม่เก็บในตาราง — หน้า OEE คำนวณเป็นค่าเฉลี่ยของกรุ๊ปใน section นั้น
--- เช่น APRON ASSY ≥75% + HYDROFORM ≥85% → PD3 ≥80% (เฉลี่ย) · กรุ๊ปที่ไม่ตั้งค่า = ไม่ถูกนำมาเฉลี่ย
 -- ตั้งค่าจากหน้า /oee-analytics ปุ่ม 🎯 (สิทธิ์ manage_master_data) — ดู src/pages/OEEAnalytics.jsx
 
 create table if not exists oee_targets (

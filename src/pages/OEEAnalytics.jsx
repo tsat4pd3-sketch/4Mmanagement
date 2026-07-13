@@ -22,9 +22,10 @@ const UNPLAN_COLORS = ['#ef4444','#f97316','#eab308','#84cc16','#06b6d4','#8b5cf
 const PLAN_COLORS   = ['#60a5fa','#34d399','#fb7185','#fbbf24'];
 
 // เป้าหมายมาตรฐาน (fallback) — ใช้เมื่อกรุ๊ปใน scope ยังไม่ถูกตั้ง target ในตาราง oee_targets
+// ตั้งได้เฉพาะ A/P/Q — เป้า OEE ไม่ตั้งเอง คำนวณจาก A×P×Q เสมอ (คำสั่ง user 2026-07-13)
 // target จริงตั้งรายกรุ๊ปจากปุ่ม 🎯 · ระดับ section = ค่าเฉลี่ยของกรุ๊ปใน section (ไม่เก็บใน DB)
-const TARGET = { oee: 85, a: 90, p: 90, q: 99 };
-const METRIC_TO_COL = { oee: 'target_oee', a: 'target_a', p: 'target_p', q: 'target_q' };
+const TARGET = { a: 90, p: 90, q: 99 };
+TARGET.oee = Math.round(TARGET.a * TARGET.p * TARGET.q / 10000 * 10) / 10; // 80.2
 const METRIC_COLOR = { a: '#22c55e', p: '#f59e0b', q: '#a78bfa' };
 const METRIC_LABEL = { a: 'AVAILABILITY (A)', p: 'PERFORMANCE (P)', q: 'QUALITY (Q)' };
 const METRIC_COLOR_FN = { a: aColor, p: pColor, q: qColor };
@@ -282,14 +283,26 @@ export default function OEEAnalytics() {
     return out.sort((a, b) => (a.section || '').localeCompare(b.section || '') || a.name.localeCompare(b.name));
   }, [linesFull]);
 
-  // เฉลี่ย target ของหลายกรุ๊ป (กรุ๊ปที่ไม่ตั้งค่า metric นั้นไม่ถูกนำมาเฉลี่ย) — fallback ค่ามาตรฐาน
+  // เฉลี่ย target ของหลายกรุ๊ป (กรุ๊ปที่ไม่ตั้งค่า metric นั้นใช้ค่ามาตรฐานแทน)
+  // เป้า OEE ไม่ตั้งเอง — คำนวณจาก A×P×Q ของแต่ละกรุ๊ปเสมอ แล้วค่อยเฉลี่ยข้ามกรุ๊ป
   const targetOf = useCallback((groupNames) => {
-    const out = { configured: false };
-    for (const k of ['oee', 'a', 'p', 'q']) {
-      const vals = groupNames.map(g => oeeTargets[g]?.[METRIC_TO_COL[k]]).filter(v => v != null).map(Number);
-      if (vals.length) { out[k] = Math.round(vals.reduce((s, v) => s + v, 0) / vals.length * 10) / 10; out.configured = true; }
-      else out[k] = TARGET[k];
+    const effs = groupNames.map(g => {
+      const t = oeeTargets[g] || {};
+      return {
+        a: t.target_a != null ? Number(t.target_a) : null,
+        p: t.target_p != null ? Number(t.target_p) : null,
+        q: t.target_q != null ? Number(t.target_q) : null,
+      };
+    });
+    const out = { configured: effs.some(e => e.a != null || e.p != null || e.q != null) };
+    for (const k of ['a', 'p', 'q']) {
+      const vals = effs.map(e => e[k]).filter(v => v != null);
+      out[k] = vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length * 10) / 10 : TARGET[k];
     }
+    const oees = effs.length
+      ? effs.map(e => ((e.a ?? TARGET.a) * (e.p ?? TARGET.p) * (e.q ?? TARGET.q)) / 10000)
+      : [(TARGET.a * TARGET.p * TARGET.q) / 10000];
+    out.oee = Math.round(oees.reduce((s, v) => s + v, 0) / oees.length * 10) / 10;
     return out;
   }, [oeeTargets]);
 
@@ -658,7 +671,7 @@ export default function OEEAnalytics() {
           <button style={s.tab(viewTab === 'trend')}  onClick={() => setViewTab('trend')}>📊 แนวโน้ม/ประวัติ</button>
           {canSetTarget && (
             <button style={{ ...s.tab(false), color: '#f59e0b', border: '1px solid rgba(245,158,11,0.4)' }}
-              onClick={() => setShowTargetModal(true)} title="ตั้ง Target OEE/A/P/Q รายกรุ๊ป — ระดับส่วนคำนวณจากค่าเฉลี่ยของกรุ๊ป">
+              onClick={() => setShowTargetModal(true)} title="ตั้ง Target A/P/Q รายกรุ๊ป (OEE = A×P×Q อัตโนมัติ) — ระดับส่วนคำนวณจากค่าเฉลี่ยของกรุ๊ป">
               🎯 ตั้ง Target
             </button>
           )}
@@ -1128,20 +1141,17 @@ export default function OEEAnalytics() {
    คำนวณสดให้ดูในหัวข้อ section · ช่องว่าง = ไม่ตั้ง (ใช้ค่ามาตรฐาน และไม่ถูกนำไปเฉลี่ย)
    modal มีฟอร์ม → ห้ามปิดจากคลิก backdrop (UI-CONVENTIONS §5) */
 function OeeTargetModal({ groups, targets, fullName, onClose, onSaved }) {
+  // ตั้งได้เฉพาะ A/P/Q — OEE ไม่ใช่ช่องกรอก คำนวณจาก A×P×Q ให้อัตโนมัติ (ช่องว่างใช้ค่ามาตรฐานแทนในสูตร)
   const METRICS = [
-    { key: 'target_oee', label: 'OEE' },
-    { key: 'target_a',   label: 'A' },
-    { key: 'target_p',   label: 'P' },
-    { key: 'target_q',   label: 'Q' },
+    { key: 'target_a', label: 'A', def: TARGET.a },
+    { key: 'target_p', label: 'P', def: TARGET.p },
+    { key: 'target_q', label: 'Q', def: TARGET.q },
   ];
   const [draft, setDraft] = useState(() => {
     const d = {};
     groups.forEach(g => {
       const t = targets[g.name] || {};
-      d[g.name] = {
-        target_oee: t.target_oee ?? '', target_a: t.target_a ?? '',
-        target_p: t.target_p ?? '', target_q: t.target_q ?? '',
-      };
+      d[g.name] = { target_a: t.target_a ?? '', target_p: t.target_p ?? '', target_q: t.target_q ?? '' };
     });
     return d;
   });
@@ -1155,9 +1165,20 @@ function OeeTargetModal({ groups, targets, fullName, onClose, onSaved }) {
     return Object.entries(m).sort((a, b) => a[0].localeCompare(b[0]));
   }, [groups]);
 
+  // OEE ของกรุ๊ปจาก draft = A×P×Q (metric ที่เว้นว่างใช้ค่ามาตรฐานในสูตร) — สูตรเดียวกับหน้า OEE
+  const num = (v, def) => { const n = Number(v); return v !== '' && v != null && !isNaN(n) ? n : def; };
+  const groupOee = (g) => {
+    const d = draft[g.name] || {};
+    return Math.round(num(d.target_a, TARGET.a) * num(d.target_p, TARGET.p) * num(d.target_q, TARGET.q) / 10000 * 10) / 10;
+  };
+
   // ค่าเฉลี่ยระดับ section จาก draft (โชว์สด — ตรงกับที่หน้า OEE จะคำนวณตอนเลือก section)
   const secAvg = (list, key) => {
     const vals = list.map(g => draft[g.name]?.[key]).filter(v => v !== '' && v != null).map(Number).filter(v => !isNaN(v));
+    return vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length * 10) / 10 : null;
+  };
+  const secOee = (list) => {
+    const vals = list.map(groupOee);
     return vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length * 10) / 10 : null;
   };
 
@@ -1180,7 +1201,8 @@ function OeeTargetModal({ groups, targets, fullName, onClose, onSaved }) {
         }
         if (bad) { toast.error(`ค่า target ของ ${g.name} ต้องเป็นตัวเลข 0–100`); setSaving(false); return; }
         if (hasAny) {
-          toUpsert.push({ group_name: g.name, ...nums, updated_by: userData?.user?.id || null, updated_by_name: fullName || null, updated_at: new Date().toISOString() });
+          // target_oee ไม่เก็บแล้ว (คำนวณจาก A×P×Q ในแอปเสมอ) — เขียน null ล้างค่าเก่าที่เคยกรอกไว้
+          toUpsert.push({ group_name: g.name, ...nums, target_oee: null, updated_by: userData?.user?.id || null, updated_by_name: fullName || null, updated_at: new Date().toISOString() });
         } else if (targets[g.name]) {
           toDelete.push(g.name); // เคลียร์ทุกช่อง = ลบ target ของกรุ๊ป (กลับไปใช้ค่ามาตรฐาน)
         }
@@ -1208,9 +1230,9 @@ function OeeTargetModal({ groups, targets, fullName, onClose, onSaved }) {
       <div style={{ background: 'var(--card)', borderRadius: 12, border: '1px solid var(--border)', width: 'min(96vw, 760px)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>🎯 ตั้ง Target OEE / A / P / Q รายกรุ๊ป</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>🎯 ตั้ง Target A / P / Q รายกรุ๊ป — OEE = A×P×Q</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-              ระดับส่วน (section) ไม่ต้องตั้ง — คำนวณเป็นค่าเฉลี่ยของกรุ๊ปที่ตั้งไว้ · ช่องว่าง = ใช้ค่ามาตรฐาน ({TARGET.oee}/{TARGET.a}/{TARGET.p}/{TARGET.q})
+              ตั้งเฉพาะ A / P / Q — <strong>เป้า OEE คำนวณจาก A×P×Q ให้อัตโนมัติ</strong> · ระดับส่วน (section) ไม่ต้องตั้ง คำนวณเป็นค่าเฉลี่ยของกรุ๊ป · ช่องว่าง = ใช้ค่ามาตรฐาน (A {TARGET.a} / P {TARGET.p} / Q {TARGET.q} → OEE {TARGET.oee})
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 14, cursor: 'pointer' }}>✕</button>
@@ -1224,6 +1246,7 @@ function OeeTargetModal({ groups, targets, fullName, onClose, onSaved }) {
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                   เป้ารวมของส่วน (เฉลี่ยจากกรุ๊ป): {' '}
                   {METRICS.map(m => `${m.label} ${secAvg(list, m.key) ?? '—'}`).join(' · ')}
+                  {' · '}<strong style={{ color: '#22c55e' }}>OEE {secOee(list) ?? '—'}</strong>
                 </span>
               </div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1231,6 +1254,7 @@ function OeeTargetModal({ groups, targets, fullName, onClose, onSaved }) {
                   <tr style={{ fontSize: 11, color: 'var(--muted)' }}>
                     <th style={{ textAlign: 'left', padding: '6px 4px' }}>กรุ๊ป / ไลน์หลัก</th>
                     {METRICS.map(m => <th key={m.key} style={{ textAlign: 'right', padding: '6px 4px', width: 76 }}>{m.label} ≥ %</th>)}
+                    <th style={{ textAlign: 'right', padding: '6px 4px', width: 90 }} title="คำนวณจาก A×P×Q อัตโนมัติ — ไม่ต้องกรอก">OEE = A×P×Q</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1242,10 +1266,13 @@ function OeeTargetModal({ groups, targets, fullName, onClose, onSaved }) {
                           <input type="number" min="0" max="100" step="0.1" inputMode="decimal"
                             value={draft[g.name]?.[m.key] ?? ''}
                             onChange={e => setVal(g.name, m.key, e.target.value)}
-                            placeholder={String(TARGET[m.key === 'target_oee' ? 'oee' : m.key.slice(-1)])}
+                            placeholder={String(m.def)}
                             style={inSt} />
                         </td>
                       ))}
+                      <td style={{ padding: '5px 4px', textAlign: 'right', fontSize: 13, fontWeight: 800, color: '#22c55e', whiteSpace: 'nowrap' }}>
+                        {groupOee(g)}%
+                      </td>
                     </tr>
                   ))}
                 </tbody>
