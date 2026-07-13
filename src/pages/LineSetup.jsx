@@ -163,7 +163,10 @@ export default function LineSetup() {
     setMachinePoints(mpData || []);
     const { data: flData } = await supabase.from('machine_flow_links').select('*').eq('line_name', selectedLine);
     setFlowLinks(flData || []);
-    const { data: drMc } = await supabaseDR.from('machines').select('*, machine_types(id, label, color, icon)').eq('line_name', selectedLine).order('sort_order');
+    // ไลน์ใหญ่ (parent) ใช้ผังจริงวางเครื่องของทั้ง family → picker/รายการเครื่องต้องเห็นเครื่องของไลน์ลูกด้วย
+    // ไลน์ย่อย/standalone → family = ตัวเอง (พฤติกรรมเดิม)
+    const familyLines = [selectedLine, ...lines.filter(l => l.parent_line_name === selectedLine).map(l => l.name)];
+    const { data: drMc } = await supabaseDR.from('machines').select('*, machine_types(id, label, color, icon)').in('line_name', familyLines).order('sort_order');
     setDrMachines(drMc || []);
     const { data: drMt } = await supabaseDR.from('machine_types').select('*').order('sort_order');
     setMachineTypes(drMt || []);
