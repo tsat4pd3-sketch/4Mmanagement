@@ -1043,7 +1043,23 @@ function LiveTab({ role }) {
     } else {
       toast.success(`เปิด Order ${prodNo} · ${matNo} · ${qty} ชิ้น ✓`);
     }
-    setOpenProdForm(f => ({ prod_no: '', mat_no: nextMatNo, qty: f.qty, is_backfill: false, backfill_time: '' }));
+    // โหมดยิงย้อนหลังต้อง sticky — ยิงเติมทีละหลายใบ ถ้ารีเซ็ต checkbox เงียบๆ ใบถัดไปจะถูกบันทึกเป็น "เวลาตอนนี้"
+    // โดยไม่รู้ตัว (เคยพัง: บอร์ดการ์ดไปกองที่เวลาสแกนแทนเวลาผลิตจริง) — เลื่อนเวลาให้อัตโนมัติ = เวลาใบนี้ + qty×CT
+    let nextBackfillTime = '';
+    if (openProdForm.is_backfill) {
+      const ctSec2 = ctForMatNo(matNo);
+      const baseMs = new Date(data?.opened_at || Date.now()).getTime();
+      if (ctSec2 > 0) {
+        const est = new Date(baseMs + qty * ctSec2 * 1000).toTimeString().slice(0, 5);
+        const eh = Number(est.split(':')[0]);
+        const inDay = eh >= 8 && eh < 20;
+        // เวลาที่เดาเกินกรอบกะ = ปล่อยว่างให้กรอกเอง (กันหลุดกะเหมือน guard ตอนบันทึก)
+        nextBackfillTime = ((selSession.shift === 'day' && inDay) || (selSession.shift === 'night' && !inDay)) ? est : '';
+      } else {
+        nextBackfillTime = openProdForm.backfill_time;
+      }
+    }
+    setOpenProdForm(f => ({ prod_no: '', mat_no: nextMatNo, qty: f.qty, is_backfill: f.is_backfill, backfill_time: nextBackfillTime }));
     loadProdOrders(selSession.id, selSession.line_name);
     setTimeout(() => openProdInputRef.current?.focus(), 80);
   };
