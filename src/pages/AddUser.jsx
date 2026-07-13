@@ -33,6 +33,11 @@ export default function AddUser() {
   const [modalMode,     setModalMode]     = useState('create');
   const [editingId,     setEditingId]     = useState(null);
   const [form,          setForm]          = useState(emptyForm);
+  // ค้นหา/กรอง/เรียง — default เรียง "สร้างล่าสุดก่อน" (user ใหม่ขึ้นบนสุด หาเจอทันที)
+  const [q,             setQ]             = useState('');
+  const [filterRole,    setFilterRole]    = useState('');
+  const [filterSection, setFilterSection] = useState('');
+  const [sort,          setSort]          = useState({ key: 'created_at', dir: 'desc' });
   const [loading,       setLoading]       = useState(false);
   const [message,       setMessage]       = useState(null);
   const [error,         setError]         = useState(null);
@@ -56,10 +61,14 @@ export default function AddUser() {
       .select('id, full_name, role, position, line_id, section, sections, team, notify_email');
     const { data: authUsers } = await supabase.rpc('get_auth_users');
 
-    const emailMap = {};
-    (authUsers || []).forEach(u => { emailMap[u.id] = u.email; });
+    const authMap = {};
+    (authUsers || []).forEach(u => { authMap[u.id] = u; });
 
-    setUsers((profiles || []).map(p => ({ ...p, email: emailMap[p.id] || '—' })));
+    setUsers((profiles || []).map(p => ({
+      ...p,
+      email: authMap[p.id]?.email || '—',
+      created_at: authMap[p.id]?.created_at || null,
+    })));
     setFetchingUsers(false);
   };
 
@@ -179,6 +188,51 @@ export default function AddUser() {
     }
   };
 
+  const norm = (v) => (v || '').toString().trim().toLowerCase();
+  const toggleSort = (key) => setSort(prev => prev.key === key
+    ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+    : { key, dir: key === 'created_at' ? 'desc' : 'asc' });
+
+  const view = (() => {
+    const kw = norm(q);
+    let rows = users.filter(u => {
+      if (filterRole && u.role !== filterRole) return false;
+      if (filterSection) {
+        const secs = u.sections?.length ? u.sections : (u.section ? [u.section] : []);
+        if (!secs.includes(filterSection)) return false;
+      }
+      if (!kw) return true;
+      return [u.full_name, u.email, u.position, u.section, ...(u.sections || [])].some(v => norm(v).includes(kw));
+    });
+    const val = (u) => {
+      switch (sort.key) {
+        case 'name':       return norm(u.full_name || u.email);
+        case 'position':   return norm(u.position);
+        case 'role':       return norm(u.role);
+        case 'section':    return norm(u.sections?.length ? u.sections.join(',') : u.section);
+        case 'line':       return norm(lines.find(l => l.id === u.line_id)?.name);
+        case 'team':       return norm(u.team);
+        case 'created_at': return u.created_at || '';
+        default:           return '';
+      }
+    };
+    rows.sort((a, b) => {
+      const cmp = val(a) < val(b) ? -1 : val(a) > val(b) ? 1 : 0;
+      return sort.dir === 'asc' ? cmp : -cmp;
+    });
+    return rows;
+  })();
+
+  // หัวตารางกดเรียงได้ — ลูกศรบอกคอลัมน์+ทิศทางที่ใช้อยู่
+  const Th = ({ label, sortKey, style }) => (
+    <th onClick={() => toggleSort(sortKey)} title="คลิกเพื่อเรียง"
+      style={{ ...style, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+      {label} <span style={{ fontSize: 10, opacity: sort.key === sortKey ? 1 : 0.35 }}>
+        {sort.key === sortKey ? (sort.dir === 'asc' ? '▲' : '▼') : '⇅'}
+      </span>
+    </th>
+  );
+
   return (
     <div className="page-content">
       {/* Header */}
@@ -203,27 +257,57 @@ export default function AddUser() {
         </div>
       )}
 
+      {/* Toolbar: ค้นหา + กรอง + ตัวนับ (input ใน flex row ต้องกำหนด width — index.css ตั้ง input{width:100%}) */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+        <input type="search" placeholder="🔍 ค้นหา ชื่อ / อีเมล / ตำแหน่ง..." value={q}
+          onChange={e => setQ(e.target.value)}
+          style={{ width: 260, padding: '8px 12px', borderRadius: 8, fontSize: 13 }} />
+        <select value={filterRole} onChange={e => setFilterRole(e.target.value)}
+          style={{ width: 'auto', minWidth: 130, padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
+          <option value="">ทุกชุดสิทธิ์</option>
+          {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+        </select>
+        <select value={filterSection} onChange={e => setFilterSection(e.target.value)}
+          style={{ width: 'auto', minWidth: 120, padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
+          <option value="">ทุก Section</option>
+          {sectionOpts.map(sec => <option key={sec} value={sec}>{sec}</option>)}
+        </select>
+        {(q || filterRole || filterSection) && (
+          <button onClick={() => { setQ(''); setFilterRole(''); setFilterSection(''); }}
+            style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
+            ✕ ล้างตัวกรอง
+          </button>
+        )}
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>
+          {view.length === users.length ? `ทั้งหมด ${users.length} คน` : `แสดง ${view.length} จาก ${users.length} คน`}
+          <span style={{ marginLeft: 6, opacity: 0.7 }}>· ไม่มีการจำกัดจำนวน user</span>
+        </span>
+      </div>
+
       {/* User Table */}
-      <div className="card" style={{ overflowX: 'auto', marginBottom: 16 }}>
+      <div className="card table-sticky" style={{ overflowX: 'auto', marginBottom: 16, maxHeight: '65vh' }}>
         <table style={{ minWidth: 680 }}>
           <thead>
             <tr>
-              <th style={{ minWidth: 200 }}>ชื่อ / อีเมล</th>
-              <th style={{ textAlign: 'center', minWidth: 100 }}>ตำแหน่ง</th>
-              <th style={{ textAlign: 'center', minWidth: 100 }}>ชุดสิทธิ์</th>
-              <th style={{ textAlign: 'center', minWidth: 80 }}>Section</th>
-              <th style={{ minWidth: 140 }}>ไลน์ / Group</th>
-              <th style={{ textAlign: 'center', minWidth: 80 }}>Team</th>
+              <Th label="ชื่อ / อีเมล" sortKey="name" style={{ minWidth: 200 }} />
+              <Th label="ตำแหน่ง" sortKey="position" style={{ textAlign: 'center', minWidth: 100 }} />
+              <Th label="ชุดสิทธิ์" sortKey="role" style={{ textAlign: 'center', minWidth: 100 }} />
+              <Th label="Section" sortKey="section" style={{ textAlign: 'center', minWidth: 80 }} />
+              <Th label="ไลน์ / Group" sortKey="line" style={{ minWidth: 140 }} />
+              <Th label="Team" sortKey="team" style={{ textAlign: 'center', minWidth: 80 }} />
               <th style={{ minWidth: 180 }}>📬 Notify Email</th>
+              <Th label="สร้างเมื่อ" sortKey="created_at" style={{ textAlign: 'center', minWidth: 96 }} />
               <th style={{ textAlign: 'center', minWidth: 80 }}>แก้ไข</th>
             </tr>
           </thead>
           <tbody>
             {fetchingUsers ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>กำลังโหลด...</td></tr>
+              <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>กำลังโหลด...</td></tr>
             ) : users.length === 0 ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบข้อมูลผู้ใช้</td></tr>
-            ) : users.map(u => {
+              <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบข้อมูลผู้ใช้</td></tr>
+            ) : view.length === 0 ? (
+              <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบ user ที่ตรงกับตัวกรอง — ลองล้างตัวกรอง</td></tr>
+            ) : view.map(u => {
               const rc      = ROLES.find(r => r.value === u.role);
               const lineName = lines.find(l => l.id === u.line_id)?.name || '—';
               return (
@@ -258,6 +342,9 @@ export default function AddUser() {
                     {u.notify_email
                       ? <span style={{ color: 'var(--green)' }}>📬 {u.notify_email}</span>
                       : <span style={{ color: 'var(--muted)' }}>—</span>}
+                  </td>
+                  <td style={{ textAlign: 'center', fontSize: 12, color: u.created_at ? 'var(--text2)' : 'var(--muted)', whiteSpace: 'nowrap' }}>
+                    {u.created_at ? new Date(u.created_at).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: '2-digit' }) : '—'}
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     <button
