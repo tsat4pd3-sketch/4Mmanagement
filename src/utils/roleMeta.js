@@ -11,6 +11,8 @@ export const ROLE_META = {
   document_control: { icon: '🗂️', label: 'งานเอกสาร',        en: 'Document Control', color: '#fb923c', desc: 'ปฏิทินบริษัท + เอกสารควบคุม' },
   sale:             { icon: '🚚', label: 'ขาย-จัดส่ง',       en: 'Sales & Delivery', color: '#38bdf8', desc: 'Forecast, Delivery, Kanban' },
   mtn:              { icon: '🔧', label: 'ซ่อมบำรุง',        en: 'Maintenance',      color: '#fb7185', desc: 'PM, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร' },
+  engineer:         { icon: '⚙️', label: 'งานวิศวกรรม',      en: 'Engineering',      color: '#2dd4bf', desc: 'อัพเดท BOM / EC / New Model (Product Master)' },
+  planner_store:    { icon: '📦', label: 'แผนงาน-คลัง',      en: 'Planner & Store',  color: '#a3e635', desc: 'Store, Kanban, Rack, Rundown + อัพโหลด Forecast' },
   display:          { icon: '📺', label: 'จอแสดงผล',         en: 'View Only',        color: '#94a3b8', desc: 'ดูอย่างเดียว ไม่มี Auto-Logout (จอ TV/บอร์ด)' },
 };
 
