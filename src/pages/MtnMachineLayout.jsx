@@ -119,7 +119,9 @@ export default function MtnMachineLayout() {
     const machineNos = [...new Set(mpoints.map(p => p.machine_no).filter(Boolean))]
     if (!machineNos.length) { setMachineInfo({}); setLoading(false); return }
 
-    const { data: machines } = await supabaseDR.from('machines').select('id, machine_no, machine_name').eq('line_name', selectedLine)
+    // จับด้วย machine_no ที่อยู่บนผังจริง (ไม่ผูก line ตรงเป๊ะ) — ไลน์ใหญ่ที่วางเครื่องของลูกบนผัง parent
+    // จะได้ชื่อ/รายละเอียดครบ ไม่มีหมุดไร้ชื่อ
+    const { data: machines } = await supabaseDR.from('machines').select('id, machine_no, machine_name').in('machine_no', machineNos)
     const nameByNo = {}, noById = {}
     ;(machines || []).forEach(m => { if (m.machine_no) nameByNo[m.machine_no] = m.machine_name; if (m.id) noById[m.id] = m.machine_no })
     const { data: jigs } = await supabaseDR.from('jigs').select('id, name, machine_no, machine_id').eq('module', 'mtn')

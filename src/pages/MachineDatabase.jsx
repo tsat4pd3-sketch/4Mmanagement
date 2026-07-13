@@ -231,6 +231,8 @@ export default function MachineDatabase() {
                   {lines.filter(l => !l.parent_line_name && !parentChildrenMap[l.name]).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                   {Object.entries(parentChildrenMap).map(([parent, children]) => (
                     <optgroup key={parent} label={`▸ ${parent}`}>
+                      {/* ไลน์ใหญ่เลือกได้ด้วย — บางโรงงานใช้ผังไลน์ใหญ่เป็นผังจริงที่วางเครื่อง (เช่น HYDROFORM) */}
+                      <option value={parent}>{parent} (ไลน์หลัก)</option>
                       {children.map(c => <option key={c} value={c}>{c}</option>)}
                     </optgroup>
                   ))}
