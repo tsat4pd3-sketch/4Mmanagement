@@ -55,6 +55,10 @@ model: inherit
   และผ่าน `canAccessPage` — ไม่ hardcode role ใน route guard
 - **C3** admin ต้อง bypass เสมอ — หา logic ที่อาจล็อก admin ออก
 - **C4** fail-closed — logic permission ใหม่ที่ default เป็น "อนุญาต" เมื่อโหลด cache ไม่ได้ = ผิด (ยกเว้น admin)
+- **C5** ชื่อแสดงผลของ role ต้องมาจาก `src/utils/roleMeta.js` เท่านั้น (2026-07-13) — ห้ามนิยาม
+  label/สี/desc ของ role ซ้ำในหน้า และข้อความ UI ห้ามเรียก role ด้วยคำตำแหน่งบริษัท (Manager/Supervisor/Leader)
+  · grep: `ROLE_LABELS\s*=|label: 'Manager'|'Supervisor'|'Leader'` ใน `src/` (ยกเว้น roleMeta.js
+  และคำที่หมายถึง "ตำแหน่งงานจริง" เช่น ป้ายลายเซ็นบนแบบฟอร์มพิมพ์ / employees level)
 
 ### หมวด D — Section/Line/Team Scoping
 - **D1** หน้าที่ query ข้อมูลตาม line/section ต้องกรองด้วย `sections` array จาก UserContext

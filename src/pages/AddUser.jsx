@@ -1,24 +1,22 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { accessSummaryForRole } from '../App';
+import { ROLE_OPTIONS, roleLabel } from '../utils/roleMeta';
 
-// desc = "ลักษณะ/ขอบเขตอำนาจ" ของ role เท่านั้น (ไม่เปลี่ยนตามเวลา) — ห้ามพิมพ์รายชื่อโมดูล/หน้า
-// เพราะหน้าเข้าได้จริงเป็น data-driven จาก role_permissions (แสดงอัตโนมัติผ่าน accessSummaryForRole
-// และปรับได้ที่หน้า จัดการสิทธิ์) เคย hardcode รายชื่อโมดูลแล้ว drift ตามโมดูลใหม่ไม่ทัน
-const ROLES = [
-  { value: 'admin',      label: 'Admin',      color: 'var(--accent)', desc: 'ทุกอย่าง + จัดการผู้ใช้และสิทธิ์' },
-  { value: 'manager',    label: 'Manager',    color: '#f59e0b', desc: 'ผู้จัดการ — เห็นกว้างทุกโมดูล (จำกัดบางส่วนงานได้ด้วย Section)' },
-  { value: 'supervisor', label: 'Supervisor', color: '#4d9fff', desc: 'หัวหน้าส่วน — จัดการข้อมูลภายใน Section ตัวเอง' },
-  { value: 'leader',     label: 'Leader',     color: '#22c55e', desc: 'หัวหน้าไลน์ — เฉพาะไลน์ + ทีมตัวเอง' },
-  { value: 'qa',         label: 'QA',         color: '#c084fc', desc: 'งานคุณภาพ — อนุมัติ 4M/CQI-15 + QA Center' },
-  { value: 'document_control', label: 'Document Control', color: '#fb923c', desc: 'ปฏิทินบริษัท + เอกสารควบคุม' },
-  { value: 'sale', label: 'Sale', color: '#38bdf8', desc: 'ทีมขาย/จัดส่ง — Forecast, Delivery, Kanban' },
-  { value: 'mtn',  label: 'MTN',  color: '#fb7185', desc: 'ทีมซ่อมบำรุง — PM, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร' },
-  { value: 'display',    label: 'Display',    color: '#94a3b8', desc: '📺 จอแสดงผล/TV — ดูอย่างเดียว ไม่มี Auto-Logout' },
-];
+// ชื่อ/สี/คำอธิบายชุดสิทธิ์ อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
+// desc = "ลักษณะ/ขอบเขตอำนาจ" ของ role เท่านั้น — ห้ามพิมพ์รายชื่อโมดูล/หน้า
+// เพราะหน้าเข้าได้จริงเป็น data-driven จาก role_permissions (แสดงอัตโนมัติผ่าน accessSummaryForRole)
+const ROLES = ROLE_OPTIONS.map(r => ({ ...r, label: `${r.icon} ${r.label} (${r.en})` }));
 // sections = ขอบเขตส่วนงาน (เลือกได้หลายอัน ทุก role) — ว่าง = เห็นทุกส่วนงาน
 // profiles.section (เดี่ยว) ยังถูกเขียนเป็นตัวแรกของ sections เสมอ เพื่อให้ rollback โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope
 const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], lineId: '', team: '', notifyEmail: '' };
+
+// คำอธิบายกะของแต่ละทีม (ดู CLAUDE.md "Shift Logic") — ทีมอื่นที่ไม่รู้จักแสดงชื่อเฉยๆ
+const TEAM_DESC = {
+  A: '(ทำงานสลับกะกับ TEAM B)',
+  B: '(ทำงานสลับกะกับ TEAM A)',
+  C: '(เข้ากะเช้าตลอด ไม่สลับกะ)',
+};
 
 // ตำแหน่งงานจริงในโรงงาน (แสดงตัวตน/รายงาน/ลายเซ็น) — คนละมิติกับ role ซึ่งเป็น "ชุดสิทธิ์ใช้ระบบ"
 // เป็น dropdown + ตัวเลือก "อื่นๆ (พิมพ์เอง)" — ตำแหน่งใหม่ไม่ต้องแก้โค้ด และเปลี่ยนตัวเลือกได้ตลอด
@@ -79,8 +77,8 @@ export default function AddUser() {
   // ป้องกันบั๊ก fail-open: ถ้า supervisor/leader ไม่มี section/line_id ทุกหน้าที่กรองข้อมูลตาม
   // section/line_id จะข้าม condition แล้วโชว์ข้อมูลทุกไลน์ทุกแผนกเหมือน admin โดยไม่มีอะไรเตือน
   const validateScope = () => {
-    if (form.role === 'supervisor' && !form.sections.length) return 'Supervisor ต้องกำหนด Section อย่างน้อย 1 ส่วนงาน ไม่งั้นจะเห็นข้อมูลทุกส่วนงานเหมือน admin';
-    if (form.role === 'leader' && (!form.lineId || !form.team)) return 'Leader ต้องกำหนดทั้งไลน์ผลิตและ Team ไม่งั้นจะเห็นข้อมูลทุกไลน์เหมือน admin';
+    if (form.role === 'supervisor' && !form.sections.length) return 'ชุดสิทธิ์ระดับส่วน ต้องกำหนด Section อย่างน้อย 1 ส่วนงาน ไม่งั้นจะเห็นข้อมูลทุกส่วนงานแบบไม่จำกัด';
+    if (form.role === 'leader' && (!form.lineId || !form.team)) return 'ชุดสิทธิ์ระดับไลน์ ต้องกำหนดทั้งไลน์ผลิตและ Team ไม่งั้นจะเห็นข้อมูลทุกไลน์แบบไม่จำกัด';
     return null;
   };
 
@@ -350,7 +348,7 @@ export default function AddUser() {
                       color:      rc ? rc.color        : 'var(--text2)',
                       border:     `1px solid ${rc ? rc.color + '44' : 'var(--border2)'}`,
                     }}>
-                      {u.role?.toUpperCase() || '—'}
+                      {u.role ? roleLabel(u.role) : '—'}
                     </span>
                   </td>
                   <td style={{ textAlign: 'center', fontSize: 13, color: (u.sections?.length || u.section) ? 'var(--text)' : 'var(--muted)' }}>
@@ -522,7 +520,7 @@ export default function AddUser() {
                   })}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
-                  เลือกได้หลายส่วนงาน — user จะเห็นข้อมูลเฉพาะส่วนงานที่ติ๊กไว้ (ใช้ได้กับทุก role เช่น Manager ที่ดูแลเฉพาะบางส่วน) · ไม่ติ๊กเลย = เห็นทุกส่วนงาน
+                  เลือกได้หลายส่วนงาน — user จะเห็นข้อมูลเฉพาะส่วนงานที่ติ๊กไว้ (ใช้ได้กับทุกชุดสิทธิ์ เช่น สิทธิ์ทั้งฝ่าย ที่ดูแลเฉพาะบางส่วน) · ไม่ติ๊กเลย = เห็นทุกส่วนงาน
                   <br />💡 ขอบเขตนี้มีผลกับ<b>ข้อมูลฝ่ายผลิต</b> (พนักงาน/ไลน์/เช็คชื่อ/รายงาน) — สาย Logistic/Store/ขาย <b>ไม่ต้องติ๊ก</b> เพราะโมดูล Logistic ไม่ได้แบ่งข้อมูลตามส่วนงาน ใช้ Role คุมการเข้าหน้าแทน
                 </div>
               </div>
@@ -531,7 +529,7 @@ export default function AddUser() {
                 <label style={labelSt}>Team {form.role === 'leader' && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}</label>
                 <select value={form.team} onChange={e => setF('team', e.target.value)}>
                   <option value="">— เลือก —</option>
-                  {teamOpts.map(t => <option key={t} value={t}>Team {t}</option>)}
+                  {teamOpts.map(t => <option key={t} value={t}>Team {t} {TEAM_DESC[t] || ''}</option>)}
                 </select>
               </div>
 
@@ -546,8 +544,8 @@ export default function AddUser() {
               {(form.role === 'supervisor' || form.role === 'leader') && (
                 <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', padding: '8px 10px', background: 'var(--bg3)', borderRadius: 6, lineHeight: 1.5 }}>
                   ⚠️ {form.role === 'supervisor'
-                    ? 'Supervisor เห็นเฉพาะข้อมูลใน Section ที่ติ๊กไว้ — ถ้าไม่กำหนดจะเห็นทุกส่วนงานเหมือน admin'
-                    : 'Leader เห็นเฉพาะข้อมูลในไลน์+Team ที่กำหนด — ถ้าไม่กำหนดจะเห็นทุกไลน์เหมือน admin'}
+                    ? 'สิทธิ์ระดับส่วน เห็นเฉพาะข้อมูลใน Section ที่ติ๊กไว้ — ถ้าไม่กำหนดจะเห็นทุกส่วนงานแบบไม่จำกัด'
+                    : 'สิทธิ์ระดับไลน์ เห็นเฉพาะข้อมูลในไลน์+Team ที่กำหนด — ถ้าไม่กำหนดจะเห็นทุกไลน์แบบไม่จำกัด'}
                 </div>
               )}
 
