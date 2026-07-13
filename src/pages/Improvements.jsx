@@ -86,8 +86,9 @@ export default function Improvements() {
     const [{ data: ln }, { data: imp }, { data: dt }, { data: dft }, { data: mc }, { data: pr }] = await Promise.all([
       supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
       supabaseDR.from('improvements').select('*').order('created_at', { ascending: false }),
-      supabaseDR.from('dr_downtime_types').select('id, name, category').order('sort_order'),
-      supabaseDR.from('dr_defect_types').select('id, name').order('sort_order'),
+      // ⚠️ คอลัมน์ชื่อประเภทคือ name_th (ไม่มีคอลัมน์ name) — เคยพลาด select 'name' แล้ว query 400 เงียบ list ว่างทั้งหน้า
+      supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
+      supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').eq('is_active', true).order('sort_order'),
       supabaseDR.from('dr_products').select('id, name, mat_no, line_name').eq('is_active', true).order('name'),
     ]);
@@ -126,7 +127,7 @@ export default function Improvements() {
 
   const typeName = useCallback((imp) => {
     const list = imp.problem_source === 'defect' ? defectTypes : dtTypes;
-    return list.find(t => t.id === imp.problem_type_id)?.name || imp.problem_label || '—';
+    return list.find(t => t.id === imp.problem_type_id)?.name_th || imp.problem_label || '—';
   }, [dtTypes, defectTypes]);
 
   /* ── ผลลัพธ์ก่อน/หลัง จากข้อมูลจริง ──
@@ -256,7 +257,7 @@ export default function Improvements() {
         mat_no: modal.mat_no || null,
         problem_source: modal.problem_source,
         problem_type_id: modal.problem_type_id || null,
-        problem_label: typeList.find(t => t.id === modal.problem_type_id)?.name || modal.problem_label || null,
+        problem_label: typeList.find(t => t.id === modal.problem_type_id)?.name_th || modal.problem_label || null,
         description: modal.description?.trim() || null,
         action_taken: modal.action_taken?.trim() || null,
         start_date: modal.start_date,
@@ -480,7 +481,7 @@ export default function Improvements() {
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ปัญหาที่แก้ (จาก master {modal.problem_source === 'defect' ? 'ของเสีย' : 'Downtime'})
                   <select value={modal.problem_type_id} onChange={e => setModal({ ...modal, problem_type_id: e.target.value })} style={{ marginTop: 4 }}>
                     <option value="">— ทุกประเภท —</option>
-                    {typeOpts.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    {typeOpts.map(t => <option key={t.id} value={t.id}>{t.name_th}</option>)}
                   </select>
                 </label>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -541,7 +542,7 @@ export default function Improvements() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                     {pareto.rows.map((row, i) => {
                       const max = pareto.rows[0].value || 1;
-                      const tn = typeOpts.find(t => t.id === row.type_id)?.name || 'ไม่ระบุประเภท';
+                      const tn = typeOpts.find(t => t.id === row.type_id)?.name_th || 'ไม่ระบุประเภท';
                       const selected = modal.problem_type_id === (row.type_id || '') &&
                         (modal.problem_source === 'downtime' ? (modal.machine_no || '') === row.machine_no : (modal.mat_no || '') === row.mat_no);
                       return (
