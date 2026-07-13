@@ -8,6 +8,8 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { hasPermission } from '../utils/permissions';
+import { toast } from '../components/Toast';
 import useIsMobile from '../utils/useIsMobile';
 
 // ── Colour helpers ───────────────────────────────────────────────
@@ -19,8 +21,10 @@ const qColor    = v => v >= 99 ? '#22c55e' : v >= 95 ? '#f59e0b' : '#ef4444';
 const UNPLAN_COLORS = ['#ef4444','#f97316','#eab308','#84cc16','#06b6d4','#8b5cf6','#ec4899','#6b7280','#a78bfa'];
 const PLAN_COLORS   = ['#60a5fa','#34d399','#fb7185','#fbbf24'];
 
-// เป้าหมายมาตรฐานของแต่ละตัวชี้วัด — ใช้แสดงเส้น Target บนกราฟ/เกจ
+// เป้าหมายมาตรฐาน (fallback) — ใช้เมื่อกรุ๊ปใน scope ยังไม่ถูกตั้ง target ในตาราง oee_targets
+// target จริงตั้งรายกรุ๊ปจากปุ่ม 🎯 · ระดับ section = ค่าเฉลี่ยของกรุ๊ปใน section (ไม่เก็บใน DB)
 const TARGET = { oee: 85, a: 90, p: 90, q: 99 };
+const METRIC_TO_COL = { oee: 'target_oee', a: 'target_a', p: 'target_p', q: 'target_q' };
 const METRIC_COLOR = { a: '#22c55e', p: '#f59e0b', q: '#a78bfa' };
 const METRIC_LABEL = { a: 'AVAILABILITY (A)', p: 'PERFORMANCE (P)', q: 'QUALITY (Q)' };
 const METRIC_COLOR_FN = { a: aColor, p: pColor, q: qColor };
@@ -165,9 +169,21 @@ const STATUS_BADGE = {
 
 // ── Main Component ───────────────────────────────────────────────
 export default function OEEAnalytics() {
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const isMobile = useIsMobile(); // ≤768px: grid วิเคราะห์ยุบเป็นคอลัมน์เดียว กันกราฟถูกตัด (desktop ไม่เปลี่ยน)
   const [viewTab, setViewTab] = useState('today'); // today | trend
+  const canSetTarget = hasPermission('manage_master_data', role);
+
+  // ── Target OEE/A/P/Q รายกรุ๊ป (ตาราง oee_targets ฝั่ง Main) ──
+  const [oeeTargets, setOeeTargets] = useState({});          // { group_name: row }
+  const [showTargetModal, setShowTargetModal] = useState(false);
+  const loadTargets = useCallback(async () => {
+    const { data } = await supabase.from('oee_targets').select('*');
+    const m = {};
+    (data || []).forEach(r => { m[r.group_name] = r; });
+    setOeeTargets(m);
+  }, []);
+  useEffect(() => { loadTargets(); }, [loadTargets]);
 
   // mandatory scope (แบบเดียวกับ DailyReport): leader → ครอบครัวไลน์ตัวเอง ·
   // role ที่ถูกจำกัด sections → เฉพาะไลน์ในส่วนงาน scope — filter อิสระของหน้า apply ทับอีกที
@@ -245,6 +261,46 @@ export default function OEEAnalytics() {
   }, [tdLine, tdDept, tdSection, linesFull, parentChildrenMap, isScoped]);
 
   const tdScopeLabel = tdLine || tdDept || tdSection || 'ทุกไลน์';
+
+  // ── Target ตาม scope ที่เลือก ──
+  // กรุ๊ปของไลน์ = parent_line_name (ไลน์เดี่ยวไม่มีแม่ = ตัวมันเอง)
+  const groupOfLine = useCallback((lineName) => {
+    const row = linesFull.find(l => l.name === lineName);
+    return row?.parent_line_name || lineName;
+  }, [linesFull]);
+
+  // กรุ๊ปทั้งหมดใน scope (ใช้ทั้ง modal ตั้งค่า และการเฉลี่ยระดับ section/ทุกไลน์)
+  const allGroups = useMemo(() => {
+    const seen = new Set(); const out = [];
+    linesFull.forEach(l => {
+      const g = l.parent_line_name || l.name;
+      if (seen.has(g)) return;
+      seen.add(g);
+      const gRow = linesFull.find(x => x.name === g) || l;
+      out.push({ name: g, section: gRow.section || '' });
+    });
+    return out.sort((a, b) => (a.section || '').localeCompare(b.section || '') || a.name.localeCompare(b.name));
+  }, [linesFull]);
+
+  // เฉลี่ย target ของหลายกรุ๊ป (กรุ๊ปที่ไม่ตั้งค่า metric นั้นไม่ถูกนำมาเฉลี่ย) — fallback ค่ามาตรฐาน
+  const targetOf = useCallback((groupNames) => {
+    const out = { configured: false };
+    for (const k of ['oee', 'a', 'p', 'q']) {
+      const vals = groupNames.map(g => oeeTargets[g]?.[METRIC_TO_COL[k]]).filter(v => v != null).map(Number);
+      if (vals.length) { out[k] = Math.round(vals.reduce((s, v) => s + v, 0) / vals.length * 10) / 10; out.configured = true; }
+      else out[k] = TARGET[k];
+    }
+    return out;
+  }, [oeeTargets]);
+
+  // แท็บวันนี้: เลือกกรุ๊ป → เป้ากรุ๊ป · เลือกไลน์ → เป้ากรุ๊ปของไลน์ · เลือก section →
+  // เฉลี่ยกรุ๊ปใน section · ทุกไลน์ → เฉลี่ยทุกกรุ๊ปใน scope (เช่น PD3 = เฉลี่ย APRON ASSY + HYDROFORM)
+  const tdTarget = useMemo(() => {
+    if (tdLine) return targetOf([groupOfLine(tdLine)]);
+    if (tdDept) return targetOf([tdDept]);
+    const pool = tdSection ? allGroups.filter(g => g.section === tdSection) : allGroups;
+    return targetOf(pool.map(g => g.name));
+  }, [tdLine, tdDept, tdSection, allGroups, targetOf, groupOfLine]);
 
   const loadToday = useCallback(async () => {
     // scope แล้วแต่รายชื่อไลน์ยังไม่มา (หรือไม่มีไลน์ใน scope) — ห้าม query แบบไม่กรอง
@@ -385,6 +441,11 @@ export default function OEEAnalytics() {
   }, [tdSessionsTeamFiltered]);
 
   const tdLiveRow = useMemo(() => tdLiveSession ? tdRows.find(r => r.id === tdLiveSession.id) : null, [tdLiveSession, tdRows]);
+  // target ของการ์ด live = เป้ากรุ๊ปของไลน์ที่กำลังผลิตจริง (เจาะจงกว่า filter รวม)
+  const liveTarget = useMemo(
+    () => tdLiveSession ? targetOf([groupOfLine(tdLiveSession.line_name)]) : null,
+    [tdLiveSession, targetOf, groupOfLine]
+  );
 
   // Downtime donut (โดยประเภท)
   const tdDtDonut = useMemo(() => {
@@ -433,6 +494,12 @@ export default function OEEAnalytics() {
   const [selShift,   setSelShift]   = useState('');
   const [dateFrom,   setDateFrom]   = useState(() => dateStrAdd(getWorkDateStr(), -90));
   const [dateTo,     setDateTo]     = useState(() => getWorkDateStr());
+
+  // Target ของแท็บแนวโน้ม: เลือกกรุ๊ป/ไลน์ → เป้ากรุ๊ปนั้น · ทุกไลน์ → เฉลี่ยทุกกรุ๊ปใน scope
+  const trTarget = useMemo(() => {
+    if (selLine) return targetOf([groupOfLine(selLine)]);
+    return targetOf(allGroups.map(g => g.name));
+  }, [selLine, allGroups, targetOf, groupOfLine]);
 
   // ── Load data ──────────────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -589,6 +656,12 @@ export default function OEEAnalytics() {
         <div style={{ display: 'flex', gap: 4 }}>
           <button style={s.tab(viewTab === 'today')}  onClick={() => setViewTab('today')}>⚡ ภาพรวมวันนี้</button>
           <button style={s.tab(viewTab === 'trend')}  onClick={() => setViewTab('trend')}>📊 แนวโน้ม/ประวัติ</button>
+          {canSetTarget && (
+            <button style={{ ...s.tab(false), color: '#f59e0b', border: '1px solid rgba(245,158,11,0.4)' }}
+              onClick={() => setShowTargetModal(true)} title="ตั้ง Target OEE/A/P/Q รายกรุ๊ป — ระดับส่วนคำนวณจากค่าเฉลี่ยของกรุ๊ป">
+              🎯 ตั้ง Target
+            </button>
+          )}
         </div>
       </div>
 
@@ -652,15 +725,17 @@ export default function OEEAnalytics() {
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>OEE รวมวันนี้</div>
                   <div style={{ fontSize: 34, fontWeight: 900, color: tdKpi.oee != null ? oeeColor(tdKpi.oee) : 'var(--muted)' }}>{tdKpi.oee ?? '—'}{tdKpi.oee != null ? '%' : ''}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>TARGET {TARGET.oee}%</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }} title={tdTarget.configured ? 'เป้าจากการตั้งค่ารายกรุ๊ป (section = เฉลี่ยของกรุ๊ป)' : 'ค่ามาตรฐาน — ยังไม่ตั้ง target กรุ๊ปใน scope นี้'}>
+                    TARGET {tdTarget.oee}%{tdTarget.configured ? '' : ' *'}
+                  </div>
                 </div>
               </div>
               {['a', 'p', 'q'].map(k => (
                 <div key={k} style={{ flex: 1, minWidth: 160 }}>
                   <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{METRIC_LABEL[k]}</div>
                   <div style={{ fontSize: 26, fontWeight: 900, color: tdKpi[k] != null ? METRIC_COLOR_FN[k](tdKpi[k]) : 'var(--muted)' }}>{tdKpi[k] ?? '—'}{tdKpi[k] != null ? '%' : ''}</div>
-                  <MiniTrend data={tdHistoryGrouped} dataKey={k} color={METRIC_COLOR[k]} target={TARGET[k]} />
-                  <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}>TARGET {TARGET[k]}%</div>
+                  <MiniTrend data={tdHistoryGrouped} dataKey={k} color={METRIC_COLOR[k]} target={tdTarget[k]} />
+                  <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}>TARGET {tdTarget[k]}%</div>
                 </div>
               ))}
             </div>
@@ -689,12 +764,12 @@ export default function OEEAnalytics() {
                     <div style={{ fontSize: 28, fontWeight: 900, color: tdLiveRow?.calcOEE != null ? oeeColor(tdLiveRow.calcOEE) : 'var(--muted)' }}>
                       {tdLiveRow?.calcOEE ?? '—'}{tdLiveRow?.calcOEE != null ? '%' : ''}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>TARGET {TARGET.oee}%</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>TARGET {(liveTarget || tdTarget).oee}%</div>
                   </div>
                   <div style={{ display: 'flex', gap: 14 }}>
-                    <MetricColumn label="A" value={tdLiveRow?.calcA} target={TARGET.a} color={METRIC_COLOR.a} />
-                    <MetricColumn label="P" value={tdLiveRow?.calcP} target={TARGET.p} color={METRIC_COLOR.p} />
-                    <MetricColumn label="Q" value={tdLiveRow?.calcQ} target={TARGET.q} color={METRIC_COLOR.q} />
+                    <MetricColumn label="A" value={tdLiveRow?.calcA} target={(liveTarget || tdTarget).a} color={METRIC_COLOR.a} />
+                    <MetricColumn label="P" value={tdLiveRow?.calcP} target={(liveTarget || tdTarget).p} color={METRIC_COLOR.p} />
+                    <MetricColumn label="Q" value={tdLiveRow?.calcQ} target={(liveTarget || tdTarget).q} color={METRIC_COLOR.q} />
                   </div>
                 </div>
               )}
@@ -733,7 +808,7 @@ export default function OEEAnalytics() {
                 <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="%" />
                 <Tooltip content={<OEETooltip />} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <ReferenceLine y={TARGET.oee} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} label={{ value: `TARGET ${TARGET.oee}%`, fill: '#22c55e', fontSize: 11, position: 'insideTopRight' }} />
+                <ReferenceLine y={tdTarget.oee} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} label={{ value: `TARGET ${tdTarget.oee}%`, fill: '#22c55e', fontSize: 11, position: 'insideTopRight' }} />
                 <Bar dataKey="oee" name="OEE %" fill="#22c55e" opacity={0.85} radius={[3, 3, 0, 0]}>
                   <LabelList dataKey="oee" position="top" formatter={v => v != null ? `${v}%` : ''} style={{ fontSize: 11, fill: 'var(--text)' }} />
                 </Bar>
@@ -878,10 +953,10 @@ export default function OEEAnalytics() {
 
       {/* KPI Cards */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-        <KpiCard label="OEE เฉลี่ย"     value={kpi.oee} color={kpi.oee != null ? oeeColor(kpi.oee) : undefined} sub={`${kpi.sessions} กะ`} />
-        <KpiCard label="Availability (A)" value={kpi.a}   color={kpi.a   != null ? aColor(kpi.a)   : undefined} sub="% เวลาที่เครื่องพร้อม" />
-        <KpiCard label="Performance (P)"  value={kpi.p}   color={kpi.p   != null ? pColor(kpi.p)   : undefined} sub="% ความเร็วผลิต" />
-        <KpiCard label="Quality (Q)"      value={kpi.q}   color={kpi.q   != null ? qColor(kpi.q)   : undefined} sub="% ชิ้นงานดี" />
+        <KpiCard label="OEE เฉลี่ย"     value={kpi.oee} color={kpi.oee != null ? oeeColor(kpi.oee) : undefined} sub={`${kpi.sessions} กะ · เป้า ≥ ${trTarget.oee}%`} />
+        <KpiCard label="Availability (A)" value={kpi.a}   color={kpi.a   != null ? aColor(kpi.a)   : undefined} sub={`เป้า ≥ ${trTarget.a}% · % เวลาที่เครื่องพร้อม`} />
+        <KpiCard label="Performance (P)"  value={kpi.p}   color={kpi.p   != null ? pColor(kpi.p)   : undefined} sub={`เป้า ≥ ${trTarget.p}% · % ความเร็วผลิต`} />
+        <KpiCard label="Quality (Q)"      value={kpi.q}   color={kpi.q   != null ? qColor(kpi.q)   : undefined} sub={`เป้า ≥ ${trTarget.q}% · % ชิ้นงานดี`} />
         <KpiCard label="ผลิตรวม" value={null} sub={`${kpi.total.toLocaleString()} ชิ้น`}
           color="var(--text)" />
       </div>
@@ -899,7 +974,7 @@ export default function OEEAnalytics() {
                 <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="%" />
                 <Tooltip content={<OEETooltip />} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <ReferenceLine y={85} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} label={{ value: '85%', fill: '#22c55e', fontSize: 11 }} />
+                <ReferenceLine y={trTarget.oee} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} label={{ value: `TARGET ${trTarget.oee}%`, fill: '#22c55e', fontSize: 11 }} />
                 <Line type="monotone" dataKey="oee" name="OEE" stroke="#4d9fff" strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
                 <Line type="monotone" dataKey="a"   name="A%"  stroke="#22c55e" strokeWidth={1.5} dot={false} strokeDasharray="5 3" connectNulls />
                 <Line type="monotone" dataKey="p"   name="P%"  stroke="#f59e0b" strokeWidth={1.5} dot={false} strokeDasharray="5 3" connectNulls />
@@ -1034,6 +1109,160 @@ export default function OEEAnalytics() {
       </div>
       </>
       )}
+
+      {showTargetModal && canSetTarget && (
+        <OeeTargetModal
+          groups={allGroups}
+          targets={oeeTargets}
+          fullName={fullName}
+          onClose={() => setShowTargetModal(false)}
+          onSaved={() => { loadTargets(); setShowTargetModal(false); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── Modal ตั้ง Target OEE/A/P/Q รายกรุ๊ป ─────────────────────────────
+   เก็บเฉพาะระดับกรุ๊ปในตาราง oee_targets (Main) — ระดับ section เป็นค่าเฉลี่ยของกรุ๊ป
+   คำนวณสดให้ดูในหัวข้อ section · ช่องว่าง = ไม่ตั้ง (ใช้ค่ามาตรฐาน และไม่ถูกนำไปเฉลี่ย)
+   modal มีฟอร์ม → ห้ามปิดจากคลิก backdrop (UI-CONVENTIONS §5) */
+function OeeTargetModal({ groups, targets, fullName, onClose, onSaved }) {
+  const METRICS = [
+    { key: 'target_oee', label: 'OEE' },
+    { key: 'target_a',   label: 'A' },
+    { key: 'target_p',   label: 'P' },
+    { key: 'target_q',   label: 'Q' },
+  ];
+  const [draft, setDraft] = useState(() => {
+    const d = {};
+    groups.forEach(g => {
+      const t = targets[g.name] || {};
+      d[g.name] = {
+        target_oee: t.target_oee ?? '', target_a: t.target_a ?? '',
+        target_p: t.target_p ?? '', target_q: t.target_q ?? '',
+      };
+    });
+    return d;
+  });
+  const [saving, setSaving] = useState(false);
+
+  const setVal = (g, k, v) => setDraft(prev => ({ ...prev, [g]: { ...prev[g], [k]: v } }));
+
+  const bySection = useMemo(() => {
+    const m = {};
+    groups.forEach(g => { const sec = g.section || '(ไม่ระบุส่วน)'; (m[sec] = m[sec] || []).push(g); });
+    return Object.entries(m).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [groups]);
+
+  // ค่าเฉลี่ยระดับ section จาก draft (โชว์สด — ตรงกับที่หน้า OEE จะคำนวณตอนเลือก section)
+  const secAvg = (list, key) => {
+    const vals = list.map(g => draft[g.name]?.[key]).filter(v => v !== '' && v != null).map(Number).filter(v => !isNaN(v));
+    return vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length * 10) / 10 : null;
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const toUpsert = [];
+      const toDelete = [];
+      for (const g of groups) {
+        const d = draft[g.name];
+        const nums = {};
+        let hasAny = false, bad = false;
+        for (const m of METRICS) {
+          const raw = d[m.key];
+          if (raw === '' || raw == null) { nums[m.key] = null; continue; }
+          const n = Number(raw);
+          if (isNaN(n) || n < 0 || n > 100) { bad = true; break; }
+          nums[m.key] = n; hasAny = true;
+        }
+        if (bad) { toast.error(`ค่า target ของ ${g.name} ต้องเป็นตัวเลข 0–100`); setSaving(false); return; }
+        if (hasAny) {
+          toUpsert.push({ group_name: g.name, ...nums, updated_by: userData?.user?.id || null, updated_by_name: fullName || null, updated_at: new Date().toISOString() });
+        } else if (targets[g.name]) {
+          toDelete.push(g.name); // เคลียร์ทุกช่อง = ลบ target ของกรุ๊ป (กลับไปใช้ค่ามาตรฐาน)
+        }
+      }
+      if (toUpsert.length) {
+        const { error } = await supabase.from('oee_targets').upsert(toUpsert, { onConflict: 'group_name' });
+        if (error) throw error;
+      }
+      if (toDelete.length) {
+        const { error } = await supabase.from('oee_targets').delete().in('group_name', toDelete);
+        if (error) throw error;
+      }
+      toast.success('บันทึก Target เรียบร้อย');
+      onSaved();
+    } catch (e) {
+      toast.error('บันทึกไม่สำเร็จ: ' + e.message);
+      setSaving(false);
+    }
+  };
+
+  const inSt = { width: 64, padding: '4px 6px', borderRadius: 6, fontSize: 12, textAlign: 'right', background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+      <div style={{ background: 'var(--card)', borderRadius: 12, border: '1px solid var(--border)', width: 'min(96vw, 760px)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>🎯 ตั้ง Target OEE / A / P / Q รายกรุ๊ป</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+              ระดับส่วน (section) ไม่ต้องตั้ง — คำนวณเป็นค่าเฉลี่ยของกรุ๊ปที่ตั้งไว้ · ช่องว่าง = ใช้ค่ามาตรฐาน ({TARGET.oee}/{TARGET.a}/{TARGET.p}/{TARGET.q})
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 14, cursor: 'pointer' }}>✕</button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '10px 18px' }}>
+          {bySection.map(([sec, list]) => (
+            <div key={sec} style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', padding: '6px 0', borderBottom: '1px dashed var(--border)' }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>{sec}</span>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                  เป้ารวมของส่วน (เฉลี่ยจากกรุ๊ป): {' '}
+                  {METRICS.map(m => `${m.label} ${secAvg(list, m.key) ?? '—'}`).join(' · ')}
+                </span>
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ fontSize: 11, color: 'var(--muted)' }}>
+                    <th style={{ textAlign: 'left', padding: '6px 4px' }}>กรุ๊ป / ไลน์หลัก</th>
+                    {METRICS.map(m => <th key={m.key} style={{ textAlign: 'right', padding: '6px 4px', width: 76 }}>{m.label} ≥ %</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map(g => (
+                    <tr key={g.name} style={{ borderTop: '1px solid var(--border)' }}>
+                      <td style={{ padding: '5px 4px', fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{g.name}</td>
+                      {METRICS.map(m => (
+                        <td key={m.key} style={{ padding: '5px 4px', textAlign: 'right' }}>
+                          <input type="number" min="0" max="100" step="0.1" inputMode="decimal"
+                            value={draft[g.name]?.[m.key] ?? ''}
+                            onChange={e => setVal(g.name, m.key, e.target.value)}
+                            placeholder={String(TARGET[m.key === 'target_oee' ? 'oee' : m.key.slice(-1)])}
+                            style={inSt} />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+          {!groups.length && <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีข้อมูลกรุ๊ปไลน์</div>}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '12px 18px', borderTop: '1px solid var(--border)' }}>
+          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+          <button onClick={handleSave} disabled={saving}
+            style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
+            {saving ? '⏳ กำลังบันทึก...' : '💾 บันทึก Target'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

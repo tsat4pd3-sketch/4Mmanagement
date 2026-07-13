@@ -67,6 +67,7 @@
 |-------|---------|-------------|
 | `employees` | ข้อมูลพนักงาน | id, employee_id_code, name, image_url, line_id, team (A/B/C), section, is_active, position |
 | `production_lines` | ไลน์ผลิต | id, name, section, parent_line_name, std_day_shift, std_night_shift |
+| `oee_targets` | Target OEE/A/P/Q **รายกรุ๊ป** (parent line/ไลน์เดี่ยว) — ระดับ section ไม่เก็บใน DB ใช้**ค่าเฉลี่ยของกรุ๊ป**คำนวณสดในหน้า OEE (2026-07-13) | group_name (unique), target_oee/a/p/q (null = ค่ามาตรฐาน 85/90/90/99) · ตั้งจากปุ่ม 🎯 ใน /oee-analytics (สิทธิ์ manage_master_data) · migration `20260713_oee_targets.sql` |
 | `profiles` | User roles + scope | id, email, role, **position** (ตำแหน่งจริง — แสดงผลเท่านั้น), full_name, line_id, section, sections[], notify_email, signature_url |
 | `role_permissions` | สิทธิ์เข้าหน้า/action ตาม role (data-driven) | role, permission_key, allowed |
 
