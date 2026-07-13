@@ -1151,7 +1151,8 @@ function LiveTab({ role }) {
     const prod = products.find(p => p.mat_no === matNo);
     const now = new Date();
     const prodNo = `MANUAL-${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
-    const { error } = await supabaseDR.from('prod_orders').insert({
+    const backfillIso = manualForm.is_backfill && manualForm.backfill_time ? backfillIsoFromTime(manualForm.backfill_time) : null;
+    const { data: created, error } = await supabaseDR.from('prod_orders').insert({
       session_id: selSession.id,
       prod_no:    prodNo,
       mat_no:     matNo,
@@ -1165,14 +1166,57 @@ function LiveTab({ role }) {
       is_backfill: manualForm.is_backfill,
       status:     'open',
       opened_by:  fullName,
-      ...(manualForm.is_backfill && manualForm.backfill_time
-        ? { opened_at: backfillIsoFromTime(manualForm.backfill_time) } : {}),
-    });
+      ...(backfillIso ? { opened_at: backfillIso } : {}),
+    }).select().single();
     setSavingManual(false);
     if (error) { toast.error(error.message); return; }
     toast.success(manualForm.is_backfill
       ? `เปิดเป้า ${matNo} · ${qty} ชิ้น ✓ (ย้อนหลังตั้งแต่ ${manualForm.backfill_time}) — อัพเดทยอดสะสมได้เลย`
       : `เปิดเป้า ${matNo} · ${qty} ชิ้น ✓ — ให้พนักงานอัพเดทยอดสะสมทุกช่วงเบรค`);
+
+    // ── งานคู่ RH/LH — สินค้ามี pair_mat_no ต้องเปิดเป้าคู่ด้วย (เหมือนใบสแกนที่ต้องเปิดทั้งสองข้าง)
+    // คู่บางตัวอยู่คนละไลน์ (เช่น LH ที่ HDF1 · RH ที่ LASER123) → เปิดเข้า session ที่เปิดอยู่ของไลน์นั้นให้เลย
+    const pairMat = prod?.pair_mat_no || null;
+    if (pairMat && created) {
+      const pairProd = products.find(p => p.mat_no === pairMat);
+      const pairStd  = kanbanStds.find(s => s.mat_no === pairMat);
+      const pairLine = (pairProd?.line_name || '').trim();
+      const famNames = new Set(getLineFamilyNames(lines, selSession.line_name).map(n => n.trim().toLowerCase()));
+      let pairSession = selSession;
+      if (pairLine && !famNames.has(pairLine.toLowerCase())) {
+        const { data: ps } = await supabaseDR.from('production_sessions')
+          .select('id, line_name')
+          .eq('line_name', pairLine).eq('work_date', selSession.work_date)
+          .eq('shift', selSession.shift).eq('status', 'open')
+          .order('created_at', { ascending: false }).limit(1);
+        pairSession = ps?.[0] || null;
+      }
+      if (!pairSession) {
+        toast.info(`⚠️ สินค้านี้มีคู่ RH/LH (${pairMat} · ไลน์ ${pairLine}) แต่ไลน์นั้นยังไม่เปิดกะ — เปิดกะแล้วค่อยเปิดเป้าคู่เอง`);
+      } else if (window.confirm(`สินค้านี้มีคู่ RH/LH: ${pairMat}${pairSession.id !== selSession.id ? ` (ไลน์ ${pairLine})` : ''}\nเปิดเป้าคู่ ${qty} ชิ้นให้พร้อมกันเลยมั้ย?`)) {
+        const { data: pairCreated, error: pe } = await supabaseDR.from('prod_orders').insert({
+          session_id: pairSession.id,
+          prod_no:    `${prodNo}P`,
+          mat_no:     pairMat,
+          part_name:  pairStd?.part_name || pairProd?.name || null,
+          p_no:       pairStd?.p_no || pairProd?.p_no || null,
+          customer:   pairStd?.customer || pairProd?.customer || null,
+          qty, qty_target: qty, qty_actual: 0,
+          is_manual: true, is_backfill: manualForm.is_backfill,
+          status: 'open', opened_by: fullName,
+          paired_order_id: created.id,
+          // ผลิตพร้อมกันจริง — sync เวลาเริ่มกับใบแรก (กติกาเดียวกับคู่ใบสแกน)
+          opened_at: backfillIso || created.opened_at,
+        }).select().single();
+        if (pe) {
+          toast.error(`เปิดเป้าคู่ไม่สำเร็จ: ${pe.message}`);
+        } else {
+          await supabaseDR.from('prod_orders').update({ paired_order_id: pairCreated.id }).eq('id', created.id);
+          toast.success(`เปิดเป้าคู่ ${pairMat} · ${qty} ชิ้น ✓${pairSession.id !== selSession.id ? ` (ไลน์ ${pairLine} — ไปอัพเดทยอดที่หน้ากะของไลน์นั้น)` : ''}`);
+        }
+      }
+    }
+
     setShowManualOpen(false);
     setManualForm({ mat_no: '', qty: '', is_backfill: false, backfill_time: '' });
     loadProdOrders(selSession.id, selSession.line_name);
