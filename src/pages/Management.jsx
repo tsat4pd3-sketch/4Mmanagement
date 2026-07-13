@@ -1636,13 +1636,21 @@ export default function Management() {
                                   borderRadius: 4, overflow: 'hidden', cursor: 'default', zIndex: 1,
                                   boxShadow: (isDelayed || isLateDone) ? `0 0 6px ${sc}44` : 'none',
                                 }}>
-                                <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`, background: `${sc}22` }} />
+                                {/* ใบ manual: fill เข้มขึ้นตามสัดส่วนยอดสะสม (alpha 0.30→0.75) ครบเป้า = เขียว — ใบสแกนปกติจางแบบเดิม */}
+                                <div style={{
+                                  position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`,
+                                  background: o.is_manual && !o.isDone
+                                    ? `${pctBlock >= 100 ? '#22c55e' : sc}${Math.round((0.30 + 0.45 * Math.min(pctBlock, 100) / 100) * 255).toString(16).padStart(2, '0')}`
+                                    : `${sc}22`,
+                                  transition: 'width 0.5s ease, background 0.5s ease',
+                                }} />
                                 <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 2px', overflow: 'hidden' }}>
-                                  <div style={{ fontSize: 11, fontWeight: 800, color: sc, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {/* fill เข้มของใบ manual ทำสีเดิมจม — เกินครึ่งสลับตัวหนังสือเป็นขาว */}
+                                  <div style={{ fontSize: 11, fontWeight: 800, color: o.is_manual && !o.isDone && pctBlock >= 45 ? '#fff' : sc, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                     {icon} {o.prod_no || (oi + 1)}
                                   </div>
                                   {/* ใบ manual ที่ยังเปิด: ยอดสะสม/เป้า — ใบสแกน/ปิดแล้ว: จำนวนตามเดิม */}
-                                  <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.is_manual && !o.isDone ? `${o.qty_actual ?? 0}/${o.qty_target ?? o.qty}` : o.qty}ชิ้น</div>
+                                  <div style={{ fontSize: 11, color: o.is_manual && !o.isDone && pctBlock >= 45 ? 'rgba(255,255,255,0.85)' : 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.is_manual && !o.isDone ? `${o.qty_actual ?? 0}/${o.qty_target ?? o.qty}` : o.qty}ชิ้น</div>
                                 </div>
                               </div>
                               {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}

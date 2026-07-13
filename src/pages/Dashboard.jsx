@@ -1581,12 +1581,21 @@ export default function Dashboard() {
                                 boxShadow: (isDelayed || isLateDone) ? `0 0 6px ${statusColor}44` : 'none',
                                 cursor: 'default', zIndex: 1,
                               }}>
-                              <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`, background: `${statusColor}22`, transition: 'width 0.5s ease' }} />
+                              {/* ใบ manual: fill เข้มขึ้นตามสัดส่วนยอดสะสม (alpha 0.30→0.75) ครบเป้า = เขียว — เห็นชัดว่าเหลืออีกเท่าไหร่จบ
+                                  ใบสแกนปกติ: fill จางแบบเดิม */}
+                              <div style={{
+                                position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`,
+                                background: o.is_manual && !o.isDone
+                                  ? `${pctBlock >= 100 ? '#22c55e' : statusColor}${Math.round((0.30 + 0.45 * Math.min(pctBlock, 100) / 100) * 255).toString(16).padStart(2, '0')}`
+                                  : `${statusColor}22`,
+                                transition: 'width 0.5s ease, background 0.5s ease',
+                              }} />
                               <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 3px', overflow: 'hidden' }}>
-                                <div style={{ fontSize: 11, fontWeight: 800, color: statusColor, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {/* fill เข้มของใบ manual ทำสีเดิมจม — เกินครึ่งสลับตัวหนังสือเป็นขาว */}
+                                <div style={{ fontSize: 11, fontWeight: 800, color: o.is_manual && !o.isDone && pctBlock >= 45 ? '#fff' : statusColor, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {icon} {o.prod_no || (oi + 1)}
                                 </div>
-                                <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                <div style={{ fontSize: 11, color: o.is_manual && !o.isDone && pctBlock >= 45 ? 'rgba(255,255,255,0.85)' : 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {/* ใบ manual ที่ยังเปิด: โชว์ยอดสะสม/เป้า (พนักงานอัพเดททุกเบรค) — ใบสแกน/ปิดแล้ว: จำนวนตามเดิม */}
                                   {o.is_manual && !o.isDone ? `${o.qty_actual ?? 0}/${o.qty_target ?? o.qty}` : o.qty}ชิ้น
                                 </div>
