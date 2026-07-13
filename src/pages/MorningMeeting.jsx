@@ -62,6 +62,7 @@ export default function MorningMeeting() {
   const [fourM, setFourM]             = useState([]);
   const [attendance, setAttendance]   = useState([]);
   const [openDts, setOpenDts]         = useState([]); // เครื่องที่ยังซ่อมค้าง "ตอนนี้" (readiness)
+  const [machineCountByLine, setMachineCountByLine] = useState({}); // จำนวนเครื่องต่อไลน์ — ฐานคิด % Downtime
   const [actions, setActions]         = useState([]);
   const [tvMode, setTvMode]           = useState(false);
   const [slide, setSlide]             = useState(0);
@@ -119,7 +120,7 @@ export default function MorningMeeting() {
     setLoading(true);
     try {
       const D = meetingDate;
-      const [{ data: sess }, { data: fm }, { data: att }, { data: actToday }, { data: actCarry }] = await Promise.all([
+      const [{ data: sess }, { data: fm }, { data: att }, { data: actToday }, { data: actCarry }, { data: mcs }] = await Promise.all([
         supabaseDR.from('production_sessions')
           .select('*, dr_products(name, mat_no)')
           .eq('work_date', D).in('line_name', lineNames).limit(500),
@@ -135,8 +136,13 @@ export default function MorningMeeting() {
         supabase.from('meeting_action_items')
           .select('*').in('status', ['open', 'doing']).lt('meeting_date', D)
           .order('meeting_date').limit(200),
+        // ทะเบียนเครื่องต่อไลน์ — ใช้เป็นฐานเวลาเครื่องรวม (เครื่อง × นาทีกะที่เปิด) เทียบ % Downtime
+        supabaseDR.from('machines').select('machine_no, line_name').in('line_name', lineNames).limit(1000),
       ]);
       setSessions(sess || []);
+      const mCnt = {};
+      (mcs || []).forEach(m => { mCnt[m.line_name] = (mCnt[m.line_name] || 0) + 1; });
+      setMachineCountByLine(mCnt);
       setFourM(fm || []);
       // ผูกแถวเช็คชื่อเข้ากับ "ชื่อไลน์" ผ่าน employees.line_id แล้วกรองเฉพาะไลน์ใน scope
       const nameByLineId = {};
@@ -218,14 +224,24 @@ export default function MorningMeeting() {
     const closed = sessions.filter(s => s.status === 'closed' && s.oee != null);
     const oeeAvg = closed.length ? Math.round(closed.reduce((a, s) => a + Number(s.oee), 0) / closed.length) : null;
     const dtMin = Math.round(downtimes.reduce((a, d) => a + (Number(d.duration_min) || 0), 0));
+    // ฐานเวลาเครื่องรวม = Σ ต่อกะที่เปิด (นาทีกะ × จำนวนเครื่องของไลน์นั้น) — ให้ % Downtime
+    // เทียบได้ว่าเยอะ/น้อยแค่ไหน (ไลน์ไม่มีทะเบียนเครื่องนับเป็น 1 เครื่อง · กะเปิดค้างไม่มี shift_min ใช้ 570 = 9.5 ชม.)
+    let dtBaseMin = 0, dtMachines = 0;
+    const seenLines = new Set();
+    sessions.forEach(s => {
+      const mc = machineCountByLine[s.line_name] || 1;
+      dtBaseMin += (s.shift_min || 570) * mc;
+      if (!seenLines.has(s.line_name)) { seenLines.add(s.line_name); dtMachines += mc; }
+    });
+    const dtPct = dtBaseMin > 0 ? Math.round((dtMin / dtBaseMin) * 1000) / 10 : null;
     const ng = sessions.reduce((a, s) => a + (s.qty_ng ?? 0), 0);
     const present = attendance.filter(a => a.is_present).length;
     return {
       actual, target, achieve: pctStr(actual, target), oeeAvg,
-      dtMin, dtCount: downtimes.length, ng,
+      dtMin, dtCount: downtimes.length, dtBaseMin, dtPct, dtMachines, ng,
       present, attTotal: attendance.length,
     };
-  }, [sessions, downtimes, attendance, viewLines, orders]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessions, downtimes, attendance, viewLines, orders, machineCountByLine]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ผลต่อไลน์ (การ์ด) — เฉพาะ leaf lines, ไลน์ไม่เปิดกะ = เทา
   const lineResults = useMemo(() => leafLines.map(l => {
@@ -406,7 +422,7 @@ export default function MorningMeeting() {
 <style>body{font-family:'Sarabun',sans-serif;font-size:13px;margin:24px}h1{font-size:18px}h2{font-size:14px;margin:16px 0 6px}table{border-collapse:collapse;width:100%}</style></head><body>
 <h1>🌅 สรุปประชุมแถวเช้า — ${fmtDate(meetingDate)} · ${scopeLabel}</h1>
 <p>📦 ผลิตรวม <b>${sum.actual}${sum.target > 0 ? `/${sum.target} (${sum.achieve}%)` : ' (ไม่มีเป้าให้เทียบ)'}</b> · 📊 OEE เฉลี่ย ${sum.oeeAvg ?? '-'}% ·
-⏱️ Downtime ${sum.dtMin} นาที (${sum.dtCount} ครั้ง — รวมทุกไลน์/เครื่อง เวลาซ้อนกันได้) · ❌ NG ${sum.ng} · 👥 เข้างาน ${sum.present}/${sum.attTotal}</p>
+⏱️ Downtime ${sum.dtMin} นาที (${sum.dtCount} ครั้ง${sum.dtPct != null ? ` = ${sum.dtPct}% ของเวลาเครื่องรวม ≈${Math.round(sum.dtBaseMin / 60)} ชม. · ${sum.dtMachines} เครื่อง` : ''} — รวมทุกไลน์/เครื่อง เวลาซ้อนกันได้) · ❌ NG ${sum.ng} · 👥 เข้างาน ${sum.present}/${sum.attTotal}</p>
 <h2>📉 งานหลุดแผน (${missedOrders.length})</h2>
 <table><tr><th style="${td}">ไลน์</th><th style="${td}">พาร์ท</th><th style="${td}">เป้า</th><th style="${td}">ได้จริง</th><th style="${td}">ขาด</th><th style="${td}">สาเหตุ</th></tr>${missedRows || `<tr><td colspan="6" style="${td}">— ไม่มี —</td></tr>`}</table>
 <h2>🛠️ Top Downtime</h2>
@@ -432,8 +448,15 @@ export default function MorningMeeting() {
           ? { label: 'ผลิตรวม (ชิ้น)', value: `${sum.actual.toLocaleString()}/${sum.target.toLocaleString()}`, sub: `${sum.achieve}% ของเป้า`, color: achieveColor(sum.achieve) }
           : { label: 'ผลิตรวม (ชิ้น)', value: sum.actual.toLocaleString(), sub: 'ไม่มีเป้าให้เทียบ (ยังไม่ตั้ง target/std)', color: 'var(--text)' },
         { label: 'OEE เฉลี่ย', value: sum.oeeAvg != null ? `${sum.oeeAvg}%` : '—', sub: 'เฉพาะกะที่ปิดแล้ว', color: sum.oeeAvg == null ? 'var(--muted)' : sum.oeeAvg >= 85 ? '#22c55e' : sum.oeeAvg >= 65 ? '#f59e0b' : '#ef4444' },
-        // ผลรวมนาทีของ "ทุกรายการทุกเครื่องทุกไลน์" — เวลาซ้อนกันได้ จึงเกิน 24 ชม./วันได้ ไม่ใช่เวลาที่โรงงานหยุดจริง
-        { label: 'Downtime (นาที·รวมทุกเครื่อง)', value: `${sum.dtMin.toLocaleString()} นาที`, sub: `${sum.dtCount} ครั้ง · ≈${(sum.dtMin / 60).toFixed(1)} ชม. — รวมทุกไลน์/เครื่อง เวลาซ้อนกันได้`, color: sum.dtMin > 0 ? '#ef4444' : '#22c55e' },
+        // ผลรวมนาทีของ "ทุกรายการทุกเครื่องทุกไลน์" (เวลาซ้อนกันได้) เทียบกับฐานเวลาเครื่องรวม
+        // ที่มีจริงของวันนั้น → % ทำให้เห็นทันทีว่าเยอะหรือน้อย (เกณฑ์สี: <3% เขียว · 3-8% เหลือง · >8% แดง)
+        sum.dtPct != null
+          ? {
+              label: 'Downtime รวมทุกเครื่อง', value: `${sum.dtPct}%`,
+              sub: `${sum.dtMin.toLocaleString()} นาที (≈${(sum.dtMin / 60).toFixed(1)} ชม.) · ${sum.dtCount} ครั้ง — จากเวลาเครื่องรวม ≈${Math.round(sum.dtBaseMin / 60).toLocaleString()} ชม. (${sum.dtMachines} เครื่อง × กะที่เปิด)`,
+              color: sum.dtMin === 0 ? '#22c55e' : sum.dtPct > 8 ? '#ef4444' : sum.dtPct >= 3 ? '#f59e0b' : '#22c55e',
+            }
+          : { label: 'Downtime รวมทุกเครื่อง', value: `${sum.dtMin.toLocaleString()} นาที`, sub: `${sum.dtCount} ครั้ง — รวมทุกไลน์/เครื่อง เวลาซ้อนกันได้`, color: sum.dtMin > 0 ? '#ef4444' : '#22c55e' },
         { label: 'ของเสีย (NG)', value: sum.ng.toLocaleString(), sub: 'จากทุกกะ', color: sum.ng > 0 ? '#ef4444' : '#22c55e' },
         { label: 'เข้างาน', value: `${sum.present}/${sum.attTotal}`, sub: sum.attTotal ? `${pctStr(sum.present, sum.attTotal)}%` : 'ไม่มีข้อมูลเช็คชื่อวันนั้น', color: '#4d9fff' },
       ].map(k => (
