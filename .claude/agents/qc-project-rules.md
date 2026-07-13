@@ -44,6 +44,12 @@ model: inherit
   ไปเป็น `TO authenticated` (supabaseDR ไม่เคยส่ง JWT — จะพังทั้งระบบ เคยเกิดแล้ว)
 - **B3** การเปลี่ยน schema ต้องมี migration file ใน `supabase/migrations/` — ถ้าเจอโค้ดอ้างถึง
   คอลัมน์/ตารางที่ไม่มีใน migration หรือ docs/sql/ ให้ตั้งข้อสังเกต (อาจแก้ตรงผ่าน dashboard โดยไม่บันทึก)
+- **B4** ห้ามเขียนคะแนน `employee_skills` จาก client นอกเหนือจาก 2 flow ที่อนุญาต
+  (แก้สกิลใน modal พนักงาน + อนุมัติ/ปฏิเสธ level up — ทั้งคู่ใน operator.jsx) —
+  การเพิ่ม/ลดคะแนนอัตโนมัติ (farming/decay) ต้องเป็นฟังก์ชัน DB ฝั่ง server เท่านั้น
+  (CLAUDE.md "Employee Skills & EXP Farming" — เคยเป็นช่อง farm EXP ใน Checkin.jsx)
+  · grep: `from\('employee_skills'\)` ใน `src/` แล้วเช็คว่า write อยู่นอก operator.jsx หรือไม่
+  · RPC skill ใหม่ต้อง guard role ในตัวฟังก์ชัน + revoke EXECUTE จาก anon/PUBLIC + idempotent
 
 ### หมวด C — Permissions (data-driven)
 - **C1** ห้าม hardcode role array เพิ่ม เช่น `['admin','manager','supervisor'].includes(role)` —
