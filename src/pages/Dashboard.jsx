@@ -1573,13 +1573,16 @@ export default function Dashboard() {
                           const pctBlock = segEndMs > segStartMs
                             ? Math.max(0, Math.min(100, ((Math.min(fillEndMs, segEndMs) - segStartMs) / (segEndMs - segStartMs)) * 100))
                             : 0;
+                          // เป้าล้นกรอบวันงาน 08:00→08:00 (เช่น เป้า×CT > 24 ชม.) — เตือนบนการ์ดให้เห็นเลยว่าเกินกำลังเท่าไหร่
+                          const overMs = !o.isDone ? realEndMs - gridEndMs : 0;
+                          const isOverCap = overMs > 5 * 60000; // เกิน 5 นาทีขึ้นไปถึงนับ (กันเศษปัดจาก CT)
                           // ใบที่หลุดแผน (ดีเลย์/ปิดช้า) — แนบ downtime ที่คาบเกี่ยวช่วงเวลาของใบนั้นเข้า tooltip เป็นสาเหตุ
                           // จำกัดเฉพาะ downtime ของ sub-line เดียวกับใบนี้ ไม่หยิบของอีกไลน์ที่แค่เวลาตรงกันมาปน
                           const causeText = isLateDone ? dtTooltip(startMs, new Date(o.confirmed_at).getTime(), o.line_name)
                             : isDelayed ? dtTooltip(startMs, Math.min(nowMs, gridEndMs), o.line_name) : '';
                           return (
                             <Fragment key={o.prod_no || oi}>
-                            <div title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs-realEndMs)/60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${causeText}`}
+                            <div title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs-realEndMs)/60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${isOverCap ? ` 🔴 เป้าล้นกรอบวันงาน +${(overMs / 3600000).toFixed(1)} ชม. — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต` : ''}${causeText}`}
                               style={{
                                 position: 'absolute', top: 4, bottom: 4,
                                 left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 24,
@@ -1594,7 +1597,7 @@ export default function Dashboard() {
                               <div style={{
                                 position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`,
                                 background: o.is_manual && !o.isDone
-                                  ? `${pctBlock >= 100 ? '#22c55e' : statusColor}${Math.round((0.30 + 0.45 * Math.min(pctBlock, 100) / 100) * 255).toString(16).padStart(2, '0')}`
+                                  ? `${fillFrac >= 1 ? '#22c55e' : statusColor}${Math.round((0.30 + 0.45 * Math.min(pctBlock, 100) / 100) * 255).toString(16).padStart(2, '0')}`
                                   : `${statusColor}22`,
                                 transition: 'width 0.5s ease, background 0.5s ease',
                               }} />
@@ -1606,6 +1609,7 @@ export default function Dashboard() {
                                 <div style={{ fontSize: 11, color: o.is_manual && !o.isDone && pctBlock >= 45 ? 'rgba(255,255,255,0.85)' : 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {/* ใบ manual ที่ยังเปิด: โชว์ยอดสะสม/เป้า (พนักงานอัพเดททุกเบรค) — ใบสแกน/ปิดแล้ว: จำนวนตามเดิม */}
                                   {o.is_manual && !o.isDone ? `${o.qty_actual ?? 0}/${o.qty_target ?? o.qty}` : o.qty}ชิ้น
+                                  {isOverCap && <span style={{ color: '#ef4444', fontWeight: 800 }}> 🔴ล้น+{(overMs / 3600000).toFixed(1)}ชม.</span>}
                                 </div>
                               </div>
                             </div>
