@@ -139,6 +139,7 @@ const ROLE_LABELS = {
   qa:         '🔍 QA',
   document_control: '🗂 Doc Control',
   sale:       '💼 Sale',
+  mtn:        '🔧 MTN',
   display:    '📺 Display',
 };
 

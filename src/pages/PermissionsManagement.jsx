@@ -11,6 +11,7 @@ const ROLES = [
   { value: 'qa',         label: 'QA',         color: '#c084fc' },
   { value: 'document_control', label: 'Doc Control', color: '#fb923c' },
   { value: 'sale',       label: 'Sale',       color: '#38bdf8' },
+  { value: 'mtn',        label: 'MTN',        color: '#fb7185' },
   { value: 'display',    label: 'Display',    color: '#94a3b8' },
 ];
 

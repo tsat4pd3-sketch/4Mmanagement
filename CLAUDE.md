@@ -199,7 +199,7 @@
 > ต่างกันแค่ position · ถ้าวันหน้าระดับต่างกันต้องได้**สิทธิ์**ต่างกันจริง ค่อยเพิ่ม role ใหม่ + แถวใน
 > role_permissions (ระบบรองรับ) — **ห้ามเพิ่ม role ตามชื่อตำแหน่งโดยที่ชุดสิทธิ์ไม่ต่างจาก role เดิม**
 
-8 roles ใน enum `user_role`: `admin, manager, supervisor, leader, qa, document_control, sale, display`
+9 roles ใน enum `user_role`: `admin, manager, supervisor, leader, qa, document_control, sale, mtn, display`
 
 | Role | สิทธิ์หลัก |
 |------|-----------|
@@ -210,6 +210,7 @@
 | `qa` | ดู Dashboard + Report, อนุมัติ 4M step QA |
 | `document_control` | จัดการเอกสาร CQI-15 |
 | `sale` | ทีมขาย — Planner & Sales, Delivery, Kanban, Dashboard (seed: `20260708_sale_role_demand_page_permissions.sql`) |
+| `mtn` | ทีมซ่อมบำรุง (MTN/JIG/DIE) — หน้า PM ทั้งหมด, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร (seed: `20260713_mtn_role.sql`) |
 | `display` | ดูอย่างเดียว (จอแสดงผลลอย ไม่ login เป็นคน) |
 
 ### สิทธิ์ตามหน้า/action — `role_permissions` (data-driven, ไม่ hardcode)
@@ -411,9 +412,11 @@ src/
 
 supabase/
 ├── migrations/        # ทุกการเปลี่ยน schema ต้องมีไฟล์ที่นี่ (ดู docs/sql/00_schema_snapshot_*.sql = โครงตารางทั้งหมด)
-└── functions/         # 7 ตัว: send-notification, send-cqi15-notification, daily-4m-summary,
-                       #   create-user (deploy แล้วแต่ซอร์สอยู่บน dashboard), pm-daily-scan,
-                       #   pm-plan-reminder, shipping-phase-scan, cleanup-orphan-photos
+└── functions/         # 9 ตัว (ซอร์สอยู่ใน repo ครบแล้ว): send-notification, send-cqi15-notification,
+                       #   daily-4m-summary, create-user (v14 2026-07-13: admin-only + validate role
+                       #   กับ enum ผ่าน RPC get_user_roles ห้าม hardcode + เขียนโปรไฟล์ครบทุก field
+                       #   จังหวะเดียว), delete-user (admin-only · กันลบตัวเอง/ลบ admin),
+                       #   pm-daily-scan, pm-plan-reminder, shipping-phase-scan, cleanup-orphan-photos
 
 docs/                  # UI-CONVENTIONS.md (บังคับอ่านก่อนแก้ UI) · PERMISSIONS-DESIGN.md ·
                        #   ROLLBACK_*.md · sql/ (schema snapshot + seed อ้างอิง)
