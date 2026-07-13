@@ -29,6 +29,7 @@ const DEFAULT_TEMPLATES = {
   shipping_shipped: '🚚 ส่งงานลูกค้าแล้ว\n🕐 รอบ {ship_time} · 📅 {due_date}\n🏭 {customer} · Dock {dock_code}\n🔩 {mat_no} × {qty} ชิ้น\n👤 {shipped_by}',
   shipping_overdue: '🔴 รอบส่งเลยเวลา {count} รอบ — วันงาน {work_date}\n{items}',
   shipping_phase_alert: '🟠 หลุดเฟสงานส่ง {total} รายการ — วันงาน {work_date}\n{items}',
+  morning_meeting: '🌅 สรุปประชุมแถวเช้า — {work_date}\n🏭 {scope_label}\n📦 ผลิตรวม {total_actual}/{total_target} ({achieve_pct}%)\n📊 OEE {oee_avg}% · ⏱️ DT {dt_total_min} นาที ({dt_count} ครั้ง) · ❌ NG {ng_total}\n📉 หลุดแผน {missed_count} รายการ\n{missed_list}\n📌 Action ค้าง {action_open}\n👤 {actor}',
 }
 const COMMON_PH = ['line_name', 'shift_label', 'work_date']
 const PLACEHOLDERS = {
@@ -44,6 +45,7 @@ const PLACEHOLDERS = {
   shipping_shipped: ['ship_time', 'due_date', 'customer', 'dock_code', 'mat_no', 'customer_part_no', 'part_name', 'qty', 'order_no', 'shipped_by'],
   shipping_overdue: ['work_date', 'count', 'items'],
   shipping_phase_alert: ['work_date', 'total', 'items'],
+  morning_meeting: ['work_date', 'scope_label', 'total_actual', 'total_target', 'achieve_pct', 'oee_avg', 'dt_total_min', 'dt_count', 'ng_total', 'dt_top', 'missed_count', 'missed_list', 'action_open', 'actor'],
 }
 // sample values for the live preview only (not sent anywhere)
 const SAMPLE = {
@@ -60,6 +62,9 @@ const SAMPLE = {
   ship_time: '09:00', due_date: '2026-07-09', customer: 'AAT (GRBNA)', dock_code: 'B5',
   customer_part_no: 'RB3B 16E060 BA', qty: 50, order_no: 'SGUCHF', shipped_by: 'Logistic B',
   count: 3, items: '08:00 · AAT · 10106790 × 50\n09:00 · AAT · 10100401 × 50',
+  scope_label: 'PD3', total_actual: 2140, total_target: 2400, achieve_pct: 89, oee_avg: 84,
+  ng_total: 32, dt_top: 'รอวัตถุดิบ 45น. · เปลี่ยน Die 20น.', missed_count: 2,
+  missed_list: '• Line 60 · REINF FRT SD BDY: 270/360 (ขาด 90)', action_open: 3,
 }
 const renderPreview = (t) => String(t ?? '').replace(/\{(\w+)\}/g, (_m, k) => (SAMPLE[k] != null ? String(SAMPLE[k]) : ''))
 

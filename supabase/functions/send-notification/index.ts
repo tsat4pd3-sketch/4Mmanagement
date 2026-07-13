@@ -204,6 +204,31 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
+    /* ── Morning meeting summary (หน้า /morning-meeting) ── */
+    if (event === 'morning_meeting') {
+      const s = body.summary;
+      if (!s) return new Response('missing summary', { status: 400 });
+      const chat = resolveEvent(routes, 'morning_meeting');
+      if (chat === null) return json({ ok: true, skipped: true });
+      const builtin = [
+        `🌅 <b>สรุปประชุมแถวเช้า</b> — ${s.work_date}`,
+        `🏭 ${s.scope_label}`, ``,
+        `📦 ผลิตรวม: <b>${s.total_actual}/${s.total_target}</b> (${s.achieve_pct}%)`,
+        `📊 OEE เฉลี่ย ${s.oee_avg}% · ⏱️ Downtime ${s.dt_total_min} นาที (${s.dt_count} ครั้ง) · ❌ NG ${s.ng_total}`,
+        s.dt_top ? `🛠️ Top DT: ${s.dt_top}` : null,
+        ``,
+        `📉 งานหลุดแผน <b>${s.missed_count}</b> รายการ`,
+        s.missed_list || null,
+        ``,
+        `📌 Action ค้าง ${s.action_open} รายการ`,
+        `👤 ${s.actor}`,
+        `— ESM Morning Meeting`,
+      ].filter((l): l is string => l !== null).join('\n');
+      const message = pick(routes, 'morning_meeting', { ...s }, builtin);
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
+    }
+
     /* ── Machine downtime alert ──────────────────── */
     if (event === 'downtime') {
       const d = body.downtime;

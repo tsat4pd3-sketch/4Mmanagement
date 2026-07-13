@@ -1310,11 +1310,15 @@ export default function Dashboard() {
 
                     // แยกแถวตามชื่อ product (ไม่ใช่ mat_no) — เพื่อไม่ให้ product ต่างกัน (เช่น RH60 / LH61) ปนแถวเดียวกัน
                     // แต่ part เดียวกันที่ต่าง mat_no/customer เท่านั้น (เช่น FVL/FTM/AAT) ให้รวมแถวเดียว
+                    // การ์ดไลน์แม่รวมหลาย sub-line: product ชื่อเดียวกันที่ผลิต "คนละไลน์" (เช่น REINF FRT FNDR
+                    // ใบ manual ที่ HDF1 กับใบสแกนที่ HDF2) ต้องแยกคนละแถวด้วย — คิวคาดการณ์ต่อแถวถือว่าเป็น
+                    // เครื่องเดียวกัน ถ้ารวมกันใบจะถูกต่อคิวข้ามไลน์ เวลาคาดเสร็จ/ดีเลย์ผิดทั้งแถว
                     const groups = {};
                     allCards.forEach(c => {
-                      (groups[c.productKey] = groups[c.productKey] || { key: c.productKey, label: c.productLabel, img: c.productImg, cards: [] }).cards.push(c);
+                      const rowKey = multiSubLine ? `${c.line_name || ''}|${c.productKey}` : c.productKey;
+                      (groups[rowKey] = groups[rowKey] || { key: rowKey, label: c.productLabel, img: c.productImg, line: c.line_name, cards: [] }).cards.push(c);
                     });
-                    const productRows = Object.values(groups).sort((a, b) => a.label.localeCompare(b.label));
+                    const productRows = Object.values(groups).sort((a, b) => a.label.localeCompare(b.label) || String(a.line || '').localeCompare(String(b.line || '')));
 
                     // ช่วง break_policies ที่ตรงกับ half นี้ (เป็น [startMs, endMs]) — ใช้ทั้งวาดแถบและกันการ์ดวางทับเวลาพัก
                     const getBreakIntervals = (half) => breakPolicies
@@ -1828,7 +1832,13 @@ export default function Dashboard() {
                               <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3, background: 'var(--card)' } : null) }}>
                                 {row.img && <img src={row.img} alt="" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0 }}>
-                                  <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>{row.label}</div>
+                                  <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>
+                                    {row.label}
+                                    {/* บอร์ดรวมหลาย sub-line — ป้ายบอกว่าแถวนี้ของไลน์ไหน (product เดียวกันคนละไลน์ = คนละแถว) */}
+                                    {multiSubLine && row.line && (
+                                      <span style={{ marginLeft: 4, fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.14)', border: '1px solid rgba(77,159,255,0.4)', borderRadius: 5, padding: '0 5px', whiteSpace: 'nowrap' }}>{row.line}</span>
+                                    )}
+                                  </div>
                                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexWrap: 'wrap' }}>
                                     <span style={{ fontSize: 15, fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
                                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
