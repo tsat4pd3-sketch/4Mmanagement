@@ -459,43 +459,9 @@ export default function Checkin() {
       }
     }
 
-    /* ── Skill farming: +1 XP for employees working at stations requiring ≥70% skill ── */
-    try {
-      const { data: todayLogs } = await supabase
-        .from('daily_production_logs')
-        .select('employee_id, assigned_line, employees(employee_skills(skill_name, score))')
-        .eq('work_date', workDateStr)
-        .eq('is_present', true)
-        .not('assigned_line', 'is', null);
-
-      if (todayLogs?.length) {
-        const stationIds = [...new Set(todayLogs.map(l => l.assigned_line))];
-        const { data: reqs } = await supabase
-          .from('station_requirements')
-          .select('station_id, skill_name, min_score')
-          .in('station_id', stationIds)
-          .gte('min_score', 70);
-
-        if (reqs?.length) {
-          const skillUpserts = [];
-          for (const log of todayLogs) {
-            const stReqs = reqs.filter(r => String(r.station_id) === String(log.assigned_line));
-            if (!stReqs.length) continue;
-            const skills = log.employees?.employee_skills || [];
-            const skillMap = Object.fromEntries(skills.map(s => [s.skill_name, s.score]));
-            for (const req of stReqs) {
-              const cur = Number(skillMap[req.skill_name] ?? 0);
-              if (cur < req.min_score) {
-                skillUpserts.push({ employee_id: log.employee_id, skill_name: req.skill_name, score: Math.min(cur + 1, req.min_score), updated_at: new Date().toISOString() });
-              }
-            }
-          }
-          if (skillUpserts.length) {
-            await supabase.from('employee_skills').upsert(skillUpserts, { onConflict: 'employee_id,skill_name' });
-          }
-        }
-      }
-    } catch (_) { /* skill farming errors are non-critical */ }
+    /* Skill farming (+1 EXP/วัน) ย้ายไปฝั่ง server แล้ว — fn_daily_skill_farm + pg_cron รายวัน
+       ห้ามคืนการเขียน employee_skills จาก client ตรงนี้ (เคยเป็นช่อง farm: กดบันทึกซ้ำ = +1 ซ้ำไม่จำกัด
+       และเหมาทุกไลน์ทั้งโรงงาน) — ดู CLAUDE.md ส่วน "Employee Skills & EXP Farming" */
 
     toast.success('บันทึกข้อมูลสำเร็จ!');
 
