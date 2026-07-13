@@ -126,9 +126,10 @@ export default function MorningMeeting() {
         supabase.from('four_m_logs')
           .select('id, line_name, category, change_subtype, description, status, created_at')
           .eq('work_date', D).in('line_name', lineNames).order('created_at'),
+        // assigned_line เก็บ "id จุดงาน" ไม่ใช่ชื่อไลน์ — หาไลน์ของคนผ่าน employees.line_id แทน
         supabase.from('daily_production_logs')
-          .select('employee_id, is_present, leave_type, assigned_line, shift')
-          .eq('work_date', D).in('assigned_line', lineNames).limit(2000),
+          .select('employee_id, is_present, leave_type, shift, employees(line_id)')
+          .eq('work_date', D).limit(3000),
         supabase.from('meeting_action_items')
           .select('*').eq('meeting_date', D).order('created_at'),
         supabase.from('meeting_action_items')
@@ -137,7 +138,13 @@ export default function MorningMeeting() {
       ]);
       setSessions(sess || []);
       setFourM(fm || []);
-      setAttendance(att || []);
+      // ผูกแถวเช็คชื่อเข้ากับ "ชื่อไลน์" ผ่าน employees.line_id แล้วกรองเฉพาะไลน์ใน scope
+      const nameByLineId = {};
+      allLines.forEach(l => { nameByLineId[l.id] = l.name; });
+      const lineNameSet = new Set(lineNames);
+      setAttendance((att || [])
+        .map(a => ({ ...a, _line: nameByLineId[a.employees?.line_id] || null }))
+        .filter(a => a._line && lineNameSet.has(a._line)));
       // action วันนี้ + ค้างจากวันก่อน — กรอง scope ที่ client (section/line เก็บ denormalized)
       const inScope = (a) =>
         (!a.line_name && !a.section) ||
@@ -181,15 +188,32 @@ export default function MorningMeeting() {
   useEffect(() => { load(); }, [load]);
 
   /* ── สรุปตัวเลข ── */
+  const ordersBySession = useMemo(() => {
+    const m = {};
+    orders.forEach(o => { (m[o.session_id] = m[o.session_id] || []).push(o); });
+    return m;
+  }, [orders]);
+  // เป้าของกะ: target_qty ของกะ → รวมเป้าใบงานจริง (qty_target ?? qty) → std ของไลน์
+  // (กะที่ไม่ตั้ง target และ std = 0 เคยโชว์ "เป้า 0 / 0%" ทั้งที่มีใบงาน — ให้ยึดใบงานจริงก่อน)
+  const sessTarget = (s) => {
+    if (s.target_qty) return s.target_qty;
+    const os = (ordersBySession[s.id] || []).filter(o => !['cancelled', 'imported', 'carry_over'].includes(o.status));
+    const fromOrders = os.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
+    if (fromOrders) return fromOrders;
+    const l = viewLines.find(x => x.name === s.line_name);
+    return (s.shift === 'night' ? l?.std_night_shift : l?.std_day_shift) || 0;
+  };
+  // ยอดจริงของกะ: qty_ok (ปิดกะแล้ว) → actual_qty → รวมยอดจริงจากใบงาน (qty_ok ?? qty_actual)
+  const sessActual = (s) => {
+    if (s.qty_ok != null) return s.qty_ok;
+    if (s.actual_qty) return s.actual_qty;
+    return (ordersBySession[s.id] || []).reduce((a, o) => a + (o.qty_ok ?? o.qty_actual ?? 0), 0);
+  };
   const sum = useMemo(() => {
-    const stdOf = (line, shift) => {
-      const l = viewLines.find(x => x.name === line);
-      return (shift === 'night' ? l?.std_night_shift : l?.std_day_shift) || 0;
-    };
     let actual = 0, target = 0;
     sessions.forEach(s => {
-      actual += s.qty_ok ?? s.actual_qty ?? 0;
-      target += s.target_qty ?? stdOf(s.line_name, s.shift);
+      actual += sessActual(s);
+      target += sessTarget(s);
     });
     const closed = sessions.filter(s => s.status === 'closed' && s.oee != null);
     const oeeAvg = closed.length ? Math.round(closed.reduce((a, s) => a + Number(s.oee), 0) / closed.length) : null;
@@ -201,7 +225,7 @@ export default function MorningMeeting() {
       dtMin, dtCount: downtimes.length, ng,
       present, attTotal: attendance.length,
     };
-  }, [sessions, downtimes, attendance, viewLines]);
+  }, [sessions, downtimes, attendance, viewLines, orders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ผลต่อไลน์ (การ์ด) — เฉพาะ leaf lines, ไลน์ไม่เปิดกะ = เทา
   const lineResults = useMemo(() => leafLines.map(l => {
@@ -209,17 +233,17 @@ export default function MorningMeeting() {
     const shifts = ['day', 'night'].map(sh => {
       const s = ss.find(x => x.shift === sh);
       if (!s) return null;
-      const actual = s.qty_ok ?? s.actual_qty ?? 0;
-      const target = s.target_qty ?? ((sh === 'night' ? l.std_night_shift : l.std_day_shift) || 0);
+      const actual = sessActual(s);
+      const target = sessTarget(s);
       return {
-        shift: sh, actual, target, pct: pctStr(actual, target),
+        shift: sh, actual, target, pct: target > 0 ? pctStr(actual, target) : null,
         oee: s.status === 'closed' ? s.oee : null, status: s.status,
         ng: s.qty_ng ?? 0,
         dtMin: Math.round(downtimes.filter(d => d.session_id === s.id).reduce((a, d) => a + (Number(d.duration_min) || 0), 0)),
       };
     }).filter(Boolean);
     return { line: l, shifts };
-  }), [leafLines, sessions, downtimes]);
+  }), [leafLines, sessions, downtimes, orders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // งานหลุดแผน — order ที่ยอดจริงไม่ถึงเป้า หรือยังค้าง (open/carry_over)
   const missedOrders = useMemo(() => {
@@ -244,7 +268,7 @@ export default function MorningMeeting() {
         const top = Object.entries(g).sort((a, b) => b[1] - a[1])[0];
         return top ? `${top[0]} ${Math.round(top[1])} นาที` : null;
       })();
-      const absent = attendance.filter(a => a.assigned_line === line && !a.is_present).length;
+      const absent = attendance.filter(a => a._line === line && !a.is_present && !a.leave_type).length;
       const fmPending = fourM.filter(m => m.line_name === line && ['pending', 'pending_qa'].includes(m.status)).length;
       const causes = [];
       if (topDt) causes.push({ icon: '🛠️', text: topDt, color: '#ef4444' });
@@ -260,23 +284,34 @@ export default function MorningMeeting() {
     const g = {};
     downtimes.forEach(d => {
       const k = d.dr_downtime_types?.name_th || 'ไม่ระบุ';
-      g[k] = g[k] || { name: k, color: d.dr_downtime_types?.color, min: 0, count: 0, machines: new Set(), carry: false };
-      g[k].min += Number(d.duration_min) || 0;
+      g[k] = g[k] || { name: k, color: d.dr_downtime_types?.color, min: 0, count: 0, machines: new Set(), carry: false, descs: {} };
+      const min = Number(d.duration_min) || 0;
+      g[k].min += min;
       g[k].count += 1;
       if (d.machine_no) g[k].machines.add(d.machine_no);
       if (d.carry_over) g[k].carry = true;
+      // เก็บ note ที่พนักงานพิมพ์ — สำคัญมากกับประเภทกว้างๆ อย่าง "อื่นๆ" ที่ชื่อประเภทบอกอะไรไม่ได้
+      const desc = (d.description || '').trim() || '(ไม่ระบุรายละเอียด)';
+      g[k].descs[desc] = (g[k].descs[desc] || 0) + min;
     });
-    return Object.values(g).sort((a, b) => b.min - a.min).slice(0, 6);
+    return Object.values(g)
+      .map(x => ({ ...x, topDescs: Object.entries(x.descs).sort((a, b) => b[1] - a[1]).slice(0, 3) }))
+      .sort((a, b) => b.min - a.min).slice(0, 6);
   }, [downtimes]);
 
   const topDefects = useMemo(() => {
     const g = {};
     defects.forEach(d => {
       const k = `${d.dr_defect_types?.name_th || 'ไม่ระบุ'}|${d.prod_orders?.part_name || d.prod_orders?.mat_no || ''}`;
-      g[k] = g[k] || { type: d.dr_defect_types?.name_th || 'ไม่ระบุ', part: d.prod_orders?.part_name || d.prod_orders?.mat_no || '-', qty: 0 };
-      g[k].qty += (d.qty_ng ?? 0) + (d.qty_suspect ?? 0);
+      g[k] = g[k] || { type: d.dr_defect_types?.name_th || 'ไม่ระบุ', part: d.prod_orders?.part_name || d.prod_orders?.mat_no || '-', qty: 0, descs: {} };
+      const q = (d.qty_ng ?? 0) + (d.qty_suspect ?? 0);
+      g[k].qty += q;
+      const desc = (d.description || '').trim();
+      if (desc) g[k].descs[desc] = (g[k].descs[desc] || 0) + q;
     });
-    return Object.values(g).filter(x => x.qty > 0).sort((a, b) => b.qty - a.qty).slice(0, 6);
+    return Object.values(g).filter(x => x.qty > 0)
+      .map(x => ({ ...x, topDescs: Object.entries(x.descs).sort((a, b) => b[1] - a[1]).slice(0, 2) }))
+      .sort((a, b) => b.qty - a.qty).slice(0, 6);
   }, [defects]);
 
   const openActions = actions.filter(a => ['open', 'doing'].includes(a.status));
@@ -370,8 +405,8 @@ export default function MorningMeeting() {
     const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>สรุปประชุมแถวเช้า ${fmtDate(meetingDate)}</title>
 <style>body{font-family:'Sarabun',sans-serif;font-size:13px;margin:24px}h1{font-size:18px}h2{font-size:14px;margin:16px 0 6px}table{border-collapse:collapse;width:100%}</style></head><body>
 <h1>🌅 สรุปประชุมแถวเช้า — ${fmtDate(meetingDate)} · ${scopeLabel}</h1>
-<p>📦 ผลิตรวม <b>${sum.actual}/${sum.target}</b> (${sum.achieve}%) · 📊 OEE เฉลี่ย ${sum.oeeAvg ?? '-'}% ·
-⏱️ Downtime ${sum.dtMin} นาที (${sum.dtCount} ครั้ง) · ❌ NG ${sum.ng} · 👥 เข้างาน ${sum.present}/${sum.attTotal}</p>
+<p>📦 ผลิตรวม <b>${sum.actual}${sum.target > 0 ? `/${sum.target} (${sum.achieve}%)` : ' (ไม่มีเป้าให้เทียบ)'}</b> · 📊 OEE เฉลี่ย ${sum.oeeAvg ?? '-'}% ·
+⏱️ Downtime ${sum.dtMin} นาที (${sum.dtCount} ครั้ง — รวมทุกไลน์/เครื่อง เวลาซ้อนกันได้) · ❌ NG ${sum.ng} · 👥 เข้างาน ${sum.present}/${sum.attTotal}</p>
 <h2>📉 งานหลุดแผน (${missedOrders.length})</h2>
 <table><tr><th style="${td}">ไลน์</th><th style="${td}">พาร์ท</th><th style="${td}">เป้า</th><th style="${td}">ได้จริง</th><th style="${td}">ขาด</th><th style="${td}">สาเหตุ</th></tr>${missedRows || `<tr><td colspan="6" style="${td}">— ไม่มี —</td></tr>`}</table>
 <h2>🛠️ Top Downtime</h2>
@@ -392,11 +427,15 @@ export default function MorningMeeting() {
   const KpiStrip = () => (
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)', gap: 10 }}>
       {[
-        { label: 'ผลิตรวม (ชิ้น)', value: `${sum.actual.toLocaleString()}/${sum.target.toLocaleString()}`, sub: `${sum.achieve}% ของเป้า`, color: achieveColor(sum.achieve) },
+        // เป้า 0 = ยังไม่มีเป้าให้เทียบ (ไม่ตั้ง target/std และไม่มีใบงาน) — โชว์ "—" ไม่ใช่ 0% แดง
+        sum.target > 0
+          ? { label: 'ผลิตรวม (ชิ้น)', value: `${sum.actual.toLocaleString()}/${sum.target.toLocaleString()}`, sub: `${sum.achieve}% ของเป้า`, color: achieveColor(sum.achieve) }
+          : { label: 'ผลิตรวม (ชิ้น)', value: sum.actual.toLocaleString(), sub: 'ไม่มีเป้าให้เทียบ (ยังไม่ตั้ง target/std)', color: 'var(--text)' },
         { label: 'OEE เฉลี่ย', value: sum.oeeAvg != null ? `${sum.oeeAvg}%` : '—', sub: 'เฉพาะกะที่ปิดแล้ว', color: sum.oeeAvg == null ? 'var(--muted)' : sum.oeeAvg >= 85 ? '#22c55e' : sum.oeeAvg >= 65 ? '#f59e0b' : '#ef4444' },
-        { label: 'Downtime', value: `${sum.dtMin} นาที`, sub: `${sum.dtCount} ครั้ง`, color: sum.dtMin > 0 ? '#ef4444' : '#22c55e' },
+        // ผลรวมนาทีของ "ทุกรายการทุกเครื่องทุกไลน์" — เวลาซ้อนกันได้ จึงเกิน 24 ชม./วันได้ ไม่ใช่เวลาที่โรงงานหยุดจริง
+        { label: 'Downtime (นาที·รวมทุกเครื่อง)', value: `${sum.dtMin.toLocaleString()} นาที`, sub: `${sum.dtCount} ครั้ง · ≈${(sum.dtMin / 60).toFixed(1)} ชม. — รวมทุกไลน์/เครื่อง เวลาซ้อนกันได้`, color: sum.dtMin > 0 ? '#ef4444' : '#22c55e' },
         { label: 'ของเสีย (NG)', value: sum.ng.toLocaleString(), sub: 'จากทุกกะ', color: sum.ng > 0 ? '#ef4444' : '#22c55e' },
-        { label: 'เข้างาน', value: `${sum.present}/${sum.attTotal}`, sub: sum.attTotal ? `${pctStr(sum.present, sum.attTotal)}%` : 'ไม่มีข้อมูล', color: '#4d9fff' },
+        { label: 'เข้างาน', value: `${sum.present}/${sum.attTotal}`, sub: sum.attTotal ? `${pctStr(sum.present, sum.attTotal)}%` : 'ไม่มีข้อมูลเช็คชื่อวันนั้น', color: '#4d9fff' },
       ].map(k => (
         <div key={k.label} style={{ ...card, height: '100%', minHeight: 92, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>{k.label}</div>
@@ -419,8 +458,17 @@ export default function MorningMeeting() {
           {shifts.map(s => (
             <div key={s.shift} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
               <span style={{ color: 'var(--text2)', width: 74, flexShrink: 0 }}>{SHIFT_LABEL[s.shift]}</span>
-              <span style={{ fontWeight: 800, color: achieveColor(s.pct) }}>{s.actual}/{s.target}</span>
-              <span style={chip(achieveColor(s.pct))}>{s.pct}%</span>
+              {s.pct != null ? (
+                <>
+                  <span style={{ fontWeight: 800, color: achieveColor(s.pct) }}>{s.actual}/{s.target}</span>
+                  <span style={chip(achieveColor(s.pct))}>{s.pct}%</span>
+                </>
+              ) : (
+                <>
+                  <span style={{ fontWeight: 800, color: 'var(--text)' }}>{s.actual}</span>
+                  <span style={chip('#94a3b8')} title="ยังไม่ตั้งเป้ากะ/std และไม่มีเป้าใบงานให้เทียบ">ไม่มีเป้า</span>
+                </>
+              )}
               {s.oee != null && <span style={chip('#4d9fff')}>OEE {Math.round(s.oee)}%</span>}
               {s.dtMin > 0 && <span style={chip('#ef4444')}>DT {s.dtMin}น.</span>}
               {s.status !== 'closed' && <span style={chip('#f59e0b')}>ยังไม่ปิดกะ</span>}
@@ -490,17 +538,32 @@ export default function MorningMeeting() {
         {topDowntime.length === 0 ? <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 700 }}>✅ ไม่มี Downtime</div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {topDowntime.map(t => (
-              <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {t.name} {t.carry && <span style={chip('#f59e0b')}>ข้ามกะ</span>}
+              <div key={t.name} style={{ fontSize: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {t.name} {t.carry && <span style={chip('#f59e0b')}>ข้ามกะ</span>}
+                    </div>
+                    <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 3, marginTop: 3, overflow: 'hidden' }}>
+                      <div style={{ width: `${Math.min(100, (t.min / (topDowntime[0].min || 1)) * 100)}%`, height: '100%', background: t.color || '#ef4444', borderRadius: 3 }} />
+                    </div>
                   </div>
-                  <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 3, marginTop: 3, overflow: 'hidden' }}>
-                    <div style={{ width: `${Math.min(100, (t.min / (topDowntime[0].min || 1)) * 100)}%`, height: '100%', background: t.color || '#ef4444', borderRadius: 3 }} />
-                  </div>
+                  <span style={{ fontWeight: 800, color: '#ef4444', whiteSpace: 'nowrap' }}>{Math.round(t.min)} น.</span>
+                  <span style={{ color: 'var(--muted)', fontSize: 11, whiteSpace: 'nowrap' }}>{t.count} ครั้ง</span>
                 </div>
-                <span style={{ fontWeight: 800, color: '#ef4444', whiteSpace: 'nowrap' }}>{Math.round(t.min)} น.</span>
-                <span style={{ color: 'var(--muted)', fontSize: 11, whiteSpace: 'nowrap' }}>{t.count} ครั้ง</span>
+                {/* note ที่พนักงานพิมพ์ — ทำให้ประเภทกว้างๆ เช่น "อื่นๆ" อ่านรู้เรื่องว่าเกิดอะไรจริง */}
+                {t.topDescs.length > 0 && (
+                  <div style={{ marginTop: 2, paddingLeft: 10, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {t.topDescs.map(([desc, min]) => (
+                      <div key={desc} style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        ↳ {desc} <span style={{ color: '#fca5a5' }}>— {Math.round(min)} น.</span>
+                      </div>
+                    ))}
+                    {Object.keys(t.descs).length > 3 && (
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>↳ …และอีก {Object.keys(t.descs).length - 3} รายการ</div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -511,11 +574,22 @@ export default function MorningMeeting() {
         {topDefects.length === 0 ? <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 700 }}>✅ ไม่มีของเสียที่บันทึก</div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {topDefects.map((t, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  <b>{t.type}</b> <span style={{ color: 'var(--muted)' }}>· {t.part}</span>
-                </span>
-                <span style={{ fontWeight: 800, color: '#ef4444' }}>{t.qty} ชิ้น</span>
+              <div key={i} style={{ fontSize: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <b>{t.type}</b> <span style={{ color: 'var(--muted)' }}>· {t.part}</span>
+                  </span>
+                  <span style={{ fontWeight: 800, color: '#ef4444' }}>{t.qty} ชิ้น</span>
+                </div>
+                {t.topDescs.length > 0 && (
+                  <div style={{ paddingLeft: 10 }}>
+                    {t.topDescs.map(([desc, q]) => (
+                      <div key={desc} style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        ↳ {desc} <span style={{ color: '#fca5a5' }}>— {q} ชิ้น</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
