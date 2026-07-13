@@ -291,7 +291,7 @@ export default function Dashboard() {
     let ordersBySession = {}, dtBySession = {}, defectBySession = {};
     if (sessionIds.length > 0) {
       const [{ data: orders }, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
-        supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, prod_no, part_name, mat_no, opened_at, confirmed_at').in('session_id', sessionIds),
+        supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, is_manual, prod_no, part_name, mat_no, opened_at, confirmed_at').in('session_id', sessionIds),
         supabaseDR.from('downtime_logs').select('id, session_id, machine_no, description, duration_min, started_at, ended_at, created_at, dr_downtime_types(category, name_th)').in('session_id', sessionIds),
         supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessionIds),
       ]);
@@ -1562,7 +1562,7 @@ export default function Dashboard() {
                           return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs }, oi) => {
                           if (leftPct >= 100) return null;
                           const statusColor = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
-                          const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : '▶';
+                          const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : o.is_manual ? '✍️' : '▶';
                           const doneQty  = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
                           const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
                           // ใบที่หลุดแผน (ดีเลย์/ปิดช้า) — แนบ downtime ที่คาบเกี่ยวช่วงเวลาของใบนั้นเข้า tooltip เป็นสาเหตุ
@@ -1587,7 +1587,8 @@ export default function Dashboard() {
                                   {icon} {o.prod_no || (oi + 1)}
                                 </div>
                                 <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {o.qty}ชิ้น
+                                  {/* ใบ manual ที่ยังเปิด: โชว์ยอดสะสม/เป้า (พนักงานอัพเดททุกเบรค) — ใบสแกน/ปิดแล้ว: จำนวนตามเดิม */}
+                                  {o.is_manual && !o.isDone ? `${o.qty_actual ?? 0}/${o.qty_target ?? o.qty}` : o.qty}ชิ้น
                                 </div>
                               </div>
                             </div>

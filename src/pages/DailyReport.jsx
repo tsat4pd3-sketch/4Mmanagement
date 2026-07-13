@@ -232,6 +232,7 @@ function LiveTab({ role }) {
   const [manualForm, setManualForm]         = useState({ mat_no: '', qty: '' });
   const [savingManual, setSavingManual]     = useState(false);
   const [manualQtyDraft, setManualQtyDraft] = useState({}); // order id -> ค่าที่พิมพ์ในช่องอัพเดทยอด
+  const [qtyUpdatesByOrder, setQtyUpdatesByOrder] = useState({}); // order id -> [{qty_accum, qty_delta, logged_at, is_final}]
 
   // Scan Close modal
   const [showScanClose, setShowScanClose] = useState(false);
@@ -389,6 +390,20 @@ function LiveTab({ role }) {
       .eq('session_id', sessionId)
       .order('opened_at');
     setProdOrders(data || []);
+
+    // ประวัติการอัพเดทยอดสะสมของใบ manual — โชว์เป็นช่วงเวลา (10:00 → 200, 12:00 → +280)
+    const manualIds = (data || []).filter(o => o.is_manual).map(o => o.id);
+    if (manualIds.length) {
+      const { data: upd } = await supabaseDR.from('prod_order_qty_updates')
+        .select('order_id, qty_accum, qty_delta, is_final, logged_at, logged_by')
+        .in('order_id', manualIds)
+        .order('logged_at');
+      const byOrder = {};
+      (upd || []).forEach(u => { (byOrder[u.order_id] ||= []).push(u); });
+      setQtyUpdatesByOrder(byOrder);
+    } else {
+      setQtyUpdatesByOrder({});
+    }
 
     // Fetch carry-over orders from previous sessions of same line (not yet imported)
     if (lineName) {
@@ -1147,10 +1162,14 @@ function LiveTab({ role }) {
   const handleManualQtyUpdate = async (o) => {
     const v = parseInt(manualQtyDraft[o.id]);
     if (isNaN(v) || v < 0) { toast.error('กรอกยอดสะสม (ชิ้น) ก่อน'); return; }
+    const delta = v - (o.qty_actual || 0);
     const { error } = await supabaseDR.from('prod_orders')
       .update({ qty_actual: v, qty_updated_at: new Date().toISOString() }).eq('id', o.id);
     if (error) { toast.error(error.message); return; }
-    toast.success(`อัพเดทยอด ${o.mat_no}: ${v}/${o.qty_target ?? o.qty} ชิ้น ✓`);
+    // log ประวัติต่อช่วง (best-effort — ประวัติพังไม่ทำให้ยอดหลักพัง)
+    await supabaseDR.from('prod_order_qty_updates')
+      .insert({ order_id: o.id, qty_accum: v, qty_delta: delta, logged_by: fullName }).then(() => {}, () => {});
+    toast.success(`อัพเดทยอด ${o.mat_no}: ${v}/${o.qty_target ?? o.qty} ชิ้น (${delta >= 0 ? '+' : ''}${delta} จากครั้งก่อน) ✓`);
     setManualQtyDraft(d => ({ ...d, [o.id]: '' }));
     loadProdOrders(selSession.id, selSession.line_name);
   };
@@ -1167,6 +1186,9 @@ function LiveTab({ role }) {
       qty: finalQty, qty_ok: finalQty, qty_actual: finalQty, qty_updated_at: nowIso,
     }).eq('id', o.id);
     if (error) { toast.error(error.message); return; }
+    // log แถวปิดใบ — เก็บส่วนต่างช่วงสุดท้ายไว้ในประวัติด้วย
+    await supabaseDR.from('prod_order_qty_updates')
+      .insert({ order_id: o.id, qty_accum: finalQty, qty_delta: finalQty - (o.qty_actual || 0), is_final: true, logged_by: fullName }).then(() => {}, () => {});
     toast.success(`ปิดใบ ${o.prod_no} · ${finalQty} ชิ้น ✓`);
     setManualQtyDraft(d => ({ ...d, [o.id]: '' }));
     loadProdOrders(selSession.id, selSession.line_name);
@@ -1919,7 +1941,9 @@ function LiveTab({ role }) {
             {/* Per-product breakdown — กะเดียวอาจผลิตหลาย MAT.NO จึงต้องแยกสรุปรายชิ้นงาน ไม่รวมเป็นก้อนเดียว */}
             {(() => {
               const totalTarget    = prodOrders.reduce((s, o) => s + o.qty, 0);
-              const totalConfirmed = prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
+              // ผลิตได้ = ใบที่ปิดแล้ว + ยอดสะสมของใบ manual ที่ยังเปิดอยู่ (พนักงานอัพเดททุกเบรค — ไม่นับ = เห็น 0 ทั้งกะ)
+              const manualRunning  = prodOrders.filter(o => o.is_manual && o.status === 'open').reduce((s, o) => s + (o.qty_actual || 0), 0);
+              const totalConfirmed = prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0) + manualRunning;
               const pct = totalTarget > 0 ? Math.min(100, Math.round((totalConfirmed / totalTarget) * 100)) : 0;
               // ของเสีย/สงสัย ต้องเบิก input ทดแทนเพิ่มเพื่อให้ได้ยอดดีครบเป้า (ซ่อมได้ไม่ต้องเบิกใหม่)
               const totalNg = defectLogs.reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
@@ -1931,7 +1955,8 @@ function LiveTab({ role }) {
                 const orders    = prodOrders.filter(o => o.mat_no === matNo);
                 const orderIds  = new Set(orders.map(o => o.id));
                 const target    = orders.reduce((s, o) => s + o.qty, 0);
-                const confirmed = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
+                const confirmed = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)
+                  + orders.filter(o => o.is_manual && o.status === 'open').reduce((s, o) => s + (o.qty_actual || 0), 0);
                 const openCnt   = orders.filter(o => o.status === 'open').length;
                 const closedCnt = orders.filter(o => o.status === 'confirmed').length;
                 const ng  = defectLogs.filter(d => orderIds.has(d.prod_order_id)).reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
@@ -2162,6 +2187,22 @@ function LiveTab({ role }) {
                           style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 2px' }}>✕</button>
                       )}
                       </div>
+                      {/* ประวัติยอดต่อช่วง — 10:00 กรอก 200 = ช่วงแรก 200 · 12:00 กรอก 480 = +280 */}
+                      {isManual && (qtyUpdatesByOrder[o.id]?.length > 0) && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, paddingTop: 6, borderTop: '1px dashed var(--border)' }}>
+                          {qtyUpdatesByOrder[o.id].map((u, ui) => (
+                            <span key={ui} title={`ยอดสะสม ${u.qty_accum} ชิ้น · ${u.logged_by || ''}`} style={{
+                              fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+                              background: u.is_final ? 'rgba(34,197,94,0.13)' : 'rgba(96,165,250,0.12)',
+                              color: u.is_final ? '#22c55e' : '#60a5fa',
+                              border: `1px solid ${u.is_final ? 'rgba(34,197,94,0.4)' : 'rgba(96,165,250,0.35)'}`,
+                            }}>
+                              {u.is_final ? '✓ ' : ''}{fmtTime(new Date(u.logged_at))} · สะสม {u.qty_accum}
+                              <span style={{ opacity: 0.75 }}> ({u.qty_delta >= 0 ? '+' : ''}{u.qty_delta})</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       {/* แถวอัพเดทยอดสะสมของใบ manual — พนักงานกรอกทุกช่วงเบรคตาม break policy */}
                       {manualOpen && canScan && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingTop: 6, borderTop: '1px dashed var(--border)' }}>
