@@ -365,6 +365,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [layoutType, setLayoutType] = useState(editJig?.layout_type ?? 'image_pin')
   // รูปหลายมุมต่ออุปกรณ์ (1 รูป = ปกติ, ≥2 รูป = ปัดดูรอบเครื่อง — ไม่บังคับจำนวน)
   const [frames, setFrames] = useState([])   // [{ _key, id?, image_path?, _file?, _preview, title }]
+  const initialImagePathsRef = useRef(new Set()) // path รูปตอนเปิดแก้ไข — ใช้เก็บกวาดไฟล์ที่ถูกถอดตอน save
   const [frameIdx, setFrameIdx] = useState(0)
   const [imgBusy, setImgBusy] = useState(false)
   // โมเดล 3D (ถ้ามี) — { path, format } = ของเดิม · _glb = ไฟล์ใหม่ที่แปลงเป็น GLB แล้ว รอ upload
@@ -401,6 +402,11 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         _frameKey: (c.image_id && frameKeyById[c.image_id]) || fr[0]?._key || null,
         _imgFile: null, _imgPreview: c.image_path ? getPublicUrl(c.image_path) : null,
       })))
+      // จำ path รูปทั้งหมดตอนเปิดแก้ไข — ตอน save จะเทียบหาไฟล์ที่ถูกถอด (เฟรม/รูปจุดตรวจ) แล้วลบจาก storage
+      initialImagePathsRef.current = new Set([
+        ...fr.map(f => f.image_path),
+        ...(cps ?? []).map(c => c.image_path),
+      ].filter(Boolean))
       const { data: plan } = await supabaseDR.from('pm_plans').select('plan_type, usage_threshold, usage_source_line').eq('checklist_id', cl.id).maybeSingle()
       if (plan) {
         setPlanType(plan.plan_type ?? 'time')
@@ -600,6 +606,16 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           }))
         )
         if (cpErr) throw cpErr
+      }
+      // เก็บกวาดไฟล์เฟรม/รูปจุดตรวจที่ถูกถอดออกในรอบแก้ไขนี้ — ลบหลัง DB สำเร็จเท่านั้น (best-effort, กติกา CLAUDE.md)
+      {
+        const finalPaths = new Set([
+          ...resolvedFrames.map(f => f.path),
+          ...checkpoints.map(c => cpImagePaths[c._key] ?? c.image_path).filter(Boolean),
+        ])
+        const stale = [...initialImagePathsRef.current].filter(p => !finalPaths.has(p) && p.startsWith('jigs/'))
+        if (stale.length) supabaseDR.storage.from('jig-images').remove(stale).catch(() => {})
+        initialImagePathsRef.current = finalPaths
       }
       toast.success('บันทึกสำเร็จ')
       onSaved()

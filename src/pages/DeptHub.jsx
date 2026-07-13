@@ -6,10 +6,6 @@ const DEPT_CSS = `
     from { opacity: 0; transform: translateY(28px); }
     to   { opacity: 1; transform: translateY(0); }
   }
-  @keyframes hub-glow {
-    0%, 100% { opacity: 0.5; }
-    50%       { opacity: 1; }
-  }
   .dept-card {
     position: relative;
     border-radius: 16px;
@@ -234,7 +230,8 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
           border: '1px solid rgba(61,214,92,0.2)',
           borderRadius: 40, padding: '5px 16px', marginBottom: 20,
         }}>
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#3dd65c', display: 'inline-block', animation: 'hub-glow 2s ease infinite' }} />
+          {/* จุดเขียวนิ่ง+เรืองแสง — กระพริบสงวนให้สถานะแดง (Andon) เท่านั้น ตาม UI-CONVENTIONS */}
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#3dd65c', display: 'inline-block', boxShadow: '0 0 6px 1px rgba(61,214,92,0.7)' }} />
           <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.15em', color: '#3dd65c', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>
             Enterprise Shopfloor Management
           </span>

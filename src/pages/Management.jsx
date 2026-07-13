@@ -1891,7 +1891,8 @@ export default function Management() {
                   display: 'flex', flexDirection: 'column', alignItems: 'center',
                   cursor: isMobile ? 'pointer' : 'default',
                   zIndex: isOver ? 20 : 5,
-                  opacity: isDimmed ? 0.28 : 1,
+                  /* dim = 0.1 ให้เห็นชัดว่าถูกกรองออก (0.28 เดิมแยกไม่ออกจากจุดปกติ — UI-CONVENTIONS §1) */
+                  opacity: isDimmed ? 0.1 : 1,
                   filter: isDimmed ? 'grayscale(0.6)' : 'none',
                   transition: 'opacity 0.2s, filter 0.2s',
                 }}

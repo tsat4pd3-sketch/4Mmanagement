@@ -580,8 +580,6 @@ export default function OEEAnalytics() {
 
   return (
     <div style={s.page}>
-      <style>{`@keyframes oee-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }`}</style>
-
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
         <div>
@@ -638,7 +636,8 @@ export default function OEEAnalytics() {
             </span>
             <button onClick={() => { loadToday(); loadTdHistory(); }} style={{ ...s.tab(false) }}>🔄</button>
             <button onClick={() => setAutoRefresh(v => !v)} style={s.tab(autoRefresh)}>
-              <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: autoRefresh ? '#22c55e' : 'var(--muted)', marginRight: 6, animation: autoRefresh ? 'oee-pulse 1.4s ease infinite' : 'none' }} />
+              {/* จุดเขียวนิ่ง — กระพริบสงวนให้สถานะแดง (Andon) เท่านั้น ตาม UI-CONVENTIONS */}
+              <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: autoRefresh ? '#22c55e' : 'var(--muted)', marginRight: 6, boxShadow: autoRefresh ? '0 0 5px 1px rgba(34,197,94,0.6)' : 'none' }} />
               AUTO REFRESH
             </button>
             {tdLoading && <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด...</span>}
