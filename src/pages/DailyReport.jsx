@@ -229,7 +229,7 @@ function LiveTab({ role }) {
   // ออเดอร์ manual — ไลน์ไม่มี kanban card (SAP ไม่ gen barcode) เช่น HDF1 → LASER CUT 123
   // leader เปิด "เป้า" เอง แล้วพนักงานอัพเดทยอดสะสมทุกช่วงเบรค ปิดใบด้วยยอดจริงไม่ต้องสแกน
   const [showManualOpen, setShowManualOpen] = useState(false);
-  const [manualForm, setManualForm]         = useState({ mat_no: '', qty: '' });
+  const [manualForm, setManualForm]         = useState({ mat_no: '', qty: '', is_backfill: false, backfill_time: '' });
   const [savingManual, setSavingManual]     = useState(false);
   const [manualQtyDraft, setManualQtyDraft] = useState({}); // order id -> ค่าที่พิมพ์ในช่องอัพเดทยอด
   const [qtyUpdatesByOrder, setQtyUpdatesByOrder] = useState({}); // order id -> [{qty_accum, qty_delta, logged_at, is_final}]
@@ -908,15 +908,19 @@ function LiveTab({ role }) {
       .reduce((sum, o) => sum + (o.qty || 0) * ctForMatNo(o.mat_no) / 60, 0);
   };
 
-  // หาเวลา opened_at จริงของ order ย้อนหลัง — anchor กับ work_date ของกะนี้ และเลื่อนวันถัดไปถ้าเป็นกะดึกที่ข้ามเที่ยงคืน
+  // แปลง HH:mm ที่กรอกย้อนหลัง → ISO จริง: anchor กับ work_date ของกะนี้ และเลื่อนวันถัดไปถ้าเป็นกะดึกที่ข้ามเที่ยงคืน
   // (ไม่งั้นถ้าไม่ระบุเวลา DB จะ default เป็นเวลาปัจจุบัน ทำให้ Heijunka ขึ้นที่ "ตอนนี้" ไม่ใช่ตอนที่ผลิตจริง)
-  const backfillOpenedAt = () => {
-    if (!openProdForm.is_backfill || !openProdForm.backfill_time || !selSession) return null;
-    const workDate = selSession.work_date;
-    const [h, m] = openProdForm.backfill_time.split(':').map(Number);
-    let d = new Date(`${workDate}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`);
+  // ใช้ร่วมกันทั้งใบสแกน (backfillOpenedAt) และใบ manual (handleManualOpen)
+  const backfillIsoFromTime = (hhmm) => {
+    if (!hhmm || !selSession) return null;
+    const [h, m] = hhmm.split(':').map(Number);
+    let d = new Date(`${selSession.work_date}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`);
     if (selSession.shift === 'night' && h < 8) d = new Date(d.getTime() + 86400000);
     return d.toISOString();
+  };
+  const backfillOpenedAt = () => {
+    if (!openProdForm.is_backfill) return null;
+    return backfillIsoFromTime(openProdForm.backfill_time);
   };
 
   // เดาเวลาเริ่มผลิตจริงให้ตอนติ๊ก "ยิงย้อนหลัง" — ใบแรกของกะ = เวลาเริ่มกะ, ใบต่อไป = เวลาปิดจริง (confirmed_at)
@@ -1132,6 +1136,16 @@ function LiveTab({ role }) {
     const qty = parseInt(manualForm.qty);
     if (!matNo) { toast.error('เลือกสินค้าก่อน'); return; }
     if (!qty || qty < 1) { toast.error('ระบุเป้าหมายผลิต (ชิ้น)'); return; }
+    // เปิดเป้าย้อนหลัง — กติกาเดียวกับใบสแกน: บังคับกรอกเวลา + กันเวลาหลุดกรอบกะ
+    if (manualForm.is_backfill && !manualForm.backfill_time) { toast.error('ระบุเวลาที่เริ่มผลิตจริงก่อน (บังคับสำหรับเปิดย้อนหลัง)'); return; }
+    if (manualForm.is_backfill && manualForm.backfill_time && selSession) {
+      const bh = Number(manualForm.backfill_time.split(':')[0]);
+      const inDay = bh >= 8 && bh < 20;   // กะเช้า 08:00–19:59 · กะดึก 20:00–07:59
+      if ((selSession.shift === 'day' && !inDay) || (selSession.shift === 'night' && inDay)) {
+        toast.error(`เวลา ${manualForm.backfill_time} อยู่นอกกรอบกะ${selSession.shift === 'day' ? 'เช้า (08:00–20:00)' : 'ดึก (20:00–08:00)'} — ตรวจเวลาที่เริ่มผลิตอีกครั้ง`);
+        return;
+      }
+    }
     setSavingManual(true);
     const std = kanbanStds.find(s => s.mat_no === matNo);
     const prod = products.find(p => p.mat_no === matNo);
@@ -1148,14 +1162,19 @@ function LiveTab({ role }) {
       qty_target: qty,
       qty_actual: 0,
       is_manual:  true,
+      is_backfill: manualForm.is_backfill,
       status:     'open',
       opened_by:  fullName,
+      ...(manualForm.is_backfill && manualForm.backfill_time
+        ? { opened_at: backfillIsoFromTime(manualForm.backfill_time) } : {}),
     });
     setSavingManual(false);
     if (error) { toast.error(error.message); return; }
-    toast.success(`เปิดเป้า ${matNo} · ${qty} ชิ้น ✓ — ให้พนักงานอัพเดทยอดสะสมทุกช่วงเบรค`);
+    toast.success(manualForm.is_backfill
+      ? `เปิดเป้า ${matNo} · ${qty} ชิ้น ✓ (ย้อนหลังตั้งแต่ ${manualForm.backfill_time}) — อัพเดทยอดสะสมได้เลย`
+      : `เปิดเป้า ${matNo} · ${qty} ชิ้น ✓ — ให้พนักงานอัพเดทยอดสะสมทุกช่วงเบรค`);
     setShowManualOpen(false);
-    setManualForm({ mat_no: '', qty: '' });
+    setManualForm({ mat_no: '', qty: '', is_backfill: false, backfill_time: '' });
     loadProdOrders(selSession.id, selSession.line_name);
   };
 
@@ -3386,6 +3405,21 @@ function LiveTab({ role }) {
                     onChange={e => setManualForm(f => ({ ...f, qty: e.target.value }))}
                     onKeyDown={e => { if (e.key === 'Enter') handleManualOpen(); }} />
                 </Field>
+                {/* เปิดย้อนหลัง — กติกา/หน้าตาเดียวกับใบสแกน (ลืมเปิดเป้าตอนต้นกะ เริ่มผลิตไปแล้ว) */}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', background: manualForm.is_backfill ? 'rgba(107,114,128,0.15)' : 'rgba(107,114,128,0.06)', border: `1px solid ${manualForm.is_backfill ? 'rgba(107,114,128,0.5)' : 'rgba(107,114,128,0.2)'}`, borderRadius: 8 }}>
+                  <input type="checkbox" checked={manualForm.is_backfill}
+                    onChange={e => setManualForm(f => ({ ...f, is_backfill: e.target.checked, backfill_time: e.target.checked ? (f.backfill_time || guessBackfillTime()) : '' }))}
+                    style={{ width: 16, height: 16, flexShrink: 0 }} />
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>⏪ เปิดย้อนหลัง — เริ่มผลิตไปแล้ว ลืมเปิดเป้าตอนต้น</span>
+                </label>
+                {manualForm.is_backfill && (
+                  <Field label="เวลาที่เริ่มผลิตจริง *">
+                    {/* width กัน index.css input{width:100%} (กับดัก CSS ใน CLAUDE.md) */}
+                    <input type="time" value={manualForm.backfill_time}
+                      onChange={e => setManualForm(f => ({ ...f, backfill_time: e.target.value }))}
+                      style={{ width: 140, display: 'block' }} />
+                  </Field>
+                )}
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button disabled={savingManual} onClick={handleManualOpen}
                     style={{ flex: 2, padding: 12, background: '#60a5fa', color: '#08131f', border: 'none', borderRadius: 8, fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: savingManual ? 0.6 : 1 }}>
