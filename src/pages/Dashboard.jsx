@@ -1564,7 +1564,15 @@ export default function Dashboard() {
                           const statusColor = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
                           const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : o.is_manual ? '✍️' : '▶';
                           const doneQty  = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
-                          const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
+                          // fill ต่อเนื่องตามแกนเวลาทั้งใบ — ใบที่คร่อม 2 กะถูกตัดเป็น 2 ท่อน ถ้าคิด % แยกต่อท่อน
+                          // จะเห็น "กะดึกเข้มทั้งที่กะเช้ายังไม่เต็ม" (เคยพัง user ทัก 2026-07-13): ท่อนเช้าต้องเต็มก่อน แล้วค่อยไหลเข้าท่อนดึก
+                          const fillFrac  = (o.qty || 0) > 0 ? Math.min(doneQty / o.qty, 1) : (o.isDone ? 1 : 0);
+                          const fillEndMs = startMs + (realEndMs - startMs) * fillFrac;
+                          const segStartMs = Math.max(startMs, half.startMs);
+                          const segEndMs   = Math.min(realEndMs, half.startMs + 12 * 3600000);
+                          const pctBlock = segEndMs > segStartMs
+                            ? Math.max(0, Math.min(100, ((Math.min(fillEndMs, segEndMs) - segStartMs) / (segEndMs - segStartMs)) * 100))
+                            : 0;
                           // ใบที่หลุดแผน (ดีเลย์/ปิดช้า) — แนบ downtime ที่คาบเกี่ยวช่วงเวลาของใบนั้นเข้า tooltip เป็นสาเหตุ
                           // จำกัดเฉพาะ downtime ของ sub-line เดียวกับใบนี้ ไม่หยิบของอีกไลน์ที่แค่เวลาตรงกันมาปน
                           const causeText = isLateDone ? dtTooltip(startMs, new Date(o.confirmed_at).getTime(), o.line_name)

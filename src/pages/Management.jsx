@@ -1623,7 +1623,14 @@ export default function Management() {
                             const sc = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : o.is_backfill ? '#6b7280' : '#4d9fff';
                             const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : o.is_backfill ? '⏪' : o.is_manual ? '✍️' : '▶';
                             const doneQty = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
-                            const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
+                            // fill ต่อเนื่องตามแกนเวลาทั้งใบ — ใบคร่อม 2 กะห้ามคิด % แยกต่อท่อน (ท่อนเช้าต้องเต็มก่อนค่อยไหลเข้าท่อนดึก)
+                            const fillFrac  = (o.qty || 0) > 0 ? Math.min(doneQty / o.qty, 1) : (o.isDone ? 1 : 0);
+                            const fillEndMs = startMs + (realEndMs - startMs) * fillFrac;
+                            const segStartMs = Math.max(startMs, half.startMs);
+                            const segEndMs   = Math.min(realEndMs, half.startMs + 12 * 3600000);
+                            const pctBlock = segEndMs > segStartMs
+                              ? Math.max(0, Math.min(100, ((Math.min(fillEndMs, segEndMs) - segStartMs) / (segEndMs - segStartMs)) * 100))
+                              : 0;
                             const causeText = isLateDone ? dtTooltip(startMs, new Date(o.confirmed_at).getTime(), o.line_name)
                               : isDelayed ? dtTooltip(startMs, Math.min(nowMs, gridEndMs), o.line_name) : '';
                             return (
