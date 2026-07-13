@@ -44,7 +44,7 @@ export default function OrgSetup() {
     if (kind === 'department') return sections.map(s => ({ id: s.id, label: s.name }));
     if (kind === 'line') return allDepts.map(d => {
       const sec = sections.find(s => s.id === d.parent_id);
-      return { id: d.id, label: `${sec?.name || '?'} > ${d.name}` };
+      return { id: d.id, label: `${sec ? sec.name : 'ขึ้นตรงฝ่าย'} > ${d.name}` };
     });
     return [];
   };
@@ -89,7 +89,7 @@ export default function OrgSetup() {
       name: formName.trim(),
       code: formCode.trim() || null,
       cost_center: formCostCenter.trim() || null,
-      parent_id: modal.parentId,
+      parent_id: modal.parentId || null, // department เลือก "ขึ้นตรงฝ่าย" ได้ = parent_id null
       ref_line_id: modal.kind === 'line' && formRefLineId ? Number(formRefLineId) : null,
     };
     const { error } = modal.editing
@@ -158,21 +158,19 @@ export default function OrgSetup() {
               </div>
             ))}
             {!sections.length && <Empty text="ยังไม่มี Section" />}
-            {!!orphanDepts.length && (
-              <div style={itemStyle(selSection === ORPHAN)} onClick={() => setSelSection(ORPHAN)}>
-                <span style={{ fontSize: 13, color: '#f59e0b' }}>
-                  ⚠️ ไม่มี Section
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({orphanDepts.length} แผนก)</span>
-                </span>
-              </div>
-            )}
+            <div style={itemStyle(selSection === ORPHAN)} onClick={() => setSelSection(ORPHAN)}>
+              <span style={{ fontSize: 13, color: 'var(--text2)' }}>
+                🏛️ ขึ้นตรงฝ่าย (ไม่มี Section)
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({orphanDepts.length} แผนก)</span>
+              </span>
+            </div>
           </div>
 
           {/* Departments */}
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>DEPARTMENT / แผนก ({currentDepts.length})</strong>
-              <button onClick={() => selSection && selSection !== ORPHAN && openCreate('department', selSection)} disabled={!selSection || selSection === ORPHAN} style={addBtnSt}>➕</button>
+              <button onClick={() => selSection && openCreate('department', selSection === ORPHAN ? null : selSection)} disabled={!selSection} style={addBtnSt}>➕</button>
             </div>
             {!selSection ? <Empty text="เลือก Section ก่อน" /> : currentDepts.map(d => (
               <div key={d.id} style={itemStyle(selDept === d.id)} onClick={() => setSelDept(d.id)}>
@@ -221,7 +219,8 @@ export default function OrgSetup() {
               {modal.kind !== 'section' && (
                 <div>
                   <label style={labelSt}>{PARENT_LABEL[modal.kind]}</label>
-                  <select value={modal.parentId ?? ''} onChange={e => setModal(m => ({ ...m, parentId: e.target.value }))}>
+                  <select value={modal.parentId ?? ''} onChange={e => setModal(m => ({ ...m, parentId: e.target.value || null }))}>
+                    {modal.kind === 'department' && <option value="">🏛️ ขึ้นตรงฝ่าย — ไม่อยู่ใต้ Section ใด</option>}
                     {parentOptionsFor(modal.kind).map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                   </select>
                 </div>

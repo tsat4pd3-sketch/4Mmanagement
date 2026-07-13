@@ -183,6 +183,7 @@
 ```
 
 **กฎการ link ข้ามระดับ:**
+- **แผนกที่ไม่ขึ้นกับ Section ใด (ขึ้นตรงฝ่าย) รองรับแล้ว (2026-07-13):** `org_nodes.kind='department'` ที่ `parent_id IS NULL` — สร้าง/ย้ายได้จาก OrgSetup (ตัวเลือก "🏛️ ขึ้นตรงฝ่าย" ในฟอร์ม + กลุ่ม "ขึ้นตรงฝ่าย" ในคอลัมน์ Section) · ข้อจำกัดโดยตั้งใจ: dropdown แผนกใน Register/operator เป็น cascade จาก section ของพนักงาน แผนกขึ้นตรงฝ่ายจึงไม่โผล่ที่นั่น (พนักงานฝ่ายผลิตต้องมี section เสมอเพื่อ scoping)
 - `production_lines.section` = `org_nodes.code` ของ section
 - `production_lines.parent_line_name` = `name` ของ production_line ระดับแผนก (เช่น 'HYDROFORM')
 - Department name ใน org_nodes ต้องตรงกับ parent production_line name เพื่อให้ Register กรอง LINE dropdown ถูก
