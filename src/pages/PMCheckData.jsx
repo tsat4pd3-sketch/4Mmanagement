@@ -12,6 +12,7 @@ import { exportInspectionExcel } from '../lib/pmExportExcel'
 import { exportInspectionPDF, resolveSignatureDataUrl } from '../lib/pmExportPDF'
 import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } from '../lib/pmTaxonomy'
 import useImgBox from '../utils/useImgBox'
+import CalloutPin from '../components/CalloutPin'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -167,10 +168,10 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, ma
               const col = st ? PIN_STATUS_COLOR[st] : categoryColor(c.category)
               const active = c.id === activeCpId
               return (
-                <button key={c.id} onClick={e => { e.stopPropagation(); onPinClick?.(c.id) }} title={`${cpIndex[c.id] + 1}. ${c.name}${st ? ` — ${st.toUpperCase()}` : ''}`}
-                  style={{ position: 'absolute', left: `${clampPct(c.x_pos * 100, padX, 100 - padX)}%`, top: `${clampPct(c.y_pos * 100, padTop, 100)}%`, transform: 'translate(-50%,-100%)', zIndex: active ? 12 : 10, cursor: 'pointer', background: 'none', border: 'none', padding: 0, pointerEvents: 'auto' }}>
-                  <div style={{ minWidth: PK, height: PK, padding: `0 ${Math.round(PK * 0.15)}px`, borderRadius: 999, background: col, color: '#fff', fontSize: pkFont, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff', boxShadow: active ? '0 0 0 3px rgba(61,214,92,0.75), 0 2px 6px rgba(0,0,0,0.5)' : '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap', transform: active ? 'scale(1.18)' : 'none', transition: 'transform .12s' }}>{cpIndex[c.id] + 1}</div>
-                </button>
+                <CalloutPin key={c.id} xPct={c.x_pos * 100} yPct={c.y_pos * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
+                  label={cpIndex[c.id] + 1} color={col} selected={active}
+                  title={`${cpIndex[c.id] + 1}. ${c.name}${st ? ` — ${st.toUpperCase()}` : ''}`}
+                  onClick={e => { e.stopPropagation(); onPinClick?.(c.id) }} />
               )
             })}
           </div>

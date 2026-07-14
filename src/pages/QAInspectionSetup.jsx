@@ -17,6 +17,7 @@ import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import useIsMobile from '../utils/useIsMobile';
+import CalloutPin from '../components/CalloutPin';
 
 const fmtDT = s => s ? new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -653,22 +654,11 @@ export default function QAInspectionSetup() {
                   <img src={activeDwg.drawing_url} alt={activeDwg.title} style={{ display: 'block', maxWidth: '100%' }}
                     onLoad={e => setDwgSize({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight })} />
                   {items.filter(i => i.pos_x != null && i.pos_y != null && (i.drawing_id === activeDwg.id || (!i.drawing_id && drawings[0]?.id === activeDwg.id))).map(i => (
-                    <div key={i.id}
+                    <CalloutPin key={i.id} xPct={i.pos_x} yPct={i.pos_y} layerW={dwgSize.w} layerH={dwgSize.h} size={BK}
+                      label={i.balloon_no} color={i.id === placingId ? '#f59e0b' : (i.rank ? RANK[i.rank]?.color : '#4d9fff')}
+                      selected={i.id === placingId} opacity={i.is_active ? 1 : 0.45}
                       title={`#${i.balloon_no} ${i.characteristic}${i.spec_text ? ` · ${i.spec_text}` : ''}`}
-                      onClick={e => { e.stopPropagation(); if (canManage) openEditItem(i); }}
-                      style={{
-                        /* ตำแหน่งแสดงผลถูก clamp ไม่ให้ตกขอบรูป — ค่าจริงใน DB ไม่เปลี่ยน */
-                        position: 'absolute', left: `${clampPos(i.pos_x, padX)}%`, top: `${clampPos(i.pos_y, padY)}%`,
-                        transform: 'translate(-50%, -50%)',
-                        minWidth: BK, height: BK, padding: `0 ${Math.round(BK * 0.2)}px`, borderRadius: 999,
-                        background: i.id === placingId ? '#f59e0b' : (i.rank ? RANK[i.rank]?.color : '#4d9fff'),
-                        color: '#fff', fontWeight: 900, fontSize: bkFont,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        border: `${Math.max(2, Math.round(BK * 0.07))}px solid #fff`, boxShadow: '0 1px 5px rgba(0,0,0,0.45)',
-                        cursor: 'pointer', opacity: i.is_active ? 1 : 0.45, whiteSpace: 'nowrap',
-                      }}>
-                      {i.balloon_no}
-                    </div>
+                      onClick={e => { e.stopPropagation(); if (canManage) openEditItem(i); }} />
                   ))}
                 </div>
               )}

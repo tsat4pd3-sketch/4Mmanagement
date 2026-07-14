@@ -12,6 +12,7 @@ import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmT
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
 import SpinAnnotator from '../components/SpinAnnotator'
 import useImgBox from '../utils/useImgBox'
+import CalloutPin from '../components/CalloutPin'
 
 const DEPT_COLORS = {
   maintenance:     '#fb923c',
@@ -182,18 +183,10 @@ function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageCl
             const isActive = activePinKey === cp._key
             const col = isActive ? 'var(--accent)' : categoryColor(cp.category)
             return (
-              <button key={cp._key}
-                style={{
-                  position: 'absolute',
-                  left: `${clampPct(cp.x_pos * 100, padX, 100 - padX)}%`,
-                  top: `${clampPct(cp.y_pos * 100, padTop, 100)}%`,
-                  transform: 'translate(-50%,-100%)', zIndex: 10, cursor: 'pointer', background: 'none', border: 'none', padding: 0, pointerEvents: 'auto',
-                }}
-                onClick={e => { e.stopPropagation(); onPinRemove(cp._key) }}
+              <CalloutPin key={cp._key} xPct={cp.x_pos * 100} yPct={cp.y_pos * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
+                label={labels?.[i] ?? i + 1} color={col} selected={isActive}
                 title={`${cp.name || `จุด ${i + 1}`} — คลิกเพื่อลบ`}
-              >
-                <div style={{ minWidth: PK, height: PK, padding: `0 ${Math.round(PK * 0.15)}px`, borderRadius: 999, background: col, border: '2px solid #fff', color: '#fff', fontSize: pkFont, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>{labels?.[i] ?? i + 1}</div>
-              </button>
+                onClick={e => { e.stopPropagation(); onPinRemove(cp._key) }} />
             )
           })}
         </div>
