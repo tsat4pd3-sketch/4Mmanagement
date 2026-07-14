@@ -6,6 +6,7 @@ import { can } from '../utils/permissions'
 import { dueStatus, STATUS_META, DEPT_LABEL, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
 import { toast } from '../components/Toast'
 import MachineFloorMap from '../components/MachineFloorMap'
+import DowntimeSiren from '../components/DowntimeSiren'
 
 // 'YYYY-MM-DD' (from pm_plans.next_due_date) → local-midnight Date, so day math
 // stays aligned with the Asia/Bangkok calendar (not UTC).
@@ -259,6 +260,7 @@ export default function MtnMachineLayout() {
 
   return (
     <div style={S.page}>
+      <DowntimeSiren mode="call_mtn" />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 10 }}>
         <div>
           <h1 style={S.h1}>🗺️ ผังเครื่องจักร (ซ่อมบำรุง)</h1>
