@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import { useState, useEffect, useContext, useCallback, useMemo, Fragment } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -500,50 +500,59 @@ export default function MorningMeeting() {
             <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{line.name}</div>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>{line.section}</span>
           </div>
-          {/* โครงตายตัวทุกใบ: ☀️ กะเช้า คอลัมน์ซ้าย / 🌙 กะดึก คอลัมน์ขวา (เส้นคั่นกลาง)
-              รายละเอียดไล่ลงแนวตั้งเป็นชั้น: ยอด+% → OEE·DT → สถานะ — ไม่มีการ wrap พาดแถว */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', flex: 1 }}>
-            {['day', 'night'].map(sh => {
+          {/* ตารางเล็กในการ์ด — หัวคอลัมน์บอกชัดว่า % ไหนคืออะไร (เคยงง: % ตามเป้า กับ % OEE ติดกัน)
+              แถวละกะเรียงลงมา คอลัมน์ตรงกันทุกใบโดยธรรมชาติ ไม่มีชิป wrap */}
+          {(() => {
+            const cell = { fontSize: 12, fontWeight: 800, textAlign: 'right', whiteSpace: 'nowrap' };
+            const head = { fontSize: 11, color: 'var(--muted)', fontWeight: 700, textAlign: 'right', whiteSpace: 'nowrap' };
+            const notClosed = ['day', 'night'].filter(sh => {
               const s = shifts.find(x => x.shift === sh);
-              return (
-                <div key={sh} style={{
-                  display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0,
-                  ...(sh === 'night' ? { borderLeft: '1px solid var(--border)', paddingLeft: 10 } : { paddingRight: 10 }),
-                }}>
-                  <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{SHIFT_LABEL[sh]}</span>
-                  {!s ? (
-                    <span style={{ fontSize: 12, color: 'var(--muted)' }}>— ไม่เปิดกะ —</span>
-                  ) : (
-                    <>
-                      {/* ชั้น 1: ยอด/เป้า ตัวใหญ่ + % */}
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
-                        {s.pct != null ? (
-                          <>
-                            <span style={{ fontSize: 15, fontWeight: 900, color: achieveColor(s.pct), whiteSpace: 'nowrap' }}>{s.actual}/{s.target}</span>
-                            <span style={chip(achieveColor(s.pct))}>{s.pct}%</span>
-                          </>
+              return s && s.status !== 'closed';
+            });
+            return (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 52px 44px 52px', columnGap: 8, rowGap: 5, alignItems: 'baseline' }}>
+                  <span />
+                  <span style={head}>ยอดผลิต</span>
+                  <span style={head} title="% เทียบเป้าการผลิตของกะ">ตามเป้า</span>
+                  <span style={head}>OEE</span>
+                  <span style={head}>DT</span>
+                  {['day', 'night'].map(sh => {
+                    const s = shifts.find(x => x.shift === sh);
+                    return (
+                      <Fragment key={sh}>
+                        <span style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{SHIFT_LABEL[sh]}</span>
+                        {!s ? (
+                          <span style={{ gridColumn: '2 / -1', fontSize: 12, color: 'var(--muted)' }}>— ไม่เปิดกะ —</span>
                         ) : (
                           <>
-                            <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>{s.actual}</span>
-                            <span style={chip('#94a3b8')} title="ยังไม่ตั้งเป้ากะ/std และไม่มีเป้าใบงานให้เทียบ">ไม่มีเป้า</span>
+                            <span style={{ ...cell, color: s.pct != null ? achieveColor(s.pct) : 'var(--text)' }}>
+                              {s.pct != null ? `${s.actual.toLocaleString()}/${s.target.toLocaleString()}` : s.actual.toLocaleString()}
+                            </span>
+                            <span style={{ ...cell, color: s.pct != null ? achieveColor(s.pct) : 'var(--muted)' }}
+                              title={s.pct == null ? 'ยังไม่ตั้งเป้ากะ/std และไม่มีเป้าใบงานให้เทียบ' : undefined}>
+                              {s.pct != null ? `${s.pct}%` : '—'}
+                            </span>
+                            <span style={{ ...cell, color: s.oee != null ? '#4d9fff' : 'var(--muted)', fontWeight: s.oee != null ? 800 : 400 }}>
+                              {s.oee != null ? `${Math.round(s.oee)}%` : '—'}
+                            </span>
+                            <span style={{ ...cell, color: s.dtMin > 0 ? '#ef4444' : 'var(--muted)', fontWeight: s.dtMin > 0 ? 800 : 400 }}>
+                              {s.dtMin > 0 ? `${s.dtMin}น.` : '—'}
+                            </span>
                           </>
                         )}
-                      </div>
-                      {/* ชั้น 2: OEE + DT (มีอันเดียวก็อยู่ชั้นนี้) */}
-                      {(s.oee != null || s.dtMin > 0) && (
-                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                          {s.oee != null && <span style={chip('#4d9fff')}>OEE {Math.round(s.oee)}%</span>}
-                          {s.dtMin > 0 && <span style={chip('#ef4444')}>DT {s.dtMin}น.</span>}
-                        </div>
-                      )}
-                      {/* ชั้น 3: สถานะกะ */}
-                      {s.status !== 'closed' && <div><span style={chip('#f59e0b')}>ยังไม่ปิดกะ</span></div>}
-                    </>
-                  )}
+                      </Fragment>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
+                {notClosed.length > 0 && (
+                  <div style={{ marginTop: 'auto' }}>
+                    <span style={chip('#f59e0b')}>⏳ ยังไม่ปิดกะ: {notClosed.map(sh => (sh === 'day' ? 'กะเช้า' : 'กะดึก')).join(' + ')}</span>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       ))}
       {lineResults.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>ไม่มีไลน์ใน scope</div>}
