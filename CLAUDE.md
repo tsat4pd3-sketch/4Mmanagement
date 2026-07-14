@@ -341,6 +341,18 @@ Reject → status: "rejected" + reject_reason
 - ไม่เข้าเกณฑ์ = sequential: P = Σ(qty×CT) ÷ run ทั้งกะ (จับ idle ระหว่างงานด้วย)
 - บั๊กเดิม (ก่อน 2026-07-14) ทำ P ต่ำเกินจริงในกะ multi-MAT — แก้ย้อนหลังใน DB แล้ว 12 กะ (22/06–13/07) ด้วย SQL ที่ replicate สูตรแล้ว validate กับการคำนวณมือ
 
+### OEE Insight Engine — แท็บ 🧠 วิเคราะห์สาเหตุ ใน /oee-analytics (2026-07-14)
+
+`src/components/OeeInsightPanel.jsx` — วิเคราะห์ภาพรวมอัตโนมัติ (rule-based + สถิติ ไม่ใช่ ML) ตอบ "ทำไมยอดไม่ได้เป้า / pattern ไหนกระทบ OEE" จากกะที่ปิดแล้วย้อนหลัง 14/30/60/90 วัน (เลือกไลน์เดี่ยวได้ · รับ `lines` = `linesFull` ที่ scope แล้วจาก OEEAnalytics):
+1. **Loss decomposition** — แตกเป้าที่หาย (target−actual ของกะพลาดเป้า) เป็นชิ้นด้วย CT เฉลี่ยถ่วงน้ำหนักต่อกะ: Downtime นอกแผน (นาที×60÷CT, cap ที่ shortfall) / NG+สงสัย / เศษ = ความเร็วต่ำกว่า CT
+2. **Downtime เรื้อรัง** — จับกลุ่ม ชนิด×เครื่อง ที่เกิด ≥3 กะ (top 3 ตามนาที) · นับเฉพาะนอกแผน
+3. **กะเช้า vs กะดึก** — ต่างเฉลี่ย ≥5 จุด (ทั้งคู่ ≥3 กะ) + ชี้ตัวต่างหลัก A หรือ P
+4. **วันในสัปดาห์ DT หนักผิดปกติ** — เฉลี่ยนาที/วัน > 1.6× ค่ากลาง (n ≥2 วัน)
+5. **คนขาด ↔ OEE** — เทียบกะวันมีคนขาด (จาก daily_production_logs ฝั่ง Main ผูกผ่าน employees.line_id — best-effort try/catch) vs วันคนครบ ต่าง ≥5 จุด
+6. **Product วิ่งช้าซ้ำ** — P<75 ใน ≥3 กะที่มี product เดียว (ชี้ CT master ตั้งเร็วเกิน/micro-stop)
+7. **NG กระจุกประเภทเดียว** — ประเภท top ≥50% ของ NG รวม ≥20 ชิ้น
+- ทุก insight มีหลักฐานตัวเลขแนบ (นาที/ชิ้น/จำนวนกะ) เรียงตาม severity (high/med/info) แล้วตาม impact · <3 กะ = "ข้อมูลยังไม่พอ" ไม่เดา · เกณฑ์ตัวเลข (threshold) อยู่ในไฟล์ component จุดเดียว
+
 ---
 
 ## Improvements — โปรเจคปรับปรุง Kaizen (2026-07-12)

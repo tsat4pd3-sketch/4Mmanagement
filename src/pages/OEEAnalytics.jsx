@@ -11,6 +11,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { hasPermission } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import useIsMobile from '../utils/useIsMobile';
+import OeeInsightPanel from '../components/OeeInsightPanel';
 
 // ── Colour helpers ───────────────────────────────────────────────
 const oeeColor  = v => v >= 80 ? '#22c55e' : v >= 60 ? '#f59e0b' : '#ef4444';
@@ -172,7 +173,7 @@ const STATUS_BADGE = {
 export default function OEEAnalytics() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const isMobile = useIsMobile(); // ≤768px: grid วิเคราะห์ยุบเป็นคอลัมน์เดียว กันกราฟถูกตัด (desktop ไม่เปลี่ยน)
-  const [viewTab, setViewTab] = useState('today'); // today | trend
+  const [viewTab, setViewTab] = useState('today'); // today | trend | insight
   const canSetTarget = hasPermission('manage_master_data', role);
 
   // ── Target OEE/A/P/Q รายกรุ๊ป (ตาราง oee_targets ฝั่ง Main) ──
@@ -669,6 +670,7 @@ export default function OEEAnalytics() {
         <div style={{ display: 'flex', gap: 4 }}>
           <button style={s.tab(viewTab === 'today')}  onClick={() => setViewTab('today')}>⚡ ภาพรวมวันนี้</button>
           <button style={s.tab(viewTab === 'trend')}  onClick={() => setViewTab('trend')}>📊 แนวโน้ม/ประวัติ</button>
+          <button style={s.tab(viewTab === 'insight')} onClick={() => setViewTab('insight')}>🧠 วิเคราะห์สาเหตุ</button>
           {canSetTarget && (
             <button style={{ ...s.tab(false), color: '#f59e0b', border: '1px solid rgba(245,158,11,0.4)' }}
               onClick={() => setShowTargetModal(true)} title="ตั้ง Target A/P/Q รายกรุ๊ป (OEE = A×P×Q อัตโนมัติ) — ระดับส่วนคำนวณจากค่าเฉลี่ยของกรุ๊ป">
@@ -925,6 +927,8 @@ export default function OEEAnalytics() {
             </div>
           </div>
         </>
+      ) : viewTab === 'insight' ? (
+        <OeeInsightPanel lines={linesFull} />
       ) : (
       <>
       {/* Filters */}
