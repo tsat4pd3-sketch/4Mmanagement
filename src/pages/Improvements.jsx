@@ -211,27 +211,42 @@ export default function Improvements() {
     const ids = (sessions || []).map(s => s.id);
     if (!ids.length) { setPareto({ loading: false, rows: [] }); return; }
     const agg = new Map();
+    const pushDesc = (cur, desc) => {
+      const d = (desc || '').trim();
+      if (!d) return;
+      cur.descCount.set(d, (cur.descCount.get(d) || 0) + 1);
+    };
     if (source === 'downtime') {
+      // ดึง category (planned/unplanned) + description มาด้วย — งานในแผนเป็น priority รอง
+      // และ note พนักงานคือตัวบอกว่า "อื่นๆ" จริงๆ คือปัญหาอะไร
       const { data } = await supabaseDR.from('downtime_logs')
-        .select('downtime_type_id, machine_no, duration_min').in('session_id', ids);
+        .select('downtime_type_id, machine_no, duration_min, description, dr_downtime_types(category)')
+        .in('session_id', ids);
       (data || []).forEach(r => {
         const key = `${r.downtime_type_id || ''}::${r.machine_no || ''}`;
-        const cur = agg.get(key) || { type_id: r.downtime_type_id, machine_no: r.machine_no || '', value: 0, count: 0 };
+        const cur = agg.get(key) || { type_id: r.downtime_type_id, machine_no: r.machine_no || '', value: 0, count: 0, planned: r.dr_downtime_types?.category === 'planned', descCount: new Map() };
         cur.value += Number(r.duration_min) || 0; cur.count += 1;
+        pushDesc(cur, r.description);
         agg.set(key, cur);
       });
     } else {
       const { data } = await supabaseDR.from('defect_logs')
-        .select('defect_type_id, qty_ng, prod_orders(mat_no)').in('session_id', ids);
+        .select('defect_type_id, qty_ng, description, prod_orders(mat_no)').in('session_id', ids);
       (data || []).forEach(r => {
         const mat = r.prod_orders?.mat_no || '';
         const key = `${r.defect_type_id || ''}::${mat}`;
-        const cur = agg.get(key) || { type_id: r.defect_type_id, mat_no: mat, value: 0, count: 0 };
+        const cur = agg.get(key) || { type_id: r.defect_type_id, mat_no: mat, value: 0, count: 0, planned: false, descCount: new Map() };
         cur.value += Number(r.qty_ng) || 0; cur.count += 1;
+        pushDesc(cur, r.description);
         agg.set(key, cur);
       });
     }
-    const rows = [...agg.values()].filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
+    // เรียง: งานนอกแผน (unplanned) มาก่อนเสมอ · งานในแผน (planned เช่น 5ส./นับสต็อก) เป็น priority รองท้ายลิสต์
+    // แต่ละแถวแนบ note พนักงานที่พบบ่อยสุด (สำคัญกับประเภท "อื่นๆ" ที่ชื่อประเภทบอกอะไรไม่ได้)
+    const rows = [...agg.values()].filter(r => r.value > 0)
+      .map(r => ({ ...r, topDescs: [...r.descCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3) }))
+      .sort((a, b) => (a.planned ? 1 : 0) - (b.planned ? 1 : 0) || b.value - a.value)
+      .slice(0, 10);
     setPareto({ loading: false, rows });
   }, []);
 
@@ -541,10 +556,12 @@ export default function Improvements() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                     {pareto.rows.map((row, i) => {
-                      const max = pareto.rows[0].value || 1;
+                      const max = Math.max(...pareto.rows.map(r => r.value)) || 1;
                       const tn = typeOpts.find(t => t.id === row.type_id)?.name_th || 'ไม่ระบุประเภท';
                       const selected = modal.problem_type_id === (row.type_id || '') &&
                         (modal.problem_source === 'downtime' ? (modal.machine_no || '') === row.machine_no : (modal.mat_no || '') === row.mat_no);
+                      // งานในแผน (5ส./นับสต็อก ฯลฯ) = priority รอง: จางลง แถบเทา + ป้ายกำกับ — ไม่ใช่เป้าหลักของ Kaizen
+                      const barColor = row.planned ? '#94a3b8' : '#ef4444';
                       return (
                         <button key={i} onClick={() => setModal({
                           ...modal,
@@ -556,14 +573,29 @@ export default function Improvements() {
                           textAlign: 'left', padding: '6px 8px', borderRadius: 7, cursor: 'pointer',
                           border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
                           background: selected ? 'var(--accent-dim)' : 'var(--bg)',
+                          opacity: row.planned ? 0.62 : 1,
                         }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i + 1}. {tn}{row.machine_no ? ` · ⚙️${row.machine_no}` : ''}{row.mat_no ? ` · 📦${row.mat_no}` : ''}</span>
-                            <span style={{ color: '#ef4444', flexShrink: 0 }}>{row.value.toFixed(0)} {modal.problem_source === 'defect' ? 'ชิ้น' : 'นาที'} · {row.count} ครั้ง</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {i + 1}. {tn}{row.machine_no ? ` · ⚙️${row.machine_no}` : ''}{row.mat_no ? ` · 📦${row.mat_no}` : ''}
+                              {row.planned && <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 700, color: '#94a3b8', background: 'rgba(148,163,184,0.15)', borderRadius: 4, padding: '0 5px' }}>📅 ในแผน</span>}
+                            </span>
+                            <span style={{ color: barColor, flexShrink: 0 }}>{row.value.toFixed(0)} {modal.problem_source === 'defect' ? 'ชิ้น' : 'นาที'} · {row.count} ครั้ง</span>
                           </div>
                           <div style={{ height: 6, background: 'var(--bg2)', borderRadius: 3, marginTop: 3, overflow: 'hidden' }}>
-                            <div style={{ width: `${(row.value / max) * 100}%`, height: '100%', background: '#ef4444', borderRadius: 3 }} />
+                            <div style={{ width: `${(row.value / max) * 100}%`, height: '100%', background: barColor, borderRadius: 3 }} />
                           </div>
+                          {/* note ของพนักงาน — ตัวบอกปัญหาจริงโดยเฉพาะประเภท "อื่นๆ" ที่ชื่อประเภทบอกอะไรไม่ได้ */}
+                          {row.topDescs?.length > 0 && (
+                            <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 1 }}
+                              title={row.topDescs.map(([d, n]) => `${d} (×${n})`).join('\n')}>
+                              {row.topDescs.map(([d, n], di) => (
+                                <div key={di} style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  💬 {d}{n > 1 ? ` (×${n})` : ''}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </button>
                       );
                     })}
