@@ -481,23 +481,26 @@ export default function MorningMeeting() {
           </div>
           {shifts.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>— ไม่เปิดกะ —</div>}
           {shifts.map(s => (
-            /* flexWrap สำคัญ — ชิป OEE/DT/สถานะรวมกันยาวกว่าการ์ดได้ ต้องตกบรรทัดใหม่ ห้ามทะลุขอบขวา */
-            <div key={s.shift} style={{ display: 'flex', alignItems: 'center', gap: 6, rowGap: 3, fontSize: 12, flexWrap: 'wrap' }}>
-              <span style={{ color: 'var(--text2)', width: 74, flexShrink: 0 }}>{SHIFT_LABEL[s.shift]}</span>
-              {s.pct != null ? (
-                <>
-                  <span style={{ fontWeight: 800, color: achieveColor(s.pct) }}>{s.actual}/{s.target}</span>
-                  <span style={chip(achieveColor(s.pct))}>{s.pct}%</span>
-                </>
-              ) : (
-                <>
-                  <span style={{ fontWeight: 800, color: 'var(--text)' }}>{s.actual}</span>
-                  <span style={chip('#94a3b8')} title="ยังไม่ตั้งเป้ากะ/std และไม่มีเป้าใบงานให้เทียบ">ไม่มีเป้า</span>
-                </>
-              )}
-              {s.oee != null && <span style={chip('#4d9fff')}>OEE {Math.round(s.oee)}%</span>}
-              {s.dtMin > 0 && <span style={chip('#ef4444')}>DT {s.dtMin}น.</span>}
-              {s.status !== 'closed' && <span style={chip('#f59e0b')}>ยังไม่ปิดกะ</span>}
+            /* ป้ายกะ = คอลัมน์ตายตัว · ชิปอยู่คอลัมน์ของตัวเองแล้ว wrap ในนั้น — ตกบรรทัดก็ยังเรียงตรง
+               คอลัมน์เดิม อ่านออกว่าเป็นของกะไหน (ห้าม wrap ทั้งแถวแบบชิปไหลไปเริ่มใต้ป้ายกะ) */
+            <div key={s.shift} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12 }}>
+              <span style={{ color: 'var(--text2)', width: 74, flexShrink: 0, lineHeight: '20px' }}>{SHIFT_LABEL[s.shift]}</span>
+              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, rowGap: 3, minWidth: 0, flex: 1 }}>
+                {s.pct != null ? (
+                  <>
+                    <span style={{ fontWeight: 800, color: achieveColor(s.pct) }}>{s.actual}/{s.target}</span>
+                    <span style={chip(achieveColor(s.pct))}>{s.pct}%</span>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ fontWeight: 800, color: 'var(--text)' }}>{s.actual}</span>
+                    <span style={chip('#94a3b8')} title="ยังไม่ตั้งเป้ากะ/std และไม่มีเป้าใบงานให้เทียบ">ไม่มีเป้า</span>
+                  </>
+                )}
+                {s.oee != null && <span style={chip('#4d9fff')}>OEE {Math.round(s.oee)}%</span>}
+                {s.dtMin > 0 && <span style={chip('#ef4444')}>DT {s.dtMin}น.</span>}
+                {s.status !== 'closed' && <span style={chip('#f59e0b')}>ยังไม่ปิดกะ</span>}
+              </div>
             </div>
           ))}
         </div>
