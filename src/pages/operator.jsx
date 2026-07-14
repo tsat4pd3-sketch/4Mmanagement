@@ -148,13 +148,18 @@ export default function Operator() {
     let doc_url = req.doc_url || null;
 
     if (luDocFile) {
-      const path = `skill-docs/${req.employee_id}_${req.skill_name}_${Date.now()}.jpg`;
-      // resize if image
+      // รูปบีบผ่าน resizeImage (ได้ .jpg) · PDF ส่งดิบแต่ cap 20MB (สเปคเดียวกับ drawing ฝั่ง QA)
+      // และตั้งนามสกุลตามชนิดไฟล์จริง — เดิม fix .jpg ทำให้ PDF ถูกเก็บผิดฟอร์แมต
+      const isPdf = luDocFile.type === 'application/pdf';
+      if (isPdf && luDocFile.size > 20 * 1024 * 1024) {
+        toast.error('ไฟล์ PDF ต้องไม่เกิน 20MB'); setIsReviewing(false); return;
+      }
       let fileToUpload = luDocFile;
       if (luDocFile.type.startsWith('image/')) {
         fileToUpload = await resizeImage(luDocFile);
       }
-      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, fileToUpload, { upsert: false });
+      const path = `skill-docs/${req.employee_id}_${req.skill_name}_${Date.now()}.${isPdf ? 'pdf' : 'jpg'}`;
+      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, fileToUpload, { upsert: false, contentType: isPdf ? 'application/pdf' : 'image/jpeg' });
       if (upErr) { toast.error('อัปโหลดเอกสารไม่สำเร็จ'); setIsReviewing(false); return; }
       const { data: urlData } = supabase.storage.from('four-m-images').getPublicUrl(path);
       doc_url = urlData.publicUrl;

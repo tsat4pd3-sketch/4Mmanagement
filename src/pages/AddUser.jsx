@@ -249,7 +249,7 @@ export default function AddUser() {
   const Th = ({ label, sortKey, style }) => (
     <th onClick={() => toggleSort(sortKey)} title="คลิกเพื่อเรียง"
       style={{ ...style, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
-      {label} <span style={{ fontSize: 10, opacity: sort.key === sortKey ? 1 : 0.35 }}>
+      {label} <span style={{ fontSize: 11, opacity: sort.key === sortKey ? 1 : 0.35 }}>
         {sort.key === sortKey ? (sort.dir === 'asc' ? '▲' : '▼') : '⇅'}
       </span>
     </th>

@@ -892,7 +892,7 @@ export default function MorningMeeting() {
               <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>➕ Action Item — ประชุม {fmtDate(meetingDate)}</h3>
               <button onClick={() => setActModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
             </div>
-            <div className="mgrid" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>ปัญหา / สิ่งที่ต้องทำ *
                 <textarea rows={2} value={actModal.problem} onChange={e => setActModal(v => ({ ...v, problem: e.target.value }))}
                   style={{ marginTop: 4, fontSize: 13, resize: 'vertical' }} />
@@ -901,7 +901,7 @@ export default function MorningMeeting() {
                 <input value={actModal.root_cause} onChange={e => setActModal(v => ({ ...v, root_cause: e.target.value }))}
                   style={{ marginTop: 4, fontSize: 13 }} placeholder="เช่น น็อตจับจิ๊กสึก / วัตถุดิบมาช้า" />
               </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>ไลน์
                   <select value={actModal.line_name} onChange={e => setActModal(v => ({ ...v, line_name: e.target.value }))}
                     style={{ marginTop: 4, fontSize: 13 }}>

@@ -23,6 +23,8 @@ const PAGE_GROUPS = [
       { key: 'page:/management',   label: 'จัดการไลน์ผลิต' },
       { key: 'page:/daily-report', label: 'Daily Report' },
       { key: 'page:/daily-pm',     label: 'Daily PM ฝ่ายผลิต' },
+      { key: 'page:/morning-meeting', label: 'ประชุมแถวเช้า' },
+      { key: 'page:/improvements', label: 'Improvements (Kaizen)' },
       { key: 'page:/oee-analytics', label: 'OEE' },
     ],
   },
@@ -176,7 +178,7 @@ export default function PermissionsManagement() {
             {ROLES.map(r => (
               <th key={r.value} style={{ textAlign: 'center', padding: '8px 4px', minWidth: 90 }} title={r.value}>
                 <span style={{ fontSize: 11, fontWeight: 800, color: r.color }}>{r.icon} {r.label}</span>
-                <div style={{ fontSize: 10, fontWeight: 400, color: 'var(--muted)' }}>{r.en}</div>
+                <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>{r.en}</div>
               </th>
             ))}
           </tr>
