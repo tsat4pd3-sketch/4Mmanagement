@@ -1531,11 +1531,14 @@ function LiveTab({ role }) {
     });
     const knownQty = matPData.reduce((s, d) => s + d.qty, 0);
 
-    // ตรวจ parallel: window ต้องทับกัน "อย่างมีนัยยะ" (> 15 นาที และ > 20% ของ window ที่สั้นกว่า)
-    // — เดิมทับกันแค่ไม่กี่นาที (จังหวะสแกนปิดชุดเก่าคาบเกี่ยวเปิดชุดใหม่) ก็ถูกตีเป็น parallel
-    // เคยพัง 2026-07-13: Line 60 กะดึก 2 MAT ต่อคิวกันแต่ window ทับ 2 นาที → P ตกจาก ~83% เหลือ 44%
+    // ตรวจ parallel: (1) เฉพาะ session ของ "ไลน์แม่" (มีไลน์ลูก = รวมงานหลายเครื่อง/ไลน์ย่อยไว้ใน session เดียว)
+    // — ไลน์ย่อย/ไลน์เดี่ยวผลิตได้ทีละ product เสมอ (user ยืนยัน 2026-07-14: เช่น Line 60 ขึ้นทีละ product
+    // ต่างแค่ลูกค้า) ห้ามตีเป็น parallel เด็ดขาด · (2) window ต้องทับกัน "อย่างมีนัยยะ" (> 15 นาที และ
+    // > 20% ของ window ที่สั้นกว่า) — จังหวะสแกนปิดชุดเก่าคาบเกี่ยวเปิดชุดใหม่ไม่นับ
+    // เคยพัง 2026-07-13: Line 60 กะดึก 2 MAT ต่อคิวกันแต่ window ทับ 2 นาที → P ตกจาก ~88% เหลือ 44%
+    const lineHasChildren = (parentChildrenMap[selSession?.line_name] || []).length > 0;
     const overlapOf = (a, b) => Math.max(0, (Math.min(a.winEnd, b.winEnd) - Math.max(a.winStart, b.winStart)) / 60000);
-    const isParallel = matPData.length > 1 && matPData.some((a, i) =>
+    const isParallel = lineHasChildren && matPData.length > 1 && matPData.some((a, i) =>
       matPData.slice(i + 1).some(b => {
         if (a.winStart == null || a.winEnd == null || b.winStart == null || b.winEnd == null) return false;
         const ov = overlapOf(a, b);
