@@ -1184,19 +1184,20 @@ export default function Management() {
             const batchSeen = new Map();
             // เงื่อนไขผสม: ใบที่ยังไม่ปิด+เกินเวลาจะตีแดงก็ต่อเมื่อ "ยอดรวมจริงของแถวนี้ยังไม่ทันเป้าตามเวลา" ด้วย
             // ถ้ายอดรวมทันเป้าอยู่ (แค่สแกนปิดไม่ตรง FIFO) จะไม่ตีแดง เพราะงานยังผลิตได้ตามแผนจริง
-            const ctSec = ctByMatNo[byOpenTime[0]?.mat_no] || 0;
-            const rowActualQty = cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
+            // pace เทียบเป็น std-time (Σ ยอด×CT ต่อพาร์ท) — คิวคำนวณระดับ sub-line มีหลายพาร์ท CT ต่างกันได้
+            const rowActualStdSec = cards.reduce((a, c) => a + ((c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)) * (ctByMatNo[c.mat_no] || 0)), 0);
+            const anyCt = cards.some(c => (ctByMatNo[c.mat_no] || 0) > 0);
             const firstStartMs = byOpenTime.length ? byOpenTime[0].orderStartMs : null;
-            let expectedQty = Infinity;
-            if (ctSec > 0 && firstStartMs) {
+            let expectedStdSec = Infinity;
+            if (anyCt && firstStartMs) {
               let elapsedMs = Math.max(0, Math.min(nowMs, firstStartMs + 24 * 3600000) - firstStartMs);
               breaks.forEach(([bs, be]) => {
                 const os = Math.max(bs, firstStartMs), oe = Math.min(be, nowMs);
                 if (oe > os) elapsedMs -= (oe - os);
               });
-              expectedQty = Math.max(0, elapsedMs) / 1000 / ctSec;
+              expectedStdSec = Math.max(0, elapsedMs) / 1000;
             }
-            const rowBehindPace = rowActualQty < expectedQty;
+            const rowBehindPace = rowActualStdSec < expectedStdSec;
             let queueEndMs = -Infinity;
             let curRoundIdx = null;
             return sorted.map(o => {
@@ -1342,8 +1343,22 @@ export default function Management() {
           });
           const productRows = Object.values(groups).sort((a, b) => a.label.localeCompare(b.label) || String(a.line || '').localeCompare(String(b.line || '')));
 
+          // ── คิวจริงระดับ sub-line: 1 ไลน์ผลิตได้ทีละใบ ใบคนละพาร์ทของไลน์เดียวกันต้องต่อคิวกัน ──
+          // ห้ามคำนวณคิวแยกต่อแถวพาร์ท (เคยพัง 2026-07-14: พาร์ทที่สองถูกวาดเริ่ม 08:00 ซ้อนกับพาร์ทแรก
+          // ทั้งที่ไลน์ไม่ parallel) · แยกคิวเฉพาะคนละ sub-line (คนละเครื่องจริง วิ่งขนานได้)
+          const positionedByOrder = new Map();
+          {
+            const byLine = {};
+            productRows.forEach(r => r.cards.forEach(c => { (byLine[c.line_name || ''] ||= []).push(c); }));
+            Object.values(byLine).forEach(cs => {
+              computeQueuedPositionsFull(cs).forEach(item => positionedByOrder.set(item.o.id ?? item.o.prod_no, item));
+            });
+          }
+          const positionedForCards = (cs) => cs.map(c => positionedByOrder.get(c.id ?? c.prod_no)).filter(Boolean)
+            .sort((a, b) => a.startMs - b.startMs);
+
           const totalDelayed = productRows.reduce((sum, row) =>
-            sum + computeQueuedPositionsFull(row.cards).filter(p => p.isDelayed).length, 0);
+            sum + positionedForCards(row.cards).filter(p => p.isDelayed).length, 0);
           const hasOpen = sessions.some(s => s.status === 'open');
 
           const openByMatNo = {};
@@ -1378,7 +1393,7 @@ export default function Management() {
             ['day', 'night'].forEach(shift => {
               let remainCards = 0, remainQty = 0, projEndMs = null, noCt = 0, workMs = 0, started = false;
               productRows.forEach(row => {
-                computeQueuedPositionsFull(row.cards).forEach(item => {
+                positionedForCards(row.cards).forEach(item => {
                   if (item.o.shift !== shift) return;
                   if (item.o.isDone || (item.o.qty_actual || 0) > 0) started = true;
                   if (item.o.isDone || item.o.isCarry) return;
@@ -1617,7 +1632,7 @@ export default function Management() {
                             );
                           })}
                           {(() => {
-                            const positioned = computeQueuedPositionsFull(row.cards).map(item => pctForHalf(item, half)).filter(Boolean);
+                            const positioned = positionedForCards(row.cards).map(item => pctForHalf(item, half)).filter(Boolean);
                             return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs }, oi) => {
                             if (leftPct >= 100) return null;
                             const sc = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : o.is_backfill ? '#6b7280' : '#4d9fff';
@@ -1730,7 +1745,7 @@ export default function Management() {
                       const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
                       const rowDemand = row.cards.reduce((a, c) => a + (c.qty || 0), 0);
                       const doneCount = row.cards.filter(c => c.isDone).length;
-                      const delayed   = computeQueuedPositionsFull(row.cards).filter(p => p.isDelayed).length;
+                      const delayed   = positionedForCards(row.cards).filter(p => p.isDelayed).length;
                       const isOpen    = row.cards.some(c => c.sessionOpen);
                       const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
                       const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';

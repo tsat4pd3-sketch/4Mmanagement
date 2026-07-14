@@ -1380,19 +1380,21 @@ export default function Dashboard() {
                       const batchSeen = new Map();
                       // เงื่อนไขผสม: ใบที่ยังไม่ปิด+เกินเวลาจะตีแดงก็ต่อเมื่อ "ยอดรวมจริงของแถวนี้ยังไม่ทันเป้าตามเวลา" ด้วย
                       // ถ้ายอดรวมทันเป้าอยู่ (แค่สแกนปิดไม่ตรง FIFO) จะไม่ตีแดง เพราะงานยังผลิตได้ตามแผนจริง
-                      const ctSec = ctByMatNo[byOpenTime[0]?.mat_no] || 0;
-                      const rowActualQty = cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
+                      // pace เทียบเป็น std-time (Σ ยอด×CT ของแต่ละพาร์ท) — คิวหนึ่งอาจมีหลายพาร์ท CT ต่างกัน
+                      // (คิวคำนวณระดับ sub-line แล้ว ไม่ใช่ต่อพาร์ท — ห้ามใช้ CT ของใบแรกเหมาทั้งคิว)
+                      const rowActualStdSec = cards.reduce((a, c) => a + ((c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)) * (ctByMatNo[c.mat_no] || 0)), 0);
+                      const anyCt = cards.some(c => (ctByMatNo[c.mat_no] || 0) > 0);
                       const firstStartMs = byOpenTime.length ? byOpenTime[0].orderStartMs : null;
-                      let expectedQty = Infinity;
-                      if (ctSec > 0 && firstStartMs) {
+                      let expectedStdSec = Infinity;
+                      if (anyCt && firstStartMs) {
                         let elapsedMs = Math.max(0, Math.min(nowMs, firstStartMs + 24 * 3600000) - firstStartMs);
                         breaks.forEach(([bs, be]) => {
                           const os = Math.max(bs, firstStartMs), oe = Math.min(be, nowMs);
                           if (oe > os) elapsedMs -= (oe - os);
                         });
-                        expectedQty = Math.max(0, elapsedMs) / 1000 / ctSec;
+                        expectedStdSec = Math.max(0, elapsedMs) / 1000;
                       }
-                      const rowBehindPace = rowActualQty < expectedQty;
+                      const rowBehindPace = rowActualStdSec < expectedStdSec;
                       let queueEndMs = -Infinity;
                       let curRoundIdx = null;
                       return sorted.map(o => {
@@ -1462,6 +1464,20 @@ export default function Dashboard() {
                         return item;
                       });
                     };
+
+                    // ── คิวจริงระดับ sub-line: 1 ไลน์ผลิตได้ทีละใบ ใบ "คนละพาร์ท" ของไลน์เดียวกันต้องต่อคิวกัน ──
+                    // ห้ามคำนวณคิวแยกต่อแถวพาร์ท (เคยพัง 2026-07-14: พาร์ทที่สองถูกวาดเริ่ม 08:00 ซ้อนกับพาร์ทแรก
+                    // ทั้งที่ไลน์ไม่ parallel) · แยกคิวเฉพาะคนละ sub-line (line_name ต่างกัน = คนละเครื่อง วิ่งขนานได้จริง)
+                    const positionedByOrder = new Map();
+                    {
+                      const byLine = {};
+                      productRows.forEach(r => r.cards.forEach(c => { (byLine[c.line_name || ''] ||= []).push(c); }));
+                      Object.values(byLine).forEach(cs => {
+                        computeQueuedPositionsFull(cs).forEach(item => positionedByOrder.set(item.o.id ?? item.o.prod_no, item));
+                      });
+                    }
+                    const positionedForCards = (cs) => cs.map(c => positionedByOrder.get(c.id ?? c.prod_no)).filter(Boolean)
+                      .sort((a, b) => a.startMs - b.startMs);
 
                     // ตัดผลคิวทั้งวัน (ms จริง) มาเป็น % สำหรับ "กะ" หนึ่ง ๆ — การ์ดเดียวกันแสดงต่อกันได้ทั้ง 2 กะ
                     // ถ้าดีเลย์ล้นข้ามขอบกะ (เช่น ผลิตเลย 20:00) แทนที่จะถูกตัดทิ้งที่ขอบ
@@ -1548,7 +1564,7 @@ export default function Dashboard() {
                           );
                         })}
                         {(() => {
-                          const positioned = computeQueuedPositionsFull(cards).map(item => pctForHalf(item, half)).filter(Boolean);
+                          const positioned = positionedForCards(cards).map(item => pctForHalf(item, half)).filter(Boolean);
                           // MIN_W_PCT บวกความกว้างขั้นต่ำให้การ์ดบาง ๆ มองเห็นได้ แต่ถ้าการ์ดสองใบต่อคิวกันพอดี
                           // (จบ-เริ่มติดกัน) การบวกความกว้างขั้นต่ำแยกอิสระแต่ละใบจะทำให้ขอบขวาของใบแรกล้ำ
                           // ขอบซ้ายของใบถัดไป เห็นเป็นแถบซ้อนทับกันทั้งที่ข้อมูลจริงต่อคิวไม่ทับกัน — หรี่ความกว้าง
@@ -1664,7 +1680,7 @@ export default function Dashboard() {
                       ['day', 'night'].forEach(shift => {
                         let remainCards = 0, remainQty = 0, projEndMs = null, noCt = 0, workMs = 0, started = false;
                         productRows.forEach(row => {
-                          computeQueuedPositionsFull(row.cards).forEach(item => {
+                          positionedForCards(row.cards).forEach(item => {
                             if (item.o.shift !== shift) return;
                             if (item.o.isDone || (item.o.qty_actual || 0) > 0) started = true;
                             if (item.o.isDone || item.o.isCarry) return;
@@ -1843,7 +1859,7 @@ export default function Dashboard() {
                           const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
                           const rowDemand = row.cards.reduce((a, c) => a + (c.qty || 0), 0);
                           const doneCount = row.cards.filter(c => c.isDone).length;
-                          const delayed   = computeQueuedPositionsFull(row.cards).filter(p => p.isDelayed).length;
+                          const delayed   = positionedForCards(row.cards).filter(p => p.isDelayed).length;
                           const isOpen    = row.cards.some(c => c.sessionOpen);
                           const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
                           const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
