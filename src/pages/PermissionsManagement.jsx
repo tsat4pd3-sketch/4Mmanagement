@@ -42,6 +42,7 @@ const PAGE_GROUPS = [
   {
     group: 'การตรวจสอบและซ่อมบำรุง',
     pages: [
+      { key: 'page:/mtn-repair',  label: 'แจ้งซ่อม MTN (MO)' },
       { key: 'page:/pm-check',    label: 'ตรวจสอบอุปกรณ์เครื่องจักร' },
       { key: 'page:/pm-schedule', label: 'แผน PM อุปกรณ์เครื่องจักร' },
       { key: 'page:/pm-setup',    label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร' },
