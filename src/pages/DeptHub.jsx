@@ -292,9 +292,12 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       <style>{DEPT_CSS}</style>
 
       {/* Top bar — user info + theme toggle + logout (มือถือ: .hub-topbar กลับเข้า flow) */}
+      {/* zIndex 1200 ที่ตัว topbar จำเป็น — ทุก section มี animation fill-mode:both (คง transform)
+          จึงเป็น stacking context แยก ถ้า topbar ไม่มี z-index เมนูโปรไฟล์ข้างใน (z 1300) จะโดน
+          hero/telemetry ที่อยู่หลังใน DOM วาดทับ (เคยพัง: dropdown โดนชิปนาฬิกาบัง) */}
       <div className="hub-topbar" style={{
         position: 'absolute', top: 'clamp(16px, 3vw, 28px)', right: 'clamp(16px, 4vw, 40px)',
-        display: 'flex', alignItems: 'center', gap: 10,
+        display: 'flex', alignItems: 'center', gap: 10, zIndex: 1200,
         animation: 'hub-fade-up 0.5s ease both',
       }}>
         {userFullName && (
