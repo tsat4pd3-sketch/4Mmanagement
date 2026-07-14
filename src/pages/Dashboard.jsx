@@ -845,7 +845,7 @@ export default function Dashboard() {
           },
         ].map((kpi, i) => (
           <motion.div key={kpi.label} {...stagger(i + 2)} style={{ height: '100%' }}>
-            <div style={{
+            <div className="kpi-lift" style={{
               background: 'var(--card)', border: '1px solid var(--border2)',
               borderRadius: 14, padding: isMobile ? '14px 14px' : isWide ? '22px 24px' : '18px 20px',
               boxShadow: 'var(--shadow-sm)',
