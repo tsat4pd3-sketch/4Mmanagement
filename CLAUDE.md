@@ -355,6 +355,7 @@ Reject → status: "rejected" + reject_reason
 - **Milestone/Gantt ต่อโปรเจค (2026-07-14 — คำสั่ง user: ไม่ใช่ฟอร์มทีเดียวจบ ต้องตามงานทีมแบบ gantt):** ตาราง `improvement_milestones` (DR, migration `20260714_improvement_milestones.sql`) — โปรเจคใหม่ seed ขั้นงานมาตรฐาน **PDCA 5 ขั้น** กระจายวันตาม baseline อัตโนมัติ (แก้/เพิ่ม/ลบอิสระ) · การ์ดมีแผง "🗓 แผนงาน x/y ขั้น" + progress + gantt ในตัว: แถบตามแผนสีตามสถานะ (กดป้ายวน todo→doing→done, stamp `done_at`), เลยแผน = แดง "⚠ เลยแผน", เส้นวันนี้สีชมพู (playhead convention) · พาเรโต้: งานในแผน priority รอง (จาง+ป้าย 📅 ในแผน) และแต่ละแถวโชว์ note พนักงาน 💬 (สำคัญกับ "อื่นๆ")
 - สิทธิ์: ทุก role เข้าดูได้ · สร้าง/แก้/ลบ/เปลี่ยนสถานะ + จัดการ milestone = `can('improvements','manage')` (seed: admin/manager/supervisor/leader)
 - Scope: leader เห็นเฉพาะ family ไลน์ตัวเอง · role อื่นกรองตาม `sections` (pattern มาตรฐาน)
+- **เชื่อมกับ MTN Work-Order (2026-07-14):** `problem_source = 'mtn'` (migration `20260714_improvements_mtn_source.sql` ขยาย check constraint) → วัดผลก่อน/หลังจาก**ใบซ่อม MO** (จำนวนใบ + นาที breakdown จาก `mtn_orders`) แทน downtime/defect · พาเรโต้ตอนสร้างมีโหมด "ใบซ่อม MTN" (เครื่อง+อาการที่มีใบเยอะสุด) · การ์ดโชว์ชิป "🔧 ใบ MO N ใบ" (นับตั้งแต่ start_date) · ฝั่ง MtnRepair: ปุ่ม "💡 เปิดโปรเจคปรับปรุง" ใน DetailDrawer ส่ง prefill ผ่าน `sessionStorage['imp_prefill']` แล้ว navigate มา /improvements (เด่นเมื่อ step6 ติดตามได้ "เกิดปัญหาซ้ำ/แก้ไขไม่ได้") + ชิป "มีโปรเจคปรับปรุงกำลังทำ" บนใบของเครื่องที่มี improvement status=monitoring
 
 ---
 

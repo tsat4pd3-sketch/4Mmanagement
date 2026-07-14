@@ -69,6 +69,8 @@ export default function Improvements() {
   const [defectTypes, setDefectTypes] = useState([]);
   const [machines, setMachines] = useState([]);
   const [products, setProducts] = useState([]);
+  const [mtnProblemTypes, setMtnProblemTypes] = useState([]);   // ลักษณะปัญหาฝั่ง MTN (source='mtn')
+  const [mtnOrders, setMtnOrders] = useState([]);               // ใบซ่อม MO — วัดผล + พาเรโต้ + cross-ref
   const [loading, setLoading] = useState(true);
   const [results, setResults] = useState({});          // improvement id -> metric result
   const [statusFilter, setStatusFilter] = useState('all');
@@ -87,7 +89,7 @@ export default function Improvements() {
   /* ── load master + improvements ── */
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: ln }, { data: imp }, { data: dt }, { data: dft }, { data: mc }, { data: pr }, { data: ms }] = await Promise.all([
+    const [{ data: ln }, { data: imp }, { data: dt }, { data: dft }, { data: mc }, { data: pr }, { data: ms }, { data: mpt }, { data: mo }] = await Promise.all([
       supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
       supabaseDR.from('improvements').select('*').order('created_at', { ascending: false }),
       // ⚠️ คอลัมน์ชื่อประเภทคือ name_th (ไม่มีคอลัมน์ name) — เคยพลาด select 'name' แล้ว query 400 เงียบ list ว่างทั้งหน้า
@@ -96,6 +98,9 @@ export default function Improvements() {
       supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').eq('is_active', true).order('sort_order'),
       supabaseDR.from('dr_products').select('id, name, mat_no, line_name').eq('is_active', true).order('name'),
       supabaseDR.from('improvement_milestones').select('*').order('sort_order').order('created_at'),
+      supabaseDR.from('mtn_problem_types').select('characteristic').eq('is_active', true).order('sort_order'),
+      // ใบซ่อม MO (ไม่รวมที่ถูก reject) — ใช้วัดผล/พาเรโต้/cross-ref
+      supabaseDR.from('mtn_orders').select('id, line_name, machine_no, item_type, problem_characteristic, report_at, repair_done_at, work_date, status').neq('status', 'rejected').limit(4000),
     ]);
     setLines(ln || []);
     setItems(imp || []);
@@ -106,9 +111,24 @@ export default function Improvements() {
     const m = {};
     (ms || []).forEach(x => { (m[x.improvement_id] ||= []).push(x); });
     setMsByImp(m);
+    setMtnProblemTypes([...new Set((mpt || []).map(x => x.characteristic))]);
+    setMtnOrders(mo || []);
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // รับ prefill จากหน้าแจ้งซ่อม MTN (ปุ่ม "เปิดโปรเจคปรับปรุง") — เชื่อม B
+  useEffect(() => {
+    if (loading || !canManage) return;
+    const raw = sessionStorage.getItem('imp_prefill');
+    if (!raw) return;
+    sessionStorage.removeItem('imp_prefill');
+    try {
+      const p = JSON.parse(raw);
+      setBeforeFile(null); setAfterFile(null);
+      setModal({ ...EMPTY_FORM, problem_source: 'mtn', line_name: p.line_name || '', machine_no: p.machine_no || '', problem_label: p.problem || '', title: p.title || '' });
+    } catch { /* ignore */ }
+  }, [loading, canManage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── milestone CRUD (Gantt) ── */
   const reloadMilestones = async (impId) => {
@@ -187,9 +207,18 @@ export default function Improvements() {
   }, [lines, visibleLineNames]);
 
   const typeName = useCallback((imp) => {
+    if (imp.problem_source === 'mtn') return imp.problem_label || 'ทุกอาการ';
     const list = imp.problem_source === 'defect' ? defectTypes : dtTypes;
     return list.find(t => t.id === imp.problem_type_id)?.name_th || imp.problem_label || '—';
   }, [dtTypes, defectTypes]);
+
+  // จำนวนใบ MO ตั้งแต่วันเริ่มแก้ (cross-ref บนการ์ด — D)
+  const moCountSince = useCallback((imp) => {
+    return mtnOrders.filter(m => m.line_name === imp.line_name
+      && (!imp.machine_no || m.machine_no === imp.machine_no)
+      && (imp.problem_source !== 'mtn' || !imp.problem_label || m.problem_characteristic === imp.problem_label)
+      && (m.work_date || String(m.report_at).slice(0, 10)) >= imp.start_date).length;
+  }, [mtnOrders]);
 
   /* ── ผลลัพธ์ก่อน/หลัง จากข้อมูลจริง ──
      ก่อน = [start-baseline_days, start) · หลัง = [start, วันนี้] (เพดาน baseline_days วัน)
@@ -210,6 +239,25 @@ export default function Improvements() {
     });
     const allIds = [...beforeIds, ...afterIds];
     const idSetAfter = new Set(afterIds);
+
+    // ── source = 'mtn' : วัดจากใบซ่อม MO (จำนวนใบ + นาที breakdown) ──
+    if (imp.problem_source === 'mtn') {
+      const inWin = mtnOrders.filter(m => m.line_name === imp.line_name
+        && (!imp.machine_no || m.machine_no === imp.machine_no)
+        && (!imp.problem_label || m.problem_characteristic === imp.problem_label));
+      const dOf = (m) => m.work_date || String(m.report_at).slice(0, 10);
+      const bMO = inWin.filter(m => { const d = dOf(m); return d >= from && d < imp.start_date; });
+      const aMO = inWin.filter(m => { const d = dOf(m); return d >= imp.start_date && d <= to; });
+      const mins = (m) => (m.report_at && m.repair_done_at ? Math.max(0, (new Date(m.repair_done_at) - new Date(m.report_at)) / 60000) : 0);
+      const sumMin = (arr) => Math.round(arr.reduce((a, m) => a + mins(m), 0));
+      return {
+        source: 'mtn', unit: 'ใบ', beforeDays: beforeDays.size, afterDays: afterDays.size,
+        beforeTotal: bMO.length, afterTotal: aMO.length, beforeCount: bMO.length, afterCount: aMO.length,
+        beforePerDay: beforeDays.size ? bMO.length / beforeDays.size : 0,
+        afterPerDay: afterDays.size ? aMO.length / afterDays.size : 0,
+        beforeMin: sumMin(bMO), afterMin: sumMin(aMO),
+      };
+    }
 
     let rows = [];
     if (imp.problem_source === 'downtime') {
@@ -247,7 +295,7 @@ export default function Improvements() {
       beforePerDay: beforeDays.size ? sum(bRows) / beforeDays.size : 0,
       afterPerDay: afterDays.size ? sum(aRows) / afterDays.size : 0,
     };
-  }, []);
+  }, [mtnOrders]);
 
   useEffect(() => {
     let cancelled = false;
@@ -267,6 +315,20 @@ export default function Improvements() {
     if (!line_name) { setPareto({ loading: false, rows: [] }); return; }
     setPareto({ loading: true, rows: [] });
     const from = addDays(todayStr(), -days);
+    // ── source = 'mtn' : พาเรโต้จากใบซ่อม MO (เครื่อง+อาการ ที่มีใบเยอะสุด) ──
+    if (source === 'mtn') {
+      const dOf = (m) => m.work_date || String(m.report_at).slice(0, 10);
+      const agg = new Map();
+      mtnOrders.filter(m => m.line_name === line_name && dOf(m) >= from).forEach(m => {
+        const key = `${m.problem_characteristic || ''}::${m.machine_no || ''}`;
+        const cur = agg.get(key) || { label: m.problem_characteristic || 'ทุกอาการ', machine_no: m.machine_no || '', value: 0, count: 0, planned: false, mins: 0, descCount: new Map() };
+        cur.value += 1; cur.count += 1;
+        if (m.report_at && m.repair_done_at) cur.mins += Math.max(0, (new Date(m.repair_done_at) - new Date(m.report_at)) / 60000);
+        agg.set(key, cur);
+      });
+      const rows = [...agg.values()].filter(r => r.value > 0).map(r => ({ ...r, mins: Math.round(r.mins), topDescs: [] })).sort((a, b) => b.value - a.value).slice(0, 10);
+      setPareto({ loading: false, rows }); return;
+    }
     const { data: sessions } = await supabaseDR.from('production_sessions')
       .select('id').eq('line_name', line_name).gte('work_date', from);
     const ids = (sessions || []).map(s => s.id);
@@ -309,7 +371,7 @@ export default function Improvements() {
       .sort((a, b) => (a.planned ? 1 : 0) - (b.planned ? 1 : 0) || b.value - a.value)
       .slice(0, 10);
     setPareto({ loading: false, rows });
-  }, []);
+  }, [mtnOrders]);
 
   useEffect(() => {
     if (modal) loadPareto(modal.line_name, modal.problem_source, Number(modal.baseline_days) || 30);
@@ -411,7 +473,7 @@ export default function Improvements() {
         <div>
           <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>💡 Improvements — โปรเจคปรับปรุง</h1>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-            เลือกปัญหาจากพาเรโต้ Downtime/ของเสีย → บันทึกการแก้ไข → ระบบเทียบผลก่อน/หลังจากข้อมูลที่เกิดจริงให้อัตโนมัติ
+            เลือกปัญหาจากพาเรโต้ Downtime / ของเสีย / ใบซ่อม MTN → บันทึกการแก้ไข → ระบบเทียบผลก่อน/หลังจากข้อมูลที่เกิดจริงให้อัตโนมัติ
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -455,9 +517,13 @@ export default function Improvements() {
                   <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(77,159,255,0.13)', color: '#4d9fff', borderRadius: 5, padding: '2px 7px' }}>🏭 {imp.line_name}</span>
                   {imp.machine_no && <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(245,158,11,0.13)', color: '#f59e0b', borderRadius: 5, padding: '2px 7px' }}>⚙️ {imp.machine_no}</span>}
                   {imp.mat_no && <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', borderRadius: 5, padding: '2px 7px' }}>📦 {imp.mat_no}</span>}
-                  <span style={{ fontSize: 11, fontWeight: 700, background: imp.problem_source === 'defect' ? 'rgba(236,72,153,0.13)' : 'rgba(239,68,68,0.13)', color: imp.problem_source === 'defect' ? '#ec4899' : '#ef4444', borderRadius: 5, padding: '2px 7px' }}>
-                    {imp.problem_source === 'defect' ? '🔍 ของเสีย' : '🛑 Downtime'}: {typeName(imp)}
-                  </span>
+                  {(() => {
+                    const meta = imp.problem_source === 'defect' ? { bg: 'rgba(236,72,153,0.13)', c: '#ec4899', t: '🔍 ของเสีย' }
+                      : imp.problem_source === 'mtn' ? { bg: 'rgba(124,108,240,0.15)', c: '#a78bfa', t: '🛠️ ใบซ่อม MTN' }
+                      : { bg: 'rgba(239,68,68,0.13)', c: '#ef4444', t: '🛑 Downtime' };
+                    return <span style={{ fontSize: 11, fontWeight: 700, background: meta.bg, color: meta.c, borderRadius: 5, padding: '2px 7px' }}>{meta.t}: {typeName(imp)}</span>;
+                  })()}
+                  {(() => { const n = moCountSince(imp); return n > 0 ? <span title="จำนวนใบซ่อม MO ของเครื่อง/ไลน์นี้ ตั้งแต่วันเริ่มแก้" style={{ fontSize: 11, fontWeight: 700, background: 'rgba(124,108,240,0.13)', color: '#7c6cf0', borderRadius: 5, padding: '2px 7px' }}>🔧 ใบ MO {n} ใบ</span> : null; })()}
                 </div>
                 {/* description / action */}
                 {imp.description && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 8, lineHeight: 1.45 }}><b style={{ color: 'var(--muted)' }}>ปัญหา:</b> {imp.description}</div>}
@@ -503,6 +569,9 @@ export default function Improvements() {
                           </span>
                         </div>
                       ))}
+                      {r.source === 'mtn' && (r.beforeMin || r.afterMin) ? (
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>⏱ breakdown รวม: <b style={{ color: '#ef4444' }}>{r.beforeMin}</b> → <b style={{ color: '#22c55e' }}>{r.afterMin}</b> นาที</div>
+                      ) : null}
                       {r.afterDays === 0 && <div style={{ fontSize: 11, color: '#f59e0b' }}>⏳ ยังไม่มีวันผลิตหลังวันเริ่มแก้ — รอข้อมูล</div>}
                     </div>
                   )}
@@ -648,15 +717,25 @@ export default function Improvements() {
                     <select value={modal.problem_source} onChange={e => setModal({ ...modal, problem_source: e.target.value, problem_type_id: '', problem_label: '' })} style={{ marginTop: 4 }}>
                       <option value="downtime">🛑 Downtime</option>
                       <option value="defect">🔍 ของเสีย/คุณภาพ</option>
+                      <option value="mtn">🛠️ ใบซ่อม MTN</option>
                     </select>
                   </label>
                 </div>
-                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ปัญหาที่แก้ (จาก master {modal.problem_source === 'defect' ? 'ของเสีย' : 'Downtime'})
-                  <select value={modal.problem_type_id} onChange={e => setModal({ ...modal, problem_type_id: e.target.value })} style={{ marginTop: 4 }}>
-                    <option value="">— ทุกประเภท —</option>
-                    {typeOpts.map(t => <option key={t.id} value={t.id}>{t.name_th}</option>)}
-                  </select>
-                </label>
+                {modal.problem_source === 'mtn' ? (
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ลักษณะปัญหา (จากใบซ่อม MTN)
+                    <select value={modal.problem_label || ''} onChange={e => setModal({ ...modal, problem_label: e.target.value, problem_type_id: '' })} style={{ marginTop: 4 }}>
+                      <option value="">— ทุกอาการ —</option>
+                      {mtnProblemTypes.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </label>
+                ) : (
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ปัญหาที่แก้ (จาก master {modal.problem_source === 'defect' ? 'ของเสีย' : 'Downtime'})
+                    <select value={modal.problem_type_id} onChange={e => setModal({ ...modal, problem_type_id: e.target.value })} style={{ marginTop: 4 }}>
+                      <option value="">— ทุกประเภท —</option>
+                      {typeOpts.map(t => <option key={t.id} value={t.id}>{t.name_th}</option>)}
+                    </select>
+                  </label>
+                )}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>เครื่องจักร/จุดงาน
                     <select value={modal.machine_no || ''} onChange={e => setModal({ ...modal, machine_no: e.target.value })} style={{ marginTop: 4 }}>
@@ -704,7 +783,7 @@ export default function Improvements() {
               {/* ขวา: Pareto ปัญหา Top — คลิกเลือกเป็นเป้า */}
               <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, padding: 12, alignSelf: 'start' }}>
                 <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>
-                  🔝 พาเรโต้ {modal.problem_source === 'defect' ? 'ของเสีย' : 'Downtime'} · {modal.line_name || 'เลือกไลน์ก่อน'}
+                  🔝 พาเรโต้ {modal.problem_source === 'defect' ? 'ของเสีย' : modal.problem_source === 'mtn' ? 'ใบซ่อม MTN' : 'Downtime'} · {modal.line_name || 'เลือกไลน์ก่อน'}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>ย้อนหลัง {modal.baseline_days} วัน — คลิกปัญหาเพื่อตั้งเป็นเป้าโปรเจค</div>
                 {pareto.loading ? (
@@ -715,18 +794,20 @@ export default function Improvements() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                     {pareto.rows.map((row, i) => {
                       const max = Math.max(...pareto.rows.map(r => r.value)) || 1;
-                      const tn = typeOpts.find(t => t.id === row.type_id)?.name_th || 'ไม่ระบุประเภท';
-                      const selected = modal.problem_type_id === (row.type_id || '') &&
-                        (modal.problem_source === 'downtime' ? (modal.machine_no || '') === row.machine_no : (modal.mat_no || '') === row.mat_no);
+                      const isMtn = modal.problem_source === 'mtn';
+                      const tn = isMtn ? row.label : (typeOpts.find(t => t.id === row.type_id)?.name_th || 'ไม่ระบุประเภท');
+                      const selected = isMtn
+                        ? (modal.problem_label || '') === (row.label === 'ทุกอาการ' ? '' : row.label) && (modal.machine_no || '') === row.machine_no
+                        : modal.problem_type_id === (row.type_id || '') && (modal.problem_source === 'downtime' ? (modal.machine_no || '') === row.machine_no : (modal.mat_no || '') === row.mat_no);
                       // งานในแผน (5ส./นับสต็อก ฯลฯ) = priority รอง: จางลง แถบเทา + ป้ายกำกับ — ไม่ใช่เป้าหลักของ Kaizen
-                      const barColor = row.planned ? '#94a3b8' : '#ef4444';
+                      const barColor = row.planned ? '#94a3b8' : isMtn ? '#f59e0b' : '#ef4444';
                       return (
                         <button key={i} onClick={() => setModal({
                           ...modal,
-                          problem_type_id: row.type_id || '',
-                          problem_label: tn,
-                          ...(modal.problem_source === 'downtime' ? { machine_no: row.machine_no || '' } : { mat_no: row.mat_no || '' }),
-                          title: modal.title || `ลด${modal.problem_source === 'defect' ? 'ของเสีย' : 'ดาวไทม์'} ${tn} ${row.machine_no || row.mat_no || ''}`.trim(),
+                          ...(isMtn
+                            ? { problem_label: row.label === 'ทุกอาการ' ? '' : row.label, problem_type_id: '', machine_no: row.machine_no || '' }
+                            : { problem_type_id: row.type_id || '', problem_label: tn, ...(modal.problem_source === 'downtime' ? { machine_no: row.machine_no || '' } : { mat_no: row.mat_no || '' }) }),
+                          title: modal.title || (isMtn ? `ลดใบซ่อม ${tn} ${row.machine_no || ''}`.trim() : `ลด${modal.problem_source === 'defect' ? 'ของเสีย' : 'ดาวไทม์'} ${tn} ${row.machine_no || row.mat_no || ''}`.trim()),
                         })} style={{
                           textAlign: 'left', padding: '6px 8px', borderRadius: 7, cursor: 'pointer',
                           border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
@@ -738,7 +819,7 @@ export default function Improvements() {
                               {i + 1}. {tn}{row.machine_no ? ` · ⚙️${row.machine_no}` : ''}{row.mat_no ? ` · 📦${row.mat_no}` : ''}
                               {row.planned && <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 700, color: '#94a3b8', background: 'rgba(148,163,184,0.15)', borderRadius: 4, padding: '0 5px' }}>📅 ในแผน</span>}
                             </span>
-                            <span style={{ color: barColor, flexShrink: 0 }}>{row.value.toFixed(0)} {modal.problem_source === 'defect' ? 'ชิ้น' : 'นาที'} · {row.count} ครั้ง</span>
+                            <span style={{ color: barColor, flexShrink: 0 }}>{modal.problem_source === 'mtn' ? `${row.value} ใบ · ${row.mins} นาที` : `${row.value.toFixed(0)} ${modal.problem_source === 'defect' ? 'ชิ้น' : 'นาที'} · ${row.count} ครั้ง`}</span>
                           </div>
                           <div style={{ height: 6, background: 'var(--bg2)', borderRadius: 3, marginTop: 3, overflow: 'hidden' }}>
                             <div style={{ width: `${(row.value / max) * 100}%`, height: '100%', background: barColor, borderRadius: 3 }} />

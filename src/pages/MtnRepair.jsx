@@ -5,6 +5,7 @@
              → 6 รับมอบ/ติดตาม → 7 อนุมัติปิด (Close MO)
    สิทธิ์ (role_permissions): mtn_repair:report/service/qa/approve/manage_master · ดู docs/PERMISSIONS-DESIGN.md */
 import { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -160,7 +161,9 @@ export default function MtnRepair() {
   const [problemTypes, setProblemTypes] = useState([]);
   const [repairTypes, setRepairTypes] = useState([]);
   const [itemTypes, setItemTypes] = useState([]);
+  const [improvements, setImprovements] = useState([]); // โปรเจคปรับปรุงที่กำลังทำ (cross-ref D)
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
   const [fStatus, setFStatus] = useState('open');
   const [fLine, setFLine] = useState('');
   const [fDept, setFDept] = useState('');
@@ -170,7 +173,7 @@ export default function MtnRepair() {
   const [stepModal, setStepModal] = useState(null); // { step, order, editMode }
 
   const loadMasters = useCallback(async () => {
-    const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }] = await Promise.all([
+    const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }] = await Promise.all([
       supabase.from('production_lines').select('id, name, section, parent_line_name, cost_center').order('name'),
       supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_technicians').select('*').eq('is_active', true).order('sort_order'),
@@ -178,9 +181,11 @@ export default function MtnRepair() {
       supabaseDR.from('mtn_spare_parts').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_repair_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_item_types').select('*').eq('is_active', true).order('sort_order'),
+      supabaseDR.from('improvements').select('id, line_name, machine_no, title').eq('status', 'monitoring'),
     ]);
     setLines(ln || []); setMachines(mc || []); setTechs(tc || []);
     setProblemTypes(pt || []); setParts(pp || []); setRepairTypes(rt || []); setItemTypes(it || []);
+    setImprovements(imp || []);
     return ln || [];
   }, []);
 
@@ -217,9 +222,18 @@ export default function MtnRepair() {
   const openCount = useMemo(() => orders.filter(o => !['closed', 'rejected'].includes(o.status) && (!scopeLines || !o.line_name || scopeLines.has(o.line_name))).length, [orders, scopeLines]);
   const lineOpts = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines).map(l => l.name), [lines, scopeLines]);
 
+  // เปิดโปรเจคปรับปรุงจากใบ MO (เชื่อม B) — ส่ง prefill ผ่าน sessionStorage แล้วไปหน้า /improvements
+  const openImprovementFromMo = (o) => {
+    sessionStorage.setItem('imp_prefill', JSON.stringify({
+      line_name: o.line_name, machine_no: o.machine_no, item_type: o.item_type,
+      problem: o.problem_characteristic, title: `ลดใบซ่อม ${o.problem_characteristic || ''} ${o.machine_no || ''}`.trim(),
+    }));
+    navigate('/improvements');
+  };
+
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
 
-  const cp = { lines, machines, techs, parts, problemTypes, repairTypes, itemTypes, role, fullName, signatureUrl, onReload: loadOrders, reloadMasters: loadMasters };
+  const cp = { lines, machines, techs, parts, problemTypes, repairTypes, itemTypes, role, fullName, signatureUrl, improvements, onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
 
   return (
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1800px)', margin: '0 auto' }}>
@@ -444,11 +458,13 @@ function printMoReport(o, dparts = []) {
 }
 
 /* ── Detail drawer ───────────────────────────────────── */
-function DetailDrawer({ order, role, onClose, onStep }) {
+function DetailDrawer({ order, role, improvements, onOpenImprovement, onClose, onStep }) {
   const o = order;
   const m = STATUS_META[o.status] || STATUS_META.pending;
   const next = nextStepFor(o);
   const dept = o.mtn_dept || deptForItem(o.item_type);
+  const openImps = (improvements || []).filter(i => i.line_name === o.line_name && (!i.machine_no || i.machine_no === o.machine_no));
+  const repeatIssue = ['เกิดปัญหาซ้ำ', 'แก้ไขไม่ได้'].includes(o.follow_up);
   const resp = minutesBetween(o.report_at, o.accept_at), ttr = minutesBetween(o.accept_at, o.repair_done_at), bd = minutesBetween(o.report_at, o.repair_done_at);
   const [dparts, setDparts] = useState([]);
   useEffect(() => { supabaseDR.from('mtn_order_parts').select('*').eq('order_id', o.id).then(({ data }) => setDparts(data || [])); }, [o.id]);
@@ -476,6 +492,17 @@ function DetailDrawer({ order, role, onClose, onStep }) {
 
   return (
     <ModalShell title={`${o.mo_no || '(ยังไม่ออกเลข MO)'} · ${m.label} · ${dept}`} onClose={onClose} wide>
+      {openImps.length > 0 && (
+        <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'rgba(124,108,240,0.12)', border: '1px solid rgba(124,108,240,0.4)', fontSize: 12.5, color: '#a78bfa' }}
+          title={openImps.map(i => i.title).join('\n')}>
+          💡 มีโปรเจคปรับปรุงกำลังทำ {openImps.length} โปรเจคสำหรับเครื่อง/ไลน์นี้
+        </div>
+      )}
+      {repeatIssue && (
+        <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.5)', fontSize: 12.5, color: '#f59e0b' }}>
+          ⚠️ ติดตามผลได้ว่า "{o.follow_up}" — ควรเปิดโปรเจคปรับปรุงแก้ที่ต้นเหตุ
+        </div>
+      )}
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <div>
           <StepBox n={1} title="แจ้งซ่อม" done>
@@ -522,7 +549,8 @@ function DetailDrawer({ order, role, onClose, onStep }) {
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
         {can('mtn_repair', 'manage_master', role) ? <button onClick={del} style={{ ...btnGhost, color: '#ef4444', borderColor: '#ef4444' }}>🗑 ลบใบนี้</button> : <span />}
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {can('improvements', 'manage', role) && <button onClick={() => onOpenImprovement(o)} style={{ ...btnGhost, ...(repeatIssue ? { color: '#a78bfa', borderColor: '#7c6cf0' } : {}) }}>💡 เปิดโปรเจคปรับปรุง</button>}
           <button onClick={() => printMoReport(o, dparts)} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
           <button onClick={onClose} style={btnGhost}>ปิด</button>
           {next && can('mtn_repair', next.perm, role) && <button onClick={() => onStep(next.step, false)} style={btnPri}>{next.label}</button>}
