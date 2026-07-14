@@ -1531,18 +1531,29 @@ function LiveTab({ role }) {
     });
     const knownQty = matPData.reduce((s, d) => s + d.qty, 0);
 
-    // ตรวจ parallel: (1) เฉพาะ session ของ "ไลน์แม่" (มีไลน์ลูก = รวมงานหลายเครื่อง/ไลน์ย่อยไว้ใน session เดียว)
-    // — ไลน์ย่อย/ไลน์เดี่ยวผลิตได้ทีละ product เสมอ (user ยืนยัน 2026-07-14: เช่น Line 60 ขึ้นทีละ product
-    // ต่างแค่ลูกค้า) ห้ามตีเป็น parallel เด็ดขาด · (2) window ต้องทับกัน "อย่างมีนัยยะ" (> 15 นาที และ
-    // > 20% ของ window ที่สั้นกว่า) — จังหวะสแกนปิดชุดเก่าคาบเกี่ยวเปิดชุดใหม่ไม่นับ
-    // เคยพัง 2026-07-13: Line 60 กะดึก 2 MAT ต่อคิวกันแต่ window ทับ 2 นาที → P ตกจาก ~88% เหลือ 44%
-    const lineHasChildren = (parentChildrenMap[selSession?.line_name] || []).length > 0;
-    const overlapOf = (a, b) => Math.max(0, (Math.min(a.winEnd, b.winEnd) - Math.max(a.winStart, b.winStart)) / 60000);
-    const isParallel = lineHasChildren && matPData.length > 1 && matPData.some((a, i) =>
-      matPData.slice(i + 1).some(b => {
-        if (a.winStart == null || a.winEnd == null || b.winStart == null || b.winEnd == null) return false;
+    // ── ตรวจ parallel ระดับ "product" ไม่ใช่ระดับ MAT.NO (user ชี้ 2026-07-14) ──
+    // MAT ที่เป็น product เดียวกันแตกตามลูกค้า (เช่น FVL/FTM/AAT — ชื่อชิ้นงานเดียวกัน) คืองานตัวเดียวกัน
+    // แค่ส่งแยกลูกค้า → ขึ้น parallel กันเองไม่ได้ ให้รวมเป็นสายเดียวก่อน แล้วค่อยเช็ค overlap ระหว่าง
+    // "คนละ product จริงๆ" (ซึ่ง parallel ได้ถ้าวิ่งคนละเครื่อง/สถานี) · เกณฑ์ overlap ต้องมีนัยยะ:
+    // > 15 นาที และ > 20% ของ window ที่สั้นกว่า — จังหวะสแกนปิดชุดเก่าคาบเกี่ยวเปิดชุดใหม่ไม่นับ
+    // เคยพัง 2026-07-13: Line 60 กะดึก 2 MAT (product เดียวกันคนละลูกค้า) window ทับ 2 นาที → P ตกเหลือ 44%
+    const prodNameOf = (matNo) => (kanbanStds.find(s => s.mat_no === matNo)?.dr_products?.name || matNo || '').trim().toUpperCase();
+    const prodGroupMap = {};
+    matPData.forEach(d => {
+      const k = prodNameOf(d.matNo);
+      const g = (prodGroupMap[k] ||= { stdSec: 0, runMin: 0, ws: null, we: null });
+      g.stdSec += d.qty * d.ctSec;
+      g.runMin += matRunMinMap[d.matNo] ?? 0;
+      if (d.winStart != null) g.ws = g.ws == null ? d.winStart : Math.min(g.ws, d.winStart);
+      if (d.winEnd != null) g.we = g.we == null ? d.winEnd : Math.max(g.we, d.winEnd);
+    });
+    const prodGroups = Object.values(prodGroupMap);
+    const overlapOf = (a, b) => Math.max(0, (Math.min(a.we, b.we) - Math.max(a.ws, b.ws)) / 60000);
+    const isParallel = prodGroups.length > 1 && prodGroups.some((a, i) =>
+      prodGroups.slice(i + 1).some(b => {
+        if (a.ws == null || a.we == null || b.ws == null || b.we == null) return false;
         const ov = overlapOf(a, b);
-        const minDurMin = Math.min(a.winEnd - a.winStart, b.winEnd - b.winStart) / 60000;
+        const minDurMin = Math.min(a.we - a.ws, b.we - b.ws) / 60000;
         return ov > 15 && ov > 0.2 * minDurMin;
       })
     );
@@ -1551,11 +1562,11 @@ function LiveTab({ role }) {
     if (runSec > 0 && matPData.length > 0) {
       const totalStdSec = matPData.reduce((s, d) => s + d.qty * d.ctSec, 0);
       if (isParallel) {
-        // Parallel (คนละสถานีวิ่งพร้อมกัน): denominator = Σ run ต่อ MAT.NO (เวลาของแต่ละสถานีรวมกัน)
+        // Parallel (คนละ product วิ่งพร้อมกันคนละสถานี): denominator = Σ run ต่อ product group
         // = ถ่วงน้ำหนัก P ตามเวลารันจริงของแต่ละสถานี — ห้ามใช้ mean เท่าๆ กัน
-        // (เคยพัง 2026-07-13: Line 61 มีงานแทรก 10 ชิ้น/10 นาที window ทับงานหลัก → mean ลาก P ทั้งกะ
+        // (เคยพัง 2026-07-13: งานแทรก 10 ชิ้น/10 นาที window ทับงานหลัก → mean ลาก P ทั้งกะ
         //  จาก ~93% เหลือ 48% ทั้งที่งานแทรกวิ่งเต็มประสิทธิภาพในช่วงของมันเอง)
-        const denomSec = matPData.reduce((s, d) => s + (matRunMinMap[d.matNo] ?? 0) * 60, 0) || runSec;
+        const denomSec = prodGroups.reduce((s, g) => s + g.runMin * 60, 0) || runSec;
         P = Math.min(1, totalStdSec / denomSec);
       } else {
         // Sequential: standard time รวมหารด้วย run_time ทั้งกะ (จับ idle ระหว่าง MAT.NO ด้วย)

@@ -334,8 +334,9 @@ Reject → status: "rejected" + reject_reason
 
 ## OEE (computeOEE ใน DailyReport) — กฎ P สำหรับหลาย MAT.NO (2026-07-14)
 
-- **ไลน์ย่อย/ไลน์เดี่ยว (ไม่มีไลน์ลูก) = sequential เสมอ** — ขึ้นงานได้ทีละ product (หลาย MAT อาจเป็นแค่คนละลูกค้า) ห้ามตีเป็น parallel · P = Σ(qty×CT) ÷ run ทั้งกะ
-- **parallel มีได้เฉพาะ session ของไลน์แม่** (มีไลน์ลูกใน `parent_line_name` = รวมงานหลายเครื่องใน session เดียว เช่น LINE APRON ASSY ยุคก่อนแยกกะต่อไลน์ย่อย) และ window ต้องทับกัน >15 นาที + >20% ของ window ที่สั้นกว่า (จังหวะสแกนคาบเกี่ยวไม่นับ) · P แบบ parallel = Σ(qty×CT) ÷ Σ(run ต่อ MAT) — **ห้าม mean เท่าๆ กัน** (งานแทรกเล็กเคยลาก P ทั้งกะจาก ~93 เหลือ 48)
+- **ตรวจ parallel ระดับ "product" ไม่ใช่ระดับ MAT.NO** — MAT ที่เป็น product เดียวกันแตกตามลูกค้า (ชื่อชิ้นงานเดียวกัน เช่น FVL/FTM/AAT) คืองานตัวเดียวกันแค่ส่งแยกลูกค้า **ขึ้น parallel กันเองไม่ได้** ระบบรวมเป็นสายเดียวก่อน (จับกลุ่มด้วยชื่อ product จาก kanban_standards→dr_products) แล้วค่อยเช็ค overlap ระหว่าง "คนละ product จริงๆ"
+- **parallel = คนละ product ที่ window ทับกัน >15 นาที + >20% ของ window ที่สั้นกว่า** (จังหวะสแกนคาบเกี่ยวไม่นับ) — เช่น RH ที่ Line 60 + LH ที่ Line 61 ใน session ไลน์แม่ APRON ASSY · P แบบ parallel = Σ(qty×CT) ÷ Σ(run ต่อ product group) — **ห้าม mean เท่าๆ กัน** (งานแทรกเล็กเคยลาก P ทั้งกะจาก ~93 เหลือ 48)
+- ไม่เข้าเกณฑ์ = sequential: P = Σ(qty×CT) ÷ run ทั้งกะ (จับ idle ระหว่างงานด้วย)
 - บั๊กเดิม (ก่อน 2026-07-14) ทำ P ต่ำเกินจริงในกะ multi-MAT — แก้ย้อนหลังใน DB แล้ว 12 กะ (22/06–13/07) ด้วย SQL ที่ replicate สูตรแล้ว validate กับการคำนวณมือ
 
 ---
