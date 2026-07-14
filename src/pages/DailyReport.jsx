@@ -1461,6 +1461,7 @@ function LiveTab({ role }) {
       return { startMs: s, endMs: e };
     };
     let totalNetAvailByMat = 0, totalRunMinByMat = 0;
+    const matRunMinMap = {};
     const matNosForA = Array.from(new Set(prodOrders.map(o => o.mat_no)));
     matNosForA.forEach(matNo => {
       const orders = prodOrders.filter(o => o.mat_no === matNo);
@@ -1487,6 +1488,7 @@ function LiveTab({ role }) {
       const matRunMin   = Math.max(0, matNetAvail - matLoggedUnplanned);
       totalNetAvailByMat += matNetAvail;
       totalRunMinByMat   += matRunMin;
+      matRunMinMap[matNo] = matRunMin; // เก็บ run ต่อ MAT.NO — ใช้เป็น denominator ของ P ตอน parallel
     });
     // ถ้าแยกตาม MAT.NO ไม่ได้เลย (เช่นกะมีแต่ Downtime ไม่มี Order) ให้ fallback กลับไปใช้ช่วงเวลาทั้งกะแบบเดิม
     const A = totalNetAvailByMat > 0 ? Math.min(1, totalRunMinByMat / totalNetAvailByMat)
@@ -1527,23 +1529,31 @@ function LiveTab({ role }) {
     });
     const knownQty = matPData.reduce((s, d) => s + d.qty, 0);
 
-    // ตรวจ parallel: มี MAT.NO คู่ไหนที่ window ทับกันมั้ย
+    // ตรวจ parallel: window ต้องทับกัน "อย่างมีนัยยะ" (> 15 นาที และ > 20% ของ window ที่สั้นกว่า)
+    // — เดิมทับกันแค่ไม่กี่นาที (จังหวะสแกนปิดชุดเก่าคาบเกี่ยวเปิดชุดใหม่) ก็ถูกตีเป็น parallel
+    // เคยพัง 2026-07-13: Line 60 กะดึก 2 MAT ต่อคิวกันแต่ window ทับ 2 นาที → P ตกจาก ~83% เหลือ 44%
+    const overlapOf = (a, b) => Math.max(0, (Math.min(a.winEnd, b.winEnd) - Math.max(a.winStart, b.winStart)) / 60000);
     const isParallel = matPData.length > 1 && matPData.some((a, i) =>
-      matPData.slice(i + 1).some(b =>
-        a.winStart != null && a.winEnd != null && b.winStart != null && b.winEnd != null &&
-        a.winStart < b.winEnd && b.winStart < a.winEnd
-      )
+      matPData.slice(i + 1).some(b => {
+        if (a.winStart == null || a.winEnd == null || b.winStart == null || b.winEnd == null) return false;
+        const ov = overlapOf(a, b);
+        const minDurMin = Math.min(a.winEnd - a.winStart, b.winEnd - b.winStart) / 60000;
+        return ov > 15 && ov > 0.2 * minDurMin;
+      })
     );
 
     let P = null;
     if (runSec > 0 && matPData.length > 0) {
+      const totalStdSec = matPData.reduce((s, d) => s + d.qty * d.ctSec, 0);
       if (isParallel) {
-        // Parallel: P แต่ละ MAT.NO ใช้ run_time เต็มๆ เป็น denominator แล้ว mean
-        const pValues = matPData.map(d => (d.qty * d.ctSec) / runSec);
-        P = Math.min(1, pValues.reduce((s, v) => s + v, 0) / pValues.length);
+        // Parallel (คนละสถานีวิ่งพร้อมกัน): denominator = Σ run ต่อ MAT.NO (เวลาของแต่ละสถานีรวมกัน)
+        // = ถ่วงน้ำหนัก P ตามเวลารันจริงของแต่ละสถานี — ห้ามใช้ mean เท่าๆ กัน
+        // (เคยพัง 2026-07-13: Line 61 มีงานแทรก 10 ชิ้น/10 นาที window ทับงานหลัก → mean ลาก P ทั้งกะ
+        //  จาก ~93% เหลือ 48% ทั้งที่งานแทรกวิ่งเต็มประสิทธิภาพในช่วงของมันเอง)
+        const denomSec = matPData.reduce((s, d) => s + (matRunMinMap[d.matNo] ?? 0) * 60, 0) || runSec;
+        P = Math.min(1, totalStdSec / denomSec);
       } else {
-        // Sequential: standard time รวมหารด้วย run_time ทั้งกะ
-        const totalStdSec = matPData.reduce((s, d) => s + d.qty * d.ctSec, 0);
+        // Sequential: standard time รวมหารด้วย run_time ทั้งกะ (จับ idle ระหว่าง MAT.NO ด้วย)
         P = Math.min(1, totalStdSec / runSec);
       }
     }
