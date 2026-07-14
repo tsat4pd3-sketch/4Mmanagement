@@ -1919,6 +1919,26 @@ function LiveTab({ role }) {
     loadDT(selSession.id);
   };
 
+  // เปิดใบแจ้งซ่อม MO จากรายการ Downtime (เชื่อมกับหน้าแจ้งซ่อม MTN) — prefill เครื่อง/ไลน์/อาการ
+  const handleCreateMoFromDt = async (d) => {
+    const { data: exist } = await supabaseDR.from('mtn_orders').select('id, mo_no').eq('source_downtime_id', d.id).maybeSingle();
+    if (exist) { toast.info(`มีใบแจ้งซ่อมของรายการนี้แล้ว${exist.mo_no ? ` (${exist.mo_no})` : ''}`); return; }
+    const dtType = dtTypes.find(t => t.id === d.downtime_type_id);
+    const payload = {
+      status: 'pending', current_step: 1, report_at: new Date().toISOString(), work_date: selSession.work_date,
+      repair_scope: 'in_line', line_name: selSession.line_name, dept_section: selSession.section || null,
+      machine_no: d.machine_no || null, problem_characteristic: 'อื่นๆ',
+      report_note: `[จาก Downtime] ${dtType?.name_th || ''}${d.description ? ` — ${d.description}` : ''}`.trim(),
+      reporter_prod: fullName, reported_by_name: fullName, source_downtime_id: d.id,
+    };
+    const { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
+    if (error) { toast.error(error.message); return; }
+    fetch('https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-mtn-notification', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'mtn_reported', mo: data }),
+    }).catch(() => {});
+    toast.success('📝 เปิดใบแจ้งซ่อม MO แล้ว — ไปดำเนินการต่อที่หน้า “แจ้งซ่อม MTN”');
+  };
+
   const totalDT      = dtLogs.reduce((s, d) => s + (d.duration_min || 0), 0);
   const unplannedDT  = dtLogs.filter(d => d.dr_downtime_types?.category === 'unplanned').reduce((s, d) => s + (d.duration_min || 0), 0);
 
@@ -2484,6 +2504,10 @@ function LiveTab({ role }) {
                         d.call_mtn
                           ? <span title={`เรียกช่างแล้ว${d.call_mtn_by ? ` โดย ${d.call_mtn_by}` : ''}`} style={{ fontSize: 11, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 20, padding: '3px 9px', whiteSpace: 'nowrap' }}>📞 เรียกช่างแล้ว</span>
                           : <button onClick={() => handleCallMtn(d)} title="แจ้งช่าง MTN ให้เข้าหน้างานทันที" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: '#e05c4a', border: 'none', borderRadius: 20, padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>📞 เรียกช่าง</button>
+                      )}
+                      {/* เปิดใบแจ้งซ่อม MO จาก downtime — เชื่อมกับระบบแจ้งซ่อม MTN */}
+                      {canScan && can('mtn_repair', 'report', role) && (
+                        <button onClick={() => handleCreateMoFromDt(d)} title="เปิดใบแจ้งซ่อม MO (7 ขั้น) จากรายการนี้" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: '#7c6cf0', border: 'none', borderRadius: 20, padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>📝 เปิดใบซ่อม</button>
                       )}
                       {canEditRecords && (
                         <div style={{ display: 'flex', gap: 4 }}>
