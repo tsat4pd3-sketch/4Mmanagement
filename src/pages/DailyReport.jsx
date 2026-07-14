@@ -1929,7 +1929,7 @@ function LiveTab({ role }) {
     const payload = {
       status: 'pending', current_step: 1, report_at: new Date().toISOString(), work_date: selSession.work_date,
       repair_scope: 'in_line', line_name: selSession.line_name, dept_section: selSession.section || null,
-      machine_no: d.machine_no || null, problem_characteristic: 'อื่นๆ',
+      mtn_dept: 'MTN', machine_no: d.machine_no || null, problem_characteristic: 'อื่นๆ',
       report_note: `[จาก Downtime] ${dtType?.name_th || ''}${d.description ? ` — ${d.description}` : ''}`.trim(),
       reporter_prod: fullName, reported_by_name: fullName, source_downtime_id: d.id,
     };
@@ -2622,6 +2622,13 @@ function LiveTab({ role }) {
                     { label: 'NG',       value: `${selSession.qty_ng ?? 0} ชิ้น`,         color: '#ef4444' },
                     { label: 'สงสัย',    value: `${selSession.qty_suspect ?? 0} ชิ้น`,    color: '#f59e0b' },
                     { label: 'ซ่อม',     value: `${selSession.qty_repair ?? 0} ชิ้น`,     color: '#a78bfa' },
+                    // %A %P %Q ก่อน OEE — เกณฑ์สีเดียวกับหน้า OEE Analytics
+                    { label: '%A', value: selSession.oee_a != null ? `${Number(selSession.oee_a).toFixed(1)}%` : 'N/A',
+                      color: selSession.oee_a == null ? 'var(--muted)' : selSession.oee_a >= 90 ? '#22c55e' : selSession.oee_a >= 75 ? '#f59e0b' : '#ef4444' },
+                    { label: '%P', value: selSession.oee_p != null ? `${Number(selSession.oee_p).toFixed(1)}%` : 'N/A',
+                      color: selSession.oee_p == null ? 'var(--muted)' : selSession.oee_p >= 85 ? '#22c55e' : selSession.oee_p >= 70 ? '#f59e0b' : '#ef4444' },
+                    { label: '%Q', value: selSession.oee_q != null ? `${Number(selSession.oee_q).toFixed(1)}%` : 'N/A',
+                      color: selSession.oee_q == null ? 'var(--muted)' : selSession.oee_q >= 99 ? '#22c55e' : selSession.oee_q >= 95 ? '#f59e0b' : '#ef4444' },
                     { label: 'OEE',      value: selSession.oee != null ? `${selSession.oee}%` : 'N/A', color: oeeColor },
                   ].map(k => (
                     <div key={k.label} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>

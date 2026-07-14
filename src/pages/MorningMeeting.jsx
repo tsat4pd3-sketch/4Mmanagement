@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import { useState, useEffect, useContext, useCallback, useMemo, Fragment } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -495,43 +495,64 @@ export default function MorningMeeting() {
     // (เดิม 240px ได้ 6 ใบ/แถว การ์ดแคบจนชิปตกบรรทัดบ่อย ดูรก)
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(290px, 1fr))', gap: 10 }}>
       {lineResults.map(({ line, shifts }) => (
-        <div key={line.id} style={{ ...card, height: '100%', minHeight: 108, display: 'flex', flexDirection: 'column', gap: 8, opacity: shifts.length ? 1 : 0.55 }}>
+        <div key={line.id} style={{ ...card, height: '100%', minHeight: 126, display: 'flex', flexDirection: 'column', gap: 8, opacity: shifts.length ? 1 : 0.55 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
             <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{line.name}</div>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>{line.section}</span>
           </div>
-          {/* โครงตายตัวทุกใบ: กะเช้า/กะดึก 2 แถวเสมอ — กะที่ไม่เปิดโชว์ "ไม่เปิดกะ" สีจาง
-              ทำให้ทุกการ์ดบรรทัดตรงกันหมด ไล่สายตาแนวนอนข้ามการ์ดได้ */}
-          {['day', 'night'].map(sh => {
-            const s = shifts.find(x => x.shift === sh);
+          {/* ตารางเล็กในการ์ด — หัวคอลัมน์บอกชัดว่า % ไหนคืออะไร (เคยงง: % ตามเป้า กับ % OEE ติดกัน)
+              แถวละกะเรียงลงมา คอลัมน์ตรงกันทุกใบโดยธรรมชาติ ไม่มีชิป wrap */}
+          {(() => {
+            const cell = { fontSize: 12, fontWeight: 800, textAlign: 'right', whiteSpace: 'nowrap' };
+            const head = { fontSize: 11, color: 'var(--muted)', fontWeight: 700, textAlign: 'right', whiteSpace: 'nowrap' };
+            const notClosed = ['day', 'night'].filter(sh => {
+              const s = shifts.find(x => x.shift === sh);
+              return s && s.status !== 'closed';
+            });
             return (
-              /* ป้ายกะกว้าง 58px พอดีคำ + ยอดชิดซ้ายตามธรรมชาติ — บีบช่องว่างให้ชิปจบบรรทัดเดียวมากที่สุด */
-              <div key={sh} style={{ display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 12 }}>
-                <span style={{ color: 'var(--text2)', width: 58, flexShrink: 0, lineHeight: '20px', whiteSpace: 'nowrap' }}>{SHIFT_LABEL[sh]}</span>
-                {!s ? (
-                  <span style={{ color: 'var(--muted)', lineHeight: '20px' }}>— ไม่เปิดกะ —</span>
-                ) : (
-                  /* ชิปอยู่คอลัมน์ของตัวเอง wrap ในคอลัมน์ — ตกบรรทัดก็เรียงตรงคอลัมน์เดิม ไม่ไหลใต้ป้ายกะ */
-                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 5, rowGap: 3, minWidth: 0, flex: 1 }}>
-                    {s.pct != null ? (
-                      <>
-                        <span style={{ fontWeight: 800, color: achieveColor(s.pct), whiteSpace: 'nowrap' }}>{s.actual}/{s.target}</span>
-                        <span style={chip(achieveColor(s.pct))}>{s.pct}%</span>
-                      </>
-                    ) : (
-                      <>
-                        <span style={{ fontWeight: 800, color: 'var(--text)' }}>{s.actual}</span>
-                        <span style={chip('#94a3b8')} title="ยังไม่ตั้งเป้ากะ/std และไม่มีเป้าใบงานให้เทียบ">ไม่มีเป้า</span>
-                      </>
-                    )}
-                    {s.oee != null && <span style={chip('#4d9fff')}>OEE {Math.round(s.oee)}%</span>}
-                    {s.dtMin > 0 && <span style={chip('#ef4444')}>DT {s.dtMin}น.</span>}
-                    {s.status !== 'closed' && <span style={chip('#f59e0b')}>ยังไม่ปิดกะ</span>}
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 52px 44px 52px', columnGap: 8, rowGap: 5, alignItems: 'baseline' }}>
+                  <span />
+                  <span style={head}>ยอดผลิต</span>
+                  <span style={head} title="% เทียบเป้าการผลิตของกะ">ตามเป้า</span>
+                  <span style={head}>OEE</span>
+                  <span style={head}>DT</span>
+                  {['day', 'night'].map(sh => {
+                    const s = shifts.find(x => x.shift === sh);
+                    return (
+                      <Fragment key={sh}>
+                        <span style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{SHIFT_LABEL[sh]}</span>
+                        {!s ? (
+                          <span style={{ gridColumn: '2 / -1', fontSize: 12, color: 'var(--muted)' }}>— ไม่เปิดกะ —</span>
+                        ) : (
+                          <>
+                            <span style={{ ...cell, color: s.pct != null ? achieveColor(s.pct) : 'var(--text)' }}>
+                              {s.pct != null ? `${s.actual.toLocaleString()}/${s.target.toLocaleString()}` : s.actual.toLocaleString()}
+                            </span>
+                            <span style={{ ...cell, color: s.pct != null ? achieveColor(s.pct) : 'var(--muted)' }}
+                              title={s.pct == null ? 'ยังไม่ตั้งเป้ากะ/std และไม่มีเป้าใบงานให้เทียบ' : undefined}>
+                              {s.pct != null ? `${s.pct}%` : '—'}
+                            </span>
+                            <span style={{ ...cell, color: s.oee != null ? '#4d9fff' : 'var(--muted)', fontWeight: s.oee != null ? 800 : 400 }}>
+                              {s.oee != null ? `${Math.round(s.oee)}%` : '—'}
+                            </span>
+                            <span style={{ ...cell, color: s.dtMin > 0 ? '#ef4444' : 'var(--muted)', fontWeight: s.dtMin > 0 ? 800 : 400 }}>
+                              {s.dtMin > 0 ? `${s.dtMin}น.` : '—'}
+                            </span>
+                          </>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </div>
+                {notClosed.length > 0 && (
+                  <div style={{ marginTop: 'auto' }}>
+                    <span style={chip('#f59e0b')}>⏳ ยังไม่ปิดกะ: {notClosed.map(sh => (sh === 'day' ? 'กะเช้า' : 'กะดึก')).join(' + ')}</span>
                   </div>
                 )}
-              </div>
+              </>
             );
-          })}
+          })()}
         </div>
       ))}
       {lineResults.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>ไม่มีไลน์ใน scope</div>}
@@ -858,7 +879,8 @@ export default function MorningMeeting() {
       {/* ── โหมด TV: full-screen ไล่วาระ ── */}
       {tvMode && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 22px', borderBottom: '1px solid var(--border)' }}>
+          {/* paddingRight 64 เว้นที่ให้กระดิ่งแจ้งเตือน (fixed มุมขวาบน อยู่เหนือ overlay) — ไม่งั้นปุ่ม ✕ โดนทับ */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 64px 14px 22px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ fontSize: 22, fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
               {slides[slide].title}
             </div>
