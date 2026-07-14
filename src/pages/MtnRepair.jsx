@@ -15,7 +15,8 @@ import { fmtDateTime } from '../utils/dateFormat';
 import tsLogo from '../assets/TS logo.png';
 
 /* ── helpers ─────────────────────────────────────────────── */
-function resizeImage(file, maxPx = 1280, quality = 0.85) {
+// รูปแจ้งซ่อม/หลักฐาน MTN — บีบ 1024px q0.8 (~120KB) สมดุลคม/ประหยัด storage (user เลือก B 2026-07-14)
+function resizeImage(file, maxPx = 1024, quality = 0.8) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
