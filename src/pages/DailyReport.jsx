@@ -2696,9 +2696,12 @@ function LiveTab({ role }) {
                       if (actualStart && e < actualStart.getTime()) e += 86400000;
                       return e;
                     })() : null);
-                    // หักเวลา Downtime ที่ทับซ้อนช่วงวิ่งของ MAT.NO นี้ออกก่อน ไม่งั้น "ควรได้" จะคิดจากเวลาทั้งหมด
-                    // (รวมเวลาหยุด) ทำให้ %P ต่ำเกินจริง และไม่ตรงกับ P รวมที่คำนวณใน computeOEE()
-                    const winMin = (actualStart && winEndMs) ? Math.max(0, (winEndMs - actualStart.getTime()) / 60000 - dtOverlapMin(actualStart.getTime(), winEndMs)) : null;
+                    // หักเวลา Downtime ที่ทับซ้อนช่วงวิ่งของ MAT.NO นี้ + "พักตามนโยบาย" ออกก่อน — ให้ฐานเวลา
+                    // ตรงกับ P รวมใน computeOEE() ที่หักทั้งคู่ (เคยหักแค่ DT → "ควรได้" เกินจริง %P พาร์ทต่ำกว่า
+                    // P รวมทั้งที่รันงานตัวเดียว เช่นกะดึกพักรวม 120 นาที ทำให้เพี้ยน ~15% — user ชี้ 2026-07-14)
+                    const winMin = (actualStart && winEndMs) ? Math.max(0, (winEndMs - actualStart.getTime()) / 60000
+                      - dtOverlapMin(actualStart.getTime(), winEndMs)
+                      - computePolicyBreakMin(actualStart, new Date(winEndMs), selSession?.shift || 'day', sessionProcessType())) : null;
                     const achievable = (ctSec > 0 && winMin != null) ? Math.floor(winMin * 60 / ctSec) : null;
                     // ผลิตได้จริง > ควรได้ (ตาม CT ที่ตั้งไว้) แปลว่า CT ใน Product Master ตั้งไว้ช้ากว่าความเป็นจริง
                     // ย้อนคำนวณ CT จริงที่สังเกตได้จากกะนี้ไว้เตือน ไม่ใช่ปล่อยให้ %P ติดเพดาน 100% เฉยๆ
@@ -3082,9 +3085,12 @@ function LiveTab({ role }) {
                       if (actualStart && e < actualStart.getTime()) e += 86400000;
                       return e;
                     })() : null);
-                    // หักเวลา Downtime ที่ทับซ้อนช่วงวิ่งของ MAT.NO นี้ออกก่อน ไม่งั้น "ควรได้" จะคิดจากเวลาทั้งหมด
-                    // (รวมเวลาหยุด) ทำให้ %P ต่ำเกินจริง และไม่ตรงกับ P รวมที่คำนวณใน computeOEE()
-                    const winMin = (actualStart && winEndMs) ? Math.max(0, (winEndMs - actualStart.getTime()) / 60000 - dtOverlapMin(actualStart.getTime(), winEndMs)) : null;
+                    // หักเวลา Downtime ที่ทับซ้อนช่วงวิ่งของ MAT.NO นี้ + "พักตามนโยบาย" ออกก่อน — ให้ฐานเวลา
+                    // ตรงกับ P รวมใน computeOEE() ที่หักทั้งคู่ (เคยหักแค่ DT → "ควรได้" เกินจริง %P พาร์ทต่ำกว่า
+                    // P รวมทั้งที่รันงานตัวเดียว เช่นกะดึกพักรวม 120 นาที ทำให้เพี้ยน ~15% — user ชี้ 2026-07-14)
+                    const winMin = (actualStart && winEndMs) ? Math.max(0, (winEndMs - actualStart.getTime()) / 60000
+                      - dtOverlapMin(actualStart.getTime(), winEndMs)
+                      - computePolicyBreakMin(actualStart, new Date(winEndMs), selSession?.shift || 'day', sessionProcessType())) : null;
                     const achievable = (ctSec > 0 && winMin != null) ? Math.floor(winMin * 60 / ctSec) : null;
                     const qty = confirmedQty + openQty;
                     // ผลิตได้จริง > ควรได้ (ตาม CT ที่ตั้งไว้) แปลว่า CT ใน Product Master ตั้งไว้ช้ากว่าความเป็นจริง
@@ -4048,8 +4054,32 @@ function HistoryTab({ role }) {
   const [orderMap, setOrderMap]   = useState({});
   const [deleting, setDeleting]   = useState(null);
   const [ordersMinimized, setOrdersMinimized] = useState({});
+  const [ctByMat, setCtByMat]     = useState({});  // mat_no → cycle_time_sec (สำหรับ %P รายชิ้น)
+  const [histBreaks, setHistBreaks] = useState([]); // break_policies — หักพักตามนโยบายจากช่วงวิ่งของพาร์ท
 
   const canDeleteSession = can('daily_report', 'delete_session', role);
+
+  // ── %P รายชิ้นในประวัติ — สูตรเดียวกับ modal ตรวจสอบคำขอปิดกะ (หัก DT + พักนโยบายจาก window) ──
+  const histDtOverlapMin = (startMs, endMs, logs) => {
+    if (!startMs || !endMs || endMs <= startMs) return 0;
+    return (logs || []).reduce((sum, d) => {
+      if (!d.started_at) return sum;
+      const ds = new Date(d.started_at).getTime();
+      const de = d.ended_at ? new Date(d.ended_at).getTime() : (d.duration_min != null ? ds + d.duration_min * 60000 : null);
+      if (de == null) return sum;
+      return sum + Math.max(0, (Math.min(de, endMs) - Math.max(ds, startMs)) / 60000);
+    }, 0);
+  };
+  const histBreakOverlapMin = (startMs, endMs, workDateStr, shift) => {
+    if (!startMs || !endMs || endMs <= startMs) return 0;
+    return histBreaks.filter(p => p.shift === 'both' || p.shift === shift).reduce((sum, p) => {
+      const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
+      let ps = new Date(`${workDateStr}T${String(ph).padStart(2, '0')}:${String(pm).padStart(2, '0')}:00`).getTime();
+      let pe = ps + (p.duration_min || 0) * 60000;
+      if (pe < startMs) { ps += 86400000; pe += 86400000; } // พักกะดึกหลังเที่ยงคืน — เลื่อนไปวันถัดไป
+      return sum + Math.max(0, (Math.min(pe, endMs) - Math.max(ps, startMs)) / 60000);
+    }, 0);
+  };
 
   const handleDelete = async (s) => {
     if (!window.confirm(`ลบกะ ${s.line_name} ${s.shift === 'day' ? 'กะเช้า' : 'กะดึก'} วันที่ ${fmtDate(s.work_date)} ?\n(ข้อมูล Order, Downtime, Defect จะถูกลบทั้งหมด)`)) return;
@@ -4092,6 +4122,18 @@ function HistoryTab({ role }) {
     setLineNames(allowedLineNames ?? (ln || []).map(l => l.name));
     setLoading(false);
   }, [filter, role, scopeSecs, userLineId]);
+
+  // CT ต่อ MAT.NO + break policies — โหลดครั้งเดียว ใช้คำนวณ %P รายชิ้นตอน expand
+  useEffect(() => {
+    supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true)
+      .then(({ data }) => {
+        const m = {};
+        (data || []).forEach(r => { if (r.dr_products?.cycle_time_sec) m[r.mat_no] = Number(r.dr_products.cycle_time_sec); });
+        setCtByMat(m);
+      });
+    supabaseDR.from('break_policies').select('shift, start_time, duration_min').eq('is_active', true)
+      .then(({ data }) => setHistBreaks(data || []));
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -4213,18 +4255,45 @@ function HistoryTab({ role }) {
                       const orderIds = new Set(matOrders.map(o => o.id));
                       const ng = defects.filter(d => orderIds.has(d.prod_order_id)).reduce((sum, d) => sum + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
                       const dt = dts.filter(d => d.mat_no === matNo).reduce((sum, d) => sum + (d.duration_min || 0), 0);
-                      return { matNo, partName: matOrders[0]?.part_name, qty, ng, dt };
+                      // %P รายชิ้น (สูตรเดียวกับ modal ตรวจสอบคำขอปิดกะ): window ของพาร์ท − DT ทับซ้อน − พักนโยบาย
+                      const openedTimes = matOrders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
+                      const closedTimes = matOrders.map(o => o.confirmed_at || o.stopped_at).filter(Boolean).map(t => new Date(t).getTime());
+                      const winStart = openedTimes.length ? Math.min(...openedTimes) : null;
+                      const winEnd   = closedTimes.length ? Math.max(...closedTimes) : null;
+                      const ctSec = ctByMat[matNo] || 0;
+                      let achievable = null, pPct = null, winLabel = null;
+                      if (winStart && winEnd && winEnd > winStart) {
+                        const fmtT = ms => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+                        winLabel = `${fmtT(winStart)}–${fmtT(winEnd)}`;
+                        if (ctSec > 0) {
+                          const runMin = Math.max(0, (winEnd - winStart) / 60000
+                            - histDtOverlapMin(winStart, winEnd, dts)
+                            - histBreakOverlapMin(winStart, winEnd, s.work_date, s.shift));
+                          achievable = Math.floor(runMin * 60 / ctSec);
+                          if (achievable > 0) pPct = Math.min(100, Math.round(qty / achievable * 100));
+                        }
+                      }
+                      return { matNo, partName: matOrders[0]?.part_name, qty, ng, dt, winLabel, achievable, pPct };
                     }).sort((a, b) => b.qty - a.qty);
                     return (
                       <div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>📦 สรุปแยกตามชิ้นงาน ({rows.length} รายการ)</div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>📦 สรุปแยกตามชิ้นงาน ({rows.length} รายการ) — %P รายชิ้นคิดจากช่วงเวลาที่พาร์ทวิ่งจริง (หัก DT + พักนโยบาย)</div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                           {rows.map(r => (
-                            <div key={r.matNo} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                            <div key={r.matNo} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, border: '1px solid var(--border)', flexWrap: 'wrap' }}>
                               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', fontFamily: 'monospace' }}>{r.matNo}</span>
-                              {r.partName && <span style={{ fontSize: 11, color: 'var(--muted)', flex: 1 }}>{r.partName}</span>}
-                              {!r.partName && <span style={{ flex: 1 }} />}
+                              {r.partName && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{r.partName}</span>}
+                              {r.winLabel && <span style={{ fontSize: 11, color: '#4d9fff' }}>🕐 {r.winLabel}</span>}
+                              <span style={{ flex: 1 }} />
                               <span style={{ fontSize: 12, fontWeight: 700, color: '#22c55e' }}>ผลิต {r.qty}</span>
+                              {r.achievable != null && <span style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa' }}>ควรได้ {r.achievable}</span>}
+                              {r.pPct != null && (
+                                <span style={{ fontSize: 11, fontWeight: 800, padding: '1px 8px', borderRadius: 20,
+                                  color: r.pPct >= 85 ? '#22c55e' : r.pPct >= 70 ? '#f59e0b' : '#ef4444',
+                                  background: r.pPct >= 85 ? 'rgba(34,197,94,0.12)' : r.pPct >= 70 ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)' }}>
+                                  %P ≈ {r.pPct}%
+                                </span>
+                              )}
                               {r.ng > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}>NG {r.ng}</span>}
                               {r.dt > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#a855f7' }}>DT {fmtMin(r.dt)}</span>}
                             </div>
