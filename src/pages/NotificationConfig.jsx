@@ -31,6 +31,9 @@ const DEFAULT_TEMPLATES = {
   shipping_shipped: '🚚 ส่งงานลูกค้าแล้ว\n🕐 รอบ {ship_time} · 📅 {due_date}\n🏭 {customer} · Dock {dock_code}\n🔩 {mat_no} × {qty} ชิ้น\n👤 {shipped_by}',
   shipping_overdue: '🔴 รอบส่งเลยเวลา {count} รอบ — วันงาน {work_date}\n{items}',
   shipping_phase_alert: '🟠 หลุดเฟสงานส่ง {total} รายการ — วันงาน {work_date}\n{items}',
+  mtn_reported: '🛠️ แจ้งซ่อมใหม่ — รอ MTN รับงาน\n🏭 {line_name} · {scope}\n⚙️ {item_type} {machine_no}\n🛑 {problem}\n🙋 {reporter}',
+  mtn_assigned: '🔧 รับงานซ่อม {mo_no}\n🏭 {line_name} · {item_type} {machine_no}\n🧰 {repair_type} · 👷 {assigned_to}',
+  mtn_closed: '✅ ปิด MO {mo_no}\n🏭 {line_name} · {item_type} {machine_no}\n🛠 {solution} · 👷 {tech_main}\n✍️ {approver}',
   morning_meeting: '🌅 สรุปประชุมแถวเช้า — {work_date}\n🏭 {scope_label}\n📦 ผลิตรวม {total_actual}/{total_target} ({achieve_pct}%)\n📊 OEE {oee_avg}% · ⏱️ DT {dt_total_min} นาที ({dt_count} ครั้ง) · ❌ NG {ng_total}\n📉 หลุดแผน {missed_count} รายการ\n{missed_list}\n📌 Action ค้าง {action_open}\n👤 {actor}',
 }
 const COMMON_PH = ['line_name', 'shift_label', 'work_date']
@@ -50,6 +53,9 @@ const PLACEHOLDERS = {
   shipping_overdue: ['work_date', 'count', 'items'],
   shipping_phase_alert: ['work_date', 'total', 'items'],
   morning_meeting: ['work_date', 'scope_label', 'total_actual', 'total_target', 'achieve_pct', 'oee_avg', 'dt_total_min', 'dt_count', 'ng_total', 'dt_top', 'missed_count', 'missed_list', 'action_open', 'actor'],
+  mtn_reported: ['mo_no', 'line_name', 'scope', 'item_type', 'machine_no', 'problem', 'reporter', 'note'],
+  mtn_assigned: ['mo_no', 'line_name', 'item_type', 'machine_no', 'problem', 'repair_type', 'assigned_to'],
+  mtn_closed: ['mo_no', 'line_name', 'item_type', 'machine_no', 'problem', 'solution', 'tech_main', 'approver'],
 }
 // sample values for the live preview only (not sent anywhere)
 const SAMPLE = {

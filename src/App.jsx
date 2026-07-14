@@ -44,6 +44,7 @@ const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement')
 const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
+const MtnRepair = lazy(() => import('./pages/MtnRepair'));
 
 /* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null, signatureUrl: null, fullName: null });
@@ -72,6 +73,7 @@ const NAV_ITEMS = [
   { to: '/rundown-stock',   icon: '📉', label: 'Rundown Stock',             group: 'Logistic - Store' },
   { to: '/customer-demand', icon: '🚚', label: 'Delivery',                  group: 'Logistic - Store' },
 
+  { to: '/mtn-repair',  icon: '🛠️', label: 'แจ้งซ่อม MTN (MO)',                group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-schedule', icon: '📅', label: 'แผน PM อุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      group: 'การตรวจสอบและซ่อมบำรุง' },
@@ -931,6 +933,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/mtn-layout" element={
                 <RoleRoute path="/mtn-layout" userRole={role}><MtnMachineLayout /></RoleRoute>
+              } />
+              <Route path="/mtn-repair" element={
+                <RoleRoute path="/mtn-repair" userRole={role}><MtnRepair /></RoleRoute>
               } />
             </Routes>
           </Suspense>

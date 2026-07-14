@@ -140,6 +140,7 @@
 | Logistic - Store | `/planner-sales` | PlannerSales | manager/supervisor/leader/qa/sale/planner_store |
 | Logistic - Store | `/rundown-stock` | RundownStock | manager/supervisor/leader/qa/sale/planner_store |
 | Logistic - Store | `/customer-demand` | CustomerDemand (Delivery) | manager/supervisor/leader/qa/sale/planner_store |
+| การตรวจสอบและซ่อมบำรุง | `/mtn-repair` | MtnRepair — ใบแจ้งซ่อม MO 7 ขั้น (ดู section "MTN Work-Order") | ทุก role (ดู) · report/service/qa/approve/manage_master ตามสิทธิ์ |
 | การตรวจสอบและซ่อมบำรุง | `/pm-check` | PMCheckData | ทุก role |
 | การตรวจสอบและซ่อมบำรุง | `/pm-schedule` | PMSchedule | ทุก role |
 | การตรวจสอบและซ่อมบำรุง | `/mtn-layout` | MtnMachineLayout | ทุก role |
@@ -372,6 +373,23 @@ Reject → status: "rejected" + reject_reason
 
 ---
 
+## MTN Work-Order — ใบแจ้งซ่อม MO 7 ขั้น (2026-07-14)
+
+หน้า `/mtn-repair` (`MtnRepair.jsx`, กลุ่มการตรวจสอบและซ่อมบำรุง) — **clone ระบบ AppSheet เดิม (Jig MTN) มาอยู่ใน ESM** เพื่อไม่ต้องแยกระบบ + เก็บฐานข้อมูลเดียวกัน · ตารางทั้งหมดอยู่ **DR project** (anon-open ตาม convention)
+
+- **Workflow 7 ขั้น (mirror ของเดิม):** 1 แจ้งซ่อม → 2 รับ/จ่ายงาน (**ออกเลข MO อัตโนมัติ**) → 3 ดำเนินการซ่อม → 4 ตรวจหลังซ่อม → 5 คุณภาพหลังซ่อม (**เฉพาะงานที่ step4 ระบุ "เกี่ยวกับคุณภาพ"** ไม่งั้นข้ามไป step6) → 6 รับมอบ/ติดตาม → 7 อนุมัติปิด (Close MO) · `status`: pending→assigned→repaired→checked→qa→handover→closed · `rejected` (step2 เลือก "Reject MO") · `current_step` 1..7 ใช้คิด % ความคืบหน้า
+- **เลข MO auto:** RPC `mtn_assign_mo_no(order_id, prefix)` (SECURITY DEFINER, idempotent — ออกเลขครั้งเดียวต่อใบ) ออกตอน step2 = `PREFIX-DDMMYY-ลำดับรายวัน` · prefix ตามประเภทงานซ่อม: BM(Breakdown)/IM(Improvement)/CM(Corrective)/PM(Preventive)/AM(Autonomous)/RE(Reject) · ลำดับ atomic ต่อวัน (ตาราง `mtn_mo_counter` keyed ด้วย DDMMYY เวลาไทย)
+- **ตาราง (DR):** `mtn_orders` (แถวเดียวต่อใบ เก็บครบ 7 ขั้น) · `mtn_order_parts` (log เบิกอะไหล่ต่อใบ + หัก stock) · master: `mtn_technicians` `mtn_spare_parts` `mtn_problem_types` (cascade ลักษณะปัญหา→รายละเอียด) `mtn_repair_types` `mtn_item_types` · `mtn_mo_counter` · migration `20260714_mtn_work_order.sql` (seed taxonomy 20 + ช่าง 8 + item/repair types)
+- **รูป/ลายเซ็น:** bucket **`mtn-images`** (DR, anon-open, cap 5MB) — รูปก่อน/หลังซ่อม/QA บีบ 1280px q0.85 ก่อนอัปโหลด (helper `resizeImage`) · ลายเซ็นต่อขั้น (step4/5/6/7) วาดใน `SignaturePad` (canvas→PNG) · ลบใบ = ลบไฟล์ที่ผูกทุกอัน (best-effort)
+- **KPI (คำนวณสดจาก timestamp ไม่เก็บ):** Response = accept−report · TTR = repair_done−accept · Breakdown = repair_done−report · แท็บ 📊 KPI มีการ์ดเฉลี่ย + พาเรโต้ลักษณะปัญหา Top 10 (กรองช่วงวัน/ไลน์)
+- **สิทธิ์ (role_permissions, migration `20260714_mtn_work_order_permissions.sql`):** `page:/mtn-repair`+`mtn_repair:report` = ทุก role · `mtn_repair:service` (step2-4) = admin/manager/mtn · `mtn_repair:qa` (step5) = admin/manager/qa · `mtn_repair:approve` (step7) = admin/manager · `mtn_repair:manage_master` (ช่าง/อะไหล่/taxonomy + ลบใบ) = admin/manager/mtn · ปุ่ม action แต่ละขั้นเช็ค `can()` ตามนี้ (ไม่ hardcode)
+- **เชื่อมกับ Downtime:** ปุ่ม "📝 เปิดใบซ่อม" ในแถว Downtime (DailyReport) → สร้าง `mtn_orders` prefill (ไลน์/เครื่อง/อาการจาก dt type) `status=pending`, `source_downtime_id` ผูกที่มา (กันเปิดซ้ำ) แล้ว MTN ไปรับงานต่อที่ `/mtn-repair`
+- **แจ้งเตือน Telegram:** ผ่าน edge function `send-mtn-notification` (events `mtn_reported`/`mtn_assigned`/`mtn_closed`) — route ผ่าน notification_rules category maintenance (ตั้งค่าที่ `/notification-config`)
+- **Scope:** leader = family ไลน์ตัวเอง (branch มาก่อน) · role อื่นตาม `sections` — pattern มาตรฐาน
+- **ข้อมูลเก่า 677 ใบจาก Google Sheet ยังไม่ย้าย** (user เลือก "ย้ายทีหลัง") — ระบบเริ่มนับ MO ใหม่จาก 0
+
+---
+
 ## Employee Skills & EXP Farming (ย้ายฝั่ง server ทั้งหมด — 2026-07-13)
 
 ระบบสะสม EXP ทักษะพนักงานจากการทำงานจริง — **ห้ามเขียนคะแนน `employee_skills` จาก client นอกเหนือจาก
@@ -442,6 +460,7 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 | `pm-plan-reminder` | DR (pg_cron รายวัน) | เตือน Planned PM ตามขั้น 30/14/3 วัน/เกินกำหนด → POST ไป send-notification ฝั่ง Main |
 | `shipping-phase-scan` | DR (pg_cron ทุก 10 นาที) | สแกน shipping walkback phase misses บนกรอบวันงาน 08:00→08:00 |
 | `downtime-open-scan` | DR (pg_cron ทุก 5 นาที) | สแกน Downtime ที่เปิดค้างเกิน `dt_alert_config.open_alert_min` นาที → POST `downtime_open_15min` ไป send-notification ฝั่ง Main + stamp `open_alerted_at` กันซ้ำ (2026-07-14) |
+| `send-mtn-notification` | Main | แจ้งเตือนใบแจ้งซ่อม MO — events `mtn_reported`/`mtn_assigned`/`mtn_closed` · **แยกไฟล์จาก send-notification (กันไฟล์ใหญ่พัง) แต่ route ผ่าน notification_rules/telegram_channels เดียวกัน** → ตั้งค่า/ปิด/เลือกห้อง/แก้ข้อความได้จาก `/notification-config` (category maintenance) · payload `{ event, mo: {...} }` (2026-07-14) |
 
 ### `cleanup-orphan-photos` (Main project — 2026-07-09)
 - ล้างไฟล์กำพร้าใน bucket `employee-photos` = ไฟล์ที่ไม่มี `employees.image_url` / `line_layouts.image_url` ชี้ถึงแล้ว
