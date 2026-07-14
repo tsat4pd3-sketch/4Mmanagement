@@ -407,6 +407,79 @@ function nextStepFor(order) {
   }
 }
 
+/* ── พิมพ์ใบ MO / บันทึก PDF (window.open + print — pattern เดียวกับ Report/MorningMeeting)
+     layout ตามฟอร์มเดิม FM-JIG-008: หัวบริษัท + 6 ส่วน + รูปก่อน/หลัง + ลายเซ็นอนุมัติ 4 ช่อง ── */
+function printMoReport(o, dparts = []) {
+  const beDT = (v) => {
+    if (!v) return '';
+    const d = new Date(v);
+    const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d);
+    const g = {}; p.forEach(x => g[x.type] = x.value);
+    return `${g.day}/${g.month}/${Number(g.year) + 543} ${g.hour === '24' ? '00' : g.hour}:${g.minute}`;
+  };
+  const esc = (s) => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+  const row = (k, v) => v ? `<div class="r"><span class="k">${k}</span><span class="v">${esc(v)}</span></div>` : '';
+  const statusTh = (STATUS_META[o.status] || {}).label || o.status;
+  const sign = (title, name, url) => `<div class="sg"><div class="sgt">${title}</div>${url ? `<img src="${url}"/>` : '<div class="sgb"></div>'}<div class="sgn">${esc(name || '')}</div></div>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>MO ${esc(o.mo_no || '')}</title>
+  <style>
+    *{box-sizing:border-box} body{font-family:'Sarabun','Tahoma',sans-serif;color:#111;margin:0;padding:14px;font-size:12px}
+    .hdr{text-align:center;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:8px}
+    .hdr h1{font-size:15px;margin:0} .hdr h2{font-size:13px;margin:2px 0;font-weight:600}
+    .meta{display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px;flex-wrap:wrap;gap:6px}
+    .meta b{font-size:13px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .box{border:1px solid #333;border-radius:4px;padding:8px}
+    .box h3{font-size:12px;margin:0 0 6px;background:#eee;padding:3px 6px;border-radius:3px}
+    .r{display:flex;gap:6px;padding:1px 0;font-size:11.5px} .k{color:#555;min-width:96px} .v{flex:1;font-weight:600}
+    .imgs{display:flex;gap:8px;margin-top:8px} .imgs figure{flex:1;margin:0;text-align:center}
+    .imgs img{max-width:100%;max-height:190px;border:1px solid #999} .imgs figcaption{font-size:11px;color:#555;margin-top:2px}
+    .signs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+    .sg{border:1px solid #333;border-radius:4px;padding:6px;text-align:center;min-height:96px}
+    .sgt{font-size:11px;font-weight:700;margin-bottom:4px} .sg img{max-height:46px;max-width:100%} .sgb{height:46px}
+    .sgn{font-size:11px;margin-top:4px;border-top:1px solid #bbb;padding-top:3px}
+    .ft{display:flex;justify-content:space-between;font-size:10px;color:#555;margin-top:10px;border-top:1px solid #999;padding-top:4px}
+    @media print{body{padding:0}}
+  </style></head><body>
+    <div class="hdr"><h1>บริษัท ไทยซัมมิท โอโตโมทีฟ จำกัด สาขา 1</h1><h2>ใบแจ้งซ่อมและปรับปรุง MTN</h2></div>
+    <div class="meta"><div><b>MO NO: ${esc(o.mo_no || '-')}</b> · แจ้งถึงหน่วยงาน: MTN</div><div>สถานะ: <b>${esc(statusTh)}</b></div></div>
+    <div class="grid">
+      <div class="box"><h3>1) ส่วนผู้แจ้ง (OPEN MO)</h3>
+        ${row('วันที่แจ้ง', beDT(o.report_at))}${row('ประเภท', o.repair_scope === 'off_line' ? 'ซ่อมนอกไลน์' : 'ซ่อมในไลน์')}
+        ${row('ไลน์การผลิต', o.line_name)}${row('ส่วน/แผนก', o.dept_section)}${row('Cost Ctr', o.cost_center)}
+        ${row('ชื่อรายการ', o.item_type)}${row('หมายเลข', o.machine_no)}${row('Model/ลูกค้า', [o.model, o.customer].filter(Boolean).join(' / '))}
+        ${row('ลักษณะปัญหา', o.problem_characteristic)}${row('รายละเอียด', o.problem_detail)}${row('ระบุเพิ่มเติม', o.report_note)}
+        ${row('ต้องการเสร็จ', beDT(o.want_at))}${row('PD ผู้แจ้ง', o.reporter_prod)}${row('QA ผู้แจ้ง', o.reporter_qa)}</div>
+      <div class="box"><h3>2) ส่วนผู้รับงาน (ACCEPT/ASSIGN)</h3>
+        ${row('วันที่รับงาน', beDT(o.accept_at))}${row('ผู้รับงาน', o.accepted_by)}${row('ประเภทงานซ่อม', o.repair_type)}
+        ${row('มอบหมายช่าง', o.assigned_to)}${row('คาดว่าเสร็จ', beDT(o.target_done_at))}${row('เหตุ Reject', o.reject_reason)}</div>
+      <div class="box"><h3>3) ส่วนผู้ซ่อม (REPAIR)</h3>
+        ${row('วันที่เสร็จ', beDT(o.repair_done_at))}${row('ช่างซ่อมหลัก', o.tech_main)}${row('ช่างซ่อมรอง', o.tech_secondary)}
+        ${row('สาเหตุปัญหา', o.root_cause)}${row('วิธีการแก้ไข', o.solution)}
+        ${dparts.length ? row('อะไหล่ที่ใช้', dparts.map(p => `${p.part_name} ×${p.qty}${p.unit || ''}`).join(', ')) : ''}</div>
+      <div class="box"><h3>4-6) ตรวจ/คุณภาพ/รับมอบ</h3>
+        ${row('4.ผลงานหลังซ่อม', o.check_result)}${row('4.เกี่ยวคุณภาพ', o.quality_related)}${row('4.รายละเอียด', o.check_note)}
+        ${row('5.คุณภาพหลังแก้ไข', o.qa_result)}${row('5.รายละเอียด', o.qa_note)}
+        ${row('6.ติดตามผล', o.follow_up)}</div>
+    </div>
+    <div class="imgs">
+      <figure>${o.before_img ? `<img src="${o.before_img}"/>` : '<div style="height:190px;border:1px dashed #bbb"></div>'}<figcaption>ภาพก่อนปรับปรุง</figcaption></figure>
+      <figure>${o.after_img ? `<img src="${o.after_img}"/>` : '<div style="height:190px;border:1px dashed #bbb"></div>'}<figcaption>ภาพหลังปรับปรุง</figcaption></figure>
+    </div>
+    <div class="signs">
+      ${sign('JIG/MTN APPROVE', o.checker_name, o.checker_sign)}
+      ${sign('QA APPROVE', o.qa_checker, o.qa_sign)}
+      ${sign('PD APPROVE', o.ho_checker, o.ho_sign)}
+      ${sign('MGR APPROVE', o.approver_name, o.approve_sign)}
+    </div>
+    <div class="ft"><span>FM-JIG-008-REV.00</span><span>ESM · Enterprise Shopfloor Management</span></div>
+    <script>window.onload=function(){setTimeout(function(){window.print()},400)}</script>
+  </body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { toast.error('เบราว์เซอร์บล็อกการเปิดหน้าต่าง — อนุญาต popup แล้วลองใหม่'); return; }
+  w.document.write(html); w.document.close();
+}
+
 /* ── Detail drawer ───────────────────────────────────── */
 function DetailDrawer({ order, role, fullName, onClose, onStep, onReload }) {
   const o = order;
@@ -492,6 +565,7 @@ function DetailDrawer({ order, role, fullName, onClose, onStep, onReload }) {
         {can('mtn_repair', 'manage_master', role)
           ? <button onClick={del} style={{ ...btnGhost, color: '#ef4444', borderColor: '#ef4444' }}>🗑 ลบใบนี้</button> : <span />}
         <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => printMoReport(o, dparts)} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
           <button onClick={onClose} style={btnGhost}>ปิด</button>
           {next && can('mtn_repair', next.perm, role) &&
             <button onClick={() => onStep(next.step)} style={btnPri}>{next.label}</button>}
@@ -539,8 +613,7 @@ function StepModal({ step, order, techs, repairTypes, parts, fullName, onClose, 
         if (!isReject) {
           const prefix = repairTypes.find(r => r.name === f.repair_type)?.prefix || 'BM';
           await supabaseDR.rpc('mtn_assign_mo_no', { p_order_id: o.id, p_prefix: prefix });
-          const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single();
-          notifyMtn(fresh, 'mtn_assigned');
+          // ไม่แจ้ง Telegram ตอนรับงาน (ตามระบบเดิม — แจ้งตอนแจ้งซ่อม/ซ่อมเสร็จ/ปิดเท่านั้น)
         }
       } else if (step === 3) {
         upd = { ...upd, status: 'repaired', current_step: 3, repair_done_at: new Date().toISOString(),
@@ -551,6 +624,7 @@ function StepModal({ step, order, techs, repairTypes, parts, fullName, onClose, 
           await supabaseDR.from('mtn_order_parts').insert({ order_id: o.id, part_id: p.part_id || null, part_name: p.name, qty: Number(p.qty), unit: p.unit, tech: f.tech_main, logged_by: fullName });
           if (p.part_id) { const cur = parts.find(x => x.id === p.part_id); if (cur) await supabaseDR.from('mtn_spare_parts').update({ stock_qty: Number(cur.stock_qty) - Number(p.qty) }).eq('id', p.part_id); }
         }
+        { const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single(); notifyMtn(fresh, 'mtn_repaired'); }
       } else if (step === 4) {
         if (!sign) { setSaving(false); return toast.error('ลงลายเซ็นผู้ตรวจ'); }
         upd = { ...upd, status: 'checked', current_step: 4, check_at: new Date().toISOString(),
