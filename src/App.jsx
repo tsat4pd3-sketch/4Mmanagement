@@ -933,7 +933,22 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const { data } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, position, notify_email, signature_url').eq('id', user.id).single();
+    const { data, error } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, position, notify_email, signature_url').eq('id', user.id).single();
+    // fail-visible: โหลดโปรไฟล์ไม่ได้ = แอปใช้งานไม่ได้อยู่ดี (role null → เมนูหาย, query ฝั่ง Main
+    // ล้มหมด กลายเป็น "หน้าผี") — ห้ามปล่อย render ต่อแบบไม่มี role
+    if (error || !data) {
+      const authBroken = !data && !error                       // query ผ่านแต่ไม่มีแถว = user ถูกลบ
+        || error?.code === 'PGRST116'                          // 0 rows
+        || error?.status === 401 || error?.status === 403
+        || /jwt|token|expired/i.test(error?.message || '');
+      if (authBroken) {
+        // token เสีย/user ถูกลบ → เคลียร์ session ฝั่ง client ให้เด้งไปหน้า login
+        try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* token เสียอยู่แล้ว */ }
+      }
+      // error อื่น (เช่น network สะดุด) → ค้างที่ "กำลังโหลด..." ให้ผู้ใช้ F5 — ไม่ signOut
+      // เพราะ localStorage แชร์ข้ามแท็บ เดี๋ยวพาแท็บอื่นที่ดีๆ อยู่หลุดไปด้วย
+      return;
+    }
     setUserRole(data?.role ?? null);
     setUserLineId(data?.line_id ?? null);
     setUserFullName(data?.full_name ?? null);
