@@ -289,6 +289,58 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
+    /* ── เรียกช่าง MTN เข้าหน้างานด่วน (2026-07-14) ── */
+    if (event === 'downtime_call_mtn') {
+      const d = body.downtime;
+      if (!d) return new Response('missing downtime', { status: 400 });
+      const chat = resolveEvent(routes, 'downtime_call_mtn');
+      if (chat === null) return json({ ok: true, skipped: true });
+      const shiftLabel = d.shift === 'day' ? 'กะเช้า' : 'กะดึก';
+      const lines = [
+        `📞🔧 <b>เรียกช่าง MTN เข้าหน้างานด่วน</b> 🔧📞`, ``,
+        `⚙️ เครื่องจักร: <b>${d.machine_no || '-'}${d.machine_name ? ` (${d.machine_name})` : ''}</b>`,
+        `🏭 ไลน์: ${d.line_name} · ${shiftLabel}`,
+        `📅 วันที่: ${d.work_date}`,
+        `🛑 อาการ: ${d.type_name || '-'}`,
+      ];
+      if (d.start_time)  lines.push(`🕐 เริ่มหยุด: ${d.start_time}`);
+      if (d.description) lines.push(`📝 รายละเอียด: ${d.description}`);
+      lines.push(``, `🙋 ผู้เรียก: ${d.reported_by || '-'}`, `— โปรดเข้าหน้างานทันที`);
+      const message = pick(routes, 'downtime_call_mtn', {
+        machine_no: d.machine_no || '-', machine_name: d.machine_name || '', line_name: d.line_name,
+        shift_label: shiftLabel, work_date: d.work_date, type_name: d.type_name || '-',
+        description: d.description || '', reported_by: d.reported_by || '-', start_time: d.start_time || '',
+      }, lines.join('\n'));
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
+    }
+
+    /* ── เครื่องเปิดค้างเกินเกณฑ์ (จาก scanner downtime-open-scan) ── */
+    if (event === 'downtime_open_15min') {
+      const d = body.downtime;
+      if (!d) return new Response('missing downtime', { status: 400 });
+      const chat = resolveEvent(routes, 'downtime_open_15min');
+      if (chat === null) return json({ ok: true, skipped: true });
+      const shiftLabel = d.shift === 'day' ? 'กะเช้า' : 'กะดึก';
+      const lines = [
+        `🚨 <b>เครื่องยังหยุด ยังไม่กลับมารัน</b> — เกิน ${d.open_min ?? ''} นาที`, ``,
+        `⚙️ เครื่องจักร: <b>${d.machine_no || '-'}${d.machine_name ? ` (${d.machine_name})` : ''}</b>`,
+        `🏭 ไลน์: ${d.line_name} · ${shiftLabel}`,
+        `📅 วันที่: ${d.work_date}`,
+        `🛑 สาเหตุ: ${d.type_name || '-'}`,
+      ];
+      if (d.start_time)  lines.push(`🕐 เริ่มหยุด: ${d.start_time}`);
+      if (d.description) lines.push(`📝 รายละเอียด: ${d.description}`);
+      lines.push(``, `👤 ผู้แจ้ง: ${d.reported_by || '-'}`, `— Production System`);
+      const message = pick(routes, 'downtime_open_15min', {
+        machine_no: d.machine_no || '-', machine_name: d.machine_name || '', line_name: d.line_name,
+        shift_label: shiftLabel, work_date: d.work_date, type_name: d.type_name || '-',
+        open_min: d.open_min ?? '', description: d.description || '', reported_by: d.reported_by || '-', start_time: d.start_time || '',
+      }, lines.join('\n'));
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
+    }
+
     /* ── Production session close ────────────────── */
     if (event === 'prod_close') {
       const s = body.session;
@@ -411,25 +463,6 @@ Deno.serve(async (req) => {
         jig_name: p.jig_name || '', machine_no: p.machine_no || '', line_name: p.line_name || '',
         part_name: p.part_name || '', checklist_name: p.checklist_name || '', frequency: p.frequency || '',
       }, lines.join('\n'));
-      await sendTelegram(message, chat).catch(console.error);
-      return json({ ok: true });
-    }
-
-    /* ── 4M change management (in-app always + Telegram by rule) ── */
-    if (event === 'pm_plan_reminder') {
-      const p = body.pm;
-      if (!p) return new Response('missing pm', { status: 400 });
-      const chat = resolveEvent(routes, 'pm_plan_reminder');
-      if (chat === null) return json({ ok: true, skipped: true });
-      const overdue = Number(p.days) < 0;
-      const dueLine = overdue ? `📅 ครบกำหนด: ${p.due_date} — <b>เกินมาแล้ว ${Math.abs(Number(p.days))} วัน</b>` : `📅 ครบกำหนด: ${p.due_date} (อีก <b>${p.days}</b> วัน)`;
-      const equip = `${p.machine_no ? `${p.machine_no} ` : ''}${p.jig_name || '-'}`.trim();
-      const lines = [`${p.stage_label || '🗓️ เตือนรอบ PM'}`, ``, `🔧 เครื่อง/จิ๊ก: <b>${equip}</b>`];
-      if (p.line_name) lines.push(`🏭 ไลน์: ${p.line_name}`);
-      if (p.part_name) lines.push(`📦 ชิ้นงาน: ${p.part_name}`);
-      if (p.checklist_name) lines.push(`📋 เช็คลิสต์: ${p.checklist_name}${p.frequency ? ` (รอบ ${p.frequency})` : ''}`);
-      lines.push(dueLine, ``, `— Smart Maintenance`);
-      const message = pick(routes, 'pm_plan_reminder', { stage: p.stage, stage_label: p.stage_label, days: p.days, due_date: p.due_date, jig_name: p.jig_name || '', machine_no: p.machine_no || '', line_name: p.line_name || '', part_name: p.part_name || '', checklist_name: p.checklist_name || '', frequency: p.frequency || '' }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
       return json({ ok: true });
     }
