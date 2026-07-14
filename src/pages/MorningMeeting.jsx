@@ -495,43 +495,55 @@ export default function MorningMeeting() {
     // (เดิม 240px ได้ 6 ใบ/แถว การ์ดแคบจนชิปตกบรรทัดบ่อย ดูรก)
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(290px, 1fr))', gap: 10 }}>
       {lineResults.map(({ line, shifts }) => (
-        <div key={line.id} style={{ ...card, height: '100%', minHeight: 108, display: 'flex', flexDirection: 'column', gap: 8, opacity: shifts.length ? 1 : 0.55 }}>
+        <div key={line.id} style={{ ...card, height: '100%', minHeight: 126, display: 'flex', flexDirection: 'column', gap: 8, opacity: shifts.length ? 1 : 0.55 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
             <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{line.name}</div>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>{line.section}</span>
           </div>
-          {/* โครงตายตัวทุกใบ: กะเช้า/กะดึก 2 แถวเสมอ — กะที่ไม่เปิดโชว์ "ไม่เปิดกะ" สีจาง
-              ทำให้ทุกการ์ดบรรทัดตรงกันหมด ไล่สายตาแนวนอนข้ามการ์ดได้ */}
-          {['day', 'night'].map(sh => {
-            const s = shifts.find(x => x.shift === sh);
-            return (
-              /* ป้ายกะกว้าง 58px พอดีคำ + ยอดชิดซ้ายตามธรรมชาติ — บีบช่องว่างให้ชิปจบบรรทัดเดียวมากที่สุด */
-              <div key={sh} style={{ display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 12 }}>
-                <span style={{ color: 'var(--text2)', width: 58, flexShrink: 0, lineHeight: '20px', whiteSpace: 'nowrap' }}>{SHIFT_LABEL[sh]}</span>
-                {!s ? (
-                  <span style={{ color: 'var(--muted)', lineHeight: '20px' }}>— ไม่เปิดกะ —</span>
-                ) : (
-                  /* ชิปอยู่คอลัมน์ของตัวเอง wrap ในคอลัมน์ — ตกบรรทัดก็เรียงตรงคอลัมน์เดิม ไม่ไหลใต้ป้ายกะ */
-                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 5, rowGap: 3, minWidth: 0, flex: 1 }}>
-                    {s.pct != null ? (
-                      <>
-                        <span style={{ fontWeight: 800, color: achieveColor(s.pct), whiteSpace: 'nowrap' }}>{s.actual}/{s.target}</span>
-                        <span style={chip(achieveColor(s.pct))}>{s.pct}%</span>
-                      </>
-                    ) : (
-                      <>
-                        <span style={{ fontWeight: 800, color: 'var(--text)' }}>{s.actual}</span>
-                        <span style={chip('#94a3b8')} title="ยังไม่ตั้งเป้ากะ/std และไม่มีเป้าใบงานให้เทียบ">ไม่มีเป้า</span>
-                      </>
-                    )}
-                    {s.oee != null && <span style={chip('#4d9fff')}>OEE {Math.round(s.oee)}%</span>}
-                    {s.dtMin > 0 && <span style={chip('#ef4444')}>DT {s.dtMin}น.</span>}
-                    {s.status !== 'closed' && <span style={chip('#f59e0b')}>ยังไม่ปิดกะ</span>}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {/* โครงตายตัวทุกใบ: ☀️ กะเช้า คอลัมน์ซ้าย / 🌙 กะดึก คอลัมน์ขวา (เส้นคั่นกลาง)
+              รายละเอียดไล่ลงแนวตั้งเป็นชั้น: ยอด+% → OEE·DT → สถานะ — ไม่มีการ wrap พาดแถว */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', flex: 1 }}>
+            {['day', 'night'].map(sh => {
+              const s = shifts.find(x => x.shift === sh);
+              return (
+                <div key={sh} style={{
+                  display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0,
+                  ...(sh === 'night' ? { borderLeft: '1px solid var(--border)', paddingLeft: 10 } : { paddingRight: 10 }),
+                }}>
+                  <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{SHIFT_LABEL[sh]}</span>
+                  {!s ? (
+                    <span style={{ fontSize: 12, color: 'var(--muted)' }}>— ไม่เปิดกะ —</span>
+                  ) : (
+                    <>
+                      {/* ชั้น 1: ยอด/เป้า ตัวใหญ่ + % */}
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
+                        {s.pct != null ? (
+                          <>
+                            <span style={{ fontSize: 15, fontWeight: 900, color: achieveColor(s.pct), whiteSpace: 'nowrap' }}>{s.actual}/{s.target}</span>
+                            <span style={chip(achieveColor(s.pct))}>{s.pct}%</span>
+                          </>
+                        ) : (
+                          <>
+                            <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>{s.actual}</span>
+                            <span style={chip('#94a3b8')} title="ยังไม่ตั้งเป้ากะ/std และไม่มีเป้าใบงานให้เทียบ">ไม่มีเป้า</span>
+                          </>
+                        )}
+                      </div>
+                      {/* ชั้น 2: OEE + DT (มีอันเดียวก็อยู่ชั้นนี้) */}
+                      {(s.oee != null || s.dtMin > 0) && (
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                          {s.oee != null && <span style={chip('#4d9fff')}>OEE {Math.round(s.oee)}%</span>}
+                          {s.dtMin > 0 && <span style={chip('#ef4444')}>DT {s.dtMin}น.</span>}
+                        </div>
+                      )}
+                      {/* ชั้น 3: สถานะกะ */}
+                      {s.status !== 'closed' && <div><span style={chip('#f59e0b')}>ยังไม่ปิดกะ</span></div>}
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       ))}
       {lineResults.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>ไม่มีไลน์ใน scope</div>}
