@@ -31,9 +31,9 @@ const DEFAULT_TEMPLATES = {
   shipping_shipped: '🚚 ส่งงานลูกค้าแล้ว\n🕐 รอบ {ship_time} · 📅 {due_date}\n🏭 {customer} · Dock {dock_code}\n🔩 {mat_no} × {qty} ชิ้น\n👤 {shipped_by}',
   shipping_overdue: '🔴 รอบส่งเลยเวลา {count} รอบ — วันงาน {work_date}\n{items}',
   shipping_phase_alert: '🟠 หลุดเฟสงานส่ง {total} รายการ — วันงาน {work_date}\n{items}',
-  mtn_reported: '🛠️ แจ้งซ่อมใหม่ — รอ MTN รับงาน\n🏭 {line_name} · {scope}\n⚙️ {item_type} {machine_no}\n🛑 {problem}\n🙋 {reporter}',
-  mtn_assigned: '🔧 รับงานซ่อม {mo_no}\n🏭 {line_name} · {item_type} {machine_no}\n🧰 {repair_type} · 👷 {assigned_to}',
-  mtn_closed: '✅ ปิด MO {mo_no}\n🏭 {line_name} · {item_type} {machine_no}\n🛠 {solution} · 👷 {tech_main}\n✍️ {approver}',
+  mtn_reported: '🛠️ แจ้งซ่อม JIG MTN\nไลน์การผลิต: {line_name}\nชื่อรายการ: {item_type}\nปัญหา: {problem}\nPD ผู้แจ้ง: {reporter_prod}\nเป้าหมาย: {want_at}\nสถานะ: รอดำเนินการ',
+  mtn_repaired: '🔧 สรุปผลซ่อม JIG MTN\nไลน์การผลิต: {line_name}\nชื่อรายการ: {item_type}\nปัญหา: {problem}\nเลขแจ้งซ่อม: {mo_no}\nช่างซ่อม: {tech_main}\nสาเหตุ: {root_cause}\nวิธีแก้ไข: {solution}',
+  mtn_closed: '✅ อนุมัติปิดแจ้งซ่อม\nไลน์การผลิต: {line_name}\nชื่อรายการ: {item_type}\nปัญหา: {problem}\nเลขแจ้งซ่อม: {mo_no}\nช่างซ่อม: {tech_main}\nวิธีแก้ไข: {solution}\nผู้อนุมัติ: {approver}',
   morning_meeting: '🌅 สรุปประชุมแถวเช้า — {work_date}\n🏭 {scope_label}\n📦 ผลิตรวม {total_actual}/{total_target} ({achieve_pct}%)\n📊 OEE {oee_avg}% · ⏱️ DT {dt_total_min} นาที ({dt_count} ครั้ง) · ❌ NG {ng_total}\n📉 หลุดแผน {missed_count} รายการ\n{missed_list}\n📌 Action ค้าง {action_open}\n👤 {actor}',
 }
 const COMMON_PH = ['line_name', 'shift_label', 'work_date']
@@ -53,9 +53,9 @@ const PLACEHOLDERS = {
   shipping_overdue: ['work_date', 'count', 'items'],
   shipping_phase_alert: ['work_date', 'total', 'items'],
   morning_meeting: ['work_date', 'scope_label', 'total_actual', 'total_target', 'achieve_pct', 'oee_avg', 'dt_total_min', 'dt_count', 'ng_total', 'dt_top', 'missed_count', 'missed_list', 'action_open', 'actor'],
-  mtn_reported: ['mo_no', 'line_name', 'scope', 'item_type', 'machine_no', 'problem', 'reporter', 'note'],
-  mtn_assigned: ['mo_no', 'line_name', 'item_type', 'machine_no', 'problem', 'repair_type', 'assigned_to'],
-  mtn_closed: ['mo_no', 'line_name', 'item_type', 'machine_no', 'problem', 'solution', 'tech_main', 'approver'],
+  mtn_reported: ['mo_no', 'line_name', 'item_type', 'machine_no', 'problem', 'reporter_prod', 'reporter_qa', 'want_at'],
+  mtn_repaired: ['mo_no', 'line_name', 'item_type', 'machine_no', 'problem', 'tech_main', 'root_cause', 'solution'],
+  mtn_closed: ['mo_no', 'line_name', 'item_type', 'machine_no', 'problem', 'tech_main', 'root_cause', 'solution', 'approver'],
 }
 // sample values for the live preview only (not sent anywhere)
 const SAMPLE = {
@@ -72,6 +72,9 @@ const SAMPLE = {
   ship_time: '09:00', due_date: '2026-07-09', customer: 'AAT (GRBNA)', dock_code: 'B5',
   customer_part_no: 'RB3B 16E060 BA', qty: 50, order_no: 'SGUCHF', shipped_by: 'Logistic B',
   count: 3, items: '08:00 · AAT · 10106790 × 50\n09:00 · AAT · 10100401 × 50',
+  mo_no: 'BM-140726-01', item_type: 'JIG', problem: 'เซนเซอร์ ชำรุด', reporter_prod: 'นายมงคล นาสมบูรณ์',
+  reporter_qa: 'นายชะเอ็ม เตียรเขียว', want_at: '07/14/2569 09:59:00', tech_main: 'นายอภิเดช กะจันต๊ะ',
+  root_cause: 'อายุการใช้งาน', solution: 'เปลี่ยนสายสัญญาณใหม่ 1 เส้น', approver: 'นายดุลยทรรศน์ ลาภธนสารสมบัติ',
   scope_label: 'PD3', total_actual: 2140, total_target: 2400, achieve_pct: 89, oee_avg: 84,
   ng_total: 32, dt_top: 'รอวัตถุดิบ 45น. · เปลี่ยน Die 20น.', missed_count: 2,
   missed_list: '• Line 60 · REINF FRT SD BDY: 270/360 (ขาด 90)', action_open: 3,
