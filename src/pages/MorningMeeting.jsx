@@ -471,6 +471,15 @@ export default function MorningMeeting() {
     </div>
   );
 
+  // หัวคั่นโซน — กันหน้า "ติดกันเป็นพรืด": ชื่อโซน + เส้นแบ่งยาวเต็มแถว (+ตัวเลขสรุปท้ายเส้น)
+  const SectionHead = ({ icon, title, extra }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
+      <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', whiteSpace: 'nowrap' }}>{icon} {title}</span>
+      <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+      {extra && <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{extra}</span>}
+    </div>
+  );
+
   const LineCards = () => (
     // min 290px ≈ 5 ใบ/แถวบนจอ desktop — กว้างพอให้ชิปยอด/%/OEE/DT จบบรรทัดเดียวเกือบทุกเคส
     // (เดิม 240px ได้ 6 ใบ/แถว การ์ดแคบจนชิปตกบรรทัดบ่อย ดูรก)
@@ -481,30 +490,37 @@ export default function MorningMeeting() {
             <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{line.name}</div>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>{line.section}</span>
           </div>
-          {shifts.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>— ไม่เปิดกะ —</div>}
-          {shifts.map(s => (
-            /* ป้ายกะ = คอลัมน์ตายตัว · ชิปอยู่คอลัมน์ของตัวเองแล้ว wrap ในนั้น — ตกบรรทัดก็ยังเรียงตรง
-               คอลัมน์เดิม อ่านออกว่าเป็นของกะไหน (ห้าม wrap ทั้งแถวแบบชิปไหลไปเริ่มใต้ป้ายกะ) */
-            <div key={s.shift} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12 }}>
-              <span style={{ color: 'var(--text2)', width: 74, flexShrink: 0, lineHeight: '20px' }}>{SHIFT_LABEL[s.shift]}</span>
-              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, rowGap: 3, minWidth: 0, flex: 1 }}>
-                {s.pct != null ? (
-                  <>
-                    <span style={{ fontWeight: 800, color: achieveColor(s.pct) }}>{s.actual}/{s.target}</span>
-                    <span style={chip(achieveColor(s.pct))}>{s.pct}%</span>
-                  </>
+          {/* โครงตายตัวทุกใบ: กะเช้า/กะดึก 2 แถวเสมอ — กะที่ไม่เปิดโชว์ "ไม่เปิดกะ" สีจาง
+              ทำให้ทุกการ์ดบรรทัดตรงกันหมด ไล่สายตาแนวนอนข้ามการ์ดได้ */}
+          {['day', 'night'].map(sh => {
+            const s = shifts.find(x => x.shift === sh);
+            return (
+              <div key={sh} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12 }}>
+                <span style={{ color: 'var(--text2)', width: 74, flexShrink: 0, lineHeight: '20px' }}>{SHIFT_LABEL[sh]}</span>
+                {!s ? (
+                  <span style={{ color: 'var(--muted)', lineHeight: '20px' }}>— ไม่เปิดกะ —</span>
                 ) : (
-                  <>
-                    <span style={{ fontWeight: 800, color: 'var(--text)' }}>{s.actual}</span>
-                    <span style={chip('#94a3b8')} title="ยังไม่ตั้งเป้ากะ/std และไม่มีเป้าใบงานให้เทียบ">ไม่มีเป้า</span>
-                  </>
+                  /* ชิปอยู่คอลัมน์ของตัวเอง wrap ในคอลัมน์ — ตกบรรทัดก็เรียงตรงคอลัมน์เดิม ไม่ไหลใต้ป้ายกะ */
+                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, rowGap: 3, minWidth: 0, flex: 1 }}>
+                    {s.pct != null ? (
+                      <>
+                        <span style={{ fontWeight: 800, color: achieveColor(s.pct), minWidth: 58, textAlign: 'right' }}>{s.actual}/{s.target}</span>
+                        <span style={chip(achieveColor(s.pct))}>{s.pct}%</span>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ fontWeight: 800, color: 'var(--text)', minWidth: 58, textAlign: 'right' }}>{s.actual}</span>
+                        <span style={chip('#94a3b8')} title="ยังไม่ตั้งเป้ากะ/std และไม่มีเป้าใบงานให้เทียบ">ไม่มีเป้า</span>
+                      </>
+                    )}
+                    {s.oee != null && <span style={chip('#4d9fff')}>OEE {Math.round(s.oee)}%</span>}
+                    {s.dtMin > 0 && <span style={chip('#ef4444')}>DT {s.dtMin}น.</span>}
+                    {s.status !== 'closed' && <span style={chip('#f59e0b')}>ยังไม่ปิดกะ</span>}
+                  </div>
                 )}
-                {s.oee != null && <span style={chip('#4d9fff')}>OEE {Math.round(s.oee)}%</span>}
-                {s.dtMin > 0 && <span style={chip('#ef4444')}>DT {s.dtMin}น.</span>}
-                {s.status !== 'closed' && <span style={chip('#f59e0b')}>ยังไม่ปิดกะ</span>}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ))}
       {lineResults.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>ไม่มีไลน์ใน scope</div>}
@@ -734,7 +750,13 @@ export default function MorningMeeting() {
 
   /* ── วาระสำหรับโหมด TV (ไล่ทีละสไลด์) ── */
   const slides = [
-    { title: '🎯 ภาพรวมเมื่อวาน — ได้ตามเป้ามั้ย', render: () => (<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}><KpiStrip /><LineCards /></div>) },
+    { title: '🎯 ภาพรวมเมื่อวาน — ได้ตามเป้ามั้ย', render: () => (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <KpiStrip />
+        <SectionHead icon="🏭" title="ผลรายไลน์" extra={`เปิดกะ ${lineResults.filter(r => r.shifts.length).length}/${lineResults.length} ไลน์`} />
+        <LineCards />
+      </div>
+    ) },
     { title: '📉 งานหลุดแผน — เกิดเพราะอะไร', render: () => <MissedPanel /> },
     { title: '🛠️ Downtime & ของเสีย', render: () => <DtDefectPanel /> },
     { title: '🔄 4M Change', render: () => <FourMPanel /> },
@@ -793,7 +815,10 @@ export default function MorningMeeting() {
       ) : (
         <>
           <KpiStrip />
+          <SectionHead icon="🏭" title="ผลรายไลน์"
+            extra={`เปิดกะ ${lineResults.filter(r => r.shifts.length).length}/${lineResults.length} ไลน์`} />
           <LineCards />
+          <SectionHead icon="🔎" title="เจาะปัญหาเมื่อวาน" />
           <MissedPanel />
           <DtDefectPanel />
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
