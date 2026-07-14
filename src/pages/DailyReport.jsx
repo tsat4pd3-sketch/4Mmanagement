@@ -731,13 +731,15 @@ function LiveTab({ role }) {
       description:  dtForm.description || null,
       reported_by:  fullName,
     };
-    if (!dtForm.id) {
-      notifyDowntime(notifyBase);
-    } else {
+    // แจ้งเตือน v2 (2026-07-14) — ลดสัญญาณรบกวน:
+    //   • บันทึกใหม่ = ไม่แจ้งทันที (ปิดแล้ว→สรุปตอนปิดกะ · เปิดค้าง→scanner แจ้งเมื่อเกินเกณฑ์นาที)
+    //   • ปิดรายการที่ "เคยถูกแจ้ง" (open_alerted_at หรือ call_mtn) → ✅ เครื่องกลับมารันได้ (ไม่งั้นเงียบ)
+    if (dtForm.id) {
       const orig = dtLogs.find(x => x.id === dtForm.id);
       const wasOpen   = orig && !orig.ended_at && orig.duration_min == null;
       const nowClosed = endedAt != null || durMin != null;
-      if (wasOpen && nowClosed) {
+      const wasAlerted = orig && (orig.open_alerted_at || orig.call_mtn);
+      if (wasOpen && nowClosed && wasAlerted) {
         notifyDowntime({
           ...notifyBase,
           description: [dtForm.description, orig.carried_from_id ? '(ต่อเนื่องจากกะก่อน)' : ''].filter(Boolean).join(' ') || null,
@@ -1884,6 +1886,25 @@ function LiveTab({ role }) {
     loadDT(selSession.id);
   };
 
+  // เรียกช่าง MTN เข้าหน้างาน — แจ้ง Telegram ทันที + เสียงไซเรนดังหน้า Maintenance (ผ่าน realtime call_mtn)
+  const handleCallMtn = async (d) => {
+    if (d.call_mtn) return;
+    const { error } = await supabaseDR.from('downtime_logs')
+      .update({ call_mtn: true, call_mtn_at: new Date().toISOString(), call_mtn_by: fullName }).eq('id', d.id);
+    if (error) { toast.error(error.message); return; }
+    const dtType = dtTypes.find(t => t.id === d.downtime_type_id);
+    const mcName = machines.find(m => m.machine_no === d.machine_no)?.machine_name || '';
+    notifyDowntime({
+      line_name: selSession.line_name, shift: selSession.shift, work_date: selSession.work_date,
+      machine_no: d.machine_no, machine_name: mcName,
+      type_name: dtType?.name_th || '', category: dtType?.category || '',
+      start_time: d.started_at ? fmtTime(new Date(d.started_at)) : null,
+      description: d.description || null, reported_by: fullName,
+    }, 'downtime_call_mtn');
+    toast.success('📞 เรียกช่าง MTN แล้ว — แจ้งเตือนทันที');
+    loadDT(selSession.id);
+  };
+
   const totalDT      = dtLogs.reduce((s, d) => s + (d.duration_min || 0), 0);
   const unplannedDT  = dtLogs.filter(d => d.dr_downtime_types?.category === 'unplanned').reduce((s, d) => s + (d.duration_min || 0), 0);
 
@@ -2444,6 +2465,12 @@ function LiveTab({ role }) {
                       <div style={{ fontSize: 15, fontWeight: 800, color: d.dr_downtime_types?.color || '#aaa', minWidth: 64, textAlign: 'right' }}>
                         {fmtMin(d.duration_min)}
                       </div>
+                      {/* เรียกช่าง MTN — เฉพาะรายการที่ยังเปิดค้าง (เครื่องยังหยุดอยู่) */}
+                      {canScan && d.duration_min == null && !d.ended_at && (
+                        d.call_mtn
+                          ? <span title={`เรียกช่างแล้ว${d.call_mtn_by ? ` โดย ${d.call_mtn_by}` : ''}`} style={{ fontSize: 11, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 20, padding: '3px 9px', whiteSpace: 'nowrap' }}>📞 เรียกช่างแล้ว</span>
+                          : <button onClick={() => handleCallMtn(d)} title="แจ้งช่าง MTN ให้เข้าหน้างานทันที" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: '#e05c4a', border: 'none', borderRadius: 20, padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>📞 เรียกช่าง</button>
+                      )}
                       {canEditRecords && (
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button onClick={() => {

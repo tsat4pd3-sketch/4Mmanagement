@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { supabase } from '../supabaseClient'
+import { supabase, supabaseDR } from '../supabaseClient'
 import { toast } from '../components/Toast'
 
 const inputStyle = {
@@ -20,6 +20,8 @@ const DEFAULT_TEMPLATES = {
   checkin_summary: '✅ เช็คชื่อเสร็จแล้ว\n🏭 ไลน์: {line_name} · {shift_label}\n📅 {work_date}\n👥 เข้างาน: {present}/{total} · OT {ot} · ลา {leave} · ขาด {absent}\n✍️ ตรวจโดย {checked_by}',
   downtime: '🚨 เครื่องจักร DOWNTIME\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n🛑 {type_name}\n⏱ {duration_min} นาที\n🔩 {mat_no}\n📝 {description}\n👤 {reported_by}',
   downtime_recovered: '✅ เครื่องกลับมารันได้แล้ว\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n⏱ หยุดรวม {duration_min} นาที\n👤 {reported_by}',
+  downtime_call_mtn: '📞🔧 เรียกช่าง MTN เข้าหน้างานด่วน\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n🛑 {type_name}\n🕐 เริ่มหยุด {start_time}\n📝 {description}\n🙋 {reported_by}',
+  downtime_open_15min: '🚨 เครื่องยังหยุด ยังไม่กลับมารัน — เกิน {open_min} นาที\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n🛑 {type_name}\n🕐 เริ่มหยุด {start_time}\n📝 {description}\n👤 {reported_by}',
   prod_close: '{title}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n📦 ผลิตรวม {total_qty} · ✅ {qty_ok} ❌ NG {qty_ng}\n📊 OEE {oee}%\n👤 {actor}',
   four_m_status: '🔔 {title}\n📅 {work_date} · 🏭 {line_name}\n📋 {category}\n📝 {description}\n🔖 {status_label}\n👤 {creator}',
   pm_daily_green: '🟢 ตรวจ Daily PM เรียบร้อย ทุกอย่างปกติ\n🏭 {line_name} · {shift_label}\n📅 {work_date}\n✅ ตรวจแล้ว {checked}/{total} เครื่อง',
@@ -36,6 +38,8 @@ const PLACEHOLDERS = {
   checkin_summary: [...COMMON_PH, 'present', 'total', 'ot', 'leave', 'absent', 'checked_by', 'start_time'],
   downtime: [...COMMON_PH, 'machine_no', 'machine_name', 'type_name', 'duration_min', 'mat_no', 'description', 'reported_by', 'start_time', 'end_time'],
   downtime_recovered: [...COMMON_PH, 'machine_no', 'machine_name', 'type_name', 'duration_min', 'mat_no', 'description', 'reported_by', 'start_time', 'end_time'],
+  downtime_call_mtn: [...COMMON_PH, 'machine_no', 'machine_name', 'type_name', 'description', 'reported_by', 'start_time'],
+  downtime_open_15min: [...COMMON_PH, 'machine_no', 'machine_name', 'type_name', 'open_min', 'description', 'reported_by', 'start_time'],
   prod_close: [...COMMON_PH, 'title', 'total_qty', 'qty_ok', 'qty_ng', 'qty_suspect', 'qty_repair', 'oee', 'oee_a', 'oee_p', 'oee_q', 'start_time', 'end_time', 'shift_min', 'dt_count', 'dt_total_min', 'actor', 'requested_by'],
   four_m_status: [...COMMON_PH, 'title', 'category', 'description', 'status_label', 'creator', 'reject_reason'],
   pm_daily_green: [...COMMON_PH, 'checked', 'total'],
@@ -52,7 +56,7 @@ const SAMPLE = {
   line_name: 'HDF1', shift_label: 'กะเช้า', work_date: '2026-07-09', present: 18, total: 20,
   ot: 3, leave: 1, absent: 1, checked_by: 'สมชาย', start_time: '08:00', end_time: '08:25',
   machine_no: 'M-01', machine_name: '(Press 500T)', type_name: 'ไฟดับ', duration_min: 25,
-  mat_no: 'PN-123', description: 'มอเตอร์ร้อนผิดปกติ', reported_by: 'สมหญิง',
+  mat_no: 'PN-123', description: 'มอเตอร์ร้อนผิดปกติ', reported_by: 'สมหญิง', open_min: 22,
   title: '✅ ปิดกะสำเร็จ', total_qty: 1200, qty_ok: 1180, qty_ng: 20, qty_suspect: 0, qty_repair: 5,
   oee: 87, oee_a: 95, oee_p: 92, oee_q: 98, shift_min: 600, dt_count: 2, dt_total_min: 40,
   actor: 'สมชาย', requested_by: 'สมศักดิ์', category: 'Man', status_label: 'Approved ✅',
@@ -78,18 +82,34 @@ export default function NotificationConfig() {
   const [tokenInput, setTokenInput] = useState('')
   const [editingTpl, setEditingTpl] = useState(null) // event_key being edited
   const [tplDraft, setTplDraft] = useState('')
+  const [openMin, setOpenMin] = useState('15')      // เกณฑ์ "เปิดค้างเกินกี่นาทีถึงแจ้ง" (dt_alert_config — DR project)
 
   const load = async () => {
     setLoading(true)
-    const [{ data: rm }, { data: rl }, { data: ts }] = await Promise.all([
+    // dt_alert_config อยู่ฝั่ง DR (supabaseDR = anon เสมอ) — แยก client จากตารางแจ้งเตือนฝั่ง Main
+    const [{ data: rm }, { data: rl }, { data: ts }, { data: dcfg }] = await Promise.all([
       supabase.from('telegram_channels').select('*').order('sort_order'),
       supabase.from('notification_rules').select('*').order('sort_order'),
       supabase.rpc('bot_token_status'),
+      supabaseDR.from('dt_alert_config').select('open_alert_min').eq('id', 1).maybeSingle(),
     ])
     setRooms(rm ?? [])
     setRules(rl ?? [])
     if (ts) setTokenStatus(ts)
+    if (dcfg?.open_alert_min != null) setOpenMin(String(dcfg.open_alert_min))
     setLoading(false)
+  }
+
+  const saveOpenMin = async () => {
+    const n = Math.round(Number(openMin))
+    if (!Number.isFinite(n) || n < 1) return toast.error('ใส่จำนวนนาที (อย่างน้อย 1)')
+    setBusy('openmin')
+    const { error } = await supabaseDR.from('dt_alert_config')
+      .upsert({ id: 1, open_alert_min: n, updated_at: new Date().toISOString() })
+    setBusy(null)
+    if (error) return toast.error(error.message)
+    setOpenMin(String(n))
+    toast.success(`ตั้งเกณฑ์แจ้งเตือนเครื่องเปิดค้าง = ${n} นาที`)
   }
 
   const saveToken = async () => {
@@ -223,6 +243,26 @@ export default function NotificationConfig() {
         </button>
         <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--muted)' }}>
           🔒 token เก็บแบบเข้ารหัสฝั่ง server — บันทึกแล้วดูย้อนหลังไม่ได้ (โชว์แค่ 4 ตัวท้าย) · ถ้าไม่ตั้งที่นี่ ระบบใช้ token เดิมที่ตั้งไว้ในระบบ
+        </div>
+      </div>
+
+      {/* ── Downtime open-alert threshold ── */}
+      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>เครื่องเปิดค้าง — เกณฑ์แจ้งเตือน</div>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 14, marginBottom: 26, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+        <div style={{ fontSize: 12.5, color: 'var(--text)' }}>
+          แจ้งเตือนเมื่อ Downtime เปิดค้าง (ยังไม่ปิดรายการ) เกิน
+        </div>
+        <input
+          type="number" min={1} inputMode="numeric"
+          value={openMin} onChange={e => setOpenMin(e.target.value)}
+          style={{ width: 90, textAlign: 'center', fontSize: 14, fontWeight: 700, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}
+        />
+        <div style={{ fontSize: 12.5, color: 'var(--text)' }}>นาที</div>
+        <button onClick={saveOpenMin} disabled={busy === 'openmin'} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+          {busy === 'openmin' ? 'บันทึก...' : 'บันทึก'}
+        </button>
+        <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--muted)' }}>
+          บันทึก Downtime ใหม่จะ<b>ไม่แจ้งทันที</b> (ปิดรายการแล้ว→สรุปตอนปิดกะ) · ถ้ายังเปิดค้างนานเกินเวลานี้ ระบบจะส่งเข้า Telegram + เตือนเสียงหน้า Production · ปุ่ม “เรียกช่าง MTN” ในหน้า Daily Report แจ้งทันทีเสมอ (เตือนเสียงหน้า Maintenance)
         </div>
       </div>
 

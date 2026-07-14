@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
 import { isAlarmingDT, dtElapsedMin } from '../utils/downtimeAlarm';
 import { markerScale } from '../utils/markerScale';
+import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
@@ -736,6 +737,7 @@ export default function Dashboard() {
 
   return (
     <div className="page-content" style={{ maxWidth: '100%' }}>
+      <DowntimeSiren mode="open_15min" />
 
       {/* ── Header ─────────────────────────────────────── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, gap: 16, flexWrap: 'wrap' }}>

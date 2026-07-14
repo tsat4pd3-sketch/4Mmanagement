@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import DowntimeSiren from '../components/DowntimeSiren';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
 import { hasPermission, can } from '../utils/permissions';
 import { getLineFamilyNames, getLineFamilyIds, getAncestorNames, toHierarchicalOptions } from '../utils/lineHierarchy';
@@ -917,6 +918,7 @@ export default function Management() {
 
   return (
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: 'calc(100vh - 80px)', background: 'var(--bg)', overflow: 'hidden' }}>
+      <DowntimeSiren mode="open_15min" />
 
       {/* MAN / MACHINE / WIP status filters — fixed, sit just left of the global notification bell */}
       <div style={{ position: 'fixed', top: 10, right: 58, zIndex: 1200, display: 'flex', gap: 6 }}>
