@@ -79,11 +79,15 @@ export default function Improvements() {
   const [afterFile, setAfterFile] = useState(null);
   const [pareto, setPareto] = useState({ loading: false, rows: [] });
   const [closeModal, setCloseModal] = useState(null);  // { imp, note } ตอนกดปิดจ๊อบ
+  // milestone/Gantt ต่อโปรเจค (คำสั่ง user 2026-07-14: ตามงานโปรเจคทีมแบบ gantt ไม่ใช่ฟอร์มทีเดียวจบ)
+  const [msByImp, setMsByImp] = useState({});          // improvement_id -> [milestones]
+  const [ganttOpen, setGanttOpen] = useState({});      // improvement_id -> bool
+  const [msDraft, setMsDraft] = useState({});          // improvement_id -> { title, assignee, planned_start, planned_end }
 
   /* ── load master + improvements ── */
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: ln }, { data: imp }, { data: dt }, { data: dft }, { data: mc }, { data: pr }] = await Promise.all([
+    const [{ data: ln }, { data: imp }, { data: dt }, { data: dft }, { data: mc }, { data: pr }, { data: ms }] = await Promise.all([
       supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
       supabaseDR.from('improvements').select('*').order('created_at', { ascending: false }),
       // ⚠️ คอลัมน์ชื่อประเภทคือ name_th (ไม่มีคอลัมน์ name) — เคยพลาด select 'name' แล้ว query 400 เงียบ list ว่างทั้งหน้า
@@ -91,6 +95,7 @@ export default function Improvements() {
       supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').eq('is_active', true).order('sort_order'),
       supabaseDR.from('dr_products').select('id, name, mat_no, line_name').eq('is_active', true).order('name'),
+      supabaseDR.from('improvement_milestones').select('*').order('sort_order').order('created_at'),
     ]);
     setLines(ln || []);
     setItems(imp || []);
@@ -98,9 +103,65 @@ export default function Improvements() {
     setDefectTypes(dft || []);
     setMachines(mc || []);
     setProducts(pr || []);
+    const m = {};
+    (ms || []).forEach(x => { (m[x.improvement_id] ||= []).push(x); });
+    setMsByImp(m);
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  /* ── milestone CRUD (Gantt) ── */
+  const reloadMilestones = async (impId) => {
+    const { data } = await supabaseDR.from('improvement_milestones')
+      .select('*').eq('improvement_id', impId).order('sort_order').order('created_at');
+    setMsByImp(prev => ({ ...prev, [impId]: data || [] }));
+  };
+  // ขั้นงานมาตรฐาน PDCA — seed ให้ตอนสร้างโปรเจค (แก้/เพิ่ม/ลบได้อิสระ) กระจายวันตาม baseline
+  const seedMilestones = async (imp) => {
+    const span = Math.max(7, imp.baseline_days || 30);
+    const seg = (a, b) => ({ planned_start: addDays(imp.start_date, Math.round(span * a)), planned_end: addDays(imp.start_date, Math.round(span * b)) });
+    const rows = [
+      { title: '1. วิเคราะห์สาเหตุ (Plan)',        ...seg(0, 0.1) },
+      { title: '2. วางแผน/เตรียมการแก้ไข',        ...seg(0.1, 0.25) },
+      { title: '3. ดำเนินการแก้ไข (Do)',           ...seg(0.25, 0.5) },
+      { title: '4. ติดตามผลจากข้อมูลจริง (Check)', ...seg(0.5, 0.9) },
+      { title: '5. สรุปผล/จัดทำมาตรฐาน (Act)',     ...seg(0.9, 1) },
+    ].map((r, i) => ({ ...r, improvement_id: imp.id, sort_order: i }));
+    await supabaseDR.from('improvement_milestones').insert(rows).then(() => {}, () => {});
+    reloadMilestones(imp.id);
+  };
+  const addMilestone = async (impId) => {
+    const d = msDraft[impId] || {};
+    if (!d.title?.trim()) { toast.error('กรอกชื่อขั้นงานก่อน'); return; }
+    const cur = msByImp[impId] || [];
+    const { error } = await supabaseDR.from('improvement_milestones').insert({
+      improvement_id: impId, title: d.title.trim(), assignee: d.assignee?.trim() || null,
+      planned_start: d.planned_start || null, planned_end: d.planned_end || null,
+      sort_order: cur.length,
+    });
+    if (error) { toast.error(error.message); return; }
+    setMsDraft(prev => ({ ...prev, [impId]: { title: '', assignee: '', planned_start: '', planned_end: '' } }));
+    reloadMilestones(impId);
+  };
+  // คลิกสถานะ = วนขั้น todo → doing → done (stamp วันปิดจริงตอน done)
+  const cycleMilestone = async (m) => {
+    const next = m.status === 'todo' ? 'doing' : m.status === 'doing' ? 'done' : 'todo';
+    const { error } = await supabaseDR.from('improvement_milestones')
+      .update({ status: next, done_at: next === 'done' ? todayStr() : null }).eq('id', m.id);
+    if (error) { toast.error(error.message); return; }
+    reloadMilestones(m.improvement_id);
+  };
+  const updateMilestone = async (m, patch) => {
+    const { error } = await supabaseDR.from('improvement_milestones').update(patch).eq('id', m.id);
+    if (error) { toast.error(error.message); return; }
+    reloadMilestones(m.improvement_id);
+  };
+  const deleteMilestone = async (m) => {
+    if (!window.confirm(`ลบขั้นงาน "${m.title}"?`)) return;
+    const { error } = await supabaseDR.from('improvement_milestones').delete().eq('id', m.id);
+    if (error) { toast.error(error.message); return; }
+    reloadMilestones(m.improvement_id);
+  };
 
   /* ── scope: leader → family ไลน์ตัวเอง · role อื่น → section scope (pattern เดียวกับหน้าอื่น) ── */
   const visibleLineNames = useMemo(() => {
@@ -306,9 +367,12 @@ export default function Improvements() {
         if (imgPayload.image_before_url && row.image_before_url) removeImpImage(row.image_before_url);
         if (imgPayload.image_after_url && row.image_after_url) removeImpImage(row.image_after_url);
       }
-      toast.success(modal.id ? 'บันทึกการแก้ไขแล้ว' : 'สร้างโปรเจคปรับปรุงแล้ว — ระบบจะติดตามผลจากข้อมูลจริงให้');
+      // โปรเจคใหม่ seed ขั้นงานมาตรฐาน PDCA 5 ขั้นให้เลย (ปรับ/เพิ่ม/ลบได้ใน Gantt ของการ์ด)
+      if (!modal.id) await seedMilestones(row);
+      toast.success(modal.id ? 'บันทึกการแก้ไขแล้ว' : 'สร้างโปรเจคปรับปรุงแล้ว — วางแผนขั้นงานใน 🗓 แผนงาน ได้เลย');
       setModal(null);
       setResults(prev => { const p = { ...prev }; delete p[row.id]; return p; }); // คำนวณผลใหม่
+      setGanttOpen(prev => ({ ...prev, [row.id]: !modal.id ? true : prev[row.id] }));
       load();
     } catch (e) { toast.error(e.message); }
     setSaving(false);
@@ -444,6 +508,100 @@ export default function Improvements() {
                   )}
                   {imp.result_note && <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 6 }}><b style={{ color: 'var(--muted)' }}>สรุปผล:</b> {imp.result_note}</div>}
                 </div>
+
+                {/* ── 🗓 แผนงานโปรเจค (milestone + gantt) — ตามงานทีมระหว่างทาง ไม่ใช่บันทึกทีเดียวจบ ── */}
+                {(() => {
+                  const ms = msByImp[imp.id] || [];
+                  const doneCnt = ms.filter(m => m.status === 'done').length;
+                  const nextMs = ms.find(m => m.status !== 'done');
+                  const isOpen = !!ganttOpen[imp.id];
+                  const today = todayStr();
+                  // แกนเวลา gantt: ครอบทุก planned window + วันเริ่มโปรเจค + วันนี้
+                  const dates = ms.flatMap(m => [m.planned_start, m.planned_end]).filter(Boolean).concat([imp.start_date, today]).sort();
+                  const gStart = dates[0], gEnd = dates[dates.length - 1];
+                  const spanMs = Math.max(1, new Date(`${gEnd}T00:00:00`) - new Date(`${gStart}T00:00:00`)) + 86400000;
+                  const pctOf = (d) => Math.max(0, Math.min(100, ((new Date(`${d}T00:00:00`) - new Date(`${gStart}T00:00:00`)) / spanMs) * 100));
+                  const stMeta = { todo: { c: '#8b8b96', l: 'รอเริ่ม' }, doing: { c: '#4d9fff', l: 'กำลังทำ' }, done: { c: '#22c55e', l: 'เสร็จ' } };
+                  return (
+                    <div style={{ marginTop: 8, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg3)' }}>
+                      <div onClick={() => setGanttOpen(p => ({ ...p, [imp.id]: !isOpen }))}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', cursor: 'pointer', userSelect: 'none' }}>
+                        <span style={{ fontSize: 11, transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', color: 'var(--muted)' }}>▶</span>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>🗓 แผนงาน {ms.length ? `${doneCnt}/${ms.length} ขั้น` : '(ยังไม่วางแผน)'}</span>
+                        {ms.length > 0 && (
+                          <div style={{ flex: 1, height: 6, background: 'var(--bg)', borderRadius: 3, overflow: 'hidden' }}>
+                            <div style={{ width: `${(doneCnt / ms.length) * 100}%`, height: '100%', background: '#22c55e', borderRadius: 3, transition: 'width 0.4s' }} />
+                          </div>
+                        )}
+                        {nextMs && <span style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 160 }}>ถัดไป: {nextMs.title}</span>}
+                      </div>
+                      {isOpen && (
+                        <div style={{ padding: '4px 10px 10px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                          {/* แถบวันที่หัว gantt */}
+                          {ms.length > 0 && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', paddingLeft: 148 }}>
+                              <span>{fmtDate(gStart)}</span><span>{fmtDate(gEnd)}</span>
+                            </div>
+                          )}
+                          {ms.map(m => {
+                            const meta = stMeta[m.status] || stMeta.todo;
+                            const overdue = m.status !== 'done' && m.planned_end && m.planned_end < today;
+                            const l = m.planned_start ? pctOf(m.planned_start) : 0;
+                            const rgt = m.planned_end ? pctOf(addDays(m.planned_end, 1)) : l + 3;
+                            return (
+                              <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {/* ป้ายสถานะกดวน todo→doing→done */}
+                                <button disabled={!canManage} onClick={() => cycleMilestone(m)}
+                                  title={canManage ? 'กดเพื่อเปลี่ยนสถานะ' : ''}
+                                  style={{ width: 142, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', cursor: canManage ? 'pointer' : 'default', padding: 0, textAlign: 'left' }}>
+                                  <span style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, background: m.status === 'done' ? meta.c : 'transparent', border: `2px solid ${overdue ? '#ef4444' : meta.c}` }} />
+                                  <span title={`${m.title}${m.assignee ? ` · ${m.assignee}` : ''}`} style={{ fontSize: 11, fontWeight: 700, color: overdue ? '#ef4444' : 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: m.status === 'done' ? 'line-through' : 'none', opacity: m.status === 'done' ? 0.65 : 1 }}>{m.title}</span>
+                                </button>
+                                {/* แถบ gantt ตามแผน */}
+                                <div style={{ flex: 1, position: 'relative', height: 16, background: 'var(--bg)', borderRadius: 4, overflow: 'hidden' }}>
+                                  {/* เส้นวันนี้ — playhead ชมพูตาม convention */}
+                                  <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${pctOf(today)}%`, width: 2, background: '#ec4899', zIndex: 2, boxShadow: '0 0 4px #ec4899' }} />
+                                  {(m.planned_start || m.planned_end) && (
+                                    <div title={`${m.title}\nแผน ${fmtDate(m.planned_start)} – ${fmtDate(m.planned_end)}${m.done_at ? `\nเสร็จจริง ${fmtDate(m.done_at)}` : ''}${m.assignee ? `\nผู้รับผิดชอบ: ${m.assignee}` : ''}`}
+                                      style={{ position: 'absolute', top: 2, bottom: 2, left: `${l}%`, width: `${Math.max(rgt - l, 1.5)}%`, borderRadius: 4, background: `${overdue ? '#ef4444' : meta.c}${m.status === 'done' ? 'cc' : '77'}`, border: `1px solid ${overdue ? '#ef4444' : meta.c}` }} />
+                                  )}
+                                  {m.done_at && (
+                                    <div title={`เสร็จจริง ${fmtDate(m.done_at)}`} style={{ position: 'absolute', top: 1, left: `calc(${pctOf(m.done_at)}% - 4px)`, fontSize: 11, lineHeight: 1, zIndex: 3 }}>✅</div>
+                                  )}
+                                </div>
+                                <span style={{ width: 64, flexShrink: 0, fontSize: 11, fontWeight: 700, color: overdue ? '#ef4444' : meta.c, textAlign: 'right' }}>{overdue ? '⚠ เลยแผน' : meta.l}</span>
+                                {canManage && (
+                                  <button onClick={() => deleteMilestone(m)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12, padding: 0, flexShrink: 0 }}>✕</button>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {/* เพิ่มขั้นงาน */}
+                          {canManage && (
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 4, paddingTop: 6, borderTop: '1px dashed var(--border)' }}>
+                              {/* width กัน index.css input{width:100%} ดันแถวแตก (กับดัก CSS ใน CLAUDE.md) */}
+                              <input placeholder="ขั้นงานใหม่ เช่น สั่งทำ jig ใหม่" value={msDraft[imp.id]?.title || ''}
+                                onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], title: e.target.value } }))}
+                                style={{ width: 170, padding: '5px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                              <input placeholder="ผู้รับผิดชอบ" value={msDraft[imp.id]?.assignee || ''}
+                                onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], assignee: e.target.value } }))}
+                                style={{ width: 100, padding: '5px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                              <input type="date" value={msDraft[imp.id]?.planned_start || ''}
+                                onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], planned_start: e.target.value } }))}
+                                style={{ width: 125, padding: '4px 6px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                              <input type="date" value={msDraft[imp.id]?.planned_end || ''}
+                                onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], planned_end: e.target.value } }))}
+                                style={{ width: 125, padding: '4px 6px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                              <button onClick={() => addMilestone(imp.id)}
+                                style={{ padding: '5px 12px', borderRadius: 6, border: 'none', background: '#4d9fff', color: '#08131f', fontWeight: 800, fontSize: 11, cursor: 'pointer' }}>➕ เพิ่มขั้น</button>
+                            </div>
+                          )}
+                          {ms.length === 0 && !canManage && <div style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มีแผนงาน</div>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 {/* footer actions */}
                 <div style={{ marginTop: 'auto', paddingTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                   <span style={{ fontSize: 11, color: 'var(--muted)', marginRight: 'auto' }}>{imp.created_by_name ? `โดย ${imp.created_by_name}` : ''}</span>
