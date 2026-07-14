@@ -89,7 +89,7 @@ function ThumbMap({ imageUrl, alt, markers }) {
                   <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 1, background: 'rgba(239,68,68,0.9)', borderRadius: 4, padding: '0px 5px', fontSize: 11, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.label}</div>
                 </div>
               ) : (
-                <div style={{ position: 'relative' }} title={m.personAlarm?.label}>
+                <div style={{ position: 'relative' }} title={m.personAlarm?.label || m.names}>
                   <div
                     className={m.personAlarm ? (m.personAlarm.kind === 'red' ? 'person-alarm-red' : 'person-alarm-amber') : undefined}
                     style={{
@@ -102,6 +102,10 @@ function ThumbMap({ imageUrl, alt, markers }) {
                       : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: m.color }}>{m.initial}</div>
                     }
                   </div>
+                  {/* จุดเดียวหลายคน — ป้าย +N มุมขวาล่าง (รายชื่อทั้งหมดอยู่ใน title) */}
+                  {m.more > 0 && (
+                    <div style={{ position: 'absolute', bottom: -4, right: -6, fontSize: 11, fontWeight: 800, lineHeight: 1, background: 'rgba(0,0,0,0.85)', color: '#fff', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 7, padding: '1px 4px' }}>+{m.more}</div>
+                  )}
                   {m.personAlarm && (
                     <div style={{ position: 'absolute', top: -5, right: -5, fontSize: 11, lineHeight: 1 }}>{m.personAlarm.icon}</div>
                   )}
@@ -510,18 +514,24 @@ export default function Dashboard() {
       return Math.round((passed / reqs.length) * 100);
     };
 
-    // Build stationEmpMap: station_id → employee + today's attendance + skill fit
-    // Only present employees will be shown on the floor map
+    // Build stationEmpMap: station_id → "รายชื่อพนักงาน" (array) + today's attendance + skill fit
+    // ⚠️ ต้องเป็น array — จุดงานเดียวมีได้หลายคน (เคยเก็บคนเดียวต่อจุด คนหลังทับคนก่อน
+    // รูปบนผังเลยขึ้นไม่ครบทั้งที่เช็คชื่อครบ) · เฉพาะคนที่มาทำงานจริงถึงถูกวาดบนผัง
     const attMap = {};
     enriched.forEach(l => { if (l.employees?.id) attMap[l.employees.id] = l; });
 
     const semap = {};
+    // คนที่ถูกวางจุดจริงวันนี้ (assigned_line) — home position ของคนกลุ่มนี้ต้องไม่โผล่ซ้ำอีกจุด
+    const assignedEmpIds = new Set(
+      enriched.filter(l => l.assigned_line && l.employees?.id).map(l => l.employees.id)
+    );
 
-    // 1st pass: home positions as baseline
+    // 1st pass: home positions as baseline (ข้ามคนที่ถูกวางจุดจริงแล้ว)
     (hpData || []).forEach(hp => {
-      if (!hp.employees) return;
+      if (!hp.employees || assignedEmpIds.has(hp.employee_id)) return;
       const att = attMap[hp.employee_id];
-      semap[String(hp.station_id)] = {
+      const stId = String(hp.station_id);
+      (semap[stId] = semap[stId] || []).push({
         ...hp.employees,
         is_present:      att ? att.is_present      : null,
         has_ot:          att?.has_ot          ?? false,
@@ -531,14 +541,14 @@ export default function Dashboard() {
         has_gloves:      att?.has_gloves      ?? true,
         assignedShift:   att?.assignedShift   ?? null,
         fitScore:        computeFit(hp.employee_id, hp.station_id),
-      };
+      });
     });
 
-    // 2nd pass: override with today's actual assigned_line (same source as Management page)
+    // 2nd pass: today's actual assigned_line (same source as Management page) — เพิ่มทุกคน ไม่ทับกัน
     enriched.forEach(l => {
       if (!l.assigned_line || !l.employees?.id) return;
       const stId = String(l.assigned_line);
-      semap[stId] = {
+      (semap[stId] = semap[stId] || []).push({
         id:              l.employees.id,
         name:            l.employees.name,
         image_url:       l.employees.image_url ?? null,
@@ -551,7 +561,7 @@ export default function Dashboard() {
         has_gloves:      l.has_gloves      ?? true,
         assignedShift:   l.assignedShift   ?? null,
         fitScore:        computeFit(l.employees.id, l.assigned_line),
-      };
+      });
     });
     setStationEmpMap(semap);
     setLoading(false);
@@ -2012,7 +2022,7 @@ export default function Dashboard() {
                 {visibleLayouts.map(layout => {
                   const cardLineNames = layoutLineNamesForCard(layout.line_name);
                   const lineWs = workstations.filter(w => cardLineNames.includes(w.line_name));
-                  const lineStaff = lineWs.map(ws => stationEmpMap[String(ws.id)]).filter(e => e && (!shiftEmpIds || shiftEmpIds.has(e.id)));
+                  const lineStaff = lineWs.flatMap(ws => stationEmpMap[String(ws.id)] || []).filter(e => !shiftEmpIds || shiftEmpIds.has(e.id));
                   // Use lineStats (same source as KPI cards) for the footer counts — sum across sub-lines merged into this card
                   const cardLineStats = lineStats.filter(l => cardLineNames.includes(l.name));
                   const footerPresent = cardLineStats.length ? cardLineStats.reduce((s, l) => s + l.linePresent, 0) : lineStaff.filter(e => e.is_present === true).length;
@@ -2029,22 +2039,24 @@ export default function Dashboard() {
                         imageUrl={layout.image_url}
                         alt={layout.line_name}
                         markers={[
-                          ...lineWs.map(ws => {
-                            const emp = stationEmpMap[String(ws.id)];
-                            if (!emp) return null;
-                            if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
-                            // Only show employees who are present
-                            if (emp.is_present !== true) return null;
+                          ...lineWs.flatMap(ws => {
+                            // จุดเดียวมีได้หลายคน — วาดคนแรก + ป้าย +N (ผังย่อเล็กเกินกว่าจะวางหลายรูปต่อจุด)
+                            const emps = (stationEmpMap[String(ws.id)] || [])
+                              .filter(e => (!shiftEmpIds || shiftEmpIds.has(e.id)) && e.is_present === true);
+                            if (!emps.length) return [];
+                            const emp = emps[0];
                             const fitLv = getFitLevel(emp.fitScore);
-                            return {
+                            return [{
                               id: ws.id,
                               top: ws.pos_top, left: ws.pos_left,
                               color: fitLv ? fitLv.color : '#aaa',
                               img: emp.image_url,
                               initial: (emp.name || '?')[0],
                               personAlarm: personAlarmOf(emp),
-                            };
-                          }).filter(Boolean),
+                              more: emps.length - 1,
+                              names: emps.map(e => e.name).join(', '),
+                            }];
+                          }),
                           // จุดเครื่องจักรที่กำลัง Downtime — กระพริบแดงบนผังย่อ
                           ...machinePoints
                             .filter(p => cardLineNames.includes(p.line_name) && dtAlarmByMachine[p.machine_no])
@@ -2274,17 +2286,16 @@ export default function Dashboard() {
                 />
                 {(() => {
                   // เก็บ marker ที่จะแสดง + ตำแหน่งจริง (anchor) จาก pos_top/pos_left (เป็น %)
-                  const markers = lineWs.map(ws => {
-                    const emp = stationEmpMap[String(ws.id)];
-                    if (!emp) return null;
-                    if (shiftEmpIds && !shiftEmpIds.has(emp.id)) return null;
-                    if (emp.is_present !== true) return null;
-                    return {
-                      ws, emp,
-                      top: parseFloat(ws.pos_top) || 0, left: parseFloat(ws.pos_left) || 0,
-                      ox: 0, oy: 0,
-                    };
-                  }).filter(Boolean);
+                  // จุดเดียวหลายคน = marker ต่อคน (จุดยึดเดียวกัน) — ตัว de-overlap ข้างล่างผลักแยกให้เอง
+                  const markers = lineWs.flatMap(ws =>
+                    (stationEmpMap[String(ws.id)] || [])
+                      .filter(emp => (!shiftEmpIds || shiftEmpIds.has(emp.id)) && emp.is_present === true)
+                      .map(emp => ({
+                        ws, emp,
+                        top: parseFloat(ws.pos_top) || 0, left: parseFloat(ws.pos_left) || 0,
+                        ox: 0, oy: 0,
+                      }))
+                  );
 
                   // กันการ์ดซ้อนทับกัน: ผลักออกจากกันใน "พิกเซลจริง" ของภาพที่ render
                   // (แปลง % เป็น px ตามขนาดจริงของ mapBox ก่อนคำนวณ แล้วแปลงกลับเป็น % ตอน render)
@@ -2330,10 +2341,10 @@ export default function Dashboard() {
                       {/* เส้นโยงกลับไปตำแหน่งจริง สำหรับการ์ดที่ถูกผลักออก */}
                       <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 1, pointerEvents: 'none' }}
                         viewBox="0 0 100 100" preserveAspectRatio="none">
-                        {pxMarkers.map(({ ws, top, left, ox, oy }) => {
+                        {pxMarkers.map(({ ws, emp, top, left, ox, oy }) => {
                           if (Math.abs(ox) < 0.3 && Math.abs(oy) < 0.3) return null;
                           return (
-                            <g key={`ln-${ws.id}`}>
+                            <g key={`ln-${ws.id}-${emp.id}`}>
                               <line x1={left} y1={top} x2={left + ox} y2={top + oy}
                                 stroke="rgba(255,255,255,0.5)" strokeWidth={0.25} strokeDasharray="1.2 1" vectorEffect="non-scaling-stroke" />
                               <circle cx={left} cy={top} r={0.8} fill="rgba(255,255,255,0.7)" />
@@ -2348,7 +2359,7 @@ export default function Dashboard() {
                         const shortName = (emp.name || '').split(' ')[0];
                         const pAlarm = personAlarmOf(emp);
                         return (
-                          <div key={ws.id}
+                          <div key={`${ws.id}-${emp.id}`}
                             onMouseEnter={e => { e.currentTarget.style.zIndex = 50; }}
                             onMouseLeave={e => { e.currentTarget.style.zIndex = 2; }}
                             title={pAlarm?.label}
