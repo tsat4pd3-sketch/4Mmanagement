@@ -453,17 +453,19 @@ export default function MorningMeeting() {
         sum.dtPct != null
           ? {
               label: 'Downtime รวมทุกเครื่อง', value: `${sum.dtPct}%`,
-              sub: `${sum.dtMin.toLocaleString()} นาที (≈${(sum.dtMin / 60).toFixed(1)} ชม.) · ${sum.dtCount} ครั้ง — จากเวลาเครื่องรวม ≈${Math.round(sum.dtBaseMin / 60).toLocaleString()} ชม. (${sum.dtMachines} เครื่อง × กะที่เปิด)`,
+              // sub ต้องสั้นพอไม่ล้นการ์ด — รายละเอียดเต็ม (สูตรฐาน) อยู่ใน tooltip
+              sub: `${sum.dtMin.toLocaleString()} นาที · ${sum.dtCount} ครั้ง / ฐาน ≈${Math.round(sum.dtBaseMin / 60).toLocaleString()} ชม. · ${sum.dtMachines} เครื่อง`,
+              title: `Downtime รวม ${sum.dtMin.toLocaleString()} นาที (≈${(sum.dtMin / 60).toFixed(1)} ชม.) จาก ${sum.dtCount} รายการ\nฐานเวลาเครื่องรวม ≈${Math.round(sum.dtBaseMin / 60).toLocaleString()} ชม. = นาทีกะที่เปิด × จำนวนเครื่องของไลน์ (${sum.dtMachines} เครื่อง)\nเวลารายการซ้อนกันได้ (หลายเครื่องเสียพร้อมกัน) จึงเกิน 24 ชม./วันได้`,
               color: sum.dtMin === 0 ? '#22c55e' : sum.dtPct > 8 ? '#ef4444' : sum.dtPct >= 3 ? '#f59e0b' : '#22c55e',
             }
           : { label: 'Downtime รวมทุกเครื่อง', value: `${sum.dtMin.toLocaleString()} นาที`, sub: `${sum.dtCount} ครั้ง — รวมทุกไลน์/เครื่อง เวลาซ้อนกันได้`, color: sum.dtMin > 0 ? '#ef4444' : '#22c55e' },
         { label: 'ของเสีย (NG)', value: sum.ng.toLocaleString(), sub: 'จากทุกกะ', color: sum.ng > 0 ? '#ef4444' : '#22c55e' },
         { label: 'เข้างาน', value: `${sum.present}/${sum.attTotal}`, sub: sum.attTotal ? `${pctStr(sum.present, sum.attTotal)}%` : 'ไม่มีข้อมูลเช็คชื่อวันนั้น', color: '#4d9fff' },
       ].map(k => (
-        <div key={k.label} style={{ ...card, height: '100%', minHeight: 92, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+        <div key={k.label} title={k.title || undefined} style={{ ...card, height: '100%', minHeight: 92, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 4, minWidth: 0 }}>
           <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>{k.label}</div>
           <div style={{ fontSize: 26, fontWeight: 900, fontFamily: 'var(--font-display)', color: k.color, lineHeight: 1.1 }}>{k.value}</div>
-          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{k.sub}</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', overflowWrap: 'break-word' }}>{k.sub}</div>
         </div>
       ))}
     </div>
@@ -479,7 +481,8 @@ export default function MorningMeeting() {
           </div>
           {shifts.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>— ไม่เปิดกะ —</div>}
           {shifts.map(s => (
-            <div key={s.shift} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+            /* flexWrap สำคัญ — ชิป OEE/DT/สถานะรวมกันยาวกว่าการ์ดได้ ต้องตกบรรทัดใหม่ ห้ามทะลุขอบขวา */
+            <div key={s.shift} style={{ display: 'flex', alignItems: 'center', gap: 6, rowGap: 3, fontSize: 12, flexWrap: 'wrap' }}>
               <span style={{ color: 'var(--text2)', width: 74, flexShrink: 0 }}>{SHIFT_LABEL[s.shift]}</span>
               {s.pct != null ? (
                 <>
