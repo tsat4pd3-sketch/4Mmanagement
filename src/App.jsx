@@ -610,6 +610,10 @@ function ToggleBtn({ isOpen, onClick }) {
 /* ─── Auto-Logout ──────────────────────────────────────────────────── */
 const IDLE_TIMEOUT_MS  = 30 * 60 * 1000; // 30 min idle → show warning
 const WARN_DURATION_MS =  5 * 60 * 1000; // 5 min countdown before forced logout
+// นับ idle ร่วมกันทุกแท็บของ browser เดียวกันผ่าน localStorage — แท็บที่เปิดทิ้งไว้ต้องไม่
+// auto-logout ทั้งที่ user กำลังใช้งานอีกแท็บอยู่ (เคยเป็นสาเหตุหลักของ "เด้ง login บ่อย"
+// เพราะ signOut จากแท็บ idle พาแท็บที่ใช้งานอยู่หลุดด้วย — session แชร์กันใน localStorage)
+const ACTIVITY_LS_KEY = 'esm-last-activity';
 
 function useAutoLogout(isDisplay, onLogout) {
   const [warnSecsLeft, setWarnSecsLeft] = useState(null); // null = not warning
@@ -628,19 +632,42 @@ function useAutoLogout(isDisplay, onLogout) {
   const dismissWarning = useCallback(() => {
     stopCountdown();
     lastActivityRef.current = Date.now();
+    try { localStorage.setItem(ACTIVITY_LS_KEY, String(Date.now())); } catch { /* private mode */ }
   }, [stopCountdown]);
 
   useEffect(() => {
     if (isDisplay) return; // display users never get auto-logged out
 
     const EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
-    const onActivity = () => { lastActivityRef.current = Date.now(); };
+    let lastLsWrite = 0;
+    const onActivity = () => {
+      lastActivityRef.current = Date.now();
+      // แชร์เวลา activity ให้แท็บอื่น (เขียนถี่สุดทุก 5 วิ กัน write spam)
+      if (Date.now() - lastLsWrite > 5000) {
+        lastLsWrite = Date.now();
+        try { localStorage.setItem(ACTIVITY_LS_KEY, String(Date.now())); } catch { /* private mode */ }
+      }
+      // กลับมาใช้งานระหว่าง countdown = ยังอยู่ — ปิดคำเตือนเอง ไม่ต้องบังคับกดปุ่ม
+      // (เดิมขยับเมาส์/แตะจอไม่ช่วย ต้องกดปุ่มเท่านั้น เลยโดน logout ทั้งที่คนอยู่หน้าจอ)
+      if (warnActiveRef.current) dismissWarning();
+    };
     EVENTS.forEach(e => window.addEventListener(e, onActivity, { passive: true }));
 
-    // Poll every 30s to check idle time
+    // แท็บอื่นมี activity → นับเป็น activity ของเราด้วย (storage event ยิงเฉพาะแท็บอื่น)
+    const onStorage = (e) => {
+      if (e.key !== ACTIVITY_LS_KEY) return;
+      lastActivityRef.current = Date.now();
+      if (warnActiveRef.current) dismissWarning();
+    };
+    window.addEventListener('storage', onStorage);
+
+    // Poll every 30s to check idle time — เทียบกับ activity ล่าสุดของ "ทุกแท็บ" (max ของ local ref กับ localStorage)
     const pollId = setInterval(() => {
       if (warnActiveRef.current) return; // already counting down
-      const idle = Date.now() - lastActivityRef.current;
+      let shared = 0;
+      try { shared = Number(localStorage.getItem(ACTIVITY_LS_KEY)) || 0; } catch { /* ignore */ }
+      const lastActivity = Math.max(lastActivityRef.current, shared);
+      const idle = Date.now() - lastActivity;
       if (idle >= IDLE_TIMEOUT_MS) {
         // Start countdown
         warnActiveRef.current = true;
@@ -661,10 +688,11 @@ function useAutoLogout(isDisplay, onLogout) {
 
     return () => {
       EVENTS.forEach(e => window.removeEventListener(e, onActivity));
+      window.removeEventListener('storage', onStorage);
       clearInterval(pollId);
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
-  }, [isDisplay]);
+  }, [isDisplay, dismissWarning]);
 
   return { warnSecsLeft, dismissWarning };
 }
@@ -738,7 +766,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   if (!session) return <Navigate to="/login" replace />;
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    // scope 'local' = ออกเฉพาะ browser นี้ (ทุกแท็บของเครื่องนี้ผ่าน localStorage event)
+    // ห้ามใช้ default (global) — global จะ revoke refresh token ของ user นี้ "ทุกเครื่อง"
+    // → account ที่ใช้ร่วมกันหลายจุดในโรงงานโดนเด้ง login พร้อมกันทั้งหมดทุกครั้งที่
+    // เครื่องใดเครื่องหนึ่ง logout/auto-logout (สาเหตุหลักของ "เด้ง login บ่อย" 2026-07-14)
+    await supabase.auth.signOut({ scope: 'local' });
     navigate('/login');
   };
 
