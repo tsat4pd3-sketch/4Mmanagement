@@ -88,6 +88,14 @@ const DEPT_CSS = `
     position: absolute; top: 0; left: 0; right: 0; height: 2px;
     background: linear-gradient(90deg, var(--tc) 0%, transparent 70%); opacity: 0.7;
   }
+  /* กริดโมดูล — ใช้พื้นที่แนวนอนเต็มที่ (กฎ user 2026-07-14: ห้ามเหลือขอบข้างว่างเยอะ)
+     6 การ์ดจัดคอลัมน์ให้สมดุล: แคบ=auto · ≥1200px = 3 คอลัมน์ (2 แถว) · ≥1900px = 6 คอลัมน์แถวเดียว (จอ TV) */
+  .hub-grid {
+    display: grid; gap: clamp(12px, 1.6vw, 20px);
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+  @media (min-width: 1200px) { .hub-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (min-width: 1900px) { .hub-grid { grid-template-columns: repeat(6, 1fr); } }
   /* มือถือ ≤768px: top bar (ชื่อ user/ธีม/ออกจากระบบ) เลิกลอย absolute — กลับเข้า flow ชิดขวา
      กันทับหัวข้อ (desktop ไม่เปลี่ยน: media ไม่ match) */
   @media (max-width: 768px) {
@@ -244,8 +252,9 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
         )}
       </div>
 
-      {/* ── Header ── */}
-      <div style={{ textAlign: 'center', marginBottom: 'clamp(20px, 3vw, 30px)', animation: 'hub-fade-up 0.55s ease both' }}>
+      {/* ── Header — แถวนอนเต็มความกว้าง: ชื่อระบบซ้าย · นาฬิกา/กะขวา (จอแคบ wrap) ── */}
+      <div style={{ width: '100%', maxWidth: 'min(97vw, 2400px)', display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: '14px clamp(20px, 3vw, 48px)', marginBottom: 'clamp(18px, 2.5vw, 26px)', animation: 'hub-fade-up 0.55s ease both' }}>
+        <div style={{ minWidth: 'min(100%, 420px)' }}>
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 10,
           background: 'rgba(61,214,92,0.08)', border: '1px solid rgba(61,214,92,0.22)',
@@ -267,9 +276,10 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
         <p style={{ margin: '8px 0 0', fontSize: 'clamp(13px, 2vw, 15px)', color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>
           ศูนย์ควบคุมโรงงานอัจฉริยะ · Thai Summit Group — เลือกส่วนงานเพื่อเริ่มทำงาน
         </p>
+        </div>
 
-        {/* นาฬิกา + กะ — readout สด */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+        {/* นาฬิกา + กะ — readout สด (ชิดขวาบนจอกว้าง) */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 700, color: 'var(--text)', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, padding: '4px 12px', fontVariantNumeric: 'tabular-nums' }}>
             ⏱ {clock}
           </span>
@@ -283,7 +293,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       </div>
 
       {/* ── LIVE TELEMETRY ── */}
-      <div style={{ width: '100%', maxWidth: 1060, marginBottom: 'clamp(22px, 3vw, 32px)', animation: 'hub-fade-up 0.6s ease 0.08s both' }}>
+      <div style={{ width: '100%', maxWidth: 'min(97vw, 2400px)', marginBottom: 'clamp(22px, 3vw, 32px)', animation: 'hub-fade-up 0.6s ease 0.08s both' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
           <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: MONO }}>
             ● Live Telemetry
@@ -309,12 +319,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       </div>
 
       {/* ── Module Grid ── */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(clamp(260px, 28vw, 320px), 1fr))',
-        gap: 'clamp(12px, 2vw, 18px)',
-        width: '100%', maxWidth: 1060,
-      }}>
+      <div className="hub-grid" style={{ width: '100%', maxWidth: 'min(97vw, 2400px)' }}>
         {DEPTS.map((d, i) => (
           <div
             key={d.key}
