@@ -86,6 +86,9 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 - การ์ดในหมวด/แถวเดียวกันต้อง**สูงเท่ากัน**: wrapper `height: 100%` + การ์ด `height: 100%` + `minHeight` เดียวกัน + `display:flex; flexDirection:column; justifyContent:space-between`
 - ทั้งการ์ด**ไม่ใช่**จุดคลิก — action ต้องเป็นปุ่ม/ป้ายเฉพาะจุดที่เห็นชัด (เช่นปุ่ม "ดูไลน์ย่อย ▾")
 - แถวขยายลูก (nested) ให้ทำเป็น panel เต็มแถว `gridColumn: '1 / -1'` ขอบประ + หัวข้อบอกว่าเป็นลูกของอะไร ไม่ปนใน grid เดียวกับการ์ดหลัก
+- **การ์ด KPI/สถิติ ให้ติด class กลาง `kpi-lift`** (2026-07-14 — อยู่ใน index.css): hover ยกการ์ด -4px + เงา
+  เฉพาะอุปกรณ์มีเมาส์จริง (`@media (hover:hover)`) — ห้ามเขียน hover lift เองต่อหน้า · ตัวเลขวิ่ง count-up
+  ทำได้ (ดู `useCountUp` ใน DeptHub) — เป็น animation ตอนค่าเปลี่ยน ไม่ใช่ไฟกระพริบ ไม่ขัด Andon §2
 
 ---
 

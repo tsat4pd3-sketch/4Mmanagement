@@ -1,9 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { focusSidebarGroups, navItemsForGroups } from '../App';
 import { roleLabel } from '../utils/roleMeta';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { fetchActiveDowntimes } from '../utils/downtimeAlarm';
+import { toast } from '../components/Toast';
+import ImageCropModal from '../components/ImageCropModal';
+import SignatureModal from '../components/SignatureModal';
+import ChangePasswordModal from '../components/ChangePasswordModal';
 
 /* ── DeptHub — landing "Smart Factory / Industry 5.0" (redesign v2 2026-07-13) ──
    คอนเซปต์: Mission Control ของโรงงาน — ไม่ใช่แค่เมนู แต่เป็นแผงควบคุมที่มีชีวิต
@@ -88,6 +92,10 @@ const DEPT_CSS = `
     position: absolute; top: 0; left: 0; right: 0; height: 2px;
     background: linear-gradient(90deg, var(--tc) 0%, transparent 70%); opacity: 0.7;
   }
+  @media (hover: hover) {
+    .tele-tile:hover { transform: translateY(-4px); border-color: var(--tc); }
+  }
+  .tele-tile { transition: transform 0.2s ease, border-color 0.2s ease; }
   /* กริดโมดูล — ใช้พื้นที่แนวนอนเต็มที่ (กฎ user 2026-07-14: ห้ามเหลือขอบข้างว่างเยอะ)
      6 การ์ดจัดคอลัมน์ให้สมดุล: แคบ=auto · ≥1200px = 3 คอลัมน์ (2 แถว) · ≥1900px = 6 คอลัมน์แถวเดียว (จอ TV) */
   .hub-grid {
@@ -138,6 +146,46 @@ const DEPTS = [
   },
 ];
 
+// ตัวเลขวิ่งขึ้นสู่ค่าจริง (count-up) — เอฟเฟกต์ตอนโหลด/ค่าเปลี่ยน ไม่ใช่ไฟกระพริบ (Andon §2 ไม่เกี่ยว)
+function useCountUp(target, dur = 700) {
+  const [val, setVal] = useState(0);
+  const prevRef = useRef(0);
+  useEffect(() => {
+    if (target == null) return;
+    const from = prevRef.current, to = target;
+    if (from === to) { setVal(to); return; }
+    const t0 = performance.now();
+    let raf;
+    const step = (t) => {
+      const pr = Math.min(1, (t - t0) / dur);
+      const eased = 1 - Math.pow(1 - pr, 3);
+      setVal(Math.round(from + (to - from) * eased));
+      if (pr < 1) raf = requestAnimationFrame(step);
+      else prevRef.current = to;
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [target, dur]);
+  return target == null ? null : val;
+}
+
+function TeleTile({ t }) {
+  const shown = useCountUp(t.val);
+  return (
+    <div className="tele-tile" style={{ '--tc': t.color }}>
+      <div className="scan" />
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+        <span style={{ fontFamily: MONO, fontSize: 'clamp(26px, 3vw, 34px)', fontWeight: 700, lineHeight: 1, color: shown == null ? 'var(--muted2)' : t.color, fontVariantNumeric: 'tabular-nums' }}>
+          {shown == null ? '–' : shown}
+        </span>
+        <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>{t.unit}</span>
+      </div>
+      <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-body)' }}>{t.label}</div>
+      <div style={{ fontSize: 11, color: 'var(--muted2)', letterSpacing: '0.14em', fontFamily: MONO }}>{t.sub}</div>
+    </div>
+  );
+}
+
 // work date เดียวกับกฎทั้งระบบ: ก่อน 08:00 นับเป็นวันก่อนหน้า (ห้าม toISOString)
 function getWorkDate() {
   const d = new Date();
@@ -145,8 +193,39 @@ function getWorkDate() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, userRole, userPosition }) {
+export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, userRole, userPosition,
+  userEmail, userAvatarUrl, onAvatarSaved, userSignatureUrl, onSignatureSaved }) {
   const navigate = useNavigate();
+
+  // ── โปรไฟล์เมนู: เปลี่ยนรูป / ลายเซ็น / เปลี่ยนรหัสผ่าน (2026-07-14) ──
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [cropFile, setCropFile] = useState(null);
+  const [sigOpen, setSigOpen] = useState(false);
+  const [pwdOpen, setPwdOpen] = useState(false);
+  const fileRef = useRef(null);
+
+  const onAvatarCropped = async (file) => {
+    setCropFile(null);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error('ยังไม่ได้เข้าสู่ระบบ'); return; }
+      const path = `${user.id}/avatar_${Date.now()}.jpg`;
+      const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { contentType: 'image/jpeg' });
+      if (upErr) throw upErr;
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
+      const { error: dbErr } = await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id);
+      if (dbErr) throw dbErr;
+      // ลบไฟล์เก่า best-effort หลัง DB update สำเร็จเท่านั้น (กฎ Storage E2) — เฉพาะโฟลเดอร์ตัวเอง
+      if (userAvatarUrl?.includes('/avatars/')) {
+        const old = decodeURIComponent(userAvatarUrl.split('/avatars/')[1] || '').split('?')[0];
+        if (old && old.startsWith(`${user.id}/`)) supabase.storage.from('avatars').remove([old]).catch(() => {});
+      }
+      onAvatarSaved?.(publicUrl);
+      toast.success('เปลี่ยนรูปโปรไฟล์แล้ว');
+    } catch (err) {
+      toast.error(`อัพโหลดรูปไม่สำเร็จ: ${err?.message || 'ลองใหม่อีกครั้ง'}`);
+    }
+  };
 
   // นาฬิกา/กะสด — display เท่านั้น (ขอบกะตรง getCurrentShift: day 08:00–19:59)
   const [now, setNow] = useState(() => new Date());
@@ -224,12 +303,73 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
               {userFullName}
             </span>
             {userRole && (
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+              <span style={{ fontSize: 11, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                {/* จุดเขียว ONLINE นิ่ง+เรืองแสง */}
+                <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#3dd65c', boxShadow: '0 0 4px 1px rgba(61,214,92,0.6)' }} />
                 {userPosition ? `${userPosition} · ` : ''}{roleLabel(userRole)}
               </span>
             )}
           </div>
         )}
+
+        {/* Avatar → เมนูโปรไฟล์: เปลี่ยนรูป / ลายเซ็น / เปลี่ยนรหัสผ่าน */}
+        <div style={{ position: 'relative' }}>
+          <button onClick={() => setProfileOpen(o => !o)} title="โปรไฟล์ของฉัน" style={{
+            width: 40, height: 40, borderRadius: '50%', padding: 0, cursor: 'pointer', overflow: 'hidden',
+            border: `2px solid ${profileOpen ? 'var(--accent)' : 'var(--border2)'}`,
+            background: 'var(--card)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            {userAvatarUrl
+              ? <img src={userAvatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              : <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>{(userFullName || '?').trim().charAt(0)}</span>}
+          </button>
+
+          {profileOpen && (
+            <>
+              {/* popup แสดงผล/เมนู (ไม่มี input) — ปิดจากคลิกนอกกรอบได้ตาม UI-CONVENTIONS §5 */}
+              <div onClick={() => setProfileOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1290 }} />
+              <div style={{
+                position: 'absolute', top: 46, right: 0, zIndex: 1300, width: 240,
+                background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12,
+                boxShadow: 'var(--shadow-lg)', overflow: 'hidden',
+              }}>
+                <div style={{ padding: '14px 14px 12px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <div style={{ width: 44, height: 44, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, border: '2px solid var(--accent)', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {userAvatarUrl
+                      ? <img src={userAvatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--accent)' }}>{(userFullName || '?').trim().charAt(0)}</span>}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{userFullName || '—'}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{roleLabel(userRole)}</div>
+                  </div>
+                </div>
+                {[
+                  { icon: '📷', label: 'เปลี่ยนรูปโปรไฟล์', act: () => { setProfileOpen(false); fileRef.current?.click(); } },
+                  { icon: '✍️', label: 'ตั้งค่าลายเซ็น', act: () => { setProfileOpen(false); setSigOpen(true); } },
+                  { icon: '🔐', label: 'เปลี่ยนรหัสผ่าน', act: () => { setProfileOpen(false); setPwdOpen(true); } },
+                ].map(m => (
+                  <button key={m.label} onClick={m.act} style={{
+                    display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px',
+                    background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)',
+                    color: 'var(--text2)', fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+                    fontFamily: 'var(--font-body)',
+                  }}>
+                    <span style={{ fontSize: 15 }}>{m.icon}</span>{m.label}
+                  </button>
+                ))}
+                <button onClick={() => { setProfileOpen(false); onLogout?.(); }} style={{
+                  display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px',
+                  background: 'transparent', border: 'none', color: '#ef4444', fontSize: 13, fontWeight: 700,
+                  cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-body)',
+                }}>
+                  <span style={{ fontSize: 15 }}>🚪</span>ออกจากระบบ
+                </button>
+              </div>
+            </>
+          )}
+        </div>
         {onToggleTheme && (
           <button onClick={onToggleTheme} title="สลับธีม" style={{
             width: 38, height: 38, borderRadius: 10,
@@ -238,16 +378,6 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             {theme === 'dark' ? '☀️' : '🌙'}
-          </button>
-        )}
-        {onLogout && (
-          <button onClick={onLogout} title="ออกจากระบบ" style={{
-            height: 38, padding: '0 16px', borderRadius: 10,
-            background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
-            color: '#ef4444', cursor: 'pointer', fontSize: 13, fontWeight: 700,
-            display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'var(--font-body)',
-          }}>
-            🚪 ออกจากระบบ
           </button>
         )}
       </div>
@@ -302,19 +432,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
           <span style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: MONO }}>refresh 60s</span>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {TELE.map(t => (
-            <div key={t.key} className="tele-tile" style={{ '--tc': t.color }}>
-              <div className="scan" />
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                <span style={{ fontFamily: MONO, fontSize: 'clamp(26px, 3vw, 34px)', fontWeight: 700, lineHeight: 1, color: t.val == null ? 'var(--muted2)' : t.color, fontVariantNumeric: 'tabular-nums' }}>
-                  {t.val == null ? '–' : t.val}
-                </span>
-                <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>{t.unit}</span>
-              </div>
-              <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-body)' }}>{t.label}</div>
-              <div style={{ fontSize: 11, color: 'var(--muted2)', letterSpacing: '0.14em', fontFamily: MONO }}>{t.sub}</div>
-            </div>
-          ))}
+          {TELE.map(t => <TeleTile key={t.key} t={t} />)}
         </div>
       </div>
 
@@ -380,6 +498,17 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
           </div>
         ))}
       </div>
+
+      {/* input เลือกรูปโปรไฟล์ (ซ่อน) → ImageCropModal crop วงกลม + บีบอัตโนมัติ */}
+      <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setCropFile(f); }} />
+      {cropFile && (
+        <ImageCropModal file={cropFile} aspect={1} shape="circle" outputSize={480}
+          title="จัดตำแหน่งรูปโปรไฟล์" onCancel={() => setCropFile(null)} onConfirm={onAvatarCropped} />
+      )}
+      <SignatureModal open={sigOpen} onClose={() => setSigOpen(false)}
+        currentSignatureUrl={userSignatureUrl} onSaved={(url) => onSignatureSaved?.(url)} />
+      <ChangePasswordModal open={pwdOpen} onClose={() => setPwdOpen(false)} userEmail={userEmail} />
 
       {/* ── Footer ── */}
       <div style={{
