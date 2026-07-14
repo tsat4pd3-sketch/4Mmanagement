@@ -223,7 +223,12 @@ export default function MorningMeeting() {
     });
     const closed = sessions.filter(s => s.status === 'closed' && s.oee != null);
     const oeeAvg = closed.length ? Math.round(closed.reduce((a, s) => a + Number(s.oee), 0) / closed.length) : null;
-    const dtMin = Math.round(downtimes.reduce((a, d) => a + (Number(d.duration_min) || 0), 0));
+    // แยก นอกแผน/ในแผน — ตัวชี้วัดหลักนับเฉพาะ "นอกแผน" (ในแผน เช่น นับสต็อก/ไม่มีแผนผลิต
+    // เป็นเรื่องปกติ ไม่ใช่ความเสียหาย ถ้ารวมจะกลบตัวเลขจริงจนดูวิกฤตเกินเหตุ)
+    const isPlanned = (d) => d.dr_downtime_types?.category === 'planned';
+    const dtMin = Math.round(downtimes.filter(d => !isPlanned(d)).reduce((a, d) => a + (Number(d.duration_min) || 0), 0));
+    const dtPlannedMin = Math.round(downtimes.filter(isPlanned).reduce((a, d) => a + (Number(d.duration_min) || 0), 0));
+    const dtCount = downtimes.filter(d => !isPlanned(d)).length;
     // ฐานเวลาเครื่องรวม = Σ ต่อกะที่เปิด (นาทีกะ × จำนวนเครื่องของไลน์นั้น) — ให้ % Downtime
     // เทียบได้ว่าเยอะ/น้อยแค่ไหน (ไลน์ไม่มีทะเบียนเครื่องนับเป็น 1 เครื่อง · กะเปิดค้างไม่มี shift_min ใช้ 570 = 9.5 ชม.)
     let dtBaseMin = 0, dtMachines = 0;
@@ -238,7 +243,7 @@ export default function MorningMeeting() {
     const present = attendance.filter(a => a.is_present).length;
     return {
       actual, target, achieve: pctStr(actual, target), oeeAvg,
-      dtMin, dtCount: downtimes.length, dtBaseMin, dtPct, dtMachines, ng,
+      dtMin, dtCount, dtPlannedMin, dtBaseMin, dtPct, dtMachines, ng,
       present, attTotal: attendance.length,
     };
   }, [sessions, downtimes, attendance, viewLines, orders, machineCountByLine]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -276,8 +281,10 @@ export default function MorningMeeting() {
       const dts = downtimes.filter(d => d.session_id === o.session_id);
       const dtMin = Math.round(dts.reduce((a, d) => a + (Number(d.duration_min) || 0), 0));
       const topDt = (() => {
+        // สาเหตุจาก downtime: เน้นนอกแผนก่อน (planned เช่น นับสต็อกไม่ใช่สาเหตุงานหลุด) — ไม่มีนอกแผนค่อย fallback
+        const pool = dts.filter(d => d.dr_downtime_types?.category !== 'planned');
         const g = {};
-        dts.forEach(d => {
+        (pool.length ? pool : dts).forEach(d => {
           const k = d.dr_downtime_types?.name_th || 'Downtime';
           g[k] = (g[k] || 0) + (Number(d.duration_min) || 0);
         });
@@ -296,11 +303,12 @@ export default function MorningMeeting() {
     }).filter(Boolean).sort((a, b) => b.gap - a.gap);
   }, [orders, sessions, downtimes, attendance, fourM]);
 
+  // แยก นอกแผน (ตัวจริงที่ต้องคุยในประชุม — มีแถบ+note) / ในแผน (planned: นับสต็อก ฯลฯ — โชว์จางๆ ท้ายแผง)
   const topDowntime = useMemo(() => {
     const g = {};
     downtimes.forEach(d => {
       const k = d.dr_downtime_types?.name_th || 'ไม่ระบุ';
-      g[k] = g[k] || { name: k, color: d.dr_downtime_types?.color, min: 0, count: 0, machines: new Set(), carry: false, descs: {} };
+      g[k] = g[k] || { name: k, color: d.dr_downtime_types?.color, planned: d.dr_downtime_types?.category === 'planned', min: 0, count: 0, machines: new Set(), carry: false, descs: {} };
       const min = Number(d.duration_min) || 0;
       g[k].min += min;
       g[k].count += 1;
@@ -310,9 +318,11 @@ export default function MorningMeeting() {
       const desc = (d.description || '').trim() || '(ไม่ระบุรายละเอียด)';
       g[k].descs[desc] = (g[k].descs[desc] || 0) + min;
     });
-    return Object.values(g)
-      .map(x => ({ ...x, topDescs: Object.entries(x.descs).sort((a, b) => b[1] - a[1]).slice(0, 3) }))
-      .sort((a, b) => b.min - a.min).slice(0, 6);
+    const all = Object.values(g).map(x => ({ ...x, topDescs: Object.entries(x.descs).sort((a, b) => b[1] - a[1]).slice(0, 3) }));
+    return {
+      unplanned: all.filter(x => !x.planned).sort((a, b) => b.min - a.min).slice(0, 6),
+      planned: all.filter(x => x.planned).sort((a, b) => b.min - a.min).slice(0, 4),
+    };
   }, [downtimes]);
 
   const topDefects = useMemo(() => {
@@ -379,7 +389,7 @@ export default function MorningMeeting() {
       const missedList = missedOrders.slice(0, 5)
         .map(m => `• ${m.line} · ${m.o.part_name || m.o.mat_no || m.o.prod_no}: ${m.actual}/${m.target} (ขาด ${m.gap})`)
         .join('\n');
-      const dtTop = topDowntime.slice(0, 3).map(t => `${t.name} ${Math.round(t.min)}น.`).join(' · ');
+      const dtTop = topDowntime.unplanned.slice(0, 3).map(t => `${t.name} ${Math.round(t.min)}น.`).join(' · ');
       const { error } = await supabase.functions.invoke('send-notification', {
         body: {
           event: 'morning_meeting',
@@ -410,7 +420,7 @@ export default function MorningMeeting() {
        <td style="${td};text-align:right">${m.target}</td><td style="${td};text-align:right">${m.actual}</td>
        <td style="${td};text-align:right;color:#c00">${m.gap}</td>
        <td style="${td}">${m.causes.map(c => c.text).join(', ') || '-'}</td></tr>`).join('');
-    const dtRows = topDowntime.map(t =>
+    const dtRows = topDowntime.unplanned.map(t =>
       `<tr><td style="${td}">${t.name}</td><td style="${td};text-align:right">${Math.round(t.min)}</td>
        <td style="${td};text-align:right">${t.count}</td><td style="${td}">${[...t.machines].join(', ')}</td></tr>`).join('');
     const actRows = actions.map(a =>
@@ -425,7 +435,7 @@ export default function MorningMeeting() {
 ⏱️ Downtime ${sum.dtMin} นาที (${sum.dtCount} ครั้ง${sum.dtPct != null ? ` = ${sum.dtPct}% ของเวลาเครื่องรวม ≈${Math.round(sum.dtBaseMin / 60)} ชม. · ${sum.dtMachines} เครื่อง` : ''} — รวมทุกไลน์/เครื่อง เวลาซ้อนกันได้) · ❌ NG ${sum.ng} · 👥 เข้างาน ${sum.present}/${sum.attTotal}</p>
 <h2>📉 งานหลุดแผน (${missedOrders.length})</h2>
 <table><tr><th style="${td}">ไลน์</th><th style="${td}">พาร์ท</th><th style="${td}">เป้า</th><th style="${td}">ได้จริง</th><th style="${td}">ขาด</th><th style="${td}">สาเหตุ</th></tr>${missedRows || `<tr><td colspan="6" style="${td}">— ไม่มี —</td></tr>`}</table>
-<h2>🛠️ Top Downtime</h2>
+<h2>🛠️ Top Downtime นอกแผน</h2>
 <table><tr><th style="${td}">สาเหตุ</th><th style="${td}">นาที</th><th style="${td}">ครั้ง</th><th style="${td}">เครื่อง</th></tr>${dtRows || `<tr><td colspan="4" style="${td}">— ไม่มี —</td></tr>`}</table>
 <h2>📌 Action Items</h2>
 <table><tr><th style="${td}">จากวัน</th><th style="${td}">ไลน์</th><th style="${td}">เรื่อง</th><th style="${td}">ผู้รับผิดชอบ</th><th style="${td}">กำหนด</th><th style="${td}">สถานะ</th></tr>${actRows || `<tr><td colspan="6" style="${td}">— ไม่มี —</td></tr>`}</table>
@@ -452,13 +462,13 @@ export default function MorningMeeting() {
         // ที่มีจริงของวันนั้น → % ทำให้เห็นทันทีว่าเยอะหรือน้อย (เกณฑ์สี: <3% เขียว · 3-8% เหลือง · >8% แดง)
         sum.dtPct != null
           ? {
-              label: 'Downtime รวมทุกเครื่อง', value: `${sum.dtPct}%`,
+              label: 'Downtime นอกแผน', value: `${sum.dtPct}%`,
               // sub ต้องสั้นพอไม่ล้นการ์ด — รายละเอียดเต็ม (สูตรฐาน) อยู่ใน tooltip
-              sub: `${sum.dtMin.toLocaleString()} นาที · ${sum.dtCount} ครั้ง / ฐาน ≈${Math.round(sum.dtBaseMin / 60).toLocaleString()} ชม. · ${sum.dtMachines} เครื่อง`,
-              title: `Downtime รวม ${sum.dtMin.toLocaleString()} นาที (≈${(sum.dtMin / 60).toFixed(1)} ชม.) จาก ${sum.dtCount} รายการ\nฐานเวลาเครื่องรวม ≈${Math.round(sum.dtBaseMin / 60).toLocaleString()} ชม. = นาทีกะที่เปิด × จำนวนเครื่องของไลน์ (${sum.dtMachines} เครื่อง)\nเวลารายการซ้อนกันได้ (หลายเครื่องเสียพร้อมกัน) จึงเกิน 24 ชม./วันได้`,
+              sub: `${sum.dtMin.toLocaleString()} นาที · ${sum.dtCount} ครั้ง / ฐาน ≈${Math.round(sum.dtBaseMin / 60).toLocaleString()} ชม.${sum.dtPlannedMin ? ` · ในแผนอีก ${sum.dtPlannedMin.toLocaleString()} น.` : ''}`,
+              title: `Downtime นอกแผน ${sum.dtMin.toLocaleString()} นาที (≈${(sum.dtMin / 60).toFixed(1)} ชม.) จาก ${sum.dtCount} รายการ\nฐานเวลาเครื่องรวม ≈${Math.round(sum.dtBaseMin / 60).toLocaleString()} ชม. = นาทีกะที่เปิด × จำนวนเครื่องของไลน์ (${sum.dtMachines} เครื่อง)\nในแผน (planned เช่น นับสต็อก/ไม่มีแผนผลิต) ${sum.dtPlannedMin.toLocaleString()} นาที — แสดงแยก ไม่นับใน %\nเวลารายการซ้อนกันได้ (หลายเครื่องเสียพร้อมกัน) จึงเกิน 24 ชม./วันได้`,
               color: sum.dtMin === 0 ? '#22c55e' : sum.dtPct > 8 ? '#ef4444' : sum.dtPct >= 3 ? '#f59e0b' : '#22c55e',
             }
-          : { label: 'Downtime รวมทุกเครื่อง', value: `${sum.dtMin.toLocaleString()} นาที`, sub: `${sum.dtCount} ครั้ง — รวมทุกไลน์/เครื่อง เวลาซ้อนกันได้`, color: sum.dtMin > 0 ? '#ef4444' : '#22c55e' },
+          : { label: 'Downtime นอกแผน', value: `${sum.dtMin.toLocaleString()} นาที`, sub: `${sum.dtCount} ครั้ง — รวมทุกไลน์/เครื่อง เวลาซ้อนกันได้`, color: sum.dtMin > 0 ? '#ef4444' : '#22c55e' },
         { label: 'ของเสีย (NG)', value: sum.ng.toLocaleString(), sub: 'จากทุกกะ', color: sum.ng > 0 ? '#ef4444' : '#22c55e' },
         { label: 'เข้างาน', value: `${sum.present}/${sum.attTotal}`, sub: sum.attTotal ? `${pctStr(sum.present, sum.attTotal)}%` : 'ไม่มีข้อมูลเช็คชื่อวันนั้น', color: '#4d9fff' },
       ].map(k => (
@@ -495,21 +505,22 @@ export default function MorningMeeting() {
           {['day', 'night'].map(sh => {
             const s = shifts.find(x => x.shift === sh);
             return (
-              <div key={sh} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 12 }}>
-                <span style={{ color: 'var(--text2)', width: 74, flexShrink: 0, lineHeight: '20px' }}>{SHIFT_LABEL[sh]}</span>
+              /* ป้ายกะกว้าง 58px พอดีคำ + ยอดชิดซ้ายตามธรรมชาติ — บีบช่องว่างให้ชิปจบบรรทัดเดียวมากที่สุด */
+              <div key={sh} style={{ display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 12 }}>
+                <span style={{ color: 'var(--text2)', width: 58, flexShrink: 0, lineHeight: '20px', whiteSpace: 'nowrap' }}>{SHIFT_LABEL[sh]}</span>
                 {!s ? (
                   <span style={{ color: 'var(--muted)', lineHeight: '20px' }}>— ไม่เปิดกะ —</span>
                 ) : (
                   /* ชิปอยู่คอลัมน์ของตัวเอง wrap ในคอลัมน์ — ตกบรรทัดก็เรียงตรงคอลัมน์เดิม ไม่ไหลใต้ป้ายกะ */
-                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, rowGap: 3, minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 5, rowGap: 3, minWidth: 0, flex: 1 }}>
                     {s.pct != null ? (
                       <>
-                        <span style={{ fontWeight: 800, color: achieveColor(s.pct), minWidth: 58, textAlign: 'right' }}>{s.actual}/{s.target}</span>
+                        <span style={{ fontWeight: 800, color: achieveColor(s.pct), whiteSpace: 'nowrap' }}>{s.actual}/{s.target}</span>
                         <span style={chip(achieveColor(s.pct))}>{s.pct}%</span>
                       </>
                     ) : (
                       <>
-                        <span style={{ fontWeight: 800, color: 'var(--text)', minWidth: 58, textAlign: 'right' }}>{s.actual}</span>
+                        <span style={{ fontWeight: 800, color: 'var(--text)' }}>{s.actual}</span>
                         <span style={chip('#94a3b8')} title="ยังไม่ตั้งเป้ากะ/std และไม่มีเป้าใบงานให้เทียบ">ไม่มีเป้า</span>
                       </>
                     )}
@@ -581,10 +592,10 @@ export default function MorningMeeting() {
   const DtDefectPanel = () => (
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
       <div style={{ ...card, height: '100%' }}>
-        <h2 style={h2St}>🛠️ Top Downtime <span style={chip(sum.dtMin ? '#ef4444' : '#22c55e')}>{sum.dtMin} นาที</span></h2>
-        {topDowntime.length === 0 ? <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 700 }}>✅ ไม่มี Downtime</div> : (
+        <h2 style={h2St}>🛠️ Top Downtime นอกแผน <span style={chip(sum.dtMin ? '#ef4444' : '#22c55e')}>{sum.dtMin} นาที</span></h2>
+        {topDowntime.unplanned.length === 0 ? <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 700 }}>✅ ไม่มี Downtime นอกแผน</div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {topDowntime.map(t => (
+            {topDowntime.unplanned.map(t => (
               <div key={t.name} style={{ fontSize: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -592,7 +603,7 @@ export default function MorningMeeting() {
                       {t.name} {t.carry && <span style={chip('#f59e0b')}>ข้ามกะ</span>}
                     </div>
                     <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 3, marginTop: 3, overflow: 'hidden' }}>
-                      <div style={{ width: `${Math.min(100, (t.min / (topDowntime[0].min || 1)) * 100)}%`, height: '100%', background: t.color || '#ef4444', borderRadius: 3 }} />
+                      <div style={{ width: `${Math.min(100, (t.min / (topDowntime.unplanned[0].min || 1)) * 100)}%`, height: '100%', background: t.color || '#ef4444', borderRadius: 3 }} />
                     </div>
                   </div>
                   <span style={{ fontWeight: 800, color: '#ef4444', whiteSpace: 'nowrap' }}>{Math.round(t.min)} น.</span>
@@ -611,6 +622,21 @@ export default function MorningMeeting() {
                     )}
                   </div>
                 )}
+              </div>
+            ))}
+          </div>
+        )}
+        {/* ในแผน (planned): เรื่องปกติ ไม่ต้องคุยในประชุม — โชว์จางๆ ท้ายแผงพอให้รู้ว่ามี ไม่มีแถบ/ไม่มี note */}
+        {topDowntime.planned.length > 0 && (
+          <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed var(--border)', opacity: 0.65 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>
+              🗓 ในแผน (planned) — รวม {sum.dtPlannedMin.toLocaleString()} นาที (ไม่นับใน %)
+            </div>
+            {topDowntime.planned.map(t => (
+              <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--muted)' }}
+                title={t.topDescs.map(([desc, min]) => `${desc} — ${Math.round(min)} น.`).join('\n')}>
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
+                <span style={{ whiteSpace: 'nowrap' }}>{Math.round(t.min)} น. · {t.count} ครั้ง</span>
               </div>
             ))}
           </div>
