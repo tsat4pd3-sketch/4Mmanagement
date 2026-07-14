@@ -1,5 +1,6 @@
 import { useRef, useEffect } from 'react'
 import useImgBox from '../utils/useImgBox'
+import CalloutPin from './CalloutPin'
 
 /* 360° spin annotator for PM equipment setup.
    Multiple photo frames of one piece of equipment; drag left/right to rotate
@@ -79,10 +80,9 @@ export default function SpinAnnotator({
         {imgBox && (
           <div ref={layerRef} style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
             {pins.map(p => (
-              <button key={p.key} onClick={e => { e.stopPropagation(); onRemovePin?.(p.key) }} title={`${p.label} — คลิกเพื่อลบ`}
-                style={{ position: 'absolute', left: `${clampPct(p.x * 100, padX, 100 - padX)}%`, top: `${clampPct(p.y * 100, padTop, 100)}%`, transform: 'translate(-50%,-100%)', zIndex: 10, cursor: 'pointer', background: 'none', border: 'none', padding: 0, pointerEvents: 'auto' }}>
-                <div style={{ minWidth: PK, height: PK, padding: `0 ${Math.round(PK * 0.15)}px`, borderRadius: 999, background: p.color || 'var(--accent)', border: '2px solid #fff', color: '#fff', fontSize: pkFont, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>{p.label}</div>
-              </button>
+              <CalloutPin key={p.key} xPct={p.x * 100} yPct={p.y * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
+                label={p.label} color={p.color || 'var(--accent)'} title={`${p.label} — คลิกเพื่อลบ`}
+                onClick={e => { e.stopPropagation(); onRemovePin?.(p.key) }} />
             ))}
           </div>
         )}
