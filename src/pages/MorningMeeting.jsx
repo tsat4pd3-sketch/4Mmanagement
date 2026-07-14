@@ -879,7 +879,8 @@ export default function MorningMeeting() {
       {/* ── โหมด TV: full-screen ไล่วาระ ── */}
       {tvMode && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 22px', borderBottom: '1px solid var(--border)' }}>
+          {/* paddingRight 64 เว้นที่ให้กระดิ่งแจ้งเตือน (fixed มุมขวาบน อยู่เหนือ overlay) — ไม่งั้นปุ่ม ✕ โดนทับ */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 64px 14px 22px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ fontSize: 22, fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
               {slides[slide].title}
             </div>
