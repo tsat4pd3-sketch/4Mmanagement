@@ -1635,7 +1635,9 @@ function LiveTab({ role }) {
       if (dtErr) { toast.error('ปิดรายการ Downtime ไม่สำเร็จ: ' + dtErr.message); setSavingClose(false); return; }
       updatedDtLogs = updatedDtLogs.map(x => x.id === d.id ? { ...x, ...patch } : x);
       // เครื่องกลับมาจริง → แจ้ง ✅ / ตัดยอดข้ามกะ = เครื่องยังไม่กลับมา ห้ามแจ้ง recovered
-      if (decision === 'close') {
+      // และแจ้งเฉพาะรายการที่ "เคยถูกแจ้ง" แล้วเท่านั้น (open_alerted_at/call_mtn) —
+      // รายการที่ไม่เคยดังก็เงียบ ไม่รก (กฎ downtime overhaul 2026-07-14 — เหมือน guard ใน handleAddDT)
+      if (decision === 'close' && (d.open_alerted_at || d.call_mtn)) {
         const hm = (ms) => { const t = new Date(ms); return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`; };
         notifyDowntime({
           line_name: selSession.line_name, shift: selSession.shift, work_date: selSession.work_date,

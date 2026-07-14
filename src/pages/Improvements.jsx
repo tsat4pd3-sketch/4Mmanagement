@@ -515,7 +515,7 @@ export default function Improvements() {
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>การแก้ไข (Action)
                   <textarea value={modal.action_taken || ''} onChange={e => setModal({ ...modal, action_taken: e.target.value })} rows={2} style={{ marginTop: 4 }} />
                 </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   {[['before', 'รูปก่อนแก้ไข', beforeFile, setBeforeFile, modal.image_before_url],
                     ['after', 'รูปหลังแก้ไข', afterFile, setAfterFile, modal.image_after_url]].map(([key, label, file, setFile, existing]) => (
                     <div key={key}>
