@@ -1929,7 +1929,7 @@ function LiveTab({ role }) {
     const payload = {
       status: 'pending', current_step: 1, report_at: new Date().toISOString(), work_date: selSession.work_date,
       repair_scope: 'in_line', line_name: selSession.line_name, dept_section: selSession.section || null,
-      machine_no: d.machine_no || null, problem_characteristic: 'อื่นๆ',
+      mtn_dept: 'MTN', machine_no: d.machine_no || null, problem_characteristic: 'อื่นๆ',
       report_note: `[จาก Downtime] ${dtType?.name_th || ''}${d.description ? ` — ${d.description}` : ''}`.trim(),
       reporter_prod: fullName, reported_by_name: fullName, source_downtime_id: d.id,
     };
