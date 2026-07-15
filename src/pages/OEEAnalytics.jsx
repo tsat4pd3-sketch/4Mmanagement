@@ -489,9 +489,12 @@ export default function OEEAnalytics() {
   }, [tdDowntimesScoped]);
 
   // Top 10 downtime แยกตามพาร์ท (mat_no ที่บันทึกไว้ตอน log downtime)
+  // นับเฉพาะ "นอกแผน" — ในแผน (นับสต๊อก/ไม่มีแผนผลิต) ไม่ผูก mat_no แล้วเคยครองอันดับ 1 เป็น
+  // "ไม่ระบุ MAT.NO 81.9%" ซึ่งไม่ใช่ความเสียหายจริง กลบพาร์ทที่มีปัญหาจริง (2026-07-15)
   const tdDtByPart = useMemo(() => {
     const map = {};
     for (const d of tdDowntimesScoped) {
+      if (d.dr_downtime_types?.category === 'planned') continue;
       const mat = d.mat_no || 'ไม่ระบุ MAT.NO';
       if (!map[mat]) map[mat] = { mat, part: tdProductsByMat[mat] || mat, min: 0 };
       map[mat].min += d.duration_min || 0;
@@ -801,27 +804,36 @@ export default function OEEAnalytics() {
               )}
             </div>
 
-            {/* 3. Production qty gauge */}
+            {/* 3. Production qty gauge — เป้ากะ (target_qty) ปัจจุบันไม่ได้ตั้งในระบบ (=0 ทุกกะ)
+                target 0 = ไม่มีเป้าให้เทียบ ห้ามโชว์ "0%" (ดูเป็นพลาดเป้าทั้งที่ผลิตได้จริง) — โชว์ "ยังไม่ตั้งเป้า" (2026-07-15) */}
+            {(() => { const hasTarget = tdKpi.targetQty > 0; const achievePct = hasTarget ? Math.round(Math.min(100, tdKpi.totalQty / tdKpi.targetQty * 100)) : 0; return (
             <div style={{ ...s.section, marginBottom: 0 }}>
               <div style={s.title}>3. จำนวนชิ้นงานที่ผลิตรวมของวันนี้</div>
               <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>เป้าหมาย</div>
-                  <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--text)' }}>{tdKpi.targetQty.toLocaleString()} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>ชิ้น</span></div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: hasTarget ? 'var(--text)' : 'var(--muted)' }}>
+                    {hasTarget ? <>{tdKpi.targetQty.toLocaleString()} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>ชิ้น</span></> : <span style={{ fontSize: 14, fontWeight: 700 }}>ยังไม่ตั้งเป้ากะ</span>}
+                  </div>
                   <div style={{ height: 10 }} />
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>ผลิตได้แล้ว</div>
                   <div style={{ fontSize: 22, fontWeight: 900, color: '#4d9fff' }}>{tdKpi.totalQty.toLocaleString()} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>ชิ้น</span></div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>คงเหลืออีก {Math.max(0, tdKpi.targetQty - tdKpi.totalQty).toLocaleString()} ชิ้น</div>
+                  {hasTarget && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>คงเหลืออีก {Math.max(0, tdKpi.targetQty - tdKpi.totalQty).toLocaleString()} ชิ้น</div>}
                 </div>
                 <div style={{ position: 'relative', width: 140, height: 140, flexShrink: 0 }}>
-                  <GaugeRing value={tdKpi.targetQty > 0 ? Math.min(100, tdKpi.totalQty / tdKpi.targetQty * 100) : 0} color="#4d9fff" size={140} stroke={13} />
+                  <GaugeRing value={achievePct} color={hasTarget ? '#4d9fff' : 'var(--border)'} size={140} stroke={13} />
                   <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                    <div style={{ fontSize: 24, fontWeight: 900, color: '#4d9fff' }}>{tdKpi.targetQty > 0 ? Math.round(Math.min(100, tdKpi.totalQty / tdKpi.targetQty * 100)) : 0}%</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>เทียบเป้าหมาย</div>
+                    {hasTarget ? (
+                      <><div style={{ fontSize: 24, fontWeight: 900, color: '#4d9fff' }}>{achievePct}%</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>เทียบเป้าหมาย</div></>
+                    ) : (
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textAlign: 'center', padding: '0 12px' }}>ไม่มีเป้า<br/>ให้เทียบ</div>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
+            ); })()}
           </div>
 
           {/* 1.2 Daily OEE chart */}
@@ -850,28 +862,30 @@ export default function OEEAnalytics() {
             <div style={s.title}>2. DOWNTIME</div>
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '260px 1.5fr 1.2fr', gap: 14, alignItems: 'stretch' }}>
 
-              {/* 2.1 Total */}
+              {/* 2.1 Total — โชว์ "นอกแผน" เป็นตัวเลขหลัก (ความเสียหายจริง) · ในแผน (ไม่มีแผนผลิต/นับสต๊อก)
+                  ไม่ใช่ loss ห้ามเอามาคิด % หลัก/โป่งตัวเลข (เคยโชว์รวม 5,512น. · 38.68% ทั้งที่ 4,684น. คือ
+                  ไม่มีแผนผลิต — user: "ไม่มีแผนผลิตไม่ควรเป็นอันดับ1 นอกแผนสำคัญกว่า" 2026-07-15) */}
               <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 12 }}>2.1 Downtime รวมของวันนี้</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 12 }}>2.1 Downtime นอกแผนของวันนี้</div>
                 <div style={{ position: 'relative', width: 130, height: 130, margin: '2px auto 0' }}>
-                  <GaugeRing value={tdKpi.totalShiftMin > 0 ? Math.min(100, tdKpi.totalDT / tdKpi.totalShiftMin * 100) : 0} color="#a855f7" size={130} stroke={11} />
+                  <GaugeRing value={tdKpi.totalShiftMin > 0 ? Math.min(100, tdDtByCause.unplannedMin / tdKpi.totalShiftMin * 100) : 0} color="#a855f7" size={130} stroke={11} />
                   <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                    <div style={{ fontSize: 24, fontWeight: 900, color: '#a855f7' }}>{tdKpi.totalDT.toLocaleString()}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>นาที</div>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: '#a855f7' }}>{tdDtByCause.unplannedMin.toLocaleString()}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>นาที · นอกแผน</div>
                   </div>
                 </div>
                 <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--text2)', marginTop: 10 }}>
-                  <b style={{ color: '#a855f7' }}>{tdKpi.totalShiftMin > 0 ? (tdKpi.totalDT / tdKpi.totalShiftMin * 100).toFixed(2) : '0.00'}%</b> ของเวลาผลิตทั้งหมด
+                  <b style={{ color: '#a855f7' }}>{tdKpi.totalShiftMin > 0 ? (tdDtByCause.unplannedMin / tdKpi.totalShiftMin * 100).toFixed(2) : '0.00'}%</b> ของเวลาผลิตทั้งหมด
                 </div>
-                {/* แยกนอกแผน/ในแผน — นอกแผนคือความเสียหายจริง (convention เดียวกับประชุมแถวเช้า) */}
+                {/* บริบท: รวมทั้งหมด + ในแผน (จาง 📅) — ให้เห็นภาพเต็มโดยไม่ให้ในแผนกลบตัวเลขหลัก */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 'auto', paddingTop: 12 }}>
-                  <div style={{ background: 'rgba(168,85,247,0.10)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 8, padding: '7px 10px', textAlign: 'center' }}>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>นอกแผน</div>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: '#a855f7' }}>{tdDtByCause.unplannedMin.toLocaleString()} <span style={{ fontSize: 11, fontWeight: 600 }}>นาที</span></div>
-                  </div>
                   <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px', textAlign: 'center' }}>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>ในแผน 📅</div>
                     <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text2)' }}>{tdDtByCause.plannedMin.toLocaleString()} <span style={{ fontSize: 11, fontWeight: 600 }}>นาที</span></div>
+                  </div>
+                  <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>รวมทั้งหมด</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text2)' }}>{tdDtByCause.total.toLocaleString()} <span style={{ fontSize: 11, fontWeight: 600 }}>นาที</span></div>
                   </div>
                 </div>
               </div>
@@ -926,7 +940,7 @@ export default function OEEAnalytics() {
 
               {/* 2.3 Top 10 by part */}
               <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 12 }}>2.3 Top 10 Downtime รายพาร์ท</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 12 }}>2.3 Top 10 Downtime รายพาร์ท <span style={{ fontWeight: 500, fontSize: 11 }}>(เฉพาะนอกแผน)</span></div>
                 {tdDtByPart.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>ไม่มีข้อมูล</div>
                 ) : (

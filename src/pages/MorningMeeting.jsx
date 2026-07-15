@@ -205,15 +205,14 @@ export default function MorningMeeting() {
     orders.forEach(o => { (m[o.session_id] = m[o.session_id] || []).push(o); });
     return m;
   }, [orders]);
-  // เป้าของกะ: target_qty ของกะ → รวมเป้าใบงานจริง (qty_target ?? qty) → std ของไลน์
-  // (กะที่ไม่ตั้ง target และ std = 0 เคยโชว์ "เป้า 0 / 0%" ทั้งที่มีใบงาน — ให้ยึดใบงานจริงก่อน)
+  // เป้าของกะ: target_qty ของกะ → รวมเป้าใบงานจริง (qty_target ?? qty)
+  // ❌ ห้าม fallback ไป std_day/night_shift — ค่านั้นคือ "จำนวนคนต่อกะ (headcount)" ไม่ใช่เป้าจำนวนชิ้น
+  //    (เช่น HYDROFORM std=14 = 14 คน · GOR=11 · Line60=6) เคยเอามาใช้เป็นเป้าแล้วไลน์ที่ไม่มีใบงาน
+  //    โชว์ "0/14 · 0%" ทั้งที่ควรเป็น "ไม่มีเป้า" (2026-07-15) — ไม่มี target_qty และไม่มีใบงาน = คืน 0
   const sessTarget = (s) => {
     if (s.target_qty) return s.target_qty;
     const os = (ordersBySession[s.id] || []).filter(o => !['cancelled', 'imported', 'carry_over'].includes(o.status));
-    const fromOrders = os.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
-    if (fromOrders) return fromOrders;
-    const l = viewLines.find(x => x.name === s.line_name);
-    return (s.shift === 'night' ? l?.std_night_shift : l?.std_day_shift) || 0;
+    return os.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
   };
   // ยอดจริงของกะ: qty_ok (ปิดกะแล้ว) → actual_qty → รวมยอดจริงจากใบงาน (qty_ok ?? qty_actual)
   const sessActual = (s) => {
@@ -266,7 +265,9 @@ export default function MorningMeeting() {
         shift: sh, actual, target, pct: target > 0 ? pctStr(actual, target) : null,
         oee: s.status === 'closed' ? s.oee : null, status: s.status,
         ng: s.qty_ng ?? 0,
-        dtMin: Math.round(downtimes.filter(d => d.session_id === s.id).reduce((a, d) => a + (Number(d.duration_min) || 0), 0)),
+        // DT บนการ์ด = "นอกแผน" เท่านั้น — ในแผน (นับสต๊อก/ไม่มีแผนผลิต) ไม่ใช่ความเสียหาย
+        // ห้ามรวม (เคยรวมแล้วไลน์ไม่มีแผนผลิตโชว์ DT ก้อนใหญ่สีแดง เช่น 569/1620น. ทั้งที่แค่ไม่มีแผน — 2026-07-15)
+        dtMin: Math.round(downtimes.filter(d => d.session_id === s.id && d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (Number(d.duration_min) || 0), 0)),
       };
     }).filter(Boolean);
     return { line: l, shifts };
