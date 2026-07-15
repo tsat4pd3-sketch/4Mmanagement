@@ -436,6 +436,19 @@ Reject → status: "rejected" + reject_reason
 
 ---
 
+## PM Photo-Compare Inspection — ตรวจสภาพเครื่องด้วยการเทียบรูป "จับผิด" (2026-07-15, เฟส 1 ทดลอง)
+
+ตรวจสภาพเครื่องแบบ *photo-hunt*: เทียบ **รูปมาตรฐาน (สภาพดี)** กับ **สภาพจริงที่ถ่ายตอนตรวจ** เพื่อจับความผิดปกติที่มองเห็น (น้ำมันรั่ว/การ์ดเปิด/ของหาย/สภาพเปลี่ยน) — คนเป็นผู้ตัดสิน เว็บช่วยให้เทียบง่าย · ต่อยอดเข้า `/pm-check` เดิม ไม่ใช่หน้าใหม่
+
+- **รูปมาตรฐาน = `jig_checkpoints.image_path`** (รูปอ้างอิงต่อจุดที่ตั้งใน PMSetup อยู่แล้ว) — ปุ่ม "📷 เทียบรูป" โผล่บนแถวจุดตรวจชนิด attribute/note **เมื่อจุดนั้นมี image_path** เท่านั้น
+- **Component: `src/components/PhotoCompareModal.jsx`** — 3 โหมดเทียบ: ↔ แบ่งซ้าย/ขวา (wipe slider) · ◐ ซ้อนจาง (fade) · 🔍 ไฮไลต์จุดต่าง (diff heatmap คำนวณ luminance ต่างในเบราว์เซอร์ — ตัวช่วยคร่าวๆ ไม่ใช่ AI, มุม/แสงต่างมากจะไฮไลต์เงาด้วย) · ถ่ายสดพร้อม **ghost overlay** รูปมาตรฐานช่วยเล็งมุม (getUserMedia facingMode environment) หรือ `<input capture>` สำรอง
+- **กฎเหล็กประหยัด storage — เก็บรูป "เฉพาะ NG" เท่านั้น** (ผ่าน = ทิ้งพิกเซล): modal คืน `{ verdict, blob }` · blob ถูกเก็บใน `evidenceBlobs` (state) เฉพาะตอน verdict='ng' · `handleSave` อัปโหลด blob → bucket `jig-images` path `evidence/<inspection_id>/<checkpoint_id>.jpg` แล้ว set `inspection_results.evidence_path` (best-effort try/catch ไม่ล้มการบันทึก) · การเลือก "ปกติ" ลบ blob ทิ้งทันที — **ห้ามเปลี่ยนเป็นเก็บทุกรูป** (250 รูป/วัน × 100KB ≈ 1.1GB/เดือน = เต็มแพลนฟรีใน 1 เดือน · เก็บเฉพาะ NG ~3% = 180MB/ปี)
+- รูปถ่ายบีบ **800px q0.72** ในตัว component (canvas→jpeg) ก่อนอัปโหลด · HistoryModal โชว์ thumbnail หลักฐานใต้ผล NG
+- schema: `20260715_inspection_evidence_photo.sql` (DR — เพิ่มคอลัมน์ `inspection_results.evidence_path` เดียว additive)
+- **เฟสถัดไป (ยังไม่ทำ):** Level 2 auto-diff ที่ align ภาพก่อน · Level 3 AI anomaly detection (ต้องสะสมรูปหลายเดือน + edge box/cloud API) — รูปหลักฐานที่เก็บตอนนี้เป็น data ตั้งต้นให้เทรนทีหลัง
+
+---
+
 ## Employee Skills & EXP Farming (ย้ายฝั่ง server ทั้งหมด — 2026-07-13)
 
 ระบบสะสม EXP ทักษะพนักงานจากการทำงานจริง — **ห้ามเขียนคะแนน `employee_skills` จาก client นอกเหนือจาก
