@@ -451,6 +451,15 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   animation: dtAlarmBlink 0.9s ease-in-out infinite;
   border-color: #ef4444 !important;
 }
+/* ขอบกระพริบเบา สำหรับการ์ดใหญ่ (เช่นการ์ดใบซ่อม MTN รอรับงาน) — glow เล็กกว่า marker มาก */
+@keyframes moCardBlink {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.35); border-color: rgba(239, 68, 68, 0.55); }
+  50%      { box-shadow: 0 0 6px 1px rgba(239, 68, 68, 0.6); border-color: #ef4444; }
+}
+.mo-card-alert {
+  animation: moCardBlink 1.1s ease-in-out infinite;
+  border-color: #ef4444 !important;
+}
 @keyframes dtAlarmBannerPulse {
   0%, 100% { background-color: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.45); }
   50%      { background-color: rgba(239, 68, 68, 0.28); border-color: #ef4444; }
