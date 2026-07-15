@@ -9,18 +9,26 @@ import { useEffect, useRef, useState } from 'react';
    - มี preview + จุดแดงบอกชัดว่ากล้องทำงานอยู่ · ปิดโหมด = ปิด track กล้องทันที
    - gesture คุมได้แค่ "เปลี่ยนหน้า/ออกจากโหมด" — ห้ามผูกกับ action ที่แก้ข้อมูล
 
-   ท่าที่รองรับ (ต้องค้าง/ชัดเจน กัน trigger มั่ว + cooldown 1.2 วิ หลังทุก action):
-   - ✋ ฝ่ามือปัดไปทางซ้ายของผู้ใช้  → 'next' (เหมือนปัดหน้ากระดาษไปหน้าถัดไป)
-   - ✋ ฝ่ามือปัดไปทางขวาของผู้ใช้  → 'prev'
-   - 👍 ชูโป้งค้าง ~0.6 วิ            → 'next' (ทางเลือกแบบไม่ต้องปัด)
+   ท่าที่รองรับ — ตัวหลักคือ "นิ้วชี้บอกทิศ + ค้าง" (มือนิ่ง จับแม่นกว่าการปัดที่ภาพเบลอ):
+   - ☝️ ชี้นิ้ว ◀/▶ ค้าง ~0.45 วิ    → 'prev'/'next' (ทิศลูกศรตรงตัว)
+   - ☝️ ชี้นิ้ว ▲/▼ ค้าง            → 'scroll_up'/'scroll_down' (ค้างต่อ = เลื่อนต่อเนื่อง)
+   - ✋ ฝ่ามือปัดซ้าย/ขวา            → 'next'/'prev' (ตัวรอง — ยังใช้ได้)
+   - 👍 ชูโป้งค้าง ~0.6 วิ            → 'next'
    - ✊ กำมือค้าง ~0.9 วิ            → 'exit'
+   ทุก action มี cooldown กันรัวซ้ำ · ทิศนิ้วคิดจากเวกเตอร์ landmark โคนนิ้วชี้(5) → ปลายนิ้วชี้(8)
+   โดยต้องเข้าเงื่อนไข "ชี้นิ้วเดียว": นิ้วชี้เหยียด + กลาง/นาง/ก้อยพับ (ตรรกะเดียวกับนับนิ้ว)
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const SWIPE_DX = 0.20;        // ระยะปัดขั้นต่ำ (สัดส่วนความกว้างเฟรม)
-const SWIPE_WINDOW_MS = 550;  // ต้องปัดให้จบภายในเวลานี้
-const HOLD_THUMB_MS = 600;    // ชูโป้งค้างกี่ ms ถึงนับ
-const HOLD_FIST_MS = 900;     // กำมือค้างกี่ ms ถึงนับ (นานกว่า — เป็น action ออกจากโหมด)
-const COOLDOWN_MS = 1200;     // เว้นหลังทุก action กันรัวซ้ำ
+const SWIPE_DX = 0.20;         // ระยะปัดขั้นต่ำ (สัดส่วนความกว้างเฟรม)
+const SWIPE_WINDOW_MS = 550;   // ต้องปัดให้จบภายในเวลานี้
+const TRAIL_GAP_MS = 220;      // มือหลุด track สั้นๆ (ภาพเบลอ) ไม่รีเซ็ตเส้นทางปัด — เกินนี้ค่อยล้าง
+const HOLD_THUMB_MS = 600;     // ชูโป้งค้างกี่ ms ถึงนับ
+const HOLD_FIST_MS = 900;      // กำมือค้างกี่ ms ถึงนับ (นานกว่า — เป็น action ออกจากโหมด)
+const POINT_HOLD_MS = 450;     // ชี้นิ้วค้างกี่ ms ถึงนับ
+const SCROLL_REPEAT_MS = 450;  // ชี้ ▲/▼ ค้างต่อเนื่อง = สั่งเลื่อนซ้ำทุกๆ กี่ ms
+const POINT_MIN_LEN = 0.09;    // ความยาวเวกเตอร์นิ้วขั้นต่ำ (กันมือไกลจนอ่านทิศเพี้ยน)
+const POINT_AXIS_RATIO = 1.4;  // แกนหลักต้องชนะอีกแกนกี่เท่า ถึงตัดสินทิศ (กันชี้เฉียงกำกวม)
+const COOLDOWN_MS = 1200;      // เว้นหลัง action เปลี่ยนวาระ/ออก กันรัวซ้ำ
 
 export default function GestureCam({ onGesture, onError }) {
   const videoRef = useRef(null);
@@ -34,8 +42,10 @@ export default function GestureCam({ onGesture, onError }) {
     let stopped = false;
 
     // สถานะตรวจจับ (อยู่นอก React state — อัพเดททุกเฟรม)
-    const trail = [];            // [{ x, t }] ตำแหน่งข้อมือช่วงฝ่ามือเปิด สำหรับตรวจปัด
+    const trail = [];            // [{ x, t }] ตำแหน่งข้อมือ สำหรับตรวจปัด
     let holdStart = null;        // { name, t } gesture ที่กำลังค้างอยู่
+    let pointHold = null;        // { dir, t, fired } ทิศนิ้วชี้ที่กำลังค้างอยู่
+    let lastHandAt = 0;          // เวลาเฟรมล่าสุดที่เห็นมือ — ใช้ยอมให้ track หลุดสั้นๆ
     let cooldownUntil = 0;
     let lastVideoTime = -1;
 
@@ -91,10 +101,51 @@ export default function GestureCam({ onGesture, onError }) {
           const gesture = result.gestures?.[0]?.[0]; // มือแรก ท่าที่มั่นใจสุด
           const hand = result.landmarks?.[0];
           const name = gesture && gesture.score > 0.55 ? gesture.categoryName : null;
+          if (hand) lastHandAt = now;
 
-          // ── ปัดมือ: เก็บเส้นทางข้อมือ (landmark 0) ทุกเฟรมที่ "เห็นมือ" — ไม่บังคับกางฝ่ามือ
-          //    (ตอนมือเหวี่ยงภาพเบลอ โมเดลจำท่า Open_Palm ไม่ทัน ถ้าผูกกับท่าจะรีเซ็ต trail ตลอด
-          //     จนปัดไม่ติด) · ยกเว้นตอนกำมือ — สงวนไว้ให้ท่าออกจากโหมด ไม่ให้ชนกัน ──
+          // ── ☝️ นิ้วชี้บอกทิศ (ตัวหลัก — มือนิ่ง จับแม่นกว่าการปัด): เข้าเงื่อนไข "ชี้นิ้วเดียว"
+          //    (นิ้วชี้เหยียด + กลาง/นาง/ก้อยพับ — ตรรกะนับนิ้วมาตรฐาน) แล้วอ่านทิศจากเวกเตอร์ 5→8 ──
+          const pointDir = (() => {
+            if (!hand) return null;
+            const d2 = (a, b) => { const dx = a.x - b.x, dy = a.y - b.y; return dx * dx + dy * dy; };
+            const w = hand[0];
+            const idxExt   = d2(hand[8], w)  > d2(hand[6], w);   // นิ้วชี้เหยียด
+            const midFold  = d2(hand[12], w) < d2(hand[10], w);  // กลางพับ
+            const ringFold = d2(hand[16], w) < d2(hand[14], w);  // นางพับ
+            const pinkFold = d2(hand[20], w) < d2(hand[18], w);  // ก้อยพับ
+            if (!(idxExt && midFold && ringFold && pinkFold)) return null;
+            const vx = hand[8].x - hand[5].x, vy = hand[8].y - hand[5].y;
+            if (Math.hypot(vx, vy) < POINT_MIN_LEN) return null;
+            // เฟรมกล้องไม่ mirror: ผู้ใช้ชี้ไปทางขวาของตัวเอง = x ลด · แกน y ของภาพชี้ลง
+            if (Math.abs(vx) > Math.abs(vy) * POINT_AXIS_RATIO) return vx < 0 ? 'right' : 'left';
+            if (Math.abs(vy) > Math.abs(vx) * POINT_AXIS_RATIO) return vy < 0 ? 'up' : 'down';
+            return null; // ชี้เฉียงกำกวม — ไม่ตัดสิน
+          })();
+
+          if (pointDir) {
+            if (!pointHold || pointHold.dir !== pointDir) pointHold = { dir: pointDir, t: now, fired: 0 };
+            const held = now - pointHold.t;
+            if (pointDir === 'up' || pointDir === 'down') {
+              // เลื่อนหน้า: ค้างต่อเนื่อง = เลื่อนซ้ำเรื่อยๆ (ไม่ใช้ cooldown ใหญ่ — จะได้ไหลลื่น)
+              if (held >= POINT_HOLD_MS && now - pointHold.fired >= SCROLL_REPEAT_MS) {
+                pointHold.fired = now;
+                trail.length = 0;
+                setLastAction(pointDir === 'up' ? '☝️ เลื่อนขึ้น' : '👇 เลื่อนดูด้านล่าง');
+                setTimeout(() => setLastAction(null), 500);
+                onGesture?.(pointDir === 'up' ? 'scroll_up' : 'scroll_down');
+              }
+              return;
+            }
+            if (held >= POINT_HOLD_MS) {
+              fire(pointDir === 'right' ? 'next' : 'prev', pointDir === 'right' ? '👉 วาระถัดไป' : '👈 วาระก่อนหน้า');
+              return;
+            }
+          } else {
+            pointHold = null;
+          }
+
+          // ── ✋ ปัดมือ (ตัวรอง): เก็บเส้นทางข้อมือทุกเฟรมที่เห็นมือ — มือหลุด track สั้นๆ
+          //    (ภาพเบลอตอนเหวี่ยง) ไม่รีเซ็ต ปล่อยให้ค้างไว้จนเกิน TRAIL_GAP_MS ค่อยล้าง ──
           if (hand && name !== 'Closed_Fist') {
             trail.push({ x: hand[0].x, t: now });
             while (trail.length && now - trail[0].t > SWIPE_WINDOW_MS) trail.shift();
@@ -104,7 +155,7 @@ export default function GestureCam({ onGesture, onError }) {
               if (dx >= SWIPE_DX) { fire('next', '👉 วาระถัดไป'); return; }
               if (dx <= -SWIPE_DX) { fire('prev', '👈 วาระก่อนหน้า'); return; }
             }
-          } else {
+          } else if (name === 'Closed_Fist' || now - lastHandAt > TRAIL_GAP_MS) {
             trail.length = 0;
           }
 
@@ -153,7 +204,7 @@ export default function GestureCam({ onGesture, onError }) {
       )}
       <div style={{ padding: '5px 8px', fontSize: 11, color: 'var(--text2)', background: 'var(--bg2)', lineHeight: 1.5 }}>
         {status === 'loading' && '⏳ กำลังโหลดโมเดล…'}
-        {status === 'running' && <>✋ ปัด = เปลี่ยนวาระ · 👍 ถัดไป · ✊ ค้าง = ออก</>}
+        {status === 'running' && <>☝️ ชี้ ◀▶ = เปลี่ยนวาระ · ชี้ ▲▼ = เลื่อน · ✊ ค้าง = ออก</>}
         {status === 'error' && '⚠️ เปิดกล้องไม่สำเร็จ — เช็คสิทธิ์กล้องของเบราว์เซอร์'}
       </div>
     </div>

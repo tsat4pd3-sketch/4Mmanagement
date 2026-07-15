@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useCallback, useMemo, Fragment, lazy, Suspense } from 'react';
+import { useState, useEffect, useContext, useCallback, useMemo, useRef, Fragment, lazy, Suspense } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -68,6 +68,7 @@ export default function MorningMeeting() {
   const [machineCountByLine, setMachineCountByLine] = useState({}); // จำนวนเครื่องต่อไลน์ — ฐานคิด % Downtime
   const [showRoutineMoves, setShowRoutineMoves] = useState(false); // กางรายชื่อย้ายจุด routine ในแผง 4M
   const [gestureOn, setGestureOn] = useState(false); // 📷 ควบคุมวาระด้วยท่ามือ (เฉพาะโหมดประชุม)
+  const tvBodyRef = useRef(null); // ตัวเลื้อนเนื้อหาวาระในโหมด TV — gesture ชี้ ▲/▼ สั่ง scroll ตัวนี้
   const [actions, setActions]         = useState([]);
   const [tvMode, setTvMode]           = useState(false);
   const [slide, setSlide]             = useState(0);
@@ -870,6 +871,11 @@ export default function MorningMeeting() {
     if (action === 'next') setSlide(s => Math.min(slideCount - 1, s + 1));
     else if (action === 'prev') setSlide(s => Math.max(0, s - 1));
     else if (action === 'exit') { setTvMode(false); setGestureOn(false); }
+    // ชี้ ▲/▼ = เลื่อนเนื้อหาวาระทีละ ~45% ของจอ (วาระที่ยาวเกินจอ เช่น ผลรายไลน์/งานหลุดแผน)
+    else if (action === 'scroll_down' || action === 'scroll_up') {
+      const el = tvBodyRef.current;
+      if (el) el.scrollBy({ top: (action === 'scroll_down' ? 1 : -1) * el.clientHeight * 0.45, behavior: 'smooth' });
+    }
   }, [slideCount]);
   const handleGestureError = useCallback(() => {
     toast.error('เปิดกล้องไม่สำเร็จ — เช็คว่าเบราว์เซอร์ได้รับสิทธิ์ใช้กล้อง');
@@ -943,14 +949,14 @@ export default function MorningMeeting() {
               <span style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 700 }}>{slide + 1}/{slides.length}</span>
               <button onClick={() => setSlide(s => Math.min(slides.length - 1, s + 1))} disabled={slide === slides.length - 1} style={{ ...btnSt(false), fontSize: 16, opacity: slide === slides.length - 1 ? 0.4 : 1 }}>▶</button>
               <button onClick={() => setGestureOn(v => !v)} style={btnSt(gestureOn)}
-                title={'ควบคุมด้วยท่ามือผ่านกล้อง (ประมวลผลในเครื่อง ไม่ส่งภาพออกไปไหน)\n✋ ปัดซ้าย/ขวา = เปลี่ยนวาระ · 👍 ค้าง = ถัดไป · ✊ ค้าง = ออกจากโหมด'}>
+                title={'ควบคุมด้วยท่ามือผ่านกล้อง (ประมวลผลในเครื่อง ไม่ส่งภาพออกไปไหน)\n☝️ ชี้นิ้ว ◀/▶ ค้าง = เปลี่ยนวาระ · ชี้ ▲/▼ ค้าง = เลื่อนหน้า\n✋ ปัดซ้าย/ขวา = เปลี่ยนวาระ · 👍 ค้าง = ถัดไป · ✊ ค้าง = ออกจากโหมด'}>
                 {gestureOn ? '📷 ปิดท่ามือ' : '📷 คุมด้วยท่ามือ'}
               </button>
               <button onClick={() => { setTvMode(false); setGestureOn(false); }} style={{ ...btnSt(false), fontSize: 14 }} title="ออกจากโหมดประชุม (Esc)">✕</button>
             </div>
           </div>
           {/* zoom ขยายทั้งวาระให้อ่านจากระยะไกล (จอ TV) — เนื้อหา component เดียวกับโหมดปกติเป๊ะ */}
-          <div style={{ flex: 1, overflow: 'auto', padding: 22, zoom: 1.3 }}>
+          <div ref={tvBodyRef} style={{ flex: 1, overflow: 'auto', padding: 22, zoom: 1.3 }}>
             {slides[slide].render()}
           </div>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 6, padding: '10px 0 16px' }}>
