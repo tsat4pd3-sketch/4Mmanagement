@@ -4,6 +4,7 @@
 > เหตุผล: หลาย session ทำงานขนานกัน ถ้าไม่มีมาตรฐานกลาง จะได้ UI คนละทรง (เคยเกิดแล้ว: จุดเครื่องจักรฝั่ง MTN ทำเป็นเหลี่ยม ขณะที่ระบบหลักเป็นวงกลม)
 
 อัพเดทล่าสุด: 2026-07-14 (ใหม่ §5.1 หมุดจุดตรวจใช้ `CalloutPin` — ลูกศรชี้จุดจริง + วงเลขหลบข้าง ไม่บังจุด · §6.5 ห้ามเหลือขอบข้างว่างบน landscape · บอร์ดเวลา: HH:00 + ชิป ⏳ ไม่ระบุเวลา · ปุ่ม 🏷️ โชว์/ซ่อน สองสถานะ · pillMaxW/subPillMaxW · ลำดับจุด คน→เครื่องจักร→WIP · mobile: useIsMobile hook / time board เลื่อนแนวนอนบนมือถือ / mgrid·tbtn / pointer-drag)
+อัพเดท 2026-07-15: §5.1 viewer วางจุดต้องซูมได้ (default เต็มความกว้างกรอบ ไม่ใช่ขนาดไฟล์)
 
 ---
 
@@ -152,6 +153,7 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
   - ใช้แล้วครบ**ทั้ง 4 renderer**: `SpinAnnotator.jsx` (วาง), `PMSetup.jsx` (ตั้งค่า), `PMCheckData.jsx` (ตรวจ/ดูผล — JigSpinCheck), `QAInspectionSetup.jsx` (QA drawing) — **แก้ CalloutPin ที่เดียว มีผลทุกหน้า** · หน้าใหม่ที่มีหมุดจุดตรวจให้ reuse component นี้ ห้ามวาดหมุดเอง
 - 1 part/อุปกรณ์มี**หลายรูป/หลายเฟรมได้** — balloon ต้องผูกกับรูปที่มันอยู่ (`drawing_id`/`image_id`) ลบรูป = ถอดตำแหน่ง balloon แต่**ห้ามลบตัวจุดตรวจ** · ฝั่ง PM รองรับ 360° spin (หลายเฟรม/อุปกรณ์) ผ่าน component กลาง `src/components/SpinAnnotator.jsx` — pin ผูกกับเฟรมที่วาง (`image_id`), ลากรูปหมุนเฟรม, reuse component นี้แทนเขียน annotator ใหม่
 - **หน้าตรวจ PM (`PMCheckData` — JigSpinCheck) 2026-07-10:** รูปหลายมุม (spin) + auto-play ▶/⏸ · **หมุด sync กับ checklist**: สีหมุด = สถานะตรวจจริง (เขียว OK/แดง NG/เหลืองเฝ้าระวัง/ยังไม่ตรวจ=สีหมวด) เปลี่ยนสด, คลิกหมุด↔ไฮไลต์+เลื่อนแถวเช็ค, คลิกแถว→หมุนไปเฟรมของจุดนั้น · **ฟิลเตอร์แผนก = ความรับผิดชอบตามชนิดอุปกรณ์** (ผลิต=ทุกชนิด Autonomous · mtn=machine · jig mtn=jig · die mtn=die) กรองรายการอุปกรณ์ ไม่ใช่แค่เปลี่ยน checklist · **responsive**: จอ ≤860px = master-detail (ลิสต์/ฟอร์มทีละอัน + ปุ่มกลับ) · จอ ≥1180px = 2 คอลัมน์ (รูปซ้าย sticky · เช็คขวา) · desktop กว้างปกติไม่แตะ
+- **Viewer วางจุดต้องซูมได้ (2026-07-15 — user: รูปเล็กจนวางจุดไม่ได้):** รูปในหน้า setup/วางจุด **ห้าม render ที่ขนาดไฟล์ธรรมชาติ** (ไฟล์เล็ก/แนวตั้งจะจิ๋ว) — ค่าเริ่มต้น = **เต็มความกว้างกรอบ** (`width: 100%` ของ viewport) + toolbar ซูม ➖/%/➕ (100–400%, step 50%) + ปุ่ม "↺ พอดีกรอบ" · viewport `maxHeight ~75vh; overflow: auto` เลื่อนดูส่วนอื่นได้ · เปลี่ยนแผ่น → รีเซ็ตซูม · พิกัดคลิก/หมุดยังถูกทุกระดับซูมเพราะคำนวณ % จาก wrapper ที่สเกลไปด้วยกัน (BK ก็สเกลตาม ResizeObserver ปกติ) — ต้นแบบ: `QAInspectionSetup.jsx`
 - เลขจุดตรวจแบบ text เรียงด้วย natural sort (`localeCompare(..., { numeric: true })`) — H2 มาก่อน H10
 - สี: จุด control พิเศษ (Rank M/SC) = แดง/amber, จุดทั่วไป = น้ำเงิน `#4d9fff`, กำลังวางตำแหน่ง = amber
 - ชื่อแผ่น drawing ฝั่ง QA ให้เลือกจาก **view มาตรฐาน** (Front/Back/Top/Bottom View, Side View LH/RH, Isometric, Section, Detail) ผ่าน picker — พิมพ์เองได้เฉพาะกรณีพิเศษ

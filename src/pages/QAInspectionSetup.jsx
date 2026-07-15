@@ -148,12 +148,15 @@ export default function QAInspectionSetup() {
   const [customTitle, setCustomTitle] = useState('');
   const dwgWrapRef = useRef(null);                      // wrapper รูป drawing — วัดขนาด render จริง
   const [dwgSize, setDwgSize] = useState({ w: 0, h: 0 });
+  const [zoom, setZoom] = useState(1);                  // 1 = เต็มความกว้างกรอบ (ไม่ใช่ขนาดไฟล์) ซูมได้ถึง 4x
   const fileRef = useRef(null);                        // input เพิ่ม drawing ใหม่
   const replaceRef = useRef(null);                     // input เปลี่ยนรูปแผ่นที่เปิดอยู่
 
   const sel = parts.find(p => p.id === selId) || null;
   const activeDwg = drawings.find(d => d.id === activeDwgId) || null;
   const isPdf = activeDwg?.drawing_url?.toLowerCase().includes('.pdf');
+
+  useEffect(() => { setZoom(1); }, [activeDwgId]);      // เปลี่ยนแผ่น → รีเซ็ตซูม
 
   const loadParts = useCallback(async () => {
     const { data } = await supabase.from('qa_parts').select('*').order('part_no');
@@ -647,20 +650,32 @@ export default function QAInspectionSetup() {
                   </div>
                 </div>
               ) : (
-                <div
-                  ref={dwgWrapRef}
-                  onClick={onDrawingClick}
-                  style={{ position: 'relative', display: 'inline-block', maxWidth: '100%', cursor: canManage ? 'crosshair' : 'default', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border2)' }}>
-                  <img src={activeDwg.drawing_url} alt={activeDwg.title} style={{ display: 'block', maxWidth: '100%' }}
-                    onLoad={e => setDwgSize({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight })} />
-                  {items.filter(i => i.pos_x != null && i.pos_y != null && (i.drawing_id === activeDwg.id || (!i.drawing_id && drawings[0]?.id === activeDwg.id))).map(i => (
-                    <CalloutPin key={i.id} xPct={i.pos_x} yPct={i.pos_y} layerW={dwgSize.w} layerH={dwgSize.h} size={BK}
-                      label={i.balloon_no} color={i.id === placingId ? '#f59e0b' : (i.rank ? RANK[i.rank]?.color : '#4d9fff')}
-                      selected={i.id === placingId} opacity={i.is_active ? 1 : 0.45}
-                      title={`#${i.balloon_no} ${i.characteristic}${i.spec_text ? ` · ${i.spec_text}` : ''}`}
-                      onClick={e => { e.stopPropagation(); if (canManage) openEditItem(i); }} />
-                  ))}
-                </div>
+                <>
+                  {/* ซูมสำหรับวางจุดแม่นๆ — 100% = เต็มความกว้างกรอบ (รูปเล็ก/แนวตั้งไม่จิ๋วอีก) */}
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+                    <button style={ghostBtn} onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} disabled={zoom <= 1} title="ซูมออก">➖</button>
+                    <span style={{ fontSize: 12.5, fontWeight: 800, minWidth: 52, textAlign: 'center', color: 'var(--text)' }}>{Math.round(zoom * 100)}%</span>
+                    <button style={ghostBtn} onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))} disabled={zoom >= 4} title="ซูมเข้า">➕</button>
+                    {zoom > 1 && <button style={ghostBtn} onClick={() => setZoom(1)}>↺ พอดีกรอบ</button>}
+                    <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{zoom > 1 ? 'เลื่อนดูส่วนอื่นของแบบได้ในกรอบ' : 'ซูมเข้าเพื่อวางจุดละเอียดขึ้น'}</span>
+                  </div>
+                  <div style={{ maxHeight: '75vh', overflow: 'auto', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+                    <div
+                      ref={dwgWrapRef}
+                      onClick={onDrawingClick}
+                      style={{ position: 'relative', width: `${zoom * 100}%`, cursor: canManage ? 'crosshair' : 'default' }}>
+                      <img src={activeDwg.drawing_url} alt={activeDwg.title} style={{ display: 'block', width: '100%' }}
+                        onLoad={e => setDwgSize({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight })} />
+                      {items.filter(i => i.pos_x != null && i.pos_y != null && (i.drawing_id === activeDwg.id || (!i.drawing_id && drawings[0]?.id === activeDwg.id))).map(i => (
+                        <CalloutPin key={i.id} xPct={i.pos_x} yPct={i.pos_y} layerW={dwgSize.w} layerH={dwgSize.h} size={BK}
+                          label={i.balloon_no} color={i.id === placingId ? '#f59e0b' : (i.rank ? RANK[i.rank]?.color : '#4d9fff')}
+                          selected={i.id === placingId} opacity={i.is_active ? 1 : 0.45}
+                          title={`#${i.balloon_no} ${i.characteristic}${i.spec_text ? ` · ${i.spec_text}` : ''}`}
+                          onClick={e => { e.stopPropagation(); if (canManage) openEditItem(i); }} />
+                      ))}
+                    </div>
+                  </div>
+                </>
               )}
             </div>
 
