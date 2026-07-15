@@ -57,7 +57,7 @@ export const UserContext = createContext({ role: 'admin', lineId: null, team: nu
 // — จึงไม่มีฟิลด์ roles ในนี้ (เคยมี แต่เป็น dead field ไม่ถูกอ่าน ลบออก 2026-07-10 กันเข้าใจผิดว่าเป็น source of truth)
 const NAV_ITEMS = [
   { to: '/',            icon: '🏠', label: 'หน้าหลัก',           group: 'ภาพรวม' },
-  { to: '/remote',      icon: '🎮', label: 'รีโมทจอ (Remote)',   group: 'ภาพรวม' },
+  // 🎮 /remote ตั้งใจไม่อยู่ในเมนูหมวด — คู่กับปุ่ม 📺 รับรีโมทจอ ที่โซนล่างของ sidebar (ดู Sidebar)
 
   // Dashboard ย้ายจากหมวด "ภาพรวม" → "ฝ่ายผลิต" (คำสั่ง user 2026-07-12 — เนื้อหาส่วนใหญ่เป็นรายละเอียดฝ่ายผลิต)
   { to: '/dashboard',   icon: '📊', label: 'Dashboard',           group: 'ฝ่ายผลิต' },
@@ -406,16 +406,27 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             <span style={{ whiteSpace: 'nowrap' }}>เปลี่ยนรหัสผ่าน</span>
           </button>
 
-          {/* 📺 โหมดจอตาม — เปิดรับคำสั่งจากมือถือ (หน้า 🎮 รีโมทจอ) ผ่าน Supabase Realtime
-              ใช้กับจอ TV/โปรเจคเตอร์ที่ไม่มีเมาส์-กล้อง: มือถือกลายเป็น touchpad/รีโมทของจอนี้ */}
-          <button
-            onClick={onToggleRemote}
-            className="nav-link"
-            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: remoteCode ? 'var(--accent)' : 'var(--text2)' }}
-          >
-            <span style={{ fontSize: 15, flexShrink: 0 }}>📺</span>
-            <span style={{ whiteSpace: 'nowrap' }}>{remoteCode ? `รับรีโมทอยู่ · ${remoteCode}` : 'รับรีโมทจอ (จอตาม)'}</span>
-          </button>
+          {/* ── รีโมทจอ (คู่กัน) — เห็นเฉพาะ role ที่มีสิทธิ์ page:/remote (ปรับที่หน้าจัดการสิทธิ์) ──
+              🎮 = มือถือคุมจอ (ไปหน้ารีโมท) · 📺 = จอนี้เปิดรับรีโมทจากมือถือ (จอตาม) */}
+          {canAccessPage('/remote', userRole) && (<>
+            <Link
+              to="/remote"
+              onClick={onClose}
+              className="nav-link"
+              style={{ color: location.pathname === '/remote' ? 'var(--accent)' : 'var(--text2)' }}
+            >
+              <span style={{ fontSize: 15, flexShrink: 0 }}>🎮</span>
+              <span style={{ whiteSpace: 'nowrap' }}>รีโมทจอ (คุมจากมือถือ)</span>
+            </Link>
+            <button
+              onClick={onToggleRemote}
+              className="nav-link"
+              style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: remoteCode ? 'var(--accent)' : 'var(--text2)' }}
+            >
+              <span style={{ fontSize: 15, flexShrink: 0 }}>📺</span>
+              <span style={{ whiteSpace: 'nowrap' }}>{remoteCode ? `รับรีโมทอยู่ · ${remoteCode}` : 'รับรีโมทจอ (จอตาม)'}</span>
+            </button>
+          </>)}
 
           <button
             onClick={onToggleTheme}
