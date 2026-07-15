@@ -264,7 +264,9 @@ export default function MorningMeeting() {
       };
     }).filter(Boolean);
     return { line: l, shifts };
-  }), [leafLines, sessions, downtimes, orders]); // eslint-disable-line react-hooks/exhaustive-deps
+    // ไลน์ที่เปิดกะ (มีผลผลิตให้คุย) ขึ้นก่อน — ไลน์ไม่ผลิตวันนั้นทั้งหมดตกไปอยู่ท้าย grid
+    // ภายในกลุ่มคงลำดับตามชื่อไลน์เดิม (query เรียง name มาแล้ว)
+  }).sort((a, b) => (b.shifts.length > 0) - (a.shifts.length > 0)), [leafLines, sessions, downtimes, orders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // งานหลุดแผน — order ที่ยอดจริงไม่ถึงเป้า หรือยังค้าง (open/carry_over)
   const missedOrders = useMemo(() => {
