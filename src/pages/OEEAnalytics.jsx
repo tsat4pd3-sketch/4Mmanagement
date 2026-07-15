@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import {
-  LineChart, Line, BarChart, Bar, ComposedChart, PieChart, Pie,
+  LineChart, Line, BarChart, Bar, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   Cell, ReferenceLine, LabelList,
 } from 'recharts';
@@ -462,7 +462,10 @@ export default function OEEAnalytics() {
   );
 
   // Downtime donut (โดยประเภท)
-  const tdDtDonut = useMemo(() => {
+  // จัดอันดับสาเหตุ (pareto) — สีตาม "ประเภท" เท่านั้น: นอกแผน = ม่วง (เด่น) / ในแผน = เทา (จาง)
+  // ห้ามกลับไปไล่สีตามลำดับแถว (hue-cycling อ่านไม่ออกว่าสีสื่ออะไร — เคยเป็นโดนัท 25 สี)
+  const [tdDtShowAll, setTdDtShowAll] = useState(false);
+  const tdDtByCause = useMemo(() => {
     const map = {};
     for (const d of tdDowntimesScoped) {
       const name = d.dr_downtime_types?.name_th || 'ไม่ระบุ';
@@ -470,11 +473,19 @@ export default function OEEAnalytics() {
       if (!map[name]) map[name] = { name, min: 0, category: cat };
       map[name].min += d.duration_min || 0;
     }
-    const total = Object.values(map).reduce((s, d) => s + d.min, 0);
-    return Object.values(map).sort((a, b) => b.min - a.min).map((d, i) => ({
-      ...d, min: +d.min.toFixed(1), pct: total > 0 ? +(d.min / total * 100).toFixed(1) : 0,
-      color: d.category === 'planned' ? PLAN_COLORS[i % PLAN_COLORS.length] : UNPLAN_COLORS[i % UNPLAN_COLORS.length],
-    }));
+    const rows = Object.values(map).sort((a, b) => b.min - a.min);
+    const total = rows.reduce((s, d) => s + d.min, 0);
+    const max = rows.length ? rows[0].min : 0;
+    return {
+      total: +total.toFixed(1),
+      plannedMin:   +rows.filter(d => d.category === 'planned').reduce((s, d) => s + d.min, 0).toFixed(1),
+      unplannedMin: +rows.filter(d => d.category !== 'planned').reduce((s, d) => s + d.min, 0).toFixed(1),
+      rows: rows.map(d => ({
+        ...d, min: +d.min.toFixed(1),
+        pct: total > 0 ? +(d.min / total * 100).toFixed(1) : 0,
+        barPct: max > 0 ? (d.min / max * 100) : 0,
+      })),
+    };
   }, [tdDowntimesScoped]);
 
   // Top 10 downtime แยกตามพาร์ท (mat_no ที่บันทึกไว้ตอน log downtime)
@@ -834,93 +845,107 @@ export default function OEEAnalytics() {
             </ResponsiveContainer>
           </div>
 
-          {/* 2. Downtime */}
+          {/* 2. Downtime — pareto bars สีตามประเภท (นอกแผนเด่น/ในแผนจาง) แทนโดนัทหลายสี + ตารางยาว */}
           <div style={s.section}>
             <div style={s.title}>2. DOWNTIME</div>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '0.8fr 1.3fr 1.5fr', gap: 16 }}>
+            <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '260px 1.5fr 1.2fr', gap: 14, alignItems: 'stretch' }}>
+
               {/* 2.1 Total */}
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 10 }}>2.1 Downtime รวมของวันนี้</div>
-                <div style={{ position: 'relative', width: 120, height: 120, margin: '0 auto' }}>
-                  <GaugeRing value={tdKpi.totalShiftMin > 0 ? Math.min(100, tdKpi.totalDT / tdKpi.totalShiftMin * 100) : 0} color="#a855f7" size={120} stroke={11} />
+              <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 12 }}>2.1 Downtime รวมของวันนี้</div>
+                <div style={{ position: 'relative', width: 130, height: 130, margin: '2px auto 0' }}>
+                  <GaugeRing value={tdKpi.totalShiftMin > 0 ? Math.min(100, tdKpi.totalDT / tdKpi.totalShiftMin * 100) : 0} color="#a855f7" size={130} stroke={11} />
                   <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                    <div style={{ fontSize: 22, fontWeight: 900, color: '#a855f7' }}>{tdKpi.totalDT.toLocaleString()}</div>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: '#a855f7' }}>{tdKpi.totalDT.toLocaleString()}</div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>นาที</div>
                   </div>
                 </div>
-                <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
-                  {tdKpi.totalShiftMin > 0 ? (tdKpi.totalDT / tdKpi.totalShiftMin * 100).toFixed(2) : '0.00'}% ของเวลาผลิตทั้งหมด
+                <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--text2)', marginTop: 10 }}>
+                  <b style={{ color: '#a855f7' }}>{tdKpi.totalShiftMin > 0 ? (tdKpi.totalDT / tdKpi.totalShiftMin * 100).toFixed(2) : '0.00'}%</b> ของเวลาผลิตทั้งหมด
+                </div>
+                {/* แยกนอกแผน/ในแผน — นอกแผนคือความเสียหายจริง (convention เดียวกับประชุมแถวเช้า) */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 'auto', paddingTop: 12 }}>
+                  <div style={{ background: 'rgba(168,85,247,0.10)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 8, padding: '7px 10px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>นอกแผน</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: '#a855f7' }}>{tdDtByCause.unplannedMin.toLocaleString()} <span style={{ fontSize: 11, fontWeight: 600 }}>นาที</span></div>
+                  </div>
+                  <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>ในแผน 📅</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text2)' }}>{tdDtByCause.plannedMin.toLocaleString()} <span style={{ fontSize: 11, fontWeight: 600 }}>นาที</span></div>
+                  </div>
                 </div>
               </div>
 
-              {/* 2.2 Donut by type */}
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 10 }}>2.2 Downtime แยกตามสาเหตุ</div>
-                {tdDtDonut.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>ไม่มีข้อมูล Downtime</div>
-                ) : (
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                    <ResponsiveContainer width={140} height={140}>
-                      <PieChart>
-                        <Pie data={tdDtDonut} dataKey="min" nameKey="name" innerRadius={38} outerRadius={62} paddingAngle={2}>
-                          {tdDtDonut.map((d, i) => <Cell key={i} fill={d.color} />)}
-                        </Pie>
-                        <Tooltip formatter={v => [`${v} นาที`]} contentStyle={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div style={{ flex: 1, overflowX: 'auto' }}>
-                      <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
-                        <thead><tr style={{ color: 'var(--muted)' }}>
-                          <th style={{ textAlign: 'left', padding: '3px 6px' }}>สาเหตุ</th>
-                          <th style={{ textAlign: 'right', padding: '3px 6px' }}>นาที</th>
-                          <th style={{ textAlign: 'right', padding: '3px 6px' }}>%</th>
-                        </tr></thead>
-                        <tbody>
-                          {tdDtDonut.map((d, i) => (
-                            <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
-                              <td style={{ padding: '3px 6px' }}><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: d.color, marginRight: 5 }} />{d.name}</td>
-                              <td style={{ textAlign: 'right', padding: '3px 6px', color: 'var(--text)' }}>{d.min}</td>
-                              <td style={{ textAlign: 'right', padding: '3px 6px', color: 'var(--text)' }}>{d.pct}%</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+              {/* 2.2 Pareto by cause */}
+              <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>2.2 Downtime แยกตามสาเหตุ</div>
+                  <div style={{ display: 'flex', gap: 10, fontSize: 11, color: 'var(--muted)' }}>
+                    <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#a855f7', marginRight: 4, verticalAlign: 'middle' }} />นอกแผน</span>
+                    <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: 'var(--muted2)', marginRight: 4, verticalAlign: 'middle' }} />ในแผน 📅</span>
                   </div>
-                )}
+                </div>
+                {tdDtByCause.rows.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>ไม่มีข้อมูล Downtime</div>
+                ) : (() => {
+                  const TOP_N = 8;
+                  const shown = tdDtShowAll ? tdDtByCause.rows : tdDtByCause.rows.slice(0, TOP_N);
+                  const rest = tdDtByCause.rows.slice(TOP_N);
+                  const restMin = +rest.reduce((s, d) => s + d.min, 0).toFixed(1);
+                  const restPct = +rest.reduce((s, d) => s + d.pct, 0).toFixed(1);
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {shown.map(d => {
+                        const planned = d.category === 'planned';
+                        return (
+                          <div key={d.name} title={`${d.name} — ${d.min} นาที (${d.pct}%)`}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, fontSize: 12, marginBottom: 3 }}>
+                              <span style={{ color: planned ? 'var(--muted)' : 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                                {d.name}{planned && <span style={{ marginLeft: 5, fontSize: 11 }}>📅</span>}
+                              </span>
+                              <span style={{ color: planned ? 'var(--muted)' : 'var(--text2)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                                <b style={{ color: planned ? 'var(--muted)' : 'var(--text)' }}>{d.min.toLocaleString()}</b> นาที · {d.pct}%
+                              </span>
+                            </div>
+                            <div style={{ height: 7, borderRadius: 4, background: 'var(--bg3)', overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${Math.max(1.5, d.barPct)}%`, background: planned ? 'var(--muted2)' : '#a855f7', borderRadius: 4 }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {rest.length > 0 && (
+                        <button onClick={() => setTdDtShowAll(v => !v)}
+                          style={{ marginTop: 2, padding: '6px 10px', borderRadius: 7, border: '1px dashed var(--border2)', background: 'transparent', color: 'var(--muted)', fontSize: 11.5, cursor: 'pointer', textAlign: 'center' }}>
+                          {tdDtShowAll ? '▲ ย่อเหลือ Top 8' : `▼ อื่นๆ อีก ${rest.length} สาเหตุ · ${restMin.toLocaleString()} นาที (${restPct}%)`}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* 2.3 Top 10 by part */}
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 10 }}>2.3 Top 10 Downtime รายพาร์ท</div>
+              <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 12 }}>2.3 Top 10 Downtime รายพาร์ท</div>
                 {tdDtByPart.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>ไม่มีข้อมูล</div>
                 ) : (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
-                      <thead><tr style={{ color: 'var(--muted)' }}>
-                        <th style={{ textAlign: 'left', padding: '3px 6px' }}>#</th>
-                        <th style={{ textAlign: 'left', padding: '3px 6px' }}>พาร์ท</th>
-                        <th style={{ textAlign: 'right', padding: '3px 6px' }}>นาที</th>
-                        <th style={{ textAlign: 'right', padding: '3px 6px' }}>%</th>
-                        <th style={{ padding: '3px 6px', width: 90 }}></th>
-                      </tr></thead>
-                      <tbody>
-                        {tdDtByPart.map((d, i) => (
-                          <tr key={d.mat} style={{ borderTop: '1px solid var(--border)' }}>
-                            <td style={{ padding: '3px 6px', color: 'var(--muted)' }}>{i + 1}</td>
-                            <td style={{ padding: '3px 6px', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 140 }}>{d.part}</td>
-                            <td style={{ textAlign: 'right', padding: '3px 6px', color: 'var(--text)' }}>{d.min}</td>
-                            <td style={{ textAlign: 'right', padding: '3px 6px', color: 'var(--muted)' }}>{d.pct}%</td>
-                            <td style={{ padding: '3px 6px' }}>
-                              <div style={{ height: 8, borderRadius: 4, background: 'var(--bg2)', overflow: 'hidden' }}>
-                                <div style={{ height: '100%', width: `${d.barPct}%`, background: '#a855f7', borderRadius: 4 }} />
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {tdDtByPart.map((d, i) => (
+                      <div key={d.mat} title={`${d.part} — ${d.min} นาที (${d.pct}%)`}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, fontSize: 12, marginBottom: 3 }}>
+                          <span style={{ color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                            <span style={{ color: 'var(--muted)', fontWeight: 700, marginRight: 6, fontVariantNumeric: 'tabular-nums' }}>{i + 1}.</span>{d.part}
+                          </span>
+                          <span style={{ color: 'var(--text2)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                            <b style={{ color: 'var(--text)' }}>{d.min.toLocaleString()}</b> นาที · {d.pct}%
+                          </span>
+                        </div>
+                        <div style={{ height: 7, borderRadius: 4, background: 'var(--bg3)', overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${Math.max(1.5, d.barPct)}%`, background: '#a855f7', borderRadius: 4 }} />
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
