@@ -646,7 +646,32 @@ const WARN_DURATION_MS =  5 * 60 * 1000; // 5 min countdown before forced logout
 // เพราะ signOut จากแท็บ idle พาแท็บที่ใช้งานอยู่หลุดด้วย — session แชร์กันใน localStorage)
 const ACTIVITY_LS_KEY = 'esm-last-activity';
 
-function useAutoLogout(isDisplay, onLogout) {
+// ── เพดานเวลา login ตามกะ (2026-07-15) ────────────────────────────────────────
+// leader/หัวหน้าทำงานสลับกะ + ใช้เครื่องเช็คชื่อร่วมกัน → เดิม idle 30 นาทีไม่เตะ
+// เพราะเครื่องถูกใช้ตลอด หัวหน้ากะก่อนเลยค้าง login ข้ามกะ คนกะใหม่มาเช็คผิด session
+// กติกา: session ต้องไม่อยู่เกิน "สิ้นกะที่ตอน login + 60 นาที" (คำสั่ง user)
+// ยกเว้น admin (ดูแลระบบ เครื่องตัวเอง) + display (จอลอย — ไม่ logout อยู่แล้ว)
+const SESSION_START_KEY = 'esm-session-started';
+const SHIFT_GRACE_MS = 60 * 60 * 1000; // เผื่อ 60 นาทีหลังสิ้นกะ (ทำงานคาบเกี่ยว/OT ต่อเนื่อง)
+
+// คืน timestamp (ms) ที่ session ต้องหมดอายุ = สิ้นกะของเวลาที่ login + grace
+// กะเช้า 08:00–19:59 → สิ้นกะ 20:00 · กะดึก 20:00–07:59 → สิ้นกะ 08:00 ของเช้าถัดไป
+function shiftDeadlineFrom(loginTsMs) {
+  const d = new Date(loginTsMs);
+  const h = d.getHours();
+  const y = d.getFullYear(), mo = d.getMonth(), day = d.getDate();
+  let end;
+  if (h >= 8 && h < 20) {
+    end = new Date(y, mo, day, 20, 0, 0, 0);          // กะเช้า → 20:00 วันเดียวกัน
+  } else if (h >= 20) {
+    end = new Date(y, mo, day + 1, 8, 0, 0, 0);        // กะดึกช่วงหัวค่ำ → 08:00 วันถัดไป
+  } else {
+    end = new Date(y, mo, day, 8, 0, 0, 0);            // กะดึกช่วงเช้ามืด (< 08:00) → 08:00 วันเดียวกัน
+  }
+  return end.getTime() + SHIFT_GRACE_MS;
+}
+
+function useAutoLogout(isDisplay, onLogout, shiftCapped) {
   const [warnSecsLeft, setWarnSecsLeft] = useState(null); // null = not warning
   const lastActivityRef = useRef(Date.now());
   const warnActiveRef   = useRef(false);
@@ -692,8 +717,28 @@ function useAutoLogout(isDisplay, onLogout) {
     };
     window.addEventListener('storage', onStorage);
 
+    // แท็บถูกทิ้งไว้ข้ามคืน (timer ถูก throttle) → เช็คเพดานกะทันทีที่กลับมา active
+    const onVisible = () => { if (document.visibilityState === 'visible') checkShiftDeadline(); };
+    document.addEventListener('visibilitychange', onVisible);
+
+    // เพดานกะ: เตะออกทันทีเมื่อเลย "สิ้นกะที่ login + 60 นาที" (ไม่สนใจ idle — คนกำลังใช้ก็ต้องออก
+    // เพื่อให้หัวหน้ากะใหม่ login ด้วยบัญชีตัวเอง) · เช็คทั้งใน poll และตอนแท็บกลับมา active
+    const checkShiftDeadline = () => {
+      if (!shiftCapped) return false;
+      let startTs = 0;
+      try { startTs = Number(localStorage.getItem(SESSION_START_KEY)) || 0; } catch { /* private mode */ }
+      if (!startTs) {
+        // ไม่มี timestamp (login ค้างมาก่อนมีฟีเจอร์นี้) → ตั้งจากตอนนี้ ให้ได้กรอบกะปัจจุบันไปก่อน
+        startTs = Date.now();
+        try { localStorage.setItem(SESSION_START_KEY, String(startTs)); } catch { /* private mode */ }
+      }
+      if (Date.now() > shiftDeadlineFrom(startTs)) { onLogoutRef.current(); return true; }
+      return false;
+    };
+
     // Poll every 30s to check idle time — เทียบกับ activity ล่าสุดของ "ทุกแท็บ" (max ของ local ref กับ localStorage)
     const pollId = setInterval(() => {
+      if (checkShiftDeadline()) return; // เลยเพดานกะ = ออกแล้ว
       if (warnActiveRef.current) return; // already counting down
       let shared = 0;
       try { shared = Number(localStorage.getItem(ACTIVITY_LS_KEY)) || 0; } catch { /* ignore */ }
@@ -720,10 +765,11 @@ function useAutoLogout(isDisplay, onLogout) {
     return () => {
       EVENTS.forEach(e => window.removeEventListener(e, onActivity));
       window.removeEventListener('storage', onStorage);
+      document.removeEventListener('visibilitychange', onVisible);
       clearInterval(pollId);
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
-  }, [isDisplay, dismissWarning]);
+  }, [isDisplay, shiftCapped, dismissWarning]);
 
   return { warnSecsLeft, dismissWarning };
 }
@@ -806,7 +852,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   };
 
   const isDisplay = userRole === 'display';
-  const { warnSecsLeft, dismissWarning } = useAutoLogout(isDisplay, handleLogout);
+  // เพดานกะ (สิ้นกะ+60นาที เตะออก) ใช้กับ role หน้างานที่ทำงานสลับกะ + ใช้เครื่องเช็คชื่อร่วมกัน
+  // = หัวหน้าไลน์ (leader) + หัวหน้าส่วน (supervisor) · admin/manager/office ทำงานเครื่องตัวเอง
+  // ไม่ต้องโดนเตะรายกะ (มี idle-logout 30 นาทีคุมอยู่แล้ว) · แก้ขอบเขตที่ list นี้จุดเดียว
+  const shiftCapped = ['leader', 'supervisor'].includes(userRole);
+  const { warnSecsLeft, dismissWarning } = useAutoLogout(isDisplay, handleLogout, shiftCapped);
 
   // 📺 โหมดจอตาม (รับรีโมทจากมือถือ) — จำรหัสไว้ข้ามการรีเฟรช เปิด/ปิดจากปุ่มใน sidebar
   const [remoteCode, setRemoteCode] = useState(() => localStorage.getItem('esm-remote-receiver') || null);
@@ -1065,12 +1115,18 @@ export default function App() {
         loadPermissions().then(() => setPermsLoaded(true));
       }
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((evt, s) => {
       setSession(s);
+      // stamp เวลา login จริง (เฉพาะตอน SIGNED_IN — refresh/INITIAL_SESSION ไม่ยิง event นี้)
+      // ใช้คิดเพดานกะใน useAutoLogout · เก็บใน localStorage แชร์ทุกแท็บ + คงข้ามการรีเฟรช
+      if (evt === 'SIGNED_IN') {
+        try { localStorage.setItem(SESSION_START_KEY, String(Date.now())); } catch { /* private mode */ }
+      }
       if (s?.user) {
         fetchProfile(s.user);
         loadPermissions().then(() => setPermsLoaded(true));
       } else {
+        try { localStorage.removeItem(SESSION_START_KEY); } catch { /* private mode */ }
         setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserPosition(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null); setUserAvatarUrl(null);
         setProfileLoaded(false); setPermsLoaded(false);
       }
