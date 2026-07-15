@@ -7,6 +7,7 @@ import { loadCompanyCalendar, getDayType } from '../utils/companyCalendar';
 import { holidayPeriodsForShift, defaultHolidayPeriod } from '../utils/otPeriods';
 import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
+import { roleLabel } from '../utils/roleMeta';
 
 const LEAVE_TYPES = ['ลากิจ', 'ลาป่วย', 'ลาพักร้อน', 'อื่นๆ'];
 const LEAVE_DURATION_OPTS = [
@@ -86,6 +87,7 @@ export default function Checkin() {
   const [otExtraPeriods,  setOtExtraPeriods]  = useState({}); // { [empId]: { [date]: ot_period } } — วันหยุดล่วงหน้าเพิ่ม
   const [taskTypes,      setTaskTypes]      = useState([]);
   const [isSaving,       setIsSaving]       = useState(false);
+  const [confirmSave,    setConfirmSave]    = useState(false); // popup ยืนยัน "บันทึกในนามใคร" (กันเช็คผิด session บนเครื่องแชร์)
   const [filterShift,    setFilterShift]    = useState(true);
   const [noSchedule,     setNoSchedule]     = useState(false);
   const [orgSections,    setOrgSections]    = useState([]);
@@ -358,7 +360,23 @@ export default function Checkin() {
     });
   };
 
+  // ── ตัวตนคนที่ล็อกอินอยู่ (แสดงบนแถบเตือน + popup ยืนยัน) — กันเช็คชื่อผิด session บนเครื่องแชร์กัน ──
+  const myScopeLabel = (() => {
+    if (role === 'leader') {
+      const ln = lines.find(l => l.id === lineId)?.name;
+      return [ln && `ไลน์ ${ln}`, team && `ทีม ${team}`].filter(Boolean).join(' · ') || 'ยังไม่กำหนดไลน์/ทีม';
+    }
+    if (scopeSecs.length) return `ส่วนงาน ${scopeSecs.join(', ')}`;
+    return 'ทุกส่วนงาน';
+  })();
+
+  const handleSwitchUser = async () => {
+    // ออกจากระบบเฉพาะเครื่องนี้ (scope local — ห้าม global ตามกฎ auth) แล้ว App เด้งไปหน้า login
+    try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* ปล่อยให้ App จัดการต่อ */ }
+  };
+
   const handleSave = async () => {
+    setConfirmSave(false);
     setIsSaving(true);
     const { data: userData } = await supabase.auth.getUser();
     if (!userData?.user?.id) { toast.error('กรุณา Login ก่อน'); setIsSaving(false); return; }
@@ -973,7 +991,7 @@ export default function Checkin() {
             🚐 จองรถ OT
           </button>
           <button
-            onClick={handleSave}
+            onClick={() => setConfirmSave(true)}
             disabled={isSaving || previewNight || !canRecord}
             title={previewNight ? 'ปิดโหมด Preview ก่อนบันทึก' : !canRecord ? 'บัญชีของคุณไม่มีสิทธิ์บันทึกเช็คชื่อ' : undefined}
             style={{
@@ -987,6 +1005,35 @@ export default function Checkin() {
             {isSaving ? '⏳ กำลังบันทึก...' : previewNight ? '🔒 ปิด Preview ก่อนบันทึก' : !canRecord ? '🔒 ไม่มีสิทธิ์บันทึก' : '💾 บันทึก'}
           </button>
         </div>
+      </div>
+
+      {/* แถบตัวตนคนล็อกอิน — กันเช็คชื่อผิด session บนเครื่องแชร์ (หัวหน้ากะก่อนไม่ logout)
+          เด่นชัดตลอดเวลา + ปุ่มสลับผู้ใช้ในตัว · Andon: นิ่ง ไม่กระพริบ (แค่เตือนตัวตน ไม่ใช่ alarm) */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+        background: 'var(--accent-dim)', border: '1px solid var(--accent)',
+        borderRadius: 10, padding: '9px 14px', marginBottom: 14,
+      }}>
+        <span style={{ fontSize: 18 }}>👤</span>
+        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <span style={{ fontSize: 13, color: 'var(--text)', fontWeight: 700 }}>
+            กำลังเช็คชื่อในนาม: <span style={{ color: 'var(--accent)' }}>{fullName || 'ไม่ทราบชื่อ'}</span>
+          </span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+            {roleLabel(role)} · {myScopeLabel}
+          </span>
+        </div>
+        <button
+          onClick={handleSwitchUser}
+          title="ออกจากระบบเครื่องนี้ แล้วให้คนที่จะเช็คชื่อ login ด้วยบัญชีตัวเอง"
+          style={{
+            marginLeft: 'auto', padding: '7px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+            cursor: 'pointer', whiteSpace: 'nowrap',
+            background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)',
+          }}
+        >
+          🔄 ไม่ใช่ฉัน — สลับผู้ใช้
+        </button>
       </div>
 
       {/* Section & Line filter bar — supervisor only */}
@@ -1439,6 +1486,36 @@ export default function Checkin() {
       </div>
 
       {/* จองรถ OT แบบอิสระ modal */}
+      {/* ยืนยัน "บันทึกในนามใคร" ก่อนเซฟจริง — จุด checkpoint บังคับให้เห็นชื่อ กันเช็คผิด session
+          (ไม่ปิดจากคลิกฉากหลัง ตามกฎ modal ฟอร์ม — ต้องเลือกยืนยัน/สลับผู้ใช้) */}
+      {confirmSave && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200, padding: 16 }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '22px 24px', width: '100%', maxWidth: 380, textAlign: 'center' }}>
+            <div style={{ fontSize: 32, marginBottom: 6 }}>👤</div>
+            <div style={{ fontSize: 14, color: 'var(--text2)', marginBottom: 4 }}>บันทึกเช็คชื่อในนาม</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>{fullName || 'ไม่ทราบชื่อ'}</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, marginBottom: 18 }}>
+              {roleLabel(role)} · {myScopeLabel}<br />
+              ระบบจะลงว่าคนนี้เป็นผู้เช็คชื่อ — ถ้าไม่ใช่ตัวคุณ ให้สลับผู้ใช้ก่อน
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={handleSwitchUser}
+                style={{ flex: 1, padding: '11px 0', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
+                🔄 ไม่ใช่ฉัน
+              </button>
+              <button
+                onClick={handleSave}
+                style={{ flex: 2, padding: '11px 0', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer',
+                  background: 'var(--accent)', color: '#fff', border: 'none' }}>
+                ✓ ใช่ บันทึกเลย
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showOtBookModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
           <div style={{ background: 'var(--card)', borderRadius: 12, padding: 22, width: '100%', maxWidth: 640, maxHeight: '86vh', display: 'flex', flexDirection: 'column', border: '1px solid var(--border)' }}>
