@@ -332,6 +332,13 @@ Reject → status: "rejected" + reject_reason
 - **บนบอร์ด Heijunka (Dashboard/Management):** การ์ด manual ใช้ไอคอน ✍️ + ยอด `ทำได้/เป้า` และแถบ fill ในการ์ดวิ่งตาม qty_actual (ใบสแกนปกติแสดงเหมือนเดิม)
 - migration: `20260712_prod_orders_manual_mode.sql` (DR, additive — ใบสแกนปกติไม่กระทบ)
 
+### ถอยใบที่สแกนปิดไปแล้ว (revert confirmed → open) — 2026-07-15
+
+ปุ่ม **↩️ ถอยใบ** บนใบ `confirmed` ใน DailyReport (เคสจริง: หัวหน้ากลุ่มสแกนปิดเกินยอดที่ผลิตได้/ปิดผิดใบ):
+- เงื่อนไข: **เฉพาะกะที่ยังเปิดอยู่** (`selSession.status === 'open'`) — หลังปิดกะ/ส่งขออนุมัติ ยอด+OEE ถูก stamp ลง session แล้ว ถอยไม่ได้ · สิทธิ์ = `canEditRecords` (leader ตอนกะเปิด / manager+)
+- สิ่งที่ย้อนให้: status→open, ล้าง confirmed_by/at + qty_ok, ใบ manual คืน `qty = qty_target` (ยอดสะสม qty_actual คงไว้) + **ถอนแถว stock ที่ trigger `trg_post_confirmed_output` โพสต์อัตโนมัติ** (ลบ `line_stock_transactions` ที่ `ref_order_id`+`created_by='auto'`+`type='issue'` — ตัวกันโพสต์ซ้ำของ trigger เช็คจากแถวนี้ ลบแล้วสแกนปิดใหม่จะโพสต์ให้ใหม่ถูกต้อง)
+- Audit: `prod_orders.reopened_by/reopened_at/reopen_count` (migration `20260715_prod_orders_reopen_log.sql` DR) — การ์ดใบโชว์ชิป "↩️ เคยถอยใบ N ครั้ง · ชื่อ" เสมอ ให้หัวหน้าแผนกตรวจย้อนหลังได้ · update guard `.eq('status','confirmed')` กันถอยซ้ำสองเครื่องพร้อมกัน
+
 ---
 
 ## OEE (computeOEE ใน DailyReport) — กฎ P สำหรับหลาย MAT.NO (2026-07-14)

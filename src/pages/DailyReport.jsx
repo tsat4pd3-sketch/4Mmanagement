@@ -1143,6 +1143,37 @@ function LiveTab({ role }) {
     await doConfirmCloseOrder(match);
   };
 
+  // ── ถอยใบที่สแกนปิดไปแล้ว (confirmed → open) ──────────────────
+  // เคสจริง: หัวหน้ากลุ่มสแกนปิดเกินยอดที่ผลิตได้ / ปิดผิดใบ — ต้องย้อนได้ก่อนปิดกะ
+  // ต้องถอน stock ที่ trigger trg_post_confirmed_output โพสต์อัตโนมัติตอนปิดใบด้วย
+  // (ลบแถว ref_order_id + created_by='auto' — ตัวกันโพสต์ซ้ำของ trigger เช็คจากแถวนี้
+  //  ลบแล้วสแกนปิดใหม่ trigger จะโพสต์ให้ใหม่ถูกต้อง) · อนุญาตเฉพาะกะที่ยังเปิดอยู่
+  // เพราะหลังปิดกะ ยอด/OEE ถูก stamp ลง session แล้ว ถอยใบจะทำตัวเลขไม่ตรงกัน
+  const handleRevertOrder = async (o) => {
+    if (selSession?.status !== 'open') { toast.error('กะนี้ปิด/ส่งขออนุมัติปิดแล้ว — ถอยใบไม่ได้ (ยอดถูกสรุปไปแล้ว)'); return; }
+    if (!window.confirm(
+      `↩️ ถอยใบ ${o.prod_no} (${o.mat_no} · ${coalesceQty(o)} ชิ้น) กลับเป็น "กำลังผลิต"?\n\n` +
+      `• ยอดที่รับเข้า stock อัตโนมัติตอนปิดใบจะถูกถอนออก\n` +
+      `• ผลิตจบจริงแล้วค่อยสแกนปิดใหม่\n` +
+      `• ระบบบันทึกไว้ว่าใครถอยใบนี้ (ตรวจย้อนหลังได้)`)) return;
+    const upd = {
+      status: 'open', confirmed_by: null, confirmed_at: null, qty_ok: null,
+      reopened_by: fullName, reopened_at: new Date().toISOString(), reopen_count: (o.reopen_count || 0) + 1,
+    };
+    // ใบ manual: ตอนปิดใบ qty ถูกแทนด้วยยอดจริง — ถอยแล้วคืนเป้าเดิม (ยอดสะสม qty_actual คงไว้)
+    if (o.is_manual) upd.qty = o.qty_target ?? o.qty;
+    const { error } = await supabaseDR.from('prod_orders')
+      .update(upd).eq('id', o.id).eq('status', 'confirmed'); // guard กันถอยซ้ำ/ชนกันสองเครื่อง
+    if (error) { toast.error(error.message); return; }
+    const { error: se } = await supabaseDR.from('line_stock_transactions')
+      .delete().eq('ref_order_id', o.id).eq('type', 'issue').eq('created_by', 'auto');
+    if (se) toast.error(`⚠️ ถอยใบแล้ว แต่ถอนยอด stock ไม่สำเร็จ: ${se.message} — แจ้ง Store ตรวจยอด ${o.mat_no}`);
+    else toast.success(`↩️ ถอยใบ ${o.prod_no} กลับเป็น "กำลังผลิต" แล้ว (ถอนยอด stock ให้เรียบร้อย)`);
+    loadProdOrders(selSession.id, selSession.line_name);
+  };
+  // ยอดชิ้นของใบไว้โชว์ใน confirm dialog (ใบสแกน = qty ตายตัวจาก kanban · manual = ยอดจริงที่ปิด)
+  const coalesceQty = (o) => o.qty_ok ?? o.qty;
+
   const handleScanClose = async () => {
     if (!closeMatch) { toast.error('ไม่พบ PROD.NO นี้ หรือปิดไปแล้ว'); return; }
     await doConfirmCloseOrder(closeMatch);
@@ -2302,6 +2333,13 @@ function LiveTab({ role }) {
                           <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: `${statusColor}20`, color: statusColor }}>
                             {statusLabel}
                           </span>
+                          {/* ร่องรอยการถอยใบ — โชว์เสมอให้หัวหน้าแผนกตรวจย้อนหลังได้ว่าใครถอย */}
+                          {(o.reopen_count || 0) > 0 && (
+                            <span title={`ใบนี้เคยถูกถอยจาก "ปิดแล้ว" กลับมาผลิตต่อ ${o.reopen_count} ครั้ง · ล่าสุดโดย ${o.reopened_by || '-'}`}
+                              style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.13)', color: '#f59e0b', fontWeight: 700 }}>
+                              ↩️ เคยถอยใบ {o.reopen_count} ครั้ง · {o.reopened_by}
+                            </span>
+                          )}
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                           เปิด {fmtTime(new Date(o.opened_at))} {o.opened_by && `· ${o.opened_by}`}
@@ -2331,6 +2369,14 @@ function LiveTab({ role }) {
                       {!confirmed && (canManage || (canEditRecords && !carryOver)) && (
                         <button onClick={() => handleDeleteProdOrder(o.id)}
                           style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 2px' }}>✕</button>
+                      )}
+                      {/* ถอยใบที่สแกนปิดเกิน/ปิดผิดใบ — เฉพาะกะที่ยังเปิดอยู่ (หลังปิดกะยอดถูกสรุปแล้ว ถอยไม่ได้) */}
+                      {confirmed && canEditRecords && selSession?.status === 'open' && (
+                        <button onClick={() => handleRevertOrder(o)}
+                          title="ถอยใบ — สแกนปิดเกินยอดที่ผลิตได้/ปิดผิดใบ ย้อนกลับเป็นกำลังผลิต (ระบบถอนยอดที่รับเข้า stock อัตโนมัติให้ด้วย)"
+                          style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 7, padding: '5px 11px', fontSize: 11, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                          ↩️ ถอยใบ
+                        </button>
                       )}
                       </div>
                       {/* ประวัติยอดต่อช่วง — 10:00 กรอก 200 = ช่วงแรก 200 · 12:00 กรอก 480 = +280 */}
