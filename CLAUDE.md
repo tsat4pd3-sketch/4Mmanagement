@@ -127,7 +127,7 @@
 | Group (sidebar) | Route | Component | Role (seed default) |
 |---|---|---|---|
 | ภาพรวม | `/` | DeptHub — หน้า Hub เลือกโมดูล (เต็มจอ ไม่มี sidebar, ชิปเมนูดึงจาก NAV_ITEMS) | ทุก role |
-| ภาพรวม | `/remote` | RemoteControl — 🎮 รีโมทจอ: มือถือคุมจอ TV (ดู section "Remote Control") | ทุก role |
+| (ไม่อยู่ในเมนูหมวด) | `/remote` | RemoteControl — 🎮 รีโมทจอ: มือถือคุมจอ TV · ลิงก์ 🎮 + ปุ่ม 📺 รับรีโมท อยู่คู่กันโซนล่าง sidebar เห็นเมื่อมีสิทธิ์ `page:/remote` (ดู section "Remote Control") | ทุก role (ปรับที่ /permissions) |
 | ฝ่ายผลิต | `/dashboard` | Dashboard (ย้ายจากหมวด ภาพรวม 2026-07-12 — เนื้อหาส่วนใหญ่เป็นของฝ่ายผลิต) | ทุก role |
 | ฝ่ายผลิต | `/morning-meeting` | MorningMeeting — ประชุมแถวเช้า (ดู section "Morning Meeting") | ทุก role (record: admin/mgr/sv/leader) |
 | ฝ่ายผลิต | `/checkin` | Checkin | ทุก role |
@@ -401,8 +401,9 @@ Reject → status: "rejected" + reject_reason
 
 แก้โจทย์จอที่ไม่มีเมาส์/คีย์บอร์ด/กล้อง (Smart TV, โปรเจคเตอร์, จอบอร์ดหน้าไลน์) — **ใช้ได้ทุกหน้า** ผ่าน Supabase Realtime broadcast (channel `esm-remote-<รหัส 6 หลัก>`) ไม่มีตาราง/เซิร์ฟเวอร์ใหม่:
 
-- **ฝั่งจอ (Receiver):** ปุ่ม "📺 รับรีโมทจอ (จอตาม)" ท้าย sidebar → สุ่มรหัส 6 หลัก (จำใน localStorage ข้ามรีเฟรช) + ป้ายสถานะมุมล่างซ้ายแสดงรหัส/สถานะเชื่อมต่อเสมอ · `src/components/RemoteReceiver.jsx` ฝังระดับ App (ใน Router) — จอ**ต้อง opt-in เอง** และกด ✕ ปิดได้ตลอด
-- **ฝั่งมือถือ:** หน้า `/remote` (🎮 รีโมทจอ, หมวดภาพรวม) ใส่รหัสจากจอ → **Touchpad: ลาก 1 นิ้ว = เลื่อน pointer แดงบนจอ · แตะ = คลิก (elementFromPoint + native .click()) · ลาก 2 นิ้ว = scroll** + ปุ่ม ◀ ▶ Esc (ยิง KeyboardEvent — โหมดประชุมแถวเช้าฟัง keydown อยู่แล้ว) + ปุ่มเลื่อนขึ้น/ลง + ชิปสั่งจอกระโดดไปหน้าใดก็ได้ (เมนูจาก `navItemsForGroups` ชุดเดียวกับ sidebar — สิทธิ์เข้าหน้าคุมที่ฝั่งจอผ่าน RoleRoute ตามปกติ)
+- **ที่อยู่เมนู:** ลิงก์ 🎮 รีโมทจอ (ไปหน้า `/remote`) + ปุ่ม 📺 รับรีโมทจอ (จอตาม) **อยู่คู่กันโซนล่างสุดของ sidebar** (เหนือ Light Mode) — ทั้งคู่เห็นเฉพาะ role ที่มีสิทธิ์ `page:/remote` (default ทุก role, ปรับที่ `/permissions`) · `/remote` **ไม่อยู่ในเมนูหมวด/DeptHub** โดยตั้งใจ (เข้าจากลิงก์นี้เท่านั้น)
+- **ฝั่งจอ (Receiver):** ปุ่ม "📺 รับรีโมทจอ (จอตาม)" → สุ่มรหัส 6 หลัก (จำใน localStorage ข้ามรีเฟรช) + ป้ายสถานะมุมล่างซ้ายแสดงรหัส/สถานะเชื่อมต่อเสมอ · `src/components/RemoteReceiver.jsx` ฝังระดับ App (ใน Router) — จอ**ต้อง opt-in เอง** และกด ✕ ปิดได้ตลอด
+- **ฝั่งมือถือ:** หน้า `/remote` (🎮 รีโมทจอ) ใส่รหัสจากจอ → **Touchpad: ลาก 1 นิ้ว = เลื่อน pointer แดงบนจอ · แตะ = คลิก (elementFromPoint + native .click()) · ลาก 2 นิ้ว = scroll** + ปุ่ม ◀ ▶ Esc (ยิง KeyboardEvent — โหมดประชุมแถวเช้าฟัง keydown อยู่แล้ว) + ปุ่มเลื่อนขึ้น/ลง + ชิปสั่งจอกระโดดไปหน้าใดก็ได้ (เมนูจาก `navItemsForGroups` ชุดเดียวกับ sidebar — สิทธิ์เข้าหน้าคุมที่ฝั่งจอผ่าน RoleRoute ตามปกติ)
 - **กลไก pointer:** จอถือตำแหน่งเอง มือถือส่ง delta (throttle ~25Hz) · scroll เดินหา ancestor ที่ overflow แล้ว scrollBy ที่ตัวนั้น (รองรับ inner scroll container) · คลิกหา interactive ใกล้สุดด้วย `.closest('button, a, [role=button], input, ...')`
 - **ข้อควรระวัง:** ใครมีบัญชี ESM + รหัส 6 หลักที่เห็นบนจอ ก็สั่งจอได้ — จอเป็นฝ่ายเปิดรับเองเสมอ, รหัสโชว์บนจอเท่านั้น, ปิดเมื่อไม่ใช้ · migration สิทธิ์: `20260715_remote_page_permission.sql`
 
