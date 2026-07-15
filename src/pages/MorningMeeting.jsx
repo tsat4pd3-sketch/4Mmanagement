@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useCallback, useMemo, Fragment } from 'react';
+import { useState, useEffect, useContext, useCallback, useMemo, Fragment, lazy, Suspense } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -7,6 +7,9 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
+
+// Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷
+const GestureCam = lazy(() => import('../components/GestureCam'));
 
 /* ═══ ประชุมแถวเช้า (Morning Meeting) ══════════════════════════════════════
    วาระเดียวจบ: เมื่อวานได้ตามเป้ามั้ย → งานหลุดแผนเพราะอะไร → Top Downtime/NG
@@ -64,6 +67,7 @@ export default function MorningMeeting() {
   const [openDts, setOpenDts]         = useState([]); // เครื่องที่ยังซ่อมค้าง "ตอนนี้" (readiness)
   const [machineCountByLine, setMachineCountByLine] = useState({}); // จำนวนเครื่องต่อไลน์ — ฐานคิด % Downtime
   const [showRoutineMoves, setShowRoutineMoves] = useState(false); // กางรายชื่อย้ายจุด routine ในแผง 4M
+  const [gestureOn, setGestureOn] = useState(false); // 📷 ควบคุมวาระด้วยท่ามือ (เฉพาะโหมดประชุม)
   const [actions, setActions]         = useState([]);
   const [tvMode, setTvMode]           = useState(false);
   const [slide, setSlide]             = useState(0);
@@ -852,13 +856,25 @@ export default function MorningMeeting() {
   useEffect(() => {
     if (!tvMode) return;
     const onKey = (e) => {
-      if (e.key === 'Escape') setTvMode(false);
+      if (e.key === 'Escape') { setTvMode(false); setGestureOn(false); }
       if (e.key === 'ArrowRight') setSlide(s => Math.min(slides.length - 1, s + 1));
       if (e.key === 'ArrowLeft') setSlide(s => Math.max(0, s - 1));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [tvMode, slides.length]);
+
+  // Gesture Mode: callback ต้อง stable (GestureCam ผูก effect กับตัวนี้ — เปลี่ยน ref = restart กล้อง)
+  const slideCount = slides.length;
+  const handleGesture = useCallback((action) => {
+    if (action === 'next') setSlide(s => Math.min(slideCount - 1, s + 1));
+    else if (action === 'prev') setSlide(s => Math.max(0, s - 1));
+    else if (action === 'exit') { setTvMode(false); setGestureOn(false); }
+  }, [slideCount]);
+  const handleGestureError = useCallback(() => {
+    toast.error('เปิดกล้องไม่สำเร็จ — เช็คว่าเบราว์เซอร์ได้รับสิทธิ์ใช้กล้อง');
+    setGestureOn(false);
+  }, []);
 
   const btnSt = (active) => ({
     padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
@@ -926,7 +942,11 @@ export default function MorningMeeting() {
               <button onClick={() => setSlide(s => Math.max(0, s - 1))} disabled={slide === 0} style={{ ...btnSt(false), fontSize: 16, opacity: slide === 0 ? 0.4 : 1 }}>◀</button>
               <span style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 700 }}>{slide + 1}/{slides.length}</span>
               <button onClick={() => setSlide(s => Math.min(slides.length - 1, s + 1))} disabled={slide === slides.length - 1} style={{ ...btnSt(false), fontSize: 16, opacity: slide === slides.length - 1 ? 0.4 : 1 }}>▶</button>
-              <button onClick={() => setTvMode(false)} style={{ ...btnSt(false), fontSize: 14 }} title="ออกจากโหมดประชุม (Esc)">✕</button>
+              <button onClick={() => setGestureOn(v => !v)} style={btnSt(gestureOn)}
+                title={'ควบคุมด้วยท่ามือผ่านกล้อง (ประมวลผลในเครื่อง ไม่ส่งภาพออกไปไหน)\n✋ ปัดซ้าย/ขวา = เปลี่ยนวาระ · 👍 ค้าง = ถัดไป · ✊ ค้าง = ออกจากโหมด'}>
+                {gestureOn ? '📷 ปิดท่ามือ' : '📷 คุมด้วยท่ามือ'}
+              </button>
+              <button onClick={() => { setTvMode(false); setGestureOn(false); }} style={{ ...btnSt(false), fontSize: 14 }} title="ออกจากโหมดประชุม (Esc)">✕</button>
             </div>
           </div>
           {/* zoom ขยายทั้งวาระให้อ่านจากระยะไกล (จอ TV) — เนื้อหา component เดียวกับโหมดปกติเป๊ะ */}
@@ -939,6 +959,12 @@ export default function MorningMeeting() {
                 style={{ width: 10, height: 10, borderRadius: '50%', border: 'none', cursor: 'pointer', background: i === slide ? 'var(--accent)' : 'var(--border2)', padding: 0 }} />
             ))}
           </div>
+          {/* 📷 Gesture Mode — mount เฉพาะตอนเปิด (unmount = ดับกล้องทันที) */}
+          {gestureOn && (
+            <Suspense fallback={<div style={{ position: 'absolute', right: 16, bottom: 16, zIndex: 30, fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 10, padding: '8px 12px' }}>⏳ กำลังโหลด Gesture Mode…</div>}>
+              <GestureCam onGesture={handleGesture} onError={handleGestureError} />
+            </Suspense>
+          )}
         </div>
       )}
 
