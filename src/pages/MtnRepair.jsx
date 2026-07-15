@@ -282,7 +282,7 @@ function MoCard({ o, onOpen }) {
   const pct = Math.round((o.current_step / 7) * 100);
   const dept = o.mtn_dept || deptForItem(o.item_type);
   return (
-    <div className={o.status === 'pending' ? 'dt-alarm-blink' : ''} onClick={onOpen}
+    <div className={o.status === 'pending' ? 'mo-card-alert' : ''} onClick={onOpen}
       style={{ background: 'var(--card)', border: `1px solid ${o.status === 'pending' ? '#ef4444' : 'var(--border)'}`, borderRadius: 12, padding: 12, cursor: 'pointer' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
         <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>{o.mo_no || '(ยังไม่ออกเลข MO)'}</div>
