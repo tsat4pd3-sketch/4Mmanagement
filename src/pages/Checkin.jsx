@@ -86,9 +86,6 @@ export default function Checkin() {
   const [otExtraPeriods,  setOtExtraPeriods]  = useState({}); // { [empId]: { [date]: ot_period } } — วันหยุดล่วงหน้าเพิ่ม
   const [taskTypes,      setTaskTypes]      = useState([]);
   const [isSaving,       setIsSaving]       = useState(false);
-  // ชื่อผู้ตรวจในสรุป Telegram — default = ชื่อ account ที่ login แต่พิมพ์ทับได้
-  // (หน้างานจริงมีการยืมเครื่อง/ยืม account กัน ชื่อคนตรวจจริงต้องแก้ได้ — 2026-07-15)
-  const [checkerName,    setCheckerName]    = useState('');
   const [filterShift,    setFilterShift]    = useState(true);
   const [noSchedule,     setNoSchedule]     = useState(false);
   const [orgSections,    setOrgSections]    = useState([]);
@@ -546,7 +543,7 @@ export default function Checkin() {
             has_ot_night: hasOtNight,
             total:   shown.length,
             present, absent, leave, ot,
-            checked_by: checkerName.trim() || fullName || 'SV',
+            checked_by: fullName || 'SV',
           },
         }),
       }).catch(() => {}); // fire-and-forget, ไม่บล็อก
@@ -975,13 +972,6 @@ export default function Checkin() {
           >
             🚐 จองรถ OT
           </button>
-          <input
-            value={checkerName}
-            onChange={e => setCheckerName(e.target.value)}
-            placeholder={`✍️ ผู้ตรวจ: ${fullName || 'SV'}`}
-            title="ชื่อผู้ตรวจที่จะแสดงในสรุป Telegram — เว้นว่าง = ใช้ชื่อ account ที่ login · ถ้าคนตรวจจริงไม่ใช่เจ้าของ account ให้พิมพ์ชื่อทับ"
-            style={{ width: 180, padding: '8px 10px', borderRadius: 8, fontSize: 12, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)' }}
-          />
           <button
             onClick={handleSave}
             disabled={isSaving || previewNight || !canRecord}
