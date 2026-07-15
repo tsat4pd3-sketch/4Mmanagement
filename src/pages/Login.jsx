@@ -25,9 +25,28 @@ export default function Login() {
     setError(null);
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (!error) { setLoading(false); navigate('/'); return; }
+
+    // แปล error เป็นไทย + แยกประเภท "ไม่พบบัญชี" vs "รหัสผ่านผิด" (คำสั่ง user 2026-07-14)
+    // ใช้ RPC login_email_exists (security definer ฝั่ง server) เช็คว่าอีเมลนี้มีบัญชีจริงมั้ย
+    const m = (error.message || '').toLowerCase();
+    let msg;
+    if (m.includes('invalid login credentials')) {
+      const { data: exists, error: rpcErr } = await supabase.rpc('login_email_exists', { p_email: email });
+      if (rpcErr || exists === null) msg = '❌ อีเมลหรือรหัสผ่านไม่ถูกต้อง';
+      else if (exists === false)     msg = `❌ ไม่พบบัญชี "${email}" ในระบบ — ตรวจตัวสะกดอีเมล หรือติดต่อ admin ให้สร้างบัญชี`;
+      else                           msg = '🔒 อีเมลถูกต้อง แต่รหัสผ่านไม่ถูกต้อง — ลองใหม่ หรือให้ admin รีเซ็ตรหัสผ่านให้';
+    } else if (m.includes('email not confirmed')) {
+      msg = '📧 บัญชีนี้ยังไม่ถูกยืนยัน — ติดต่อ admin';
+    } else if (error.status === 429 || m.includes('too many') || m.includes('rate limit')) {
+      msg = '⏳ ลองเข้าระบบผิดหลายครั้งเกินไป — พักสักครู่แล้วลองใหม่';
+    } else if (m.includes('failed to fetch') || m.includes('network')) {
+      msg = '📡 เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่';
+    } else {
+      msg = 'เข้าสู่ระบบไม่สำเร็จ: ' + error.message;
+    }
+    setError(msg);
     setLoading(false);
-    if (error) setError(error.message);
-    else navigate('/');
   };
 
   return (

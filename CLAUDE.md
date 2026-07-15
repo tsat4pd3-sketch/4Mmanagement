@@ -127,6 +127,7 @@
 | Group (sidebar) | Route | Component | Role (seed default) |
 |---|---|---|---|
 | ภาพรวม | `/` | DeptHub — หน้า Hub เลือกโมดูล (เต็มจอ ไม่มี sidebar, ชิปเมนูดึงจาก NAV_ITEMS) | ทุก role |
+| (ไม่อยู่ในเมนูหมวด) | `/remote` | RemoteControl — 🎮 รีโมทจอ: มือถือคุมจอ TV · ลิงก์ 🎮 + ปุ่ม 📺 รับรีโมท อยู่คู่กันโซนล่าง sidebar เห็นเมื่อมีสิทธิ์ `page:/remote` (ดู section "Remote Control") | ทุก role (ปรับที่ /permissions) |
 | ฝ่ายผลิต | `/dashboard` | Dashboard (ย้ายจากหมวด ภาพรวม 2026-07-12 — เนื้อหาส่วนใหญ่เป็นของฝ่ายผลิต) | ทุก role |
 | ฝ่ายผลิต | `/morning-meeting` | MorningMeeting — ประชุมแถวเช้า (ดู section "Morning Meeting") | ทุก role (record: admin/mgr/sv/leader) |
 | ฝ่ายผลิต | `/checkin` | Checkin | ทุก role |
@@ -256,6 +257,7 @@
   - นับ idle **ร่วมกันทุกแท็บ** ผ่าน `localStorage['esm-last-activity']` (เขียน throttle 5 วิ + ฟัง storage event) — ห้ามกลับไปนับต่อแท็บ ไม่งั้นแท็บที่เปิดทิ้งไว้จะ logout ทั้งที่ user ใช้งานอีกแท็บอยู่
   - ระหว่าง countdown ถ้ามี activity (เมาส์/คีย์/แตะจอ — แท็บไหนก็ได้) → ปิดคำเตือนอัตโนมัติ ไม่ต้องกดปุ่ม
 - อยากปรับระยะ idle → แก้ `IDLE_TIMEOUT_MS`/`WARN_DURATION_MS` ใน App.jsx จุดเดียว
+- **เพดานเวลา login ตามกะ (2026-07-15):** role หน้างานที่ทำงานสลับกะ+ใช้เครื่องเช็คชื่อร่วมกัน (`leader`+`supervisor`) จะถูก **เตะออกทันทีเมื่อเลย "สิ้นกะที่ตอน login + 60 นาที"** ไม่สนใจ idle (กะเช้า 08:00–19:59 → หมดอายุ 21:00 · กะดึก 20:00–07:59 → หมดอายุ 09:00 เช้าถัดไป) — แก้ปัญหาหัวหน้ากะก่อนไม่ logout แล้วคนกะใหม่มาเช็คผิด session · stamp เวลา login ที่ `localStorage['esm-session-started']` ตอน `SIGNED_IN` (ล้างตอน signout) · admin/manager/office/display **ไม่โดน** (ทำงานเครื่องตัวเอง มี idle-logout คุมพอ) · ปรับขอบเขตที่ list `shiftCapped` + ค่า `SHIFT_GRACE_MS`/`shiftDeadlineFrom()` ใน App.jsx
 
 ---
 
@@ -383,7 +385,9 @@ Reject → status: "rejected" + reject_reason
 หน้า `/morning-meeting` (กลุ่มฝ่ายผลิต) — บอร์ดประชุมทบทวนเช้าก่อนเริ่มงาน **ข้อมูลดึงอัตโนมัติทั้งหมด ไม่ต้องทำสไลด์** วาระ: ภาพรวมเมื่อวาน (ผลิตจริง/เป้า, OEE, DT, NG, เข้างาน) → งานหลุดแผน+สาเหตุ → Top Downtime/ของเสีย → 4M → ความพร้อมเช้านี้ → Action items
 
 - **วันที่ default = วันงานล่าสุดที่จบ:** ก่อน 08:00 ใช้ `getWorkDate()` ตรงๆ (ยังเป็นเมื่อวาน) · หลัง 08:00 ถอย 1 วัน — ห้ามใช้ getWorkDate()-1 เสมอ (ช่วงประชุม 07:30-08:00 จะกลายเป็น 2 วันก่อน)
-- **แหล่งข้อมูล:** DR = production_sessions/prod_orders/downtime_logs/defect_logs · Main = four_m_logs/daily_production_logs · เป้าใบงาน = `qty_target ?? qty`, ยอดจริง = `qty_ok ?? qty_actual` · **เป้ากะ = `target_qty` → รวมเป้าใบงานของกะ → std_day/night_shift** (เป้า 0 = แสดง "ไม่มีเป้า" ห้ามโชว์ 0% แดง) · ยอดจริงกะ = `qty_ok` → `actual_qty` → รวมจากใบงาน
+- **แหล่งข้อมูล:** DR = production_sessions/prod_orders/downtime_logs/defect_logs · Main = four_m_logs/daily_production_logs · เป้าใบงาน = `qty_target ?? qty`, ยอดจริง = `qty_ok ?? qty_actual` · **เป้ากะ = `target_qty` → รวมเป้าใบงานของกะ (`qty_target ?? qty`) เท่านั้น** (เป้า 0 = แสดง "ไม่มีเป้า"/"—" ห้ามโชว์ 0% แดง) · ยอดจริงกะ = `qty_ok` → `actual_qty` → รวมจากใบงาน
+  - ⚠️ **ห้าม fallback เป้ากะไป `production_lines.std_day_shift`/`std_night_shift`** — ค่านั้นคือ **"จำนวนคนต่อกะ (headcount)"** ไม่ใช่เป้าจำนวนชิ้น (HYDROFORM=14 คน, GOR=11, Line60=6) · เคย fallback แล้วไลน์ไม่มีใบงานโชว์ "0/14 · 0%" ทั้งที่ควรเป็น "ไม่มีเป้า" (แก้ 2026-07-15 MorningMeeting + OEEAnalytics panel 3)
+  - **การ์ด/รายงาน DT ต่อไลน์-ต่อกะ นับเฉพาะ "นอกแผน"** เหมือน KPI รวม — planned (ไม่มีแผนผลิต/นับสต๊อก) ไม่ใช่ loss ห้ามเอามาคิด % หลัก/โป่งตัวเลขการ์ด (เคยโชว์ DT 569/1620น. สีแดงทั้งที่แค่ไม่มีแผนผลิต · OEEAnalytics 2.1 เคยโชว์รวม 5,512น. 38.68% ที่จริง 4,684น.เป็น planned) · 2.3 Top-by-part ก็กรอง planned ออก (ไม่งั้น "ไม่ระบุ MAT.NO" ครองอันดับ 1 · แก้ 2026-07-15)
 - **เช็คชื่อ:** `daily_production_logs.assigned_line` เก็บ **id จุดงาน ไม่ใช่ชื่อไลน์** — หาไลน์ของคนต้อง join `employees.line_id` (เคยพลาด query ตรงแล้วได้ 0/0)
 - **Downtime KPI นับเฉพาะ "นอกแผน"** (planned เช่น นับสต็อก/ไม่มีแผนผลิต แสดงแยกจางๆ ไม่นับใน % — ไม่ใช่ความเสียหาย ถ้ารวมจะกลบตัวเลขจริง) — ผลรวมนาทีทุกรายการทุกเครื่อง (เวลาซ้อนกันได้ เกิน 24 ชม./วันได้) แสดงเป็น **% เทียบฐานเวลาเครื่องรวม** = Σ ต่อกะที่เปิด (`shift_min` (fallback 570) × จำนวนเครื่องจากทะเบียน `machines` ของไลน์ ไม่มีทะเบียน = 1) · เกณฑ์สี <3% เขียว / 3-8% เหลือง / >8% แดง · Top Downtime แยกส่วน นอกแผน (แถบ+note) / ในแผน (จางท้ายแผง) · Top Downtime/ของเสีย แสดง note ของพนักงาน (description) ใต้แต่ละประเภท — สำคัญกับประเภท "อื่นๆ"
 - **กฎบังคับ (DailyReport):** บันทึก Downtime/งานเสียประเภทชื่อมี "อื่น" ต้องกรอกรายละเอียด (description) เสมอ ไม่งั้นบันทึกไม่ผ่าน — ไม่งั้นรายงาน/ประชุมเช้าอ่านไม่รู้เรื่อง (2026-07-13)
@@ -391,7 +395,20 @@ Reject → status: "rejected" + reject_reason
 - **Action items:** ตาราง `meeting_action_items` (Main — migration `20260713_morning_meeting.sql`) · รายการ open/doing จากวันก่อนโผล่ทุกประชุมพร้อมป้าย ⏮ จนกว่าจะปิด · เขียนได้เมื่อ `can('morning_meeting','record')` (seed: admin/manager/supervisor/leader)
 - **ความพร้อมเช้านี้:** เครื่องซ่อมค้างตอนนี้ (open DT จากกะ 3 วันล่าสุด — แดงกระพริบตาม Andon), 4M ค้างอนุมัติ (เหลืองนิ่ง)
 - **โหมดประชุม (📺):** full-screen ไล่วาระทีละสไลด์ (◀ ▶ / Esc) เนื้อหา component เดิม + `zoom: 1.3` สำหรับจอ TV · 🖨️ พิมพ์สรุป (pattern window.open + print เหมือน Report) · 📤 ส่งสรุป Telegram (event `morning_meeting`)
+- **📷 Gesture Mode (2026-07-15):** ควบคุมวาระด้วยท่ามือผ่านกล้อง (MediaPipe `@mediapipe/tasks-vision` GestureRecognizer) — ตัวหลัก = **☝️ ชี้นิ้วบอกทิศ+ค้าง 0.45s** (◀/▶ เปลี่ยนวาระ · ▲/▼ เลื่อนหน้า ค้างต่อ = เลื่อนต่อเนื่อง — ทิศอ่านจากเวกเตอร์ landmark 5→8 + เงื่อนไขชี้นิ้วเดียว เสถียรกว่าการปัดที่ภาพเบลอ), ✋ ปัดซ้าย/ขวา = เปลี่ยนวาระ (ตัวรอง — trail ทน track หลุด ≤220ms), 👍 ค้าง 0.6s = ถัดไป, ✊ ค้าง 0.9s = ออกจากโหมด · `src/components/GestureCam.jsx` · **กฎ:** opt-in เท่านั้น (ปุ่มในโหมดประชุม), ประมวลผลในเครื่อง 100% (ห้ามส่งภาพออก), โมเดล+WASM self-host ที่ `public/mediapipe/` (~19MB, cache 30 วันใน render.yaml — เปลี่ยนเวอร์ชันโมเดล = เปลี่ยนชื่อไฟล์), lazy-load ทั้งหมด (bundle หลักไม่บวม), มีจุดแดง+preview บอกว่ากล้องทำงานเสมอ, gesture ผูกได้แค่เปลี่ยนหน้า/ออกจากโหมด **ห้ามผูกกับ action ที่แก้ข้อมูล**
 - **Scope:** leader = family ไลน์ตัวเอง (branch มาก่อน) · role อื่นตาม `sections` — pattern มาตรฐาน
+
+---
+
+## Remote Control — จอตาม-มือถือคุม (2026-07-15)
+
+แก้โจทย์จอที่ไม่มีเมาส์/คีย์บอร์ด/กล้อง (Smart TV, โปรเจคเตอร์, จอบอร์ดหน้าไลน์) — **ใช้ได้ทุกหน้า** ผ่าน Supabase Realtime broadcast (channel `esm-remote-<รหัส 6 หลัก>`) ไม่มีตาราง/เซิร์ฟเวอร์ใหม่:
+
+- **ที่อยู่เมนู:** ลิงก์ 🎮 รีโมทจอ (ไปหน้า `/remote`) + ปุ่ม 📺 รับรีโมทจอ (จอตาม) **อยู่คู่กันโซนล่างสุดของ sidebar** (เหนือ Light Mode) — ทั้งคู่เห็นเฉพาะ role ที่มีสิทธิ์ `page:/remote` (default ทุก role, ปรับที่ `/permissions`) · `/remote` **ไม่อยู่ในเมนูหมวด/DeptHub** โดยตั้งใจ (เข้าจากลิงก์นี้เท่านั้น)
+- **ฝั่งจอ (Receiver):** ปุ่ม "📺 รับรีโมทจอ (จอตาม)" → สุ่มรหัส 6 หลัก (จำใน localStorage ข้ามรีเฟรช) + ป้ายสถานะมุมล่างซ้ายแสดงรหัส/สถานะเชื่อมต่อเสมอ · `src/components/RemoteReceiver.jsx` ฝังระดับ App (ใน Router) — จอ**ต้อง opt-in เอง** และกด ✕ ปิดได้ตลอด
+- **ฝั่งมือถือ:** หน้า `/remote` (🎮 รีโมทจอ) ใส่รหัสจากจอ → **Touchpad: ลาก 1 นิ้ว = เลื่อน pointer แดงบนจอ · แตะ = คลิก (elementFromPoint + native .click()) · ลาก 2 นิ้ว = scroll** + ปุ่ม ◀ ▶ Esc (ยิง KeyboardEvent — โหมดประชุมแถวเช้าฟัง keydown อยู่แล้ว) + ปุ่มเลื่อนขึ้น/ลง + ชิปสั่งจอกระโดดไปหน้าใดก็ได้ (เมนูจาก `navItemsForGroups` ชุดเดียวกับ sidebar — สิทธิ์เข้าหน้าคุมที่ฝั่งจอผ่าน RoleRoute ตามปกติ)
+- **กลไก pointer:** จอถือตำแหน่งเอง มือถือส่ง delta (throttle ~25Hz) · scroll เดินหา ancestor ที่ overflow แล้ว scrollBy ที่ตัวนั้น (รองรับ inner scroll container) · คลิกหา interactive ใกล้สุดด้วย `.closest('button, a, [role=button], input, ...')`
+- **ข้อควรระวัง:** ใครมีบัญชี ESM + รหัส 6 หลักที่เห็นบนจอ ก็สั่งจอได้ — จอเป็นฝ่ายเปิดรับเองเสมอ, รหัสโชว์บนจอเท่านั้น, ปิดเมื่อไม่ใช้ · migration สิทธิ์: `20260715_remote_page_permission.sql`
 
 ---
 
@@ -416,6 +433,19 @@ Reject → status: "rejected" + reject_reason
 - **พิมพ์ใบ MO / บันทึก PDF (100% ตาม template):** ปุ่ม 🖨️ ใน DetailDrawer → `printMoReport()` (window.open + print) layout **FM-JIG-008 เป๊ะ**: โลโก้ TS + หัวบริษัท 3 คอลัมน์ (ชื่อ/ใบแจ้งซ่อม+หน่วยงาน/MO NO) + ส่วน 1 ผู้แจ้ง | 2 รับงาน + 3 ซ่อม + BEFORE/AFTER + 4&5 คุณภาพ | 6 รับมอบ + ตารางอนุมัติ 4 ช่อง (JIG/MTN·QA·PD·MGR ช่อง MGR พื้นเทาเข้ม) + footer FM-JIG-008-REV.00 / Effective 05/12/2025 — เซฟ PDF จาก dialog พิมพ์เบราว์เซอร์
 - **Scope:** leader = family ไลน์ตัวเอง (branch มาก่อน) · role อื่นตาม `sections` — pattern มาตรฐาน
 - **ข้อมูลเก่า 677 ใบจาก Google Sheet ยังไม่ย้าย** (user เลือก "ย้ายทีหลัง") — ระบบเริ่มนับ MO ใหม่จาก 0
+
+---
+
+## PM Photo-Compare Inspection — ตรวจสภาพเครื่องด้วยการเทียบรูป "จับผิด" (2026-07-15, เฟส 1 ทดลอง)
+
+ตรวจสภาพเครื่องแบบ *photo-hunt*: เทียบ **รูปมาตรฐาน (สภาพดี)** กับ **สภาพจริงที่ถ่ายตอนตรวจ** เพื่อจับความผิดปกติที่มองเห็น (น้ำมันรั่ว/การ์ดเปิด/ของหาย/สภาพเปลี่ยน) — คนเป็นผู้ตัดสิน เว็บช่วยให้เทียบง่าย · ต่อยอดเข้า `/pm-check` เดิม ไม่ใช่หน้าใหม่
+
+- **รูปมาตรฐาน = `jig_checkpoints.image_path`** (รูปอ้างอิงต่อจุดที่ตั้งใน PMSetup อยู่แล้ว) — ปุ่ม "📷 เทียบรูป" โผล่บนแถวจุดตรวจชนิด attribute/note **เมื่อจุดนั้นมี image_path** เท่านั้น
+- **Component: `src/components/PhotoCompareModal.jsx`** — 3 โหมดเทียบ: ↔ แบ่งซ้าย/ขวา (wipe slider) · ◐ ซ้อนจาง (fade) · 🔍 ไฮไลต์จุดต่าง (diff heatmap คำนวณ luminance ต่างในเบราว์เซอร์ — ตัวช่วยคร่าวๆ ไม่ใช่ AI, มุม/แสงต่างมากจะไฮไลต์เงาด้วย) · ถ่ายสดพร้อม **ghost overlay** รูปมาตรฐานช่วยเล็งมุม (getUserMedia facingMode environment) หรือ `<input capture>` สำรอง
+- **กฎเหล็กประหยัด storage — เก็บรูป "เฉพาะ NG" เท่านั้น** (ผ่าน = ทิ้งพิกเซล): modal คืน `{ verdict, blob }` · blob ถูกเก็บใน `evidenceBlobs` (state) เฉพาะตอน verdict='ng' · `handleSave` อัปโหลด blob → bucket `jig-images` path `evidence/<inspection_id>/<checkpoint_id>.jpg` แล้ว set `inspection_results.evidence_path` (best-effort try/catch ไม่ล้มการบันทึก) · การเลือก "ปกติ" ลบ blob ทิ้งทันที — **ห้ามเปลี่ยนเป็นเก็บทุกรูป** (250 รูป/วัน × 100KB ≈ 1.1GB/เดือน = เต็มแพลนฟรีใน 1 เดือน · เก็บเฉพาะ NG ~3% = 180MB/ปี)
+- รูปถ่ายบีบ **800px q0.72** ในตัว component (canvas→jpeg) ก่อนอัปโหลด · HistoryModal โชว์ thumbnail หลักฐานใต้ผล NG
+- schema: `20260715_inspection_evidence_photo.sql` (DR — เพิ่มคอลัมน์ `inspection_results.evidence_path` เดียว additive)
+- **เฟสถัดไป (ยังไม่ทำ):** Level 2 auto-diff ที่ align ภาพก่อน · Level 3 AI anomaly detection (ต้องสะสมรูปหลายเดือน + edge box/cloud API) — รูปหลักฐานที่เก็บตอนนี้เป็น data ตั้งต้นให้เทรนทีหลัง
 
 ---
 
@@ -535,12 +565,16 @@ src/
 
 supabase/
 ├── migrations/        # ทุกการเปลี่ยน schema ต้องมีไฟล์ที่นี่ (ดู docs/sql/00_schema_snapshot_*.sql = โครงตารางทั้งหมด)
-└── functions/         # 10 ตัว (ซอร์สอยู่ใน repo ครบแล้ว): send-notification, send-cqi15-notification,
+└── functions/         # 11 ตัว (ซอร์สอยู่ใน repo ครบแล้ว): send-notification, send-cqi15-notification,
                        #   daily-4m-summary, create-user (v14 2026-07-13: admin-only + validate role
                        #   กับ enum ผ่าน RPC get_user_roles ห้าม hardcode + เขียนโปรไฟล์ครบทุก field
                        #   จังหวะเดียว), delete-user (admin-only · กันลบตัวเอง/ลบ admin),
+                       #   reset-user-password (admin-only · ตั้งรหัสใหม่ให้ user ที่ลืมรหัส —
+                       #   ห้ามใช้กับบัญชี admin · ปุ่ม 🔑 ใน modal แก้ไขของ /add-user · 2026-07-14),
                        #   pm-daily-scan, pm-plan-reminder, shipping-phase-scan,
                        #   downtime-open-scan (DR cron 5 นาที — เปิดค้างเกินเกณฑ์), cleanup-orphan-photos
+                       # หน้า Login แยก error "ไม่พบบัญชี" vs "รหัสผิด" ผ่าน RPC login_email_exists
+                       #   (anon เรียกได้ — enumeration trade-off ที่ตั้งใจ ดู migration 20260714)
 
 docs/                  # UI-CONVENTIONS.md (บังคับอ่านก่อนแก้ UI) · PERMISSIONS-DESIGN.md ·
                        #   ROLLBACK_*.md · sql/ (schema snapshot + seed อ้างอิง)

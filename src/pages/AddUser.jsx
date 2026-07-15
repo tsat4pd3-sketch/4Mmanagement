@@ -41,6 +41,8 @@ export default function AddUser() {
   const [loading,       setLoading]       = useState(false);
   const [message,       setMessage]       = useState(null);
   const [error,         setError]         = useState(null);
+  const [resetPw,       setResetPw]       = useState(''); // ช่องตั้งรหัสใหม่ใน modal แก้ไข
+  const [resetPwBusy,   setResetPwBusy]   = useState(false);
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name').order('name')
@@ -89,6 +91,7 @@ export default function AddUser() {
     setModalMode('create');
     setMessage(null);
     setError(null);
+    setResetPw('');
     setShowModal(true);
   };
 
@@ -109,6 +112,7 @@ export default function AddUser() {
     setModalMode('edit');
     setMessage(null);
     setError(null);
+    setResetPw('');
     setShowModal(true);
   };
 
@@ -156,6 +160,33 @@ export default function AddUser() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // admin ตั้งรหัสผ่านใหม่ให้ user (ลืมรหัส/login ไม่ได้) — ผ่าน Edge Function reset-user-password
+  // (admin-only ฝั่ง server + ห้ามใช้กับบัญชี admin — เจ้าตัวเปลี่ยนเองผ่านเมนูเปลี่ยนรหัสผ่าน)
+  const handleResetPassword = async () => {
+    const who = form.fullName || form.email;
+    if (resetPw.length < 6) return setError('รหัสผ่านใหม่ต้องยาวอย่างน้อย 6 ตัวอักษร');
+    if (!window.confirm(`ตั้งรหัสผ่านใหม่ให้ "${who}" ?\n\nรหัสเดิมจะใช้ไม่ได้ทันที — อย่าลืมแจ้งรหัสใหม่ให้เจ้าตัว`)) return;
+    setResetPwBusy(true); setError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-user-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ user_id: editingId, new_password: resetPw }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'รีเซ็ตรหัสผ่านไม่สำเร็จ');
+      setResetPw('');
+      setMessage(`ตั้งรหัสผ่านใหม่ให้ "${who}" แล้ว — แจ้งรหัสใหม่ให้เจ้าตัวด้วย`);
+      setShowModal(false);
+    } catch (err) { setError(err.message); }
+    finally { setResetPwBusy(false); }
   };
 
   const handleDelete = async () => {
@@ -433,9 +464,34 @@ export default function AddUser() {
                   </div>
                 </>
               ) : (
-                <div style={{ padding: '8px 12px', background: 'var(--bg3)', borderRadius: 8, fontSize: 12, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  📧 <span style={{ color: 'var(--text)' }}>{form.email}</span>
-                </div>
+                <>
+                  <div style={{ padding: '8px 12px', background: 'var(--bg3)', borderRadius: 8, fontSize: 12, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    📧 <span style={{ color: 'var(--text)' }}>{form.email}</span>
+                  </div>
+                  {form.role !== 'admin' && (
+                    <div>
+                      <label style={labelSt}>🔑 ตั้งรหัสผ่านใหม่ (กรณีลืมรหัส / login ไม่ได้)</label>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        {/* input ใน flex row ต้องกำหนด width เอง (กฎ F5 — index.css default 100%) */}
+                        <input type="text" placeholder="รหัสใหม่ อย่างน้อย 6 ตัว..." value={resetPw}
+                          onChange={e => setResetPw(e.target.value)}
+                          autoComplete="off"
+                          style={{ flex: 1, width: 'auto', minWidth: 0 }} />
+                        <button type="button" onClick={handleResetPassword}
+                          disabled={resetPwBusy || resetPw.length < 6}
+                          style={{ padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+                            cursor: (resetPwBusy || resetPw.length < 6) ? 'not-allowed' : 'pointer',
+                            background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)',
+                            opacity: (resetPwBusy || resetPw.length < 6) ? 0.5 : 1 }}>
+                          {resetPwBusy ? 'กำลังตั้ง...' : 'รีเซ็ตรหัส'}
+                        </button>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                        รหัสเดิมใช้ไม่ได้ทันที — แจ้งรหัสใหม่ให้เจ้าตัว แล้วแนะนำให้ไปเปลี่ยนเองที่เมนูเปลี่ยนรหัสผ่าน
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               <div>

@@ -779,7 +779,14 @@ function LiveTab({ role }) {
   // หา Cycle Time (วินาที) ของ MAT.NO หนึ่งใบ จาก Kanban Standard → Product Master
   // ทำแบบ per-order เพราะกะเดียวอาจผลิตได้หลาย MAT.NO/สินค้า ไม่ใช่สินค้าเดียวตาม session.product_id
   // (session.product_id ไม่ได้ถูกตั้งค่าจาก UI เปิดกะ เลยเป็น null เสมอ — ใช้ mat_no ของแต่ละใบงานแทน)
-  const ctForMatNo = (matNo) => kanbanStds.find(s => s.mat_no === matNo)?.dr_products?.cycle_time_sec || 0;
+  const ctForMatNo = (matNo) => {
+    const fromKanban = kanbanStds.find(s => s.mat_no === matNo)?.dr_products?.cycle_time_sec;
+    if (fromKanban) return fromKanban;
+    // fallback: kanban_standards บางแถวลิงก์ไป product_id ที่ cycle_time_sec ว่าง ทั้งที่มี dr_products อีกแถว
+    // (mat เดียวกัน) ตั้ง CT ไว้ — โดยเฉพาะใบ manual/สินค้าลิงก์ซ้ำ · เดิมได้ CT=0 → P/OEE ทั้งกะเป็น null
+    // ทั้งที่ผลิตจริงและมี CT (เจอ 7 กะย้อนหลัง เช่น LASER E50 manual · แก้ 2026-07-15)
+    return products.find(p => p.mat_no === matNo && p.cycle_time_sec)?.cycle_time_sec || 0;
+  };
 
   // นาที Downtime ที่ทับซ้อนกับช่วงเวลา [startMs, endMs] — ใช้หักจาก "เวลาที่ MAT.NO นี้วิ่งจริง" ก่อนเทียบ %P
   // เทียบด้วยช่วงเวลาจริง (started_at/ended_at) ไม่ใช่แค่ d.mat_no ตรงกัน เพราะ Downtime ของไลน์ร่วม (ไม่ระบุ MAT.NO)

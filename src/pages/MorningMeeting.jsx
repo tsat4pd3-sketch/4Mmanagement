@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useCallback, useMemo, Fragment } from 'react';
+import { useState, useEffect, useContext, useCallback, useMemo, useRef, Fragment, lazy, Suspense } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -7,6 +7,9 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
+
+// Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷
+const GestureCam = lazy(() => import('../components/GestureCam'));
 
 /* ═══ ประชุมแถวเช้า (Morning Meeting) ══════════════════════════════════════
    วาระเดียวจบ: เมื่อวานได้ตามเป้ามั้ย → งานหลุดแผนเพราะอะไร → Top Downtime/NG
@@ -64,6 +67,8 @@ export default function MorningMeeting() {
   const [openDts, setOpenDts]         = useState([]); // เครื่องที่ยังซ่อมค้าง "ตอนนี้" (readiness)
   const [machineCountByLine, setMachineCountByLine] = useState({}); // จำนวนเครื่องต่อไลน์ — ฐานคิด % Downtime
   const [showRoutineMoves, setShowRoutineMoves] = useState(false); // กางรายชื่อย้ายจุด routine ในแผง 4M
+  const [gestureOn, setGestureOn] = useState(false); // 📷 ควบคุมวาระด้วยท่ามือ (เฉพาะโหมดประชุม)
+  const tvBodyRef = useRef(null); // ตัวเลื้อนเนื้อหาวาระในโหมด TV — gesture ชี้ ▲/▼ สั่ง scroll ตัวนี้
   const [actions, setActions]         = useState([]);
   const [tvMode, setTvMode]           = useState(false);
   const [slide, setSlide]             = useState(0);
@@ -200,15 +205,14 @@ export default function MorningMeeting() {
     orders.forEach(o => { (m[o.session_id] = m[o.session_id] || []).push(o); });
     return m;
   }, [orders]);
-  // เป้าของกะ: target_qty ของกะ → รวมเป้าใบงานจริง (qty_target ?? qty) → std ของไลน์
-  // (กะที่ไม่ตั้ง target และ std = 0 เคยโชว์ "เป้า 0 / 0%" ทั้งที่มีใบงาน — ให้ยึดใบงานจริงก่อน)
+  // เป้าของกะ: target_qty ของกะ → รวมเป้าใบงานจริง (qty_target ?? qty)
+  // ❌ ห้าม fallback ไป std_day/night_shift — ค่านั้นคือ "จำนวนคนต่อกะ (headcount)" ไม่ใช่เป้าจำนวนชิ้น
+  //    (เช่น HYDROFORM std=14 = 14 คน · GOR=11 · Line60=6) เคยเอามาใช้เป็นเป้าแล้วไลน์ที่ไม่มีใบงาน
+  //    โชว์ "0/14 · 0%" ทั้งที่ควรเป็น "ไม่มีเป้า" (2026-07-15) — ไม่มี target_qty และไม่มีใบงาน = คืน 0
   const sessTarget = (s) => {
     if (s.target_qty) return s.target_qty;
     const os = (ordersBySession[s.id] || []).filter(o => !['cancelled', 'imported', 'carry_over'].includes(o.status));
-    const fromOrders = os.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
-    if (fromOrders) return fromOrders;
-    const l = viewLines.find(x => x.name === s.line_name);
-    return (s.shift === 'night' ? l?.std_night_shift : l?.std_day_shift) || 0;
+    return os.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
   };
   // ยอดจริงของกะ: qty_ok (ปิดกะแล้ว) → actual_qty → รวมยอดจริงจากใบงาน (qty_ok ?? qty_actual)
   const sessActual = (s) => {
@@ -261,7 +265,9 @@ export default function MorningMeeting() {
         shift: sh, actual, target, pct: target > 0 ? pctStr(actual, target) : null,
         oee: s.status === 'closed' ? s.oee : null, status: s.status,
         ng: s.qty_ng ?? 0,
-        dtMin: Math.round(downtimes.filter(d => d.session_id === s.id).reduce((a, d) => a + (Number(d.duration_min) || 0), 0)),
+        // DT บนการ์ด = "นอกแผน" เท่านั้น — ในแผน (นับสต๊อก/ไม่มีแผนผลิต) ไม่ใช่ความเสียหาย
+        // ห้ามรวม (เคยรวมแล้วไลน์ไม่มีแผนผลิตโชว์ DT ก้อนใหญ่สีแดง เช่น 569/1620น. ทั้งที่แค่ไม่มีแผน — 2026-07-15)
+        dtMin: Math.round(downtimes.filter(d => d.session_id === s.id && d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (Number(d.duration_min) || 0), 0)),
       };
     }).filter(Boolean);
     return { line: l, shifts };
@@ -852,13 +858,30 @@ export default function MorningMeeting() {
   useEffect(() => {
     if (!tvMode) return;
     const onKey = (e) => {
-      if (e.key === 'Escape') setTvMode(false);
+      if (e.key === 'Escape') { setTvMode(false); setGestureOn(false); }
       if (e.key === 'ArrowRight') setSlide(s => Math.min(slides.length - 1, s + 1));
       if (e.key === 'ArrowLeft') setSlide(s => Math.max(0, s - 1));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [tvMode, slides.length]);
+
+  // Gesture Mode: callback ต้อง stable (GestureCam ผูก effect กับตัวนี้ — เปลี่ยน ref = restart กล้อง)
+  const slideCount = slides.length;
+  const handleGesture = useCallback((action) => {
+    if (action === 'next') setSlide(s => Math.min(slideCount - 1, s + 1));
+    else if (action === 'prev') setSlide(s => Math.max(0, s - 1));
+    else if (action === 'exit') { setTvMode(false); setGestureOn(false); }
+    // ชี้ ▲/▼ = เลื่อนเนื้อหาวาระทีละ ~45% ของจอ (วาระที่ยาวเกินจอ เช่น ผลรายไลน์/งานหลุดแผน)
+    else if (action === 'scroll_down' || action === 'scroll_up') {
+      const el = tvBodyRef.current;
+      if (el) el.scrollBy({ top: (action === 'scroll_down' ? 1 : -1) * el.clientHeight * 0.45, behavior: 'smooth' });
+    }
+  }, [slideCount]);
+  const handleGestureError = useCallback(() => {
+    toast.error('เปิดกล้องไม่สำเร็จ — เช็คว่าเบราว์เซอร์ได้รับสิทธิ์ใช้กล้อง');
+    setGestureOn(false);
+  }, []);
 
   const btnSt = (active) => ({
     padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
@@ -926,11 +949,15 @@ export default function MorningMeeting() {
               <button onClick={() => setSlide(s => Math.max(0, s - 1))} disabled={slide === 0} style={{ ...btnSt(false), fontSize: 16, opacity: slide === 0 ? 0.4 : 1 }}>◀</button>
               <span style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 700 }}>{slide + 1}/{slides.length}</span>
               <button onClick={() => setSlide(s => Math.min(slides.length - 1, s + 1))} disabled={slide === slides.length - 1} style={{ ...btnSt(false), fontSize: 16, opacity: slide === slides.length - 1 ? 0.4 : 1 }}>▶</button>
-              <button onClick={() => setTvMode(false)} style={{ ...btnSt(false), fontSize: 14 }} title="ออกจากโหมดประชุม (Esc)">✕</button>
+              <button onClick={() => setGestureOn(v => !v)} style={btnSt(gestureOn)}
+                title={'ควบคุมด้วยท่ามือผ่านกล้อง (ประมวลผลในเครื่อง ไม่ส่งภาพออกไปไหน)\n☝️ ชี้นิ้ว ◀/▶ ค้าง = เปลี่ยนวาระ · ชี้ ▲/▼ ค้าง = เลื่อนหน้า\n✋ ปัดซ้าย/ขวา = เปลี่ยนวาระ · 👍 ค้าง = ถัดไป · ✊ ค้าง = ออกจากโหมด'}>
+                {gestureOn ? '📷 ปิดท่ามือ' : '📷 คุมด้วยท่ามือ'}
+              </button>
+              <button onClick={() => { setTvMode(false); setGestureOn(false); }} style={{ ...btnSt(false), fontSize: 14 }} title="ออกจากโหมดประชุม (Esc)">✕</button>
             </div>
           </div>
           {/* zoom ขยายทั้งวาระให้อ่านจากระยะไกล (จอ TV) — เนื้อหา component เดียวกับโหมดปกติเป๊ะ */}
-          <div style={{ flex: 1, overflow: 'auto', padding: 22, zoom: 1.3 }}>
+          <div ref={tvBodyRef} style={{ flex: 1, overflow: 'auto', padding: 22, zoom: 1.3 }}>
             {slides[slide].render()}
           </div>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 6, padding: '10px 0 16px' }}>
@@ -939,6 +966,12 @@ export default function MorningMeeting() {
                 style={{ width: 10, height: 10, borderRadius: '50%', border: 'none', cursor: 'pointer', background: i === slide ? 'var(--accent)' : 'var(--border2)', padding: 0 }} />
             ))}
           </div>
+          {/* 📷 Gesture Mode — mount เฉพาะตอนเปิด (unmount = ดับกล้องทันที) */}
+          {gestureOn && (
+            <Suspense fallback={<div style={{ position: 'absolute', right: 16, bottom: 16, zIndex: 30, fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 10, padding: '8px 12px' }}>⏳ กำลังโหลด Gesture Mode…</div>}>
+              <GestureCam onGesture={handleGesture} onError={handleGestureError} />
+            </Suspense>
+          )}
         </div>
       )}
 
