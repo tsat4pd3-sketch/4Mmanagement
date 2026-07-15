@@ -16,8 +16,8 @@ import { useEffect, useRef, useState } from 'react';
    - ✊ กำมือค้าง ~0.9 วิ            → 'exit'
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const SWIPE_DX = 0.24;        // ระยะปัดขั้นต่ำ (สัดส่วนความกว้างเฟรม)
-const SWIPE_WINDOW_MS = 450;  // ต้องปัดให้จบภายในเวลานี้
+const SWIPE_DX = 0.20;        // ระยะปัดขั้นต่ำ (สัดส่วนความกว้างเฟรม)
+const SWIPE_WINDOW_MS = 550;  // ต้องปัดให้จบภายในเวลานี้
 const HOLD_THUMB_MS = 600;    // ชูโป้งค้างกี่ ms ถึงนับ
 const HOLD_FIST_MS = 900;     // กำมือค้างกี่ ms ถึงนับ (นานกว่า — เป็น action ออกจากโหมด)
 const COOLDOWN_MS = 1200;     // เว้นหลังทุก action กันรัวซ้ำ
@@ -92,8 +92,10 @@ export default function GestureCam({ onGesture, onError }) {
           const hand = result.landmarks?.[0];
           const name = gesture && gesture.score > 0.55 ? gesture.categoryName : null;
 
-          // ── ปัดฝ่ามือ: เก็บเส้นทางข้อมือ (landmark 0) เฉพาะช่วงที่ฝ่ามือเปิด ──
-          if (hand && name === 'Open_Palm') {
+          // ── ปัดมือ: เก็บเส้นทางข้อมือ (landmark 0) ทุกเฟรมที่ "เห็นมือ" — ไม่บังคับกางฝ่ามือ
+          //    (ตอนมือเหวี่ยงภาพเบลอ โมเดลจำท่า Open_Palm ไม่ทัน ถ้าผูกกับท่าจะรีเซ็ต trail ตลอด
+          //     จนปัดไม่ติด) · ยกเว้นตอนกำมือ — สงวนไว้ให้ท่าออกจากโหมด ไม่ให้ชนกัน ──
+          if (hand && name !== 'Closed_Fist') {
             trail.push({ x: hand[0].x, t: now });
             while (trail.length && now - trail[0].t > SWIPE_WINDOW_MS) trail.shift();
             if (trail.length >= 3) {
