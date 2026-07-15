@@ -45,6 +45,8 @@ const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
+const RemoteControl = lazy(() => import('./pages/RemoteControl'));
+const RemoteReceiver = lazy(() => import('./components/RemoteReceiver'));
 
 /* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null, signatureUrl: null, fullName: null });
@@ -55,6 +57,7 @@ export const UserContext = createContext({ role: 'admin', lineId: null, team: nu
 // — จึงไม่มีฟิลด์ roles ในนี้ (เคยมี แต่เป็น dead field ไม่ถูกอ่าน ลบออก 2026-07-10 กันเข้าใจผิดว่าเป็น source of truth)
 const NAV_ITEMS = [
   { to: '/',            icon: '🏠', label: 'หน้าหลัก',           group: 'ภาพรวม' },
+  { to: '/remote',      icon: '🎮', label: 'รีโมทจอ (Remote)',   group: 'ภาพรวม' },
 
   // Dashboard ย้ายจากหมวด "ภาพรวม" → "ฝ่ายผลิต" (คำสั่ง user 2026-07-12 — เนื้อหาส่วนใหญ่เป็นรายละเอียดฝ่ายผลิต)
   { to: '/dashboard',   icon: '📊', label: 'Dashboard',           group: 'ฝ่ายผลิต' },
@@ -97,7 +100,7 @@ const NAV_ITEMS = [
   { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
 ];
 
-const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'รายงาน', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
+export const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'รายงาน', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
 
 // เมนูจริงของหมวด sidebar สำหรับ DeptHub — การ์ดหน้าหลักดึงไปแสดงเป็นชิปที่คลิกเข้าหน้าได้เลย
 // อิง NAV_ITEMS ตัวเดียวกับ sidebar เสมอ (single source of truth — ห้ามพิมพ์รายชื่อเมนูซ้ำใน DeptHub)
@@ -204,7 +207,7 @@ function SplashScreen({ onDone }) {
 }
 
 /* ─── Sidebar ──────────────────────────────────────────────── */
-function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition, userAvatarUrl }) {
+function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition, userAvatarUrl, remoteCode, onToggleRemote }) {
   const location = useLocation();
   const isMobile = window.innerWidth <= 768;
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
@@ -401,6 +404,17 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
           >
             <span style={{ fontSize: 15, flexShrink: 0 }}>🔐</span>
             <span style={{ whiteSpace: 'nowrap' }}>เปลี่ยนรหัสผ่าน</span>
+          </button>
+
+          {/* 📺 โหมดจอตาม — เปิดรับคำสั่งจากมือถือ (หน้า 🎮 รีโมทจอ) ผ่าน Supabase Realtime
+              ใช้กับจอ TV/โปรเจคเตอร์ที่ไม่มีเมาส์-กล้อง: มือถือกลายเป็น touchpad/รีโมทของจอนี้ */}
+          <button
+            onClick={onToggleRemote}
+            className="nav-link"
+            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: remoteCode ? 'var(--accent)' : 'var(--text2)' }}
+          >
+            <span style={{ fontSize: 15, flexShrink: 0 }}>📺</span>
+            <span style={{ whiteSpace: 'nowrap' }}>{remoteCode ? `รับรีโมทอยู่ · ${remoteCode}` : 'รับรีโมทจอ (จอตาม)'}</span>
           </button>
 
           <button
@@ -783,6 +797,17 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   const isDisplay = userRole === 'display';
   const { warnSecsLeft, dismissWarning } = useAutoLogout(isDisplay, handleLogout);
 
+  // 📺 โหมดจอตาม (รับรีโมทจากมือถือ) — จำรหัสไว้ข้ามการรีเฟรช เปิด/ปิดจากปุ่มใน sidebar
+  const [remoteCode, setRemoteCode] = useState(() => localStorage.getItem('esm-remote-receiver') || null);
+  const onToggleRemote = useCallback(() => {
+    setRemoteCode(c => {
+      if (c) { localStorage.removeItem('esm-remote-receiver'); return null; }
+      const code = String(Math.floor(100000 + Math.random() * 900000));
+      localStorage.setItem('esm-remote-receiver', code);
+      return code;
+    });
+  }, []);
+
   const sidebarPx  = isTV ? 280 : 240;
   const marginLeft = (!isMobile && isOpen) ? sidebarPx : 0;
   const role       = userRole; // ไม่ fallback เป็น 'admin' อีกต่อไป — profileLoaded gate ด้านบนรับประกันว่า role ถูก resolve แล้วก่อนถึงจุดนี้
@@ -808,6 +833,12 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />
         <NotificationBell userId={userId} />
+        {/* 📺 จอตาม: รับคำสั่งรีโมท (pointer/คลิก/เลื่อน/เปลี่ยนหน้า) — ทำงานได้ทุกหน้า */}
+        {remoteCode && (
+          <Suspense fallback={null}>
+            <RemoteReceiver code={remoteCode} onStop={onToggleRemote} />
+          </Suspense>
+        )}
         <Sidebar
           isOpen={isOpen}
           onClose={() => setIsOpen(false)}
@@ -821,6 +852,8 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
           userFullName={userFullName}
           userSignatureUrl={userSignatureUrl}
           userAvatarUrl={userAvatarUrl}
+          remoteCode={remoteCode}
+          onToggleRemote={onToggleRemote}
         />
 
         <main style={{
@@ -888,6 +921,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/morning-meeting" element={
                 <RoleRoute path="/morning-meeting" userRole={role}><MorningMeeting /></RoleRoute>
+              } />
+              <Route path="/remote" element={
+                <RoleRoute path="/remote" userRole={role}><RemoteControl /></RoleRoute>
               } />
               <Route path="/event-log" element={
                 <RoleRoute path="/event-log" userRole={role}><EventLog /></RoleRoute>
