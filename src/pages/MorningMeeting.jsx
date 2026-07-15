@@ -63,6 +63,7 @@ export default function MorningMeeting() {
   const [attendance, setAttendance]   = useState([]);
   const [openDts, setOpenDts]         = useState([]); // เครื่องที่ยังซ่อมค้าง "ตอนนี้" (readiness)
   const [machineCountByLine, setMachineCountByLine] = useState({}); // จำนวนเครื่องต่อไลน์ — ฐานคิด % Downtime
+  const [showRoutineMoves, setShowRoutineMoves] = useState(false); // กางรายชื่อย้ายจุด routine ในแผง 4M
   const [actions, setActions]         = useState([]);
   const [tvMode, setTvMode]           = useState(false);
   const [slide, setSlide]             = useState(0);
@@ -694,26 +695,60 @@ export default function MorningMeeting() {
     </div>
   );
 
-  const FourMPanel = () => (
-    <div style={card}>
-      <h2 style={h2St}>🔄 4M Change เมื่อวาน <span style={chip('#4d9fff')}>{fourM.length} รายการ</span></h2>
-      {fourM.length === 0 ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>— ไม่มีบันทึก 4M —</div> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          {fourM.map(m => {
-            const st = FOURM_STATUS[m.status] || { label: m.status, color: '#94a3b8' };
-            return (
-              <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '5px 8px', borderRadius: 8, background: 'var(--bg2)', borderLeft: `3px solid ${st.color}` }}>
-                <span style={chip(st.color)}>{st.label}</span>
-                <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{m.line_name}</span>
-                <span style={chip('#94a3b8')}>{m.category}{m.change_subtype ? ` · ${m.change_subtype}` : ''}</span>
-                <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{m.description}</span>
+  const FourMPanel = () => {
+    // ย้ายจุดในไลน์เดิมแบบ skill ผ่าน/เคยทำ (same_ok) ที่อนุมัติแล้ว = เรื่อง routine
+    // — log จุดงานบันทึกอยู่แล้ว ไม่ต้องไล่ทีละแถวในที่ประชุม ยุบเป็นสรุปต่อไลน์ (กดกางดูรายชื่อได้)
+    const routine = fourM.filter(m => m.category === 'Man' && m.change_subtype === 'same_ok' && m.status === 'approved');
+    const notable = fourM.filter(m => !routine.includes(m));
+    const routineByLine = {};
+    routine.forEach(m => { routineByLine[m.line_name] = (routineByLine[m.line_name] || 0) + 1; });
+    return (
+      <div style={card}>
+        <h2 style={h2St}>🔄 4M Change เมื่อวาน <span style={chip('#4d9fff')}>{fourM.length} รายการ</span></h2>
+        {fourM.length === 0 ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>— ไม่มีบันทึก 4M —</div> : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {notable.map(m => {
+              const st = FOURM_STATUS[m.status] || { label: m.status, color: '#94a3b8' };
+              return (
+                <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '5px 8px', borderRadius: 8, background: 'var(--bg2)', borderLeft: `3px solid ${st.color}` }}>
+                  <span style={chip(st.color)}>{st.label}</span>
+                  <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{m.line_name}</span>
+                  <span style={chip('#94a3b8')}>{m.category}{m.change_subtype ? ` · ${m.change_subtype}` : ''}</span>
+                  <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{m.description}</span>
+                </div>
+              );
+            })}
+            {routine.length > 0 && (
+              <div style={{ fontSize: 12, padding: '5px 8px', borderRadius: 8, background: 'var(--bg2)', borderLeft: '3px solid #22c55e' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={chip('#22c55e')}>อนุมัติ</span>
+                  <span style={{ color: 'var(--text2)' }}>
+                    ย้ายจุดในไลน์เดิม (skill ผ่าน/เคยทำ) <b>{routine.length} คน</b> —{' '}
+                    <span style={{ color: 'var(--muted)' }}>
+                      {Object.entries(routineByLine).map(([ln, n]) => `${ln} ×${n}`).join(' · ')}
+                    </span>
+                  </span>
+                  <button onClick={() => setShowRoutineMoves(v => !v)}
+                    style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    {showRoutineMoves ? '▲ ซ่อนรายชื่อ' : `▼ ดูรายชื่อ (${routine.length})`}
+                  </button>
+                </div>
+                {showRoutineMoves && (
+                  <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {routine.map(m => (
+                      <div key={m.id} style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        ↳ <b style={{ color: 'var(--text2)' }}>{m.line_name}</b> · {m.description}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const ReadinessPanel = () => (
     <div style={card}>
