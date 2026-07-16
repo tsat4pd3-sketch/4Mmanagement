@@ -19,14 +19,22 @@ async function getBotToken(): Promise<string | undefined> {
 }
 
 type Route = { enabled: boolean; chats: string[]; template?: string | null };
-async function loadRoutes(): Promise<Record<string, Route>> {
+// teamChats = ห้องที่แท็กทีมไว้ (JIG MTN/DIE MTN/MTN/PRODUCTION) → ส่งแจ้งเตือนเข้าห้องของทีมนั้นก่อน
+async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Record<string, string[]> }> {
   try {
     const [{ data: rules }, { data: channels }] = await Promise.all([
       supabase.from('notification_rules').select('event_key, is_enabled, channel_ids, channel_id, template'),
-      supabase.from('telegram_channels').select('id, chat_id, is_active'),
+      supabase.from('telegram_channels').select('id, chat_id, is_active, team'),
     ]);
     const chatById = new Map<string, string>();
-    for (const c of channels ?? []) if (c.is_active && c.chat_id) chatById.set(String(c.id), String(c.chat_id).trim());
+    const teamChats: Record<string, string[]> = {};
+    for (const c of channels ?? []) {
+      if (!(c.is_active && c.chat_id)) continue;
+      const chat = String(c.chat_id).trim();
+      chatById.set(String(c.id), chat);
+      const team = (c as { team?: string | null }).team;
+      if (team) (teamChats[String(team).trim()] ||= []).push(chat);
+    }
     const map: Record<string, Route> = {};
     for (const r of rules ?? []) {
       const ids: string[] = Array.isArray((r as Record<string, unknown>).channel_ids)
@@ -35,8 +43,8 @@ async function loadRoutes(): Promise<Record<string, Route>> {
       const chats = [...new Set(ids.map((id) => chatById.get(String(id))).filter((v): v is string => !!v))];
       map[r.event_key as string] = { enabled: r.is_enabled as boolean, chats, template: (r as { template?: string | null }).template };
     }
-    return map;
-  } catch { return {}; }
+    return { map, teamChats };
+  } catch { return { map: {}, teamChats: {} }; }
 }
 function resolveEvent(routes: Record<string, Route>, key: string): string[] | null {
   const r = routes[key];
@@ -90,11 +98,13 @@ Deno.serve(async (req) => {
     const { event, mo } = body;
     if (!mo) return json({ error: 'missing mo' }, 400);
     BOT_TOKEN = await getBotToken();
-    const routes = await loadRoutes();
-    const chat = resolveEvent(routes, event);
-    if (chat === null) return json({ ok: true, skipped: true });
+    const { map: routes, teamChats } = await loadRoutes();
+    const baseChat = resolveEvent(routes, event);
+    if (baseChat === null) return json({ ok: true, skipped: true }); // event ถูกปิด
 
     const dept = mo.mtn_dept || deptFor(mo.item_type);
+    // แจกให้ถูกทีม: มีห้องของทีมนี้ → ส่งเข้าห้องทีม, ไม่มี → route เดิม (ห้องรวม/fallback)
+    const chat = (teamChats[dept] && teamChats[dept].length) ? teamChats[dept] : baseChat;
     const v = {
       dept, mo_no: mo.mo_no || '(ยังไม่ออกเลข)', line_name: mo.line_name || '-', item_type: mo.item_type || '-',
       machine_no: mo.machine_no || '', problem: mo.problem_characteristic || '-',
