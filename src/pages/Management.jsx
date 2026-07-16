@@ -840,7 +840,7 @@ export default function Management() {
           cursor: isMobile ? 'pointer' : 'grab',
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
           boxShadow: isSelected ? '0 0 0 3px rgba(77,159,255,0.3), 0 2px 8px rgba(0,0,0,0.5)' : '0 2px 8px rgba(0,0,0,0.5)',
-          userSelect: 'none', backdropFilter: 'blur(3px)',
+          userSelect: 'none',
           transition: 'all 0.15s',
           transform: isSelected ? 'scale(1.04)' : 'scale(1)',
         }}
@@ -1970,8 +1970,7 @@ export default function Management() {
                       <div style={{
                         width: MK, height: MK, borderRadius: '50%',
                         border: `${Math.max(2, RING - 1)}px dashed ${isOver ? (activeFc || '#4d9fff') : 'var(--border2)'}`,
-                        backgroundColor: isOver || isPulse ? `${activeFc || '#4d9fff'}1a` : 'rgba(8,8,14,0.55)',
-                        backdropFilter: 'blur(2px)',
+                        backgroundColor: isOver || isPulse ? `${activeFc || '#4d9fff'}1a` : 'rgba(8,8,14,0.7)',
                         animation: isPulse ? 'pulse-ring 1.4s ease-in-out infinite' : 'none',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         color: isOver ? activeFc : 'rgba(255,255,255,0.55)',
@@ -2038,7 +2037,7 @@ export default function Management() {
                 <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2 }}>
                 {/* station-name pill below the circle */}
                 <div title={st.station_name} style={{
-                  marginTop: 3, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
+                  marginTop: 3, background: 'rgba(0,0,0,0.75)',
                   border: `1px solid ${activeFc ? `${activeFc}88` : 'transparent'}`,
                   borderRadius: 4, padding: '1px 6px',
                   fontSize: PILL_F, fontWeight: 700, color: '#fff',
@@ -2111,14 +2110,14 @@ export default function Management() {
                             width: WK, height: WK, borderRadius: '50%',
                             border: `${SUB_RING}px solid ${wc}`,
                             backgroundColor: isLow ? 'rgba(239,68,68,0.22)' : 'rgba(0,0,0,0.78)',
-                            backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
                             fontSize: Math.max(13, Math.round(WK * 0.44)), lineHeight: 1,
                           }}>{p.point_type === 'packaging' ? '📦' : '🧱'}</div>
                           {/* ป้าย: โชว์เมื่อเปิดป้าย (auto/บังคับ) หรือของต่ำกว่า min — warning ต้องเห็นเสมอ */}
                           {(pillsOn || isLow) && (
                           <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2 }}>
                           <div style={{
-                            marginTop: 3, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
+                            marginTop: 3, background: 'rgba(0,0,0,0.75)',
                             borderRadius: 4, padding: '1px 6px',
                             fontSize: SUB_PILL_F, fontWeight: 700,
                             color: isLow ? '#fecaca' : '#fff',
@@ -2163,14 +2162,14 @@ export default function Management() {
                               width: MKS, height: MKS, borderRadius: '50%',
                               border: `${SUB_RING}px solid ${alarms ? '#ef4444' : 'rgba(245,158,11,0.85)'}`,
                               backgroundColor: alarms ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.78)',
-                              backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
                               fontSize: Math.max(13, Math.round(MKS * 0.44)), lineHeight: 1,
                             }}>{alarms ? '🚨' : '⚙️'}</div>
                           {/* ป้าย: โชว์เมื่อเปิดป้าย (auto/บังคับ) หรือมี downtime ค้าง — alarm ต้องเห็นเสมอ */}
                           {(pillsOn || alarms) && (
                           <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2 }}>
                           <div style={{
-                            marginTop: 3, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
+                            marginTop: 3, background: 'rgba(0,0,0,0.75)',
                             borderRadius: 4, padding: '1px 6px',
                             fontSize: SUB_PILL_F, fontWeight: 700,
                             color: alarms ? '#fecaca' : '#fff',
