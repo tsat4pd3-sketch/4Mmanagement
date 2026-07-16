@@ -667,6 +667,25 @@ function PlannerTab({ refreshKey, custLabel }) {
 const numInput = { ...inputSt, width: 62, padding: '5px 6px', fontSize: 12, textAlign: 'center' };
 const tdc = { padding: '6px 8px', borderTop: '1px solid var(--border)', fontSize: 12.5, fontVariantNumeric: 'tabular-nums' };
 
+/* นับวันทำงานของเดือนจากปฏิทินบริษัท: วันธรรมดา (จ-ศ) − วันหยุด + วันเสาร์/อาทิตย์ที่มาร์ค working
+   (company_calendar เก็บเฉพาะวันพิเศษ ไม่ครบเดือน — วันปกติจึงอนุมานเป็นวันธรรมดา) */
+function countWorkingDays(monthKey, calRows) {
+  const [y, m] = monthKey.split('-').map(Number);
+  const cal = {}; (calRows || []).forEach(r => { cal[r.work_date] = r.day_type; });
+  const days = new Date(y, m, 0).getDate();
+  let wd = 0;
+  for (let d = 1; d <= days; d++) {
+    const dt = new Date(y, m - 1, d);
+    const dow = dt.getDay();                                   // 0=อา 6=เสา
+    const key = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const type = cal[key] || '';
+    if (/holiday|off|หยุด/i.test(type)) continue;              // วันหยุดในปฏิทิน
+    if (dow >= 1 && dow <= 5) wd++;                            // จ-ศ = วันทำงาน
+    else if (type === 'working') wd++;                        // เสาร์/อาทิตย์ที่มาร์คทำงาน
+  }
+  return wd;
+}
+
 function KanbanCalcTab({ canApply, fullName, custLabel }) {
   const [settings, setSettings] = useState({ working_days: 20, efficiency_pct: 80 });
   const [params, setParams]     = useState({});   // mat_no → param row
@@ -690,15 +709,18 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: st }, { data: pr }, { data: ks }, { data: pm }, { data: dr }, { data: fc }] = await Promise.all([
+    const [{ data: st }, { data: pr }, { data: ks }, { data: pm }, { data: dr }, { data: fc }, { data: cal }] = await Promise.all([
       supabaseDR.from('kanban_calc_settings').select('*').eq('id', 'default').maybeSingle(),
       supabaseDR.from('kanban_calc_params').select('*'),
       supabaseDR.from('kanban_standards').select('mat_no, part_name, customer, qty_per_kanban, min_qty, max_qty, lot_size, total_kanban').eq('is_active', true),
       supabaseDR.from('parts_master').select('mat_no, part_name, qty_per_pkg').eq('is_active', true),
       supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, customer, line_name, name').eq('is_active', true),
       supabaseDR.from('customer_forecasts').select('mat_no, qty').gte('period_month', monthRange.start).lt('period_month', monthRange.end),
+      supabase.from('company_calendar').select('work_date, day_type').gte('work_date', monthRange.start).lt('work_date', monthRange.end),
     ]);
-    if (st) setSettings({ working_days: st.working_days, efficiency_pct: st.efficiency_pct });
+    // วันทำงานลิงก์ปฏิทินตามเดือนที่เลือก (แก้ทับได้) · efficiency = ค่ากลาง
+    const wdCal = countWorkingDays(month, cal || []);
+    setSettings({ working_days: wdCal || st?.working_days || 20, efficiency_pct: st ? st.efficiency_pct : 80 });
     setParams(Object.fromEntries((pr || []).map(r => [r.mat_no, r])));
     setKsMap(Object.fromEntries((ks || []).map(r => [r.mat_no, r])));
     setPmMap(Object.fromEntries((pm || []).map(r => [r.mat_no, r])));
@@ -708,7 +730,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
     setForecast(fmap);
     setEdits({});
     setLoading(false);
-  }, [monthRange]);
+  }, [monthRange, month]);
   useEffect(() => { load(); }, [load]);
 
   // ค่าพารามิเตอร์ที่ใช้จริง = edit ชั่วคราว > param ที่บันทึกไว้ > default จาก master/ค่ากลาง
@@ -748,6 +770,25 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
   const changedRows = rows.filter(r => r.changed);
 
   const setEdit = (mat, field, val) => setEdits(e => ({ ...e, [mat]: { ...e[mat], [field]: val === '' ? '' : Number(val) } }));
+
+  const exportCSV = () => {
+    if (!rows.length) { toast.info('ไม่มีข้อมูลให้ export'); return; }
+    const head = ['Mat SAP','Part Name','Line','Customer','Order/Month','Order/Day','CT(sec)','Order/Round','Prep','Fluct','SafetyTime',
+      'PrepTime(min)','Fluct%','Packaging','DeliveryCycle','CAP(pc/hr)','LotSize','SafetyDays','Min(K/B)','Max(K/B)','Total(K/B)','Min(pcs)','Max(pcs)','Total(pcs)'];
+    const lines = rows.map(row => {
+      const { r, pp } = row;
+      return [row.mat, `"${(row.name || '').replace(/"/g, '""')}"`, row.line || '', row.customer || '', row.order,
+        r.orderDay, r.ct, r.orderRound, r.prep, r.fluct, r.safetyTime,
+        pp.prep_time_min, pp.fluctuation_pct, pp.packaging, pp.delivery_cycle, pp.capacity_pc_hr, pp.lot_size, pp.safety_days,
+        r.minKanban, r.maxKanban, r.totalKanban, r.minPcs, r.maxPcs, r.totalPcs].join(',');
+    });
+    const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `kanban_calc_${month}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
 
   const saveSettings = async () => {
     const payload = { working_days: Math.max(1, Number(settings.working_days) || 20), efficiency_pct: Number(settings.efficiency_pct) || 80, updated_by: fullName, updated_at: new Date().toISOString() };
@@ -792,7 +833,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
           <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ ...inputSt, width: 160 }} />
         </div>
         <div>
-          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>วันทำงาน/เดือน</label>
+          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>📅 วันทำงาน/เดือน <span style={{ color: '#0ea5e9' }}>(จากปฏิทิน)</span></label>
           <input type="number" value={settings.working_days} onChange={e => setSettings(s => ({ ...s, working_days: e.target.value }))} style={{ ...inputSt, width: 90 }} />
         </div>
         <div>
@@ -815,6 +856,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
             <button onClick={() => setPreview(changedRows)} disabled={changedRows.length === 0}
               style={{ ...btn(changedRows.length > 0), opacity: changedRows.length ? 1 : 0.5 }}>🎴 Preview &amp; Apply</button>
           )}
+          <button onClick={exportCSV} disabled={rows.length === 0} style={{ ...btn(false), opacity: rows.length ? 1 : 0.5 }}>⬇ CSV</button>
         </div>
       </div>
 
