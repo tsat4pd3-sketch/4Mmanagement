@@ -72,6 +72,7 @@ export default function Operator() {
   const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff', category: 'hard_skill', scope_section: '', allowance_type: '' });
   const [isAddingSkill, setIsAddingSkill] = useState(false);
   const [editingSkill, setEditingSkill] = useState(null); // skill being edited inline
+  const [subItemsSkill, setSubItemsSkill] = useState(null); // skill whose หัวข้อการพิจารณา are being managed
   const [myLineName, setMyLineName] = useState('');
   const [filterSection, setFilterSection] = useState('');
   const [filterDept,    setFilterDept]    = useState('');
@@ -432,6 +433,9 @@ export default function Operator() {
 
   return (
     <div className="page-content">
+      {subItemsSkill && (
+        <SkillSubItemsModal skill={subItemsSkill} onClose={() => setSubItemsSkill(null)} />
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
         <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
           👥 ฐานข้อมูลพนักงาน
@@ -770,6 +774,10 @@ export default function Operator() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                        {can('skills', 'edit', role) && (
+                          <button onClick={() => setSubItemsSkill(sd)} title="หัวข้อการพิจารณา (ใบประเมินรายบุคคล)"
+                            className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>📝</button>
+                        )}
                         {can('skills', 'edit', role) && (
                           <button onClick={() => setEditingSkill({ ...sd, scope_section: sd.scope_section || '' })}
                             className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>✏️</button>
@@ -1268,3 +1276,118 @@ const labelSt = {
   color: 'var(--text2)', marginBottom: 6,
   letterSpacing: '0.04em', textTransform: 'uppercase',
 };
+
+/* ── หัวข้อการพิจารณา (sub-items) ต่อสกิล — ใช้ในใบประเมินรายบุคคล (F-PRS-P1-119) ──
+   Hybrid: ข้อความหัวข้อมาจากที่นี่ · ค่าติ๊ก 4 ระดับ derive จากคะแนนสกิลตอน export ใน Report */
+function SkillSubItemsModal({ skill, onClose }) {
+  const { role } = useContext(UserContext);
+  const canEdit = can('skills', 'edit', role);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [newLabel, setNewLabel] = useState('');
+  const [newWi, setNewWi] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    const { data } = await supabase.from('skill_sub_items')
+      .select('*').eq('skill_name', skill.name).order('seq');
+    setRows(data || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [skill.name]);
+
+  const addItem = async () => {
+    const label = newLabel.trim();
+    if (!label) { toast.error('กรุณาระบุหัวข้อ'); return; }
+    setSaving(true);
+    const nextSeq = (rows.reduce((m, r) => Math.max(m, r.seq || 0), 0)) + 1;
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('skill_sub_items').insert([{
+      skill_name: skill.name, seq: nextSeq, label, wi_ref: newWi.trim() || null, created_by: user?.id || null,
+    }]);
+    setSaving(false);
+    if (error) { toast.error('เพิ่มไม่สำเร็จ: ' + error.message); return; }
+    setNewLabel(''); setNewWi(''); load();
+  };
+
+  const delItem = async (id) => {
+    if (!window.confirm('ลบหัวข้อนี้?')) return;
+    const { error } = await supabase.from('skill_sub_items').delete().eq('id', id);
+    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
+    load();
+  };
+
+  const move = async (idx, dir) => {
+    const j = idx + dir;
+    if (j < 0 || j >= rows.length) return;
+    const a = rows[idx], b = rows[j];
+    // สลับ seq สองแถว
+    await supabase.from('skill_sub_items').update({ seq: b.seq }).eq('id', a.id);
+    await supabase.from('skill_sub_items').update({ seq: a.seq }).eq('id', b.id);
+    load();
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 2200, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} className="card" style={{ width: 'min(560px, 96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+          <h3 style={{ margin: 0, fontSize: 16 }}>📝 หัวข้อการพิจารณา</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>✕</button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: skill.color, flexShrink: 0 }} />
+          <span style={{ fontSize: 13, fontWeight: 700 }}>{skill.label}</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>ใช้ในใบประเมินทักษะรายบุคคล</span>
+        </div>
+
+        {loading ? (
+          <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>กำลังโหลด...</div>
+        ) : (
+          <>
+            {rows.length === 0 && (
+              <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0 12px' }}>
+                ยังไม่มีหัวข้อย่อย — ใบประเมินจะแสดง 1 แถว = ชื่อสกิลนี้ · เพิ่มหัวข้อเพื่อให้ตรงฟอร์มกระดาษ
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+              {rows.map((r, i) => (
+                <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg3)', borderRadius: 7, padding: '7px 10px', border: '1px solid var(--border)' }}>
+                  <span style={{ fontSize: 12, color: 'var(--muted)', width: 18, textAlign: 'center' }}>{i + 1}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13 }}>{r.label}</div>
+                    {r.wi_ref && <div style={{ fontSize: 11, color: 'var(--muted)' }}>อ้างอิง: {r.wi_ref}</div>}
+                  </div>
+                  {canEdit && (
+                    <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                      <button onClick={() => move(i, -1)} disabled={i === 0} className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: i === 0 ? 'default' : 'pointer', fontSize: 13, opacity: i === 0 ? 0.3 : 1, padding: '2px 4px' }}>▲</button>
+                      <button onClick={() => move(i, 1)} disabled={i === rows.length - 1} className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: i === rows.length - 1 ? 'default' : 'pointer', fontSize: 13, opacity: i === rows.length - 1 ? 0.3 : 1, padding: '2px 4px' }}>▼</button>
+                      <button onClick={() => delItem(r.id)} className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>🗑️</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {canEdit && (
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 8 }}>➕ เพิ่มหัวข้อ</div>
+                <input placeholder="หัวข้อการพิจารณา เช่น วางแผนการผลิต (plan production)" value={newLabel}
+                  onChange={e => setNewLabel(e.target.value)} onKeyDown={e => e.key === 'Enter' && addItem()}
+                  style={{ marginBottom: 8 }} />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input placeholder="อ้างอิง WI (ไม่บังคับ) เช่น WI-PD4-001" value={newWi}
+                    onChange={e => setNewWi(e.target.value)} onKeyDown={e => e.key === 'Enter' && addItem()}
+                    style={{ flex: 1 }} />
+                  <button onClick={addItem} disabled={saving} style={{ padding: '8px 18px', borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none', flexShrink: 0, opacity: saving ? 0.6 : 1 }}>
+                    {saving ? '...' : 'เพิ่ม'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

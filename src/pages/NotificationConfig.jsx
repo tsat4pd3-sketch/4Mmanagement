@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { toast } from '../components/Toast'
+import { MTN_TEAMS } from '../utils/mtnTeams'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
@@ -159,7 +160,7 @@ export default function NotificationConfig() {
     if (!room.name.trim()) return toast.error('ใส่ชื่อห้อง')
     setBusy(room.id)
     const { error } = await supabase.from('telegram_channels')
-      .update({ name: room.name.trim(), chat_id: room.chat_id?.trim() || null, is_active: room.is_active })
+      .update({ name: room.name.trim(), chat_id: room.chat_id?.trim() || null, is_active: room.is_active, team: room.team || null })
       .eq('id', room.id)
     setBusy(null)
     if (error) return toast.error(error.message)
@@ -287,7 +288,10 @@ export default function NotificationConfig() {
       </div>
 
       {/* ── Rooms ── */}
-      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>ห้องแจ้งเตือน</div>
+      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>ห้องแจ้งเตือน</div>
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
+        🔧 <b>แจ้งซ่อม MTN แยกทีม:</b> ตั้ง “ทีม” ให้ห้อง (JIG/DIE/MTN/PRODUCTION) แล้วใส่ chat_id ของกลุ่มทีมนั้น → ใบแจ้งซ่อม MO ที่แจ้งถึงทีมนี้จะเข้า<b>เฉพาะห้องของทีม</b> · ทีมที่ยังไม่มีห้องเฉพาะ = เข้าห้องรวม (ตามที่เลือกในกฎ maintenance ด้านล่าง)
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
         {rooms.map(room => (
           <div key={room.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 12, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
@@ -296,6 +300,10 @@ export default function NotificationConfig() {
             <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
               <input type="checkbox" checked={room.is_active} onChange={e => patchRoom(room.id, 'is_active', e.target.checked)} />เปิด
             </label>
+            <select value={room.team ?? ''} onChange={e => patchRoom(room.id, 'team', e.target.value || null)} title="ห้องของทีมช่างซ่อมไหน (ใบแจ้งซ่อม MO จะเข้าห้องของทีมตามหน่วยงาน)" style={{ ...inputStyle, width: 150, flex: '0 0 auto' }}>
+              <option value="">🔧 ทุกทีม (รวม)</option>
+              {MTN_TEAMS.map(t => <option key={t} value={t}>ทีม {t}</option>)}
+            </select>
             <button onClick={() => saveRoom(room)} disabled={busy === room.id} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>บันทึก</button>
             <button onClick={() => testRoom(room)} disabled={busy === `test-${room.id}`} style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 12, cursor: 'pointer' }}>📤 ทดสอบ</button>
             <button onClick={() => deleteRoom(room)} style={{ background: 'transparent', color: '#e05c4a', border: '1px solid rgba(224,92,74,0.4)', borderRadius: 8, padding: '8px 10px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>

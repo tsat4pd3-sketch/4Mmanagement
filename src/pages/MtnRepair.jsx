@@ -12,6 +12,7 @@ import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { teamsForUser } from '../utils/mtnTeams';
 import { fmtDateTime } from '../utils/dateFormat';
 import tsLogo from '../assets/TS logo.png';
 
@@ -196,6 +197,16 @@ export default function MtnRepair() {
     return null;
   }, [lines, role, lineId, scopeSecs]);
 
+  // ทีมช่างของ user (จาก section) — ใช้ default คิวงาน + default หน่วยงานตอนแจ้ง
+  const userTeams = useMemo(() => teamsForUser(scopeSecs), [scopeSecs]);
+  const teamDefaulted = useRef(false);
+  useEffect(() => {
+    if (teamDefaulted.current || !lines.length) return;
+    // สังกัดทีมเดียว (ไม่ใช่ admin) → เปิดหน้ามาเห็นคิวของทีมตัวเองก่อน (ปรับเป็น "ทุกหน่วยงาน" ได้)
+    if (role !== 'admin' && userTeams.length === 1) setFDept(userTeams[0]);
+    teamDefaulted.current = true;
+  }, [userTeams, role, lines.length]);
+
   const loadOrders = useCallback(async () => {
     const { data } = await supabaseDR.from('mtn_orders').select('*').order('report_at', { ascending: false }).limit(1000);
     setOrders(data || []);
@@ -233,7 +244,7 @@ export default function MtnRepair() {
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
 
-  const cp = { lines, machines, techs, parts, problemTypes, repairTypes, itemTypes, role, fullName, signatureUrl, improvements, onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
+  const cp = { lines, machines, techs, parts, problemTypes, repairTypes, itemTypes, role, fullName, signatureUrl, improvements, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
 
   return (
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1800px)', margin: '0 auto' }}>
@@ -301,9 +312,9 @@ function MoCard({ o, onOpen }) {
 }
 
 /* ── Step 1: แจ้งซ่อม ─────────────────────────────────── */
-function ReportModal({ lines, machines, itemTypes, problemTypes, fullName, onClose, onSaved }) {
+function ReportModal({ lines, machines, itemTypes, problemTypes, fullName, defaultDept, onClose, onSaved }) {
   const [f, setF] = useState({
-    mtn_dept: 'MTN', repair_scope: 'in_line', line_name: '', item_type: '', machine_no: '', dept_section: '', work_area: '',
+    mtn_dept: defaultDept || 'MTN', repair_scope: 'in_line', line_name: '', item_type: '', machine_no: '', dept_section: '', work_area: '',
     cost_center: '', model: '', customer: '', code: '', want_at: '', problem_characteristic: '', problem_detail: '',
     report_note: '', is_sample: false, reporter_prod: fullName || '', reporter_qa: '',
   });
@@ -337,7 +348,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, fullName, onClo
   return (
     <ModalShell title="➕ แจ้งซ่อมใหม่ (Step 1)" onClose={onClose} wide>
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <Field label="หน่วยงานซ่อม (แจ้งถึง)"><select value={f.mtn_dept} onChange={e => set('mtn_dept', e.target.value)} style={inp}>{MTN_DEPTS.map(d => <option key={d}>{d}</option>)}</select></Field>
+        <Field label="แจ้งถึงทีมช่าง" required><select value={f.mtn_dept} onChange={e => set('mtn_dept', e.target.value)} style={{ ...inp, borderColor: 'var(--accent)', fontWeight: 700 }}>{MTN_DEPTS.map(d => <option key={d}>{d}</option>)}</select></Field>
         <Field label="ประเภทการซ่อม"><select value={f.repair_scope} onChange={e => set('repair_scope', e.target.value)} style={inp}>{SCOPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}</select></Field>
         <Field label="ไลน์การผลิต" required><select value={f.line_name} onChange={e => onLine(e.target.value)} style={inp}><option value="">— เลือก —</option>{lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}</select></Field>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>

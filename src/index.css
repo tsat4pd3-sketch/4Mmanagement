@@ -525,3 +525,31 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   white-space: nowrap; line-height: 1.4;
   animation: nowChipGlow 1.5s ease-in-out infinite;
 }
+
+/* ─── โหมดเบาสำหรับจอ TV/บอร์ด (role `display`) — `data-perf="lite"` บน <html> ──────
+   ตั้งอัตโนมัติใน App.jsx เมื่อ role === 'display' (บัญชีที่รันบนจอ TV/บอร์ดหน้าไลน์)
+   จอพวกนี้ GPU อ่อน — animation ที่กระพริบ `box-shadow` (blur+spread) ทำให้ค้างทั้งเครื่อง
+   Lite = คงการกระพริบไว้แต่เปลี่ยนไปใช้ "สี/ขอบ" อย่างเดียว (ไม่มี box-shadow blur):
+   Andon แดงยังกระพริบเห็นชัดตามกฎ แต่ไม่รีดเพนต์พื้นที่เบลอทุกเฟรม · playhead/เรืองแสง
+   ที่เป็นแค่ความสวยงามตัดทิ้ง — ห้ามลบ ต้องคู่กับ setAttribute ใน App.jsx */
+[data-perf="lite"] .dt-alarm-blink { animation: dtAlarmBlinkLite 0.9s ease-in-out infinite; }
+@keyframes dtAlarmBlinkLite {
+  0%, 100% { background-color: rgba(239, 68, 68, 0.92); }
+  50%      { background-color: rgba(127, 29, 29, 0.92); }
+}
+[data-perf="lite"] .person-alarm-red { animation: personAlarmRedLite 0.9s ease-in-out infinite; }
+@keyframes personAlarmRedLite {
+  0%, 100% { border-color: #ef4444; }
+  50%      { border-color: #fecaca; }
+}
+[data-perf="lite"] .mo-card-alert { animation: moCardBlinkLite 1.1s ease-in-out infinite; }
+@keyframes moCardBlinkLite {
+  0%, 100% { border-color: rgba(239, 68, 68, 0.55); }
+  50%      { border-color: #ef4444; }
+}
+/* เรืองแสง/pulse ที่เป็นความสวยงามล้วน — ตัด box-shadow animation ทิ้งบนจอเบา */
+[data-perf="lite"] .now-line,
+[data-perf="lite"] .now-chip { animation: none; }
+[data-perf="lite"] .person-alarm-amber { box-shadow: none; }
+[data-perf="lite"] .dt-alarm-banner { animation: none; background-color: rgba(239, 68, 68, 0.16); }
+[data-perf="lite"] #noise-overlay { display: none; }
