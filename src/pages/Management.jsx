@@ -154,6 +154,8 @@ export default function Management() {
   const [machinePoints,  setMachinePoints]  = useState([]);
   const [drMachines,     setDrMachines]     = useState([]);
   const [lineLayout,     setLineLayout]     = useState(null);
+  const [layoutLineName, setLayoutLineName] = useState(null);   // ชื่อไลน์ที่เป็นเจ้าของผังที่กำลังแสดง
+  const [linesWithLayout,setLinesWithLayout]= useState(new Set()); // ไลน์ในครอบครัวที่มีผังเป็นของตัวเอง
   const [draggingWorker, setDraggingWorker] = useState(null);
   const [selectedLine,   setSelectedLine]   = useState('');
   const [lines,          setLines]          = useState([]);
@@ -258,6 +260,15 @@ export default function Management() {
     () => viewLineNames.filter(n => n !== selectedLine && !mergedParentNames.includes(n)),
     [viewLineNames, selectedLine, mergedParentNames],
   );
+
+  // จุดงาน/เครื่อง/WIP จะวาดบน "ผังที่กำลังแสดง" ได้ ก็ต่อเมื่อผังที่แท้จริงของไลน์นั้น
+  // (ของตัวเอง → ไล่ขึ้นไลน์แม่ที่มีผัง) เป็นผังเดียวกับที่แสดงอยู่ — pos_top/pos_left ผูกกับผังของมันเอง
+  // เอาจุดของไลน์ย่อยที่มีผังของตัวเอง ไปวางบนผังไลน์แม่ (คนละรูป) จะทับกัน/ผิดตำแหน่ง (2026-07-16)
+  const belongsToShownMap = useCallback((lineName) => {
+    if (!layoutLineName) return true; // ไม่มีผังแสดง (ผังเปล่า) → แสดงทุกจุดตามเดิม
+    const chain = [lineName, ...getAncestorNames(allLines, lineName)];
+    return (chain.find(n => linesWithLayout.has(n)) || null) === layoutLineName;
+  }, [allLines, linesWithLayout, layoutLineName]);
 
   const fetchLineProd = useCallback(async (lineNames) => {
     if (!lineNames?.length) { setLineProdData(null); return; }
@@ -375,10 +386,15 @@ export default function Management() {
   const fetchSetup = async () => {
     // ผังไลน์: ใช้ของตัวเองก่อน ถ้าไลน์ย่อยไม่มีรูปผังของตัวเอง ไล่ขึ้นไปใช้ของไลน์หลัก
     // (พื้นที่จริงเดียวกัน — pattern เดียวกับ LineSetup.jsx)
-    const layoutCandidates = [selectedLine, ...getAncestorNames(allLines, selectedLine)];
-    const { data: layoutRows } = await supabase.from('line_layouts').select('line_name, image_url').in('line_name', layoutCandidates);
+    // โหลดผังของ "ทั้งครอบครัว" (ไม่ใช่แค่ตัวเอง+สายบน) เพื่อรู้ว่าไลน์ย่อยไลน์ไหนมีผังเป็นของตัวเอง
+    // → ใช้ตัดสินว่าจุดงานของไลน์นั้นควรวาดบนผังที่แสดงอยู่ไหม (กันจุดของไลน์ย่อยที่มีผังของตัวเอง
+    //   ไปโผล่ทับบนผังไลน์แม่ที่เป็นคนละรูป · พิกัด pos ผูกกับผังของมันเอง — 2026-07-16)
+    const { data: layoutRows } = await supabase.from('line_layouts').select('line_name, image_url').in('line_name', viewLineNames);
     const layoutByName = Object.fromEntries((layoutRows || []).map(r => [r.line_name, r.image_url]));
-    setLineLayout(layoutCandidates.map(n => layoutByName[n]).find(Boolean) || null);
+    setLinesWithLayout(new Set(Object.keys(layoutByName)));
+    const shownLayoutLine = [selectedLine, ...getAncestorNames(allLines, selectedLine)].find(n => layoutByName[n]) || null;
+    setLayoutLineName(shownLayoutLine);
+    setLineLayout(shownLayoutLine ? layoutByName[shownLayoutLine] : null);
 
     // จุดงาน/WIP/เครื่องจักร: ดึงตามครอบครัวไลน์ (ตัวเอง + สายบน + สายล่าง)
     const { data: stationData } = await supabase.from('workstations').select('*, station_requirements(*)').in('line_name', viewLineNames);
@@ -1848,7 +1864,7 @@ export default function Management() {
                 // จุดตั้งค่าในหน้า Line Setup เป็นแค่หมุดตำแหน่งจริง อาจอยู่ใกล้กันมากกว่าขนาด marker จริง
                 // ที่นี่ต้องผลัก marker ที่จะทับกัน (วงกลม + name pill + fit badge) ออกจากกันในพิกเซลจริง
                 // แล้วโยงเส้นกลับไปยังตำแหน่งจริงที่ตั้งไว้ ไม่ขยับตำแหน่งจริงใน DB
-                const raw = dynamicStations.map(st => ({
+                const raw = dynamicStations.filter(st => belongsToShownMap(st.line_name)).map(st => ({
                   st,
                   px: imgBox.offsetX + (parseFloat(st.pos_left) / 100) * imgBox.rw,
                   py: imgBox.offsetY + (parseFloat(st.pos_top) / 100) * imgBox.rh,
@@ -2077,7 +2093,7 @@ export default function Management() {
               </div>
             );
           })}
-                    {filterWip && wipPoints.map(p => {
+                    {filterWip && wipPoints.filter(p => belongsToShownMap(p.line_name)).map(p => {
                       const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
                       const wTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const wLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
@@ -2119,7 +2135,7 @@ export default function Management() {
                         </div>
                       );
                     })}
-                    {machinePoints.map(p => {
+                    {machinePoints.filter(p => belongsToShownMap(p.line_name)).map(p => {
                       const alarms = dtAlarms.byMachine[p.machine_no];
                       // เครื่องที่กำลัง Downtime ต้องโชว์เสมอแม้ปิด filter MACHINE — เป็น alarm ไม่ใช่แค่ข้อมูลผัง
                       if (!filterMachine && !alarms) return null;
