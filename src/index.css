@@ -396,6 +396,24 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   }
 }
 
+/* ─── Mobile form-grid collapse (2026-07-11) ─────────────────────
+   ฟอร์ม/กลุ่มช่องกรอก (มักอยู่ใน modal) ที่ inline style เป็น grid หลายคอลัมน์ (1fr 1fr ฯลฯ)
+   ให้ติด className="mgrid" → จอ ≤600px ยุบเป็นคอลัมน์เดียวอัตโนมัติ
+   (!important ใน media ชนะ inline style เฉพาะจอแคบ — desktop ใช้ grid inline เดิมเป๊ะ) */
+@media (max-width: 600px) {
+  .mgrid { grid-template-columns: 1fr !important; }
+}
+
+/* ─── Touch targets (2026-07-11) ─────────────────────────────────
+   ปุ่มไอคอน/ปุ่มเล็กในตาราง (✏️ 🗑️ ✕ 💾 ฯลฯ) ที่ติด className="tbtn"
+   → อุปกรณ์จอทัช (pointer:coarse) ขยาย hit area เป็น ≥40px กดง่ายด้วยนิ้ว
+   desktop เมาส์ไม่เปลี่ยน · หน้าใหม่ที่มีปุ่มไอคอนเล็กให้ติด class นี้เสมอ */
+@media (pointer: coarse) {
+  .tbtn { min-width: 40px; min-height: 40px; }
+  /* เซลล์วันในปฏิทินบริษัท (แตะเพื่อวนสถานะ) — สูงพอสำหรับนิ้ว */
+  .cal-day { min-height: 34px; display: flex; align-items: center; justify-content: center; }
+}
+
 /* ─── Small phones ≤ 480px ───────────────────────────────────── */
 @media (max-width: 480px) {
   html, body { font-size: 13px; }
@@ -411,6 +429,13 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   td { padding: 7px 8px; font-size: 12px; }
 }
 
+/* ─── KPI card hover lift (2026-07-14) — การ์ดสถิติ/KPI ยกตัวตอบสนองเมาส์
+   ใช้: className="kpi-lift" (เฉพาะอุปกรณ์มีเมาส์จริง — จอทัช/TV ไม่ขยับ) ── */
+.kpi-lift { transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
+@media (hover: hover) {
+  .kpi-lift:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
+}
+
 /* ─── Loading spinner กลาง — ใช้ animation: 'spin ...' ได้ทุกหน้า (ห้าม define ซ้ำต่อหน้า) ── */
 @keyframes spin {
   from { transform: rotate(0deg); }
@@ -424,6 +449,15 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 }
 .dt-alarm-blink {
   animation: dtAlarmBlink 0.9s ease-in-out infinite;
+  border-color: #ef4444 !important;
+}
+/* ขอบกระพริบเบา สำหรับการ์ดใหญ่ (เช่นการ์ดใบซ่อม MTN รอรับงาน) — glow เล็กกว่า marker มาก */
+@keyframes moCardBlink {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.35); border-color: rgba(239, 68, 68, 0.55); }
+  50%      { box-shadow: 0 0 6px 1px rgba(239, 68, 68, 0.6); border-color: #ef4444; }
+}
+.mo-card-alert {
+  animation: moCardBlink 1.1s ease-in-out infinite;
   border-color: #ef4444 !important;
 }
 @keyframes dtAlarmBannerPulse {

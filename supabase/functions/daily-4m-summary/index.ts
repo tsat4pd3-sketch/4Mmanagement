@@ -10,9 +10,13 @@ const TELEGRAM_CHAT_ID   = Deno.env.get('TELEGRAM_CHAT_ID');
 const CRON_SECRET        = Deno.env.get('CRON_SECRET') ?? '';
 
 /* ── Bangkok date helpers ────────────────────────── */
-function bangkokDateStr(offsetDays = 0): string {
-  const now = new Date();
-  const bkk = new Date(now.getTime() + 7 * 60 * 60 * 1000 + offsetDays * 86400000);
+// work date ตามกฎระบบ (CLAUDE.md Date/Time): ก่อน 08:00 Bangkok นับเป็นวันก่อนหน้า (กะดึกข้ามวัน)
+// four_m_logs.work_date ถูกเขียนด้วยกฎเดียวกันจาก getWorkDate() ฝั่งแอป — สรุป "เมื่อวาน" ต้องใช้กฎนี้
+// ไม่ใช่วันปฏิทิน ไม่งั้น cron ที่รันช่วง 00:00-07:59 จะไปสรุป work date ที่กะดึกยังไม่จบ
+function bangkokWorkDateStr(offsetDays = 0): string {
+  const bkk = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  if (bkk.getUTCHours() < 8) bkk.setUTCDate(bkk.getUTCDate() - 1);
+  bkk.setUTCDate(bkk.getUTCDate() + offsetDays);
   return bkk.toISOString().split('T')[0];
 }
 
@@ -69,7 +73,7 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     /* Allow override date for testing: { "date": "2026-05-28" } */
-    const targetDate: string = body.date ?? bangkokDateStr(-1);
+    const targetDate: string = body.date ?? bangkokWorkDateStr(-1);
     const dateLabel = thaiDateLabel(targetDate);
 
     /* Query all 4M logs for target date */

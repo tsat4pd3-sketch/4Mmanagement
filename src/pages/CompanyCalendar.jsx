@@ -136,7 +136,7 @@ export default function CompanyCalendar() {
           </div>
         ))}
         {!canEdit && (
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>🔒 ดูได้อย่างเดียว — ต้องเป็น Admin / Document Control ถึงแก้ไขได้</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>🔒 ดูได้อย่างเดียว — แก้ไขได้เฉพาะชุดสิทธิ์ ผู้ดูแลระบบ / งานเอกสาร</span>
         )}
       </div>
 
@@ -203,6 +203,7 @@ export default function CompanyCalendar() {
                   return (
                     <div
                       key={i}
+                      className="cal-day"
                       onClick={() => cycleDay(dateStr)}
                       title={isDirty ? `${meta.label} (ยังไม่บันทึก)` : meta.label}
                       style={{

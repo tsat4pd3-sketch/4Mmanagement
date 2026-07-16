@@ -12,6 +12,7 @@ import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmT
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
 import SpinAnnotator from '../components/SpinAnnotator'
 import useImgBox from '../utils/useImgBox'
+import CalloutPin from '../components/CalloutPin'
 
 const DEPT_COLORS = {
   maintenance:     '#fb923c',
@@ -68,7 +69,7 @@ function getPublicUrl(path) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const S = {
-  page: { padding: '28px 32px', minHeight: '100%', background: 'var(--bg)' },
+  page: { padding: 'clamp(12px,3vw,28px) clamp(14px,3.5vw,32px)', minHeight: '100%', background: 'var(--bg)' },
   header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 },
   h1: { fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 },
   sub: { fontSize: 13, color: 'var(--muted)', marginTop: 4 },
@@ -182,18 +183,10 @@ function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageCl
             const isActive = activePinKey === cp._key
             const col = isActive ? 'var(--accent)' : categoryColor(cp.category)
             return (
-              <button key={cp._key}
-                style={{
-                  position: 'absolute',
-                  left: `${clampPct(cp.x_pos * 100, padX, 100 - padX)}%`,
-                  top: `${clampPct(cp.y_pos * 100, padTop, 100)}%`,
-                  transform: 'translate(-50%,-100%)', zIndex: 10, cursor: 'pointer', background: 'none', border: 'none', padding: 0, pointerEvents: 'auto',
-                }}
-                onClick={e => { e.stopPropagation(); onPinRemove(cp._key) }}
+              <CalloutPin key={cp._key} xPct={cp.x_pos * 100} yPct={cp.y_pos * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
+                label={labels?.[i] ?? i + 1} color={col} selected={isActive}
                 title={`${cp.name || `จุด ${i + 1}`} — คลิกเพื่อลบ`}
-              >
-                <div style={{ minWidth: PK, height: PK, padding: `0 ${Math.round(PK * 0.15)}px`, borderRadius: 999, background: col, border: '2px solid #fff', color: '#fff', fontSize: pkFont, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>{labels?.[i] ?? i + 1}</div>
-              </button>
+                onClick={e => { e.stopPropagation(); onPinRemove(cp._key) }} />
             )
           })}
         </div>
@@ -236,13 +229,13 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+      <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
         <input value={cp.name} onChange={e => onChange({ name: e.target.value })} placeholder="ชื่อจุดตรวจสอบ เช่น LP1" />
         <input value={cp.group_name ?? ''} onChange={e => onChange({ group_name: e.target.value })}
           placeholder="กลุ่ม/หัวข้อ (Item) เช่น Locate Pin" list="cp-group-options" />
       </div>
 
-      <div style={S.inputRow}>
+      <div className="mgrid" style={S.inputRow}>
         <div style={{ marginBottom: 10 }}>
           <label style={S.label}>ประเภท (Category)</label>
           <select value={cp.category ?? ''} onChange={e => onChange({ category: e.target.value || null })}>
@@ -283,15 +276,15 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
               }}>{a === null ? '—' : a}</button>
             ))}
           </div>
-          <div style={S.inputRow}>
+          <div className="mgrid" style={S.inputRow}>
             <div><label style={S.label}>Nominal</label><input type="number" value={cp.nominal} onChange={e => onChange({ nominal: e.target.value })} placeholder="0" /></div>
             <div><label style={S.label}>Unit</label><input value={cp.unit} onChange={e => onChange({ unit: e.target.value })} placeholder="mm" /></div>
           </div>
-          <div style={S.inputRow}>
+          <div className="mgrid" style={S.inputRow}>
             <div><label style={{ ...S.label, color: '#e05c4a' }}>LSL</label><input type="number" value={cp.lsl} onChange={e => onChange({ lsl: e.target.value })} placeholder="—" /></div>
             <div><label style={{ ...S.label, color: '#e05c4a' }}>USL</label><input type="number" value={cp.usl} onChange={e => onChange({ usl: e.target.value })} placeholder="—" /></div>
           </div>
-          <div style={S.inputRow}>
+          <div className="mgrid" style={S.inputRow}>
             <div><label style={{ ...S.label, color: '#f59a3f' }}>LCL</label><input type="number" value={cp.lcl} onChange={e => onChange({ lcl: e.target.value })} placeholder="—" /></div>
             <div><label style={{ ...S.label, color: '#f59a3f' }}>UCL</label><input type="number" value={cp.ucl} onChange={e => onChange({ ucl: e.target.value })} placeholder="—" /></div>
           </div>
@@ -365,6 +358,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [layoutType, setLayoutType] = useState(editJig?.layout_type ?? 'image_pin')
   // รูปหลายมุมต่ออุปกรณ์ (1 รูป = ปกติ, ≥2 รูป = ปัดดูรอบเครื่อง — ไม่บังคับจำนวน)
   const [frames, setFrames] = useState([])   // [{ _key, id?, image_path?, _file?, _preview, title }]
+  const initialImagePathsRef = useRef(new Set()) // path รูปตอนเปิดแก้ไข — ใช้เก็บกวาดไฟล์ที่ถูกถอดตอน save
   const [frameIdx, setFrameIdx] = useState(0)
   const [imgBusy, setImgBusy] = useState(false)
   // โมเดล 3D (ถ้ามี) — { path, format } = ของเดิม · _glb = ไฟล์ใหม่ที่แปลงเป็น GLB แล้ว รอ upload
@@ -401,6 +395,11 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         _frameKey: (c.image_id && frameKeyById[c.image_id]) || fr[0]?._key || null,
         _imgFile: null, _imgPreview: c.image_path ? getPublicUrl(c.image_path) : null,
       })))
+      // จำ path รูปทั้งหมดตอนเปิดแก้ไข — ตอน save จะเทียบหาไฟล์ที่ถูกถอด (เฟรม/รูปจุดตรวจ) แล้วลบจาก storage
+      initialImagePathsRef.current = new Set([
+        ...fr.map(f => f.image_path),
+        ...(cps ?? []).map(c => c.image_path),
+      ].filter(Boolean))
       const { data: plan } = await supabaseDR.from('pm_plans').select('plan_type, usage_threshold, usage_source_line').eq('checklist_id', cl.id).maybeSingle()
       if (plan) {
         setPlanType(plan.plan_type ?? 'time')
@@ -601,6 +600,16 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         )
         if (cpErr) throw cpErr
       }
+      // เก็บกวาดไฟล์เฟรม/รูปจุดตรวจที่ถูกถอดออกในรอบแก้ไขนี้ — ลบหลัง DB สำเร็จเท่านั้น (best-effort, กติกา CLAUDE.md)
+      {
+        const finalPaths = new Set([
+          ...resolvedFrames.map(f => f.path),
+          ...checkpoints.map(c => cpImagePaths[c._key] ?? c.image_path).filter(Boolean),
+        ])
+        const stale = [...initialImagePathsRef.current].filter(p => !finalPaths.has(p) && p.startsWith('jigs/'))
+        if (stale.length) supabaseDR.storage.from('jig-images').remove(stale).catch(() => {})
+        initialImagePathsRef.current = finalPaths
+      }
       toast.success('บันทึกสำเร็จ')
       onSaved()
     } catch (err) {
@@ -722,7 +731,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             <input value={description} onChange={e => setDescription(e.target.value)} placeholder="คำอธิบายเพิ่มเติม" />
           </div>
 
-          <div style={S.inputRow}>
+          <div className="mgrid" style={S.inputRow}>
             {[
               { label: 'No./รหัส', val: jigNo, set: setJigNo, ph: 'JIG-001' },
               { label: 'Process', val: process, set: setProcess, ph: 'Welding' },
@@ -764,7 +773,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
               </div>
             )}
             {(planType === 'usage' || planType === 'hybrid') && (
-              <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div className="mgrid" style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div>
                   <label style={S.label}>ครบเมื่อผลิตถึง (ชิ้น)</label>
                   <input type="number" min="1" value={usageThreshold} onChange={e => setUsageThreshold(e.target.value)} placeholder="เช่น 50000" />

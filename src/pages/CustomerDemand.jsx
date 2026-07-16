@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
+import useIsMobile from '../utils/useIsMobile';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -37,6 +38,9 @@ const SHIP_STATUS = {
 };
 const SHIP_RANK = { pending: 0, confirmed: 1, prepared: 2, loaded: 3, shipped: 4 };
 function ShippingTab({ fullName, refreshKey, custLabel }) {
+  // มือถือ ≤768px: ชาร์ต 24 ชม.เลื่อนแนวนอนได้ + ป้ายลูกค้า sticky ซ้าย (desktop เต็มจอเดียวเหมือนเดิม)
+  const isMobile = useIsMobile();
+  const chartLeftW = isMobile ? 96 : 130;
   // กรอบ "วันงาน" 08:00 → 08:00 วันถัดไป (ตามกฎเวลาทำงานของระบบ) — รอบส่งตี 0–7 โมง คือช่วงกะดึกของวันงานนั้น
   const [day, setDay] = useState(workDateStr());
   const [orders, setOrders] = useState([]);
@@ -49,6 +53,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
   const [highlightId, setHighlightId] = useState(null);
   const [collapsedCust, setCollapsedCust] = useState({});  // ย่อแถวลูกค้า (ข้อมูลเยอะ) — ยังเห็นจุดสถานะแบบย่อ
   const [breakPolicies, setBreakPolicies] = useState([]);  // เงาเวลาพักบนชาร์ต (มาตรฐานเดียวกับบอร์ด Heijunka)
+  const [pastDue, setPastDue] = useState([]);              // ใบค้างส่งจากวันงานก่อนหน้า (ย้อน 14 วัน)
   useEffect(() => {
     supabaseDR.from('break_policies').select('*').eq('is_active', true)
       .then(({ data }) => setBreakPolicies(data || []));
@@ -59,12 +64,18 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
   const load = useCallback(async () => {
     // วันงาน D = (D, เวลา ≥ 08:00 หรือไม่ระบุเวลา) + (D+1, เวลา < 08:00 = กะดึกข้ามคืน)
     const nd = nextDayOf(day);
-    const [{ data: d1 }, { data: d2 }, { data: wfs }] = await Promise.all([
+    const back = new Date(`${day}T12:00:00`);
+    back.setDate(back.getDate() - 14);
+    const [{ data: d1 }, { data: d2 }, { data: wfs }, { data: past }] = await Promise.all([
       supabaseDR.from('customer_shipping_orders').select('*').eq('due_date', day),
       supabaseDR.from('customer_shipping_orders').select('*').eq('due_date', nd).not('ship_time', 'is', null).lt('ship_time', '08:00'),
       supabaseDR.from('shipping_workflow_steps').select('*').eq('is_active', true).order('step_no'),
+      // ใบค้างส่งจากวันงานก่อนหน้า (ย้อน 14 วัน) — เตือนบนหัวหน้า ไม่ให้ของเก่าหายเงียบตอนข้ามวัน
+      supabaseDR.from('customer_shipping_orders').select('id, due_date')
+        .gte('due_date', dateStr(back)).lt('due_date', day).neq('status', 'shipped'),
     ]);
     setWfSteps(wfs || []);
+    setPastDue(past || []);
     const list = [
       ...(d1 || []).filter(o => !o.ship_time || o.ship_time.slice(0, 5) >= '08:00'),
       ...(d2 || []),
@@ -99,8 +110,12 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
   /* เวลาบนกรอบวันงาน: ใช้ frameMin จาก utils/timeFrame (ห้ามเขียน wrap นาทีเองซ้ำ — UI-CONVENTIONS §6) */
   const now = new Date();
   const isToday = day === workDateStr();
+  const isPastDay = day < workDateStr();   // ดูวันงานที่ผ่านมาแล้ว — deadline ทุกตัวของวันนั้นผ่านไปหมดแล้ว
   const nowW = frameMin(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
-  const isOverdue = (o) => isToday && o.status !== 'shipped' && frameMin(o.ship_time) != null && frameMin(o.ship_time) < nowW;
+  // เลยเวลา = ยังไม่ส่ง และ (วันงานนั้นผ่านไปแล้วทั้งวัน หรือ วันนี้แต่เลยเวลาส่งแล้ว)
+  // — เดิมเช็คเฉพาะ isToday ทำให้พอข้ามวัน ใบค้างส่งกลายเป็นเหลือง "รอยืนยัน" เฉยๆ ทั้งที่ตกดิวไปแล้ว
+  const isOverdue = (o) => o.status !== 'shipped'
+    && (isPastDay || (isToday && frameMin(o.ship_time) != null && frameMin(o.ship_time) < nowW));
 
   // ── Standard workflow (walkback): deadline ต่อเฟส = เวลาส่ง − offset_min ──
   const stepsForCust = (customer) => {
@@ -114,7 +129,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
       const dl = tw - st.offset_min;
       const m = ((dl % 1440) + 1440) % 1440;
       const done = (SHIP_RANK[o.status] ?? 0) >= (SHIP_RANK[st.requires_status] ?? 9);
-      const missed = !done && isToday && nowW > dl;
+      const missed = !done && (isPastDay || (isToday && nowW > dl));
       return { ...st, dlW: dl, deadline: `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`, done, missed };
     });
   };
@@ -220,8 +235,9 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
     Object.entries(byCustomer).forEach(([cust, list]) => {
       const laneEnd = [];
       const map = {};
-      list.forEach(o => {
-        const t = frameMin(o.ship_time) ?? (tStart + span);
+      // order ที่ไม่ระบุเวลาไม่เข้าเลน — รวมเป็นชิป ⏳ ใบเดียวท้ายแถวแทน (เคยไปกองตกขอบขวาเป็นสิบเลน)
+      list.filter(o => frameMin(o.ship_time) != null).forEach(o => {
+        const t = frameMin(o.ship_time);
         let li = laneEnd.findIndex(end => t >= end);
         if (li < 0) { li = laneEnd.length; laneEnd.push(0); }
         laneEnd[li] = t + SPAN_MIN;
@@ -263,6 +279,13 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
           {overdueCount > 0 && <span style={{ color: '#ef4444' }}> · 🔴 {overdueCount} เลยเวลา</span>}
           {shortCount > 0 && <span style={{ color: '#f59e0b' }}> · 📦 {shortCount} รอบ stock ไม่พอ</span>}
         </span>
+        {pastDue.length > 0 && (
+          <button onClick={() => setDay(pastDue.reduce((a, p) => (p.due_date > a ? p.due_date : a), pastDue[0].due_date))}
+            title="คลิกเพื่อกระโดดไปวันงานล่าสุดที่ยังมีใบค้างส่ง"
+            style={{ padding: '4px 12px', borderRadius: 8, border: '1.5px solid rgba(239,68,68,0.5)', background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0 }}>
+            ⏰ ค้างส่งจากวันก่อน {pastDue.length} ใบ — กดดู
+          </button>
+        )}
       </div>
 
       {orders.length === 0 ? (
@@ -277,18 +300,20 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
               <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🕐 Shipping Time Chart — วันงาน {day}</span>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>คลิกที่บล็อกเพื่อดูรายละเอียด / ไปที่การ์ดรายการ</span>
             </div>
+            <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
+            <div style={isMobile ? { minWidth: 780 } : undefined}>
             <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
-              <div style={{ width: 130, flexShrink: 0, padding: '3px 10px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)' }}>ลูกค้า · คลิกชื่อเพื่อย่อ/ขยาย</div>
+              <div style={{ width: chartLeftW, flexShrink: 0, padding: '3px 10px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 2, background: 'var(--bg2)' } : null) }}>ลูกค้า · คลิกชื่อเพื่อย่อ/ขยาย</div>
               <div style={{ flex: 1, position: 'relative', height: 22 }}>
                 {hourMarks.map((m, i) => (i % 2 === 0 &&
-                  <span key={m} style={{ position: 'absolute', left: `${((m - tStart) / span) * 100}%`, fontSize: 11, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
-                    {String((m / 60) % 24 | 0).padStart(2, '0')}
+                  <span key={m} style={{ position: 'absolute', left: `${((m - tStart) / span) * 100}%`, fontSize: 11, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: m === tStart + span ? 'translateX(-100%)' : 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
+                    {String((m / 60) % 24 | 0).padStart(2, '0')}:00
                   </span>
                 ))}
               </div>
               {/* ป้ายเวลาปัจจุบัน — มาตรฐานเดียวกับบอร์ด Heijunka */}
               {isToday && nowW >= tStart && nowW <= tStart + span && (
-                <div className="now-chip" style={{ left: `calc(130px + (100% - 130px) * ${(nowW - tStart) / span})` }}>
+                <div className="now-chip" style={{ left: `calc(${chartLeftW}px + (100% - ${chartLeftW}px) * ${(nowW - tStart) / span})` }}>
                   ⏱ {String(Math.floor(nowW / 60) % 24).padStart(2, '0')}:{String(nowW % 60).padStart(2, '0')}
                 </div>
               )}
@@ -302,7 +327,7 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                 <div key={cust} style={{ display: 'flex', borderTop: '1px solid var(--border)' }}>
                   <div onClick={() => setCollapsedCust(m => ({ ...m, [cust]: !m[cust] }))}
                     title={isCol ? 'คลิกเพื่อขยาย' : 'คลิกเพื่อย่อ'}
-                    style={{ width: 130, flexShrink: 0, padding: '4px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text2)', borderRight: '1px solid var(--border2)', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                    style={{ width: chartLeftW, flexShrink: 0, padding: '4px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text2)', borderRight: '1px solid var(--border2)', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', cursor: 'pointer', userSelect: 'none', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 2, background: 'var(--card)' } : null) }}>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       <span style={{ color: 'var(--muted)', marginRight: 4 }}>{isCol ? '▸' : '▾'}</span>{cust}
                     </span>
@@ -330,13 +355,13 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                     {isToday && nowW >= tStart && nowW <= tStart + span && (
                       <div className="now-line" style={{ left: `${((nowW - tStart) / span) * 100}%` }} />
                     )}
-                    {list.map(o => {
+                    {list.filter(o => frameMin(o.ship_time) != null).map(o => {
                       const tw = frameMin(o.ship_time);
                       const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
                       const od = isOverdue(o);
                       const pl = phaseLate(o);
                       const color = od ? '#ef4444' : pl ? '#f97316' : st.color;
-                      const left = tw == null ? 99 : ((tw - tStart) / span) * 100;
+                      const left = ((tw - tStart) / span) * 100;
                       const lane = lanes.map[o.id] || 0;
                       const isSel = popup?.o?.id === o.id;
                       if (isCol) {
@@ -364,10 +389,34 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                         </div>
                       );
                     })}
+                    {/* order ที่ลูกค้าไม่ระบุเวลาส่ง — รวมเป็นชิปเดียวท้ายแถว ไม่ตกขอบ/ไม่กองสูง
+                        คลิกดูรายละเอียดทีละใบใน popup (ไล่จากการ์ดด้านล่างได้เหมือนเดิม) */}
+                    {(() => {
+                      const noTime = list.filter(o => frameMin(o.ship_time) == null);
+                      if (!noTime.length) return null;
+                      const doneAll = noTime.every(o => o.status === 'shipped');
+                      return (
+                        <div onClick={e => setPopup({ o: noTime[0], x: e.clientX, y: e.clientY })}
+                          title={`ไม่ระบุเวลาส่ง ${noTime.length} รายการ: ${noTime.map(o => `${o.mat_no} × ${fmt(o.qty)}`).join(' · ')}`}
+                          style={{
+                            position: 'absolute', top: isCol ? 2 : 5, right: 4, height: isCol ? 22 : LANE_H - 6,
+                            padding: '0 10px', display: 'flex', alignItems: 'center', gap: 4,
+                            background: doneAll ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)',
+                            border: `1.5px dashed ${doneAll ? '#22c55e' : '#f59e0b'}`, borderRadius: 5,
+                            cursor: 'pointer', zIndex: 2, boxSizing: 'border-box',
+                          }}>
+                          <span style={{ fontSize: 12, fontWeight: 800, color: doneAll ? '#22c55e' : '#f59e0b', whiteSpace: 'nowrap', lineHeight: 1 }}>
+                            ⏳ {noTime.length} ไม่ระบุเวลา{doneAll ? ' ✅' : ''}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               );
             })}
+            </div>
+            </div>
           </div>
 
           {/* Popup รายละเอียดรอบส่ง — คลิกบล็อกบนชาร์ต */}

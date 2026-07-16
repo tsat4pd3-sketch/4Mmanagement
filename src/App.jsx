@@ -38,24 +38,18 @@ const PMCheckData = lazy(() => import('./pages/PMCheckData'));
 const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
 const DailyPM     = lazy(() => import('./pages/DailyPM'));
+const Improvements = lazy(() => import('./pages/Improvements'));
+const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
+const MtnRepair = lazy(() => import('./pages/MtnRepair'));
+const RemoteControl = lazy(() => import('./pages/RemoteControl'));
+const RemoteReceiver = lazy(() => import('./components/RemoteReceiver'));
 
 /* ─── Role System ──────────────────────────────────────────── */
 export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null, signatureUrl: null, fullName: null });
-
-const ROLE_LABELS = {
-  admin:      '👑 Admin',
-  manager:    '🏢 Manager',
-  supervisor: '🎯 Supervisor',
-  leader:     '⭐ Leader',
-  qa:         '🔍 QA',
-  document_control: '🗂 Doc Control',
-  sale:       '💼 Sale',
-  display:    '📺 Display',
-};
 
 // null roles = accessible to every role
 // group ใช้จัดหมวดหมู่ในแถบ sidebar (มี minimize/expand ต่อหมวด)
@@ -63,13 +57,17 @@ const ROLE_LABELS = {
 // — จึงไม่มีฟิลด์ roles ในนี้ (เคยมี แต่เป็น dead field ไม่ถูกอ่าน ลบออก 2026-07-10 กันเข้าใจผิดว่าเป็น source of truth)
 const NAV_ITEMS = [
   { to: '/',            icon: '🏠', label: 'หน้าหลัก',           group: 'ภาพรวม' },
-  { to: '/dashboard',   icon: '📊', label: 'Dashboard',           group: 'ภาพรวม' },
+  // 🎮 /remote ตั้งใจไม่อยู่ในเมนูหมวด — คู่กับปุ่ม 📺 รับรีโมทจอ ที่โซนล่างของ sidebar (ดู Sidebar)
 
+  // Dashboard ย้ายจากหมวด "ภาพรวม" → "ฝ่ายผลิต" (คำสั่ง user 2026-07-12 — เนื้อหาส่วนใหญ่เป็นรายละเอียดฝ่ายผลิต)
+  { to: '/dashboard',   icon: '📊', label: 'Dashboard',           group: 'ฝ่ายผลิต' },
+  { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
   { to: '/daily-report',   icon: '📊', label: 'Daily Report',      group: 'ฝ่ายผลิต' },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'ฝ่ายผลิต' },
   { to: '/daily-pm',       icon: '✅', label: 'Daily PM ฝ่ายผลิต',   group: 'ฝ่ายผลิต' },
+  { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
 
   { to: '/line-stock',      icon: '📦', label: 'Store management',       group: 'Logistic - Store' },
   { to: '/heijunka',       icon: '🎴', label: 'Kanban Board',             group: 'Logistic - Store' },
@@ -78,6 +76,7 @@ const NAV_ITEMS = [
   { to: '/rundown-stock',   icon: '📉', label: 'Rundown Stock',             group: 'Logistic - Store' },
   { to: '/customer-demand', icon: '🚚', label: 'Delivery',                  group: 'Logistic - Store' },
 
+  { to: '/mtn-repair',  icon: '🛠️', label: 'แจ้งซ่อม MTN (MO)',                group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-schedule', icon: '📅', label: 'แผน PM อุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      group: 'การตรวจสอบและซ่อมบำรุง' },
@@ -101,7 +100,7 @@ const NAV_ITEMS = [
   { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
 ];
 
-const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'รายงาน', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
+export const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'รายงาน', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
 
 // เมนูจริงของหมวด sidebar สำหรับ DeptHub — การ์ดหน้าหลักดึงไปแสดงเป็นชิปที่คลิกเข้าหน้าได้เลย
 // อิง NAV_ITEMS ตัวเดียวกับ sidebar เสมอ (single source of truth — ห้ามพิมพ์รายชื่อเมนูซ้ำใน DeptHub)
@@ -208,7 +207,7 @@ function SplashScreen({ onDone }) {
 }
 
 /* ─── Sidebar ──────────────────────────────────────────────── */
-function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition }) {
+function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition, userAvatarUrl, remoteCode, onToggleRemote }) {
   const location = useLocation();
   const isMobile = window.innerWidth <= 768;
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
@@ -347,14 +346,18 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             background: 'var(--bg3)', border: '1px solid var(--border2)',
             marginBottom: 2,
           }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-              background: 'linear-gradient(135deg, var(--accent), #ff6b6b)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 12, fontWeight: 800, color: '#fff',
-            }}>
-              {initials}
-            </div>
+            {userAvatarUrl ? (
+              <img src={userAvatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1.5px solid var(--accent)' }} />
+            ) : (
+              <div style={{
+                width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                background: 'linear-gradient(135deg, var(--accent), #ff6b6b)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 12, fontWeight: 800, color: '#fff',
+              }}>
+                {initials}
+              </div>
+            )}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {userFullName || (userEmail?.split('@')[0]) || 'Unknown'}
@@ -402,6 +405,28 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             <span style={{ fontSize: 15, flexShrink: 0 }}>🔐</span>
             <span style={{ whiteSpace: 'nowrap' }}>เปลี่ยนรหัสผ่าน</span>
           </button>
+
+          {/* ── รีโมทจอ (คู่กัน) — เห็นเฉพาะ role ที่มีสิทธิ์ page:/remote (ปรับที่หน้าจัดการสิทธิ์) ──
+              🎮 = มือถือคุมจอ (ไปหน้ารีโมท) · 📺 = จอนี้เปิดรับรีโมทจากมือถือ (จอตาม) */}
+          {canAccessPage('/remote', userRole) && (<>
+            <Link
+              to="/remote"
+              onClick={onClose}
+              className="nav-link"
+              style={{ color: location.pathname === '/remote' ? 'var(--accent)' : 'var(--text2)' }}
+            >
+              <span style={{ fontSize: 15, flexShrink: 0 }}>🎮</span>
+              <span style={{ whiteSpace: 'nowrap' }}>รีโมทจอ (คุมจากมือถือ)</span>
+            </Link>
+            <button
+              onClick={onToggleRemote}
+              className="nav-link"
+              style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: remoteCode ? 'var(--accent)' : 'var(--text2)' }}
+            >
+              <span style={{ fontSize: 15, flexShrink: 0 }}>📺</span>
+              <span style={{ whiteSpace: 'nowrap' }}>{remoteCode ? `รับรีโมทอยู่ · ${remoteCode}` : 'รับรีโมทจอ (จอตาม)'}</span>
+            </button>
+          </>)}
 
           <button
             onClick={onToggleTheme}
@@ -616,8 +641,37 @@ function ToggleBtn({ isOpen, onClick }) {
 /* ─── Auto-Logout ──────────────────────────────────────────────────── */
 const IDLE_TIMEOUT_MS  = 30 * 60 * 1000; // 30 min idle → show warning
 const WARN_DURATION_MS =  5 * 60 * 1000; // 5 min countdown before forced logout
+// นับ idle ร่วมกันทุกแท็บของ browser เดียวกันผ่าน localStorage — แท็บที่เปิดทิ้งไว้ต้องไม่
+// auto-logout ทั้งที่ user กำลังใช้งานอีกแท็บอยู่ (เคยเป็นสาเหตุหลักของ "เด้ง login บ่อย"
+// เพราะ signOut จากแท็บ idle พาแท็บที่ใช้งานอยู่หลุดด้วย — session แชร์กันใน localStorage)
+const ACTIVITY_LS_KEY = 'esm-last-activity';
 
-function useAutoLogout(isDisplay, onLogout) {
+// ── เพดานเวลา login ตามกะ (2026-07-15) ────────────────────────────────────────
+// leader/หัวหน้าทำงานสลับกะ + ใช้เครื่องเช็คชื่อร่วมกัน → เดิม idle 30 นาทีไม่เตะ
+// เพราะเครื่องถูกใช้ตลอด หัวหน้ากะก่อนเลยค้าง login ข้ามกะ คนกะใหม่มาเช็คผิด session
+// กติกา: session ต้องไม่อยู่เกิน "สิ้นกะที่ตอน login + 60 นาที" (คำสั่ง user)
+// ยกเว้น admin (ดูแลระบบ เครื่องตัวเอง) + display (จอลอย — ไม่ logout อยู่แล้ว)
+const SESSION_START_KEY = 'esm-session-started';
+const SHIFT_GRACE_MS = 60 * 60 * 1000; // เผื่อ 60 นาทีหลังสิ้นกะ (ทำงานคาบเกี่ยว/OT ต่อเนื่อง)
+
+// คืน timestamp (ms) ที่ session ต้องหมดอายุ = สิ้นกะของเวลาที่ login + grace
+// กะเช้า 08:00–19:59 → สิ้นกะ 20:00 · กะดึก 20:00–07:59 → สิ้นกะ 08:00 ของเช้าถัดไป
+function shiftDeadlineFrom(loginTsMs) {
+  const d = new Date(loginTsMs);
+  const h = d.getHours();
+  const y = d.getFullYear(), mo = d.getMonth(), day = d.getDate();
+  let end;
+  if (h >= 8 && h < 20) {
+    end = new Date(y, mo, day, 20, 0, 0, 0);          // กะเช้า → 20:00 วันเดียวกัน
+  } else if (h >= 20) {
+    end = new Date(y, mo, day + 1, 8, 0, 0, 0);        // กะดึกช่วงหัวค่ำ → 08:00 วันถัดไป
+  } else {
+    end = new Date(y, mo, day, 8, 0, 0, 0);            // กะดึกช่วงเช้ามืด (< 08:00) → 08:00 วันเดียวกัน
+  }
+  return end.getTime() + SHIFT_GRACE_MS;
+}
+
+function useAutoLogout(isDisplay, onLogout, shiftCapped) {
   const [warnSecsLeft, setWarnSecsLeft] = useState(null); // null = not warning
   const lastActivityRef = useRef(Date.now());
   const warnActiveRef   = useRef(false);
@@ -634,19 +688,62 @@ function useAutoLogout(isDisplay, onLogout) {
   const dismissWarning = useCallback(() => {
     stopCountdown();
     lastActivityRef.current = Date.now();
+    try { localStorage.setItem(ACTIVITY_LS_KEY, String(Date.now())); } catch { /* private mode */ }
   }, [stopCountdown]);
 
   useEffect(() => {
     if (isDisplay) return; // display users never get auto-logged out
 
     const EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
-    const onActivity = () => { lastActivityRef.current = Date.now(); };
+    let lastLsWrite = 0;
+    const onActivity = () => {
+      lastActivityRef.current = Date.now();
+      // แชร์เวลา activity ให้แท็บอื่น (เขียนถี่สุดทุก 5 วิ กัน write spam)
+      if (Date.now() - lastLsWrite > 5000) {
+        lastLsWrite = Date.now();
+        try { localStorage.setItem(ACTIVITY_LS_KEY, String(Date.now())); } catch { /* private mode */ }
+      }
+      // กลับมาใช้งานระหว่าง countdown = ยังอยู่ — ปิดคำเตือนเอง ไม่ต้องบังคับกดปุ่ม
+      // (เดิมขยับเมาส์/แตะจอไม่ช่วย ต้องกดปุ่มเท่านั้น เลยโดน logout ทั้งที่คนอยู่หน้าจอ)
+      if (warnActiveRef.current) dismissWarning();
+    };
     EVENTS.forEach(e => window.addEventListener(e, onActivity, { passive: true }));
 
-    // Poll every 30s to check idle time
+    // แท็บอื่นมี activity → นับเป็น activity ของเราด้วย (storage event ยิงเฉพาะแท็บอื่น)
+    const onStorage = (e) => {
+      if (e.key !== ACTIVITY_LS_KEY) return;
+      lastActivityRef.current = Date.now();
+      if (warnActiveRef.current) dismissWarning();
+    };
+    window.addEventListener('storage', onStorage);
+
+    // แท็บถูกทิ้งไว้ข้ามคืน (timer ถูก throttle) → เช็คเพดานกะทันทีที่กลับมา active
+    const onVisible = () => { if (document.visibilityState === 'visible') checkShiftDeadline(); };
+    document.addEventListener('visibilitychange', onVisible);
+
+    // เพดานกะ: เตะออกทันทีเมื่อเลย "สิ้นกะที่ login + 60 นาที" (ไม่สนใจ idle — คนกำลังใช้ก็ต้องออก
+    // เพื่อให้หัวหน้ากะใหม่ login ด้วยบัญชีตัวเอง) · เช็คทั้งใน poll และตอนแท็บกลับมา active
+    const checkShiftDeadline = () => {
+      if (!shiftCapped) return false;
+      let startTs = 0;
+      try { startTs = Number(localStorage.getItem(SESSION_START_KEY)) || 0; } catch { /* private mode */ }
+      if (!startTs) {
+        // ไม่มี timestamp (login ค้างมาก่อนมีฟีเจอร์นี้) → ตั้งจากตอนนี้ ให้ได้กรอบกะปัจจุบันไปก่อน
+        startTs = Date.now();
+        try { localStorage.setItem(SESSION_START_KEY, String(startTs)); } catch { /* private mode */ }
+      }
+      if (Date.now() > shiftDeadlineFrom(startTs)) { onLogoutRef.current(); return true; }
+      return false;
+    };
+
+    // Poll every 30s to check idle time — เทียบกับ activity ล่าสุดของ "ทุกแท็บ" (max ของ local ref กับ localStorage)
     const pollId = setInterval(() => {
+      if (checkShiftDeadline()) return; // เลยเพดานกะ = ออกแล้ว
       if (warnActiveRef.current) return; // already counting down
-      const idle = Date.now() - lastActivityRef.current;
+      let shared = 0;
+      try { shared = Number(localStorage.getItem(ACTIVITY_LS_KEY)) || 0; } catch { /* ignore */ }
+      const lastActivity = Math.max(lastActivityRef.current, shared);
+      const idle = Date.now() - lastActivity;
       if (idle >= IDLE_TIMEOUT_MS) {
         // Start countdown
         warnActiveRef.current = true;
@@ -667,10 +764,12 @@ function useAutoLogout(isDisplay, onLogout) {
 
     return () => {
       EVENTS.forEach(e => window.removeEventListener(e, onActivity));
+      window.removeEventListener('storage', onStorage);
+      document.removeEventListener('visibilitychange', onVisible);
       clearInterval(pollId);
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
-  }, [isDisplay]);
+  }, [isDisplay, shiftCapped, dismissWarning]);
 
   return { warnSecsLeft, dismissWarning };
 }
@@ -724,7 +823,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved }) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
   const [isOpen, setIsOpen] = useState(!isMobile);
@@ -744,12 +843,31 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   if (!session) return <Navigate to="/login" replace />;
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    // scope 'local' = ออกเฉพาะ browser นี้ (ทุกแท็บของเครื่องนี้ผ่าน localStorage event)
+    // ห้ามใช้ default (global) — global จะ revoke refresh token ของ user นี้ "ทุกเครื่อง"
+    // → account ที่ใช้ร่วมกันหลายจุดในโรงงานโดนเด้ง login พร้อมกันทั้งหมดทุกครั้งที่
+    // เครื่องใดเครื่องหนึ่ง logout/auto-logout (สาเหตุหลักของ "เด้ง login บ่อย" 2026-07-14)
+    await supabase.auth.signOut({ scope: 'local' });
     navigate('/login');
   };
 
   const isDisplay = userRole === 'display';
-  const { warnSecsLeft, dismissWarning } = useAutoLogout(isDisplay, handleLogout);
+  // เพดานกะ (สิ้นกะ+60นาที เตะออก) ใช้กับ role หน้างานที่ทำงานสลับกะ + ใช้เครื่องเช็คชื่อร่วมกัน
+  // = หัวหน้าไลน์ (leader) + หัวหน้าส่วน (supervisor) · admin/manager/office ทำงานเครื่องตัวเอง
+  // ไม่ต้องโดนเตะรายกะ (มี idle-logout 30 นาทีคุมอยู่แล้ว) · แก้ขอบเขตที่ list นี้จุดเดียว
+  const shiftCapped = ['leader', 'supervisor'].includes(userRole);
+  const { warnSecsLeft, dismissWarning } = useAutoLogout(isDisplay, handleLogout, shiftCapped);
+
+  // 📺 โหมดจอตาม (รับรีโมทจากมือถือ) — จำรหัสไว้ข้ามการรีเฟรช เปิด/ปิดจากปุ่มใน sidebar
+  const [remoteCode, setRemoteCode] = useState(() => localStorage.getItem('esm-remote-receiver') || null);
+  const onToggleRemote = useCallback(() => {
+    setRemoteCode(c => {
+      if (c) { localStorage.removeItem('esm-remote-receiver'); return null; }
+      const code = String(Math.floor(100000 + Math.random() * 900000));
+      localStorage.setItem('esm-remote-receiver', code);
+      return code;
+    });
+  }, []);
 
   const sidebarPx  = isTV ? 280 : 240;
   const marginLeft = (!isMobile && isOpen) ? sidebarPx : 0;
@@ -758,22 +876,30 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
     return (
-      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
+      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName }}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
-          <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} userPosition={userPosition} />
+          <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} userPosition={userPosition}
+            userEmail={userEmail} userAvatarUrl={userAvatarUrl} onAvatarSaved={onAvatarSaved}
+            userSignatureUrl={userSignatureUrl} onSignatureSaved={onSignatureSaved} />
         </Suspense>
       </UserContext.Provider>
     );
   }
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, fullName: userFullName }}>
+    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName }}>
       {warnSecsLeft !== null && (
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />
         <NotificationBell userId={userId} />
+        {/* 📺 จอตาม: รับคำสั่งรีโมท (pointer/คลิก/เลื่อน/เปลี่ยนหน้า) — ทำงานได้ทุกหน้า */}
+        {remoteCode && (
+          <Suspense fallback={null}>
+            <RemoteReceiver code={remoteCode} onStop={onToggleRemote} />
+          </Suspense>
+        )}
         <Sidebar
           isOpen={isOpen}
           onClose={() => setIsOpen(false)}
@@ -786,6 +912,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
           userEmail={userEmail}
           userFullName={userFullName}
           userSignatureUrl={userSignatureUrl}
+          userAvatarUrl={userAvatarUrl}
+          remoteCode={remoteCode}
+          onToggleRemote={onToggleRemote}
         />
 
         <main style={{
@@ -848,6 +977,15 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/daily-pm" element={
                 <RoleRoute path="/daily-pm" userRole={role}><DailyPM /></RoleRoute>
               } />
+              <Route path="/improvements" element={
+                <RoleRoute path="/improvements" userRole={role}><Improvements /></RoleRoute>
+              } />
+              <Route path="/morning-meeting" element={
+                <RoleRoute path="/morning-meeting" userRole={role}><MorningMeeting /></RoleRoute>
+              } />
+              <Route path="/remote" element={
+                <RoleRoute path="/remote" userRole={role}><RemoteControl /></RoleRoute>
+              } />
               <Route path="/event-log" element={
                 <RoleRoute path="/event-log" userRole={role}><EventLog /></RoleRoute>
               } />
@@ -893,6 +1031,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/mtn-layout" element={
                 <RoleRoute path="/mtn-layout" userRole={role}><MtnMachineLayout /></RoleRoute>
               } />
+              <Route path="/mtn-repair" element={
+                <RoleRoute path="/mtn-repair" userRole={role}><MtnRepair /></RoleRoute>
+              } />
             </Routes>
           </Suspense>
         </main>
@@ -915,6 +1056,7 @@ export default function App() {
   const [userFullName,     setUserFullName]     = useState(null);
   const [userNotifyEmail,  setUserNotifyEmail]  = useState(null);
   const [userSignatureUrl, setUserSignatureUrl] = useState(null);
+  const [userAvatarUrl,    setUserAvatarUrl]    = useState(null); // รูปโปรไฟล์ user (profiles.avatar_url — 2026-07-14)
   const [showSplash,   setShowSplash]   = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
   // ต้อง resolve ทั้ง profile (role จริง) และ permissions ก่อนค่อย render route tree —
@@ -933,7 +1075,22 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const { data } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, position, notify_email, signature_url').eq('id', user.id).single();
+    const { data, error } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, position, notify_email, signature_url').eq('id', user.id).single();
+    // fail-visible: โหลดโปรไฟล์ไม่ได้ = แอปใช้งานไม่ได้อยู่ดี (role null → เมนูหาย, query ฝั่ง Main
+    // ล้มหมด กลายเป็น "หน้าผี") — ห้ามปล่อย render ต่อแบบไม่มี role
+    if (error || !data) {
+      const authBroken = !data && !error                       // query ผ่านแต่ไม่มีแถว = user ถูกลบ
+        || error?.code === 'PGRST116'                          // 0 rows
+        || error?.status === 401 || error?.status === 403
+        || /jwt|token|expired/i.test(error?.message || '');
+      if (authBroken) {
+        // token เสีย/user ถูกลบ → เคลียร์ session ฝั่ง client ให้เด้งไปหน้า login
+        try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* token เสียอยู่แล้ว */ }
+      }
+      // error อื่น (เช่น network สะดุด) → ค้างที่ "กำลังโหลด..." ให้ผู้ใช้ F5 — ไม่ signOut
+      // เพราะ localStorage แชร์ข้ามแท็บ เดี๋ยวพาแท็บอื่นที่ดีๆ อยู่หลุดไปด้วย
+      return;
+    }
     setUserRole(data?.role ?? null);
     setUserLineId(data?.line_id ?? null);
     setUserFullName(data?.full_name ?? null);
@@ -943,6 +1100,10 @@ export default function App() {
     setUserSections(effectiveSections(data?.role, data?.sections, data?.section));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
+    // avatar_url แยก query best-effort — คอลัมน์เพิ่งเพิ่ม (migration 20260714) ถ้ายังไม่ apply ห้ามทำ login พัง
+    supabase.from('profiles').select('avatar_url').eq('id', user.id).maybeSingle()
+      .then(({ data: av }) => setUserAvatarUrl(av?.avatar_url ?? null))
+      .catch(() => setUserAvatarUrl(null));
     setProfileLoaded(true);
   };
 
@@ -954,13 +1115,19 @@ export default function App() {
         loadPermissions().then(() => setPermsLoaded(true));
       }
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((evt, s) => {
       setSession(s);
+      // stamp เวลา login จริง (เฉพาะตอน SIGNED_IN — refresh/INITIAL_SESSION ไม่ยิง event นี้)
+      // ใช้คิดเพดานกะใน useAutoLogout · เก็บใน localStorage แชร์ทุกแท็บ + คงข้ามการรีเฟรช
+      if (evt === 'SIGNED_IN') {
+        try { localStorage.setItem(SESSION_START_KEY, String(Date.now())); } catch { /* private mode */ }
+      }
       if (s?.user) {
         fetchProfile(s.user);
         loadPermissions().then(() => setPermsLoaded(true));
       } else {
-        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserPosition(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null);
+        try { localStorage.removeItem(SESSION_START_KEY); } catch { /* private mode */ }
+        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserPosition(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null); setUserAvatarUrl(null);
         setProfileLoaded(false); setPermsLoaded(false);
       }
     });
@@ -1016,6 +1183,9 @@ export default function App() {
                 userFullName={userFullName}
                 userNotifyEmail={userNotifyEmail}
                 userSignatureUrl={userSignatureUrl}
+                userAvatarUrl={userAvatarUrl}
+                onAvatarSaved={setUserAvatarUrl}
+                onSignatureSaved={setUserSignatureUrl}
               />
             } />
           </Routes>

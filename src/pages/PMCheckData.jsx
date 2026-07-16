@@ -12,6 +12,8 @@ import { exportInspectionExcel } from '../lib/pmExportExcel'
 import { exportInspectionPDF, resolveSignatureDataUrl } from '../lib/pmExportPDF'
 import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } from '../lib/pmTaxonomy'
 import useImgBox from '../utils/useImgBox'
+import CalloutPin from '../components/CalloutPin'
+import PhotoCompareModal from '../components/PhotoCompareModal'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -167,10 +169,10 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, ma
               const col = st ? PIN_STATUS_COLOR[st] : categoryColor(c.category)
               const active = c.id === activeCpId
               return (
-                <button key={c.id} onClick={e => { e.stopPropagation(); onPinClick?.(c.id) }} title={`${cpIndex[c.id] + 1}. ${c.name}${st ? ` — ${st.toUpperCase()}` : ''}`}
-                  style={{ position: 'absolute', left: `${clampPct(c.x_pos * 100, padX, 100 - padX)}%`, top: `${clampPct(c.y_pos * 100, padTop, 100)}%`, transform: 'translate(-50%,-100%)', zIndex: active ? 12 : 10, cursor: 'pointer', background: 'none', border: 'none', padding: 0, pointerEvents: 'auto' }}>
-                  <div style={{ minWidth: PK, height: PK, padding: `0 ${Math.round(PK * 0.15)}px`, borderRadius: 999, background: col, color: '#fff', fontSize: pkFont, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff', boxShadow: active ? '0 0 0 3px rgba(61,214,92,0.75), 0 2px 6px rgba(0,0,0,0.5)' : '0 2px 6px rgba(0,0,0,0.4)', whiteSpace: 'nowrap', transform: active ? 'scale(1.18)' : 'none', transition: 'transform .12s' }}>{cpIndex[c.id] + 1}</div>
-                </button>
+                <CalloutPin key={c.id} xPct={c.x_pos * 100} yPct={c.y_pos * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
+                  label={cpIndex[c.id] + 1} color={col} selected={active}
+                  title={`${cpIndex[c.id] + 1}. ${c.name}${st ? ` — ${st.toUpperCase()}` : ''}`}
+                  onClick={e => { e.stopPropagation(); onPinClick?.(c.id) }} />
               )
             })}
           </div>
@@ -247,7 +249,7 @@ function VariableRow({ cp, idx, r, onChange, methodIndex }) {
 }
 
 // ─── Attribute / Note Row ────────────────────────────────────────────────────
-function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex }) {
+function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex, onCompare, hasEvidence }) {
   const method = methodIndex?.[cp.checking_method]
   return (
     <div style={S.cpRow(null)}>
@@ -255,6 +257,13 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
         {cp.x_pos != null && <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
         {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}</p>
+        {cp.image_path && (
+          <button onClick={e => { e.stopPropagation(); onCompare?.(cp) }} title="เทียบรูปมาตรฐานกับสภาพจริง"
+            style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0,
+              border: `1px solid ${hasEvidence ? '#e0a44a' : 'var(--border2)'}`, background: hasEvidence ? 'rgba(224,164,74,0.12)' : 'var(--bg3)', color: hasEvidence ? '#e0a44a' : 'var(--text2)' }}>
+            📷 เทียบรูป{hasEvidence ? ' 📎' : ''}
+          </button>
+        )}
         <CpImage cp={cp} />
         <div style={{ display: 'flex', gap: 4 }}>
           {['ok', 'ng'].map(v => (
@@ -462,6 +471,12 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
                     </div>
                     {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{c.label}</span>}
                   </div>
+                  {r.evidence_path && (
+                    <a href={getPublicUrl(r.evidence_path)} target="_blank" rel="noreferrer" title="รูปหลักฐาน (สภาพจริงตอนพบผิดปกติ)" style={{ display: 'inline-block', marginTop: 6 }}>
+                      <img src={getPublicUrl(r.evidence_path)} alt="" style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 6, border: '1px solid rgba(224,92,74,0.4)', display: 'block' }} />
+                      <span style={{ fontSize: 10.5, color: '#e05c4a', fontWeight: 700 }}>📎 หลักฐานสภาพจริง</span>
+                    </a>
+                  )}
                 </div>
                 {isNG && <NgRecheckPanel result={r} cp={cp} onSaved={fetchResults} />}
               </div>
@@ -524,6 +539,8 @@ export default function PMCheckData() {
   }, [])
   const [tab, setTab] = useState('record')
   const [results, setResults] = useState({})
+  const [compareCp, setCompareCp] = useState(null)      // จุดที่กำลังเทียบรูป (modal)
+  const [evidenceBlobs, setEvidenceBlobs] = useState({}) // { cpId: Blob } รูป NG รออัปโหลดตอนบันทึก
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [inspections, setInspections] = useState([])
@@ -598,7 +615,7 @@ export default function PMCheckData() {
 
   useEffect(() => {
     if (!selectedJig || !userId) return
-    setResults({}); setNotes(''); setTab('record'); setActiveCpId(null)
+    setResults({}); setNotes(''); setTab('record'); setActiveCpId(null); setEvidenceBlobs({})
     // เฟรมรูป 360° (ถ้าไม่มี jig_images → ใช้รูปหลัก image_path เป็นเฟรมเดียว)
     supabaseDR.from('jig_images').select('id, image_path, sort').eq('jig_id', selectedJig.id).order('sort').then(({ data }) => {
       let fr = (data ?? []).map(im => ({ id: im.id, url: getPublicUrl(im.image_path) }))
@@ -661,8 +678,25 @@ export default function PMCheckData() {
         }
         return { inspection_id: insp.id, checkpoint_id: cp.id, value_attribute: r.attr || null, status: r.attr === 'ng' ? 'fail' : r.attr === 'ok' ? 'pass' : null }
       })
-      const { error: e2 } = await supabaseDR.from('inspection_results').insert(rows)
+      const { data: insertedRows, error: e2 } = await supabaseDR.from('inspection_results').insert(rows).select('id, checkpoint_id')
       if (e2) throw e2
+
+      // อัปโหลดรูปหลักฐาน "เฉพาะจุดที่ผิดปกติ (NG)" — ผ่าน = ไม่เก็บพิกเซล (ประหยัด storage)
+      // best-effort: ล้มเหลวไม่ทำให้การบันทึกผลพัง
+      const pendingEvidence = Object.entries(evidenceBlobs)
+      if (pendingEvidence.length) {
+        const ridByCp = Object.fromEntries((insertedRows ?? []).map(r => [r.checkpoint_id, r.id]))
+        for (const [cpId, blob] of pendingEvidence) {
+          const rid = ridByCp[cpId]
+          if (!rid || !blob) continue
+          try {
+            const path = `evidence/${insp.id}/${cpId}.jpg`
+            const { error: ue } = await supabaseDR.storage.from('jig-images').upload(path, blob, { upsert: true, contentType: 'image/jpeg' })
+            if (!ue) await supabaseDR.from('inspection_results').update({ evidence_path: path }).eq('id', rid)
+          } catch { /* เก็บรูปไม่ได้ ไม่ล้มการบันทึก */ }
+        }
+        setEvidenceBlobs({})
+      }
 
       if (overall === 'fail') {
         notifyDepartment(department, { title: 'พบผลตรวจไม่ผ่าน (NG)', body: `${selectedJig.name} — ${formatDate(insp.inspected_at)}`, type: 'error', refTable: 'inspections', refId: insp.id }, userId).catch(() => {})
@@ -845,6 +879,7 @@ export default function PMCheckData() {
                           ) : (
                             <AttrRow cp={cp} idx={idx} methodIndex={methodIndex}
                               value={results[cp.id]?.attr ?? ''} note={results[cp.id]?.note ?? ''}
+                              onCompare={setCompareCp} hasEvidence={!!evidenceBlobs[cp.id]}
                               onChangeAttr={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], attr: v } }))}
                               onChangeNote={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], note: v } }))} />
                           )
@@ -912,6 +947,23 @@ export default function PMCheckData() {
           <HistoryModal inspection={viewInspection} checkpoints={checkpoints} jig={selectedJig}
             userId={userId} userRole={userRole}
             onClose={() => { setViewInspection(null); if (selectedJig) fetchHistory(selectedJig.id) }} />
+        )}
+        {compareCp && (
+          <PhotoCompareModal
+            referenceUrl={getPublicUrl(compareCp.image_path)}
+            title={compareCp.name}
+            initialVerdict={results[compareCp.id]?.attr}
+            onClose={() => setCompareCp(null)}
+            onResult={({ verdict, blob }) => {
+              setResults(prev => ({ ...prev, [compareCp.id]: { ...prev[compareCp.id], attr: verdict } }))
+              setEvidenceBlobs(prev => {
+                const next = { ...prev }
+                if (verdict === 'ng' && blob) next[compareCp.id] = blob
+                else delete next[compareCp.id]  // ผ่าน = ไม่เก็บรูป
+                return next
+              })
+              setCompareCp(null)
+            }} />
         )}
       </AnimatePresence>
     </div>

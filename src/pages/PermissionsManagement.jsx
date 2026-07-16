@@ -2,17 +2,10 @@ import { useState, useEffect, useMemo, Fragment } from 'react';
 import { supabase } from '../supabaseClient';
 import { loadPermissions } from '../utils/permissions';
 import { toast } from '../components/Toast';
+import { ROLE_OPTIONS } from '../utils/roleMeta';
 
-const ROLES = [
-  { value: 'admin',      label: 'Admin',      color: 'var(--accent)' },
-  { value: 'manager',    label: 'Manager',    color: '#f59e0b' },
-  { value: 'supervisor', label: 'Supervisor', color: '#4d9fff' },
-  { value: 'leader',     label: 'Leader',     color: '#22c55e' },
-  { value: 'qa',         label: 'QA',         color: '#c084fc' },
-  { value: 'document_control', label: 'Doc Control', color: '#fb923c' },
-  { value: 'sale',       label: 'Sale',       color: '#38bdf8' },
-  { value: 'display',    label: 'Display',    color: '#94a3b8' },
-];
+// ชื่อ/สีชุดสิทธิ์อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
+const ROLES = ROLE_OPTIONS;
 
 // ชื่อหน้าให้ตรงกับ NAV_ITEMS ใน App.jsx — จัดกลุ่มตามหมวดใน sidebar
 const PAGE_GROUPS = [
@@ -30,6 +23,8 @@ const PAGE_GROUPS = [
       { key: 'page:/management',   label: 'จัดการไลน์ผลิต' },
       { key: 'page:/daily-report', label: 'Daily Report' },
       { key: 'page:/daily-pm',     label: 'Daily PM ฝ่ายผลิต' },
+      { key: 'page:/morning-meeting', label: 'ประชุมแถวเช้า' },
+      { key: 'page:/improvements', label: 'Improvements (Kaizen)' },
       { key: 'page:/oee-analytics', label: 'OEE' },
     ],
   },
@@ -47,6 +42,7 @@ const PAGE_GROUPS = [
   {
     group: 'การตรวจสอบและซ่อมบำรุง',
     pages: [
+      { key: 'page:/mtn-repair',  label: 'แจ้งซ่อม MTN (MO)' },
       { key: 'page:/pm-check',    label: 'ตรวจสอบอุปกรณ์เครื่องจักร' },
       { key: 'page:/pm-schedule', label: 'แผน PM อุปกรณ์เครื่องจักร' },
       { key: 'page:/pm-setup',    label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร' },
@@ -162,7 +158,7 @@ export default function PermissionsManagement() {
   };
 
   const s = {
-    page:    { padding: '20px 24px', maxWidth: 'min(96vw, 1400px)', margin: '0 auto' },
+    page:    { padding: 'clamp(10px,2.5vw,20px) clamp(12px,3vw,24px)', maxWidth: 'min(96vw, 1400px)', margin: '0 auto' },
     section: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px', marginBottom: 16 },
     groupTitle: { fontSize: 13, fontWeight: 800, color: 'var(--accent)', margin: '18px 0 8px', textTransform: 'uppercase', letterSpacing: '0.05em' },
     tabBtn: (active) => ({
@@ -181,8 +177,9 @@ export default function PermissionsManagement() {
           <tr style={{ borderBottom: '2px solid var(--border)' }}>
             <th style={{ textAlign: 'left', padding: '8px 10px', color: 'var(--muted)', position: 'sticky', left: 0, background: 'var(--bg)' }}>{firstColLabel}</th>
             {ROLES.map(r => (
-              <th key={r.value} style={{ textAlign: 'center', padding: '8px 4px', minWidth: 90 }}>
-                <span style={{ fontSize: 11, fontWeight: 800, color: r.color }}>{r.label}</span>
+              <th key={r.value} style={{ textAlign: 'center', padding: '8px 4px', minWidth: 90 }} title={r.value}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: r.color }}>{r.icon} {r.label}</span>
+                <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>{r.en}</div>
               </th>
             ))}
           </tr>

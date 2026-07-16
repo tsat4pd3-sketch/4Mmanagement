@@ -1,26 +1,25 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { accessSummaryForRole } from '../App';
+import { ROLE_OPTIONS, roleLabel } from '../utils/roleMeta';
 
-// desc = "ลักษณะ/ขอบเขตอำนาจ" ของ role เท่านั้น (ไม่เปลี่ยนตามเวลา) — ห้ามพิมพ์รายชื่อโมดูล/หน้า
-// เพราะหน้าเข้าได้จริงเป็น data-driven จาก role_permissions (แสดงอัตโนมัติผ่าน accessSummaryForRole
-// และปรับได้ที่หน้า จัดการสิทธิ์) เคย hardcode รายชื่อโมดูลแล้ว drift ตามโมดูลใหม่ไม่ทัน
-const ROLES = [
-  { value: 'admin',      label: 'Admin',      color: 'var(--accent)', desc: 'ทุกอย่าง + จัดการผู้ใช้และสิทธิ์' },
-  { value: 'manager',    label: 'Manager',    color: '#f59e0b', desc: 'ผู้จัดการ — เห็นกว้างทุกโมดูล (จำกัดบางส่วนงานได้ด้วย Section)' },
-  { value: 'supervisor', label: 'Supervisor', color: '#4d9fff', desc: 'หัวหน้าส่วน — จัดการข้อมูลภายใน Section ตัวเอง' },
-  { value: 'leader',     label: 'Leader',     color: '#22c55e', desc: 'หัวหน้าไลน์ — เฉพาะไลน์ + ทีมตัวเอง' },
-  { value: 'qa',         label: 'QA',         color: '#c084fc', desc: 'งานคุณภาพ — อนุมัติ 4M/CQI-15 + QA Center' },
-  { value: 'document_control', label: 'Document Control', color: '#fb923c', desc: 'ปฏิทินบริษัท + เอกสารควบคุม' },
-  { value: 'sale', label: 'Sale', color: '#38bdf8', desc: 'ทีมขาย/จัดส่ง — Forecast, Delivery, Kanban' },
-  { value: 'display',    label: 'Display',    color: '#94a3b8', desc: '📺 จอแสดงผล/TV — ดูอย่างเดียว ไม่มี Auto-Logout' },
-];
+// ชื่อ/สี/คำอธิบายชุดสิทธิ์ อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
+// desc = "ลักษณะ/ขอบเขตอำนาจ" ของ role เท่านั้น — ห้ามพิมพ์รายชื่อโมดูล/หน้า
+// เพราะหน้าเข้าได้จริงเป็น data-driven จาก role_permissions (แสดงอัตโนมัติผ่าน accessSummaryForRole)
+const ROLES = ROLE_OPTIONS.map(r => ({ ...r, label: `${r.icon} ${r.label} (${r.en})` }));
 // sections = ขอบเขตส่วนงาน (เลือกได้หลายอัน ทุก role) — ว่าง = เห็นทุกส่วนงาน
 // profiles.section (เดี่ยว) ยังถูกเขียนเป็นตัวแรกของ sections เสมอ เพื่อให้ rollback โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope
 const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], lineId: '', team: '', notifyEmail: '' };
 
+// คำอธิบายกะของแต่ละทีม (ดู CLAUDE.md "Shift Logic") — ทีมอื่นที่ไม่รู้จักแสดงชื่อเฉยๆ
+const TEAM_DESC = {
+  A: '(ทำงานสลับกะกับ TEAM B)',
+  B: '(ทำงานสลับกะกับ TEAM A)',
+  C: '(เข้ากะเช้าตลอด ไม่สลับกะ)',
+};
+
 // ตำแหน่งงานจริงในโรงงาน (แสดงตัวตน/รายงาน/ลายเซ็น) — คนละมิติกับ role ซึ่งเป็น "ชุดสิทธิ์ใช้ระบบ"
-// เป็น datalist: เลือกจากรายการหรือพิมพ์เองได้ ไม่ล็อกตายตัว (ตำแหน่งใหม่ไม่ต้องแก้โค้ด)
+// เป็น dropdown + ตัวเลือก "อื่นๆ (พิมพ์เอง)" — ตำแหน่งใหม่ไม่ต้องแก้โค้ด และเปลี่ยนตัวเลือกได้ตลอด
 const POSITION_SUGGESTIONS = ['ผู้จัดการฝ่าย', 'หัวหน้าแผนก', 'หัวหน้าส่วน', 'หัวหน้าไลน์', 'วิศวกร', 'เจ้าหน้าที่', 'ช่างเทคนิค', 'ธุรการ'];
 
 export default function AddUser() {
@@ -33,9 +32,17 @@ export default function AddUser() {
   const [modalMode,     setModalMode]     = useState('create');
   const [editingId,     setEditingId]     = useState(null);
   const [form,          setForm]          = useState(emptyForm);
+  // ค้นหา/กรอง/เรียง — default เรียง "สร้างล่าสุดก่อน" (user ใหม่ขึ้นบนสุด หาเจอทันที)
+  const [q,             setQ]             = useState('');
+  const [filterRole,    setFilterRole]    = useState('');
+  const [filterSection, setFilterSection] = useState('');
+  const [sort,          setSort]          = useState({ key: 'created_at', dir: 'desc' });
+  const [posCustom,     setPosCustom]     = useState(false); // ตำแหน่ง = "อื่นๆ (พิมพ์เอง)" อยู่
   const [loading,       setLoading]       = useState(false);
   const [message,       setMessage]       = useState(null);
   const [error,         setError]         = useState(null);
+  const [resetPw,       setResetPw]       = useState(''); // ช่องตั้งรหัสใหม่ใน modal แก้ไข
+  const [resetPwBusy,   setResetPwBusy]   = useState(false);
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name').order('name')
@@ -56,10 +63,14 @@ export default function AddUser() {
       .select('id, full_name, role, position, line_id, section, sections, team, notify_email');
     const { data: authUsers } = await supabase.rpc('get_auth_users');
 
-    const emailMap = {};
-    (authUsers || []).forEach(u => { emailMap[u.id] = u.email; });
+    const authMap = {};
+    (authUsers || []).forEach(u => { authMap[u.id] = u; });
 
-    setUsers((profiles || []).map(p => ({ ...p, email: emailMap[p.id] || '—' })));
+    setUsers((profiles || []).map(p => ({
+      ...p,
+      email: authMap[p.id]?.email || '—',
+      created_at: authMap[p.id]?.created_at || null,
+    })));
     setFetchingUsers(false);
   };
 
@@ -68,17 +79,19 @@ export default function AddUser() {
   // ป้องกันบั๊ก fail-open: ถ้า supervisor/leader ไม่มี section/line_id ทุกหน้าที่กรองข้อมูลตาม
   // section/line_id จะข้าม condition แล้วโชว์ข้อมูลทุกไลน์ทุกแผนกเหมือน admin โดยไม่มีอะไรเตือน
   const validateScope = () => {
-    if (form.role === 'supervisor' && !form.sections.length) return 'Supervisor ต้องกำหนด Section อย่างน้อย 1 ส่วนงาน ไม่งั้นจะเห็นข้อมูลทุกส่วนงานเหมือน admin';
-    if (form.role === 'leader' && (!form.lineId || !form.team)) return 'Leader ต้องกำหนดทั้งไลน์ผลิตและ Team ไม่งั้นจะเห็นข้อมูลทุกไลน์เหมือน admin';
+    if (form.role === 'supervisor' && !form.sections.length) return 'ชุดสิทธิ์ระดับส่วน ต้องกำหนด Section อย่างน้อย 1 ส่วนงาน ไม่งั้นจะเห็นข้อมูลทุกส่วนงานแบบไม่จำกัด';
+    if (form.role === 'leader' && (!form.lineId || !form.team)) return 'ชุดสิทธิ์ระดับไลน์ ต้องกำหนดทั้งไลน์ผลิตและ Team ไม่งั้นจะเห็นข้อมูลทุกไลน์แบบไม่จำกัด';
     return null;
   };
 
   const openCreate = () => {
     setForm(emptyForm);
+    setPosCustom(false);
     setEditingId(null);
     setModalMode('create');
     setMessage(null);
     setError(null);
+    setResetPw('');
     setShowModal(true);
   };
 
@@ -94,10 +107,12 @@ export default function AddUser() {
       team:        u.team         || '',
       notifyEmail: u.notify_email || '',
     });
+    setPosCustom(!!u.position && !POSITION_SUGGESTIONS.includes(u.position));
     setEditingId(u.id);
     setModalMode('edit');
     setMessage(null);
     setError(null);
+    setResetPw('');
     setShowModal(true);
   };
 
@@ -120,26 +135,22 @@ export default function AddUser() {
             'apikey':        import.meta.env.VITE_SUPABASE_ANON_KEY,
           },
           body: JSON.stringify({
-            email:     form.email,
-            password:  form.password,
-            role:      form.role,
-            full_name: form.fullName || null,
-            section:   form.sections[0] || null,
-            team:      form.team     || null,
-            line_id:   form.lineId   ? Number(form.lineId) : null,
+            email:        form.email,
+            password:     form.password,
+            role:         form.role,
+            full_name:    form.fullName || null,
+            position:     form.position || null,
+            section:      form.sections[0] || null,
+            sections:     form.sections,
+            team:         form.team || null,
+            line_id:      form.lineId ? Number(form.lineId) : null,
+            notify_email: form.notifyEmail || null,
           }),
         }
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
-
-      // Edge Function create-user ยังไม่รู้จัก sections/position — อัปเดตตามหลังด้วย id ที่ได้กลับมา
-      if (data.user?.id && (form.sections.length || form.position)) {
-        await supabase.from('profiles').update({
-          sections: form.sections.length ? form.sections : null,
-          position: form.position || null,
-        }).eq('id', data.user.id);
-      }
+      // create-user v14 เขียนโปรไฟล์ครบทุก field ในจังหวะเดียวแล้ว (ไม่มีจังหวะสองให้พลาด)
 
       setMessage(`สร้าง user "${form.email}" (${form.role}) สำเร็จ`);
       setShowModal(false);
@@ -149,6 +160,57 @@ export default function AddUser() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // admin ตั้งรหัสผ่านใหม่ให้ user (ลืมรหัส/login ไม่ได้) — ผ่าน Edge Function reset-user-password
+  // (admin-only ฝั่ง server + ห้ามใช้กับบัญชี admin — เจ้าตัวเปลี่ยนเองผ่านเมนูเปลี่ยนรหัสผ่าน)
+  const handleResetPassword = async () => {
+    const who = form.fullName || form.email;
+    if (resetPw.length < 6) return setError('รหัสผ่านใหม่ต้องยาวอย่างน้อย 6 ตัวอักษร');
+    if (!window.confirm(`ตั้งรหัสผ่านใหม่ให้ "${who}" ?\n\nรหัสเดิมจะใช้ไม่ได้ทันที — อย่าลืมแจ้งรหัสใหม่ให้เจ้าตัว`)) return;
+    setResetPwBusy(true); setError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-user-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ user_id: editingId, new_password: resetPw }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'รีเซ็ตรหัสผ่านไม่สำเร็จ');
+      setResetPw('');
+      setMessage(`ตั้งรหัสผ่านใหม่ให้ "${who}" แล้ว — แจ้งรหัสใหม่ให้เจ้าตัวด้วย`);
+      setShowModal(false);
+    } catch (err) { setError(err.message); }
+    finally { setResetPwBusy(false); }
+  };
+
+  const handleDelete = async () => {
+    const who = form.fullName || form.email;
+    if (!window.confirm(`ลบผู้ใช้ "${who}" ถาวร?\n\nบัญชี login และสิทธิ์ทั้งหมดจะถูกลบ กู้คืนไม่ได้`)) return;
+    setLoading(true); setError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ user_id: editingId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ลบไม่สำเร็จ');
+      setMessage(`ลบผู้ใช้ "${who}" แล้ว`);
+      setShowModal(false);
+      fetchUsers();
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
   };
 
   const handleUpdate = async () => {
@@ -179,6 +241,51 @@ export default function AddUser() {
     }
   };
 
+  const norm = (v) => (v || '').toString().trim().toLowerCase();
+  const toggleSort = (key) => setSort(prev => prev.key === key
+    ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+    : { key, dir: key === 'created_at' ? 'desc' : 'asc' });
+
+  const view = (() => {
+    const kw = norm(q);
+    let rows = users.filter(u => {
+      if (filterRole && u.role !== filterRole) return false;
+      if (filterSection) {
+        const secs = u.sections?.length ? u.sections : (u.section ? [u.section] : []);
+        if (!secs.includes(filterSection)) return false;
+      }
+      if (!kw) return true;
+      return [u.full_name, u.email, u.position, u.section, ...(u.sections || [])].some(v => norm(v).includes(kw));
+    });
+    const val = (u) => {
+      switch (sort.key) {
+        case 'name':       return norm(u.full_name || u.email);
+        case 'position':   return norm(u.position);
+        case 'role':       return norm(u.role);
+        case 'section':    return norm(u.sections?.length ? u.sections.join(',') : u.section);
+        case 'line':       return norm(lines.find(l => l.id === u.line_id)?.name);
+        case 'team':       return norm(u.team);
+        case 'created_at': return u.created_at || '';
+        default:           return '';
+      }
+    };
+    rows.sort((a, b) => {
+      const cmp = val(a) < val(b) ? -1 : val(a) > val(b) ? 1 : 0;
+      return sort.dir === 'asc' ? cmp : -cmp;
+    });
+    return rows;
+  })();
+
+  // หัวตารางกดเรียงได้ — ลูกศรบอกคอลัมน์+ทิศทางที่ใช้อยู่
+  const Th = ({ label, sortKey, style }) => (
+    <th onClick={() => toggleSort(sortKey)} title="คลิกเพื่อเรียง"
+      style={{ ...style, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+      {label} <span style={{ fontSize: 11, opacity: sort.key === sortKey ? 1 : 0.35 }}>
+        {sort.key === sortKey ? (sort.dir === 'asc' ? '▲' : '▼') : '⇅'}
+      </span>
+    </th>
+  );
+
   return (
     <div className="page-content">
       {/* Header */}
@@ -203,27 +310,57 @@ export default function AddUser() {
         </div>
       )}
 
+      {/* Toolbar: ค้นหา + กรอง + ตัวนับ (input ใน flex row ต้องกำหนด width — index.css ตั้ง input{width:100%}) */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+        <input type="search" placeholder="🔍 ค้นหา ชื่อ / อีเมล / ตำแหน่ง..." value={q}
+          onChange={e => setQ(e.target.value)}
+          style={{ width: 260, padding: '8px 12px', borderRadius: 8, fontSize: 13 }} />
+        <select value={filterRole} onChange={e => setFilterRole(e.target.value)}
+          style={{ width: 'auto', minWidth: 130, padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
+          <option value="">ทุกชุดสิทธิ์</option>
+          {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+        </select>
+        <select value={filterSection} onChange={e => setFilterSection(e.target.value)}
+          style={{ width: 'auto', minWidth: 120, padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
+          <option value="">ทุก Section</option>
+          {sectionOpts.map(sec => <option key={sec} value={sec}>{sec}</option>)}
+        </select>
+        {(q || filterRole || filterSection) && (
+          <button onClick={() => { setQ(''); setFilterRole(''); setFilterSection(''); }}
+            style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
+            ✕ ล้างตัวกรอง
+          </button>
+        )}
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>
+          {view.length === users.length ? `ทั้งหมด ${users.length} คน` : `แสดง ${view.length} จาก ${users.length} คน`}
+          <span style={{ marginLeft: 6, opacity: 0.7 }}>· ไม่มีการจำกัดจำนวน user</span>
+        </span>
+      </div>
+
       {/* User Table */}
-      <div className="card" style={{ overflowX: 'auto', marginBottom: 16 }}>
+      <div className="card table-sticky" style={{ overflowX: 'auto', marginBottom: 16, maxHeight: '65vh' }}>
         <table style={{ minWidth: 680 }}>
           <thead>
             <tr>
-              <th style={{ minWidth: 200 }}>ชื่อ / อีเมล</th>
-              <th style={{ textAlign: 'center', minWidth: 100 }}>ตำแหน่ง</th>
-              <th style={{ textAlign: 'center', minWidth: 100 }}>ชุดสิทธิ์</th>
-              <th style={{ textAlign: 'center', minWidth: 80 }}>Section</th>
-              <th style={{ minWidth: 140 }}>ไลน์ / Group</th>
-              <th style={{ textAlign: 'center', minWidth: 80 }}>Team</th>
+              <Th label="ชื่อ / อีเมล" sortKey="name" style={{ minWidth: 200 }} />
+              <Th label="ตำแหน่ง" sortKey="position" style={{ textAlign: 'center', minWidth: 100 }} />
+              <Th label="ชุดสิทธิ์" sortKey="role" style={{ textAlign: 'center', minWidth: 100 }} />
+              <Th label="Section" sortKey="section" style={{ textAlign: 'center', minWidth: 80 }} />
+              <Th label="ไลน์ / Group" sortKey="line" style={{ minWidth: 140 }} />
+              <Th label="Team" sortKey="team" style={{ textAlign: 'center', minWidth: 80 }} />
               <th style={{ minWidth: 180 }}>📬 Notify Email</th>
+              <Th label="สร้างเมื่อ" sortKey="created_at" style={{ textAlign: 'center', minWidth: 96 }} />
               <th style={{ textAlign: 'center', minWidth: 80 }}>แก้ไข</th>
             </tr>
           </thead>
           <tbody>
             {fetchingUsers ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>กำลังโหลด...</td></tr>
+              <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>กำลังโหลด...</td></tr>
             ) : users.length === 0 ? (
-              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบข้อมูลผู้ใช้</td></tr>
-            ) : users.map(u => {
+              <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบข้อมูลผู้ใช้</td></tr>
+            ) : view.length === 0 ? (
+              <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบ user ที่ตรงกับตัวกรอง — ลองล้างตัวกรอง</td></tr>
+            ) : view.map(u => {
               const rc      = ROLES.find(r => r.value === u.role);
               const lineName = lines.find(l => l.id === u.line_id)?.name || '—';
               return (
@@ -242,7 +379,7 @@ export default function AddUser() {
                       color:      rc ? rc.color        : 'var(--text2)',
                       border:     `1px solid ${rc ? rc.color + '44' : 'var(--border2)'}`,
                     }}>
-                      {u.role?.toUpperCase() || '—'}
+                      {u.role ? roleLabel(u.role) : '—'}
                     </span>
                   </td>
                   <td style={{ textAlign: 'center', fontSize: 13, color: (u.sections?.length || u.section) ? 'var(--text)' : 'var(--muted)' }}>
@@ -258,6 +395,9 @@ export default function AddUser() {
                     {u.notify_email
                       ? <span style={{ color: 'var(--green)' }}>📬 {u.notify_email}</span>
                       : <span style={{ color: 'var(--muted)' }}>—</span>}
+                  </td>
+                  <td style={{ textAlign: 'center', fontSize: 12, color: u.created_at ? 'var(--text2)' : 'var(--muted)', whiteSpace: 'nowrap' }}>
+                    {u.created_at ? new Date(u.created_at).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: '2-digit' }) : '—'}
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     <button
@@ -308,6 +448,10 @@ export default function AddUser() {
             </h3>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 13, alignItems: 'start' }}>
+              {/* โซน 1: ตัวตน (ตำแหน่ง = แสดงผล) แยกชัดจากโซน 2: สิทธิ์ — เคยปนกันจน user งงว่าตำแหน่งคือสิทธิ์ */}
+              <div style={{ gridColumn: '1 / -1', fontSize: 12, fontWeight: 800, color: 'var(--accent)', borderBottom: '1px solid var(--border)', paddingBottom: 5 }}>
+                👤 ข้อมูลบัญชี & ตัวตน
+              </div>
               {modalMode === 'create' ? (
                 <>
                   <div>
@@ -320,9 +464,34 @@ export default function AddUser() {
                   </div>
                 </>
               ) : (
-                <div style={{ padding: '8px 12px', background: 'var(--bg3)', borderRadius: 8, fontSize: 12, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  📧 <span style={{ color: 'var(--text)' }}>{form.email}</span>
-                </div>
+                <>
+                  <div style={{ padding: '8px 12px', background: 'var(--bg3)', borderRadius: 8, fontSize: 12, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    📧 <span style={{ color: 'var(--text)' }}>{form.email}</span>
+                  </div>
+                  {form.role !== 'admin' && (
+                    <div>
+                      <label style={labelSt}>🔑 ตั้งรหัสผ่านใหม่ (กรณีลืมรหัส / login ไม่ได้)</label>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        {/* input ใน flex row ต้องกำหนด width เอง (กฎ F5 — index.css default 100%) */}
+                        <input type="text" placeholder="รหัสใหม่ อย่างน้อย 6 ตัว..." value={resetPw}
+                          onChange={e => setResetPw(e.target.value)}
+                          autoComplete="off"
+                          style={{ flex: 1, width: 'auto', minWidth: 0 }} />
+                        <button type="button" onClick={handleResetPassword}
+                          disabled={resetPwBusy || resetPw.length < 6}
+                          style={{ padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+                            cursor: (resetPwBusy || resetPw.length < 6) ? 'not-allowed' : 'pointer',
+                            background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)',
+                            opacity: (resetPwBusy || resetPw.length < 6) ? 0.5 : 1 }}>
+                          {resetPwBusy ? 'กำลังตั้ง...' : 'รีเซ็ตรหัส'}
+                        </button>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                        รหัสเดิมใช้ไม่ได้ทันที — แจ้งรหัสใหม่ให้เจ้าตัว แล้วแนะนำให้ไปเปลี่ยนเองที่เมนูเปลี่ยนรหัสผ่าน
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               <div>
@@ -332,18 +501,33 @@ export default function AddUser() {
 
               <div>
                 <label style={labelSt}>ตำแหน่งงาน (Position)</label>
-                <input type="text" list="position-suggestions" placeholder="เช่น วิศวกร, หัวหน้าแผนก, ช่างเทคนิค"
-                  value={form.position} onChange={e => setF('position', e.target.value)} />
-                <datalist id="position-suggestions">
-                  {POSITION_SUGGESTIONS.map(p => <option key={p} value={p} />)}
-                </datalist>
+                {/* dropdown ปกติ (เปลี่ยนค่าได้เสมอ) + "อื่นๆ" เปิดช่องพิมพ์เอง — datalist เดิมพอมีค่าแล้วตัวเลือกอื่นหาย */}
+                <select
+                  value={posCustom ? '__custom__' : form.position}
+                  onChange={e => {
+                    if (e.target.value === '__custom__') { setPosCustom(true); setF('position', ''); }
+                    else { setPosCustom(false); setF('position', e.target.value); }
+                  }}>
+                  <option value="">— ไม่ระบุ —</option>
+                  {POSITION_SUGGESTIONS.map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                  <option value="__custom__">อื่นๆ (พิมพ์เอง)...</option>
+                </select>
+                {posCustom && (
+                  <input type="text" autoFocus placeholder="พิมพ์ตำแหน่ง เช่น ผู้ช่วยหัวหน้าแผนก"
+                    value={form.position} onChange={e => setF('position', e.target.value)}
+                    style={{ marginTop: 6 }} />
+                )}
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                  ตำแหน่งจริงในโรงงาน — ใช้แสดงตัวตน/รายงาน/ลายเซ็น ไม่มีผลต่อสิทธิ์ (สิทธิ์ดูช่องถัดไป)
+                  ตำแหน่งจริงในโรงงาน — ใช้แสดงตัวตน/รายงาน/ลายเซ็น <b>ไม่มีผลต่อสิทธิ์</b>
                 </div>
               </div>
 
+              <div style={{ gridColumn: '1 / -1', fontSize: 12, fontWeight: 800, color: 'var(--accent2)', borderBottom: '1px solid var(--border)', paddingBottom: 5, marginTop: 4 }}>
+                🔐 สิทธิ์การใช้งานในระบบ — เข้าหน้าไหนได้ / เห็นข้อมูลส่วนงานไหน (ไม่เกี่ยวกับตำแหน่งงานข้างบน)
+              </div>
+
               <div>
-                <label style={labelSt}>ชุดสิทธิ์การใช้งาน (Role) <span style={{ fontWeight: 400, textTransform: 'none' }}>— ไม่ใช่ตำแหน่งงาน</span></label>
+                <label style={labelSt}>ชุดสิทธิ์การใช้งาน (Role)</label>
                 <select value={form.role} onChange={e => setF('role', e.target.value)}>
                   {ROLES.map(r => (
                     <option key={r.value} value={r.value}>{r.label} — {r.desc}</option>
@@ -392,7 +576,7 @@ export default function AddUser() {
                   })}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
-                  เลือกได้หลายส่วนงาน — user จะเห็นข้อมูลเฉพาะส่วนงานที่ติ๊กไว้ (ใช้ได้กับทุก role เช่น Manager ที่ดูแลเฉพาะบางส่วน) · ไม่ติ๊กเลย = เห็นทุกส่วนงาน
+                  เลือกได้หลายส่วนงาน — user จะเห็นข้อมูลเฉพาะส่วนงานที่ติ๊กไว้ (ใช้ได้กับทุกชุดสิทธิ์ เช่น สิทธิ์ทั้งฝ่าย ที่ดูแลเฉพาะบางส่วน) · ไม่ติ๊กเลย = เห็นทุกส่วนงาน
                   <br />💡 ขอบเขตนี้มีผลกับ<b>ข้อมูลฝ่ายผลิต</b> (พนักงาน/ไลน์/เช็คชื่อ/รายงาน) — สาย Logistic/Store/ขาย <b>ไม่ต้องติ๊ก</b> เพราะโมดูล Logistic ไม่ได้แบ่งข้อมูลตามส่วนงาน ใช้ Role คุมการเข้าหน้าแทน
                 </div>
               </div>
@@ -401,7 +585,7 @@ export default function AddUser() {
                 <label style={labelSt}>Team {form.role === 'leader' && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}</label>
                 <select value={form.team} onChange={e => setF('team', e.target.value)}>
                   <option value="">— เลือก —</option>
-                  {teamOpts.map(t => <option key={t} value={t}>Team {t}</option>)}
+                  {teamOpts.map(t => <option key={t} value={t}>Team {t} {TEAM_DESC[t] || ''}</option>)}
                 </select>
               </div>
 
@@ -416,8 +600,8 @@ export default function AddUser() {
               {(form.role === 'supervisor' || form.role === 'leader') && (
                 <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', padding: '8px 10px', background: 'var(--bg3)', borderRadius: 6, lineHeight: 1.5 }}>
                   ⚠️ {form.role === 'supervisor'
-                    ? 'Supervisor เห็นเฉพาะข้อมูลใน Section ที่ติ๊กไว้ — ถ้าไม่กำหนดจะเห็นทุกส่วนงานเหมือน admin'
-                    : 'Leader เห็นเฉพาะข้อมูลในไลน์+Team ที่กำหนด — ถ้าไม่กำหนดจะเห็นทุกไลน์เหมือน admin'}
+                    ? 'สิทธิ์ระดับส่วน เห็นเฉพาะข้อมูลใน Section ที่ติ๊กไว้ — ถ้าไม่กำหนดจะเห็นทุกส่วนงานแบบไม่จำกัด'
+                    : 'สิทธิ์ระดับไลน์ เห็นเฉพาะข้อมูลในไลน์+Team ที่กำหนด — ถ้าไม่กำหนดจะเห็นทุกไลน์แบบไม่จำกัด'}
                 </div>
               )}
 
@@ -441,6 +625,13 @@ export default function AddUser() {
               )}
 
               <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, marginTop: 4 }}>
+                {modalMode === 'edit' && form.role !== 'admin' && (
+                  <button type="button" onClick={handleDelete} disabled={loading}
+                    title="ลบบัญชีถาวร (ลบตัวเอง/บัญชี admin ไม่ได้)"
+                    style={{ padding: '12px 16px', background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: loading ? 'default' : 'pointer' }}>
+                    🗑 ลบผู้ใช้
+                  </button>
+                )}
                 <button
                   onClick={modalMode === 'create' ? handleCreate : handleUpdate}
                   disabled={loading}

@@ -11,10 +11,13 @@
  * ตาราง: qa_parts, qa_inspection_items (MAIN project) — เขียนได้เฉพาะ qa:manage
  */
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
+import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
+import useIsMobile from '../utils/useIsMobile';
+import CalloutPin from '../components/CalloutPin';
 
 const fmtDT = s => s ? new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -122,6 +125,7 @@ const EMPTY_ITEM = {
 };
 
 export default function QAInspectionSetup() {
+  const isMobile = useIsMobile(); // ≤768px: two-pane ยุบเป็นคอลัมน์เดียว + ปิด sticky (desktop ไม่เปลี่ยน)
   const { fullName } = useContext(UserContext);
   const { can } = usePerms();
   const canManage = can('qa', 'manage');
@@ -144,12 +148,15 @@ export default function QAInspectionSetup() {
   const [customTitle, setCustomTitle] = useState('');
   const dwgWrapRef = useRef(null);                      // wrapper รูป drawing — วัดขนาด render จริง
   const [dwgSize, setDwgSize] = useState({ w: 0, h: 0 });
+  const [zoom, setZoom] = useState(1);                  // 1 = เต็มความกว้างกรอบ (ไม่ใช่ขนาดไฟล์) ซูมได้ถึง 4x
   const fileRef = useRef(null);                        // input เพิ่ม drawing ใหม่
   const replaceRef = useRef(null);                     // input เปลี่ยนรูปแผ่นที่เปิดอยู่
 
   const sel = parts.find(p => p.id === selId) || null;
   const activeDwg = drawings.find(d => d.id === activeDwgId) || null;
   const isPdf = activeDwg?.drawing_url?.toLowerCase().includes('.pdf');
+
+  useEffect(() => { setZoom(1); }, [activeDwgId]);      // เปลี่ยนแผ่น → รีเซ็ตซูม
 
   const loadParts = useCallback(async () => {
     const { data } = await supabase.from('qa_parts').select('*').order('part_no');
@@ -323,9 +330,18 @@ export default function QAInspectionSetup() {
   const uploadFile = async (file) => {
     if (!/^image\/|application\/pdf$/.test(file.type)) { toast.error('รองรับเฉพาะไฟล์รูปภาพหรือ PDF'); return null; }
     if (file.size > 20 * 1024 * 1024) { toast.error('ไฟล์ใหญ่เกิน 20MB'); return null; }
-    const ext = file.name.split('.').pop().toLowerCase();
+    // รูปภาพบีบก่อนอัปโหลด (สเปคเดียวกับผัง 2560px/2.5MB/q0.9 — drawing ต้องซูมอ่าน dimension ได้)
+    // PDF ส่งดิบตามเดิม — ข้อยกเว้นตาม CLAUDE.md "Storage & รูปภาพ"
+    let toUpload = file;
+    let ext = file.name.split('.').pop().toLowerCase();
+    if (file.type.startsWith('image/')) {
+      try {
+        toUpload = await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9, fileType: 'image/jpeg' });
+        ext = 'jpg';
+      } catch { /* บีบไม่ได้ (ฟอร์แมตแปลก) — ส่งไฟล์เดิมภายใต้ cap 20MB */ }
+    }
     const path = `parts/${sel.id}/${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from('qa-drawings').upload(path, file, { upsert: true });
+    const { error } = await supabase.storage.from('qa-drawings').upload(path, toUpload, { upsert: true });
     if (error) { toast.error(`อัพโหลดไม่สำเร็จ: ${error.message}`); return null; }
     return supabase.storage.from('qa-drawings').getPublicUrl(path).data.publicUrl;
   };
@@ -503,9 +519,9 @@ export default function QAInspectionSetup() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(230px, 290px) 1fr', gap: 14, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(230px, 290px) 1fr', gap: 14, alignItems: 'start' }}>
         {/* ── ซ้าย: รายการ part ── */}
-        <div style={{ ...cardSt, padding: 12, position: 'sticky', top: 70 }}>
+        <div style={{ ...cardSt, padding: 12, ...(isMobile ? null : { position: 'sticky', top: 70 }) }}>
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
             <input style={{ ...inputSt, flex: 1 }} placeholder="🔍 ค้นหา part…" value={search} onChange={e => setSearch(e.target.value)} />
             {canManage && <button style={{ ...btnSt(), padding: '8px 12px' }} title="เพิ่ม Part" onClick={() => setPartModal({ ...EMPTY_PART })}>＋</button>}
@@ -634,31 +650,32 @@ export default function QAInspectionSetup() {
                   </div>
                 </div>
               ) : (
-                <div
-                  ref={dwgWrapRef}
-                  onClick={onDrawingClick}
-                  style={{ position: 'relative', display: 'inline-block', maxWidth: '100%', cursor: canManage ? 'crosshair' : 'default', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border2)' }}>
-                  <img src={activeDwg.drawing_url} alt={activeDwg.title} style={{ display: 'block', maxWidth: '100%' }}
-                    onLoad={e => setDwgSize({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight })} />
-                  {items.filter(i => i.pos_x != null && i.pos_y != null && (i.drawing_id === activeDwg.id || (!i.drawing_id && drawings[0]?.id === activeDwg.id))).map(i => (
-                    <div key={i.id}
-                      title={`#${i.balloon_no} ${i.characteristic}${i.spec_text ? ` · ${i.spec_text}` : ''}`}
-                      onClick={e => { e.stopPropagation(); if (canManage) openEditItem(i); }}
-                      style={{
-                        /* ตำแหน่งแสดงผลถูก clamp ไม่ให้ตกขอบรูป — ค่าจริงใน DB ไม่เปลี่ยน */
-                        position: 'absolute', left: `${clampPos(i.pos_x, padX)}%`, top: `${clampPos(i.pos_y, padY)}%`,
-                        transform: 'translate(-50%, -50%)',
-                        minWidth: BK, height: BK, padding: `0 ${Math.round(BK * 0.2)}px`, borderRadius: 999,
-                        background: i.id === placingId ? '#f59e0b' : (i.rank ? RANK[i.rank]?.color : '#4d9fff'),
-                        color: '#fff', fontWeight: 900, fontSize: bkFont,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        border: `${Math.max(2, Math.round(BK * 0.07))}px solid #fff`, boxShadow: '0 1px 5px rgba(0,0,0,0.45)',
-                        cursor: 'pointer', opacity: i.is_active ? 1 : 0.45, whiteSpace: 'nowrap',
-                      }}>
-                      {i.balloon_no}
+                <>
+                  {/* ซูมสำหรับวางจุดแม่นๆ — 100% = เต็มความกว้างกรอบ (รูปเล็ก/แนวตั้งไม่จิ๋วอีก) */}
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+                    <button style={ghostBtn} onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} disabled={zoom <= 1} title="ซูมออก">➖</button>
+                    <span style={{ fontSize: 12.5, fontWeight: 800, minWidth: 52, textAlign: 'center', color: 'var(--text)' }}>{Math.round(zoom * 100)}%</span>
+                    <button style={ghostBtn} onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))} disabled={zoom >= 4} title="ซูมเข้า">➕</button>
+                    {zoom > 1 && <button style={ghostBtn} onClick={() => setZoom(1)}>↺ พอดีกรอบ</button>}
+                    <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{zoom > 1 ? 'เลื่อนดูส่วนอื่นของแบบได้ในกรอบ' : 'ซูมเข้าเพื่อวางจุดละเอียดขึ้น'}</span>
+                  </div>
+                  <div style={{ maxHeight: '75vh', overflow: 'auto', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+                    <div
+                      ref={dwgWrapRef}
+                      onClick={onDrawingClick}
+                      style={{ position: 'relative', width: `${zoom * 100}%`, cursor: canManage ? 'crosshair' : 'default' }}>
+                      <img src={activeDwg.drawing_url} alt={activeDwg.title} style={{ display: 'block', width: '100%' }}
+                        onLoad={e => setDwgSize({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight })} />
+                      {items.filter(i => i.pos_x != null && i.pos_y != null && (i.drawing_id === activeDwg.id || (!i.drawing_id && drawings[0]?.id === activeDwg.id))).map(i => (
+                        <CalloutPin key={i.id} xPct={i.pos_x} yPct={i.pos_y} layerW={dwgSize.w} layerH={dwgSize.h} size={BK}
+                          label={i.balloon_no} color={i.id === placingId ? '#f59e0b' : (i.rank ? RANK[i.rank]?.color : '#4d9fff')}
+                          selected={i.id === placingId} opacity={i.is_active ? 1 : 0.45}
+                          title={`#${i.balloon_no} ${i.characteristic}${i.spec_text ? ` · ${i.spec_text}` : ''}`}
+                          onClick={e => { e.stopPropagation(); if (canManage) openEditItem(i); }} />
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                </>
               )}
             </div>
 
@@ -737,7 +754,7 @@ export default function QAInspectionSetup() {
         <Modal title={titlePicker.mode === 'add' ? '🖼 ตั้งชื่อแผ่น/มุมมองของ drawing ใหม่' : `✏️ เปลี่ยนชื่อแผ่น "${titlePicker.dwg.title}"`}
           onClose={() => setTitlePicker(null)} width={480}>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700, marginBottom: 8 }}>เลือก view มาตรฐาน</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 14 }}>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 14 }}>
             {STANDARD_VIEWS.map(v => {
               const used = drawings.some(d => d.title === v && d.id !== titlePicker.dwg?.id);
               return (
@@ -796,7 +813,7 @@ export default function QAInspectionSetup() {
               </div>
             )}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="Part No. *"><input style={inputSt} value={partModal.part_no} onChange={e => setPartModal(f => ({ ...f, part_no: e.target.value }))} /></Field>
             <Field label="Part Name"><input style={inputSt} value={partModal.part_name} onChange={e => setPartModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
             <Field label="ลูกค้า"><input style={inputSt} value={partModal.customer} onChange={e => setPartModal(f => ({ ...f, customer: e.target.value }))} /></Field>
@@ -840,7 +857,7 @@ export default function QAInspectionSetup() {
       {/* ── Item modal ── */}
       {itemModal && (
         <Modal title={itemModal.id ? `✏️ จุดตรวจ #${itemModal.balloon_no}` : `➕ เพิ่มจุดตรวจ #${itemModal.balloon_no}`} onClose={() => setItemModal(null)} width={620}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <Field label="No. (balloon)"><input style={inputSt} placeholder="เช่น H35, A1, 7" value={itemModal.balloon_no} onChange={e => setItemModal(f => ({ ...f, balloon_no: e.target.value }))} /></Field>
             <Field label="ชนิด">
               <select style={inputSt} value={itemModal.item_type} onChange={e => setItemModal(f => ({ ...f, item_type: e.target.value }))}>

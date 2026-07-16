@@ -33,7 +33,7 @@ export default function MachineFloorMap({
   const overlayRef = useRef(null)
   const [imgBox, setImgBox] = useState(null)
   const [drag, setDrag] = useState(null) // { id, top, left }
-  const [forcePills, setForcePills] = useState(false) // 🏷️ override เมื่อผังแน่นจนป้ายถูกซ่อนอัตโนมัติ
+  const [showPills, setShowPills] = useState(true) // 🏷️ โชว์/ซ่อนป้ายชื่อทุกหมุด (behavior เดียวกับ Management/LineSetup — UI-CONVENTIONS §1)
 
   const recalc = () => {
     const img = imgRef.current
@@ -63,17 +63,27 @@ export default function MachineFloorMap({
     return { top: `${t.toFixed(2)}%`, left: `${l.toFixed(2)}%` }
   }
 
+  // pointer events (แทน mouse events) — ลากได้ทั้งเมาส์และจอทัช (2026-07-11)
+  // desktop พฤติกรรมเดิมเป๊ะ: pointerdown/move/up ครอบ mouse อยู่แล้ว · touch ต้องคู่กับ touchAction:'none' ที่ marker
   const startDrag = (e, p) => {
     if (!editable) return
     e.preventDefault(); e.stopPropagation()
     const move = (ev) => { const pct = toPct(ev); if (pct) setDrag({ id: p.id, ...pct }) }
+    const cleanup = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', cancel)
+    }
     const up = (ev) => {
-      window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up)
+      cleanup()
       const pct = toPct(ev)
       setDrag(null)
       if (pct) onMarkerDragEnd?.(p.id, pct)
     }
-    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
+    const cancel = () => { cleanup(); setDrag(null) } // ระบบยกเลิก gesture (เช่น จอหมุน) — ไม่ commit ตำแหน่ง
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cancel)
   }
 
   if (!imageUrl) {
@@ -89,15 +99,14 @@ export default function MachineFloorMap({
     )
   }
 
-  // ขนาดจาก util กลาง (docs/UI-CONVENTIONS.md §1) — density-aware:
-  // ผังที่เครื่องเยอะ หมุดย่อลงและป้ายชื่อซ่อนอัตโนมัติ (ปุ่ม 🏷️ override ได้)
-  const { SUB, showSubPills, subRing, subPillFont } = markerScale(imgBox?.rw, { machineCount: points.length })
+  // ขนาดจาก util กลาง (docs/UI-CONVENTIONS.md §1) — density-aware: ผังที่เครื่องเยอะ หมุดย่อลง
+  const { SUB, subRing, subPillFont, subPillMaxW } = markerScale(imgBox?.rw, { machineCount: points.length })
   const size = SUB
   const borderW = subRing
   const pillFont = subPillFont
   const subFont = Math.max(11, Math.round(size * 0.26))
   const iconFont = Math.round(size * 0.44)
-  const pillsOn = showSubPills || forcePills
+  const pillsOn = showPills
 
   // clamp the *displayed* position so circle+pill stay on the image (DB unchanged):
   // margin left/right/top = size*0.55, bottom = size*1.35 (pill hangs below).
@@ -130,7 +139,7 @@ export default function MachineFloorMap({
             const pos = d ? { top: drag.top, left: drag.left } : clampPct(p.pos_top, p.pos_left)
             return (
               <div key={p.id}
-                onMouseDown={(e) => startDrag(e, p)}
+                onPointerDown={(e) => startDrag(e, p)}
                 onClick={(e) => { e.stopPropagation(); onSelect?.(p) }}
                 title={p.label}
                 style={{
@@ -141,13 +150,14 @@ export default function MachineFloorMap({
                   boxShadow: d ? '0 0 12px rgba(61,214,92,0.8)' : sel ? '0 0 10px rgba(61,214,92,0.6)' : `0 0 8px ${color}66`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   pointerEvents: 'auto', cursor: editable ? (d ? 'grabbing' : 'grab') : 'pointer',
+                  touchAction: editable ? 'none' : undefined, // โหมดแก้ไข: กันหน้าจอ scroll ระหว่างลากหมุดบนจอทัช
                   // dim (ไม่เข้าฟิลเตอร์แผนก) ต้องจางจนเห็นชัดว่าถูกกรองออก — 0.28 เดิมแยกไม่ออกจากจุดปกติ
                   opacity: p.dim ? 0.1 : (d ? 0.92 : 1), zIndex: (sel || d) ? 15 : 5,
                 }}>
                 <span style={{ fontSize: iconFont, lineHeight: 1 }}>⚙️</span>
 
                 {editable && (
-                  <div onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onMarkerRemove?.(p.id) }}
+                  <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onMarkerRemove?.(p.id) }}
                     title="เอาออกจากผัง"
                     style={{ position: 'absolute', top: -6, right: -6, width: 16, height: 16, borderRadius: '50%', background: '#e05c4a', color: '#fff', fontSize: 11, lineHeight: '16px', textAlign: 'center', cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>✕</div>
                 )}
@@ -155,11 +165,11 @@ export default function MachineFloorMap({
                 {/* name pill(s) underneath the circle — ซ่อนเมื่อผังแน่น ยกเว้นถูกเลือก/ลาก/จุดที่ caller บังคับ (เช่น PM เกินกำหนด) */}
                 {!p.dim && (pillsOn || sel || d || p.alwaysLabel) && (
                 <div style={{ position: 'absolute', top: 'calc(100% + 3px)', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                  <div style={{ maxWidth: size * 2, background: sel ? 'rgba(34,197,94,0.9)' : 'rgba(0,0,0,0.78)', color: '#fff', fontSize: pillFont, fontWeight: 800, lineHeight: 1.2, padding: '1px 6px', borderRadius: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ maxWidth: subPillMaxW, background: sel ? 'rgba(34,197,94,0.9)' : 'rgba(0,0,0,0.78)', color: '#fff', fontSize: pillFont, fontWeight: 800, lineHeight: 1.2, padding: '1px 6px', borderRadius: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {p.label}
                   </div>
                   {p.sub && (
-                    <div style={{ maxWidth: size * 2, background: 'rgba(0,0,0,0.68)', color: '#cdd6ce', fontSize: subFont, fontWeight: 600, lineHeight: 1.2, padding: '0 5px', borderRadius: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ maxWidth: subPillMaxW, background: 'rgba(0,0,0,0.68)', color: '#cdd6ce', fontSize: subFont, fontWeight: 600, lineHeight: 1.2, padding: '0 5px', borderRadius: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {p.sub}
                     </div>
                   )}
@@ -170,20 +180,18 @@ export default function MachineFloorMap({
           })}
         </div>
       )}
-      {/* 🏷️ toggle — โผล่เฉพาะตอนป้ายถูกซ่อนอัตโนมัติ (ผังแน่น) */}
-      {!showSubPills && (
-        <button onClick={() => setForcePills(v => !v)}
-          title="ผังแน่น ป้ายชื่อถูกซ่อนอัตโนมัติ — กดเพื่อแสดง/ซ่อนป้ายทั้งหมด (ชื่อยังดูได้จากการชี้/คลิกหมุด)"
-          style={{
-            position: 'absolute', top: 10, right: 10, zIndex: 20,
-            padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer',
-            background: forcePills ? 'var(--accent-dim)' : 'rgba(10,15,11,0.85)',
-            color: forcePills ? 'var(--accent)' : '#cdd6ce',
-            border: `1.5px solid ${forcePills ? 'var(--accent)' : 'var(--border2)'}`,
-          }}>
-          🏷️ ป้ายชื่อ
-        </button>
-      )}
+      {/* 🏷️ โชว์/ซ่อนป้ายชื่อทุกหมุด — label บอก action ที่จะเกิดเมื่อกด (หมุดที่เลือก/PM เกินกำหนดโชว์ป้ายเสมอ) */}
+      <button onClick={() => setShowPills(v => !v)}
+        title="แสดง/ซ่อนป้ายชื่อทุกหมุดบนผัง (ชื่อยังดูได้จากการชี้/คลิกหมุด — หมุดที่เลือก/PM เกินกำหนดโชว์ป้ายเสมอ)"
+        style={{
+          position: 'absolute', top: 10, right: 10, zIndex: 20,
+          padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer',
+          background: showPills ? 'var(--accent-dim)' : 'rgba(10,15,11,0.85)',
+          color: showPills ? 'var(--accent)' : '#cdd6ce',
+          border: `1.5px solid ${showPills ? 'var(--accent)' : 'var(--border2)'}`,
+        }}>
+        {showPills ? '🏷️ ซ่อนป้าย' : '🏷️ โชว์ป้าย'}
+      </button>
     </div>
   )
 }

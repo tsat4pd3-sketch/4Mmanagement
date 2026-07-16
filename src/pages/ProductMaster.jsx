@@ -5,6 +5,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
+import useIsMobile from '../utils/useIsMobile';
 
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
@@ -242,8 +243,17 @@ export default function ProductMaster() {
 
   const handleDelete = async (id) => {
     if (!window.confirm('ลบสินค้านี้?')) return;
+    const oldUrl = items.find(i => i.id === id)?.image_url;
     const { error } = await supabaseDR.from('dr_products').delete().eq('id', id);
     if (error) { toast.error(error.message); return; }
+    // ลบรูปหลัง DB สำเร็จ (best-effort) — ข้ามถ้าสินค้าอื่น/variant ยังแชร์ URL เดียวกัน (กติกา CLAUDE.md)
+    if (oldUrl?.includes('/product-images/')) {
+      const stillUsed = items.some(i => i.id !== id && i.image_url === oldUrl);
+      const oldPath = decodeURIComponent(oldUrl.split('/product-images/')[1] || '');
+      if (!stillUsed && oldPath) {
+        supabaseDR.storage.from('product-images').remove([oldPath]).catch(() => {});
+      }
+    }
     load();
   };
 
@@ -421,10 +431,11 @@ export default function ProductMaster() {
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
       {/* ── Main Tab Bar ── */}
-      <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 20, width: 'fit-content' }}>
+      {/* overflowX + maxWidth: จอแคบเลื่อนแท็บแนวนอนได้ (desktop กว้างพอ ไม่มี scrollbar — เหมือนเดิม) */}
+      <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 20, width: 'fit-content', maxWidth: '100%', overflowX: 'auto' }}>
         {[{ key:'products', label:'🔩 Products' }, { key:'bom', label:'📦 BOM' }, { key:'packaging', label:'📦 Packaging' }, { key:'parts', label:'🗂 Parts Master' }, { key:'kanban', label:'🎴 Kanban Std' }, { key:'export', label:'📤 Export' }].map(t => (
           <button key={t.key} onClick={() => setMainTab(t.key)}
-            style={{ padding:'6px 18px', borderRadius:6, border:'none', cursor:'pointer', fontSize:13, fontWeight:600,
+            style={{ padding:'6px 18px', borderRadius:6, border:'none', cursor:'pointer', fontSize:13, fontWeight:600, whiteSpace:'nowrap', flexShrink:0,
               background: mainTab===t.key ? 'var(--accent)' : 'transparent',
               color: mainTab===t.key ? '#08130a' : 'var(--muted)', fontFamily:'var(--font-body)' }}>
             {t.label}
@@ -998,6 +1009,7 @@ const TD = ({ children, style }) => (
 );
 
 function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
+  const isMobile = useIsMobile(); // ≤768px: two-pane ยุบเป็นคอลัมน์เดียว (desktop ไม่เปลี่ยน)
   const [products, setProducts]     = useState([]);
   const [selProduct, setSelProduct] = useState(null);
   const [items, setItems]           = useState([]);
@@ -1167,7 +1179,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   }, [products, search]);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 300px) 1fr', gap: 16, alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(240px, 300px) 1fr', gap: 16, alignItems: 'start' }}>
       {/* left: product list */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 12 }}>
         <input style={inputSt} placeholder="🔍 ค้นหา product / mat no. / ลูกค้า..." value={search} onChange={e => setSearch(e.target.value)} />
@@ -1859,6 +1871,7 @@ const EMPTY_PKG_MASTER = { code: '', name: '', category: 'BOX', supplier: '' };
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16 };
 
 function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
+  const isMobile = useIsMobile(); // ≤768px: two-pane ยุบเป็นคอลัมน์เดียว (desktop ไม่เปลี่ยน)
   const [products, setProducts]   = useState([]);
   const [selProduct, setSelProduct] = useState(null);
   const [links, setLinks]         = useState([]);
@@ -1934,7 +1947,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
         {canEdit && <button onClick={() => setShowMaster(true)} style={{ ...btnSecondary }}>🗃 จัดการภาชนะ (Container Types) ({masters.length})</button>}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 320px) 1fr', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(240px, 320px) 1fr', gap: 16, alignItems: 'start' }}>
         {/* product list */}
         <div style={{ ...cardSt, padding: 12 }}>
           <input style={inputSt} placeholder="🔍 ค้นหา product..." value={search} onChange={e => setSearch(e.target.value)} />

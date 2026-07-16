@@ -50,7 +50,7 @@
 | Project | ID | ใช้เก็บอะไร | Client ใน code |
 |---------|-----|------------|----------------|
 | Main | `ewhdfqwfwofivojtsizn` | auth, profiles, employees, production_lines, four_m_logs, cqi15_event_logs, role_permissions ฯลฯ | `supabase` (`src/supabaseClient.js`) |
-| DR (Daily Report/PM) | `eyhclzkifitbhbljgoav` | production_sessions, downtime_logs, defect_logs, machines, prod_orders, dr_products ฯลฯ | `supabaseDR` (`src/supabaseClient.js`) |
+| DR (Daily Report/PM) | `eyhclzkifitbhbljgoav` | production_sessions, downtime_logs, defect_logs, machines, prod_orders, dr_products, improvements ฯลฯ | `supabaseDR` (`src/supabaseClient.js`) |
 
 > ⚠️ **กฎเหล็ก — `supabaseDR` ไม่เคย authenticate**
 > `supabaseDR` ถูกสร้างด้วย `createClient(url, anonKey)` เฉยๆ ไม่มี `auth` config ผูกกับ session เลย
@@ -67,7 +67,8 @@
 |-------|---------|-------------|
 | `employees` | ข้อมูลพนักงาน | id, employee_id_code, name, image_url, line_id, team (A/B/C), section, is_active, position |
 | `production_lines` | ไลน์ผลิต | id, name, section, parent_line_name, std_day_shift, std_night_shift |
-| `profiles` | User roles + scope | id, email, role, **position** (ตำแหน่งจริง — แสดงผลเท่านั้น), full_name, line_id, section, sections[], notify_email, signature_url |
+| `oee_targets` | Target **A/P/Q รายกรุ๊ป** (parent line/ไลน์เดี่ยว) — **เป้า OEE ไม่ตั้งเอง คำนวณจาก A×P×Q เสมอ** · ระดับ section ไม่เก็บใน DB ใช้**ค่าเฉลี่ยของกรุ๊ป**คำนวณสดในหน้า OEE (2026-07-13) | group_name (unique), target_a/p/q (null = ค่ามาตรฐาน 90/90/99 → OEE 80.2) · `target_oee` เป็นคอลัมน์ vestigial ห้ามใช้ (แอปคำนวณเอง) · ตั้งจากปุ่ม 🎯 ใน /oee-analytics (สิทธิ์ manage_master_data) · migration `20260713_oee_targets.sql` |
+| `profiles` | User roles + scope | id, email, role, **position** (ตำแหน่งจริง — แสดงผลเท่านั้น), full_name, line_id, section, sections[], notify_email, signature_url, avatar_url (รูปโปรไฟล์ user — 2026-07-14) |
 | `role_permissions` | สิทธิ์เข้าหน้า/action ตาม role (data-driven) | role, permission_key, allowed |
 
 ### การผลิตรายวัน
@@ -90,8 +91,10 @@
 ### ทักษะ
 | Table | คำอธิบาย |
 |-------|---------|
-| `employee_skills` | คะแนนทักษะรายพนักงาน (skill_name, score 0-100) |
+| `employee_skills` | คะแนนทักษะรายพนักงาน (skill_name, score 0-100, pending_level, last_daily_farm_date) — **RLS: อ่านได้ทุก role ที่ login, เขียนเฉพาะ admin/manager/supervisor/leader** (2026-07-13) |
 | `skill_definitions` | นิยามทักษะ (id, name, label, color) |
+| `skill_level_up_requests` | คำขออัพระดับข้ามขั้น 25/50/75/100 — ดู section "Employee Skills & EXP Farming" |
+| `skill_update_runs` | log การรัน daily/weekly skill job (กันรันซ้ำ + audit) — เขียนโดยฟังก์ชัน SECURITY DEFINER เท่านั้น |
 
 ### กะการทำงาน
 | Table | คำอธิบาย |
@@ -112,28 +115,34 @@
 |-------|---------|-------------|
 | `four_m_logs` | บันทึกการเปลี่ยนแปลง 4M | work_date, line_name, category (Man/Machine/Material/Method), description, status, created_by, sv_approved_by, approved_by, reject_reason, requires_qa |
 | `notifications` | In-app notifications | user_id, title, body, type (success/error/info), is_read, ref_table, ref_id |
+| `meeting_action_items` | Action item จากประชุมแถวเช้า (ติดตามข้ามวันจนปิด) | meeting_date, section, line_name, problem, root_cause, ref_kind/ref_id (ที่มา: downtime/defect/4m/order_miss), assignee, due_date, status (open/doing/done/cancelled) |
 
 ---
 
 ## Pages & Routes
 
 > สิทธิ์เข้าถึงแต่ละหน้า **ไม่ได้ hardcode ในโค้ดอีกต่อไป** — อ่านจากตาราง `role_permissions` ผ่าน `src/utils/permissions.js` (`canAccessPage`) ปรับได้จากหน้า `/permissions` (admin เท่านั้น) คอลัมน์ "Role" ด้านล่างคือ default ตอน seed ไม่ใช่ source of truth
+> ⚠️ **กับดัก seed "ทุก role":** migration ที่ seed ด้วย `enum_range(user_role)` ล็อกรายชื่อ role ณ เวลานั้น — **role ที่เพิ่มทีหลังจะไม่มีแถว = เข้าหน้านั้นไม่ได้ (fail-closed)** เช่น mtn/engineer/planner_store (เพิ่ม 2026-07-13) ไม่มีแถวของ `page:/improvements`/`page:/morning-meeting` (seed 2026-07-12/13) — ถ้าต้องการให้เข้าได้ ให้ admin ติ๊กจากหน้า `/permissions` (ทั้ง 2 หน้าอยู่ใน matrix แล้ว) หรือ migration เพิ่ม role ใหม่ต้อง seed page keys ที่ควรได้ด้วย
 
 | Group (sidebar) | Route | Component | Role (seed default) |
 |---|---|---|---|
 | ภาพรวม | `/` | DeptHub — หน้า Hub เลือกโมดูล (เต็มจอ ไม่มี sidebar, ชิปเมนูดึงจาก NAV_ITEMS) | ทุก role |
-| ภาพรวม | `/dashboard` | Dashboard | ทุก role |
+| (ไม่อยู่ในเมนูหมวด) | `/remote` | RemoteControl — 🎮 รีโมทจอ: มือถือคุมจอ TV · ลิงก์ 🎮 + ปุ่ม 📺 รับรีโมท อยู่คู่กันโซนล่าง sidebar เห็นเมื่อมีสิทธิ์ `page:/remote` (ดู section "Remote Control") | ทุก role (ปรับที่ /permissions) |
+| ฝ่ายผลิต | `/dashboard` | Dashboard (ย้ายจากหมวด ภาพรวม 2026-07-12 — เนื้อหาส่วนใหญ่เป็นของฝ่ายผลิต) | ทุก role |
+| ฝ่ายผลิต | `/morning-meeting` | MorningMeeting — ประชุมแถวเช้า (ดู section "Morning Meeting") | ทุก role (record: admin/mgr/sv/leader) |
 | ฝ่ายผลิต | `/checkin` | Checkin | ทุก role |
 | ฝ่ายผลิต | `/management` | Management | ทุก role |
 | ฝ่ายผลิต | `/daily-report` | DailyReport | ทุก role |
 | ฝ่ายผลิต | `/oee-analytics` | OEEAnalytics | ทุก role |
 | ฝ่ายผลิต | `/daily-pm` | DailyPM | ทุก role |
+| ฝ่ายผลิต | `/improvements` | Improvements (Kaizen — ดู section "Improvements") | ทุก role (manage: admin/mgr/sv/leader) |
 | Logistic - Store | `/line-stock` | LineStock | ทุก role |
 | Logistic - Store | `/heijunka` | HeijunkaKanban | ทุก role |
 | Logistic - Store | `/rack-center` | RackCenter | ทุก role |
-| Logistic - Store | `/planner-sales` | PlannerSales | manager/supervisor/leader/qa/sale |
-| Logistic - Store | `/rundown-stock` | RundownStock | manager/supervisor/leader/qa/sale |
-| Logistic - Store | `/customer-demand` | CustomerDemand (Delivery) | manager/supervisor/leader/qa/sale |
+| Logistic - Store | `/planner-sales` | PlannerSales | manager/supervisor/leader/qa/sale/planner_store |
+| Logistic - Store | `/rundown-stock` | RundownStock | manager/supervisor/leader/qa/sale/planner_store |
+| Logistic - Store | `/customer-demand` | CustomerDemand (Delivery) | manager/supervisor/leader/qa/sale/planner_store |
+| การตรวจสอบและซ่อมบำรุง | `/mtn-repair` | MtnRepair — ใบแจ้งซ่อม MO 7 ขั้น (ดู section "MTN Work-Order") | ทุก role (ดู) · report/service/qa/approve/manage_master ตามสิทธิ์ |
 | การตรวจสอบและซ่อมบำรุง | `/pm-check` | PMCheckData | ทุก role |
 | การตรวจสอบและซ่อมบำรุง | `/pm-schedule` | PMSchedule | ทุก role |
 | การตรวจสอบและซ่อมบำรุง | `/mtn-layout` | MtnMachineLayout | ทุก role |
@@ -179,6 +188,7 @@
 ```
 
 **กฎการ link ข้ามระดับ:**
+- **แผนกที่ไม่ขึ้นกับ Section ใด (ขึ้นตรงฝ่าย) รองรับแล้ว (2026-07-13):** `org_nodes.kind='department'` ที่ `parent_id IS NULL` — สร้าง/ย้ายได้จาก OrgSetup (ตัวเลือก "🏛️ ขึ้นตรงฝ่าย" ในฟอร์ม + กลุ่ม "ขึ้นตรงฝ่าย" ในคอลัมน์ Section) · ข้อจำกัดโดยตั้งใจ: dropdown แผนกใน Register/operator เป็น cascade จาก section ของพนักงาน แผนกขึ้นตรงฝ่ายจึงไม่โผล่ที่นั่น (พนักงานฝ่ายผลิตต้องมี section เสมอเพื่อ scoping)
 - `production_lines.section` = `org_nodes.code` ของ section
 - `production_lines.parent_line_name` = `name` ของ production_line ระดับแผนก (เช่น 'HYDROFORM')
 - Department name ใน org_nodes ต้องตรงกับ parent production_line name เพื่อให้ Register กรอง LINE dropdown ถูก
@@ -195,18 +205,26 @@
 > ต่างกันแค่ position · ถ้าวันหน้าระดับต่างกันต้องได้**สิทธิ์**ต่างกันจริง ค่อยเพิ่ม role ใหม่ + แถวใน
 > role_permissions (ระบบรองรับ) — **ห้ามเพิ่ม role ตามชื่อตำแหน่งโดยที่ชุดสิทธิ์ไม่ต่างจาก role เดิม**
 
-8 roles ใน enum `user_role`: `admin, manager, supervisor, leader, qa, document_control, sale, display`
+11 roles ใน enum `user_role`: `admin, manager, supervisor, leader, qa, document_control, sale, mtn, engineer, planner_store, display`
 
-| Role | สิทธิ์หลัก |
-|------|-----------|
-| `admin` | ทุกอย่าง รวมถึง Add User, จัดการสิทธิ์ |
-| `manager` | ดูและแก้ไขได้ทุกหน้า ยกเว้น Add User/จัดการสิทธิ์ |
-| `supervisor` | จัดการเฉพาะ section ตัวเอง, Register พนักงาน, อนุมัติ 4M step 1 |
-| `leader` | เห็นเฉพาะ line/team ของตัวเอง |
-| `qa` | ดู Dashboard + Report, อนุมัติ 4M step QA |
-| `document_control` | จัดการเอกสาร CQI-15 |
-| `sale` | ทีมขาย — Planner & Sales, Delivery, Kanban, Dashboard (seed: `20260708_sale_role_demand_page_permissions.sql`) |
-| `display` | ดูอย่างเดียว (จอแสดงผลลอย ไม่ login เป็นคน) |
+> **ชื่อแสดงผลของ role ไม่ใช้คำตำแหน่งบริษัทแล้ว (2026-07-13)** — เพื่อไม่ให้ชนกับ `profiles.position`
+> ชื่อ/ไอคอน/สี/คำอธิบายทั้งหมดอยู่ที่ **`src/utils/roleMeta.js` จุดเดียว** (`ROLE_META`, `ROLE_OPTIONS`, `roleLabel()`)
+> — **ห้ามนิยาม label ของ role ซ้ำในหน้าใดๆ** (เคยซ้ำ 4 ไฟล์: App/DeptHub/AddUser/PermissionsManagement — รวมแล้ว)
+> รหัสใน DB (enum) คงเดิม เปลี่ยนเฉพาะการแสดงผล · ข้อความ UI ที่พูดถึง role ให้เรียกตามชื่อใหม่ ไม่เรียก Manager/Supervisor/Leader
+
+| Role (รหัสใน DB) | ชื่อแสดงผล | สิทธิ์หลัก |
+|------|-----------|-----------|
+| `admin` | 🛡️ ผู้ดูแลระบบ (System Admin) | ทุกอย่าง รวมถึง Add User, จัดการสิทธิ์ |
+| `manager` | 🏭 สิทธิ์ทั้งฝ่าย (Full Access) | ดูและแก้ไขได้ทุกหน้า ยกเว้น Add User/จัดการสิทธิ์ |
+| `supervisor` | 🏢 สิทธิ์ระดับส่วน (Section Scope) | จัดการเฉพาะ section ตัวเอง, Register พนักงาน, อนุมัติ 4M step 1 |
+| `leader` | 👥 สิทธิ์ระดับไลน์ (Line/Team Scope) | เห็นเฉพาะ line/team ของตัวเอง |
+| `qa` | ✅ งานคุณภาพ (Quality) | ดู Dashboard + Report, อนุมัติ 4M step QA |
+| `document_control` | 🗂️ งานเอกสาร (Document Control) | จัดการเอกสาร CQI-15, ปฏิทินบริษัท |
+| `sale` | 🚚 ขาย-จัดส่ง (Sales & Delivery) | ทีมขาย — Planner & Sales, Delivery, Kanban, Dashboard (seed: `20260708_sale_role_demand_page_permissions.sql`) |
+| `mtn` | 🔧 ซ่อมบำรุง (Maintenance) | ทีมซ่อมบำรุง (MTN/JIG/DIE) — หน้า PM ทั้งหมด, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร (seed: `20260713_mtn_role.sql`) |
+| `engineer` | ⚙️ งานวิศวกรรม (Engineering) | process engineering — Product Master `products:create/edit` (BOM/EC/New Model) โดยไม่พ่วงอำนาจจัดการผลิต/อนุมัติ QA/งาน PM · **ตั้งใจไม่รวมกับ qa/mtn** เพราะอำนาจอนุมัติคุณภาพกับ master เครื่องจักรต้องแยกคนถือ (seed: `20260713_engineer_planner_store_roles.sql`) |
+| `planner_store` | 📦 แผนงาน-คลัง (Planner & Store) | ฝั่งคลัง/แผนงาน — Store, Kanban, Rack, Rundown, อัพโหลด Forecast (`heijunka:operate`, `line_stock:issue/manage_rounds`, `rack_center:operate`, `demand:upload`) — แยกจาก `sale` ที่โฟกัส Delivery/Ship-to (seed เดียวกัน) |
+| `display` | 📺 จอแสดงผล (View Only) | ดูอย่างเดียว (จอแสดงผลลอย ไม่ login เป็นคน) |
 
 ### สิทธิ์ตามหน้า/action — `role_permissions` (data-driven, ไม่ hardcode)
 
@@ -227,9 +245,19 @@
 - UserContext ส่ง `sections` = array ผลลัพธ์สุดท้าย (`[]` = ไม่จำกัด) — ในหน้าเช็คด้วย `scopeSecs.length` แล้วกรองด้วย `inSectionScope(scopeSecs, value)` (เทียบ trim+lowercase) หรือ `.in('section', scopeSecs)` ใน query
 - `leader` ยังผูก `profiles.line_id` + `team` เหมือนเดิม ไม่เกี่ยวกับ sections — เช็ค branch ของ leader **ก่อน** branch ของ scope เสมอ
 - AddUser.jsx: ช่อง Section เป็น checkbox เลือกหลายอันได้ทุก role และ**ยังเขียน `section` เดี่ยว (= ตัวแรกที่ติ๊ก) คู่กันเสมอ — ห้ามเลิกเขียน** เพื่อให้ revert โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope · supervisor ยังบังคับติ๊กอย่างน้อย 1 (Edge Function `create-user` ยังไม่รู้จัก sections — AddUser update ตามหลังด้วย id ที่ได้กลับมา)
-- หน้าที่ปิดช่องโหว่แล้ว: Management, Checkin, operator, Register, DailyReport (Live/History/Export), Report (ครบทั้ง 10 แท็บ — รายวัน/รายพนักงาน/Log จุดงาน/สรุปช่วงเวลา/4M + สิทธิ์อนุมัติ SV/Skill Matrix/ค่าฝีมือ/ใบบันทึก/Multi-Skill Form/จองรถ OT — 2026-07-10), ShiftOrganize (ตารางกะ/override/merge event/dropdown ใน modal — 2026-07-10) — pattern: mandatory scope filter ก่อน แล้วค่อย apply free-text filter ทับ
+- หน้าที่ปิดช่องโหว่แล้ว: Management, Checkin, operator, Register, DailyReport (Live/History/Export), Report (ครบทั้ง 10 แท็บ — รายวัน/รายพนักงาน/Log จุดงาน/สรุปช่วงเวลา/4M + สิทธิ์อนุมัติ SV/Skill Matrix/ค่าฝีมือ/ใบบันทึก/Multi-Skill Form/จองรถ OT — 2026-07-10), ShiftOrganize (ตารางกะ/override/merge event/dropdown ใน modal — 2026-07-10), OEEAnalytics, LineSetup, EventLog, Improvements, Dashboard, MachineDatabase (2026-07-12 — user ยืนยัน: Dashboard/MachineDatabase ก็กรอง ใครไม่มี scope เห็นหมดเหมือนเดิม) — pattern: mandatory scope filter ก่อน แล้วค่อย apply free-text filter ทับ
 - หน้าใหม่ที่ query ข้อมูลตาม line/section **ต้องเพิ่ม scope filter แบบเดียวกัน** ไม่งั้นเห็นข้อมูลข้ามส่วนงานโดยไม่ตั้งใจ
 - Rollback: `docs/ROLLBACK_MULTI_SECTION_SCOPE.md` — **ห้าม drop คอลัมน์ `sections` ก่อน revert โค้ด** (App.jsx select คอลัมน์นี้ตอน login ถ้า drop ก่อนจะ login ไม่ได้ทั้งระบบ)
+
+### Auth Session & Auto-Logout (กติกาสำคัญ — 2026-07-14 หลังไล่แก้ "เด้ง login บ่อย")
+
+- Session เก็บใน **localStorage** (default ของ supabase-js) แชร์ทุกแท็บของ browser เดียวกัน — **ห้ามเปลี่ยนเป็น sessionStorage** (แท็บใครแท็บมันจะถือ refresh token คนละก๊อปปี้ พอ token หมุนแท็บเก่าหลุดเงียบๆ — ดู comment ใน `src/supabaseClient.js`)
+- **`signOut` ทุกจุดต้องใช้ `{ scope: 'local' }`** — default คือ `global` ซึ่ง revoke refresh token ของ user นั้น**ทุกเครื่อง** → account ที่ใช้ร่วมกันหลายจุดในโรงงานโดนเด้งพร้อมกันหมดทุกครั้งที่เครื่องเดียว logout/auto-logout (เคยเป็นสาเหตุหลักของ "เด้ง login บ่อย")
+- **Auto-logout (`useAutoLogout` ใน App.jsx):** idle 30 นาที → modal เตือน 5 นาที → logout (role `display` ยกเว้น) โดย:
+  - นับ idle **ร่วมกันทุกแท็บ** ผ่าน `localStorage['esm-last-activity']` (เขียน throttle 5 วิ + ฟัง storage event) — ห้ามกลับไปนับต่อแท็บ ไม่งั้นแท็บที่เปิดทิ้งไว้จะ logout ทั้งที่ user ใช้งานอีกแท็บอยู่
+  - ระหว่าง countdown ถ้ามี activity (เมาส์/คีย์/แตะจอ — แท็บไหนก็ได้) → ปิดคำเตือนอัตโนมัติ ไม่ต้องกดปุ่ม
+- อยากปรับระยะ idle → แก้ `IDLE_TIMEOUT_MS`/`WARN_DURATION_MS` ใน App.jsx จุดเดียว
+- **เพดานเวลา login ตามกะ (2026-07-15):** role หน้างานที่ทำงานสลับกะ+ใช้เครื่องเช็คชื่อร่วมกัน (`leader`+`supervisor`) จะถูก **เตะออกทันทีเมื่อเลย "สิ้นกะที่ตอน login + 60 นาที"** ไม่สนใจ idle (กะเช้า 08:00–19:59 → หมดอายุ 21:00 · กะดึก 20:00–07:59 → หมดอายุ 09:00 เช้าถัดไป) — แก้ปัญหาหัวหน้ากะก่อนไม่ logout แล้วคนกะใหม่มาเช็คผิด session · stamp เวลา login ที่ `localStorage['esm-session-started']` ตอน `SIGNED_IN` (ล้างตอน signout) · admin/manager/office/display **ไม่โดน** (ทำงานเครื่องตัวเอง มี idle-logout คุมพอ) · ปรับขอบเขตที่ list `shiftCapped` + ค่า `SHIFT_GRACE_MS`/`shiftDeadlineFrom()` ใน App.jsx
 
 ---
 
@@ -250,13 +278,229 @@ Reject → status: "rejected" + reject_reason
 
 ---
 
+## Logistic — Planner & Sales / Delivery / Rundown Stock (2026-07-10..11)
+
+โมดูลติดตามการส่งงานลูกค้า (ตารางทั้งหมดอยู่ **DR project**) — 3 หน้า:
+`/planner-sales` (Sales อัพโหลด Forecast 830 / Order 862 + Forecast Planner) ·
+`/customer-demand` = **Delivery** (Shipping Chart + Ship-to Config) · `/rundown-stock` (Balance FG รายวัน)
+
+### กฎธุรกิจที่ห้ามทำพัง
+
+- **กรอบวันงาน 08:00 → 08:00 วันถัดไป** — order ที่ `ship_time < 08:00` ของวันถัดไปนับเป็นกะดึกของวันงานนี้
+- **สถานะรอบส่ง (chain เดียว ห้ามข้าม):** `pending → confirmed → prepared → loaded → shipped`
+  ตรงกับ 4 activity ของ walkback (`shipping_workflow_steps` — default: ยืนยันออเดอร์ −240 นาที →
+  เตรียมเสร็จ −120 → โหลดขึ้นรถ −60 → ถึงลูกค้า 0 · override รายลูกค้าได้ เพิ่ม/ลดจำนวนเฟสได้)
+- **เลยเวลา (แดง):** ยังไม่ shipped และ (ก) เป็นวันงานปัจจุบันและเลยเวลาส่งแล้ว หรือ (ข) **เป็นวันงานที่ผ่านมาแล้ว
+  — แดงเสมอทั้งวัน** ห้ามผูกกับ `isToday` อย่างเดียว (เคยพัง: พอข้ามวัน ใบตกดิวกลายเป็นเหลือง "รอยืนยัน"
+  และตัวนับเลยเวลา = 0) · เฟส walkback ที่ไม่เสร็จของวันเก่านับ "หลุดเฟส" เช่นกัน
+  · หัวหน้า Delivery มีปุ่มแดง "⏰ ค้างส่งจากวันก่อน N ใบ" (สแกนย้อน 14 วัน กดกระโดดไปวันนั้น)
+- **order ไม่ระบุเวลา (`ship_time = null`):** ไม่เดาเวลาให้ (จะหลอก walkback/phase alert) —
+  บนชาร์ตรวมเป็นชิป ⏳ ท้ายแถว, การ์ดโชว์ "⏳ ไม่ระบุเวลา"
+- **แจ้งเตือนหลุดเฟสเป็นหน้าที่ scanner ฝั่ง server** (`shipping-phase-scan` pg_cron ทุก 10 นาที
+  + dedup ใน `shipping_phase_alerts`) — ห้ามย้ายกลับมา client (ทำงานแม้ไม่มีใครเปิดหน้า)
+
+### วงจร FG stock (ครบ loop — ห้ามตัดขาตอนแก้)
+
+```
+สแกนปิดออเดอร์ผลิต (prod_orders → confirmed)
+  → trigger trg_post_confirmed_output post เข้า stock ปลายทางทันที ไม่รอปิดกะ
+    (กฎปลายทาง stock_inflow_rules: MAT ขึ้นต้น 1 → FG WAREHOUSE · 2 → STORE ·
+     ปรับได้ที่ Store management → ⚙️ รับเข้าอัตโนมัติ · กันซ้ำด้วย ref_order_id)
+  → Shipping Chart เห็น stock พร้อมส่งต่อรอบ (FIFO ตามเวลาส่ง): เขียวครบ / เหลืองขาดบางส่วน /
+    🚨 แดง "ไม่มี stock ต้องผลิต!" (ห้ามปล่อยใบไม่มี stock เงียบ) + ตัวนับ "N รอบ stock ไม่พอ"
+  → กด "ส่งแล้ว" หัก stock อัตโนมัติ (line_stock_transactions type consume)
+  → Rundown Stock: Balance วัน D = stock ตอนนี้ − order ค้างส่งสะสม (ค้างเก่ารวมเข้าวันนี้
+    เรียงพาร์ทที่จะขาดเร็วสุดขึ้นบน) — realtime ไม่ต้องรอปิดกะ
+```
+
+- การจับคู่เลขพาร์ทลูกค้า → mat ภายใน: normalize (ตัด ขีด/ช่องว่าง, uppercase) เทียบ `p_no`
+  ใน kanban_standards/dr_products — FG (ขึ้นต้น 1) ชนะ child · จับคู่ไม่ได้ = เก็บด้วยเลขพาร์ทลูกค้าไปก่อน
+- นำเข้า EDI ซ้ำ = **แทนที่ฉบับเดิมของ ship-to เดียวกัน** (ยอดไม่ทบ) เก็บใบที่เลย pending ไปแล้วเสมอ
+- การปรับ stock ที่กรอกมือ (type adjust) เข้าคิว ⏳ รออนุมัติก่อนมีผลต่อยอด — auto movement ไม่เข้าคิว
+- แจ้งเตือน Telegram ผ่าน framework `notification_rules` category `logistic`:
+  `edi_import`, `shipping_shipped`, `shipping_overdue`, `shipping_phase_alert`
+
+---
+
+## Daily Report — ออเดอร์ manual สำหรับไลน์ไม่มี kanban card (2026-07-12)
+
+ไลน์บางไลน์ (เช่น HDF1 ที่ส่งงานต่อ LASER CUT 123) **ไม่มีเลข SAP order ให้สแกน** เปิด-ปิดใบแบบปกติไม่ได้:
+
+- ปุ่ม "✍️ เปิดเป้า (ไม่มีบาร์โค้ด)" ข้างปุ่ม Scan เปิด Order — leader ตั้งเป้า (เลือกสินค้า + จำนวน) → สร้าง `prod_orders` ที่ `is_manual=true`, `prod_no='MANUAL-HHmmss'`, `qty_target`=เป้า, `qty`=เป้า (ใช้กับ capacity check/บอร์ดเหมือนใบปกติ) · มี ⏪ **เปิดย้อนหลัง**เหมือนใบสแกน (บังคับกรอกเวลา + กันหลุดกรอบกะ + `opened_at` anchor กับ work_date — helper ร่วม `backfillIsoFromTime` · 2026-07-13) · **งานคู่ RH/LH**: สินค้ามี `pair_mat_no` → ถาม confirm แล้วเปิดเป้าคู่ให้อัตโนมัติ (`prod_no`+`P`, ผูก `paired_order_id` สองทาง, sync `opened_at`) รองรับคู่**คนละไลน์** — เปิดเข้า session ที่เปิดอยู่ของไลน์คู่ (วัน/กะเดียวกัน) ถ้าไลน์คู่ยังไม่เปิดกะจะเตือนให้ไปเปิดเอง (2026-07-13)
+- พนักงาน**อัพเดทยอดสะสม (`qty_actual`) ทุกช่วงเบรคตาม break policy** จากช่องบนการ์ดใบ — เห็นยอดจริงทุก ~2 ชม. · `qty_updated_at` เก็บเวลาล่าสุด ใบที่ไม่อัพเดท > 2.5 ชม. ขึ้นเตือนเหลือง (นิ่ง — ตาม Andon เหลืองไม่กระพริบ)
+- ปิดใบด้วยปุ่ม "✓ ปิดใบนี้ (ยอดจริง)" (ไม่ต้องสแกน) → `status=confirmed`, **`qty` และ `qty_ok` ถูกแทนด้วยยอดจริง** เพื่อให้ OEE/รายงาน/stock trigger (`coalesce(qty_ok, qty)`) นับจากของที่ผลิตได้จริง — เป้าเดิมยังอยู่ที่ `qty_target`
+- ใบ manual ที่ค้างเปิดตอนปิดกะ เข้า flow ยกยอด/กรอก actual ของ modal ปิดกะเหมือนใบปกติ
+- **ยอดสะสมของใบ manual ที่ยังเปิด ถูกนับเข้า "ผลิตได้"/ความคืบหน้า/แยกตามชิ้นงาน ทันที** (ไม่ต้องรอปิดใบ — ไม่งั้นเห็น 0 ทั้งกะ) และ**ทุกครั้งที่กรอกถูก log ลง `prod_order_qty_updates`** (qty_accum, qty_delta, is_final, logged_at/by) → การ์ดใบโชว์ชิปประวัติต่อช่วง เช่น "10:00 · สะสม 200 (+200)" "12:00 · สะสม 480 (+280)" (migration `20260713_prod_order_qty_update_log.sql`)
+- **บนบอร์ด Heijunka (Dashboard/Management):** การ์ด manual ใช้ไอคอน ✍️ + ยอด `ทำได้/เป้า` และแถบ fill ในการ์ดวิ่งตาม qty_actual (ใบสแกนปกติแสดงเหมือนเดิม)
+- migration: `20260712_prod_orders_manual_mode.sql` (DR, additive — ใบสแกนปกติไม่กระทบ)
+
+### ถอยใบที่สแกนปิดไปแล้ว (revert confirmed → open) — 2026-07-15
+
+ปุ่ม **↩️ ถอยใบ** บนใบ `confirmed` ใน DailyReport (เคสจริง: หัวหน้ากลุ่มสแกนปิดเกินยอดที่ผลิตได้/ปิดผิดใบ):
+- เงื่อนไข: **เฉพาะกะที่ยังเปิดอยู่** (`selSession.status === 'open'`) — หลังปิดกะ/ส่งขออนุมัติ ยอด+OEE ถูก stamp ลง session แล้ว ถอยไม่ได้ · สิทธิ์ = `canEditRecords` (leader ตอนกะเปิด / manager+)
+- สิ่งที่ย้อนให้: status→open, ล้าง confirmed_by/at + qty_ok, ใบ manual คืน `qty = qty_target` (ยอดสะสม qty_actual คงไว้) + **ถอนแถว stock ที่ trigger `trg_post_confirmed_output` โพสต์อัตโนมัติ** (ลบ `line_stock_transactions` ที่ `ref_order_id`+`created_by='auto'`+`type='issue'` — ตัวกันโพสต์ซ้ำของ trigger เช็คจากแถวนี้ ลบแล้วสแกนปิดใหม่จะโพสต์ให้ใหม่ถูกต้อง)
+- Audit: `prod_orders.reopened_by/reopened_at/reopen_count` (migration `20260715_prod_orders_reopen_log.sql` DR) — การ์ดใบโชว์ชิป "↩️ เคยถอยใบ N ครั้ง · ชื่อ" เสมอ ให้หัวหน้าแผนกตรวจย้อนหลังได้ · update guard `.eq('status','confirmed')` กันถอยซ้ำสองเครื่องพร้อมกัน
+
+---
+
+## OEE (computeOEE ใน DailyReport) — กฎ P สำหรับหลาย MAT.NO (2026-07-14)
+
+- **ตรวจ parallel ระดับ "product" ไม่ใช่ระดับ MAT.NO** — MAT ที่เป็น product เดียวกันแตกตามลูกค้า (ชื่อชิ้นงานเดียวกัน เช่น FVL/FTM/AAT) คืองานตัวเดียวกันแค่ส่งแยกลูกค้า **ขึ้น parallel กันเองไม่ได้** ระบบรวมเป็นสายเดียวก่อน (จับกลุ่มด้วยชื่อ product จาก kanban_standards→dr_products) แล้วค่อยเช็ค overlap ระหว่าง "คนละ product จริงๆ"
+- **parallel = คนละ product ที่ window ทับกัน >15 นาที + >20% ของ window ที่สั้นกว่า** (จังหวะสแกนคาบเกี่ยวไม่นับ) — เช่น RH ที่ Line 60 + LH ที่ Line 61 ใน session ไลน์แม่ APRON ASSY · P แบบ parallel = Σ(qty×CT) ÷ Σ(run ต่อ product group) — **ห้าม mean เท่าๆ กัน** (งานแทรกเล็กเคยลาก P ทั้งกะจาก ~93 เหลือ 48)
+- ไม่เข้าเกณฑ์ = sequential: P = Σ(qty×CT) ÷ run ทั้งกะ (จับ idle ระหว่างงานด้วย)
+- บั๊กเดิม (ก่อน 2026-07-14) ทำ P ต่ำเกินจริงในกะ multi-MAT — แก้ย้อนหลังใน DB แล้ว 12 กะ (22/06–13/07) ด้วย SQL ที่ replicate สูตรแล้ว validate กับการคำนวณมือ
+
+### OEE Insight Engine — แท็บ 🧠 วิเคราะห์สาเหตุ ใน /oee-analytics (2026-07-14)
+
+`src/components/OeeInsightPanel.jsx` — วิเคราะห์ภาพรวมอัตโนมัติ (rule-based + สถิติ ไม่ใช่ ML) ตอบ "ทำไมยอดไม่ได้เป้า / pattern ไหนกระทบ OEE" จากกะที่ปิดแล้วย้อนหลัง 14/30/60/90 วัน (เลือกไลน์เดี่ยวได้ · รับ `lines` = `linesFull` ที่ scope แล้วจาก OEEAnalytics):
+1. **Loss decomposition** — แตกเป้าที่หาย (target−actual ของกะพลาดเป้า) เป็นชิ้นด้วย CT เฉลี่ยถ่วงน้ำหนักต่อกะ: Downtime นอกแผน (นาที×60÷CT, cap ที่ shortfall) / NG+สงสัย / เศษ = ความเร็วต่ำกว่า CT
+2. **Downtime เรื้อรัง** — จับกลุ่ม ชนิด×เครื่อง ที่เกิด ≥3 กะ (top 3 ตามนาที) · นับเฉพาะนอกแผน
+3. **กะเช้า vs กะดึก** — ต่างเฉลี่ย ≥5 จุด (ทั้งคู่ ≥3 กะ) + ชี้ตัวต่างหลัก A หรือ P
+4. **วันในสัปดาห์ DT หนักผิดปกติ** — เฉลี่ยนาที/วัน > 1.6× ค่ากลาง (n ≥2 วัน)
+5. **คนขาด ↔ OEE** — เทียบกะวันมีคนขาด (จาก daily_production_logs ฝั่ง Main ผูกผ่าน employees.line_id — best-effort try/catch) vs วันคนครบ ต่าง ≥5 จุด
+6. **Product วิ่งช้าซ้ำ** — P<75 ใน ≥3 กะที่มี product เดียว (ชี้ CT master ตั้งเร็วเกิน/micro-stop)
+7. **NG กระจุกประเภทเดียว** — ประเภท top ≥50% ของ NG รวม ≥20 ชิ้น
+- ทุก insight มีหลักฐานตัวเลขแนบ (นาที/ชิ้น/จำนวนกะ) เรียงตาม severity (high/med/info) แล้วตาม impact · <3 กะ = "ข้อมูลยังไม่พอ" ไม่เดา · เกณฑ์ตัวเลข (threshold) อยู่ในไฟล์ component จุดเดียว
+
+---
+
+## Improvements — โปรเจคปรับปรุง Kaizen (2026-07-12)
+
+หน้า `/improvements` (กลุ่มฝ่ายผลิต) — บันทึกโปรเจคปรับปรุงผูกกับปัญหาจริง แล้ว**เทียบผลก่อน/หลังจากข้อมูลที่เกิดจริงอัตโนมัติ** ไม่ต้องกรอกผลเอง
+
+- ตาราง `improvements` อยู่ **DR project** (anon-open ตาม convention) + bucket `improvement-images` (cap 5MB, รูปบีบ 1280px q0.85 ก่อนอัปโหลด, เปลี่ยน/ลบแล้วลบไฟล์เก่าเสมอ) — migration: `20260712_improvements_module.sql` (DR) + `20260712_improvements_page_permissions.sql` (Main)
+- จุดยึดโปรเจค: `line_name` + `problem_source` (downtime/defect) + `problem_type_id` (→ `dr_downtime_types`/`dr_defect_types`) + optional `machine_no`/`mat_no` + `start_date` (วันเริ่มแก้) + `baseline_days` (หน้าต่างเทียบ 14/30/60/90 วัน)
+- **สูตรเทียบผล:** ก่อน = [start−baseline, start) · หลัง = [start, min(วันนี้, start+baseline)] — ดึง `downtime_logs.duration_min` หรือ `defect_logs.qty_ng` ผ่าน session ของไลน์ แล้วหารด้วย**จำนวนวันที่มีการผลิตจริง** (นับจาก `production_sessions`) ไม่ใช่วันปฏิทิน — แสดง % ลด/เพิ่ม + แถบเทียบ ก่อน(แดง)/หลัง(เขียว)
+- ตอนสร้างมี**พาเรโต้ Top 10** ของไลน์ (ตามหน้าต่างเดียวกัน) คลิกเลือกปัญหา → prefill เป้าโปรเจค + ตั้งชื่อให้อัตโนมัติ
+- สถานะ: `monitoring` (เหลือง นิ่ง) → `done` (เขียว พร้อม result_note) / `cancelled` — snapshot ชื่อปัญหาไว้ใน `problem_label` กัน master ถูกลบ
+- **Milestone/Gantt ต่อโปรเจค (2026-07-14 — คำสั่ง user: ไม่ใช่ฟอร์มทีเดียวจบ ต้องตามงานทีมแบบ gantt):** ตาราง `improvement_milestones` (DR, migration `20260714_improvement_milestones.sql`) — โปรเจคใหม่ seed ขั้นงานมาตรฐาน **PDCA 5 ขั้น** กระจายวันตาม baseline อัตโนมัติ (แก้/เพิ่ม/ลบอิสระ) · การ์ดมีแผง "🗓 แผนงาน x/y ขั้น" + progress + gantt ในตัว: แถบตามแผนสีตามสถานะ (กดป้ายวน todo→doing→done, stamp `done_at`), เลยแผน = แดง "⚠ เลยแผน", เส้นวันนี้สีชมพู (playhead convention) · พาเรโต้: งานในแผน priority รอง (จาง+ป้าย 📅 ในแผน) และแต่ละแถวโชว์ note พนักงาน 💬 (สำคัญกับ "อื่นๆ")
+- สิทธิ์: ทุก role เข้าดูได้ · สร้าง/แก้/ลบ/เปลี่ยนสถานะ + จัดการ milestone = `can('improvements','manage')` (seed: admin/manager/supervisor/leader)
+- Scope: leader เห็นเฉพาะ family ไลน์ตัวเอง · role อื่นกรองตาม `sections` (pattern มาตรฐาน)
+- **เชื่อมกับ MTN Work-Order (2026-07-14):** `problem_source = 'mtn'` (migration `20260714_improvements_mtn_source.sql` ขยาย check constraint) → วัดผลก่อน/หลังจาก**ใบซ่อม MO** (จำนวนใบ + นาที breakdown จาก `mtn_orders`) แทน downtime/defect · พาเรโต้ตอนสร้างมีโหมด "ใบซ่อม MTN" (เครื่อง+อาการที่มีใบเยอะสุด) · การ์ดโชว์ชิป "🔧 ใบ MO N ใบ" (นับตั้งแต่ start_date) · ฝั่ง MtnRepair: ปุ่ม "💡 เปิดโปรเจคปรับปรุง" ใน DetailDrawer ส่ง prefill ผ่าน `sessionStorage['imp_prefill']` แล้ว navigate มา /improvements (เด่นเมื่อ step6 ติดตามได้ "เกิดปัญหาซ้ำ/แก้ไขไม่ได้") + ชิป "มีโปรเจคปรับปรุงกำลังทำ" บนใบของเครื่องที่มี improvement status=monitoring
+
+---
+
+## Morning Meeting — ประชุมแถวเช้า (2026-07-13)
+
+หน้า `/morning-meeting` (กลุ่มฝ่ายผลิต) — บอร์ดประชุมทบทวนเช้าก่อนเริ่มงาน **ข้อมูลดึงอัตโนมัติทั้งหมด ไม่ต้องทำสไลด์** วาระ: ภาพรวมเมื่อวาน (ผลิตจริง/เป้า, OEE, DT, NG, เข้างาน) → งานหลุดแผน+สาเหตุ → Top Downtime/ของเสีย → 4M → ความพร้อมเช้านี้ → Action items
+
+- **วันที่ default = วันงานล่าสุดที่จบ:** ก่อน 08:00 ใช้ `getWorkDate()` ตรงๆ (ยังเป็นเมื่อวาน) · หลัง 08:00 ถอย 1 วัน — ห้ามใช้ getWorkDate()-1 เสมอ (ช่วงประชุม 07:30-08:00 จะกลายเป็น 2 วันก่อน)
+- **แหล่งข้อมูล:** DR = production_sessions/prod_orders/downtime_logs/defect_logs · Main = four_m_logs/daily_production_logs · เป้าใบงาน = `qty_target ?? qty`, ยอดจริง = `qty_ok ?? qty_actual` · **เป้ากะ = `target_qty` → รวมเป้าใบงานของกะ (`qty_target ?? qty`) เท่านั้น** (เป้า 0 = แสดง "ไม่มีเป้า"/"—" ห้ามโชว์ 0% แดง) · ยอดจริงกะ = `qty_ok` → `actual_qty` → รวมจากใบงาน
+  - ⚠️ **ห้าม fallback เป้ากะไป `production_lines.std_day_shift`/`std_night_shift`** — ค่านั้นคือ **"จำนวนคนต่อกะ (headcount)"** ไม่ใช่เป้าจำนวนชิ้น (HYDROFORM=14 คน, GOR=11, Line60=6) · เคย fallback แล้วไลน์ไม่มีใบงานโชว์ "0/14 · 0%" ทั้งที่ควรเป็น "ไม่มีเป้า" (แก้ 2026-07-15 MorningMeeting + OEEAnalytics panel 3)
+  - **การ์ด/รายงาน DT ต่อไลน์-ต่อกะ นับเฉพาะ "นอกแผน"** เหมือน KPI รวม — planned (ไม่มีแผนผลิต/นับสต๊อก) ไม่ใช่ loss ห้ามเอามาคิด % หลัก/โป่งตัวเลขการ์ด (เคยโชว์ DT 569/1620น. สีแดงทั้งที่แค่ไม่มีแผนผลิต · OEEAnalytics 2.1 เคยโชว์รวม 5,512น. 38.68% ที่จริง 4,684น.เป็น planned) · 2.3 Top-by-part ก็กรอง planned ออก (ไม่งั้น "ไม่ระบุ MAT.NO" ครองอันดับ 1 · แก้ 2026-07-15)
+- **เช็คชื่อ:** `daily_production_logs.assigned_line` เก็บ **id จุดงาน ไม่ใช่ชื่อไลน์** — หาไลน์ของคนต้อง join `employees.line_id` (เคยพลาด query ตรงแล้วได้ 0/0)
+- **Downtime KPI นับเฉพาะ "นอกแผน"** (planned เช่น นับสต็อก/ไม่มีแผนผลิต แสดงแยกจางๆ ไม่นับใน % — ไม่ใช่ความเสียหาย ถ้ารวมจะกลบตัวเลขจริง) — ผลรวมนาทีทุกรายการทุกเครื่อง (เวลาซ้อนกันได้ เกิน 24 ชม./วันได้) แสดงเป็น **% เทียบฐานเวลาเครื่องรวม** = Σ ต่อกะที่เปิด (`shift_min` (fallback 570) × จำนวนเครื่องจากทะเบียน `machines` ของไลน์ ไม่มีทะเบียน = 1) · เกณฑ์สี <3% เขียว / 3-8% เหลือง / >8% แดง · Top Downtime แยกส่วน นอกแผน (แถบ+note) / ในแผน (จางท้ายแผง) · Top Downtime/ของเสีย แสดง note ของพนักงาน (description) ใต้แต่ละประเภท — สำคัญกับประเภท "อื่นๆ"
+- **กฎบังคับ (DailyReport):** บันทึก Downtime/งานเสียประเภทชื่อมี "อื่น" ต้องกรอกรายละเอียด (description) เสมอ ไม่งั้นบันทึกไม่ผ่าน — ไม่งั้นรายงาน/ประชุมเช้าอ่านไม่รู้เรื่อง (2026-07-13)
+- **สาเหตุงานหลุดแผน (อัตโนมัติ):** chip จาก downtime กะเดียวกัน (top ตามนาที), NG ของใบ, คนขาดของไลน์, 4M ค้างอนุมัติ, ใบยกยอด/ยังไม่ปิด — ปุ่ม "➕ Action" prefill เป็น action item (`ref_kind`/`ref_id` ผูกที่มา)
+- **Action items:** ตาราง `meeting_action_items` (Main — migration `20260713_morning_meeting.sql`) · รายการ open/doing จากวันก่อนโผล่ทุกประชุมพร้อมป้าย ⏮ จนกว่าจะปิด · เขียนได้เมื่อ `can('morning_meeting','record')` (seed: admin/manager/supervisor/leader)
+- **ความพร้อมเช้านี้:** เครื่องซ่อมค้างตอนนี้ (open DT จากกะ 3 วันล่าสุด — แดงกระพริบตาม Andon), 4M ค้างอนุมัติ (เหลืองนิ่ง)
+- **โหมดประชุม (📺):** full-screen ไล่วาระทีละสไลด์ (◀ ▶ / Esc) เนื้อหา component เดิม + `zoom: 1.3` สำหรับจอ TV · 🖨️ พิมพ์สรุป (pattern window.open + print เหมือน Report) · 📤 ส่งสรุป Telegram (event `morning_meeting`)
+- **📷 Gesture Mode (2026-07-15):** ควบคุมวาระด้วยท่ามือผ่านกล้อง (MediaPipe `@mediapipe/tasks-vision` GestureRecognizer) — ตัวหลัก = **☝️ ชี้นิ้วบอกทิศ+ค้าง 0.45s** (◀/▶ เปลี่ยนวาระ · ▲/▼ เลื่อนหน้า ค้างต่อ = เลื่อนต่อเนื่อง — ทิศอ่านจากเวกเตอร์ landmark 5→8 + เงื่อนไขชี้นิ้วเดียว เสถียรกว่าการปัดที่ภาพเบลอ), ✋ ปัดซ้าย/ขวา = เปลี่ยนวาระ (ตัวรอง — trail ทน track หลุด ≤220ms), 👍 ค้าง 0.6s = ถัดไป, ✊ ค้าง 0.9s = ออกจากโหมด · `src/components/GestureCam.jsx` · **กฎ:** opt-in เท่านั้น (ปุ่มในโหมดประชุม), ประมวลผลในเครื่อง 100% (ห้ามส่งภาพออก), โมเดล+WASM self-host ที่ `public/mediapipe/` (~19MB, cache 30 วันใน render.yaml — เปลี่ยนเวอร์ชันโมเดล = เปลี่ยนชื่อไฟล์), lazy-load ทั้งหมด (bundle หลักไม่บวม), มีจุดแดง+preview บอกว่ากล้องทำงานเสมอ, gesture ผูกได้แค่เปลี่ยนหน้า/ออกจากโหมด **ห้ามผูกกับ action ที่แก้ข้อมูล**
+- **Scope:** leader = family ไลน์ตัวเอง (branch มาก่อน) · role อื่นตาม `sections` — pattern มาตรฐาน
+
+---
+
+## Remote Control — จอตาม-มือถือคุม (2026-07-15)
+
+แก้โจทย์จอที่ไม่มีเมาส์/คีย์บอร์ด/กล้อง (Smart TV, โปรเจคเตอร์, จอบอร์ดหน้าไลน์) — **ใช้ได้ทุกหน้า** ผ่าน Supabase Realtime broadcast (channel `esm-remote-<รหัส 6 หลัก>`) ไม่มีตาราง/เซิร์ฟเวอร์ใหม่:
+
+- **ที่อยู่เมนู:** ลิงก์ 🎮 รีโมทจอ (ไปหน้า `/remote`) + ปุ่ม 📺 รับรีโมทจอ (จอตาม) **อยู่คู่กันโซนล่างสุดของ sidebar** (เหนือ Light Mode) — ทั้งคู่เห็นเฉพาะ role ที่มีสิทธิ์ `page:/remote` (default ทุก role, ปรับที่ `/permissions`) · `/remote` **ไม่อยู่ในเมนูหมวด/DeptHub** โดยตั้งใจ (เข้าจากลิงก์นี้เท่านั้น)
+- **ฝั่งจอ (Receiver):** ปุ่ม "📺 รับรีโมทจอ (จอตาม)" → สุ่มรหัส 6 หลัก (จำใน localStorage ข้ามรีเฟรช) + ป้ายสถานะมุมล่างซ้ายแสดงรหัส/สถานะเชื่อมต่อเสมอ · `src/components/RemoteReceiver.jsx` ฝังระดับ App (ใน Router) — จอ**ต้อง opt-in เอง** และกด ✕ ปิดได้ตลอด
+- **ฝั่งมือถือ:** หน้า `/remote` (🎮 รีโมทจอ) ใส่รหัสจากจอ → **Touchpad: ลาก 1 นิ้ว = เลื่อน pointer แดงบนจอ · แตะ = คลิก (elementFromPoint + native .click()) · ลาก 2 นิ้ว = scroll** + ปุ่ม ◀ ▶ Esc (ยิง KeyboardEvent — โหมดประชุมแถวเช้าฟัง keydown อยู่แล้ว) + ปุ่มเลื่อนขึ้น/ลง + ชิปสั่งจอกระโดดไปหน้าใดก็ได้ (เมนูจาก `navItemsForGroups` ชุดเดียวกับ sidebar — สิทธิ์เข้าหน้าคุมที่ฝั่งจอผ่าน RoleRoute ตามปกติ)
+- **กลไก pointer:** จอถือตำแหน่งเอง มือถือส่ง delta (throttle ~25Hz) · scroll เดินหา ancestor ที่ overflow แล้ว scrollBy ที่ตัวนั้น (รองรับ inner scroll container) · คลิกหา interactive ใกล้สุดด้วย `.closest('button, a, [role=button], input, ...')`
+- **ข้อควรระวัง:** ใครมีบัญชี ESM + รหัส 6 หลักที่เห็นบนจอ ก็สั่งจอได้ — จอเป็นฝ่ายเปิดรับเองเสมอ, รหัสโชว์บนจอเท่านั้น, ปิดเมื่อไม่ใช้ · migration สิทธิ์: `20260715_remote_page_permission.sql`
+
+---
+
+## MTN Work-Order — ใบแจ้งซ่อม MO 7 ขั้น (2026-07-14)
+
+หน้า `/mtn-repair` (`MtnRepair.jsx`, กลุ่มการตรวจสอบและซ่อมบำรุง) — **clone ระบบ AppSheet เดิม (Jig MTN) มาอยู่ใน ESM** เพื่อไม่ต้องแยกระบบ + เก็บฐานข้อมูลเดียวกัน · ตารางทั้งหมดอยู่ **DR project** (anon-open ตาม convention)
+
+- **Workflow 7 ขั้น (mirror ของเดิม):** 1 แจ้งซ่อม → 2 รับ/จ่ายงาน (**ออกเลข MO อัตโนมัติ**) → 3 ดำเนินการซ่อม → 4 ตรวจหลังซ่อม → 5 คุณภาพหลังซ่อม (**เฉพาะงานที่ step4 ระบุ "เกี่ยวกับคุณภาพ"** ไม่งั้นข้ามไป step6) → 6 รับมอบ/ติดตาม → 7 อนุมัติปิด (Close MO) · `status`: pending→assigned→repaired→checked→qa→handover→closed · `rejected` (step2 เลือก "Reject MO") · `current_step` 1..7 ใช้คิด % ความคืบหน้า
+- **เลข MO auto:** RPC `mtn_assign_mo_no(order_id, prefix)` (SECURITY DEFINER, idempotent — ออกเลขครั้งเดียวต่อใบ) ออกตอน step2 = `PREFIX-DDMMYY-ลำดับรายวัน` · prefix ตามประเภทงานซ่อม: BM(Breakdown)/IM(Improvement)/CM(Corrective)/PM(Preventive)/AM(Autonomous)/RE(Reject) · ลำดับ atomic ต่อวัน (ตาราง `mtn_mo_counter` keyed ด้วย DDMMYY เวลาไทย)
+- **ตาราง (DR):** `mtn_orders` (แถวเดียวต่อใบ เก็บครบ 7 ขั้น) · `mtn_order_parts` (log เบิกอะไหล่ต่อใบ + หัก stock) · master: `mtn_technicians` `mtn_spare_parts` `mtn_problem_types` (cascade ลักษณะปัญหา→รายละเอียด) `mtn_repair_types` `mtn_item_types` · `mtn_mo_counter` · migration `20260714_mtn_work_order.sql` (seed taxonomy 20 + ช่าง 8 + item/repair types)
+- **รูป/ลายเซ็น:** bucket **`mtn-images`** (DR, anon-open, cap 5MB) — รูปก่อน/หลังซ่อม/QA บีบ 1280px q0.85 ก่อนอัปโหลด (helper `resizeImage`) · ลายเซ็นต่อขั้น (step4/5/6/7) วาดใน `SignaturePad` (canvas→PNG) · ลบใบ = ลบไฟล์ที่ผูกทุกอัน (best-effort)
+- **KPI (คำนวณสดจาก timestamp ไม่เก็บ):** Response = accept−report · TTR = repair_done−accept · Breakdown = repair_done−report · แท็บ 📊 KPI มีการ์ดเฉลี่ย + พาเรโต้ลักษณะปัญหา Top 10 (กรองช่วงวัน/ไลน์)
+- **สิทธิ์ (role_permissions, migration `20260714_mtn_work_order_permissions.sql`):** `page:/mtn-repair`+`mtn_repair:report` = ทุก role · `mtn_repair:service` (step2-4) = admin/manager/mtn · `mtn_repair:qa` (step5) = admin/manager/qa · `mtn_repair:approve` (step7) = admin/manager · `mtn_repair:manage_master` (ช่าง/อะไหล่/taxonomy + ลบใบ) = admin/manager/mtn · ปุ่ม action แต่ละขั้นเช็ค `can()` ตามนี้ (ไม่ hardcode)
+- **เชื่อมกับ Downtime:** ปุ่ม "📝 เปิดใบซ่อม" ในแถว Downtime (DailyReport) → สร้าง `mtn_orders` prefill (ไลน์/เครื่อง/อาการจาก dt type) `status=pending`, `source_downtime_id` ผูกที่มา (กันเปิดซ้ำ) แล้ว MTN ไปรับงานต่อที่ `/mtn-repair`
+- **หลายทีมซ่อม (2026-07-14):** ครอบคลุม **PRODUCTION(Autonomous) / JIG MTN / DIE MTN / MTN** — `mtn_technicians.dept` (ทีมของช่าง, master แยกกลุ่มตามทีม) + `mtn_orders.mtn_dept` ("แจ้งถึงหน่วยงาน" auto จากชนิดอุปกรณ์: JIG→JIG MTN, DIE→DIE MTN, อื่น→MTN แก้ได้) · ฟิลเตอร์รายการตามหน่วยงาน · migration `20260714_mtn_multi_team.sql`
+- **Cost Center auto:** ดึงจาก `production_lines.cost_center` ตามไลน์ที่เลือก (fallback ไลน์แม่ถ้า sub-line ไม่มี) แก้ทับได้
+- **วันที่ (want_at/target_done_at) เป็น date-only:** input `type=date` (**ปฏิทิน ค.ศ.**) + echo "= DD/MM/พ.ศ." ใต้ช่องกันสับสน ปี · เก็บ/แสดงเฉพาะวันที่ ไม่มีเวลา
+- **ลายเซ็นใช้ซ้ำจากโปรไฟล์ (2026-07-14):** `SignField` default = ใช้ `profiles.signature_url` ของ user (ไม่สร้างไฟล์ใหม่ทุกครั้ง) · กด "เซ็นใหม่" เพื่อวาดเฉพาะกิจ (ค่อยอัปโหลด) — ลดไฟล์รูปสะสมมาก (เดิมเซ็น 4 ครั้ง/ใบ = 4 ไฟล์)
+- **แก้ไขหลังบันทึก:** DetailBox แต่ละสเตปมีปุ่ม ✏️ แก้ไข (StepModal `editMode` — อัพเดทเฉพาะฟิลด์ ไม่เลื่อนสถานะ/ไม่แจ้งซ้ำ) · สิทธิ์: `manage_master` (หัวหน้า) หรือผู้มีสิทธิ์ทำสเตปนั้น (ผู้กรอกแก้ของตัวเองได้)
+- **Spare part + stock control:** master `mtn_spare_parts` (code/name/unit/stock_qty/min_qty) + ledger `mtn_stock_txns` (in/adjust/consume) · แท็บอะไหล่: ➕รับเข้า / ปรับยอด (log ledger) + แถบแดงเมื่อ ≤ min · ขั้นซ่อมเบิกอะไหล่ = หัก stock + log consume อัตโนมัติ · migration `20260714_mtn_stock_txns.sql`
+- **แจ้งเตือน Telegram — ครบทุกสเตป (คำสั่ง user 2026-07-14):** edge function `send-mtn-notification` events `mtn_reported`(1,+รูปก่อน)/`mtn_assigned`(2)/`mtn_repaired`(3,+รูปหลัง)/`mtn_checked`(4)/`mtn_qa`(5,+รูป QA)/`mtn_handover`(6)/`mtn_closed`(7) · format mirror ระบบเดิม + หน่วยงานในหัวข้อ · วันที่ พ.ศ. · route ผ่าน notification_rules category maintenance (ตั้งค่า/ปิด/แก้ข้อความที่ `/notification-config`)
+- **พิมพ์ใบ MO / บันทึก PDF (100% ตาม template):** ปุ่ม 🖨️ ใน DetailDrawer → `printMoReport()` (window.open + print) layout **FM-JIG-008 เป๊ะ**: โลโก้ TS + หัวบริษัท 3 คอลัมน์ (ชื่อ/ใบแจ้งซ่อม+หน่วยงาน/MO NO) + ส่วน 1 ผู้แจ้ง | 2 รับงาน + 3 ซ่อม + BEFORE/AFTER + 4&5 คุณภาพ | 6 รับมอบ + ตารางอนุมัติ 4 ช่อง (JIG/MTN·QA·PD·MGR ช่อง MGR พื้นเทาเข้ม) + footer FM-JIG-008-REV.00 / Effective 05/12/2025 — เซฟ PDF จาก dialog พิมพ์เบราว์เซอร์
+- **Scope:** leader = family ไลน์ตัวเอง (branch มาก่อน) · role อื่นตาม `sections` — pattern มาตรฐาน
+- **ข้อมูลเก่า 677 ใบจาก Google Sheet ยังไม่ย้าย** (user เลือก "ย้ายทีหลัง") — ระบบเริ่มนับ MO ใหม่จาก 0
+
+---
+
+## PM Photo-Compare Inspection — ตรวจสภาพเครื่องด้วยการเทียบรูป "จับผิด" (2026-07-15, เฟส 1 ทดลอง)
+
+ตรวจสภาพเครื่องแบบ *photo-hunt*: เทียบ **รูปมาตรฐาน (สภาพดี)** กับ **สภาพจริงที่ถ่ายตอนตรวจ** เพื่อจับความผิดปกติที่มองเห็น (น้ำมันรั่ว/การ์ดเปิด/ของหาย/สภาพเปลี่ยน) — คนเป็นผู้ตัดสิน เว็บช่วยให้เทียบง่าย · ต่อยอดเข้า `/pm-check` เดิม ไม่ใช่หน้าใหม่
+
+- **รูปมาตรฐาน = `jig_checkpoints.image_path`** (รูปอ้างอิงต่อจุดที่ตั้งใน PMSetup อยู่แล้ว) — ปุ่ม "📷 เทียบรูป" โผล่บนแถวจุดตรวจชนิด attribute/note **เมื่อจุดนั้นมี image_path** เท่านั้น
+- **Component: `src/components/PhotoCompareModal.jsx`** — 3 โหมดเทียบ: ↔ แบ่งซ้าย/ขวา (wipe slider) · ◐ ซ้อนจาง (fade) · 🔍 ไฮไลต์จุดต่าง (diff heatmap คำนวณ luminance ต่างในเบราว์เซอร์ — ตัวช่วยคร่าวๆ ไม่ใช่ AI, มุม/แสงต่างมากจะไฮไลต์เงาด้วย) · ถ่ายสดพร้อม **ghost overlay** รูปมาตรฐานช่วยเล็งมุม (getUserMedia facingMode environment) หรือ `<input capture>` สำรอง
+- **กฎเหล็กประหยัด storage — เก็บรูป "เฉพาะ NG" เท่านั้น** (ผ่าน = ทิ้งพิกเซล): modal คืน `{ verdict, blob }` · blob ถูกเก็บใน `evidenceBlobs` (state) เฉพาะตอน verdict='ng' · `handleSave` อัปโหลด blob → bucket `jig-images` path `evidence/<inspection_id>/<checkpoint_id>.jpg` แล้ว set `inspection_results.evidence_path` (best-effort try/catch ไม่ล้มการบันทึก) · การเลือก "ปกติ" ลบ blob ทิ้งทันที — **ห้ามเปลี่ยนเป็นเก็บทุกรูป** (250 รูป/วัน × 100KB ≈ 1.1GB/เดือน = เต็มแพลนฟรีใน 1 เดือน · เก็บเฉพาะ NG ~3% = 180MB/ปี)
+- รูปถ่ายบีบ **800px q0.72** ในตัว component (canvas→jpeg) ก่อนอัปโหลด · HistoryModal โชว์ thumbnail หลักฐานใต้ผล NG
+- schema: `20260715_inspection_evidence_photo.sql` (DR — เพิ่มคอลัมน์ `inspection_results.evidence_path` เดียว additive)
+- **เฟสถัดไป (ยังไม่ทำ):** Level 2 auto-diff ที่ align ภาพก่อน · Level 3 AI anomaly detection (ต้องสะสมรูปหลายเดือน + edge box/cloud API) — รูปหลักฐานที่เก็บตอนนี้เป็น data ตั้งต้นให้เทรนทีหลัง
+
+---
+
+## Employee Skills & EXP Farming (ย้ายฝั่ง server ทั้งหมด — 2026-07-13)
+
+ระบบสะสม EXP ทักษะพนักงานจากการทำงานจริง — **ห้ามเขียนคะแนน `employee_skills` จาก client นอกเหนือจาก
+2 flow ที่อนุญาต** (แก้สกิลใน modal พนักงาน + อนุมัติ/ปฏิเสธ level up ใน `/operator`) ทุกการเพิ่มคะแนน
+อัตโนมัติต้องเป็นฟังก์ชันฝั่ง DB เท่านั้น · migration: `20260713_skill_farming_server_side.sql` (Main)
+
+### กลไก (SQL functions บน Main project — ซอร์สอยู่ใน migration ข้างบน)
+
+| Function | รันโดย | ทำอะไร |
+|---|---|---|
+| `fn_daily_skill_farm(p_work_date?)` | pg_cron `daily-skill-farm` ทุกวัน 01:20 UTC (**08:20 ไทย** — หลังจบกรอบวันงาน 08:00) | +1 EXP/วัน ต่อ (พนักงาน, สกิล) ที่มาทำงานจริงที่สถานีที่มี `station_requirements.min_score >= 70` · cap 3 ชั้น: min_score / เพดานขั้น 24-49-74-99 / หยุดเมื่อมี `pending_level` · dedup ด้วย `last_daily_farm_date` (วันละครั้งเสมอ ไม่ว่าจะเรียกกี่รอบ) |
+| `fn_weekly_skill_update(p_week_start?)` | pg_cron `weekly-skill-update` จันทร์ 01:05 UTC (**08:05 ไทย**) + ปุ่ม 🔄 ใน `/operator` (สิทธิ์ `skills:run_weekly_update`) | ทำงาน ≥3 วัน/สัปดาห์ที่สถานีที่ต้องการสกิล → +2 (cap เพดานขั้น) · ชนเพดาน → สร้าง `skill_level_up_requests` + ตั้ง `pending_level` (หยุด farm จนกว่าจะ approve/reject) · ไม่ได้ทำงานเลยทั้งสัปดาห์ → decay −2 (floor 25) · **idempotent: สัปดาห์เดียวกันประมวลผลครั้งเดียว** (กันใน `skill_update_runs` — เรียกซ้ำได้ข้อความ "ประมวลผลไปแล้ว") |
+
+### Level Up flow
+
+```
+farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (to_level = 25/50/75/100) + pending_level
+   → อนุมัติใน /operator แท็บ ⬆️: to_level < 100 = can('skills','approve_levelup') (sv/mgr/admin)
+                                  to_level = 100 = can('skills','approve_levelup_100') (mgr/admin) + บังคับแนบเอกสารอบรม
+   → approved: score = to_level, pending_level = null · rejected: pending_level = null (farm ต่อจากคะแนนเดิม)
+```
+
+### กฎเหล็กของระบบนี้ (บั๊กที่เคยเกิด — ห้ามทำซ้ำ)
+
+- **ห้ามคืน daily farming ฝั่ง client** — เดิมอยู่ใน Checkin.jsx handleSave: กดบันทึกซ้ำ = +1 ซ้ำไม่จำกัด,
+  เหมาพนักงานทุกไลน์ทั้งโรงงาน (query ไม่ scope), และข้ามด่านอนุมัติ 25/50/75 ได้เอง → พนักงานสกิลอัพเร็วผิดปกติทั้งระบบ
+- **RPC ฝั่ง skill ทุกตัวต้อง guard สิทธิ์ในตัวฟังก์ชัน** (เช็ค `auth.uid()` + role จาก profiles — cron ที่ไม่มี JWT ผ่านได้)
+  และ **revoke EXECUTE จาก anon/PUBLIC** — เดิม anon key (ฝังใน JS bundle สาธารณะ) ยิง `fn_weekly_skill_update` ซ้ำได้ไม่ต้อง login
+- **job อัตโนมัติต้อง idempotent เสมอ** — เดิมเรียกซ้ำ = +2/−2 ซ้ำ · pattern: กันด้วย `skill_update_runs` (weekly)
+  หรือ dedup รายแถว (`last_daily_farm_date` — daily)
+- **pg_cron ใช้ UTC** — เวลาไทยต้อง −7 ชม. (เคยตั้ง `5 8 * * 1` แล้วได้จันทร์ 15:05 ไทยแทน 08:05)
+- คะแนนที่เฟ้อไปแล้วจากบั๊กเก่า**ไม่ได้ถูก reset อัตโนมัติ** — supervisor/manager ปรับมือได้จากแท็บ ⚙️ กำหนดสกิลใน `/operator`
+  (weekly decay จะค่อยๆ ดึงคะแนนคนที่ไม่ได้ทำงานจริงลงเอง)
+
+---
+
 ## Edge Functions
 
 ### `send-notification`
 - **Endpoint:** `POST /functions/v1/send-notification`
 - **Payload:** `{ event: "status_change", log: { ...four_m_log } }`
-- **Events อื่น:** `checkin_summary`, `prod_close`, `downtime`, `downtime_recovered`
-  - `downtime` — แจ้ง Telegram ทันทีที่พนักงานบันทึก Downtime ใหม่จากหน้า Daily Report (payload `{ event: "downtime", downtime: {...} }`) — คู่กับ alarm กระพริบแดงที่จุดเครื่องจักรบน Dashboard/Management (helper: `src/utils/downtimeAlarm.js` — alarm เฉพาะเมื่อ downtime ยังไม่ปิดรายการ ปิดรายการแล้วดับทันที)
+- **Events อื่น:** `checkin_summary`, `prod_close`, `downtime`, `downtime_recovered`, `downtime_call_mtn`, `downtime_open_15min`, `morning_meeting`
+  - `morning_meeting` — สรุปประชุมแถวเช้าจากหน้า `/morning-meeting` (payload `{ event, summary: {...} }` — ผลิตรวม/เป้า, OEE, DT, NG, งานหลุดแผน, action ค้าง) · rule/template แก้ได้จากหน้าตั้งค่าการแจ้งเตือน (deploy v30 2026-07-13)
+  - ⚠️ **Downtime notification overhaul (2026-07-14) — ลดสัญญาณรบกวน + เรียกช่างแบบตั้งใจ** (คำสั่ง user: แจ้งเยอะเกิน เบรคดาวน์เล็กน้อยก็แจ้ง + พนักงานลงย้อนหลังไม่ได้ตั้งใจเรียกช่าง):
+    - **บันทึก Downtime ใหม่ = ไม่แจ้ง Telegram ทันทีอีกต่อไป** (ทั้งปิดแล้วและเปิดค้าง) — ตัด `notifyDowntime` ตอน insert ใน `DailyReport.jsx handleAddDT`
+    - **ปิดรายการย้อนหลัง (ลงแล้วปิดเลย)** → เงียบ ไปสรุปตอนปิดกะแทน (`prod_close` มี downtimes[]/dt_total_min ครบอยู่แล้ว)
+    - **เปิดค้าง (ไม่ปิดรายการ)** → `downtime-open-scan` (DR pg_cron ทุก 5 นาที) แจ้ง `downtime_open_15min` เมื่อ `started_at` เกิน `dt_alert_config.open_alert_min` นาที (config ได้จากหน้า `/notification-config`, default 15) แล้ว stamp `open_alerted_at` กันซ้ำ → เตือน**เสียงหน้า Production** (Dashboard/Management)
+    - **ปุ่ม "📞 เรียกช่าง" ในแถว Downtime (DailyReport)** → `downtime_call_mtn` แจ้งทันที (set `call_mtn=true, call_mtn_at, call_mtn_by`) → เตือน**เสียงหน้า Maintenance** (MtnMachineLayout)
+    - **เสียงบนเว็บ:** `src/components/DowntimeSiren.jsx` (mode `call_mtn` / `open_15min`) — Web Audio วนจนกด "รับทราบ" (set `call_mtn_ack_at` / `open_ack_at`) · scope เสียงแยกหน้าตามคำสั่ง user (เรียกช่างดังหน้า MTN, เปิดค้างดังหน้า Production)
+    - `downtime_recovered` ยิงเฉพาะตอนปิดรายการที่**เคยถูกแจ้ง**แล้ว (`open_alerted_at` หรือ `call_mtn`) — ปิดรายการที่ไม่เคยดังก็เงียบ ไม่รก
+    - schema: `20260714_downtime_alert_v2.sql` (DR: คอลัมน์ open_alerted_at/open_ack_at/call_mtn*/ + ตาราง `dt_alert_config`) · cron: `20260714_downtime_open_scan_cron.sql` (DR) · rules: `20260714_downtime_notification_rules.sql` (Main)
+  - `downtime` — event เดิม (payload `{ event: "downtime", downtime: {...} }`) ยังมีอยู่แต่**เลิกยิงจาก DailyReport แล้ว** (เก็บไว้เผื่อ manual/backward compat) — คู่กับ alarm กระพริบแดงที่จุดเครื่องจักรบน Dashboard/Management (helper: `src/utils/downtimeAlarm.js` — alarm เฉพาะเมื่อ downtime ยังไม่ปิดรายการ ปิดรายการแล้วดับทันที)
   - **Person alarm (ไม่เกี่ยว Telegram):** marker คนบนผัง Dashboard/Management กระพริบด้วย helper `src/utils/personAlarm.js` — แดง = เช็คชื่อแล้วแต่ PPE ไม่ครบ (Management แสดงเป็นแถบเตือนเหนือผัง เพราะคน PPE ไม่ครบไม่เข้า pool), เหลือง = ย้ายจุด/ข้ามไลน์แล้ว 4M Man ยังรออนุมัติ (จับคู่คน↔log ด้วยชื่อใน description เพราะ four_m_logs ไม่มี employee_id)
   - `downtime_recovered` — แจ้งเมื่อรายการ Downtime ที่เปิดค้าง (ไม่มีเวลาจบ/ระยะเวลา) ถูกแก้ไขจนปิดรายการ = เครื่องกลับมารันได้ (เฉพาะเคสนี้ การแก้ไขทั่วไปไม่แจ้งซ้ำ)
   - `prod_close` — รองรับ field เสริม (start_time/end_time/shift_min, total_qty, qty_repair, oee_a/p/q, parts[], downtimes[], dt_count, dt_total_min, dt_carry[]) — ข้อความ Telegram จะสรุปครบเหมือนหน้าปิดกะ ทุก field optional เพื่อ backward compat
@@ -269,11 +513,13 @@ Reject → status: "rejected" + reject_reason
 
 | Function | Project | ทำอะไร |
 |---|---|---|
-| `daily-4m-summary` | Main | สรุป 4M รายวันส่ง Telegram (เวลา Bangkok) |
+| `daily-4m-summary` | Main | สรุป 4M รายวันส่ง Telegram — default = **work date เมื่อวาน** (ตัด 08:00 ตามกฎ getWorkDate ไม่ใช่วันปฏิทิน — แก้ 2026-07-12 v3) |
 | `send-cqi15-notification` | Main | แจ้งเตือน CQI-15 Event Log + approval แยกจาก send-notification |
 | `pm-daily-scan` | DR (pg_cron) | สแกน Daily PM alarm สีส้ม (เช็คไม่เสร็จตามเวลา) — เขียว/แดง event-driven จากแอป |
 | `pm-plan-reminder` | DR (pg_cron รายวัน) | เตือน Planned PM ตามขั้น 30/14/3 วัน/เกินกำหนด → POST ไป send-notification ฝั่ง Main |
 | `shipping-phase-scan` | DR (pg_cron ทุก 10 นาที) | สแกน shipping walkback phase misses บนกรอบวันงาน 08:00→08:00 |
+| `downtime-open-scan` | DR (pg_cron ทุก 5 นาที) | สแกน Downtime ที่เปิดค้างเกิน `dt_alert_config.open_alert_min` นาที → POST `downtime_open_15min` ไป send-notification ฝั่ง Main + stamp `open_alerted_at` กันซ้ำ (2026-07-14) |
+| `send-mtn-notification` | Main | แจ้งเตือนใบแจ้งซ่อม MO — events `mtn_reported`/`mtn_assigned`/`mtn_closed` · **แยกไฟล์จาก send-notification (กันไฟล์ใหญ่พัง) แต่ route ผ่าน notification_rules/telegram_channels เดียวกัน** → ตั้งค่า/ปิด/เลือกห้อง/แก้ข้อความได้จาก `/notification-config` (category maintenance) · payload `{ event, mo: {...} }` (2026-07-14) |
 
 ### `cleanup-orphan-photos` (Main project — 2026-07-09)
 - ล้างไฟล์กำพร้าใน bucket `employee-photos` = ไฟล์ที่ไม่มี `employees.image_url` / `line_layouts.image_url` ชี้ถึงแล้ว
@@ -286,10 +532,10 @@ Reject → status: "rejected" + reject_reason
 ## Storage & รูปภาพ (กติกาสำคัญ — 2026-07-09)
 
 - **อัปโหลดรูปทุกหน้าต้องผ่าน `ImageCropModal`** — รูปนิ่งถูก crop + บีบเป็น JPEG 480px q0.85 (~100KB) อัตโนมัติ
-  - **ข้อยกเว้นที่ตั้งใจ (crop ไม่เหมาะ):** รูปที่ต้องเห็นทั้งใบ/คมชัด ให้**บีบก่อนอัปโหลดแทน** — รูป jig/checkpoint (PMSetup), รูปหลักฐาน 4M/QA/เอกสาร level-up (Management/Report/operator: helper `resizeImage` 1280px q0.85) · drawing ฝั่ง QA รับ PDF ด้วยจึงไม่บีบ (≤20MB) · **ห้ามอัปโหลดรูปดิบโดยไม่บีบเลย**
+  - **ข้อยกเว้นที่ตั้งใจ (crop ไม่เหมาะ):** รูปที่ต้องเห็นทั้งใบ/คมชัด ให้**บีบก่อนอัปโหลดแทน** — รูป jig/checkpoint (PMSetup), รูปหลักฐาน 4M/QA/เอกสาร level-up (Management/Report/operator: helper `resizeImage` 1280px q0.85) · drawing ฝั่ง QA: **รูปบีบ 2560px/2.5MB/q0.9** (สเปคเดียวกับผัง — ต้องซูมอ่าน dimension ได้ · user ยืนยัน 2026-07-12 ว่าบีบได้), **PDF เท่านั้นที่ส่งดิบ** (≤20MB) · **ห้ามอัปโหลดรูปดิบโดยไม่บีบเลย**
   - **รูปผัง/layout (LineSetup, MtnMachineLayout) บีบเบากว่ารูปอื่น: 2560px / 2.5MB / q0.9** (2026-07-10) — layout มีจำนวนน้อยทั้งระบบ (≤20 รูป) แต่ต้องซูมอ่านรายละเอียดผังได้ **ห้ามลดกลับไป 1600px/0.5MB** เคยบีบแรงจนเบลอใช้งานไม่ได้ (รูปเดิมที่เบลอไปแล้วต้องอัปโหลดต้นฉบับซ้ำ ระบบไม่มีต้นฉบับเก็บไว้)
 - **GIF (รูปขยับ) ถูกส่งทั้งไฟล์โดยไม่แปลง** เพื่อคงการเคลื่อนไหว (วาดลง canvas จะเหลือเฟรมแรกเฟรมเดียว = การขยับหายเงียบๆ) — จำกัด ≤ 2MB **ทุกจุดที่รับ GIF** (ImageCropModal + LineSetup) **ห้ามถอด cap ออก** (GIF ไม่จำกัดขนาดเฉลี่ย ~4MB เคยกินครึ่ง bucket)
-- **เปลี่ยน/ลบรูปแล้วต้องลบไฟล์เก่าจาก storage เสมอ** (ลบ**หลัง** DB update สำเร็จเท่านั้น + best-effort ห้ามทำ flow หลักพัง) — ทำแล้วใน: operator.jsx (รูปพนักงาน), LineSetup.jsx (ผังไลน์ — เฉพาะผังของตัวเอง **ห้ามลบผังที่ยืมแสดงจากไลน์แม่**), ProductMaster.jsx (dr_products + parts_master — มี guard ไม่ลบรูปที่สินค้า/พาร์ทอื่นแชร์ URL เดียวกัน), QAInspectionSetup.jsx (replace/delete drawing + ลบทั้งโฟลเดอร์ตอนลบ part), PMSetup.jsx (ลบ jig = ลบรูปทั้งชุด frame-*/cp-*), SignatureModal.jsx (ลายเซ็นเก่า — เฉพาะโฟลเดอร์ user ตัวเอง) · หน้าใหม่ที่มีการเปลี่ยนรูปต้องทำแบบเดียวกัน ไม่งั้นไฟล์กำพร้าสะสม (เคยค้าง 117 ไฟล์ / 100MB เพราะอัปโหลดชื่อใหม่ `emp_<timestamp>` โดยไม่ลบของเดิม)
+- **เปลี่ยน/ลบรูปแล้วต้องลบไฟล์เก่าจาก storage เสมอ** (ลบ**หลัง** DB update สำเร็จเท่านั้น + best-effort ห้ามทำ flow หลักพัง) — ทำแล้วใน: DeptHub.jsx (รูปโปรไฟล์ user — bucket `avatars` **แยกจาก employee-photos โดยเจตนา** เพราะ cleanup-orphan-photos สแกน employee-photos เทียบ employees/line_layouts เท่านั้น ไฟล์ avatar ที่ไปอยู่ที่นั่นจะโดนลบ · migration `20260714_profiles_avatar.sql`), operator.jsx (รูปพนักงาน), LineSetup.jsx (ผังไลน์ ทั้งตอนเปลี่ยนผังและตอนลบไลน์ — เฉพาะผังของตัวเอง **ห้ามลบผังที่ยืมแสดงจากไลน์แม่**), ProductMaster.jsx (dr_products + parts_master ทั้งตอนเปลี่ยนรูปและตอนลบสินค้า — มี guard ไม่ลบรูปที่สินค้า/พาร์ทอื่นแชร์ URL เดียวกัน), QAInspectionSetup.jsx (replace/delete drawing + ลบทั้งโฟลเดอร์ตอนลบ part), PMSetup.jsx (ลบ jig = ลบรูปทั้งชุด frame-*/cp-*), SignatureModal.jsx (ลายเซ็นเก่า — เฉพาะโฟลเดอร์ user ตัวเอง), Management.jsx (รูปหลักฐาน OJT แนบทับ = ลบรูปเดิม), MtnMachineLayout.jsx (รูปโซน facility), Improvements.jsx (รูป before/after ทั้งตอนเปลี่ยนและตอนลบโปรเจค) · หน้าใหม่ที่มีการเปลี่ยนรูปต้องทำแบบเดียวกัน ไม่งั้นไฟล์กำพร้าสะสม (เคยค้าง 117 ไฟล์ / 100MB เพราะอัปโหลดชื่อใหม่ `emp_<timestamp>` โดยไม่ลบของเดิม)
 - **อุปกรณ์ PM ใช้ "รูปหลายมุม (spin)" เท่านั้น — ไม่มีโมเดล 3D แล้ว** (ถอดออก 2026-07-10 เพราะเกินจำเป็น + dep หนัก three/occt wasm 7.6MB): PMSetup อัปหลายรูปมุมต่างๆ (SpinAnnotator) ปักหมุดจุดตรวจต่อเฟรม, หน้าตรวจ (JigSpinCheck) ปัดหมุน+auto-play+หมุด sync checklist · คอลัมน์ vestigial `jigs.model_path`/`model_format` และ bucket `jig-images` (cap 40MB + mime GLB) ยังคงอยู่จาก migration เดิม (additive ไม่กระทบ) แต่**ไม่มีโค้ดใช้แล้ว** — ถ้าจะรื้อ 3D กลับมาให้ดู git history (`src/lib/model3d.js`, `src/components/Model3DViewer.jsx`)
 - **Quota Free plan (ต่อ project):** DB 500MB · Storage 1GB · Egress 5GB/เดือน — ตรวจล่าสุด 2026-07-10: Main DB 22MB (~4%), DR DB 18MB (~4%), Storage หลัก ~156MB (~15%) → พนักงาน ≤300 คน + อัตราข้อมูลโตปัจจุบัน อยู่ได้อีกหลายปี ถ้าใกล้เต็มค่อยอัป Pro ($25/เดือน = DB 8GB + Storage 100GB) โดยไม่ต้องย้ายระบบ
 
@@ -308,18 +554,27 @@ src/
 ├── index.css          # theme variables + CSS กลาง (.now-line/.now-chip, .dt-alarm-*, .person-alarm-*, .table-sticky)
 ├── supabaseClient.js  # 2 clients: supabase (Main) / supabaseDR (DR — anon เสมอ)
 ├── components/        # ของกลาง: Toast, ImageCropModal, MachineFloorMap, SpinAnnotator,
-│                      #   InternalTimeBoard, SignatureModal, TaxonomyManagerModal, ChangePasswordModal
-├── utils/             # กฎ/สูตรกลาง — permissions.js (can/canAccessPage), sectionScope.js,
-│                      #   markerScale.js, timeFrame.js, downtimeAlarm.js, personAlarm.js,
-│                      #   lineHierarchy.js, companyCalendar.js, otPeriods.js, dateFormat.js, useImgBox.js
+│                      #   InternalTimeBoard, SignatureModal, TaxonomyManagerModal, ChangePasswordModal,
+│                      #   DowntimeSiren (เสียงเตือน downtime — 2026-07-14)
+├── utils/             # กฎ/สูตรกลาง — permissions.js (can/canAccessPage), usePerms.js, sectionScope.js,
+│                      #   roleMeta.js (ชื่อ/สี role จุดเดียว), useIsMobile.js, markerScale.js, timeFrame.js,
+│                      #   downtimeAlarm.js, personAlarm.js, lineHierarchy.js, companyCalendar.js,
+│                      #   otPeriods.js, dateFormat.js, useImgBox.js
 ├── lib/               # logic เฉพาะโดเมน (pmNotify, pmDailyAlarm, pmExportPDF/Excel, changePointChecklist)
-└── pages/             # ~33 หน้า — ชื่อไฟล์ตรงกับ route (⚠️ operator.jsx ตัวพิมพ์เล็ก)
+└── pages/             # ~35 หน้า — ชื่อไฟล์ตรงกับ route (⚠️ operator.jsx ตัวพิมพ์เล็ก)
 
 supabase/
 ├── migrations/        # ทุกการเปลี่ยน schema ต้องมีไฟล์ที่นี่ (ดู docs/sql/00_schema_snapshot_*.sql = โครงตารางทั้งหมด)
-└── functions/         # 7 ตัว: send-notification, send-cqi15-notification, daily-4m-summary,
-                       #   create-user (deploy แล้วแต่ซอร์สอยู่บน dashboard), pm-daily-scan,
-                       #   pm-plan-reminder, shipping-phase-scan, cleanup-orphan-photos
+└── functions/         # 11 ตัว (ซอร์สอยู่ใน repo ครบแล้ว): send-notification, send-cqi15-notification,
+                       #   daily-4m-summary, create-user (v14 2026-07-13: admin-only + validate role
+                       #   กับ enum ผ่าน RPC get_user_roles ห้าม hardcode + เขียนโปรไฟล์ครบทุก field
+                       #   จังหวะเดียว), delete-user (admin-only · กันลบตัวเอง/ลบ admin),
+                       #   reset-user-password (admin-only · ตั้งรหัสใหม่ให้ user ที่ลืมรหัส —
+                       #   ห้ามใช้กับบัญชี admin · ปุ่ม 🔑 ใน modal แก้ไขของ /add-user · 2026-07-14),
+                       #   pm-daily-scan, pm-plan-reminder, shipping-phase-scan,
+                       #   downtime-open-scan (DR cron 5 นาที — เปิดค้างเกินเกณฑ์), cleanup-orphan-photos
+                       # หน้า Login แยก error "ไม่พบบัญชี" vs "รหัสผิด" ผ่าน RPC login_email_exists
+                       #   (anon เรียกได้ — enumeration trade-off ที่ตั้งใจ ดู migration 20260714)
 
 docs/                  # UI-CONVENTIONS.md (บังคับอ่านก่อนแก้ UI) · PERMISSIONS-DESIGN.md ·
                        #   ROLLBACK_*.md · sql/ (schema snapshot + seed อ้างอิง)
@@ -371,6 +626,10 @@ new Date().toISOString().slice(0,10)  // อาจได้วันที่ผ
 ```js
 getShiftInfo()  // object { shift, label } — กะเช้า 08:00-20:00 / กะดึก 20:00-08:00
 ```
+
+> **ฝั่ง SQL (DR project)** มี helper กลาง `work_date_bangkok()` (migration `20260714_work_date_bangkok_fallback.sql`)
+> = work date ไทยตัด 08:00 — trigger/function/default ใหม่ฝั่ง DR ที่ต้องการวันที่งาน **ให้ใช้ตัวนี้
+> ห้ามใช้ `current_date`** (คือ UTC — เพี้ยนช่วง 07:00-07:59 ไทย เคยเป็นบั๊กใน fn_post_confirmed_output)
 
 ### Skill Fit Scoring
 ```js
@@ -488,6 +747,22 @@ Environment Variables:
 > deploy ใหม่ = ไฟล์เก่าหายจาก server → แท็บเก่าเปลี่ยนหน้าแล้วโหลด chunk พัง → React ล่มเป็นจอดำเงียบๆ
 > `src/main.jsx` มีตัวจัดการแล้ว: `vite:preloadError` → auto reload 1 ครั้ง (กัน loop 30 วิ) + `RootErrorBoundary`
 > แสดงหน้า "โหลดหน้าใหม่" แทนจอดำ — **ห้ามถอดออก** และ error อื่นที่ไม่ใช่ chunk จะโชว์ข้อความ error ให้ debug ได้
+>
+> ⚠️ **กับดักที่สอง — แท็บใหม่ (ctrl+click) ได้เวอร์ชันเก่าจาก browser cache (แก้แล้ว 2026-07-12):**
+> เบราว์เซอร์ cache index.html แบบเดา (heuristic) ได้ถ้า server ไม่ส่ง Cache-Control → แท็บใหม่บูตแอปเวอร์ชันเก่า
+> คลิกอะไรก็เงียบ · แก้ 2 ชั้น **ห้ามถอดทั้งคู่**: (1) **version guard** ใน `src/main.jsx` เทียบ `__BUILD_ID__`
+> (จาก `vite.config.js` define + emit `dist/version.json`) กับ `/version.json` (no-store) ตอนเปิด+กลับมาโฟกัสแท็บ
+> ไม่ตรง = reload อัตโนมัติ · (2) `render.yaml` ตั้ง header: `/*` = no-cache, `/assets/*` = immutable
+> (ถ้า service ไม่ได้สร้างจาก Blueprint ต้องตั้ง 2 rules นี้เองใน Render dashboard → Redirects/Headers)
+>
+> ⚠️ **กับดักที่สาม — เปิดหลายแท็บแล้วบางแท็บหลุด login เงียบๆ เป็น "หน้าผี" (แก้แล้ว 2026-07-14):**
+> เดิม auth ฝั่ง Main เก็บใน `sessionStorage` (แยกต่อแท็บ) → หลายแท็บถือ refresh token คนละก๊อปปี้
+> พอ token หมุน แท็บที่ถือของเก่าโดนปฏิเสธ → query ฝั่ง Main ล้มหมดแต่ฝั่ง DR (anon) ยังขึ้น
+> (อาการชี้ตัว: เลขไลน์/downtime ขึ้น แต่เช็คชื่อ/4M เป็น 0 + ชิปเมนูและป้าย role หาย)
+> แก้: `supabaseClient.js` ใช้ localStorage (default — **ห้ามเปลี่ยนกลับ**, ความปลอดภัยเครื่องส่วนกลาง
+> มี auto-logout idle 30 นาทีคุมแทน) + `fetchProfile` ใน App.jsx เป็น fail-visible: token เสีย/user
+> ถูกลบ → signOut ไปหน้า login, network สะดุด → ค้าง "กำลังโหลด..." (ไม่ signOut — localStorage
+> แชร์ข้ามแท็บ เดี๋ยวพาแท็บดีๆ หลุดตาม) · หมายเหตุ test harness: seed token ต้องลง localStorage แล้ว
 
 ---
 

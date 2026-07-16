@@ -1,0 +1,146 @@
+// MTN Work-Order (ใบแจ้งซ่อม MO) Telegram notifications — Main project.
+// รูปแบบข้อความ mirror ระบบ AppSheet เดิม (JIG MTN) · แจ้งครบทุกสเตป (คำสั่ง user 2026-07-14)
+// แยกจาก send-notification (กันไฟล์ใหญ่พัง) แต่ route ผ่าน notification_rules + telegram_channels เดียวกัน
+//   → ปรับ/ปิด/เลือกห้อง/แก้ข้อความได้จาก /notification-config (category 'maintenance').
+// Events: mtn_reported/assigned/repaired/checked/qa/handover/closed (step 1..7)
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN');
+const TELEGRAM_CHAT_ID   = Deno.env.get('TELEGRAM_CHAT_ID');
+let BOT_TOKEN: string | undefined = TELEGRAM_BOT_TOKEN;
+
+async function getBotToken(): Promise<string | undefined> {
+  try {
+    const { data } = await supabase.from('notification_settings').select('bot_token').eq('id', 1).maybeSingle();
+    const t = data?.bot_token ? String(data.bot_token).trim() : '';
+    return t || TELEGRAM_BOT_TOKEN || undefined;
+  } catch { return TELEGRAM_BOT_TOKEN || undefined; }
+}
+
+type Route = { enabled: boolean; chats: string[]; template?: string | null };
+async function loadRoutes(): Promise<Record<string, Route>> {
+  try {
+    const [{ data: rules }, { data: channels }] = await Promise.all([
+      supabase.from('notification_rules').select('event_key, is_enabled, channel_ids, channel_id, template'),
+      supabase.from('telegram_channels').select('id, chat_id, is_active'),
+    ]);
+    const chatById = new Map<string, string>();
+    for (const c of channels ?? []) if (c.is_active && c.chat_id) chatById.set(String(c.id), String(c.chat_id).trim());
+    const map: Record<string, Route> = {};
+    for (const r of rules ?? []) {
+      const ids: string[] = Array.isArray((r as Record<string, unknown>).channel_ids)
+        ? ((r as Record<string, unknown>).channel_ids as string[])
+        : (r as { channel_id?: string }).channel_id ? [(r as { channel_id: string }).channel_id] : [];
+      const chats = [...new Set(ids.map((id) => chatById.get(String(id))).filter((v): v is string => !!v))];
+      map[r.event_key as string] = { enabled: r.is_enabled as boolean, chats, template: (r as { template?: string | null }).template };
+    }
+    return map;
+  } catch { return {}; }
+}
+function resolveEvent(routes: Record<string, Route>, key: string): string[] | null {
+  const r = routes[key];
+  if (r && !r.enabled) return null;
+  if (r && r.chats.length) return r.chats;
+  return TELEGRAM_CHAT_ID ? [TELEGRAM_CHAT_ID] : [];
+}
+function renderTemplate(t: string, vars: Record<string, unknown>): string {
+  return t.replace(/\{(\w+)\}/g, (_m, k) => { const v = vars[k as string]; return v == null ? '' : String(v); });
+}
+function pick(routes: Record<string, Route>, key: string, vars: Record<string, unknown>, builtin: string): string {
+  const t = routes[key]?.template;
+  return t && String(t).trim() ? renderTemplate(String(t), vars) : builtin;
+}
+async function sendTelegram(message: string, chats: string[]): Promise<boolean> {
+  const list = [...new Set(chats.filter(Boolean))];
+  if (!BOT_TOKEN || !list.length) return false;
+  const res = await Promise.all(list.map((chat) =>
+    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chat, text: message, parse_mode: 'HTML' }),
+    }).then((r) => r.ok).catch(() => false)));
+  return res.some(Boolean);
+}
+async function sendTelegramPhoto(photoUrl: string, caption: string, chats: string[]) {
+  const list = [...new Set(chats.filter(Boolean))];
+  if (!BOT_TOKEN || !list.length) return;
+  const cap = caption.length > 1000 ? caption.slice(0, 1000) : caption;
+  await Promise.all(list.map((chat) =>
+    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chat, photo: photoUrl, caption: cap, parse_mode: 'HTML' }),
+    }).then((r) => r.ok).catch(() => false)));
+}
+
+const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
+const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json', ...CORS } });
+
+function beDate(iso?: string | null): string {
+  if (!iso) return '';
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(iso));
+  const g: Record<string, string> = {}; for (const x of p) g[x.type] = x.value;
+  return `${+g.day}/${+g.month}/${Number(g.year) + 543}`;
+}
+const deptFor = (it: string) => { const s = (it || '').toUpperCase(); if (s.includes('JIG')) return 'JIG MTN'; if (s.includes('DIE')) return 'DIE MTN'; return 'MTN'; };
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+  try {
+    const body = await req.json();
+    const { event, mo } = body;
+    if (!mo) return json({ error: 'missing mo' }, 400);
+    BOT_TOKEN = await getBotToken();
+    const routes = await loadRoutes();
+    const chat = resolveEvent(routes, event);
+    if (chat === null) return json({ ok: true, skipped: true });
+
+    const dept = mo.mtn_dept || deptFor(mo.item_type);
+    const v = {
+      dept, mo_no: mo.mo_no || '(ยังไม่ออกเลข)', line_name: mo.line_name || '-', item_type: mo.item_type || '-',
+      machine_no: mo.machine_no || '', problem: mo.problem_characteristic || '-',
+      reporter_prod: mo.reporter_prod || mo.reported_by_name || '', reporter_qa: mo.reporter_qa || '',
+      want_at: beDate(mo.want_at), repair_type: mo.repair_type || '-', assigned_to: mo.assigned_to || '-',
+      tech_main: mo.tech_main || mo.assigned_to || '-', root_cause: mo.root_cause || '-', solution: mo.solution || '-',
+      check_result: mo.check_result || '-', quality_related: mo.quality_related || '-', checker_name: mo.checker_name || '-',
+      qa_result: mo.qa_result || '-', qa_checker: mo.qa_checker || '-', follow_up: mo.follow_up || '-', ho_checker: mo.ho_checker || '-',
+      approver: mo.approver_name || '-',
+    };
+    const equip = `${v.item_type}${v.machine_no ? ` (${v.machine_no})` : ''}`;
+    let builtin = ''; let photo: string | null = null;
+    switch (event) {
+      case 'mtn_reported':
+        builtin = [`🛠️ <b>แจ้งซ่อม ${dept}</b>`, `ไลน์การผลิต: ${v.line_name}`, `ชื่อรายการ: ${equip}`, `ปัญหา: ${v.problem}`,
+          `PD ผู้แจ้ง: ${v.reporter_prod}`, `QA ผู้แจ้ง: ${v.reporter_qa}`, v.want_at ? `เป้าหมาย: ${v.want_at}` : '', `สถานะ: รอดำเนินการ`].filter(Boolean).join('\n');
+        photo = mo.before_img || null; break;
+      case 'mtn_assigned':
+        builtin = [`📋 <b>รับงานซ่อม — ${v.mo_no}</b>`, `${dept} · ${v.line_name} · ${equip}`, `ปัญหา: ${v.problem}`,
+          `ประเภทงานซ่อม: ${v.repair_type}`, `มอบหมายช่าง: ${v.assigned_to}`].join('\n'); break;
+      case 'mtn_repaired':
+        builtin = [`🔧 <b>สรุปผลซ่อม ${dept}</b>`, `ไลน์การผลิต: ${v.line_name}`, `ชื่อรายการ: ${equip}`, `ปัญหา: ${v.problem}`, ``,
+          `เลขแจ้งซ่อม: <b>${v.mo_no}</b>`, `ช่างซ่อม: ${v.tech_main}`, `สาเหตุ: ${v.root_cause}`, `วิธีแก้ไข: ${v.solution}`].join('\n');
+        photo = mo.after_img || null; break;
+      case 'mtn_checked':
+        builtin = [`🔎 <b>ตรวจสอบหลังซ่อม — ${v.mo_no}</b>`, `${dept} · ${v.line_name} · ${equip}`,
+          `ผลงานหลังซ่อม: ${v.check_result}`, `เกี่ยวคุณภาพ: ${v.quality_related}`, `ผู้ตรวจ: ${v.checker_name}`].join('\n'); break;
+      case 'mtn_qa':
+        builtin = [`🧪 <b>ยืนยันคุณภาพหลังซ่อม — ${v.mo_no}</b>`, `${dept} · ${v.line_name} · ${equip}`,
+          `ผลคุณภาพ: ${v.qa_result}`, `ผู้ตรวจ QA: ${v.qa_checker}`].join('\n');
+        photo = mo.qa_img || null; break;
+      case 'mtn_handover':
+        builtin = [`🤝 <b>รับมอบหลังซ่อม — ${v.mo_no}</b>`, `${dept} · ${v.line_name} · ${equip}`,
+          `ติดตามผล: ${v.follow_up}`, `ผู้รับมอบ: ${v.ho_checker}`].join('\n'); break;
+      case 'mtn_closed':
+        builtin = [`✅ <b>อนุมัติปิดแจ้งซ่อม</b>`, `ไลน์การผลิต: ${v.line_name}`, `ชื่อรายการ: ${equip}`, `ปัญหา: ${v.problem}`, ``,
+          `เลขแจ้งซ่อม: <b>${v.mo_no}</b>`, `ช่างซ่อม: ${v.tech_main}`, `วิธีแก้ไข: ${v.solution}`, `ผู้อนุมัติ: ${v.approver}`].join('\n');
+        photo = mo.after_img || null; break;
+      default: return json({ error: 'unknown event' }, 400);
+    }
+    const message = pick(routes, event, v, builtin);
+    if (photo) await sendTelegramPhoto(photo, message, chat).catch(console.error);
+    else await sendTelegram(message, chat).catch(console.error);
+    return json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return json({ error: String(err) }, 500);
+  }
+});

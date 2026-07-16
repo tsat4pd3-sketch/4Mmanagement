@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import DowntimeSiren from '../components/DowntimeSiren';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
 import { hasPermission, can } from '../utils/permissions';
 import { getLineFamilyNames, getLineFamilyIds, getAncestorNames, toHierarchicalOptions } from '../utils/lineHierarchy';
@@ -189,11 +190,17 @@ export default function Management() {
   const [filterMan,       setFilterMan]       = useState(true);
   const [filterMachine,   setFilterMachine]   = useState(false);
   const [filterWip,       setFilterWip]       = useState(false);
-  const [forcePills,      setForcePills]      = useState(false); // บังคับโชว์ป้ายชื่อเครื่อง/WIP เมื่อผังแน่นจนป้ายถูกซ่อนอัตโนมัติ
+  // ป้ายชื่อบนผัง: โชว์/ซ่อน อย่างเดียว คุมทุกชนิดจุด (คน/เครื่องจักร/WIP — UI-CONVENTIONS §1)
+  // ป้ายเตือน (เครื่อง Downtime / WIP ต่ำกว่า min / หมุดที่กำลังเลือก) โชว์เสมอแม้ซ่อนป้าย
+  const [showPills,       setShowPills]       = useState(true);
   const [docImagePreview, setDocImagePreview] = useState(null);
   const [isSavingDoc,     setIsSavingDoc]     = useState(false);
   const [lineProdData,    setLineProdData]    = useState(null); // heijunka data for selected line
   const [boardDate,       setBoardDate]       = useState(() => getWorkDate()); // วันที่ mini Heijunka board — เลือกดูย้อนหลังได้
+  // มือถือ: บอร์ด Heijunka default พับเป็นแถบสรุป (map-first — ผังคนได้พื้นที่เต็ม) · จำสถานะใน localStorage
+  const [mobileBoardOpen, setMobileBoardOpen] = useState(() => { try { return localStorage.getItem('mg_board_open_mobile') === '1'; } catch { return false; } });
+  const toggleMobileBoard = () => setMobileBoardOpen(v => { try { localStorage.setItem('mg_board_open_mobile', v ? '0' : '1'); } catch { /* private mode */ } return !v; });
+  const [showLegendMobile, setShowLegendMobile] = useState(false); // มือถือ: legend สถานะยุบเข้าปุ่ม ℹ️
   const [imgBox,         setImgBox]         = useState(null); // actual rendered image bounds inside objectFit:contain
   const imgRef = useRef(null);
   const recalcImgBox = useCallback(() => {
@@ -264,7 +271,7 @@ export default function Management() {
     const sessionIds = sessions.map(s => s.id);
     const { data: orders } = await supabaseDR
       .from('prod_orders')
-      .select('session_id, status, qty, qty_ok, qty_actual, prod_no, mat_no, opened_at, confirmed_at')
+      .select('session_id, status, qty, qty_ok, qty_actual, qty_target, is_manual, prod_no, mat_no, opened_at, confirmed_at')
       .in('session_id', sessionIds);
     // production_sessions.product_id ไม่ได้ตั้งค่าเสมอ (กะนึงมีได้หลาย mat_no)
     // จึง fallback ไปหา cycle_time_sec ตรงจาก mat_no ของออเดอร์เอง
@@ -911,6 +918,7 @@ export default function Management() {
 
   return (
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: 'calc(100vh - 80px)', background: 'var(--bg)', overflow: 'hidden' }}>
+      <DowntimeSiren mode="open_15min" />
 
       {/* MAN / MACHINE / WIP status filters — fixed, sit just left of the global notification bell */}
       <div style={{ position: 'fixed', top: 10, right: 58, zIndex: 1200, display: 'flex', gap: 6 }}>
@@ -944,24 +952,23 @@ export default function Management() {
             )}
           </button>
         ))}
-        {/* ผังแน่น (>18 เครื่อง) — ป้ายชื่อเครื่อง/WIP ถูกซ่อนอัตโนมัติ ปุ่มนี้บังคับเปิดทั้งหมด (alarm/below-min โชว์เสมอไม่ต้องกด) */}
-        {machinePoints.length > 18 && (
-          <button
-            onClick={() => setForcePills(v => !v)}
-            title="ผังแน่น — ป้ายชื่อเครื่องจักร/WIP ถูกซ่อนอัตโนมัติ กดเพื่อบังคับแสดงป้ายทั้งหมด"
-            style={{
-              height: 36, borderRadius: 8, padding: '0 10px',
-              background: forcePills ? 'rgba(148,163,184,0.28)' : 'var(--bg3)',
-              border: forcePills ? '1px solid #94a3b8' : '1px solid var(--border2)',
-              color: forcePills ? 'var(--text)' : 'var(--text2)',
-              fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-              cursor: 'pointer', boxShadow: 'var(--shadow-sm)',
-            }}
-          >
-            🏷️ ป้ายชื่อ
-          </button>
-        )}
+        {/* ป้ายชื่อทุกชนิดจุด (คน/เครื่องจักร/WIP) — โชว์/ซ่อน อย่างเดียว label บอก action ที่จะเกิดเมื่อกด
+            (ป้ายเตือน alarm/ต่ำกว่า min โชว์เสมอแม้ซ่อนป้าย) */}
+        <button
+          onClick={() => setShowPills(v => !v)}
+          title={'แสดง/ซ่อนป้ายชื่อทุกจุดบนผัง (คน/เครื่องจักร/WIP)\nป้ายเตือน (เครื่อง Downtime / WIP ต่ำกว่า min) แสดงเสมอ'}
+          style={{
+            height: 36, borderRadius: 8, padding: '0 10px',
+            background: showPills ? 'rgba(148,163,184,0.28)' : 'var(--bg3)',
+            border: showPills ? '1px solid #94a3b8' : '1px solid var(--border2)',
+            color: showPills ? 'var(--text)' : 'var(--text2)',
+            fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+            cursor: 'pointer', boxShadow: 'var(--shadow-sm)',
+          }}
+        >
+          {showPills ? '🏷️ ซ่อนป้าย' : '🏷️ โชว์ป้าย'}
+        </button>
       </div>
 
       {/* ── Pool Panel ── */}
@@ -1011,6 +1018,12 @@ export default function Management() {
           onDrop={!isMobile ? (e) => handleDrop(e, 'Pool') : undefined}
           style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 0 }}
         >
+          {/* มือถือ + pool ว่างทั้งสองส่วน: ยุบเหลือแถบเดียว คืนพื้นที่ให้ผังคน (desktop เหมือนเดิม) */}
+          {isMobile && poolWorkers.length === 0 && specialWorkers.length === 0 ? (
+            <div style={{ fontSize: 11, color: 'var(--muted)', padding: '2px 0', display: 'flex', gap: 10, alignItems: 'center' }}>
+              <span>🔵 พร้อมทำงาน 0</span><span style={{ color: 'rgba(245,158,11,0.7)' }}>🟡 งานนอกไลน์ 0</span><span>— ไม่มีพนักงานใน Pool</span>
+            </div>
+          ) : (<>
           {/* Normal pool — 70% */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexShrink: 0 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🔵 พร้อมทำงาน</span>
@@ -1065,6 +1078,7 @@ export default function Management() {
               </button>
             )}
           </div>
+          </>)}
         </div>
 
         {/* 4M buttons — desktop only in sidebar */}
@@ -1099,7 +1113,7 @@ export default function Management() {
         {/* ── Mini Heijunka board ── */}
         {lineProdData && (() => {
           const HOURS = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
-          const LEFT_W = 170; // ป้ายพาร์ทใหญ่ขึ้น (รูป 46px + ชื่อ 2 บรรทัด) — ป้ายเดียวครอบ 2 แถบเวลา
+          const LEFT_W = isMobile ? 120 : 170; // ป้ายพาร์ทใหญ่ (รูป 46px + ชื่อ 2 บรรทัด) — มือถือแคบลง + บอร์ดเลื่อนแนวนอน
           const nowMs = nowForBoard.current.getTime();
           const wd = lineProdData.workDate;
           const gridStartMs = new Date(`${wd}T08:00:00`).getTime();
@@ -1172,19 +1186,20 @@ export default function Management() {
             const batchSeen = new Map();
             // เงื่อนไขผสม: ใบที่ยังไม่ปิด+เกินเวลาจะตีแดงก็ต่อเมื่อ "ยอดรวมจริงของแถวนี้ยังไม่ทันเป้าตามเวลา" ด้วย
             // ถ้ายอดรวมทันเป้าอยู่ (แค่สแกนปิดไม่ตรง FIFO) จะไม่ตีแดง เพราะงานยังผลิตได้ตามแผนจริง
-            const ctSec = ctByMatNo[byOpenTime[0]?.mat_no] || 0;
-            const rowActualQty = cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
+            // pace เทียบเป็น std-time (Σ ยอด×CT ต่อพาร์ท) — คิวคำนวณระดับ sub-line มีหลายพาร์ท CT ต่างกันได้
+            const rowActualStdSec = cards.reduce((a, c) => a + ((c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)) * (ctByMatNo[c.mat_no] || 0)), 0);
+            const anyCt = cards.some(c => (ctByMatNo[c.mat_no] || 0) > 0);
             const firstStartMs = byOpenTime.length ? byOpenTime[0].orderStartMs : null;
-            let expectedQty = Infinity;
-            if (ctSec > 0 && firstStartMs) {
+            let expectedStdSec = Infinity;
+            if (anyCt && firstStartMs) {
               let elapsedMs = Math.max(0, Math.min(nowMs, firstStartMs + 24 * 3600000) - firstStartMs);
               breaks.forEach(([bs, be]) => {
                 const os = Math.max(bs, firstStartMs), oe = Math.min(be, nowMs);
                 if (oe > os) elapsedMs -= (oe - os);
               });
-              expectedQty = Math.max(0, elapsedMs) / 1000 / ctSec;
+              expectedStdSec = Math.max(0, elapsedMs) / 1000;
             }
-            const rowBehindPace = rowActualQty < expectedQty;
+            const rowBehindPace = rowActualStdSec < expectedStdSec;
             let queueEndMs = -Infinity;
             let curRoundIdx = null;
             return sorted.map(o => {
@@ -1321,14 +1336,31 @@ export default function Management() {
           };
 
           // แยกแถวตาม mat_no/product — ไม่ให้ product ต่างกัน (เช่น RH/LH) ปนแถวเดียวกัน
+          // การ์ดไลน์แม่รวมหลาย sub-line: product เดียวกันที่ผลิตคนละไลน์ต้องแยกคนละแถวด้วย
+          // (คิวคาดการณ์ต่อแถว = เครื่องเดียวกัน ถ้ารวมจะต่อคิวข้ามไลน์ เวลาคาดเสร็จ/ดีเลย์ผิดทั้งแถว)
           const groups = {};
           allCards.forEach(c => {
-            (groups[c.productKey] = groups[c.productKey] || { key: c.productKey, label: c.productLabel, img: c.productImg, cards: [] }).cards.push(c);
+            const rowKey = multiSubLine ? `${c.line_name || ''}|${c.productKey}` : c.productKey;
+            (groups[rowKey] = groups[rowKey] || { key: rowKey, label: c.productLabel, img: c.productImg, line: c.line_name, cards: [] }).cards.push(c);
           });
-          const productRows = Object.values(groups).sort((a, b) => a.label.localeCompare(b.label));
+          const productRows = Object.values(groups).sort((a, b) => a.label.localeCompare(b.label) || String(a.line || '').localeCompare(String(b.line || '')));
+
+          // ── คิวจริงระดับ sub-line: 1 ไลน์ผลิตได้ทีละใบ ใบคนละพาร์ทของไลน์เดียวกันต้องต่อคิวกัน ──
+          // ห้ามคำนวณคิวแยกต่อแถวพาร์ท (เคยพัง 2026-07-14: พาร์ทที่สองถูกวาดเริ่ม 08:00 ซ้อนกับพาร์ทแรก
+          // ทั้งที่ไลน์ไม่ parallel) · แยกคิวเฉพาะคนละ sub-line (คนละเครื่องจริง วิ่งขนานได้)
+          const positionedByOrder = new Map();
+          {
+            const byLine = {};
+            productRows.forEach(r => r.cards.forEach(c => { (byLine[c.line_name || ''] ||= []).push(c); }));
+            Object.values(byLine).forEach(cs => {
+              computeQueuedPositionsFull(cs).forEach(item => positionedByOrder.set(item.o.id ?? item.o.prod_no, item));
+            });
+          }
+          const positionedForCards = (cs) => cs.map(c => positionedByOrder.get(c.id ?? c.prod_no)).filter(Boolean)
+            .sort((a, b) => a.startMs - b.startMs);
 
           const totalDelayed = productRows.reduce((sum, row) =>
-            sum + computeQueuedPositionsFull(row.cards).filter(p => p.isDelayed).length, 0);
+            sum + positionedForCards(row.cards).filter(p => p.isDelayed).length, 0);
           const hasOpen = sessions.some(s => s.status === 'open');
 
           const openByMatNo = {};
@@ -1363,7 +1395,7 @@ export default function Management() {
             ['day', 'night'].forEach(shift => {
               let remainCards = 0, remainQty = 0, projEndMs = null, noCt = 0, workMs = 0, started = false;
               productRows.forEach(row => {
-                computeQueuedPositionsFull(row.cards).forEach(item => {
+                positionedForCards(row.cards).forEach(item => {
                   if (item.o.shift !== shift) return;
                   if (item.o.isDone || (item.o.qty_actual || 0) > 0) started = true;
                   if (item.o.isDone || item.o.isCarry) return;
@@ -1424,6 +1456,24 @@ export default function Management() {
             return chips;
           })();
           const todayWd = getWorkDate();
+          // มือถือ + พับอยู่: แถบสรุปบรรทัดเดียว แตะเพื่อกางบอร์ด (desktop ไม่มีโหมดพับ — เหมือนเดิม)
+          if (isMobile && !mobileBoardOpen) {
+            return (
+              <button onClick={toggleMobileBoard} style={{
+                width: '100%', marginBottom: 10, padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
+                background: 'var(--card)', textAlign: 'left',
+                border: `1px solid ${totalDelayed > 0 ? 'rgba(239,68,68,0.45)' : hasOpen ? 'rgba(34,197,94,0.35)' : 'var(--border2)'}`,
+                display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+              }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>📊 Heijunka — {selectedLine}</span>
+                {totalDelayed > 0
+                  ? <span style={{ fontSize: 12, fontWeight: 800, color: '#ef4444' }}>⚠️ ดีเลย์ {totalDelayed} ใบ</span>
+                  : <span style={{ fontSize: 12, fontWeight: 700, color: hasOpen ? '#22c55e' : 'var(--muted)' }}>{hasOpen ? '● Live' : '✓ ปิดกะแล้ว'}</span>}
+                {isHistorical && <span style={{ fontSize: 11, color: '#a855f7', fontWeight: 700 }}>📅 {boardDate}</span>}
+                <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>▸ แตะเพื่อดูบอร์ด</span>
+              </button>
+            );
+          }
           const shiftBoardDate = (days) => {
             const d = new Date(`${boardDate}T12:00:00`);
             d.setDate(d.getDate() + days);
@@ -1473,6 +1523,18 @@ export default function Management() {
                       );
                     });
                   })()}
+                  {isMobile && (
+                    <button className="tbtn" onClick={() => setShowLegendMobile(v => !v)} title="สัญลักษณ์สถานะการ์ด"
+                      style={{ padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: showLegendMobile ? 'var(--accent-dim)' : 'var(--bg)', border: `1px solid ${showLegendMobile ? 'var(--accent)' : 'var(--border)'}`, color: showLegendMobile ? 'var(--accent)' : 'var(--text2)' }}>
+                      ℹ️
+                    </button>
+                  )}
+                  {isMobile && (
+                    <button className="tbtn" onClick={toggleMobileBoard} title="พับบอร์ด"
+                      style={{ padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>
+                      ▾ พับ
+                    </button>
+                  )}
                 </div>
               </div>
               {/* Kanban ที่เปิดอยู่ ต่อ MAT.NO */}
@@ -1486,7 +1548,8 @@ export default function Management() {
                   ))}
                 </div>
               )}
-              {/* Legend สีสถานะ kanban */}
+              {/* Legend สีสถานะ kanban — มือถือซ่อนไว้หลังปุ่ม ℹ️ (ประหยัดพื้นที่ 2-3 บรรทัด) */}
+              {(!isMobile || showLegendMobile) && (
               <div style={{ padding: '6px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', gap: 14, flexWrap: 'wrap', background: 'var(--bg)' }}>
                 {[
                   { c: '#4d9fff', icon: '▶', label: 'กำลังผลิต' },
@@ -1503,6 +1566,7 @@ export default function Management() {
                   </div>
                 ))}
               </div>
+              )}
               {/* 🧠 Smart planner — คาดการณ์เวลาเสร็จ / คำแนะนำ OT */}
               {plannerChips.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, padding: '7px 14px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
@@ -1570,31 +1634,50 @@ export default function Management() {
                             );
                           })}
                           {(() => {
-                            const positioned = computeQueuedPositionsFull(row.cards).map(item => pctForHalf(item, half)).filter(Boolean);
+                            const positioned = positionedForCards(row.cards).map(item => pctForHalf(item, half)).filter(Boolean);
                             return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs }, oi) => {
                             if (leftPct >= 100) return null;
                             const sc = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : o.is_backfill ? '#6b7280' : '#4d9fff';
-                            const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : o.is_backfill ? '⏪' : '▶';
+                            const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : o.is_backfill ? '⏪' : o.is_manual ? '✍️' : '▶';
                             const doneQty = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
-                            const pctBlock = (o.qty || 0) > 0 ? Math.min((doneQty / o.qty) * 100, 100) : (o.isDone ? 100 : 0);
+                            // fill ต่อเนื่องตามแกนเวลาทั้งใบ — ใบคร่อม 2 กะห้ามคิด % แยกต่อท่อน (ท่อนเช้าต้องเต็มก่อนค่อยไหลเข้าท่อนดึก)
+                            const fillFrac  = (o.qty || 0) > 0 ? Math.min(doneQty / o.qty, 1) : (o.isDone ? 1 : 0);
+                            const fillEndMs = startMs + (realEndMs - startMs) * fillFrac;
+                            const segStartMs = Math.max(startMs, half.startMs);
+                            const segEndMs   = Math.min(realEndMs, half.startMs + 12 * 3600000);
+                            const pctBlock = segEndMs > segStartMs
+                              ? Math.max(0, Math.min(100, ((Math.min(fillEndMs, segEndMs) - segStartMs) / (segEndMs - segStartMs)) * 100))
+                              : 0;
+                            // เป้าล้นกรอบวันงาน 08:00→08:00 — เตือนบนการ์ดให้เห็นว่าเกินกำลังเท่าไหร่
+                            const overMs = !o.isDone ? realEndMs - gridEndMs : 0;
+                            const isOverCap = overMs > 5 * 60000;
                             const causeText = isLateDone ? dtTooltip(startMs, new Date(o.confirmed_at).getTime(), o.line_name)
                               : isDelayed ? dtTooltip(startMs, Math.min(nowMs, gridEndMs), o.line_name) : '';
                             return (
                               <Fragment key={o.prod_no || oi}>
                               <div
-                                title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs - realEndMs) / 60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${causeText}`}
+                                title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs - realEndMs) / 60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${isOverCap ? ` 🔴 เป้าล้นกรอบวันงาน +${(overMs / 3600000).toFixed(1)} ชม. — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต` : ''}${causeText}`}
                                 style={{
                                   position: 'absolute', top: 3, bottom: 3, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 22,
                                   background: `${sc}28`, border: `1.5px solid ${sc}${o.isDone && !isLateDone ? 'cc' : (isDelayed || isLateDone) ? 'dd' : '88'}`,
                                   borderRadius: 4, overflow: 'hidden', cursor: 'default', zIndex: 1,
                                   boxShadow: (isDelayed || isLateDone) ? `0 0 6px ${sc}44` : 'none',
                                 }}>
-                                <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`, background: `${sc}22` }} />
+                                {/* ใบ manual: fill เข้มขึ้นตามสัดส่วนยอดสะสม (alpha 0.30→0.75) ครบเป้า = เขียว — ใบสแกนปกติจางแบบเดิม */}
+                                <div style={{
+                                  position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`,
+                                  background: o.is_manual && !o.isDone
+                                    ? `${fillFrac >= 1 ? '#22c55e' : sc}${Math.round((0.30 + 0.45 * Math.min(pctBlock, 100) / 100) * 255).toString(16).padStart(2, '0')}`
+                                    : `${sc}22`,
+                                  transition: 'width 0.5s ease, background 0.5s ease',
+                                }} />
                                 <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 2px', overflow: 'hidden' }}>
-                                  <div style={{ fontSize: 11, fontWeight: 800, color: sc, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {/* fill เข้มของใบ manual ทำสีเดิมจม — เกินครึ่งสลับตัวหนังสือเป็นขาว */}
+                                  <div style={{ fontSize: 11, fontWeight: 800, color: o.is_manual && !o.isDone && pctBlock >= 45 ? '#fff' : sc, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                     {icon} {o.prod_no || (oi + 1)}
                                   </div>
-                                  <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.qty}ชิ้น</div>
+                                  {/* ใบ manual ที่ยังเปิด: ยอดสะสม/เป้า — ใบสแกน/ปิดแล้ว: จำนวนตามเดิม */}
+                                  <div style={{ fontSize: 11, color: o.is_manual && !o.isDone && pctBlock >= 45 ? 'rgba(255,255,255,0.85)' : 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.is_manual && !o.isDone ? `${o.qty_actual ?? 0}/${o.qty_target ?? o.qty}` : o.qty}ชิ้น{isOverCap && <span style={{ color: '#ef4444', fontWeight: 800 }}> 🔴ล้น+{(overMs / 3600000).toFixed(1)}ชม.</span>}</div>
                                 </div>
                               </div>
                               {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
@@ -1621,12 +1704,14 @@ export default function Management() {
                   </div>
                 );
                 return (
+                  <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
+                  <div style={isMobile ? { minWidth: 640 } : undefined}>
                   <div>
                     {/* Hour header — เวลาคู่: บรรทัดบน ☀️ 08–19 / บรรทัดล่าง 🌙 20–07 คอลัมน์เดียวกัน */}
                     <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
-                      <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '3px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1 }}>
-                        <span>☀️ กะเช้า (แถบบน)</span>
-                        <span>🌙 กะดึก (แถบล่าง)</span>
+                      <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '3px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3, background: 'var(--bg2)' } : null) }}>
+                        <span>☀️ กะเช้า{isMobile ? '' : ' (แถบบน)'}</span>
+                        <span>🌙 กะดึก{isMobile ? '' : ' (แถบล่าง)'}</span>
                       </div>
                       {/* ป้ายเวลาปัจจุบัน ลอยตรงตำแหน่ง playhead (คอลัมน์ใช้ร่วม 2 กะ — ไอคอนบอกว่าอยู่กะไหน) */}
                       {(() => {
@@ -1662,16 +1747,22 @@ export default function Management() {
                       const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
                       const rowDemand = row.cards.reduce((a, c) => a + (c.qty || 0), 0);
                       const doneCount = row.cards.filter(c => c.isDone).length;
-                      const delayed   = computeQueuedPositionsFull(row.cards).filter(p => p.isDelayed).length;
+                      const delayed   = positionedForCards(row.cards).filter(p => p.isDelayed).length;
                       const isOpen    = row.cards.some(c => c.sessionOpen);
                       const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
                       const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
                       return (
                         <div key={row.key} style={{ display: 'flex', borderTop: '1px solid var(--border2)', overflow: 'hidden' }}>
-                          <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden' }}>
+                          <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3, background: 'var(--card)' } : null) }}>
                             {row.img && <img src={row.img} alt="" style={{ width: 46, height: 46, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                             <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0 }}>
-                              <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>{row.label}</div>
+                              <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>
+                                {row.label}
+                                {/* บอร์ดรวมหลาย sub-line — ป้ายบอกว่าแถวนี้ของไลน์ไหน (product เดียวกันคนละไลน์ = คนละแถว) */}
+                                {multiSubLine && row.line && (
+                                  <span style={{ marginLeft: 4, fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.14)', border: '1px solid rgba(77,159,255,0.4)', borderRadius: 5, padding: '0 5px', whiteSpace: 'nowrap' }}>{row.line}</span>
+                                )}
+                              </div>
                               <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: 14, fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
                                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
@@ -1687,6 +1778,8 @@ export default function Management() {
                         </div>
                       );
                     })}
+                  </div>
+                  </div>
                   </div>
                 );
               })()}
@@ -1740,12 +1833,12 @@ export default function Management() {
               `}</style>
               {imgBox && (() => {
                 // ขนาด marker ทั้งหมดมาจาก util กลาง (WYSIWYG เดียวกับ LineSetup) — density-aware ตามจำนวนเครื่อง
-                const { MK, SUB, showSubPills, ring: RING, subRing: SUB_RING, pillFont: PILL_F, subPillFont: SUB_PILL_F, badgeFont: FIT_F } =
+                const { MK, SUB, ring: RING, subRing: SUB_RING, pillFont: PILL_F, subPillFont: SUB_PILL_F, badgeFont: FIT_F, pillMaxW: PILL_MAXW, subPillMaxW: SUB_PILL_MAXW } =
                   markerScale(imgBox.rw, { machineCount: machinePoints.length });
-                // ป้ายชื่อเครื่อง/WIP: auto-hide เมื่อผังแน่น — ผู้ใช้กด 🏷️ บังคับเปิดได้ (alarm/below-min โชว์เสมอ)
-                const pillsOn = showSubPills || forcePills;
+                // ป้ายชื่อทุกชนิดจุด: ปุ่ม 🏷️ โชว์/ซ่อน อย่างเดียว (ป้ายเตือน alarm/below-min โชว์เสมอ)
+                const pillsOn = showPills;
+                const stationPillsOn = showPills;
                 const BADGE   = Math.max(14, Math.round(MK * 0.3));  // corner chip size
-                const PILL_MAXW = Math.round(MK * 1.8);
                 // clamp ตำแหน่ง "แสดงผล" ไม่ให้วงกลม+ป้ายตกขอบผัง — ตำแหน่งจริงใน DB ไม่เปลี่ยน
                 // (จุดที่ตั้งใน Line Setup ชิดขอบได้ แต่ marker ที่ใหญ่กว่าจุดต้องไม่โดนตัด)
                 const clampPos = (x, y, size) => ({
@@ -1843,7 +1936,8 @@ export default function Management() {
                   display: 'flex', flexDirection: 'column', alignItems: 'center',
                   cursor: isMobile ? 'pointer' : 'default',
                   zIndex: isOver ? 20 : 5,
-                  opacity: isDimmed ? 0.28 : 1,
+                  /* dim = 0.1 ให้เห็นชัดว่าถูกกรองออก (0.28 เดิมแยกไม่ออกจากจุดปกติ — UI-CONVENTIONS §1) */
+                  opacity: isDimmed ? 0.1 : 1,
                   filter: isDimmed ? 'grayscale(0.6)' : 'none',
                   transition: 'opacity 0.2s, filter 0.2s',
                 }}
@@ -1922,7 +2016,9 @@ export default function Management() {
                   )}
                 </div>
 
-                {/* ป้ายห้อยใต้แบบ absolute — ไม่ดัน layout เพื่อให้ศูนย์กลางวงกลม = พิกัดจริง (กัน marker ลอยเหนือจุด) */}
+                {/* ป้ายห้อยใต้แบบ absolute — ไม่ดัน layout เพื่อให้ศูนย์กลางวงกลม = พิกัดจริง (กัน marker ลอยเหนือจุด)
+                    ซ่อนได้เมื่อผู้ใช้เลือก "ซ่อนป้าย" (🏷️) — แต่ตอนกำลังลาก/แตะเลือกคนต้องโชว์เสมอ (ต้องเห็น fit preview) */}
+                {(stationPillsOn || isOver || isPulse) && (
                 <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2 }}>
                 {/* station-name pill below the circle */}
                 <div title={st.station_name} style={{
@@ -1947,6 +2043,7 @@ export default function Management() {
                   </div>
                 )}
                 </div>
+                )}
 
                 {/* Desktop drag-preview fit popup — outside inner div so overflow:hidden doesn't clip it */}
                 {previewFit && !isMobile && (
@@ -2009,7 +2106,7 @@ export default function Management() {
                             borderRadius: 4, padding: '1px 6px',
                             fontSize: SUB_PILL_F, fontWeight: 700,
                             color: isLow ? '#fecaca' : '#fff',
-                            whiteSpace: 'nowrap', maxWidth: Math.round(WK * 1.8), overflow: 'hidden', textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap', maxWidth: SUB_PILL_MAXW, overflow: 'hidden', textOverflow: 'ellipsis',
                           }}>{p.point_name}</div>
                           <div style={{
                             marginTop: 2, fontSize: SUB_PILL_F, fontWeight: isLow ? 800 : 600,
@@ -2061,14 +2158,14 @@ export default function Management() {
                             borderRadius: 4, padding: '1px 6px',
                             fontSize: SUB_PILL_F, fontWeight: 700,
                             color: alarms ? '#fecaca' : '#fff',
-                            whiteSpace: 'nowrap', maxWidth: Math.round(MKS * 1.8), overflow: 'hidden', textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap', maxWidth: SUB_PILL_MAXW, overflow: 'hidden', textOverflow: 'ellipsis',
                           }}>{p.machine_no}</div>
                           <div style={{
                             marginTop: 2, fontSize: SUB_PILL_F, fontWeight: alarms ? 800 : 600,
                             color: alarms ? '#fca5a5' : '#a3a3a3',
                             background: alarms ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.55)',
                             padding: '0 5px', borderRadius: 3, lineHeight: 1.5,
-                            whiteSpace: 'nowrap', maxWidth: Math.round(MKS * 2), overflow: 'hidden', textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap', maxWidth: SUB_PILL_MAXW, overflow: 'hidden', textOverflow: 'ellipsis',
                           }}>
                             {alarms
                               ? `${firstAlarm.dr_downtime_types?.name_th || 'Downtime'}${ongoing && elapsed != null ? ` ${elapsed}น.` : ''}`
@@ -2488,6 +2585,12 @@ export default function Management() {
                     ...(publicUrl ? { request_image_url: publicUrl } : {}),
                   }).eq('id', pendingDocModal.log.id);
                   if (updErr) throw updErr;
+                  // แนบรูปใหม่ทับสำเร็จแล้ว ค่อยลบไฟล์เก่า (best-effort — กติกา CLAUDE.md กันไฟล์กำพร้า)
+                  const oldReqUrl = pendingDocModal.log.request_image_url;
+                  if (publicUrl && oldReqUrl && oldReqUrl !== publicUrl && oldReqUrl.includes('/four-m-images/')) {
+                    const oldPath = decodeURIComponent(oldReqUrl.split('/four-m-images/')[1] || '');
+                    if (oldPath) supabase.storage.from('four-m-images').remove([oldPath]).catch(() => {});
+                  }
                   supabase.functions.invoke('send-notification', {
                     body: { event: 'status_change', log: { ...pendingDocModal.log, status: 'pending', request_image_url: publicUrl } }
                   }).catch(() => {});

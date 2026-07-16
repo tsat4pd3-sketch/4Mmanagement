@@ -6,6 +6,7 @@ import { can } from '../utils/permissions'
 import { dueStatus, STATUS_META, DEPT_LABEL, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
 import { toast } from '../components/Toast'
 import MachineFloorMap from '../components/MachineFloorMap'
+import DowntimeSiren from '../components/DowntimeSiren'
 
 // 'YYYY-MM-DD' (from pm_plans.next_due_date) → local-midnight Date, so day math
 // stays aligned with the Asia/Bangkok calendar (not UTC).
@@ -49,7 +50,7 @@ async function loadPmForJigs(jigIds) {
 }
 
 const S = {
-  page: { padding: '24px 28px', minHeight: '100%', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 14 },
+  page: { padding: 'clamp(12px,3vw,24px) clamp(14px,3.5vw,28px)', minHeight: '100%', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 14 },
   h1: { fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 },
   sub: { fontSize: 13, color: 'var(--muted)', marginTop: 4 },
   chip: (active, color) => ({
@@ -119,7 +120,9 @@ export default function MtnMachineLayout() {
     const machineNos = [...new Set(mpoints.map(p => p.machine_no).filter(Boolean))]
     if (!machineNos.length) { setMachineInfo({}); setLoading(false); return }
 
-    const { data: machines } = await supabaseDR.from('machines').select('id, machine_no, machine_name').eq('line_name', selectedLine)
+    // จับด้วย machine_no ที่อยู่บนผังจริง (ไม่ผูก line ตรงเป๊ะ) — ไลน์ใหญ่ที่วางเครื่องของลูกบนผัง parent
+    // จะได้ชื่อ/รายละเอียดครบ ไม่มีหมุดไร้ชื่อ
+    const { data: machines } = await supabaseDR.from('machines').select('id, machine_no, machine_name').in('machine_no', machineNos)
     const nameByNo = {}, noById = {}
     ;(machines || []).forEach(m => { if (m.machine_no) nameByNo[m.machine_no] = m.machine_name; if (m.id) noById[m.id] = m.machine_no })
     const { data: jigs } = await supabaseDR.from('jigs').select('id, name, machine_no, machine_id').eq('module', 'mtn')
@@ -257,6 +260,7 @@ export default function MtnMachineLayout() {
 
   return (
     <div style={S.page}>
+      <DowntimeSiren mode="call_mtn" />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 10 }}>
         <div>
           <h1 style={S.h1}>🗺️ ผังเครื่องจักร (ซ่อมบำรุง)</h1>

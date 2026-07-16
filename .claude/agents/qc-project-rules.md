@@ -44,6 +44,12 @@ model: inherit
   ไปเป็น `TO authenticated` (supabaseDR ไม่เคยส่ง JWT — จะพังทั้งระบบ เคยเกิดแล้ว)
 - **B3** การเปลี่ยน schema ต้องมี migration file ใน `supabase/migrations/` — ถ้าเจอโค้ดอ้างถึง
   คอลัมน์/ตารางที่ไม่มีใน migration หรือ docs/sql/ ให้ตั้งข้อสังเกต (อาจแก้ตรงผ่าน dashboard โดยไม่บันทึก)
+- **B4** ห้ามเขียนคะแนน `employee_skills` จาก client นอกเหนือจาก 2 flow ที่อนุญาต
+  (แก้สกิลใน modal พนักงาน + อนุมัติ/ปฏิเสธ level up — ทั้งคู่ใน operator.jsx) —
+  การเพิ่ม/ลดคะแนนอัตโนมัติ (farming/decay) ต้องเป็นฟังก์ชัน DB ฝั่ง server เท่านั้น
+  (CLAUDE.md "Employee Skills & EXP Farming" — เคยเป็นช่อง farm EXP ใน Checkin.jsx)
+  · grep: `from\('employee_skills'\)` ใน `src/` แล้วเช็คว่า write อยู่นอก operator.jsx หรือไม่
+  · RPC skill ใหม่ต้อง guard role ในตัวฟังก์ชัน + revoke EXECUTE จาก anon/PUBLIC + idempotent
 
 ### หมวด C — Permissions (data-driven)
 - **C1** ห้าม hardcode role array เพิ่ม เช่น `['admin','manager','supervisor'].includes(role)` —
@@ -55,6 +61,10 @@ model: inherit
   และผ่าน `canAccessPage` — ไม่ hardcode role ใน route guard
 - **C3** admin ต้อง bypass เสมอ — หา logic ที่อาจล็อก admin ออก
 - **C4** fail-closed — logic permission ใหม่ที่ default เป็น "อนุญาต" เมื่อโหลด cache ไม่ได้ = ผิด (ยกเว้น admin)
+- **C5** ชื่อแสดงผลของ role ต้องมาจาก `src/utils/roleMeta.js` เท่านั้น (2026-07-13) — ห้ามนิยาม
+  label/สี/desc ของ role ซ้ำในหน้า และข้อความ UI ห้ามเรียก role ด้วยคำตำแหน่งบริษัท (Manager/Supervisor/Leader)
+  · grep: `ROLE_LABELS\s*=|label: 'Manager'|'Supervisor'|'Leader'` ใน `src/` (ยกเว้น roleMeta.js
+  และคำที่หมายถึง "ตำแหน่งงานจริง" เช่น ป้ายลายเซ็นบนแบบฟอร์มพิมพ์ / employees level)
 
 ### หมวด D — Section/Line/Team Scoping
 - **D1** หน้าที่ query ข้อมูลตาม line/section ต้องกรองด้วย `sections` array จาก UserContext
@@ -87,11 +97,32 @@ model: inherit
 - **F5** input ใน flex row/toolbar ต้องกำหนด width เอง (index.css default width:100%)
 - **F6** hover card เฉพาะ `matchMedia('(hover: hover)')` · popup ทุกอันมีทางปิด
 - **F7** playhead ไทม์ไลน์ใช้ `.now-line`/`.now-chip` — ห้ามวาดเส้นเวลาปัจจุบันเองสีอื่น
+- **F9** ลำดับชนิดจุดที่แสดงเรียงกัน (แท็บ/ปุ่ม filter/legend) ต้องเป็น คน → เครื่องจักร → WIP
+  (ลำดับ 4M: Man, Machine, Material) · ปุ่ม 🏷️ ป้ายชื่อ = โชว์/ซ่อน **สองสถานะเท่านั้น** (default โชว์
+  ห้ามมีโหมด auto ซ่อนตามความแน่น) คุมทุกชนิดจุด · label บนปุ่มบอก action ที่จะเกิดเมื่อกด
+  (Management + LineSetup + MachineFloorMap ต้อง behavior ตรงกัน — WYSIWYG)
+  · ป้ายชื่อ maxWidth ต้องใช้ pillMaxW/subPillMaxW จาก markerScale (มีขั้นต่ำอ่านออก) —
+  grep: `maxWidth` ที่คูณ MK/SUB/size ตรงๆ โดยไม่มีขั้นต่ำ ในไฟล์ที่วาด marker
 - **F8** balloon จุดตรวจ: anchor ฝั่ง PM `translate(-50%,-100%)` ต้องเหมือนกันทั้ง 3 renderer
   (SpinAnnotator / PMSetup / PMCheckData) — ถ้าไฟล์ใดไฟล์หนึ่งต่าง = บั๊กร้ายแรง
   · ทั้ง 3 ต้องหัก letterbox ผ่าน hook กลาง `src/utils/useImgBox.js` (วาง pin บน layer
   ox/oy/rw/rh + แปลงคลิกจาก layer เดียวกัน) และ maxHeight รูป = 300 เท่ากัน —
   grep: pin ที่วางเป็น % ของ container ตรงๆ บน img objectFit:contain
+- **F10** (2026-07-11) branch มือถือ: หน้าใหม่/แก้ใหม่ใช้ hook กลาง `src/utils/useIsMobile.js`
+  — grep `window.innerWidth <= 768` ที่คำนวณครั้งเดียวนอก hook = ผิด convention ·
+  branch มือถือต้องเป็น additive (จอ >768px render เหมือนเดิม) ·
+  ฟอร์ม grid หลายคอลัมน์ใน modal → ติด `className="mgrid"` · ปุ่มไอคอนเล็กในตาราง →
+  `className="tbtn"` · บอร์ดเวลา 24 ชม.: มือถืออนุญาต scroll แนวนอน (UI-CONVENTIONS §6)
+  แต่ desktop ห้าม scroll เหมือนเดิม · ลาก marker ใช้ pointer events (`onPointerDown` +
+  `touchAction:'none'`) ไม่ใช่ mouse events อย่างเดียว — grep `onMouseDown` ที่เริ่ม drag
+- **F11** (2026-07-11) บอร์ดเวลา: ป้ายชั่วโมงบนแกนต้องเป็น `HH:00` (ไม่ใช่เลขเปล่า) และป้ายตัวสุดท้าย
+  ที่ตำแหน่ง 100% ต้อง `translateX(-100%)` กันโดนตัดครึ่ง · รายการไม่ระบุเวลาห้ามวางตำแหน่งปลอมบนแกน
+  (เช่น left 99%) — ต้องรวมเป็นชิป ⏳ ท้ายแถว (UI-CONVENTIONS §6)
+
+- **F12** (2026-07-14) การใช้พื้นที่จอ landscape: container หลักของหน้าต้องกว้าง
+  `min(96-97vw, 1800-2400px)` — grep `maxWidth: 9\d\d|maxWidth: 10\d\d` (fix แคบแล้วเหลือ
+  ขอบข้างว่างเยอะ = ขัดคำสั่ง user · ยกเว้นฟอร์มคอลัมน์เดียว เช่น Login/Register และ modal)
+  · การ์ดจำนวน fix ให้จัดคอลัมน์สมดุลเต็มแถวตาม breakpoint (ดู UI-CONVENTIONS §6.5)
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่

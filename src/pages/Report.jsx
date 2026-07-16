@@ -44,8 +44,10 @@ function resizeImage(file, maxPx = 1280, quality = 0.85) {
       canvas.width  = Math.round(w * scale);
       canvas.height = Math.round(h * scale);
       canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(blob => resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', quality);
+      canvas.toBlob(blob => resolve(blob ? new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' }) : null), 'image/jpeg', quality);
     };
+    // ไฟล์เสีย/ฟอร์แมตไม่รองรับ (เช่น HEIC) — ต้อง resolve(null) ไม่งั้น await ค้างถาวร ปุ่มบันทึกแขวน
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
     img.src = url;
   });
 }
@@ -76,11 +78,28 @@ async function urlToDataUrl(url) {
   }
 }
 
+/* ── ดึงข้อมูลเกินเพดาน ~1000 แถว/request ของ Supabase — วนทีละหน้า จนหน้าที่ได้ไม่เต็ม
+   (เดิมใช้ .limit(10000) ซึ่งโดน server cap ตัดเหลือ 1000 เงียบๆ — รายงานช่วงยาว/ส่วนงานใหญ่ขาดข้อมูล)
+   buildQuery ต้องคืน query "ตัวใหม่" ทุกครั้ง (builder ใช้ซ้ำไม่ได้) และใส่ order คงที่ให้หน้าไม่สลับ ── */
+async function fetchAllRows(buildQuery, pageSize = 1000, maxRows = 50000) {
+  const out = [];
+  for (let i = 0; i < maxRows; i += pageSize) {
+    const { data, error } = await buildQuery().range(i, i + pageSize - 1);
+    if (error) { toast.error('โหลดข้อมูลไม่สำเร็จ: ' + error.message); break; }
+    out.push(...(data || []));
+    if (!data || data.length < pageSize) break;
+  }
+  return out;
+}
+
 /* ── CSV export utility ── */
 function downloadCSV(filename, headers, rows) {
   const escape = v => {
-    const s = v == null ? '' : String(v);
-    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+    let s = v == null ? '' : String(v);
+    // กัน CSV formula injection — ค่าที่พิมพ์มือ (ชื่อ/หมายเหตุ) ขึ้นต้น = + - @ จะถูก Excel ตีความเป็นสูตร
+    // (ยกเว้นตัวเลขติดลบจริง เช่น -5 — ไม่ใช่สูตร)
+    if (/^[=+\-@]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
+    return s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r') ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const lines = [headers.map(escape).join(','), ...rows.map(r => r.map(escape).join(','))];
   const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -111,7 +130,8 @@ const CAT_META = {
   Method:   { color: '#c084fc', bg: 'rgba(139,92,246,0.12)', label: 'Method',   icon: '📋' },
 };
 
-const TABS = ['รายวัน', 'รายพนักงาน', '📍 Log จุดงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '💰 ค่าฝีมือ', '📋 ใบบันทึก', '🏅 Multi-Skill Form', '🚐 จองรถ OT พรุ่งนี้'];
+// แท็บจองรถ: ตัดคำ "พรุ่งนี้" ออก — หน้าเลือกดูวันไหนก็ได้ (default = วันงานวันนี้)
+const TABS = ['รายวัน', 'รายพนักงาน', '📍 Log จุดงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '💰 ค่าฝีมือ', '📋 ใบบันทึก', '🏅 Multi-Skill Form', '🚐 จองรถ OT'];
 
 const SKILL_LEVELS = [
   { min: 100, label: 'ผู้เชี่ยวชาญ',   color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
@@ -331,16 +351,16 @@ table{border-collapse:collapse;width:100%}
             {isHoliday ? '🔶 ' : ''}{DAY_TYPE_META[dayType].label}
           </span>
         )}
-        <select value={shiftFilter} onChange={e => setShiftFilter(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+        <select value={shiftFilter} onChange={e => setShiftFilter(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
           <option value="all">— ทุกกะ —</option>
           <option value="day">☀️ กะเช้า</option>
           <option value="night">🌙 กะดึก</option>
         </select>
-        <select value={section} onChange={e => setSection(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+        <select value={section} onChange={e => setSection(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
           <option value="">— ทุกส่วนงาน —</option>
           {sections.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+        <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
           <option value="">— ทุกแผนก —</option>
           {orgDeptList.map(d => <option key={d} value={d}>{d}</option>)}
         </select>
@@ -429,8 +449,9 @@ function OtMasterDataPanel() {
 
   const addRoute = async () => {
     if (!newRouteCode.trim() || !newRouteName.trim()) return;
+    // sort_order = max+1 (ไม่ใช่ length — ลบตัวกลางแล้ว length ชนกับ order เดิม ลำดับแสดงผลไม่นิ่ง)
     const { error } = await supabase.from('bus_routes').insert([{
-      code: newRouteCode.trim(), name: newRouteName.trim(), sort_order: busRoutes.length,
+      code: newRouteCode.trim(), name: newRouteName.trim(), sort_order: Math.max(0, ...busRoutes.map(r => r.sort_order || 0)) + 1,
     }]);
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
     setNewRouteCode(''); setNewRouteName('');
@@ -440,7 +461,7 @@ function OtMasterDataPanel() {
   const addTask = async () => {
     if (!newTaskName.trim()) return;
     const { error } = await supabase.from('ot_task_types').insert([{
-      name: newTaskName.trim(), sort_order: taskTypes.length,
+      name: newTaskName.trim(), sort_order: Math.max(0, ...taskTypes.map(t => t.sort_order || 0)) + 1,
     }]);
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
     setNewTaskName('');
@@ -448,29 +469,35 @@ function OtMasterDataPanel() {
   };
 
   const toggleRouteActive = async (r) => {
-    await supabase.from('bus_routes').update({ is_active: !r.is_active }).eq('id', r.id);
+    const { error } = await supabase.from('bus_routes').update({ is_active: !r.is_active }).eq('id', r.id);
+    if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
     load();
   };
 
   const toggleTaskActive = async (t) => {
-    await supabase.from('ot_task_types').update({ is_active: !t.is_active }).eq('id', t.id);
+    const { error } = await supabase.from('ot_task_types').update({ is_active: !t.is_active }).eq('id', t.id);
+    if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
     load();
   };
 
+  // การจอง/พนักงานเก่าอ้าง master เหล่านี้อยู่ (task_type_id / bus_route_id) — ลบแล้วประวัติจะโชว์ "—"
+  // แนะนำ "ปิดใช้" แทน · เช็ค error เสมอ (ถ้ามี FK กันลบไว้ จะได้ไม่ล้มเหลวเงียบๆ)
   const removeRoute = async (r) => {
-    if (!window.confirm(`ลบสายรถ "${r.code} ${r.name}"?`)) return;
-    await supabase.from('bus_routes').delete().eq('id', r.id);
+    if (!window.confirm(`ลบสายรถ "${r.code} ${r.name}"?\n(ประวัติการจอง/พนักงานที่ผูกสายนี้จะแสดงเป็น "—" — ถ้าแค่เลิกใช้ แนะนำกด "ปิดใช้" แทน)`)) return;
+    const { error } = await supabase.from('bus_routes').delete().eq('id', r.id);
+    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
     load();
   };
 
   const removeTask = async (t) => {
-    if (!window.confirm(`ลบงาน "${t.name}"?`)) return;
-    await supabase.from('ot_task_types').delete().eq('id', t.id);
+    if (!window.confirm(`ลบงาน "${t.name}"?\n(ประวัติการจองที่ผูกงานนี้จะแสดงเป็น "—" — ถ้าแค่เลิกใช้ แนะนำกด "ปิดใช้" แทน)`)) return;
+    const { error } = await supabase.from('ot_task_types').delete().eq('id', t.id);
+    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
     load();
   };
 
   return (
-    <div className="card" style={{ padding: 16, marginBottom: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+    <div className="card mgrid" style={{ padding: 16, marginBottom: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
       <div>
         <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>🚐 สายรถรับส่ง</div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
@@ -557,8 +584,10 @@ function DailyTab() {
       const s = l.shift;
       const team = l.employees?.team;
       if (s) return s === shift;
-      if (shift === 'day')   return team === 'A' || team === 'C' || !team;
-      if (shift === 'night') return team === 'B' || team === 'C' || !team;
+      // fallback แถว legacy ที่ไม่มี shift: Team C = กะเช้าตลอด (ห้ามโผล่กะดึก) · A/B ไม่รู้รอบหมุนจริง
+      // จึงแสดงทั้งสองกะ (คนไม่มี team เช่นกัน) — ดีกว่าเดาผิดครึ่งสัปดาห์
+      if (shift === 'day')   return true;
+      if (shift === 'night') return team !== 'C';
       return true;
     });
     // mandatory scope: leader → ไลน์ตัวเอง, role ที่ถูกจำกัด sections → เฉพาะส่วนงานใน scope (CLAUDE.md "Section/Line/Team Scoping")
@@ -687,7 +716,8 @@ table{border-collapse:collapse;width:100%}
         <CsvBtn onClick={() => downloadCSV(
           `daily_${date}_${shift}.csv`,
           ['วันที่', 'ประเภทวัน', 'กะ', 'รหัสพนักงาน', 'ชื่อ', 'แผนก', 'ทีม', 'หมวก', 'รองเท้า', 'ถุงมือ', 'OT'],
-          filteredLogs.map(l => [date, DAY_TYPE_META[getDayType(date)].label, l.shift || (l.employees?.team === 'A' ? 'day' : l.employees?.team === 'B' ? 'night' : ''), l.employees?.employee_id_code, l.employees?.name, l.employees?.department || '', l.employees?.team || '', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.has_ot ? '✓' : ''])
+          // fallback กะจาก team: C = กะเช้าตลอด · A/B หมุนกะ ไม่รู้รอบจริง = เว้นว่าง (เดิมเดา A=เช้า B=ดึกตายตัว — ผิดครึ่งสัปดาห์)
+          filteredLogs.map(l => [date, DAY_TYPE_META[getDayType(date)]?.label || '', l.shift || (l.employees?.team === 'C' ? 'day' : ''), l.employees?.employee_id_code, l.employees?.name, l.employees?.department || '', l.employees?.team || '', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.has_ot ? '✓' : ''])
         )} />
       </div>
       {loading ? <Loader /> : (
@@ -755,11 +785,15 @@ function PerEmployeeTab() {
   const load = async () => {
     setLoading(true);
     const from = month + '-01';
-    const to = month + '-31';
-    const { data } = await supabase.from('daily_production_logs')
+    // วันสุดท้ายจริงของเดือน — ห้ามใช้ 'เดือน-31' (ก.พ./เม.ย./มิ.ย./ก.ย./พ.ย. ไม่มีวันที่ 31
+    // PostgreSQL cast date ไม่ผ่าน → query ตอบ 400 → หน้าโชว์ "ไม่มีข้อมูล" เงียบๆ ทั้งเดือน)
+    const [yy, mm] = month.split('-').map(Number);
+    const to = `${month}-${String(new Date(yy, mm, 0).getDate()).padStart(2, '0')}`;
+    const { data, error } = await supabase.from('daily_production_logs')
       .select('work_date, is_present, has_helmet, has_boots, has_gloves, assigned_line')
       .eq('employee_id', selected).gte('work_date', from).lte('work_date', to)
       .order('work_date', { ascending: false });
+    if (error) toast.error('โหลดข้อมูลไม่สำเร็จ: ' + error.message);
     setLogs(data || []);
     setLoading(false);
   };
@@ -838,7 +872,7 @@ table{border-collapse:collapse;width:100%}
           <option value="B">Team B</option>
           <option value="C">Team C</option>
         </select>
-        <select value={selected} onChange={e => setSelected(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
+        <select value={selected} onChange={e => setSelected(e.target.value)} style={{ width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
           {filteredEmployees.map(e => <option key={e.id} value={e.id}>{e.employee_id_code} — {e.name}</option>)}
         </select>
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 150, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
@@ -853,7 +887,8 @@ table{border-collapse:collapse;width:100%}
           downloadCSV(
             `employee_${emp?.employee_id_code || selected}_${month}.csv`,
             ['วันที่', 'ประเภทวัน', 'มาทำงาน', 'หมวก', 'รองเท้า', 'ถุงมือ', 'จุดงาน'],
-            logs.map(l => [l.work_date, DAY_TYPE_META[getDayType(l.work_date)].label, l.is_present ? '✓' : '✗', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.assigned_line || ''])
+            // assigned_line เก็บ id จุดงาน — ต้อง map เป็นชื่อสถานีเหมือนหน้าจอ/PDF (เดิม CSV ออกเป็น uuid ดิบ)
+            logs.map(l => [l.work_date, DAY_TYPE_META[getDayType(l.work_date)]?.label || '', l.is_present ? '✓' : '✗', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', stationMap[String(l.assigned_line)] || l.assigned_line || ''])
           );
         }} />
       </div>
@@ -933,14 +968,13 @@ function StationLogTab() {
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase
+    const data = await fetchAllRows(() => supabase
       .from('daily_production_logs')
       .select('work_date, is_present, has_helmet, has_boots, has_gloves, shift, employees(name, employee_id_code, image_url, team, section)')
       .eq('assigned_line', selectedStation)
       .gte('work_date', from).lte('work_date', to)
-      .order('work_date', { ascending: false })
-      .limit(10000);
-    setRows(data || []);
+      .order('work_date', { ascending: false }));
+    setRows(data);
     setLoading(false);
   };
 
@@ -960,8 +994,8 @@ function StationLogTab() {
       const team = r.employees?.team;
       if (s) { if (s !== stationShift) return false; }
       else {
-        if (stationShift === 'day'   && !(team === 'A' || team === 'C' || !team)) return false;
-        if (stationShift === 'night' && !(team === 'B' || team === 'C' || !team)) return false;
+        // แถว legacy ไม่มี shift: Team C = กะเช้าตลอด (ห้ามโผล่กะดึก) · A/B ไม่รู้รอบหมุนจริง แสดงทั้งสองกะ
+        if (stationShift === 'night' && team === 'C') return false;
       }
     }
     return true;
@@ -1010,7 +1044,7 @@ table{border-collapse:collapse;width:100%}
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
         <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)}
-          style={{ padding: '7px 10px', borderRadius: 7, fontSize: 13, minWidth: 200 }}>
+          style={{ width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13, minWidth: 200 }}>
           {Object.entries(byLine).map(([line, sts]) => (
             <optgroup key={line} label={line}>
               {sts.map(s => <option key={s.id} value={String(s.id)}>{s.station_name}</option>)}
@@ -1116,9 +1150,9 @@ function RangeTab() {
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase.from('daily_production_logs')
+    const data = await fetchAllRows(() => supabase.from('daily_production_logs')
       .select('work_date, is_present, employee_id, employees(name, employee_id_code, section, team, line_id)')
-      .gte('work_date', from).lte('work_date', to).limit(10000);
+      .gte('work_date', from).lte('work_date', to).order('work_date').order('employee_id'));
     // mandatory scope: leader → ไลน์ตัวเอง, role ที่ถูกจำกัด sections → เฉพาะส่วนงานใน scope
     const scoped = (data || []).filter(l => {
       if (role === 'leader' && userLineId) return String(l.employees?.line_id) === String(userLineId);
@@ -1385,8 +1419,11 @@ function FourMTab() {
       nextStatus = 'approved';
     }
 
-    const { error } = await supabase.from('four_m_logs').update(update).eq('id', log.id);
+    // guard สถานะเดิม — กัน SV สองคนกดพร้อมกันแล้วทับผลของกันเอง (0 แถว = มีคนจัดการไปแล้ว)
+    const { data: updated, error } = await supabase.from('four_m_logs').update(update)
+      .eq('id', log.id).eq('status', log.status).select('id');
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
+    if (!updated?.length) { toast.info('รายการนี้ถูกจัดการโดยผู้อื่นไปแล้ว — รีเฟรชข้อมูลใหม่'); load(); return; }
     toast.success(nextStatus === 'pending_qa' ? 'SV Approved → รอ QA' : 'Approved เรียบร้อย');
     supabase.functions.invoke('send-notification', { body: { event: 'status_change', log: { ...log, ...update, status: nextStatus } } }).catch(() => {});
     load();
@@ -1394,37 +1431,53 @@ function FourMTab() {
 
   const handleQaApproveSubmit = async () => {
     setIsApprovingSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) { toast.error('เซสชันหมดอายุ — กรุณา login ใหม่'); return; }
 
-    let qa_image_url = null;
-    if (qaImageFile) {
-      const resized = await resizeImage(qaImageFile);
-      const path = `qa/${Date.now()}_${user?.id ?? 'anon'}.jpg`;
-      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: false, contentType: 'image/jpeg' });
-      if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); setIsApprovingSaving(false); return; }
-      qa_image_url = supabase.storage.from('four-m-images').getPublicUrl(path).data.publicUrl;
+      let qa_image_url = null;
+      if (qaImageFile) {
+        const resized = await resizeImage(qaImageFile);
+        if (!resized) { toast.error('อ่านไฟล์รูปไม่สำเร็จ — ลองใช้ JPG/PNG'); return; }
+        const path = `qa/${Date.now()}_${user.id}.jpg`;
+        const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: false, contentType: 'image/jpeg' });
+        if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); return; }
+        qa_image_url = supabase.storage.from('four-m-images').getPublicUrl(path).data.publicUrl;
+      }
+
+      const now = new Date().toISOString();
+      const update = { status: 'approved', approved_by: user.id, approved_at: now, reject_reason: null, ...(qa_image_url ? { qa_image_url } : {}) };
+      const { data: updated, error } = await supabase.from('four_m_logs').update(update)
+        .eq('id', qaApproveModal.id).eq('status', 'pending_qa').select('id');
+      if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
+      if (!updated?.length) { toast.info('รายการนี้ถูกจัดการโดยผู้อื่นไปแล้ว — รีเฟรชข้อมูลใหม่'); setQaApproveModal(null); load(); return; }
+      // แทนที่รูป QA เดิม (เช่นเคยอนุมัติแล้วถูก Reset) → ลบไฟล์เก่าหลัง DB update สำเร็จ (best-effort — กฎ storage)
+      if (qa_image_url && qaApproveModal.qa_image_url?.includes('/four-m-images/')) {
+        const oldPath = decodeURIComponent(qaApproveModal.qa_image_url.split('/four-m-images/')[1] || '').split('?')[0];
+        if (oldPath) supabase.storage.from('four-m-images').remove([oldPath]).catch(() => {});
+      }
+      toast.success('QA Approved เรียบร้อย');
+      supabase.functions.invoke('send-notification', { body: { event: 'status_change', log: { ...qaApproveModal, ...update, status: 'approved' } } }).catch(() => {});
+      setQaApproveModal(null); setQaImageFile(null); setQaImagePreview(null);
+      load();
+    } finally {
+      setIsApprovingSaving(false);
     }
-
-    const now = new Date().toISOString();
-    const update = { status: 'approved', approved_by: user.id, approved_at: now, reject_reason: null, ...(qa_image_url ? { qa_image_url } : {}) };
-    const { error } = await supabase.from('four_m_logs').update(update).eq('id', qaApproveModal.id);
-    setIsApprovingSaving(false);
-    if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
-    toast.success('QA Approved เรียบร้อย');
-    supabase.functions.invoke('send-notification', { body: { event: 'status_change', log: { ...qaApproveModal, ...update, status: 'approved' } } }).catch(() => {});
-    setQaApproveModal(null); setQaImageFile(null); setQaImagePreview(null);
-    load();
   };
 
   const handleReject = async () => {
     if (!rejectReason.trim()) { toast.error('กรุณาระบุเหตุผล'); return; }
     const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from('four_m_logs').update({
+    const log = logs.find(l => l.id === rejectModal);
+    let q = supabase.from('four_m_logs').update({
       status: 'rejected', approved_by: user.id, approved_at: new Date().toISOString(), reject_reason: rejectReason.trim(),
     }).eq('id', rejectModal);
+    // guard สถานะเดิม — reject ได้เฉพาะรายการที่ยังรออนุมัติ (กัน race ทับผล approve ของคนอื่น)
+    if (log) q = q.in('status', ['pending', 'pending_qa']);
+    const { data: updated, error } = await q.select('id');
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
+    if (!updated?.length) { toast.info('รายการนี้ถูกจัดการโดยผู้อื่นไปแล้ว — รีเฟรชข้อมูลใหม่'); setRejectModal(null); setRejectReason(''); load(); return; }
     toast.success('Rejected แล้ว');
-    const log = logs.find(l => l.id === rejectModal);
     if (log) supabase.functions.invoke('send-notification', { body: { event: 'status_change', log: { ...log, status: 'rejected', reject_reason: rejectReason.trim() } } }).catch(() => {});
     setRejectModal(null); setRejectReason('');
     load();
@@ -1434,6 +1487,7 @@ function FourMTab() {
   // ── Export "Changing Point Control Record" — ปฏิทินรายเดือน 11 หัวข้อ Man/Machine/Method/Material ──
   const handleExportChangePointPdf = async () => {
     if (!line) { toast.error('เลือกไลน์ก่อน'); return; }
+    if (!cpcMonth) { toast.error('เลือกเดือนก่อน'); return; } // ช่อง month เคลียร์เป็น '' ได้ → parseInt(undefined) = NaN ตารางพัง
     setCpcExporting(true);
     const [yStr, mStr] = cpcMonth.split('-');
     const y = parseInt(yStr), m = parseInt(mStr); // m: 1-12
@@ -1767,7 +1821,8 @@ function FourMTab() {
         <CsvBtn onClick={() => downloadCSV(
           `4m_changes_${from}_${to}.csv`,
           ['วันที่', 'ประเภทวัน', 'ไลน์', 'ประเภท', 'ประเภทย่อย', 'รายละเอียด', 'สถานะ', 'เวลาสร้าง'],
-          logs.map(l => [l.work_date, DAY_TYPE_META[getDayType(l.work_date)].label, l.line_name, l.category, l.change_subtype || '', l.description, l.status, l.created_at ? fmtDateTime(l.created_at) : ''])
+          // export ชุดเดียวกับตารางบนจอ (ผ่าน filter ส่วนงาน) — เดิมใช้ logs ดิบ CSV ไม่ตรงจอ
+          fourMFilteredLogs.map(l => [l.work_date, DAY_TYPE_META[getDayType(l.work_date)]?.label || '', l.line_name, l.category, l.change_subtype || '', l.description, l.status, l.created_at ? fmtDateTime(l.created_at) : ''])
         )} />
         {canExport && (
           <>
@@ -1873,7 +1928,22 @@ function FourMTab() {
                         )
                       ) : (
                         can('four_m', 'reset', role) && (
-                          <button onClick={() => supabase.from('four_m_logs').update({ status: 'pending', sv_approved_by: null, sv_approved_at: null, approved_by: null, approved_at: null, reject_reason: null }).eq('id', l.id).then(load)}
+                          <button onClick={async () => {
+                            // Reset = status change → ต้องเคลียร์รูป QA เดิม (ลบไฟล์ด้วย) + แจ้ง Telegram + เช็ค error
+                            const oldQaUrl = l.qa_image_url;
+                            const { error } = await supabase.from('four_m_logs').update({
+                              status: 'pending', sv_approved_by: null, sv_approved_at: null,
+                              approved_by: null, approved_at: null, reject_reason: null, qa_image_url: null,
+                            }).eq('id', l.id);
+                            if (error) { toast.error('Reset ไม่สำเร็จ: ' + error.message); return; }
+                            if (oldQaUrl?.includes('/four-m-images/')) {
+                              const oldPath = decodeURIComponent(oldQaUrl.split('/four-m-images/')[1] || '').split('?')[0];
+                              if (oldPath) supabase.storage.from('four-m-images').remove([oldPath]).catch(() => {});
+                            }
+                            supabase.functions.invoke('send-notification', { body: { event: 'status_change', log: { ...l, status: 'pending', reject_reason: null } } }).catch(() => {});
+                            toast.success('Reset กลับเป็นรออนุมัติแล้ว');
+                            load();
+                          }}
                             style={{ padding: '3px 8px', borderRadius: 5, fontSize: 11, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
                             Reset
                           </button>
@@ -1942,7 +2012,7 @@ function DocumentControlPanel() {
   const addRevision = async () => {
     if (!newRev.rev.trim()) { toast.error('กรุณาระบุ Rev'); return; }
     const { error } = await supabase.from('document_control_revisions').insert([{
-      doc_key: DOC_KEY, seq: revisions.length + 1,
+      doc_key: DOC_KEY, seq: Math.max(0, ...revisions.map(r => r.seq || 0)) + 1, // max+1 กัน seq ซ้ำหลังลบแถวกลาง
       record_date: newRev.record_date || null,
       rev: newRev.rev.trim(),
       issued_date: newRev.issued_date || null,
@@ -2227,10 +2297,24 @@ function OperatorRadarPanel({ emp, skillDefs, onClose }) {
 const selSt = { width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', minWidth: 120 }; // width:auto กัน index.css select{width:100%} ยืดเต็ม toolbar
 
 function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilterLine, filterTeam, setFilterTeam, filterDept, setFilterDept }) {
+  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const orgSectionList = useOrgSections();
   const orgDeptList    = useOrgDepts();
-  const sections = useMemo(() => orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort(), [lines, orgSectionList]);
-  const visibleLines = filterSection ? lines.filter(l => l.section === filterSection) : lines;
+  // dropdown เหลือเฉพาะใน scope — ข้อมูลจริงถูกบังคับ scope ที่ query ของแต่ละแท็บแล้ว
+  // (เดิมโชว์ทุกส่วนงาน/ไลน์ เลือกนอก scope ได้ผลว่างเปล่า ทำให้ผู้ใช้สับสน)
+  const scopedLines = useMemo(() => {
+    if (role === 'leader' && userLineId) {
+      const fam = new Set([...getLineFamilyIds(lines, Number(userLineId) || userLineId)].map(String));
+      return lines.filter(l => fam.has(String(l.id)));
+    }
+    return scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines;
+  }, [lines, role, userLineId, scopeSecs]);
+  const sections = useMemo(() => {
+    const all = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+    if (role === 'leader' && userLineId) return [...new Set(scopedLines.map(l => l.section).filter(Boolean))].sort();
+    return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
+  }, [lines, orgSectionList, role, userLineId, scopeSecs, scopedLines]);
+  const visibleLines = filterSection ? scopedLines.filter(l => l.section === filterSection) : scopedLines;
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
       <select value={filterSection} onChange={e => { setFilterSection(e.target.value); setFilterLine(''); }} style={selSt}>
@@ -2330,11 +2414,12 @@ function SkillMatrixTab() {
           const rowsHtml = employees.map((emp, i) => {
             const sm = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
             const scores = ordered.map(s => sm[s.name]);
-            const defined = scores.filter(v => v !== undefined);
+            // นิยามเดียวกับหน้าจอ (บรรทัด ~2500): เฉลี่ยเฉพาะคะแนน > 0 และคะแนน 0 แสดง "—"
+            const defined = scores.filter(v => v !== undefined && v > 0);
             const avg = defined.length ? Math.round(defined.reduce((a,b)=>a+b,0)/defined.length) : null;
-            const cells = ordered.map((s, si) => {
+            const cells = ordered.map((s) => {
               const v = sm[s.name];
-              return `<td style="border:1px solid #ccc;text-align:center;padding:2px">${v !== undefined ? v : '—'}</td>`;
+              return `<td style="border:1px solid #ccc;text-align:center;padding:2px">${v !== undefined && v > 0 ? v : '—'}</td>`;
             }).join('');
             return `<tr><td style="border:1px solid #ccc;text-align:center;padding:2px">${i+1}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.employee_id_code || ''}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.name || ''}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.section || ''}</td><td style="border:1px solid #ccc;padding:2px 4px;text-align:center">${emp.team || ''}</td>${cells}<td style="border:1px solid #ccc;text-align:center;font-weight:700;padding:2px">${avg !== null ? avg : '—'}</td></tr>`;
           }).join('');
@@ -2373,8 +2458,9 @@ ${catHeaderCells}
             ['รหัส', 'ชื่อ', 'ส่วนงาน', 'Team', ...ordered.map(s => s.label), 'เฉลี่ย'],
             employees.map(emp => {
               const sm = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
-              const scores = ordered.map(s => sm[s.name] ?? '');
-              const defined = ordered.map(s => sm[s.name]).filter(v => v !== undefined);
+              // นิยามเดียวกับหน้าจอ: คะแนน 0 = ยังไม่มีสกิล (ช่องว่าง) และไม่ถูกนำมาเฉลี่ย
+              const scores = ordered.map(s => (sm[s.name] !== undefined && sm[s.name] > 0) ? sm[s.name] : '');
+              const defined = ordered.map(s => sm[s.name]).filter(v => v !== undefined && v > 0);
               const avg = defined.length ? Math.round(defined.reduce((a,b)=>a+b,0)/defined.length) : '';
               return [emp.employee_id_code, emp.name, emp.section || '', emp.team || '', ...scores, avg];
             })
@@ -2855,18 +2941,11 @@ function MultiSkillFormTab() {
   };
 
   const handlePrint = async () => {
-    const ordered = groupSkillsByCategory(skillDefs).flatMap(g => g.skills);
-    const empRows = employees.map((emp, i) => {
-      const sm = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
-      const levels = ordered.map(s => scoreToLevel(sm[s.name]));
-      const validLevels = levels.filter(l => l > 0);
-      const overall = validLevels.length
-        ? Math.round(validLevels.reduce((a, b) => a + b, 0) / validLevels.length)
-        : 0;
-      return { emp, levels, overall, index: i + 1 };
-    });
+    // ใช้ชุดข้อมูลเดียวกับตารางบนจอ (msVisibleDefs + empLevelRows) — เดิมพิมพ์จาก skillDefs ทั้งหมด
+    // และนับคนที่ไม่มี record เป็นระดับ 0 ("อยู่ระหว่างฝึกอบรม") ทำให้สรุปบนกระดาษไม่ตรงกับ preview
+    const empRows = empLevelRows.map((r, i) => ({ ...r, index: i + 1 }));
     const levelCounts = MS_LEVELS.map(lv => [
-      ...ordered.map((_, si) => empRows.filter(r => r.levels[si] === lv.level).length),
+      ...msVisibleDefs.map((_, si) => empRows.filter(r => r.levels[si] !== null && r.levels[si] === lv.level).length),
       empRows.filter(r => r.overall === lv.level).length,
     ]);
     const [mSig, cSig, aSig] = await Promise.all([
@@ -2874,7 +2953,7 @@ function MultiSkillFormTab() {
       checkerSig  ? urlToDataUrl(checkerSig)  : Promise.resolve(null),
       approverSig ? urlToDataUrl(approverSig) : Promise.resolve(null),
     ]);
-    const html = buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps: empRows.length, makerSigUrl: mSig, checkerSigUrl: cSig, approverSigUrl: aSig });
+    const html = buildMultiSkillHtml({ empRows, levelCounts, skillDefs: msVisibleDefs, dept, section, department, headName, maker, checker, approver, totalEmps: empRows.length, makerSigUrl: mSig, checkerSigUrl: cSig, approverSigUrl: aSig });
     const w = window.open('', '_blank');
     w.document.write(html);
     w.document.close();
@@ -2939,10 +3018,11 @@ function MultiSkillFormTab() {
         </button>
         {employees.length > 0 && (
           <CsvBtn onClick={() => {
-            const ordered = msCatGroups.flatMap(g => g.skills);
+            // header ต้องเป็น msVisibleDefs ชุดเดียวกับ levels ใน empLevelRows —
+            // เดิมใช้ skill ทุกตัวเป็น header แต่ค่ามีเฉพาะตัวที่ visible → คอลัมน์เหลื่อมทั้งไฟล์
             downloadCSV(
               `multi_skill_${toLocalDateStr(new Date())}.csv`,
-              ['รหัส', 'ชื่อ', 'ตำแหน่ง', 'ส่วนงาน', 'Team', 'อายุงาน', ...ordered.map(s => s.label), 'ทักษะโดยรวม'],
+              ['รหัส', 'ชื่อ', 'ตำแหน่ง', 'ส่วนงาน', 'Team', 'อายุงาน', ...msVisibleDefs.map(s => s.label), 'ทักษะโดยรวม'],
               empLevelRows.map(({ emp, levels, overall }) => [
                 emp.employee_id_code || '',
                 emp.name || '',
@@ -2950,8 +3030,8 @@ function MultiSkillFormTab() {
                 emp.section || '',
                 emp.team || '',
                 calcServiceDuration(emp.start_date),
-                ...levels,
-                overall,
+                ...levels.map(l => l ?? ''),
+                overall || '',
               ])
             );
           }} />
@@ -3194,212 +3274,8 @@ function MultiSkillFormTab() {
   );
 }
 
-// ─── Export Tab ─────────────────────────────────────────────
-const SUMCOLS = ['ส', 'ป', 'ก', 'พง', 'กธ', 'บป', 'ข', 'มต'];
-const TH_MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
-
-function AttendancePrint({ employees, days, logsMap, dept, thMonthStr, startDay, endDay }) {
-  const bdr  = '0.5px solid #555';
-  const tdSt = (ex = {}) => ({ border: bdr, fontSize: 6.5, textAlign: 'center', padding: '0 1px', lineHeight: 1.3, verticalAlign: 'middle', ...ex });
-  const thSt = (ex = {}) => ({ ...tdSt(), background: '#dde8ff', fontWeight: 700, ...ex });
-
-  return (
-    <div style={{ fontFamily: '"Sarabun","TH Sarabun New",Arial,sans-serif', background: '#fff', color: '#000', padding: 6, minWidth: 900 }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 3 }}>
-        <tbody>
-          <tr>
-            <td style={{ width: '35%', textAlign: 'center', fontWeight: 800, fontSize: 10 }}>
-              บริษัท ไทยซัมมิท โอโตโมทีฟ จำกัด
-            </td>
-            <td style={{ width: '20%', border: bdr, textAlign: 'center', fontSize: 8, padding: '3px 6px' }}>
-              เดือน <strong>{thMonthStr}</strong>
-            </td>
-            <td style={{ width: '22%', border: bdr, textAlign: 'center', fontSize: 8, padding: '3px 6px' }}>
-              งวด วันที่ {startDay}–{endDay}
-            </td>
-            <td style={{ width: '23%', border: bdr, textAlign: 'center', fontSize: 8, padding: '3px 6px' }}>
-              จำนวนพนักงาน <strong>{employees.length}</strong> คน
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div style={{ textAlign: 'center', fontSize: 9.5, fontWeight: 700, marginBottom: 3 }}>
-        ใบบันทึกการมาทำงาน - การหยุดงานของพนักงาน
-      </div>
-
-      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 3 }}>
-        <tbody>
-          <tr>
-            <td style={{ fontSize: 7.5, padding: '1px 0' }}>หัวหน้าแผนก ___________________</td>
-            <td style={{ fontSize: 7.5, textAlign: 'center' }}>หัวหน้าส่วน ___________________</td>
-            <td style={{ fontSize: 7.5, textAlign: 'right' }}>ผู้จัดการ ___________________</td>
-          </tr>
-        </tbody>
-      </table>
-
-      {dept && (
-        <div style={{ fontWeight: 700, fontSize: 8, marginBottom: 3, background: '#eef2ff', display: 'inline-block', padding: '1px 6px' }}>
-          {dept}
-        </div>
-      )}
-
-      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 6.5 }}>
-        <colgroup>
-          <col style={{ width: 18 }} />
-          <col style={{ width: 80 }} />
-          <col style={{ width: 46 }} />
-          {days.flatMap(d => [
-            <col key={`ca${d}`} style={{ width: 9 }} />,
-            <col key={`cb${d}`} style={{ width: 9 }} />,
-            <col key={`cc${d}`} style={{ width: 9 }} />,
-          ])}
-          {SUMCOLS.map(s => <col key={`cs${s}`} style={{ width: 12 }} />)}
-          <col style={{ width: 15 }} />
-        </colgroup>
-        <thead>
-          <tr>
-            <th rowSpan={2} style={thSt({ fontSize: 5.5 })}>ลำดับ</th>
-            <th rowSpan={2} style={thSt({ textAlign: 'left', paddingLeft: 3 })}>ชื่อ - สกุล</th>
-            <th rowSpan={2} style={thSt()}>เลขที่บัตร</th>
-            {days.map(d => <th key={d} colSpan={3} style={thSt()}>{d}</th>)}
-            {SUMCOLS.map(s => <th key={s} rowSpan={2} style={thSt({ fontSize: 5.5 })}>{s}</th>)}
-            <th rowSpan={2} style={thSt({ fontSize: 5.5 })}>OT<br/>ชม.</th>
-          </tr>
-          <tr>
-            {days.flatMap(d => [
-              <th key={`${d}c`} style={thSt({ fontSize: 5 })}>ช</th>,
-              <th key={`${d}b`} style={thSt({ fontSize: 5 })}>บ</th>,
-              <th key={`${d}o`} style={thSt({ fontSize: 5 })}>อ</th>,
-            ])}
-          </tr>
-        </thead>
-        <tbody>
-          {employees.map((emp, idx) => {
-            const log = logsMap[emp.id] || {};
-            const absentCount = days.filter(d => log[d] === false).length;
-
-            const mainCells = days.flatMap(d => {
-              const status = log[d];
-              return [
-                <td key={`${d}c`} style={tdSt({ background: status === false ? '#ffe4e1' : status === true ? '#f0fff4' : '#fff', fontSize: 6 })}>
-                  {status === false ? 'ข' : status === true ? '✓' : ''}
-                </td>,
-                <td key={`${d}b`} style={tdSt({ background: '#fff' })}></td>,
-                <td key={`${d}o`} style={tdSt({ background: '#fff' })}></td>,
-              ];
-            });
-
-            const otCells = days.flatMap(d => [
-              <td key={`${d}c2`} style={tdSt({ height: 10 })}></td>,
-              <td key={`${d}b2`} style={tdSt()}></td>,
-              <td key={`${d}o2`} style={tdSt()}></td>,
-            ]);
-
-            return [
-              <tr key={`${emp.id}a`} style={{ height: 14 }}>
-                <td rowSpan={2} style={tdSt({ textAlign: 'center', fontWeight: 600 })}>{idx + 1}</td>
-                <td rowSpan={2} style={tdSt({ textAlign: 'left', paddingLeft: 3 })}>{emp.name}</td>
-                <td rowSpan={2} style={tdSt({ fontSize: 6 })}>{emp.employee_id_code}</td>
-                {mainCells}
-                {SUMCOLS.map(s => (
-                  <td key={s} style={tdSt()}>{s === 'ข' && absentCount > 0 ? absentCount : ''}</td>
-                ))}
-                <td style={tdSt()}></td>
-              </tr>,
-              <tr key={`${emp.id}b`} style={{ height: 10 }}>
-                {otCells}
-                {SUMCOLS.map(s => <td key={s} style={tdSt()}></td>)}
-                <td style={tdSt()}></td>
-              </tr>,
-            ];
-          })}
-        </tbody>
-      </table>
-
-      <div style={{ marginTop: 5, fontSize: 6, lineHeight: 1.8, color: '#444' }}>
-        <div><strong>หมายเหตุ:</strong> ส=มาสาย &nbsp; ป=ลาป่วย &nbsp; ก=กาคิง &nbsp; พง=ลาพักผ่อนประจำปี &nbsp; กธ=ลากิจธุระอันจำเป็น &nbsp; บป=ลาอุปสมบท &nbsp; ข=ขาดงาน &nbsp; มต=ไม่มา Meeting</div>
-        <div>★ ช = ช่วงเช้า, บ = ช่วงบ่าย, อ = ช่วงโอที &nbsp; ★ ลา 12 ชั่วโมง = 0.2, ลาครึ่งวัน = 0.5</div>
-      </div>
-    </div>
-  );
-}
-
-function OTPrint({ employees, dept, thMonthStr }) {
-  const bdr  = '0.5px solid #444';
-  const tdSt = (ex = {}) => ({ border: bdr, fontSize: 8, padding: '2px 3px', verticalAlign: 'middle', ...ex });
-  const thSt = (ex = {}) => ({ ...tdSt(), background: '#c8e6c9', fontWeight: 700, textAlign: 'center', ...ex });
-
-  const half   = Math.ceil(employees.length / 2);
-  const groups = [employees.slice(0, half), employees.slice(half)];
-  const cols   = [
-    { label: 'สำดับ', w: 22 }, { label: 'เลขที่บัตร', w: 56 }, { label: 'ชื่อ-สกุล', w: 110 },
-    { label: 'งานที่ทำ', w: 90 }, { label: 'สายรอง', w: 60 },
-    { label: 'เวลาเริ่ม', w: 40 }, { label: 'ลายมือชื่อ ล.1', w: 48 },
-    { label: 'เวลาเลิก', w: 40 }, { label: 'ชั่วโมง', w: 28 }, { label: 'ลายมือชื่อ ล.2', w: 48 },
-  ];
-
-  const renderGroup = (grp, offset) => (
-    <table key={offset} style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 8, tableLayout: 'fixed', fontSize: 8 }}>
-      <colgroup>{cols.map((c, i) => <col key={i} style={{ width: c.w }} />)}</colgroup>
-      <thead>
-        <tr>{cols.map((c, i) => <th key={i} style={thSt()}>{c.label}</th>)}</tr>
-      </thead>
-      <tbody>
-        {grp.map((emp, i) => (
-          <tr key={emp.id} style={{ height: 20 }}>
-            <td style={tdSt({ textAlign: 'center' })}>{offset + i + 1}</td>
-            <td style={tdSt()}>{emp.employee_id_code}</td>
-            <td style={tdSt()}>{emp.name}</td>
-            {Array(7).fill(0).map((_, j) => <td key={j} style={tdSt()}></td>)}
-          </tr>
-        ))}
-        {Array.from({ length: Math.max(0, 5 - grp.length) }).map((_, i) => (
-          <tr key={`p${i}`} style={{ height: 20 }}>
-            {cols.map((_, j) => <td key={j} style={tdSt()}></td>)}
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-
-  return (
-    <div style={{ fontFamily: '"Sarabun","TH Sarabun New",Arial,sans-serif', background: '#fff', color: '#000', padding: 10, minWidth: 700, fontSize: 9 }}>
-      <div style={{ textAlign: 'right', marginBottom: 6, fontSize: 8 }}>□ วันธรรมดา &nbsp;&nbsp; □ วันหยุด</div>
-      <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 800, marginBottom: 6 }}>
-        แบบฟอร์มใบสั่งงานและรายงานการทำงานล่วงเวลา (ใบ ล.1 และ ล.2)
-      </div>
-      <div style={{ marginBottom: 6, fontSize: 8, lineHeight: 1.8 }}>
-        <div>บริษัท: บริษัทไทยซัมมิท โอโตโมทีฟ จำกัด (สาขา 1) &nbsp;&nbsp;&nbsp; วันที่: ___________</div>
-        <div>ฝ่าย: Production &nbsp;&nbsp; ส่วน: {dept || '___________'} &nbsp;&nbsp; Cost: ___________</div>
-      </div>
-      <div style={{ fontWeight: 700, fontSize: 8.5, marginBottom: 4, borderBottom: '1px solid #555', paddingBottom: 2 }}>
-        รายชื่อพนักงานที่ทำงานล่วงเวลา
-      </div>
-      {groups.map((grp, i) => grp.length > 0 && renderGroup(grp, i === 0 ? 0 : groups[0].length))}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 10, fontSize: 8 }}>
-        {['ผู้บันทึกและผู้อนุมัติ ล.1', 'ผู้บันทึกและผู้อนุมัติ ล.2'].map((label, i) => (
-          <div key={i} style={{ border: bdr, padding: '8px 12px' }}>
-            <div style={{ fontWeight: 700, marginBottom: 12 }}>{label}</div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-              <span>ผู้บันทึก _________________</span><span>(หัวหน้างาน)</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span>( _________________ )</span><span>(ระดับจัดการ)</span>
-            </div>
-            <div style={{ fontSize: 7, color: '#888', marginTop: 4 }}>คุณภูลยทารสคน ลาตธนสารสมบัติ</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ marginTop: 8, fontSize: 7, lineHeight: 1.7, color: '#666', borderTop: '0.5px solid #ccc', paddingTop: 4 }}>
-        <strong>ระเบียบปฏิบัติ</strong><br/>
-        1. หน่วยงานต้องบันทึกข้อมูลการทำงานล่วงเวลาภายใน 15.00 น. เพื่อส่งข้อมูลให้ฝ่าย HRM จัดรอรับล่า โดยฝ่าย HRM จะแจ้งสายรองภายใน 16.00 น.<br/>
-        2. ผู้ที่ทำงานล่วงเวลาต้องลายมือชื่อทั้งก่อนเริ่มงาน (ล.1) และหลังเวลาเลิกงาน (ล.2) โดยให้ส่งแบบฟอร์มนี้ที่ฝ่าย HRM ภายในเวลา 10.00 น. ของวันอังคารไป<br/>
-        * รายการขอ OT ข้ามวัน, ** รายการขอ OT ย้อนหลัง
-      </div>
-    </div>
-  );
-}
+// (ลบ AttendancePrint/OTPrint ที่เป็น dead code ~230 บรรทัดออก 2026-07-14 — ไม่ถูกเรียกจากที่ใด
+//  ฟอร์มจริงใช้ handlePrint ของ AttendanceFormTab ที่สร้าง HTML เอง)
 
 const Loader = () => (
   <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
@@ -3512,6 +3388,7 @@ function SkillAllowanceTab() {
   }, [role, userLineId, scopeSecs, lines]);
 
   const load = async () => {
+    if (!workType) { toast.error('เลือก "ประเภทงาน" ก่อนดึงข้อมูล'); return; } // เดิม query ด้วย '' ได้ผลว่างโดยไม่บอกสาเหตุ
     setLoading(true);
     const days = periodDays();
     const startDate = `${year}-${String(month).padStart(2,'0')}-${String(days[0]).padStart(2,'0')}`;
@@ -3551,8 +3428,8 @@ function SkillAllowanceTab() {
       certifiedEmpIds = new Set((certHolders || []).map(c => c.employee_id));
     }
 
-    // logs ที่ qualify
-    const { data: logs } = await supabase
+    // logs ที่ qualify — แบ่งหน้าดึงให้ครบ (โดนตัดที่ 1000 = คนหายจากใบค่าฝีมือ = ไม่ได้เงิน)
+    const logs = await fetchAllRows(() => supabase
       .from('daily_production_logs')
       .select('work_date, employee_id, assigned_line, shift, employees(employee_id_code, name, section, team)')
       .gte('work_date', startDate)
@@ -3562,7 +3439,7 @@ function SkillAllowanceTab() {
       .eq('has_boots', true)
       .eq('has_gloves', true)
       .in('assigned_line', stationIds)
-      .limit(10000);
+      .order('work_date').order('employee_id'));
 
     // group by employee, แยกตามกะ (day=กะ01 / night=กะ02)
     const empMap = {};
@@ -3768,7 +3645,7 @@ function SkillAllowanceTab() {
       <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ปี</div>
-          <select value={year} onChange={e => setYear(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={year} onChange={e => setYear(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             {[today.getFullYear()-1, today.getFullYear(), today.getFullYear()+1].map(y => (
               <option key={y} value={y}>{y + 543}</option>
             ))}
@@ -3776,27 +3653,27 @@ function SkillAllowanceTab() {
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>เดือน</div>
-          <select value={month} onChange={e => setMonth(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={month} onChange={e => setMonth(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
           </select>
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>งวด</div>
-          <select value={period} onChange={e => setPeriod(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={period} onChange={e => setPeriod(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             <option value={1}>งวด 1 (วันที่ 1-15)</option>
             <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
           </select>
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์ผลิต</div>
-          <select value={line} onChange={e => setLine(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={line} onChange={e => setLine(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             <option value="">ทุกไลน์</option>
             {(scopedLineNames ? lines.filter(l => scopedLineNames.includes(l.name)) : lines).map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
           </select>
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Team</div>
-          <select value={team} onChange={e => setTeam(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={team} onChange={e => setTeam(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             <option value="">ทุก Team</option>
             <option value="A">Team A</option>
             <option value="B">Team B</option>
@@ -3840,7 +3717,7 @@ function SkillAllowanceTab() {
       <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ประเภทงาน</div>
-          <select value={workType} onChange={e => setWorkType(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={workType} onChange={e => setWorkType(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             <option value="">— เลือกประเภท —</option>
             {workTypes.map(w => <option key={w} value={w}>{w}</option>)}
           </select>
@@ -4004,18 +3881,30 @@ function AttendanceFormTab() {
 
   // ชั่วโมง OT จริงต่อวัน (ไม่ใช่การนับจำนวนวัน)
   // - วันทำงานปกติ: คิดเฉพาะช่วงเลย OT ต่อจากเวลางานปกติ — กะดึก 2 ชม. เสมอ, กะเช้า 2 ชม. (+3 ถ้ามี extended OT = 5)
-  // - วันหยุด (company_calendar = ot15/ot2): มาทำงานทั้งวัน = OT ทั้งกะ 8 ชม. (หรือ 10.5 ชม. ถ้าทำ extended OT ต่อ)
+  // - วันหยุด (company_calendar = ot15/ot2): มาทำงาน = OT ทั้งกะ ตามรูปแบบที่จองใน ot_night_bookings.ot_period
+  //   (8 หรือ 10 ชม. — ดู src/utils/otPeriods.js) · จองเก่า/ไม่ระบุ = 8 ชม. (ห้ามเดา 10.5 — ไม่มีในกฎ)
   const otHoursForDay = (info, day) => {
     if (!info) return 0;
     const holiday = calLoaded && getDayType(dayDateStr(day)) !== 'working';
     if (holiday) {
       if (!info.present) return 0;
-      return info.extOt ? 10.5 : 8;
+      const meta = otPeriodMeta(info.otPeriod);
+      return meta ? meta.hours : 8;
     }
     if (!info.ot) return 0;
     const isNight = info.shift === 'night';
     return isNight ? 2 : (info.extOt ? 5 : 2);
   };
+
+  // น้ำหนักวันลาในคอลัมน์สรุป — ตาม legend ฟอร์ม: ลาครึ่งวัน = 0.5 · ลา 2 ชั่วโมง = 0.2 (ชม.×0.1) · เต็มวัน = 1
+  const leaveWeight = (b) => {
+    if (!b?.leave) return 0;
+    if (b.leaveDur === 'half') return 0.5;
+    if (b.leaveDur === 'hours') return Math.round((Number(b.leaveHours) || 0) * 0.1 * 10) / 10;
+    return 1;
+  };
+  const sumLeave = (r, daysArr, type) =>
+    Math.round(daysArr.reduce((s, d) => s + (r.byDay[d]?.leave === type ? leaveWeight(r.byDay[d]) : 0), 0) * 10) / 10;
   // ชั่วโมง OT รวมทั้งช่วง สำหรับพนักงาน 1 คน
   const sumOtHours = (r, daysArr) => daysArr.reduce((sum, d) => sum + otHoursForDay(r.byDay[d], d), 0);
 
@@ -4031,9 +3920,11 @@ function AttendanceFormTab() {
     const familyIds = line ? [...getLineFamilyIds(lines, line)] : [];
     let empQ = supabase.from('employees')
       .select('id, name, employee_id_code, section, department, team, line_id');
-    // mandatory scope ก่อน (leader → ไลน์ตัวเอง, role ที่ถูกจำกัด sections → เฉพาะส่วนงานใน scope) แล้วค่อย filter อิสระทับ
-    if (role === 'leader' && userLineId) empQ = empQ.eq('line_id', userLineId);
-    else if (scopeSecs.length)           empQ = empQ.in('section', scopeSecs);
+    // mandatory scope ก่อน (leader → ครอบครัวไลน์ตัวเอง แบบเดียวกับแท็บอื่น, sections → เฉพาะส่วนงานใน scope) แล้วค่อย filter อิสระทับ
+    if (role === 'leader' && userLineId) {
+      const leaderFam = [...getLineFamilyIds(lines, Number(userLineId) || userLineId)];
+      empQ = empQ.in('line_id', leaderFam.length ? leaderFam : [userLineId]);
+    } else if (scopeSecs.length)         empQ = empQ.in('section', scopeSecs);
     if (line && familyIds.length) empQ = empQ.in('line_id', familyIds);
     if (dept)           empQ = empQ.eq('section', dept);
     if (empDept)        empQ = empQ.eq('department', empDept);
@@ -4045,19 +3936,34 @@ function AttendanceFormTab() {
     const empIds = filteredEmps.map(e => e.id);
 
     // Step 2: fetch logs in batches of 50 (50 emps × 15 days = 750 rows, safe under 1000 limit)
+    // + การจอง OT วันหยุด (ot_period) เพื่อคิดชั่วโมง 8/10 ชม. ให้ถูกตามรูปแบบที่จอง
     const BATCH = 50;
     const allLogs = [];
+    const allBookings = [];
     for (let i = 0; i < empIds.length; i += BATCH) {
-      const { data: batchLogs } = await supabase
-        .from('daily_production_logs')
-        .select('work_date, employee_id, is_present, has_ot, has_extended_ot, shift, leave_type, leave_duration, leave_period')
-        .gte('work_date', startDate)
-        .lte('work_date', endDate)
-        .in('employee_id', empIds.slice(i, i + BATCH));
+      const ids = empIds.slice(i, i + BATCH);
+      const [{ data: batchLogs }, { data: batchBookings }] = await Promise.all([
+        supabase.from('daily_production_logs')
+          .select('work_date, employee_id, is_present, has_ot, has_extended_ot, shift, leave_type, leave_duration, leave_period, leave_hours')
+          .gte('work_date', startDate).lte('work_date', endDate).in('employee_id', ids),
+        supabase.from('ot_night_bookings')
+          .select('work_date, employee_id, shift, ot_period')
+          .gte('work_date', startDate).lte('work_date', endDate).in('employee_id', ids)
+          .not('ot_period', 'is', null),
+      ]);
       allLogs.push(...(batchLogs || []));
+      allBookings.push(...(batchBookings || []));
     }
+    // ot_period ต่อ (พนักงาน, วัน, กะ) — fallback แบบไม่ระบุกะเผื่อ shift ใน log กับ booking ไม่ตรงกัน
+    const periodByKey = {};
+    allBookings.forEach(b => {
+      periodByKey[`${b.employee_id}|${b.work_date}|${b.shift}`] = b.ot_period;
+      if (!periodByKey[`${b.employee_id}|${b.work_date}`]) periodByKey[`${b.employee_id}|${b.work_date}`] = b.ot_period;
+    });
 
+    // seed พนักงานทุกคนใน scope ก่อน — คนที่ไม่มี log เลยทั้งงวดต้องยังมีแถวในเอกสาร (เดิมหายทั้งแถว)
     const empMap = {};
+    filteredEmps.forEach(e => { empMap[e.id] = { emp: e, byDay: {} }; });
     allLogs.forEach(log => {
       const id  = log.employee_id;
       const emp = empMetaById[id];
@@ -4072,6 +3978,8 @@ function AttendanceFormTab() {
         leave:       log.leave_type || null,
         leaveDur:    log.leave_duration || null,
         leavePeriod: log.leave_period || null,
+        leaveHours:  log.leave_hours || null,
+        otPeriod:    periodByKey[`${id}|${log.work_date}|${log.shift || 'day'}`] || periodByKey[`${id}|${log.work_date}`] || null,
       };
     });
 
@@ -4120,7 +4028,8 @@ function AttendanceFormTab() {
       if (info.present) {
         // Full present — both halves get slash
         // If half-day leave, one half gets leave code instead
-        if (info.leave && info.leaveDur <= 0.5) {
+        // leave_duration เป็น text 'full'|'half'|'hours' (เดิมเทียบ <= 0.5 กับ text = false เสมอ ลาครึ่งวันไม่เคยพิมพ์)
+        if (info.leave && (info.leaveDur === 'half' || info.leaveDur === 'hours')) {
           if (info.leavePeriod === 'morning') {
             markCh = leaveMark;   // morning half: on leave
             markB  = slash;       // afternoon half: worked
@@ -4136,9 +4045,13 @@ function AttendanceFormTab() {
       } else if (info.leave) {
         // Full-day absence with leave code
         markCh = leaveMark; markB = leaveMark;
+      } else {
+        // ขาดงาน (มี log แต่ไม่มา ไม่ลา) — เขียน "ข" ให้ตรงกับ preview/CSV และคอลัมน์สรุป (เดิมเป็นช่องว่าง)
+        const absentMark = `<span style="font-size:8px;font-weight:bold">ข</span>`;
+        markCh = absentMark; markB = absentMark;
       }
-      // OT mark
-      if (info.ot) markO = slash;
+      // OT mark — ใช้ชั่วโมงจริง (ครอบวันหยุดที่มาทำ OT ทั้งกะโดยไม่ติ๊ก has_ot ด้วย)
+      if (otHoursForDay(info, d) > 0) markO = slash;
 
       return `<td style="${tdStyle}${sunBg}">${markCh}</td><td style="${tdStyle}${sunBg}">${markB}</td><td style="${tdStyle}${sunBg}">${markO}</td>`;
     };
@@ -4167,9 +4080,10 @@ function AttendanceFormTab() {
     const dayCols = days.map(() => `<col style="width:7px"/><col style="width:7px"/><col style="width:7px"/>`).join('');
 
     const empHtml = empRows.map((r, i) => {
-      const cntSick     = days.filter(d => r.byDay[d]?.leave === 'ลาป่วย').length;
-      const cntPersonal = days.filter(d => r.byDay[d]?.leave === 'ลากิจ').length;
-      const cntVacation = days.filter(d => r.byDay[d]?.leave === 'ลาพักร้อน').length;
+      // นับตามน้ำหนักวันลา (ครึ่งวัน 0.5 / รายชั่วโมง ชม.×0.1) ตาม legend ท้ายฟอร์ม — เดิมนับเต็ม 1 เสมอ
+      const cntSick     = sumLeave(r, days, 'ลาป่วย');
+      const cntPersonal = sumLeave(r, days, 'ลากิจ');
+      const cntVacation = sumLeave(r, days, 'ลาพักร้อน');
       const cntAbsent   = days.filter(d => { const b=r.byDay[d]; return b && !b.present && !b.leave; }).length;
       const totalOTHrs = sumOtHours(r, days);
       const fmt = v => v > 0 ? String(v) : '';
@@ -4191,17 +4105,9 @@ function AttendanceFormTab() {
           <td style="${tdStyle}">${totalOTHrs > 0 ? totalOTHrs : ''}</td>
         </tr>
         <tr>
-          <td colspan="3" style="border:1px solid #000;font-size:8px;text-align:left;padding:0 3px;height:12px">→ จำนวน ช.ม ที่ทำ OT</td>
-          ${days.slice(1).map(d => makeDayRow2(d, r)).join('')}
+          ${days.map(d => makeDayRow2(d, r)).join('')}
+          <td colspan="8" style="border:1px solid #000;font-size:7px;text-align:right;padding:0 3px;height:12px">→ จำนวน ชม. ที่ทำ OT</td>
           <td style="${tdOTStyle}">${totalOTHrs > 0 ? totalOTHrs : ''}</td>
-          <td style="${tdOTStyle}"></td>
-          <td style="${tdOTStyle}"></td>
-          <td style="${tdOTStyle}"></td>
-          <td style="${tdOTStyle}"></td>
-          <td style="${tdOTStyle}"></td>
-          <td style="${tdOTStyle}"></td>
-          <td style="${tdOTStyle}"></td>
-          <td style="${tdOTStyle}"></td>
         </tr>`;
     }).join('');
 
@@ -4330,7 +4236,7 @@ function AttendanceFormTab() {
       <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ปี</div>
-          <select value={year} onChange={e => setYear(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={year} onChange={e => setYear(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             {[today.getFullYear()-1, today.getFullYear(), today.getFullYear()+1].map(y => (
               <option key={y} value={y}>{y+543}</option>
             ))}
@@ -4338,41 +4244,41 @@ function AttendanceFormTab() {
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>เดือน</div>
-          <select value={month} onChange={e => setMonth(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={month} onChange={e => setMonth(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
           </select>
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>งวด</div>
-          <select value={period} onChange={e => setPeriod(Number(e.target.value))} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={period} onChange={e => setPeriod(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             <option value={1}>งวด 1 (วันที่ 1-15)</option>
             <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
           </select>
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์</div>
-          <select value={line} onChange={e => setLine(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={line} onChange={e => setLine(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             <option value="">ทุกไลน์</option>
             {attLinesInScope.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
           </select>
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ส่วนงาน</div>
-          <select value={dept} onChange={e => setDept(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={dept} onChange={e => setDept(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             <option value="">ทุกส่วนงาน</option>
             {attSections.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>แผนก</div>
-          <select value={empDept} onChange={e => setEmpDept(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={empDept} onChange={e => setEmpDept(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             <option value="">ทุกแผนก</option>
             {orgDeptList.map(d => <option key={d} value={d}>{d}</option>)}
           </select>
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Team</div>
-          <select value={team} onChange={e => setTeam(e.target.value)} style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={team} onChange={e => setTeam(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             <option value="">ทุก Team</option>
             <option value="A">Team A</option>
             <option value="B">Team B</option>
@@ -4428,6 +4334,11 @@ function AttendanceFormTab() {
       {/* Preview */}
       {empRows.length > 0 && (
         <div className="card" style={{ overflowX: 'auto' }}>
+          {calLoaded && days.every(d => getDayType(dayDateStr(d)) === 'working') && (
+            <div style={{ marginBottom: 8, padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)' }}>
+              ⚠️ งวดนี้ไม่มีวันหยุดในปฏิทินบริษัทเลย — ถ้าเดือนนี้มีวันหยุดจริง ให้ตั้งค่าที่ "ปฏิทินบริษัท" ก่อนพิมพ์ ไม่งั้นชั่วโมง OT วันหยุด (8/10 ชม.) จะถูกคิดแบบวันทำงานปกติ (2/5 ชม.)
+            </div>
+          )}
           <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
             <span style={{ fontWeight: 700 }}>ใบบันทึกการมาทำงาน</span>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
