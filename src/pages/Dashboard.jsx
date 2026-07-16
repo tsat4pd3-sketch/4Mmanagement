@@ -2386,7 +2386,7 @@ export default function Dashboard() {
                             </div>
                             <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
                             <div style={{
-                              background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)',
+                              background: 'rgba(0,0,0,0.8)',
                               borderRadius: 4, padding: '2px 8px',
                               fontSize: Math.max(11, Math.round(MK * 0.24)), fontWeight: 700, color: '#fff',
                               whiteSpace: 'nowrap', maxWidth: Math.max(MK * 1.9, 96),
@@ -2439,7 +2439,7 @@ export default function Dashboard() {
                               <div className="dt-alarm-blink" style={{
                                 width: MKS, height: MKS, borderRadius: '50%',
                                 border: `${Math.max(2, Math.round(MKS * 0.06))}px solid #ef4444`,
-                                backgroundColor: 'rgba(239,68,68,0.25)', backdropFilter: 'blur(2px)',
+                                backgroundColor: 'rgba(239,68,68,0.25)',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 fontSize: Math.max(13, Math.round(MKS * 0.44)), lineHeight: 1,
                               }}>🚨</div>

@@ -1071,6 +1071,13 @@ export default function App() {
     localStorage.setItem('4m-theme', theme);
   }, [theme]);
 
+  // โหมดเบาสำหรับจอ TV/บอร์ด (role display) — ปิด animation box-shadow ที่หนักบน GPU จอ (ดู index.css [data-perf="lite"])
+  // จอ display คือบัญชีที่รันบนจอลอย GPU อ่อน · role อื่นบน PC ปกติไม่ต้องล็อกโหมดเบา
+  useEffect(() => {
+    if (userRole === 'display') document.documentElement.setAttribute('data-perf', 'lite');
+    else document.documentElement.removeAttribute('data-perf');
+  }, [userRole]);
+
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark');
 
   const fetchProfile = async (user) => {

@@ -123,6 +123,11 @@ model: inherit
   `min(96-97vw, 1800-2400px)` — grep `maxWidth: 9\d\d|maxWidth: 10\d\d` (fix แคบแล้วเหลือ
   ขอบข้างว่างเยอะ = ขัดคำสั่ง user · ยกเว้นฟอร์มคอลัมน์เดียว เช่น Login/Register และ modal)
   · การ์ดจำนวน fix ให้จัดคอลัมน์สมดุลเต็มแถวตาม breakpoint (ดู UI-CONVENTIONS §6.5)
+- **F13** (2026-07-15) perf จอ TV: ห้าม `backdrop-filter/backdropFilter: blur()` บน element ที่ render
+  ซ้ำหลายอัน (marker/ป้าย/การ์ดบนผัง-บอร์ด) — Smart TV ค้างทั้งเครื่อง (UI-CONVENTIONS §1 ข้อ 5)
+  · grep: `backdropFilter` ใน Management/Dashboard/LineSetup/MachineFloorMap แล้วเช็คว่าไม่ได้อยู่บน
+  marker/pill (อยู่บน overlay ของ modal ชิ้นเดียวได้) · เช่นเดียวกับ `animation` ที่กระพริบ
+  `box-shadow` บน element ที่โผล่ตลอด (จำกัดเฉพาะ Andon แดง)
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่

@@ -95,6 +95,7 @@
 | `skill_definitions` | นิยามทักษะ (id, name, label, color) |
 | `skill_level_up_requests` | คำขออัพระดับข้ามขั้น 25/50/75/100 — ดู section "Employee Skills & EXP Farming" |
 | `skill_update_runs` | log การรัน daily/weekly skill job (กันรันซ้ำ + audit) — เขียนโดยฟังก์ชัน SECURITY DEFINER เท่านั้น |
+| `skill_sub_items` | หัวข้อการพิจารณาย่อยต่อสกิล (skill_name, seq, label, wi_ref) — ใช้ในใบประเมินรายบุคคล F-PRS-P1-119 · จัดการที่ operator ⚙️ ปุ่ม 📝 (สิทธิ์ `skills:edit`) · RLS: อ่านทุก role, เขียน admin/mgr/sv/leader (2026-07-16) |
 
 ### กะการทำงาน
 | Table | คำอธิบาย |
@@ -424,6 +425,10 @@ Reject → status: "rejected" + reject_reason
 - **สิทธิ์ (role_permissions, migration `20260714_mtn_work_order_permissions.sql`):** `page:/mtn-repair`+`mtn_repair:report` = ทุก role · `mtn_repair:service` (step2-4) = admin/manager/mtn · `mtn_repair:qa` (step5) = admin/manager/qa · `mtn_repair:approve` (step7) = admin/manager · `mtn_repair:manage_master` (ช่าง/อะไหล่/taxonomy + ลบใบ) = admin/manager/mtn · ปุ่ม action แต่ละขั้นเช็ค `can()` ตามนี้ (ไม่ hardcode)
 - **เชื่อมกับ Downtime:** ปุ่ม "📝 เปิดใบซ่อม" ในแถว Downtime (DailyReport) → สร้าง `mtn_orders` prefill (ไลน์/เครื่อง/อาการจาก dt type) `status=pending`, `source_downtime_id` ผูกที่มา (กันเปิดซ้ำ) แล้ว MTN ไปรับงานต่อที่ `/mtn-repair`
 - **หลายทีมซ่อม (2026-07-14):** ครอบคลุม **PRODUCTION(Autonomous) / JIG MTN / DIE MTN / MTN** — `mtn_technicians.dept` (ทีมของช่าง, master แยกกลุ่มตามทีม) + `mtn_orders.mtn_dept` ("แจ้งถึงหน่วยงาน" auto จากชนิดอุปกรณ์: JIG→JIG MTN, DIE→DIE MTN, อื่น→MTN แก้ได้) · ฟิลเตอร์รายการตามหน่วยงาน · migration `20260714_mtn_multi_team.sql`
+- **แจกงานให้ถูกทีม 4 ส่วน (2026-07-16 — คำสั่ง user):** ทำ 3 อย่างพร้อมกัน จับคู่ทีมจาก **section ของ user** (util `src/utils/mtnTeams.js`: `teamForSection`/`teamsForUser` — JIG/DIE/MTN เท่านั้น, ทีม PRODUCTION เลือกเอง เพราะ section ฝ่ายผลิตมีหลายชื่อ):
+  1. **บังคับเลือกทีมตอนแจ้ง** — ReportModal ฟิลด์ "แจ้งถึงทีมช่าง" (required, default = ทีมของผู้แจ้ง) · **เปิดใบจาก Downtime มี picker เลือกทีม** (DailyReport `openMoPicker` → modal 4 ปุ่ม, เดา default จากชื่อเครื่อง) แทน hardcode 'MTN' เดิม
+  2. **คิวงานแยกทีม** — MtnRepair default ฟิลเตอร์หน่วยงาน = ทีมของ user (สังกัดทีมเดียว, ไม่ใช่ admin) เปิดมาเห็นคิวทีมตัวเองก่อน ปรับเป็น "ทุกหน่วยงาน" ได้
+  3. **แจ้งเตือน Telegram แยกห้องต่อทีม** — `telegram_channels.team` (migration `20260716_telegram_channels_team.sql` Main) แท็กห้องเป็นของทีมไหน · edge `send-mtn-notification` v4: มีห้องของทีมตาม `mtn_dept` → ส่งเข้าห้องทีม, ไม่มี → route เดิม (ห้องรวม/fallback) · ตั้งทีมของห้องได้ที่ `/notification-config` (dropdown ต่อห้อง) · **backward-compatible: ห้อง team=NULL = ห้องรวมพฤติกรรมเดิม**
 - **Cost Center auto:** ดึงจาก `production_lines.cost_center` ตามไลน์ที่เลือก (fallback ไลน์แม่ถ้า sub-line ไม่มี) แก้ทับได้
 - **วันที่ (want_at/target_done_at) เป็น date-only:** input `type=date` (**ปฏิทิน ค.ศ.**) + echo "= DD/MM/พ.ศ." ใต้ช่องกันสับสน ปี · เก็บ/แสดงเฉพาะวันที่ ไม่มีเวลา
 - **ลายเซ็นใช้ซ้ำจากโปรไฟล์ (2026-07-14):** `SignField` default = ใช้ `profiles.signature_url` ของ user (ไม่สร้างไฟล์ใหม่ทุกครั้ง) · กด "เซ็นใหม่" เพื่อวาดเฉพาะกิจ (ค่อยอัปโหลด) — ลดไฟล์รูปสะสมมาก (เดิมเซ็น 4 ครั้ง/ใบ = 4 ไฟล์)
@@ -482,6 +487,15 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 - **pg_cron ใช้ UTC** — เวลาไทยต้อง −7 ชม. (เคยตั้ง `5 8 * * 1` แล้วได้จันทร์ 15:05 ไทยแทน 08:05)
 - คะแนนที่เฟ้อไปแล้วจากบั๊กเก่า**ไม่ได้ถูก reset อัตโนมัติ** — supervisor/manager ปรับมือได้จากแท็บ ⚙️ กำหนดสกิลใน `/operator`
   (weekly decay จะค่อยๆ ดึงคะแนนคนที่ไม่ได้ทำงานจริงลงเอง)
+
+### Export ฟอร์ม Skill Matrix (ตามฟอร์มกระดาษ Thai Summit — 2026-07-16)
+
+ระบบ export ฟอร์มทักษะได้ 2 แบบใน `/report` ให้เหมือนฟอร์มกระดาษของบริษัท (โลโก้ TS + รหัสฟอร์มสร้างจาก CSS/SVG ไม่พึ่งไฟล์ภายนอก):
+
+- **สรุปทั้งไลน์** (`MULTI SKILL OF OPERATORS`, รหัส FM-PD1-017) — แท็บ 🏅 Multi-Skill Form · ตารางพนักงาน × สกิล แต่ละช่องเป็น**วงกลมแบ่ง 4 ส่วน 5 ระดับ** (0-24/25-49/50-74/75-99/100 = `MS_LEVELS`+`scoreToLevel`+`skillGaugeSvgStr`) · ลายเซ็น จัดทำ/ตรวจสอบ/อนุมัติ ดึงจาก `profiles` ตาม role ของไลน์ · A3 landscape
+- **รายบุคคล** (`ใบประเมินทักษะฯ`, รหัส F-PRS-P1-119) — แท็บ 📊 Skill Matrix → คลิกพนักงาน → ปุ่ม 🖨️ ใน radar panel (`buildIndividualSkillHtml`) · มี radar SVG (`buildRadarSvg`), รูป+3 ลายเซ็น, ตารางหัวข้อย่อยต่อสกิล + คะแนน 4 ระดับ, สรุป/legend/เกณฑ์/หมายเหตุ · A4 portrait
+- **โหมด Hybrid (สำคัญ):** ระบบเก็บแค่คะแนนเดียว 0-100 ต่อสกิล — ใบรายบุคคลจึง (ก) เอา**ข้อความหัวข้อย่อย**จาก `skill_sub_items` (ถ้าสกิลไม่มี → fallback 1 แถว = ชื่อสกิล) (ข) **ค่าติ๊ก 4 ระดับรายแถว derive จากคะแนน** (`distributeLevels` กระจายระดับให้เฉลี่ย ≈ score/25 เหมือนฟอร์มกระดาษที่หัวข้อเป็นสเต็ป 25%) (ค) **% สรุปกลุ่ม/radar/โดยรวม ใช้คะแนนจริง** (เที่ยงตรง ไม่ปัดเป็น 25) · ถ้าวันหน้าจะเก็บผลประเมินรายหัวข้อจริง (ไม่ derive) ต้องเพิ่มตารางผลประเมิน + UI กรอก แล้วเปลี่ยนที่มาของค่าติ๊ก
+- helper ทั้งหมดอยู่ใน `src/pages/Report.jsx` · หัวข้อย่อยจัดการที่ `/operator` ⚙️ ปุ่ม 📝 (`SkillSubItemsModal`)
 
 ---
 

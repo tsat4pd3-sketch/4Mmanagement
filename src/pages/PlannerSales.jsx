@@ -3,6 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
+import { calcWithdrawalKanban, nextMonthKey } from '../utils/kanbanCalc';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 
 /* ─── PLANNER & SALES — Forecast Planner + อัพโหลดไฟล์จากลูกค้า ──────────────
@@ -662,6 +663,242 @@ function PlannerTab({ refreshKey, custLabel }) {
 }
 
 /* ─── Page ────────────────────────────────────────────────────────────────── */
+/* ─── คำนวณ Kanban อัตโนมัติจาก Forecast (Type A — Withdrawal/FG store) ─────── */
+const numInput = { ...inputSt, width: 62, padding: '5px 6px', fontSize: 12, textAlign: 'center' };
+const tdc = { padding: '6px 8px', borderTop: '1px solid var(--border)', fontSize: 12.5, fontVariantNumeric: 'tabular-nums' };
+
+function KanbanCalcTab({ canApply, fullName, custLabel }) {
+  const [settings, setSettings] = useState({ working_days: 20, efficiency_pct: 80 });
+  const [params, setParams]     = useState({});   // mat_no → param row
+  const [forecast, setForecast] = useState({});   // mat_no → order/month
+  const [ksMap, setKsMap]       = useState({});   // mat_no → kanban_standards ปัจจุบัน
+  const [pmMap, setPmMap]       = useState({});   // mat_no → { part_name, qty_per_pkg }
+  const [drMap, setDrMap]       = useState({});   // mat_no → { cycle_time_sec, customer, line_name, name }
+  const [month, setMonth]       = useState(nextMonthKey());
+  const [lineFilter, setLineFilter] = useState('');
+  const [edits, setEdits]       = useState({});   // mat_no → {field:value} override ชั่วคราว
+  const [loading, setLoading]   = useState(false);
+  const [preview, setPreview]   = useState(null);  // [{mat_no, ...}] ก่อน apply
+  const [applying, setApplying] = useState(false);
+
+  const monthRange = useMemo(() => {
+    const [y, m] = month.split('-').map(Number);
+    const start = `${month}-01`;
+    const end = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}-01`;
+    return { start, end };
+  }, [month]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [{ data: st }, { data: pr }, { data: ks }, { data: pm }, { data: dr }, { data: fc }] = await Promise.all([
+      supabaseDR.from('kanban_calc_settings').select('*').eq('id', 'default').maybeSingle(),
+      supabaseDR.from('kanban_calc_params').select('*'),
+      supabaseDR.from('kanban_standards').select('mat_no, part_name, customer, qty_per_kanban, min_qty, max_qty, lot_size, total_kanban').eq('is_active', true),
+      supabaseDR.from('parts_master').select('mat_no, part_name, qty_per_pkg').eq('is_active', true),
+      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, customer, line_name, name').eq('is_active', true),
+      supabaseDR.from('customer_forecasts').select('mat_no, qty').gte('period_month', monthRange.start).lt('period_month', monthRange.end),
+    ]);
+    if (st) setSettings({ working_days: st.working_days, efficiency_pct: st.efficiency_pct });
+    setParams(Object.fromEntries((pr || []).map(r => [r.mat_no, r])));
+    setKsMap(Object.fromEntries((ks || []).map(r => [r.mat_no, r])));
+    setPmMap(Object.fromEntries((pm || []).map(r => [r.mat_no, r])));
+    setDrMap(Object.fromEntries((dr || []).map(r => [r.mat_no, r])));
+    const fmap = {};
+    (fc || []).forEach(r => { if (r.mat_no) fmap[r.mat_no] = (fmap[r.mat_no] || 0) + (Number(r.qty) || 0); });
+    setForecast(fmap);
+    setEdits({});
+    setLoading(false);
+  }, [monthRange]);
+  useEffect(() => { load(); }, [load]);
+
+  // ค่าพารามิเตอร์ที่ใช้จริง = edit ชั่วคราว > param ที่บันทึกไว้ > default จาก master/ค่ากลาง
+  const paramOf = useCallback((mat) => {
+    const p = params[mat] || {}, e = edits[mat] || {}, pm = pmMap[mat] || {}, dr = drMap[mat] || {};
+    const g = (k, dflt) => e[k] ?? p[k] ?? dflt;
+    return {
+      prep_time_min:  g('prep_time_min', 30),
+      fluctuation_pct: g('fluctuation_pct', 7),
+      packaging:      g('packaging', pm.qty_per_pkg ?? ''),
+      delivery_cycle: g('delivery_cycle', 1),
+      capacity_pc_hr: g('capacity_pc_hr', dr.cycle_time_sec ? Math.round(3600 / dr.cycle_time_sec) : ''),
+      lot_size:       g('lot_size', 1),
+      safety_days:    g('safety_days', 1),
+    };
+  }, [params, edits, pmMap, drMap]);
+
+  const rows = useMemo(() => {
+    const mats = Object.keys(forecast).filter(m => forecast[m] > 0);
+    return mats.map(mat => {
+      const pp = paramOf(mat);
+      const r = calcWithdrawalKanban({
+        orderMonth: forecast[mat], workingDays: settings.working_days, efficiencyPct: settings.efficiency_pct,
+        prepTimeMin: pp.prep_time_min, fluctuationPct: pp.fluctuation_pct, packaging: pp.packaging,
+        deliveryCycle: pp.delivery_cycle, capacityPcHr: pp.capacity_pc_hr, lotSize: pp.lot_size, safetyDays: pp.safety_days,
+      });
+      const dr = drMap[mat] || {}, ks = ksMap[mat] || {};
+      const name = pmMap[mat]?.part_name || dr.name || ks.part_name || '';
+      const line = dr.line_name || '';
+      const changed = r.valid && (Number(ks.max_qty) !== r.maxPcs || Number(ks.min_qty) !== r.minPcs || Number(ks.total_kanban) !== r.totalKanban);
+      return { mat, name, line, customer: dr.customer || ks.customer, order: forecast[mat], pp, r, ks, changed };
+    }).filter(row => !lineFilter || row.line === lineFilter)
+      .sort((a, b) => a.mat.localeCompare(b.mat));
+  }, [forecast, settings, paramOf, drMap, ksMap, pmMap, lineFilter]);
+
+  const lines = useMemo(() => [...new Set(rows.map(r => r.line).filter(Boolean))].sort(), [rows]);
+  const changedRows = rows.filter(r => r.changed);
+
+  const setEdit = (mat, field, val) => setEdits(e => ({ ...e, [mat]: { ...e[mat], [field]: val === '' ? '' : Number(val) } }));
+
+  const saveSettings = async () => {
+    const payload = { working_days: Math.max(1, Number(settings.working_days) || 20), efficiency_pct: Number(settings.efficiency_pct) || 80, updated_by: fullName, updated_at: new Date().toISOString() };
+    const { error } = await supabaseDR.from('kanban_calc_settings').update(payload).eq('id', 'default');
+    if (error) toast.error(error.message); else toast.success('บันทึกค่ากลางแล้ว');
+  };
+
+  const doApply = async () => {
+    setApplying(true);
+    try {
+      for (const row of changedRows) {
+        const pp = row.pp, r = row.r;
+        // 1) บันทึก param ที่ใช้ (จำไว้รอบหน้า)
+        await supabaseDR.from('kanban_calc_params').upsert({
+          mat_no: row.mat, part_name: row.name, customer: row.customer, line_name: row.line,
+          prep_time_min: Number(pp.prep_time_min), fluctuation_pct: Number(pp.fluctuation_pct),
+          packaging: Number(pp.packaging), delivery_cycle: Number(pp.delivery_cycle),
+          capacity_pc_hr: Number(pp.capacity_pc_hr), lot_size: Number(pp.lot_size), safety_days: Number(pp.safety_days),
+          updated_by: fullName, updated_at: new Date().toISOString(),
+        }, { onConflict: 'mat_no' });
+        // 2) เขียนผลเข้า kanban_standards (min/max = ชิ้น, total_kanban = ใบ)
+        const patch = { qty_per_kanban: Number(pp.packaging), min_qty: r.minPcs, max_qty: r.maxPcs, lot_size: Number(pp.lot_size), total_kanban: r.totalKanban, updated_by: fullName, updated_at: new Date().toISOString() };
+        if (row.ks && row.ks.mat_no) await supabaseDR.from('kanban_standards').update(patch).eq('mat_no', row.mat);
+        else await supabaseDR.from('kanban_standards').insert({ mat_no: row.mat, part_name: row.name, customer: row.customer, is_active: true, ...patch });
+      }
+      toast.success(`✅ อัปเดต kanban ${changedRows.length} รายการเข้าระบบดึงแล้ว`);
+      setPreview(null);
+      await load();
+    } catch (err) { toast.error(err.message); }
+    setApplying(false);
+  };
+
+  const NCOLS = ['prep_time_min','fluctuation_pct','packaging','delivery_cycle','capacity_pc_hr','lot_size','safety_days'];
+  const NHEAD = ['เตรียม(min)','ผันผวน%','Pkg','รอบส่ง','CAP/ชม.','Lot','Safety(วัน)'];
+
+  return (
+    <div>
+      {/* controls */}
+      <div style={{ ...card, marginBottom: 14, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>เดือน Forecast ที่ใช้คำนวณ</label>
+          <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ ...inputSt, width: 160 }} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>วันทำงาน/เดือน</label>
+          <input type="number" value={settings.working_days} onChange={e => setSettings(s => ({ ...s, working_days: e.target.value }))} style={{ ...inputSt, width: 90 }} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Efficiency %</label>
+          <input type="number" value={settings.efficiency_pct} onChange={e => setSettings(s => ({ ...s, efficiency_pct: e.target.value }))} style={{ ...inputSt, width: 80 }} />
+        </div>
+        {canApply && <button onClick={saveSettings} style={btn(false)}>💾 ค่ากลาง</button>}
+        {lines.length > 0 && (
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ไลน์</label>
+            <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, width: 150 }}>
+              <option value="">ทุกไลน์</option>
+              {lines.map(l => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </div>
+        )}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{rows.length} พาร์ท · <b style={{ color: '#f59e0b' }}>{changedRows.length}</b> เปลี่ยน</span>
+          {canApply && (
+            <button onClick={() => setPreview(changedRows)} disabled={changedRows.length === 0}
+              style={{ ...btn(changedRows.length > 0), opacity: changedRows.length ? 1 : 0.5 }}>🎴 Preview &amp; Apply</button>
+          )}
+        </div>
+      </div>
+
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
+        📖 Withdrawal Kanban (คัมบังเบิกถอน FG). Order/เดือน = ผลรวม forecast ของเดือนที่เลือก · แก้ param ในตารางแล้วค่าคำนวณอัปเดตทันที · Apply = เขียนเข้า kanban_standards (ระบบดึงใช้ต่อ)
+      </div>
+
+      {loading ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div> :
+       rows.length === 0 ? <div style={{ ...card, textAlign: 'center', color: 'var(--muted)' }}>ไม่มี forecast ในเดือน {monthLabel(monthRange.start)} — อัปโหลด forecast ที่แท็บ 📤 ก่อน</div> : (
+        <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
+              <thead>
+                <tr style={{ background: 'var(--bg2)' }}>
+                  {['Mat SAP','Part / ไลน์','Order/เดือน', ...NHEAD, 'Min(K/B)','Max(K/B)','Total(K/B)','Min→Max (pcs)','สถานะ'].map(h => (
+                    <th key={h} style={{ padding: '8px 8px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'center', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(row => {
+                  const { r, ks } = row;
+                  return (
+                    <tr key={row.mat} style={{ background: row.changed ? 'rgba(245,158,11,0.05)' : undefined }}>
+                      <td style={{ ...tdc, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', textAlign: 'left' }}>{row.mat}</td>
+                      <td style={{ ...tdc, textAlign: 'left', maxWidth: 200 }}><div style={{ color: 'var(--text)' }}>{row.name || '—'}</div><div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{row.line || '—'}{row.customer ? ` · ${row.customer}` : ''}</div></td>
+                      <td style={{ ...tdc, textAlign: 'right', fontWeight: 800 }}>{fmt(row.order)}</td>
+                      {NCOLS.map(c => (
+                        <td key={c} style={{ ...tdc, textAlign: 'center' }}>
+                          <input type="number" value={row.pp[c]} disabled={!canApply}
+                            onChange={e => setEdit(row.mat, c, e.target.value)}
+                            style={{ ...numInput, borderColor: (edits[row.mat] || {})[c] != null ? '#0ea5e9' : 'var(--border)' }} />
+                        </td>
+                      ))}
+                      <td style={{ ...tdc, textAlign: 'right', fontWeight: 700 }}>{r.valid ? r.minKanban : '—'}</td>
+                      <td style={{ ...tdc, textAlign: 'right', fontWeight: 700 }}>{r.valid ? r.maxKanban : '—'}</td>
+                      <td style={{ ...tdc, textAlign: 'right', fontWeight: 900, color: r.valid ? 'var(--accent)' : 'var(--muted)', fontSize: 14 }}>{r.valid ? r.totalKanban : '—'}</td>
+                      <td style={{ ...tdc, textAlign: 'right', color: 'var(--muted)' }}>{r.valid ? `${fmt(r.minPcs)}→${fmt(r.maxPcs)}` : '—'}</td>
+                      <td style={{ ...tdc, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        {!r.valid ? <span title="ต้องมี Pkg + CAP" style={{ fontSize: 11, color: '#ef4444' }}>⚠️ ขาด param</span>
+                          : row.changed ? <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>ต่างจากเดิม ({ks.total_kanban ?? '—'}→{r.totalKanban})</span>
+                          : <span style={{ fontSize: 11, color: '#22c55e' }}>✓ ตรงแล้ว</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Preview & Apply (แสดงอย่างเดียว ปิดจากปุ่ม/นอกกรอบได้) */}
+      {preview && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setPreview(null)}>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(680px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 4 }}>🎴 ยืนยันอัปเดต Kanban — {changedRows.length} รายการ</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>เขียนค่า Min/Max/Total ใหม่เข้า kanban_standards (ระบบดึงทั้งองค์กรใช้ต่อทันที)</div>
+            <div style={{ overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead><tr style={{ background: 'var(--bg2)' }}>{['Mat','Total เดิม','→ ใหม่','Max (pcs)'].map(h => <th key={h} style={{ padding: '7px 10px', fontSize: 11, color: 'var(--muted)', textAlign: h === 'Mat' ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {preview.map(row => (
+                    <tr key={row.mat}>
+                      <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', fontFamily: 'monospace', color: '#0ea5e9' }}>{row.mat}</td>
+                      <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', color: 'var(--muted)' }}>{row.ks.total_kanban ?? '—'}</td>
+                      <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', fontWeight: 800, color: 'var(--accent)' }}>{row.r.totalKanban}</td>
+                      <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(row.r.maxPcs)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+              <button onClick={() => setPreview(null)} style={{ ...btn(false) }}>ยกเลิก</button>
+              <button onClick={doApply} disabled={applying} style={{ ...btn(true), opacity: applying ? 0.6 : 1 }}>{applying ? '...' : `✅ ยืนยัน Apply (${changedRows.length})`}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PlannerSales() {
   const { role, fullName } = useContext(UserContext);
   const [tab, setTab] = useState('planner');
@@ -698,11 +935,13 @@ export default function PlannerSales() {
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
         {[
           { id: 'planner', label: '📈 Forecast Planner' },
+          { id: 'kanban',  label: '🎴 คำนวณ Kanban' },
           { id: 'upload',  label: '📤 อัพโหลด (Sales)' },
         ].map(t => <button key={t.id} onClick={() => setTab(t.id)} style={btn(tab === t.id)}>{t.label}</button>)}
       </div>
 
       {tab === 'planner' && <PlannerTab refreshKey={refreshKey} custLabel={custLabel} />}
+      {tab === 'kanban' && <KanbanCalcTab canApply={canUpload} fullName={fullName} custLabel={custLabel} />}
       {tab === 'upload' && <UploadTab canUpload={canUpload} fullName={fullName} onImported={() => { setRefreshKey(k => k + 1); loadShipTo(); }} custLabel={custLabel} />}
     </div>
   );

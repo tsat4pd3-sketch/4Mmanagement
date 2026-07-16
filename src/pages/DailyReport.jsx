@@ -8,6 +8,7 @@ import tsLogoUrl from '../assets/TS logo.png';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { MTN_TEAMS, teamForItem } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
 
 // โหลดโลโก้บริษัท (เหมือนหน้าเว็บ) เป็น base64 ครั้งเดียวสำหรับฝัง PDF
@@ -190,6 +191,7 @@ function LiveTab({ role }) {
   const [openForm, setOpenForm] = useState(() => { const s = currentShift(); return { work_date: workDate(), line_name: '', shift: s, product_id: '', start_time: shiftStart(s) }; });
 
   const [showDT, setShowDT]   = useState(false);
+  const [moDtPick, setMoDtPick] = useState(null); // { d, team } — เลือกทีมช่างก่อนเปิดใบซ่อมจาก downtime
   const [dtForm, setDtForm]   = useState({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
   const [savingDT, setSavingDT] = useState(false);
 
@@ -1960,14 +1962,19 @@ function LiveTab({ role }) {
   };
 
   // เปิดใบแจ้งซ่อม MO จากรายการ Downtime (เชื่อมกับหน้าแจ้งซ่อม MTN) — prefill เครื่อง/ไลน์/อาการ
-  const handleCreateMoFromDt = async (d) => {
+  // เปิด picker เลือกทีมช่างก่อน (แจกให้ถูกทีม) — เดา default จากชื่อเครื่อง (JIG/DIE)
+  const openMoPicker = async (d) => {
     const { data: exist } = await supabaseDR.from('mtn_orders').select('id, mo_no').eq('source_downtime_id', d.id).maybeSingle();
     if (exist) { toast.info(`มีใบแจ้งซ่อมของรายการนี้แล้ว${exist.mo_no ? ` (${exist.mo_no})` : ''}`); return; }
+    setMoDtPick({ d, team: teamForItem(d.machine_no) });
+  };
+
+  const handleCreateMoFromDt = async (d, team) => {
     const dtType = dtTypes.find(t => t.id === d.downtime_type_id);
     const payload = {
       status: 'pending', current_step: 1, report_at: new Date().toISOString(), work_date: selSession.work_date,
       repair_scope: 'in_line', line_name: selSession.line_name, dept_section: selSession.section || null,
-      mtn_dept: 'MTN', machine_no: d.machine_no || null, problem_characteristic: 'อื่นๆ',
+      mtn_dept: team || 'MTN', machine_no: d.machine_no || null, problem_characteristic: 'อื่นๆ',
       report_note: `[จาก Downtime] ${dtType?.name_th || ''}${d.description ? ` — ${d.description}` : ''}`.trim(),
       reporter_prod: fullName, reported_by_name: fullName, source_downtime_id: d.id,
     };
@@ -1976,7 +1983,8 @@ function LiveTab({ role }) {
     fetch('https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-mtn-notification', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'mtn_reported', mo: data }),
     }).catch(() => {});
-    toast.success('📝 เปิดใบแจ้งซ่อม MO แล้ว — ไปดำเนินการต่อที่หน้า “แจ้งซ่อม MTN”');
+    setMoDtPick(null);
+    toast.success(`📝 เปิดใบแจ้งซ่อม MO → แจ้งถึงทีม ${team || 'MTN'} แล้ว — ไปดำเนินการต่อที่หน้า “แจ้งซ่อม MTN”`);
   };
 
   const totalDT      = dtLogs.reduce((s, d) => s + (d.duration_min || 0), 0);
@@ -2562,7 +2570,7 @@ function LiveTab({ role }) {
                       )}
                       {/* เปิดใบแจ้งซ่อม MO จาก downtime — เชื่อมกับระบบแจ้งซ่อม MTN */}
                       {canScan && can('mtn_repair', 'report', role) && (
-                        <button onClick={() => handleCreateMoFromDt(d)} title="เปิดใบแจ้งซ่อม MO (7 ขั้น) จากรายการนี้" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: '#7c6cf0', border: 'none', borderRadius: 20, padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>📝 เปิดใบซ่อม</button>
+                        <button onClick={() => openMoPicker(d)} title="เปิดใบแจ้งซ่อม MO (7 ขั้น) จากรายการนี้" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: '#7c6cf0', border: 'none', borderRadius: 20, padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>📝 เปิดใบซ่อม</button>
                       )}
                       {canEditRecords && (
                         <div style={{ display: 'flex', gap: 4 }}>
@@ -2599,6 +2607,30 @@ function LiveTab({ role }) {
         )}
 
         {/* Open session modal */}
+        {moDtPick && (
+          <div className="overlay" style={{ zIndex: 2100 }} onClick={() => setMoDtPick(null)}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(95vw,420px)' }}>
+              <div style={{ fontSize: 15.5, fontWeight: 800, marginBottom: 6, color: 'var(--text)' }}>📝 เปิดใบแจ้งซ่อม — แจ้งถึงทีมช่างไหน?</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
+                🏭 {selSession?.line_name} · {moDtPick.d.machine_no || 'ไม่ระบุเครื่อง'} — ใบซ่อมจะถูกส่งเข้าคิว + แจ้งเตือน Telegram ของทีมที่เลือก
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+                {MTN_TEAMS.map(t => (
+                  <button key={t} onClick={() => setMoDtPick(p => ({ ...p, team: t }))} style={{
+                    padding: '12px 8px', borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer',
+                    border: `2px solid ${moDtPick.team === t ? '#7c6cf0' : 'var(--border)'}`,
+                    background: moDtPick.team === t ? 'rgba(124,108,240,0.14)' : 'var(--card)',
+                    color: moDtPick.team === t ? '#7c6cf0' : 'var(--text2)',
+                  }}>{t}</button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setMoDtPick(null)} style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
+                <button onClick={() => handleCreateMoFromDt(moDtPick.d, moDtPick.team)} style={{ flex: 2, padding: '10px 0', borderRadius: 8, border: 'none', background: '#7c6cf0', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>📝 เปิดใบซ่อม → {moDtPick.team}</button>
+              </div>
+            </div>
+          </div>
+        )}
         {showOpen && (
           <div className="overlay" style={{ zIndex: 2000 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,480px)' }}>

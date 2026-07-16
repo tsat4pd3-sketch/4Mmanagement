@@ -63,6 +63,7 @@
 -- skill_definitions (id uuid, name text, label text, color text, sort_order integer, created_at timestamptz, category text, scope_section text, allowance_type text)
 -- skill_level_up_requests (id uuid, employee_id uuid, skill_name text, from_score integer, to_level integer, status text, requested_at timestamptz, reviewed_by uuid, reviewed_at timestamptz, doc_url text, reject_reason text)
 -- skill_update_runs (run_kind text, period_start date, ran_at timestamptz, result text) -- pk(run_kind, period_start) — log/idempotency ของ daily-skill-farm + weekly-skill-update (20260713_skill_farming_server_side.sql)
+-- skill_sub_items (id uuid, skill_name text, seq integer, label text, wi_ref text, created_at timestamptz, created_by uuid) -- หัวข้อการพิจารณาต่อสกิล ใช้ในใบประเมินรายบุคคล F-PRS-P1-119 (20260716_skill_assessment_subitems.sql)
 -- station_assignment_logs (id uuid, employee_id uuid, station_id uuid, station_name text, line_name text, work_date date, shift text, period text, period_start time, started_at timestamptz, ended_at timestamptz, assigned_by_uid uuid, assigned_by_name text, created_at timestamptz)
 -- station_requirements (id uuid, station_id uuid, skill_name text, min_score integer)
 -- telegram_channels (id uuid, name text, chat_id text, is_active boolean, sort_order integer, created_at timestamptz)
