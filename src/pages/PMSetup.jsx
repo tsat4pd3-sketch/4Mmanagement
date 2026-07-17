@@ -201,8 +201,12 @@ function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageCl
 }
 
 // ─── CheckpointCard ───────────────────────────────────────────────────────────
-function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage, isPinning, onPinToggle, hasImage, categories, methods }) {
+function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage, isPinning, onPinToggle, hasImage, categories, allCategories, methods }) {
   const isVar = cp.type === 'variable'
+  // ถ้าหมวดที่เลือกไว้เดิมไม่อยู่ในลิสต์ที่กรองแล้ว (เช่น jig เก่า) ยังต้องโชว์ไม่ให้หาย
+  const catOpts = cp.category && !(categories ?? []).some(c => c.code === cp.category)
+    ? [...(categories ?? []), (allCategories ?? []).find(c => c.code === cp.category)].filter(Boolean)
+    : (categories ?? [])
   return (
     <div style={{ ...S.cpCard, borderColor: isPinning ? 'var(--accent)' : 'var(--border)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -240,7 +244,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
           <label style={S.label}>ประเภท (Category)</label>
           <select value={cp.category ?? ''} onChange={e => onChange({ category: e.target.value || null })}>
             <option value="">— ไม่ระบุ —</option>
-            {(categories ?? []).map(c => <option key={c.code} value={c.code}>{c.code} — {c.label}</option>)}
+            {catOpts.map(c => <option key={c.code} value={c.code}>{c.code} — {c.label}</option>)}
           </select>
         </div>
         <div style={{ marginBottom: 10 }}>
@@ -635,12 +639,16 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     background: 'var(--accent-dim)', border: '1px solid var(--border2)',
     fontSize: 12, fontWeight: 800, color: 'var(--accent)',
   }
+  // กรองหมวดตามชนิดอุปกรณ์ที่กำลังตั้ง (facility/utility → 'facility', ไม่งั้นใช้ equipment_type)
+  // equip_types ว่าง/null = หมวดกลาง โชว์ทุกชนิด
+  const catScopeKey = (equipCategory === 'facility' || equipCategory === 'utility') ? 'facility' : equipType
+  const scopedCategories = (categories ?? []).filter(c => !c.equip_types?.length || c.equip_types.includes(catScopeKey))
   const renderCard = (cp) => (
     <CheckpointCard key={cp._key} cp={cp} label={cpLabels[cp._key]}
       onChange={patch => updateCp(cp._key, patch)} onDelete={() => deleteCp(cp._key)}
       onDuplicate={() => duplicateCp(cp._key)} onCpImage={e => handleCpImage(cp._key, e)}
       isPinning={activePinKey === cp._key} onPinToggle={() => togglePin(cp._key)} hasImage={frames.length > 0}
-      categories={categories} methods={methods} />
+      categories={scopedCategories} allCategories={categories} methods={methods} />
   )
 
   return (
@@ -1023,7 +1031,7 @@ export default function PMSetup() {
       <AnimatePresence>
         {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} categories={categories} methods={methods} />}
         {taxModal === 'category' && (
-          <TaxonomyManagerModal table="pm_checkpoint_categories" title="จัดการประเภทจุดตรวจ (Category)" extraField="color"
+          <TaxonomyManagerModal table="pm_checkpoint_categories" title="จัดการประเภทจุดตรวจ (Category)" extraField="color" withEquipTypes
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
         )}
         {taxModal === 'method' && (

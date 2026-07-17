@@ -14,12 +14,14 @@ import { toast } from './Toast'
 //   onChanged- called after any successful create/update/delete so the parent can refetch
 
 const EMOJI_SUGGESTIONS = ['👁', '👂', '✋', '📏', '📐', '🔧', '🔩', '⚙️', '🔍', '🧪', '🌡️', '⚡']
+// ชนิดอุปกรณ์สำหรับแท็กหมวด (equip_types) — ว่าง = หมวดกลาง โชว์ทุกชนิด
+const EQUIP_TYPE_OPTS = [{ k: 'machine', l: 'Machine' }, { k: 'jig', l: 'JIG' }, { k: 'die', l: 'Die' }, { k: 'facility', l: 'Facility' }]
 
-export default function TaxonomyManagerModal({ table, title, extraField = 'color', onClose, onChanged }) {
+export default function TaxonomyManagerModal({ table, title, extraField = 'color', withEquipTypes = false, onClose, onChanged }) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null) // row object or 'new'
-  const blank = { code: '', label: '', color: '#3dd65c', icon: '🔍', sort_order: 0, is_active: true }
+  const blank = { code: '', label: '', color: '#3dd65c', icon: '🔍', sort_order: 0, is_active: true, equip_types: [] }
   const [form, setForm] = useState(blank)
   const [saving, setSaving] = useState(false)
 
@@ -44,6 +46,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
       }
       if (extraField === 'color') payload.color = form.color
       if (extraField === 'icon') payload.icon = form.icon
+      if (withEquipTypes) payload.equip_types = (form.equip_types?.length ? form.equip_types : null)
       const { error } = editing === 'new'
         ? await supabaseDR.from(table).insert(payload)
         : await supabaseDR.from(table).update(payload).eq('id', editing)
@@ -92,6 +95,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{r.label}</span>
                     <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{r.code}</span>
+                    {withEquipTypes && <span style={{ fontSize: 10.5, color: 'var(--accent2)', marginLeft: 6, fontWeight: 700 }}>{r.equip_types?.length ? r.equip_types.join('/') : 'ทุกชนิด'}</span>}
                     {!r.is_active && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>(ปิดใช้งาน)</span>}
                   </div>
                   <button onClick={() => openEdit(r)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>แก้ไข</button>
@@ -126,6 +130,17 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                         <button key={em} onClick={() => setForm(f => ({ ...f, icon: em }))} style={{ width: 30, height: 30, borderRadius: 6, border: `1px solid ${form.icon === em ? 'var(--accent)' : 'var(--border)'}`, background: form.icon === em ? 'var(--accent-dim)' : 'var(--bg2)', fontSize: 15, cursor: 'pointer' }}>{em}</button>
                       ))}
                     </div>
+                  </div>
+                </div>
+              )}
+              {withEquipTypes && (
+                <div><label style={lbl}>ใช้กับชนิดอุปกรณ์ (ว่าง = ทุกชนิด)</label>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {EQUIP_TYPE_OPTS.map(o => {
+                      const on = (form.equip_types || []).includes(o.k)
+                      return <button key={o.k} onClick={() => setForm(f => { const cur = f.equip_types || []; return { ...f, equip_types: on ? cur.filter(x => x !== o.k) : [...cur, o.k] } })}
+                        style={{ padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent-dim)' : 'var(--bg2)', color: on ? 'var(--accent)' : 'var(--muted)' }}>{o.l}</button>
+                    })}
                   </div>
                 </div>
               )}
