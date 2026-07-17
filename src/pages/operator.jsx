@@ -281,7 +281,15 @@ export default function Operator() {
         photoUrl = pub.publicUrl;
       }
 
+      // รหัสพนักงานแก้ได้ (เคสจริง: HR แจ้งรหัสผิดตั้งแต่ลงทะเบียน) — กันซ้ำกับคนอื่นก่อนบันทึก
+      const newCode = (editingEmp.employee_id_code || '').trim();
+      if (!newCode) throw new Error('กรุณากรอกรหัสพนักงาน');
+      const { data: dupCode } = await supabase.from('employees')
+        .select('id').eq('employee_id_code', newCode).neq('id', editingEmp.id).limit(1);
+      if (dupCode?.length) throw new Error(`รหัส ${newCode} ถูกใช้โดยพนักงานคนอื่นแล้ว`);
+
       const { error } = await supabase.from('employees').update({
+        employee_id_code: newCode,
         name:       editingEmp.name,
         position:   editingEmp.position   || null,
         department: editingEmp.department,
@@ -1077,6 +1085,11 @@ export default function Operator() {
             </h3>
             <form onSubmit={handleUpdate} style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={labelSt}>รหัสพนักงาน</label>
+                  <input type="text" value={editingEmp.employee_id_code || ''}
+                    onChange={e => setEditingEmp({ ...editingEmp, employee_id_code: e.target.value })} required />
+                </div>
                 <div>
                   <label style={labelSt}>ชื่อ - นามสกุล</label>
                   <input type="text" value={editingEmp.name}
