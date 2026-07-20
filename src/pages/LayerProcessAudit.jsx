@@ -7,6 +7,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadCompanyCalendar } from '../utils/companyCalendar';
 import tsLogoUrl from '../assets/TS logo.png';
+import { getDocForm, fullCode } from '../utils/docForms';
 
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
@@ -412,7 +413,8 @@ export default function LayerProcessAudit() {
   const printPlan = async () => {
     setPrinting(true);
     try {
-      const logo = await urlToDataUrl(tsLogoUrl);
+      const dfp = await getDocForm('lpa_plan', {});
+      const logo = await urlToDataUrl(dfp.logo_url || tsLogoUrl);
       const nDays = daysInMonth(selMonth);
       const days = Array.from({ length: nDays }, (_, i) => i + 1);
       const hol = (d) => isHoliday(dateOf(selMonth, d));
@@ -480,6 +482,7 @@ table{border-collapse:collapse}
   ${layerRow('manager', 'plan_manager', 'Manager')}
   ${layerRow('gm', 'plan_gm', 'GM')}
 </table>
+<div style="display:flex;justify-content:space-between;margin-top:3px;font-size:9px"><span>${fullCode(dfp)}${dfp.footer_note ? ' · ' + dfp.footer_note : ''}</span><span>${dfp.effective_date ? 'Effective Date : ' + dfp.effective_date : ''}</span></div>
 <script>window.onload = () => window.print();</script>
 </body></html>`;
       const w = window.open('', '_blank');
@@ -493,7 +496,9 @@ table{border-collapse:collapse}
   const printReport = async () => {
     setPrinting(true);
     try {
-      const logo = await urlToDataUrl(tsLogoUrl);
+      // เลขฟอร์ม/Rev/Effective จากทะเบียนเอกสาร (/doc-forms) — fallback ค่าเดิม
+      const df = await getDocForm('lpa_report', { form_code: 'FM-QMR-008', rev: 'Rev.01', effective_date: EFFECTIVE });
+      const logo = await urlToDataUrl(df.logo_url || tsLogoUrl);
       const nDays = daysInMonth(selMonth);
       const days = Array.from({ length: nDays }, (_, i) => i + 1);
       const hol = (d) => isHoliday(dateOf(selMonth, d));
@@ -604,7 +609,7 @@ table{border-collapse:collapse;width:100%}
   <div><span style="display:inline-block;width:24px;height:9px;background:#f3e8a0;border:1px solid #999;vertical-align:middle"></span> Quarterly : GM Plant ทำการตรวจทุก 3 เดือน โดยสุ่มตรวจ</div>
 </div>
 ${issuesHtml}
-<div style="display:flex;justify-content:space-between;margin-top:3px;font-size:9px"><div>${FORM_NO}</div><div>Effective Date : ${EFFECTIVE}</div></div>
+<div style="display:flex;justify-content:space-between;margin-top:3px;font-size:9px"><div>${fullCode(df)}${df.footer_note ? ' · ' + df.footer_note : ''}</div><div>${df.effective_date ? 'Effective Date : ' + df.effective_date : ''}</div></div>
 <script>window.onload = () => window.print();</script>
 </body></html>`;
       const w = window.open('', '_blank');
