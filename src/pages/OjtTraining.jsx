@@ -311,7 +311,7 @@ export default function OjtTraining() {
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
 table{border-collapse:collapse}
-@media print{@page{size:A4 landscape;margin:7mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+@media print{@page{size:A4 portrait;margin:7mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body style="padding:6mm">
 <div style="font-size:9px;text-align:right">หน้า 1 ของ 1 หน้า</div>
 <table style="width:100%;border:1px solid #000">
