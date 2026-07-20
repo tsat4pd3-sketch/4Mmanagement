@@ -526,6 +526,13 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   animation: nowChipGlow 1.5s ease-in-out infinite;
 }
 
+/* ─── กรอบไลน์บนผังรวมโรงงาน (SVG polygon) กระพริบแดงเมื่อ Downtime ── */
+@keyframes regionAlarm {
+  0%, 100% { fill: rgba(239, 68, 68, 0.28); stroke: #ef4444; }
+  50%      { fill: rgba(127, 29, 29, 0.28); stroke: #fecaca; }
+}
+.region-alarm { animation: regionAlarm 0.9s ease-in-out infinite; }
+
 /* ─── โหมดเบาสำหรับจอ TV/บอร์ด (role `display`) — `data-perf="lite"` บน <html> ──────
    ตั้งอัตโนมัติใน App.jsx เมื่อ role === 'display' (บัญชีที่รันบนจอ TV/บอร์ดหน้าไลน์)
    จอพวกนี้ GPU อ่อน — animation ที่กระพริบ `box-shadow` (blur+spread) ทำให้ค้างทั้งเครื่อง
@@ -536,6 +543,10 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 @keyframes dtAlarmBlinkLite {
   0%, 100% { background-color: rgba(239, 68, 68, 0.92); }
   50%      { background-color: rgba(127, 29, 29, 0.92); }
+}
+[data-perf="lite"] .region-alarm { animation: regionAlarmLite 0.9s ease-in-out infinite; }
+@keyframes regionAlarmLite { /* จอ TV: กระพริบเฉพาะ stroke (fill นิ่ง) ลดรีเพนต์ */
+  0%, 100% { stroke: #ef4444; } 50% { stroke: #fecaca; }
 }
 [data-perf="lite"] .person-alarm-red { animation: personAlarmRedLite 0.9s ease-in-out infinite; }
 @keyframes personAlarmRedLite {

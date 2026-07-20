@@ -45,6 +45,7 @@ const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
+const FactoryMap = lazy(() => import('./pages/FactoryMap'));
 const RemoteControl = lazy(() => import('./pages/RemoteControl'));
 const RemoteReceiver = lazy(() => import('./components/RemoteReceiver'));
 
@@ -61,6 +62,7 @@ const NAV_ITEMS = [
 
   // Dashboard ย้ายจากหมวด "ภาพรวม" → "ฝ่ายผลิต" (คำสั่ง user 2026-07-12 — เนื้อหาส่วนใหญ่เป็นรายละเอียดฝ่ายผลิต)
   { to: '/dashboard',   icon: '📊', label: 'Dashboard',           group: 'ฝ่ายผลิต' },
+  { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ฝ่ายผลิต' },
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
@@ -931,6 +933,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
             <Routes>
               <Route path="/dashboard"  element={
                 <RoleRoute path="/dashboard" userRole={role}><Dashboard /></RoleRoute>
+              } />
+              <Route path="/factory-map" element={
+                <RoleRoute path="/factory-map" userRole={role}><FactoryMap /></RoleRoute>
               } />
               <Route path="/management" element={
                 <RoleRoute path="/management" userRole={role}><Management /></RoleRoute>

@@ -45,6 +45,9 @@ Deno.serve(async (req) => {
     const { data: layouts, error: e2 } = await admin.from('line_layouts').select('image_url')
     if (e2) throw e2
     for (const r of layouts ?? []) addRef(r.image_url)
+    // ผังรวมโรงงาน (factory/) — whitelist กันโดนลบ (เก็บ bucket เดียวกับ layouts)
+    const { data: fmaps } = await admin.from('factory_map').select('image_url')
+    for (const r of fmaps ?? []) addRef(r.image_url)
 
     // 2) ไล่รายชื่อไฟล์ทั้ง bucket (root + โฟลเดอร์ layouts/)
     const listAll = async (prefix: string) => {
@@ -64,7 +67,7 @@ Deno.serve(async (req) => {
       }
       return out
     }
-    const files = [...await listAll(''), ...await listAll('layouts')]
+    const files = [...await listAll(''), ...await listAll('layouts'), ...await listAll('factory')]
 
     // 3) คัดไฟล์กำพร้า (ข้ามไฟล์ใหม่ภายใน 24 ชม.)
     const cutoff = Date.now() - SAFETY_MS
