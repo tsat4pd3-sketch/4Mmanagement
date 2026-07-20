@@ -192,14 +192,17 @@ export default function MtnMachineLayout() {
   }
   const placeLineNode = async (pct) => {
     if (!armedLine || !orgAreaId || !canEdit) return
-    const { error } = await supabaseDR.from('pm_org_nodes').insert({ area_id: orgAreaId, line_name: armedLine, pos_top: pct.top, pos_left: pct.left })
+    // toPct คืน "71.46%" (string) — คอลัมน์ pos_top/left เป็น numeric ต้อง parseFloat ตัด % ก่อน
+    const top = parseFloat(pct.top), left = parseFloat(pct.left)
+    const { error } = await supabaseDR.from('pm_org_nodes').insert({ area_id: orgAreaId, line_name: armedLine, pos_top: top, pos_left: left })
     if (error) return toast.error(error.message.includes('duplicate') ? 'ไลน์นี้อยู่บนผังแล้ว' : error.message)
     setArmedLine(null); loadOrg()
   }
   const moveOrgNode = async (id, pct) => {
     if (!canEdit) return
-    setOrgNodes(prev => prev.map(n => n.id === id ? { ...n, pos_top: pct.top, pos_left: pct.left } : n))
-    await supabaseDR.from('pm_org_nodes').update({ pos_top: pct.top, pos_left: pct.left }).eq('id', id)
+    const top = parseFloat(pct.top), left = parseFloat(pct.left)
+    setOrgNodes(prev => prev.map(n => n.id === id ? { ...n, pos_top: top, pos_left: left } : n))
+    await supabaseDR.from('pm_org_nodes').update({ pos_top: top, pos_left: left }).eq('id', id)
   }
   const removeOrgNode = async (id) => {
     if (!canEdit) return
