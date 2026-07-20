@@ -146,13 +146,16 @@ export default function PermissionsManagement() {
     const isSaving = !!saving[`${role}:${permissionKey}`];
     return (
       <td style={{ textAlign: 'center', padding: '8px 4px' }}>
-        <input
-          type="checkbox"
-          checked={checked}
-          disabled={role === 'admin' || isSaving}
-          onChange={() => toggle(permissionKey, role, checked)}
-          style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: role === 'admin' ? 'not-allowed' : 'pointer', opacity: isSaving ? 0.4 : 1 }}
-        />
+        {/* label.tbtn = ขยาย hit area ≥40px บนจอทัช (matrix ช่องแน่น 11 คอลัมน์) — desktop ไม่เปลี่ยน */}
+        <label className="tbtn" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: role === 'admin' ? 'not-allowed' : 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={checked}
+            disabled={role === 'admin' || isSaving}
+            onChange={() => toggle(permissionKey, role, checked)}
+            style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: role === 'admin' ? 'not-allowed' : 'pointer', opacity: isSaving ? 0.4 : 1 }}
+          />
+        </label>
       </td>
     );
   };

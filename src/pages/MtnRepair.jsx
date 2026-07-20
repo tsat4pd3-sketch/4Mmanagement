@@ -684,9 +684,9 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, fullName,
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><label style={lbl}>อะไหล่ที่ใช้ (เบิก — หักสต็อกอัตโนมัติ)</label><button type="button" onClick={addPart} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }}>+ เพิ่ม</button></div>
             {usedParts.map((p, i) => (
-              <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 5, alignItems: 'center' }}>
-                <select value={p.part_id} onChange={e => pickPart(i, e.target.value)} style={{ ...inp, flex: 2 }}><option value="">อะไหล่…</option>{parts.map(pp => <option key={pp.id} value={pp.id}>{pp.name} (สต็อก {pp.stock_qty})</option>)}</select>
-                <input value={p.name} onChange={e => setPart(i, 'name', e.target.value)} placeholder="หรือพิมพ์ชื่อ" style={{ ...inp, flex: 2 }} />
+              <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 5, alignItems: 'center', flexWrap: 'wrap' }}>
+                <select value={p.part_id} onChange={e => pickPart(i, e.target.value)} style={{ ...inp, flex: '2 1 140px' }}><option value="">อะไหล่…</option>{parts.map(pp => <option key={pp.id} value={pp.id}>{pp.name} (สต็อก {pp.stock_qty})</option>)}</select>
+                <input value={p.name} onChange={e => setPart(i, 'name', e.target.value)} placeholder="หรือพิมพ์ชื่อ" style={{ ...inp, flex: '2 1 120px' }} />
                 <input type="number" value={p.qty} onChange={e => setPart(i, 'qty', e.target.value)} style={{ ...inp, width: 70 }} />
                 <button type="button" onClick={() => setUsedParts(x => x.filter((_, j) => j !== i))} className="tbtn" style={{ ...btnGhost, padding: '6px 8px' }}>✕</button>
               </div>
@@ -776,9 +776,9 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, fullName, reloadMast
         <div key={dep} style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent2)', marginBottom: 4 }}>🏢 {dep} ({list.length})</div>
           <div style={{ display: 'grid', gap: 6 }}>{list.map(it => (
-            <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
-              <input defaultValue={it.name} onBlur={e => e.target.value !== it.name && updRow('mtn_technicians', it.id, { name: e.target.value })} style={{ ...inp, width: 260 }} />
-              <select defaultValue={it.dept || 'MTN'} onChange={e => updRow('mtn_technicians', it.id, { dept: e.target.value })} style={{ ...inp, width: 150 }}>{MTN_DEPTS.map(d => <option key={d}>{d}</option>)}</select>
+            <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+              <input defaultValue={it.name} onBlur={e => e.target.value !== it.name && updRow('mtn_technicians', it.id, { name: e.target.value })} style={{ ...inp, flex: '2 1 180px', width: 'auto' }} />
+              <select defaultValue={it.dept || 'MTN'} onChange={e => updRow('mtn_technicians', it.id, { dept: e.target.value })} style={{ ...inp, flex: '1 1 120px', width: 'auto' }}>{MTN_DEPTS.map(d => <option key={d}>{d}</option>)}</select>
               <button onClick={() => delRow('mtn_technicians', it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
             </div>))}</div>
         </div>); })}
@@ -831,8 +831,8 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, fullName, reloadMast
           <button onClick={() => { if (!nw[fields[0].k]) return; addRow(table, { ...nw, sort_order: items.length + 1 }); setNw({}); }} style={btnPri}>+ {addLabel}</button>
         </div>
         <div style={{ display: 'grid', gap: 6 }}>{items.map(it => (
-          <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
-            {fields.map(fl => <input key={fl.k} defaultValue={it[fl.k] || ''} onBlur={e => e.target.value !== (it[fl.k] || '') && updRow(table, it.id, { [fl.k]: e.target.value })} style={{ ...inp, width: fl.w || 200 }} />)}
+          <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+            {fields.map(fl => <input key={fl.k} defaultValue={it[fl.k] || ''} onBlur={e => e.target.value !== (it[fl.k] || '') && updRow(table, it.id, { [fl.k]: e.target.value })} style={{ ...inp, flex: `1 1 ${fl.w || 200}px`, width: 'auto', minWidth: 120 }} />)}
             <button onClick={() => delRow(table, it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
           </div>))}</div>
       </div>

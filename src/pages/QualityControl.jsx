@@ -706,8 +706,8 @@ function SPCTab({ lines, canRecord, canManage }) {
                 </div>
               ) : <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>คุณไม่มีสิทธิ์บันทึกผลวัด (qa:record)</div>}
 
-              <div style={{ maxHeight: 250, overflowY: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <div style={{ maxHeight: 250, overflowY: 'auto', overflowX: 'auto' }}>
+                <table style={{ width: '100%', minWidth: 460, borderCollapse: 'collapse' }}>
                   <thead><tr>
                     <th style={thSt}>วันที่</th><th style={thSt}>กะ</th><th style={thSt}>ค่าวัด</th>
                     <th style={thSt}>X̄</th><th style={thSt}>ผู้วัด</th>{canManage && <th style={thSt}></th>}
@@ -723,7 +723,7 @@ function SPCTab({ lines, canRecord, canManage }) {
                           <td style={{ ...tdSt, fontWeight: 700 }}>{fmtNum(mean(vals))}</td>
                           <td style={tdSt}>{r.operator_name || '—'}</td>
                           {canManage && <td style={tdSt}>
-                            <button onClick={() => delMeasurement(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 12 }}>🗑</button>
+                            <button className="tbtn" onClick={() => delMeasurement(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 12 }}>🗑</button>
                           </td>}
                         </tr>
                       );
@@ -1266,7 +1266,7 @@ function InstrumentTab({ lines, canManage }) {
                   <td style={{ ...tdSt, whiteSpace: 'nowrap', fontWeight: 700, color: s.color }}>{fmtD(nextDue(i))}</td>
                   <td style={tdSt}><Chip label={s.label} color={s.color} /></td>
                   {canManage && <td style={tdSt}>
-                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }} onClick={() => setModal({
+                    <button className="tbtn" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }} onClick={() => setModal({
                       ...EMPTY_INST, ...i,
                       inst_type: i.inst_type || '', brand: i.brand || '', serial_no: i.serial_no || '',
                       range_spec: i.range_spec || '', resolution: i.resolution || '', location: i.location || '',

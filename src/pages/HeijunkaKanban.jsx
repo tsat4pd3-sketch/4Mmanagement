@@ -861,9 +861,9 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, on
                           <span style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)' }}>{fmt(lot.lot_qty)} <span style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น/ล็อต</span></span>
                           {canReorder && (
                             <div style={{ display: 'flex', gap: 4 }}>
-                              <button onClick={() => onReorder(queue, lot, 'up')} disabled={busy === lot.id || qIdx === 0}
+                              <button className="tbtn" onClick={() => onReorder(queue, lot, 'up')} disabled={busy === lot.id || qIdx === 0}
                                 style={{ padding: '2px 8px', borderRadius: 6, cursor: qIdx === 0 ? 'default' : 'pointer', fontSize: 12, fontWeight: 800, background: 'var(--bg2)', color: qIdx === 0 ? 'var(--border2)' : 'var(--text)', border: '1px solid var(--border)' }}>▲</button>
-                              <button onClick={() => onReorder(queue, lot, 'down')} disabled={busy === lot.id || qIdx === queue.length - 1}
+                              <button className="tbtn" onClick={() => onReorder(queue, lot, 'down')} disabled={busy === lot.id || qIdx === queue.length - 1}
                                 style={{ padding: '2px 8px', borderRadius: 6, cursor: qIdx === queue.length - 1 ? 'default' : 'pointer', fontSize: 12, fontWeight: 800, background: 'var(--bg2)', color: qIdx === queue.length - 1 ? 'var(--border2)' : 'var(--text)', border: '1px solid var(--border)' }}>▼</button>
                             </div>
                           )}
