@@ -39,6 +39,7 @@ const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
 const DailyPM     = lazy(() => import('./pages/DailyPM'));
 const Improvements = lazy(() => import('./pages/Improvements'));
+const OjtTraining = lazy(() => import('./pages/OjtTraining'));
 const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
@@ -70,6 +71,7 @@ const NAV_ITEMS = [
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'ฝ่ายผลิต' },
   { to: '/daily-pm',       icon: '✅', label: 'Daily PM ฝ่ายผลิต',   group: 'ฝ่ายผลิต' },
   { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
+  { to: '/ojt-training',   icon: '📖', label: 'อบรมสอนงาน OJT',      group: 'ฝ่ายผลิต' },
 
   { to: '/line-stock',      icon: '📦', label: 'Store management',       group: 'Logistic - Store' },
   { to: '/heijunka',       icon: '🎴', label: 'Kanban Board',             group: 'Logistic - Store' },
@@ -984,6 +986,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/improvements" element={
                 <RoleRoute path="/improvements" userRole={role}><Improvements /></RoleRoute>
+              } />
+              <Route path="/ojt-training" element={
+                <RoleRoute path="/ojt-training" userRole={role}><OjtTraining /></RoleRoute>
               } />
               <Route path="/morning-meeting" element={
                 <RoleRoute path="/morning-meeting" userRole={role}><MorningMeeting /></RoleRoute>

@@ -118,6 +118,12 @@
 | `notifications` | In-app notifications | user_id, title, body, type (success/error/info), is_read, ref_table, ref_id |
 | `meeting_action_items` | Action item จากประชุมแถวเช้า (ติดตามข้ามวันจนปิด) | meeting_date, section, line_name, problem, root_cause, ref_kind/ref_id (ที่มา: downtime/defect/4m/order_miss), assignee, due_date, status (open/doing/done/cancelled) |
 
+### OJT (ใบแจ้งการอบรมสอนงาน FM-HRM-004 — paperless · 2026-07-20)
+| Table | คำอธิบาย | Fields สำคัญ |
+|-------|---------|-------------|
+| `ojt_trainings` | หัวใบอบรม OJT (หน้า `/ojt-training` · migration `20260714_ojt_training.sql`) | train_date, time_from/to, location, dept/section/department, for_new/for_review/for_method_change, topic, scope, trainer_name, duration_min, maker/approver/hr (name+sig_url — เลือกจาก profiles ที่มี signature_url), status (open/completed) |
+| `ojt_training_attendees` | ผู้เข้าอบรมต่อใบ (snapshot ชื่อ/รหัส กัน master เปลี่ยน) | training_id (FK cascade), employee_id, emp_code/emp_name, pre_score/post_score (0-4), sign_url (เซ็นบนจอ → bucket `signatures` path ของ user ที่บันทึก), eval_agree, evaluator_name, sort_order |
+
 ---
 
 ## Pages & Routes
@@ -138,6 +144,7 @@
 | ฝ่ายผลิต | `/oee-analytics` | OEEAnalytics | ทุก role |
 | ฝ่ายผลิต | `/daily-pm` | DailyPM | ทุก role |
 | ฝ่ายผลิต | `/improvements` | Improvements (Kaizen — ดู section "Improvements") | ทุก role (manage: admin/mgr/sv/leader) |
+| ฝ่ายผลิต | `/ojt-training` | OjtTraining — ใบอบรม OJT paperless FM-HRM-004: บันทึก+เซ็นบนจอ+พิมพ์ PDF ตามฟอร์มกระดาษ (สิทธิ์บันทึก `ojt:record` = mgr/sv/leader · ลบ `ojt:delete` = mgr · scope ผู้เข้าอบรมตาม leader family/sections) | ทุก role |
 | Logistic - Store | `/line-stock` | LineStock | ทุก role |
 | Logistic - Store | `/heijunka` | HeijunkaKanban | ทุก role |
 | Logistic - Store | `/rack-center` | RackCenter | ทุก role |
