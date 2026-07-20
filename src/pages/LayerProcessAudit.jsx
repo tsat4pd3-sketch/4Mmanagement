@@ -1,5 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useRef } from 'react';
-import { supabase, supabaseDR } from '../supabaseClient';
+import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
@@ -179,29 +179,29 @@ export default function LayerProcessAudit() {
     return dow === 0 || dow === 6;
   };
 
-  /* ── ดึงรายชื่อสถานีจาก "ฐานข้อมูลเครื่องจักร" (DR project) ของไลน์ (รวมไลน์ย่อยในครอบครัว) ──
-     ใช้เป็นสถานีตรวจตั้งต้นให้ครบทั้งไลน์ แล้ว user แก้เพิ่ม/ลบเองได้ (คำสั่ง user 2026-07-20) */
-  const fetchMachineStations = async () => {
+  /* ── ดึงรายชื่อ "จุดงาน (workstations)" ของไลน์ (รวมไลน์ย่อยในครอบครัว) ──
+     LPA = audit กระบวนการ/คนที่จุดงาน ไม่ใช่ตรวจทุกเครื่องจักร → ใช้จุดงานเป็นสถานีตรวจตั้งต้น
+     (คำสั่ง user 2026-07-20) · workstations อยู่ Main project · user แก้เพิ่ม/ลบเองได้ */
+  const fetchStationNames = async () => {
     const lineObj = lines.find(l => l.name === selLine);
     const famNames = lineObj ? getLineFamilyNames(lines, lineObj.id) : [];
     const names = famNames.length ? famNames : [selLine];
-    const { data, error } = await supabaseDR.from('machines')
-      .select('machine_no, machine_name').in('line_name', names).eq('is_active', true)
-      .order('machine_no');
+    const { data, error } = await supabase.from('workstations')
+      .select('station_name, line_name').in('line_name', names).order('id');
     if (error) return { list: [], error };
     const list = []; const seen = new Set();
-    (data || []).forEach(m => {
-      const nm = (m.machine_name || '').trim() || (m.machine_no || '').trim();
+    (data || []).forEach(w => {
+      const nm = (w.station_name || '').trim();
       if (nm && !seen.has(nm)) { seen.add(nm); list.push(nm); }
     });
     return { list };
   };
-  const fillStationsFromMachines = async () => {
-    const { list, error } = await fetchMachineStations();
-    if (error) { toast.error('ดึงเครื่องจักรไม่สำเร็จ: ' + error.message); return; }
-    if (!list.length) { toast.info('ไลน์นี้ยังไม่มีเครื่องจักรในฐานข้อมูล — เพิ่มที่หน้าฐานข้อมูลเครื่องจักรก่อน'); return; }
+  const fillStationsFromWorkstations = async () => {
+    const { list, error } = await fetchStationNames();
+    if (error) { toast.error('ดึงจุดงานไม่สำเร็จ: ' + error.message); return; }
+    if (!list.length) { toast.info('ไลน์นี้ยังไม่มีจุดงานในผัง — ตั้งจุดงานที่หน้า Line Setup ก่อน'); return; }
     setQHeader(prev => ({ ...prev, stations: list.join('\n') }));
-    toast.success(`ดึง ${list.length} เครื่องจักรมาเป็นสถานีตรวจแล้ว — แก้ไข/เพิ่มเองได้`);
+    toast.success(`ดึง ${list.length} จุดงานมาเป็นสถานีตรวจแล้ว — แก้ไข/เพิ่มเองได้`);
   };
 
   /* ── โหลดแผน + ผลตรวจของเดือน เมื่อเปลี่ยน line/shift/month ── */
@@ -339,7 +339,7 @@ export default function LayerProcessAudit() {
     setQAudits(auds || []);
     const firstPl = mks.map(mk => map[mk].plan).find(Boolean);
     let stations = firstPl?.stations || '';
-    if (!stations && canManage) { const { list } = await fetchMachineStations(); stations = list.join('\n'); }
+    if (!stations && canManage) { const { list } = await fetchStationNames(); stations = list.join('\n'); }
     setQHeader({
       leader_name: firstPl?.leader_name || '', supervisor_name: firstPl?.supervisor_name || '',
       manager_name: firstPl?.manager_name || '', gm_name: firstPl?.gm_name || '', stations,
@@ -363,7 +363,7 @@ export default function LayerProcessAudit() {
     return null;
   };
 
-  // เติมแผนอัตโนมัติทั้งไตรมาส — ครอบทุกเครื่อง "ภายในแต่ละเดือน" (แจกหลายสถานี/วันถ้าเครื่อง > วันทำงาน)
+  // เติมแผนอัตโนมัติทั้งไตรมาส — ครอบทุกจุดงาน "ภายในแต่ละเดือน" (แจกหลายสถานี/วันถ้าจุดงาน > วันทำงาน)
   const autoFillQuarter = () => {
     const stationList = (qHeader.stations || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
     if (!stationList.length) { toast.error('กรอก/ดึงรายชื่อสถานี (Station) ก่อน'); return; }
@@ -373,7 +373,7 @@ export default function LayerProcessAudit() {
       const working = [];
       for (let d = 1; d <= nDays; d++) if (!isHoliday(dateOf(mk, d))) working.push(d);
       if (!working.length) { next[mk] = { ...(next[mk] || { plan: null }), days: {} }; return; }
-      // ครบทุกเครื่องภายในเดือน → สถานี/วัน = ceil(จำนวนเครื่อง ÷ วันทำงาน)
+      // ครบทุกจุดงานภายในเดือน → สถานี/วัน = ceil(จำนวนจุดงาน ÷ วันทำงาน)
       const perDay = Math.max(1, Math.ceil(stationList.length / working.length));
       const blocks = [[1, 7], [8, 14], [15, 21], [22, 31]];
       const svDays = blocks.map(([a, b]) => working.find(d => d >= a && d <= b)).filter(Boolean);
@@ -395,7 +395,7 @@ export default function LayerProcessAudit() {
       next[mk] = { ...(next[mk] || { plan: null }), days };
     });
     setQData(next);
-    toast.success(`เติมแผนทั้งไตรมาสแล้ว — ครบ ${stationList.length} เครื่องในทุกเดือน (แก้ไขได้)`);
+    toast.success(`เติมแผนทั้งไตรมาสแล้ว — ครบ ${stationList.length} จุดงานในทุกเดือน (แก้ไขได้)`);
   };
 
   const saveQuarter = async () => {
@@ -831,14 +831,14 @@ ${issuesHtml}
           <datalist id="lpa-profiles">{profiles.filter(p => p.full_name).map(p => <option key={p.id} value={p.full_name} />)}</datalist>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
             <div style={{ flex: '1 1 340px' }}>
-              <div style={lb}>รายชื่อสถานีตรวจ (Station for audit — บรรทัดละชื่อ หรือคั่นด้วย , · ดึงจากเครื่องจักรในไลน์อัตโนมัติ แก้ไข/เพิ่มเองได้ · ใช้ทั้งไตรมาส)</div>
+              <div style={lb}>รายชื่อสถานีตรวจ (Station for audit — บรรทัดละชื่อ หรือคั่นด้วย , · ดึงจากจุดงานในไลน์อัตโนมัติ แก้ไข/เพิ่มเองได้ · ใช้ทั้งไตรมาส)</div>
               <textarea rows={3} value={qHeader.stations || ''} onChange={e => setQHeaderF('stations', e.target.value)} disabled={!canManage}
                 placeholder={'ปืนยิงBoat\nSTAMP MARK\nJig-01\nJig-02 ...'} style={{ width: '100%', fontSize: 13 }} />
             </div>
             {canManage && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button onClick={fillStationsFromMachines} style={btnTeal} title="ดึงรายชื่อเครื่องจักรทั้งหมดในไลน์นี้ (รวมไลน์ย่อย) มาเป็นสถานีตรวจตั้งต้น">🏭 ดึงเครื่องจักรในไลน์</button>
-                <button onClick={autoFillQuarter} style={btnAmber} title="กระจายสถานีให้ครบทุกเครื่องภายในแต่ละเดือน (Leader ทุกวัน · SV ต้นสัปดาห์ · MGR รายเดือน · GM รายไตรมาส)">⚡ เติมแผนทั้งไตรมาส</button>
+                <button onClick={fillStationsFromWorkstations} style={btnTeal} title="ดึงรายชื่อจุดงานทั้งหมดในไลน์นี้ (รวมไลน์ย่อย) มาเป็นสถานีตรวจตั้งต้น — LPA ตรวจกระบวนการที่จุดงาน ไม่ใช่ทุกเครื่องจักร">📍 ดึงจุดงานในไลน์</button>
+                <button onClick={autoFillQuarter} style={btnAmber} title="กระจายจุดงานให้ครบทุกจุดภายในแต่ละเดือน (Leader ทุกวัน · SV ต้นสัปดาห์ · MGR รายเดือน · GM รายไตรมาส)">⚡ เติมแผนทั้งไตรมาส</button>
                 <button onClick={saveQuarter} disabled={savingPlan} style={btnAccent}>{savingPlan ? '⏳...' : '💾 บันทึกแผนไตรมาส'}</button>
                 <button onClick={printPlan} disabled={printing} style={btnBlue} title={`พิมพ์ใบแผนของเดือน ${monthLabel(selMonth)} (บันทึกก่อนพิมพ์)`}>🖨️ พิมพ์ ({monthLabel(selMonth)})</button>
               </div>
