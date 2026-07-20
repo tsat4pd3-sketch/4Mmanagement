@@ -5,6 +5,7 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { markerScale } from '../utils/markerScale';
+import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
 import FactoryPlanManager from '../components/FactoryPlanManager';
 
@@ -51,7 +52,7 @@ export default function LineSetup() {
   const [isUploading, setIsUploading] = useState(false);
   const [tempPos, setTempPos] = useState(null);
   const [formData, setFormData] = useState({ id: null, name: '', requirements: {}, skill_allowance: false, skill_allowance_type: '' });
-  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const isMobile = useIsMobile();
   const [collisionWarn, setCollisionWarn] = useState(null); // string message หรือ null
   const [showManpower, setShowManpower] = useState(false);
   const [skillDefs, setSkillDefs] = useState([]);
@@ -109,11 +110,6 @@ export default function LineSetup() {
   const [signerHRM,      setSignerHRM]     = useState('');
   const [signersSaving, setSignersSaving] = useState(false);
 
-  useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth <= 768);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, []);
 
   const skillAllowanceTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
 

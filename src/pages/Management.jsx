@@ -11,6 +11,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { markerScale } from '../utils/markerScale';
+import useIsMobile from '../utils/useIsMobile';
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
   return new Promise((resolve) => {
@@ -162,7 +163,7 @@ export default function Management() {
   const [allLines,       setAllLines]       = useState([]); // ทุกไลน์รวมไลน์ย่อย (ใช้หา parent_line_name)
   const [show4MModal,    setShow4MModal]    = useState(null);
   const [log4MForm,      setLog4MForm]      = useState({ category: 'Man', description: '', moveType: 'same', skillOk: false, hasHistory: false, subtype: 'change' });
-  const [isMobile,       setIsMobile]       = useState(window.innerWidth <= 768);
+  const isMobile = useIsMobile();
   const vw = useWidth();
   const isWide  = vw >= 1280;
   const isUltra = vw >= 1600;
@@ -335,11 +336,6 @@ export default function Management() {
     return () => { clearInterval(t); clearTimeout(debounceTimer); supabaseDR.removeChannel(ch); };
   }, [selectedLine, viewKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    const h = () => setIsMobile(window.innerWidth <= 768);
-    window.addEventListener('resize', h);
-    return () => window.removeEventListener('resize', h);
-  }, []);
 
   useEffect(() => {
     supabase.from('skill_definitions').select('*').order('sort_order').then(({ data }) => setSkillDefs(data || []));

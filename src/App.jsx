@@ -9,6 +9,7 @@ import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 import { loadPermissions, canAccessPage } from './utils/permissions';
 import { effectiveSections } from './utils/sectionScope';
+import useIsMobile from './utils/useIsMobile';
 
 const Register     = lazy(() => import('./pages/Register'));
 const Checkin      = lazy(() => import('./pages/Checkin'));
@@ -227,7 +228,7 @@ function SplashScreen({ onDone }) {
 /* ─── Sidebar ──────────────────────────────────────────────── */
 function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition, userAvatarUrl, remoteCode, onToggleRemote }) {
   const location = useLocation();
-  const isMobile = window.innerWidth <= 768;
+  const isMobile = useIsMobile();
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
   const [sigUrl,        setSigUrl]        = useState(userSignatureUrl);
   const [pwdModalOpen,  setPwdModalOpen]  = useState(false);
@@ -839,9 +840,9 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 // permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
 function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved }) {
-  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
-  const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
-  const [isOpen, setIsOpen] = useState(!isMobile);
+  const isMobile = useIsMobile();
+  const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
+  const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 768);
   const navigate = useNavigate();
   const location = useLocation();
   const userId = session?.user?.id ?? null;

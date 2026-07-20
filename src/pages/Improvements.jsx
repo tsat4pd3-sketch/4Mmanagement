@@ -620,7 +620,7 @@ export default function Improvements() {
                             return (
                               <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 {/* ป้ายสถานะกดวน todo→doing→done */}
-                                <button disabled={!canManage} onClick={() => cycleMilestone(m)}
+                                <button className="tbtn" disabled={!canManage} onClick={() => cycleMilestone(m)}
                                   title={canManage ? 'กดเพื่อเปลี่ยนสถานะ' : ''}
                                   style={{ width: 142, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', cursor: canManage ? 'pointer' : 'default', padding: 0, textAlign: 'left' }}>
                                   <span style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, background: m.status === 'done' ? meta.c : 'transparent', border: `2px solid ${overdue ? '#ef4444' : meta.c}` }} />
@@ -640,7 +640,7 @@ export default function Improvements() {
                                 </div>
                                 <span style={{ width: 64, flexShrink: 0, fontSize: 11, fontWeight: 700, color: overdue ? '#ef4444' : meta.c, textAlign: 'right' }}>{overdue ? '⚠ เลยแผน' : meta.l}</span>
                                 {canManage && (
-                                  <button onClick={() => deleteMilestone(m)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12, padding: 0, flexShrink: 0 }}>✕</button>
+                                  <button className="tbtn" onClick={() => deleteMilestone(m)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12, padding: 0, flexShrink: 0 }}>✕</button>
                                 )}
                               </div>
                             );

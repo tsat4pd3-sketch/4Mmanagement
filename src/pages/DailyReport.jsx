@@ -174,6 +174,7 @@ export default function DailyReport() {
 function LiveTab({ role }) {
   const { fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const isMobile = useIsMobile(); // ≤768px: sidebar รายชื่อกะยุบมาซ้อนบนเนื้อหา (desktop ไม่เปลี่ยน)
+  const wide1100 = !useIsMobile(1099); // ≥1100px → modal แผ่ 2 คอลัมน์ (reactive แทน innerWidth ครั้งเดียว)
   const [lines, setLines]           = useState([]);
   const [lineMap, setLineMap]       = useState({});
   const [products, setProducts]     = useState([]);
@@ -2698,7 +2699,7 @@ function LiveTab({ role }) {
           const carryOrdersList  = prodOrders.filter(o => o.status === 'carry_over');
           const cancelledOrders  = prodOrders.filter(o => o.status === 'cancelled');
           // จอ landscape กว้าง → แผ่เนื้อหาเป็น 2 คอลัมน์แทนการยืดสูงจน scroll (layout อย่างเดียว ไม่แตะ logic)
-          const twoCol = typeof window !== 'undefined' && window.innerWidth >= 1100 && (defectLogs.length > 0 || dtLogs.length > 0) && prodOrders.length > 0;
+          const twoCol = wide1100 && (defectLogs.length > 0 || dtLogs.length > 0) && prodOrders.length > 0;
           return (
             <div className="overlay" style={{ zIndex: 2100 }}>
               <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.5)', borderRadius: 14, padding: 24, width: 'min(96vw,1500px)', maxHeight: '94vh', overflowY: 'auto' }}>
@@ -3001,7 +3002,7 @@ function LiveTab({ role }) {
           const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty } = computeOEE(ng, closeEndTime, closeStartTime, previewDtLogs);
           const oeeColor = oee == null ? 'var(--muted)' : oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
           // จอ landscape กว้าง → แผ่เนื้อหาเป็น 2 คอลัมน์แทนการยืดสูงจน scroll (layout อย่างเดียว ไม่แตะ logic/การคำนวณ)
-          const twoCol = typeof window !== 'undefined' && window.innerWidth >= 1100;
+          const twoCol = wide1100;
           const hasOpenOrdersCol = twoCol && prodOrders.some(o => o.status === 'open');
           const hasOpenDTCol = twoCol && modalOpenDT.length > 0;
           return (

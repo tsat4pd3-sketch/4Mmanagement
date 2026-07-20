@@ -342,7 +342,7 @@ export default function RackCenter() {
                           {ACTION_LABEL[r.status]}
                         </button>
                         {col.key !== 'delivered' && (
-                          <button onClick={() => cancel(r)} disabled={busyId === r.id}
+                          <button className="tbtn" onClick={() => cancel(r)} disabled={busyId === r.id}
                             style={{ ...btn('rgba(239,68,68,0.1)', '#ef4444'), border: '1px solid rgba(239,68,68,0.3)', padding: '6px 10px', fontSize: 12 }}>
                             ✕
                           </button>
