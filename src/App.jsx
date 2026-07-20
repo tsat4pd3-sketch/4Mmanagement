@@ -311,17 +311,20 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             const groupHasActive = items.some(i => location.pathname === i.to);
             return (
               <div key={group} style={{ marginBottom: 2 }}>
+                {/* หัวหมวด — สว่าง+ใหญ่พออ่านง่าย (เดิม 11px สี muted จางเกิน อ่านยากโดยเฉพาะตัวไทย)
+                    ไม่ใช้ letterSpacing กว้าง/uppercase กับไทย · active = accent, ปกติ = text2 (สว่างกว่า muted) */}
                 <button
                   onClick={() => toggleGroup(group)}
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-                    background: 'none', border: 'none', cursor: 'pointer', padding: '8px 10px 4px',
-                    color: groupHasActive ? 'var(--accent)' : 'var(--muted)',
-                    fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase',
+                    background: 'none', border: 'none', cursor: 'pointer', padding: '10px 10px 5px',
+                    color: groupHasActive ? 'var(--accent)' : 'var(--text2)',
+                    fontSize: 13, fontWeight: 800, letterSpacing: '0.01em',
+                    fontFamily: 'var(--font-display)',
                   }}
                 >
                   <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</span>
-                  <span style={{ fontSize: 11, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
+                  <span style={{ fontSize: 12, opacity: 0.7, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
                 </button>
                 {!collapsed && items.map(item => (
                   <Link
