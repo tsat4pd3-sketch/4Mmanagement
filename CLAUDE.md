@@ -118,6 +118,12 @@
 | `notifications` | In-app notifications | user_id, title, body, type (success/error/info), is_read, ref_table, ref_id |
 | `meeting_action_items` | Action item จากประชุมแถวเช้า (ติดตามข้ามวันจนปิด) | meeting_date, section, line_name, problem, root_cause, ref_kind/ref_id (ที่มา: downtime/defect/4m/order_miss), assignee, due_date, status (open/doing/done/cancelled) |
 
+### OJT (ใบแจ้งการอบรมสอนงาน FM-HRM-004 — paperless · 2026-07-20)
+| Table | คำอธิบาย | Fields สำคัญ |
+|-------|---------|-------------|
+| `ojt_trainings` | หัวใบอบรม OJT (หน้า `/ojt-training` · migration `20260714_ojt_training.sql`) | train_date, time_from/to, location, dept/section/department, for_new/for_review/for_method_change, topic, scope, trainer_name, duration_min, maker/approver/hr (name+sig_url — เลือกจาก profiles ที่มี signature_url), status (open/completed) |
+| `ojt_training_attendees` | ผู้เข้าอบรมต่อใบ (snapshot ชื่อ/รหัส กัน master เปลี่ยน) | training_id (FK cascade), employee_id, emp_code/emp_name, pre_score/post_score (0-4), sign_url (เซ็นบนจอ → bucket `signatures` path ของ user ที่บันทึก), eval_agree, evaluator_name, sort_order |
+
 ---
 
 ## Pages & Routes
@@ -138,6 +144,7 @@
 | ฝ่ายผลิต | `/oee-analytics` | OEEAnalytics | ทุก role |
 | ฝ่ายผลิต | `/daily-pm` | DailyPM | ทุก role |
 | ฝ่ายผลิต | `/improvements` | Improvements (Kaizen — ดู section "Improvements") | ทุก role (manage: admin/mgr/sv/leader) |
+| ฝ่ายผลิต | `/ojt-training` | OjtTraining — ใบอบรม OJT paperless FM-HRM-004: บันทึก+เซ็นบนจอ+พิมพ์ PDF ตามฟอร์มกระดาษ (สิทธิ์บันทึก `ojt:record` = mgr/sv/leader · ลบ `ojt:delete` = mgr · scope ผู้เข้าอบรมตาม leader family/sections) | ทุก role |
 | Logistic - Store | `/line-stock` | LineStock | ทุก role |
 | Logistic - Store | `/heijunka` | HeijunkaKanban | ทุก role |
 | Logistic - Store | `/rack-center` | RackCenter | ทุก role |
@@ -472,7 +479,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 
 ตรวจสภาพเครื่องแบบ *photo-hunt*: เทียบ **รูปมาตรฐาน (สภาพดี)** กับ **สภาพจริงที่ถ่ายตอนตรวจ** เพื่อจับความผิดปกติที่มองเห็น (น้ำมันรั่ว/การ์ดเปิด/ของหาย/สภาพเปลี่ยน) — คนเป็นผู้ตัดสิน เว็บช่วยให้เทียบง่าย · ต่อยอดเข้า `/pm-check` เดิม ไม่ใช่หน้าใหม่
 
-- **รูปมาตรฐาน = `jig_checkpoints.image_path`** (รูปอ้างอิงต่อจุดที่ตั้งใน PMSetup อยู่แล้ว) — ปุ่ม "📷 เทียบรูป" โผล่บนแถวจุดตรวจชนิด attribute/note **เมื่อจุดนั้นมี image_path** เท่านั้น
+- **รูปมาตรฐาน = `jig_checkpoints.image_path`** (รูปอ้างอิงต่อจุด) — ปุ่ม 📷 โผล่บนแถว attribute/note **ทุกจุด** (2026-07-16): มีรูปแล้ว = "เทียบรูป" · ยังไม่มี = "ตั้งรูปมาตรฐาน" (สีเน้น) → ถ่ายครั้งแรก **ตั้งเป็นมาตรฐาน inline** ไม่ต้องไป PMSetup (`onSetReference` อัปโหลด `reference/<cp>.jpg` → set image_path + อัปเดต state ทันที) · โมดัล default โหมด ⚡ กะพริบ ง่ายสุด, wipe/fade/diff/align/จูนมือ ซ่อนใต้ปุ่ม "⚙️ ตัวช่วยเทียบเพิ่มเติม"
 - **Component: `src/components/PhotoCompareModal.jsx`** — 4 โหมดเทียบ: ↔ แบ่งซ้าย/ขวา (wipe) · ◐ ซ้อนจาง (fade) · 🔍 ไฮไลต์จุดต่าง (diff heatmap ปรับความไวได้) · ⚡ กะพริบสลับ (blink comparator สลับ ref/current 520ms ให้จุดต่างเด้งเข้าตา) · ถ่ายสดพร้อม **ghost overlay** รูปมาตรฐานช่วยเล็งมุม (getUserMedia facingMode environment) หรือ `<input capture>` สำรอง
 - **เฟส 2 — auto-align (2026-07-16):** จัดตำแหน่ง+สเกลรูปปัจจุบันให้ตรงรูปมาตรฐานอัตโนมัติก่อนเทียบ (coarse-to-fine หา s,tx,ty ที่ MSE ต่ำสุดบน grid 80×60 luminance — **dependency-free คำนวณในเครื่อง**) → diff/blink/wipe แม่นขึ้นแม้ถ่ายมุมเบี้ยวเล็กน้อย · มีตัวบอก "ความตรง" (จาก MSE) + จูนมือ (◀▶▲▼ ➕➖ รีเซ็ต) เผื่อ auto ไม่เป๊ะ · อ่านพิกเซลรูปมาตรฐานไม่ได้ (cross-origin taint) → ปิด auto เงียบๆ ใช้จูนมือแทน · **ยังไม่ใช่ AI** (rotation ไม่รองรับ — ghost overlay ช่วยกันเอียงตอนถ่าย)
 - **กฎเหล็กประหยัด storage — เก็บรูป "เฉพาะ NG" เท่านั้น** (ผ่าน = ทิ้งพิกเซล): modal คืน `{ verdict, blob }` · blob ถูกเก็บใน `evidenceBlobs` (state) เฉพาะตอน verdict='ng' · `handleSave` อัปโหลด blob → bucket `jig-images` path `evidence/<inspection_id>/<checkpoint_id>.jpg` แล้ว set `inspection_results.evidence_path` (best-effort try/catch ไม่ล้มการบันทึก) · การเลือก "ปกติ" ลบ blob ทิ้งทันที — **ห้ามเปลี่ยนเป็นเก็บทุกรูป** (250 รูป/วัน × 100KB ≈ 1.1GB/เดือน = เต็มแพลนฟรีใน 1 เดือน · เก็บเฉพาะ NG ~3% = 180MB/ปี)
