@@ -1,5 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useRef } from 'react';
-import { supabase } from '../supabaseClient';
+import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
@@ -171,6 +171,31 @@ export default function LayerProcessAudit() {
     return dow === 0 || dow === 6;
   };
 
+  /* ── ดึงรายชื่อสถานีจาก "ฐานข้อมูลเครื่องจักร" (DR project) ของไลน์ (รวมไลน์ย่อยในครอบครัว) ──
+     ใช้เป็นสถานีตรวจตั้งต้นให้ครบทั้งไลน์ แล้ว user แก้เพิ่ม/ลบเองได้ (คำสั่ง user 2026-07-20) */
+  const fetchMachineStations = async () => {
+    const lineObj = lines.find(l => l.name === selLine);
+    const famNames = lineObj ? getLineFamilyNames(lines, lineObj.id) : [];
+    const names = famNames.length ? famNames : [selLine];
+    const { data, error } = await supabaseDR.from('machines')
+      .select('machine_no, machine_name').in('line_name', names).eq('is_active', true)
+      .order('machine_no');
+    if (error) return { list: [], error };
+    const list = []; const seen = new Set();
+    (data || []).forEach(m => {
+      const nm = (m.machine_name || '').trim() || (m.machine_no || '').trim();
+      if (nm && !seen.has(nm)) { seen.add(nm); list.push(nm); }
+    });
+    return { list };
+  };
+  const fillStationsFromMachines = async () => {
+    const { list, error } = await fetchMachineStations();
+    if (error) { toast.error('ดึงเครื่องจักรไม่สำเร็จ: ' + error.message); return; }
+    if (!list.length) { toast.info('ไลน์นี้ยังไม่มีเครื่องจักรในฐานข้อมูล — เพิ่มที่หน้าฐานข้อมูลเครื่องจักรก่อน'); return; }
+    setPlanF('stations', list.join('\n'));
+    toast.success(`ดึง ${list.length} เครื่องจักรมาเป็นสถานีตรวจแล้ว — แก้ไข/เพิ่มเองได้`);
+  };
+
   /* ── โหลดแผน + ผลตรวจของเดือน เมื่อเปลี่ยน line/shift/month ── */
   const loadMonth = async () => {
     if (!selLine) return;
@@ -180,11 +205,17 @@ export default function LayerProcessAudit() {
       supabase.from('lpa_plans').select('*, lpa_plan_days(*)').eq('line_name', selLine).eq('shift', selShift).eq('month_key', selMonth).maybeSingle(),
       supabase.from('lpa_audits').select('*, lpa_audit_answers(*)').eq('line_name', selLine).eq('shift', selShift).gte('audit_date', first).lte('audit_date', last).order('audit_date'),
     ]);
-    setPlan(pl || null);
     const dm = {};
     (pl?.lpa_plan_days || []).forEach(d => { dm[d.day] = d; });
     setPlanDays(dm);
     setMonthAudits(aud || []);
+    // ยังไม่มีแผนบันทึกไว้ + มีสิทธิ์จัดการ → auto-fill สถานีจากเครื่องจักรไลน์ให้ "เบื้องต้น" (ยังไม่บันทึกจนกว่าจะกดบันทึก)
+    if (!pl && canManage) {
+      const { list } = await fetchMachineStations();
+      setPlan({ line_name: selLine, shift: selShift, month_key: selMonth, ...(list.length ? { stations: list.join('\n') } : {}) });
+    } else {
+      setPlan(pl || null);
+    }
   };
   useEffect(() => { loadMonth(); }, [selLine, selShift, selMonth]);
 
@@ -684,12 +715,13 @@ ${issuesHtml}
           <datalist id="lpa-profiles">{profiles.filter(p => p.full_name).map(p => <option key={p.id} value={p.full_name} />)}</datalist>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
             <div style={{ flex: '1 1 340px' }}>
-              <div style={lb}>รายชื่อสถานีตรวจ (Station for audit — บรรทัดละชื่อ หรือคั่นด้วย , · ใช้เติมแผนอัตโนมัติวนตามลำดับ)</div>
+              <div style={lb}>รายชื่อสถานีตรวจ (Station for audit — บรรทัดละชื่อ หรือคั่นด้วย , · ดึงจากเครื่องจักรในไลน์อัตโนมัติ แก้ไข/เพิ่มเองได้)</div>
               <textarea rows={3} value={plan?.stations || ''} onChange={e => setPlanF('stations', e.target.value)} disabled={!canManage}
                 placeholder={'ปืนยิงBoat\nSTAMP MARK\nJig-01\nJig-02 ...'} style={{ width: '100%', fontSize: 13 }} />
             </div>
             {canManage && (
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button onClick={fillStationsFromMachines} style={btnTeal} title="ดึงรายชื่อเครื่องจักรทั้งหมดในไลน์นี้ (รวมไลน์ย่อย) มาเป็นสถานีตรวจตั้งต้น">🏭 ดึงเครื่องจักรในไลน์</button>
                 <button onClick={autoFillPlan} style={btnAmber}>⚡ เติมแผนอัตโนมัติ</button>
                 <button onClick={savePlan} disabled={savingPlan} style={btnAccent}>{savingPlan ? '⏳...' : '💾 บันทึกแผน'}</button>
                 <button onClick={printPlan} disabled={printing} style={btnBlue}>🖨️ พิมพ์ใบแผน</button>
@@ -1007,3 +1039,4 @@ const btnGray = { padding: '7px 14px', borderRadius: 8, border: '1px solid var(-
 const btnAccent = { padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
 const btnAmber = { padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
 const btnBlue = { padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(77,159,255,0.35)', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
+const btnTeal = { padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(45,212,191,0.4)', background: 'rgba(45,212,191,0.12)', color: '#2dd4bf', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
