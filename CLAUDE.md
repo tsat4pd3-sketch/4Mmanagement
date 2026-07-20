@@ -153,6 +153,7 @@
 | ฝ่ายผลิต | `/oee-analytics` | OEEAnalytics | ทุก role |
 | ฝ่ายผลิต | `/daily-pm` | DailyPM | ทุก role |
 | ฝ่ายผลิต | `/improvements` | Improvements (Kaizen — ดู section "Improvements") | ทุก role (manage: admin/mgr/sv/leader) |
+| ฝ่ายผลิต | `/lpa` | LayerProcessAudit — LPA paperless (แผนตรวจ+บันทึกผล+รายงาน FM-QMR-008 — ดู section "Layer Process Audit") | ทุก role (record: mgr/sv/leader/engineer/qa · manage: mgr/sv · delete: mgr) |
 | Logistic - Store | `/line-stock` | LineStock | ทุก role |
 | Logistic - Store | `/heijunka` | HeijunkaKanban | ทุก role |
 | Logistic - Store | `/rack-center` | RackCenter | ทุก role |
@@ -167,7 +168,6 @@
 | ควบคุมคุณภาพ QA/QC | `/qa` | QualityControl | admin/manager/supervisor/leader/qa/doc_control |
 | ควบคุมคุณภาพ QA/QC | `/qa-setup` | QAInspectionSetup | admin/manager/qa |
 | ควบคุมคุณภาพ QA/QC | `/event-log` | EventLog | admin/manager/supervisor/leader/qa (CQI-15 + Approval) |
-| ควบคุมคุณภาพ QA/QC | `/lpa` | LayerProcessAudit — LPA paperless (แผนตรวจ+บันทึกผล+รายงาน FM-QMR-008 — ดู section "Layer Process Audit") | ทุก role (record: mgr/sv/leader/engineer/qa · manage: mgr/sv · delete: mgr) |
 | รายงาน | `/report` | Report | ทุก role (10 tabs + CSV export) |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/org-setup` | OrgSetup | admin |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/register` | Register | admin/manager/supervisor |
@@ -435,7 +435,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 
 ## Layer Process Audit — LPA paperless (2026-07-20)
 
-หน้า `/lpa` (`LayerProcessAudit.jsx`, กลุ่ม QA/QC) — แทนฟอร์มกระดาษ 2 ใบ: **Layer Process Audit Plan** (แผนตรวจรายเดือนต่อไลน์+กะ) + **Layer Process Audit Report FM-QMR-008 Rev.01** · ชั้นผู้ตรวจ 4 ชั้น: Leader ทุกวัน · Supervisor/Engineer รายสัปดาห์ (W1-W4) · Manager รายเดือน · GM รายไตรมาส
+หน้า `/lpa` (`LayerProcessAudit.jsx`, กลุ่มฝ่ายผลิต — ฝ่ายผลิตเป็นผู้ใช้งานหลัก ย้ายจากหมวด QA/QC ตามคำสั่ง user 2026-07-20) — แทนฟอร์มกระดาษ 2 ใบ: **Layer Process Audit Plan** (แผนตรวจรายเดือนต่อไลน์+กะ) + **Layer Process Audit Report FM-QMR-008 Rev.01** · ชั้นผู้ตรวจ 4 ชั้น: Leader ทุกวัน · Supervisor/Engineer รายสัปดาห์ (W1-W4) · Manager รายเดือน · GM รายไตรมาส
 
 - **4 แท็บ:** ✅ บันทึกผลตรวจ (ตอบ Y/N/T/NA รายข้อ + ปุ่ม "ยังไม่ตอบ=Y" · **N/T บังคับกรอกรายละเอียดปัญหา** · ลายเซ็น default จาก profiles.signature_url เซ็นใหม่ได้) · 📅 แผนตรวจ (สถานีรายวัน + ติ๊กชั้นผู้ตรวจ + **⚡ เติมแผนอัตโนมัติ**: Leader ทุกวันทำงาน วนสถานีตามลิสต์, SV วันทำงานแรกของแต่ละสัปดาห์, MGR สัปดาห์ที่ 2 — สถานะ ○ วางแผน / ● ตรวจแล้ว / ⊗ เลยกำหนด derive จาก lpa_audits ไม่เก็บซ้ำ) · 📊 รายงาน (grid คำถาม×วัน + W1-4/M/Q + ลิสต์ปัญหา N/T) · ⚙️ คำถาม (สิทธิ์ manage — คำถามมาตรฐาน + ข้อเฝ้าระวัง special ผูกไลน์+ช่วงวันที่)
 - **พิมพ์ 2 ฟอร์ม** (window.open + print): ใบแผน A4 landscape (สัญลักษณ์ ○●⊗ คอลัมน์วันหยุดเขียว สถานีแนวตั้ง) + ใบรายงาน FM-QMR-008 A3 landscape (หมวดแนวตั้ง rowspan, ข้อ special สีแดง + Issue Date, W1-4 เขียว/Monthly เทา/Quarterly เหลือง, แถว Work Station + ลายเซ็นผู้ตรวจรายวัน, legend + Effective Date 12/05/2017)
