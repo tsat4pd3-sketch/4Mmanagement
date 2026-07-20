@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { loadDocForms, docFormSync, fullCode } from '../utils/docForms';
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, Tooltip,
@@ -153,6 +154,8 @@ const groupSkillsByCategory = (defs) =>
   Object.entries(SKILL_CAT_META)
     .map(([k, m]) => ({ key: k, ...m, skills: defs.filter(s => (s.category || 'hard_skill') === k) }))
     .filter(g => g.skills.length > 0);
+
+loadDocForms(); // ทะเบียนเอกสาร — ฟอร์ม Multi-Skill / ใบประเมินรายบุคคล อ่านผ่าน docFormSync
 
 const lbSt = { fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 4, display: 'block' };
 
@@ -2904,7 +2907,7 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
   </div>
   <div style="margin-top:6px;font-size:8px;color:#555">พิมพ์วันที่ ${today} · จำนวนพนักงาน ${totalEmps} คน</div>
 </div>
-<div style="text-align:right;font-size:8px;color:#666;margin-top:2px">FM-PD1-017</div>
+<div style="text-align:right;font-size:8px;color:#666;margin-top:2px">${fullCode(docFormSync('multi_skill', { form_code: 'FM-PD1-017' }))}${docFormSync('multi_skill', {}).effective_date ? ' · Effective Date : ' + docFormSync('multi_skill', {}).effective_date : ''}</div>
 <script>window.onload = () => { window.print(); }</script></body></html>`;
 }
 
@@ -3156,7 +3159,7 @@ function buildIndividualSkillHtml({ emp, skillDefs, subItemsByskill, dept, asses
       </div>
     </td>
   </tr></table>
-  <div style="text-align:right;font-size:8px;color:#666;margin-top:3px">F-PRS-P1-119-0</div>
+  <div style="text-align:right;font-size:8px;color:#666;margin-top:3px">${fullCode(docFormSync('individual_skill', { form_code: 'F-PRS-P1-119-0' }))}${docFormSync('individual_skill', {}).effective_date ? ' · Effective Date : ' + docFormSync('individual_skill', {}).effective_date : ''}</div>
 </div>
 <script>window.onload = () => { window.print(); }</script></body></html>`;
 }

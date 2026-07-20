@@ -13,6 +13,8 @@ import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser } from '../utils/mtnTeams';
+import { loadDocForms, docFormSync } from '../utils/docForms';
+loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sync) อ่านผ่าน docFormSync
 import { fmtDateTime } from '../utils/dateFormat';
 import tsLogo from '../assets/TS logo.png';
 import EventComments from '../components/EventComments';
@@ -392,6 +394,8 @@ function nextStepFor(order) {
 
 /* ── พิมพ์ใบ MO — layout 100% ตามฟอร์มเดิม FM-JIG-008 ── */
 function printMoReport(o, dparts = []) {
+  // เลขฟอร์ม/Rev/Effective จากทะเบียนเอกสาร (/doc-forms) — fallback ค่าเดิม
+  const dfMo = docFormSync('mo_report', { form_code: 'FM-JIG-008', rev: 'REV.00', effective_date: '05/12/2025' });
   const beDT = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${+g.year + 543} ${g.hour === '24' ? '00' : g.hour}:${g.minute}:${g.second}`; };
   const beD = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${+g.year + 543}`; };
   const esc = (s) => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
@@ -461,7 +465,7 @@ function printMoReport(o, dparts = []) {
   <table class="signs">
     <tr>${sign('JIG/MTN APPROVE', o.checker_name, o.checker_sign, o.check_at)}${sign('QA APPROVE', o.qa_checker, o.qa_sign, o.qa_at)}${sign('PD APPROVE', o.ho_checker, o.ho_sign, o.ho_at)}${sign('MGR APPROVE', o.approver_name, o.approve_sign, o.approve_at, true)}</tr>
   </table>
-  <div class="ft"><span>FM-JIG-008-REV.00</span><span>Effective : 05/12/2025</span></div>
+  <div class="ft"><span>${[dfMo.form_code, dfMo.rev].filter(Boolean).join('-')}${dfMo.footer_note ? ' · ' + dfMo.footer_note : ''}</span><span>${dfMo.effective_date ? 'Effective : ' + dfMo.effective_date : ''}</span></div>
   <script>window.onload=function(){setTimeout(function(){window.print()},500)}</script>
   </body></html>`;
   const w = window.open('', '_blank');
