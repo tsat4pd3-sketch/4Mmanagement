@@ -221,6 +221,9 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
   const [sigUrl,        setSigUrl]        = useState(userSignatureUrl);
   const [pwdModalOpen,  setPwdModalOpen]  = useState(false);
+  // เมนูโปรไฟล์ท้าย sidebar (ลายเซ็น/รหัสผ่าน/รีโมท/ธีม/ออกจากระบบ) พับได้ — default ซ่อน ลดความรก
+  const [footerOpen, setFooterOpen] = useState(() => { try { return localStorage.getItem('sb_footer_open') === '1'; } catch { return false; } });
+  const toggleFooter = () => setFooterOpen(v => { try { localStorage.setItem('sb_footer_open', v ? '0' : '1'); } catch { /* private mode */ } return !v; });
   const [collapsedGroups, setCollapsedGroups] = useState(() => {
     try { return JSON.parse(localStorage.getItem('nav_collapsed_groups') || '{}'); } catch { return {}; }
   });
@@ -347,12 +350,12 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
 
         {/* Footer: User info + Theme toggle + Logout */}
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {/* User info card */}
-          <div style={{
+          {/* User info card — คลิกเพื่อกาง/พับเมนูโปรไฟล์ด้านล่าง */}
+          <div onClick={toggleFooter} title={footerOpen ? 'พับเมนูโปรไฟล์' : 'กางเมนูโปรไฟล์ (ลายเซ็น/รหัสผ่าน/ธีม/ออกจากระบบ)'} style={{
             display: 'flex', alignItems: 'center', gap: 8,
             padding: '8px 10px', borderRadius: 8,
             background: 'var(--bg3)', border: '1px solid var(--border2)',
-            marginBottom: 2,
+            marginBottom: 2, cursor: 'pointer', userSelect: 'none',
           }}>
             {userAvatarUrl ? (
               <img src={userAvatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1.5px solid var(--accent)' }} />
@@ -394,7 +397,12 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             }}>
               {userRole?.toUpperCase() ?? 'ADMIN'}
             </div>
+            {/* กำลังรับรีโมทอยู่แต่เมนูพับ — โชว์ 📺 บอกสถานะไว้บนการ์ด */}
+            {!footerOpen && remoteCode && <span style={{ fontSize: 12, flexShrink: 0 }} title={`รับรีโมทอยู่ · ${remoteCode}`}>📺</span>}
+            <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>{footerOpen ? '▾' : '▸'}</span>
           </div>
+
+          {footerOpen && (<>
 
           <button
             onClick={() => setSigModalOpen(true)}
@@ -472,6 +480,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             <span style={{ fontSize: 15 }}>🚪</span>
             <span style={{ whiteSpace: 'nowrap' }}>ออกจากระบบ</span>
           </button>
+          </>)}
         </div>
       </nav>
       <SignatureModal
