@@ -614,7 +614,7 @@ function PlannerTab({ refreshKey, custLabel }) {
       <div style={card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
           <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🧠 แผนภาระการผลิตรายพาร์ท</div>
-          <select value={focusMonth} onChange={e => setFocusMonth(e.target.value)} style={inputSt}>
+          <select value={focusMonth} onChange={e => setFocusMonth(e.target.value)} style={{ ...inputSt, width: 170 }}>
             {months.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
           </select>
         </div>

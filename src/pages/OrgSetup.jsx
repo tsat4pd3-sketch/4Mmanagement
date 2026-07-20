@@ -145,7 +145,7 @@ export default function OrgSetup() {
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>SECTION / ส่วน ({sections.length})</strong>
-              <button onClick={() => openCreate('section', null)} style={addBtnSt}>➕</button>
+              <button className="tbtn" onClick={() => openCreate('section', null)} style={addBtnSt}>➕</button>
             </div>
             {sections.map(s => (
               <div key={s.id} style={itemStyle(selSection === s.id)} onClick={() => setSelSection(s.id)}>
@@ -170,7 +170,7 @@ export default function OrgSetup() {
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>DEPARTMENT / แผนก ({currentDepts.length})</strong>
-              <button onClick={() => selSection && openCreate('department', selSection === ORPHAN ? null : selSection)} disabled={!selSection} style={addBtnSt}>➕</button>
+              <button className="tbtn" onClick={() => selSection && openCreate('department', selSection === ORPHAN ? null : selSection)} disabled={!selSection} style={addBtnSt}>➕</button>
             </div>
             {!selSection ? <Empty text="เลือก Section ก่อน" /> : currentDepts.map(d => (
               <div key={d.id} style={itemStyle(selDept === d.id)} onClick={() => setSelDept(d.id)}>
@@ -189,7 +189,7 @@ export default function OrgSetup() {
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>GROUP / กลุ่ม ({currentLines.length})</strong>
-              <button onClick={() => selDept && openCreate('line', selDept)} disabled={!selDept} style={addBtnSt}>➕</button>
+              <button className="tbtn" onClick={() => selDept && openCreate('line', selDept)} disabled={!selDept} style={addBtnSt}>➕</button>
             </div>
             {!selDept ? <Empty text="เลือกแผนกก่อน" /> : currentLines.map(l => (
               <div key={l.id} style={itemStyle(false)}>

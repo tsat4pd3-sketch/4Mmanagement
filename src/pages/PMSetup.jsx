@@ -229,7 +229,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
               color: isPinning ? '#071008' : cp.x_pos != null ? 'var(--accent)' : 'var(--muted)',
             }}>{cp.x_pos != null ? '📍 วางแล้ว' : '🔘 วางตำแหน่ง'}</button>
           )}
-          <button onClick={onDelete} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 16, lineHeight: 1, padding: '0 2px', cursor: 'pointer' }}>×</button>
+          <button className="tbtn" onClick={onDelete} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 16, lineHeight: 1, padding: '0 2px', cursor: 'pointer' }}>×</button>
         </div>
       </div>
 
@@ -917,7 +917,7 @@ function EquipmentCard({ jig, cpCount, hasPins, onEdit, onDelete, canSetup }) {
           {canSetup && (
             <div style={S.actions}>
               <button onClick={onEdit} style={S.btnSm('var(--accent)')}>แก้ไข</button>
-              <button onClick={onDelete} style={S.btnSm('var(--red)')}>ลบ</button>
+              <button className="tbtn" onClick={onDelete} style={S.btnSm('var(--red)')}>ลบ</button>
             </div>
           )}
         </div>
