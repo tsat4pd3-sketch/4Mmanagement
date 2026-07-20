@@ -690,7 +690,7 @@ export default function Operator() {
                       {emp.is_active ? (
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
                           {can('employees', 'edit', role) && (
-                          <button title="แก้ไขข้อมูล" onClick={() => openEdit(emp)} style={{
+                          <button className="tbtn" title="แก้ไขข้อมูล" onClick={() => openEdit(emp)} style={{
                             width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
                             background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
                             fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -702,7 +702,7 @@ export default function Operator() {
                           </button>
                           )}
                           {can('employees', 'deactivate', role) && (
-                          <button title="ปิดใช้งาน" onClick={() => handleDeactivate(emp.id, emp.name)} style={{
+                          <button className="tbtn" title="ปิดใช้งาน" onClick={() => handleDeactivate(emp.id, emp.name)} style={{
                             width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
                             background: 'rgba(239,68,68,0.1)', color: '#ef4444',
                             fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -715,7 +715,7 @@ export default function Operator() {
                           )}
                         </div>
                       ) : can('employees', 'deactivate', role) ? (
-                        <button title="เปิดใช้งานอีกครั้ง" onClick={() => handleReactivate(emp.id)} style={{
+                        <button className="tbtn" title="เปิดใช้งานอีกครั้ง" onClick={() => handleReactivate(emp.id)} style={{
                           width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
                           background: 'rgba(34,197,94,0.12)', color: '#22c55e',
                           fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center',

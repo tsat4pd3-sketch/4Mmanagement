@@ -1155,7 +1155,8 @@ function InflowRulesTab({ canEdit }) {
       </div>
 
       <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+       <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <table style={{ width: '100%', minWidth: 560, borderCollapse: 'collapse' }}>
           <thead><tr style={{ background: 'var(--bg2)' }}>
             {['เงื่อนไข MAT No.', 'ปลายทาง (line_name)', 'สถานะ', ''].map(h => (
               <th key={h} style={{ padding: '9px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{h}</th>
@@ -1193,6 +1194,7 @@ function InflowRulesTab({ canEdit }) {
             ))}
           </tbody>
         </table>
+       </div>
       </div>
 
       {canEdit && (

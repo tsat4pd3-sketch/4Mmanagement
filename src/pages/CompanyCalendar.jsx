@@ -147,11 +147,12 @@ export default function CompanyCalendar() {
               ตั้งค่าวันหยุดประจำสัปดาห์ทั้งปี
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <select value={bulkWeekday} onChange={e => setBulkWeekday(e.target.value)}>
+              {/* width กัน index.css input/select {width:100%} ยืดเต็ม toolbar (กับดัก CSS ใน CLAUDE.md) */}
+              <select value={bulkWeekday} onChange={e => setBulkWeekday(e.target.value)} style={{ width: 'auto' }}>
                 {WEEKDAY_HEAD.map((w, i) => <option key={i} value={i}>{w}</option>)}
               </select>
               <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>เป็น</span>
-              <select value={bulkType} onChange={e => setBulkType(e.target.value)}>
+              <select value={bulkType} onChange={e => setBulkType(e.target.value)} style={{ width: 'auto' }}>
                 {DAY_TYPES.filter(t => t !== 'working').map(t => <option key={t} value={t}>{DAY_TYPE_META[t].label}</option>)}
               </select>
               <button onClick={handleBulkWeekday} disabled={loading} style={primaryBtnSt}>ตั้งค่าทั้งปี</button>

@@ -14,7 +14,7 @@ function TimeInput24({ value = '', onChange, style = {} }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       <input type="time" value={value || ''} step="60"
         onChange={e => onChange?.({ target: { value: e.target.value } })}
-        style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14,
+        style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14, flex: '1 1 auto', minWidth: 0,
           background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)',
           borderRadius: 6, padding: '5px 8px', colorScheme: 'dark', ...style }} />
       <button type="button" title="ใช้เวลาปัจจุบัน"
@@ -351,12 +351,12 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
   const catMeta = selectedEvent ? CAT_META[selectedEvent.category] : null;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+    <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
       {/* Left: Form fields */}
       <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>📋 ข้อมูล Event</div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div>
             <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>วันที่</label>
             <input type="date" value={form.work_date} onChange={e => f('work_date', e.target.value)} />
@@ -375,7 +375,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
           </select>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div>
             <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Station Number</label>
             <input type="text" placeholder="เช่น SP-67" value={form.station_number} onChange={e => f('station_number', e.target.value)} />
@@ -423,7 +423,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
         {/* Qty */}
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, fontWeight: 700 }}>จำนวนชิ้นงาน</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(64px, 1fr))', gap: 8 }}>
             {[
               { k: 'qty_total',  label: 'ทั้งหมด', color: '#4d9fff' },
               { k: 'qty_ok',     label: 'OK',       color: '#22c55e' },
