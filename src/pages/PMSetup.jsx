@@ -256,16 +256,36 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: isVar ? 10 : 0 }}>
-        {['variable', 'attribute', 'note'].map(t => {
-          const colors = { variable: '#4d9fff', attribute: '#9b8de8', note: '#f59a3f' }
+      <div style={{ display: 'flex', gap: 6, marginBottom: (isVar || cp.type === 'measure') ? 10 : 0, flexWrap: 'wrap' }}>
+        {['variable', 'measure', 'attribute', 'note'].map(t => {
+          const colors = { variable: '#4d9fff', measure: '#22c55e', attribute: '#9b8de8', note: '#f59a3f' }
+          const lbl = { variable: '📏 Variable', measure: '📊 ค่าวัด', attribute: '✅ OK/NG', note: '📝 Note' }
           return (
-            <button key={t} onClick={() => onChange({ type: t })} style={S.typeBtn(cp.type === t, colors[t])}>
-              {t === 'variable' ? '📏 Variable' : t === 'attribute' ? '✅ OK/NG' : '📝 Note'}
-            </button>
+            <button key={t} onClick={() => onChange({ type: t })} style={S.typeBtn(cp.type === t, colors[t])}>{lbl[t]}</button>
           )
         })}
       </div>
+
+      {cp.type === 'measure' && (() => {
+        const has = v => v !== '' && v != null
+        const mMode = (has(cp.lsl) && has(cp.usl)) ? 'between' : has(cp.usl) && !has(cp.lsl) ? 'lte' : 'gte'
+        const setMode = m => onChange(m === 'gte' ? { usl: '' } : m === 'lte' ? { lsl: '' } : {})
+        const modeBtn = (m, t) => (
+          <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: '5px 0', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+            border: `1.5px solid ${mMode === m ? '#22c55e' : 'var(--border)'}`, background: mMode === m ? 'rgba(34,197,94,0.12)' : 'var(--bg3)', color: mMode === m ? '#22c55e' : 'var(--muted)' }}>{t}</button>
+        )
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 6 }}>{modeBtn('gte', '≥ ต่ำสุด')}{modeBtn('lte', '≤ สูงสุด')}{modeBtn('between', 'ช่วง min–max')}</div>
+            <div className="mgrid" style={S.inputRow}>
+              {mMode !== 'lte' && <div><label style={{ ...S.label, color: '#22c55e' }}>{mMode === 'between' ? 'ค่าต่ำสุด (min)' : 'ค่าต่ำสุด (≥)'}</label><input type="number" value={cp.lsl} onChange={e => onChange({ lsl: e.target.value })} placeholder="0.45" /></div>}
+              {mMode !== 'gte' && <div><label style={{ ...S.label, color: '#22c55e' }}>{mMode === 'between' ? 'ค่าสูงสุด (max)' : 'ค่าสูงสุด (≤)'}</label><input type="number" value={cp.usl} onChange={e => onChange({ usl: e.target.value })} placeholder="—" /></div>}
+              <div><label style={S.label}>หน่วย</label><input value={cp.unit} onChange={e => onChange({ unit: e.target.value })} placeholder="Mpa" /></div>
+            </div>
+            <p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>อ่านค่าครั้งเดียว → ระบบเทียบเกณฑ์ ขึ้น OK/NG ให้อัตโนมัติ</p>
+          </div>
+        )
+      })()}
 
       {isVar && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

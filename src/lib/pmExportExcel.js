@@ -350,7 +350,8 @@ export async function exportInspectionExcel({
         const r = results[cp.id]
         const hasImg = !!cpImgs[cp.id]
         ws.getRow(row).height = hasImg ? 42 : 22
-        const ok = r?.value_attribute === 'ok' ? 'OK' : r?.value_attribute === 'ng' ? 'NG' : ''
+        const ok = r?.value_attribute === 'ok' ? 'OK' : r?.value_attribute === 'ng' ? 'NG'
+          : r?.status === 'pass' ? 'OK' : r?.status === 'fail' ? 'NG' : ''
 
         setVal(ws, `A${row}`, idx + 1, { center: true, size: 8, border: true })
         setVal(ws, `B${row}`, cp.name, { size: 8, wrap: true, border: true })
