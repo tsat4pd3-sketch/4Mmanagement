@@ -183,7 +183,7 @@
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/company-calendar` | CompanyCalendar | ทุก role |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/notification-config` | NotificationConfig | admin เท่านั้น |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/permissions` | PermissionsManagement | admin เท่านั้น |
-| (ไม่อยู่ใน sidebar) | `/add-user` | AddUser | admin เท่านั้น |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/add-user` | AddUser — จัดการผู้ใช้งาน (ย้ายจากลิงก์พิเศษท้าย sidebar เข้าหมวดตั้งค่าฯ 2026-07-20) | admin เท่านั้น |
 | (ไม่อยู่ใน sidebar) | `/login` | Login | ไม่ต้อง auth |
 
 ---

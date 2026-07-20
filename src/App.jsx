@@ -106,6 +106,8 @@ const NAV_ITEMS = [
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  // จัดการผู้ใช้งาน ย้ายเข้าหมวดตั้งค่าฯ (คำสั่ง user 2026-07-20) — เดิมเป็นลิงก์พิเศษลอยท้าย sidebar
+  { to: '/add-user',    icon: '🔑', label: 'จัดการผู้ใช้งาน',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
 ];
 
 export const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
@@ -331,21 +333,6 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             );
           })}
 
-          {canAccessPage('/add-user', userRole) && (
-            <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6 }}>
-              <Link
-                to="/add-user"
-                className="nav-link"
-                style={location.pathname === '/add-user'
-                  ? { background: 'var(--accent2-dim)', color: 'var(--accent2)' }
-                  : { color: 'var(--accent2)' }}
-                onClick={() => isMobile && onClose()}
-              >
-                <span style={{ fontSize: 15 }}>🔑</span>
-                <span style={{ whiteSpace: 'nowrap' }}>จัดการผู้ใช้งาน</span>
-              </Link>
-            </div>
-          )}
         </div>
 
         {/* Footer: User info + Theme toggle + Logout */}
