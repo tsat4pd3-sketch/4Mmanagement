@@ -153,6 +153,7 @@
 | ฝ่ายผลิต | `/checkin` | Checkin | ทุก role |
 | ฝ่ายผลิต | `/management` | Management | ทุก role |
 | ฝ่ายผลิต | `/daily-report` | DailyReport | ทุก role |
+| ฝ่ายผลิต | `/production-plan` | ProductionPlan — วางแผนการผลิต (active planner ดู section "Production Plan") | admin/manager/supervisor/leader/planner_store/sale |
 | วิเคราะห์ & รายงาน | `/oee-analytics` | OEEAnalytics | ทุก role |
 | ฝ่ายผลิต | `/daily-pm` | DailyPM | ทุก role |
 | ฝ่ายผลิต | `/improvements` | Improvements (Kaizen — ดู section "Improvements") | ทุก role (manage: admin/mgr/sv/leader) |
@@ -479,6 +480,20 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - **สถานะการผลิต (DR, refresh 30 วิ):** downtime ค้าง = 🔴 กระพริบ (class `region-alarm` — มี lite override สำหรับจอ display) · มีกะเปิด = 🟢 กำลังผลิต (เขียว) / 🟡 ตามหลังเป้า (<80%) · ไม่มีกะ = ⚫ idle · โชว์ยอด/เป้า + %
 - **สิทธิ์:** เข้าดู = ทุก role (`page:/factory-map`) · อัปโหลด/วาด/ลบ = `can('factory_map','edit')` (admin/manager/supervisor)
 - **รูปเก็บ** bucket `employee-photos` path `factory/` — cleanup-orphan-photos whitelist `factory_map.image_url` + สแกนโฟลเดอร์ factory/ แล้ว (กันลบผิด) · เปลี่ยนรูปลบไฟล์เก่าทิ้ง (best-effort)
+
+---
+
+## Production Plan — วางแผนการผลิต (Active Planner, 2026-07-15)
+
+หน้า `/production-plan` (กลุ่มฝ่ายผลิต) — จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบ **"กำลังผลิตที่ทำได้จริง"** → บอกว่าต้องเปิดกี่กะ กี่วัน วันไหนเปิด OT/กะดึก/ทำวันหยุด วันไหนไม่ต้อง เพื่อทันดิว · **เฟส 1 อ่านอย่างเดียว ไม่เขียน DB**
+
+- **กำลังผลิต = median(ยอดดีจริงต่อกะ) ใน 60 วันล่าสุด** ต่อ (ไลน์+พาร์ท) — util กลาง `src/utils/capacityModel.js` · median ตัดค่าโดด (วันเทพ/หายนะ) + บวก OEE/เบรค/NG ไว้ในตัว · พาร์ทที่มีประวัติ < 3 กะ fallback = (นาทีกะ×60÷CT)×OEE median ของไลน์ + ติดป้าย "ข้อมูลน้อย" · เลือกโหมดวางแผน **median (สมจริง)** หรือ **P25 (ปลอดภัยไว้ก่อน)**
+- **หน่วยกลาง = shift-load** (qty ÷ กำลังต่อกะ) เพื่อรวมหลายพาร์ทบนไลน์เดียวถูกต้อง (ไลน์มี 1 กะ แต่หลาย product คนละ rate)
+- **แท็บรายวัน:** order ค้างส่ง 21 วันข้างหน้า → เดินปฏิทินวันต่อวัน (greedy: กะเช้า → +กะดึก(ถ้าไลน์มี) → +OT 25% → วันหยุดทำเฉพาะเมื่อ backlog) · แถบปฏิทินระบายสี ☀/⏰/🌙/⚠ + สรุปต่อไลน์ "ต้องเปิด OT X วัน กะดึก Y วัน" หรือ "กะเช้าพอ" · endBacklog > 0 = 🚨 เปิดเต็มที่ยังไม่ทัน
+- **แท็บรายเดือน:** forecast 6 เดือนข้างหน้า → กะที่ต้องใช้ (shiftsNeeded) vs วันทำงานในเดือน (จาก company_calendar) → verdict: กะเช้าพอ / ต้อง OT N วัน / ต้องกะดึก / 🚨 เกินกำลังต้องเพิ่มไลน์-คน
+- **แหล่งข้อมูล:** DR = customer_shipping_orders (order), customer_forecasts (forecast), production_sessions+prod_orders (กำลังจริง), dr_products (mat→line, CT) · Main = production_lines (std กะ), company_calendar (วันทำงาน) · map พาร์ท→ไลน์ผ่าน `dr_products.line_name` + normalize mat (ตัดขีด/ช่องว่าง)
+- **Scope:** leader = family ไลน์ตัวเอง (branch มาก่อน) · role อื่นตาม `sections` · migration สิทธิ์: `20260715_production_plan_page_permission.sql`
+- **แผนต่อไป (ยังไม่ทำ):** เฟส 2 what-if (เพิ่มคน/ลด NG ทันมั้ย) · เฟส 3 ผูก `ot_night_bookings` — กดจากแผนแล้วจองรถ OT/เปิดกะอัตโนมัติ + Telegram
 
 ---
 

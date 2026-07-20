@@ -44,6 +44,7 @@ const OjtTraining = lazy(() => import('./pages/OjtTraining'));
 const LayerProcessAudit = lazy(() => import('./pages/LayerProcessAudit'));
 const DocFormsRegistry = lazy(() => import('./pages/DocFormsRegistry'));
 const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
+const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
@@ -73,6 +74,7 @@ const NAV_ITEMS = [
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
   { to: '/daily-report',   icon: '📊', label: 'Daily Report',      group: 'ฝ่ายผลิต' },
+  { to: '/production-plan', icon: '🗓️', label: 'วางแผนการผลิต',      group: 'ฝ่ายผลิต' },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'วิเคราะห์ & รายงาน' },
   { to: '/daily-pm',       icon: '✅', label: 'Daily PM ฝ่ายผลิต',   group: 'ฝ่ายผลิต' },
   { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
@@ -1010,6 +1012,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/remote" element={
                 <RoleRoute path="/remote" userRole={role}><RemoteControl /></RoleRoute>
+              } />
+              <Route path="/production-plan" element={
+                <RoleRoute path="/production-plan" userRole={role}><ProductionPlan /></RoleRoute>
               } />
               <Route path="/event-log" element={
                 <RoleRoute path="/event-log" userRole={role}><EventLog /></RoleRoute>
