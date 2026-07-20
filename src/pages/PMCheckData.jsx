@@ -278,13 +278,13 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
         {cp.x_pos != null && <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
         {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}</p>
-        {cp.image_path && (
-          <button onClick={e => { e.stopPropagation(); onCompare?.(cp) }} title="เทียบรูปมาตรฐานกับสภาพจริง"
-            style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0,
-              border: `1px solid ${hasEvidence ? '#e0a44a' : 'var(--border2)'}`, background: hasEvidence ? 'rgba(224,164,74,0.12)' : 'var(--bg3)', color: hasEvidence ? '#e0a44a' : 'var(--text2)' }}>
-            📷 เทียบรูป{hasEvidence ? ' 📎' : ''}
-          </button>
-        )}
+        <button onClick={e => { e.stopPropagation(); onCompare?.(cp) }} title={cp.image_path ? 'เทียบรูปมาตรฐานกับสภาพจริง' : 'ยังไม่มีรูปมาตรฐาน — ถ่ายตั้งเป็นมาตรฐานได้เลย'}
+          style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0,
+            border: `1px solid ${hasEvidence ? '#e0a44a' : cp.image_path ? 'var(--border2)' : 'var(--accent)'}`,
+            background: hasEvidence ? 'rgba(224,164,74,0.12)' : cp.image_path ? 'var(--bg3)' : 'var(--accent-dim)',
+            color: hasEvidence ? '#e0a44a' : cp.image_path ? 'var(--text2)' : 'var(--accent)' }}>
+          📷 {cp.image_path ? `เทียบรูป${hasEvidence ? ' 📎' : ''}` : 'ตั้งรูปมาตรฐาน'}
+        </button>
         <CpImage cp={cp} />
         <div style={{ display: 'flex', gap: 4 }}>
           {['ok', 'ng'].map(v => (
@@ -1012,10 +1012,22 @@ export default function PMCheckData() {
         )}
         {compareCp && (
           <PhotoCompareModal
-            referenceUrl={getPublicUrl(compareCp.image_path)}
+            referenceUrl={compareCp.image_path ? getPublicUrl(compareCp.image_path) : null}
             title={compareCp.name}
             initialVerdict={results[compareCp.id]?.attr}
             onClose={() => setCompareCp(null)}
+            onSetReference={async (blob) => {
+              // ครั้งแรก: ตั้งรูปมาตรฐานให้จุดนี้เลย (ไม่ต้องไป Setup) — เก็บถาวรที่ jig_checkpoints.image_path
+              try {
+                const path = `reference/${compareCp.id}.jpg`
+                const { error: ue } = await supabaseDR.storage.from('jig-images').upload(path, blob, { upsert: true, contentType: 'image/jpeg' })
+                if (ue) throw ue
+                await supabaseDR.from('jig_checkpoints').update({ image_path: path }).eq('id', compareCp.id)
+                setCheckpoints(prev => prev.map(c => c.id === compareCp.id ? { ...c, image_path: path } : c))
+                setCompareCp(c => c ? { ...c, image_path: path } : c) // เทียบต่อได้ทันทีในโมดัลเดิม
+                toast.success('บันทึกเป็นภาพมาตรฐานแล้ว')
+              } catch (err) { toast.error('บันทึกรูปมาตรฐานไม่สำเร็จ: ' + err.message) }
+            }}
             onResult={({ verdict, blob }) => {
               setResults(prev => ({ ...prev, [compareCp.id]: { ...prev[compareCp.id], attr: verdict } }))
               setEvidenceBlobs(prev => {
