@@ -258,9 +258,10 @@
 
 - ขอบเขตส่วนงานเก็บที่ `profiles.sections text[]` (หลายค่า เช่น `{PD1,PD2,QA}`) โดยยังมี `profiles.section` เดี่ยว (legacy) อยู่คู่กัน — ตีความผ่าน `effectiveSections(role, sections, section)` ใน `src/utils/sectionScope.js` ตามลำดับ:
   1. `admin` → ไม่จำกัดเสมอ
-  2. `sections` มีค่า → จำกัดตาม array นั้น **ใช้ได้ทุก role** (เช่น manager ที่ดูแลเฉพาะ PD1+PD2)
-  3. `supervisor` ที่มีแค่ `section` เดี่ยว → `[section]` (พฤติกรรมเดิมเป๊ะ)
-  4. role อื่นที่มีแค่ `section` เดี่ยวค้างอยู่ → **ไม่จำกัด** (ตั้งใจ — กัน manager เก่าที่เคยกรอก section ไว้เฉยๆ โดนจำกัดกะทันหันหลัง deploy)
+  2. **role คุณภาพทั้งโรงงาน (`qa`) → ไม่จำกัดเสมอ** (2026-07-16) — QA เป็นผู้อนุมัติ 4M step QA / งานคุณภาพข้ามสายผลิตทั้งโรงงาน และ section ของ QA เอง (ค่าจริงในระบบคือ `"QA"`) **ไม่ใช่สายผลิต** ถ้าปล่อยให้ scope ตาม section จะกรองข้อมูลผลิตออกหมด (เห็น 4M/รายงาน = 0 ทุกใบ — bug ที่เจอจริง) · กำหนดใน `FACTORY_WIDE_ROLES` ใน `sectionScope.js` — ถ้าจะให้ QA แยกดูแลราย section จริงต้องคิดกลไกใหม่ (ปัจจุบัน QA ทุกคน sections=`["QA"]`)
+  3. `sections` มีค่า → จำกัดตาม array นั้น **ใช้ได้ทุก role ที่เหลือ** (เช่น manager ที่ดูแลเฉพาะ PD1+PD2)
+  4. `supervisor` ที่มีแค่ `section` เดี่ยว → `[section]` (พฤติกรรมเดิมเป๊ะ)
+  5. role อื่นที่มีแค่ `section` เดี่ยวค้างอยู่ → **ไม่จำกัด** (ตั้งใจ — กัน manager เก่าที่เคยกรอก section ไว้เฉยๆ โดนจำกัดกะทันหันหลัง deploy)
 - UserContext ส่ง `sections` = array ผลลัพธ์สุดท้าย (`[]` = ไม่จำกัด) — ในหน้าเช็คด้วย `scopeSecs.length` แล้วกรองด้วย `inSectionScope(scopeSecs, value)` (เทียบ trim+lowercase) หรือ `.in('section', scopeSecs)` ใน query
 - `leader` ยังผูก `profiles.line_id` + `team` เหมือนเดิม ไม่เกี่ยวกับ sections — เช็ค branch ของ leader **ก่อน** branch ของ scope เสมอ
 - AddUser.jsx: ช่อง Section เป็น checkbox เลือกหลายอันได้ทุก role และ**ยังเขียน `section` เดี่ยว (= ตัวแรกที่ติ๊ก) คู่กันเสมอ — ห้ามเลิกเขียน** เพื่อให้ revert โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope · supervisor ยังบังคับติ๊กอย่างน้อย 1 (Edge Function `create-user` ยังไม่รู้จัก sections — AddUser update ตามหลังด้วย id ที่ได้กลับมา)

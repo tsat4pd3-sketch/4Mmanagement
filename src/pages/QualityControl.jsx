@@ -226,11 +226,23 @@ const RANGE_OPTS = [{ v: 7, label: '7 วัน' }, { v: 30, label: '30 วั�
 
 function QualityDashboard() {
   const [rangeDays, setRangeDays] = useState(30);
+  const [lineFilter, setLineFilter] = useState('');   // '' = ทุกไลน์
   const [loading, setLoading] = useState(true);
   const [sessions, setSessions] = useState([]);
   const [defects, setDefects] = useState([]);
   const [ncrOpen, setNcrOpen] = useState(0);
   const [capaOverdue, setCapaOverdue] = useState(0);
+
+  // ตัวเลือกไลน์จากข้อมูลที่โหลดมา (เรียง A→Z)
+  const lineOptions = useMemo(
+    () => [...new Set(sessions.map(s => s.line_name).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [sessions]
+  );
+  // กรองกะตามไลน์ที่เลือกก่อนคำนวณสถิติทั้งหมด
+  const shownSessions = useMemo(
+    () => lineFilter ? sessions.filter(s => s.line_name === lineFilter) : sessions,
+    [sessions, lineFilter]
+  );
 
   useEffect(() => {
     let alive = true;
@@ -260,13 +272,16 @@ function QualityDashboard() {
   }, [rangeDays]);
 
   const stat = useMemo(() => {
+    // เมื่อเลือกไลน์ → นับ defect เฉพาะกะของไลน์นั้น
+    const shownIds = new Set(shownSessions.map(s => s.id));
+    const shownDefects = lineFilter ? defects.filter(d => shownIds.has(d.session_id)) : defects;
     const defBySession = new Map();
-    defects.forEach(d => {
+    shownDefects.forEach(d => {
       defBySession.set(d.session_id, (defBySession.get(d.session_id) || 0) + (d.qty_ng || 0));
     });
     let total = 0, ng = 0;
     const byDate = new Map(), byLine = new Map();
-    sessions.forEach(s => {
+    shownSessions.forEach(s => {
       const t = s.actual_qty || 0;
       // NG = defect logs ของกะ + qty_ng ที่บันทึกบน session (แนวเดียวกับ OEEAnalytics)
       const g = (defBySession.get(s.id) || 0) + (s.qty_ng || 0);
@@ -283,7 +298,7 @@ function QualityDashboard() {
       .sort((a, b) => b.ng - a.ng).slice(0, 12);
     // Pareto ตามประเภทของเสีย
     const byType = new Map();
-    defects.forEach(d => {
+    shownDefects.forEach(d => {
       const name = d.dr_defect_types?.name_th || 'ไม่ระบุ';
       const cur = byType.get(name) || { qty: 0, color: d.dr_defect_types?.color || '#6b7280' };
       cur.qty += (d.qty_ng || 0) + (d.qty_suspect || 0);
@@ -300,7 +315,7 @@ function QualityDashboard() {
       ftt: total ? +((total - ng) / total * 100).toFixed(2) : null,
       ppmTrend, lineRows, pareto,
     };
-  }, [sessions, defects]);
+  }, [shownSessions, defects, lineFilter]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -312,11 +327,17 @@ function QualityDashboard() {
             {o.label}
           </button>
         ))}
+        <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700, marginLeft: 6 }}>ไลน์:</span>
+        <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, width: 'auto', minWidth: 160 }}>
+          <option value="">ทุกไลน์ ({lineOptions.length})</option>
+          {lineOptions.map(l => <option key={l} value={l}>{l}</option>)}
+        </select>
+        {lineFilter && <button style={ghostBtn} onClick={() => setLineFilter('')}>ล้าง</button>}
         {loading && <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</span>}
       </div>
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <KpiCard label="ยอดผลิตรวม (ชิ้น)" value={stat.total.toLocaleString()} sub={`${sessions.length} กะที่ปิดแล้ว`} />
+        <KpiCard label="ยอดผลิตรวม (ชิ้น)" value={stat.total.toLocaleString()} sub={`${shownSessions.length} กะที่ปิดแล้ว${lineFilter ? ` · ${lineFilter}` : ''}`} />
         <KpiCard label="ของเสียรวม (NG)" value={stat.ng.toLocaleString()} color={stat.ng > 0 ? '#ef4444' : '#22c55e'} />
         <KpiCard label="PPM" value={stat.ppm != null ? stat.ppm.toLocaleString() : '—'}
           color={stat.ppm == null ? undefined : stat.ppm <= 500 ? '#22c55e' : stat.ppm <= 3000 ? '#f59e0b' : '#ef4444'}
