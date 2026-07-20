@@ -7,6 +7,7 @@ import { dueStatus, STATUS_META, DEPT_LABEL, computeNextDue, daysUntilDue } from
 import { toast } from '../components/Toast'
 import MachineFloorMap from '../components/MachineFloorMap'
 import DowntimeSiren from '../components/DowntimeSiren'
+import { getLineFamilyNames } from '../utils/lineHierarchy'
 
 // 'YYYY-MM-DD' (from pm_plans.next_due_date) → local-midnight Date, so day math
 // stays aligned with the Asia/Bangkok calendar (not UTC).
@@ -94,6 +95,13 @@ export default function MtnMachineLayout() {
   const [busy, setBusy] = useState(false)
   const fileRef = useRef(null)
 
+  // org overview (วาง node ไลน์บนผัง facility + andon 2 ระดับ)
+  const [orgAreaId, setOrgAreaId] = useState(null)
+  const [orgImage, setOrgImage] = useState(null)
+  const [orgNodes, setOrgNodes] = useState([])
+  const [orgStatus, setOrgStatus] = useState({ openMo: new Set(), lineDue: {} })
+  const [armedLine, setArmedLine] = useState(null)
+
   useEffect(() => {
     supabase.from('production_lines').select('id, name, parent_line_name').order('name').then(({ data }) => {
       setLines(data || []); if (data?.length && !selectedLine) setSelectedLine(data[0].name)
@@ -103,6 +111,11 @@ export default function MtnMachineLayout() {
 
   useEffect(() => { if (view === 'production' && selectedLine) loadProduction() }, [selectedLine, view]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (view === 'facility' && areaId) loadFacilityArea() }, [areaId, view]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { // org view — default area = อันแรก แล้วโหลด node + andon
+    if (view !== 'org') return
+    if (!orgAreaId && areas.length) { setOrgAreaId(areas[0].id); return }
+    if (orgAreaId) loadOrg()
+  }, [view, orgAreaId, areas]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── production (read-only, uses production's machine_points) ── */
   const loadProduction = async () => {
@@ -157,6 +170,41 @@ export default function MtnMachineLayout() {
     const info = {}
     ;(jigs || []).forEach(j => { info[j.id] = { name: j.name || '-', jig_no: j.jig_no || '', checklists: pm[j.id] || [] } })
     setJigInfo(info); setLoading(false)
+  }
+
+  /* ── org overview: node ไลน์ + andon (breakdown แดงกระพริบ / planned PM เหลืองนิ่ง) ── */
+  const loadOrg = async () => {
+    setLoading(true); setSelId(null); setArmedLine(null)
+    const area = areas.find(a => a.id === orgAreaId)
+    setOrgImage(area?.image_path ? publicUrl(area.image_path) : null)
+    const [{ data: nodes }, { data: mos }, { data: jigs }] = await Promise.all([
+      supabaseDR.from('pm_org_nodes').select('id, line_name, pos_top, pos_left').eq('area_id', orgAreaId),
+      supabaseDR.from('mtn_orders').select('line_name, status'),
+      supabaseDR.from('jigs').select('id, line_name').eq('module', 'mtn'),
+    ])
+    setOrgNodes(nodes || [])
+    const openMo = new Set((mos || []).filter(m => m.line_name && !['closed', 'rejected'].includes(m.status)).map(m => m.line_name))
+    const pm = await loadPmForJigs((jigs || []).map(j => j.id))
+    const rank = s => s === 'overdue' ? 0 : s === 'due_soon' ? 1 : 2
+    const lineDue = {}
+    ;(jigs || []).forEach(j => { const ln = j.line_name; if (!ln) return; (pm[j.id] || []).forEach(c => { if (lineDue[ln] == null || rank(c.status) < rank(lineDue[ln])) lineDue[ln] = c.status }) })
+    setOrgStatus({ openMo, lineDue }); setLoading(false)
+  }
+  const placeLineNode = async (pct) => {
+    if (!armedLine || !orgAreaId || !canEdit) return
+    const { error } = await supabaseDR.from('pm_org_nodes').insert({ area_id: orgAreaId, line_name: armedLine, pos_top: pct.top, pos_left: pct.left })
+    if (error) return toast.error(error.message.includes('duplicate') ? 'ไลน์นี้อยู่บนผังแล้ว' : error.message)
+    setArmedLine(null); loadOrg()
+  }
+  const moveOrgNode = async (id, pct) => {
+    if (!canEdit) return
+    setOrgNodes(prev => prev.map(n => n.id === id ? { ...n, pos_top: pct.top, pos_left: pct.left } : n))
+    await supabaseDR.from('pm_org_nodes').update({ pos_top: pct.top, pos_left: pct.left }).eq('id', id)
+  }
+  const removeOrgNode = async (id) => {
+    if (!canEdit) return
+    setOrgNodes(prev => prev.filter(n => n.id !== id))
+    await supabaseDR.from('pm_org_nodes').delete().eq('id', id)
   }
 
   const addArea = async () => {
@@ -242,6 +290,20 @@ export default function MtnMachineLayout() {
     return c
   }, [enrichedPoints])
 
+  // andon ต่อ node ไลน์: 🔴 breakdown (มีใบซ่อม MO ค้าง) กระพริบ · 🟡 planned PM ใกล้/เกินรอบ นิ่ง · 🟢 ปกติ
+  const enrichedOrgPoints = useMemo(() => orgNodes.map(n => {
+    const fam = getLineFamilyNames(lines, n.line_name)
+    const breakdown = fam.some(f => orgStatus.openMo?.has(f))
+    const dues = fam.map(f => orgStatus.lineDue?.[f]).filter(Boolean)
+    const planned = dues.includes('overdue') || dues.includes('due_soon')
+    return { id: n.id, line_name: n.line_name, pos_top: n.pos_top, pos_left: n.pos_left, label: n.line_name,
+      color: breakdown ? '#ef4444' : planned ? '#f59a3f' : '#22c55e', blink: breakdown, icon: '🏭' }
+  }), [orgNodes, orgStatus, lines])
+  const orgAlarmCount = useMemo(() => ({
+    breakdown: enrichedOrgPoints.filter(p => p.blink).length,
+    planned: enrichedOrgPoints.filter(p => !p.blink && p.color === '#f59a3f').length,
+  }), [enrichedOrgPoints])
+
   const orderedLines = useMemo(() => {
     const parents = lines.filter(l => !l.parent_line_name), children = lines.filter(l => l.parent_line_name), out = []
     parents.forEach(p => { out.push({ ...p }); children.filter(c => c.parent_line_name === p.name).forEach(c => out.push({ ...c, _child: true })) })
@@ -267,11 +329,27 @@ export default function MtnMachineLayout() {
           <p style={S.sub}>ดูสถานะ PM บนผังจริง · กรองตามผู้รับผิดชอบ</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => { setView('org'); setSelId(null) }} style={S.viewBtn(view === 'org')}>🗺️ ภาพรวม (Org)</button>
           <button onClick={() => { setView('production'); setSelId(null) }} style={S.viewBtn(view === 'production')}>🏭 ไลน์ผลิต</button>
           <button onClick={() => { setView('facility'); setSelId(null) }} style={S.viewBtn(view === 'facility')}>🔌 Facility / Utility</button>
         </div>
       </div>
 
+      {view === 'org' ? (
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>
+            <span className="dt-alarm-blink" style={{ width: 11, height: 11, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />🔴 เรียกช่างด่วน (ใบซ่อมค้าง){orgAlarmCount.breakdown ? ` · ${orgAlarmCount.breakdown}` : ''}
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>
+            <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#f59a3f', display: 'inline-block' }} />🟡 PM ใกล้/เกินรอบ{orgAlarmCount.planned ? ` · ${orgAlarmCount.planned}` : ''}
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--muted)' }}>
+            <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />🟢 ปกติ
+          </span>
+          <div style={{ flex: 1 }} />
+          <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>คลิก node ไลน์ → ดูผังเครื่องของไลน์นั้น</span>
+        </div>
+      ) : (
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button onClick={() => setDept('all')} style={S.chip(dept === 'all', 'var(--accent)')}>ทั้งหมด</button>
         {MTN_DEPTS.map(d => <button key={d} onClick={() => setDept(d)} style={S.chip(dept === d, '#4d9fff')}>{DEPT_ICON[d]} {DEPT_LABEL[d]}</button>)}
@@ -284,10 +362,16 @@ export default function MtnMachineLayout() {
           ))}
         </div>
       </div>
+      )}
 
       {view === 'facility' && armedJig && (
         <div style={{ fontSize: 12, color: 'var(--accent2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px' }}>
           📍 คลิกบนผังเพื่อวาง <b>{jigInfo[armedJig]?.jig_no || jigInfo[armedJig]?.name}</b> · <span onClick={() => setArmedJig(null)} style={{ cursor: 'pointer', textDecoration: 'underline' }}>ยกเลิก</span>
+        </div>
+      )}
+      {view === 'org' && armedLine && (
+        <div style={{ fontSize: 12, color: 'var(--accent2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px' }}>
+          📍 คลิกบนผังเพื่อวางไลน์ <b>{armedLine}</b> · <span onClick={() => setArmedLine(null)} style={{ cursor: 'pointer', textDecoration: 'underline' }}>ยกเลิก</span>
         </div>
       )}
 
@@ -297,6 +381,13 @@ export default function MtnMachineLayout() {
             ? <div style={{ flex: 1, minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14 }}>
                 <div style={{ width: 30, height: 30, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
               </div>
+            : view === 'org' ? <MachineFloorMap
+                imageUrl={orgImage}
+                points={enrichedOrgPoints} selectedId={selId}
+                onSelect={p => { setSelectedLine(p.line_name); setView('production'); setSelId(null) }}
+                editable={canEdit} armed={!!armedLine}
+                height="clamp(360px, calc(100vh - 260px), 1100px)"
+                onImageClick={placeLineNode} onMarkerDragEnd={moveOrgNode} onMarkerRemove={removeOrgNode} />
             : <MachineFloorMap
                 imageUrl={view === 'production' ? prodImage : facImage}
                 points={enrichedPoints} selectedId={selId} onSelect={p => setSelId(p.id)}
@@ -333,8 +424,40 @@ export default function MtnMachineLayout() {
           )}
         </div>
 
-        {/* right sidebar — production: line tree · facility: zones + unplaced equipment */}
-        {view === 'production' ? (
+        {/* right sidebar — org: base image + line nodes · production: line tree · facility: zones + equipment */}
+        {view === 'org' ? (
+          <div style={S.side}>
+            {areas.length > 1 && (
+              <>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>ผังฐาน (จาก Facility)</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 12 }}>
+                  {areas.map(a => <div key={a.id} onClick={() => setOrgAreaId(a.id)} style={S.rowBtn(orgAreaId === a.id, false)}>{a.image_path ? '🗺️' : '▫️'} {a.name}</div>)}
+                </div>
+              </>
+            )}
+            {!orgImage && <div style={{ fontSize: 12, color: 'var(--accent2)', marginBottom: 10 }}>⚠️ ผังฐานนี้ยังไม่มีรูป — อัปโหลดที่แท็บ 🔌 Facility ก่อน</div>}
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>ไลน์บนผัง{canEdit ? ' (คลิกเพื่อวาง)' : ''}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {orderedLines.map(l => {
+                const node = orgNodes.find(n => n.line_name === l.name)
+                const ep = enrichedOrgPoints.find(p => p.line_name === l.name)
+                return (
+                  <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: l._child ? 12 : 0 }}>
+                    <div onClick={() => node ? (setSelectedLine(l.name), setView('production')) : (canEdit && orgImage ? setArmedLine(l.name) : null)}
+                      title={node ? 'ไปผังเครื่องของไลน์นี้' : canEdit ? 'คลิกแล้วไปคลิกบนผังเพื่อวาง' : ''}
+                      style={{ ...S.rowBtn(armedLine === l.name, false), flex: 1, display: 'flex', alignItems: 'center', gap: 6, opacity: node || (canEdit && orgImage) ? 1 : 0.5 }}>
+                      {node
+                        ? <span className={ep?.blink ? 'dt-alarm-blink' : ''} style={{ width: 9, height: 9, borderRadius: '50%', background: ep?.color || '#556', flexShrink: 0 }} />
+                        : <span style={{ width: 9, height: 9, borderRadius: '50%', border: '1px dashed var(--border2)', flexShrink: 0 }} />}
+                      <span>{l._child ? '└ ' : ''}{l.name}</span>
+                      {!node && canEdit && orgImage && <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--accent)' }}>+ วาง</span>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ) : view === 'production' ? (
           <div style={S.side}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 10 }}>ไลน์ผลิต ({lines.length})</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>

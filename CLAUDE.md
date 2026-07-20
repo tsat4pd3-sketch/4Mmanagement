@@ -498,6 +498,16 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 
 ---
 
+## MTN Org Overview Map — ผังภาพรวมไลน์ + Andon 2 ระดับ (2026-07-16)
+
+แท็บ **🗺️ ภาพรวม (Org)** ในหน้า `/mtn-layout` — วาง **node ไลน์** ทับ**ผัง Facility ที่มีอยู่** (`pm_facility_areas.image_path`) เห็นสถานะทุกไลน์บนจอเดียว (เหมาะจอ TV หน้างาน MTN)
+
+- **ตาราง:** `pm_org_nodes` (DR, migration `20260716_pm_org_nodes.sql`) — line_name + pos_top/left (% ของภาพ) + area_id (ผูกผัง facility) · anon-open
+- **Andon 2 ระดับ (คนละสี ตาม Andon convention):** 🔴 **breakdown** = ไลน์มีใบซ่อม MO ค้าง (`mtn_orders` ไม่ closed/rejected) → **กระพริบแดง** (`.dt-alarm-blink`) · 🟡 **planned PM** = PM ใกล้/เกินรอบ (`overdue`/`due_soon` ของอุปกรณ์ในไลน์) → **เหลืองนิ่ง** · 🟢 ปกติ · เช็ค family ไลน์ (`getLineFamilyNames`: ไลน์แม่ครอบลูก)
+- **คลิก node → ไปผังเครื่องของไลน์นั้น** (สลับไป view production + selectedLine)
+- **แก้ผัง (สิทธิ์ `pm:setup`):** sidebar เลือกไลน์ → คลิกบนผังวาง node · ลากย้าย · ✕ ลบ · เลือกผังฐานจาก facility area ได้ถ้ามีหลายผัง
+- **refresh:** โหลดตอนเปิด view (ไม่ auto-poll — เปิดค้างจอ TV กด refresh/สลับ view เอา) · MachineFloorMap เพิ่ม prop `p.blink` (class dt-alarm-blink) + `p.icon`
+
 ## PM Photo-Compare Inspection — ตรวจสภาพเครื่องด้วยการเทียบรูป "จับผิด" (2026-07-15, เฟส 1 ทดลอง)
 
 ตรวจสภาพเครื่องแบบ *photo-hunt*: เทียบ **รูปมาตรฐาน (สภาพดี)** กับ **สภาพจริงที่ถ่ายตอนตรวจ** เพื่อจับความผิดปกติที่มองเห็น (น้ำมันรั่ว/การ์ดเปิด/ของหาย/สภาพเปลี่ยน) — คนเป็นผู้ตัดสิน เว็บช่วยให้เทียบง่าย · ต่อยอดเข้า `/pm-check` เดิม ไม่ใช่หน้าใหม่
