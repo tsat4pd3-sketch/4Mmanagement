@@ -181,18 +181,25 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           supabaseDR.from('kanban_standards').select('mat_no, p_no, part_name').not('p_no', 'is', null),
           supabaseDR.from('dr_products').select('mat_no, p_no, name').eq('is_active', true).not('p_no', 'is', null),
         ]);
-        const matMap = {};
+        const matMap = {}, baseMap = {};
         const put = (pno, mat, name) => {
           const k = norm(pno);
           if (!k || !mat) return;
           const cur = matMap[k];
           if (!cur || (!String(cur.mat_no).startsWith('1') && String(mat).startsWith('1'))) matMap[k] = { mat_no: mat, name };
+          // ดัชนี base part (ตัด revision) สำหรับ fallback — เก็บทุกตัวเพื่อเช็คกำกวม
+          const b = baseOfPart(pno);
+          if (b) { (baseMap[b] = baseMap[b] || []); if (!baseMap[b].some(e => e.mat_no === mat)) baseMap[b].push({ mat_no: mat, name }); }
         };
         (stds || []).forEach(x => put(x.p_no, x.mat_no, x.part_name));
         (prods || []).forEach(x => put(x.p_no, x.mat_no, x.name));
         const unmatched = new Set();
         const records = rows2.map(r => {
-          const hit = matMap[norm(r.part)];
+          let hit = matMap[norm(r.part)];
+          if (!hit) {                                   // fallback: จับ base part เฉพาะที่ชัดตัวเดียว (กำกวม = ไม่เดา)
+            const cands = baseMap[baseOfPart(r.part)];
+            if (cands && cands.length === 1) hit = cands[0];
+          }
           if (!hit) unmatched.add(r.part);
           return { ...r, mat_no: hit ? hit.mat_no : r.part, part_name: hit ? hit.name : null };
         });
