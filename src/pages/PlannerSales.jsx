@@ -669,6 +669,15 @@ const tdc = { padding: '6px 8px', borderTop: '1px solid var(--border)', fontSize
 
 /* นับวันทำงานของเดือนจากปฏิทินบริษัท: วันธรรมดา (จ-ศ) − วันหยุด + วันเสาร์/อาทิตย์ที่มาร์ค working
    (company_calendar เก็บเฉพาะวันพิเศษ ไม่ครบเดือน — วันปกติจึงอนุมานเป็นวันธรรมดา) */
+// base part = ตัด revision token ตัวท้าย (≤2 ตัวอักษร) ออก แล้ว uppercase ไม่มีตัวคั่น
+// เช่น "MB3B 16C274 CE" → "MB3B16C274" · "MB3B-16C274" → "MB3B16C274" (ตรงกัน แม้ rev ต่าง)
+function baseOfPart(x) {
+  return String(x || '').toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ').trim()
+    .replace(/ [A-Z0-9]{1,2}$/, '')
+    .replace(/ /g, '');
+}
+
 function countWorkingDays(monthKey, calRows) {
   const [y, m] = monthKey.split('-').map(Number);
   const cal = {}; (calRows || []).forEach(r => { cal[r.work_date] = r.day_type; });
@@ -718,7 +727,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       supabaseDR.from('kanban_calc_params').select('*'),
       supabaseDR.from('kanban_standards').select('mat_no, part_name, customer, qty_per_kanban, min_qty, max_qty, lot_size, total_kanban').eq('is_active', true),
       supabaseDR.from('parts_master').select('mat_no, part_name, qty_per_pkg').eq('is_active', true),
-      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, customer, line_name, name').eq('is_active', true),
+      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, customer, line_name, name, p_no').eq('is_active', true),
       supabaseDR.from('customer_forecasts').select('mat_no, qty').gte('period_month', monthRange.start).lt('period_month', monthRange.end),
       supabase.from('company_calendar').select('work_date, day_type').gte('work_date', monthRange.start).lt('work_date', monthRange.end),
     ]);
@@ -794,6 +803,27 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
   const sapOptions = useMemo(() => Object.entries(drMap)
     .map(([mat, v]) => ({ mat, name: v.name || '', line: v.line_name || '' }))
     .sort((a, b) => a.mat.localeCompare(b.mat)), [drMap]);
+
+  // auto-suggest จับคู่ด้วย base part (revision ต่างกันก็จับได้) — customerPart → [{sap,name}]
+  const suggestByCust = useMemo(() => {
+    const byBase = {};
+    Object.entries(drMap).forEach(([sap, v]) => {
+      if (!v.p_no) return;
+      const b = baseOfPart(v.p_no); if (!b) return;
+      (byBase[b] = byBase[b] || []).push({ sap, name: v.name || '' });
+    });
+    const out = {};
+    unmapped.forEach(u => { const c = byBase[baseOfPart(u.mat)]; if (c && c.length) out[u.mat] = c; });
+    return out;
+  }, [drMap, unmapped]);
+
+  // เปิด modal จับคู่ + เติมข้อเสนอที่ชัดเจน (มีตัวเดียว) ให้อัตโนมัติ
+  const openMapModal = () => {
+    const pre = {};
+    Object.entries(suggestByCust).forEach(([cust, cands]) => { if (cands.length === 1) pre[cust] = cands[0].sap; });
+    setMapSel(pre);
+    setMapModal(true);
+  };
 
   // สรุปภาระการผลิต (Type B): Σ work-time/ไลน์ เทียบ available = %load
   const capacity = useMemo(() => {
@@ -988,9 +1018,12 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
           <span style={{ fontSize: 22 }}>⚠️</span>
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>{unmapped.length} พาร์ทจับคู่เลข SAP ภายในไม่ได้ (forecast โชว์เป็นเลขพาร์ทลูกค้า)</div>
-            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ยังไม่มีใน Product Master (dr_products) → คำนวณ kanban ไม่ได้ และ Store/Planner จะไม่ sync กันจนกว่าจะจับคู่ p_no</div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+              ยังไม่มีใน Product Master (dr_products) → คำนวณ kanban ไม่ได้ และ Store/Planner จะไม่ sync จนกว่าจะจับคู่ p_no
+              {Object.keys(suggestByCust).length > 0 && <span style={{ color: '#22c55e', fontWeight: 700 }}> · 💡 ระบบแนะนำได้ {Object.keys(suggestByCust).length} พาร์ท (ตัด revision เทียบ base)</span>}
+            </div>
           </div>
-          {canApply && <button onClick={() => setMapModal(true)} style={{ ...btn(true) }}>🔗 จับคู่เลข SAP</button>}
+          {canApply && <button onClick={openMapModal} style={{ ...btn(true) }}>🔗 จับคู่เลข SAP</button>}
         </div>
       )}
 
@@ -1072,7 +1105,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(760px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 4 }}>🔗 จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
-              เลือกเลข SAP ภายในให้แต่ละพาร์ท → ระบบเขียน <b>p_no</b> ให้ Product Master (ใช้ auto-map รอบอัพโหลดถัดไป) และแก้ forecast เดิมให้ชี้เลข SAP ทันที · <b>{Object.values(mapSel).filter(Boolean).length}</b> เลือกแล้ว
+              เลือกเลข SAP ภายในให้แต่ละพาร์ท → ระบบเขียน <b>p_no</b> ให้ Product Master (ใช้ auto-map รอบอัพโหลดถัดไป) และแก้ forecast เดิมให้ชี้เลข SAP ทันที · <b>{Object.values(mapSel).filter(Boolean).length}</b> เลือกแล้ว · 💡 = ระบบแนะนำจาก base part (กดชิปเขียวเพื่อเติม)
             </div>
             <div style={{ overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
@@ -1092,6 +1125,18 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                         {mapSel[u.mat] && (drMap[mapSel[u.mat]]
                           ? <div style={{ fontSize: 10.5, color: '#22c55e', marginTop: 2 }}>✓ {drMap[mapSel[u.mat]].name}{drMap[mapSel[u.mat]].line_name ? ` · ${drMap[mapSel[u.mat]].line_name}` : ''}</div>
                           : <div style={{ fontSize: 10.5, color: '#ef4444', marginTop: 2 }}>✗ ไม่พบเลข SAP นี้ใน Product Master</div>)}
+                        {suggestByCust[u.mat] && (
+                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 3 }}>
+                            {suggestByCust[u.mat].map(c => (
+                              <button key={c.sap} onClick={() => setMapSel(s => ({ ...s, [u.mat]: c.sap }))}
+                                title="แนะนำจาก base part (revision ต่างกัน)"
+                                style={{ fontSize: 10, padding: '2px 6px', borderRadius: 5, cursor: 'pointer', border: '1px solid #22c55e',
+                                  background: mapSel[u.mat] === c.sap ? 'rgba(34,197,94,0.18)' : 'transparent', color: '#22c55e', fontWeight: 700 }}>
+                                💡 {c.sap} · {c.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
