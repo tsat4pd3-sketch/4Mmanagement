@@ -3,7 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
-import { calcWithdrawalKanban, nextMonthKey } from '../utils/kanbanCalc';
+import { calcWithdrawalKanban, calcProductionKanban, nextMonthKey } from '../utils/kanbanCalc';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 
 /* ─── PLANNER & SALES — Forecast Planner + อัพโหลดไฟล์จากลูกค้า ──────────────
@@ -687,7 +687,8 @@ function countWorkingDays(monthKey, calRows) {
 }
 
 function KanbanCalcTab({ canApply, fullName, custLabel }) {
-  const [settings, setSettings] = useState({ working_days: 20, efficiency_pct: 80 });
+  const [settings, setSettings] = useState({ working_days: 20, efficiency_pct: 80, hours_per_day: 16 });
+  const [calcType, setCalcType] = useState('withdrawal');   // 'withdrawal' (เบิกถอน FG) | 'production' (ผลิต press)
   const [params, setParams]     = useState({});   // mat_no → param row
   const [forecast, setForecast] = useState({});   // mat_no → order/month
   const [ksMap, setKsMap]       = useState({});   // mat_no → kanban_standards ปัจจุบัน
@@ -699,6 +700,9 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
   const [loading, setLoading]   = useState(false);
   const [preview, setPreview]   = useState(null);  // [{mat_no, ...}] ก่อน apply
   const [applying, setApplying] = useState(false);
+  const [mapModal, setMapModal] = useState(false); // จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน
+  const [mapSel, setMapSel]     = useState({});    // customerPart → sap ที่เลือก
+  const [mapping, setMapping]   = useState(false);
 
   const monthRange = useMemo(() => {
     const [y, m] = month.split('-').map(Number);
@@ -720,7 +724,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
     ]);
     // วันทำงานลิงก์ปฏิทินตามเดือนที่เลือก (แก้ทับได้) · efficiency = ค่ากลาง
     const wdCal = countWorkingDays(month, cal || []);
-    setSettings({ working_days: wdCal || st?.working_days || 20, efficiency_pct: st ? st.efficiency_pct : 80 });
+    setSettings({ working_days: wdCal || st?.working_days || 20, efficiency_pct: st ? st.efficiency_pct : 80, hours_per_day: st?.hours_per_day ?? 16 });
     setParams(Object.fromEntries((pr || []).map(r => [r.mat_no, r])));
     setKsMap(Object.fromEntries((ks || []).map(r => [r.mat_no, r])));
     setPmMap(Object.fromEntries((pm || []).map(r => [r.mat_no, r])));
@@ -745,6 +749,10 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       capacity_pc_hr: g('capacity_pc_hr', dr.cycle_time_sec ? Math.round(3600 / dr.cycle_time_sec) : ''),
       lot_size:       g('lot_size', 1),
       safety_days:    g('safety_days', 1),
+      // production (Type B)
+      process_count:  g('process_count', 1),
+      lot_qty:        g('lot_qty', ''),
+      setup_time_sec: g('setup_time_sec', 0),
     };
   }, [params, edits, pmMap, drMap]);
 
@@ -752,11 +760,17 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
     const mats = Object.keys(forecast).filter(m => forecast[m] > 0);
     return mats.map(mat => {
       const pp = paramOf(mat);
-      const r = calcWithdrawalKanban({
-        orderMonth: forecast[mat], workingDays: settings.working_days, efficiencyPct: settings.efficiency_pct,
-        prepTimeMin: pp.prep_time_min, fluctuationPct: pp.fluctuation_pct, packaging: pp.packaging,
-        deliveryCycle: pp.delivery_cycle, capacityPcHr: pp.capacity_pc_hr, lotSize: pp.lot_size, safetyDays: pp.safety_days,
-      });
+      const r = calcType === 'production'
+        ? calcProductionKanban({
+            orderMonth: forecast[mat], workingDays: settings.working_days, hoursPerDay: settings.hours_per_day,
+            packaging: pp.packaging, capacityPcHr: pp.capacity_pc_hr, processCount: pp.process_count,
+            lotQty: pp.lot_qty, setupTimeSec: pp.setup_time_sec, safetyDays: pp.safety_days,
+          })
+        : calcWithdrawalKanban({
+            orderMonth: forecast[mat], workingDays: settings.working_days, efficiencyPct: settings.efficiency_pct,
+            prepTimeMin: pp.prep_time_min, fluctuationPct: pp.fluctuation_pct, packaging: pp.packaging,
+            deliveryCycle: pp.delivery_cycle, capacityPcHr: pp.capacity_pc_hr, lotSize: pp.lot_size, safetyDays: pp.safety_days,
+          });
       const dr = drMap[mat] || {}, ks = ksMap[mat] || {};
       const name = pmMap[mat]?.part_name || dr.name || ks.part_name || '';
       const line = dr.line_name || '';
@@ -764,68 +778,163 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       return { mat, name, line, customer: dr.customer || ks.customer, order: forecast[mat], pp, r, ks, changed };
     }).filter(row => !lineFilter || row.line === lineFilter)
       .sort((a, b) => a.mat.localeCompare(b.mat));
-  }, [forecast, settings, paramOf, drMap, ksMap, pmMap, lineFilter]);
+  }, [forecast, settings, paramOf, drMap, ksMap, pmMap, lineFilter, calcType]);
 
   const lines = useMemo(() => [...new Set(rows.map(r => r.line).filter(Boolean))].sort(), [rows]);
   const changedRows = rows.filter(r => r.changed);
+
+  // (#2) พาร์ทที่ forecast จับคู่เลข SAP ภายในไม่ได้ = ไม่มีใน dr_products/parts_master/kanban_standards เลย
+  //      (mat_no เก็บเป็นเลขพาร์ทลูกค้าไปก่อน) → คำนวณ kanban ไม่ได้จนกว่าจะจับคู่ p_no
+  const unmapped = useMemo(() => Object.keys(forecast)
+    .filter(m => forecast[m] > 0 && !drMap[m] && !pmMap[m] && !ksMap[m])
+    .map(m => ({ mat: m, order: forecast[m], part_name: null }))
+    .sort((a, b) => b.order - a.order), [forecast, drMap, pmMap, ksMap]);
+
+  // ตัวเลือกเลข SAP ภายในสำหรับจับคู่ (จาก dr_products ที่ active)
+  const sapOptions = useMemo(() => Object.entries(drMap)
+    .map(([mat, v]) => ({ mat, name: v.name || '', line: v.line_name || '' }))
+    .sort((a, b) => a.mat.localeCompare(b.mat)), [drMap]);
+
+  // สรุปภาระการผลิต (Type B): Σ work-time/ไลน์ เทียบ available = %load
+  const capacity = useMemo(() => {
+    if (calcType !== 'production') return null;
+    const availSec = (Number(settings.hours_per_day) || 16) * 3600 * (Number(settings.working_days) || 0);
+    const byLine = {};
+    rows.forEach(row => {
+      if (!row.r.valid) return;
+      const line = row.line || '(ไม่ระบุไลน์)';
+      if (!byLine[line]) byLine[line] = { line, parts: 0, workSec: 0 };
+      byLine[line].parts++;
+      byLine[line].workSec += row.r.workTimeMonth;
+    });
+    return { availSec, list: Object.values(byLine)
+      .map(l => ({ ...l, loadPct: availSec ? (l.workSec / availSec) * 100 : 0 }))
+      .sort((a, b) => b.loadPct - a.loadPct) };
+  }, [rows, calcType, settings.hours_per_day, settings.working_days]);
 
   const setEdit = (mat, field, val) => setEdits(e => ({ ...e, [mat]: { ...e[mat], [field]: val === '' ? '' : Number(val) } }));
 
   const exportCSV = () => {
     if (!rows.length) { toast.info('ไม่มีข้อมูลให้ export'); return; }
-    const head = ['Mat SAP','Part Name','Line','Customer','Order/Month','Order/Day','CT(sec)','Order/Round','Prep','Fluct','SafetyTime',
-      'PrepTime(min)','Fluct%','Packaging','DeliveryCycle','CAP(pc/hr)','LotSize','SafetyDays','Min(K/B)','Max(K/B)','Total(K/B)','Min(pcs)','Max(pcs)','Total(pcs)'];
-    const lines = rows.map(row => {
+    const esc = (s) => `"${String(s ?? '').replace(/"/g, '""')}"`;
+    const isProd = calcType === 'production';
+    const head = isProd
+      ? ['Mat SAP','Part Name','Line','Customer','Order/Month','Vol/Day','CT(sec)','Packaging','CAP(pc/hr)','Process','LotQty','Setup(s)','SafetyDays',
+         'Min(K/B)','Max(K/B)','Kanban/Lot','Kanban(sys)','Min(pcs)','Max(pcs)','WorkTime(sec/mo)','WorkTime(hr/mo)','Available(hr/mo)','Load%']
+      : ['Mat SAP','Part Name','Line','Customer','Order/Month','Order/Day','CT(sec)','Order/Round','Prep','Fluct','SafetyTime',
+         'PrepTime(min)','Fluct%','Packaging','DeliveryCycle','CAP(pc/hr)','LotSize','SafetyDays','Min(K/B)','Max(K/B)','Total(K/B)','Min(pcs)','Max(pcs)','Total(pcs)'];
+    const dataLines = rows.map(row => {
       const { r, pp } = row;
-      return [row.mat, `"${(row.name || '').replace(/"/g, '""')}"`, row.line || '', row.customer || '', row.order,
-        r.orderDay, r.ct, r.orderRound, r.prep, r.fluct, r.safetyTime,
-        pp.prep_time_min, pp.fluctuation_pct, pp.packaging, pp.delivery_cycle, pp.capacity_pc_hr, pp.lot_size, pp.safety_days,
-        r.minKanban, r.maxKanban, r.totalKanban, r.minPcs, r.maxPcs, r.totalPcs].join(',');
+      const cells = isProd
+        ? [row.mat, esc(row.name), row.line || '', row.customer || '', row.order,
+           r.volDay, r.ct, pp.packaging, pp.capacity_pc_hr, pp.process_count, pp.lot_qty, pp.setup_time_sec, pp.safety_days,
+           r.minKanban, r.maxKanban, r.kanbanPerLot, r.totalKanban, r.minPcs, r.maxPcs,
+           Math.round(r.workTimeMonth), (r.workTimeMonth / 3600).toFixed(1), (r.availableMonth / 3600).toFixed(1), r.loadPct.toFixed(1)]
+        : [row.mat, esc(row.name), row.line || '', row.customer || '', row.order,
+           r.orderDay, r.ct, r.orderRound, r.prep, r.fluct, r.safetyTime,
+           pp.prep_time_min, pp.fluctuation_pct, pp.packaging, pp.delivery_cycle, pp.capacity_pc_hr, pp.lot_size, pp.safety_days,
+           r.minKanban, r.maxKanban, r.totalKanban, r.minPcs, r.maxPcs, r.totalPcs];
+      return cells.join(',');
     });
-    const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
+    // ต่อท้ายด้วยตารางสรุป capacity (production)
+    const capBlock = (isProd && capacity)
+      ? ['', 'สรุปภาระการผลิต (Capacity Load)', 'Line,Parts,WorkTime(hr/mo),Available(hr/mo),Load%',
+         ...capacity.list.map(l => [esc(l.line), l.parts, (l.workSec / 3600).toFixed(1), (capacity.availSec / 3600).toFixed(1), l.loadPct.toFixed(1)].join(','))]
+      : [];
+    const blob = new Blob(['﻿' + [head.join(','), ...dataLines, ...capBlock].join('\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `kanban_calc_${month}.csv`;
+    a.download = `kanban_${calcType}_${month}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
 
   const saveSettings = async () => {
-    const payload = { working_days: Math.max(1, Number(settings.working_days) || 20), efficiency_pct: Number(settings.efficiency_pct) || 80, updated_by: fullName, updated_at: new Date().toISOString() };
-    const { error } = await supabaseDR.from('kanban_calc_settings').update(payload).eq('id', 'default');
+    const full = { working_days: Math.max(1, Number(settings.working_days) || 20), efficiency_pct: Number(settings.efficiency_pct) || 80, hours_per_day: Math.max(1, Number(settings.hours_per_day) || 16), updated_by: fullName, updated_at: new Date().toISOString() };
+    let { error } = await supabaseDR.from('kanban_calc_settings').update(full).eq('id', 'default');
+    if (error && /hours_per_day/.test(error.message || '')) {           // ยังไม่ได้ apply migration → บันทึกค่าเดิมได้
+      const { hours_per_day, ...base } = full;
+      ({ error } = await supabaseDR.from('kanban_calc_settings').update(base).eq('id', 'default'));
+      if (!error) { toast.info('บันทึกค่ากลางแล้ว (hours/day ต้อง apply migration ก่อนถึงจำได้ข้ามรอบ)'); return; }
+    }
     if (error) toast.error(error.message); else toast.success('บันทึกค่ากลางแล้ว');
   };
 
   const doApply = async () => {
     setApplying(true);
     try {
+      let paramWarn = false;
       for (const row of changedRows) {
         const pp = row.pp, r = row.r;
-        // 1) บันทึก param ที่ใช้ (จำไว้รอบหน้า)
-        await supabaseDR.from('kanban_calc_params').upsert({
+        // 1) บันทึก param ที่ใช้ (จำไว้รอบหน้า) — production เพิ่มฟิลด์เฉพาะ (best-effort ถ้ายังไม่ได้ apply migration)
+        const baseP = {
           mat_no: row.mat, part_name: row.name, customer: row.customer, line_name: row.line,
           prep_time_min: Number(pp.prep_time_min), fluctuation_pct: Number(pp.fluctuation_pct),
           packaging: Number(pp.packaging), delivery_cycle: Number(pp.delivery_cycle),
           capacity_pc_hr: Number(pp.capacity_pc_hr), lot_size: Number(pp.lot_size), safety_days: Number(pp.safety_days),
           updated_by: fullName, updated_at: new Date().toISOString(),
-        }, { onConflict: 'mat_no' });
-        // 2) เขียนผลเข้า kanban_standards (min/max = ชิ้น, total_kanban = ใบ)
-        const patch = { qty_per_kanban: Number(pp.packaging), min_qty: r.minPcs, max_qty: r.maxPcs, lot_size: Number(pp.lot_size), total_kanban: r.totalKanban, updated_by: fullName, updated_at: new Date().toISOString() };
+        };
+        const payloadP = calcType === 'production'
+          ? { ...baseP, calc_type: 'production', process_count: Number(pp.process_count), lot_qty: Number(pp.lot_qty), setup_time_sec: Number(pp.setup_time_sec) }
+          : baseP;
+        let { error: pErr } = await supabaseDR.from('kanban_calc_params').upsert(payloadP, { onConflict: 'mat_no' });
+        if (pErr && calcType === 'production' && /calc_type|process_count|lot_qty|setup_time_sec/.test(pErr.message || '')) {
+          paramWarn = true;                                              // migration ยังไม่ apply — เขียน param พื้นฐานพอ
+          ({ error: pErr } = await supabaseDR.from('kanban_calc_params').upsert(baseP, { onConflict: 'mat_no' }));
+        }
+        if (pErr) throw pErr;
+        // 2) เขียนผลเข้า kanban_standards (min/max = ชิ้น, total_kanban = ใบ) — ใช้คอลัมน์เดิม ทำงานได้ทั้ง 2 type
+        const lotStd = calcType === 'production' ? r.kanbanPerLot : Number(pp.lot_size);
+        const patch = { qty_per_kanban: Number(pp.packaging), min_qty: r.minPcs, max_qty: r.maxPcs, lot_size: lotStd, total_kanban: r.totalKanban, updated_by: fullName, updated_at: new Date().toISOString() };
         if (row.ks && row.ks.mat_no) await supabaseDR.from('kanban_standards').update(patch).eq('mat_no', row.mat);
         else await supabaseDR.from('kanban_standards').insert({ mat_no: row.mat, part_name: row.name, customer: row.customer, is_active: true, ...patch });
       }
       toast.success(`✅ อัปเดต kanban ${changedRows.length} รายการเข้าระบบดึงแล้ว`);
+      if (paramWarn) toast.info('หมายเหตุ: param เฉพาะ Production ยังไม่ถูกจำ (ต้อง apply migration 20260716_kanban_production_calc)');
       setPreview(null);
       await load();
     } catch (err) { toast.error(err.message); }
     setApplying(false);
   };
 
-  const NCOLS = ['prep_time_min','fluctuation_pct','packaging','delivery_cycle','capacity_pc_hr','lot_size','safety_days'];
-  const NHEAD = ['เตรียม(min)','ผันผวน%','Pkg','รอบส่ง','CAP/ชม.','Lot','Safety(วัน)'];
+  // (#1) จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน: เขียน p_no ให้ dr_products (รอบถัดไป) + re-point forecast เดิม
+  const doMapping = async () => {
+    const pairs = Object.entries(mapSel).filter(([, sap]) => sap);
+    if (!pairs.length) { toast.info('ยังไม่ได้เลือกคู่ SAP'); return; }
+    setMapping(true);
+    try {
+      for (const [cust, sap] of pairs) {
+        const name = drMap[sap]?.name || null;
+        await supabaseDR.from('dr_products').update({ p_no: cust }).eq('mat_no', sap);                       // future uploads
+        await supabaseDR.from('customer_forecasts').update({ mat_no: sap, part_name: name }).eq('mat_no', cust); // existing forecast
+      }
+      toast.success(`🔗 จับคู่ ${pairs.length} พาร์ทเข้าเลข SAP แล้ว — Store/Planner จะ sync ตามเลขเดียวกัน`);
+      setMapModal(false); setMapSel({});
+      await load();
+    } catch (err) { toast.error(err.message); }
+    setMapping(false);
+  };
+
+  const NCOLS = calcType === 'production'
+    ? ['packaging','capacity_pc_hr','process_count','lot_qty','setup_time_sec','safety_days']
+    : ['prep_time_min','fluctuation_pct','packaging','delivery_cycle','capacity_pc_hr','lot_size','safety_days'];
+  const NHEAD = calcType === 'production'
+    ? ['Pkg','CAP/ชม.','Process','Lot Qty','Setup(s)','Safety(วัน)']
+    : ['เตรียม(min)','ผันผวน%','Pkg','รอบส่ง','CAP/ชม.','Lot','Safety(วัน)'];
 
   return (
     <div>
+      {/* เลือกชนิด Kanban */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+        {[
+          { id: 'withdrawal', label: '🔄 Withdrawal (เบิกถอน FG)' },
+          { id: 'production', label: '🏭 Production (ผลิต press)' },
+        ].map(t => (
+          <button key={t.id} onClick={() => { setCalcType(t.id); setPreview(null); }}
+            style={{ ...btn(calcType === t.id), fontSize: 12.5 }}>{t.label}</button>
+        ))}
+      </div>
+
       {/* controls */}
       <div style={{ ...card, marginBottom: 14, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div>
@@ -836,10 +945,17 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
           <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>📅 วันทำงาน/เดือน <span style={{ color: '#0ea5e9' }}>(จากปฏิทิน)</span></label>
           <input type="number" value={settings.working_days} onChange={e => setSettings(s => ({ ...s, working_days: e.target.value }))} style={{ ...inputSt, width: 90 }} />
         </div>
-        <div>
-          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Efficiency %</label>
-          <input type="number" value={settings.efficiency_pct} onChange={e => setSettings(s => ({ ...s, efficiency_pct: e.target.value }))} style={{ ...inputSt, width: 80 }} />
-        </div>
+        {calcType === 'withdrawal' ? (
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Efficiency %</label>
+            <input type="number" value={settings.efficiency_pct} onChange={e => setSettings(s => ({ ...s, efficiency_pct: e.target.value }))} style={{ ...inputSt, width: 80 }} />
+          </div>
+        ) : (
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>⏱ ชม.ทำงาน/วัน <span style={{ color: '#0ea5e9' }}>(คิด capacity)</span></label>
+            <input type="number" value={settings.hours_per_day} onChange={e => setSettings(s => ({ ...s, hours_per_day: e.target.value }))} style={{ ...inputSt, width: 90 }} />
+          </div>
+        )}
         {canApply && <button onClick={saveSettings} style={btn(false)}>💾 ค่ากลาง</button>}
         {lines.length > 0 && (
           <div>
@@ -861,8 +977,22 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       </div>
 
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
-        📖 Withdrawal Kanban (คัมบังเบิกถอน FG). Order/เดือน = ผลรวม forecast ของเดือนที่เลือก · แก้ param ในตารางแล้วค่าคำนวณอัปเดตทันที · Apply = เขียนเข้า kanban_standards (ระบบดึงใช้ต่อ)
+        {calcType === 'production'
+          ? '📖 Production Kanban (คัมบังสั่งผลิต press). Vol/Day = ⌈forecast/วันทำงาน⌉ · Kanban(sys) = ⌈(Info+Process+Safety)/CT/pkg⌉ · Min = Safety · Max = Min + Kanban/Lot · แก้ param แล้วค่าคำนวณอัปเดตทันที · มีสรุปภาระการผลิต (%load) ด้านล่าง'
+          : '📖 Withdrawal Kanban (คัมบังเบิกถอน FG). Order/เดือน = ผลรวม forecast ของเดือนที่เลือก · แก้ param ในตารางแล้วค่าคำนวณอัปเดตทันที · Apply = เขียนเข้า kanban_standards (ระบบดึงใช้ต่อ)'}
       </div>
+
+      {/* (#2) แจ้งเตือนพาร์ทที่จับคู่เลข SAP ไม่ได้ */}
+      {unmapped.length > 0 && (
+        <div style={{ ...card, marginBottom: 12, borderColor: '#f59e0b', background: 'rgba(245,158,11,0.06)', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 22 }}>⚠️</span>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>{unmapped.length} พาร์ทจับคู่เลข SAP ภายในไม่ได้ (forecast โชว์เป็นเลขพาร์ทลูกค้า)</div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ยังไม่มีใน Product Master (dr_products) → คำนวณ kanban ไม่ได้ และ Store/Planner จะไม่ sync กันจนกว่าจะจับคู่ p_no</div>
+          </div>
+          {canApply && <button onClick={() => setMapModal(true)} style={{ ...btn(true) }}>🔗 จับคู่เลข SAP</button>}
+        </div>
+      )}
 
       {loading ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div> :
        rows.length === 0 ? <div style={{ ...card, textAlign: 'center', color: 'var(--muted)' }}>ไม่มี forecast ในเดือน {monthLabel(monthRange.start)} — อัปโหลด forecast ที่แท็บ 📤 ก่อน</div> : (
@@ -896,7 +1026,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                       <td style={{ ...tdc, textAlign: 'right', fontWeight: 900, color: r.valid ? 'var(--accent)' : 'var(--muted)', fontSize: 14 }}>{r.valid ? r.totalKanban : '—'}</td>
                       <td style={{ ...tdc, textAlign: 'right', color: 'var(--muted)' }}>{r.valid ? `${fmt(r.minPcs)}→${fmt(r.maxPcs)}` : '—'}</td>
                       <td style={{ ...tdc, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                        {!r.valid ? <span title="ต้องมี Pkg + CAP" style={{ fontSize: 11, color: '#ef4444' }}>⚠️ ขาด param</span>
+                        {!r.valid ? <span title={calcType === 'production' ? 'ต้องมี Pkg + CAP + Lot Qty' : 'ต้องมี Pkg + CAP'} style={{ fontSize: 11, color: '#ef4444' }}>⚠️ ขาด param</span>
                           : row.changed ? <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>ต่างจากเดิม ({ks.total_kanban ?? '—'}→{r.totalKanban})</span>
                           : <span style={{ fontSize: 11, color: '#22c55e' }}>✓ ตรงแล้ว</span>}
                       </td>
@@ -905,6 +1035,80 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* สรุปภาระการผลิต (Type B) — Σ work-time/ไลน์ เทียบ available */}
+      {calcType === 'production' && capacity && capacity.list.length > 0 && (
+        <div style={{ ...card, marginTop: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 2 }}>📊 สรุปภาระการผลิต (Capacity Load)</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12 }}>
+            เวลาที่ต้องใช้ = Σ (setup + lot×CT) × (order/lot) ต่อไลน์ · Available = {fmt(settings.hours_per_day)} ชม./วัน × {fmt(settings.working_days)} วัน = {fmt(capacity.availSec / 3600)} ชม./เดือน · สี &lt;85% เขียว · 85–100% เหลือง · &gt;100% แดง (เกิน capacity)
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {capacity.list.map(l => {
+              const col = l.loadPct > 100 ? '#ef4444' : l.loadPct >= 85 ? '#f59e0b' : '#22c55e';
+              return (
+                <div key={l.line} style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                  <div style={{ width: 150, fontSize: 12.5, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.line}</div>
+                  <div style={{ flex: 1, height: 22, background: 'var(--bg2)', borderRadius: 6, overflow: 'hidden', position: 'relative', border: '1px solid var(--border)' }}>
+                    <div style={{ width: `${Math.min(100, l.loadPct)}%`, height: '100%', background: col, transition: 'width .25s' }} />
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', paddingLeft: 8, fontSize: 11.5, fontWeight: 800, color: 'var(--text)' }}>
+                      {l.parts} พาร์ท · {fmt(l.workSec / 3600)} ชม.
+                    </div>
+                  </div>
+                  <div style={{ width: 72, textAlign: 'right', fontSize: 13.5, fontWeight: 900, color: col, fontVariantNumeric: 'tabular-nums' }}>{l.loadPct.toFixed(1)}%</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* (#1) Modal จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน */}
+      {mapModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setMapModal(false)}>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(760px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 4 }}>🔗 จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+              เลือกเลข SAP ภายในให้แต่ละพาร์ท → ระบบเขียน <b>p_no</b> ให้ Product Master (ใช้ auto-map รอบอัพโหลดถัดไป) และแก้ forecast เดิมให้ชี้เลข SAP ทันที · <b>{Object.values(mapSel).filter(Boolean).length}</b> เลือกแล้ว
+            </div>
+            <div style={{ overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead><tr style={{ background: 'var(--bg2)' }}>
+                  {['เลขพาร์ทลูกค้า', 'Order/เดือน', 'เลข SAP ภายใน'].map(h => <th key={h} style={{ padding: '7px 10px', fontSize: 11, color: 'var(--muted)', textAlign: h === 'Order/เดือน' ? 'right' : 'left' }}>{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {unmapped.map(u => (
+                    <tr key={u.mat}>
+                      <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', fontFamily: 'monospace', fontWeight: 700 }}>{u.mat}</td>
+                      <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(u.order)}</td>
+                      <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)' }}>
+                        <input list="sap-opts" value={mapSel[u.mat] || ''} placeholder="พิมพ์เลข SAP หรือชื่อ…"
+                          onChange={e => setMapSel(s => ({ ...s, [u.mat]: e.target.value.trim() }))}
+                          style={{ ...inputSt, width: '100%', padding: '5px 8px', fontSize: 12,
+                            borderColor: mapSel[u.mat] && drMap[mapSel[u.mat]] ? '#22c55e' : mapSel[u.mat] ? '#ef4444' : 'var(--border)' }} />
+                        {mapSel[u.mat] && (drMap[mapSel[u.mat]]
+                          ? <div style={{ fontSize: 10.5, color: '#22c55e', marginTop: 2 }}>✓ {drMap[mapSel[u.mat]].name}{drMap[mapSel[u.mat]].line_name ? ` · ${drMap[mapSel[u.mat]].line_name}` : ''}</div>
+                          : <div style={{ fontSize: 10.5, color: '#ef4444', marginTop: 2 }}>✗ ไม่พบเลข SAP นี้ใน Product Master</div>)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <datalist id="sap-opts">
+                {sapOptions.map(o => <option key={o.mat} value={o.mat}>{o.name}{o.line ? ` · ${o.line}` : ''}</option>)}
+              </datalist>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>* พาร์ทที่ยังไม่มีเลข SAP ในระบบเลย ต้องไปเพิ่มที่ Product Master ก่อน แล้วค่อยกลับมาจับคู่</div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+              <button onClick={() => setMapModal(false)} style={{ ...btn(false) }}>ปิด</button>
+              <button onClick={doMapping} disabled={mapping || Object.values(mapSel).filter(v => v && drMap[v]).length === 0}
+                style={{ ...btn(true), opacity: mapping || Object.values(mapSel).filter(v => v && drMap[v]).length === 0 ? 0.5 : 1 }}>
+                {mapping ? '...' : `🔗 จับคู่ (${Object.values(mapSel).filter(v => v && drMap[v]).length})`}
+              </button>
+            </div>
           </div>
         </div>
       )}
