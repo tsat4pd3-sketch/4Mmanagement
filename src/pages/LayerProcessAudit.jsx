@@ -182,6 +182,8 @@ export default function LayerProcessAudit() {
   /* ── ดึงรายชื่อ "จุดงาน (workstations)" ของไลน์ (รวมไลน์ย่อยในครอบครัว) ──
      LPA = audit กระบวนการ/คนที่จุดงาน ไม่ใช่ตรวจทุกเครื่องจักร → ใช้จุดงานเป็นสถานีตรวจตั้งต้น
      (คำสั่ง user 2026-07-20) · workstations อยู่ Main project · user แก้เพิ่ม/ลบเองได้ */
+  // จุดหัวหน้างาน (Leader/Supervisor) = คนตรวจ ไม่ใช่จุดที่ถูก audit → ตัดออกจากสถานีตรวจ (คำสั่ง user 2026-07-20)
+  const isLeaderStation = (nm) => /leader|หัวหน้า|supervisor|\bsv\b|\bspv\b|foreman|หน\.กลุ่ม|หน\.ไลน์/i.test(nm);
   const fetchStationNames = async () => {
     const lineObj = lines.find(l => l.name === selLine);
     const famNames = lineObj ? getLineFamilyNames(lines, lineObj.id) : [];
@@ -192,7 +194,7 @@ export default function LayerProcessAudit() {
     const list = []; const seen = new Set();
     (data || []).forEach(w => {
       const nm = (w.station_name || '').trim();
-      if (nm && !seen.has(nm)) { seen.add(nm); list.push(nm); }
+      if (nm && !seen.has(nm) && !isLeaderStation(nm)) { seen.add(nm); list.push(nm); }
     });
     return { list };
   };
