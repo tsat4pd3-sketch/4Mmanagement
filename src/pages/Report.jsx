@@ -3285,9 +3285,16 @@ const EmptyRow = ({ cols }) => (
   <tr><td colSpan={cols} style={{ textAlign: 'center', padding: '20px 0', color: 'var(--muted)', fontSize: 12 }}>ไม่มีข้อมูล</td></tr>
 );
 
-const Thumb = ({ src }) => (
-  <img src={src || 'https://via.placeholder.com/40'} alt="" style={{ width: 38, height: 38, borderRadius: 8, objectFit: 'cover', border: '1px solid var(--border2)' }} />
-);
+// รูปพนักงาน — ไม่มีรูป (image_url null) หรือไฟล์โหลดไม่ได้ ให้แสดง placeholder 👤 ในเครื่อง
+// ห้าม fallback เป็น URL ภายนอก (เดิมใช้ via.placeholder.com ซึ่งบริการถูกปิด → รูปแตกทุกคนที่ไม่มีรูป)
+const Thumb = ({ src }) => {
+  const [failed, setFailed] = useState(false);
+  const box = { width: 38, height: 38, borderRadius: 8, border: '1px solid var(--border2)', flexShrink: 0 };
+  if (!src || failed) {
+    return <div style={{ ...box, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>👤</div>;
+  }
+  return <img src={src} alt="" onError={() => setFailed(true)} style={{ ...box, objectFit: 'cover' }} />;
+};
 
 const StatusBadge = ({ ok, label }) => (
   <span style={{
