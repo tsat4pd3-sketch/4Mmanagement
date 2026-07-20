@@ -341,6 +341,10 @@ Reject → status: "rejected" + reject_reason
 - การจับคู่เลขพาร์ทลูกค้า → mat ภายใน: normalize (ตัด ขีด/ช่องว่าง, uppercase) เทียบ `p_no`
   ใน kanban_standards/dr_products — FG (ขึ้นต้น 1) ชนะ child · จับคู่ไม่ได้ = เก็บด้วยเลขพาร์ทลูกค้าไปก่อน
 - นำเข้า EDI ซ้ำ = **แทนที่ฉบับเดิมของ ship-to เดียวกัน** (ยอดไม่ทบ) เก็บใบที่เลย pending ไปแล้วเสมอ
+- **order เข้าระบบได้ 3 ทาง:** (1) EDI 862 (source `edi_862`) (2) Excel manual mapping (3) ปุ่ม
+  "➕ เพิ่ม order ด่วน" บนหน้า Delivery คีย์ทีละใบ (source `manual` · สิทธิ์ `can('shipping','config')` ·
+  ลูกค้าสั่งนอกไฟล์ EDI/โทรสั่ง) — ใบ source อื่นที่ไม่ใช่ `edi_862` **ไม่ถูกแทนที่**ตอนอัพโหลด 862 ซ้ำ ·
+  ใบคีย์มือที่ยัง pending ลบได้จาก popup บนชาร์ต
 - การปรับ stock ที่กรอกมือ (type adjust) เข้าคิว ⏳ รออนุมัติก่อนมีผลต่อยอด — auto movement ไม่เข้าคิว
 - แจ้งเตือน Telegram ผ่าน framework `notification_rules` category `logistic`:
   `edi_import`, `shipping_shipped`, `shipping_overdue`, `shipping_phase_alert`
