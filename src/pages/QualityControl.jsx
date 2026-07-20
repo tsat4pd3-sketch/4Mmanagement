@@ -223,45 +223,70 @@ async function nextDocNo(table, col, prefix) {
    TAB 1 — Dashboard คุณภาพ (PPM / FTT / Pareto จาก DR project)
    ════════════════════════════════════════════════════════════════════════ */
 const RANGE_OPTS = [{ v: 7, label: '7 วัน' }, { v: 30, label: '30 วัน' }, { v: 90, label: '90 วัน' }];
+const prodQty = o => o.qty_ok ?? o.qty_actual ?? o.qty ?? 0;   // ยอดผลิตจริงต่อใบงาน
 
 function QualityDashboard() {
-  const [rangeDays, setRangeDays] = useState(30);
-  const [lineFilter, setLineFilter] = useState('');   // '' = ทุกไลน์
+  const [from, setFrom] = useState(() => daysAgoStr(30));
+  const [to, setTo]     = useState(() => getWorkDate());
+  const [lineFilter, setLineFilter] = useState('');    // '' = ทุกไลน์
+  const [productFilter, setProductFilter] = useState(''); // '' = ทุก product (คีย์ = mat_no)
   const [loading, setLoading] = useState(true);
   const [sessions, setSessions] = useState([]);
+  const [orders, setOrders] = useState([]);            // prod_orders ในช่วง (ต่อ product)
   const [defects, setDefects] = useState([]);
   const [ncrOpen, setNcrOpen] = useState(0);
   const [capaOverdue, setCapaOverdue] = useState(0);
 
-  // ตัวเลือกไลน์จากข้อมูลที่โหลดมา (เรียง A→Z)
-  const lineOptions = useMemo(
-    () => [...new Set(sessions.map(s => s.line_name).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
-    [sessions]
-  );
-  // กรองกะตามไลน์ที่เลือกก่อนคำนวณสถิติทั้งหมด
+  const setRange = (n) => { setFrom(daysAgoStr(n)); setTo(getWorkDate()); };
+
+  const sessById = useMemo(() => new Map(sessions.map(s => [s.id, s])), [sessions]);
+
+  // กะที่แสดง (กรองไลน์) + product ที่อยู่ในกะเหล่านั้น
   const shownSessions = useMemo(
     () => lineFilter ? sessions.filter(s => s.line_name === lineFilter) : sessions,
     [sessions, lineFilter]
   );
+  const shownSessIds = useMemo(() => new Set(shownSessions.map(s => s.id)), [shownSessions]);
+
+  const lineOptions = useMemo(
+    () => [...new Set(sessions.map(s => s.line_name).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [sessions]
+  );
+  // ตัวเลือก product = mat_no ของใบงานในกะที่แสดง (label = ชื่อชิ้นงาน)
+  const productOptions = useMemo(() => {
+    const m = new Map();
+    orders.forEach(o => {
+      if (!shownSessIds.has(o.session_id)) return;
+      const key = o.mat_no || o.part_name;
+      if (key && !m.has(key)) m.set(key, o.part_name || o.mat_no);
+    });
+    return [...m.entries()].map(([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [orders, shownSessIds]);
+
+  // เปลี่ยนไลน์แล้ว product ที่เลือกไม่อยู่ในลิสต์ → ล้าง
+  useEffect(() => {
+    if (productFilter && !productOptions.some(p => p.key === productFilter)) setProductFilter('');
+  }, [productOptions, productFilter]);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       setLoading(true);
-      const from = daysAgoStr(rangeDays);
       const { data: ss } = await supabaseDR.from('production_sessions')
         .select('id, work_date, line_name, shift, actual_qty, qty_ok, qty_ng, oee_q')
-        .eq('status', 'closed').gte('work_date', from).order('work_date');
+        .eq('status', 'closed').gte('work_date', from).lte('work_date', to).order('work_date');
       const ids = (ss || []).map(s => s.id);
-      const { data: dd } = ids.length
-        ? await supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, qty_repair, dr_defect_types(name_th, color)').in('session_id', ids)
-        : { data: [] };
+      const [{ data: oo }, { data: dd }] = ids.length ? await Promise.all([
+        supabaseDR.from('prod_orders').select('id, session_id, mat_no, part_name, qty, qty_ok, qty_actual').in('session_id', ids),
+        supabaseDR.from('defect_logs').select('session_id, prod_order_id, qty_ng, qty_suspect, qty_repair, dr_defect_types(name_th, color)').in('session_id', ids),
+      ]) : [{ data: [] }, { data: [] }];
       const [{ count: nOpen }, { data: capas }] = await Promise.all([
         supabase.from('qa_ncr').select('id', { count: 'exact', head: true }).neq('status', 'closed'),
         supabase.from('qa_capa').select('id, due_date, status').neq('status', 'closed'),
       ]);
       if (!alive) return;
       setSessions(ss || []);
+      setOrders(oo || []);
       setDefects(dd || []);
       setNcrOpen(nOpen || 0);
       const today = getWorkDate();
@@ -269,41 +294,52 @@ function QualityDashboard() {
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [rangeDays]);
+  }, [from, to]);
 
   const stat = useMemo(() => {
-    // เมื่อเลือกไลน์ → นับ defect เฉพาะกะของไลน์นั้น
-    const shownIds = new Set(shownSessions.map(s => s.id));
-    const shownDefects = lineFilter ? defects.filter(d => shownIds.has(d.session_id)) : defects;
-    const defBySession = new Map();
-    shownDefects.forEach(d => {
-      defBySession.set(d.session_id, (defBySession.get(d.session_id) || 0) + (d.qty_ng || 0));
-    });
+    const byDate = new Map(), byLine = new Map(), byType = new Map();
+    const addDate = (k, t, g) => { const c = byDate.get(k) || { total: 0, ng: 0 }; c.total += t; c.ng += g; byDate.set(k, c); };
+    const addLine = (k, t, g) => { const c = byLine.get(k) || { total: 0, ng: 0 }; c.total += t; c.ng += g; byLine.set(k, c); };
+    const addType = (d) => {
+      const name = d.dr_defect_types?.name_th || 'ไม่ระบุ';
+      const cur = byType.get(name) || { qty: 0, color: d.dr_defect_types?.color || '#6b7280' };
+      cur.qty += (d.qty_ng || 0) + (d.qty_suspect || 0); byType.set(name, cur);
+    };
     let total = 0, ng = 0;
-    const byDate = new Map(), byLine = new Map();
-    shownSessions.forEach(s => {
-      const t = s.actual_qty || 0;
-      // NG = defect logs ของกะ + qty_ng ที่บันทึกบน session (แนวเดียวกับ OEEAnalytics)
-      const g = (defBySession.get(s.id) || 0) + (s.qty_ng || 0);
-      total += t; ng += g;
-      const d = byDate.get(s.work_date) || { total: 0, ng: 0 };
-      d.total += t; d.ng += g; byDate.set(s.work_date, d);
-      const l = byLine.get(s.line_name || '—') || { total: 0, ng: 0 };
-      l.total += t; l.ng += g; byLine.set(s.line_name || '—', l);
-    });
+
+    if (productFilter) {
+      // ── ระดับ product: ยอดผลิตจากใบงานของ product นั้น · NG จาก defect ที่ผูกใบงาน ──
+      const oInScope = orders.filter(o => shownSessIds.has(o.session_id) && (o.mat_no || o.part_name) === productFilter);
+      const orderIds = new Set(oInScope.map(o => o.id));
+      oInScope.forEach(o => {
+        const s = sessById.get(o.session_id); if (!s) return;
+        const t = prodQty(o); total += t;
+        addDate(s.work_date, t, 0); addLine(s.line_name || '—', t, 0);
+      });
+      defects.forEach(d => {
+        if (!d.prod_order_id || !orderIds.has(d.prod_order_id)) return;
+        const s = sessById.get(d.session_id); const g = d.qty_ng || 0; ng += g;
+        if (s) { addDate(s.work_date, 0, g); addLine(s.line_name || '—', 0, g); }
+        addType(d);
+      });
+    } else {
+      // ── ระดับกะ (เดิม): actual_qty + qty_ng ของ session + defect logs ──
+      const shownDefects = lineFilter ? defects.filter(d => shownSessIds.has(d.session_id)) : defects;
+      const defBySession = new Map();
+      shownDefects.forEach(d => { defBySession.set(d.session_id, (defBySession.get(d.session_id) || 0) + (d.qty_ng || 0)); addType(d); });
+      shownSessions.forEach(s => {
+        const t = s.actual_qty || 0;
+        const g = (defBySession.get(s.id) || 0) + (s.qty_ng || 0);
+        total += t; ng += g;
+        addDate(s.work_date, t, g); addLine(s.line_name || '—', t, g);
+      });
+    }
+
     const ppmTrend = [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0]))
       .map(([date, v]) => ({ date: fmtD(date), ppm: v.total ? Math.round(v.ng / v.total * 1e6) : null, ng: v.ng }));
     const lineRows = [...byLine.entries()]
       .map(([line, v]) => ({ line, ng: v.ng, ppm: v.total ? Math.round(v.ng / v.total * 1e6) : 0 }))
       .sort((a, b) => b.ng - a.ng).slice(0, 12);
-    // Pareto ตามประเภทของเสีย
-    const byType = new Map();
-    shownDefects.forEach(d => {
-      const name = d.dr_defect_types?.name_th || 'ไม่ระบุ';
-      const cur = byType.get(name) || { qty: 0, color: d.dr_defect_types?.color || '#6b7280' };
-      cur.qty += (d.qty_ng || 0) + (d.qty_suspect || 0);
-      byType.set(name, cur);
-    });
     let pareto = [...byType.entries()].map(([name, v]) => ({ name, qty: v.qty, color: v.color }))
       .filter(p => p.qty > 0).sort((a, b) => b.qty - a.qty).slice(0, 10);
     const paretoTotal = pareto.reduce((s, p) => s + p.qty, 0);
@@ -315,29 +351,45 @@ function QualityDashboard() {
       ftt: total ? +((total - ng) / total * 100).toFixed(2) : null,
       ppmTrend, lineRows, pareto,
     };
-  }, [shownSessions, defects, lineFilter]);
+  }, [shownSessions, shownSessIds, sessById, orders, defects, lineFilter, productFilter]);
+
+  const dateSt = { ...inputSt, width: 148 };
+  const activeRangeDays = useMemo(() => {
+    if (to !== getWorkDate()) return null;
+    const hit = RANGE_OPTS.find(o => daysAgoStr(o.v) === from);
+    return hit ? hit.v : null;
+  }, [from, to]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ช่วงข้อมูล:</span>
         {RANGE_OPTS.map(o => (
-          <button key={o.v} onClick={() => setRangeDays(o.v)}
-            style={{ ...ghostBtn, ...(rangeDays === o.v ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderColor: 'var(--accent)' } : {}) }}>
+          <button key={o.v} onClick={() => setRange(o.v)}
+            style={{ ...ghostBtn, ...(activeRangeDays === o.v ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderColor: 'var(--accent)' } : {}) }}>
             {o.label}
           </button>
         ))}
+        <input type="date" value={from} max={to} onChange={e => setFrom(e.target.value)} style={dateSt} />
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>ถึง</span>
+        <input type="date" value={to} min={from} max={getWorkDate()} onChange={e => setTo(e.target.value)} style={dateSt} />
         <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700, marginLeft: 6 }}>ไลน์:</span>
-        <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, width: 'auto', minWidth: 160 }}>
+        <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, width: 'auto', minWidth: 150 }}>
           <option value="">ทุกไลน์ ({lineOptions.length})</option>
           {lineOptions.map(l => <option key={l} value={l}>{l}</option>)}
         </select>
-        {lineFilter && <button style={ghostBtn} onClick={() => setLineFilter('')}>ล้าง</button>}
+        <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ชิ้นงาน:</span>
+        <select value={productFilter} onChange={e => setProductFilter(e.target.value)} style={{ ...inputSt, width: 'auto', minWidth: 180, maxWidth: 280 }}>
+          <option value="">ทุกชิ้นงาน ({productOptions.length})</option>
+          {productOptions.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+        </select>
+        {(lineFilter || productFilter) && <button style={ghostBtn} onClick={() => { setLineFilter(''); setProductFilter(''); }}>ล้างตัวกรอง</button>}
         {loading && <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</span>}
       </div>
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <KpiCard label="ยอดผลิตรวม (ชิ้น)" value={stat.total.toLocaleString()} sub={`${shownSessions.length} กะที่ปิดแล้ว${lineFilter ? ` · ${lineFilter}` : ''}`} />
+        <KpiCard label="ยอดผลิตรวม (ชิ้น)" value={stat.total.toLocaleString()}
+          sub={productFilter ? `ชิ้นงาน: ${productOptions.find(p => p.key === productFilter)?.label || productFilter}` : `${shownSessions.length} กะที่ปิดแล้ว${lineFilter ? ` · ${lineFilter}` : ''}`} />
         <KpiCard label="ของเสียรวม (NG)" value={stat.ng.toLocaleString()} color={stat.ng > 0 ? '#ef4444' : '#22c55e'} />
         <KpiCard label="PPM" value={stat.ppm != null ? stat.ppm.toLocaleString() : '—'}
           color={stat.ppm == null ? undefined : stat.ppm <= 500 ? '#22c55e' : stat.ppm <= 3000 ? '#f59e0b' : '#ef4444'}
