@@ -59,25 +59,37 @@ function pick(routes: Record<string, Route>, key: string, vars: Record<string, u
   const t = routes[key]?.template;
   return t && String(t).trim() ? renderTemplate(String(t), vars) : builtin;
 }
-async function sendTelegram(message: string, chats: string[]): Promise<boolean> {
+// คืนรายการ {chat, message_id} ที่ส่งสำเร็จ — ใช้ผูก reply ใน Telegram กลับมาหาใบงาน (telegram-webhook)
+async function sendTelegram(message: string, chats: string[]): Promise<{ chat: string; message_id: number }[]> {
   const list = [...new Set(chats.filter(Boolean))];
-  if (!BOT_TOKEN || !list.length) return false;
+  if (!BOT_TOKEN || !list.length) return [];
   const res = await Promise.all(list.map((chat) =>
     fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chat, text: message, parse_mode: 'HTML' }),
-    }).then((r) => r.ok).catch(() => false)));
-  return res.some(Boolean);
+    }).then(async (r) => (r.ok ? { chat, message_id: (await r.json())?.result?.message_id as number } : null)).catch(() => null)));
+  return res.filter((x): x is { chat: string; message_id: number } => !!x?.message_id);
 }
-async function sendTelegramPhoto(photoUrl: string, caption: string, chats: string[]) {
+async function sendTelegramPhoto(photoUrl: string, caption: string, chats: string[]): Promise<{ chat: string; message_id: number }[]> {
   const list = [...new Set(chats.filter(Boolean))];
-  if (!BOT_TOKEN || !list.length) return;
+  if (!BOT_TOKEN || !list.length) return [];
   const cap = caption.length > 1000 ? caption.slice(0, 1000) : caption;
-  await Promise.all(list.map((chat) =>
+  const res = await Promise.all(list.map((chat) =>
     fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chat, photo: photoUrl, caption: cap, parse_mode: 'HTML' }),
-    }).then((r) => r.ok).catch(() => false)));
+    }).then(async (r) => (r.ok ? { chat, message_id: (await r.json())?.result?.message_id as number } : null)).catch(() => null)));
+  return res.filter((x): x is { chat: string; message_id: number } => !!x?.message_id);
+}
+// จำ message_id ที่ส่ง ผูกกับใบงาน (best-effort — ล้มเงียบ ห้ามทำการแจ้งเตือนพัง)
+async function recordSentRefs(sent: { chat: string; message_id: number }[], refKind: string, refId: unknown, event: string) {
+  if (!refId || !sent.length) return;
+  try {
+    await supabase.from('telegram_sent_messages').upsert(
+      sent.map((s) => ({ chat_id: s.chat, message_id: s.message_id, ref_kind: refKind, ref_id: String(refId), event })),
+      { onConflict: 'chat_id,message_id', ignoreDuplicates: true },
+    );
+  } catch { /* ตารางยังไม่สร้าง (migration 20260716_telegram_intake) — ข้าม */ }
 }
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
@@ -146,8 +158,10 @@ Deno.serve(async (req) => {
       default: return json({ error: 'unknown event' }, 400);
     }
     const message = pick(routes, event, v, builtin);
-    if (photo) await sendTelegramPhoto(photo, message, chat).catch(console.error);
-    else await sendTelegram(message, chat).catch(console.error);
+    const sent = photo
+      ? await sendTelegramPhoto(photo, message, chat).catch(() => [])
+      : await sendTelegram(message, chat).catch(() => []);
+    await recordSentRefs(sent || [], 'mtn_order', mo.id, event); // reply ใต้ข้อความนี้ = คอมเมนต์ใบ MO
     return json({ ok: true });
   } catch (err) {
     console.error(err);

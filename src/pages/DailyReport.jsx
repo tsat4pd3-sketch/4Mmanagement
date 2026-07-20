@@ -1953,6 +1953,7 @@ function LiveTab({ role }) {
     const dtType = dtTypes.find(t => t.id === d.downtime_type_id);
     const mcName = machines.find(m => m.machine_no === d.machine_no)?.machine_name || '';
     notifyDowntime({
+      id: d.id, // ให้ send-notification จำ message_id ผูกรายการนี้ — reply ใน Telegram = คอมเมนต์
       line_name: selSession.line_name, shift: selSession.shift, work_date: selSession.work_date,
       machine_no: d.machine_no, machine_name: mcName,
       type_name: dtType?.name_th || '', category: dtType?.category || '',
