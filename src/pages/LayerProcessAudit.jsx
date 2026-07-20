@@ -50,6 +50,10 @@ const getWorkDate = () => { const d = new Date(); if (d.getHours() < 8) d.setDat
 const getCurrentShift = () => { const h = new Date().getHours(); return h >= 8 && h < 20 ? 'day' : 'night'; };
 const thDate = (dstr) => { if (!dstr) return ''; const [y, m, d] = dstr.split('-').map(Number); return `${d}/${m}/${y + 543}`; };
 const monthLabel = (mk) => { const [y, m] = mk.split('-').map(Number); const en = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']; return `${en[m - 1]}-${String(y).slice(2)}`; };
+// ไตรมาสของเดือน (Q1 ม.ค-มี.ค / Q2 เม.ย-มิ.ย / Q3 ก.ค-ก.ย / Q4 ต.ค-ธ.ค) + 3 เดือนของไตรมาสนั้น
+const quarterOf = (mk) => Math.floor((Number(mk.split('-')[1]) - 1) / 3) + 1;
+const quarterMonths = (mk) => { const [y, m] = mk.split('-').map(Number); const qs = Math.floor((m - 1) / 3) * 3 + 1; return [0, 1, 2].map(i => `${y}-${pad2(qs + i)}`); };
+const shiftMonth = (mk, delta) => { const [y, m] = mk.split('-').map(Number); const d = new Date(y, m - 1 + delta, 1); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`; };
 const daysInMonth = (mk) => { const [y, m] = mk.split('-').map(Number); return new Date(y, m, 0).getDate(); };
 const dateOf = (mk, day) => `${mk}-${pad2(day)}`;
 const dowOf = (dstr) => { const [y, m, d] = dstr.split('-').map(Number); return new Date(y, m - 1, d).getDay(); };
@@ -116,6 +120,10 @@ export default function LayerProcessAudit() {
   const [planDays, setPlanDays] = useState({});     // { day: {station, plan_leader, ...} }
   const [monthAudits, setMonthAudits] = useState([]); // audits+answers ของเดือนที่เลือก
   const [savingPlan, setSavingPlan] = useState(false);
+  /* แท็บแผน = มองทีละไตรมาส (3 เดือน) — คำสั่ง user 2026-07-20 */
+  const [qData, setQData] = useState({});   // { 'YYYY-MM': { plan: row|null, days: {day: pd} } }
+  const [qAudits, setQAudits] = useState([]); // audits ทั้งไตรมาส (ใช้ทำสถานะ ● ตรวจแล้ว)
+  const [qHeader, setQHeader] = useState({ leader_name: '', supervisor_name: '', manager_name: '', gm_name: '', stations: '' });
 
   /* audit record */
   const [auditDate, setAuditDate] = useState(getWorkDate());
@@ -192,7 +200,7 @@ export default function LayerProcessAudit() {
     const { list, error } = await fetchMachineStations();
     if (error) { toast.error('ดึงเครื่องจักรไม่สำเร็จ: ' + error.message); return; }
     if (!list.length) { toast.info('ไลน์นี้ยังไม่มีเครื่องจักรในฐานข้อมูล — เพิ่มที่หน้าฐานข้อมูลเครื่องจักรก่อน'); return; }
-    setPlanF('stations', list.join('\n'));
+    setQHeader(prev => ({ ...prev, stations: list.join('\n') }));
     toast.success(`ดึง ${list.length} เครื่องจักรมาเป็นสถานีตรวจแล้ว — แก้ไข/เพิ่มเองได้`);
   };
 
@@ -205,17 +213,11 @@ export default function LayerProcessAudit() {
       supabase.from('lpa_plans').select('*, lpa_plan_days(*)').eq('line_name', selLine).eq('shift', selShift).eq('month_key', selMonth).maybeSingle(),
       supabase.from('lpa_audits').select('*, lpa_audit_answers(*)').eq('line_name', selLine).eq('shift', selShift).gte('audit_date', first).lte('audit_date', last).order('audit_date'),
     ]);
+    setPlan(pl || null);
     const dm = {};
     (pl?.lpa_plan_days || []).forEach(d => { dm[d.day] = d; });
     setPlanDays(dm);
     setMonthAudits(aud || []);
-    // ยังไม่มีแผนบันทึกไว้ + มีสิทธิ์จัดการ → auto-fill สถานีจากเครื่องจักรไลน์ให้ "เบื้องต้น" (ยังไม่บันทึกจนกว่าจะกดบันทึก)
-    if (!pl && canManage) {
-      const { list } = await fetchMachineStations();
-      setPlan({ line_name: selLine, shift: selShift, month_key: selMonth, ...(list.length ? { stations: list.join('\n') } : {}) });
-    } else {
-      setPlan(pl || null);
-    }
   };
   useEffect(() => { loadMonth(); }, [selLine, selShift, selMonth]);
 
@@ -314,6 +316,114 @@ export default function LayerProcessAudit() {
     if (planned && dstr < getWorkDate()) return { sym: '⊗', color: '#ef4444', title: 'เลยกำหนด — ยังไม่ตรวจ' };
     if (planned) return { sym: '○', color: 'var(--text2)', title: 'วางแผนตรวจ' };
     return null;
+  };
+
+  /* ═════════ TAB: แผน (ราย "ไตรมาส" — 3 เดือน) ═════════ */
+  const qMonths = useMemo(() => quarterMonths(selMonth), [selMonth]);
+  const loadQuarter = async () => {
+    if (!selLine) return;
+    const mks = quarterMonths(selMonth);
+    const first = dateOf(mks[0], 1), last = dateOf(mks[2], daysInMonth(mks[2]));
+    const [{ data: pls }, { data: auds }] = await Promise.all([
+      supabase.from('lpa_plans').select('*, lpa_plan_days(*)').eq('line_name', selLine).eq('shift', selShift).in('month_key', mks),
+      supabase.from('lpa_audits').select('id, audit_date, layer, auditor_name').eq('line_name', selLine).eq('shift', selShift).gte('audit_date', first).lte('audit_date', last),
+    ]);
+    const map = {};
+    mks.forEach(mk => {
+      const pl = (pls || []).find(p => p.month_key === mk) || null;
+      const days = {};
+      (pl?.lpa_plan_days || []).forEach(d => { days[d.day] = d; });
+      map[mk] = { plan: pl, days };
+    });
+    setQData(map);
+    setQAudits(auds || []);
+    const firstPl = mks.map(mk => map[mk].plan).find(Boolean);
+    let stations = firstPl?.stations || '';
+    if (!stations && canManage) { const { list } = await fetchMachineStations(); stations = list.join('\n'); }
+    setQHeader({
+      leader_name: firstPl?.leader_name || '', supervisor_name: firstPl?.supervisor_name || '',
+      manager_name: firstPl?.manager_name || '', gm_name: firstPl?.gm_name || '', stations,
+    });
+  };
+  useEffect(() => { if (tab === 'plan') loadQuarter(); }, [selLine, selShift, selMonth, tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const setQHeaderF = (k, v) => setQHeader(prev => ({ ...prev, [k]: v }));
+  const setQDay = (mk, day, patch) => setQData(prev => {
+    const md = prev[mk] || { plan: null, days: {} };
+    const pd = md.days[day] || { day, station: '', plan_leader: false, plan_supervisor: false, plan_manager: false, plan_gm: false };
+    return { ...prev, [mk]: { ...md, days: { ...md.days, [day]: { ...pd, ...patch } } } };
+  });
+  const qAuditFor = (dstr, layer) => qAudits.find(a => a.audit_date === dstr && a.layer === layer);
+  const qStatus = (mk, day, layerKey, planKey) => {
+    const dstr = dateOf(mk, day);
+    const planned = qData[mk]?.days?.[day]?.[planKey];
+    if (qAuditFor(dstr, layerKey)) return { sym: '●', color: '#22c55e', title: 'ตรวจแล้ว' };
+    if (planned && dstr < getWorkDate()) return { sym: '⊗', color: '#ef4444', title: 'เลยกำหนด — ยังไม่ตรวจ' };
+    if (planned) return { sym: '○', color: 'var(--text2)', title: 'วางแผนตรวจ' };
+    return null;
+  };
+
+  // เติมแผนอัตโนมัติทั้งไตรมาส — ครอบทุกเครื่อง "ภายในแต่ละเดือน" (แจกหลายสถานี/วันถ้าเครื่อง > วันทำงาน)
+  const autoFillQuarter = () => {
+    const stationList = (qHeader.stations || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+    if (!stationList.length) { toast.error('กรอก/ดึงรายชื่อสถานี (Station) ก่อน'); return; }
+    const next = { ...qData };
+    qMonths.forEach((mk, mi) => {
+      const nDays = daysInMonth(mk);
+      const working = [];
+      for (let d = 1; d <= nDays; d++) if (!isHoliday(dateOf(mk, d))) working.push(d);
+      if (!working.length) { next[mk] = { ...(next[mk] || { plan: null }), days: {} }; return; }
+      // ครบทุกเครื่องภายในเดือน → สถานี/วัน = ceil(จำนวนเครื่อง ÷ วันทำงาน)
+      const perDay = Math.max(1, Math.ceil(stationList.length / working.length));
+      const blocks = [[1, 7], [8, 14], [15, 21], [22, 31]];
+      const svDays = blocks.map(([a, b]) => working.find(d => d >= a && d <= b)).filter(Boolean);
+      const wk2 = working.filter(d => d >= 8 && d <= 14);
+      const mgrDay = wk2[1] || wk2[0] || working[Math.floor(working.length / 2)];
+      const gmDay = mi === 0 ? (working.find(d => d >= 15) || working[Math.floor(working.length / 2)]) : null; // GM รายไตรมาส = ครั้งเดียว เดือนแรก
+      const days = {};
+      let si = 0;
+      working.forEach(d => {
+        const stns = [];
+        for (let k = 0; k < perDay && si < stationList.length; k++) { stns.push(stationList[si]); si++; }
+        if (!stns.length) stns.push(stationList[(si + d) % stationList.length]); // แจกครบแล้ว วันที่เหลือให้ตรวจซ้ำ
+        days[d] = {
+          day: d, station: stns.join(', '),
+          plan_leader: true, plan_supervisor: svDays.includes(d),
+          plan_manager: d === mgrDay, plan_gm: gmDay ? d === gmDay : false,
+        };
+      });
+      next[mk] = { ...(next[mk] || { plan: null }), days };
+    });
+    setQData(next);
+    toast.success(`เติมแผนทั้งไตรมาสแล้ว — ครบ ${stationList.length} เครื่องในทุกเดือน (แก้ไขได้)`);
+  };
+
+  const saveQuarter = async () => {
+    if (!canManage) return;
+    setSavingPlan(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      for (const mk of qMonths) {
+        const md = qData[mk] || { plan: null, days: {} };
+        const row = {
+          ...(md.plan?.id ? { id: md.plan.id } : {}),
+          line_name: selLine, shift: selShift, month_key: mk,
+          leader_name: qHeader.leader_name || null, supervisor_name: qHeader.supervisor_name || null,
+          manager_name: qHeader.manager_name || null, gm_name: qHeader.gm_name || null,
+          stations: qHeader.stations || null,
+          created_by: md.plan?.created_by || user?.id || null, updated_at: new Date().toISOString(),
+        };
+        const { data: saved, error } = await supabase.from('lpa_plans').upsert(row, { onConflict: 'line_name,shift,month_key' }).select().single();
+        if (error) throw error;
+        await supabase.from('lpa_plan_days').delete().eq('plan_id', saved.id);
+        const rows = Object.values(md.days).filter(d => d.station || d.plan_leader || d.plan_supervisor || d.plan_manager || d.plan_gm)
+          .map(d => ({ plan_id: saved.id, day: d.day, station: d.station || null, plan_leader: !!d.plan_leader, plan_supervisor: !!d.plan_supervisor, plan_manager: !!d.plan_manager, plan_gm: !!d.plan_gm }));
+        if (rows.length) { const { error: e2 } = await supabase.from('lpa_plan_days').insert(rows); if (e2) throw e2; }
+      }
+      toast.success('บันทึกแผน LPA ทั้งไตรมาสเรียบร้อย');
+      loadQuarter(); loadMonth();
+    } catch (e) { toast.error('บันทึกแผนไม่สำเร็จ: ' + e.message); }
+    finally { setSavingPlan(false); }
   };
 
   /* ═════════ TAB: บันทึกผลตรวจ ═════════ */
@@ -700,14 +810,20 @@ ${issuesHtml}
 
       {selectorBar}
 
-      {/* ═════════ แผนตรวจ ═════════ */}
+      {/* ═════════ แผนตรวจ — มองทีละไตรมาส (3 เดือน) ═════════ */}
       {tab === 'plan' && (
         <div className="card" style={{ padding: 16 }}>
+          {/* หัวไตรมาส + ปุ่มเลื่อนไตรมาส */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+            <button onClick={() => setSelMonth(shiftMonth(qMonths[0], -3))} style={btnGhost}>◀ ไตรมาสก่อน</button>
+            <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)' }}>ไตรมาส Q{quarterOf(selMonth)} · {monthLabel(qMonths[0])} – {monthLabel(qMonths[2])}</div>
+            <button onClick={() => setSelMonth(shiftMonth(qMonths[0], 3))} style={btnGhost}>ไตรมาสถัดไป ▶</button>
+          </div>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: 12 }}>
             {[['leader_name', 'Leader'], ['supervisor_name', 'Supervisor'], ['manager_name', 'Manager'], ['gm_name', 'GM Plant']].map(([k, label]) => (
               <div key={k}>
                 <div style={lb}>{label}</div>
-                <input type="text" list="lpa-profiles" value={plan?.[k] || ''} onChange={e => setPlanF(k, e.target.value)} disabled={!canManage}
+                <input type="text" list="lpa-profiles" value={qHeader[k] || ''} onChange={e => setQHeaderF(k, e.target.value)} disabled={!canManage}
                   style={{ width: '100%', padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
               </div>
             ))}
@@ -715,68 +831,83 @@ ${issuesHtml}
           <datalist id="lpa-profiles">{profiles.filter(p => p.full_name).map(p => <option key={p.id} value={p.full_name} />)}</datalist>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
             <div style={{ flex: '1 1 340px' }}>
-              <div style={lb}>รายชื่อสถานีตรวจ (Station for audit — บรรทัดละชื่อ หรือคั่นด้วย , · ดึงจากเครื่องจักรในไลน์อัตโนมัติ แก้ไข/เพิ่มเองได้)</div>
-              <textarea rows={3} value={plan?.stations || ''} onChange={e => setPlanF('stations', e.target.value)} disabled={!canManage}
+              <div style={lb}>รายชื่อสถานีตรวจ (Station for audit — บรรทัดละชื่อ หรือคั่นด้วย , · ดึงจากเครื่องจักรในไลน์อัตโนมัติ แก้ไข/เพิ่มเองได้ · ใช้ทั้งไตรมาส)</div>
+              <textarea rows={3} value={qHeader.stations || ''} onChange={e => setQHeaderF('stations', e.target.value)} disabled={!canManage}
                 placeholder={'ปืนยิงBoat\nSTAMP MARK\nJig-01\nJig-02 ...'} style={{ width: '100%', fontSize: 13 }} />
             </div>
             {canManage && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button onClick={fillStationsFromMachines} style={btnTeal} title="ดึงรายชื่อเครื่องจักรทั้งหมดในไลน์นี้ (รวมไลน์ย่อย) มาเป็นสถานีตรวจตั้งต้น">🏭 ดึงเครื่องจักรในไลน์</button>
-                <button onClick={autoFillPlan} style={btnAmber}>⚡ เติมแผนอัตโนมัติ</button>
-                <button onClick={savePlan} disabled={savingPlan} style={btnAccent}>{savingPlan ? '⏳...' : '💾 บันทึกแผน'}</button>
-                <button onClick={printPlan} disabled={printing} style={btnBlue}>🖨️ พิมพ์ใบแผน</button>
+                <button onClick={autoFillQuarter} style={btnAmber} title="กระจายสถานีให้ครบทุกเครื่องภายในแต่ละเดือน (Leader ทุกวัน · SV ต้นสัปดาห์ · MGR รายเดือน · GM รายไตรมาส)">⚡ เติมแผนทั้งไตรมาส</button>
+                <button onClick={saveQuarter} disabled={savingPlan} style={btnAccent}>{savingPlan ? '⏳...' : '💾 บันทึกแผนไตรมาส'}</button>
+                <button onClick={printPlan} disabled={printing} style={btnBlue} title={`พิมพ์ใบแผนของเดือน ${monthLabel(selMonth)} (บันทึกก่อนพิมพ์)`}>🖨️ พิมพ์ ({monthLabel(selMonth)})</button>
               </div>
             )}
-            {!canManage && <button onClick={printPlan} disabled={printing} style={btnBlue}>🖨️ พิมพ์ใบแผน</button>}
+            {!canManage && <button onClick={printPlan} disabled={printing} style={btnBlue}>🖨️ พิมพ์ ({monthLabel(selMonth)})</button>}
           </div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
-            <span style={{ color: 'var(--text2)' }}>○ วางแผน</span> · <span style={{ color: '#22c55e' }}>● ตรวจแล้ว</span> · <span style={{ color: '#ef4444' }}>⊗ เลยกำหนดยังไม่ตรวจ</span> · แถวเขียว = วันหยุด
+            <span style={{ color: 'var(--text2)' }}>○ วางแผน</span> · <span style={{ color: '#22c55e' }}>● ตรวจแล้ว</span> · <span style={{ color: '#ef4444' }}>⊗ เลยกำหนดยังไม่ตรวจ</span> · แถวเขียว = วันหยุด · หลายสถานี/วัน = คั่นด้วย ,
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', minWidth: 720 }}>
-              <thead>
-                <tr style={{ fontSize: 12 }}>
-                  <th style={{ width: 90 }}>วันที่</th>
-                  <th style={{ textAlign: 'left' }}>Station for audit</th>
-                  {LAYERS.map(l => <th key={l.key} style={{ width: 96, textAlign: 'center' }}>{l.label}<div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>{l.freq}</div></th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {daysArr.map(d => {
-                  const dstr = dateOf(selMonth, d);
-                  const holiday = isHoliday(dstr);
-                  const pd = planDays[d] || {};
-                  return (
-                    <tr key={d} style={holiday ? { background: 'rgba(46,125,50,0.16)' } : undefined}>
-                      <td style={{ whiteSpace: 'nowrap', fontSize: 12, fontWeight: 700, color: holiday ? '#4caf50' : 'var(--text)' }}>
-                        {d} <span style={{ fontSize: 11, color: 'var(--muted)' }}>({DOW_TH[dowOf(dstr)]})</span>
-                      </td>
-                      <td>
-                        {holiday ? <span style={{ fontSize: 11, color: '#4caf50' }}>วันหยุด</span> : (
-                          <input type="text" value={pd.station || ''} onChange={e => setPlanDay(d, { station: e.target.value })} disabled={!canManage}
-                            style={{ width: 'min(100%, 260px)', fontSize: 12, padding: '4px 8px' }} />
-                        )}
-                      </td>
-                      {LAYERS.map(l => {
-                        const s = statusSymbol(d, l.key, l.planKey);
+
+          {/* 3 เดือนของไตรมาส */}
+          {qMonths.map(mk => {
+            const nD = daysInMonth(mk);
+            const isFocus = mk === selMonth;
+            return (
+              <div key={mk} style={{ marginTop: 12, border: isFocus ? '1px solid var(--accent)' : '1px solid var(--border2)', borderRadius: 10, overflow: 'hidden' }}>
+                <div style={{ padding: '7px 12px', background: isFocus ? 'rgba(34,197,94,0.12)' : 'var(--bg3)', fontWeight: 800, fontSize: 14, color: isFocus ? 'var(--accent)' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  📅 {monthLabel(mk)}
+                  {isFocus ? <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)' }}>(เดือนที่เลือก — ใช้พิมพ์/รายงาน)</span>
+                    : <button onClick={() => setSelMonth(mk)} style={{ ...btnGhost, padding: '2px 8px', fontSize: 11 }}>เลือกเดือนนี้</button>}
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', minWidth: 720 }}>
+                    <thead>
+                      <tr style={{ fontSize: 12 }}>
+                        <th style={{ width: 90 }}>วันที่</th>
+                        <th style={{ textAlign: 'left' }}>Station for audit</th>
+                        {LAYERS.map(l => <th key={l.key} style={{ width: 96, textAlign: 'center' }}>{l.label}<div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>{l.freq}</div></th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Array.from({ length: nD }, (_, i) => i + 1).map(d => {
+                        const dstr = dateOf(mk, d);
+                        const holiday = isHoliday(dstr);
+                        const pd = qData[mk]?.days?.[d] || {};
                         return (
-                          <td key={l.key} style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                            {!holiday && (
-                              <label style={{ cursor: canManage ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                <input type="checkbox" checked={!!pd[l.planKey]} disabled={!canManage}
-                                  onChange={e => setPlanDay(d, { [l.planKey]: e.target.checked })} style={{ width: 'auto' }} />
-                                {s && <span title={s.title} style={{ fontSize: 15, color: s.color, fontWeight: 700 }}>{s.sym}</span>}
-                              </label>
-                            )}
-                          </td>
+                          <tr key={d} style={holiday ? { background: 'rgba(46,125,50,0.16)' } : undefined}>
+                            <td style={{ whiteSpace: 'nowrap', fontSize: 12, fontWeight: 700, color: holiday ? '#4caf50' : 'var(--text)' }}>
+                              {d} <span style={{ fontSize: 11, color: 'var(--muted)' }}>({DOW_TH[dowOf(dstr)]})</span>
+                            </td>
+                            <td>
+                              {holiday ? <span style={{ fontSize: 11, color: '#4caf50' }}>วันหยุด</span> : (
+                                <input type="text" value={pd.station || ''} onChange={e => setQDay(mk, d, { station: e.target.value })} disabled={!canManage}
+                                  style={{ width: 'min(100%, 320px)', fontSize: 12, padding: '4px 8px' }} />
+                              )}
+                            </td>
+                            {LAYERS.map(l => {
+                              const s = qStatus(mk, d, l.key, l.planKey);
+                              return (
+                                <td key={l.key} style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                  {!holiday && (
+                                    <label style={{ cursor: canManage ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                      <input type="checkbox" checked={!!pd[l.planKey]} disabled={!canManage}
+                                        onChange={e => setQDay(mk, d, { [l.planKey]: e.target.checked })} style={{ width: 'auto' }} />
+                                      {s && <span title={s.title} style={{ fontSize: 15, color: s.color, fontWeight: 700 }}>{s.sym}</span>}
+                                    </label>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
                         );
                       })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -1040,3 +1171,4 @@ const btnAccent = { padding: '7px 18px', borderRadius: 8, border: 'none', backgr
 const btnAmber = { padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
 const btnBlue = { padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(77,159,255,0.35)', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
 const btnTeal = { padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(45,212,191,0.4)', background: 'rgba(45,212,191,0.12)', color: '#2dd4bf', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
+const btnGhost = { padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, cursor: 'pointer', fontSize: 12 };
