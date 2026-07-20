@@ -40,6 +40,7 @@ const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
 const DailyPM     = lazy(() => import('./pages/DailyPM'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
+const LayerProcessAudit = lazy(() => import('./pages/LayerProcessAudit'));
 const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
@@ -71,7 +72,6 @@ const NAV_ITEMS = [
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'ฝ่ายผลิต' },
   { to: '/daily-pm',       icon: '✅', label: 'Daily PM ฝ่ายผลิต',   group: 'ฝ่ายผลิต' },
   { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
-  { to: '/ojt-training',   icon: '📖', label: 'อบรมสอนงาน OJT',      group: 'ฝ่ายผลิต' },
 
   { to: '/line-stock',      icon: '📦', label: 'Store management',       group: 'Logistic - Store' },
   { to: '/heijunka',       icon: '🎴', label: 'Kanban Board',             group: 'Logistic - Store' },
@@ -89,12 +89,14 @@ const NAV_ITEMS = [
   { to: '/qa',             icon: '🔍', label: 'Quality Control Center', group: 'ควบคุมคุณภาพ QA/QC' },
   { to: '/qa-setup',       icon: '📐', label: 'มาตรฐานการตรวจ & Drawing', group: 'ควบคุมคุณภาพ QA/QC' },
   { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', group: 'ควบคุมคุณภาพ QA/QC' },
+  { to: '/lpa',            icon: '📋', label: 'Layer Process Audit', group: 'ควบคุมคุณภาพ QA/QC' },
 
   { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'รายงาน' },
 
   { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/ojt-training', icon: '📖', label: 'อบรมสอนงาน OJT',   group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/products',        icon: '🔩', label: 'Product Master',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
@@ -989,6 +991,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/ojt-training" element={
                 <RoleRoute path="/ojt-training" userRole={role}><OjtTraining /></RoleRoute>
+              } />
+              <Route path="/lpa" element={
+                <RoleRoute path="/lpa" userRole={role}><LayerProcessAudit /></RoleRoute>
               } />
               <Route path="/morning-meeting" element={
                 <RoleRoute path="/morning-meeting" userRole={role}><MorningMeeting /></RoleRoute>
