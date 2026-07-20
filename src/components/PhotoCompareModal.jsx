@@ -69,9 +69,12 @@ function alignImages(refG, curG) {
 }
 const IDENTITY = { s: 1, txF: 0, tyF: 0, score: null }
 
-export default function PhotoCompareModal({ referenceUrl, title, initialVerdict, onResult, onClose }) {
+export default function PhotoCompareModal({ referenceUrl, title, initialVerdict, onResult, onSetReference, onClose }) {
+  const settingRef = !referenceUrl // ยังไม่มีรูปมาตรฐาน → โหมด "ตั้งรูปมาตรฐานครั้งแรก"
   const [captured, setCaptured] = useState(null) // { blob, url }
-  const [mode, setMode] = useState('wipe')        // wipe | fade | diff | blink
+  const [mode, setMode] = useState('blink')       // wipe | fade | diff | blink (default = กะพริบ ง่ายสุด)
+  const [showAdv, setShowAdv] = useState(false)   // ซ่อนโหมด/ตัวช่วยขั้นสูง ให้หน้าเรียบง่าย
+  const [savingRef, setSavingRef] = useState(false)
   const [wipe, setWipe] = useState(50)
   const [fade, setFade] = useState(60)
   const [sens, setSens] = useState(34)            // เกณฑ์ diff (ต่ำ = ไวขึ้น)
@@ -123,7 +126,7 @@ export default function PhotoCompareModal({ referenceUrl, title, initialVerdict,
     ref.src = referenceUrl; cur.src = curUrl
   }, [referenceUrl])
 
-  const accept = (shot) => { if (captured?.url) URL.revokeObjectURL(captured.url); setCaptured(shot); runAlign(shot.url) }
+  const accept = (shot) => { if (captured?.url) URL.revokeObjectURL(captured.url); setCaptured(shot); if (!settingRef) runAlign(shot.url) }
 
   const captureFromVideo = async () => {
     const v = videoRef.current
@@ -137,7 +140,8 @@ export default function PhotoCompareModal({ referenceUrl, title, initialVerdict,
     img.onload = async () => { const shot = await shrinkToBlob(img, img.naturalWidth, img.naturalHeight); accept(shot); URL.revokeObjectURL(img.src) }
     img.src = URL.createObjectURL(f); e.target.value = ''
   }
-  const retake = () => { if (captured?.url) URL.revokeObjectURL(captured.url); setCaptured(null); setMode('wipe'); setWipe(50); setAlign(IDENTITY) }
+  const retake = () => { if (captured?.url) URL.revokeObjectURL(captured.url); setCaptured(null); setMode('blink'); setWipe(50); setAlign(IDENTITY) }
+  const saveReference = async () => { if (!captured?.blob) return; setSavingRef(true); try { await onSetReference?.(captured.blob) } finally { setSavingRef(false); retake() } }
 
   // transform ที่ใช้ทับรูปปัจจุบัน (aligned) — ใช้ทั้ง wipe/fade/blink
   const T = autoAlign && !alignErr ? align : IDENTITY
@@ -207,13 +211,23 @@ export default function PhotoCompareModal({ referenceUrl, title, initialVerdict,
         <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {!captured && !camOn && (
             <>
-              <div>
-                <p style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, margin: '0 0 4px' }}>รูปมาตรฐาน (สภาพดี)</p>
-                <img src={referenceUrl} alt="" style={{ width: '100%', maxHeight: 260, objectFit: 'contain', borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)', display: 'block' }} />
-              </div>
-              <p style={{ fontSize: 12, color: 'var(--text2)', margin: 0, textAlign: 'center', lineHeight: 1.5 }}>ถ่ายรูปจุดเดียวกันของเครื่อง แล้วเทียบกับรูปมาตรฐาน</p>
+              {settingRef ? (
+                <div style={{ padding: '20px 14px', textAlign: 'center', borderRadius: 8, border: '1px dashed var(--accent)', background: 'var(--accent-dim)' }}>
+                  <div style={{ fontSize: 30 }}>📷</div>
+                  <p style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent)', margin: '6px 0 2px' }}>ตั้งรูปมาตรฐานครั้งแรก</p>
+                  <p style={{ fontSize: 12, color: 'var(--text2)', margin: 0, lineHeight: 1.5 }}>ถ่าย/เลือกรูป "สภาพดี" ของจุดนี้ 1 รูป<br />ครั้งต่อไปจะเอามาเทียบให้อัตโนมัติ</p>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <p style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, margin: '0 0 4px' }}>รูปมาตรฐาน (สภาพดี)</p>
+                    <img src={referenceUrl} alt="" style={{ width: '100%', maxHeight: 260, objectFit: 'contain', borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)', display: 'block' }} />
+                  </div>
+                  <p style={{ fontSize: 12, color: 'var(--text2)', margin: 0, textAlign: 'center', lineHeight: 1.5 }}>ถ่ายรูปจุดเดียวกันของเครื่อง แล้วเทียบกับรูปมาตรฐาน</p>
+                </>
+              )}
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={startCam} style={btn('accent')}>📸 ถ่ายสด (ghost)</button>
+                <button onClick={startCam} style={btn('accent')}>📸 ถ่ายสด{settingRef ? '' : ' (ghost)'}</button>
                 <label style={{ ...btn('plain'), cursor: 'pointer', textAlign: 'center' }}>
                   📁 เลือก/ถ่ายรูป
                   <input type="file" accept="image/*" capture="environment" onChange={onFile} style={{ display: 'none' }} />
@@ -226,13 +240,15 @@ export default function PhotoCompareModal({ referenceUrl, title, initialVerdict,
             <>
               <div ref={boxRef} style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: '#000' }}>
                 <video ref={videoRef} playsInline muted style={{ width: '100%', maxHeight: 300, objectFit: 'contain', display: 'block' }} />
-                <img src={referenceUrl} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', opacity: ghost / 100, pointerEvents: 'none' }} />
-                <div style={{ position: 'absolute', top: 6, left: 6, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 10, padding: '2px 8px', pointerEvents: 'none' }}>👻 เล็งให้ตรงเงารูปมาตรฐาน</div>
+                {!settingRef && <img src={referenceUrl} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', opacity: ghost / 100, pointerEvents: 'none' }} />}
+                {!settingRef && <div style={{ position: 'absolute', top: 6, left: 6, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 10, padding: '2px 8px', pointerEvents: 'none' }}>👻 เล็งให้ตรงเงารูปมาตรฐาน</div>}
               </div>
-              <label style={{ fontSize: 11.5, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                เงารูปมาตรฐาน
-                <input type="range" min={0} max={80} value={ghost} onChange={e => setGhost(+e.target.value)} style={{ flex: 1, width: 'auto' }} />
-              </label>
+              {!settingRef && (
+                <label style={{ fontSize: 11.5, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  เงารูปมาตรฐาน
+                  <input type="range" min={0} max={80} value={ghost} onChange={e => setGhost(+e.target.value)} style={{ flex: 1, width: 'auto' }} />
+                </label>
+              )}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={stopCam} style={btn('plain')}>ยกเลิก</button>
                 <button onClick={captureFromVideo} style={btn('accent')}>📸 ถ่าย</button>
@@ -240,13 +256,27 @@ export default function PhotoCompareModal({ referenceUrl, title, initialVerdict,
             </>
           )}
 
-          {captured && (
+          {/* ครั้งแรก (ยังไม่มีรูปมาตรฐาน) — ถ่ายแล้วบันทึกเป็นมาตรฐานเลย */}
+          {captured && settingRef && (
             <>
-              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                {[['wipe', '↔ แบ่ง'], ['fade', '◐ ซ้อนจาง'], ['diff', '🔍 จุดต่าง'], ['blink', '⚡ กะพริบ']].map(([k, lb]) => (
-                  <button key={k} onClick={() => setMode(k)} style={chip(mode === k)}>{lb}</button>
-                ))}
+              <div>
+                <p style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, margin: '0 0 4px' }}>รูปที่ถ่าย (จะตั้งเป็นมาตรฐาน)</p>
+                <img src={captured.url} alt="" style={{ width: '100%', maxHeight: 300, objectFit: 'contain', borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)', display: 'block' }} />
               </div>
+              <button onClick={retake} style={{ ...btn('plain'), padding: '7px 0', fontSize: 12 }}>↺ ถ่ายใหม่</button>
+              <button onClick={saveReference} disabled={savingRef} style={{ ...btn('accent'), opacity: savingRef ? 0.6 : 1 }}>{savingRef ? 'กำลังบันทึก...' : '✅ บันทึกเป็นภาพมาตรฐาน'}</button>
+            </>
+          )}
+
+          {captured && !settingRef && (
+            <>
+              {showAdv && (
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                  {[['wipe', '↔ แบ่ง'], ['fade', '◐ ซ้อนจาง'], ['diff', '🔍 จุดต่าง'], ['blink', '⚡ กะพริบ']].map(([k, lb]) => (
+                    <button key={k} onClick={() => setMode(k)} style={chip(mode === k)}>{lb}</button>
+                  ))}
+                </div>
+              )}
 
               <div ref={boxRef} style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg3)', userSelect: 'none' }}>
                 <img src={referenceUrl} alt="" draggable={false} style={{ width: '100%', maxHeight: 320, objectFit: 'contain', display: 'block' }} />
@@ -271,9 +301,9 @@ export default function PhotoCompareModal({ referenceUrl, title, initialVerdict,
                 {aligning && <div style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 10.5, fontWeight: 700, borderRadius: 8, padding: '2px 7px' }}>⏳ กำลังจัดตำแหน่ง…</div>}
               </div>
 
-              {mode === 'wipe' && <input type="range" min={0} max={100} value={wipe} onChange={e => setWipe(+e.target.value)} style={{ width: '100%' }} />}
-              {mode === 'fade' && <input type="range" min={0} max={100} value={fade} onChange={e => setFade(+e.target.value)} style={{ width: '100%' }} />}
-              {mode === 'diff' && (
+              {showAdv && mode === 'wipe' && <input type="range" min={0} max={100} value={wipe} onChange={e => setWipe(+e.target.value)} style={{ width: '100%' }} />}
+              {showAdv && mode === 'fade' && <input type="range" min={0} max={100} value={fade} onChange={e => setFade(+e.target.value)} style={{ width: '100%' }} />}
+              {showAdv && mode === 'diff' && (
                 <label style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
                   ความไว
                   <input type="range" min={12} max={80} value={90 - sens} onChange={e => setSens(90 - +e.target.value)} style={{ flex: 1, width: 'auto' }} />
@@ -281,28 +311,33 @@ export default function PhotoCompareModal({ referenceUrl, title, initialVerdict,
                 </label>
               )}
 
-              {/* ── แถบจัดตำแหน่ง (auto-align) ── */}
-              <div style={{ borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <label style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={autoAlign} onChange={e => setAutoAlign(e.target.checked)} style={{ width: 'auto' }} />🎯 จัดตำแหน่งอัตโนมัติ
-                  </label>
-                  {alignErr ? <span style={{ fontSize: 10.5, color: 'var(--accent2)' }}>จัดอัตโนมัติไม่ได้ — จูนมือด้านล่าง</span>
-                    : alignQuality && <span style={{ fontSize: 10.5, color: alignQuality === 'ดี' ? 'var(--accent)' : alignQuality === 'พอใช้' ? 'var(--accent2)' : '#e05c4a', fontWeight: 700 }}>ความตรง: {alignQuality}</span>}
+              {/* ── ตัวช่วยขั้นสูง (auto-align + จูนมือ) ซ่อนไว้ให้หน้าเรียบง่าย ── */}
+              {showAdv && (
+                <div style={{ borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <label style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={autoAlign} onChange={e => setAutoAlign(e.target.checked)} style={{ width: 'auto' }} />🎯 จัดตำแหน่งอัตโนมัติ
+                    </label>
+                    {alignErr ? <span style={{ fontSize: 10.5, color: 'var(--accent2)' }}>จัดอัตโนมัติไม่ได้ — จูนมือด้านล่าง</span>
+                      : alignQuality && <span style={{ fontSize: 10.5, color: alignQuality === 'ดี' ? 'var(--accent)' : alignQuality === 'พอใช้' ? 'var(--accent2)' : '#e05c4a', fontWeight: 700 }}>ความตรง: {alignQuality}</span>}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>จูนมือ:</span>
+                    <button onClick={() => nudge(-0.012, 0, 0)} style={nb}>◀</button>
+                    <button onClick={() => nudge(0.012, 0, 0)} style={nb}>▶</button>
+                    <button onClick={() => nudge(0, -0.012, 0)} style={nb}>▲</button>
+                    <button onClick={() => nudge(0, 0.012, 0)} style={nb}>▼</button>
+                    <button onClick={() => nudge(0, 0, 0.02)} style={nb}>➕</button>
+                    <button onClick={() => nudge(0, 0, -0.02)} style={nb}>➖</button>
+                    <button onClick={() => setAlign(IDENTITY)} style={{ ...nb, width: 'auto', padding: '0 8px', fontSize: 10.5 }}>รีเซ็ต</button>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>จูนมือ:</span>
-                  <button onClick={() => nudge(-0.012, 0, 0)} style={nb}>◀</button>
-                  <button onClick={() => nudge(0.012, 0, 0)} style={nb}>▶</button>
-                  <button onClick={() => nudge(0, -0.012, 0)} style={nb}>▲</button>
-                  <button onClick={() => nudge(0, 0.012, 0)} style={nb}>▼</button>
-                  <button onClick={() => nudge(0, 0, 0.02)} style={nb}>➕</button>
-                  <button onClick={() => nudge(0, 0, -0.02)} style={nb}>➖</button>
-                  <button onClick={() => setAlign(IDENTITY)} style={{ ...nb, width: 'auto', padding: '0 8px', fontSize: 10.5 }}>รีเซ็ต</button>
-                </div>
-              </div>
+              )}
 
-              <button onClick={retake} style={{ ...btn('plain'), padding: '6px 0', fontSize: 12 }}>↺ ถ่ายใหม่</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={retake} style={{ ...btn('plain'), padding: '6px 0', fontSize: 12 }}>↺ ถ่ายใหม่</button>
+                <button onClick={() => setShowAdv(v => !v)} style={{ ...btn('plain'), padding: '6px 0', fontSize: 12, color: showAdv ? 'var(--accent)' : 'var(--muted)', borderColor: showAdv ? 'var(--accent)' : 'var(--border2)' }}>{showAdv ? '▲ ซ่อนตัวช่วย' : '⚙️ ตัวช่วยเทียบเพิ่มเติม'}</button>
+              </div>
 
               <div>
                 <p style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700, margin: '0 0 6px' }}>ผลตรวจจุดนี้</p>
@@ -319,7 +354,7 @@ export default function PhotoCompareModal({ referenceUrl, title, initialVerdict,
 
         <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8 }}>
           <button onClick={onClose} style={btn('plain')}>ปิด</button>
-          <button onClick={confirm} disabled={!captured || !verdict} style={{ ...btn('accent'), opacity: (!captured || !verdict) ? 0.5 : 1 }}>ใช้ผลนี้</button>
+          {!settingRef && <button onClick={confirm} disabled={!captured || !verdict} style={{ ...btn('accent'), opacity: (!captured || !verdict) ? 0.5 : 1 }}>ใช้ผลนี้</button>}
         </div>
       </motion.div>
     </div>

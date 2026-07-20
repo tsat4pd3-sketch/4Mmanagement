@@ -139,6 +139,7 @@ export default function MachineFloorMap({
             const pos = d ? { top: drag.top, left: drag.left } : clampPct(p.pos_top, p.pos_left)
             return (
               <div key={p.id}
+                className={p.blink ? 'dt-alarm-blink' : ''}
                 onPointerDown={(e) => startDrag(e, p)}
                 onClick={(e) => { e.stopPropagation(); onSelect?.(p) }}
                 title={p.label}
@@ -154,7 +155,7 @@ export default function MachineFloorMap({
                   // dim (ไม่เข้าฟิลเตอร์แผนก) ต้องจางจนเห็นชัดว่าถูกกรองออก — 0.28 เดิมแยกไม่ออกจากจุดปกติ
                   opacity: p.dim ? 0.1 : (d ? 0.92 : 1), zIndex: (sel || d) ? 15 : 5,
                 }}>
-                <span style={{ fontSize: iconFont, lineHeight: 1 }}>⚙️</span>
+                <span style={{ fontSize: iconFont, lineHeight: 1 }}>{p.icon || '⚙️'}</span>
 
                 {editable && (
                   <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onMarkerRemove?.(p.id) }}

@@ -83,6 +83,23 @@ const S = {
   },
 }
 
+// ค่าวัดเครื่องจักร (type 'measure') — อ่านค่าเดียวเทียบเกณฑ์ lsl(ต่ำสุด)/usl(สูงสุด) → pass/fail
+// คืน 'pass' | 'fail' | null (ยังไม่กรอก) — comparator derive จากช่องที่ตั้ง (lsl only=≥, usl only=≤, ทั้งคู่=ช่วง)
+function measureStatus(val, cp) {
+  if (val === '' || val == null) return null
+  const v = Number(val); if (isNaN(v)) return null
+  if (cp.lsl != null && v < cp.lsl) return 'fail'
+  if (cp.usl != null && v > cp.usl) return 'fail'
+  return 'pass'
+}
+function measureStdText(cp) {
+  const lo = cp.lsl != null, hi = cp.usl != null
+  if (lo && hi) return `${fmt(cp.lsl)}–${fmt(cp.usl)}${cp.unit ? ' ' + cp.unit : ''}`
+  if (lo) return `≥ ${fmt(cp.lsl)}${cp.unit ? ' ' + cp.unit : ''}`
+  if (hi) return `≤ ${fmt(cp.usl)}${cp.unit ? ' ' + cp.unit : ''}`
+  return '—'
+}
+
 // สีหมุด = สถานะการตรวจ (dynamic) — เขียวผ่าน / แดง NG / เหลืองเฝ้าระวัง / ยังไม่ตรวจ = สีหมวด
 const PIN_STATUS_COLOR = { ok: '#3dd65c', ng: '#e05c4a', warning: '#f59a3f' }
 function cpCheckStatus(cp, r) {
@@ -91,6 +108,10 @@ function cpCheckStatus(cp, r) {
     if (r.v1 === '' || r.v2 === '' || r.v3 === '' || r.v1 == null || r.v2 == null || r.v3 == null) return null
     const s = getSpcStatus(computeAvg(r.v1, r.v2, r.v3), cp)
     return s === 'fail' ? 'ng' : s === 'warning' ? 'warning' : 'ok'
+  }
+  if (cp.type === 'measure') {
+    const s = measureStatus(r.mval, cp)
+    return s === 'fail' ? 'ng' : s === 'pass' ? 'ok' : null
   }
   return r.attr === 'ok' ? 'ok' : r.attr === 'ng' ? 'ng' : null
 }
@@ -257,13 +278,13 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
         {cp.x_pos != null && <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
         {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}</p>
-        {cp.image_path && (
-          <button onClick={e => { e.stopPropagation(); onCompare?.(cp) }} title="เทียบรูปมาตรฐานกับสภาพจริง"
-            style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0,
-              border: `1px solid ${hasEvidence ? '#e0a44a' : 'var(--border2)'}`, background: hasEvidence ? 'rgba(224,164,74,0.12)' : 'var(--bg3)', color: hasEvidence ? '#e0a44a' : 'var(--text2)' }}>
-            📷 เทียบรูป{hasEvidence ? ' 📎' : ''}
-          </button>
-        )}
+        <button onClick={e => { e.stopPropagation(); onCompare?.(cp) }} title={cp.image_path ? 'เทียบรูปมาตรฐานกับสภาพจริง' : 'ยังไม่มีรูปมาตรฐาน — ถ่ายตั้งเป็นมาตรฐานได้เลย'}
+          style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0,
+            border: `1px solid ${hasEvidence ? '#e0a44a' : cp.image_path ? 'var(--border2)' : 'var(--accent)'}`,
+            background: hasEvidence ? 'rgba(224,164,74,0.12)' : cp.image_path ? 'var(--bg3)' : 'var(--accent-dim)',
+            color: hasEvidence ? '#e0a44a' : cp.image_path ? 'var(--text2)' : 'var(--accent)' }}>
+          📷 {cp.image_path ? `เทียบรูป${hasEvidence ? ' 📎' : ''}` : 'ตั้งรูปมาตรฐาน'}
+        </button>
         <CpImage cp={cp} />
         <div style={{ display: 'flex', gap: 4 }}>
           {['ok', 'ng'].map(v => (
@@ -282,6 +303,30 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
         </p>
       )}
       {cp.type === 'note' && <input value={note} onChange={e => onChangeNote(e.target.value)} placeholder="หมายเหตุ (ถ้ามี)..." />}
+    </div>
+  )
+}
+
+// ─── Measure Row (ค่าวัดเครื่องจักร — อ่านค่าเดียว auto OK/NG) ─────────────────
+function MeasureRow({ cp, idx, r, onChange, methodIndex }) {
+  const status = measureStatus(r.mval, cp) // 'pass'|'fail'|null
+  const c = status ? STATUS_COLOR[status] : null
+  const method = methodIndex?.[cp.checking_method]
+  return (
+    <div style={S.cpRow(status)}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {cp.x_pos != null && <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
+        {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
+        <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}</p>
+        <CpImage cp={cp} />
+        {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{status === 'pass' ? '● OK' : '✕ NG'}</span>}
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input type="number" value={r.mval ?? ''} onChange={e => onChange({ ...r, mval: e.target.value })} placeholder="อ่านค่า"
+          style={{ width: 110, textAlign: 'center', fontFamily: 'monospace', border: `1px solid ${c?.border ?? 'var(--border)'}` }} />
+        {cp.unit && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{cp.unit}</span>}
+        <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 'auto' }}>เกณฑ์: <b style={{ color: 'var(--text2)' }}>{measureStdText(cp)}</b></span>
+      </div>
     </div>
   )
 }
@@ -448,7 +493,7 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
           {results.map(r => {
             const cp = cpMap[r.checkpoint_id]
             if (!cp) return null
-            const isNG = cp.type === 'variable' ? r.status === 'fail' : r.value_attribute === 'ng'
+            const isNG = (cp.type === 'variable' || cp.type === 'measure') ? r.status === 'fail' : r.value_attribute === 'ng'
             const c = r.status ? STATUS_COLOR[r.status] : null
             return (
               <div key={r.id}>
@@ -461,6 +506,11 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
                           {fmt(r.value_1)} / {fmt(r.value_2)} / {fmt(r.value_3)}
                           {r.avg_value != null && <span style={{ color: 'var(--text2)' }}> → Avg: <strong>{fmt(r.avg_value)}</strong></span>}
                           {cp.unit && <span style={{ marginLeft: 4 }}>{cp.unit}</span>}
+                        </p>
+                      ) : cp.type === 'measure' ? (
+                        <p style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace', margin: '2px 0 0' }}>
+                          อ่านค่า: <strong style={{ color: 'var(--text2)' }}>{fmt(r.value_1)}</strong>{cp.unit ? ` ${cp.unit}` : ''}
+                          <span style={{ marginLeft: 6 }}>เกณฑ์ {measureStdText(cp)}</span>
                         </p>
                       ) : (
                         <>
@@ -628,7 +678,7 @@ export default function PMCheckData() {
       const cps = data ?? []
       setCheckpoints(cps)
       const init = {}
-      cps.forEach(c => { init[c.id] = { v1: '', v2: '', v3: '', attr: '', note: '' } })
+      cps.forEach(c => { init[c.id] = { v1: '', v2: '', v3: '', attr: '', note: '', mval: '' } })
       setResults(init)
     })
     fetchHistory(selectedJig.id)
@@ -647,6 +697,10 @@ export default function PMCheckData() {
       if (cp.type === 'variable') {
         if (r.v1 === '' || r.v2 === '' || r.v3 === '') { hasEmpty = true; continue }
         if (getSpcStatus(computeAvg(r.v1, r.v2, r.v3), cp) === 'fail') hasFail = true
+      } else if (cp.type === 'measure') {
+        const s = measureStatus(r.mval, cp)
+        if (s == null) { hasEmpty = true; continue }
+        if (s === 'fail') hasFail = true
       } else {
         if (!r.attr) { hasEmpty = true; continue }
         if (r.attr === 'ng') hasFail = true
@@ -675,6 +729,10 @@ export default function PMCheckData() {
           const v3 = r.v3 !== '' ? Number(r.v3) : null
           const avg = computeAvg(r.v1, r.v2, r.v3)
           return { inspection_id: insp.id, checkpoint_id: cp.id, value_1: v1, value_2: v2, value_3: v3, avg_value: avg, value_numeric: avg, status: getSpcStatus(avg, cp) ?? (avg != null ? 'pass' : null) }
+        }
+        if (cp.type === 'measure') {
+          const mv = r.mval !== '' && r.mval != null ? Number(r.mval) : null
+          return { inspection_id: insp.id, checkpoint_id: cp.id, value_1: mv, value_numeric: mv, status: measureStatus(r.mval, cp) }
         }
         return { inspection_id: insp.id, checkpoint_id: cp.id, value_attribute: r.attr || null, status: r.attr === 'ng' ? 'fail' : r.attr === 'ok' ? 'pass' : null }
       })
@@ -706,7 +764,8 @@ export default function PMCheckData() {
       const ngTopics = checkpoints.filter(cp => {
         const r = results[cp.id]
         if (!r) return false
-        return cp.type === 'variable' ? getSpcStatus(computeAvg(r.v1, r.v2, r.v3), cp) === 'fail' : r.attr === 'ng'
+        return cp.type === 'variable' ? getSpcStatus(computeAvg(r.v1, r.v2, r.v3), cp) === 'fail'
+          : cp.type === 'measure' ? measureStatus(r.mval, cp) === 'fail' : r.attr === 'ng'
       }).map(cp => cp.name)
       handleDailyPmSave({ jig: selectedJig, department, overall, ngTopics }).catch(() => {})
       // อัปเดตป้าย "ตรวจแล้ว/รอตรวจ" ในรายการซ้ายทันที ไม่ต้องรอโหลดใหม่
@@ -714,7 +773,7 @@ export default function PMCheckData() {
 
       toast.success('บันทึกผลการตรวจสำเร็จ')
       const init = {}
-      checkpoints.forEach(c => { init[c.id] = { v1: '', v2: '', v3: '', attr: '', note: '' } })
+      checkpoints.forEach(c => { init[c.id] = { v1: '', v2: '', v3: '', attr: '', note: '', mval: '' } })
       setResults(init); setNotes('')
       fetchHistory(selectedJig.id)
       setTab('history')
@@ -728,7 +787,8 @@ export default function PMCheckData() {
   const isFormReady = checkpoints.length > 0 && checkpoints.every(cp => {
     const r = results[cp.id]
     if (!r) return false
-    return cp.type === 'variable' ? (r.v1 !== '' && r.v2 !== '' && r.v3 !== '') : r.attr !== ''
+    return cp.type === 'variable' ? (r.v1 !== '' && r.v2 !== '' && r.v3 !== '')
+      : cp.type === 'measure' ? (r.mval !== '' && r.mval != null) : r.attr !== ''
   })
 
   const deptColor = DEPT_COLORS[department] ?? '#3dd65c'
@@ -876,6 +936,8 @@ export default function PMCheckData() {
                           ) : null)
                           const row = cp.type === 'variable' ? (
                             <VariableRow cp={cp} idx={idx} r={results[cp.id] ?? { v1: '', v2: '', v3: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex} />
+                          ) : cp.type === 'measure' ? (
+                            <MeasureRow cp={cp} idx={idx} r={results[cp.id] ?? { mval: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex} />
                           ) : (
                             <AttrRow cp={cp} idx={idx} methodIndex={methodIndex}
                               value={results[cp.id]?.attr ?? ''} note={results[cp.id]?.note ?? ''}
@@ -896,7 +958,7 @@ export default function PMCheckData() {
                       })()}
                       <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="หมายเหตุ (ถ้ามี)..." style={{ marginTop: 8 }} />
                       <button onClick={handleSave} disabled={saving || !canRecord} style={{ ...S.saveBtn, opacity: (saving || !canRecord) ? 0.6 : isFormReady ? 1 : 0.75 }}>
-                        {saving ? 'กำลังบันทึก...' : !canRecord ? '🔒 ไม่มีสิทธิ์บันทึกผลตรวจ' : isFormReady ? 'บันทึกผลการตรวจ' : `บันทึก (ยังไม่ครบ ${checkpoints.filter(cp => { const r = results[cp.id]; return cp.type === 'variable' ? !(r?.v1 !== '' && r?.v2 !== '' && r?.v3 !== '') : !r?.attr }).length} จุด)`}
+                        {saving ? 'กำลังบันทึก...' : !canRecord ? '🔒 ไม่มีสิทธิ์บันทึกผลตรวจ' : isFormReady ? 'บันทึกผลการตรวจ' : `บันทึก (ยังไม่ครบ ${checkpoints.filter(cp => { const r = results[cp.id]; return cp.type === 'variable' ? !(r?.v1 !== '' && r?.v2 !== '' && r?.v3 !== '') : cp.type === 'measure' ? (r?.mval === '' || r?.mval == null) : !r?.attr }).length} จุด)`}
                       </button>
                     </>
                   )}
@@ -950,10 +1012,22 @@ export default function PMCheckData() {
         )}
         {compareCp && (
           <PhotoCompareModal
-            referenceUrl={getPublicUrl(compareCp.image_path)}
+            referenceUrl={compareCp.image_path ? getPublicUrl(compareCp.image_path) : null}
             title={compareCp.name}
             initialVerdict={results[compareCp.id]?.attr}
             onClose={() => setCompareCp(null)}
+            onSetReference={async (blob) => {
+              // ครั้งแรก: ตั้งรูปมาตรฐานให้จุดนี้เลย (ไม่ต้องไป Setup) — เก็บถาวรที่ jig_checkpoints.image_path
+              try {
+                const path = `reference/${compareCp.id}.jpg`
+                const { error: ue } = await supabaseDR.storage.from('jig-images').upload(path, blob, { upsert: true, contentType: 'image/jpeg' })
+                if (ue) throw ue
+                await supabaseDR.from('jig_checkpoints').update({ image_path: path }).eq('id', compareCp.id)
+                setCheckpoints(prev => prev.map(c => c.id === compareCp.id ? { ...c, image_path: path } : c))
+                setCompareCp(c => c ? { ...c, image_path: path } : c) // เทียบต่อได้ทันทีในโมดัลเดิม
+                toast.success('บันทึกเป็นภาพมาตรฐานแล้ว')
+              } catch (err) { toast.error('บันทึกรูปมาตรฐานไม่สำเร็จ: ' + err.message) }
+            }}
             onResult={({ verdict, blob }) => {
               setResults(prev => ({ ...prev, [compareCp.id]: { ...prev[compareCp.id], attr: verdict } }))
               setEvidenceBlobs(prev => {

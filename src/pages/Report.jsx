@@ -174,12 +174,17 @@ function useOrgDepts() {
   return orgDepts;
 }
 
-export default function Report() {
+// แท็บสกิล (index ใน TABS) แยกไปหน้า /skills-report (หมวด พนักงาน & ทักษะ — 2026-07-20)
+// component/helper ทั้งหมดยังอยู่ไฟล์นี้ — /skills-report คือ <Report mode="skills" /> กรองแท็บเท่านั้น
+const SKILL_TAB_IDXS = [5, 6, 8];
+
+export default function Report({ mode = 'report' }) {
   const location = useLocation();
   const initialParams = new URLSearchParams(location.search);
+  const tabIdxs = mode === 'skills' ? SKILL_TAB_IDXS : TABS.map((_, i) => i).filter(i => !SKILL_TAB_IDXS.includes(i));
   const initialTab = Number(initialParams.get('tab'));
   const [activeTab, setActiveTab] = useState(
-    Number.isInteger(initialTab) && initialTab >= 0 && initialTab < TABS.length ? initialTab : 0
+    tabIdxs.includes(initialTab) ? initialTab : tabIdxs[0]
   );
   const autoOpenMaster = initialParams.get('master') === '1';
 
@@ -187,17 +192,17 @@ export default function Report() {
     <div className="page-content">
       <div style={{ marginBottom: 18 }}>
         <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
-          📋 รายงาน
+          {mode === 'skills' ? '🏅 Skill Matrix & ค่าฝีมือ' : '📋 รายงาน'}
         </h2>
       </div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 20, overflowX: 'auto', flexShrink: 0 }}>
-        {TABS.map((t, i) => (
+        {tabIdxs.map((i) => (
           <button key={i} onClick={() => setActiveTab(i)} style={{
             padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap',
             background: activeTab === i ? 'var(--accent)' : 'var(--bg3)',
             color: activeTab === i ? '#fff' : 'var(--text2)',
             fontWeight: activeTab === i ? 700 : 400,
-          }}>{t}</button>
+          }}>{TABS[i]}</button>
         ))}
       </div>
       {activeTab === 0 && <DailyTab />}
