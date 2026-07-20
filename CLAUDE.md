@@ -118,6 +118,15 @@
 | `notifications` | In-app notifications | user_id, title, body, type (success/error/info), is_read, ref_table, ref_id |
 | `meeting_action_items` | Action item จากประชุมแถวเช้า (ติดตามข้ามวันจนปิด) | meeting_date, section, line_name, problem, root_cause, ref_kind/ref_id (ที่มา: downtime/defect/4m/order_miss), assignee, due_date, status (open/doing/done/cancelled) |
 
+### Layer Process Audit — LPA (FM-QMR-008 — paperless · 2026-07-20)
+| Table | คำอธิบาย | Fields สำคัญ |
+|-------|---------|-------------|
+| `lpa_questions` | คำถาม checklist (seed 23 ข้อมาตรฐาน) — `line_name` null = ทุกไลน์ · category `special` = ข้อเฝ้าระวังปัญหา (สีแดง) ผูกไลน์+ช่วง issue_start/end แสดงเฉพาะช่วงเฝ้าระวัง | category (safety/quality/systemic/visual/special), seq, question, line_name, issue_start/end, is_active |
+| `lpa_plans` | แผนตรวจรายเดือน (unique ไลน์+กะ+เดือน) | line_name, shift (day/night), month_key 'YYYY-MM', leader/supervisor/manager/gm_name, stations (list ใช้เติมแผนอัตโนมัติ) |
+| `lpa_plan_days` | รายวันของแผน: สถานีตรวจ + ชั้นที่วางแผน | plan_id (FK cascade), day 1-31, station, plan_leader/supervisor/manager/gm |
+| `lpa_audits` | ผลตรวจ 1 ครั้ง (unique ไลน์+กะ+วัน+ชั้น) | audit_date, layer (leader/supervisor/manager/gm), station, auditor_name/sig_url |
+| `lpa_audit_answers` | คำตอบรายข้อ (snapshot question_text) | audit_id (FK cascade), question_id, answer (Y/N/T/NA), note (บังคับเมื่อ N/T) |
+
 ### OJT (ใบแจ้งการอบรมสอนงาน FM-HRM-004 — paperless · 2026-07-20)
 | Table | คำอธิบาย | Fields สำคัญ |
 |-------|---------|-------------|
@@ -144,7 +153,6 @@
 | ฝ่ายผลิต | `/oee-analytics` | OEEAnalytics | ทุก role |
 | ฝ่ายผลิต | `/daily-pm` | DailyPM | ทุก role |
 | ฝ่ายผลิต | `/improvements` | Improvements (Kaizen — ดู section "Improvements") | ทุก role (manage: admin/mgr/sv/leader) |
-| ฝ่ายผลิต | `/ojt-training` | OjtTraining — ใบอบรม OJT paperless FM-HRM-004: บันทึก+เซ็นบนจอ+พิมพ์ PDF ตามฟอร์มกระดาษ (สิทธิ์บันทึก `ojt:record` = mgr/sv/leader · ลบ `ojt:delete` = mgr · scope ผู้เข้าอบรมตาม leader family/sections) | ทุก role |
 | Logistic - Store | `/line-stock` | LineStock | ทุก role |
 | Logistic - Store | `/heijunka` | HeijunkaKanban | ทุก role |
 | Logistic - Store | `/rack-center` | RackCenter | ทุก role |
@@ -159,10 +167,12 @@
 | ควบคุมคุณภาพ QA/QC | `/qa` | QualityControl | admin/manager/supervisor/leader/qa/doc_control |
 | ควบคุมคุณภาพ QA/QC | `/qa-setup` | QAInspectionSetup | admin/manager/qa |
 | ควบคุมคุณภาพ QA/QC | `/event-log` | EventLog | admin/manager/supervisor/leader/qa (CQI-15 + Approval) |
+| ควบคุมคุณภาพ QA/QC | `/lpa` | LayerProcessAudit — LPA paperless (แผนตรวจ+บันทึกผล+รายงาน FM-QMR-008 — ดู section "Layer Process Audit") | ทุก role (record: mgr/sv/leader/engineer/qa · manage: mgr/sv · delete: mgr) |
 | รายงาน | `/report` | Report | ทุก role (10 tabs + CSV export) |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/org-setup` | OrgSetup | admin |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/register` | Register | admin/manager/supervisor |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/operator` | Operator | admin/manager/supervisor/leader |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/ojt-training` | OjtTraining — ใบอบรม OJT paperless FM-HRM-004: บันทึก+เซ็นบนจอ+พิมพ์ PDF ตามฟอร์มกระดาษ (สิทธิ์บันทึก `ojt:record` = mgr/sv/leader · ลบ `ojt:delete` = mgr · scope ผู้เข้าอบรมตาม leader family/sections · ย้ายจากหมวดฝ่ายผลิตมาอยู่คู่ฐานข้อมูลพนักงาน/สกิล ตามคำสั่ง user 2026-07-20) | ทุก role |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/products` | ProductMaster | ทุก role |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/linesetup` | LineSetup | admin/manager/supervisor |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/machine-database` | MachineDatabase | admin/manager/supervisor |
@@ -422,6 +432,19 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 
 ---
 
+## Layer Process Audit — LPA paperless (2026-07-20)
+
+หน้า `/lpa` (`LayerProcessAudit.jsx`, กลุ่ม QA/QC) — แทนฟอร์มกระดาษ 2 ใบ: **Layer Process Audit Plan** (แผนตรวจรายเดือนต่อไลน์+กะ) + **Layer Process Audit Report FM-QMR-008 Rev.01** · ชั้นผู้ตรวจ 4 ชั้น: Leader ทุกวัน · Supervisor/Engineer รายสัปดาห์ (W1-W4) · Manager รายเดือน · GM รายไตรมาส
+
+- **4 แท็บ:** ✅ บันทึกผลตรวจ (ตอบ Y/N/T/NA รายข้อ + ปุ่ม "ยังไม่ตอบ=Y" · **N/T บังคับกรอกรายละเอียดปัญหา** · ลายเซ็น default จาก profiles.signature_url เซ็นใหม่ได้) · 📅 แผนตรวจ (สถานีรายวัน + ติ๊กชั้นผู้ตรวจ + **⚡ เติมแผนอัตโนมัติ**: Leader ทุกวันทำงาน วนสถานีตามลิสต์, SV วันทำงานแรกของแต่ละสัปดาห์, MGR สัปดาห์ที่ 2 — สถานะ ○ วางแผน / ● ตรวจแล้ว / ⊗ เลยกำหนด derive จาก lpa_audits ไม่เก็บซ้ำ) · 📊 รายงาน (grid คำถาม×วัน + W1-4/M/Q + ลิสต์ปัญหา N/T) · ⚙️ คำถาม (สิทธิ์ manage — คำถามมาตรฐาน + ข้อเฝ้าระวัง special ผูกไลน์+ช่วงวันที่)
+- **พิมพ์ 2 ฟอร์ม** (window.open + print): ใบแผน A4 landscape (สัญลักษณ์ ○●⊗ คอลัมน์วันหยุดเขียว สถานีแนวตั้ง) + ใบรายงาน FM-QMR-008 A3 landscape (หมวดแนวตั้ง rowspan, ข้อ special สีแดง + Issue Date, W1-4 เขียว/Monthly เทา/Quarterly เหลือง, แถว Work Station + ลายเซ็นผู้ตรวจรายวัน, legend + Effective Date 12/05/2017)
+- **วันหยุด** = ปฏิทินบริษัท (`company_calendar` มาร์คแล้วตาม day_type, ไม่มาร์ค = เสาร์/อาทิตย์หยุด) — ตรรกะเดียวกับ countWorkingDays ฝั่ง kanban
+- **Weekly mapping:** วันที่ 1-7 = W1 · 8-14 = W2 · 15-21 = W3 · 22+ = W4 (`weekOfDay`)
+- สิทธิ์: ดู = ทุก role · `lpa:record` = mgr/sv/leader/engineer/qa · `lpa:manage` (แผน+คำถาม) = mgr/sv · `lpa:delete` = mgr · Scope ไลน์: leader = family ตัวเอง, role อื่นตาม sections (pattern มาตรฐาน)
+- migration: `20260720_layer_process_audit.sql` (Main — ตาราง 5 + seed คำถาม 23 ข้อ + permission)
+
+---
+
 ## Factory Master Map — ผังรวมโรงงานผังเดียว (2026-07-16)
 
 หน้า `/factory-map` (`FactoryMap.jsx`, กลุ่มฝ่ายผลิต) — รูปผังใหญ่ของทั้งโรงงาน **1 รูป** แล้ววาด **polygon (รูปทรงอิสระ)** ล้อมพื้นที่แต่ละไลน์ ระบายสีตามสถานะการผลิตของไลน์นั้น — ดูทุกไลน์บนจอเดียว (เหมาะจอ TV)
@@ -474,6 +497,16 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - **ข้อมูลเก่า 677 ใบจาก Google Sheet ยังไม่ย้าย** (user เลือก "ย้ายทีหลัง") — ระบบเริ่มนับ MO ใหม่จาก 0
 
 ---
+
+## MTN Org Overview Map — ผังภาพรวมไลน์ + Andon 2 ระดับ (2026-07-16)
+
+แท็บ **🗺️ ภาพรวม (Org)** ในหน้า `/mtn-layout` — วาง **node ไลน์** ทับ**ผัง Facility ที่มีอยู่** (`pm_facility_areas.image_path`) เห็นสถานะทุกไลน์บนจอเดียว (เหมาะจอ TV หน้างาน MTN)
+
+- **ตาราง:** `pm_org_nodes` (DR, migration `20260716_pm_org_nodes.sql`) — line_name + pos_top/left (% ของภาพ) + area_id (ผูกผัง facility) · anon-open
+- **Andon 2 ระดับ (คนละสี ตาม Andon convention):** 🔴 **breakdown** = ไลน์มีใบซ่อม MO ค้าง (`mtn_orders` ไม่ closed/rejected) → **กระพริบแดง** (`.dt-alarm-blink`) · 🟡 **planned PM** = PM ใกล้/เกินรอบ (`overdue`/`due_soon` ของอุปกรณ์ในไลน์) → **เหลืองนิ่ง** · 🟢 ปกติ · เช็ค family ไลน์ (`getLineFamilyNames`: ไลน์แม่ครอบลูก)
+- **คลิก node → ไปผังเครื่องของไลน์นั้น** (สลับไป view production + selectedLine)
+- **แก้ผัง (สิทธิ์ `pm:setup`):** sidebar เลือกไลน์ → คลิกบนผังวาง node · ลากย้าย · ✕ ลบ · เลือกผังฐานจาก facility area ได้ถ้ามีหลายผัง
+- **refresh:** โหลดตอนเปิด view (ไม่ auto-poll — เปิดค้างจอ TV กด refresh/สลับ view เอา) · MachineFloorMap เพิ่ม prop `p.blink` (class dt-alarm-blink) + `p.icon`
 
 ## PM Photo-Compare Inspection — ตรวจสภาพเครื่องด้วยการเทียบรูป "จับผิด" (2026-07-15, เฟส 1 ทดลอง)
 
