@@ -37,7 +37,7 @@ const SHIP_STATUS = {
   shipped:   { label: '✅ ส่งแล้ว',     color: '#22c55e', next: null,        nextLabel: null },
 };
 const SHIP_RANK = { pending: 0, confirmed: 1, prepared: 2, loaded: 3, shipped: 4 };
-function ShippingTab({ fullName, refreshKey, custLabel }) {
+function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
   // มือถือ ≤768px: ชาร์ต 24 ชม.เลื่อนแนวนอนได้ + ป้ายลูกค้า sticky ซ้าย (desktop เต็มจอเดียวเหมือนเดิม)
   const isMobile = useIsMobile();
   const chartLeftW = isMobile ? 96 : 130;
@@ -54,10 +54,60 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
   const [collapsedCust, setCollapsedCust] = useState({});  // ย่อแถวลูกค้า (ข้อมูลเยอะ) — ยังเห็นจุดสถานะแบบย่อ
   const [breakPolicies, setBreakPolicies] = useState([]);  // เงาเวลาพักบนชาร์ต (มาตรฐานเดียวกับบอร์ด Heijunka)
   const [pastDue, setPastDue] = useState([]);              // ใบค้างส่งจากวันงานก่อนหน้า (ย้อน 14 วัน)
+  // ➕ คีย์ order ด่วนทีละใบ (ลูกค้า add order นอกไฟล์ EDI เช่นโทรสั่ง) — ไม่ต้องรออัพโหลด 862 รอบถัดไป
+  const [showAdd, setShowAdd] = useState(false);
+  const [addSaving, setAddSaving] = useState(false);
+  const emptyAdd = { customer: '', mat_no: '', part_name: '', qty: '', due_date: workDateStr(), ship_time: '', order_no: '', dock_code: '' };
+  const [addForm, setAddForm] = useState(emptyAdd);
+  const [prodNames, setProdNames] = useState({});          // mat_no → ชื่อพาร์ท (datalist + เติมชื่ออัตโนมัติ)
   useEffect(() => {
     supabaseDR.from('break_policies').select('*').eq('is_active', true)
       .then(({ data }) => setBreakPolicies(data || []));
+    supabaseDR.from('dr_products').select('mat_no, name').eq('is_active', true)
+      .then(({ data }) => {
+        const m = {};
+        (data || []).forEach(p => { if (!m[p.mat_no]) m[p.mat_no] = p.name; });
+        setProdNames(m);
+      });
   }, []);
+
+  const saveAddOrder = async () => {
+    const mat = addForm.mat_no.trim().toUpperCase();
+    const qty = parseFloat(addForm.qty);
+    if (!mat) { toast.error('กรอก MAT No.'); return; }
+    if (!qty || qty <= 0) { toast.error('จำนวนต้องมากกว่า 0'); return; }
+    if (!addForm.due_date) { toast.error('เลือกวันที่ส่ง'); return; }
+    setAddSaving(true);
+    const { error } = await supabaseDR.from('customer_shipping_orders').insert({
+      customer: addForm.customer.trim() || null,
+      mat_no: mat,
+      part_name: addForm.part_name.trim() || prodNames[mat] || null,
+      qty,
+      due_date: addForm.due_date,
+      ship_time: addForm.ship_time || null,
+      order_no: addForm.order_no.trim() || null,
+      dock_code: addForm.dock_code.trim() || null,
+      source: 'manual',
+    });
+    setAddSaving(false);
+    if (error) { toast.error(error.message); return; }
+    toast.success(`➕ เพิ่ม order ${mat} × ${fmt(qty)} แล้ว`);
+    setShowAdd(false);
+    setAddForm(emptyAdd);
+    if (addForm.due_date !== day && addForm.due_date >= workDateStr()) setDay(addForm.due_date);
+    else load();
+  };
+
+  // ลบได้เฉพาะใบที่คีย์มือและยังไม่เริ่ม workflow — ใบจาก EDI ให้จัดการด้วยการอัพโหลดแทนที่ตามปกติ
+  const deleteManualOrder = async (o) => {
+    if (!window.confirm(`ลบ order ${o.mat_no} × ${fmt(o.qty)} (คีย์มือ)?`)) return;
+    const { error } = await supabaseDR.from('customer_shipping_orders')
+      .delete().eq('id', o.id).eq('source', 'manual').eq('status', 'pending');
+    if (error) { toast.error(error.message); return; }
+    toast.success('ลบแล้ว');
+    setPopup(null);
+    load();
+  };
 
   const nextDayOf = (d) => { const x = new Date(`${d}T12:00:00`); x.setDate(x.getDate() + 1); return dateStr(x); };
 
@@ -286,7 +336,70 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
             ⏰ ค้างส่งจากวันก่อน {pastDue.length} ใบ — กดดู
           </button>
         )}
+        {canAdd && (
+          <button onClick={() => { setAddForm({ ...emptyAdd, due_date: day >= workDateStr() ? day : workDateStr() }); setShowAdd(true); }}
+            title="ลูกค้าสั่งเพิ่มนอกไฟล์ EDI (สั่งด่วน/โทรสั่ง) — คีย์เข้าระบบได้ทันที ไม่ต้องรออัพโหลด 862"
+            style={{ padding: '4px 12px', borderRadius: 8, border: '1px solid var(--accent)', background: 'var(--accent)', color: '#08130a', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0, marginLeft: 'auto' }}>
+            ➕ เพิ่ม order ด่วน
+          </button>
+        )}
       </div>
+
+      {/* Modal คีย์ order ด่วน — ปิดได้จากปุ่มเท่านั้น (มีฟอร์ม ห้ามปิดจาก backdrop ตาม UI-CONVENTIONS §5) */}
+      {showAdd && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, width: 'min(94vw, 460px)', maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.5)' }}>
+            <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>➕ เพิ่ม order ด่วน (คีย์มือ)</span>
+              <button onClick={() => setShowAdd(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+            </div>
+            <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6 }}>
+                สำหรับ order ที่ลูกค้าสั่งเพิ่มนอกไฟล์ EDI — ใบนี้จะเข้าชาร์ต/walkback/หัก stock เหมือน order ปกติ
+                และ<strong>ไม่ถูกแทนที่</strong>ตอนอัพโหลด 862 รอบถัดไป (แทนที่เฉพาะใบจาก EDI)
+              </div>
+              <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ลูกค้า (Ship-to)
+                  <input list="add-ord-shipto" value={addForm.customer} onChange={e => setAddForm(f => ({ ...f, customer: e.target.value.toUpperCase() }))}
+                    placeholder="GRBNA" style={inputSt} />
+                  <datalist id="add-ord-shipto">{(shipToCodes || []).map(c => <option key={c} value={c} />)}</datalist>
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>MAT No. *
+                  <input list="add-ord-mat" value={addForm.mat_no}
+                    onChange={e => { const v = e.target.value.toUpperCase(); setAddForm(f => ({ ...f, mat_no: v, part_name: prodNames[v.trim()] || f.part_name })); }}
+                    placeholder="1XXXXXXX" style={{ ...inputSt, fontFamily: 'monospace' }} />
+                  <datalist id="add-ord-mat">{Object.keys(prodNames).map(m => <option key={m} value={m} />)}</datalist>
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>จำนวน (ชิ้น) *
+                  <input type="number" min="1" value={addForm.qty} onChange={e => setAddForm(f => ({ ...f, qty: e.target.value }))} style={inputSt} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ชื่อพาร์ท
+                  <input value={addForm.part_name} onChange={e => setAddForm(f => ({ ...f, part_name: e.target.value }))} style={inputSt} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>วันที่ส่ง *
+                  <input type="date" value={addForm.due_date} onChange={e => setAddForm(f => ({ ...f, due_date: e.target.value }))} style={inputSt} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>รอบเวลาส่ง (เว้นว่าง = ⏳ ไม่ระบุ)
+                  <input type="time" value={addForm.ship_time} onChange={e => setAddForm(f => ({ ...f, ship_time: e.target.value }))} style={inputSt} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>เลขที่ PO
+                  <input value={addForm.order_no} onChange={e => setAddForm(f => ({ ...f, order_no: e.target.value }))} style={inputSt} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>Dock
+                  <input value={addForm.dock_code} onChange={e => setAddForm(f => ({ ...f, dock_code: e.target.value }))} style={inputSt} />
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button onClick={saveAddOrder} disabled={addSaving}
+                  style={{ flex: 1, padding: '10px 12px', borderRadius: 9, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: addSaving ? 0.6 : 1 }}>
+                  {addSaving ? 'กำลังบันทึก...' : '💾 เพิ่ม order'}
+                </button>
+                <button onClick={() => setShowAdd(false)} style={btn(false)}>ยกเลิก</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {orders.length === 0 ? (
         <div style={{ ...card, padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
@@ -480,6 +593,13 @@ function ShippingTab({ fullName, refreshKey, custLabel }) {
                         style={{ flex: 1, padding: '7px 8px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', fontFamily: 'var(--font-body)' }}>
                         ⬇ ไปที่การ์ด
                       </button>
+                      {canAdd && o.source === 'manual' && o.status === 'pending' && (
+                        <button onClick={() => deleteManualOrder(o)}
+                          title="ลบได้เฉพาะใบคีย์มือที่ยังไม่เริ่ม workflow"
+                          style={{ padding: '7px 10px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontFamily: 'var(--font-body)' }}>
+                          🗑
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -856,7 +976,7 @@ export default function CustomerDemand() {
         ].map(t => <button key={t.id} onClick={() => setTab(t.id)} style={btn(tab === t.id)}>{t.label}</button>)}
       </div>
 
-      {tab === 'shipping' && <ShippingTab fullName={fullName} refreshKey={refreshKey} custLabel={custLabel} />}
+      {tab === 'shipping' && <ShippingTab fullName={fullName} refreshKey={refreshKey} custLabel={custLabel} canAdd={canConfig} shipToCodes={Object.keys(shipToMap)} />}
       {tab === 'shipto' && <ShipToTab canEdit={canConfig} onChanged={() => { setRefreshKey(k => k + 1); loadShipTo(); }} />}
     </div>
   );
