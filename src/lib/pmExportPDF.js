@@ -412,7 +412,8 @@ export async function exportInspectionPDF({
       const cps = attrSubset
       const rows = cps.map((cp) => {
         const r = results[cp.id]
-        const ok = r?.value_attribute === 'ok' ? 'OK' : r?.value_attribute === 'ng' ? 'NG' : ''
+        const ok = r?.value_attribute === 'ok' ? 'OK' : r?.value_attribute === 'ng' ? 'NG'
+          : r?.status === 'pass' ? 'OK' : r?.status === 'fail' ? 'NG' : ''
         return {
           // Standard = เกณฑ์ตัดสินหลายบรรทัด (description) ถ้าไม่มีใช้ชื่อจุดแบบเดิม
           item: String(itemNoMap[cp.id]), name: cp.name, std: cp.description || cp.name, checking: '', picture: '',
