@@ -46,6 +46,7 @@ const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
+const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
 const FactoryMap = lazy(() => import('./pages/FactoryMap'));
@@ -92,6 +93,7 @@ const NAV_ITEMS = [
 
   { to: '/qa',             icon: '🔍', label: 'Quality Control Center', group: 'ควบคุมคุณภาพ QA/QC' },
   { to: '/qa-setup',       icon: '📐', label: 'มาตรฐานการตรวจ & Drawing', group: 'ควบคุมคุณภาพ QA/QC' },
+  { to: '/scrap-report',   icon: '♻️', label: 'ใบรายงานของเสีย (Scrap)', group: 'ควบคุมคุณภาพ QA/QC' },
   { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', group: 'ควบคุมคุณภาพ QA/QC' },
 
   { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'วิเคราะห์ & รายงาน' },
@@ -1009,6 +1011,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/qa" element={
                 <RoleRoute path="/qa" userRole={role}><QualityControl /></RoleRoute>
+              } />
+              <Route path="/scrap-report" element={
+                <RoleRoute path="/scrap-report" userRole={role}><ScrapReport /></RoleRoute>
               } />
               <Route path="/qa-setup" element={
                 <RoleRoute path="/qa-setup" userRole={role}><QAInspectionSetup /></RoleRoute>
