@@ -541,6 +541,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - **คลิก node → ไปผังเครื่องของไลน์นั้น** (สลับไป view production + selectedLine)
 - **แก้ผัง (สิทธิ์ `pm:setup`):** sidebar เลือกไลน์ → คลิกบนผังวาง node · ลากย้าย · ✕ ลบ · เลือกผังฐานจาก facility area ได้ถ้ามีหลายผัง
 - **refresh:** โหลดตอนเปิด view (ไม่ auto-poll — เปิดค้างจอ TV กด refresh/สลับ view เอา) · MachineFloorMap เพิ่ม prop `p.blink` (class dt-alarm-blink) + `p.icon`
+- **ตั้งค่ารูปผังฐาน:** จัดการได้ที่ **ตั้งค่าโปรแกรม → LineSetup** (การ์ด 🗺️ ผังโรงงาน = component `FactoryPlanManager` — CRUD `pm_facility_areas` ชุดเดียวกับ MTN facility tab · แก้ที่ไหนก็ได้) ตามคำสั่ง user 2026-07-16 (รวมที่ตั้งรูปผังไว้ที่เดียวเหมือนผังไลน์) · MTN facility tab ยังอัปได้เพราะใช้รูปเดียวกันวางอุปกรณ์ facility
 
 ## PM Photo-Compare Inspection — ตรวจสภาพเครื่องด้วยการเทียบรูป "จับผิด" (2026-07-15, เฟส 1 ทดลอง)
 

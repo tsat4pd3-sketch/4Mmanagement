@@ -6,6 +6,7 @@ import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { markerScale } from '../utils/markerScale';
 import { toast } from '../components/Toast';
+import FactoryPlanManager from '../components/FactoryPlanManager';
 
 // ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร → WIP (ตามลำดับ 4M: Man, Machine, Material)
 // ให้ตรงกับปุ่ม filter MAN/MACHINE/WIP ที่หน้า Management — UI-CONVENTIONS §1
@@ -710,6 +711,7 @@ export default function LineSetup() {
 
   return (
     <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12, height: isMobile ? 'auto' : 'calc(100vh - 40px)' }}>
+      <FactoryPlanManager canEdit={can('pm', 'setup', role) || role === 'admin'} />
       {selectedLine && (
         // paddingRight เว้นที่ให้กระดิ่งแจ้งเตือน (fixed มุมขวาบน) — ไม่งั้นปุ่ม 🏷️ ที่ชิดขวาสุดโดนกระดิ่งทับ
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, paddingRight: 52 }}>
