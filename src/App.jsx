@@ -42,10 +42,12 @@ const PmForecast  = lazy(() => import('./pages/PmForecast'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
 const LayerProcessAudit = lazy(() => import('./pages/LayerProcessAudit'));
+const DocFormsRegistry = lazy(() => import('./pages/DocFormsRegistry'));
 const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
+const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
 const FactoryMap = lazy(() => import('./pages/FactoryMap'));
@@ -63,14 +65,15 @@ const NAV_ITEMS = [
   { to: '/',            icon: '🏠', label: 'หน้าหลัก',           group: 'ภาพรวม' },
   // 🎮 /remote ตั้งใจไม่อยู่ในเมนูหมวด — คู่กับปุ่ม 📺 รับรีโมทจอ ที่โซนล่างของ sidebar (ดู Sidebar)
 
-  // Dashboard ย้ายจากหมวด "ภาพรวม" → "ฝ่ายผลิต" (คำสั่ง user 2026-07-12 — เนื้อหาส่วนใหญ่เป็นรายละเอียดฝ่ายผลิต)
-  { to: '/dashboard',   icon: '📊', label: 'Dashboard',           group: 'ฝ่ายผลิต' },
-  { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ฝ่ายผลิต' },
+  // จัดหมวดเมนูใหม่ทั้งระบบ 2026-07-20 (คำสั่ง user): ภาพรวม = จอแสดงผล/ผู้บริหาร · ฝ่ายผลิต = งานประจำวัน
+  // · วิเคราะห์ & รายงาน · พนักงาน & ทักษะ (ใหม่ — รวมเรื่องคนที่เคยกระจาย 3 หมวด)
+  { to: '/dashboard',   icon: '📊', label: 'Dashboard',           group: 'ภาพรวม' },
+  { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
   { to: '/daily-report',   icon: '📊', label: 'Daily Report',      group: 'ฝ่ายผลิต' },
-  { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'ฝ่ายผลิต' },
+  { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'วิเคราะห์ & รายงาน' },
   { to: '/daily-pm',       icon: '✅', label: 'Daily PM ฝ่ายผลิต',   group: 'ฝ่ายผลิต' },
   { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
   { to: '/lpa',            icon: '📋', label: 'Layer Process Audit', group: 'ฝ่ายผลิต' },
@@ -91,24 +94,29 @@ const NAV_ITEMS = [
 
   { to: '/qa',             icon: '🔍', label: 'Quality Control Center', group: 'ควบคุมคุณภาพ QA/QC' },
   { to: '/qa-setup',       icon: '📐', label: 'มาตรฐานการตรวจ & Drawing', group: 'ควบคุมคุณภาพ QA/QC' },
+  { to: '/scrap-report',   icon: '♻️', label: 'ใบรายงานของเสีย (Scrap)', group: 'ควบคุมคุณภาพ QA/QC' },
   { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', group: 'ควบคุมคุณภาพ QA/QC' },
 
-  { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'รายงาน' },
+  { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'วิเคราะห์ & รายงาน' },
 
   { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/ojt-training', icon: '📖', label: 'อบรมสอนงาน OJT',   group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      group: 'พนักงาน & ทักษะ' },
+  { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  group: 'พนักงาน & ทักษะ' },
+  { to: '/ojt-training', icon: '📖', label: 'อบรมสอนงาน OJT',   group: 'พนักงาน & ทักษะ' },
+  { to: '/skills-report', icon: '🏅', label: 'Skill Matrix & ค่าฝีมือ', group: 'พนักงาน & ทักษะ' },
   { to: '/products',        icon: '🔩', label: 'Product Master',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'พนักงาน & ทักษะ' },
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/doc-forms',   icon: '📄', label: 'ทะเบียนเอกสาร & ฟอร์ม', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  // จัดการผู้ใช้งาน ย้ายเข้าหมวดตั้งค่าฯ (คำสั่ง user 2026-07-20) — เดิมเป็นลิงก์พิเศษลอยท้าย sidebar
+  { to: '/add-user',    icon: '🔑', label: 'จัดการผู้ใช้งาน',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
 ];
 
-export const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'รายงาน', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
+export const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
 
 // เมนูจริงของหมวด sidebar สำหรับ DeptHub — การ์ดหน้าหลักดึงไปแสดงเป็นชิปที่คลิกเข้าหน้าได้เลย
 // อิง NAV_ITEMS ตัวเดียวกับ sidebar เสมอ (single source of truth — ห้ามพิมพ์รายชื่อเมนูซ้ำใน DeptHub)
@@ -221,6 +229,9 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
   const [sigUrl,        setSigUrl]        = useState(userSignatureUrl);
   const [pwdModalOpen,  setPwdModalOpen]  = useState(false);
+  // เมนูโปรไฟล์ท้าย sidebar (ลายเซ็น/รหัสผ่าน/รีโมท/ธีม/ออกจากระบบ) พับได้ — default ซ่อน ลดความรก
+  const [footerOpen, setFooterOpen] = useState(() => { try { return localStorage.getItem('sb_footer_open') === '1'; } catch { return false; } });
+  const toggleFooter = () => setFooterOpen(v => { try { localStorage.setItem('sb_footer_open', v ? '0' : '1'); } catch { /* private mode */ } return !v; });
   const [collapsedGroups, setCollapsedGroups] = useState(() => {
     try { return JSON.parse(localStorage.getItem('nav_collapsed_groups') || '{}'); } catch { return {}; }
   });
@@ -328,31 +339,16 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             );
           })}
 
-          {canAccessPage('/add-user', userRole) && (
-            <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6 }}>
-              <Link
-                to="/add-user"
-                className="nav-link"
-                style={location.pathname === '/add-user'
-                  ? { background: 'var(--accent2-dim)', color: 'var(--accent2)' }
-                  : { color: 'var(--accent2)' }}
-                onClick={() => isMobile && onClose()}
-              >
-                <span style={{ fontSize: 15 }}>🔑</span>
-                <span style={{ whiteSpace: 'nowrap' }}>จัดการผู้ใช้งาน</span>
-              </Link>
-            </div>
-          )}
         </div>
 
         {/* Footer: User info + Theme toggle + Logout */}
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {/* User info card */}
-          <div style={{
+          {/* User info card — คลิกเพื่อกาง/พับเมนูโปรไฟล์ด้านล่าง */}
+          <div onClick={toggleFooter} title={footerOpen ? 'พับเมนูโปรไฟล์' : 'กางเมนูโปรไฟล์ (ลายเซ็น/รหัสผ่าน/ธีม/ออกจากระบบ)'} style={{
             display: 'flex', alignItems: 'center', gap: 8,
             padding: '8px 10px', borderRadius: 8,
             background: 'var(--bg3)', border: '1px solid var(--border2)',
-            marginBottom: 2,
+            marginBottom: 2, cursor: 'pointer', userSelect: 'none',
           }}>
             {userAvatarUrl ? (
               <img src={userAvatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1.5px solid var(--accent)' }} />
@@ -394,7 +390,12 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             }}>
               {userRole?.toUpperCase() ?? 'ADMIN'}
             </div>
+            {/* กำลังรับรีโมทอยู่แต่เมนูพับ — โชว์ 📺 บอกสถานะไว้บนการ์ด */}
+            {!footerOpen && remoteCode && <span style={{ fontSize: 12, flexShrink: 0 }} title={`รับรีโมทอยู่ · ${remoteCode}`}>📺</span>}
+            <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>{footerOpen ? '▾' : '▸'}</span>
           </div>
+
+          {footerOpen && (<>
 
           <button
             onClick={() => setSigModalOpen(true)}
@@ -472,6 +473,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             <span style={{ fontSize: 15 }}>🚪</span>
             <span style={{ whiteSpace: 'nowrap' }}>ออกจากระบบ</span>
           </button>
+          </>)}
         </div>
       </nav>
       <SignatureModal
@@ -952,6 +954,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/report"     element={
                 <RoleRoute path="/report" userRole={role}><Report /></RoleRoute>
               } />
+              <Route path="/skills-report" element={
+                <RoleRoute path="/skills-report" userRole={role}><Report mode="skills" /></RoleRoute>
+              } />
               <Route path="/register"   element={
                 <RoleRoute path="/register" userRole={role}><Register /></RoleRoute>
               } />
@@ -997,6 +1002,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/lpa" element={
                 <RoleRoute path="/lpa" userRole={role}><LayerProcessAudit /></RoleRoute>
               } />
+              <Route path="/doc-forms" element={
+                <RoleRoute path="/doc-forms" userRole={role}><DocFormsRegistry /></RoleRoute>
+              } />
               <Route path="/morning-meeting" element={
                 <RoleRoute path="/morning-meeting" userRole={role}><MorningMeeting /></RoleRoute>
               } />
@@ -1008,6 +1016,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/qa" element={
                 <RoleRoute path="/qa" userRole={role}><QualityControl /></RoleRoute>
+              } />
+              <Route path="/scrap-report" element={
+                <RoleRoute path="/scrap-report" userRole={role}><ScrapReport /></RoleRoute>
               } />
               <Route path="/qa-setup" element={
                 <RoleRoute path="/qa-setup" userRole={role}><QAInspectionSetup /></RoleRoute>

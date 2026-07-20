@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { loadDocForms, docFormSync, fullCode } from '../utils/docForms';
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, Tooltip,
@@ -154,6 +155,8 @@ const groupSkillsByCategory = (defs) =>
     .map(([k, m]) => ({ key: k, ...m, skills: defs.filter(s => (s.category || 'hard_skill') === k) }))
     .filter(g => g.skills.length > 0);
 
+loadDocForms(); // ทะเบียนเอกสาร — ฟอร์ม Multi-Skill / ใบประเมินรายบุคคล อ่านผ่าน docFormSync
+
 const lbSt = { fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 4, display: 'block' };
 
 function useOrgSections() {
@@ -174,12 +177,17 @@ function useOrgDepts() {
   return orgDepts;
 }
 
-export default function Report() {
+// แท็บสกิล (index ใน TABS) แยกไปหน้า /skills-report (หมวด พนักงาน & ทักษะ — 2026-07-20)
+// component/helper ทั้งหมดยังอยู่ไฟล์นี้ — /skills-report คือ <Report mode="skills" /> กรองแท็บเท่านั้น
+const SKILL_TAB_IDXS = [5, 6, 8];
+
+export default function Report({ mode = 'report' }) {
   const location = useLocation();
   const initialParams = new URLSearchParams(location.search);
+  const tabIdxs = mode === 'skills' ? SKILL_TAB_IDXS : TABS.map((_, i) => i).filter(i => !SKILL_TAB_IDXS.includes(i));
   const initialTab = Number(initialParams.get('tab'));
   const [activeTab, setActiveTab] = useState(
-    Number.isInteger(initialTab) && initialTab >= 0 && initialTab < TABS.length ? initialTab : 0
+    tabIdxs.includes(initialTab) ? initialTab : tabIdxs[0]
   );
   const autoOpenMaster = initialParams.get('master') === '1';
 
@@ -187,17 +195,17 @@ export default function Report() {
     <div className="page-content">
       <div style={{ marginBottom: 18 }}>
         <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
-          📋 รายงาน
+          {mode === 'skills' ? '🏅 Skill Matrix & ค่าฝีมือ' : '📋 รายงาน'}
         </h2>
       </div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 20, overflowX: 'auto', flexShrink: 0 }}>
-        {TABS.map((t, i) => (
+        {tabIdxs.map((i) => (
           <button key={i} onClick={() => setActiveTab(i)} style={{
             padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap',
             background: activeTab === i ? 'var(--accent)' : 'var(--bg3)',
             color: activeTab === i ? '#fff' : 'var(--text2)',
             fontWeight: activeTab === i ? 700 : 400,
-          }}>{t}</button>
+          }}>{TABS[i]}</button>
         ))}
       </div>
       {activeTab === 0 && <DailyTab />}
@@ -2899,7 +2907,7 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
   </div>
   <div style="margin-top:6px;font-size:8px;color:#555">พิมพ์วันที่ ${today} · จำนวนพนักงาน ${totalEmps} คน</div>
 </div>
-<div style="text-align:right;font-size:8px;color:#666;margin-top:2px">FM-PD1-017</div>
+<div style="text-align:right;font-size:8px;color:#666;margin-top:2px">${fullCode(docFormSync('multi_skill', { form_code: 'FM-PD1-017' }))}${docFormSync('multi_skill', {}).effective_date ? ' · Effective Date : ' + docFormSync('multi_skill', {}).effective_date : ''}</div>
 <script>window.onload = () => { window.print(); }</script></body></html>`;
 }
 
@@ -3151,7 +3159,7 @@ function buildIndividualSkillHtml({ emp, skillDefs, subItemsByskill, dept, asses
       </div>
     </td>
   </tr></table>
-  <div style="text-align:right;font-size:8px;color:#666;margin-top:3px">F-PRS-P1-119-0</div>
+  <div style="text-align:right;font-size:8px;color:#666;margin-top:3px">${fullCode(docFormSync('individual_skill', { form_code: 'F-PRS-P1-119-0' }))}${docFormSync('individual_skill', {}).effective_date ? ' · Effective Date : ' + docFormSync('individual_skill', {}).effective_date : ''}</div>
 </div>
 <script>window.onload = () => { window.print(); }</script></body></html>`;
 }
@@ -3596,9 +3604,16 @@ const EmptyRow = ({ cols }) => (
   <tr><td colSpan={cols} style={{ textAlign: 'center', padding: '20px 0', color: 'var(--muted)', fontSize: 12 }}>ไม่มีข้อมูล</td></tr>
 );
 
-const Thumb = ({ src }) => (
-  <img src={src || 'https://via.placeholder.com/40'} alt="" style={{ width: 38, height: 38, borderRadius: 8, objectFit: 'cover', border: '1px solid var(--border2)' }} />
-);
+// รูปพนักงาน — ไม่มีรูป (image_url null) หรือไฟล์โหลดไม่ได้ ให้แสดง placeholder 👤 ในเครื่อง
+// ห้าม fallback เป็น URL ภายนอก (เดิมใช้ via.placeholder.com ซึ่งบริการถูกปิด → รูปแตกทุกคนที่ไม่มีรูป)
+const Thumb = ({ src }) => {
+  const [failed, setFailed] = useState(false);
+  const box = { width: 38, height: 38, borderRadius: 8, border: '1px solid var(--border2)', flexShrink: 0 };
+  if (!src || failed) {
+    return <div style={{ ...box, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>👤</div>;
+  }
+  return <img src={src} alt="" onError={() => setFailed(true)} style={{ ...box, objectFit: 'cover' }} />;
+};
 
 const StatusBadge = ({ ok, label }) => (
   <span style={{

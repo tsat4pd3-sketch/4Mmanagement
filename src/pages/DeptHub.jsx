@@ -102,8 +102,8 @@ const DEPT_CSS = `
     display: grid; gap: clamp(12px, 1.6vw, 20px);
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   }
-  @media (min-width: 1200px) { .hub-grid { grid-template-columns: repeat(3, 1fr); } }
-  @media (min-width: 1900px) { .hub-grid { grid-template-columns: repeat(6, 1fr); } }
+  @media (min-width: 1200px) { .hub-grid { grid-template-columns: repeat(4, 1fr); } }
+  @media (min-width: 1900px) { .hub-grid { grid-template-columns: repeat(4, 1fr); } }
   /* มือถือ ≤768px: top bar (ชื่อ user/ธีม/ออกจากระบบ) เลิกลอย absolute — กลับเข้า flow ชิดขวา
      กันทับหัวข้อ (desktop ไม่เปลี่ยน: media ไม่ match) */
   @media (max-width: 768px) {
@@ -111,7 +111,7 @@ const DEPT_CSS = `
   }
 `;
 
-// 6 หมวดตรงกับกลุ่มเมนูใน sidebar — เมนูย่อยบนการ์ดดึงจาก NAV_ITEMS ผ่าน navGroups อัตโนมัติ
+// 7 หมวดตรงกับกลุ่มเมนูใน sidebar (จัดหมวดใหม่ 2026-07-20) — เมนูย่อยบนการ์ดดึงจาก NAV_ITEMS ผ่าน navGroups อัตโนมัติ
 // (ห้ามพิมพ์รายชื่อเมนูซ้ำที่นี่ — เคยมี list มือแล้ว drift ไม่ตรงกับ sidebar)
 const DEPTS = [
   {
@@ -132,17 +132,22 @@ const DEPTS = [
   {
     key: 'qa', code: 'QUA·04', label: 'Quality QA/QC', labelTh: 'ควบคุมคุณภาพ', icon: '🔍',
     color: '#4d9fff', route: '/qa', navGroups: ['ควบคุมคุณภาพ QA/QC'], available: true,
-    desc: 'Quality Control Center, มาตรฐานการตรวจ & Drawing, CQI-15',
+    desc: 'Quality Control Center, มาตรฐานการตรวจ & Drawing, ใบรายงานของเสีย, CQI-15',
   },
   {
-    key: 'report', code: 'RPT·05', label: 'Reports', labelTh: 'รายงาน', icon: '📋',
-    color: '#c084fc', route: '/report', navGroups: ['รายงาน'], available: true,
-    desc: 'รายงานเช็คชื่อ/สรุป, อนุมัติ 4M, Skill Matrix, เอกสาร HR (PDF/CSV)',
+    key: 'report', code: 'RPT·05', label: 'Analytics & Reports', labelTh: 'วิเคราะห์ & รายงาน', icon: '📋',
+    color: '#c084fc', route: '/report', navGroups: ['วิเคราะห์ & รายงาน'], available: true,
+    desc: 'OEE Analytics, รายงานเช็คชื่อ/สรุป, อนุมัติ 4M, จองรถ OT (PDF/CSV)',
   },
   {
-    key: 'settings', code: 'SET·06', label: 'Master Data & Settings', labelTh: 'ตั้งค่าโปรแกรม, ฐานข้อมูล', icon: '🛠️',
+    key: 'people', code: 'HRM·06', label: 'People & Skills', labelTh: 'พนักงาน & ทักษะ', icon: '👥',
+    color: '#22d3ee', route: '/operator', navGroups: ['พนักงาน & ทักษะ'], available: true,
+    desc: 'ฐานข้อมูลพนักงาน, สกิล & Level Up, OJT, Skill Matrix, ตารางกะ',
+  },
+  {
+    key: 'settings', code: 'SET·07', label: 'Master Data & Settings', labelTh: 'ตั้งค่าโปรแกรม, ฐานข้อมูล', icon: '🛠️',
     color: '#34d399', route: '/products', navGroups: ['ตั้งค่าโปรแกรม,ฐานข้อมูล'], available: true,
-    desc: 'Product Master, พนักงาน, ผังไลน์, เครื่องจักร, ตารางกะ, สิทธิ์',
+    desc: 'Product Master, ผังไลน์, เครื่องจักร, ปฏิทิน, สิทธิ์, แจ้งเตือน',
   },
 ];
 

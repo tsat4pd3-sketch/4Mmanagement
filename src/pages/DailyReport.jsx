@@ -10,6 +10,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { MTN_TEAMS, teamForItem } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
+import EventComments from '../components/EventComments';
 
 // โหลดโลโก้บริษัท (เหมือนหน้าเว็บ) เป็น base64 ครั้งเดียวสำหรับฝัง PDF
 let tsLogoDataUrlPromise = null;
@@ -180,6 +181,7 @@ function LiveTab({ role }) {
   const [sessions, setSessions]     = useState([]);
   const [overdueAlert, setOverdueAlert] = useState([]);
   const [dtLogs, setDtLogs]         = useState([]);
+  const [dtCmOpen, setDtCmOpen]     = useState(null); // id ของ DT ที่กางแผงคอมเมนต์อยู่
   const [selSession, setSelSession] = useState(null);
   const [loading, setLoading]       = useState(true);
   // CT overage history — keyed by mat_no: { checked, overCount, ctSec, avgObservedCt } จากกะปิดล่าสุดของไลน์เดียวกัน
@@ -1951,6 +1953,7 @@ function LiveTab({ role }) {
     const dtType = dtTypes.find(t => t.id === d.downtime_type_id);
     const mcName = machines.find(m => m.machine_no === d.machine_no)?.machine_name || '';
     notifyDowntime({
+      id: d.id, // ให้ send-notification จำ message_id ผูกรายการนี้ — reply ใน Telegram = คอมเมนต์
       line_name: selSession.line_name, shift: selSession.shift, work_date: selSession.work_date,
       machine_no: d.machine_no, machine_name: mcName,
       type_name: dtType?.name_th || '', category: dtType?.category || '',
@@ -2542,7 +2545,8 @@ function LiveTab({ role }) {
                 {dtLogs.map(d => {
                   const cat = CAT_META[d.dr_downtime_types?.category] || CAT_META.unplanned;
                   return (
-                    <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${d.dr_downtime_types?.color || '#aaa'}` }}>
+                    <div key={d.id}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${d.dr_downtime_types?.color || '#aaa'}` }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
                           <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: cat.bg, color: cat.color }}>{cat.label}</span>
@@ -2572,6 +2576,12 @@ function LiveTab({ role }) {
                       {canScan && can('mtn_repair', 'report', role) && (
                         <button onClick={() => openMoPicker(d)} title="เปิดใบแจ้งซ่อม MO (7 ขั้น) จากรายการนี้" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: '#7c6cf0', border: 'none', borderRadius: 20, padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>📝 เปิดใบซ่อม</button>
                       )}
+                      {/* 💬 คอมเมนต์ใต้รายการ downtime — คุยหน้างาน/ส่งต่อกะ + mention แจ้งเตือน */}
+                      <button className="tbtn" onClick={() => setDtCmOpen(v => v === d.id ? null : d.id)}
+                        title="คอมเมนต์/ส่งต่อข้อมูลรายการนี้"
+                        style={{ fontSize: 12, background: dtCmOpen === d.id ? 'var(--accent-dim)' : 'none', border: `1px solid ${dtCmOpen === d.id ? 'var(--accent)' : 'var(--border2)'}`, borderRadius: 20, color: dtCmOpen === d.id ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', padding: '3px 10px', whiteSpace: 'nowrap' }}>
+                        💬
+                      </button>
                       {canEditRecords && (
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button onClick={() => {
@@ -2595,6 +2605,11 @@ function LiveTab({ role }) {
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
                         </div>
                       )}
+                    </div>
+                    {dtCmOpen === d.id && (
+                      <EventComments refKind="downtime" refId={d.id}
+                        contextLabel={`Downtime ${d.dr_downtime_types?.name_th || ''}${d.machine_no ? ` (${d.machine_no})` : ''}`} />
+                    )}
                     </div>
                   );
                 })}

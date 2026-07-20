@@ -97,6 +97,28 @@ async function sendTelegram(message: string, chatId?: string | string[] | null):
   return results.some(Boolean);
 }
 
+// ส่งแบบจำ message_id — ใช้กับ event ที่มี ref (reply ใน Telegram → คอมเมนต์ใบงานผ่าน telegram-webhook)
+// แยกจาก sendTelegram เดิมโดยตั้งใจ: event อื่นพฤติกรรมเดิมเป๊ะ · ล้มเงียบ ห้ามทำการแจ้งเตือนพัง
+async function sendTelegramTracked(message: string, chatId: string | string[] | null | undefined, refKind: string, refId: unknown, event: string): Promise<boolean> {
+  const chats = chatList(chatId);
+  if (!BOT_TOKEN || !chats.length) return false;
+  const res = await Promise.all(chats.map((chat) =>
+    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chat, text: message, parse_mode: 'HTML' }),
+    }).then(async (r) => (r.ok ? { chat, message_id: (await r.json())?.result?.message_id as number } : null)).catch(() => null)));
+  const sent = res.filter((x): x is { chat: string; message_id: number } => !!x?.message_id);
+  if (refId && sent.length) {
+    try {
+      await supabase.from('telegram_sent_messages').upsert(
+        sent.map((s) => ({ chat_id: s.chat, message_id: s.message_id, ref_kind: refKind, ref_id: String(refId), event })),
+        { onConflict: 'chat_id,message_id', ignoreDuplicates: true },
+      );
+    } catch { /* migration ยังไม่ apply — ข้าม */ }
+  }
+  return sent.length > 0;
+}
+
 async function sendTelegramPhoto(photoUrl: string, caption: string, chatId?: string | string[] | null) {
   const chats = chatList(chatId);
   if (!BOT_TOKEN || !chats.length) return;
@@ -311,7 +333,8 @@ Deno.serve(async (req) => {
         shift_label: shiftLabel, work_date: d.work_date, type_name: d.type_name || '-',
         description: d.description || '', reported_by: d.reported_by || '-', start_time: d.start_time || '',
       }, lines.join('\n'));
-      await sendTelegram(message, chat).catch(console.error);
+      if (d.id) await sendTelegramTracked(message, chat, 'downtime', d.id, 'downtime_call_mtn').catch(console.error);
+      else await sendTelegram(message, chat).catch(console.error);
       return json({ ok: true });
     }
 
@@ -337,7 +360,8 @@ Deno.serve(async (req) => {
         shift_label: shiftLabel, work_date: d.work_date, type_name: d.type_name || '-',
         open_min: d.open_min ?? '', description: d.description || '', reported_by: d.reported_by || '-', start_time: d.start_time || '',
       }, lines.join('\n'));
-      await sendTelegram(message, chat).catch(console.error);
+      if (d.id) await sendTelegramTracked(message, chat, 'downtime', d.id, 'downtime_open_15min').catch(console.error);
+      else await sendTelegram(message, chat).catch(console.error);
       return json({ ok: true });
     }
 
