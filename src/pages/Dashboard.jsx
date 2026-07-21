@@ -246,6 +246,7 @@ export default function Dashboard() {
   // วันที่ของ Heijunka Board — เลือกดูย้อนหลังได้ (default = วันงานปัจจุบัน)
   const [boardDate,     setBoardDate]     = useState(() => getWorkDateStr(new Date()));
   const [lineByMat,     setLineByMat]     = useState({});   // mat_no → line_name (จาก dr_products)
+  const [pairMatByMat,  setPairMatByMat]  = useState({});   // mat_no → pair_mat_no (งานคู่ RH/LH — แม่พิมพ์คู่)
   const [ediOrders,     setEdiOrders]     = useState([]);   // รอบส่งลูกค้า (EDI 862) วันนี้+พรุ่งนี้ ที่ยังไม่ส่ง
   const [fgStockByMat,  setFgStockByMat]  = useState({});   // mat_no → stock FG พร้อมส่งรวมทุกคลัง
 
@@ -257,7 +258,7 @@ export default function Dashboard() {
         .select('id, line_name, shift, status, work_date, start_time, created_at, dr_products(name, target_per_shift, cycle_time_sec, process_type)')
         .eq('work_date', boardDate),
       supabaseDR.from('break_policies').select('*').eq('is_active', true),
-      supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, image_url, line_name').not('mat_no', 'is', null),
+      supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, image_url, line_name, pair_mat_no').not('mat_no', 'is', null),
     ]);
     // production_sessions.product_id ไม่ได้ตั้งค่าเสมอ (กะนึงมีได้หลาย mat_no) — ใช้ map นี้
     // เป็น fallback หา cycle_time_sec รายออเดอร์จาก mat_no ตรง ๆ แทนการพึ่ง session.dr_products
@@ -265,14 +266,17 @@ export default function Dashboard() {
     const nameMap = {};
     const imgMap = {};
     const lineMap = {};
+    const pairMap = {};
     (products || []).forEach(p => {
       ctMap[p.mat_no] = p.cycle_time_sec || 0; nameMap[p.mat_no] = p.name || ''; imgMap[p.mat_no] = p.image_url || '';
       if (p.line_name) lineMap[p.mat_no] = p.line_name;
+      if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no;   // งานคู่ RH/LH (แม่พิมพ์คู่ ปั๊มทีเดียวได้ทั้งคู่)
     });
     setCtByMatNo(ctMap);
     setNameByMatNo(nameMap);
     setImgByMatNo(imgMap);
     setLineByMat(lineMap);
+    setPairMatByMat(pairMap);
     setBreakPolicies(breakPolicies || []);
     // 📡 รอบส่งลูกค้า (EDI 862) ของวันนี้→พรุ่งนี้ ที่ยังไม่ส่ง — ใช้พยากรณ์กะดึกล่วงหน้าแม้ยังไม่เปิดใบผลิต
     {
@@ -1482,9 +1486,20 @@ export default function Dashboard() {
                     // ทั้งที่ไลน์ไม่ parallel) · แยกคิวเฉพาะคนละ sub-line (line_name ต่างกัน = คนละเครื่อง วิ่งขนานได้จริง)
                     const positionedByOrder = new Map();
                     {
-                      const byLine = {};
-                      productRows.forEach(r => r.cards.forEach(c => { (byLine[c.line_name || ''] ||= []).push(c); }));
-                      Object.values(byLine).forEach(cs => {
+                      // งานคู่ RH/LH (pair_mat_no ตั้งใน Product Master) ปั๊มด้วยแม่พิมพ์คู่ = ทำพร้อมกัน (parallel)
+                      // → แยกคู่ที่มีทั้งสองพาร์ทอยู่ในไลน์เดียวกันเป็น "เลนของตัวเอง" คนละคิว เริ่มพร้อมกัน แถบจึงตรงกัน
+                      // (พาร์ทไม่มีคู่ยังรวมคิวไลน์เดียวเรียงต่อกันเหมือนเดิม — 1 ไลน์ทีละใบ · 2026-07-21)
+                      const matsInLine = {}; // line → Set(mat_no) ที่มีการ์ดจริง
+                      productRows.forEach(r => r.cards.forEach(c => { (matsInLine[c.line_name || ''] ||= new Set()).add(c.mat_no); }));
+                      const laneKeyOf = (c) => {
+                        const line = c.line_name || '';
+                        const pm = pairMatByMat[c.mat_no];
+                        const paired = pm && matsInLine[line]?.has(pm); // คู่ของมันอยู่ในไลน์นี้ด้วยจริง
+                        return paired ? `${line}||${c.mat_no}` : line;
+                      };
+                      const byLane = {};
+                      productRows.forEach(r => r.cards.forEach(c => { (byLane[laneKeyOf(c)] ||= []).push(c); }));
+                      Object.values(byLane).forEach(cs => {
                         computeQueuedPositionsFull(cs).forEach(item => positionedByOrder.set(item.o.id ?? item.o.prod_no, item));
                       });
                     }
