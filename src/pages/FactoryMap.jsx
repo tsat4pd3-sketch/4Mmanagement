@@ -48,8 +48,13 @@ export default function FactoryMap() {
   const [drawing, setDrawing] = useState(false);
   const [draft, setDraft] = useState([]);            // จุดที่กำลังวาด [[x,y]...]
   const [hoverPt, setHoverPt] = useState(null);       // ตำแหน่งเมาส์ระหว่างวาด (preview เส้น)
+  const [snapFirst, setSnapFirst] = useState(false);  // แม่เหล็กดูดจุดแรกอยู่ (ปล่อยคลิก = ปิดรูป)
+  const [assignFor, setAssignFor] = useState(null);   // polygon ที่วาดเสร็จ รอเลือกไลน์ (dropdown)
+  const [assignLine, setAssignLine] = useState('');
   const wrapRef = useRef(null);
   const dragRef = useRef(null);                       // { id, vi:number|-1, px, py, base:[[x,y]...] }
+  const shiftRef = useRef(false);
+  const lastRawRef = useRef(null);                    // ตำแหน่งเมาส์ดิบล่าสุด (ไว้คำนวณใหม่ตอนกด/ปล่อย Shift)
 
   /* ── โหลดผัง + รูปทรง + ไลน์ ── */
   const loadMap = useCallback(async () => {
@@ -131,19 +136,39 @@ export default function FactoryMap() {
 
   const assignableLines = () => lines.map(l => l.name).filter(n => !regions.some(r => r.line_name === n));
 
-  /* ── วาดรูปทรงใหม่: คลิกทีละจุด, คลิกใกล้จุดแรก/กดเสร็จ = ปิดรูป ── */
+  /* ── หาจุดที่จะวาง: แม่เหล็กดูดจุดแรก (ปิดรูป) > Shift ตั้งฉากจากจุดล่าสุด > ปกติ ── */
+  const resolveDrawPoint = (p, shift) => {
+    if (draft.length >= 3) {
+      const f = draft[0];
+      if (Math.hypot(f[0] - p.x, f[1] - p.y) < 3) return { pt: [f[0], f[1]], snap: true };
+    }
+    if (shift && draft.length) {
+      const last = draft[draft.length - 1];
+      return Math.abs(p.x - last[0]) >= Math.abs(p.y - last[1])
+        ? { pt: [round(p.x), last[1]], snap: false }   // ล็อกแนวนอน (y เท่าจุดเดิม)
+        : { pt: [last[0], round(p.y)], snap: false };  // ล็อกแนวตั้ง (x เท่าจุดเดิม)
+    }
+    return { pt: [round(p.x), round(p.y)], snap: false };
+  };
+
+  /* ── วาดรูปทรงใหม่: คลิกทีละจุด · แม่เหล็กใกล้จุดแรก/กดเสร็จ = ปิดรูป · Shift = เส้นตั้งฉาก ── */
   const onMapClick = (e) => {
     if (!editing || !drawing) return;
     if (e.target.closest('[data-handle]') || e.target.closest('button')) return;
     const p = pctFromEvent(e.clientX, e.clientY);
-    if (draft.length >= 3) {
-      const f = draft[0];
-      if (Math.hypot(f[0] - p.x, f[1] - p.y) < 2.5) return finishDraw();
-    }
-    setDraft(prev => [...prev, [round(p.x), round(p.y)]]);
+    const { pt, snap } = resolveDrawPoint(p, e.shiftKey);
+    if (snap) return finishDraw();
+    setDraft(prev => [...prev, pt]);
   };
   const onMapMove = (e) => {
-    if (drawing && draft.length) { const p = pctFromEvent(e.clientX, e.clientY); setHoverPt([round(p.x), round(p.y)]); return; }
+    if (drawing) {
+      lastRawRef.current = { x: e.clientX, y: e.clientY };
+      if (draft.length) {
+        const { pt, snap } = resolveDrawPoint(pctFromEvent(e.clientX, e.clientY), e.shiftKey);
+        setHoverPt(pt); setSnapFirst(snap);
+      }
+      return;
+    }
     if (dragRef.current) {
       const p = pctFromEvent(e.clientX, e.clientY);
       const d = dragRef.current, dx = p.x - d.px, dy = p.y - d.py;
@@ -156,21 +181,37 @@ export default function FactoryMap() {
       }));
     }
   };
-  const finishDraw = async () => {
-    const pts = draft; setDraft([]); setHoverPt([]); setDrawing(false); setHoverPt(null);
+  // วาดเสร็จ → เปิด dropdown เลือกไลน์ (ไม่ใช้ window.prompt แล้ว)
+  const finishDraw = () => {
+    const pts = draft;
+    setDraft([]); setHoverPt(null); setSnapFirst(false); setDrawing(false);
     if (pts.length < 3) return;
-    const remaining = assignableLines();
-    if (!remaining.length) return toast.error('ทุกไลน์ถูกวางกรอบแล้ว');
-    const name = window.prompt(`วาดให้ไลน์ไหน? พิมพ์ชื่อไลน์ให้ตรง:\n${remaining.join(', ')}`);
-    if (!name) return;
-    const match = remaining.find(n => n.toLowerCase() === name.trim().toLowerCase());
-    if (!match) return toast.error('ไม่พบชื่อไลน์นี้ (หรือมีกรอบแล้ว)');
-    const { data, error } = await supabase.from('factory_line_regions').insert({ line_name: match, points: pts }).select().single();
+    if (!assignableLines().length) return toast.error('ทุกไลน์ถูกวางกรอบแล้ว');
+    setAssignLine(''); setAssignFor(pts);
+  };
+  const confirmAssign = async () => {
+    if (!assignLine) return toast.error('เลือกไลน์ก่อน');
+    const pts = assignFor; setAssignFor(null);
+    const { data, error } = await supabase.from('factory_line_regions').insert({ line_name: assignLine, points: pts }).select().single();
     if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
     setRegions(prev => [...prev, { ...data, points: pts }]);
-    toast.success(`ตีกรอบ ${match} แล้ว`);
+    toast.success(`ตีกรอบ ${assignLine} แล้ว`);
   };
-  const cancelDraw = () => { setDraft([]); setHoverPt(null); setDrawing(false); };
+  const cancelDraw = () => { setDraft([]); setHoverPt(null); setSnapFirst(false); setDrawing(false); };
+
+  // กด/ปล่อย Shift ระหว่างวาด → คำนวณ preview ใหม่ทันทีแม้เมาส์ไม่ขยับ
+  useEffect(() => {
+    if (!drawing) return;
+    const recompute = () => {
+      if (!lastRawRef.current || !draft.length) return;
+      const { pt, snap } = resolveDrawPoint(pctFromEvent(lastRawRef.current.x, lastRawRef.current.y), shiftRef.current);
+      setHoverPt(pt); setSnapFirst(snap);
+    };
+    const down = (e) => { if (e.key === 'Shift') { shiftRef.current = true; recompute(); } if (e.key === 'Escape') cancelDraw(); };
+    const up = (e) => { if (e.key === 'Shift') { shiftRef.current = false; recompute(); } };
+    window.addEventListener('keydown', down); window.addEventListener('keyup', up);
+    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
+  }); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startDrag = (e, region, vi) => {
     if (!editing || drawing) return;
@@ -217,7 +258,7 @@ export default function FactoryMap() {
           {imageUrl && !drawing && <button onClick={() => { setDrawing(true); setDraft([]); }} disabled={!assignableLines().length} style={btn(false)}>✏️ วาดกรอบไลน์ใหม่</button>}
           {drawing && (
             <>
-              <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>🖊️ คลิกทีละจุดล้อมพื้นที่ไลน์ (L/U ได้) · คลิกจุดแรกซ้ำ = ปิดรูป</span>
+              <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>🖊️ คลิกทีละจุดล้อมพื้นที่ไลน์ (L/U ได้) · กดค้าง <b>Shift</b> = เส้นตั้งฉาก · เข้าใกล้จุดแรก = ดูดปิดรูปเอง</span>
               <button onClick={finishDraw} disabled={draft.length < 3} style={btn(true)}>✓ เสร็จ ({draft.length} จุด)</button>
               <button onClick={() => setDraft(p => p.slice(0, -1))} disabled={!draft.length} style={btn(false)}>↩ ลบจุดล่าสุด</button>
               <button onClick={cancelDraw} style={btn(false)}>✕ ยกเลิก</button>
@@ -253,11 +294,22 @@ export default function FactoryMap() {
                     onPointerDown={(e) => startDrag(e, r, -1)} />
                 );
               })}
-              {/* draft ระหว่างวาด */}
+              {/* draft ระหว่างวาด — เส้น (ปิดลูปเมื่อดูดจุดแรก) */}
               {drawing && draft.length > 0 && (
-                <polyline points={ptsStr(hoverPt ? [...draft, hoverPt] : draft)} fill="rgba(77,159,255,0.15)" stroke="#4d9fff" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeDasharray="3 2" />
+                <polyline points={ptsStr(hoverPt ? [...draft, hoverPt] : draft)}
+                  fill={snapFirst ? 'rgba(34,197,94,0.18)' : 'rgba(77,159,255,0.12)'}
+                  stroke={snapFirst ? '#22c55e' : '#4d9fff'} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeDasharray="3 2" />
               )}
             </svg>
+
+            {/* จุด draft ระหว่างวาด (HTML — คมชัด) + ไฮไลต์จุดแรกเป็นเป้าแม่เหล็ก */}
+            {drawing && draft.map((pt, i) => (
+              <div key={`d-${i}`} style={{ position: 'absolute', left: `${pt[0]}%`, top: `${pt[1]}%`,
+                width: i === 0 ? (snapFirst ? 22 : 16) : 11, height: i === 0 ? (snapFirst ? 22 : 16) : 11,
+                transform: 'translate(-50%,-50%)', borderRadius: '50%',
+                background: i === 0 ? (snapFirst ? 'rgba(34,197,94,0.35)' : 'rgba(77,159,255,0.3)') : '#4d9fff',
+                border: `2px solid ${i === 0 ? '#22c55e' : '#fff'}`, pointerEvents: 'none', transition: 'width .1s,height .1s' }} />
+            ))}
 
             {/* ป้ายชื่อ+ยอด ที่ centroid (HTML — ไม่โดน SVG ยืด) */}
             {regions.map(r => {
@@ -291,6 +343,25 @@ export default function FactoryMap() {
 
       {editing && imageUrl && assignableLines().length > 0 && (
         <div style={{ marginTop: 12, fontSize: 12, color: 'var(--muted)' }}>ยังไม่ได้ตีกรอบ: <span style={{ color: '#f59e0b' }}>{assignableLines().join(', ')}</span></div>
+      )}
+
+      {/* เลือกไลน์ให้รูปที่วาด (dropdown แทน window.prompt) — ปิดจากปุ่มเท่านั้น (กติกา modal ฟอร์ม) */}
+      {assignFor && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '22px 24px', width: '100%', maxWidth: 360 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>🖊️ ตีกรอบให้ไลน์ไหน?</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>เลือกไลน์ที่จะผูกกับรูปที่วาด ({assignFor.length} จุด)</div>
+            <select value={assignLine} onChange={e => setAssignLine(e.target.value)} autoFocus
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 14, marginBottom: 16 }}>
+              <option value="">— เลือกไลน์ —</option>
+              {assignableLines().map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setAssignFor(null)} style={{ flex: 1, padding: '11px 0', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>ยกเลิก</button>
+              <button onClick={confirmAssign} disabled={!assignLine} style={{ flex: 2, padding: '11px 0', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: assignLine ? 'pointer' : 'not-allowed', background: assignLine ? 'var(--accent)' : 'var(--muted)', color: '#fff', border: 'none' }}>✓ ตีกรอบ</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
