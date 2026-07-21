@@ -3,6 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
+import ToggleDot from '../components/ToggleDot';
 import { loadCompanyCalendar, getDayType, isOtHolidayType } from '../utils/companyCalendar';
 import { holidayPeriodsForShift, defaultHolidayPeriod, otPeriodLabel, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy';
@@ -1021,6 +1022,7 @@ export default function Checkin() {
               onClick={() => setPreviewNight(p => !p)}
               title="ดูตัวอย่างหน้าจอกะดึก (รวมคอลัมน์ OT พรุ่งนี้) — ปิดปุ่มบันทึกอัตโนมัติระหว่าง preview"
               style={{
+                position: 'relative',
                 padding: '8px 14px', borderRadius: 8,
                 border: '1px solid var(--border2)', fontSize: 12, cursor: 'pointer',
                 background: previewNight ? 'rgba(6,182,212,0.15)' : 'var(--bg3)',
@@ -1029,11 +1031,13 @@ export default function Checkin() {
               }}
             >
               {previewNight ? '👁 กำลัง Preview กะดึก' : '🌙 Preview กะดึก'}
+              <ToggleDot on={previewNight} />
             </button>
           )}
           <button
             onClick={() => setFilterShift(f => !f)}
             style={{
+              position: 'relative',
               padding: '8px 14px', borderRadius: 8,
               border: '1px solid var(--border2)', fontSize: 12, cursor: 'pointer',
               background: filterShift ? 'rgba(77,159,255,0.12)' : 'var(--bg3)',
@@ -1042,6 +1046,7 @@ export default function Checkin() {
             }}
           >
             {filterShift ? '👁 เฉพาะกะนี้' : '👥 ทุกคน'}
+            <ToggleDot on={filterShift} />
           </button>
           <button
             onClick={() => { setExportSection(selSection || ''); setShowExport(true); }}

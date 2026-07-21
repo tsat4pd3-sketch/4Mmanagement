@@ -2,6 +2,7 @@ import { useState, useEffect, useContext, useRef, useMemo, startTransition } fro
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import ToggleDot from '../components/ToggleDot';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
@@ -551,6 +552,7 @@ export default function Operator() {
             <span style={{ fontSize: 13, color: 'var(--muted)' }}>ใช้งาน {employees.length} คน</span>
             <button onClick={() => setShowInactive(s => !s)}
               style={{
+                position: 'relative',
                 padding: '6px 12px', borderRadius: 7, border: 'none', fontSize: 12, cursor: 'pointer',
                 background: showInactive ? 'rgba(231,76,60,0.15)' : 'var(--bg3)',
                 color: showInactive ? 'var(--red)' : 'var(--text2)',
@@ -558,6 +560,7 @@ export default function Operator() {
               {showInactive
                 ? `✅ ดูพนักงานใช้งาน (${employees.length})`
                 : `❌ ปิดใช้งาน (${inactiveEmployees.length})`}
+              <ToggleDot on={showInactive} />
             </button>
           </div>
 

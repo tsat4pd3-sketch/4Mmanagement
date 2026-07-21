@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import ToggleDot from '../components/ToggleDot';
 import { loadDocForms, docFormSync, fullCode } from '../utils/docForms';
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -393,9 +394,10 @@ table{border-collapse:collapse;width:100%}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           {canManageMaster && (
             <button onClick={() => setShowMaster(v => !v)} style={{
+              position: 'relative',
               padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
               background: showMaster ? 'rgba(245,158,11,0.18)' : 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)',
-            }}>⚙️ จัดการสายรถ/งาน OT</button>
+            }}>⚙️ จัดการสายรถ/งาน OT<ToggleDot on={showMaster} /></button>
           )}
           <CsvBtn onClick={handleExportCsv} />
           {canExport && (
@@ -1873,9 +1875,10 @@ function FourMTab() {
         )}
         {canManageDoc && (
           <button onClick={() => setShowDocPanel(v => !v)} style={{
+            position: 'relative',
             padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
             background: showDocPanel ? 'rgba(245,158,11,0.18)' : 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)',
-          }}>⚙️ จัดการเอกสาร</button>
+          }}>⚙️ จัดการเอกสาร<ToggleDot on={showDocPanel} /></button>
         )}
       </div>
 

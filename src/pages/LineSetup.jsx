@@ -7,6 +7,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
+import ToggleDot from '../components/ToggleDot';
 
 // ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร → WIP (ตามลำดับ 4M: Man, Machine, Material)
 // ให้ตรงกับปุ่ม filter MAN/MACHINE/WIP ที่หน้า Management — UI-CONVENTIONS §1
@@ -736,6 +737,7 @@ export default function LineSetup() {
             onClick={() => setShowPills(v => !v)}
             title={'แสดง/ซ่อนป้ายชื่อทุกจุดบนผัง (เหมือนหน้าแสดงผลจริง)\nหมุดที่กำลังเลือก/แก้ไขโชว์ป้ายเสมอ'}
             style={{
+              position: 'relative',
               padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
               marginLeft: 'auto',
               border: `1px solid ${showPills ? 'var(--accent)' : 'var(--border2)'}`,
@@ -743,6 +745,7 @@ export default function LineSetup() {
               color: showPills ? 'var(--accent)' : 'var(--text2)',
             }}>
             {showPills ? '🏷️ ซ่อนป้าย' : '🏷️ โชว์ป้าย'}
+            <ToggleDot on={showPills} />
           </button>
         </div>
       )}
@@ -1493,12 +1496,14 @@ export default function LineSetup() {
                   <button
                     onClick={() => { setConnectMode(v => !v); setConnectFrom(null); }}
                     style={{
+                      position: 'relative',
                       padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
                       border: `1px solid ${connectMode ? '#f97316' : 'var(--border2)'}`,
                       background: connectMode ? 'rgba(249,115,22,0.18)' : 'var(--bg2)',
                       color: connectMode ? '#f97316' : 'var(--text2)',
                     }}>
                     {connectMode ? '✓ กำลังเชื่อม' : '🔗 เชื่อมต่อ'}
+                    <ToggleDot on={connectMode} />
                   </button>
                   )}
                 </div>
