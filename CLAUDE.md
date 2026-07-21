@@ -400,6 +400,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 > 1. **เปิดเป้าคู่อัตโนมัติ** (DailyReport manual open — สร้าง prod_orders คู่ให้เอง)
 > 2. **OEE `computeOEE`** — จับเป็น product group เดียว/parallel ถูกต้อง (ดูบล็อกด้านบน)
 > 3. **บอร์ด Heijunka (Dashboard + Management)** — วางแถบ **ขนาน (parallel lane)** เริ่มพร้อมกัน แทนการเรียงต่อกัน (helper `laneKeyOf` · 2026-07-21)
+> 4. **สรุปยอด "ภาพใหญ่" นับงานคู่เป็น 1 คู่/stroke** (1 ปั๊ม = 1 คู่ ไม่บวกชิ้น LH+RH ซ้ำ) — util กลาง `src/utils/pairTotals.js` `pairAwareTotal(perMat, pairOf)`: คู่ที่มีทั้ง 2 พาร์ทในชุด → เป้า/ผลิต = **max ของสองข้าง** · พาร์ทเดี่ยว/ไม่ระบุ mat = บวกปกติ · ใช้แล้วที่ DailyReport (ภาพรวมทั้งกะ) / FactoryMap (metric ยอดผลิต) / Dashboard (การ์ด demand/actual) · **แถบรายพาร์ทยังโชว์แยก RH/LH เหมือนเดิม** · INPUT/material ยังนับชิ้นจริง (เบิกตามชิ้น) · จอสรุปใหม่ที่บวกยอดข้ามพาร์ทให้ใช้ helper นี้ (2026-07-21)
 >
 > **ถ้าไม่ตั้ง `pair_mat_no` หรือ ตั้งข้างเดียว** → อาการ: แถบ LH/RH บนบอร์ดไม่ตรงกัน (LH ต้นกะ RH ท้ายกะ) · OEE นับเวลา run ซ้ำ 2 เท่า · เปิดเป้าคู่ไม่ทำงาน — **เจ ออาการพวกนี้ให้เช็ค `pair_mat_no` ก่อนแก้โค้ด** · เพิ่มฟีเจอร์ที่แตะคู่ RH/LH ให้ยึด `pair_mat_no` เป็นตัวจับคู่เสมอ ห้ามเดาจากชื่อ LH/RH
 
