@@ -403,9 +403,13 @@ export default function Operator() {
   const workTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
   const allEmps = useMemo(() => [...employees, ...inactiveEmployees], [employees, inactiveEmployees]);
   const sectionOpts = useMemo(() => orgSectionOpts.length ? orgSectionOpts : [...new Set(allEmps.map(e => e.section).filter(Boolean))].sort(), [allEmps, orgSectionOpts]);
-  const deptOpts    = useMemo(() => orgDeptNodes.length ? orgDeptNodes.map(n => n.code || n.name) : [...new Set(allEmps.map(e => e.department).filter(Boolean))].sort(), [allEmps, orgDeptNodes]);
-  const groupOpts   = useMemo(() => [...new Set(allEmps.map(e => e.group_name).filter(Boolean))].sort(), [allEmps]);
-  const teamOpts    = useMemo(() => [...new Set(allEmps.map(e => e.team).filter(Boolean))].sort(), [allEmps]);
+  // ตัวเลือก filter ไล่ตามลำดับชั้นองค์กร (cascade — คำสั่ง user 2026-07-21): Dept เฉพาะใน Section ที่เลือก ·
+  // Group เฉพาะใน Section+Dept · Team ตามที่เหลือ — ดึงจากข้อมูลพนักงานจริง (ตรงกับแถวในตารางเสมอ ไม่มีตัวเลือกข้าม section/ซ้ำ)
+  const empsInSec   = useMemo(() => allEmps.filter(e => !filterSection || e.section === filterSection), [allEmps, filterSection]);
+  const deptOpts    = useMemo(() => [...new Set(empsInSec.map(e => e.department).filter(Boolean))].sort(), [empsInSec]);
+  const empsInDept  = useMemo(() => empsInSec.filter(e => !filterDept || e.department === filterDept), [empsInSec, filterDept]);
+  const groupOpts   = useMemo(() => [...new Set(empsInDept.map(e => e.group_name).filter(Boolean))].sort(), [empsInDept]);
+  const teamOpts    = useMemo(() => [...new Set(empsInDept.filter(e => !filterGroup || e.group_name === filterGroup).map(e => e.team).filter(Boolean))].sort(), [empsInDept, filterGroup]);
 
   const displayed = useMemo(() => (showInactive ? inactiveEmployees : employees)
     .filter(emp => !filterSection || emp.section    === filterSection)
@@ -500,8 +504,9 @@ export default function Operator() {
           {/* Section / Group / Team / Grade filters */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             {[
-              { label: 'Section', value: filterSection, opts: sectionOpts, set: setFilterSection },
-              { label: 'Dept',    value: filterDept,    opts: deptOpts,    set: setFilterDept },
+              // เปลี่ยนตัวแม่ = ล้างตัวลูก (กันค้างค่าที่ไม่อยู่ใน scope ใหม่แล้วตารางว่างงงๆ)
+              { label: 'Section', value: filterSection, opts: sectionOpts, set: (v) => { setFilterSection(v); setFilterDept(''); setFilterGroup(''); } },
+              { label: 'Dept',    value: filterDept,    opts: deptOpts,    set: (v) => { setFilterDept(v); setFilterGroup(''); } },
               { label: 'Group',   value: filterGroup,   opts: groupOpts,   set: setFilterGroup },
               { label: 'Team',    value: filterTeam,    opts: teamOpts,    set: setFilterTeam },
             ].map(f => (
@@ -534,8 +539,8 @@ export default function Operator() {
               );
             })}
 
-            {(filterSection || filterGroup || filterTeam || filterGrade) && (
-              <button onClick={() => { setFilterSection(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); }}
+            {(filterSection || filterDept || filterGroup || filterTeam || filterGrade) && (
+              <button onClick={() => { setFilterSection(''); setFilterDept(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); }}
                 style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>
                 ✕ ล้าง
               </button>
@@ -1171,7 +1176,10 @@ export default function Operator() {
                     setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
                   }}>
                     <option value="">— เลือก Line —</option>
+                    {/* cascade ตามลำดับชั้น (2026-07-21): มีแผนก → เฉพาะไลน์ของแผนกนั้น (pattern Register) · มี section → เฉพาะไลน์ section นั้น */}
                     {(scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
+                      .filter(l => !editingEmp.section || l.section === editingEmp.section)
+                      .filter(l => !editingEmp.department || l.name === editingEmp.department || l.parent_line_name === editingEmp.department)
                       .map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                   </select>
                 )}
