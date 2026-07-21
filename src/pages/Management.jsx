@@ -11,6 +11,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { markerScale } from '../utils/markerScale';
+import useIsMobile from '../utils/useIsMobile';
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
   return new Promise((resolve) => {
@@ -162,7 +163,7 @@ export default function Management() {
   const [allLines,       setAllLines]       = useState([]); // ทุกไลน์รวมไลน์ย่อย (ใช้หา parent_line_name)
   const [show4MModal,    setShow4MModal]    = useState(null);
   const [log4MForm,      setLog4MForm]      = useState({ category: 'Man', description: '', moveType: 'same', skillOk: false, hasHistory: false, subtype: 'change' });
-  const [isMobile,       setIsMobile]       = useState(window.innerWidth <= 768);
+  const isMobile = useIsMobile();
   const vw = useWidth();
   const isWide  = vw >= 1280;
   const isUltra = vw >= 1600;
@@ -336,11 +337,6 @@ export default function Management() {
     return () => { clearInterval(t); clearTimeout(debounceTimer); supabaseDR.removeChannel(ch); };
   }, [selectedLine, viewKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    const h = () => setIsMobile(window.innerWidth <= 768);
-    window.addEventListener('resize', h);
-    return () => window.removeEventListener('resize', h);
-  }, []);
 
   useEffect(() => {
     supabase.from('skill_definitions').select('*').order('sort_order').then(({ data }) => setSkillDefs(data || []));
@@ -450,9 +446,17 @@ export default function Management() {
   const assignWorker = async (logId, stationId) => {
     const finalAssign = stationId === 'Pool' ? null : stationId;
     const droppedWorker = workers.find(w => w.id === logId);
+    const prevAssign = droppedWorker?.assigned_line ?? null;
     setWorkers(prev => prev.map(w => w.id === logId ? { ...w, assigned_line: finalAssign } : w));
     setSelectedWorker(null);
-    await supabase.from('daily_production_logs').update({ assigned_line: finalAssign }).eq('id', logId);
+    // เช็ค error ของการย้ายจุดหลัก — ถ้าล้ม ให้ revert UI กลับ (เดิม optimistic แล้วปล่อยผ่าน
+    // ทำให้ผังโชว์คนอยู่จุดใหม่แต่ DB ยังเป็นจุดเดิม ไม่มีเตือน)
+    const { error: eAssign } = await supabase.from('daily_production_logs').update({ assigned_line: finalAssign }).eq('id', logId);
+    if (eAssign) {
+      toast.error('ย้ายจุดไม่สำเร็จ: ' + eAssign.message);
+      setWorkers(prev => prev.map(w => w.id === logId ? { ...w, assigned_line: prevAssign } : w));
+      return;
+    }
 
     // ── Station assignment log (period-snapped) ──────────────────
     if (droppedWorker?.employee_id) {
@@ -712,10 +716,11 @@ export default function Management() {
     // ใช้ line_name ของสถานีจริง ไม่ใช่ selectedLine เฉยๆ — เพราะตอนนี้ selectedLine อาจเป็นไลน์หลัก
     // (เช่น HYDROFORM) ที่รวมจุดงานจากไลน์ย่อยหลายไลน์ (HDF1/HDF2/...) เข้ามาแสดงพร้อมกัน
     const station = dynamicStations.find(s => String(s.id) === String(stationId));
-    await supabase.from('employee_home_positions').upsert(
+    const { error: eHome } = await supabase.from('employee_home_positions').upsert(
       { employee_id: empId, station_id: stationId, line_name: station?.line_name || selectedLine, updated_at: new Date().toISOString() },
       { onConflict: 'employee_id' }
     );
+    if (eHome) { toast.error('บันทึกสถานีประจำไม่สำเร็จ: ' + eHome.message); return; }
     setHomePositions(prev => ({ ...prev, [empId]: String(stationId) }));
   };
 

@@ -477,7 +477,7 @@ export default function MtnMachineLayout() {
               {areas.map(a => (
                 <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <div onClick={() => setAreaId(a.id)} style={{ ...S.rowBtn(areaId === a.id, false), flex: 1 }}>{a.image_path ? '🗺️' : '▫️'} {a.name}</div>
-                  {canEdit && <button onClick={() => deleteArea(a.id)} title="ลบโซน" style={{ background: 'transparent', border: 'none', color: '#e05c4a', cursor: 'pointer', fontSize: 12 }}>✕</button>}
+                  {canEdit && <button className="tbtn" onClick={() => deleteArea(a.id)} title="ลบโซน" style={{ background: 'transparent', border: 'none', color: '#e05c4a', cursor: 'pointer', fontSize: 12 }}>✕</button>}
                 </div>
               ))}
               {!areas.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีโซน — กด “+ โซน” เพื่อเริ่ม</div>}

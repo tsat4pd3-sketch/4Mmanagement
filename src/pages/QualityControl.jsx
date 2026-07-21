@@ -21,6 +21,8 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { inSectionScope } from '../utils/sectionScope';
 
 /* ── Date helpers (ห้ามใช้ toISOString() หา work date — ดู CLAUDE.md) ─────── */
 function localDateStr(d = new Date()) {
@@ -226,6 +228,19 @@ const RANGE_OPTS = [{ v: 7, label: '7 วัน' }, { v: 30, label: '30 วั�
 const prodQty = o => o.qty_ok ?? o.qty_actual ?? o.qty ?? 0;   // ยอดผลิตจริงต่อใบงาน
 
 function QualityDashboard() {
+  const { role, lineId, sections } = useContext(UserContext);
+  const [allLines, setAllLines] = useState([]);
+  // ขอบเขตไลน์ของภาพรวมผลิต/ของเสีย: leader → เฉพาะครอบครัวไลน์ตัวเอง (ไม่ให้เห็นทั้งโรงงานจนงง) ·
+  // role ที่ถูกจำกัด sections → เฉพาะส่วนงาน · qa/manager/admin (sections ว่าง) → ทั้งโรงงานเหมือนเดิม
+  const scopedLineNames = useMemo(() => {
+    if (role === 'leader' && lineId) {
+      const myLine = allLines.find(l => String(l.id) === String(lineId));
+      return myLine ? getLineFamilyNames(allLines, myLine.name) : [];
+    }
+    if (sections && sections.length) return allLines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
+    return null; // ไม่จำกัด
+  }, [role, lineId, sections, allLines]);
+  useEffect(() => { supabase.from('production_lines').select('id, name, section, parent_line_name').then(({ data }) => setAllLines(data || [])); }, []);
   const [from, setFrom] = useState(() => daysAgoStr(30));
   const [to, setTo]     = useState(() => getWorkDate());
   const [lineFilter, setLineFilter] = useState('');    // '' = ทุกไลน์
@@ -272,16 +287,22 @@ function QualityDashboard() {
     let alive = true;
     (async () => {
       setLoading(true);
-      const { data: ss } = await supabaseDR.from('production_sessions')
+      if (scopedLineNames && scopedLineNames.length === 0) { setSessions([]); setOrders([]); setDefects([]); setLoading(false); return; }
+      let ssQ = supabaseDR.from('production_sessions')
         .select('id, work_date, line_name, shift, actual_qty, qty_ok, qty_ng, oee_q')
-        .eq('status', 'closed').gte('work_date', from).lte('work_date', to).order('work_date');
+        .eq('status', 'closed').gte('work_date', from).lte('work_date', to);
+      if (scopedLineNames) ssQ = ssQ.in('line_name', scopedLineNames);
+      const { data: ss } = await ssQ.order('work_date');
       const ids = (ss || []).map(s => s.id);
       const [{ data: oo }, { data: dd }] = ids.length ? await Promise.all([
         supabaseDR.from('prod_orders').select('id, session_id, mat_no, part_name, qty, qty_ok, qty_actual').in('session_id', ids),
         supabaseDR.from('defect_logs').select('session_id, prod_order_id, qty_ng, qty_suspect, qty_repair, dr_defect_types(name_th, color)').in('session_id', ids),
       ]) : [{ data: [] }, { data: [] }];
+      // นับ NCR ค้างให้ตรงกับ scope ของ leader (ตัวเลข KPI จะได้ตรงกับรายการในแท็บ NCR)
+      let ncrCountQ = supabase.from('qa_ncr').select('id', { count: 'exact', head: true }).neq('status', 'closed');
+      if (scopedLineNames) ncrCountQ = ncrCountQ.in('line_name', scopedLineNames);
       const [{ count: nOpen }, { data: capas }] = await Promise.all([
-        supabase.from('qa_ncr').select('id', { count: 'exact', head: true }).neq('status', 'closed'),
+        ncrCountQ,
         supabase.from('qa_capa').select('id, due_date, status').neq('status', 'closed'),
       ]);
       if (!alive) return;
@@ -294,7 +315,7 @@ function QualityDashboard() {
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [from, to]);
+  }, [from, to, scopedLineNames]);
 
   const stat = useMemo(() => {
     const byDate = new Map(), byLine = new Map(), byType = new Map();
@@ -793,20 +814,34 @@ const DISPO = { use_as_is: 'ใช้ตามสภาพ (Use as-is)', rework:
 const EMPTY_NCR = { report_date: '', line_name: '', part_no: '', part_name: '', source: 'inprocess', severity: 'minor', defect_desc: '', qty_found: '', qty_ng: '' };
 
 function NCRTab({ lines, canRecord, canManage, onOpenCapa }) {
-  const { fullName } = useContext(UserContext);
+  const { fullName, role, lineId, sections } = useContext(UserContext);
   const [list, setList] = useState([]);
   const [filter, setFilter] = useState('active'); // active | all | closed
   const [createModal, setCreateModal] = useState(null);
   const [detail, setDetail] = useState(null);   // NCR ที่เปิดดู
   const [edit, setEdit] = useState({});          // field แก้ไขใน detail
+  const [allLines, setAllLines] = useState([]);
+
+  // leader → เห็น NCR เฉพาะครอบครัวไลน์ตัวเอง · role จำกัด sections → เฉพาะส่วนงาน · qa/mgr/admin → ทั้งหมด
+  const scopedLineNames = useMemo(() => {
+    if (role === 'leader' && lineId) {
+      const myLine = allLines.find(l => String(l.id) === String(lineId));
+      return myLine ? getLineFamilyNames(allLines, myLine.name) : [];
+    }
+    if (sections && sections.length) return allLines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
+    return null;
+  }, [role, lineId, sections, allLines]);
+  useEffect(() => { supabase.from('production_lines').select('id, name, section, parent_line_name').then(({ data }) => setAllLines(data || [])); }, []);
 
   const load = useCallback(async () => {
+    if (scopedLineNames && scopedLineNames.length === 0) { setList([]); return; }
     let q = supabase.from('qa_ncr').select('*').order('created_at', { ascending: false }).limit(300);
     if (filter === 'active') q = q.neq('status', 'closed');
     if (filter === 'closed') q = q.eq('status', 'closed');
+    if (scopedLineNames) q = q.in('line_name', scopedLineNames);   // จำกัดตามไลน์ของ leader
     const { data } = await q;
     setList(data || []);
-  }, [filter]);
+  }, [filter, scopedLineNames]);
   useEffect(() => { load(); }, [load]);
 
   const createNCR = async () => {
@@ -886,7 +921,7 @@ function NCRTab({ lines, canRecord, canManage, onOpenCapa }) {
             <Field label="ไลน์ผลิต">
               <select style={inputSt} value={createModal.line_name} onChange={e => setCreateModal(f => ({ ...f, line_name: e.target.value }))}>
                 <option value="">— ไม่ระบุ —</option>
-                {lines.map(l => <option key={l} value={l}>{l}</option>)}
+                {(scopedLineNames ? lines.filter(l => scopedLineNames.includes(l)) : lines).map(l => <option key={l} value={l}>{l}</option>)}
               </select>
             </Field>
             <Field label="Part No."><input style={inputSt} value={createModal.part_no} onChange={e => setCreateModal(f => ({ ...f, part_no: e.target.value }))} /></Field>

@@ -1464,22 +1464,20 @@ export default function HeijunkaKanban() {
     if (confirming) return;
     setConfirming(r.id);
     try {
-      // กันยืนยันซ้ำ: ถ้ารอบนี้ยืนยันส่งไปแล้ว (มี confirmed_at) อย่า insert issue ซ้ำ — จะทำให้ stock บวกเกินจริง
-      const { data: existing } = await supabaseDR.from('kanban_deliveries')
-        .select('confirmed_at')
-        .match({ work_date: workDate, line_name: r.line_name, shift: r.shift, round_no: r.round_no })
-        .maybeSingle();
-      if (existing?.confirmed_at) {
+      // กันยืนยันซ้ำแบบ atomic: insert แถวยืนยันด้วย ON CONFLICT DO NOTHING (ignoreDuplicates)
+      // — 2 เครื่องสโตร์ (บัญชีร่วม) กดยืนยันรอบเดียวกันพร้อมกัน มีแค่ตัวเดียวที่ insert สำเร็จ (คืนแถว)
+      // ตัวที่ชน conflict คืน [] → ข้าม issueRows · เดิมเป็น read-then-write ทำให้ stock ถูก issue ซ้ำถาวร
+      const { data: claimed, error } = await supabaseDR.from('kanban_deliveries').upsert({
+        work_date: workDate, line_name: r.line_name, shift: r.shift, round_no: r.round_no,
+        confirmed_at: new Date().toISOString(), confirmed_by: fullName || 'Store',
+      }, { onConflict: 'work_date,line_name,shift,round_no', ignoreDuplicates: true }).select('id');
+      if (error) throw error;
+      if (!claimed || claimed.length === 0) {
         toast.info(`รอบ ${r.round_no} ยืนยันส่งไปแล้ว — ไม่บันทึกซ้ำ`);
         await loadDeliveries();
         setConfirming(null);
         return;
       }
-      const { error } = await supabaseDR.from('kanban_deliveries').upsert({
-        work_date: workDate, line_name: r.line_name, shift: r.shift, round_no: r.round_no,
-        confirmed_at: new Date().toISOString(), confirmed_by: fullName || 'Store',
-      }, { onConflict: 'work_date,line_name,shift,round_no', ignoreDuplicates: false });
-      if (error) throw error;
       // เข้าสต็อกในไลน์ทันที (รอผลิตกด confirm รับของอีกที)
       const issueRows = (parts || []).filter(p => p.netTotal > 0).map(p => ({
         line_name: r.line_name, mat_no: p.mat_no, part_name: p.part_name, qty: p.netTotal,

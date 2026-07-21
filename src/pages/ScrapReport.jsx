@@ -13,6 +13,8 @@ import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { inSectionScope } from '../utils/sectionScope';
 import { usePerms } from '../utils/usePerms';
 import { exportScrapReportExcel } from '../lib/scrapExportExcel';
 
@@ -60,13 +62,30 @@ function Modal({ title, onClose, children, width = 560 }) {
 }
 
 export default function ScrapReport() {
-  const { fullName } = useContext(UserContext);
+  const { fullName, role, lineId, sections } = useContext(UserContext);
   const { can } = usePerms();
   const canRecord = can('scrap', 'record');
   const canManage = can('scrap', 'manage');
 
   const [reports, setReports] = useState([]);
-  const [lines, setLines] = useState([]);
+  const [allLines, setAllLines] = useState([]);   // production_lines เต็ม (name/section/parent) ไว้คิด scope
+
+  // ขอบเขตไลน์ที่เห็นได้: leader → เฉพาะครอบครัวไลน์ตัวเอง · role ที่ถูกจำกัด sections → เฉพาะไลน์ในส่วนงาน
+  // qa/manager/admin (sections ว่าง = ไม่จำกัด) → เห็นทั้งโรงงานเหมือนเดิม · null = ไม่จำกัด
+  const scopedLineNames = useMemo(() => {
+    if (role === 'leader' && lineId) {
+      const myLine = allLines.find(l => String(l.id) === String(lineId));
+      return myLine ? getLineFamilyNames(allLines, myLine.name) : [];
+    }
+    if (sections && sections.length) return allLines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
+    return null;
+  }, [role, lineId, sections, allLines]);
+  const lines = useMemo(() => {
+    const names = allLines.map(l => l.name);
+    if (!scopedLineNames) return names;
+    const ok = new Set(scopedLineNames);
+    return names.filter(n => ok.has(n));
+  }, [allLines, scopedLineNames]);
   const [defectTypes, setDefectTypes] = useState([]);
   const [listFrom, setListFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return localDateStr(d); });
   const [listTo, setListTo] = useState(getWorkDate());
@@ -77,15 +96,18 @@ export default function ScrapReport() {
   const [sapSearch, setSapSearch] = useState('');
 
   const loadReports = useCallback(async () => {
-    const { data } = await supabaseDR.from('scrap_reports').select('*')
-      .gte('report_date', listFrom).lte('report_date', listTo)
-      .order('report_date', { ascending: false }).order('created_at', { ascending: false });
+    if (scopedLineNames && scopedLineNames.length === 0) { setReports([]); return; } // ถูก scope แต่ไม่มีไลน์ → ว่าง
+    let q = supabaseDR.from('scrap_reports').select('*')
+      .gte('report_date', listFrom).lte('report_date', listTo);
+    if (scopedLineNames) q = q.in('line_name', scopedLineNames);   // ดัน scope เข้า query
+    const { data } = await q.order('report_date', { ascending: false }).order('created_at', { ascending: false });
     setReports(data || []);
-  }, [listFrom, listTo]);
+  }, [listFrom, listTo, scopedLineNames]);
   useEffect(() => { loadReports(); }, [loadReports]);
 
   useEffect(() => {
-    supabaseDR.from('production_lines').select('name').order('name').then(({ data }) => setLines((data || []).map(l => l.name)));
+    // ⚠️ production_lines อยู่ MAIN project (client supabase) ไม่ใช่ DR — ดึงผิด client = dropdown ว่าง
+    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name').then(({ data }) => setAllLines(data || []));
     supabaseDR.from('scrap_defect_types').select('*').eq('is_active', true).order('sort_order').then(({ data }) => setDefectTypes(data || []));
   }, []);
 
@@ -114,12 +136,19 @@ export default function ScrapReport() {
     return sapOptions.filter(o => [o.mat_no, o.part_no, o.part_name].some(v => (v || '').toLowerCase().includes(q))).slice(0, 12);
   }, [sapOptions, sapSearch]);
 
-  /* ── สร้างเลขเอกสาร running รายวัน ── */
+  /* ── สร้างเลขเอกสาร running รายเดือน ── */
   const nextDocNo = async (date) => {
     const ym = date.slice(0, 7).replace('-', '');
-    const { count } = await supabaseDR.from('scrap_reports').select('id', { count: 'exact', head: true })
-      .gte('report_date', date.slice(0, 8) + '01').lte('report_date', date);
-    const running = (count || 0) + 1;
+    // ใช้ "เลขสูงสุดที่มีในเดือน + 1" ไม่ใช่ count(ถึงวันนี้)+1 — กันเลขชนเมื่อลงใบย้อนวัน
+    // (count ถึงวันที่ย้อนหลังจะได้เลขที่ออกไปแล้ว = ซ้ำ) · เทียบทั้งเดือนจาก doc_no ที่มีอยู่จริง
+    const [y, mo] = date.slice(0, 7).split('-').map(Number);
+    const monthStart = `${date.slice(0, 7)}-01`;
+    const nextMonth = mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, '0')}-01`;
+    const { data } = await supabaseDR.from('scrap_reports').select('doc_no')
+      .gte('report_date', monthStart).lt('report_date', nextMonth);
+    let maxSeq = 0;
+    (data || []).forEach(r => { const m = /TSAT4-PDX\s+(\d+)/.exec(r.doc_no || ''); if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10)); });
+    const running = maxSeq + 1;
     return `TSAT4-PDX ${String(running).padStart(4, '0')}/${ym.slice(4)}-${ym.slice(2, 4)}`;
   };
 
@@ -211,8 +240,10 @@ export default function ScrapReport() {
       if (error) { toast.error(error.message); return; }
       repId = data.id;
     }
-    // replace items ทั้งชุด
-    await supabaseDR.from('scrap_report_items').delete().eq('report_id', repId);
+    // replace items ทั้งชุด — เช็ค error ของ delete ก่อน insert ใหม่
+    // (ถ้า delete ล้มแล้วปล่อยผ่าน อาจได้ item ซ้ำ · ถ้า insert ล้มหลัง delete สำเร็จ รายการหายหมด — เตือนให้กดบันทึกใหม่)
+    const { error: eDel } = await supabaseDR.from('scrap_report_items').delete().eq('report_id', repId);
+    if (eDel) { toast.error('ลบรายการเดิมไม่สำเร็จ: ' + eDel.message); return; }
     if (items.length) {
       const rows = items.map((it, i) => ({
         report_id: repId, seq: i + 1, source: it.source, part_no: it.part_no || null, part_name: it.part_name || null,

@@ -262,12 +262,15 @@ export default function Improvements() {
     let rows = [];
     if (imp.problem_source === 'downtime') {
       let q = supabaseDR.from('downtime_logs')
-        .select('session_id, duration_min, machine_no, mat_no')
+        .select('session_id, duration_min, machine_no, mat_no, dr_downtime_types(category)')
         .in('session_id', allIds);
       if (imp.problem_type_id) q = q.eq('downtime_type_id', imp.problem_type_id);
       if (imp.machine_no) q = q.eq('machine_no', imp.machine_no);
       if (imp.mat_no) q = q.eq('mat_no', imp.mat_no);
       rows = (await q).data || [];
+      // นับเฉพาะ downtime "นอกแผน" เหมือน KPI หลัก (planned = นับสต็อก/ไม่มีแผนผลิต ไม่ใช่ loss)
+      // — ถ้าผู้ใช้ไม่ได้เจาะจงชนิด (ทุกประเภท) ต้องตัด planned ออก ไม่งั้นผลก่อน/หลังเพี้ยน
+      if (!imp.problem_type_id) rows = rows.filter(r => r.dr_downtime_types?.category !== 'planned');
       const sum = (arr) => arr.reduce((a, r) => a + (Number(r.duration_min) || 0), 0);
       const bRows = rows.filter(r => !idSetAfter.has(r.session_id));
       const aRows = rows.filter(r => idSetAfter.has(r.session_id));
@@ -620,7 +623,7 @@ export default function Improvements() {
                             return (
                               <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 {/* ป้ายสถานะกดวน todo→doing→done */}
-                                <button disabled={!canManage} onClick={() => cycleMilestone(m)}
+                                <button className="tbtn" disabled={!canManage} onClick={() => cycleMilestone(m)}
                                   title={canManage ? 'กดเพื่อเปลี่ยนสถานะ' : ''}
                                   style={{ width: 142, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', cursor: canManage ? 'pointer' : 'default', padding: 0, textAlign: 'left' }}>
                                   <span style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, background: m.status === 'done' ? meta.c : 'transparent', border: `2px solid ${overdue ? '#ef4444' : meta.c}` }} />
@@ -640,7 +643,7 @@ export default function Improvements() {
                                 </div>
                                 <span style={{ width: 64, flexShrink: 0, fontSize: 11, fontWeight: 700, color: overdue ? '#ef4444' : meta.c, textAlign: 'right' }}>{overdue ? '⚠ เลยแผน' : meta.l}</span>
                                 {canManage && (
-                                  <button onClick={() => deleteMilestone(m)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12, padding: 0, flexShrink: 0 }}>✕</button>
+                                  <button className="tbtn" onClick={() => deleteMilestone(m)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12, padding: 0, flexShrink: 0 }}>✕</button>
                                 )}
                               </div>
                             );

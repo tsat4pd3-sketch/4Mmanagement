@@ -625,8 +625,9 @@ export default function OEEAnalytics() {
 
   // ── Overall KPIs ───────────────────────────────────────────────
   const kpi = useMemo(() => {
-    const validOEE = grouped.filter(g => g.oee != null);
-    const avg = key => validOEE.length ? +(validOEE.reduce((s, g) => s + (g[key] || 0), 0) / validOEE.length).toFixed(1) : null;
+    // เฉลี่ยแต่ละตัว (A/P/Q/OEE) จาก "เฉพาะช่วงที่มีค่าของตัวนั้น" — เดิมกรองด้วย oee!=null
+    // แล้วนับ a/p/q ที่เป็น null เป็น 0 ทำให้ค่าเฉลี่ยถูกดึงต่ำผิด
+    const avg = key => { const v = grouped.filter(g => g[key] != null); return v.length ? +(v.reduce((s, g) => s + g[key], 0) / v.length).toFixed(1) : null; };
     return { oee: avg('oee'), a: avg('a'), p: avg('p'), q: avg('q'), sessions: rows.length, total: rows.reduce((s, r) => s + r.totalQty, 0) };
   }, [grouped, rows]);
 

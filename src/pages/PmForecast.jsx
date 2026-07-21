@@ -41,8 +41,9 @@ export default function PmForecast() {
       const jigById = Object.fromEntries((jigs || []).map(j => [j.id, j]))
 
       // ยอดผลิตจริง (confirmed) ย้อนหลัง 120 วัน — ใช้หา shot สะสม + fallback rate + mat ของไลน์
+      const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
       const since = new Date(todayStr + 'T00:00:00'); since.setDate(since.getDate() - 120)
-      const sinceStr = since.toISOString().slice(0, 10)
+      const sinceStr = ymd(since)  // ใช้วันที่ local ไม่ใช่ toISOString (UTC เพี้ยนถอยไป 1 วัน)
       const { data: prod } = await supabaseDR.from('prod_orders').select('line_name, work_date, qty_ok, qty, mat_no, status').eq('status', 'confirmed').gte('work_date', sinceStr)
       const prodArr = prod || []
       // forecast เดือนปัจจุบัน (อัตรา/วันจาก order ลูกค้า)
@@ -69,7 +70,7 @@ export default function PmForecast() {
         let rateSource = 'forecast'
         if (dailyRate <= 0) {
           const d30 = new Date(todayStr + 'T00:00:00'); d30.setDate(d30.getDate() - 30)
-          const d30s = d30.toISOString().slice(0, 10)
+          const d30s = ymd(d30)
           const act = famRows.filter(r => r.work_date >= d30s).reduce((s, r) => s + Number(r.qty_ok ?? r.qty ?? 0), 0)
           dailyRate = act / 30; rateSource = 'actual'
         }
