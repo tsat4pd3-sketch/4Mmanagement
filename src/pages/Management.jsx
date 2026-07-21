@@ -971,61 +971,74 @@ export default function Management() {
     { key: 'wip',     on: filterWip,     toggle: () => setFilterWip(v => !v),     label: 'WIP',     icon: '📦', color: '#22c55e', count: lowWipCount,        title: 'แสดง/ซ่อนจุด WIP บนผัง — ตัวเลข = จุดที่ของต่ำกว่า min' },
   ];
 
+  // ปุ่มกรอง MAN/MACHINE/WIP + โชว์/ซ่อนป้าย — ใช้ทั้ง rail แนวตั้ง (desktop) และแถบแนวนอน (มือถือ)
+  // ปุ่ม 36×36 เท่ากันหมด + ToggleDot (เขียว=เปิด/เทา=ปิด) ให้เครื่องหมายเหมือนกัน
+  const renderFilters = (dir) => (
+    <div style={{ display: 'flex', flexDirection: dir, gap: 6, alignItems: 'center' }}>
+      {STATUS_FILTERS.map(f => (
+        <button
+          key={f.key}
+          onClick={f.toggle}
+          title={f.title}
+          style={{
+            position: 'relative', flexShrink: 0,
+            width: 36, height: 36, borderRadius: 8,
+            background: f.on ? `${f.color}38` : 'var(--bg3)',
+            border: f.on ? `1px solid ${f.color}` : '1px solid var(--border2)',
+            color: f.on ? f.color : 'var(--text2)', fontSize: 16,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', boxShadow: 'var(--shadow-sm)', outline: 'none',
+          }}
+        >
+          {f.icon}
+          {f.count > 0 && (
+            <span style={{
+              position: 'absolute', top: -4, right: -4,
+              background: f.color, color: '#fff',
+              fontSize: 11, fontWeight: 800,
+              minWidth: 18, height: 18, borderRadius: 9,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: '0 3px', lineHeight: 1,
+            }}>
+              {f.count > 99 ? '99+' : f.count}
+            </span>
+          )}
+          <ToggleDot on={f.on} ring="var(--bg2)" />
+        </button>
+      ))}
+      {/* โชว์/ซ่อนป้ายชื่อทุกจุด — icon 36×36 เท่าปุ่มอื่น (ป้ายเตือน alarm/ต่ำกว่า min โชว์เสมอ) */}
+      <button
+        onClick={() => setShowPills(v => !v)}
+        title={(showPills ? 'ซ่อน' : 'โชว์') + 'ป้ายชื่อทุกจุดบนผัง (คน/เครื่องจักร/WIP)\nป้ายเตือน (เครื่อง Downtime / WIP ต่ำกว่า min) แสดงเสมอ'}
+        style={{
+          position: 'relative', flexShrink: 0,
+          width: 36, height: 36, borderRadius: 8,
+          background: showPills ? 'rgba(148,163,184,0.28)' : 'var(--bg3)',
+          border: showPills ? '1px solid #94a3b8' : '1px solid var(--border2)',
+          color: showPills ? 'var(--text)' : 'var(--text2)', fontSize: 16,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer', boxShadow: 'var(--shadow-sm)', outline: 'none',
+        }}
+      >
+        🏷️
+        <ToggleDot on={showPills} ring="var(--bg2)" />
+      </button>
+    </div>
+  );
+
   return (
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: 'calc(100vh - 80px)', background: 'var(--bg)', overflow: 'hidden' }}>
       <DowntimeSiren mode="open_15min" />
 
-      {/* MAN / MACHINE / WIP filters + โชว์/ซ่อนป้าย — เรียงแนวตั้งใต้ 🔔 (แนวเดียวกับ bell, right:14)
-          ทุกปุ่มขนาดเท่ากัน 36×36 (เครื่องหมายเหมือนกันหมด) · canvas เว้น paddingRight:52 ไม่ให้บอร์ด/ผังลอดใต้ */}
-      <div style={{ position: 'fixed', top: 54, right: 14, zIndex: 1200, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {STATUS_FILTERS.map(f => (
-          <button
-            key={f.key}
-            onClick={f.toggle}
-            title={f.title}
-            style={{
-              position: 'relative',
-              width: 36, height: 36, borderRadius: 8,
-              background: f.on ? `${f.color}38` : 'var(--bg3)',
-              border: f.on ? `1px solid ${f.color}` : '1px solid var(--border2)',
-              color: f.on ? f.color : 'var(--text2)', fontSize: 16,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', boxShadow: 'var(--shadow-sm)',
-            }}
-          >
-            {f.icon}
-            {f.count > 0 && (
-              <span style={{
-                position: 'absolute', top: -4, right: -4,
-                background: f.color, color: '#fff',
-                fontSize: 11, fontWeight: 800,
-                minWidth: 18, height: 18, borderRadius: 9,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                padding: '0 3px', lineHeight: 1,
-              }}>
-                {f.count > 99 ? '99+' : f.count}
-              </span>
-            )}
-            <ToggleDot on={f.on} />
-          </button>
-        ))}
-        {/* โชว์/ซ่อนป้ายชื่อทุกจุด — icon 36×36 เท่าปุ่มอื่น (ป้ายเตือน alarm/ต่ำกว่า min โชว์เสมอ) */}
-        <button
-          onClick={() => setShowPills(v => !v)}
-          title={(showPills ? 'ซ่อน' : 'โชว์') + 'ป้ายชื่อทุกจุดบนผัง (คน/เครื่องจักร/WIP)\nป้ายเตือน (เครื่อง Downtime / WIP ต่ำกว่า min) แสดงเสมอ'}
-          style={{
-            width: 36, height: 36, borderRadius: 8,
-            background: showPills ? 'rgba(148,163,184,0.28)' : 'var(--bg3)',
-            border: showPills ? '1px solid #94a3b8' : '1px solid var(--border2)',
-            color: showPills ? 'var(--text)' : 'var(--text2)', fontSize: 16,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', boxShadow: 'var(--shadow-sm)', position: 'relative',
-          }}
-        >
-          🏷️
-          <ToggleDot on={showPills} />
-        </button>
-      </div>
+      {/* ── Right rail (desktop) — เฟรมข้างขวาสมมาตรกับ Pool Panel ซ้าย: ปุ่มกรองเรียงแนวตั้ง
+          bg2+borderLeft ให้ขอบบอร์ดชิดพอดี (ไม่มีช่องว่างลอย) · paddingTop เว้นให้ 🔔 อยู่หัว rail */}
+      {!isMobile && (
+        <div style={{ position: 'fixed', top: 0, right: 0, height: '100vh', width: 46, zIndex: 15,
+          background: 'var(--bg2)', borderLeft: '1px solid var(--border)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 52, flexShrink: 0 }}>
+          {renderFilters('column')}
+        </div>
+      )}
 
       {/* ── Pool Panel ── */}
       <div style={poolStyle}>
@@ -1158,11 +1171,17 @@ export default function Management() {
       </div>
 
       {/* ── Canvas Area ── */}
-      {/* paddingRight 52 = เว้นคอลัมน์แนวตั้ง 🔔+filter (right:14, w36) ไม่ให้บอร์ด/ผัง Heijunka ลอดใต้ */}
-      <div ref={canvasAreaRef} style={{ flex: 1, minWidth: 0, position: 'relative', padding: '10px 52px 10px 10px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      {/* desktop: paddingRight 46 = ความกว้าง right rail (ขอบบอร์ดชิด rail พอดี) · mobile: ปกติ */}
+      <div ref={canvasAreaRef} style={{ flex: 1, minWidth: 0, position: 'relative', padding: isMobile ? 10 : '10px 46px 10px 10px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {autoManAlert && (
           <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', background: 'rgba(77,159,255,0.95)', color: '#fff', padding: '8px 18px', borderRadius: 10, fontSize: 12, fontWeight: 600, zIndex: 200, boxShadow: '0 4px 16px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>
             🆕 Man Change: {autoManAlert.name} — ประจำ {autoManAlert.station} เป็นครั้งแรก
+          </div>
+        )}
+        {/* มือถือ: ไม่มี rail ขวา → แถบปุ่มกรองแนวนอนชิดขวาบนแทน */}
+        {isMobile && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8, flexShrink: 0, paddingRight: 40 }}>
+            {renderFilters('row')}
           </div>
         )}
 
