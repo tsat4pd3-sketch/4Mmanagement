@@ -205,6 +205,36 @@ export default function Management() {
   // · default = map (งานหลักคือจัดคนลงสถานี) · จำสถานะใน localStorage
   const [mainView, setMainView] = useState(() => { try { return localStorage.getItem('mg_main_view') === 'heijunka' ? 'heijunka' : 'map'; } catch { return 'map'; } });
   const switchView = (v) => { setMainView(v); try { localStorage.setItem('mg_main_view', v); } catch { /* private mode */ } };
+  // วัดความสูงพื้นที่ canvas — ตัดสินว่าบอร์ด Heijunka จะเบียดผังจนพังไหม
+  //   พอ (บอร์ดเตี้ย/ไม่กี่แถว) → โชว์ผัง+บอร์ดพร้อมกันได้ (ไม่มีปุ่มสลับ)
+  //   ไม่พอ (แถวเยอะจนดันผังหลุด) → โผล่ปุ่มสลับ ให้ดูทีละมุมเต็มพื้นที่
+  const canvasAreaRef = useRef(null);
+  const [canvasH, setCanvasH] = useState(0);
+  useEffect(() => {
+    const el = canvasAreaRef.current;
+    if (!el) return;
+    const update = () => setCanvasH(el.clientHeight);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // ประมาณจำนวนแถว product ของบอร์ด (1 แถว = 1 คู่ line×product ที่ยังไม่ carry_over) เพื่อคาดความสูงบอร์ด
+  const boardRowCount = useMemo(() => {
+    if (!lineProdData?.sessions) return 0;
+    const { sessions, nameByMatNo = {} } = lineProdData;
+    const multiSubLine = new Set(sessions.map(s => s.line_name)).size > 1;
+    const keys = new Set();
+    sessions.forEach(s => (s.orders || []).forEach(o => {
+      if (o.status === 'carry_over') return;
+      const productKey = (nameByMatNo[o.mat_no] || s.dr_products?.name || '').trim().toUpperCase() || o.mat_no || 'x';
+      keys.add(multiSubLine ? `${s.line_name || ''}|${productKey}` : productKey);
+    }));
+    return keys.size;
+  }, [lineProdData]);
+  // บอร์ดจะเบียดผังจนพังไหม: ความสูงบอร์ดโดยประมาณ (chrome หัวบอร์ด ~210 + 64px/แถว) + ผังขั้นต่ำ ~220
+  // เกินพื้นที่ canvas → โผล่ปุ่มสลับ · ไม่เกิน → โชว์คู่กัน (เอนเอียงไปทางโชว์คู่จนกว่าจะล้นจริง ตามคำสั่ง user)
+  const boardWouldSquish = !!lineProdData && canvasH > 0 && (210 + boardRowCount * 64 + 220) > canvasH;
   const [showLegendMobile, setShowLegendMobile] = useState(false); // มือถือ: legend สถานะยุบเข้าปุ่ม ℹ️
   const [imgBox,         setImgBox]         = useState(null); // actual rendered image bounds inside objectFit:contain
   const imgRef = useRef(null);
@@ -1126,7 +1156,7 @@ export default function Management() {
       </div>
 
       {/* ── Canvas Area ── */}
-      <div style={{ flex: 1, minWidth: 0, position: 'relative', padding: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div ref={canvasAreaRef} style={{ flex: 1, minWidth: 0, position: 'relative', padding: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {autoManAlert && (
           <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', background: 'rgba(77,159,255,0.95)', color: '#fff', padding: '8px 18px', borderRadius: 10, fontSize: 12, fontWeight: 600, zIndex: 200, boxShadow: '0 4px 16px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>
             🆕 Man Change: {autoManAlert.name} — ประจำ {autoManAlert.station} เป็นครั้งแรก
@@ -1134,7 +1164,9 @@ export default function Management() {
         )}
 
 
-        {/* ── สลับมุมมอง: ผังไลน์+คน / Heijunka (ดูทีละมุมเต็มพื้นที่ ไม่ถูกบีบ/ย่อ) ── */}
+        {/* ── ปุ่มสลับมุมมอง — โผล่เฉพาะตอนบอร์ด Heijunka สูงจนจะเบียดผังจนพัง (boardWouldSquish)
+            ถ้าบอร์ดเตี้ยพอ → ไม่มีปุ่ม แสดงผัง+บอร์ดพร้อมกันเหมือนเดิม ── */}
+        {boardWouldSquish && (
         <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
           {[{ k: 'map', icon: '🗺️', label: 'ผังไลน์ + คน' }, { k: 'heijunka', icon: '📊', label: 'Heijunka' }].map(v => {
             const active = mainView === v.k;
@@ -1145,14 +1177,15 @@ export default function Management() {
               </button>
             );
           })}
-          {mainView === 'map' && lineProdData?.sessions?.some(s => s.status === 'open') && (
-            <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>· 📊 Heijunka กำลังผลิตอยู่ กดดูได้</span>
-          )}
+          <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>· 🎴 kanban เยอะ — สลับดูทีละมุมเต็มจอ</span>
         </div>
+        )}
 
-        {mainView === 'heijunka' && (
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
-        {!lineProdData && <div style={{ padding: 20, color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีข้อมูลการผลิตของไลน์นี้</div>}
+        {/* Heijunka: โชว์เมื่อ (แสดงคู่กัน = ไม่ squish) หรือ (โหมดสลับ + เลือก heijunka)
+            · โหมดคู่ → บอร์ดสูงตามเนื้อหา (flexShrink:0) · โหมดสลับ → เต็มพื้นที่ + scroll ในตัว */}
+        {(!boardWouldSquish || mainView === 'heijunka') && (
+        <div style={boardWouldSquish ? { flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' } : { flexShrink: 0 }}>
+        {boardWouldSquish && !lineProdData && <div style={{ padding: 20, color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีข้อมูลการผลิตของไลน์นี้</div>}
         {/* ── Mini Heijunka board ── */}
         {lineProdData && (() => {
           const HOURS = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
@@ -1820,7 +1853,7 @@ export default function Management() {
         </div>
         )}
 
-        {mainView === 'map' && (<>
+        {(!boardWouldSquish || mainView === 'map') && (<>
         {/* PPE alarm — เช็คชื่อแล้วแต่ PPE ไม่ครบ: ไม่เข้า pool จึงไม่โผล่บนผัง ต้องมีแถบกระพริบเตือนแทน */}
         {ppeAlertsInView.length > 0 && (
           <div className="dt-alarm-banner" style={{ border: '1px solid rgba(239,68,68,0.45)', borderRadius: 10, padding: '8px 12px', marginBottom: 8, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
