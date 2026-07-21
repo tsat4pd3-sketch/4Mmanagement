@@ -7,7 +7,9 @@
 // วันที่จะถึงรอบจาก usage: remaining shot ÷ อัตรา/วัน → บวกจากวันนี้
 export function projectUsageDate(remaining, dailyRate, todayStr) {
   if (!dailyRate || dailyRate <= 0 || remaining == null) return null
-  const days = Math.max(0, Math.ceil(remaining / dailyRate))
+  // remaining ติดลบ = shot สะสมเกินเกณฑ์แล้ว → ต้องได้วันในอดีต (daysTo < 0) เพื่อขึ้นแดง "เลยกำหนด"
+  // ห้าม clamp ที่ 0 (เดิม Math.max(0,...) ทำให้เครื่องเกินเกณฑ์โชว์ "0 วัน" ส้มตลอด ไม่เคยแดง — แก้ 2026-07-21)
+  const days = Math.ceil(remaining / dailyRate)
   const d = new Date(todayStr + 'T00:00:00')
   d.setDate(d.getDate() + days)
   return d

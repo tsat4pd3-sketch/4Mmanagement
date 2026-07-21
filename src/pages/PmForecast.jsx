@@ -47,8 +47,19 @@ export default function PmForecast() {
       const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
       const since = new Date(todayStr + 'T00:00:00'); since.setDate(since.getDate() - 120)
       const sinceStr = ymd(since)  // ใช้วันที่ local ไม่ใช่ toISOString (UTC เพี้ยนถอยไป 1 วัน)
-      const { data: prod } = await supabaseDR.from('prod_orders').select('line_name, work_date, qty_ok, qty, mat_no, status').eq('status', 'confirmed').gte('work_date', sinceStr)
-      const prodArr = prod || []
+      // ⚠️ prod_orders ไม่มีคอลัมน์ line_name/work_date — อยู่บน production_sessions (join ผ่าน session_id)
+      // เดิม select ตรงจาก prod_orders → PostgREST error 42703 แต่ถูกกลืน (ดึงแค่ data) → prodArr ว่างเสมอ
+      // → shot สะสม/rate/buffer เป็น 0 ทั้งหมดเงียบ ๆ (แก้ 2026-07-21)
+      const { data: prod, error: prodErr } = await supabaseDR.from('prod_orders')
+        .select('qty_ok, qty, mat_no, production_sessions!inner(line_name, work_date)')
+        .eq('status', 'confirmed')
+        .gte('production_sessions.work_date', sinceStr)
+      if (prodErr) console.warn('[pm-forecast] โหลดยอดผลิตไม่สำเร็จ:', prodErr.message)
+      const prodArr = (prod || []).map(r => ({
+        qty_ok: r.qty_ok, qty: r.qty, mat_no: r.mat_no,
+        line_name: r.production_sessions?.line_name,
+        work_date: r.production_sessions?.work_date,
+      }))
       // forecast เดือนปัจจุบัน (อัตรา/วันจาก order ลูกค้า)
       const curMonth = todayStr.slice(0, 7)
       const { data: fc } = await supabaseDR.from('customer_forecasts').select('mat_no, qty, period_month').eq('period_month', curMonth)
