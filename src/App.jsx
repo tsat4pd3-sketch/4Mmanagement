@@ -311,20 +311,24 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             const groupHasActive = items.some(i => location.pathname === i.to);
             return (
               <div key={group} style={{ marginBottom: 2 }}>
-                {/* หัวหมวด — สว่าง+ใหญ่พออ่านง่าย (เดิม 11px สี muted จางเกิน อ่านยากโดยเฉพาะตัวไทย)
-                    ไม่ใช้ letterSpacing กว้าง/uppercase กับไทย · active = accent, ปกติ = text2 (สว่างกว่า muted) */}
+                {/* หัวหมวด — ปกติ = สี text (ขาวอมเขียว เป็นกลาง อ่านง่าย ไม่กลืนกับเขียว accent)
+                    · หมวดที่เปิดอยู่ = accent + พื้นจาง + ขีดซ้าย ให้รู้ทันทีว่าอยู่หมวดไหน
+                    (เดิมทุกหมวดเป็น text2 เขียวอ่อนเหมือนกันหมด แยก active ไม่ออก) */}
                 <button
                   onClick={() => toggleGroup(group)}
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-                    background: 'none', border: 'none', cursor: 'pointer', padding: '10px 10px 5px',
-                    color: groupHasActive ? 'var(--accent)' : 'var(--text2)',
+                    background: groupHasActive ? 'var(--accent-dim)' : 'none',
+                    border: 'none', borderLeft: `2px solid ${groupHasActive ? 'var(--accent)' : 'transparent'}`,
+                    borderRadius: 'var(--radius)', cursor: 'pointer', padding: '9px 10px 9px 9px',
+                    marginTop: 3,
+                    color: groupHasActive ? 'var(--accent)' : 'var(--text)',
                     fontSize: 13, fontWeight: 800, letterSpacing: '0.01em',
                     fontFamily: 'var(--font-display)',
                   }}
                 >
                   <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</span>
-                  <span style={{ fontSize: 12, opacity: 0.7, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
+                  <span style={{ fontSize: 12, opacity: 0.6, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
                 </button>
                 {!collapsed && items.map(item => (
                   <Link
