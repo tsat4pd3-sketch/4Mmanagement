@@ -361,6 +361,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - **flow:** แก้ param ในตาราง (edit ชั่วคราว > param บันทึก > default จาก master) → ค่าคำนวณอัปเดตทันที → **Preview & Apply** → เขียน `kanban_standards` (`min_qty`/`max_qty` = ชิ้น, `qty_per_kanban` = pkg, `total_kanban` = ใบ, `lot_size`) — **Store (LineStock) ดึง min/max ตรงนี้ต่อ = จุดเดียวที่ Store↔Planner sync** · param ที่ใช้จำลง `kanban_calc_params` (รอบหน้า prefill) · **export CSV** (Production แนบตารางสรุป capacity ท้ายไฟล์)
 - **สรุปภาระการผลิต (Production):** Σ work-time/ไลน์ [(setup+lot×CT)×(order/lot)] เทียบ available (ชม./วัน×วันทำงาน) = **%load** ต่อไลน์ (<85 เขียว · 85–100 เหลือง · >100 แดง=เกิน capacity)
 - **⚠️ กุญแจ sync = `mat_no` (เลข SAP ภายใน) เท่านั้น:** ตอนอัพโหลด forecast ระบบ map เลขพาร์ทลูกค้า → SAP ผ่าน **`p_no`** ใน `dr_products`/`kanban_standards` (normalize ตัดขีด/ช่องว่าง · FG ขึ้นต้น 1 ชนะ) · **จับคู่ไม่ได้ = เก็บเลขพาร์ทลูกค้าไว้ใน `mat_no` ไปก่อน** (`PlannerSales.jsx` insert: `mat_no: hit ? hit.mat_no : r.part`) → แถวนั้นคำนวณ kanban ไม่ได้ + Store/Production ที่ใช้เลข SAP จะไม่เห็น · **ปุ่ม 🔗 จับคู่เลข SAP** ในแท็บ (banner เตือน N พาร์ท) เขียน `p_no` ให้ dr_products (auto-map รอบหน้า) + re-point `customer_forecasts.mat_no` เดิม → ต้องเติม p_no ให้ครบ Store/Planner ถึง sync จริง · modal มี **auto-suggest จับคู่ด้วย base part** (`baseOfPart` — ตัด revision token ตัวท้าย ≤2 ตัว แล้วเทียบ p_no ที่มีในระบบ · เช่น forecast `MB3B 16C274 CE` ↔ dr `MB3B-16C274`) ตัวเดียวชัด = เติมให้อัตโนมัติ · กำกวมหลายตัว = โชว์ชิปเขียวให้กดเลือก · พาร์ทที่ไม่มีใน Product Master เลยต้องไปสร้างก่อน
+- **⚠️ Order/Month รวม forecast source เดียว กัน double-count (2026-07-21):** `customer_forecasts.period_month` เก็บ 2 grain ปนกัน — EDI 830 = วันราย週 (`period_month = r.date`) · manual = ต้นเดือน (`monthFirst`) · ตอนรวม Order/Month ต่อ mat ถ้าบวกทุก row จะซ้ำเมื่อ mat มีทั้ง 2 source ในเดือนเดียว → **รวมเฉพาะ source เดียว: EDI 830 (official) ก่อน ไม่มีค่อยใช้ manual** (`fBySrc` ใน KanbanCalcTab `load()`) · weekly ที่คาบเกี่ยวขอบเดือนยังนับตามเดือนที่ `period_month` ตก (calendar-month bucket — accept ได้)
 - **DB:** `kanban_calc_settings` (working_days/efficiency_pct/**hours_per_day**) · `kanban_calc_params` (per-part param + **calc_type/process_count/lot_qty/setup_time_sec** สำหรับ production) · migration `20260710_kanban_auto_calc.sql` + **`20260716_kanban_production_calc.sql`** (DR, additive) — ⚠️ ถ้ายังไม่ apply migration ตัวหลัง: หน้ายังคำนวณ/Preview/Apply เข้า kanban_standards ได้ปกติ แต่ param เฉพาะ production + hours_per_day จะยังไม่ถูกจำข้ามรอบ (โค้ด best-effort + toast เตือน)
 
 ---
@@ -494,6 +495,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
   - **คลิกกรอบ/แถว panel → เปิดผังไลน์พร้อมพนักงานแบบ Dashboard** (`openLine`): ไลน์ที่มี `line_layouts` → `navigate('/dashboard?line=NAME&from=factory-map')` ให้ Dashboard เปิด Expanded Line Map (deep-link) — ใช้ผังจริงตัวเดียวกัน ไม่ duplicate · ไลน์ที่**ไม่มีผังพื้น** → fallback popup สรุป metric + ตารางแยกไลน์ย่อย (`detailLine`)
   - **⚠️ ผังไลน์แม่-ลูกคนละรูป (คนอยู่บนผังลูก):** `floorMapTarget` เลือกผังที่**มีคนจริง** — ไลน์แม่มีผัง+คนของตัวเอง=โชว์ตัวเอง · ไลน์แม่ว่าง (คนอยู่ไลน์ลูก เช่น GOR→Assy GOR/Laser GOR) = เด้งไปโชว์**ผังลูกที่มีคนมากสุด** (จาก `manpower[n].present`) · ยังไม่มีใครเข้างาน = ผังตัวเอง/ตัวแรก · (การทาบ-สเกลพิกัดลูกลงผังแม่ผังเดียว = future enhancement ยังไม่ทำ)
   - **Dashboard รับ deep-link:** `useSearchParams` อ่าน `?line=NAME` ตอน `layouts` โหลดเสร็จ → หา layout ที่ตรงชื่อ/ครอบชื่อ (`layoutLineNamesForCard`) แล้ว `setExpandedLine` + ล้าง param (`replace:true`) กันเปิดซ้ำ · `from=factory-map` → ปิด modal แล้ว `navigate('/factory-map')` (ไม่ค้างที่ Dashboard) ผ่าน `closeExpandedLine` — backward-compatible (ไม่มี param = ไม่เปลี่ยนพฤติกรรม)
+- **Dashboard "Line Floor Maps" — โหมดใหญ่สำหรับหัวหน้า (2026-07-21):** `floorBig = scopeActive && visibleLayouts.length ≤ 3` → หัวหน้า/ผู้ใช้ scope แคบ เห็นผังไลน์ตัวเอง**ใหญ่เต็มความกว้าง** (bottom grid stack 1 คอลัมน์ + floor grid `auto-fit minmax(480px,1fr)`) แตกไลน์ลูกเป็นการ์ดใหญ่แยกกัน · ภาพรวมทั้งโรงงาน (passAll/หลายผัง) คงกริดย่อ 2-3 คอลัมน์เหมือนเดิม (เหมาะจอ TV ดูรวม)
 - **🔴 downtime ค้างโชว์เสมอทุก metric:** จุดแดงหน้าชื่อไลน์ (แม้ดู metric อื่น) — alarm ต้องไม่ถูกซ่อน · refresh DR ทุก 30 วิ
 - **สิทธิ์:** เข้าดู = ทุก role (`page:/factory-map`) · อัปโหลด/วาด/ลบ = `can('factory_map','edit')` (admin/manager/supervisor)
 - **รูปเก็บ** bucket `employee-photos` path `factory/` — cleanup-orphan-photos whitelist `factory_map.image_url` + สแกนโฟลเดอร์ factory/ แล้ว (กันลบผิด) · เปลี่ยนรูปลบไฟล์เก่าทิ้ง (best-effort)
@@ -505,6 +507,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 หน้า `/production-plan` (กลุ่มฝ่ายผลิต) — จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบ **"กำลังผลิตที่ทำได้จริง"** → บอกว่าต้องเปิดกี่กะ กี่วัน วันไหนเปิด OT/กะดึก/ทำวันหยุด วันไหนไม่ต้อง เพื่อทันดิว · **เฟส 1 อ่านอย่างเดียว ไม่เขียน DB**
 
 - **กำลังผลิต = median(ยอดดีจริงต่อกะ) ใน 60 วันล่าสุด** ต่อ (ไลน์+พาร์ท) — util กลาง `src/utils/capacityModel.js` · median ตัดค่าโดด (วันเทพ/หายนะ) + บวก OEE/เบรค/NG ไว้ในตัว · พาร์ทที่มีประวัติ < 3 กะ fallback = (นาทีกะ×60÷CT)×OEE median ของไลน์ + ติดป้าย "ข้อมูลน้อย" · เลือกโหมดวางแผน **median (สมจริง)** หรือ **P25 (ปลอดภัยไว้ก่อน)**
+  - **normalize กะที่แชร์ไลน์ (2026-07-21):** กะที่พาร์ทวิ่งไม่เต็มกะ (แชร์กับพาร์ทอื่น) ทำให้ยอด/กะต่ำ → median กำลังต่ำเกิน → OT/backlog เกินจริง · ProductionPlan โหลด `opened_at`/`confirmed_at` คิด run-min ต่อ (session,mat) แล้ว: กะวิ่ง **50–90%** ของกะ → คูณกลับเป็นเต็มกะ (scale ≤2×) **cap ด้วยกำลังทฤษฎี `shift×60÷CT` กัน over-scale** (overstate = วางแผนน้อยไป อันตราย) · กะวิ่ง **<50% = ตัดทิ้ง**จาก median (สัญญาณน้อยเกิน) · ไม่มี timestamp = ใช้ค่าดิบเดิม
 - **หน่วยกลาง = shift-load** (qty ÷ กำลังต่อกะ) เพื่อรวมหลายพาร์ทบนไลน์เดียวถูกต้อง (ไลน์มี 1 กะ แต่หลาย product คนละ rate)
 - **แท็บรายวัน:** order ค้างส่ง 21 วันข้างหน้า → เดินปฏิทินวันต่อวัน (greedy: กะเช้า → +กะดึก(ถ้าไลน์มี) → +OT 25% → วันหยุดทำเฉพาะเมื่อ backlog) · **ลำดับใช้วันหยุด (กฎ user 2026-07-21): วัน `shutdown75` (ม.75) = กำลังสำรองที่เรียกได้ด้วยค่าแรงปกติ ใช้เต็มกำลังเหมือนวันทำงาน (⚡ ยกเลิกหยุด75% สีม่วง) ก่อนถึง OT วันหยุด ot15/ot2 (⚠ แดง) เสมอ** — ทั้งแท็บรายวันและ verdict รายเดือน (tier ⚡ อยู่ก่อน 🚨 เกินกำลัง) · แถบปฏิทินระบายสี ☀/⏰/🌙/⚡/⚠ + สรุปต่อไลน์ · endBacklog > 0 = 🚨 เปิดเต็มที่ยังไม่ทัน
 - **แท็บรายเดือน:** forecast 6 เดือนข้างหน้า → กะที่ต้องใช้ (shiftsNeeded) vs วันทำงานในเดือน (จาก company_calendar) → verdict: กะเช้าพอ / ต้อง OT N วัน / ต้องกะดึก / 🚨 เกินกำลังต้องเพิ่มไลน์-คน
@@ -573,16 +576,20 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - อัตรา/วัน อ่านวันทำงานจริงจากปฏิทินบริษัท (`countWorkingDaysInMonth` — fallback 22 เมื่อปฏิทินว่าง · 2026-07-21)
 - **เฟสถัดไป (ยังไม่ทำ):** cron/edge แจ้ง Telegram ผลิต+planner ตอนเข้า window อัตโนมัติ (ตอนนี้เห็นผ่านหน้า + andon เหลืองบน org map)
 
-## MTN Org Overview Map — ผังภาพรวมไลน์ + Andon 2 ระดับ (2026-07-16)
+## ตั้งค่าผัง/Floorplan — แยก display ออกจาก setup (2026-07-16)
 
-แท็บ **🗺️ ภาพรวม (Org)** ในหน้า `/mtn-layout` — วาง **node ไลน์** ทับ**ผัง Facility ที่มีอยู่** (`pm_facility_areas.image_path`) เห็นสถานะทุกไลน์บนจอเดียว (เหมาะจอ TV หน้างาน MTN)
+**หลักการ:** หน้า display (ผังรวมโรงงาน/Dashboard) = **ดู + popup เท่านั้น** · การตั้งค่าผังทั้งหมดรวมที่ **`/layout-setup` "🗺️ ตั้งค่าผัง/Floorplan"** (หมวดตั้งค่าโปรแกรม) แยกแท็บตาม POV — เตรียมรับ Store/AMR ในอนาคต
+- **`FactoryMap` รับ prop `setupMode`** (default false): `/factory-map` = display-only (canEdit=false, ไม่มีปุ่มแก้ผัง) · `/layout-setup` แท็บภาพรวมโรงงาน = `<FactoryMap setupMode />` (แก้ผัง/วาด polygon ได้)
+- **`MtnMachineLayout` รับ prop `setupMode`** เช่นกัน (default false): `/mtn-layout` = facility display-only (canEdit=false) · `/layout-setup` แท็บ MTN = `<MtnMachineLayout setupMode />` (เพิ่มโซน/อัปรูป/วางจุด facility ได้, default view=facility)
+- **แท็บ:** 🗺️ ภาพรวมโรงงาน (FactoryMap setupMode) · 🏭 ผลิต (ลิงก์ LineSetup — LineSetup ทำหลายอย่างเลยลิงก์ไม่ยกโค้ด) · 🔧 MTN (MtnMachineLayout setupMode ฝังในแท็บ) · 📦 Store/AMR (placeholder รอระบบ AMR) · component `src/pages/LayoutSetup.jsx`
+- สิทธิ์: `page:/layout-setup` (admin/manager/supervisor · admin bypass) · migration `20260716_layout_setup_permission.sql`
+- **หน้า display อื่นที่ควรแยก setup ออก (audit อยู่):** ดูผล review — อย่าฝัง setup/config ในหน้า operational ใหม่ ให้ไปหมวดตั้งค่า
 
-- **ตาราง:** `pm_org_nodes` (DR, migration `20260716_pm_org_nodes.sql`) — line_name + pos_top/left (% ของภาพ) + area_id (ผูกผัง facility) · anon-open
-- **Andon 2 ระดับ (คนละสี ตาม Andon convention):** 🔴 **breakdown** = ไลน์มีใบซ่อม MO ค้าง (`mtn_orders` ไม่ closed/rejected) → **กระพริบแดง** (`.dt-alarm-blink`) · 🟡 **planned PM** = PM ใกล้/เกินรอบ (`overdue`/`due_soon` ของอุปกรณ์ในไลน์) → **เหลืองนิ่ง** · 🟢 ปกติ · เช็ค family ไลน์ (`getLineFamilyNames`: ไลน์แม่ครอบลูก)
-- **คลิก node → ไปผังเครื่องของไลน์นั้น** (สลับไป view production + selectedLine)
-- **แก้ผัง (สิทธิ์ `pm:setup`):** sidebar เลือกไลน์ → คลิกบนผังวาง node · ลากย้าย · ✕ ลบ · เลือกผังฐานจาก facility area ได้ถ้ามีหลายผัง
-- **refresh:** โหลดตอนเปิด view (ไม่ auto-poll — เปิดค้างจอ TV กด refresh/สลับ view เอา) · MachineFloorMap เพิ่ม prop `p.blink` (class dt-alarm-blink) + `p.icon`
-- **ตั้งค่ารูปผังฐาน:** จัดการได้ที่ **ตั้งค่าโปรแกรม → LineSetup** (การ์ด 🗺️ ผังโรงงาน = component `FactoryPlanManager` — CRUD `pm_facility_areas` ชุดเดียวกับ MTN facility tab · แก้ที่ไหนก็ได้) ตามคำสั่ง user 2026-07-16 (รวมที่ตั้งรูปผังไว้ที่เดียวเหมือนผังไลน์) · MTN facility tab ยังอัปได้เพราะใช้รูปเดียวกันวางอุปกรณ์ facility
+## ผังรวมโรงงาน — ผังภาพรวมทั้งโรงงานที่เดียว (ยุบรวมแล้ว 2026-07-16)
+
+**ผังรวมโรงงาน = `/factory-map` (FactoryMap) ที่เดียวเท่านั้น** — polygon ต่อไลน์ + หลายโหมด (ยอดผลิต/OEE/Downtime/ของเสีย/คน/**PM เครื่องจักร**) ดู "Factory Master Map" ด้านบน
+- ⚠️ **เคยทำ MTN org map แยก (แท็บ "ภาพรวม Org" ใน `/mtn-layout` + component `FactoryPlanManager` ใน LineSetup) แล้วมันซ้ำซ้อนกับ `/factory-map` → ยุบทิ้งแล้ว** (2026-07-16) · `/mtn-layout` เหลือปุ่มลิงก์ "🗺️ ภาพรวมทั้งโรงงาน" → `/factory-map` แทน · **อย่าสร้างผังรวมโรงงานอันใหม่ ให้ต่อยอดที่ `/factory-map`**
+- ตาราง `pm_org_nodes` (migration `20260716_pm_org_nodes.sql`) เป็น vestigial (additive ไม่ลบ แต่ไม่มีโค้ดใช้แล้ว) · ถ้าอยากได้ signal "ใบซ่อม MO ค้าง" บนผังรวม ให้เพิ่มเป็น metric ใน FactoryMap (มี Downtime/PM mode อยู่แล้ว)
 
 ## PM Photo-Compare Inspection — ตรวจสภาพเครื่องด้วยการเทียบรูป "จับผิด" (2026-07-15, เฟส 1 ทดลอง)
 

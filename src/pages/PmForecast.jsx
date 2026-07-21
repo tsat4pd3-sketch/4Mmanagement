@@ -74,9 +74,11 @@ export default function PmForecast() {
         if (!line) continue
         const fam = new Set(getLineFamilyNames(lineArr, line))
         const famRows = prodArr.filter(r => r.line_name && fam.has(r.line_name))
-        // shot สะสมตั้งแต่ PM ครั้งก่อน
+        // shot สะสมตั้งแต่ PM ครั้งก่อน — ใช้ > (exclusive) ให้ตรงกับ SQL pm_refresh_plan
+        // (confirmed_at > last_inspection) กันนับ production ของ "วัน PM" ก่อนทำ PM ซ้ำเข้ามา
+        // ⚠️ ถ้าเริ่มใช้แผน usage จริง: ให้ mirror pm_refresh_plan (qty field / line scope) เป็น source เดียว
         const lastDone = plan.last_done_at ? plan.last_done_at.slice(0, 10) : null
-        const accumUsage = famRows.filter(r => !lastDone || r.work_date >= lastDone).reduce((s, r) => s + Number(r.qty_ok ?? r.qty ?? 0), 0)
+        const accumUsage = famRows.filter(r => !lastDone || r.work_date > lastDone).reduce((s, r) => s + Number(r.qty_ok ?? r.qty ?? 0), 0)
         // อัตรา/วัน: forecast ของ mat ที่ไลน์นี้ผลิต ÷ วันทำงาน · ไม่มี forecast → เฉลี่ยจริง 30 วัน
         const mats = [...new Set(famRows.map(r => r.mat_no).filter(Boolean))]
         const monthFc = mats.reduce((s, m) => s + (fcByMat[m] || 0), 0)
