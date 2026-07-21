@@ -2156,6 +2156,7 @@ function RadarTooltipContent({ active, payload }) {
 
 /* ── Radar Panel ── */
 function OperatorRadarPanel({ emp, skillDefs, subItemsByskill = {}, lines = [], onClose }) {
+  const vw = useWidth();
   const skillMap = {};
   (emp.employee_skills || []).forEach(s => { skillMap[s.skill_name] = s.score; });
   const [printing, setPrinting] = useState(false);
@@ -2211,14 +2212,19 @@ function OperatorRadarPanel({ emp, skillDefs, subItemsByskill = {}, lines = [], 
   /* dynamic gradient based on avg */
   const glowColor = avg >= 80 ? '#22c55e' : avg >= 60 ? '#84cc16' : avg >= 40 ? '#f59e0b' : '#ef4444';
 
+  // จอ landscape (desktop/tablet) → modal ขยายกว้าง 2 คอลัมน์ (UI-CONVENTIONS §5 — ห้ามแคบสูงแล้ว scroll)
+  const wide = vw >= 1024;
+
   return (
-    <div style={{
+    <div onClick={onClose} style={{
       position: 'fixed', inset: 0, zIndex: 2100,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
       background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)',
     }}>
       <div onClick={e => e.stopPropagation()} style={{
-        width: 'min(460px, 94vw)',
+        width: wide ? 'min(96vw, 1040px)' : 'min(460px, 94vw)',
+        maxHeight: '92vh',
+        display: 'flex', flexDirection: 'column',
         background: 'var(--bg2)',
         border: `1px solid ${glowColor}55`,
         borderRadius: 20,
@@ -2234,10 +2240,10 @@ function OperatorRadarPanel({ emp, skillDefs, subItemsByskill = {}, lines = [], 
         `}</style>
 
         {/* Header stripe */}
-        <div style={{ height: 4, background: `linear-gradient(90deg, ${glowColor}, transparent)` }} />
+        <div style={{ height: 4, background: `linear-gradient(90deg, ${glowColor}, transparent)`, flexShrink: 0 }} />
 
-        {/* Profile section */}
-        <div style={{ padding: '20px 24px 12px', display: 'flex', alignItems: 'center', gap: 16 }}>
+        {/* Profile section (full width) */}
+        <div style={{ padding: '20px 24px 12px', display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <img
               src={emp.image_url || ''}
@@ -2277,6 +2283,9 @@ function OperatorRadarPanel({ emp, skillDefs, subItemsByskill = {}, lines = [], 
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', padding: 4, alignSelf: 'flex-start' }}>✕</button>
         </div>
 
+        {/* Body — desktop: 2 คอลัมน์ landscape · mobile: คอลัมน์เดียว · scroll เป็น fallback */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'grid', gridTemplateColumns: wide ? '1fr 1fr' : '1fr', columnGap: 8, alignItems: 'start' }}>
+        <div style={{ minWidth: 0 }}>
         {/* Stat bars row — top 4 non-zero skills */}
         {radarData.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(radarData.length, 4)}, 1fr)`, gap: 6, padding: '0 24px 12px' }}>
@@ -2326,9 +2335,10 @@ function OperatorRadarPanel({ emp, skillDefs, subItemsByskill = {}, lines = [], 
             {printing ? 'กำลังเตรียม...' : '🖨️ พิมพ์ใบประเมินทักษะรายบุคคล (F-PRS-P1-119)'}
           </button>
         </div>
+        </div>{/* /left column */}
 
-        {/* All skill bars grouped by category */}
-        <div style={{ padding: '0 24px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* All skill bars grouped by category (right column on desktop) */}
+        <div style={{ padding: '0 24px 20px', display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
           {catGroups.map(g => {
             const gSkills = g.skills.map(s => ({ subject: s.label, value: skillMap[s.name] ?? 0 })).filter(d => d.value > 0);
             if (gSkills.length === 0) return null;
@@ -2355,7 +2365,8 @@ function OperatorRadarPanel({ emp, skillDefs, subItemsByskill = {}, lines = [], 
               </div>
             );
           })}
-        </div>
+        </div>{/* /right column */}
+        </div>{/* /body */}
       </div>
     </div>
   );
