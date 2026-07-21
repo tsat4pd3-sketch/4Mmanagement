@@ -70,7 +70,7 @@ function getPublicUrl(path) {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const S = {
   page: { padding: 'clamp(12px,3vw,28px) clamp(14px,3.5vw,32px)', minHeight: '100%', background: 'var(--bg)' },
-  header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 },
+  header: { display: 'flex', paddingRight: 52, alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 },
   h1: { fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 },
   sub: { fontSize: 13, color: 'var(--muted)', marginTop: 4 },
   deptBar: { display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' },

@@ -193,7 +193,7 @@ export default function FactoryMap() {
 
   return (
     <div className="page-content" style={{ maxWidth: 'min(97vw, 2200px)', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
         <div>
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>🗺️ ผังรวมโรงงาน</h2>
           <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>สถานะการผลิตของทุกไลน์บนผังเดียว — อัปเดตอัตโนมัติทุก 30 วินาที</p>

@@ -251,7 +251,7 @@ export default function MtnRepair() {
 
   return (
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1800px)', margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+      <div style={{ display: 'flex', paddingRight: 52, alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>🛠️ แจ้งซ่อม MTN (MO)</h1>
         <span style={{ fontSize: 13, color: 'var(--muted)' }}>ค้างดำเนินการ <b style={{ color: openCount ? '#ef4444' : '#22c55e' }}>{openCount}</b> ใบ</span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>

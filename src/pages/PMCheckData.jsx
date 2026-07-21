@@ -64,7 +64,7 @@ const S = {
     background: active ? `${color}12` : 'var(--card)',
   }),
   main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
-  header: { padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 },
+  header: { padding: '14px 52px 14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 },
   tabBar: { display: 'flex', gap: 4, padding: 4, borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)' },
   tabBtn: (active) => ({
     padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none',
