@@ -215,8 +215,12 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
     setBusy(o.id);
     const payload = { status: st.next };
     if (st.next === 'shipped') { payload.shipped_at = new Date().toISOString(); payload.shipped_by = fullName || 'Logistic'; }
-    const { error } = await supabaseDR.from('customer_shipping_orders').update(payload).eq('id', o.id);
+    // guard สถานะปัจจุบันแบบ atomic — กันกดรัว/2 เครื่องเลื่อนสถานะเดียวกันซ้ำ
+    // (เครื่องสโตร์ใช้บัญชีร่วม) ถ้าไม่ guard จะหักสต็อก + ยิง Telegram ซ้ำ 2 รอบต่อการส่ง 1 ครั้ง
+    const { data: updated, error } = await supabaseDR.from('customer_shipping_orders')
+      .update(payload).eq('id', o.id).eq('status', o.status).select('id');
     if (error) { toast.error(error.message); setBusy(null); return; }
+    if (!updated || updated.length === 0) { setBusy(null); await load(); return; } // มีคนเลื่อนไปก่อนแล้ว
     // ส่งแล้ว → หักสต็อก FG จากคลังอัตโนมัติเท่าที่มีบันทึกไว้ (ไลน์ที่มีของมากสุดก่อน)
     if (st.next === 'shipped') {
       const entry = fgStock[o.mat_no];

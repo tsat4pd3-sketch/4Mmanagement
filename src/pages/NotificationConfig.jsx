@@ -185,7 +185,12 @@ export default function NotificationConfig() {
     const { error } = await supabase.from('telegram_channels').delete().eq('id', room.id)
     if (error) return toast.error(error.message)
     setRooms(prev => prev.filter(r => r.id !== room.id))
-    setRules(prev => prev.map(r => r.channel_id === room.id ? { ...r, channel_id: null } : r))
+    // ถอด id ห้องที่ลบออกจากทุกกฎที่อ้างถึง (โมเดลคือ channel_ids[] ไม่ใช่ channel_id เดี่ยว)
+    // — ต้อง persist ลง DB ด้วย ไม่งั้น id ค้างในกฎ แล้ว edge function route ไปห้องที่ไม่มีจริง
+    for (const r of rules) {
+      const cur = Array.isArray(r.channel_ids) ? r.channel_ids : []
+      if (cur.includes(room.id)) await updateRule(r.event_key, { channel_ids: cur.filter(id => id !== room.id) })
+    }
     toast.success('ลบห้องแล้ว')
   }
 
