@@ -573,16 +573,11 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - อัตรา/วัน อ่านวันทำงานจริงจากปฏิทินบริษัท (`countWorkingDaysInMonth` — fallback 22 เมื่อปฏิทินว่าง · 2026-07-21)
 - **เฟสถัดไป (ยังไม่ทำ):** cron/edge แจ้ง Telegram ผลิต+planner ตอนเข้า window อัตโนมัติ (ตอนนี้เห็นผ่านหน้า + andon เหลืองบน org map)
 
-## MTN Org Overview Map — ผังภาพรวมไลน์ + Andon 2 ระดับ (2026-07-16)
+## ผังรวมโรงงาน — ผังภาพรวมทั้งโรงงานที่เดียว (ยุบรวมแล้ว 2026-07-16)
 
-แท็บ **🗺️ ภาพรวม (Org)** ในหน้า `/mtn-layout` — วาง **node ไลน์** ทับ**ผัง Facility ที่มีอยู่** (`pm_facility_areas.image_path`) เห็นสถานะทุกไลน์บนจอเดียว (เหมาะจอ TV หน้างาน MTN)
-
-- **ตาราง:** `pm_org_nodes` (DR, migration `20260716_pm_org_nodes.sql`) — line_name + pos_top/left (% ของภาพ) + area_id (ผูกผัง facility) · anon-open
-- **Andon 2 ระดับ (คนละสี ตาม Andon convention):** 🔴 **breakdown** = ไลน์มีใบซ่อม MO ค้าง (`mtn_orders` ไม่ closed/rejected) → **กระพริบแดง** (`.dt-alarm-blink`) · 🟡 **planned PM** = PM ใกล้/เกินรอบ (`overdue`/`due_soon` ของอุปกรณ์ในไลน์) → **เหลืองนิ่ง** · 🟢 ปกติ · เช็ค family ไลน์ (`getLineFamilyNames`: ไลน์แม่ครอบลูก)
-- **คลิก node → ไปผังเครื่องของไลน์นั้น** (สลับไป view production + selectedLine)
-- **แก้ผัง (สิทธิ์ `pm:setup`):** sidebar เลือกไลน์ → คลิกบนผังวาง node · ลากย้าย · ✕ ลบ · เลือกผังฐานจาก facility area ได้ถ้ามีหลายผัง
-- **refresh:** โหลดตอนเปิด view (ไม่ auto-poll — เปิดค้างจอ TV กด refresh/สลับ view เอา) · MachineFloorMap เพิ่ม prop `p.blink` (class dt-alarm-blink) + `p.icon`
-- **ตั้งค่ารูปผังฐาน:** จัดการได้ที่ **ตั้งค่าโปรแกรม → LineSetup** (การ์ด 🗺️ ผังโรงงาน = component `FactoryPlanManager` — CRUD `pm_facility_areas` ชุดเดียวกับ MTN facility tab · แก้ที่ไหนก็ได้) ตามคำสั่ง user 2026-07-16 (รวมที่ตั้งรูปผังไว้ที่เดียวเหมือนผังไลน์) · MTN facility tab ยังอัปได้เพราะใช้รูปเดียวกันวางอุปกรณ์ facility
+**ผังรวมโรงงาน = `/factory-map` (FactoryMap) ที่เดียวเท่านั้น** — polygon ต่อไลน์ + หลายโหมด (ยอดผลิต/OEE/Downtime/ของเสีย/คน/**PM เครื่องจักร**) ดู "Factory Master Map" ด้านบน
+- ⚠️ **เคยทำ MTN org map แยก (แท็บ "ภาพรวม Org" ใน `/mtn-layout` + component `FactoryPlanManager` ใน LineSetup) แล้วมันซ้ำซ้อนกับ `/factory-map` → ยุบทิ้งแล้ว** (2026-07-16) · `/mtn-layout` เหลือปุ่มลิงก์ "🗺️ ภาพรวมทั้งโรงงาน" → `/factory-map` แทน · **อย่าสร้างผังรวมโรงงานอันใหม่ ให้ต่อยอดที่ `/factory-map`**
+- ตาราง `pm_org_nodes` (migration `20260716_pm_org_nodes.sql`) เป็น vestigial (additive ไม่ลบ แต่ไม่มีโค้ดใช้แล้ว) · ถ้าอยากได้ signal "ใบซ่อม MO ค้าง" บนผังรวม ให้เพิ่มเป็น metric ใน FactoryMap (มี Downtime/PM mode อยู่แล้ว)
 
 ## PM Photo-Compare Inspection — ตรวจสภาพเครื่องด้วยการเทียบรูป "จับผิด" (2026-07-15, เฟส 1 ทดลอง)
 
