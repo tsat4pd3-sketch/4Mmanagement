@@ -4,6 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import DowntimeSiren from '../components/DowntimeSiren';
+import ToggleDot from '../components/ToggleDot';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
 import { hasPermission, can } from '../utils/permissions';
 import { getLineFamilyNames, getLineFamilyIds, getAncestorNames, toHierarchicalOptions } from '../utils/lineHierarchy';
@@ -1005,6 +1006,7 @@ export default function Management() {
                 {f.count > 99 ? '99+' : f.count}
               </span>
             )}
+            <ToggleDot on={f.on} />
           </button>
         ))}
         {/* โชว์/ซ่อนป้ายชื่อทุกจุด — icon 36×36 เท่าปุ่มอื่น (ป้ายเตือน alarm/ต่ำกว่า min โชว์เสมอ) */}
@@ -1021,8 +1023,7 @@ export default function Management() {
           }}
         >
           🏷️
-          {/* จุดเล็กมุมล่างขวาบอกสถานะ ซ่อน (แดง) / โชว์ (เขียว) */}
-          <span style={{ position: 'absolute', bottom: -3, right: -3, width: 12, height: 12, borderRadius: 6, background: showPills ? '#22c55e' : '#6b7280', border: '2px solid var(--bg)', fontSize: 8, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }} />
+          <ToggleDot on={showPills} />
         </button>
       </div>
 
