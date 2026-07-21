@@ -193,7 +193,10 @@ export default function ProductionPlan() {
       const recall75Days = days.filter(d => d.plan.includes('recall75')).length;
       const holidayDays = days.filter(d => d.plan.includes('holiday_work')).length;
       const endBacklog = days[days.length - 1]?.backlog || 0;
-      return { line, days, otDays, nightDays, recall75Days, holidayDays, endBacklog, unknownCap, matCount: matSet.size, orderCount: lineOrders.length };
+      // มาตรการ ม.75 รายไลน์: วัน shutdown75 ในช่วง — ไลน์นี้หยุดได้กี่วัน / ต้องเรียกมากี่วัน
+      const sd75Total = days.filter(d => d.sd75).length;
+      const sd75Stoppable = days.filter(d => d.sd75 && !d.plan.includes('recall75')).length;
+      return { line, days, otDays, nightDays, recall75Days, holidayDays, endBacklog, sd75Total, sd75Stoppable, unknownCap, matCount: matSet.size, orderCount: lineOrders.length };
     }).filter(r => r.orderCount > 0 || r.unknownCap > 0);
   }, [loading, viewLines, orders, today, capOfMat, lineOfMat, calOf]);
 
@@ -286,8 +289,31 @@ export default function ProductionPlan() {
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังวิเคราะห์กำลังผลิต…</div>
       ) : tab === 'daily' ? (
-        daily.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มีออเดอร์ค้างส่งในช่วง {DAILY_HORIZON} วันข้างหน้า สำหรับไลน์ใน scope</div> :
-        daily.map(({ line, days, otDays, nightDays, recall75Days, holidayDays, endBacklog, unknownCap, orderCount }) => (
+        daily.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มีออเดอร์ค้างส่งในช่วง {DAILY_HORIZON} วันข้างหน้า สำหรับไลน์ใน scope</div> : <>
+        {/* สรุปมาตรการ ม.75: ไลน์ไหนหยุดได้ / ไลน์ไหน order ไม่ลงต้องเรียกมา (คำสั่ง user 2026-07-21) */}
+        {daily.some(r => r.sd75Total > 0) && (() => {
+          const stoppable = daily.filter(r => r.sd75Total > 0 && r.recall75Days === 0);
+          const mustWork = daily.filter(r => r.recall75Days > 0);
+          return (
+            <div style={{ ...card, borderColor: '#a78bfa66' }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa', marginBottom: 6 }}>⚖️ มาตรการหยุดจ่าย 75% (ม.75) — ช่วง {DAILY_HORIZON} วันข้างหน้า</div>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12 }}>
+                <div style={{ flex: '1 1 260px' }}>
+                  <div style={{ color: '#22c55e', fontWeight: 700, marginBottom: 4 }}>🛑 หยุดตามมาตรการได้ ({stoppable.length} ไลน์)</div>
+                  {stoppable.length === 0 ? <div style={{ color: 'var(--muted)' }}>— ไม่มี —</div>
+                    : stoppable.map(r => <div key={r.line.id} style={{ color: 'var(--text2)' }}>{r.line.name} <span style={{ color: 'var(--muted)' }}>· หยุดได้ทั้ง {r.sd75Total} วัน</span></div>)}
+                </div>
+                <div style={{ flex: '1 1 260px' }}>
+                  <div style={{ color: '#a78bfa', fontWeight: 700, marginBottom: 4 }}>⚡ หยุดไม่ได้ — order ไม่ลด ต้องเรียกมาทำ ({mustWork.length} ไลน์)</div>
+                  {mustWork.length === 0 ? <div style={{ color: 'var(--muted)' }}>— ไม่มี —</div>
+                    : mustWork.map(r => <div key={r.line.id} style={{ color: 'var(--text2)' }}>{r.line.name} <span style={{ color: '#a78bfa', fontWeight: 700 }}>· เรียกมา {r.recall75Days}/{r.sd75Total} วัน</span>{r.sd75Stoppable > 0 && <span style={{ color: 'var(--muted)' }}> (อีก {r.sd75Stoppable} วันหยุดได้)</span>}</div>)}
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>ตัดสินจาก order ค้างส่งจริง ณ ตอนนี้ + กำลังผลิตของแต่ละไลน์ — มาทำงานวัน ม.75 = ค่าแรงปกติ (ไม่ใช่ OT วันหยุด) · ดูวันไหนต้องมาที่แถบปฏิทินของไลน์ด้านล่าง (⚡)</div>
+            </div>
+          );
+        })()}
+        {daily.map(({ line, days, otDays, nightDays, recall75Days, holidayDays, endBacklog, sd75Total, sd75Stoppable, unknownCap, orderCount }) => (
           <div key={line.id} style={card}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
               <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{line.name}</span>
@@ -298,6 +324,9 @@ export default function ProductionPlan() {
                 : (otDays + nightDays + recall75Days + holidayDays === 0
                   ? <span style={chip('#22c55e')}>✅ กะเช้าปกติพอ ไม่ต้องเปิด OT</span>
                   : <span style={chip('#f59e0b')}>ต้องเปิด: {nightDays ? `กะดึก ${nightDays} วัน · ` : ''}{otDays ? `OT ${otDays} วัน · ` : ''}{recall75Days ? `ยกเลิกหยุด75% ${recall75Days} วัน · ` : ''}{holidayDays ? `ทำวันหยุด OT ${holidayDays} วัน` : ''}</span>)}
+              {sd75Total > 0 && (recall75Days > 0
+                ? <span style={chip('#a78bfa')} title="วัน ม.75 ที่มี order ชน/งานค้าง — ต้องเรียกพนักงานมาทำงาน (ค่าแรงปกติ)">⚡ ม.75: หยุดได้ {sd75Stoppable}/{sd75Total} วัน — ต้องเรียกมาทำ {recall75Days} วัน</span>
+                : <span style={chip('#22c55e')} title="ทุกวัน ม.75 ในช่วงนี้ ไลน์นี้ไม่มี order ชน — หยุดตามมาตรการได้">🛑 ม.75: หยุดได้ทั้ง {sd75Total} วัน (order ไม่ชน)</span>)}
               {unknownCap > 0 && <span style={chip('#94a3b8')} title="พาร์ทที่ยังไม่มีประวัติกำลังผลิต/ไม่รู้จักไลน์">{unknownCap.toLocaleString()} ชิ้นไม่รู้กำลัง</span>}
             </div>
             {/* แถบปฏิทินวันต่อวัน */}
@@ -321,7 +350,8 @@ export default function ProductionPlan() {
               <span>☀ กะเช้าพอ</span><span>⏰ ต้องเปิด OT</span><span>🌙 ต้องเปิดกะดึก</span><span style={{ color: '#a78bfa' }}>⚡ ยกเลิกหยุด 75% (ค่าแรงปกติ)</span><span style={{ color: '#ef4444' }}>⚠ ทำวันหยุด OT (×1.5/×2)</span>
             </div>
           </div>
-        ))
+        ))}
+        </>
       ) : (
         monthly.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มี forecast สำหรับไลน์ใน scope</div> :
         monthly.map(({ line, rows }) => (
