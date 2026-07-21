@@ -21,6 +21,8 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { inSectionScope } from '../utils/sectionScope';
 
 /* ── Date helpers (ห้ามใช้ toISOString() หา work date — ดู CLAUDE.md) ─────── */
 function localDateStr(d = new Date()) {
@@ -226,6 +228,19 @@ const RANGE_OPTS = [{ v: 7, label: '7 วัน' }, { v: 30, label: '30 วั�
 const prodQty = o => o.qty_ok ?? o.qty_actual ?? o.qty ?? 0;   // ยอดผลิตจริงต่อใบงาน
 
 function QualityDashboard() {
+  const { role, lineId, sections } = useContext(UserContext);
+  const [allLines, setAllLines] = useState([]);
+  // ขอบเขตไลน์ของภาพรวมผลิต/ของเสีย: leader → เฉพาะครอบครัวไลน์ตัวเอง (ไม่ให้เห็นทั้งโรงงานจนงง) ·
+  // role ที่ถูกจำกัด sections → เฉพาะส่วนงาน · qa/manager/admin (sections ว่าง) → ทั้งโรงงานเหมือนเดิม
+  const scopedLineNames = useMemo(() => {
+    if (role === 'leader' && lineId) {
+      const myLine = allLines.find(l => String(l.id) === String(lineId));
+      return myLine ? getLineFamilyNames(allLines, myLine.name) : [];
+    }
+    if (sections && sections.length) return allLines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
+    return null; // ไม่จำกัด
+  }, [role, lineId, sections, allLines]);
+  useEffect(() => { supabase.from('production_lines').select('id, name, section, parent_line_name').then(({ data }) => setAllLines(data || [])); }, []);
   const [from, setFrom] = useState(() => daysAgoStr(30));
   const [to, setTo]     = useState(() => getWorkDate());
   const [lineFilter, setLineFilter] = useState('');    // '' = ทุกไลน์
@@ -272,9 +287,12 @@ function QualityDashboard() {
     let alive = true;
     (async () => {
       setLoading(true);
-      const { data: ss } = await supabaseDR.from('production_sessions')
+      if (scopedLineNames && scopedLineNames.length === 0) { setSessions([]); setOrders([]); setDefects([]); setLoading(false); return; }
+      let ssQ = supabaseDR.from('production_sessions')
         .select('id, work_date, line_name, shift, actual_qty, qty_ok, qty_ng, oee_q')
-        .eq('status', 'closed').gte('work_date', from).lte('work_date', to).order('work_date');
+        .eq('status', 'closed').gte('work_date', from).lte('work_date', to);
+      if (scopedLineNames) ssQ = ssQ.in('line_name', scopedLineNames);
+      const { data: ss } = await ssQ.order('work_date');
       const ids = (ss || []).map(s => s.id);
       const [{ data: oo }, { data: dd }] = ids.length ? await Promise.all([
         supabaseDR.from('prod_orders').select('id, session_id, mat_no, part_name, qty, qty_ok, qty_actual').in('session_id', ids),
@@ -294,7 +312,7 @@ function QualityDashboard() {
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [from, to]);
+  }, [from, to, scopedLineNames]);
 
   const stat = useMemo(() => {
     const byDate = new Map(), byLine = new Map(), byType = new Map();
