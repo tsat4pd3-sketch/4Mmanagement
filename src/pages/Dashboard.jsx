@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useContext, Fragment } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
@@ -213,6 +213,8 @@ export default function Dashboard() {
   const [expandedLine,  setExpandedLine]  = useState(null);
   const [expandedLines, setExpandedLines] = useState(new Set()); // ชื่อไลน์หลักที่กดขยายดูไลน์ย่อยในการ์ดสถานะไลน์ผลิต
   const [searchParams, setSearchParams] = useSearchParams(); // deep-link ?line=NAME (จากผังรวมโรงงาน) → เปิดผังไลน์นั้น
+  const navigate = useNavigate();
+  const cameFromFactoryMap = useRef(false); // เปิดผังมาจากผังรวมโรงงาน → ปิดแล้วเด้งกลับ /factory-map
   const [andonLine, setAndonLine] = useState(null); // { title, names } — เปิด Andon panel เจาะรายละเอียด alarm ของไลน์
   const mapImgRef = useRef(null);
   const [mapBox, setMapBox] = useState({ w: 0, h: 0 });
@@ -695,10 +697,16 @@ export default function Dashboard() {
     if (!wanted || !layouts.length) return;
     const hit = layouts.find(l => l.line_name === wanted)
       || layouts.find(l => layoutLineNamesForCard(l.line_name).includes(wanted));
-    if (hit) setExpandedLine(hit.line_name);
-    searchParams.delete('line');           // ล้าง param กันเปิดซ้ำตอน re-render/ปิด modal
+    if (hit) { setExpandedLine(hit.line_name); cameFromFactoryMap.current = searchParams.get('from') === 'factory-map'; }
+    searchParams.delete('line'); searchParams.delete('from'); // ล้าง param กันเปิดซ้ำตอน re-render/ปิด modal
     setSearchParams(searchParams, { replace: true });
   }, [layouts, searchParams, layoutLineNamesForCard, setSearchParams]);
+
+  // ปิดผังไลน์: ถ้าเปิดมาจากผังรวมโรงงาน → เด้งกลับหน้านั้น (ไม่ค้างที่ Dashboard)
+  const closeExpandedLine = useCallback(() => {
+    setExpandedLine(null);
+    if (cameFromFactoryMap.current) { cameFromFactoryMap.current = false; navigate('/factory-map'); }
+  }, [navigate]);
 
   /* Filter by assignedShift — memoized so the 1s clock tick doesn't re-filter all logs */
   const shiftLogs = useMemo(
@@ -2284,7 +2292,7 @@ export default function Dashboard() {
                   🏭 {expandedLine}
                 </div>
                 <button
-                  onClick={() => setExpandedLine(null)}
+                  onClick={closeExpandedLine}
                   style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--muted)', padding: '0 4px' }}
                 >✕</button>
               </div>

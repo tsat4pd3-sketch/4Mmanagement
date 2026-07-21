@@ -259,12 +259,21 @@ export default function FactoryMap() {
     return m;
   }, [lines]);
   const familyNames = (name) => [name, ...(childrenOf[name] || [])];
-  // ไลน์นี้มีผังพื้น (line_layouts) ไหม → คืนชื่อไลน์ที่จะเปิดผัง (ตัวเอง หรือไลน์ลูกที่มีผัง) · ไม่มี = null
-  const floorMapTarget = (name) => layoutLines.has(name) ? name : (familyNames(name).find(n => layoutLines.has(n)) || null);
-  // คลิกไลน์: มีผังพื้น → ไปหน้า Dashboard เปิดผังไลน์พร้อมพนักงาน · ไม่มีผัง → popup สรุปเมตริก
+  // คืนชื่อไลน์ที่จะ "เปิดผังพื้นพร้อมพนักงาน" ให้ — เลือกผังที่มีคนจริง
+  // (ผังไลน์แม่-ลูกคนละรูป · คนอยู่บนผังของไลน์ลูก → ไลน์แม่ว่าง = เด้งไปโชว์ผังลูกที่มีคนแทน) · ไม่มีผังเลย = null
+  const floorMapTarget = (name) => {
+    const cand = familyNames(name).filter(n => layoutLines.has(n));
+    if (!cand.length) return null;
+    const presentOf = (n) => manpower[n]?.present || 0;
+    if (layoutLines.has(name) && presentOf(name) > 0) return name;          // ไลน์แม่มีผัง+คนของตัวเอง → โชว์ตัวเอง
+    const withPeople = cand.filter(n => presentOf(n) > 0).sort((a, b) => presentOf(b) - presentOf(a));
+    if (withPeople.length) return withPeople[0];                            // ไลน์แม่ว่าง → ลูกที่มีคนมากสุด
+    return layoutLines.has(name) ? name : cand[0];                          // ยังไม่มีใครเข้างาน → ผังตัวเอง/ตัวแรก
+  };
+  // คลิกไลน์: มีผังพื้น → เปิดผังไลน์พร้อมพนักงาน (Dashboard) พร้อม from=factory-map เพื่อปิดแล้วเด้งกลับผังรวม · ไม่มีผัง → popup สรุปเมตริก
   const openLine = (name) => {
     const t = floorMapTarget(name);
-    if (t) { setHoverLine(null); navigate(`/dashboard?line=${encodeURIComponent(t)}`); }
+    if (t) { setHoverLine(null); navigate(`/dashboard?line=${encodeURIComponent(t)}&from=factory-map`); }
     else setDetailLine(name);
   };
   // ตีกรอบเฉพาะ "ไลน์บนสุด (top-level)" = parent_line_name IS NULL — 1 กรอบ/กลุ่ม (รวมยอดลูกด้วย stOf)
