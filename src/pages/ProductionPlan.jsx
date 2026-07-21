@@ -48,6 +48,7 @@ export default function ProductionPlan() {
   const [secFilter, setSecFilter] = useState('');
   const [calMap, setCalMap] = useState({});      // date → day_type
   const [prodByMat, setProdByMat] = useState({}); // mat_no → { line, ct }
+  const [pnoToMat, setPnoToMat] = useState({});   // normalize(p_no) → mat_no (map เลขลูกค้า → SAP เหมือนหน้า Planner&Sales)
   const [capByMat, setCapByMat] = useState({});   // mat_no → estimateCapacity result
   const [orders, setOrders] = useState([]);       // open shipping orders (future)
   const [forecasts, setForecasts] = useState([]); // future monthly forecast
@@ -84,7 +85,7 @@ export default function ProductionPlan() {
       const [{ data: cal }, { data: prods }, { data: sess }, { data: ord }, { data: fc }] = await Promise.all([
         supabase.from('company_calendar').select('work_date, day_type')
           .gte('work_date', addDays(today, -2)).lte('work_date', addDays(today, DAILY_HORIZON + 200)),
-        supabaseDR.from('dr_products').select('mat_no, line_name, cycle_time_sec').eq('is_active', true).not('mat_no', 'is', null),
+        supabaseDR.from('dr_products').select('mat_no, line_name, cycle_time_sec, p_no').eq('is_active', true).not('mat_no', 'is', null),
         supabaseDR.from('production_sessions').select('id, line_name, shift, oee').eq('status', 'closed').gte('work_date', histStart).limit(2000),
         supabaseDR.from('customer_shipping_orders').select('mat_no, part_name, customer, qty, due_date, status')
           .neq('status', 'shipped').gte('due_date', today).lte('due_date', addDays(today, DAILY_HORIZON)).limit(2000),
@@ -96,8 +97,13 @@ export default function ProductionPlan() {
       setForecasts(fc || []);
 
       const pmap = {};
-      (prods || []).forEach(p => { if (p.mat_no) pmap[p.mat_no] = { line: p.line_name, ct: p.cycle_time_sec || 0 }; });
+      const pnoMap = {};
+      (prods || []).forEach(p => {
+        if (p.mat_no) pmap[p.mat_no] = { line: p.line_name, ct: p.cycle_time_sec || 0 };
+        if (p.p_no && p.mat_no) { const k = normMat(p.p_no); if (k && !pnoMap[k]) pnoMap[k] = p.mat_no; } // เลขลูกค้า (p_no) → SAP
+      });
       setProdByMat(pmap);
+      setPnoToMat(pnoMap);
 
       // ── กำลังจริงต่อกะ: sum qty ต่อ (session, mat) จากใบปิด แล้ว median ต่อ (mat) ──
       const sessMeta = {}; (sess || []).forEach(s => { sessMeta[s.id] = s; });
@@ -134,19 +140,36 @@ export default function ProductionPlan() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [today]);
 
+  /* ── resolve เลขที่ order/forecast อ้าง → mat_no ภายใน (SAP): ตรง → normalize → p_no (เลขลูกค้า) ──
+     เดิม map ผ่าน mat_no อย่างเดียว → order/forecast ที่อ้างเลขลูกค้าถูกทิ้งเงียบ (แก้ 2026-07-21) */
+  const resolveMat = useCallback((x) => {
+    if (!x) return null;
+    if (prodByMat[x]) return x;
+    const nm = normMat(x);
+    const hit = Object.keys(prodByMat).find(m => normMat(m) === nm);
+    if (hit) return hit;
+    return pnoToMat[nm] || null;
+  }, [prodByMat, pnoToMat]);
   /* ── หากำลังต่อกะ (ชิ้น) ของ mat + line ที่ผลิต ── */
   const lineOfMat = useCallback((mat) => {
-    const direct = prodByMat[mat]?.line;
-    if (direct && lineNameSet.has(direct)) return direct;
-    // normalize เทียบ mat ที่ต่างขีด/ช่องว่าง
-    const nm = normMat(mat);
-    const hit = Object.keys(prodByMat).find(m => normMat(m) === nm);
-    return hit && lineNameSet.has(prodByMat[hit].line) ? prodByMat[hit].line : null;
-  }, [prodByMat, lineNameSet]);
+    const rid = resolveMat(mat);
+    const line = rid ? prodByMat[rid]?.line : null;
+    return line && lineNameSet.has(line) ? line : null;
+  }, [resolveMat, prodByMat, lineNameSet]);
   const capOfMat = useCallback((mat) => {
-    const est = capByMat[mat] || capByMat[Object.keys(capByMat).find(m => normMat(m) === normMat(mat)) || ''];
+    const rid = resolveMat(mat);
+    const est = rid ? capByMat[rid] : undefined;
     return { est, perShift: planCapacity(est, capMode) };
-  }, [capByMat, capMode]);
+  }, [resolveMat, capByMat, capMode]);
+  /* ── order/forecast ที่ map ไม่เจอ (ยังไม่ตั้ง SAP/p_no) — ต้องเตือน ไม่ทิ้งเงียบ ── */
+  const unmapped = useMemo(() => {
+    if (loading) return { orders: 0, parts: new Set(), fcParts: new Set() };
+    const parts = new Set(), fcParts = new Set();
+    let ordCnt = 0;
+    orders.forEach(o => { if (!resolveMat(o.mat_no)) { ordCnt++; parts.add(o.mat_no); } });
+    forecasts.forEach(f => { if (!resolveMat(f.mat_no)) fcParts.add(f.mat_no); });
+    return { orders: ordCnt, parts, fcParts };
+  }, [loading, orders, forecasts, resolveMat]);
 
   /* ═══ รายวัน: เดินปฏิทิน จัดสรร shift-load ต่อไลน์ ═══ */
   const daily = useMemo(() => {
@@ -285,6 +308,14 @@ export default function ProductionPlan() {
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
         กำลังผลิตคำนวณจาก <b>median ยอดดีจริงต่อกะ</b> ใน {HISTORY_DAYS} วันล่าสุด (ตัดค่าโดดอัตโนมัติ) · พาร์ทที่ไม่มีประวัติ fallback เป็น cycle time × OEE
       </div>
+
+      {!loading && (unmapped.orders > 0 || unmapped.fcParts.size > 0) && (
+        <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+          ⚠️ <b>ยังจับคู่เลข SAP ไม่ได้ {unmapped.orders} ออเดอร์ · {unmapped.parts.size} พาร์ท{unmapped.fcParts.size > 0 ? ` · forecast ${unmapped.fcParts.size} พาร์ท` : ''}</b> — พาร์ทเหล่านี้**ไม่ถูกนับในแผน** (ยังไม่ได้ตั้ง `p_no`/SAP ใน Product Master ให้ตรงเลขลูกค้า)
+          {unmapped.parts.size > 0 && <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5, wordBreak: 'break-word' }}>ตัวอย่าง: {[...unmapped.parts].slice(0, 8).join(' · ')}{unmapped.parts.size > 8 ? ' …' : ''}</div>}
+          <div style={{ marginTop: 3, color: 'var(--muted)', fontSize: 11.5 }}>→ ไปตั้ง p_no ที่หน้า Product Master หรือใช้ปุ่ม 🔗 จับคู่เลข SAP ในหน้า Planner &amp; Sales</div>
+        </div>
+      )}
 
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังวิเคราะห์กำลังผลิต…</div>
