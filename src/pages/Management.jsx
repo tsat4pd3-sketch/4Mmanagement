@@ -954,10 +954,20 @@ export default function Management() {
   const ppeAlertsInView = ppeAlerts.filter(p => p.employees?.line_id != null && viewLineFamilyIds.has(p.employees.line_id));
 
   /* ── Layout ── */
-  const poolW = isMobile ? '100%' : panelCollapsed ? 44 : isUltra ? 280 : isWide ? 248 : 220;
+  // 🔔 (fixed มุมขวาบน · App.jsx) เลื่อนลงเสมอกับขอบบนตู้ Heijunka เฉพาะหน้านี้ (desktop) ผ่าน CSS var
+  //   → 🔔 + ปุ่มกรองด้านล่าง เป็นคอลัมน์เดียวเรียงตรงกัน · หน้าอื่นไม่ตั้ง = 🔔 อยู่บนสุดเหมือนเดิม
+  const BELL_TOP = 58; // px — ระดับขอบบนตู้บอร์ด (main pt14 + canvas pt10 + แถบสลับมุมมอง ~34)
+  useEffect(() => {
+    if (isMobile) { document.documentElement.style.removeProperty('--esm-bell-top'); return; }
+    document.documentElement.style.setProperty('--esm-bell-top', `${BELL_TOP}px`);
+    return () => document.documentElement.style.removeProperty('--esm-bell-top');
+  }, [isMobile]);
+
+  const poolW = isMobile ? '100%' : panelCollapsed ? 0 : isUltra ? 280 : isWide ? 248 : 220;
   const poolStyle = isMobile
     ? { width: '100%', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '10px 12px', flexShrink: 0, maxHeight: '42vh', display: 'flex', flexDirection: 'column' }
-    : { width: poolW, minWidth: poolW, background: 'var(--bg2)', borderRight: '1px solid var(--border)', padding: panelCollapsed ? '12px 6px' : isWide ? '18px 12px' : '15px 10px', display: 'flex', flexDirection: 'column', flexShrink: 0, overflowY: panelCollapsed ? 'hidden' : 'auto', transition: 'width 0.25s ease, min-width 0.25s ease' };
+    // collapsed = ย่อหายสนิทเหมือน sidebar ใหญ่ (width 0, ไม่มี padding/เส้นขอบเหลือค้าง) → คืนพื้นที่ให้บอร์ดเต็ม
+    : { width: poolW, minWidth: poolW, background: 'var(--bg2)', borderRight: panelCollapsed ? 'none' : '1px solid var(--border)', padding: panelCollapsed ? 0 : isWide ? '18px 12px' : '15px 10px', display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden', overflowY: panelCollapsed ? 'hidden' : 'auto', transition: 'width 0.25s ease, min-width 0.25s ease' };
 
   const isOpenIssue = m => m.status !== 'approved' && m.status !== 'rejected';
 
@@ -1030,9 +1040,10 @@ export default function Management() {
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: 'calc(100vh - 80px)', background: 'var(--bg)', overflow: 'hidden' }}>
       <DowntimeSiren mode="open_15min" />
 
-      {/* ── ปุ่มกรอง (desktop) — icon ลอยแนวตั้งใต้ 🔔 (โปร่ง ไม่มีเฟรม ให้เบาตา) · board เว้น paddingRight ไม่ทับ */}
+      {/* ── ปุ่มกรอง (desktop) — คอลัมน์ต่อจาก 🔔 ตรงกันเป๊ะ (right:14 เท่า 🔔, เริ่มใต้ 🔔 = BELL_TOP+44)
+          🔔 + กรอง = คอลัมน์เดียวเรียงตรงกัน เสมอขอบบนตู้ Heijunka · board เว้น paddingRight ไม่ทับ */}
       {!isMobile && (
-        <div style={{ position: 'fixed', top: 54, right: 10, zIndex: 1200,
+        <div style={{ position: 'fixed', top: BELL_TOP + 44, right: 14, zIndex: 1200,
           display: 'flex', flexDirection: 'column', gap: 6 }}>
           {renderFilters('column')}
         </div>
@@ -1040,13 +1051,13 @@ export default function Management() {
 
       {/* ── Pool Panel ── */}
       <div style={poolStyle}>
-        {/* Collapse toggle (desktop only) */}
-        {!isMobile && (
+        {/* Collapse toggle (desktop, เฉพาะตอนกาง — ตอนย่อ pool กว้าง 0 ปุ่มขยายไปอยู่ใน toolbar แทน) */}
+        {!isMobile && !panelCollapsed && (
           <button
-            onClick={() => setPanelCollapsed(c => !c)}
-            title={panelCollapsed ? 'ขยาย panel' : 'ย่อ panel'}
-            style={{ alignSelf: panelCollapsed ? 'center' : 'flex-end', marginBottom: panelCollapsed ? 8 : 6, marginTop: panelCollapsed ? 46 : 0, flexShrink: 0, width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none' }}>
-            {panelCollapsed ? '▶' : '◀'}
+            onClick={() => setPanelCollapsed(true)}
+            title="ย่อ panel"
+            style={{ alignSelf: 'flex-end', marginBottom: 6, flexShrink: 0, width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none' }}>
+            ◀
           </button>
         )}
         {!panelCollapsed && (<>
@@ -1169,8 +1180,15 @@ export default function Management() {
       </div>
 
       {/* ── Canvas Area ── */}
-      {/* desktop: paddingRight 46 = ความกว้าง right rail (ขอบบอร์ดชิด rail พอดี) · mobile: ปกติ */}
-      <div ref={canvasAreaRef} style={{ flex: 1, minWidth: 0, position: 'relative', padding: isMobile ? 10 : '10px 46px 10px 10px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      {/* desktop: paddingRight 52 = เว้นคอลัมน์ 🔔+ปุ่มกรอง (right:14, w36) ให้ตู้/ผังชิดพอดีไม่ทับ · mobile: ปกติ */}
+      <div ref={canvasAreaRef} style={{ flex: 1, minWidth: 0, position: 'relative', padding: isMobile ? 10 : '10px 52px 10px 10px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        {/* ปุ่มขยายแถบไลน์ผลิตกลับ (โผล่เฉพาะตอนย่อ pool — pool กว้าง 0) · สไตล์เดียวกับ ☰/▶ อื่น */}
+        {!isMobile && panelCollapsed && (
+          <button onClick={() => setPanelCollapsed(false)} title="ขยายแถบไลน์ผลิต"
+            style={{ alignSelf: 'flex-start', marginBottom: 8, width: 36, height: 36, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', flexShrink: 0, boxShadow: 'var(--shadow-sm)' }}>
+            ▶
+          </button>
+        )}
         {autoManAlert && (
           <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', background: 'rgba(77,159,255,0.95)', color: '#fff', padding: '8px 18px', borderRadius: 10, fontSize: 12, fontWeight: 600, zIndex: 200, boxShadow: '0 4px 16px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>
             🆕 Man Change: {autoManAlert.name} — ประจำ {autoManAlert.station} เป็นครั้งแรก

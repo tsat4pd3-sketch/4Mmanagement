@@ -553,8 +553,10 @@ function NotificationBell({ userId }) {
 
   const typeColor = { success: '#22c55e', error: '#ef4444', warning: '#f59e0b', info: '#4d9fff' };
 
+  // top อ่านจาก CSS var --esm-bell-top (default 10) — หน้าที่มีตู้/บอร์ด (เช่น Management) ตั้งค่าให้ 🔔
+  // เลื่อนลงเสมอขอบบนตู้ได้ โดยไม่กระทบหน้าอื่น (หน้าอื่นไม่ตั้ง = อยู่บนสุดเหมือนเดิม)
   return (
-    <div ref={dropRef} style={{ position: 'fixed', top: 10, right: 14, zIndex: 1200 }}>
+    <div ref={dropRef} style={{ position: 'fixed', top: 'var(--esm-bell-top, 10px)', right: 14, zIndex: 1200 }}>
       <button
         onClick={() => { setOpen(o => !o); if (!open) load(); }}
         style={{
@@ -644,7 +646,8 @@ function ToggleBtn({ isOpen, onClick }) {
       onClick={onClick}
       title="เปิดเมนู"
       style={{
-        // เครื่องหมายเหมือนปุ่มมุมขวาบน (🔔/filter): 36×36 top:10 radius8 bg3 border2
+        // เครื่องหมายเหมือนปุ่มมุมขวาบน (🔔/filter): 36×36 radius8 bg3 border2
+        // top:10 คงที่ (ฝั่งซ้ายไม่มีช่องว่างสำรองแบบขวา — ถ้าเลื่อนลงจะทับ pool/board)
         position: 'fixed', top: 10, left: 14,
         zIndex: 1100,
         width: 36, height: 36, borderRadius: 8,
