@@ -6,10 +6,11 @@ import { toast } from '../components/Toast'
 import { inSectionScope } from '../utils/sectionScope'
 import { getLineFamilyNames } from '../utils/lineHierarchy'
 import { computePlanForecast } from '../lib/pmPredictive'
+import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar'
 
 // PM ล่วงหน้า (Planner) — เห็นวันที่จะต้อง PM ล่วงหน้า 1-2 สัปดาห์ + buffer ที่ต้องผลิตเผื่อ
 //   sync ให้วางแผน/ผลิตเตรียมตัวก่อนเครื่องหยุดทำ PM (ดู CLAUDE.md "PM Predictive & Planner Sync")
-const WORKING_DAYS = 22 // วันทำงาน/เดือนโดยประมาณ (ใช้หาร forecast รายเดือน → อัตรา/วัน)
+const WORKING_DAYS_FALLBACK = 22 // fallback เมื่อปฏิทินบริษัทว่าง — ปกติอ่านวันทำงานจริงจาก company_calendar (2026-07-21)
 
 function todayBangkok() {
   const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
@@ -26,6 +27,8 @@ export default function PmForecast() {
   const todayStr = todayBangkok()
 
   const load = async () => {
+    await loadCompanyCalendar() // วันทำงานจริงจากปฏิทินบริษัท — ต้องโหลดก่อนคำนวณอัตรา/วัน
+
     setLoading(true)
     try {
       const [{ data: lines }, { data: plans }] = await Promise.all([
@@ -66,7 +69,7 @@ export default function PmForecast() {
         // อัตรา/วัน: forecast ของ mat ที่ไลน์นี้ผลิต ÷ วันทำงาน · ไม่มี forecast → เฉลี่ยจริง 30 วัน
         const mats = [...new Set(famRows.map(r => r.mat_no).filter(Boolean))]
         const monthFc = mats.reduce((s, m) => s + (fcByMat[m] || 0), 0)
-        let dailyRate = monthFc > 0 ? monthFc / WORKING_DAYS : 0
+        let dailyRate = monthFc > 0 ? monthFc / countWorkingDaysInMonth(todayStr.slice(0, 7), WORKING_DAYS_FALLBACK) : 0
         let rateSource = 'forecast'
         if (dailyRate <= 0) {
           const d30 = new Date(todayStr + 'T00:00:00'); d30.setDate(d30.getDate() - 30)
@@ -158,7 +161,7 @@ export default function PmForecast() {
         )}
 
       <p style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6 }}>
-        * ตาม shot: คาดวัน PM = วันนี้ + (เกณฑ์ − shot สะสม) ÷ อัตราผลิต/วัน (จาก forecast ลูกค้าเดือนนี้ ÷ {WORKING_DAYS} วันทำงาน · ไม่มี forecast ใช้เฉลี่ยจริง 30 วัน) ·
+        * ตาม shot: คาดวัน PM = วันนี้ + (เกณฑ์ − shot สะสม) ÷ อัตราผลิต/วัน (จาก forecast ลูกค้าเดือนนี้ ÷ วันทำงานจริงจากปฏิทินบริษัท · ไม่มี forecast ใช้เฉลี่ยจริง 30 วัน) ·
         buffer = อัตรา/วัน × (ระยะ PM ÷ 16 ชม.) × (1 + เผื่อ%) · แถวส้ม = เข้า window (ใกล้ถึงภายใน lead time) · แถวแดง = เลยกำหนด
       </p>
     </div>

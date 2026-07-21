@@ -704,7 +704,9 @@ function countWorkingDays(monthKey, calRows) {
     const dow = dt.getDay();                                   // 0=อา 6=เสา
     const key = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const type = cal[key] || '';
-    if (/holiday|off|หยุด/i.test(type)) continue;              // วันหยุดในปฏิทิน
+    // มาร์คเป็นวันหยุดทุกชนิด (ot15/ot2/shutdown75) = ไม่นับ — เดิมใช้ regex /holiday|off|หยุด/
+    // ซึ่งไม่ match ค่า day_type จริงเลย ทำให้วันหยุดที่ตก จ-ศ ถูกนับเป็นวันทำงาน (บั๊กแก้ 2026-07-21)
+    if (type && type !== 'working') continue;
     if (dow >= 1 && dow <= 5) wd++;                            // จ-ศ = วันทำงาน
     else if (type === 'working') wd++;                        // เสาร์/อาทิตย์ที่มาร์คทำงาน
   }

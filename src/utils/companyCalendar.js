@@ -20,6 +20,27 @@ export const DAY_TYPE_META = {
 export const isOtHolidayType = (t) => t === 'ot15' || t === 'ot2';
 export function isOtHoliday(workDate) { return isOtHolidayType(getDayType(workDate)); }
 
+/**
+ * วันทำงานในเดือน (monthKey = 'YYYY-MM') จากปฏิทินบริษัท — เรียก loadCompanyCalendar() ก่อน
+ * กติกากลาง (กฎ user 2026-07-21: ทุกการคำนวณวันทำงานต้องอ้างปฏิทิน):
+ *   จ-ศ ไม่มาร์ค = ทำงาน · มาร์คเป็นวันหยุดทุกชนิด (ot15/ot2/shutdown75) = หยุด
+ *   เสาร์/อาทิตย์ = หยุด เว้นแต่มาร์ค 'working'
+ * ปฏิทินยังไม่โหลด/เดือนไม่มีวันทำงานเลย → คืน fallback
+ */
+export function countWorkingDaysInMonth(monthKey, fallback = 22) {
+  if (!cache) return fallback;
+  const [y, m] = monthKey.split('-').map(Number);
+  const nDays = new Date(y, m, 0).getDate();
+  let wd = 0;
+  for (let d = 1; d <= nDays; d++) {
+    const t = cache.get(`${monthKey}-${String(d).padStart(2, '0')}`);
+    const dow = new Date(y, m - 1, d).getDay();
+    if (t) { if (t === 'working') wd++; continue; }
+    if (dow >= 1 && dow <= 5) wd++;
+  }
+  return wd || fallback;
+}
+
 let cache = null; // Map<work_date string, day_type>
 
 export async function loadCompanyCalendar(forceRefresh = false) {
