@@ -225,6 +225,13 @@ pattern ร่วมของทุกบอร์ดที่วางราย
 
 - `index.css` ตั้ง `input{width:100%}` ทั้งแอป — input ใน flex row ต้องกำหนด width เอง (checkbox/radio มี rule ยกเว้น `width:auto` แล้ว — ห้ามลบ)
 - พื้นที่ว่างแนวบนของทุกหน้า: `main` ใช้ `paddingTop: 14` (ไม่ใช่ 60) — มีแค่ icon cluster fixed มุมขวาบน; แถบควบคุมที่ชิดขวาบนของหน้า ให้เผื่อ `paddingRight` ~52px กันชนไอคอน
+- **กัน overlap มุมขวาบน + ลำดับ z-index (audit ทั้งระบบ 2026-07-21):** `NotificationBell` เป็น `position:fixed top:10 right:14 zIndex:1200` **ทุกหน้า** ลอยทับแถบบนขวา ~50px ของทุกหน้า — กติกาที่ทุกหน้าต้องทำตาม:
+  - **หัว header/toolbar แถวแรก**ที่มีปุ่ม/select ชิดขวา (มักเป็น `justifyContent:space-between`) → **ต้องใส่ `paddingRight: 52`** ไม่งั้นปุ่มขวาสุดมุดใต้ 🔔 (เคยพลาด: DailyReport/OjtTraining/ShiftOrganize — แก้ 2026-07-21)
+  - **float ปุ่มควบคุมเฉพาะหน้ามุมขวาบน** ให้เรียง**แนวตั้งใต้ 🔔** (คอลัมน์เดียวกัน `right:14`, เริ่ม `top:54`, ปุ่ม 36×36 เท่ากันหมด) **แล้ว content ของหน้าเว้น `paddingRight:52`** ไม่ให้ลอดใต้คอลัมน์นั้น — ห้ามวางแนวนอนคร่อมหัว header/บอร์ด (เคยพลาด: Management filter cluster `[👤][⚙️][📦][ซ่อนป้าย]` วางแนวนอน fixed คร่อมหัวบอร์ด Heijunka → เปลี่ยนเป็นคอลัมน์แนวตั้งใต้ bell + board เว้น paddingRight, 2026-07-21)
+  - **ปุ่ม ☰ เปิดเมนู (มุมซ้ายบน ตอนพับ sidebar) ใช้เครื่องหมายเดียวกับ 🔔**: 36×36 `top:10` radius8 bg3 border2 — ให้ 2 มุมบนสมมาตรกัน
+  - **modal ทุกตัว `zIndex ≥ 2000`** (ต้องเหนือ 🔔 z1200) ไม่งั้น bell วาดทับ modal บังปุ่มปิด (เคยพลาด: PMSchedule DayModal z1000 — แก้ 2026-07-21) · popup เกาะ cell (stock/shipping) ใช้ z1300 + click-catcher z998
+  - **ป้าย sticky ซ้ายของ time board (มือถือ) ต้อง `zIndex:6`** เหนือ playhead (`.now-line` z4 / `.now-chip` z5) ไม่งั้น now-line วาดทับป้ายพาร์ท (เคยพลาด: Dashboard mobile board z3 — แก้ 2026-07-21)
+  - ladder รวม: content 1-15 · sticky time-board label 6 · float/bell 500-1300 (🔔=1200) · modal 2000-3200 · popup/siren/tooltip 3000-4000
 - ปุ่มพับ sidebar อยู่**ในหัว sidebar** (ปุ่ม ⟨ ข้างโลโก้) — ปุ่มลอย ☰ โชว์เฉพาะตอนพับ ห้ามมีปุ่มลอยทับเนื้อหา
 - เข้าโมดูลจากหน้าหลัก (DeptHub) → sidebar กาง**เฉพาะหมวดของโมดูลที่กด** หมวดอื่นพับอัตโนมัติ (2026-07-10) — การ์ดใน DeptHub ผูกหมวดผ่าน `navGroups` + เรียก `focusSidebarGroups()` จาก App.jsx · เพิ่มการ์ด/หมวดใหม่ต้องใส่ `navGroups` ด้วยเสมอ (ชื่อต้องตรงกับ `NAV_GROUP_ORDER`) · user ยังพับ/กางเองต่อได้ตามปกติ
 - ชิปเมนูย่อยบนการ์ด DeptHub **ดึงจาก `NAV_ITEMS` อัตโนมัติ** ผ่าน `navItemsForGroups(navGroups, role)` (กรองสิทธิ์เหมือน sidebar) และ**คลิกเข้าหน้านั้นได้เลย** (2026-07-10) — **ห้ามพิมพ์รายชื่อเมนูซ้ำใน DeptHub** เพิ่มเมนูใหม่ใน NAV_ITEMS แล้วชิปบนการ์ดอัพเดทเองทั้งหน้า (เคยมี list มือแล้ว drift ไม่ตรงกับ sidebar)

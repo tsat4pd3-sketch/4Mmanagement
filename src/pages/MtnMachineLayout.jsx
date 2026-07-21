@@ -69,11 +69,13 @@ const S = {
   }),
 }
 
-export default function MtnMachineLayout() {
+// setupMode=false (default, /mtn-layout) = display-only (facility ดูอย่างเดียว ไม่มีปุ่มแก้)
+// setupMode=true (/layout-setup แท็บ MTN) = ตั้งค่า facility ได้ (เพิ่มโซน/อัปรูป/วางจุด)
+export default function MtnMachineLayout({ setupMode = false }) {
   const { role } = useContext(UserContext)
-  // แก้ผัง facility (เพิ่ม/ลบโซน อัปโหลดผัง วาง/ย้ายจุด) ใช้สิทธิ์เดียวกับ PM Setup — ห้าม hardcode role array
-  const canEdit = can('pm', 'setup', role)
-  const [view, setView] = useState('production') // 'production' | 'facility'
+  // แก้ผัง facility (เพิ่ม/ลบโซน อัปโหลดผัง วาง/ย้ายจุด) ใช้สิทธิ์เดียวกับ PM Setup — เฉพาะโหมด setup
+  const canEdit = setupMode && can('pm', 'setup', role)
+  const [view, setView] = useState(setupMode ? 'facility' : 'production') // 'production' | 'facility'
   const [dept, setDept] = useState('all')
   const [selId, setSelId] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -269,7 +271,7 @@ export default function MtnMachineLayout() {
           <p style={S.sub}>ดูสถานะ PM บนผังจริง · กรองตามผู้รับผิดชอบ</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Link to="/factory-map" style={{ ...S.viewBtn(false), textDecoration: 'none' }} title="ภาพรวมทุกไลน์ทั้งโรงงาน (ผังรวมโรงงาน)">🗺️ ภาพรวมทั้งโรงงาน</Link>
+          {!setupMode && <Link to="/factory-map" style={{ ...S.viewBtn(false), textDecoration: 'none' }} title="ภาพรวมทุกไลน์ทั้งโรงงาน (ผังรวมโรงงาน)">🗺️ ภาพรวมทั้งโรงงาน</Link>}
           <button onClick={() => { setView('production'); setSelId(null) }} style={S.viewBtn(view === 'production')}>🏭 ไลน์ผลิต</button>
           <button onClick={() => { setView('facility'); setSelId(null) }} style={S.viewBtn(view === 'facility')}>🔌 Facility / Utility</button>
         </div>
