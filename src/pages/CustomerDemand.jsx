@@ -546,7 +546,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
             return (
               <>
                 <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-                <div style={{ position: 'fixed', left, top, width: W, zIndex: 999, background: 'var(--bg3)', border: `1px solid ${od ? '#ef4444' : st.color}66`, borderRadius: 12, boxShadow: '0 8px 28px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
+                <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${od ? '#ef4444' : st.color}66`, borderRadius: 12, boxShadow: '0 8px 28px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
                   <div style={{ height: 4, background: od ? '#ef4444' : st.color }} />
                   <div style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>

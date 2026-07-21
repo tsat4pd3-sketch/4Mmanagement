@@ -1269,7 +1269,7 @@ function OeeTargetModal({ groups, targets, fullName, onClose, onSaved }) {
   const inSt = { width: 64, padding: '4px 6px', borderRadius: 6, fontSize: 12, textAlign: 'right', background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
       <div style={{ background: 'var(--card)', borderRadius: 12, border: '1px solid var(--border)', width: 'min(96vw, 760px)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
           <div>
