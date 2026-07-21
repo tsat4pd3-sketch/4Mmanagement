@@ -38,7 +38,7 @@ const METRICS = {
   oee: {
     label: '⚙️ OEE', worstFirst: true,
     value: s => s.oee,
-    text: s => s.oee != null ? `OEE ${Math.round(s.oee)}%` : (s.hasOpen ? 'รอปิดกะ' : ''),
+    text: s => s.oee != null ? `OEE ${Math.round(s.oee)}%${s.oeeLive ? ' (สด)' : ''}` : (s.hasOpen ? 'กำลังเก็บข้อมูล...' : ''),
     cat: s => s.oee == null ? 'idle' : s.oee >= 80 ? 'good' : s.oee >= 65 ? 'ok' : 'bad',
   },
   breakdown: {
@@ -71,7 +71,7 @@ const round = (v) => Math.round(v * 100) / 100;
 const centroid = (pts) => pts.length
   ? [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length]
   : [50, 50];
-const EMPTY_ST = { actual: 0, target: 0, hasOpen: false, oee: null, dtMin: 0, dtActive: false, ng: 0,
+const EMPTY_ST = { actual: 0, target: 0, hasOpen: false, oee: null, oeeLive: false, dtMin: 0, dtActive: false, ng: 0,
   headTotal: 0, present: 0, ppeBad: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0 };
 
 export default function FactoryMap() {
@@ -124,15 +124,44 @@ export default function FactoryMap() {
   const loadStatus = useCallback(async () => {
     const workDate = getWorkDate();
     const { data: sessions } = await supabaseDR
-      .from('production_sessions').select('id, line_name, status, oee, qty_ng, ng_qty').eq('work_date', workDate);
+      .from('production_sessions').select('id, line_name, status, oee, qty_ng, ng_qty, start_time, shift_min').eq('work_date', workDate);
     if (!sessions?.length) { setLineStatus({}); return; }
     const sessIds = sessions.map(s => s.id);
-    const [{ data: orders }, { data: dts }] = await Promise.all([
-      supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target').in('session_id', sessIds),
-      supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at').in('session_id', sessIds),
+    const [{ data: orders }, { data: dts }, { data: prods }] = await Promise.all([
+      supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, qty_ng, mat_no').in('session_id', sessIds),
+      supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at, started_at').in('session_id', sessIds),
+      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec'),
     ]);
+    const ctMap = {}; (prods || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; });
     const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
     const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
+    const nowMs = Date.now();
+
+    // OEE สด (กะยังเปิด) ≈ A×P×Q จากข้อมูลปัจจุบัน — สูตรย่อของ computeSessionOEE (DailyReport/Dashboard)
+    // A = เวลารันจริง/เวลาที่ผ่านไป · P = เวลามาตรฐานที่ผลิตได้/เวลารัน · Q = ดี/ทั้งหมด · (ปิดกะแล้ว = ใช้ค่าที่ stamp ไว้)
+    const liveOee = (s, os, dl) => {
+      if (!s.start_time) return null;
+      const opened = new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime();
+      let elapsed = (nowMs - opened) / 60000;
+      if (s.shift_min) elapsed = Math.min(elapsed, s.shift_min);
+      if (elapsed < 10) return null; // เพิ่งเปิดกะ ยังประเมินไม่ได้
+      const dtM = dl.reduce((a, d) => {
+        if (d.ended_at || d.duration_min != null) return a + (Number(d.duration_min) || 0);
+        return a + (d.started_at ? Math.max(0, (nowMs - new Date(d.started_at).getTime()) / 60000) : 0); // ค้างอยู่ = นับถึงตอนนี้
+      }, 0);
+      const runMin = Math.max(1, elapsed - dtM);
+      let stdMin = 0, produced = 0, ng = 0;
+      os.forEach(o => {
+        const q = o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
+        produced += q; stdMin += q * (ctMap[o.mat_no] || 0) / 60; ng += o.qty_ng || 0;
+      });
+      const A = Math.min(1, runMin / elapsed);
+      const P = Math.min(1, runMin > 0 ? stdMin / runMin : 0);
+      const Q = produced > 0 ? Math.max(0, (produced - ng) / produced) : 1;
+      const oee = Math.round(A * P * Q * 100);
+      return isFinite(oee) ? Math.max(0, Math.min(100, oee)) : null;
+    };
+
     const byLine = {};
     sessions.forEach(s => {
       const os = ordBySess[s.id] || [];
@@ -141,13 +170,17 @@ export default function FactoryMap() {
       const dl = dtBySess[s.id] || [];
       const dtMin = dl.reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
       const dtActive = dl.some(d => !d.ended_at && d.duration_min == null);
+      // ปิดกะแล้ว → ใช้ oee ที่ stamp · ยังเปิด → คำนวณสด
+      const oeeVal = s.oee != null ? Number(s.oee) : liveOee(s, os, dl);
+      const isLive = s.oee == null && oeeVal != null;
       const acc = byLine[s.line_name] || { ...EMPTY_ST, oeeSum: 0, oeeN: 0 };
       byLine[s.line_name] = {
         actual: acc.actual + actual, target: acc.target + target,
         hasOpen: acc.hasOpen || s.status === 'open',
         dtMin: acc.dtMin + Math.round(dtMin), dtActive: acc.dtActive || dtActive,
         ng: acc.ng + (s.qty_ng ?? s.ng_qty ?? 0),
-        oeeSum: acc.oeeSum + (s.oee != null ? Number(s.oee) : 0), oeeN: acc.oeeN + (s.oee != null ? 1 : 0),
+        oeeSum: acc.oeeSum + (oeeVal != null ? oeeVal : 0), oeeN: acc.oeeN + (oeeVal != null ? 1 : 0),
+        oeeLive: acc.oeeLive || isLive,
       };
     });
     const out = {};
@@ -219,7 +252,7 @@ export default function FactoryMap() {
     const agg = { ...EMPTY_ST, oeeSum: 0, oeeN: 0 };
     familyNames(name).forEach(n => {
       const p = lineStatus[n];
-      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeSum += p.oeeSum || 0; agg.oeeN += p.oeeN || 0; }
+      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeSum += p.oeeSum || 0; agg.oeeN += p.oeeN || 0; agg.oeeLive = agg.oeeLive || p.oeeLive; }
       const m = manpower[n];
       if (m) { agg.headTotal += m.headTotal || 0; agg.present += m.present || 0; agg.ppeBad += m.ppeBad || 0; }
       const pm = pmStatus[n];
