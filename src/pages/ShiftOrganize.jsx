@@ -31,6 +31,7 @@ export default function ShiftOrganize() {
   const [lines,     setLines]     = useState([]);
   const [orgSections, setOrgSections] = useState([]);
   const [weekTeams, setWeekTeams] = useState({}); // line_id → 'A' | 'B' | null
+  const [weekManual, setWeekManual] = useState({}); // line_id → is_manual (ไลน์ลูกตั้งกะเอง ไม่ตามไลน์แม่)
   const [pending,   setPending]   = useState({}); // line_id → 'A' | 'B'
   const [isSaving,  setIsSaving]  = useState(false);
 
@@ -72,7 +73,7 @@ export default function ShiftOrganize() {
 
   const fetchLines = async () => {
     const [{ data: lineData }, { data: orgData }] = await Promise.all([
-      supabase.from('production_lines').select('id, name, section').order('id'),
+      supabase.from('production_lines').select('id, name, section, parent_line_name').order('id'),
       supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name'),
     ]);
     setLines(lineData || []);
@@ -95,11 +96,12 @@ export default function ShiftOrganize() {
     // Use Monday's record as the canonical setting for the week
     const { data } = await supabase
       .from('shift_schedules')
-      .select('line_id, day_team')
+      .select('line_id, day_team, is_manual')
       .eq('work_date', weekStart);
-    const map = {};
-    (data || []).forEach(r => { map[r.line_id] = r.day_team; });
+    const map = {}, mmap = {};
+    (data || []).forEach(r => { map[r.line_id] = r.day_team; mmap[r.line_id] = !!r.is_manual; });
     setWeekTeams(map);
+    setWeekManual(mmap);
     setPending({});
   };
 
@@ -119,13 +121,32 @@ export default function ShiftOrganize() {
     setOverrides(scoped);
   };
 
-  const getTeam = (lineId) =>
-    pending[lineId] !== undefined ? pending[lineId] : (weekTeams[lineId] || null);
+  // ── ลำดับชั้นไลน์: ไลน์ลูก (parent_line_name) inherit กะจากไลน์แม่ เว้นแต่ตั้งเอง (manual) ──
+  const lineById = {}, lineByName = {};
+  lines.forEach(l => { lineById[l.id] = l; lineByName[l.name] = l; });
+  const parentIdOf = (id) => { const pn = lineById[id]?.parent_line_name; const p = pn ? lineByName[pn] : null; return p ? p.id : null; };
+  const ownTeamOf = (id) => (pending[id] !== undefined ? pending[id].team : (weekTeams[id] ?? null));
+  const manualOf  = (id) => (pending[id] !== undefined ? pending[id].manual : (weekManual[id] ?? false));
+  // กะที่แสดงจริง: ไลน์ลูกที่ไม่ manual → ตามไลน์แม่ (recurse) · ไลน์แม่/ลูกที่ manual → ค่าของตัวเอง
+  const effTeam = (id, depth = 0) => {
+    if (depth > 6) return ownTeamOf(id);
+    const pid = parentIdOf(id);
+    if (pid != null && !manualOf(id)) return effTeam(pid, depth + 1);
+    return ownTeamOf(id);
+  };
+  const getTeam = effTeam; // backward alias
+  const isFollowing = (id) => parentIdOf(id) != null && !manualOf(id); // ตามไลน์แม่อยู่
 
   const toggleTeam = (lineId) => {
     if (!canEdit) return;
-    const cur = getTeam(lineId);
-    setPending(p => ({ ...p, [lineId]: cur === 'A' ? 'B' : 'A' }));
+    const cur = effTeam(lineId);
+    const next = cur === 'A' ? 'B' : 'A';
+    // สลับที่ไลน์ลูก = ตั้งเอง (manual) ไม่ตามไลน์แม่แล้ว · ไลน์แม่ = master (manual=false)
+    setPending(p => ({ ...p, [lineId]: { team: next, manual: parentIdOf(lineId) != null } }));
+  };
+  const resetToParent = (lineId) => {
+    if (!canEdit) return;
+    setPending(p => ({ ...p, [lineId]: { team: null, manual: false } })); // กลับไปตามไลน์แม่
   };
 
   const pendingCount = Object.keys(pending).length;
@@ -136,13 +157,23 @@ export default function ShiftOrganize() {
     const { data: userData } = await supabase.auth.getUser();
     const userId = userData?.user?.id;
 
+    // ไลน์ที่ต้องเขียน = ที่แก้ (pending) + ไลน์ลูกที่ "ตามไลน์แม่" ซึ่งแม่อยู่ใน pending (cascade)
+    const affected = new Set(Object.keys(pending).map(k => Number(k)));
+    scopedLines.forEach(l => {
+      const pid = parentIdOf(l.id);
+      if (pid != null && !manualOf(l.id) && pending[pid] !== undefined) affected.add(l.id);
+    });
     // Apply the same team to every day of the selected week
     const rows = [];
-    for (const [lineId, day_team] of Object.entries(pending)) {
+    affected.forEach(id => {
+      const team = effTeam(id);               // ไลน์ลูกที่ตามแม่ → ได้กะของแม่ · manual → ของตัวเอง
+      if (!team) return;
+      const manual = parentIdOf(id) != null && manualOf(id);
       for (const d of weekDates) {
-        rows.push({ work_date: toDateStr(d), line_id: parseInt(lineId), day_team, created_by: userId });
+        rows.push({ work_date: toDateStr(d), line_id: id, day_team: team, is_manual: manual, created_by: userId });
       }
-    }
+    });
+    if (!rows.length) { setIsSaving(false); return; }
 
     const { error } = await supabase
       .from('shift_schedules')
@@ -296,12 +327,19 @@ export default function ShiftOrganize() {
           </thead>
           <tbody>
             {scopedLines.map(line => {
-              const team  = getTeam(line.id);
+              const team  = effTeam(line.id);
               const night = team === 'A' ? 'B' : team === 'B' ? 'A' : null;
               const isPending = pending[line.id] !== undefined;
+              const following = isFollowing(line.id);           // ไลน์ลูกที่ตามไลน์แม่
+              const isChild = parentIdOf(line.id) != null;
+              const parentName = isChild ? lineById[line.id]?.parent_line_name : null;
               return (
                 <tr key={line.id}>
-                  <td style={{ fontWeight: 600, fontSize: 14 }}>{line.name}</td>
+                  <td style={{ fontWeight: 600, fontSize: 14 }}>
+                    {line.name}
+                    {following && team && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: 'var(--muted)' }} title={`ตามไลน์แม่ (${parentName})`}>↳ ตามไลน์แม่</span>}
+                    {isChild && !following && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#f59e0b' }} title="ตั้งกะเอง ไม่ตามไลน์แม่">✎ แก้เอง</span>}
+                  </td>
                   <td style={{ fontSize: 12, color: 'var(--muted)' }}>{line.section || '—'}</td>
                   <td style={{ textAlign: 'center' }}>
                     {team ? (
@@ -336,7 +374,7 @@ export default function ShiftOrganize() {
                     )}
                   </td>
                   {canEdit && (
-                    <td style={{ textAlign: 'center' }}>
+                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <button
                         onClick={() => toggleTeam(line.id)}
                         style={{
@@ -349,6 +387,12 @@ export default function ShiftOrganize() {
                       >
                         {team ? '⇄ สลับ' : '+ กำหนด'}
                       </button>
+                      {isChild && !following && (
+                        <button onClick={() => resetToParent(line.id)} title="กลับไปใช้กะตามไลน์แม่"
+                          style={{ marginLeft: 6, padding: '6px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>
+                          ↳ ตามแม่
+                        </button>
+                      )}
                     </td>
                   )}
                 </tr>
@@ -360,7 +404,7 @@ export default function ShiftOrganize() {
 
       {canEdit && (
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 24, padding: '0 4px' }}>
-          การตั้งค่าจะมีผลกับทุกวันในสัปดาห์ (จันทร์–อาทิตย์) กด ⇄ สลับ แล้วกด 💾 บันทึก เพื่อบันทึกการเปลี่ยนแปลง
+          การตั้งค่าจะมีผลกับทุกวันในสัปดาห์ (จันทร์–อาทิตย์) กด ⇄ สลับ แล้วกด 💾 บันทึก · <b>ตั้งกะที่ไลน์แม่แล้วไลน์ลูกวิ่งตามอัตโนมัติ</b> (↳ ตามไลน์แม่) · สลับกะที่ไลน์ลูกเอง = ✎ แก้เอง (ไม่ตามแม่แล้ว) กด "↳ ตามแม่" เพื่อกลับไปตามไลน์แม่
         </div>
       )}
 
