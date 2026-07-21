@@ -1003,7 +1003,7 @@ export default function Management() {
               {f.count > 99 ? '99+' : f.count}
             </span>
           )}
-          <ToggleDot on={f.on} ring="var(--bg2)" />
+          <ToggleDot on={f.on} />
         </button>
       ))}
       {/* โชว์/ซ่อนป้ายชื่อทุกจุด — icon 36×36 เท่าปุ่มอื่น (ป้ายเตือน alarm/ต่ำกว่า min โชว์เสมอ) */}
@@ -1021,7 +1021,7 @@ export default function Management() {
         }}
       >
         🏷️
-        <ToggleDot on={showPills} ring="var(--bg2)" />
+        <ToggleDot on={showPills} />
       </button>
     </div>
   );
@@ -1030,12 +1030,10 @@ export default function Management() {
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: 'calc(100vh - 80px)', background: 'var(--bg)', overflow: 'hidden' }}>
       <DowntimeSiren mode="open_15min" />
 
-      {/* ── Right rail (desktop) — เฟรมข้างขวาสมมาตรกับ Pool Panel ซ้าย: ปุ่มกรองเรียงแนวตั้ง
-          bg2+borderLeft ให้ขอบบอร์ดชิดพอดี (ไม่มีช่องว่างลอย) · paddingTop เว้นให้ 🔔 อยู่หัว rail */}
+      {/* ── ปุ่มกรอง (desktop) — icon ลอยแนวตั้งใต้ 🔔 (โปร่ง ไม่มีเฟรม ให้เบาตา) · board เว้น paddingRight ไม่ทับ */}
       {!isMobile && (
-        <div style={{ position: 'fixed', top: 0, right: 0, height: '100vh', width: 46, zIndex: 15,
-          background: 'var(--bg2)', borderLeft: '1px solid var(--border)',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 52, flexShrink: 0 }}>
+        <div style={{ position: 'fixed', top: 54, right: 10, zIndex: 1200,
+          display: 'flex', flexDirection: 'column', gap: 6 }}>
           {renderFilters('column')}
         </div>
       )}
@@ -1047,7 +1045,7 @@ export default function Management() {
           <button
             onClick={() => setPanelCollapsed(c => !c)}
             title={panelCollapsed ? 'ขยาย panel' : 'ย่อ panel'}
-            style={{ alignSelf: panelCollapsed ? 'center' : 'flex-end', marginBottom: panelCollapsed ? 8 : 6, flexShrink: 0, width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            style={{ alignSelf: panelCollapsed ? 'center' : 'flex-end', marginBottom: panelCollapsed ? 8 : 6, marginTop: panelCollapsed ? 46 : 0, flexShrink: 0, width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none' }}>
             {panelCollapsed ? '▶' : '◀'}
           </button>
         )}

@@ -301,7 +301,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             style={{
               width: 28, height: 28, borderRadius: 7, flexShrink: 0,
               background: 'var(--bg3)', border: '1px solid var(--border2)',
-              color: 'var(--text2)', fontSize: 13, cursor: 'pointer',
+              color: 'var(--text2)', fontSize: 13, cursor: 'pointer', outline: 'none',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
           >⟨</button>
@@ -652,7 +652,7 @@ function ToggleBtn({ isOpen, onClick }) {
         border: '1px solid var(--border2)',
         color: 'var(--text2)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 16, cursor: 'pointer',
+        fontSize: 16, cursor: 'pointer', outline: 'none',
         boxShadow: 'var(--shadow-sm)',
       }}
     >
