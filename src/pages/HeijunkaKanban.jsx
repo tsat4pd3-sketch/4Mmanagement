@@ -241,7 +241,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
   // มือถือ ≤768px: บอร์ดครึ่งวัน (12 ชม.) เลื่อนแนวนอนได้ + ป้ายซ้าย sticky (desktop เต็มจอเดียวเหมือนเดิม)
   const isMobile = useIsMobile();
   const LEFT_W = isMobile ? 96 : 130;
-  const stickyL = (bg) => isMobile ? { position: 'sticky', left: 0, zIndex: 2, background: bg } : null;
+  const stickyL = (bg) => isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: bg } : null; // z6 เหนือ playhead
   // ยึด grid กับ workDate ที่เลือก (ไม่ใช่วันปฏิทินปัจจุบัน) — ช่วง 00:00–07:59 กะดึกยังอยู่ในกรอบวันงานเดิม
   const gridStartMs = dayFrameMs(workDate).startMs;
   const pctPerMs = 100 / (12 * 3600000);
@@ -1738,7 +1738,7 @@ export default function HeijunkaKanban() {
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
             🎴 Heijunka Kanban — Subcomponent Demand
@@ -1951,7 +1951,7 @@ function ReceiveModal({ round, parts, mode, fmt, saving, onCancel, onSubmit }) {
   const [actual, setActual] = useState(() => Object.fromEntries(netParts.map(p => [p.mat_no, p.netTotal])));
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(440px,100%)', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>
           {mode === 'full' ? '✔️ ยืนยันรับของครบ' : '⚠️ บันทึกรับของไม่ครบ'}
