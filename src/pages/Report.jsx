@@ -2195,16 +2195,18 @@ function OperatorRadarPanel({ emp, skillDefs, subItemsByskill = {}, lines = [], 
         if (cert) certifier = { name: cert.full_name || '', pos: cert.position || 'หัวหน้าส่วน', sig: cert.signature_url || null };
       }
       const dept = emp.department || (lines.find(l => l.id === emp.line_id)?.section) || emp.section || '-';
-      const [imgUrl, assessorSig, certifierSig] = await Promise.all([
+      // โลโก้: doc_forms.logo_url ถ้าอัปโหลด · ไม่งั้นไฟล์ทางการ src/assets/TS logo.png → dataURL (pattern เดียวกับ LPA/OJT)
+      const [imgUrl, assessorSig, certifierSig, logoData] = await Promise.all([
         emp.image_url ? urlToDataUrl(emp.image_url) : Promise.resolve(null),
         assessor.sig  ? urlToDataUrl(assessor.sig)  : Promise.resolve(null),
         certifier.sig ? urlToDataUrl(certifier.sig) : Promise.resolve(null),
+        urlToDataUrl(docFormSync('individual_skill', {}).logo_url || tsLogoUrl),
       ]);
       const html = buildIndividualSkillHtml({
         emp, skillDefs, subItemsByskill, dept,
         assessorName: assessor.name, assessorPos: assessor.pos,
         certifierName: certifier.name, certifierPos: certifier.pos,
-        imgUrl, assessorSig, certifierSig,
+        imgUrl, assessorSig, certifierSig, logoUrl: logoData,
       });
       const w = window.open('', '_blank'); w.document.write(html); w.document.close();
     } catch (e) {
@@ -2809,7 +2811,7 @@ function calcServiceDuration(startDate) {
   return parts.length ? parts.join(' ') : '< 1 เดือน';
 }
 
-function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps, makerSigUrl, checkerSigUrl, approverSigUrl }) {
+function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps, makerSigUrl, checkerSigUrl, approverSigUrl, logoUrl }) {
   const today = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
 
   const levelCell = (lv) =>
@@ -2866,7 +2868,7 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
 </style></head><body><div class="page">
   <table style="width:100%;margin-bottom:4px"><tr>
     <td style="vertical-align:top;width:22%">
-      <div style="margin-bottom:6px">${tsLogoHtml(docFormSync('multi_skill', {}).logo_url)}</div>
+      <div style="margin-bottom:6px">${tsLogoHtml(logoUrl)}</div>
       <div style="font-size:9px;line-height:2">
         <div>ฝ่าย : <strong>${dept}</strong></div>
         <div>ส่วน : <strong>${section}</strong></div>
@@ -2974,11 +2976,10 @@ function distributeLevels(score, n) {
   return Array.from({ length: n }, (_, i) => Math.min(4, base + (i < extra ? 1 : 0)));
 }
 
-/* โลโก้ Thai Summit — ฝังตราจริง (crop จากฟอร์มต้นฉบับ) เป็นค่า default ·
-   override ได้ด้วยรูปที่อัปโหลดใน /doc-forms (doc_forms.logo_url) → เป๊ะ 100% */
-const TS_EMBLEM = 'data:image/jpeg;base64,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';
+/* โลโก้ Thai Summit — รับ dataURL ที่ resolve แล้ว (doc_forms.logo_url ถ้าอัปโหลด ไม่งั้น
+   ไฟล์ทางการ src/assets/TS logo.png) · handler แปลงเป็น dataURL ผ่าน urlToDataUrl ก่อนส่งเข้ามา */
 function tsLogoHtml(logoUrl) {
-  const src = logoUrl || TS_EMBLEM;
+  const src = logoUrl || '';
   return `
   <div style="display:flex;align-items:center;gap:7px">
     <img src="${src}" alt="Thai Summit" style="height:38px;width:auto;object-fit:contain"/>
@@ -3036,9 +3037,8 @@ function buildRadarSvg(items, opt = {}) {
    skillDefs: skill_definitions ทั้งหมด · subItemsByskill: { [skill_name]: [{seq,label,wi_ref}] }
    signers: { assessor:{name,pos,sig}, certifier:{name,pos,sig} }
    imgUrl/assesseeSig/assessorSig/certifierSig: dataURL แปลงแล้ว                          */
-function buildIndividualSkillHtml({ emp, skillDefs, subItemsByskill, dept, assessorName, assessorPos, certifierName, certifierPos, imgUrl, assessorSig, certifierSig }) {
+function buildIndividualSkillHtml({ emp, skillDefs, subItemsByskill, dept, assessorName, assessorPos, certifierName, certifierPos, imgUrl, assessorSig, certifierSig, logoUrl }) {
   const today = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
-  const logoUrl = docFormSync('individual_skill', {}).logo_url;  // override โลโก้จาก /doc-forms ถ้าอัปโหลดไว้
   const skillMap = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
 
   // สกิลที่จะแสดง = สกิลที่พนักงานมี record (score กำหนดไว้) เรียงตาม sort_order · fallback = ทุกสกิล
@@ -3327,12 +3327,13 @@ function MultiSkillFormTab() {
       ...msVisibleDefs.map((_, si) => empRows.filter(r => r.levels[si] !== null && r.levels[si] === lv.level).length),
       empRows.filter(r => r.overall === lv.level).length,
     ]);
-    const [mSig, cSig, aSig] = await Promise.all([
+    const [mSig, cSig, aSig, logoData] = await Promise.all([
       makerSig    ? urlToDataUrl(makerSig)    : Promise.resolve(null),
       checkerSig  ? urlToDataUrl(checkerSig)  : Promise.resolve(null),
       approverSig ? urlToDataUrl(approverSig) : Promise.resolve(null),
+      urlToDataUrl(docFormSync('multi_skill', {}).logo_url || tsLogoUrl),
     ]);
-    const html = buildMultiSkillHtml({ empRows, levelCounts, skillDefs: msVisibleDefs, dept, section, department, headName, maker, checker, approver, totalEmps: empRows.length, makerSigUrl: mSig, checkerSigUrl: cSig, approverSigUrl: aSig });
+    const html = buildMultiSkillHtml({ empRows, levelCounts, skillDefs: msVisibleDefs, dept, section, department, headName, maker, checker, approver, totalEmps: empRows.length, makerSigUrl: mSig, checkerSigUrl: cSig, approverSigUrl: aSig, logoUrl: logoData });
     const w = window.open('', '_blank');
     w.document.write(html);
     w.document.close();
