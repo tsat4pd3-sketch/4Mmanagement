@@ -642,14 +642,15 @@ function ToggleBtn({ isOpen, onClick }) {
       onClick={onClick}
       title="เปิดเมนู"
       style={{
-        position: 'fixed', top: 14, left: 14,
+        // เครื่องหมายเหมือนปุ่มมุมขวาบน (🔔/filter): 36×36 top:10 radius8 bg3 border2
+        position: 'fixed', top: 10, left: 14,
         zIndex: 1100,
-        width: 34, height: 34, borderRadius: 8,
+        width: 36, height: 36, borderRadius: 8,
         background: 'var(--bg3)',
         border: '1px solid var(--border2)',
         color: 'var(--text2)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 15, cursor: 'pointer',
+        fontSize: 16, cursor: 'pointer',
         boxShadow: 'var(--shadow-sm)',
       }}
     >
