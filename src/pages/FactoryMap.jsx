@@ -605,7 +605,7 @@ export default function FactoryMap() {
         if (top + H > vh - 8) top = vh - H - 8;
         if (top < 8) top = 8;
         return (
-          <div ref={hoverCardRef} style={{ position: 'fixed', left, top, width: W, zIndex: 1100, pointerEvents: 'none',
+          <div ref={hoverCardRef} style={{ position: 'fixed', left, top, width: W, zIndex: 1250, pointerEvents: 'none',
             background: 'var(--card)', border: `1px solid ${meta.color}66`, borderTop: `3px solid ${meta.color}`, borderRadius: 12,
             boxShadow: '0 12px 34px rgba(0,0,0,0.5)', padding: '12px 14px', color: 'var(--text)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>

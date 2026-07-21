@@ -1861,7 +1861,7 @@ export default function Dashboard() {
                         {/* พาร์ทละ 1 บล็อก — ป้าย/รูปใหญ่อันเดียวครอบ 2 แถบเวลา (☀️ 08–20 บน / 🌙 20–08 ล่าง)
                             หัวชั่วโมงแสดงเวลาคู่บน-ล่างในคอลัมน์เดียวกัน (โครงเดียวกับบอร์ดหน้าจัดการไลน์) */}
                         <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
-                          <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3, background: 'var(--bg2)' } : null) }}>
+                          <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--bg2)' } : null) }}>
                             <span>☀️ กะเช้า{isMobile ? '' : ' (แถบบน)'}</span>
                             <span>🌙 กะดึก{isMobile ? '' : ' (แถบล่าง)'}</span>
                           </div>
@@ -1906,7 +1906,7 @@ export default function Dashboard() {
                           return (
                             <div key={row.key} style={{ display: 'flex', borderTop: '1px solid var(--border2)', overflow: 'hidden' }}>
                               {/* Left summary — ป้ายเดียวครอบทั้ง 2 แถบเวลา */}
-                              <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3, background: 'var(--card)' } : null) }}>
+                              <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--card)' } : null) }}>
                                 {row.img && <img src={row.img} alt="" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0 }}>
                                   <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>
