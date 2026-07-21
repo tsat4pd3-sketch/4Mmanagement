@@ -5,6 +5,7 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { markerScale } from '../utils/markerScale';
+import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
 
 // ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร → WIP (ตามลำดับ 4M: Man, Machine, Material)
@@ -50,7 +51,7 @@ export default function LineSetup() {
   const [isUploading, setIsUploading] = useState(false);
   const [tempPos, setTempPos] = useState(null);
   const [formData, setFormData] = useState({ id: null, name: '', requirements: {}, skill_allowance: false, skill_allowance_type: '' });
-  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const isMobile = useIsMobile();
   const [collisionWarn, setCollisionWarn] = useState(null); // string message หรือ null
   const [showManpower, setShowManpower] = useState(false);
   const [skillDefs, setSkillDefs] = useState([]);
@@ -108,11 +109,6 @@ export default function LineSetup() {
   const [signerHRM,      setSignerHRM]     = useState('');
   const [signersSaving, setSignersSaving] = useState(false);
 
-  useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth <= 768);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, []);
 
   const skillAllowanceTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
 
@@ -256,8 +252,18 @@ export default function LineSetup() {
     }
     // อ่าน URL ผังก่อนลบ row — จะได้ลบไฟล์ใน storage ตามหลัง DB สำเร็จ (กติกา CLAUDE.md กันไฟล์กำพร้า)
     const { data: delLayout } = await supabase.from('line_layouts').select('image_url').eq('line_name', line.name).maybeSingle();
-    await supabase.from('workstations').delete().eq('line_name', line.name);
-    await supabase.from('line_layouts').delete().eq('line_name', line.name);
+    // ลบลูกให้ครบและเรียงลำดับ FK ให้ถูก ไม่งั้น row กำพร้าค้าง / delete แม่ FK-error แล้วถูกกลืนเงียบ
+    // (เดิมลบ workstations โดยไม่ลบ station_requirements ก่อน + ไม่ลบ wip/machine/flow เลย)
+    const { data: staIds } = await supabase.from('workstations').select('id').eq('line_name', line.name);
+    if (staIds?.length) {
+      const { error: eReq } = await supabase.from('station_requirements').delete().in('station_id', staIds.map(s => s.id));
+      if (eReq) { toast.error('ลบทักษะประจำสถานีไม่สำเร็จ: ' + eReq.message); return; }
+    }
+    // flow_links อ้าง machine_points (from/to) → ลบ links ก่อน points
+    for (const tbl of ['machine_flow_links', 'machine_points', 'wip_buffer_points', 'workstations', 'line_layouts']) {
+      const { error: eDel } = await supabase.from(tbl).delete().eq('line_name', line.name);
+      if (eDel) { toast.error(`ลบ ${tbl} ไม่สำเร็จ: ` + eDel.message); return; }
+    }
     // ลบเฉพาะไฟล์ของไลน์นี้เอง — ข้ามถ้าไลน์อื่น (เช่นไลน์แม่/ลูกที่ยืมผัง) ยังชี้ URL เดียวกันอยู่
     if (delLayout?.image_url?.includes('/employee-photos/layouts/')) {
       const { data: sharers } = await supabase.from('line_layouts').select('line_name').eq('image_url', delLayout.image_url).limit(1);
@@ -267,7 +273,8 @@ export default function LineSetup() {
       }
     }
     await supabase.from('employees').update({ line_id: null }).eq('line_id', line.id);
-    await supabase.from('production_lines').delete().eq('id', line.id);
+    const { error: eLine } = await supabase.from('production_lines').delete().eq('id', line.id);
+    if (eLine) { toast.error('ลบไลน์ไม่สำเร็จ: ' + eLine.message); return; }
     const remaining = lines.filter(l => l.id !== line.id);
     setLines(remaining);
     if (selectedLine === line.name) {
@@ -1075,7 +1082,7 @@ export default function LineSetup() {
                           ))}
                         </select>
                       )}
-                      <button onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
+                      <button className="tbtn" onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
                         style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
                         title="ลบไลน์">🗑️</button>
                     </>
@@ -1247,7 +1254,7 @@ export default function LineSetup() {
                         : 'ไม่มีสกิลที่กำหนด'}
                     </div>
                   </div>
-                  {canEdit && <button onClick={() => deleteStation(st.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
+                  {canEdit && <button className="tbtn" onClick={() => deleteStation(st.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                 </div>
               );
             })}
@@ -1371,7 +1378,7 @@ export default function LineSetup() {
                             🔔 เรียกเติม
                           </button>
                         )}
-                        {canEdit && <button onClick={() => deleteWipPoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
+                        {canEdit && <button className="tbtn" onClick={() => deleteWipPoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                       </div>
                     </div>
                   );
@@ -1467,7 +1474,7 @@ export default function LineSetup() {
                           <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 700, marginTop: 2 }}>🔀 {p.redundancy_group}</div>
                         )}
                       </div>
-                      {canEdit && <button onClick={() => deleteMachinePoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
+                      {canEdit && <button className="tbtn" onClick={() => deleteMachinePoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                     </div>
                   );
                 })}
@@ -1512,7 +1519,7 @@ export default function LineSetup() {
                     return (
                       <div key={link.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
                         <span style={{ color: 'var(--text)' }}>⚙️ {from?.machine_no || '?'} → {to?.machine_no || '?'}</span>
-                        {canEdit && <button onClick={() => deleteFlowLink(link.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>🗑️</button>}
+                        {canEdit && <button className="tbtn" onClick={() => deleteFlowLink(link.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>🗑️</button>}
                       </div>
                     );
                   })}

@@ -9,6 +9,7 @@ import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 import { loadPermissions, canAccessPage } from './utils/permissions';
 import { effectiveSections } from './utils/sectionScope';
+import useIsMobile from './utils/useIsMobile';
 
 const Register     = lazy(() => import('./pages/Register'));
 const Checkin      = lazy(() => import('./pages/Checkin'));
@@ -16,6 +17,7 @@ const Management   = lazy(() => import('./pages/Management'));
 const Dashboard    = lazy(() => import('./pages/Dashboard'));
 const Operator     = lazy(() => import('./pages/operator'));
 const LineSetup    = lazy(() => import('./pages/LineSetup'));
+const LayoutSetup  = lazy(() => import('./pages/LayoutSetup'));
 const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
 const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
@@ -42,10 +44,13 @@ const PmForecast  = lazy(() => import('./pages/PmForecast'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
 const LayerProcessAudit = lazy(() => import('./pages/LayerProcessAudit'));
+const DocFormsRegistry = lazy(() => import('./pages/DocFormsRegistry'));
 const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
+const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
+const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
 const FactoryMap = lazy(() => import('./pages/FactoryMap'));
@@ -71,9 +76,11 @@ const NAV_ITEMS = [
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
   { to: '/daily-report',   icon: '📊', label: 'Daily Report',      group: 'ฝ่ายผลิต' },
+  { to: '/production-plan', icon: '🗓️', label: 'วางแผนการผลิต',      group: 'ฝ่ายผลิต' },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'วิเคราะห์ & รายงาน' },
   { to: '/daily-pm',       icon: '✅', label: 'Daily PM ฝ่ายผลิต',   group: 'ฝ่ายผลิต' },
   { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
+  { to: '/scrap-report',   icon: '♻️', label: 'ใบรายงานของเสีย (Scrap)', group: 'ฝ่ายผลิต' },
   { to: '/lpa',            icon: '📋', label: 'Layer Process Audit', group: 'ฝ่ายผลิต' },
 
   { to: '/line-stock',      icon: '📦', label: 'Store management',       group: 'Logistic - Store' },
@@ -102,12 +109,14 @@ const NAV_ITEMS = [
   { to: '/ojt-training', icon: '📖', label: 'อบรมสอนงาน OJT',   group: 'พนักงาน & ทักษะ' },
   { to: '/skills-report', icon: '🏅', label: 'Skill Matrix & ค่าฝีมือ', group: 'พนักงาน & ทักษะ' },
   { to: '/products',        icon: '🔩', label: 'Product Master',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/layout-setup', icon: '🗺️', label: 'ตั้งค่าผัง/Floorplan', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'พนักงาน & ทักษะ' },
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/doc-forms',   icon: '📄', label: 'ทะเบียนเอกสาร & ฟอร์ม', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   // จัดการผู้ใช้งาน ย้ายเข้าหมวดตั้งค่าฯ (คำสั่ง user 2026-07-20) — เดิมเป็นลิงก์พิเศษลอยท้าย sidebar
   { to: '/add-user',    icon: '🔑', label: 'จัดการผู้ใช้งาน',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
 ];
@@ -221,7 +230,7 @@ function SplashScreen({ onDone }) {
 /* ─── Sidebar ──────────────────────────────────────────────── */
 function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition, userAvatarUrl, remoteCode, onToggleRemote }) {
   const location = useLocation();
-  const isMobile = window.innerWidth <= 768;
+  const isMobile = useIsMobile();
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
   const [sigUrl,        setSigUrl]        = useState(userSignatureUrl);
   const [pwdModalOpen,  setPwdModalOpen]  = useState(false);
@@ -305,17 +314,24 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             const groupHasActive = items.some(i => location.pathname === i.to);
             return (
               <div key={group} style={{ marginBottom: 2 }}>
+                {/* หัวหมวด — ปกติ = สี text (ขาวอมเขียว เป็นกลาง อ่านง่าย ไม่กลืนกับเขียว accent)
+                    · หมวดที่เปิดอยู่ = accent + พื้นจาง + ขีดซ้าย ให้รู้ทันทีว่าอยู่หมวดไหน
+                    (เดิมทุกหมวดเป็น text2 เขียวอ่อนเหมือนกันหมด แยก active ไม่ออก) */}
                 <button
                   onClick={() => toggleGroup(group)}
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-                    background: 'none', border: 'none', cursor: 'pointer', padding: '8px 10px 4px',
-                    color: groupHasActive ? 'var(--accent)' : 'var(--muted)',
-                    fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase',
+                    background: groupHasActive ? 'var(--accent-dim)' : 'none',
+                    border: 'none', borderLeft: `2px solid ${groupHasActive ? 'var(--accent)' : 'transparent'}`,
+                    borderRadius: 'var(--radius)', cursor: 'pointer', padding: '9px 10px 9px 9px',
+                    marginTop: 3,
+                    color: groupHasActive ? 'var(--accent)' : 'var(--text)',
+                    fontSize: 13, fontWeight: 800, letterSpacing: '0.01em',
+                    fontFamily: 'var(--font-display)',
                   }}
                 >
                   <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</span>
-                  <span style={{ fontSize: 11, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
+                  <span style={{ fontSize: 12, opacity: 0.6, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
                 </button>
                 {!collapsed && items.map(item => (
                   <Link
@@ -830,9 +846,9 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 // permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
 function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved }) {
-  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
-  const isTV     = typeof window !== 'undefined' && window.innerWidth >= 1920;
-  const [isOpen, setIsOpen] = useState(!isMobile);
+  const isMobile = useIsMobile();
+  const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
+  const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 768);
   const navigate = useNavigate();
   const location = useLocation();
   const userId = session?.user?.id ?? null;
@@ -875,8 +891,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
     });
   }, []);
 
-  const sidebarPx  = isTV ? 280 : 240;
-  const marginLeft = (!isMobile && isOpen) ? sidebarPx : 0;
+  // marginLeft ต้องเท่าความกว้าง nav จริง (var(--sidebar-w)) เป๊ะ — เดิม hardcode 240/280 ไม่ตรง
+  // (nav=252 desktop / 210 tablet / 280 TV) → เนื้อหาโดน sidebar ทับ 12px หรือเหลือช่องว่าง
+  const marginLeft = (!isMobile && isOpen) ? 'var(--sidebar-w)' : 0;
   const role       = userRole; // ไม่ fallback เป็น 'admin' อีกต่อไป — profileLoaded gate ด้านบนรับประกันว่า role ถูก resolve แล้วก่อนถึงจุดนี้
 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
@@ -959,6 +976,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/operator"   element={
                 <RoleRoute path="/operator" userRole={role}><Operator /></RoleRoute>
               } />
+              <Route path="/layout-setup" element={
+                <RoleRoute path="/layout-setup" userRole={role}><LayoutSetup /></RoleRoute>
+              } />
               <Route path="/linesetup"  element={
                 <RoleRoute path="/linesetup" userRole={role}><LineSetup /></RoleRoute>
               } />
@@ -998,17 +1018,26 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/lpa" element={
                 <RoleRoute path="/lpa" userRole={role}><LayerProcessAudit /></RoleRoute>
               } />
+              <Route path="/doc-forms" element={
+                <RoleRoute path="/doc-forms" userRole={role}><DocFormsRegistry /></RoleRoute>
+              } />
               <Route path="/morning-meeting" element={
                 <RoleRoute path="/morning-meeting" userRole={role}><MorningMeeting /></RoleRoute>
               } />
               <Route path="/remote" element={
                 <RoleRoute path="/remote" userRole={role}><RemoteControl /></RoleRoute>
               } />
+              <Route path="/production-plan" element={
+                <RoleRoute path="/production-plan" userRole={role}><ProductionPlan /></RoleRoute>
+              } />
               <Route path="/event-log" element={
                 <RoleRoute path="/event-log" userRole={role}><EventLog /></RoleRoute>
               } />
               <Route path="/qa" element={
                 <RoleRoute path="/qa" userRole={role}><QualityControl /></RoleRoute>
+              } />
+              <Route path="/scrap-report" element={
+                <RoleRoute path="/scrap-report" userRole={role}><ScrapReport /></RoleRoute>
               } />
               <Route path="/qa-setup" element={
                 <RoleRoute path="/qa-setup" userRole={role}><QAInspectionSetup /></RoleRoute>

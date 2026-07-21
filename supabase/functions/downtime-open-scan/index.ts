@@ -48,6 +48,7 @@ Deno.serve(async () => {
       const payload = {
         event: 'downtime_open_15min',
         downtime: {
+          id:           r.id, // ให้ send-notification จำ message_id ผูกรายการนี้ (reply = คอมเมนต์)
           line_name:    s?.line_name || '-',
           shift:        s?.shift || 'day',
           work_date:    s?.work_date || '',

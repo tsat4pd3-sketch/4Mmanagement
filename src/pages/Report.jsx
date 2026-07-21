@@ -3,13 +3,14 @@ import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { loadDocForms, docFormSync, fullCode } from '../utils/docForms';
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, Tooltip,
 } from 'recharts';
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 import { hasPermission, can } from '../utils/permissions';
-import { loadCompanyCalendar, getDayType, DAY_TYPE_META } from '../utils/companyCalendar';
+import { loadCompanyCalendar, getDayType, isOtHolidayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import { otPeriodMeta, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyNames, getLineFamilyIds } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
@@ -154,6 +155,11 @@ const groupSkillsByCategory = (defs) =>
     .map(([k, m]) => ({ key: k, ...m, skills: defs.filter(s => (s.category || 'hard_skill') === k) }))
     .filter(g => g.skills.length > 0);
 
+loadDocForms(); // ทะเบียนเอกสาร — ฟอร์ม Multi-Skill / ใบประเมินรายบุคคล อ่านผ่าน docFormSync
+const sigLabelsOf = (key, defaults) => docFormSync(key, { sig_blocks: defaults }).sig_blocks || defaults;
+const MS_SIG_DEFAULTS = ['จัดทำโดย', 'ตรวจสอบโดย', 'อนุมัติโดย'];
+const IND_SIG_DEFAULTS = ['พนักงานผู้ถูกประเมิน', 'ผู้ประเมิน', 'ผู้รับรอง'];
+
 const lbSt = { fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 4, display: 'block' };
 
 function useOrgSections() {
@@ -259,7 +265,7 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   };
 
   const dayType = calReady ? getDayType(date) : 'working';
-  const isHoliday = dayType !== 'working';
+  const isHoliday = isOtHolidayType(dayType); // shutdown75 (ม.75) ไม่ใช่วันหยุดแบบ OT
 
   const lineName = (lineId) => lines.find(l => String(l.id) === String(lineId))?.name || '';
   const busRouteLabel = (r) => r.employees?.bus_routes ? `${r.employees.bus_routes.code} ${r.employees.bus_routes.name}` : '—';
@@ -338,7 +344,9 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">งานที่ทำ</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
-    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
+    w.document.write(html); w.document.close();
   };
 
   return (
@@ -676,7 +684,9 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">จุดงาน</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
-    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
+    w.document.write(html); w.document.close();
   };
 
   return (
@@ -857,7 +867,9 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">จุดงาน</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
-    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
+    w.document.write(html); w.document.close();
   };
 
   return (
@@ -1042,7 +1054,9 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">PPE ครบ</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
-    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
+    w.document.write(html); w.document.close();
   };
 
   return (
@@ -1225,7 +1239,9 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">%การมาทำงาน</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
-    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
+    w.document.write(html); w.document.close();
   };
 
   return (
@@ -2841,9 +2857,9 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
     <td style="vertical-align:top;width:28%">
       <table style="width:100%;font-size:8px;border-collapse:collapse">
         <tr>
-          <th style="border:1px solid #666;background:#f3f4f6;padding:2px;text-align:center">จัดทำโดย</th>
-          <th style="border:1px solid #666;background:#f3f4f6;padding:2px;text-align:center">ตรวจสอบโดย</th>
-          <th style="border:1px solid #666;background:#f3f4f6;padding:2px;text-align:center">อนุมัติโดย</th>
+          <th style="border:1px solid #666;background:#f3f4f6;padding:2px;text-align:center">${sigLabelsOf('multi_skill', MS_SIG_DEFAULTS)[0]}</th>
+          <th style="border:1px solid #666;background:#f3f4f6;padding:2px;text-align:center">${sigLabelsOf('multi_skill', MS_SIG_DEFAULTS)[1]}</th>
+          <th style="border:1px solid #666;background:#f3f4f6;padding:2px;text-align:center">${sigLabelsOf('multi_skill', MS_SIG_DEFAULTS)[2]}</th>
         </tr>
         <tr style="height:40px">
           <td style="border:1px solid #666;text-align:center;vertical-align:middle">${makerSigUrl ? `<img src="${makerSigUrl}" style="max-height:36px;max-width:90px;object-fit:contain"/>` : ''}</td>
@@ -2904,7 +2920,7 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
   </div>
   <div style="margin-top:6px;font-size:8px;color:#555">พิมพ์วันที่ ${today} · จำนวนพนักงาน ${totalEmps} คน</div>
 </div>
-<div style="text-align:right;font-size:8px;color:#666;margin-top:2px">FM-PD1-017</div>
+<div style="text-align:right;font-size:8px;color:#666;margin-top:2px">${fullCode(docFormSync('multi_skill', { form_code: 'FM-PD1-017' }))}${docFormSync('multi_skill', {}).effective_date ? ' · Effective Date : ' + docFormSync('multi_skill', {}).effective_date : ''}</div>
 <script>window.onload = () => { window.print(); }</script></body></html>`;
 }
 
@@ -3108,9 +3124,9 @@ function buildIndividualSkillHtml({ emp, skillDefs, subItemsByskill, dept, asses
   <table style="width:100%;margin-bottom:5px"><tr>
     <td style="width:62%;vertical-align:top;padding-right:6px">
       <table style="width:100%"><tr>
-        ${signBox('พนักงานผู้ถูกประเมิน', emp.name, emp.position, null, true)}
-        ${signBox('ผู้ประเมิน', assessorName, assessorPos, assessorSig, false)}
-        ${signBox('ผู้รับรอง', certifierName, certifierPos, certifierSig, false)}
+        ${signBox(sigLabelsOf('individual_skill', IND_SIG_DEFAULTS)[0], emp.name, emp.position, null, true)}
+        ${signBox(sigLabelsOf('individual_skill', IND_SIG_DEFAULTS)[1], assessorName, assessorPos, assessorSig, false)}
+        ${signBox(sigLabelsOf('individual_skill', IND_SIG_DEFAULTS)[2], certifierName, certifierPos, certifierSig, false)}
       </tr></table>
       <div style="font-size:8px;color:#555;margin-top:3px">เลขที่บัตร : <b>${esc(emp.employee_id_code || '-')}</b> &nbsp;·&nbsp; ตำแหน่ง : <b>${esc(emp.position || '-')}</b></div>
     </td>
@@ -3156,7 +3172,7 @@ function buildIndividualSkillHtml({ emp, skillDefs, subItemsByskill, dept, asses
       </div>
     </td>
   </tr></table>
-  <div style="text-align:right;font-size:8px;color:#666;margin-top:3px">F-PRS-P1-119-0</div>
+  <div style="text-align:right;font-size:8px;color:#666;margin-top:3px">${fullCode(docFormSync('individual_skill', { form_code: 'F-PRS-P1-119-0' }))}${docFormSync('individual_skill', {}).effective_date ? ' · Effective Date : ' + docFormSync('individual_skill', {}).effective_date : ''}</div>
 </div>
 <script>window.onload = () => { window.print(); }</script></body></html>`;
 }
@@ -3376,9 +3392,9 @@ function MultiSkillFormTab() {
             {/* Signature slots */}
             <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
               {[
-                { label: 'จัดทำโดย', name: maker, setName: setMaker, sig: makerSig, setSig: setMakerSig, autoRole: 'leader' },
-                { label: 'ตรวจสอบโดย', name: checker, setName: setChecker, sig: checkerSig, setSig: setCheckerSig, autoRole: 'supervisor' },
-                { label: 'อนุมัติโดย', name: approver, setName: setApprover, sig: approverSig, setSig: setApproverSig, autoRole: 'manager/admin' },
+                { label: sigLabelsOf('multi_skill', MS_SIG_DEFAULTS)[0], name: maker, setName: setMaker, sig: makerSig, setSig: setMakerSig, autoRole: 'leader' },
+                { label: sigLabelsOf('multi_skill', MS_SIG_DEFAULTS)[1], name: checker, setName: setChecker, sig: checkerSig, setSig: setCheckerSig, autoRole: 'supervisor' },
+                { label: sigLabelsOf('multi_skill', MS_SIG_DEFAULTS)[2], name: approver, setName: setApprover, sig: approverSig, setSig: setApproverSig, autoRole: 'manager/admin' },
               ].map(({ label, name, setName, sig, setSig, autoRole }) => (
                 <div key={label} style={{ border: '1px solid var(--border2)', borderRadius: 8, padding: 10, background: 'var(--bg2)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -4208,7 +4224,7 @@ function AttendanceFormTab() {
   //   (8 หรือ 10 ชม. — ดู src/utils/otPeriods.js) · จองเก่า/ไม่ระบุ = 8 ชม. (ห้ามเดา 10.5 — ไม่มีในกฎ)
   const otHoursForDay = (info, day) => {
     if (!info) return 0;
-    const holiday = calLoaded && getDayType(dayDateStr(day)) !== 'working';
+    const holiday = calLoaded && isOtHolidayType(getDayType(dayDateStr(day))); // ชม. OT วันหยุดเฉพาะ ot15/ot2 — shutdown75 มาทำงาน = ปกติ
     if (holiday) {
       if (!info.present) return 0;
       const meta = otPeriodMeta(info.otPeriod);

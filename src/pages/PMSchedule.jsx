@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabaseDR } from '../supabaseClient'
 import { FREQ_LABEL, DEPT_LABEL, dueStatus, STATUS_META, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
+import useIsMobile from '../utils/useIsMobile'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -294,8 +295,12 @@ export default function PMSchedule() {
 function TimelineView({ rows, today, onCheck }) {
   const RANGE = 90
   const marks = [0, 30, 60, 90]
+  const isMobile = useIsMobile()
   return (
     <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+     {/* จอมือถือ: บอร์ด Gantt กว้างเกินจอ → เลื่อนแนวนอนได้ (label 200 + timeline 320 = 520px) desktop เหมือนเดิม */}
+     <div style={{ overflowX: isMobile ? 'auto' : undefined, WebkitOverflowScrolling: 'touch' }}>
+      <div style={{ minWidth: isMobile ? 540 : undefined }}>
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', background: 'var(--bg3)' }}>
         <div style={{ width: 200, flexShrink: 0, padding: '8px 12px', fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>อุปกรณ์ / ไลน์</div>
         <div style={{ flex: 1, position: 'relative', height: 34, minWidth: 320 }}>
@@ -343,6 +348,8 @@ function TimelineView({ rows, today, onCheck }) {
           )
         })}
       </div>
+      </div>
+     </div>
     </div>
   )
 }

@@ -10,6 +10,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { MTN_TEAMS, teamForItem } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
+import EventComments from '../components/EventComments';
 
 // โหลดโลโก้บริษัท (เหมือนหน้าเว็บ) เป็น base64 ครั้งเดียวสำหรับฝัง PDF
 let tsLogoDataUrlPromise = null;
@@ -173,6 +174,7 @@ export default function DailyReport() {
 function LiveTab({ role }) {
   const { fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const isMobile = useIsMobile(); // ≤768px: sidebar รายชื่อกะยุบมาซ้อนบนเนื้อหา (desktop ไม่เปลี่ยน)
+  const wide1100 = !useIsMobile(1099); // ≥1100px → modal แผ่ 2 คอลัมน์ (reactive แทน innerWidth ครั้งเดียว)
   const [lines, setLines]           = useState([]);
   const [lineMap, setLineMap]       = useState({});
   const [products, setProducts]     = useState([]);
@@ -180,6 +182,7 @@ function LiveTab({ role }) {
   const [sessions, setSessions]     = useState([]);
   const [overdueAlert, setOverdueAlert] = useState([]);
   const [dtLogs, setDtLogs]         = useState([]);
+  const [dtCmOpen, setDtCmOpen]     = useState(null); // id ของ DT ที่กางแผงคอมเมนต์อยู่
   const [selSession, setSelSession] = useState(null);
   const [loading, setLoading]       = useState(true);
   // CT overage history — keyed by mat_no: { checked, overCount, ctSec, avgObservedCt } จากกะปิดล่าสุดของไลน์เดียวกัน
@@ -1951,6 +1954,7 @@ function LiveTab({ role }) {
     const dtType = dtTypes.find(t => t.id === d.downtime_type_id);
     const mcName = machines.find(m => m.machine_no === d.machine_no)?.machine_name || '';
     notifyDowntime({
+      id: d.id, // ให้ send-notification จำ message_id ผูกรายการนี้ — reply ใน Telegram = คอมเมนต์
       line_name: selSession.line_name, shift: selSession.shift, work_date: selSession.work_date,
       machine_no: d.machine_no, machine_name: mcName,
       type_name: dtType?.name_th || '', category: dtType?.category || '',
@@ -2382,7 +2386,7 @@ function LiveTab({ role }) {
                           ปกติ leader แก้ไม่ได้แล้วเพราะตัดสินใจไปแล้วตอนปิดกะ แต่ถ้าตกค้างผิดปกติ (เช่นกะเก่าปิดไม่สำเร็จ)
                           SV/Manager/Admin ต้องลบแก้ไขได้เพื่อเคลียร์ข้อมูลค้าง ไม่งั้นจะไม่มีทางแก้เลย */}
                       {!confirmed && (canManage || (canEditRecords && !carryOver)) && (
-                        <button onClick={() => handleDeleteProdOrder(o.id)}
+                        <button className="tbtn" onClick={() => handleDeleteProdOrder(o.id)}
                           style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 2px' }}>✕</button>
                       )}
                       {/* ถอยใบที่สแกนปิดเกิน/ปิดผิดใบ — เฉพาะกะที่ยังเปิดอยู่ (หลังปิดกะยอดถูกสรุปแล้ว ถอยไม่ได้) */}
@@ -2505,9 +2509,9 @@ function LiveTab({ role }) {
                       </div>
                       {canEditRecords && (
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '' }); setShowDefect(true); }}
+                          <button className="tbtn" onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '' }); setShowDefect(true); }}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✎</button>
-                          <button onClick={() => handleDeleteDefectLog(d.id)}
+                          <button className="tbtn" onClick={() => handleDeleteDefectLog(d.id)}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
                         </div>
                       )}
@@ -2542,7 +2546,8 @@ function LiveTab({ role }) {
                 {dtLogs.map(d => {
                   const cat = CAT_META[d.dr_downtime_types?.category] || CAT_META.unplanned;
                   return (
-                    <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${d.dr_downtime_types?.color || '#aaa'}` }}>
+                    <div key={d.id}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${d.dr_downtime_types?.color || '#aaa'}` }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
                           <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: cat.bg, color: cat.color }}>{cat.label}</span>
@@ -2572,6 +2577,12 @@ function LiveTab({ role }) {
                       {canScan && can('mtn_repair', 'report', role) && (
                         <button onClick={() => openMoPicker(d)} title="เปิดใบแจ้งซ่อม MO (7 ขั้น) จากรายการนี้" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: '#7c6cf0', border: 'none', borderRadius: 20, padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>📝 เปิดใบซ่อม</button>
                       )}
+                      {/* 💬 คอมเมนต์ใต้รายการ downtime — คุยหน้างาน/ส่งต่อกะ + mention แจ้งเตือน */}
+                      <button className="tbtn" onClick={() => setDtCmOpen(v => v === d.id ? null : d.id)}
+                        title="คอมเมนต์/ส่งต่อข้อมูลรายการนี้"
+                        style={{ fontSize: 12, background: dtCmOpen === d.id ? 'var(--accent-dim)' : 'none', border: `1px solid ${dtCmOpen === d.id ? 'var(--accent)' : 'var(--border2)'}`, borderRadius: 20, color: dtCmOpen === d.id ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', padding: '3px 10px', whiteSpace: 'nowrap' }}>
+                        💬
+                      </button>
                       {canEditRecords && (
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button onClick={() => {
@@ -2590,11 +2601,16 @@ function LiveTab({ role }) {
                             });
                             setShowDT(true);
                           }}
-                            style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✎</button>
-                          <button onClick={() => handleDeleteDT(d.id)}
+                            className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✎</button>
+                          <button className="tbtn" onClick={() => handleDeleteDT(d.id)}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
                         </div>
                       )}
+                    </div>
+                    {dtCmOpen === d.id && (
+                      <EventComments refKind="downtime" refId={d.id}
+                        contextLabel={`Downtime ${d.dr_downtime_types?.name_th || ''}${d.machine_no ? ` (${d.machine_no})` : ''}`} />
+                    )}
                     </div>
                   );
                 })}
@@ -2683,7 +2699,7 @@ function LiveTab({ role }) {
           const carryOrdersList  = prodOrders.filter(o => o.status === 'carry_over');
           const cancelledOrders  = prodOrders.filter(o => o.status === 'cancelled');
           // จอ landscape กว้าง → แผ่เนื้อหาเป็น 2 คอลัมน์แทนการยืดสูงจน scroll (layout อย่างเดียว ไม่แตะ logic)
-          const twoCol = typeof window !== 'undefined' && window.innerWidth >= 1100 && (defectLogs.length > 0 || dtLogs.length > 0) && prodOrders.length > 0;
+          const twoCol = wide1100 && (defectLogs.length > 0 || dtLogs.length > 0) && prodOrders.length > 0;
           return (
             <div className="overlay" style={{ zIndex: 2100 }}>
               <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.5)', borderRadius: 14, padding: 24, width: 'min(96vw,1500px)', maxHeight: '94vh', overflowY: 'auto' }}>
@@ -2986,7 +3002,7 @@ function LiveTab({ role }) {
           const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty } = computeOEE(ng, closeEndTime, closeStartTime, previewDtLogs);
           const oeeColor = oee == null ? 'var(--muted)' : oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
           // จอ landscape กว้าง → แผ่เนื้อหาเป็น 2 คอลัมน์แทนการยืดสูงจน scroll (layout อย่างเดียว ไม่แตะ logic/การคำนวณ)
-          const twoCol = typeof window !== 'undefined' && window.innerWidth >= 1100;
+          const twoCol = wide1100;
           const hasOpenOrdersCol = twoCol && prodOrders.some(o => o.status === 'open');
           const hasOpenDTCol = twoCol && modalOpenDT.length > 0;
           return (
@@ -5128,7 +5144,7 @@ function DefectTypeSetup({ role }) {
                   {canEdit && (
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                      <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
+                      <button className="tbtn" onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
                     </div>
                   )}
                 </div>
@@ -5259,7 +5275,7 @@ function BreakPolicySetup({ role }) {
             {canEdit && (
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
+                <button className="tbtn" onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
               </div>
             )}
           </div>
@@ -6011,7 +6027,7 @@ function _KanbanStandardSetup_REMOVED({ role }) {
               {canEdit && (
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                  <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
+                  <button className="tbtn" onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
                 </div>
               )}
             </div>

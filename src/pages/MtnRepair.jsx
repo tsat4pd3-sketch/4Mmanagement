@@ -13,8 +13,11 @@ import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser } from '../utils/mtnTeams';
+import { loadDocForms, docFormSync } from '../utils/docForms';
+loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sync) อ่านผ่าน docFormSync
 import { fmtDateTime } from '../utils/dateFormat';
 import tsLogo from '../assets/TS logo.png';
+import EventComments from '../components/EventComments';
 
 /* ── helpers ─────────────────────────────────────────────── */
 // รูปแจ้งซ่อม/หลักฐาน MTN — บีบ 1024px q0.8 (~120KB) สมดุลคม/ประหยัด storage (user เลือก B 2026-07-14)
@@ -248,7 +251,7 @@ export default function MtnRepair() {
 
   return (
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1800px)', margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+      <div style={{ display: 'flex', paddingRight: 52, alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>🛠️ แจ้งซ่อม MTN (MO)</h1>
         <span style={{ fontSize: 13, color: 'var(--muted)' }}>ค้างดำเนินการ <b style={{ color: openCount ? '#ef4444' : '#22c55e' }}>{openCount}</b> ใบ</span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
@@ -391,6 +394,9 @@ function nextStepFor(order) {
 
 /* ── พิมพ์ใบ MO — layout 100% ตามฟอร์มเดิม FM-JIG-008 ── */
 function printMoReport(o, dparts = []) {
+  // เลขฟอร์ม/Rev/Effective จากทะเบียนเอกสาร (/doc-forms) — fallback ค่าเดิม
+  const dfMo = docFormSync('mo_report', { form_code: 'FM-JIG-008', rev: 'REV.00', effective_date: '05/12/2025', sig_blocks: ['JIG/MTN APPROVE', 'QA APPROVE', 'PD APPROVE', 'MGR APPROVE'] });
+  const moSig = dfMo.sig_blocks || ['JIG/MTN APPROVE', 'QA APPROVE', 'PD APPROVE', 'MGR APPROVE'];
   const beDT = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${+g.year + 543} ${g.hour === '24' ? '00' : g.hour}:${g.minute}:${g.second}`; };
   const beD = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${+g.year + 543}`; };
   const esc = (s) => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
@@ -458,9 +464,9 @@ function printMoReport(o, dparts = []) {
         <td>${L('สถานะ:', o.follow_up)}${L('ผู้แจ้ง:', o.ho_reporter || o.reporter_prod)}${L('รายละเอียด:', '')}</td></tr>
   </table>
   <table class="signs">
-    <tr>${sign('JIG/MTN APPROVE', o.checker_name, o.checker_sign, o.check_at)}${sign('QA APPROVE', o.qa_checker, o.qa_sign, o.qa_at)}${sign('PD APPROVE', o.ho_checker, o.ho_sign, o.ho_at)}${sign('MGR APPROVE', o.approver_name, o.approve_sign, o.approve_at, true)}</tr>
+    <tr>${sign(moSig[0], o.checker_name, o.checker_sign, o.check_at)}${sign(moSig[1], o.qa_checker, o.qa_sign, o.qa_at)}${sign(moSig[2], o.ho_checker, o.ho_sign, o.ho_at)}${sign(moSig[3], o.approver_name, o.approve_sign, o.approve_at, true)}</tr>
   </table>
-  <div class="ft"><span>FM-JIG-008-REV.00</span><span>Effective : 05/12/2025</span></div>
+  <div class="ft"><span>${[dfMo.form_code, dfMo.rev].filter(Boolean).join('-')}${dfMo.footer_note ? ' · ' + dfMo.footer_note : ''}</span><span>${dfMo.effective_date ? 'Effective : ' + dfMo.effective_date : ''}</span></div>
   <script>window.onload=function(){setTimeout(function(){window.print()},500)}</script>
   </body></html>`;
   const w = window.open('', '_blank');
@@ -558,6 +564,8 @@ function DetailDrawer({ order, role, improvements, onOpenImprovement, onClose, o
           </div>
         </div>
       </div>
+      {/* 💬 คอมเมนต์ใต้ใบซ่อม — คุยงานติดใบ + 🔔 mention แจ้งเตือนเข้ากระดิ่ง */}
+      <EventComments refKind="mtn_order" refId={o.id} contextLabel={`ใบซ่อม ${o.mo_no || `#${o.id}`}${o.machine_no ? ` (${o.machine_no})` : ''}`} />
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
         {can('mtn_repair', 'manage_master', role) ? <button onClick={del} style={{ ...btnGhost, color: '#ef4444', borderColor: '#ef4444' }}>🗑 ลบใบนี้</button> : <span />}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -613,16 +621,32 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, fullName,
         Object.assign(upd, { accept_at: editMode ? o.accept_at : new Date().toISOString(), accepted_by: f.accepted_by, repair_type: f.repair_type, assign_note: f.assign_note, target_done_at: f.target_done_at || null, assigned_to: f.assigned_to });
         if (!editMode) { if (isReject) { upd.status = 'rejected'; upd.reject_reason = f.reject_reason; } else { upd.status = 'assigned'; upd.current_step = 2; } }
         else if (isReject) upd.reject_reason = f.reject_reason;
-        await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
-        if (!editMode && !isReject) { const prefix = repairTypes.find(r => r.name === f.repair_type)?.prefix || 'BM'; await supabaseDR.rpc('mtn_assign_mo_no', { p_order_id: o.id, p_prefix: prefix }); }
+        // ออกเลข MO ก่อนเลื่อนสถานะ — ถ้า RPC ล้ม (เน็ตสะดุด) ใบยังเป็น pending ให้กดสเตป 2 ใหม่ได้
+        // (เดิมเลื่อน status→assigned ก่อน แล้ว RPC ล้ม → ใบค้าง assigned + mo_no=null ตลอดกาล ทำสเตป 2 ซ้ำไม่ได้)
+        if (!editMode && !isReject) { const prefix = repairTypes.find(r => r.name === f.repair_type)?.prefix || 'BM'; const { error: eMo } = await supabaseDR.rpc('mtn_assign_mo_no', { p_order_id: o.id, p_prefix: prefix }); if (eMo) { setSaving(false); return toast.error('ออกเลข MO ไม่สำเร็จ: ' + eMo.message); } }
+        const { error: eUpd } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
+        if (eUpd) { setSaving(false); return toast.error(eUpd.message); }
       } else if (step === 3) {
         Object.assign(upd, { root_cause: f.root_cause, solution: f.solution, tech_main: f.tech_main, tech_secondary: f.tech_secondary });
         if (!editMode) { upd.status = 'repaired'; upd.current_step = 3; upd.repair_done_at = new Date().toISOString(); }
         if (afterFile) { const b = await resizeImage(afterFile); upd.after_img = await uploadMtnImg(b, `after/${o.id}-${Date.now()}.jpg`); }
         await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
-        for (const p of usedParts.filter(x => x.name && Number(x.qty) > 0)) {
+        const usable = usedParts.filter(x => x.name && Number(x.qty) > 0);
+        for (const p of usable) {
           await supabaseDR.from('mtn_order_parts').insert({ order_id: o.id, part_id: p.part_id || null, part_name: p.name, qty: Number(p.qty), unit: p.unit, tech: f.tech_main, logged_by: fullName });
-          if (p.part_id) { const cur = parts.find(x => x.id === p.part_id); if (cur) { const nb = Number(cur.stock_qty) - Number(p.qty); await supabaseDR.from('mtn_spare_parts').update({ stock_qty: nb }).eq('id', p.part_id); await supabaseDR.from('mtn_stock_txns').insert({ part_id: p.part_id, type: 'consume', qty: -Number(p.qty), balance: nb, ref_order_id: o.id, by_name: fullName, note: `เบิกใช้ ${o.mo_no || ''}` }); } }
+        }
+        // ตัดสต็อก: รวมยอดต่ออะไหล่ก่อน (กันนับซ้ำเมื่อใส่อะไหล่ตัวเดียวกัน 2 แถวในใบเดียว) แล้วอ่านสต็อก "สด"
+        // ณ ตอนตัด (ไม่ใช้ค่า cache ตอนโหลดหน้า ซึ่งอาจเก่า) — ลดโอกาสตัดสต็อกเพี้ยนจาก read-modify-write
+        // NOTE: ยังไม่ atomic เต็มตัวข้ามผู้ใช้พร้อมกัน — วิธีที่ถูกต้องสุดคือ RPC ตัดสต็อกฝั่ง DB (update ... returning)
+        const byPart = {};
+        usable.filter(p => p.part_id).forEach(p => { byPart[p.part_id] = (byPart[p.part_id] || 0) + Number(p.qty); });
+        for (const [pid, totalQty] of Object.entries(byPart)) {
+          const { data: fresh } = await supabaseDR.from('mtn_spare_parts').select('stock_qty').eq('id', pid).maybeSingle();
+          if (!fresh) continue;
+          const nb = Number(fresh.stock_qty || 0) - totalQty;
+          const { error: eSt } = await supabaseDR.from('mtn_spare_parts').update({ stock_qty: nb }).eq('id', pid);
+          if (eSt) { toast.error('ตัดสต็อกอะไหล่ไม่สำเร็จ: ' + eSt.message); continue; }
+          await supabaseDR.from('mtn_stock_txns').insert({ part_id: pid, type: 'consume', qty: -totalQty, balance: nb, ref_order_id: o.id, by_name: fullName, note: `เบิกใช้ ${o.mo_no || ''}` });
         }
       } else if (step === 4) {
         const s = await resolveSign('checker_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็นผู้ตรวจ'); }
@@ -676,9 +700,9 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, fullName,
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><label style={lbl}>อะไหล่ที่ใช้ (เบิก — หักสต็อกอัตโนมัติ)</label><button type="button" onClick={addPart} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }}>+ เพิ่ม</button></div>
             {usedParts.map((p, i) => (
-              <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 5, alignItems: 'center' }}>
-                <select value={p.part_id} onChange={e => pickPart(i, e.target.value)} style={{ ...inp, flex: 2 }}><option value="">อะไหล่…</option>{parts.map(pp => <option key={pp.id} value={pp.id}>{pp.name} (สต็อก {pp.stock_qty})</option>)}</select>
-                <input value={p.name} onChange={e => setPart(i, 'name', e.target.value)} placeholder="หรือพิมพ์ชื่อ" style={{ ...inp, flex: 2 }} />
+              <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 5, alignItems: 'center', flexWrap: 'wrap' }}>
+                <select value={p.part_id} onChange={e => pickPart(i, e.target.value)} style={{ ...inp, flex: '2 1 140px' }}><option value="">อะไหล่…</option>{parts.map(pp => <option key={pp.id} value={pp.id}>{pp.name} (สต็อก {pp.stock_qty})</option>)}</select>
+                <input value={p.name} onChange={e => setPart(i, 'name', e.target.value)} placeholder="หรือพิมพ์ชื่อ" style={{ ...inp, flex: '2 1 120px' }} />
                 <input type="number" value={p.qty} onChange={e => setPart(i, 'qty', e.target.value)} style={{ ...inp, width: 70 }} />
                 <button type="button" onClick={() => setUsedParts(x => x.filter((_, j) => j !== i))} className="tbtn" style={{ ...btnGhost, padding: '6px 8px' }}>✕</button>
               </div>
@@ -768,9 +792,9 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, fullName, reloadMast
         <div key={dep} style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent2)', marginBottom: 4 }}>🏢 {dep} ({list.length})</div>
           <div style={{ display: 'grid', gap: 6 }}>{list.map(it => (
-            <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
-              <input defaultValue={it.name} onBlur={e => e.target.value !== it.name && updRow('mtn_technicians', it.id, { name: e.target.value })} style={{ ...inp, width: 260 }} />
-              <select defaultValue={it.dept || 'MTN'} onChange={e => updRow('mtn_technicians', it.id, { dept: e.target.value })} style={{ ...inp, width: 150 }}>{MTN_DEPTS.map(d => <option key={d}>{d}</option>)}</select>
+            <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+              <input defaultValue={it.name} onBlur={e => e.target.value !== it.name && updRow('mtn_technicians', it.id, { name: e.target.value })} style={{ ...inp, flex: '2 1 180px', width: 'auto' }} />
+              <select defaultValue={it.dept || 'MTN'} onChange={e => updRow('mtn_technicians', it.id, { dept: e.target.value })} style={{ ...inp, flex: '1 1 120px', width: 'auto' }}>{MTN_DEPTS.map(d => <option key={d}>{d}</option>)}</select>
               <button onClick={() => delRow('mtn_technicians', it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
             </div>))}</div>
         </div>); })}
@@ -782,7 +806,9 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, fullName, reloadMast
   const stockMove = async (part, type) => {
     const q = Number(prompt(type === 'in' ? `รับเข้าอะไหล่ "${part.name}" จำนวนเท่าไร?` : `ปรับยอด "${part.name}" (+เพิ่ม / -ลด)`, type === 'in' ? '1' : '0'));
     if (!Number.isFinite(q) || q === 0) return;
-    const nb = Number(part.stock_qty) + q;
+    // อ่านสต็อกสดก่อนบวก แทนใช้ค่าจาก cache (part.stock_qty อาจเก่า) — ลดโอกาสยอดเพี้ยนจากการปรับพร้อมกัน
+    const { data: fresh } = await supabaseDR.from('mtn_spare_parts').select('stock_qty').eq('id', part.id).maybeSingle();
+    const nb = Number(fresh?.stock_qty ?? part.stock_qty ?? 0) + q;
     const { error } = await supabaseDR.from('mtn_spare_parts').update({ stock_qty: nb }).eq('id', part.id);
     if (error) return toast.error(error.message);
     await supabaseDR.from('mtn_stock_txns').insert({ part_id: part.id, type, qty: q, balance: nb, by_name: fullName, note: type === 'in' ? 'รับเข้า' : 'ปรับยอด' });
@@ -823,8 +849,8 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, fullName, reloadMast
           <button onClick={() => { if (!nw[fields[0].k]) return; addRow(table, { ...nw, sort_order: items.length + 1 }); setNw({}); }} style={btnPri}>+ {addLabel}</button>
         </div>
         <div style={{ display: 'grid', gap: 6 }}>{items.map(it => (
-          <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
-            {fields.map(fl => <input key={fl.k} defaultValue={it[fl.k] || ''} onBlur={e => e.target.value !== (it[fl.k] || '') && updRow(table, it.id, { [fl.k]: e.target.value })} style={{ ...inp, width: fl.w || 200 }} />)}
+          <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+            {fields.map(fl => <input key={fl.k} defaultValue={it[fl.k] || ''} onBlur={e => e.target.value !== (it[fl.k] || '') && updRow(table, it.id, { [fl.k]: e.target.value })} style={{ ...inp, flex: `1 1 ${fl.w || 200}px`, width: 'auto', minWidth: 120 }} />)}
             <button onClick={() => delRow(table, it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
           </div>))}</div>
       </div>

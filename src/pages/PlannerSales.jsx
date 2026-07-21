@@ -333,7 +333,16 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       await supabaseDR.from('ship_to_plants')
         .upsert(edi.shipTos.map(c => ({ code: c, customer_name: c })), { onConflict: 'code', ignoreDuplicates: true });
       if (edi.kind === 'forecast') {
-        const { error: eDel } = await supabaseDR.from('customer_forecasts').delete().eq('source', 'edi_830').in('customer', edi.shipTos);
+        // ลบ forecast เดิม "เฉพาะช่วงเดือนที่ไฟล์นี้ครอบคลุม" ไม่ใช่ลบทั้งหมด —
+        // เดิมลบ edi_830 ทุกเดือน ถ้าไฟล์ใหม่ horizon สั้นกว่า เดือนที่เลยช่วงจะหายถาวร (bounded เหมือน path 862)
+        const months = edi.records.map(r => r.date).filter(Boolean);
+        let delQ = supabaseDR.from('customer_forecasts').delete().eq('source', 'edi_830').in('customer', edi.shipTos);
+        if (months.length) {
+          const minM = months.reduce((a, b) => (a < b ? a : b));
+          const maxM = months.reduce((a, b) => (a > b ? a : b));
+          delQ = delQ.gte('period_month', minM).lte('period_month', maxM);
+        }
+        const { error: eDel } = await delQ;
         if (eDel) throw eDel;
         const recs = edi.records.map(r => ({
           batch_id: batch.id, customer: r.shipTo, mat_no: r.mat_no, part_name: r.part_name,
@@ -614,7 +623,7 @@ function PlannerTab({ refreshKey, custLabel }) {
       <div style={card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
           <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🧠 แผนภาระการผลิตรายพาร์ท</div>
-          <select value={focusMonth} onChange={e => setFocusMonth(e.target.value)} style={inputSt}>
+          <select value={focusMonth} onChange={e => setFocusMonth(e.target.value)} style={{ ...inputSt, width: 170 }}>
             {months.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
           </select>
         </div>
@@ -695,7 +704,9 @@ function countWorkingDays(monthKey, calRows) {
     const dow = dt.getDay();                                   // 0=อา 6=เสา
     const key = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const type = cal[key] || '';
-    if (/holiday|off|หยุด/i.test(type)) continue;              // วันหยุดในปฏิทิน
+    // มาร์คเป็นวันหยุดทุกชนิด (ot15/ot2/shutdown75) = ไม่นับ — เดิมใช้ regex /holiday|off|หยุด/
+    // ซึ่งไม่ match ค่า day_type จริงเลย ทำให้วันหยุดที่ตก จ-ศ ถูกนับเป็นวันทำงาน (บั๊กแก้ 2026-07-21)
+    if (type && type !== 'working') continue;
     if (dow >= 1 && dow <= 5) wd++;                            // จ-ศ = วันทำงาน
     else if (type === 'working') wd++;                        // เสาร์/อาทิตย์ที่มาร์คทำงาน
   }
@@ -735,7 +746,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       supabaseDR.from('kanban_standards').select('mat_no, part_name, customer, qty_per_kanban, min_qty, max_qty, lot_size, total_kanban').eq('is_active', true),
       supabaseDR.from('parts_master').select('mat_no, part_name, qty_per_pkg').eq('is_active', true),
       supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, customer, line_name, name, p_no').eq('is_active', true),
-      supabaseDR.from('customer_forecasts').select('mat_no, qty').gte('period_month', monthRange.start).lt('period_month', monthRange.end),
+      supabaseDR.from('customer_forecasts').select('mat_no, qty, source').gte('period_month', monthRange.start).lt('period_month', monthRange.end),
       supabase.from('company_calendar').select('work_date, day_type').gte('work_date', monthRange.start).lt('work_date', monthRange.end),
     ]);
     // วันทำงานลิงก์ปฏิทินตามเดือนที่เลือก (แก้ทับได้) · efficiency = ค่ากลาง
@@ -745,8 +756,16 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
     setKsMap(Object.fromEntries((ks || []).map(r => [r.mat_no, r])));
     setPmMap(Object.fromEntries((pm || []).map(r => [r.mat_no, r])));
     setDrMap(Object.fromEntries((dr || []).map(r => [r.mat_no, r])));
+    // กัน double-count: mat ที่มีทั้ง EDI 830 (รายสัปดาห์) และ manual (รายเดือน) ในเดือนเดียว
+    // → รวมเฉพาะ source เดียว (EDI 830 official ก่อน · ไม่มีค่อยใช้ manual) แทนการบวกทั้ง 2 grain (2026-07-21)
+    const fBySrc = {};
+    (fc || []).forEach(r => {
+      if (!r.mat_no) return;
+      const e = fBySrc[r.mat_no] || (fBySrc[r.mat_no] = { edi: 0, other: 0 });
+      e[r.source === 'edi_830' ? 'edi' : 'other'] += Number(r.qty) || 0;
+    });
     const fmap = {};
-    (fc || []).forEach(r => { if (r.mat_no) fmap[r.mat_no] = (fmap[r.mat_no] || 0) + (Number(r.qty) || 0); });
+    Object.entries(fBySrc).forEach(([mat, e]) => { fmap[mat] = e.edi > 0 ? e.edi : e.other; });
     setForecast(fmap);
     setEdits({});
     setLoading(false);
@@ -1108,7 +1127,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 
       {/* (#1) Modal จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน */}
       {mapModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setMapModal(false)}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setMapModal(false)}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(760px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 4 }}>🔗 จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
@@ -1167,7 +1186,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 
       {/* Preview & Apply (แสดงอย่างเดียว ปิดจากปุ่ม/นอกกรอบได้) */}
       {preview && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setPreview(null)}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setPreview(null)}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(680px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 4 }}>🎴 ยืนยันอัปเดต Kanban — {changedRows.length} รายการ</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>เขียนค่า Min/Max/Total ใหม่เข้า kanban_standards (ระบบดึงทั้งองค์กรใช้ต่อทันที)</div>

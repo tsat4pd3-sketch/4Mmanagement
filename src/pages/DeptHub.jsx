@@ -117,7 +117,7 @@ const DEPTS = [
   {
     key: 'production', code: 'PRD·01', label: 'Production', labelTh: 'ฝ่ายผลิต', icon: '🏭',
     color: '#3dd65c', route: '/dashboard', navGroups: ['ภาพรวม', 'ฝ่ายผลิต'], available: true,
-    desc: 'เช็คชื่อ-PPE, จัดการไลน์ผลิต, Daily Report, OEE, Daily PM',
+    desc: 'เช็คชื่อ-PPE, จัดการไลน์ผลิต, Daily Report, OEE, Daily PM, ใบรายงานของเสีย',
   },
   {
     key: 'logistic', code: 'LOG·02', label: 'Logistic & Store', labelTh: 'คลังวัสดุ & จัดส่ง', icon: '📦',
@@ -132,7 +132,7 @@ const DEPTS = [
   {
     key: 'qa', code: 'QUA·04', label: 'Quality QA/QC', labelTh: 'ควบคุมคุณภาพ', icon: '🔍',
     color: '#4d9fff', route: '/qa', navGroups: ['ควบคุมคุณภาพ QA/QC'], available: true,
-    desc: 'Quality Control Center, มาตรฐานการตรวจ & Drawing, CQI-15',
+    desc: 'Quality Control Center, มาตรฐานการตรวจ & Drawing, ใบรายงานของเสีย, CQI-15',
   },
   {
     key: 'report', code: 'RPT·05', label: 'Analytics & Reports', labelTh: 'วิเคราะห์ & รายงาน', icon: '📋',

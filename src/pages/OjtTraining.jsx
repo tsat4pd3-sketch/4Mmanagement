@@ -6,6 +6,7 @@ import { toast } from '../components/Toast';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import tsLogoUrl from '../assets/TS logo.png';
+import { getDocForm, fullCode } from '../utils/docForms';
 
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
@@ -272,10 +273,13 @@ export default function OjtTraining() {
   const handlePrint = async (t) => {
     setPrinting(t.id);
     try {
+      // เลขฟอร์ม/Rev/ช่องลายเซ็น จากทะเบียนเอกสาร (/doc-forms) — fallback ค่าเดิม
+      const df = await getDocForm('ojt', { form_code: FORM_NO, sig_blocks: ['ผู้จัดทำ', 'ระดับจัดการอนุมัติ', 'ผู้รับทราบ'] });
+      const sigLabels = df.sig_blocks;
       const { data: att } = await supabase.from('ojt_training_attendees').select('*').eq('training_id', t.id).order('sort_order');
       const rows = att || [];
       const [logo, makerSig, apprSig, hrSig, ...attSigs] = await Promise.all([
-        urlToDataUrl(tsLogoUrl), urlToDataUrl(t.maker_sig_url), urlToDataUrl(t.approver_sig_url), urlToDataUrl(t.hr_sig_url),
+        urlToDataUrl(df.logo_url || tsLogoUrl), urlToDataUrl(t.maker_sig_url), urlToDataUrl(t.approver_sig_url), urlToDataUrl(t.hr_sig_url),
         ...rows.map(r => urlToDataUrl(r.sign_url)),
       ]);
       const cb = (v) => `<span style="display:inline-block;width:11px;height:11px;border:1px solid #000;text-align:center;line-height:10px;font-size:10px;vertical-align:middle">${v ? '✓' : '&nbsp;'}</span>`;
@@ -307,7 +311,7 @@ export default function OjtTraining() {
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
 table{border-collapse:collapse}
-@media print{@page{size:A4 landscape;margin:7mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+@media print{@page{size:A4 portrait;margin:7mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body style="padding:6mm">
 <div style="font-size:9px;text-align:right">หน้า 1 ของ 1 หน้า</div>
 <table style="width:100%;border:1px solid #000">
@@ -321,15 +325,15 @@ table{border-collapse:collapse}
     </td>
     <td style="border:1px solid #000;width:130px;text-align:center;vertical-align:bottom;padding:4px;font-size:10px">
       ${makerSig ? `<img src="${makerSig}" style="height:26px;object-fit:contain"/>` : '<div style="height:26px"></div>'}
-      <div>ผู้จัดทำ</div><div>(${t.maker_name || '....................'})</div>
+      <div>${sigLabels[0] || 'ผู้จัดทำ'}</div><div>(${t.maker_name || '....................'})</div>
     </td>
     <td style="border:1px solid #000;width:130px;text-align:center;vertical-align:bottom;padding:4px;font-size:10px">
       ${apprSig ? `<img src="${apprSig}" style="height:26px;object-fit:contain"/>` : '<div style="height:26px"></div>'}
-      <div>ระดับจัดการอนุมัติ</div><div>(${t.approver_name || '....................'})</div>
+      <div>${sigLabels[1] || 'ระดับจัดการอนุมัติ'}</div><div>(${t.approver_name || '....................'})</div>
     </td>
     <td style="border:1px solid #000;width:130px;text-align:center;vertical-align:bottom;padding:4px;font-size:10px">
       ${hrSig ? `<img src="${hrSig}" style="height:26px;object-fit:contain"/>` : '<div style="height:26px"></div>'}
-      <div>ผู้รับทราบ</div><div>(${t.hr_name || '....................'})</div>
+      <div>${sigLabels[2] || 'ผู้รับทราบ'}</div><div>(${t.hr_name || '....................'})</div>
     </td>
   </tr>
   <tr>
@@ -403,7 +407,7 @@ table{border-collapse:collapse}
   3. หัวหน้างานหรือผู้สอนประเมินผู้เข้ารับการอบรมด้วยความเห็นด้วย หรือไม่เห็นด้วย กับผลการประเมินของพนักงาน กรณีไม่เห็นด้วยให้ชี้แจงกับพนักงานเป็นรายบุคคลและวัดผลการปฏิบัติงาน<br/>
   4. กำหนดให้มีการทวนสอบภาคทฤษฎีและปฏิบัติหลังการอบรมสอนงานไม่น้อยกว่า 1 เดือนหลังจากการอบรม 1 ฉบับ
 </div>
-<div style="margin-top:2px;font-size:9px">${FORM_NO}</div>
+<div style="margin-top:2px;font-size:9px;display:flex;justify-content:space-between"><span>${fullCode(df)}${df.footer_note ? " · " + df.footer_note : ""}</span><span>${df.effective_date ? "Effective Date : " + df.effective_date : ""}</span></div>
 <script>window.onload = () => window.print();</script>
 </body></html>`;
       const w = window.open('', '_blank');

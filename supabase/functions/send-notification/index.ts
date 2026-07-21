@@ -97,6 +97,28 @@ async function sendTelegram(message: string, chatId?: string | string[] | null):
   return results.some(Boolean);
 }
 
+// ส่งแบบจำ message_id — ใช้กับ event ที่มี ref (reply ใน Telegram → คอมเมนต์ใบงานผ่าน telegram-webhook)
+// แยกจาก sendTelegram เดิมโดยตั้งใจ: event อื่นพฤติกรรมเดิมเป๊ะ · ล้มเงียบ ห้ามทำการแจ้งเตือนพัง
+async function sendTelegramTracked(message: string, chatId: string | string[] | null | undefined, refKind: string, refId: unknown, event: string): Promise<boolean> {
+  const chats = chatList(chatId);
+  if (!BOT_TOKEN || !chats.length) return false;
+  const res = await Promise.all(chats.map((chat) =>
+    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chat, text: message, parse_mode: 'HTML' }),
+    }).then(async (r) => (r.ok ? { chat, message_id: (await r.json())?.result?.message_id as number } : null)).catch(() => null)));
+  const sent = res.filter((x): x is { chat: string; message_id: number } => !!x?.message_id);
+  if (refId && sent.length) {
+    try {
+      await supabase.from('telegram_sent_messages').upsert(
+        sent.map((s) => ({ chat_id: s.chat, message_id: s.message_id, ref_kind: refKind, ref_id: String(refId), event })),
+        { onConflict: 'chat_id,message_id', ignoreDuplicates: true },
+      );
+    } catch { /* migration ยังไม่ apply — ข้าม */ }
+  }
+  return sent.length > 0;
+}
+
 async function sendTelegramPhoto(photoUrl: string, caption: string, chatId?: string | string[] | null) {
   const chats = chatList(chatId);
   if (!BOT_TOKEN || !chats.length) return;
@@ -199,6 +221,50 @@ Deno.serve(async (req) => {
         line_name: s.line_name, shift_label: s.shift_label, work_date: s.work_date,
         present: s.present, total: s.total, ot: s.ot, leave: s.leave, absent: s.absent,
         checked_by: s.checked_by, start_time: s.start_time,
+      }, builtin);
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
+    }
+
+    /* ── Checkin Update (แก้กำลังคนระหว่างวัน หลังเช็คชื่อไปแล้ว) ── */
+    if (event === 'checkin_update') {
+      const s = body.summary;
+      if (!s) return new Response('missing summary', { status: 400 });
+      const chat = resolveEvent(routes, 'checkin_update');
+      if (chat === null) return json({ ok: true, skipped: true });
+      const builtin = [
+        `🔄 <b>อัพเดทกำลังคน</b> (แก้ระหว่างวัน)`, ``,
+        `🏭 ไลน์: <b>${s.line_name}</b> · ${s.shift_label}`,
+        `📅 วันที่: ${s.work_date}`, ``,
+        `👥 เข้างาน: <b>${s.present}/${s.total}</b> · ⏰ OT: ${s.ot} · 🏖️ ลา: ${s.leave} · ❌ ขาด: ${s.absent}`,
+        s.changed_names ? `\n✏️ เปลี่ยนแปลง ${s.changed_count} คน:\n${s.changed_names}` : ``,
+        ``, `✍️ แก้โดย: ${s.checked_by}`, `— 4M Management System`,
+      ].filter((l) => l !== ``).join('\n');
+      const message = pick(routes, 'checkin_update', {
+        line_name: s.line_name, shift_label: s.shift_label, work_date: s.work_date,
+        present: s.present, total: s.total, ot: s.ot, leave: s.leave, absent: s.absent,
+        checked_by: s.checked_by, changed_count: s.changed_count, changed_names: s.changed_names,
+      }, builtin);
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
+    }
+
+    /* ── OT Booking (จองรถ OT — ใครทำ OT / งานอะไร / กี่โมง) ── */
+    if (event === 'ot_booking') {
+      const b = body.booking;
+      if (!b) return new Response('missing booking', { status: 400 });
+      const chat = resolveEvent(routes, 'ot_booking');
+      if (chat === null) return json({ ok: true, skipped: true });
+      const builtin = [
+        `🚐 <b>จองรถ OT</b>`, ``,
+        `🏭 ไลน์: <b>${b.line_name}</b>`,
+        `📅 ${b.shift_label} · ${b.date_label} (${b.work_date})`, ``,
+        Number(b.count) > 0 ? `👥 ทำ OT <b>${b.count}</b> คน:\n${b.items}` : `— ยกเลิกการจองรถ OT (ไม่มีคนจองแล้ว) —`,
+        ``, `✍️ จองโดย: ${b.booked_by}`, `— 4M Management System`,
+      ].join('\n');
+      const message = pick(routes, 'ot_booking', {
+        line_name: b.line_name, work_date: b.work_date, date_label: b.date_label,
+        shift_label: b.shift_label, count: b.count, items: b.items, booked_by: b.booked_by,
       }, builtin);
       await sendTelegram(message, chat).catch(console.error);
       return json({ ok: true });
@@ -311,7 +377,8 @@ Deno.serve(async (req) => {
         shift_label: shiftLabel, work_date: d.work_date, type_name: d.type_name || '-',
         description: d.description || '', reported_by: d.reported_by || '-', start_time: d.start_time || '',
       }, lines.join('\n'));
-      await sendTelegram(message, chat).catch(console.error);
+      if (d.id) await sendTelegramTracked(message, chat, 'downtime', d.id, 'downtime_call_mtn').catch(console.error);
+      else await sendTelegram(message, chat).catch(console.error);
       return json({ ok: true });
     }
 
@@ -337,7 +404,8 @@ Deno.serve(async (req) => {
         shift_label: shiftLabel, work_date: d.work_date, type_name: d.type_name || '-',
         open_min: d.open_min ?? '', description: d.description || '', reported_by: d.reported_by || '-', start_time: d.start_time || '',
       }, lines.join('\n'));
-      await sendTelegram(message, chat).catch(console.error);
+      if (d.id) await sendTelegramTracked(message, chat, 'downtime', d.id, 'downtime_open_15min').catch(console.error);
+      else await sendTelegram(message, chat).catch(console.error);
       return json({ ok: true });
     }
 
