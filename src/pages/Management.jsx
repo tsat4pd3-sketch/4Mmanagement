@@ -203,6 +203,10 @@ export default function Management() {
   // มือถือ: บอร์ด Heijunka default พับเป็นแถบสรุป (map-first — ผังคนได้พื้นที่เต็ม) · จำสถานะใน localStorage
   const [mobileBoardOpen, setMobileBoardOpen] = useState(() => { try { return localStorage.getItem('mg_board_open_mobile') === '1'; } catch { return false; } });
   const toggleMobileBoard = () => setMobileBoardOpen(v => { try { localStorage.setItem('mg_board_open_mobile', v ? '0' : '1'); } catch { /* private mode */ } return !v; });
+  // desktop: บอร์ด Heijunka ย่อ/ขยายได้ (minimize/maximize ตาม UI-CONVENTIONS §137) — เมื่อ kanban เยอะบอร์ดสูง
+  // จนดันผังไลน์ (floor map) หลุดจอ → ย่อบอร์ดเป็นแถบสรุปเพื่อคืนพื้นที่ให้ผัง · default = ขยาย · จำสถานะใน localStorage
+  const [deskBoardCollapsed, setDeskBoardCollapsed] = useState(() => { try { return localStorage.getItem('mg_board_collapsed') === '1'; } catch { return false; } });
+  const toggleDeskBoard = () => setDeskBoardCollapsed(v => { try { localStorage.setItem('mg_board_collapsed', v ? '0' : '1'); } catch { /* private mode */ } return !v; });
   const [showLegendMobile, setShowLegendMobile] = useState(false); // มือถือ: legend สถานะยุบเข้าปุ่ม ℹ️
   const [imgBox,         setImgBox]         = useState(null); // actual rendered image bounds inside objectFit:contain
   const imgRef = useRef(null);
@@ -1389,6 +1393,7 @@ export default function Management() {
             if (o.status === 'open') openByMatNo[o.mat_no] = (openByMatNo[o.mat_no] || 0) + 1;
           }));
           const matNoChips = Object.entries(openByMatNo);
+          const openCount = matNoChips.reduce((a, [, n]) => a + n, 0);
 
           // ── Smart planner: คาดการณ์เวลาเสร็จ + คำแนะนำ OT (logic เดียวกับ Dashboard) ──
           // กะเช้า: OT ต่อท้ายกะ (เลิก 17:30, OT ถึง 20:00) · กะดึก: OT อยู่หัวกะ (เข้าปกติ 22:30, เปิด OT = เข้า 20:00)
@@ -1477,10 +1482,13 @@ export default function Management() {
             return chips;
           })();
           const todayWd = getWorkDate();
-          // มือถือ + พับอยู่: แถบสรุปบรรทัดเดียว แตะเพื่อกางบอร์ด (desktop ไม่มีโหมดพับ — เหมือนเดิม)
-          if (isMobile && !mobileBoardOpen) {
+          // พับอยู่ (มือถือ default พับ / desktop กดย่อ): แถบสรุปบรรทัดเดียว กดเพื่อกางบอร์ด
+          // — หัวแถบยังโชว์ชื่อไลน์ + สถานะ/จำนวนดีเลย์เสมอ ตาม UI-CONVENTIONS §137
+          const boardCollapsed = isMobile ? !mobileBoardOpen : deskBoardCollapsed;
+          const toggleBoard = isMobile ? toggleMobileBoard : toggleDeskBoard;
+          if (boardCollapsed) {
             return (
-              <button onClick={toggleMobileBoard} style={{
+              <button onClick={toggleBoard} title={isMobile ? undefined : 'กางบอร์ด Heijunka'} style={{
                 width: '100%', marginBottom: 10, padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
                 background: 'var(--card)', textAlign: 'left',
                 border: `1px solid ${totalDelayed > 0 ? 'rgba(239,68,68,0.45)' : hasOpen ? 'rgba(34,197,94,0.35)' : 'var(--border2)'}`,
@@ -1490,8 +1498,9 @@ export default function Management() {
                 {totalDelayed > 0
                   ? <span style={{ fontSize: 12, fontWeight: 800, color: '#ef4444' }}>⚠️ ดีเลย์ {totalDelayed} ใบ</span>
                   : <span style={{ fontSize: 12, fontWeight: 700, color: hasOpen ? '#22c55e' : 'var(--muted)' }}>{hasOpen ? '● Live' : '✓ ปิดกะแล้ว'}</span>}
+                {matNoChips.length > 0 && <span style={{ fontSize: 11, color: '#4d9fff', fontWeight: 700 }}>🎴 {matNoChips.length} พาร์ท · {openCount} ใบ</span>}
                 {isHistorical && <span style={{ fontSize: 11, color: '#a855f7', fontWeight: 700 }}>📅 {boardDate}</span>}
-                <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>▸ แตะเพื่อดูบอร์ด</span>
+                <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>▸ {isMobile ? 'แตะเพื่อดูบอร์ด' : 'กางบอร์ด'}</span>
               </button>
             );
           }
@@ -1550,12 +1559,11 @@ export default function Management() {
                       ℹ️
                     </button>
                   )}
-                  {isMobile && (
-                    <button className="tbtn" onClick={toggleMobileBoard} title="พับบอร์ด"
-                      style={{ padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>
-                      ▾ พับ
-                    </button>
-                  )}
+                  {/* ย่อบอร์ด — คืนพื้นที่ให้ผังไลน์ด้านล่างเมื่อ kanban เยอะจนบอร์ดสูงเกินจอ (มือถือ+desktop) */}
+                  <button className="tbtn" onClick={toggleBoard} title={isMobile ? 'พับบอร์ด' : 'ย่อบอร์ด — คืนพื้นที่ให้ผังไลน์'}
+                    style={{ padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>
+                    ▾ ย่อ
+                  </button>
                 </div>
               </div>
               {/* Kanban ที่เปิดอยู่ ต่อ MAT.NO */}
