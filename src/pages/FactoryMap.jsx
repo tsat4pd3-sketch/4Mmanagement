@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo } from 'react';
 import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -94,6 +94,7 @@ export default function FactoryMap() {
   const [detailLine, setDetailLine] = useState(null); // ไลน์ที่คลิกเจาะดู popup รายละเอียด
   const [hoverLine, setHoverLine] = useState(null); // ไลน์ที่เม้าส์วาง (การ์ดพรีวิวลอย — เฉพาะ mouse)
   const [hoverXY, setHoverXY] = useState({ x: 0, y: 0 });
+  const [, setHoverTick] = useState(0); // บังคับ reposition หลังการ์ด mount (ได้ความสูงจริง) กันตกขอบตอนเม้าส์นิ่ง
 
   const [drawing, setDrawing] = useState(false);
   const [draft, setDraft] = useState([]);
@@ -102,11 +103,15 @@ export default function FactoryMap() {
   const [assignFor, setAssignFor] = useState(null);
   const [assignLine, setAssignLine] = useState('');
   const wrapRef = useRef(null);
+  const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
   const dragRef = useRef(null);
   const shiftRef = useRef(false);
   const lastRawRef = useRef(null);
 
   const M = METRICS[metric];
+
+  // การ์ด hover เพิ่ง mount → วัดความสูงจริงแล้ว reposition รอบเดียว (กันตกขอบตอนเม้าส์ไม่ขยับ)
+  useLayoutEffect(() => { if (hoverLine) setHoverTick(t => t + 1); }, [hoverLine]);
 
   /* ── โหลดผัง + รูปทรง + ไลน์ ── */
   const loadMap = useCallback(async () => {
@@ -565,13 +570,19 @@ export default function FactoryMap() {
       {/* ── การ์ดพรีวิวลอยตามเม้าส์ (hover) — สรุปทุกมุมมองแบบย่อ, เฉพาะ mouse ── */}
       {hoverLine && !editing && !detailLine && (() => {
         const st = stOf(hoverLine); const kids = childrenOf[hoverLine] || []; const meta = CAT[M.cat(st)];
-        const W = 264, H = 250, OFF = 18;
+        const W = 264, OFF = 18;
         const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
         const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
-        const left = hoverXY.x + OFF + W > vw ? Math.max(8, hoverXY.x - OFF - W) : hoverXY.x + OFF;
-        const top = Math.min(Math.max(8, hoverXY.y - 40), vh - H - 8);
+        // ความสูงจริงจากรอบก่อน (การ์ดสูงเกือบคงที่) — กันตกขอบล่างแบบแม่นๆ
+        const H = Math.min(hoverCardRef.current?.offsetHeight || 300, vh - 16);
+        // แนวนอน: ถ้าล้นขวา → เด้งไปซ้ายเคอร์เซอร์
+        const left = hoverXY.x + OFF + W > vw - 8 ? Math.max(8, hoverXY.x - OFF - W) : hoverXY.x + OFF;
+        // แนวตั้ง: เกาะเคอร์เซอร์ · ถ้าจะตกขอบล่าง → เด้งหนีขึ้นบน · ไม่ต่ำกว่าขอบบน
+        let top = hoverXY.y - 40;
+        if (top + H > vh - 8) top = vh - H - 8;
+        if (top < 8) top = 8;
         return (
-          <div style={{ position: 'fixed', left, top, width: W, zIndex: 1100, pointerEvents: 'none',
+          <div ref={hoverCardRef} style={{ position: 'fixed', left, top, width: W, zIndex: 1100, pointerEvents: 'none',
             background: 'linear-gradient(160deg, rgba(20,24,36,0.97), rgba(12,15,24,0.97))',
             border: `1px solid ${meta.color}66`, borderTop: `3px solid ${meta.color}`, borderRadius: 12,
             boxShadow: `0 12px 34px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03)`, padding: '12px 14px', color: '#fff' }}>
