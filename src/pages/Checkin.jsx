@@ -3,7 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
-import { loadCompanyCalendar, getDayType } from '../utils/companyCalendar';
+import { loadCompanyCalendar, getDayType, isOtHolidayType } from '../utils/companyCalendar';
 import { holidayPeriodsForShift, defaultHolidayPeriod, otPeriodLabel, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
@@ -130,7 +130,8 @@ export default function Checkin() {
   useEffect(() => { loadCompanyCalendar().then(() => setCalLoaded(true)); }, []);
   useEffect(() => { fetchData(); }, [previewNight, calLoaded]);
 
-  const isHolidayDate = (dateStr) => calLoaded && getDayType(dateStr) !== 'working';
+  // "วันหยุดแบบ OT" (ot15/ot2) เท่านั้น — shutdown75 (ม.75) มาทำงาน = ค่าแรงปกติ ไม่เข้า flow จอง OT วันหยุด
+  const isHolidayDate = (dateStr) => calLoaded && isOtHolidayType(getDayType(dateStr));
 
   /* ── วันที่จองรถ "ล่วงหน้าเพิ่ม" ในรอบเช็คชื่อนี้ (เพิ่มเติมจากกลไกเดิม) ──
      กะดึก: คืนถัดไป (nextDateStr) จองได้เสมออยู่แล้ว (กลไกเดิม) — ถ้าคืนถัดๆไปจากนั้นเป็นวันหยุดต่อกัน
