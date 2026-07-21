@@ -416,7 +416,7 @@ export default function ShiftOrganize() {
                 <td style={{ fontSize: 12, color: 'var(--muted)' }}>{o.reason || '—'}</td>
                 {canEdit && (
                   <td style={{ textAlign: 'center' }}>
-                    <button onClick={() => handleDeleteOverride(o.id)}
+                    <button className="tbtn" onClick={() => handleDeleteOverride(o.id)}
                       style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15, padding: '2px 6px' }}>
                       🗑️
                     </button>
@@ -489,7 +489,7 @@ export default function ShiftOrganize() {
                   <td style={{ fontSize: 12, color: 'var(--muted)' }}>{evt.reason || '—'}</td>
                   {canEdit && (
                     <td style={{ textAlign: 'center' }}>
-                      <button onClick={() => handleDeleteMergeEvent(evt.id)}
+                      <button className="tbtn" onClick={() => handleDeleteMergeEvent(evt.id)}
                         style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15, padding: '2px 6px' }}>
                         🗑️
                       </button>

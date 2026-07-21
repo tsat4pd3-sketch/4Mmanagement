@@ -75,12 +75,16 @@ function workDateBkk(): string {
   return dt.toISOString().slice(0, 10);
 }
 // เวลา HH:MM บนกรอบวันงาน → ISO (+07:00) · ชั่วโมง < 08:00 = ข้ามเที่ยงคืน (กะดึกช่วงเช้ามืดวันถัดไป)
+// ⚠️ ใช้ Date.UTC เป็นตัวนับวันแบบ date-only เท่านั้น — ห้าม new Date('...+07:00') แล้วอ่าน getUTC*
+// (จะ shift ไป 1 วันเพราะ instant เที่ยงคืนไทย = 17:00 UTC วันก่อน → downtime ลงผิดวัน = OEE เพี้ยน)
 function frameTimeToIso(workDate: string, hm: string): string | null {
   const m = hm.match(/^(\d{1,2})[:.](\d{2})$/);
   if (!m) return null;
   const hh = +m[1], mi = +m[2];
   if (hh > 23 || mi > 59) return null;
-  const base = new Date(`${workDate}T00:00:00+07:00`);
+  const [wy, wmo, wd] = workDate.split('-').map(Number);
+  if (!wy || !wmo || !wd) return null;
+  const base = new Date(Date.UTC(wy, wmo - 1, wd)); // เที่ยงคืน UTC ของวันงาน = ตัวนับวันบริสุทธิ์
   if (hh < 8) base.setUTCDate(base.getUTCDate() + 1);
   const y = base.getUTCFullYear(), mo = String(base.getUTCMonth() + 1).padStart(2, '0'), d = String(base.getUTCDate()).padStart(2, '0');
   return `${y}-${mo}-${d}T${String(hh).padStart(2, '0')}:${String(mi).padStart(2, '0')}:00+07:00`;

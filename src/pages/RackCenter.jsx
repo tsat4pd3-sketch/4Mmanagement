@@ -168,7 +168,7 @@ export default function RackCenter() {
 
   return (
     <div style={{ padding: 'clamp(12px,2vw,24px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 'clamp(18px,2.5vw,24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
             🗃️ Rack Center — เรียกภาชนะ
@@ -342,7 +342,7 @@ export default function RackCenter() {
                           {ACTION_LABEL[r.status]}
                         </button>
                         {col.key !== 'delivered' && (
-                          <button onClick={() => cancel(r)} disabled={busyId === r.id}
+                          <button className="tbtn" onClick={() => cancel(r)} disabled={busyId === r.id}
                             style={{ ...btn('rgba(239,68,68,0.1)', '#ef4444'), border: '1px solid rgba(239,68,68,0.3)', padding: '6px 10px', fontSize: 12 }}>
                             ✕
                           </button>
@@ -368,7 +368,7 @@ export default function RackCenter() {
         return (
           <>
             <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-            <div style={{ position: 'fixed', left, top, width: W, zIndex: 999, background: 'var(--bg3)', border: `1px solid ${col.color}66`, borderRadius: 12, boxShadow: '0 8px 28px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${col.color}66`, borderRadius: 12, boxShadow: '0 8px 28px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
               <div style={{ height: 4, background: col.color }} />
               <div style={{ padding: '10px 14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -401,7 +401,7 @@ export default function RackCenter() {
 
       {/* Request modal */}
       {showForm && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 16, fontFamily: 'var(--font-display)' }}>
               🔔 เรียกภาชนะ

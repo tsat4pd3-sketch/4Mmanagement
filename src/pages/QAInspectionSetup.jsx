@@ -211,11 +211,16 @@ export default function QAInspectionSetup() {
     const pn = sel?.part_no?.trim();
     if (!pn || pn.includes(',')) return;
     let alive = true;
-    supabaseDR.from('dr_products').select('image_url')
-      .or(`mat_no.eq.${pn},p_no.eq.${pn},code.eq.${pn}`)
-      .not('image_url', 'is', null)
-      .limit(1)
-      .then(({ data }) => { if (alive) setProdImg(data?.[0]?.image_url || null); });
+    // ค้นทีละคอลัมน์ด้วย .eq (parameterized) แทน .or ที่ interpolate ค่าดิบ —
+    // เลขพาร์ทที่มี . / ( ) เป็น metachar ของ PostgREST filter ทำให้ .or พังแล้วรูปไม่ขึ้น
+    (async () => {
+      for (const col of ['mat_no', 'p_no', 'code']) {
+        const { data } = await supabaseDR.from('dr_products').select('image_url')
+          .eq(col, pn).not('image_url', 'is', null).limit(1);
+        if (!alive) return;
+        if (data?.[0]?.image_url) { setProdImg(data[0].image_url); return; }
+      }
+    })();
     return () => { alive = false; };
   }, [sel?.part_no]);
 
@@ -627,11 +632,11 @@ export default function QAInspectionSetup() {
                   })}
                   {canManage && activeDwg && (
                     <div style={{ display: 'flex', gap: 4, marginLeft: 4 }}>
-                      <button title={`เปลี่ยนชื่อ "${activeDwg.title}"`} onClick={() => renameDrawing(activeDwg)}
+                      <button className="tbtn" title={`เปลี่ยนชื่อ "${activeDwg.title}"`} onClick={() => renameDrawing(activeDwg)}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>
-                      <button title={`เปลี่ยนรูปแผ่น "${activeDwg.title}"`} disabled={uploading} onClick={() => replaceRef.current?.click()}
+                      <button className="tbtn" title={`เปลี่ยนรูปแผ่น "${activeDwg.title}"`} disabled={uploading} onClick={() => replaceRef.current?.click()}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>🔄</button>
-                      <button title={`ลบแผ่น "${activeDwg.title}"`} onClick={() => deleteDrawing(activeDwg)}
+                      <button className="tbtn" title={`ลบแผ่น "${activeDwg.title}"`} onClick={() => deleteDrawing(activeDwg)}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#ef4444' }}>🗑</button>
                     </div>
                   )}
@@ -723,15 +728,15 @@ export default function QAInspectionSetup() {
                         {canManage && (
                           <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                             {activeDwg && !isPdf && (
-                              <button title="วาง/ย้ายตำแหน่ง balloon — เปิดแผ่นที่ต้องการก่อนแล้วคลิกบนแบบ" onClick={() => setPlacingId(p => p === it.id ? null : it.id)}
+                              <button className="tbtn" title="วาง/ย้ายตำแหน่ง balloon — เปิดแผ่นที่ต้องการก่อนแล้วคลิกบนแบบ" onClick={() => setPlacingId(p => p === it.id ? null : it.id)}
                                 style={{ background: placingId === it.id ? '#f59e0b' : 'none', border: 'none', cursor: 'pointer', fontSize: 13, borderRadius: 5, padding: '2px 4px' }}>📍</button>
                             )}
-                            <button title="แก้ไข" onClick={() => openEditItem(it)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>
+                            <button className="tbtn" title="แก้ไข" onClick={() => openEditItem(it)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>
                             {it.item_type === 'variable' && (
-                              <button title="สร้างจุดควบคุม SPC จากจุดตรวจนี้" onClick={() => sendToSPC(it)}
+                              <button className="tbtn" title="สร้างจุดควบคุม SPC จากจุดตรวจนี้" onClick={() => sendToSPC(it)}
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--accent)', fontWeight: 800 }}>→SPC</button>
                             )}
-                            <button title="ลบ" onClick={() => delItem(it)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#ef4444' }}>🗑</button>
+                            <button className="tbtn" title="ลบ" onClick={() => delItem(it)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#ef4444' }}>🗑</button>
                           </td>
                         )}
                       </tr>

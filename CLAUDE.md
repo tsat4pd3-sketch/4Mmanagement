@@ -153,6 +153,7 @@
 | ฝ่ายผลิต | `/checkin` | Checkin | ทุก role |
 | ฝ่ายผลิต | `/management` | Management | ทุก role |
 | ฝ่ายผลิต | `/daily-report` | DailyReport | ทุก role |
+| ฝ่ายผลิต | `/production-plan` | ProductionPlan — วางแผนการผลิต (active planner ดู section "Production Plan") | admin/manager/supervisor/leader/planner_store/sale |
 | วิเคราะห์ & รายงาน | `/oee-analytics` | OEEAnalytics | ทุก role |
 | ฝ่ายผลิต | `/daily-pm` | DailyPM | ทุก role |
 | ฝ่ายผลิต | `/improvements` | Improvements (Kaizen — ดู section "Improvements") | ทุก role (manage: admin/mgr/sv/leader) |
@@ -183,7 +184,7 @@
 | พนักงาน & ทักษะ | `/shift-organize` | ShiftOrganize | admin/manager/supervisor |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/company-calendar` | CompanyCalendar | ทุก role |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/notification-config` | NotificationConfig | admin เท่านั้น |
-| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/doc-forms` | DocFormsRegistry — 📄 ทะเบียนเอกสาร & ฟอร์ม (Document Master): เลขฟอร์ม/Rev/Effective/ช่องลายเซ็น/footer ของฟอร์มพิมพ์ทุกตัว แก้แล้วใบพิมพ์ใช้ทันทีไม่ต้องแก้โค้ด · ฟังก์ชันพิมพ์อ่านผ่าน `src/utils/docForms.js` (`getDocForm`/`docFormSync` + fallback ค่าเดิมในโค้ดเสมอ) · **ฟอร์มพิมพ์ใหม่ทุกตัวต้อง: (1) seed แถวใน `doc_forms` (2) อ่านเลขฟอร์มผ่าน util นี้ ห้าม hardcode** · ตาราง `doc_forms` (Main, migration `20260720_doc_forms_registry.sql` — seed 6 ฟอร์ม: ojt/lpa_report/lpa_plan/mo_report/multi_skill/individual_skill) | ทุก role (แก้: `doc_forms:manage` = mgr/doc_control) |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/doc-forms` | DocFormsRegistry — 📄 ทะเบียนเอกสาร & ฟอร์ม (Document Master): เลขฟอร์ม/Rev/Effective/ช่องลายเซ็น/footer ของฟอร์มพิมพ์ทุกตัว แก้แล้วใบพิมพ์ใช้ทันทีไม่ต้องแก้โค้ด · ฟังก์ชันพิมพ์อ่านผ่าน `src/utils/docForms.js` (`getDocForm`/`docFormSync` + fallback ค่าเดิมในโค้ดเสมอ) · **ฟอร์มพิมพ์ใหม่ทุกตัวต้อง: (1) seed แถวใน `doc_forms` (2) อ่านเลขฟอร์มผ่าน util นี้ ห้าม hardcode** · ตาราง `doc_forms` (Main, migration `20260720_doc_forms_registry.sql` — seed 6 ฟอร์ม: ojt/lpa_report/lpa_plan/mo_report/multi_skill/individual_skill · sig_blocks ใช้แล้วทั้ง ojt/multi_skill/individual_skill/mo_report — จำนวนช่องต้องเท่า layout เดิม เปลี่ยนได้เฉพาะข้อความ) | ทุก role (แก้: `doc_forms:manage` = mgr/doc_control) |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/permissions` | PermissionsManagement | admin เท่านั้น |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/add-user` | AddUser — จัดการผู้ใช้งาน (ย้ายจากลิงก์พิเศษท้าย sidebar เข้าหมวดตั้งค่าฯ 2026-07-20) | admin เท่านั้น |
 | (ไม่อยู่ใน sidebar) | `/login` | Login | ไม่ต้อง auth |
@@ -341,6 +342,10 @@ Reject → status: "rejected" + reject_reason
 - การจับคู่เลขพาร์ทลูกค้า → mat ภายใน: normalize (ตัด ขีด/ช่องว่าง, uppercase) เทียบ `p_no`
   ใน kanban_standards/dr_products — FG (ขึ้นต้น 1) ชนะ child · จับคู่ไม่ได้ = เก็บด้วยเลขพาร์ทลูกค้าไปก่อน
 - นำเข้า EDI ซ้ำ = **แทนที่ฉบับเดิมของ ship-to เดียวกัน** (ยอดไม่ทบ) เก็บใบที่เลย pending ไปแล้วเสมอ
+- **order เข้าระบบได้ 3 ทาง:** (1) EDI 862 (source `edi_862`) (2) Excel manual mapping (3) ปุ่ม
+  "➕ เพิ่ม order ด่วน" บนหน้า Delivery คีย์ทีละใบ (source `manual` · สิทธิ์ `can('shipping','config')` ·
+  ลูกค้าสั่งนอกไฟล์ EDI/โทรสั่ง) — ใบ source อื่นที่ไม่ใช่ `edi_862` **ไม่ถูกแทนที่**ตอนอัพโหลด 862 ซ้ำ ·
+  ใบคีย์มือที่ยัง pending ลบได้จาก popup บนชาร์ต
 - การปรับ stock ที่กรอกมือ (type adjust) เข้าคิว ⏳ รออนุมัติก่อนมีผลต่อยอด — auto movement ไม่เข้าคิว
 - แจ้งเตือน Telegram ผ่าน framework `notification_rules` category `logistic`:
   `edi_import`, `shipping_shipped`, `shipping_overdue`, `shipping_phase_alert`
@@ -365,6 +370,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 ไลน์บางไลน์ (เช่น HDF1 ที่ส่งงานต่อ LASER CUT 123) **ไม่มีเลข SAP order ให้สแกน** เปิด-ปิดใบแบบปกติไม่ได้:
 
 - ปุ่ม "✍️ เปิดเป้า (ไม่มีบาร์โค้ด)" ข้างปุ่ม Scan เปิด Order — leader ตั้งเป้า (เลือกสินค้า + จำนวน) → สร้าง `prod_orders` ที่ `is_manual=true`, `prod_no='MANUAL-HHmmss'`, `qty_target`=เป้า, `qty`=เป้า (ใช้กับ capacity check/บอร์ดเหมือนใบปกติ) · มี ⏪ **เปิดย้อนหลัง**เหมือนใบสแกน (บังคับกรอกเวลา + กันหลุดกรอบกะ + `opened_at` anchor กับ work_date — helper ร่วม `backfillIsoFromTime` · 2026-07-13) · **งานคู่ RH/LH**: สินค้ามี `pair_mat_no` → ถาม confirm แล้วเปิดเป้าคู่ให้อัตโนมัติ (`prod_no`+`P`, ผูก `paired_order_id` สองทาง, sync `opened_at`) รองรับคู่**คนละไลน์** — เปิดเข้า session ที่เปิดอยู่ของไลน์คู่ (วัน/กะเดียวกัน) ถ้าไลน์คู่ยังไม่เปิดกะจะเตือนให้ไปเปิดเอง (2026-07-13)
+- **งานคู่ RH/LH บนบอร์ด Heijunka = แถบวางขนาน ไม่เรียงต่อกัน (2026-07-21):** แม่พิมพ์คู่ปั๊มครั้งเดียวได้ทั้ง LH+RH = ทำพร้อมกัน (parallel) · บอร์ด (Dashboard + Management) จัดคิว **ระดับ sub-line** ปกติ "1 ไลน์ทีละใบ เรียงต่อกัน" แต่**พาร์ทที่มี `pair_mat_no` และคู่ของมันอยู่ในไลน์เดียวกันจริง → แยกเป็นเลนคิวของตัวเอง (parallel) เริ่มพร้อมกัน** แถบ LH/RH จึงตรงกัน (helper `laneKeyOf` ตอนจัดกลุ่ม `byLane` ก่อนเรียก `computeQueuedPositionsFull`) · เดิมไม่เช็ค pair_mat_no เลยจับ LH เรียงหน้า RH เรียงหลังผิด (นับเวลาซ้ำ 2 เท่า) · พาร์ทไม่มีคู่ยังเรียงต่อกันเหมือนเดิม (1 ไลน์ทีละใบ ห้ามซ้อน)
 - พนักงาน**อัพเดทยอดสะสม (`qty_actual`) ทุกช่วงเบรคตาม break policy** จากช่องบนการ์ดใบ — เห็นยอดจริงทุก ~2 ชม. · `qty_updated_at` เก็บเวลาล่าสุด ใบที่ไม่อัพเดท > 2.5 ชม. ขึ้นเตือนเหลือง (นิ่ง — ตาม Andon เหลืองไม่กระพริบ)
 - ปิดใบด้วยปุ่ม "✓ ปิดใบนี้ (ยอดจริง)" (ไม่ต้องสแกน) → `status=confirmed`, **`qty` และ `qty_ok` ถูกแทนด้วยยอดจริง** เพื่อให้ OEE/รายงาน/stock trigger (`coalesce(qty_ok, qty)`) นับจากของที่ผลิตได้จริง — เป้าเดิมยังอยู่ที่ `qty_target`
 - ใบ manual ที่ค้างเปิดตอนปิดกะ เข้า flow ยกยอด/กรอก actual ของ modal ปิดกะเหมือนใบปกติ
@@ -387,6 +393,14 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - **parallel = คนละ product ที่ window ทับกัน >15 นาที + >20% ของ window ที่สั้นกว่า** (จังหวะสแกนคาบเกี่ยวไม่นับ) — เช่น RH ที่ Line 60 + LH ที่ Line 61 ใน session ไลน์แม่ APRON ASSY · P แบบ parallel = Σ(qty×CT) ÷ Σ(run ต่อ product group) — **ห้าม mean เท่าๆ กัน** (งานแทรกเล็กเคยลาก P ทั้งกะจาก ~93 เหลือ 48)
 - ไม่เข้าเกณฑ์ = sequential: P = Σ(qty×CT) ÷ run ทั้งกะ (จับ idle ระหว่างงานด้วย)
 - บั๊กเดิม (ก่อน 2026-07-14) ทำ P ต่ำเกินจริงในกะ multi-MAT — แก้ย้อนหลังใน DB แล้ว 12 กะ (22/06–13/07) ด้วย SQL ที่ replicate สูตรแล้ว validate กับการคำนวณมือ
+
+> ### ⚠️ กฎงานคู่ RH/LH — ต้องตั้ง `dr_products.pair_mat_no` ให้ครบ **ทั้ง 2 ทาง** (ทุก session ต้องรู้ · 2026-07-21)
+> งานคู่ (แม่พิมพ์คู่ ปั๊มครั้งเดียวได้ทั้ง LH+RH = ทำพร้อมกัน) ผูกกันด้วย `pair_mat_no` ใน **Product Master (DR `dr_products`)** — LH ต้องชี้ไป RH **และ** RH ต้องชี้กลับมา LH (ตั้งจากหน้า `/products`) · ค่านี้เป็น source of truth เดียวที่ 3 จุดนี้พึ่งพา:
+> 1. **เปิดเป้าคู่อัตโนมัติ** (DailyReport manual open — สร้าง prod_orders คู่ให้เอง)
+> 2. **OEE `computeOEE`** — จับเป็น product group เดียว/parallel ถูกต้อง (ดูบล็อกด้านบน)
+> 3. **บอร์ด Heijunka (Dashboard + Management)** — วางแถบ **ขนาน (parallel lane)** เริ่มพร้อมกัน แทนการเรียงต่อกัน (helper `laneKeyOf` · 2026-07-21)
+>
+> **ถ้าไม่ตั้ง `pair_mat_no` หรือ ตั้งข้างเดียว** → อาการ: แถบ LH/RH บนบอร์ดไม่ตรงกัน (LH ต้นกะ RH ท้ายกะ) · OEE นับเวลา run ซ้ำ 2 เท่า · เปิดเป้าคู่ไม่ทำงาน — **เจ ออาการพวกนี้ให้เช็ค `pair_mat_no` ก่อนแก้โค้ด** · เพิ่มฟีเจอร์ที่แตะคู่ RH/LH ให้ยึด `pair_mat_no` เป็นตัวจับคู่เสมอ ห้ามเดาจากชื่อ LH/RH
 
 ### OEE Insight Engine — แท็บ 🧠 วิเคราะห์สาเหตุ ใน /oee-analytics (2026-07-14)
 
@@ -442,7 +456,9 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 
 หน้า `/lpa` (`LayerProcessAudit.jsx`, กลุ่มฝ่ายผลิต — ฝ่ายผลิตเป็นผู้ใช้งานหลัก ย้ายจากหมวด QA/QC ตามคำสั่ง user 2026-07-20) — แทนฟอร์มกระดาษ 2 ใบ: **Layer Process Audit Plan** (แผนตรวจรายเดือนต่อไลน์+กะ) + **Layer Process Audit Report FM-QMR-008 Rev.01** · ชั้นผู้ตรวจ 4 ชั้น: Leader ทุกวัน · Supervisor/Engineer รายสัปดาห์ (W1-W4) · Manager รายเดือน · GM รายไตรมาส
 
-- **4 แท็บ:** ✅ บันทึกผลตรวจ (ตอบ Y/N/T/NA รายข้อ + ปุ่ม "ยังไม่ตอบ=Y" · **N/T บังคับกรอกรายละเอียดปัญหา** · ลายเซ็น default จาก profiles.signature_url เซ็นใหม่ได้) · 📅 แผนตรวจ (สถานีรายวัน + ติ๊กชั้นผู้ตรวจ + **⚡ เติมแผนอัตโนมัติ**: Leader ทุกวันทำงาน วนสถานีตามลิสต์, SV วันทำงานแรกของแต่ละสัปดาห์, MGR สัปดาห์ที่ 2 — สถานะ ○ วางแผน / ● ตรวจแล้ว / ⊗ เลยกำหนด derive จาก lpa_audits ไม่เก็บซ้ำ) · 📊 รายงาน (grid คำถาม×วัน + W1-4/M/Q + ลิสต์ปัญหา N/T) · ⚙️ คำถาม (สิทธิ์ manage — คำถามมาตรฐาน + ข้อเฝ้าระวัง special ผูกไลน์+ช่วงวันที่)
+- **4 แท็บ:** ✅ บันทึกผลตรวจ (ตอบ Y/N/T/NA รายข้อ + ปุ่ม "ยังไม่ตอบ=Y" · **N/T บังคับกรอกรายละเอียดปัญหา** · ลายเซ็น default จาก profiles.signature_url เซ็นใหม่ได้) · 📅 แผนตรวจ **(มองทีละไตรมาส — เห็น 3 เดือนเรียงกัน · 2026-07-20)** + ปุ่มเลื่อนไตรมาส · 📊 รายงาน (grid คำถาม×วัน + W1-4/M/Q + ลิสต์ปัญหา N/T) · ⚙️ คำถาม (สิทธิ์ manage — คำถามมาตรฐาน + ข้อเฝ้าระวัง special ผูกไลน์+ช่วงวันที่)
+  - **สถานีตรวจ (Station for audit) ดึงจาก "จุดงาน (workstations)" อัตโนมัติ (2026-07-20):** ปุ่ม 📍 ดึงจุดงานในไลน์ (`workstations.station_name` ของไลน์+ไลน์ย่อยในครอบครัว — Main project) → เติมเป็นสถานีตั้งต้น แล้วแก้เอง · auto-fill ตอนไลน์ยังไม่มีแผน · **LPA = audit กระบวนการ/คนที่จุดงาน ไม่ใช่ตรวจทุกเครื่องจักร → ใช้ workstations ไม่ใช่ `machines`** (คำสั่ง user — จุดงานต่อไลน์ ~10-20 จุด น้อยกว่าเครื่องจักร) · รายชื่อสถานี+ชื่อผู้ตรวจ (Leader/SV/MGR/GM) เป็น **ชุดเดียวใช้ทั้งไตรมาส**
+  - **⚡ เติมแผนทั้งไตรมาส:** กระจายจุดงานให้ **ครบทุกจุดภายในแต่ละเดือน** (สถานี/วัน = `⌈จำนวนจุดงาน ÷ วันทำงาน⌉` — เกิน 1 วันจะใส่หลายสถานีคั่นด้วย `,`) · Leader ทุกวันทำงาน · SV วันทำงานแรกของแต่ละบล็อกสัปดาห์ · MGR 1 วัน/เดือน · GM 1 ครั้ง/ไตรมาส (เดือนแรก) · 💾 บันทึกแผนไตรมาส = upsert `lpa_plans` 3 เดือน + แทน `lpa_plan_days` · สถานะ ○ วางแผน / ● ตรวจแล้ว / ⊗ เลยกำหนด derive จาก lpa_audits · **บันทึกผล/รายงาน/พิมพ์ยังเป็นราย"เดือน"** (เลือกเดือนโฟกัสในไตรมาส)
 - **พิมพ์ 2 ฟอร์ม** (window.open + print): ใบแผน A4 landscape (สัญลักษณ์ ○●⊗ คอลัมน์วันหยุดเขียว สถานีแนวตั้ง) + ใบรายงาน FM-QMR-008 A3 landscape (หมวดแนวตั้ง rowspan, ข้อ special สีแดง + Issue Date, W1-4 เขียว/Monthly เทา/Quarterly เหลือง, แถว Work Station + ลายเซ็นผู้ตรวจรายวัน, legend + Effective Date 12/05/2017)
 - **วันหยุด** = ปฏิทินบริษัท (`company_calendar` มาร์คแล้วตาม day_type, ไม่มาร์ค = เสาร์/อาทิตย์หยุด) — ตรรกะเดียวกับ countWorkingDays ฝั่ง kanban
 - **Weekly mapping:** วันที่ 1-7 = W1 · 8-14 = W2 · 15-21 = W3 · 22+ = W4 (`weekOfDay`)
@@ -453,7 +469,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 
 ## Scrap Report — ใบรายงานของเสีย FM-PD2-002 Rev.06 (paperless + export · 2026-07-16)
 
-หน้า `/scrap-report` (`ScrapReport.jsx`, กลุ่มควบคุมคุณภาพ QA/QC) — แทนฟอร์มกระดาษ "ใบรายงานของเสีย" ที่เขียนมือ · ลงยอด scrap ต่อ **ไลน์/วัน** แล้ว export Excel ตรงฟอร์ม 100%
+หน้า `/scrap-report` (`ScrapReport.jsx`, **กลุ่มฝ่ายผลิต** — ฝ่ายผลิตเป็นผู้ใช้งานหลัก) — แทนฟอร์มกระดาษ "ใบรายงานของเสีย" ที่เขียนมือ · ลงยอด scrap ต่อ **ไลน์/วัน** แล้ว export Excel ตรงฟอร์ม 100% · ⚠️ `production_lines` อยู่ **Main project** (client `supabase`) ไม่ใช่ DR — dropdown ไลน์ต้องดึงจาก `supabase` (เคยพลาดใช้ `supabaseDR` แล้ว dropdown ว่าง)
 
 - **ตาราง (DR project — anon RLS):** `scrap_reports` (หัวใบ: report_date, line_name, dept/section/division, product_categories[], storage_location, doc_no, สายอนุมัติ inspector/requester/approver_qa/pd/gm, sender/receiver, status draft/submitted/approved) · `scrap_report_items` (รายการต่อพาร์ท: source main/sub, part_no/part_name/mat_no/model/code A-E/bom_ref, qty, m_cause m1-m5, stage in_process/post_process, confirm_qty, defect_codes, src_defect_from_logs) · `scrap_defect_types` (master P1-P20 กระบวนการ / A1-A18 ประกอบ-เชื่อม — seed จากชีท Defect Type จริง) · migration `20260716_scrap_report.sql` (DR) + `20260716_scrap_report_permissions.sql` (Main)
 - **sync = ดึงตั้งต้น + แก้เองได้ (คำสั่ง user):** ปุ่ม "⤵ ดึงจาก Daily Report" รวม `defect_logs.qty_ng` ของ session ไลน์+วันนั้น group ตาม `prod_orders.mat_no` → เติมแถว main product (flag `src_defect_from_logs`) แล้วแก้/เพิ่มได้ · **พาร์ทย่อย** (nut/สกรู ที่เสียก่อนเข้ากระบวนการหลัก — ไม่มีใน production session) เพิ่มเองผ่านปุ่ม "เพิ่มจาก SAP/BOM" (ดึง `dr_products` main + `bom_items` sub) หรือกรอกมือ
@@ -468,11 +484,35 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 หน้า `/factory-map` (`FactoryMap.jsx`, กลุ่มฝ่ายผลิต) — รูปผังใหญ่ของทั้งโรงงาน **1 รูป** แล้ววาด **polygon (รูปทรงอิสระ)** ล้อมพื้นที่แต่ละไลน์ ระบายสีตามสถานะการผลิตของไลน์นั้น — ดูทุกไลน์บนจอเดียว (เหมาะจอ TV)
 
 - **ตาราง (Main project):** `factory_map` (รูปผังใหญ่ 1 รูป — image_url) · `factory_line_regions` (line_name unique, `points` jsonb = `[[x,y],...]` เป็น % ของรูปจริง 0-100 วนรอบ polygon) · migration `20260716_factory_master_map.sql` + `20260716_factory_map_permissions.sql`
-- **polygon ไม่ใช่แค่สี่เหลี่ยม** — รองรับไลน์รูป L/U shape (คำสั่ง user) · วาดโดยคลิกทีละจุดล้อมพื้นที่ คลิกจุดแรกซ้ำ/กด "เสร็จ" = ปิดรูป · แก้: ลากกลางรูป=ย้ายทั้งไลน์, ลากจุดมุม=ปรับรูปทรง
+- **polygon ไม่ใช่แค่สี่เหลี่ยม** — รองรับไลน์รูป L/U shape (คำสั่ง user) · วาดโดยคลิกทีละจุดล้อมพื้นที่ คลิกจุดแรกซ้ำ/กด "เสร็จ" = ปิดรูป · แก้: ลากกลางรูป=ย้ายทั้งไลน์, ลากจุดมุม=ปรับรูปทรง · dropdown เลือกไลน์ + Shift ล็อกเส้นตั้งฉาก + แม่เหล็กดูดปิดรูปเมื่อใกล้จุดแรก
+- **ตีกรอบเฉพาะไลน์ใบ (leaf) เท่านั้น (2026-07-16):** ไลน์แม่ที่มีลูก (ชื่อถูกอ้างเป็น `parent_line_name` ของไลน์อื่น) ถูกตัดออกจากรายการ/ตัวนับ — ตีเฉพาะลูก (ไม่งั้นกรอบแม่ทับลูก) · `leafNames` ใน component · metric ก็รวมยอดตามไลน์ใบที่มี session/คน/เครื่องจริง
 - **แสดงผล:** SVG `<polygon>` viewBox 0 0 100 100 `preserveAspectRatio="none"` + `vector-effect: non-scaling-stroke` (เส้นไม่ยืด) · รูปแสดง `width:100% height:auto` → % ตรงกับรูปเป๊ะไม่ต้องหัก letterbox · ป้ายชื่อ+ยอดวางที่ centroid เป็น **HTML** (ไม่โดน SVG ยืด)
-- **สถานะการผลิต (DR, refresh 30 วิ):** downtime ค้าง = 🔴 กระพริบ (class `region-alarm` — มี lite override สำหรับจอ display) · มีกะเปิด = 🟢 กำลังผลิต (เขียว) / 🟡 ตามหลังเป้า (<80%) · ไม่มีกะ = ⚫ idle · โชว์ยอด/เป้า + %
+- **เลือก metric ได้ 6 แบบ (2026-07-16):** แท็บบนหน้า — 📦 ยอดผลิต (ยอด/เป้า %) · ⚙️ OEE (ปิดกะ=ค่าที่ stamp · **เปิดกะ=คำนวณสด A×P×Q จากข้อมูลปัจจุบัน** ป้าย "(สด)" — สูตรย่อของ computeSessionOEE) · 🔧 Downtime (Σ `duration_min` + active) · 🚫 ของเสีย (`qty_ng`) · 👷 คนเข้างาน (Main `daily_production_logs` present/total ต่อไลน์ ผูก `employees.line_id` — refresh 60 วิ, +⚠PPE ไม่ครบ) · 🛠️ PM เครื่องจักร (DR `machines`→`checklists`→`pm_plans.next_due_date` นับเกินกำหนด/ใกล้ครบ ต่อไลน์ — refresh 5 นาที) · แต่ละ metric กำหนดสี region + ตัวเลขบนกรอบเอง (config `METRICS` ในไฟล์จุดเดียว — เพิ่ม metric ใหม่ที่นี่) · หมวดสี: good เขียว / ok เหลือง / bad แดง / down แดงกระพริบ (`region-alarm`) / idle เทา
+- **อ่านง่ายบนผังจริง (2026-07-16):** ป้ายไลน์ = การ์ดทึบ (`rgba(9,11,18,0.86)`) + ขอบสีสถานะ (ไม่จมไปกับภาพ) · scrim หรี่ภาพ `rgba(6,8,14,0.32)` ให้กรอบเด่น · side panel มีชิปสรุปจำนวนไลน์ตามสถานะ + อันดับ (เลข + จุดสี + ค่า + แถบเทียบสัดส่วน)
+- **Side panel ขวา (ใช้พื้นที่ข้าง — คำสั่ง user):** จัดอันดับทุกไลน์ตาม metric ที่เลือก (ปัญหาขึ้นบน) · คลิกแถว = เน้น region บนผัง (highlight ชั่วคราว) + เปิด popup เจาะดู · โชว์ไลน์ที่ยังไม่ตีกรอบด้วย · ซ่อนตอน edit (เปิดพื้นที่วาด)
+- **Hover preview + คลิกเปิดผังไลน์ (2026-07-21):** วางเม้าส์บนกรอบไลน์ = **การ์ดพรีวิวลอยตามเคอร์เซอร์** (เฉพาะ `pointerType==='mouse'` — จอสัมผัสไม่ขึ้น) สรุปทุก metric แบบย่อ (metric ปัจจุบันไฮไลต์) + สี region เข้มขึ้น · การ์ด hover ใช้ **theme variable ล้วน** (`--card`/`--bg3`/`--text` ฯลฯ — ห้าม hardcode สีเทา-น้ำเงินอีก เคยหลุดธีมเขียว + พังโหมด light) + วัดความสูงจริง (`hoverCardRef.offsetHeight`) แล้ว clamp/flip กันตกขอบล่าง
+  - **คลิกกรอบ/แถว panel → เปิดผังไลน์พร้อมพนักงานแบบ Dashboard** (`openLine`): ไลน์ที่มี `line_layouts` → `navigate('/dashboard?line=NAME&from=factory-map')` ให้ Dashboard เปิด Expanded Line Map (deep-link) — ใช้ผังจริงตัวเดียวกัน ไม่ duplicate · ไลน์ที่**ไม่มีผังพื้น** → fallback popup สรุป metric + ตารางแยกไลน์ย่อย (`detailLine`)
+  - **⚠️ ผังไลน์แม่-ลูกคนละรูป (คนอยู่บนผังลูก):** `floorMapTarget` เลือกผังที่**มีคนจริง** — ไลน์แม่มีผัง+คนของตัวเอง=โชว์ตัวเอง · ไลน์แม่ว่าง (คนอยู่ไลน์ลูก เช่น GOR→Assy GOR/Laser GOR) = เด้งไปโชว์**ผังลูกที่มีคนมากสุด** (จาก `manpower[n].present`) · ยังไม่มีใครเข้างาน = ผังตัวเอง/ตัวแรก · (การทาบ-สเกลพิกัดลูกลงผังแม่ผังเดียว = future enhancement ยังไม่ทำ)
+  - **Dashboard รับ deep-link:** `useSearchParams` อ่าน `?line=NAME` ตอน `layouts` โหลดเสร็จ → หา layout ที่ตรงชื่อ/ครอบชื่อ (`layoutLineNamesForCard`) แล้ว `setExpandedLine` + ล้าง param (`replace:true`) กันเปิดซ้ำ · `from=factory-map` → ปิด modal แล้ว `navigate('/factory-map')` (ไม่ค้างที่ Dashboard) ผ่าน `closeExpandedLine` — backward-compatible (ไม่มี param = ไม่เปลี่ยนพฤติกรรม)
+- **🔴 downtime ค้างโชว์เสมอทุก metric:** จุดแดงหน้าชื่อไลน์ (แม้ดู metric อื่น) — alarm ต้องไม่ถูกซ่อน · refresh DR ทุก 30 วิ
 - **สิทธิ์:** เข้าดู = ทุก role (`page:/factory-map`) · อัปโหลด/วาด/ลบ = `can('factory_map','edit')` (admin/manager/supervisor)
 - **รูปเก็บ** bucket `employee-photos` path `factory/` — cleanup-orphan-photos whitelist `factory_map.image_url` + สแกนโฟลเดอร์ factory/ แล้ว (กันลบผิด) · เปลี่ยนรูปลบไฟล์เก่าทิ้ง (best-effort)
+
+---
+
+## Production Plan — วางแผนการผลิต (Active Planner, 2026-07-15)
+
+หน้า `/production-plan` (กลุ่มฝ่ายผลิต) — จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบ **"กำลังผลิตที่ทำได้จริง"** → บอกว่าต้องเปิดกี่กะ กี่วัน วันไหนเปิด OT/กะดึก/ทำวันหยุด วันไหนไม่ต้อง เพื่อทันดิว · **เฟส 1 อ่านอย่างเดียว ไม่เขียน DB**
+
+- **กำลังผลิต = median(ยอดดีจริงต่อกะ) ใน 60 วันล่าสุด** ต่อ (ไลน์+พาร์ท) — util กลาง `src/utils/capacityModel.js` · median ตัดค่าโดด (วันเทพ/หายนะ) + บวก OEE/เบรค/NG ไว้ในตัว · พาร์ทที่มีประวัติ < 3 กะ fallback = (นาทีกะ×60÷CT)×OEE median ของไลน์ + ติดป้าย "ข้อมูลน้อย" · เลือกโหมดวางแผน **median (สมจริง)** หรือ **P25 (ปลอดภัยไว้ก่อน)**
+- **หน่วยกลาง = shift-load** (qty ÷ กำลังต่อกะ) เพื่อรวมหลายพาร์ทบนไลน์เดียวถูกต้อง (ไลน์มี 1 กะ แต่หลาย product คนละ rate)
+- **แท็บรายวัน:** order ค้างส่ง 21 วันข้างหน้า → เดินปฏิทินวันต่อวัน (greedy: กะเช้า → +กะดึก(ถ้าไลน์มี) → +OT 25% → วันหยุดทำเฉพาะเมื่อ backlog) · **ลำดับใช้วันหยุด (กฎ user 2026-07-21): วัน `shutdown75` (ม.75) = กำลังสำรองที่เรียกได้ด้วยค่าแรงปกติ ใช้เต็มกำลังเหมือนวันทำงาน (⚡ ยกเลิกหยุด75% สีม่วง) ก่อนถึง OT วันหยุด ot15/ot2 (⚠ แดง) เสมอ** — ทั้งแท็บรายวันและ verdict รายเดือน (tier ⚡ อยู่ก่อน 🚨 เกินกำลัง) · แถบปฏิทินระบายสี ☀/⏰/🌙/⚡/⚠ + สรุปต่อไลน์ · endBacklog > 0 = 🚨 เปิดเต็มที่ยังไม่ทัน
+- **แท็บรายเดือน:** forecast 6 เดือนข้างหน้า → กะที่ต้องใช้ (shiftsNeeded) vs วันทำงานในเดือน (จาก company_calendar) → verdict: กะเช้าพอ / ต้อง OT N วัน / ต้องกะดึก / 🚨 เกินกำลังต้องเพิ่มไลน์-คน
+- **แหล่งข้อมูล:** DR = customer_shipping_orders (order), customer_forecasts (forecast), production_sessions+prod_orders (กำลังจริง), dr_products (mat→line, CT) · Main = production_lines (std กะ), company_calendar (วันทำงาน) · map พาร์ท→ไลน์ผ่าน `dr_products.line_name` + normalize mat (ตัดขีด/ช่องว่าง)
+- **⚠️ map เลขลูกค้า→SAP ต้องผ่าน `p_no` ด้วย (2026-07-21):** order/forecast มักอ้าง**เลขลูกค้า** (เช่น `RB3B 8B225 AA`) ไม่ใช่ mat_no SAP — `resolveMat()` ลอง ตรง → normalize mat → `pnoToMat[normalize(p_no)]` · **map ไม่เจอ = ขึ้น banner ⚠️ (N ออเดอร์/พาร์ท ยังไม่ตั้ง SAP)** ห้ามทิ้งเงียบ (เดิม map ผ่าน mat_no อย่างเดียว ทิ้ง ~38% order/85% forecast เงียบ) · ต้นเหตุหลัก = master data `dr_products.p_no` ยังไม่กรอก → ไปตั้งที่ Product Master / ปุ่ม 🔗 จับคู่ SAP ในหน้า Planner&Sales
+- **⚠️ กับดัก `prod_orders` ไม่มีคอลัมน์ `line_name`/`work_date`** — 2 ค่านี้อยู่บน `production_sessions` (join ผ่าน `session_id`) · select ตรงจาก prod_orders = PostgREST error 42703 (ถ้าดึงแค่ `data` จะถูกกลืนเงียบ prodArr ว่าง) — เคยพังที่ PmForecast (shot สะสม = 0) · หน้าใหม่ที่ query prod_orders ตามไลน์/วัน ให้ embed `production_sessions!inner(line_name, work_date)` + เช็ค `error` เสมอ (2026-07-21)
+- **Scope:** leader = family ไลน์ตัวเอง (branch มาก่อน) · role อื่นตาม `sections` · migration สิทธิ์: `20260715_production_plan_page_permission.sql`
+- **แผนต่อไป (ยังไม่ทำ):** เฟส 2 what-if (เพิ่มคน/ลด NG ทันมั้ย) · เฟส 3 ผูก `ot_night_bookings` — กดจากแผนแล้วจองรถ OT/เปิดกะอัตโนมัติ + Telegram
 
 ---
 
@@ -530,18 +570,14 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - **config ต่อแผน** (MTN กรอกในตารางนี้ สิทธิ์ `pm:setup`): `pm_duration_hours` / `lead_time_days` (default 10) / `buffer_margin_pct` (default 15) — migration `20260716_pm_predictive_buffer.sql` (DR) · usage_metric/usage_threshold/usage_source_line มีอยู่แล้วใน pm_plans
 - **Scope:** leader = family ไลน์ตัวเอง · role อื่นตาม sections · เรียงตามใกล้ถึงสุด
 - สิทธิ์เข้าหน้า: ทุก role (`page:/pm-forecast`, migration `20260716_pm_forecast_permission.sql` Main)
-- **เฟสถัดไป (ยังไม่ทำ):** cron/edge แจ้ง Telegram ผลิต+planner ตอนเข้า window อัตโนมัติ (ตอนนี้เห็นผ่านหน้า + andon เหลืองบน org map) · นับวันทำงานจริงจากปฏิทินบริษัทแทนค่าคงที่ 22
+- อัตรา/วัน อ่านวันทำงานจริงจากปฏิทินบริษัท (`countWorkingDaysInMonth` — fallback 22 เมื่อปฏิทินว่าง · 2026-07-21)
+- **เฟสถัดไป (ยังไม่ทำ):** cron/edge แจ้ง Telegram ผลิต+planner ตอนเข้า window อัตโนมัติ (ตอนนี้เห็นผ่านหน้า + andon เหลืองบน org map)
 
-## MTN Org Overview Map — ผังภาพรวมไลน์ + Andon 2 ระดับ (2026-07-16)
+## ผังรวมโรงงาน — ผังภาพรวมทั้งโรงงานที่เดียว (ยุบรวมแล้ว 2026-07-16)
 
-แท็บ **🗺️ ภาพรวม (Org)** ในหน้า `/mtn-layout` — วาง **node ไลน์** ทับ**ผัง Facility ที่มีอยู่** (`pm_facility_areas.image_path`) เห็นสถานะทุกไลน์บนจอเดียว (เหมาะจอ TV หน้างาน MTN)
-
-- **ตาราง:** `pm_org_nodes` (DR, migration `20260716_pm_org_nodes.sql`) — line_name + pos_top/left (% ของภาพ) + area_id (ผูกผัง facility) · anon-open
-- **Andon 2 ระดับ (คนละสี ตาม Andon convention):** 🔴 **breakdown** = ไลน์มีใบซ่อม MO ค้าง (`mtn_orders` ไม่ closed/rejected) → **กระพริบแดง** (`.dt-alarm-blink`) · 🟡 **planned PM** = PM ใกล้/เกินรอบ (`overdue`/`due_soon` ของอุปกรณ์ในไลน์) → **เหลืองนิ่ง** · 🟢 ปกติ · เช็ค family ไลน์ (`getLineFamilyNames`: ไลน์แม่ครอบลูก)
-- **คลิก node → ไปผังเครื่องของไลน์นั้น** (สลับไป view production + selectedLine)
-- **แก้ผัง (สิทธิ์ `pm:setup`):** sidebar เลือกไลน์ → คลิกบนผังวาง node · ลากย้าย · ✕ ลบ · เลือกผังฐานจาก facility area ได้ถ้ามีหลายผัง
-- **refresh:** โหลดตอนเปิด view (ไม่ auto-poll — เปิดค้างจอ TV กด refresh/สลับ view เอา) · MachineFloorMap เพิ่ม prop `p.blink` (class dt-alarm-blink) + `p.icon`
-- **ตั้งค่ารูปผังฐาน:** จัดการได้ที่ **ตั้งค่าโปรแกรม → LineSetup** (การ์ด 🗺️ ผังโรงงาน = component `FactoryPlanManager` — CRUD `pm_facility_areas` ชุดเดียวกับ MTN facility tab · แก้ที่ไหนก็ได้) ตามคำสั่ง user 2026-07-16 (รวมที่ตั้งรูปผังไว้ที่เดียวเหมือนผังไลน์) · MTN facility tab ยังอัปได้เพราะใช้รูปเดียวกันวางอุปกรณ์ facility
+**ผังรวมโรงงาน = `/factory-map` (FactoryMap) ที่เดียวเท่านั้น** — polygon ต่อไลน์ + หลายโหมด (ยอดผลิต/OEE/Downtime/ของเสีย/คน/**PM เครื่องจักร**) ดู "Factory Master Map" ด้านบน
+- ⚠️ **เคยทำ MTN org map แยก (แท็บ "ภาพรวม Org" ใน `/mtn-layout` + component `FactoryPlanManager` ใน LineSetup) แล้วมันซ้ำซ้อนกับ `/factory-map` → ยุบทิ้งแล้ว** (2026-07-16) · `/mtn-layout` เหลือปุ่มลิงก์ "🗺️ ภาพรวมทั้งโรงงาน" → `/factory-map` แทน · **อย่าสร้างผังรวมโรงงานอันใหม่ ให้ต่อยอดที่ `/factory-map`**
+- ตาราง `pm_org_nodes` (migration `20260716_pm_org_nodes.sql`) เป็น vestigial (additive ไม่ลบ แต่ไม่มีโค้ดใช้แล้ว) · ถ้าอยากได้ signal "ใบซ่อม MO ค้าง" บนผังรวม ให้เพิ่มเป็น metric ใน FactoryMap (มี Downtime/PM mode อยู่แล้ว)
 
 ## PM Photo-Compare Inspection — ตรวจสภาพเครื่องด้วยการเทียบรูป "จับผิด" (2026-07-15, เฟส 1 ทดลอง)
 
@@ -607,7 +643,12 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 ### `send-notification`
 - **Endpoint:** `POST /functions/v1/send-notification`
 - **Payload:** `{ event: "status_change", log: { ...four_m_log } }`
-- **Events อื่น:** `checkin_summary`, `prod_close`, `downtime`, `downtime_recovered`, `downtime_call_mtn`, `downtime_open_15min`, `morning_meeting`
+- **Events อื่น:** `checkin_summary`, `checkin_update`, `ot_booking`, `prod_close`, `downtime`, `downtime_recovered`, `downtime_call_mtn`, `downtime_open_15min`, `morning_meeting`
+  - ⚠️ **หมวดเช็คชื่อแยกเป็น 3 event (2026-07-21 — คำสั่ง user: หัวหน้าแผนกงงว่าทำไมเช็คชื่อซ้ำ):** ปุ่ม "บันทึก" ตัวเดียวในหน้า Checkin ทำ 3 อย่าง (เช็คชื่อ / แก้กำลังคน / จองรถ OT) เดิมยิง `checkin_summary` **ทุกครั้ง** — พอหัวหน้ากลุ่มมาลงจอง OT กะดึกระหว่างวันแล้วกดบันทึก จะเด้ง "เช็คชื่อเสร็จแล้ว" ซ้ำ หัวหน้าแผนกเลยงง · แก้: `Checkin.jsx handleSave` เก็บ `baseline` ตอนโหลด แล้วเทียบตอนบันทึก → เลือก event ตามสิ่งที่เปลี่ยนจริง:
+    - `checkin_summary` — บันทึกครั้งแรกของวัน (ยังไม่มี log ของคนที่แสดงอยู่) = เช็คชื่อเริ่มงาน (payload เดิม `{ event, summary }`)
+    - `checkin_update` — เคยเช็คชื่อแล้ว + ข้อมูลเข้างาน/ลา/PPE เปลี่ยน = อัพเดทกำลังคน (payload `{ event, summary: {...+changed_count, changed_names} }` — ลิสต์คนที่เปลี่ยน)
+    - `ot_booking` — สถานะจอง OT/งาน/ช่วงเวลาเปลี่ยน = จองรถ OT (payload `{ event, booking: {line_name, work_date, date_label, shift_label, count, items, booked_by} }` — items = รายชื่อ+งาน+เวลาต่อคนของวันจองหลัก · กะดึกจองคืนถัดไป กะเช้าจองวันนี้)
+    - ไม่เปลี่ยนอะไร (re-save เฉยๆ) = **เงียบ ไม่ยิงอะไร** · ทั้ง 3 event category `manpower` ปรับห้อง/ปิด/แก้ข้อความได้ที่ `/notification-config` (migration `20260721_checkin_notification_split.sql` seed default เข้าห้องเดียวกับ checkin_summary) · **ต้อง deploy edge function `send-notification` ให้รู้จัก 2 event ใหม่** (ก่อน deploy: 2 event ใหม่ได้ 400 เงียบๆ ฝั่ง client fire-and-forget — bug ซ้ำหายทันทีจากฝั่ง frontend, แค่ยังไม่มีข้อความ update/OT)
   - `morning_meeting` — สรุปประชุมแถวเช้าจากหน้า `/morning-meeting` (payload `{ event, summary: {...} }` — ผลิตรวม/เป้า, OEE, DT, NG, งานหลุดแผน, action ค้าง) · rule/template แก้ได้จากหน้าตั้งค่าการแจ้งเตือน (deploy v30 2026-07-13)
   - ⚠️ **Downtime notification overhaul (2026-07-14) — ลดสัญญาณรบกวน + เรียกช่างแบบตั้งใจ** (คำสั่ง user: แจ้งเยอะเกิน เบรคดาวน์เล็กน้อยก็แจ้ง + พนักงานลงย้อนหลังไม่ได้ตั้งใจเรียกช่าง):
     - **บันทึก Downtime ใหม่ = ไม่แจ้ง Telegram ทันทีอีกต่อไป** (ทั้งปิดแล้วและเปิดค้าง) — ตัด `notifyDowntime` ตอน insert ใน `DailyReport.jsx handleAddDT`
@@ -745,6 +786,8 @@ new Date().toISOString().slice(0,10)  // อาจได้วันที่ผ
 getShiftInfo()  // object { shift, label } — กะเช้า 08:00-20:00 / กะดึก 20:00-08:00
 ```
 
+> ⚠️ **กฎวันทำงาน (คำสั่ง user 2026-07-21): ทุกการคำนวณที่เกี่ยวกับ "วันทำงาน" ต้องอ้างอิงปฏิทินบริษัทก่อน ห้ามใช้ค่าคงที่ (22/26 วัน)** — ใช้ helper กลาง `countWorkingDaysInMonth(monthKey, fallback)` ใน `src/utils/companyCalendar.js` (เรียก `loadCompanyCalendar()` ก่อน) หรือ logic เดียวกัน: จ-ศ ไม่มาร์ค = ทำงาน · มาร์คเป็นวันหยุดทุกชนิด (ot15/ot2/shutdown75) = หยุด · เสาร์/อาทิตย์มาร์ค working = ทำงาน · จุดที่ใช้แล้ว: kanban calc (PlannerSales), Production Plan รายวัน+รายเดือน, PM Forecast, LPA — บั๊กที่เคยเจอ: regex เทียบ day_type ไม่ match ค่าจริง (kanban นับวันหยุด จ-ศ เป็นวันทำงาน) และนับเฉพาะวันที่มาร์ค working ชัดๆ (แผนรายเดือนได้ 4-5 วัน/เดือน) — แก้แล้วทั้งคู่ 2026-07-21
+
 > **ฝั่ง SQL (DR project)** มี helper กลาง `work_date_bangkok()` (migration `20260714_work_date_bangkok_fallback.sql`)
 > = work date ไทยตัด 08:00 — trigger/function/default ใหม่ฝั่ง DR ที่ต้องการวันที่งาน **ให้ใช้ตัวนี้
 > ห้ามใช้ `current_date`** (คือ UTC — เพี้ยนช่วง 07:00-07:59 ไทย เคยเป็นบั๊กใน fn_post_confirmed_output)
@@ -844,6 +887,8 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 - `ot_period = null` = OT ต่อท้ายกะวันทำงานปกติ (และการจองเก่าก่อนมีฟีเจอร์นี้ — Report แสดง "⚠️ ไม่ระบุ" เมื่อวันนั้นเป็นวันหยุด)
 - จุดจองทุกทางในหน้าเช็คชื่อ (กะดึกจองพรุ่งนี้ / has_ot กะเช้า / ช่องวันหยุดล่วงหน้า 🔶 / modal จองรถ OT อิสระ) จะโชว์ select ช่วงเวลาอัตโนมัติเมื่อวันที่จองเป็นวันหยุด — default 8 ชม. ของกะนั้น
 - migration: `20260710_ot_booking_holiday_period.sql` (Main project)
+
+**วันหยุดจ่าย 75% — มาตรา 75 (2026-07-21):** `company_calendar.day_type = 'shutdown75'` (สีม่วง ตั้งจากปฏิทินบริษัท — เพิ่มรายวัน ไม่มีใน bulk รายสัปดาห์) = หยุดชั่วคราวเหตุลูกค้าลด order: หยุดได้ค่าจ้าง 75% · ถูกเรียกมาทำงาน = ค่าแรงปกติ · **ระบบเก็บเป็นข้อมูลอ้างอิง ยังไม่คำนวณเงิน** · ความหมาย "วันหยุด" แยก 2 ชั้น: (ก) วันหยุดโรงงาน (working-day calc: kanban/LPA/แผนงาน — เช็ค `!= 'working'`) shutdown75 นับเป็นหยุด (ข) **วันหยุดแบบ OT** (จองรถ OT/ชม. OT 8-10 ชม.) ใช้ helper `isOtHolidayType()`/`isOtHoliday()` ใน `companyCalendar.js` = **ot15/ot2 เท่านั้น** — โค้ดใหม่ที่เช็ควันหยุดต้องเลือก helper ให้ตรงความหมาย ห้ามเช็ค `!= 'working'` แบบเหมา · migration `20260721_calendar_shutdown75.sql`
 
 ---
 

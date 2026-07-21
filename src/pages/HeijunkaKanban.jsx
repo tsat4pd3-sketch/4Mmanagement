@@ -241,7 +241,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
   // มือถือ ≤768px: บอร์ดครึ่งวัน (12 ชม.) เลื่อนแนวนอนได้ + ป้ายซ้าย sticky (desktop เต็มจอเดียวเหมือนเดิม)
   const isMobile = useIsMobile();
   const LEFT_W = isMobile ? 96 : 130;
-  const stickyL = (bg) => isMobile ? { position: 'sticky', left: 0, zIndex: 2, background: bg } : null;
+  const stickyL = (bg) => isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: bg } : null; // z6 เหนือ playhead
   // ยึด grid กับ workDate ที่เลือก (ไม่ใช่วันปฏิทินปัจจุบัน) — ช่วง 00:00–07:59 กะดึกยังอยู่ในกรอบวันงานเดิม
   const gridStartMs = dayFrameMs(workDate).startMs;
   const pctPerMs = 100 / (12 * 3600000);
@@ -861,9 +861,9 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, on
                           <span style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)' }}>{fmt(lot.lot_qty)} <span style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น/ล็อต</span></span>
                           {canReorder && (
                             <div style={{ display: 'flex', gap: 4 }}>
-                              <button onClick={() => onReorder(queue, lot, 'up')} disabled={busy === lot.id || qIdx === 0}
+                              <button className="tbtn" onClick={() => onReorder(queue, lot, 'up')} disabled={busy === lot.id || qIdx === 0}
                                 style={{ padding: '2px 8px', borderRadius: 6, cursor: qIdx === 0 ? 'default' : 'pointer', fontSize: 12, fontWeight: 800, background: 'var(--bg2)', color: qIdx === 0 ? 'var(--border2)' : 'var(--text)', border: '1px solid var(--border)' }}>▲</button>
-                              <button onClick={() => onReorder(queue, lot, 'down')} disabled={busy === lot.id || qIdx === queue.length - 1}
+                              <button className="tbtn" onClick={() => onReorder(queue, lot, 'down')} disabled={busy === lot.id || qIdx === queue.length - 1}
                                 style={{ padding: '2px 8px', borderRadius: 6, cursor: qIdx === queue.length - 1 ? 'default' : 'pointer', fontSize: 12, fontWeight: 800, background: 'var(--bg2)', color: qIdx === queue.length - 1 ? 'var(--border2)' : 'var(--text)', border: '1px solid var(--border)' }}>▼</button>
                             </div>
                           )}
@@ -1464,22 +1464,20 @@ export default function HeijunkaKanban() {
     if (confirming) return;
     setConfirming(r.id);
     try {
-      // กันยืนยันซ้ำ: ถ้ารอบนี้ยืนยันส่งไปแล้ว (มี confirmed_at) อย่า insert issue ซ้ำ — จะทำให้ stock บวกเกินจริง
-      const { data: existing } = await supabaseDR.from('kanban_deliveries')
-        .select('confirmed_at')
-        .match({ work_date: workDate, line_name: r.line_name, shift: r.shift, round_no: r.round_no })
-        .maybeSingle();
-      if (existing?.confirmed_at) {
+      // กันยืนยันซ้ำแบบ atomic: insert แถวยืนยันด้วย ON CONFLICT DO NOTHING (ignoreDuplicates)
+      // — 2 เครื่องสโตร์ (บัญชีร่วม) กดยืนยันรอบเดียวกันพร้อมกัน มีแค่ตัวเดียวที่ insert สำเร็จ (คืนแถว)
+      // ตัวที่ชน conflict คืน [] → ข้าม issueRows · เดิมเป็น read-then-write ทำให้ stock ถูก issue ซ้ำถาวร
+      const { data: claimed, error } = await supabaseDR.from('kanban_deliveries').upsert({
+        work_date: workDate, line_name: r.line_name, shift: r.shift, round_no: r.round_no,
+        confirmed_at: new Date().toISOString(), confirmed_by: fullName || 'Store',
+      }, { onConflict: 'work_date,line_name,shift,round_no', ignoreDuplicates: true }).select('id');
+      if (error) throw error;
+      if (!claimed || claimed.length === 0) {
         toast.info(`รอบ ${r.round_no} ยืนยันส่งไปแล้ว — ไม่บันทึกซ้ำ`);
         await loadDeliveries();
         setConfirming(null);
         return;
       }
-      const { error } = await supabaseDR.from('kanban_deliveries').upsert({
-        work_date: workDate, line_name: r.line_name, shift: r.shift, round_no: r.round_no,
-        confirmed_at: new Date().toISOString(), confirmed_by: fullName || 'Store',
-      }, { onConflict: 'work_date,line_name,shift,round_no', ignoreDuplicates: false });
-      if (error) throw error;
       // เข้าสต็อกในไลน์ทันที (รอผลิตกด confirm รับของอีกที)
       const issueRows = (parts || []).filter(p => p.netTotal > 0).map(p => ({
         line_name: r.line_name, mat_no: p.mat_no, part_name: p.part_name, qty: p.netTotal,
@@ -1740,7 +1738,7 @@ export default function HeijunkaKanban() {
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
             🎴 Heijunka Kanban — Subcomponent Demand
@@ -1953,7 +1951,7 @@ function ReceiveModal({ round, parts, mode, fmt, saving, onCancel, onSubmit }) {
   const [actual, setActual] = useState(() => Object.fromEntries(netParts.map(p => [p.mat_no, p.netTotal])));
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(440px,100%)', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>
           {mode === 'full' ? '✔️ ยืนยันรับของครบ' : '⚠️ บันทึกรับของไม่ครบ'}

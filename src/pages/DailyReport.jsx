@@ -174,6 +174,7 @@ export default function DailyReport() {
 function LiveTab({ role }) {
   const { fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const isMobile = useIsMobile(); // ≤768px: sidebar รายชื่อกะยุบมาซ้อนบนเนื้อหา (desktop ไม่เปลี่ยน)
+  const wide1100 = !useIsMobile(1099); // ≥1100px → modal แผ่ 2 คอลัมน์ (reactive แทน innerWidth ครั้งเดียว)
   const [lines, setLines]           = useState([]);
   const [lineMap, setLineMap]       = useState({});
   const [products, setProducts]     = useState([]);
@@ -2385,7 +2386,7 @@ function LiveTab({ role }) {
                           ปกติ leader แก้ไม่ได้แล้วเพราะตัดสินใจไปแล้วตอนปิดกะ แต่ถ้าตกค้างผิดปกติ (เช่นกะเก่าปิดไม่สำเร็จ)
                           SV/Manager/Admin ต้องลบแก้ไขได้เพื่อเคลียร์ข้อมูลค้าง ไม่งั้นจะไม่มีทางแก้เลย */}
                       {!confirmed && (canManage || (canEditRecords && !carryOver)) && (
-                        <button onClick={() => handleDeleteProdOrder(o.id)}
+                        <button className="tbtn" onClick={() => handleDeleteProdOrder(o.id)}
                           style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 2px' }}>✕</button>
                       )}
                       {/* ถอยใบที่สแกนปิดเกิน/ปิดผิดใบ — เฉพาะกะที่ยังเปิดอยู่ (หลังปิดกะยอดถูกสรุปแล้ว ถอยไม่ได้) */}
@@ -2508,9 +2509,9 @@ function LiveTab({ role }) {
                       </div>
                       {canEditRecords && (
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '' }); setShowDefect(true); }}
+                          <button className="tbtn" onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '' }); setShowDefect(true); }}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✎</button>
-                          <button onClick={() => handleDeleteDefectLog(d.id)}
+                          <button className="tbtn" onClick={() => handleDeleteDefectLog(d.id)}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
                         </div>
                       )}
@@ -2600,8 +2601,8 @@ function LiveTab({ role }) {
                             });
                             setShowDT(true);
                           }}
-                            style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✎</button>
-                          <button onClick={() => handleDeleteDT(d.id)}
+                            className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✎</button>
+                          <button className="tbtn" onClick={() => handleDeleteDT(d.id)}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
                         </div>
                       )}
@@ -2698,7 +2699,7 @@ function LiveTab({ role }) {
           const carryOrdersList  = prodOrders.filter(o => o.status === 'carry_over');
           const cancelledOrders  = prodOrders.filter(o => o.status === 'cancelled');
           // จอ landscape กว้าง → แผ่เนื้อหาเป็น 2 คอลัมน์แทนการยืดสูงจน scroll (layout อย่างเดียว ไม่แตะ logic)
-          const twoCol = typeof window !== 'undefined' && window.innerWidth >= 1100 && (defectLogs.length > 0 || dtLogs.length > 0) && prodOrders.length > 0;
+          const twoCol = wide1100 && (defectLogs.length > 0 || dtLogs.length > 0) && prodOrders.length > 0;
           return (
             <div className="overlay" style={{ zIndex: 2100 }}>
               <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.5)', borderRadius: 14, padding: 24, width: 'min(96vw,1500px)', maxHeight: '94vh', overflowY: 'auto' }}>
@@ -3001,7 +3002,7 @@ function LiveTab({ role }) {
           const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty } = computeOEE(ng, closeEndTime, closeStartTime, previewDtLogs);
           const oeeColor = oee == null ? 'var(--muted)' : oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
           // จอ landscape กว้าง → แผ่เนื้อหาเป็น 2 คอลัมน์แทนการยืดสูงจน scroll (layout อย่างเดียว ไม่แตะ logic/การคำนวณ)
-          const twoCol = typeof window !== 'undefined' && window.innerWidth >= 1100;
+          const twoCol = wide1100;
           const hasOpenOrdersCol = twoCol && prodOrders.some(o => o.status === 'open');
           const hasOpenDTCol = twoCol && modalOpenDT.length > 0;
           return (
@@ -5143,7 +5144,7 @@ function DefectTypeSetup({ role }) {
                   {canEdit && (
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                      <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
+                      <button className="tbtn" onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
                     </div>
                   )}
                 </div>
@@ -5274,7 +5275,7 @@ function BreakPolicySetup({ role }) {
             {canEdit && (
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
+                <button className="tbtn" onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
               </div>
             )}
           </div>
@@ -6026,7 +6027,7 @@ function _KanbanStandardSetup_REMOVED({ role }) {
               {canEdit && (
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                  <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
+                  <button className="tbtn" onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>
                 </div>
               )}
             </div>

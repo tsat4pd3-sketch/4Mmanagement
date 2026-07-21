@@ -109,7 +109,11 @@ export default function OrgSetup() {
   };
 
   const handleDelete = async (node) => {
-    if (!confirm(`ลบ "${node.name}" และโหนดลูกทั้งหมดหรือไม่?`)) return;
+    // กันลบทั้งที่ยังมีลูก — เดิม confirm บอก "ลบลูกทั้งหมด" แต่โค้ดลบแค่ node เดียว (พึ่ง cascade)
+    // ถ้าไม่มี cascade ลูกจะกำพร้า parent_id ค้าง · ให้ย้าย/ลบลูกก่อน หรือกด "ปิดใช้งาน" แทน
+    const childCount = nodes.filter(n => n.parent_id === node.id).length;
+    if (childCount > 0) return toast.error(`ลบไม่ได้: "${node.name}" ยังมีหน่วยงานลูก ${childCount} รายการ — ย้าย/ลบลูกก่อน หรือกด "ปิดใช้งาน" แทน`);
+    if (!confirm(`ลบ "${node.name}" ?\n\n(ถ้าเคยผูกกับข้อมูลอื่นแนะนำ "ปิดใช้งาน" แทนการลบ)`)) return;
     const { error } = await supabase.from('org_nodes').delete().eq('id', node.id);
     if (error) return toast.error('ลบไม่สำเร็จ: ' + error.message);
     toast.success('ลบสำเร็จ');
@@ -145,7 +149,7 @@ export default function OrgSetup() {
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>SECTION / ส่วน ({sections.length})</strong>
-              <button onClick={() => openCreate('section', null)} style={addBtnSt}>➕</button>
+              <button className="tbtn" onClick={() => openCreate('section', null)} style={addBtnSt}>➕</button>
             </div>
             {sections.map(s => (
               <div key={s.id} style={itemStyle(selSection === s.id)} onClick={() => setSelSection(s.id)}>
@@ -170,7 +174,7 @@ export default function OrgSetup() {
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>DEPARTMENT / แผนก ({currentDepts.length})</strong>
-              <button onClick={() => selSection && openCreate('department', selSection === ORPHAN ? null : selSection)} disabled={!selSection} style={addBtnSt}>➕</button>
+              <button className="tbtn" onClick={() => selSection && openCreate('department', selSection === ORPHAN ? null : selSection)} disabled={!selSection} style={addBtnSt}>➕</button>
             </div>
             {!selSection ? <Empty text="เลือก Section ก่อน" /> : currentDepts.map(d => (
               <div key={d.id} style={itemStyle(selDept === d.id)} onClick={() => setSelDept(d.id)}>
@@ -189,7 +193,7 @@ export default function OrgSetup() {
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>GROUP / กลุ่ม ({currentLines.length})</strong>
-              <button onClick={() => selDept && openCreate('line', selDept)} disabled={!selDept} style={addBtnSt}>➕</button>
+              <button className="tbtn" onClick={() => selDept && openCreate('line', selDept)} disabled={!selDept} style={addBtnSt}>➕</button>
             </div>
             {!selDept ? <Empty text="เลือกแผนกก่อน" /> : currentLines.map(l => (
               <div key={l.id} style={itemStyle(false)}>

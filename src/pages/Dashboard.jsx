@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useContext, Fragment } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
@@ -8,6 +9,7 @@ import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import useIsMobile from '../utils/useIsMobile';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -19,16 +21,6 @@ function useNow() {
     return () => clearInterval(t);
   }, []);
   return now;
-}
-
-function useIsMobile() {
-  const [mobile, setMobile] = useState(() => window.innerWidth <= 768);
-  useEffect(() => {
-    const h = () => setMobile(window.innerWidth <= 768);
-    window.addEventListener('resize', h);
-    return () => window.removeEventListener('resize', h);
-  }, []);
-  return mobile;
 }
 
 function useWidth() {
@@ -220,6 +212,9 @@ export default function Dashboard() {
   const [stationEmpMap, setStationEmpMap] = useState({});
   const [expandedLine,  setExpandedLine]  = useState(null);
   const [expandedLines, setExpandedLines] = useState(new Set()); // ชื่อไลน์หลักที่กดขยายดูไลน์ย่อยในการ์ดสถานะไลน์ผลิต
+  const [searchParams, setSearchParams] = useSearchParams(); // deep-link ?line=NAME (จากผังรวมโรงงาน) → เปิดผังไลน์นั้น
+  const navigate = useNavigate();
+  const cameFromFactoryMap = useRef(false); // เปิดผังมาจากผังรวมโรงงาน → ปิดแล้วเด้งกลับ /factory-map
   const [andonLine, setAndonLine] = useState(null); // { title, names } — เปิด Andon panel เจาะรายละเอียด alarm ของไลน์
   const mapImgRef = useRef(null);
   const [mapBox, setMapBox] = useState({ w: 0, h: 0 });
@@ -246,6 +241,7 @@ export default function Dashboard() {
   // วันที่ของ Heijunka Board — เลือกดูย้อนหลังได้ (default = วันงานปัจจุบัน)
   const [boardDate,     setBoardDate]     = useState(() => getWorkDateStr(new Date()));
   const [lineByMat,     setLineByMat]     = useState({});   // mat_no → line_name (จาก dr_products)
+  const [pairMatByMat,  setPairMatByMat]  = useState({});   // mat_no → pair_mat_no (งานคู่ RH/LH — แม่พิมพ์คู่)
   const [ediOrders,     setEdiOrders]     = useState([]);   // รอบส่งลูกค้า (EDI 862) วันนี้+พรุ่งนี้ ที่ยังไม่ส่ง
   const [fgStockByMat,  setFgStockByMat]  = useState({});   // mat_no → stock FG พร้อมส่งรวมทุกคลัง
 
@@ -257,7 +253,7 @@ export default function Dashboard() {
         .select('id, line_name, shift, status, work_date, start_time, created_at, dr_products(name, target_per_shift, cycle_time_sec, process_type)')
         .eq('work_date', boardDate),
       supabaseDR.from('break_policies').select('*').eq('is_active', true),
-      supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, image_url, line_name').not('mat_no', 'is', null),
+      supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, image_url, line_name, pair_mat_no').not('mat_no', 'is', null),
     ]);
     // production_sessions.product_id ไม่ได้ตั้งค่าเสมอ (กะนึงมีได้หลาย mat_no) — ใช้ map นี้
     // เป็น fallback หา cycle_time_sec รายออเดอร์จาก mat_no ตรง ๆ แทนการพึ่ง session.dr_products
@@ -265,14 +261,17 @@ export default function Dashboard() {
     const nameMap = {};
     const imgMap = {};
     const lineMap = {};
+    const pairMap = {};
     (products || []).forEach(p => {
       ctMap[p.mat_no] = p.cycle_time_sec || 0; nameMap[p.mat_no] = p.name || ''; imgMap[p.mat_no] = p.image_url || '';
       if (p.line_name) lineMap[p.mat_no] = p.line_name;
+      if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no;   // งานคู่ RH/LH (แม่พิมพ์คู่ ปั๊มทีเดียวได้ทั้งคู่)
     });
     setCtByMatNo(ctMap);
     setNameByMatNo(nameMap);
     setImgByMatNo(imgMap);
     setLineByMat(lineMap);
+    setPairMatByMat(pairMap);
     setBreakPolicies(breakPolicies || []);
     // 📡 รอบส่งลูกค้า (EDI 862) ของวันนี้→พรุ่งนี้ ที่ยังไม่ส่ง — ใช้พยากรณ์กะดึกล่วงหน้าแม้ยังไม่เปิดใบผลิต
     {
@@ -691,6 +690,23 @@ export default function Dashboard() {
     walk(layoutLineName);
     return names;
   }, [parentChildrenMap, layouts]);
+
+  // deep-link จากผังรวมโรงงาน: ?line=NAME → เปิดผังไลน์ที่ครอบชื่อนี้ (ตรงชื่อ หรือเป็นลูกในการ์ดของ layout)
+  useEffect(() => {
+    const wanted = searchParams.get('line');
+    if (!wanted || !layouts.length) return;
+    const hit = layouts.find(l => l.line_name === wanted)
+      || layouts.find(l => layoutLineNamesForCard(l.line_name).includes(wanted));
+    if (hit) { setExpandedLine(hit.line_name); cameFromFactoryMap.current = searchParams.get('from') === 'factory-map'; }
+    searchParams.delete('line'); searchParams.delete('from'); // ล้าง param กันเปิดซ้ำตอน re-render/ปิด modal
+    setSearchParams(searchParams, { replace: true });
+  }, [layouts, searchParams, layoutLineNamesForCard, setSearchParams]);
+
+  // ปิดผังไลน์: ถ้าเปิดมาจากผังรวมโรงงาน → เด้งกลับหน้านั้น (ไม่ค้างที่ Dashboard)
+  const closeExpandedLine = useCallback(() => {
+    setExpandedLine(null);
+    if (cameFromFactoryMap.current) { cameFromFactoryMap.current = false; navigate('/factory-map'); }
+  }, [navigate]);
 
   /* Filter by assignedShift — memoized so the 1s clock tick doesn't re-filter all logs */
   const shiftLogs = useMemo(
@@ -1482,9 +1498,20 @@ export default function Dashboard() {
                     // ทั้งที่ไลน์ไม่ parallel) · แยกคิวเฉพาะคนละ sub-line (line_name ต่างกัน = คนละเครื่อง วิ่งขนานได้จริง)
                     const positionedByOrder = new Map();
                     {
-                      const byLine = {};
-                      productRows.forEach(r => r.cards.forEach(c => { (byLine[c.line_name || ''] ||= []).push(c); }));
-                      Object.values(byLine).forEach(cs => {
+                      // งานคู่ RH/LH (pair_mat_no ตั้งใน Product Master) ปั๊มด้วยแม่พิมพ์คู่ = ทำพร้อมกัน (parallel)
+                      // → แยกคู่ที่มีทั้งสองพาร์ทอยู่ในไลน์เดียวกันเป็น "เลนของตัวเอง" คนละคิว เริ่มพร้อมกัน แถบจึงตรงกัน
+                      // (พาร์ทไม่มีคู่ยังรวมคิวไลน์เดียวเรียงต่อกันเหมือนเดิม — 1 ไลน์ทีละใบ · 2026-07-21)
+                      const matsInLine = {}; // line → Set(mat_no) ที่มีการ์ดจริง
+                      productRows.forEach(r => r.cards.forEach(c => { (matsInLine[c.line_name || ''] ||= new Set()).add(c.mat_no); }));
+                      const laneKeyOf = (c) => {
+                        const line = c.line_name || '';
+                        const pm = pairMatByMat[c.mat_no];
+                        const paired = pm && matsInLine[line]?.has(pm); // คู่ของมันอยู่ในไลน์นี้ด้วยจริง
+                        return paired ? `${line}||${c.mat_no}` : line;
+                      };
+                      const byLane = {};
+                      productRows.forEach(r => r.cards.forEach(c => { (byLane[laneKeyOf(c)] ||= []).push(c); }));
+                      Object.values(byLane).forEach(cs => {
                         computeQueuedPositionsFull(cs).forEach(item => positionedByOrder.set(item.o.id ?? item.o.prod_no, item));
                       });
                     }
@@ -2149,7 +2176,7 @@ export default function Dashboard() {
           green: { color: '#22c55e', icon: '🟢', label: 'ANDON — GREEN', desc: 'รายการทั้งหมดอนุมัติแล้ว · สถานะปกติ' },
         }[level];
         return (
-          <div className="overlay" style={{ zIndex: 1100 }} onClick={() => setAndonLine(null)}>
+          <div className="overlay" style={{ zIndex: 2000 }} onClick={() => setAndonLine(null)}>
             <div onClick={e => e.stopPropagation()} className={level === 'red' ? 'dt-alarm-banner' : undefined} style={{
               background: 'var(--card)', borderRadius: 16, padding: '20px 24px',
               width: 'min(94vw, 720px)', maxHeight: '90vh', overflowY: 'auto',
@@ -2244,7 +2271,7 @@ export default function Dashboard() {
         return (
           <div
             className="overlay"
-            style={{ zIndex: 1000 }}
+            style={{ zIndex: 2000 }}
           >
             <div
               onClick={e => e.stopPropagation()}
@@ -2265,7 +2292,7 @@ export default function Dashboard() {
                   🏭 {expandedLine}
                 </div>
                 <button
-                  onClick={() => setExpandedLine(null)}
+                  onClick={closeExpandedLine}
                   style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--muted)', padding: '0 4px' }}
                 >✕</button>
               </div>

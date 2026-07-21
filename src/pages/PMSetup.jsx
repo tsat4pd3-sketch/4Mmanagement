@@ -70,7 +70,7 @@ function getPublicUrl(path) {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const S = {
   page: { padding: 'clamp(12px,3vw,28px) clamp(14px,3.5vw,32px)', minHeight: '100%', background: 'var(--bg)' },
-  header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 },
+  header: { display: 'flex', paddingRight: 52, alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 },
   h1: { fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 },
   sub: { fontSize: 13, color: 'var(--muted)', marginTop: 4 },
   deptBar: { display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' },
@@ -110,7 +110,7 @@ const S = {
   },
   overlay: {
     position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
-    zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+    zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
   },
   modal: {
     background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 12,
@@ -229,7 +229,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
               color: isPinning ? '#071008' : cp.x_pos != null ? 'var(--accent)' : 'var(--muted)',
             }}>{cp.x_pos != null ? '📍 วางแล้ว' : '🔘 วางตำแหน่ง'}</button>
           )}
-          <button onClick={onDelete} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 16, lineHeight: 1, padding: '0 2px', cursor: 'pointer' }}>×</button>
+          <button className="tbtn" onClick={onDelete} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 16, lineHeight: 1, padding: '0 2px', cursor: 'pointer' }}>×</button>
         </div>
       </div>
 
@@ -917,7 +917,7 @@ function EquipmentCard({ jig, cpCount, hasPins, onEdit, onDelete, canSetup }) {
           {canSetup && (
             <div style={S.actions}>
               <button onClick={onEdit} style={S.btnSm('var(--accent)')}>แก้ไข</button>
-              <button onClick={onDelete} style={S.btnSm('var(--red)')}>ลบ</button>
+              <button className="tbtn" onClick={onDelete} style={S.btnSm('var(--red)')}>ลบ</button>
             </div>
           )}
         </div>

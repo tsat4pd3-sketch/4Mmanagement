@@ -11,6 +11,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { markerScale } from '../utils/markerScale';
+import useIsMobile from '../utils/useIsMobile';
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
   return new Promise((resolve) => {
@@ -162,7 +163,7 @@ export default function Management() {
   const [allLines,       setAllLines]       = useState([]); // ทุกไลน์รวมไลน์ย่อย (ใช้หา parent_line_name)
   const [show4MModal,    setShow4MModal]    = useState(null);
   const [log4MForm,      setLog4MForm]      = useState({ category: 'Man', description: '', moveType: 'same', skillOk: false, hasHistory: false, subtype: 'change' });
-  const [isMobile,       setIsMobile]       = useState(window.innerWidth <= 768);
+  const isMobile = useIsMobile();
   const vw = useWidth();
   const isWide  = vw >= 1280;
   const isUltra = vw >= 1600;
@@ -199,9 +200,11 @@ export default function Management() {
   const [isSavingDoc,     setIsSavingDoc]     = useState(false);
   const [lineProdData,    setLineProdData]    = useState(null); // heijunka data for selected line
   const [boardDate,       setBoardDate]       = useState(() => getWorkDate()); // วันที่ mini Heijunka board — เลือกดูย้อนหลังได้
-  // มือถือ: บอร์ด Heijunka default พับเป็นแถบสรุป (map-first — ผังคนได้พื้นที่เต็ม) · จำสถานะใน localStorage
-  const [mobileBoardOpen, setMobileBoardOpen] = useState(() => { try { return localStorage.getItem('mg_board_open_mobile') === '1'; } catch { return false; } });
-  const toggleMobileBoard = () => setMobileBoardOpen(v => { try { localStorage.setItem('mg_board_open_mobile', v ? '0' : '1'); } catch { /* private mode */ } return !v; });
+  // มุมมองหลักของ Canvas Area: สลับดูทีละมุม — 'map' = ผังไลน์+คน (floor map) · 'heijunka' = บอร์ด Heijunka
+  // ดูทีละมุมได้พื้นที่เต็มจอ เห็นรายละเอียดครบ ไม่ถูกบีบ/ย่อ (แก้ปัญหา kanban เยอะแล้วบอร์ดดันผังหลุดจอ)
+  // · default = map (งานหลักคือจัดคนลงสถานี) · จำสถานะใน localStorage
+  const [mainView, setMainView] = useState(() => { try { return localStorage.getItem('mg_main_view') === 'heijunka' ? 'heijunka' : 'map'; } catch { return 'map'; } });
+  const switchView = (v) => { setMainView(v); try { localStorage.setItem('mg_main_view', v); } catch { /* private mode */ } };
   const [showLegendMobile, setShowLegendMobile] = useState(false); // มือถือ: legend สถานะยุบเข้าปุ่ม ℹ️
   const [imgBox,         setImgBox]         = useState(null); // actual rendered image bounds inside objectFit:contain
   const imgRef = useRef(null);
@@ -290,12 +293,13 @@ export default function Management() {
     const ctMap = {};
     const nameMap = {};
     const imgMap = {};
+    const pairMap = {};
     if (matNos.length) {
       const { data: products } = await supabaseDR
         .from('dr_products')
-        .select('mat_no, name, cycle_time_sec, image_url')
+        .select('mat_no, name, cycle_time_sec, image_url, pair_mat_no')
         .in('mat_no', matNos);
-      (products || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; nameMap[p.mat_no] = p.name || ''; imgMap[p.mat_no] = p.image_url || ''; });
+      (products || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; nameMap[p.mat_no] = p.name || ''; imgMap[p.mat_no] = p.image_url || ''; if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; });
     }
     const ordersBySession = {};
     (orders || []).forEach(o => { (ordersBySession[o.session_id] ||= []).push(o); });
@@ -307,7 +311,7 @@ export default function Management() {
     (dtLogs || []).forEach(d => { (dtBySession[d.session_id] ||= []).push(d); });
     const enriched = sessions.map(s => ({ ...s, orders: ordersBySession[s.id] || [], dtLogs: dtBySession[s.id] || [] }));
     const { data: breakPolicies } = await supabaseDR.from('break_policies').select('*').eq('is_active', true);
-    setLineProdData({ sessions: enriched, workDate: dateStr, ctByMatNo: ctMap, nameByMatNo: nameMap, imgByMatNo: imgMap, breakPolicies: breakPolicies || [] });
+    setLineProdData({ sessions: enriched, workDate: dateStr, ctByMatNo: ctMap, nameByMatNo: nameMap, imgByMatNo: imgMap, pairMatByMat: pairMap, breakPolicies: breakPolicies || [] });
   }, [boardDate]);
 
   useEffect(() => {
@@ -335,11 +339,6 @@ export default function Management() {
     return () => { clearInterval(t); clearTimeout(debounceTimer); supabaseDR.removeChannel(ch); };
   }, [selectedLine, viewKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    const h = () => setIsMobile(window.innerWidth <= 768);
-    window.addEventListener('resize', h);
-    return () => window.removeEventListener('resize', h);
-  }, []);
 
   useEffect(() => {
     supabase.from('skill_definitions').select('*').order('sort_order').then(({ data }) => setSkillDefs(data || []));
@@ -449,9 +448,17 @@ export default function Management() {
   const assignWorker = async (logId, stationId) => {
     const finalAssign = stationId === 'Pool' ? null : stationId;
     const droppedWorker = workers.find(w => w.id === logId);
+    const prevAssign = droppedWorker?.assigned_line ?? null;
     setWorkers(prev => prev.map(w => w.id === logId ? { ...w, assigned_line: finalAssign } : w));
     setSelectedWorker(null);
-    await supabase.from('daily_production_logs').update({ assigned_line: finalAssign }).eq('id', logId);
+    // เช็ค error ของการย้ายจุดหลัก — ถ้าล้ม ให้ revert UI กลับ (เดิม optimistic แล้วปล่อยผ่าน
+    // ทำให้ผังโชว์คนอยู่จุดใหม่แต่ DB ยังเป็นจุดเดิม ไม่มีเตือน)
+    const { error: eAssign } = await supabase.from('daily_production_logs').update({ assigned_line: finalAssign }).eq('id', logId);
+    if (eAssign) {
+      toast.error('ย้ายจุดไม่สำเร็จ: ' + eAssign.message);
+      setWorkers(prev => prev.map(w => w.id === logId ? { ...w, assigned_line: prevAssign } : w));
+      return;
+    }
 
     // ── Station assignment log (period-snapped) ──────────────────
     if (droppedWorker?.employee_id) {
@@ -711,10 +718,11 @@ export default function Management() {
     // ใช้ line_name ของสถานีจริง ไม่ใช่ selectedLine เฉยๆ — เพราะตอนนี้ selectedLine อาจเป็นไลน์หลัก
     // (เช่น HYDROFORM) ที่รวมจุดงานจากไลน์ย่อยหลายไลน์ (HDF1/HDF2/...) เข้ามาแสดงพร้อมกัน
     const station = dynamicStations.find(s => String(s.id) === String(stationId));
-    await supabase.from('employee_home_positions').upsert(
+    const { error: eHome } = await supabase.from('employee_home_positions').upsert(
       { employee_id: empId, station_id: stationId, line_name: station?.line_name || selectedLine, updated_at: new Date().toISOString() },
       { onConflict: 'employee_id' }
     );
+    if (eHome) { toast.error('บันทึกสถานีประจำไม่สำเร็จ: ' + eHome.message); return; }
     setHomePositions(prev => ({ ...prev, [empId]: String(stationId) }));
   };
 
@@ -1126,6 +1134,25 @@ export default function Management() {
         )}
 
 
+        {/* ── สลับมุมมอง: ผังไลน์+คน / Heijunka (ดูทีละมุมเต็มพื้นที่ ไม่ถูกบีบ/ย่อ) ── */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
+          {[{ k: 'map', icon: '🗺️', label: 'ผังไลน์ + คน' }, { k: 'heijunka', icon: '📊', label: 'Heijunka' }].map(v => {
+            const active = mainView === v.k;
+            return (
+              <button key={v.k} onClick={() => switchView(v.k)}
+                style={{ padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 800, background: active ? 'var(--accent)' : 'var(--bg3)', color: active ? '#08130a' : 'var(--text2)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}` }}>
+                {v.icon} {v.label}
+              </button>
+            );
+          })}
+          {mainView === 'map' && lineProdData?.sessions?.some(s => s.status === 'open') && (
+            <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>· 📊 Heijunka กำลังผลิตอยู่ กดดูได้</span>
+          )}
+        </div>
+
+        {mainView === 'heijunka' && (
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
+        {!lineProdData && <div style={{ padding: 20, color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีข้อมูลการผลิตของไลน์นี้</div>}
         {/* ── Mini Heijunka board ── */}
         {lineProdData && (() => {
           const HOURS = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
@@ -1149,6 +1176,7 @@ export default function Management() {
           const ctByMatNo = lineProdData.ctByMatNo || {};
           const nameByMatNo = lineProdData.nameByMatNo || {};
           const imgByMatNo = lineProdData.imgByMatNo || {};
+          const pairMatByMat = lineProdData.pairMatByMat || {};
           const breakPolicies = lineProdData.breakPolicies || [];
           const getBreakIntervals = (half) => breakPolicies
             .filter(p => p.shift === 'both' || (p.shift === 'day' && half.key === 'am') || (p.shift === 'night' && half.key === 'pm'))
@@ -1366,9 +1394,19 @@ export default function Management() {
           // ทั้งที่ไลน์ไม่ parallel) · แยกคิวเฉพาะคนละ sub-line (คนละเครื่องจริง วิ่งขนานได้)
           const positionedByOrder = new Map();
           {
-            const byLine = {};
-            productRows.forEach(r => r.cards.forEach(c => { (byLine[c.line_name || ''] ||= []).push(c); }));
-            Object.values(byLine).forEach(cs => {
+            // งานคู่ RH/LH (pair_mat_no ใน Product Master) ปั๊มด้วยแม่พิมพ์คู่ = ทำพร้อมกัน (parallel)
+            // → คู่ที่มีทั้งสองพาร์ทในไลน์เดียวกันแยกเป็นเลนของตัวเอง คนละคิว เริ่มพร้อมกัน แถบจึงตรงกัน
+            // (พาร์ทไม่มีคู่ยังรวมคิวไลน์เดียวเรียงต่อกัน — 1 ไลน์ทีละใบ · 2026-07-21)
+            const matsInLine = {};
+            productRows.forEach(r => r.cards.forEach(c => { (matsInLine[c.line_name || ''] ||= new Set()).add(c.mat_no); }));
+            const laneKeyOf = (c) => {
+              const line = c.line_name || '';
+              const pm = pairMatByMat[c.mat_no];
+              return (pm && matsInLine[line]?.has(pm)) ? `${line}||${c.mat_no}` : line;
+            };
+            const byLane = {};
+            productRows.forEach(r => r.cards.forEach(c => { (byLane[laneKeyOf(c)] ||= []).push(c); }));
+            Object.values(byLane).forEach(cs => {
               computeQueuedPositionsFull(cs).forEach(item => positionedByOrder.set(item.o.id ?? item.o.prod_no, item));
             });
           }
@@ -1384,6 +1422,7 @@ export default function Management() {
             if (o.status === 'open') openByMatNo[o.mat_no] = (openByMatNo[o.mat_no] || 0) + 1;
           }));
           const matNoChips = Object.entries(openByMatNo);
+          const openCount = matNoChips.reduce((a, [, n]) => a + n, 0);
 
           // ── Smart planner: คาดการณ์เวลาเสร็จ + คำแนะนำ OT (logic เดียวกับ Dashboard) ──
           // กะเช้า: OT ต่อท้ายกะ (เลิก 17:30, OT ถึง 20:00) · กะดึก: OT อยู่หัวกะ (เข้าปกติ 22:30, เปิด OT = เข้า 20:00)
@@ -1472,24 +1511,6 @@ export default function Management() {
             return chips;
           })();
           const todayWd = getWorkDate();
-          // มือถือ + พับอยู่: แถบสรุปบรรทัดเดียว แตะเพื่อกางบอร์ด (desktop ไม่มีโหมดพับ — เหมือนเดิม)
-          if (isMobile && !mobileBoardOpen) {
-            return (
-              <button onClick={toggleMobileBoard} style={{
-                width: '100%', marginBottom: 10, padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
-                background: 'var(--card)', textAlign: 'left',
-                border: `1px solid ${totalDelayed > 0 ? 'rgba(239,68,68,0.45)' : hasOpen ? 'rgba(34,197,94,0.35)' : 'var(--border2)'}`,
-                display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
-              }}>
-                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>📊 Heijunka — {selectedLine}</span>
-                {totalDelayed > 0
-                  ? <span style={{ fontSize: 12, fontWeight: 800, color: '#ef4444' }}>⚠️ ดีเลย์ {totalDelayed} ใบ</span>
-                  : <span style={{ fontSize: 12, fontWeight: 700, color: hasOpen ? '#22c55e' : 'var(--muted)' }}>{hasOpen ? '● Live' : '✓ ปิดกะแล้ว'}</span>}
-                {isHistorical && <span style={{ fontSize: 11, color: '#a855f7', fontWeight: 700 }}>📅 {boardDate}</span>}
-                <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>▸ แตะเพื่อดูบอร์ด</span>
-              </button>
-            );
-          }
           const shiftBoardDate = (days) => {
             const d = new Date(`${boardDate}T12:00:00`);
             d.setDate(d.getDate() + days);
@@ -1543,12 +1564,6 @@ export default function Management() {
                     <button className="tbtn" onClick={() => setShowLegendMobile(v => !v)} title="สัญลักษณ์สถานะการ์ด"
                       style={{ padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: showLegendMobile ? 'var(--accent-dim)' : 'var(--bg)', border: `1px solid ${showLegendMobile ? 'var(--accent)' : 'var(--border)'}`, color: showLegendMobile ? 'var(--accent)' : 'var(--text2)' }}>
                       ℹ️
-                    </button>
-                  )}
-                  {isMobile && (
-                    <button className="tbtn" onClick={toggleMobileBoard} title="พับบอร์ด"
-                      style={{ padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>
-                      ▾ พับ
                     </button>
                   )}
                 </div>
@@ -1802,7 +1817,10 @@ export default function Management() {
             </div>
           );
         })()}
+        </div>
+        )}
 
+        {mainView === 'map' && (<>
         {/* PPE alarm — เช็คชื่อแล้วแต่ PPE ไม่ครบ: ไม่เข้า pool จึงไม่โผล่บนผัง ต้องมีแถบกระพริบเตือนแทน */}
         {ppeAlertsInView.length > 0 && (
           <div className="dt-alarm-banner" style={{ border: '1px solid rgba(239,68,68,0.45)', borderRadius: 10, padding: '8px 12px', marginBottom: 8, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -2239,6 +2257,7 @@ export default function Management() {
             </div>
           )}
         </div>
+        </>)}
       </div>
 
       {/* ── Mobile FAB 4M ── */}
@@ -2319,7 +2338,7 @@ export default function Management() {
 
       {/* ── Mobile fit popup (after assign) ── */}
       {isMobile && fitPopup && (
-        <div style={{ position: 'fixed', top: 16, left: 16, right: 16, zIndex: 1000, background: 'var(--card)', border: `2px solid ${fitColor(fitPopup.fit.score)}`, borderRadius: 14, padding: '14px 16px', boxShadow: 'var(--shadow-lg)', animation: 'hoverIn 0.25s ease' }}>
+        <div style={{ position: 'fixed', top: 56, left: 16, right: 16, zIndex: 1150, background: 'var(--card)', border: `2px solid ${fitColor(fitPopup.fit.score)}`, borderRadius: 14, padding: '14px 16px', boxShadow: 'var(--shadow-lg)', animation: 'hoverIn 0.25s ease' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <img src={fitPopup.worker.employees?.image_url || ''} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fitColor(fitPopup.fit.score)}`, flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
