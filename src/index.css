@@ -275,6 +275,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
 /* Ultra-wide / TV 1920px+ */
 @media (min-width: 1920px) {
+  :root { --sidebar-w: var(--sidebar-w-tv); } /* TV: sidebar 280px — main margin ตามผ่าน var อัตโนมัติ */
   html, body { font-size: 18px; }
   .nav-link { font-size: 16px; padding: 12px 16px; gap: 13px; }
   th { font-size: 13px; padding: 13px 18px; }

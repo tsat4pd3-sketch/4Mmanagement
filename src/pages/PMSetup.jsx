@@ -110,7 +110,7 @@ const S = {
   },
   overlay: {
     position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
-    zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+    zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
   },
   modal: {
     background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 12,

@@ -241,7 +241,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
   // มือถือ ≤768px: บอร์ดครึ่งวัน (12 ชม.) เลื่อนแนวนอนได้ + ป้ายซ้าย sticky (desktop เต็มจอเดียวเหมือนเดิม)
   const isMobile = useIsMobile();
   const LEFT_W = isMobile ? 96 : 130;
-  const stickyL = (bg) => isMobile ? { position: 'sticky', left: 0, zIndex: 2, background: bg } : null;
+  const stickyL = (bg) => isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: bg } : null; // z6 เหนือ playhead
   // ยึด grid กับ workDate ที่เลือก (ไม่ใช่วันปฏิทินปัจจุบัน) — ช่วง 00:00–07:59 กะดึกยังอยู่ในกรอบวันงานเดิม
   const gridStartMs = dayFrameMs(workDate).startMs;
   const pctPerMs = 100 / (12 * 3600000);
