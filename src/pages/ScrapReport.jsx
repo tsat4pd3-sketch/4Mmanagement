@@ -115,12 +115,19 @@ export default function ScrapReport() {
     return sapOptions.filter(o => [o.mat_no, o.part_no, o.part_name].some(v => (v || '').toLowerCase().includes(q))).slice(0, 12);
   }, [sapOptions, sapSearch]);
 
-  /* ── สร้างเลขเอกสาร running รายวัน ── */
+  /* ── สร้างเลขเอกสาร running รายเดือน ── */
   const nextDocNo = async (date) => {
     const ym = date.slice(0, 7).replace('-', '');
-    const { count } = await supabaseDR.from('scrap_reports').select('id', { count: 'exact', head: true })
-      .gte('report_date', date.slice(0, 8) + '01').lte('report_date', date);
-    const running = (count || 0) + 1;
+    // ใช้ "เลขสูงสุดที่มีในเดือน + 1" ไม่ใช่ count(ถึงวันนี้)+1 — กันเลขชนเมื่อลงใบย้อนวัน
+    // (count ถึงวันที่ย้อนหลังจะได้เลขที่ออกไปแล้ว = ซ้ำ) · เทียบทั้งเดือนจาก doc_no ที่มีอยู่จริง
+    const [y, mo] = date.slice(0, 7).split('-').map(Number);
+    const monthStart = `${date.slice(0, 7)}-01`;
+    const nextMonth = mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, '0')}-01`;
+    const { data } = await supabaseDR.from('scrap_reports').select('doc_no')
+      .gte('report_date', monthStart).lt('report_date', nextMonth);
+    let maxSeq = 0;
+    (data || []).forEach(r => { const m = /TSAT4-PDX\s+(\d+)/.exec(r.doc_no || ''); if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10)); });
+    const running = maxSeq + 1;
     return `TSAT4-PDX ${String(running).padStart(4, '0')}/${ym.slice(4)}-${ym.slice(2, 4)}`;
   };
 
@@ -212,8 +219,10 @@ export default function ScrapReport() {
       if (error) { toast.error(error.message); return; }
       repId = data.id;
     }
-    // replace items ทั้งชุด
-    await supabaseDR.from('scrap_report_items').delete().eq('report_id', repId);
+    // replace items ทั้งชุด — เช็ค error ของ delete ก่อน insert ใหม่
+    // (ถ้า delete ล้มแล้วปล่อยผ่าน อาจได้ item ซ้ำ · ถ้า insert ล้มหลัง delete สำเร็จ รายการหายหมด — เตือนให้กดบันทึกใหม่)
+    const { error: eDel } = await supabaseDR.from('scrap_report_items').delete().eq('report_id', repId);
+    if (eDel) { toast.error('ลบรายการเดิมไม่สำเร็จ: ' + eDel.message); return; }
     if (items.length) {
       const rows = items.map((it, i) => ({
         report_id: repId, seq: i + 1, source: it.source, part_no: it.part_no || null, part_name: it.part_name || null,

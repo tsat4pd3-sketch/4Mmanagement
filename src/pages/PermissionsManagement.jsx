@@ -14,6 +14,8 @@ const PAGE_GROUPS = [
     pages: [
       { key: 'page:/',            label: 'หน้าหลัก' },
       { key: 'page:/dashboard',   label: 'Dashboard' },
+      { key: 'page:/factory-map', label: 'ผังรวมโรงงาน' },
+      { key: 'page:/remote',      label: 'รีโมทจอ' },
     ],
   },
   {
@@ -26,6 +28,8 @@ const PAGE_GROUPS = [
       { key: 'page:/morning-meeting', label: 'ประชุมแถวเช้า' },
       { key: 'page:/improvements', label: 'Improvements (Kaizen)' },
       { key: 'page:/oee-analytics', label: 'OEE' },
+      { key: 'page:/production-plan', label: 'วางแผนการผลิต' },
+      { key: 'page:/lpa',          label: 'Layer Process Audit (LPA)' },
     ],
   },
   {
@@ -47,6 +51,7 @@ const PAGE_GROUPS = [
       { key: 'page:/pm-schedule', label: 'แผน PM อุปกรณ์เครื่องจักร' },
       { key: 'page:/pm-setup',    label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร' },
       { key: 'page:/mtn-layout',  label: 'ผังเครื่องจักร (ซ่อมบำรุง)' },
+      { key: 'page:/pm-forecast', label: 'PM ล่วงหน้า (Planner)' },
     ],
   },
   {
@@ -54,6 +59,7 @@ const PAGE_GROUPS = [
     pages: [
       { key: 'page:/qa',       label: 'Quality Control Center' },
       { key: 'page:/qa-setup', label: 'มาตรฐานการตรวจ & Drawing' },
+      { key: 'page:/scrap-report', label: 'ใบรายงานของเสีย' },
     ],
   },
   {
@@ -69,12 +75,15 @@ const PAGE_GROUPS = [
       { key: 'page:/org-setup',         label: 'แผนผังองค์กร' },
       { key: 'page:/register',          label: 'เพิ่มพนักงาน' },
       { key: 'page:/operator',          label: 'ฐานข้อมูลพนักงาน' },
+      { key: 'page:/skills-report',     label: 'รายงานทักษะพนักงาน' },
+      { key: 'page:/ojt-training',      label: 'ใบอบรม OJT' },
       { key: 'page:/products',          label: 'Product Master' },
       { key: 'page:/linesetup',         label: 'ตั้งค่าผังไลน์' },
       { key: 'page:/machine-database',  label: 'ฐานข้อมูลเครื่องจักร' },
       { key: 'page:/shift-organize',    label: 'ตารางกะ' },
       { key: 'page:/company-calendar',  label: 'ปฏิทินบริษัท' },
       { key: 'page:/notification-config', label: 'ตั้งค่าการแจ้งเตือน' },
+      { key: 'page:/doc-forms',         label: 'ทะเบียนเอกสาร & ฟอร์ม' },
       { key: 'page:/add-user',          label: 'จัดการผู้ใช้งาน' },
       { key: 'page:/permissions',       label: 'จัดการสิทธิ์ (หน้านี้)' },
     ],

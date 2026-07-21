@@ -333,7 +333,16 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       await supabaseDR.from('ship_to_plants')
         .upsert(edi.shipTos.map(c => ({ code: c, customer_name: c })), { onConflict: 'code', ignoreDuplicates: true });
       if (edi.kind === 'forecast') {
-        const { error: eDel } = await supabaseDR.from('customer_forecasts').delete().eq('source', 'edi_830').in('customer', edi.shipTos);
+        // ลบ forecast เดิม "เฉพาะช่วงเดือนที่ไฟล์นี้ครอบคลุม" ไม่ใช่ลบทั้งหมด —
+        // เดิมลบ edi_830 ทุกเดือน ถ้าไฟล์ใหม่ horizon สั้นกว่า เดือนที่เลยช่วงจะหายถาวร (bounded เหมือน path 862)
+        const months = edi.records.map(r => r.date).filter(Boolean);
+        let delQ = supabaseDR.from('customer_forecasts').delete().eq('source', 'edi_830').in('customer', edi.shipTos);
+        if (months.length) {
+          const minM = months.reduce((a, b) => (a < b ? a : b));
+          const maxM = months.reduce((a, b) => (a > b ? a : b));
+          delQ = delQ.gte('period_month', minM).lte('period_month', maxM);
+        }
+        const { error: eDel } = await delQ;
         if (eDel) throw eDel;
         const recs = edi.records.map(r => ({
           batch_id: batch.id, customer: r.shipTo, mat_no: r.mat_no, part_name: r.part_name,
