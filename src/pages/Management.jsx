@@ -954,15 +954,6 @@ export default function Management() {
   const ppeAlertsInView = ppeAlerts.filter(p => p.employees?.line_id != null && viewLineFamilyIds.has(p.employees.line_id));
 
   /* ── Layout ── */
-  // 🔔 (fixed มุมขวาบน · App.jsx) เลื่อนลงเสมอกับขอบบนตู้ Heijunka เฉพาะหน้านี้ (desktop) ผ่าน CSS var
-  //   → 🔔 + ปุ่มกรองด้านล่าง เป็นคอลัมน์เดียวเรียงตรงกัน · หน้าอื่นไม่ตั้ง = 🔔 อยู่บนสุดเหมือนเดิม
-  const BELL_TOP = 58; // px — ระดับขอบบนตู้บอร์ด (main pt14 + canvas pt10 + แถบสลับมุมมอง ~34)
-  useEffect(() => {
-    if (isMobile) { document.documentElement.style.removeProperty('--esm-bell-top'); return; }
-    document.documentElement.style.setProperty('--esm-bell-top', `${BELL_TOP}px`);
-    return () => document.documentElement.style.removeProperty('--esm-bell-top');
-  }, [isMobile]);
-
   const poolW = isMobile ? '100%' : panelCollapsed ? 0 : isUltra ? 280 : isWide ? 248 : 220;
   const poolStyle = isMobile
     ? { width: '100%', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', padding: '10px 12px', flexShrink: 0, maxHeight: '42vh', display: 'flex', flexDirection: 'column' }
@@ -1036,14 +1027,16 @@ export default function Management() {
     </div>
   );
 
+  // desktop: marginTop -14 ล้าง paddingTop ของ main → แถบ pool/ผัง เต็มจอเสมอ ขอบบน-ล่างไม่ตัดกลางอากาศ (เนี๊ยบเท่า sidebar)
+  // · board box จึงเริ่มที่ ~top10 → 🔔 (top10) เสมอขอบบนตู้พอดี
   return (
-    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: 'calc(100vh - 80px)', background: 'var(--bg)', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: isMobile ? 'calc(100vh - 14px)' : '100vh', marginTop: isMobile ? 0 : -14, background: 'var(--bg)', overflow: 'hidden' }}>
       <DowntimeSiren mode="open_15min" />
 
-      {/* ── ปุ่มกรอง (desktop) — คอลัมน์ต่อจาก 🔔 ตรงกันเป๊ะ (right:14 เท่า 🔔, เริ่มใต้ 🔔 = BELL_TOP+44)
+      {/* ── ปุ่มกรอง (desktop) — คอลัมน์ต่อจาก 🔔 ตรงกันเป๊ะ (right:14 เท่า 🔔, เริ่มใต้ 🔔 ที่ top10+h36+gap8=54)
           🔔 + กรอง = คอลัมน์เดียวเรียงตรงกัน เสมอขอบบนตู้ Heijunka · board เว้น paddingRight ไม่ทับ */}
       {!isMobile && (
-        <div style={{ position: 'fixed', top: BELL_TOP + 44, right: 14, zIndex: 1200,
+        <div style={{ position: 'fixed', top: 54, right: 14, zIndex: 1200,
           display: 'flex', flexDirection: 'column', gap: 6 }}>
           {renderFilters('column')}
         </div>
