@@ -944,56 +944,7 @@ export default function Management() {
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: 'calc(100vh - 80px)', background: 'var(--bg)', overflow: 'hidden' }}>
       <DowntimeSiren mode="open_15min" />
 
-      {/* MAN / MACHINE / WIP status filters — fixed, sit just left of the global notification bell */}
-      <div style={{ position: 'fixed', top: 10, right: 58, zIndex: 1200, display: 'flex', gap: 6 }}>
-        {STATUS_FILTERS.map(f => (
-          <button
-            key={f.key}
-            onClick={f.toggle}
-            title={f.title}
-            style={{
-              position: 'relative',
-              width: 36, height: 36, borderRadius: 8,
-              background: f.on ? `${f.color}38` : 'var(--bg3)',
-              border: f.on ? `1px solid ${f.color}` : '1px solid var(--border2)',
-              color: f.on ? f.color : 'var(--text2)', fontSize: 16,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', boxShadow: 'var(--shadow-sm)',
-            }}
-          >
-            {f.icon}
-            {f.count > 0 && (
-              <span style={{
-                position: 'absolute', top: -4, right: -4,
-                background: f.color, color: '#fff',
-                fontSize: 11, fontWeight: 800,
-                minWidth: 18, height: 18, borderRadius: 9,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                padding: '0 3px', lineHeight: 1,
-              }}>
-                {f.count > 99 ? '99+' : f.count}
-              </span>
-            )}
-          </button>
-        ))}
-        {/* ป้ายชื่อทุกชนิดจุด (คน/เครื่องจักร/WIP) — โชว์/ซ่อน อย่างเดียว label บอก action ที่จะเกิดเมื่อกด
-            (ป้ายเตือน alarm/ต่ำกว่า min โชว์เสมอแม้ซ่อนป้าย) */}
-        <button
-          onClick={() => setShowPills(v => !v)}
-          title={'แสดง/ซ่อนป้ายชื่อทุกจุดบนผัง (คน/เครื่องจักร/WIP)\nป้ายเตือน (เครื่อง Downtime / WIP ต่ำกว่า min) แสดงเสมอ'}
-          style={{
-            height: 36, borderRadius: 8, padding: '0 10px',
-            background: showPills ? 'rgba(148,163,184,0.28)' : 'var(--bg3)',
-            border: showPills ? '1px solid #94a3b8' : '1px solid var(--border2)',
-            color: showPills ? 'var(--text)' : 'var(--text2)',
-            fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-            cursor: 'pointer', boxShadow: 'var(--shadow-sm)',
-          }}
-        >
-          {showPills ? '🏷️ ซ่อนป้าย' : '🏷️ โชว์ป้าย'}
-        </button>
-      </div>
+      {/* MAN/MACHINE/WIP filters ย้ายไปอยู่ใน toolbar สลับมุมมอง (เดิม position:fixed ลอยทับหัวบอร์ด Heijunka) */}
 
       {/* ── Pool Panel ── */}
       <div style={poolStyle}>
@@ -1134,8 +1085,9 @@ export default function Management() {
         )}
 
 
-        {/* ── สลับมุมมอง: ผังไลน์+คน / Heijunka (ดูทีละมุมเต็มพื้นที่ ไม่ถูกบีบ/ย่อ) ── */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
+        {/* ── สลับมุมมอง: ผังไลน์+คน / Heijunka (ดูทีละมุมเต็มพื้นที่ ไม่ถูกบีบ/ย่อ) ──
+            paddingRight: 52 = เว้นที่ให้ 🔔 (fixed top-right) ไม่ทับปุ่มขวาสุด */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center', paddingRight: 52 }}>
           {[{ k: 'map', icon: '🗺️', label: 'ผังไลน์ + คน' }, { k: 'heijunka', icon: '📊', label: 'Heijunka' }].map(v => {
             const active = mainView === v.k;
             return (
@@ -1148,6 +1100,55 @@ export default function Management() {
           {mainView === 'map' && lineProdData?.sessions?.some(s => s.status === 'open') && (
             <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>· 📊 Heijunka กำลังผลิตอยู่ กดดูได้</span>
           )}
+          {/* MAN / MACHINE / WIP filters + โชว์/ซ่อนป้าย — in-flow ชิดขวา (เดิมลอย fixed แล้วทับหัวบอร์ด) */}
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+            {STATUS_FILTERS.map(f => (
+              <button
+                key={f.key}
+                onClick={f.toggle}
+                title={f.title}
+                style={{
+                  position: 'relative',
+                  width: 36, height: 36, borderRadius: 8,
+                  background: f.on ? `${f.color}38` : 'var(--bg3)',
+                  border: f.on ? `1px solid ${f.color}` : '1px solid var(--border2)',
+                  color: f.on ? f.color : 'var(--text2)', fontSize: 16,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', boxShadow: 'var(--shadow-sm)',
+                }}
+              >
+                {f.icon}
+                {f.count > 0 && (
+                  <span style={{
+                    position: 'absolute', top: -4, right: -4,
+                    background: f.color, color: '#fff',
+                    fontSize: 11, fontWeight: 800,
+                    minWidth: 18, height: 18, borderRadius: 9,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: '0 3px', lineHeight: 1,
+                  }}>
+                    {f.count > 99 ? '99+' : f.count}
+                  </span>
+                )}
+              </button>
+            ))}
+            {/* ป้ายชื่อทุกชนิดจุด (คน/เครื่องจักร/WIP) — โชว์/ซ่อน (ป้ายเตือน alarm/ต่ำกว่า min โชว์เสมอ) */}
+            <button
+              onClick={() => setShowPills(v => !v)}
+              title={'แสดง/ซ่อนป้ายชื่อทุกจุดบนผัง (คน/เครื่องจักร/WIP)\nป้ายเตือน (เครื่อง Downtime / WIP ต่ำกว่า min) แสดงเสมอ'}
+              style={{
+                height: 36, borderRadius: 8, padding: '0 10px',
+                background: showPills ? 'rgba(148,163,184,0.28)' : 'var(--bg3)',
+                border: showPills ? '1px solid #94a3b8' : '1px solid var(--border2)',
+                color: showPills ? 'var(--text)' : 'var(--text2)',
+                fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                cursor: 'pointer', boxShadow: 'var(--shadow-sm)',
+              }}
+            >
+              {showPills ? '🏷️ ซ่อนป้าย' : '🏷️ โชว์ป้าย'}
+            </button>
+          </div>
         </div>
 
         {mainView === 'heijunka' && (
