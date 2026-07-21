@@ -53,13 +53,26 @@ const METRICS = {
     text: s => s.ng > 0 ? `NG ${s.ng}` : (s.hasOpen ? 'NG 0' : ''),
     cat: s => !s.hasOpen && s.ng === 0 ? 'idle' : s.ng === 0 ? 'good' : s.ng < 20 ? 'ok' : 'bad',
   },
+  manpower: {
+    label: '👷 คน/เข้างาน', worstFirst: false,
+    value: s => s.headTotal > 0 ? Math.round(s.present / s.headTotal * 100) : null,
+    text: s => s.headTotal > 0 ? `${s.present}/${s.headTotal} คน${s.ppeBad ? ` · ⚠PPE ${s.ppeBad}` : ''}` : '',
+    cat: s => s.headTotal === 0 ? 'idle' : (() => { const p = s.present / s.headTotal * 100; return p >= 95 ? 'good' : p >= 80 ? 'ok' : 'bad'; })(),
+  },
+  pm: {
+    label: '🛠️ PM เครื่องจักร', worstFirst: true, desc: true,
+    value: s => s.pmTotal ? s.pmOverdue * 1000 + s.pmDueSoon : null,   // overdue สำคัญกว่า due-soon เสมอ
+    text: s => s.pmTotal ? (s.pmOverdue ? `⚠ เกินกำหนด ${s.pmOverdue}` : s.pmDueSoon ? `ใกล้ครบ ${s.pmDueSoon}` : `PM ปกติ (${s.pmTotal})`) : '',
+    cat: s => !s.pmTotal ? 'idle' : s.pmOverdue ? 'bad' : s.pmDueSoon ? 'ok' : 'good',
+  },
 };
 
 const round = (v) => Math.round(v * 100) / 100;
 const centroid = (pts) => pts.length
   ? [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length]
   : [50, 50];
-const EMPTY_ST = { actual: 0, target: 0, hasOpen: false, oee: null, dtMin: 0, dtActive: false, ng: 0 };
+const EMPTY_ST = { actual: 0, target: 0, hasOpen: false, oee: null, dtMin: 0, dtActive: false, ng: 0,
+  headTotal: 0, present: 0, ppeBad: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0 };
 
 export default function FactoryMap() {
   const { role } = useContext(UserContext);
@@ -68,7 +81,9 @@ export default function FactoryMap() {
   const [imageUrl, setImageUrl] = useState(null);
   const [mapId, setMapId] = useState(null);
   const [regions, setRegions] = useState([]);
-  const [lineStatus, setLineStatus] = useState({});
+  const [lineStatus, setLineStatus] = useState({});   // production metrics (DR)
+  const [manpower, setManpower] = useState({});        // คน/เข้างาน (Main)
+  const [pmStatus, setPmStatus] = useState({});        // PM เครื่องจักร (DR)
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -141,12 +156,60 @@ export default function FactoryMap() {
   }, []);
   useEffect(() => { loadStatus(); const t = setInterval(loadStatus, 30000); return () => clearInterval(t); }, [loadStatus]);
 
-  const stOf = (name) => lineStatus[name] || EMPTY_ST;
+  /* ── manpower รายไลน์ (Main: employees + daily_production_logs วันนี้) — refresh 60 วิ ── */
+  const loadManpower = useCallback(async () => {
+    const workDate = getWorkDate();
+    const [{ data: emps }, { data: pls }, { data: logs }] = await Promise.all([
+      supabase.from('employees').select('id, line_id').eq('is_active', true),
+      supabase.from('production_lines').select('id, name'),
+      supabase.from('daily_production_logs').select('employee_id, is_present, has_helmet, has_boots, has_gloves').eq('work_date', workDate),
+    ]);
+    const lineOfId = {}; (pls || []).forEach(l => { lineOfId[l.id] = l.name; });
+    const empLine = {}; (emps || []).forEach(e => { empLine[e.id] = lineOfId[e.line_id]; });
+    const logMap = {}; (logs || []).forEach(l => { logMap[l.employee_id] = l; });
+    const out = {};
+    (emps || []).forEach(e => {
+      const ln = empLine[e.id]; if (!ln) return;
+      const o = out[ln] || { headTotal: 0, present: 0, ppeBad: 0 };
+      o.headTotal++;
+      const log = logMap[e.id];
+      if (log?.is_present) { o.present++; if (!(log.has_helmet && log.has_boots && log.has_gloves)) o.ppeBad++; }
+      out[ln] = o;
+    });
+    setManpower(out);
+  }, []);
+  useEffect(() => { loadManpower(); const t = setInterval(loadManpower, 60000); return () => clearInterval(t); }, [loadManpower]);
+
+  /* ── PM เครื่องจักรรายไลน์ (DR: machines → checklists → pm_plans) — refresh 5 นาที ── */
+  const loadPM = useCallback(async () => {
+    const { data: machines } = await supabaseDR.from('machines').select('id, line_name').eq('is_active', true);
+    if (!machines?.length) { setPmStatus({}); return; }
+    const lineOfMachine = {}; machines.forEach(m => { lineOfMachine[m.id] = m.line_name; });
+    const { data: cls } = await supabaseDR.from('checklists').select('id, equipment_id').eq('module', 'mtn').in('equipment_id', machines.map(m => m.id));
+    if (!cls?.length) { setPmStatus({}); return; }
+    const lineOfChecklist = {}; (cls || []).forEach(c => { lineOfChecklist[c.id] = lineOfMachine[c.equipment_id]; });
+    const { data: plans } = await supabaseDR.from('pm_plans').select('checklist_id, next_due_date').eq('is_active', true).in('checklist_id', cls.map(c => c.id));
+    const now = new Date(); const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const soon = new Date(now.getTime() + 7 * 864e5); const soonStr = `${soon.getFullYear()}-${String(soon.getMonth() + 1).padStart(2, '0')}-${String(soon.getDate()).padStart(2, '0')}`;
+    const out = {};
+    (plans || []).forEach(p => {
+      const ln = lineOfChecklist[p.checklist_id]; if (!ln) return;
+      const o = out[ln] || { pmTotal: 0, pmOverdue: 0, pmDueSoon: 0 };
+      o.pmTotal++;
+      if (p.next_due_date && p.next_due_date < today) o.pmOverdue++;
+      else if (p.next_due_date && p.next_due_date <= soonStr) o.pmDueSoon++;
+      out[ln] = o;
+    });
+    setPmStatus(out);
+  }, []);
+  useEffect(() => { loadPM(); const t = setInterval(loadPM, 300000); return () => clearInterval(t); }, [loadPM]);
+
+  const stOf = (name) => ({ ...EMPTY_ST, ...(lineStatus[name] || {}), ...(manpower[name] || {}), ...(pmStatus[name] || {}) });
   const catColor = (name) => CAT[M.cat(stOf(name))];
 
   // side panel: ไลน์ที่มีกะวันนี้ ∪ ไลน์ที่ตีกรอบไว้ — เรียงตาม metric (ปัญหาขึ้นบน)
   const ranked = useMemo(() => {
-    const names = new Set([...Object.keys(lineStatus), ...regions.map(r => r.line_name)]);
+    const names = new Set([...Object.keys(lineStatus), ...Object.keys(manpower), ...Object.keys(pmStatus), ...regions.map(r => r.line_name)]);
     const arr = [...names].map(name => ({ name, st: stOf(name), val: M.value(stOf(name)), cat: M.cat(stOf(name)) }));
     arr.sort((a, b) => {
       const av = a.val, bv = b.val;
@@ -155,7 +218,7 @@ export default function FactoryMap() {
       return M.desc ? bv - av : av - bv;
     });
     return arr;
-  }, [lineStatus, regions, metric]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lineStatus, manpower, pmStatus, regions, metric]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── อัปโหลดรูปผัง (บีบเบา 2560/2.5MB/q0.9) ── */
   const handleUpload = async (e) => {
@@ -323,6 +386,8 @@ export default function FactoryMap() {
           <div ref={wrapRef} onClick={onMapClick} onPointerMove={onMapMove} onPointerUp={endDrag} onPointerCancel={endDrag}
             style={{ position: 'relative', ...wrapStyle, maxHeight: 'calc(100vh - 200px)', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f' }}>
             <img src={imageUrl} alt="ผังโรงงาน" onLoad={onImgLoad} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none', userSelect: 'none' }} />
+            {/* scrim: หรี่ภาพลงนิดให้กรอบสี+ป้ายเด่น (ไม่งั้นจมไปกับผัง) */}
+            <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.32)', pointerEvents: 'none' }} />
 
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
               {regions.map(r => {
@@ -345,15 +410,17 @@ export default function FactoryMap() {
               <div key={`d-${i}`} style={{ position: 'absolute', left: `${pt[0]}%`, top: `${pt[1]}%`, width: i === 0 ? (snapFirst ? 22 : 16) : 11, height: i === 0 ? (snapFirst ? 22 : 16) : 11, transform: 'translate(-50%,-50%)', borderRadius: '50%', background: i === 0 ? (snapFirst ? 'rgba(34,197,94,0.35)' : 'rgba(77,159,255,0.3)') : '#4d9fff', border: `2px solid ${i === 0 ? '#22c55e' : '#fff'}`, pointerEvents: 'none', transition: 'width .1s,height .1s' }} />
             ))}
 
-            {/* ป้าย: ชื่อ + ค่า metric ที่ centroid + จุดแดงถ้า downtime ค้าง (โชว์เสมอทุก metric) */}
+            {/* ป้าย = การ์ดทึบมีขอบสีสถานะ (อ่านออกทุกพื้นหลัง) + จุดแดงถ้า downtime ค้าง */}
             {regions.map(r => {
               const [cx, cy] = centroid(r.points); const st = stOf(r.line_name); const meta = CAT[M.cat(st)]; const txt = M.text(st);
               return (
-                <div key={`lbl-${r.id}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%,-50%)', textAlign: 'center', pointerEvents: 'none', textShadow: '0 1px 4px rgba(0,0,0,0.95)' }}>
-                  <div style={{ fontSize: 'clamp(11px,1.05vw,15px)', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap' }}>
-                    {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{r.line_name}
+                <div key={`lbl-${r.id}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%,-50%)', pointerEvents: 'none' }}>
+                  <div style={{ background: 'rgba(9,11,18,0.86)', border: `2px solid ${meta.color}`, borderRadius: 8, padding: '3px 9px', textAlign: 'center', boxShadow: '0 3px 10px rgba(0,0,0,0.55)', minWidth: 50 }}>
+                    <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
+                      {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{r.line_name}
+                    </div>
+                    {txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, whiteSpace: 'nowrap', lineHeight: 1.2 }}>{txt}</div>}
                   </div>
-                  {txt && <div style={{ display: 'inline-block', fontSize: 'clamp(10px,0.95vw,13px)', fontWeight: 800, color: meta.color, background: 'rgba(0,0,0,0.72)', padding: '0 6px', borderRadius: 3, marginTop: 2 }}>{txt}</div>}
                 </div>
               );
             })}
@@ -372,30 +439,49 @@ export default function FactoryMap() {
           </div>
           </div>
 
-          {/* ── side panel: จัดอันดับไลน์ตาม metric (ใช้พื้นที่ข้าง) ── */}
-          {!editing && (
-            <aside style={{ flex: '0 0 320px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>{M.label} — จัดอันดับ</div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>{M.desc ? 'มาก→น้อย (ปัญหาขึ้นบน)' : 'น้อย→มาก (ตามหลังขึ้นบน)'} · คลิกเพื่อเน้นบนผัง</div>
+          {/* ── side panel: สรุป + จัดอันดับไลน์ตาม metric (ใช้พื้นที่ข้าง) ── */}
+          {!editing && (() => {
+            const counts = ranked.reduce((a, r) => { a[r.cat] = (a[r.cat] || 0) + 1; return a; }, {});
+            const maxVal = Math.max(1, ...ranked.map(r => (r.val == null ? 0 : Math.abs(r.val))));
+            const isPct = ['productivity', 'oee', 'manpower'].includes(metric);
+            return (
+            <aside style={{ flex: '0 0 340px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>{M.label} — จัดอันดับ</div>
+              {/* สรุปจำนวนไลน์ตามสถานะ */}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                {['bad', 'down', 'ok', 'good', 'idle'].filter(c => counts[c]).map(c => (
+                  <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: CAT[c].color, background: `${CAT[c].color}1a`, border: `1px solid ${CAT[c].color}44`, padding: '3px 9px', borderRadius: 20 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: CAT[c].color }} />{counts[c]} {CAT[c].label}
+                  </span>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{M.desc ? 'มาก → น้อย (ปัญหาขึ้นบน)' : 'น้อย → มาก (ตามหลังขึ้นบน)'} · คลิกแถวเพื่อเน้นบนผัง</div>
               {ranked.length === 0 ? (
-                <div style={{ fontSize: 12, color: 'var(--muted)', padding: 16, textAlign: 'center' }}>ยังไม่มีข้อมูลการผลิตวันนี้</div>
-              ) : ranked.map(({ name, st, cat }) => {
+                <div style={{ fontSize: 12, color: 'var(--muted)', padding: 20, textAlign: 'center' }}>ยังไม่มีข้อมูลวันนี้</div>
+              ) : ranked.map(({ name, st, cat, val }, i) => {
                 const meta = CAT[cat]; const txt = M.text(st); const hasRegion = regions.some(r => r.line_name === name);
+                const barW = val == null ? 0 : isPct ? Math.min(100, Math.abs(val)) : Math.round(Math.abs(val) / maxVal * 100);
                 return (
                   <div key={name} onClick={() => hasRegion && flashLine(name)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 8, marginBottom: 4, cursor: hasRegion ? 'pointer' : 'default', background: highlight === name ? 'var(--bg2)' : 'transparent', border: `1px solid ${highlight === name ? meta.color : 'transparent'}` }}>
-                    <span className={meta.blink ? 'dt-alarm-blink' : undefined} style={{ width: 10, height: 10, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    style={{ padding: '8px 10px', borderRadius: 9, marginBottom: 5, cursor: hasRegion ? 'pointer' : 'default', background: highlight === name ? 'var(--bg2)' : 'var(--bg3)', border: `1px solid ${highlight === name ? meta.color : 'var(--border2)'}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', width: 18, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
+                      <span className={meta.blink ? 'dt-alarm-blink' : undefined} style={{ width: 11, height: 11, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
+                      <div style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {name}{!hasRegion && <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}> · ยังไม่ตีกรอบ</span>}
                       </div>
-                      <div style={{ fontSize: 11, color: meta.color, fontWeight: 700 }}>{txt || '—'}</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: meta.color, whiteSpace: 'nowrap', flexShrink: 0 }}>{txt || '—'}</div>
+                    </div>
+                    {/* แถบเทียบสัดส่วน */}
+                    <div style={{ height: 5, borderRadius: 3, background: 'var(--bg)', marginTop: 6, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${barW}%`, background: meta.color, borderRadius: 3, transition: 'width .3s' }} />
                     </div>
                   </div>
                 );
               })}
             </aside>
-          )}
+            );
+          })()}
         </div>
       )}
 
