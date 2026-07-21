@@ -5,6 +5,7 @@
 
 อัพเดทล่าสุด: 2026-07-14 (ใหม่ §5.1 หมุดจุดตรวจใช้ `CalloutPin` — ลูกศรชี้จุดจริง + วงเลขหลบข้าง ไม่บังจุด · §6.5 ห้ามเหลือขอบข้างว่างบน landscape · บอร์ดเวลา: HH:00 + ชิป ⏳ ไม่ระบุเวลา · ปุ่ม 🏷️ โชว์/ซ่อน สองสถานะ · pillMaxW/subPillMaxW · ลำดับจุด คน→เครื่องจักร→WIP · mobile: useIsMobile hook / time board เลื่อนแนวนอนบนมือถือ / mgrid·tbtn / pointer-drag)
 อัพเดท 2026-07-15: §5.1 viewer วางจุดต้องซูมได้ (default เต็มความกว้างกรอบ ไม่ใช่ขนาดไฟล์)
+อัพเดท 2026-07-21: ใหม่ §5.3 dropdown ลำดับชั้นองค์กรต้อง cascade + ล้างตัวลูกเมื่อเปลี่ยนตัวแม่
 
 ---
 
@@ -167,6 +168,23 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 - เพิ่ม Part ฝั่ง QA → ดึงจาก `dr_products` + `bom_items` (ดู `QAInspectionSetup.jsx`)
 - เพิ่มอุปกรณ์ฝั่ง PM → ดึงจาก machine master (ดู `PMSetup.jsx` addMode workstation)
 - รูปชิ้นงานที่อัพไว้ใน Product Master (`dr_products.image_url`) ให้ดึงมาแสดงซ้ำได้เลย ไม่อัพใหม่
+
+## 5.3 Dropdown ลำดับชั้นองค์กร ต้อง cascade เสมอ (2026-07-21 — คำสั่ง user)
+
+ทุกชุด select ที่ไล่ระดับ **Section → แผนก/Dept → Group/Line → Team** (ทั้ง filter bar และฟอร์มใน modal):
+
+1. **ตัวเลือกของตัวลูกต้องถูกกรองด้วยตัวแม่ที่เลือกอยู่** — ห้ามโชว์ list แบนรวมทุก section:
+   - แผนกจาก `org_nodes`: กรองด้วย `parent_id` ของ section node (ต้อง select `parent_id` มาด้วย —
+     บั๊กจริงที่เคยเกิด: hook ดึงแค่ `code, name` เลย cascade ไม่ได้ทั้งหน้า Report 5 จุด)
+   - Line จากแผนก: `l.name === department || l.parent_line_name === department` (สูตร Register)
+   - Line จาก section: `l.section === section`
+2. **เปลี่ยนตัวแม่ = ล้างค่าตัวลูกที่เลือกค้าง** (`setChild('')`) — ไม่งั้นค่าค้างนอก scope กรองแล้วได้ผลว่างเปล่า ผู้ใช้งงว่าข้อมูลหาย
+3. ตัวเลือกที่มาจากข้อมูลจริง (เช่น distinct จาก employees) ให้กรองตามตัวแม่ก่อนค่อย distinct — ได้ตัวเลือกที่ match แถวจริงเสมอ + ไม่มีชื่อซ้ำข้าม section
+4. ข้อยกเว้น (ตั้งใจไม่ cascade): ฟอร์ม**กำหนด scope ของ user** (AddUser — เลือกหลาย section + line อิสระ) และ toggle เลือก "section หรือ line อย่างใดอย่างหนึ่ง" (ShiftOrganize merge)
+
+ต้นแบบที่ถูก: `Register.jsx` (ฟอร์ม), `OEEAnalytics.jsx` TargetDashboard (filter bar — มี comment "Cascading Section → Department(group) → Line"), `Report.jsx` hook `useOrgDepts` → `deptsOf(section)`, `operator.jsx` (filter bar + modal)
+
+---
 
 ## 6. บอร์ดเวลา (Time boards) — Heijunka / Shipping Chart / Rack Center / Store
 

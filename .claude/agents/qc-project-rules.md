@@ -98,6 +98,10 @@ model: inherit
 - **F6** hover card เฉพาะ `matchMedia('(hover: hover)')` · popup ทุกอันมีทางปิด
 - **F7** playhead ไทม์ไลน์ใช้ `.now-line`/`.now-chip` — ห้ามวาดเส้นเวลาปัจจุบันเองสีอื่น
 - **F9** ลำดับชนิดจุดที่แสดงเรียงกัน (แท็บ/ปุ่ม filter/legend) ต้องเป็น คน → เครื่องจักร → WIP
+- **F10** dropdown ลำดับชั้นองค์กร (Section→แผนก→Line→Team) ต้อง cascade: ตัวเลือกตัวลูกกรองด้วย
+  ตัวแม่ที่เลือก + เปลี่ยนตัวแม่ต้องล้างค่าตัวลูก (ดู UI-CONVENTIONS §5.3) — จับ: select แผนกที่
+  options มาจาก org_nodes ทั้งหมดโดยไม่กรอง parent_id/section · query org_nodes department ที่ไม่ select
+  parent_id · ข้อยกเว้น: AddUser (กำหนด scope), ShiftOrganize merge (section/line ทางเลือก)
   (ลำดับ 4M: Man, Machine, Material) · ปุ่ม 🏷️ ป้ายชื่อ = โชว์/ซ่อน **สองสถานะเท่านั้น** (default โชว์
   ห้ามมีโหมด auto ซ่อนตามความแน่น) คุมทุกชนิดจุด · label บนปุ่มบอก action ที่จะเกิดเมื่อกด
   (Management + LineSetup + MachineFloorMap ต้อง behavior ตรงกัน — WYSIWYG)

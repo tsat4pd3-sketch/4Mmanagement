@@ -218,6 +218,7 @@
 - `production_lines.parent_line_name` = `name` ของ production_line ระดับแผนก (เช่น 'HYDROFORM')
 - Department name ใน org_nodes ต้องตรงกับ parent production_line name เพื่อให้ Register กรอง LINE dropdown ถูก
 - Register.jsx กรอง LINE โดย: `l.name === department || l.parent_line_name === department`
+- **Dropdown ลำดับชั้น (Section→แผนก→Line→Team) ทุกหน้าต้อง cascade + ล้างตัวลูกเมื่อเปลี่ยนตัวแม่** — กฎเต็มดู `docs/UI-CONVENTIONS.md` §5.3 (เพิ่ม 2026-07-21 หลังพบ Report 5 จุด + operator filter bar โชว์แผนกข้าม section)
 
 ---
 
