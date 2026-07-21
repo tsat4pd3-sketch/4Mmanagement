@@ -2,6 +2,7 @@ import { useState, useEffect, useContext, useCallback, useMemo, useRef, Fragment
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
@@ -953,9 +954,10 @@ export default function MorningMeeting() {
               <button onClick={() => setSlide(s => Math.max(0, s - 1))} disabled={slide === 0} style={{ ...btnSt(false), fontSize: 16, opacity: slide === 0 ? 0.4 : 1 }}>◀</button>
               <span style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 700 }}>{slide + 1}/{slides.length}</span>
               <button onClick={() => setSlide(s => Math.min(slides.length - 1, s + 1))} disabled={slide === slides.length - 1} style={{ ...btnSt(false), fontSize: 16, opacity: slide === slides.length - 1 ? 0.4 : 1 }}>▶</button>
-              <button onClick={() => setGestureOn(v => !v)} style={btnSt(gestureOn)}
+              <button onClick={() => setGestureOn(v => !v)} style={{ ...btnSt(gestureOn), position: 'relative' }}
                 title={'ควบคุมด้วยท่ามือผ่านกล้อง (ประมวลผลในเครื่อง ไม่ส่งภาพออกไปไหน)\n☝️ ชี้นิ้ว ◀/▶ ค้าง = เปลี่ยนวาระ · ชี้ ▲/▼ ค้าง = เลื่อนหน้า\n✋ ปัดซ้าย/ขวา = เปลี่ยนวาระ · 👍 ค้าง = ถัดไป · ✊ ค้าง = ออกจากโหมด'}>
                 {gestureOn ? '📷 ปิดท่ามือ' : '📷 คุมด้วยท่ามือ'}
+                <ToggleDot on={gestureOn} />
               </button>
               <button onClick={() => { setTvMode(false); setGestureOn(false); }} style={{ ...btnSt(false), fontSize: 14 }} title="ออกจากโหมดประชุม (Esc)">✕</button>
             </div>
