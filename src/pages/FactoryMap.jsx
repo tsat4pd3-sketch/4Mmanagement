@@ -91,6 +91,9 @@ export default function FactoryMap() {
   const [aspect, setAspect] = useState(null);
   const [metric, setMetric] = useState('productivity');
   const [highlight, setHighlight] = useState(null); // line_name ที่คลิกจาก panel (เน้นชั่วคราว)
+  const [detailLine, setDetailLine] = useState(null); // ไลน์ที่คลิกเจาะดู popup รายละเอียด
+  const [hoverLine, setHoverLine] = useState(null); // ไลน์ที่เม้าส์วาง (การ์ดพรีวิวลอย — เฉพาะ mouse)
+  const [hoverXY, setHoverXY] = useState({ x: 0, y: 0 });
 
   const [drawing, setDrawing] = useState(false);
   const [draft, setDraft] = useState([]);
@@ -405,7 +408,7 @@ export default function FactoryMap() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div>
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>🗺️ ผังรวมโรงงาน</h2>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · อัปเดตทุก 30 วินาที</p>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเจาะดูเต็ม</b> · อัปเดตทุก 30 วินาที</p>
         </div>
         {canEdit && <button onClick={() => { setEditing(v => !v); cancelDraw(); }} style={btn(editing)}>{editing ? '✓ เสร็จ' : '✏️ แก้ผัง'}</button>}
       </div>
@@ -455,14 +458,18 @@ export default function FactoryMap() {
 
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
               {regions.map(r => {
-                const cat = M.cat(stOf(r.line_name)); const meta = CAT[cat]; const hl = highlight === r.line_name;
+                const cat = M.cat(stOf(r.line_name)); const meta = CAT[cat]; const hl = highlight === r.line_name || hoverLine === r.line_name;
                 return (
                   <polygon key={r.id} data-region points={ptsStr(r.points)}
                     className={meta.blink ? 'region-alarm' : undefined}
-                    fill={meta.blink ? undefined : `${meta.color}${hl ? '55' : '33'}`} stroke={meta.blink ? undefined : meta.color}
+                    fill={meta.blink ? undefined : `${meta.color}${hl ? '5e' : '33'}`} stroke={meta.blink ? undefined : meta.color}
                     strokeWidth={hl ? '4' : '2'} vectorEffect="non-scaling-stroke" strokeLinejoin="round"
-                    style={{ pointerEvents: editing && !drawing ? 'auto' : 'none', cursor: editing && !drawing ? 'move' : 'default' }}
-                    onPointerDown={(e) => startDrag(e, r, -1)} />
+                    style={{ pointerEvents: drawing ? 'none' : 'auto', cursor: editing ? 'move' : 'pointer' }}
+                    onClick={(e) => { if (!editing) { e.stopPropagation(); setDetailLine(r.line_name); } }}
+                    onPointerEnter={!editing ? (e) => { if (e.pointerType === 'mouse') { setHoverLine(r.line_name); setHoverXY({ x: e.clientX, y: e.clientY }); } } : undefined}
+                    onPointerMove={!editing ? (e) => { if (e.pointerType === 'mouse') setHoverXY({ x: e.clientX, y: e.clientY }); } : undefined}
+                    onPointerLeave={!editing ? () => setHoverLine(h => h === r.line_name ? null : h) : undefined}
+                    onPointerDown={editing && !drawing ? (e) => startDrag(e, r, -1) : undefined} />
                 );
               })}
               {drawing && draft.length > 0 && (
@@ -527,8 +534,8 @@ export default function FactoryMap() {
                 const meta = CAT[cat]; const txt = M.text(st); const hasRegion = regions.some(r => r.line_name === name);
                 const barW = val == null ? 0 : isPct ? Math.min(100, Math.abs(val)) : Math.round(Math.abs(val) / maxVal * 100);
                 return (
-                  <div key={name} onClick={() => hasRegion && flashLine(name)}
-                    style={{ padding: '8px 10px', borderRadius: 9, marginBottom: 5, cursor: hasRegion ? 'pointer' : 'default', background: highlight === name ? 'var(--bg2)' : 'var(--bg3)', border: `1px solid ${highlight === name ? meta.color : 'var(--border2)'}` }}>
+                  <div key={name} onClick={() => { if (hasRegion) flashLine(name); setDetailLine(name); }}
+                    style={{ padding: '8px 10px', borderRadius: 9, marginBottom: 5, cursor: 'pointer', background: highlight === name ? 'var(--bg2)' : 'var(--bg3)', border: `1px solid ${highlight === name ? meta.color : 'var(--border2)'}` }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                       <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', width: 18, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
                       <span className={meta.blink ? 'dt-alarm-blink' : undefined} style={{ width: 11, height: 11, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
@@ -553,6 +560,111 @@ export default function FactoryMap() {
       {editing && imageUrl && assignableLines().length > 0 && (
         <div style={{ marginTop: 12, fontSize: 12, color: 'var(--muted)' }}>ยังไม่ได้ตีกรอบ: <span style={{ color: '#f59e0b' }}>{assignableLines().join(', ')}</span></div>
       )}
+
+      {/* ── การ์ดพรีวิวลอยตามเม้าส์ (hover) — สรุปทุกมุมมองแบบย่อ, เฉพาะ mouse ── */}
+      {hoverLine && !editing && !detailLine && (() => {
+        const st = stOf(hoverLine); const kids = childrenOf[hoverLine] || []; const meta = CAT[M.cat(st)];
+        const W = 264, H = 250, OFF = 18;
+        const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
+        const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
+        const left = hoverXY.x + OFF + W > vw ? Math.max(8, hoverXY.x - OFF - W) : hoverXY.x + OFF;
+        const top = Math.min(Math.max(8, hoverXY.y - 40), vh - H - 8);
+        return (
+          <div style={{ position: 'fixed', left, top, width: W, zIndex: 1100, pointerEvents: 'none',
+            background: 'linear-gradient(160deg, rgba(20,24,36,0.97), rgba(12,15,24,0.97))',
+            border: `1px solid ${meta.color}66`, borderTop: `3px solid ${meta.color}`, borderRadius: 12,
+            boxShadow: `0 12px 34px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03)`, padding: '12px 14px', color: '#fff' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+              <span className={meta.blink ? 'dt-alarm-blink' : undefined} style={{ width: 11, height: 11, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
+              <div style={{ fontSize: 15, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{hoverLine}</div>
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginBottom: 10, marginLeft: 19 }}>
+              สถานะ: <span style={{ color: meta.color, fontWeight: 700 }}>{meta.label}</span>{kids.length ? ` · รวม ${kids.length} ไลน์ย่อย` : ''}
+            </div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              {Object.entries(METRICS).map(([k, m]) => {
+                const c = CAT[m.cat(st)]; const t = m.text(st); const isCur = k === metric;
+                return (
+                  <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                    background: isCur ? `${c.color}1f` : 'rgba(255,255,255,0.04)', border: isCur ? `1px solid ${c.color}55` : '1px solid transparent',
+                    borderRadius: 7, padding: '4px 8px' }}>
+                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.72)', fontWeight: isCur ? 800 : 600, whiteSpace: 'nowrap' }}>{m.label}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: t ? c.color : 'rgba(255,255,255,0.35)', whiteSpace: 'nowrap' }}>{t || '—'}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.5)', marginTop: 9, textAlign: 'center' }}>คลิกเพื่อดูรายละเอียดเต็ม + แยกไลน์ย่อย</div>
+          </div>
+        );
+      })()}
+
+      {/* ── drill-down: คลิกไลน์ → รายละเอียดทุก metric + แยกตามไลน์ลูก ── */}
+      {detailLine && (() => {
+        const st = stOf(detailLine); const kids = childrenOf[detailLine] || [];
+        return (
+          <div onClick={() => setDetailLine(null)} style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '20px 22px', width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>
+                  {st.dtActive && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{detailLine}
+                </div>
+                <button onClick={() => setDetailLine(null)} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', color: 'var(--text2)', fontSize: 15 }}>✕</button>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>รายละเอียดทุกมุมมอง — วันงานปัจจุบัน{kids.length ? ` · รวมยอดไลน์ลูก ${kids.length} ไลน์` : ''}</div>
+
+              {/* การ์ดทุก metric */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8, marginBottom: kids.length ? 18 : 0 }}>
+                {Object.entries(METRICS).map(([k, m]) => {
+                  const cat = m.cat(st); const meta = CAT[cat]; const txt = m.text(st);
+                  return (
+                    <div key={k} style={{ background: 'var(--bg3)', border: `1px solid ${meta.color}55`, borderLeft: `3px solid ${meta.color}`, borderRadius: 8, padding: '9px 11px' }}>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 3 }}>{m.label}</div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: meta.color }}>{txt || '—'}</div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* แยกตามไลน์ลูก */}
+              {kids.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text2)', marginBottom: 8 }}>แยกตามไลน์ย่อย</div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                      <thead>
+                        <tr style={{ color: 'var(--muted)', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>
+                          <th style={{ textAlign: 'left', padding: '4px 6px' }}>ไลน์</th>
+                          <th style={{ padding: '4px 6px' }}>ผลิต</th>
+                          <th style={{ padding: '4px 6px' }}>คน</th>
+                          <th style={{ padding: '4px 6px' }}>DT (น.)</th>
+                          <th style={{ padding: '4px 6px' }}>NG</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[detailLine, ...kids].map(n => {
+                          const p = lineStatus[n] || {}; const mp = manpower[n] || {};
+                          const self = n === detailLine;
+                          return (
+                            <tr key={n} style={{ borderBottom: '1px solid var(--border2)', color: 'var(--text)', textAlign: 'right' }}>
+                              <td style={{ textAlign: 'left', padding: '5px 6px', fontWeight: self ? 800 : 400, color: self ? 'var(--accent)' : 'var(--text)' }}>{self ? `${n} (ตัวเอง)` : `↳ ${n}`}</td>
+                              <td style={{ padding: '5px 6px' }}>{p.target ? `${p.actual || 0}/${p.target}` : '—'}</td>
+                              <td style={{ padding: '5px 6px' }}>{mp.headTotal ? `${mp.present || 0}/${mp.headTotal}` : '—'}</td>
+                              <td style={{ padding: '5px 6px', color: p.dtMin ? '#f59e0b' : 'inherit' }}>{p.dtMin || 0}</td>
+                              <td style={{ padding: '5px 6px', color: p.ng ? '#ef4444' : 'inherit' }}>{p.ng || 0}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>* คน/PM มักผูกกับไลน์แม่ (ลูกเป็น 0) · ผลิต/DT/NG อาจอยู่ที่ไลน์ลูก — การ์ดด้านบนรวมให้แล้ว</div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {assignFor && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
