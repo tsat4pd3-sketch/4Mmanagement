@@ -289,7 +289,7 @@ export default function ProductMaster() {
   /* ── group into families ── */
   const families = useMemo(() => {
     const map = new Map();
-    [...items].sort((a, b) => a.name.localeCompare(b.name, 'th')).forEach(item => {
+    [...items].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'th')).forEach(item => {
       const fid = item.family_id || item.id;
       if (!map.has(fid)) map.set(fid, { family_id: fid, members: [] });
       map.get(fid).members.push(item);

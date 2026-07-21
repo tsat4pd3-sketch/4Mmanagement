@@ -16,10 +16,19 @@ let loadingPromise = null;
 export async function loadPermissions(forceRefresh = false) {
   if (cache && !forceRefresh) return cache;
   if (loadingPromise && !forceRefresh) return loadingPromise;
-  loadingPromise = supabase.from('role_permissions').select('role, permission_key, allowed').then(({ data }) => {
-    cache = new Map((data || []).map(r => [`${r.role}:${r.permission_key}`, r.allowed]));
+  loadingPromise = supabase.from('role_permissions').select('role, permission_key, allowed').then(({ data, error }) => {
     loadingPromise = null;
+    // ⚠️ ห้ามเขียนทับ cache ด้วยผลลัพธ์ว่างตอน fetch ล้ม (network/RLS สะดุด) —
+    // supabase-js คืน { data:null, error } ไม่ reject · ถ้าเซ็ต Map ว่าง (truthy) ทับ cache
+    // hasPermission จะคืน false ทุก key ค้างถาวรจนกว่าจะ reload → non-admin โดนล็อกเมนู/เด้งออกทุกหน้า
+    // (เคยเป็นบั๊ก: ตอน login เน็ตกระตุก หรือตอน admin แก้สิทธิ์แล้ว broadcast ให้ทุกเครื่อง reload)
+    if (error || !data) return cache || new Map();
+    cache = new Map(data.map(r => [`${r.role}:${r.permission_key}`, r.allowed]));
     return cache;
+  }).catch(() => {
+    // เผื่อ promise reject จริง (แทนที่จะคืน {error}) — คืน cache เดิม ไม่ค้าง loadingPromise ที่ reject
+    loadingPromise = null;
+    return cache || new Map();
   });
   return loadingPromise;
 }

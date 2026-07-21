@@ -119,7 +119,7 @@ export default function EventLog() {
       { data: lineData },
     ] = await Promise.all([
       supabase.from('cqi15_event_logs')
-        .select(`*, cqi15_event_definitions(*), cqi15_event_approvals(*), profiles!cqi15_event_logs_reported_by_fkey(full_name)`)
+        .select(`*, cqi15_event_definitions(*), cqi15_event_approvals(*, profiles(full_name)), profiles!cqi15_event_logs_reported_by_fkey(full_name)`)
         .order('created_at', { ascending: false })
         .limit(200),
       supabase.from('cqi15_event_definitions').select('*').order('event_no'),

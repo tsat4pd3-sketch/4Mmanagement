@@ -27,5 +27,5 @@ export function getDayType(workDate) {
 }
 
 export function getOtMultiplier(workDate) {
-  return DAY_TYPE_META[getDayType(workDate)].otMultiplier;
+  return (DAY_TYPE_META[getDayType(workDate)] || DAY_TYPE_META.working).otMultiplier;
 }

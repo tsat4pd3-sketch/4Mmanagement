@@ -344,7 +344,9 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">งานที่ทำ</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
-    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
+    w.document.write(html); w.document.close();
   };
 
   return (
@@ -682,7 +684,9 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">จุดงาน</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
-    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
+    w.document.write(html); w.document.close();
   };
 
   return (
@@ -863,7 +867,9 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">จุดงาน</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
-    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
+    w.document.write(html); w.document.close();
   };
 
   return (
@@ -1048,7 +1054,9 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">PPE ครบ</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
-    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
+    w.document.write(html); w.document.close();
   };
 
   return (
@@ -1231,7 +1239,9 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">%การมาทำงาน</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
-    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
+    w.document.write(html); w.document.close();
   };
 
   return (
