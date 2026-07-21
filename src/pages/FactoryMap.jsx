@@ -204,12 +204,36 @@ export default function FactoryMap() {
   }, []);
   useEffect(() => { loadPM(); const t = setInterval(loadPM, 300000); return () => clearInterval(t); }, [loadPM]);
 
-  const stOf = (name) => ({ ...EMPTY_ST, ...(lineStatus[name] || {}), ...(manpower[name] || {}), ...(pmStatus[name] || {}) });
+  // ── family rollup: ตีกรอบ "ไลน์บนสุด (top-level)" แล้วรวมยอดของลูกขึ้นมา ──
+  // (ข้อมูลจริง: พนักงาน/บางเมตริกผูกกับไลน์แม่ · บางอันผูกกับลูก → รวมทั้งครอบครัวจึงครบ)
+  // ไลน์ไม่มีลูก = โชว์ตัวเอง (เช่น LINE A 800 Ton) · ไลน์มีลูก = ตัวเอง + ลูกทั้งหมด
+  const childrenOf = useMemo(() => {
+    const m = {};
+    lines.forEach(l => { if (l.parent_line_name) (m[l.parent_line_name] ||= []).push(l.name); });
+    return m;
+  }, [lines]);
+  const familyNames = (name) => [name, ...(childrenOf[name] || [])];
+  // ตีกรอบเฉพาะ "ไลน์บนสุด (top-level)" = parent_line_name IS NULL — 1 กรอบ/กลุ่ม (รวมยอดลูกด้วย stOf)
+  const topNames = useMemo(() => lines.filter(l => !l.parent_line_name).map(l => l.name), [lines]);
+  const stOf = (name) => {
+    const agg = { ...EMPTY_ST, oeeSum: 0, oeeN: 0 };
+    familyNames(name).forEach(n => {
+      const p = lineStatus[n];
+      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeSum += p.oeeSum || 0; agg.oeeN += p.oeeN || 0; }
+      const m = manpower[n];
+      if (m) { agg.headTotal += m.headTotal || 0; agg.present += m.present || 0; agg.ppeBad += m.ppeBad || 0; }
+      const pm = pmStatus[n];
+      if (pm) { agg.pmTotal += pm.pmTotal || 0; agg.pmOverdue += pm.pmOverdue || 0; agg.pmDueSoon += pm.pmDueSoon || 0; }
+    });
+    agg.oee = agg.oeeN ? Math.round(agg.oeeSum / agg.oeeN) : null;
+    return agg;
+  };
   const catColor = (name) => CAT[M.cat(stOf(name))];
 
   // side panel: ไลน์ที่มีกะวันนี้ ∪ ไลน์ที่ตีกรอบไว้ — เรียงตาม metric (ปัญหาขึ้นบน)
   const ranked = useMemo(() => {
-    const names = new Set([...Object.keys(lineStatus), ...Object.keys(manpower), ...Object.keys(pmStatus), ...regions.map(r => r.line_name)]);
+    // แสดงไลน์บนสุด (หน่วยปฏิบัติการ) + กรอบที่วาดไว้ (เผื่อของเดิมที่วาดระดับลูก) — ไม่ลิสต์ลูกแยก (รวมใน rollup แล้ว)
+    const names = new Set([...topNames, ...regions.map(r => r.line_name)]);
     const arr = [...names].map(name => ({ name, st: stOf(name), val: M.value(stOf(name)), cat: M.cat(stOf(name)) }));
     arr.sort((a, b) => {
       const av = a.val, bv = b.val;
@@ -218,7 +242,7 @@ export default function FactoryMap() {
       return M.desc ? bv - av : av - bv;
     });
     return arr;
-  }, [lineStatus, manpower, pmStatus, regions, metric]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lineStatus, manpower, pmStatus, regions, metric, topNames]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── อัปโหลดรูปผัง (บีบเบา 2560/2.5MB/q0.9) ── */
   const handleUpload = async (e) => {
@@ -252,14 +276,8 @@ export default function FactoryMap() {
     const r = wrapRef.current.getBoundingClientRect();
     return { x: Math.min(100, Math.max(0, ((clientX - r.left) / r.width) * 100)), y: Math.min(100, Math.max(0, ((clientY - r.top) / r.height) * 100)) };
   };
-  // ตีกรอบเฉพาะ "ไลน์ใบ" (leaf) — ไลน์แม่ที่มีลูกไม่ต้องตี (จะทับกับลูก) นับแค่ลูก
-  // parent = ชื่อไลน์ที่ถูกอ้างเป็น parent_line_name ของไลน์อื่น
-  const leafNames = useMemo(() => {
-    const parents = new Set(lines.map(l => l.parent_line_name).filter(Boolean));
-    return lines.filter(l => !parents.has(l.name)).map(l => l.name);
-  }, [lines]);
-  const framedLeafCount = regions.filter(r => leafNames.includes(r.line_name)).length;
-  const assignableLines = () => leafNames.filter(n => !regions.some(r => r.line_name === n));
+  const framedTopCount = regions.filter(r => topNames.includes(r.line_name)).length;
+  const assignableLines = () => topNames.filter(n => !regions.some(r => r.line_name === n));
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
@@ -382,7 +400,7 @@ export default function FactoryMap() {
             </>
           )}
           {!drawing && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ลากกลางรูป=ย้าย · ลากจุดมุม=ปรับรูปทรง</span>}
-          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>ตีกรอบแล้ว {framedLeafCount}/{leafNames.length} ไลน์ (เฉพาะไลน์ใบ)</span>
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>ตีกรอบแล้ว {framedTopCount}/{topNames.length} ไลน์ (กลุ่มบนสุด · รวมยอดลูกให้อัตโนมัติ)</span>
         </div>
       )}
 
@@ -399,8 +417,8 @@ export default function FactoryMap() {
           <div ref={wrapRef} onClick={onMapClick} onPointerMove={onMapMove} onPointerUp={endDrag} onPointerCancel={endDrag}
             style={{ position: 'relative', ...wrapStyle, maxHeight: 'calc(100vh - 200px)', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f' }}>
             <img src={imageUrl} alt="ผังโรงงาน" onLoad={onImgLoad} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none', userSelect: 'none' }} />
-            {/* scrim: หรี่ภาพลงนิดให้กรอบสี+ป้ายเด่น (ไม่งั้นจมไปกับผัง) */}
-            <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.32)', pointerEvents: 'none' }} />
+            {/* scrim บางๆ ให้กรอบเด่นแต่ยังเห็นผังชัด (ไม่หรี่จนภาพหม่น) */}
+            <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.14)', pointerEvents: 'none' }} />
 
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
               {regions.map(r => {
@@ -428,7 +446,8 @@ export default function FactoryMap() {
               const [cx, cy] = centroid(r.points); const st = stOf(r.line_name); const meta = CAT[M.cat(st)]; const txt = M.text(st);
               return (
                 <div key={`lbl-${r.id}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%,-50%)', pointerEvents: 'none' }}>
-                  <div style={{ background: 'rgba(9,11,18,0.86)', border: `2px solid ${meta.color}`, borderRadius: 8, padding: '3px 9px', textAlign: 'center', boxShadow: '0 3px 10px rgba(0,0,0,0.55)', minWidth: 50 }}>
+                  {/* ป้ายโปร่งแสง + เส้นสีสถานะด้านล่าง — อ่านออกแต่ยังเห็นผังทะลุ (ไม่ทึบทับภาพ) */}
+                  <div style={{ background: 'rgba(10,12,20,0.5)', borderBottom: `2.5px solid ${meta.color}`, borderRadius: 5, padding: '1px 7px 2px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)' }}>
                     <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{r.line_name}
                     </div>
