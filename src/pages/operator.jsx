@@ -166,15 +166,18 @@ export default function Operator() {
       doc_url = urlData.publicUrl;
     }
 
+    // เขียนคะแนน + เคลียร์ pending_level ก่อน แล้วค่อยปิดคำขอ — ถ้า upsert ล้ม ห้ามมาร์คคำขอ approved
+    // (เดิมปิดคำขอก่อน ถ้า upsert ล้ม พนักงานค้าง pending_level = farm ต่อไม่ได้ + คำขอหายจากรายการ กู้ไม่ได้)
+    const { error: sErr } = await supabase.from('employee_skills').upsert({
+      employee_id: req.employee_id, skill_name: req.skill_name,
+      score: req.to_level, pending_level: null,
+    }, { onConflict: 'employee_id,skill_name' });
+    if (sErr) { toast.error('บันทึกคะแนนไม่สำเร็จ: ' + sErr.message); setIsReviewing(false); return; }
+
     const { error: rErr } = await supabase.from('skill_level_up_requests').update({
       status: 'approved', reviewed_by: user.id, reviewed_at: new Date().toISOString(), doc_url,
     }).eq('id', req.id);
     if (rErr) { toast.error('ผิดพลาด: ' + rErr.message); setIsReviewing(false); return; }
-
-    await supabase.from('employee_skills').upsert({
-      employee_id: req.employee_id, skill_name: req.skill_name,
-      score: req.to_level, pending_level: null,
-    }, { onConflict: 'employee_id,skill_name' });
 
     toast.success(`อนุมัติ Level ${req.to_level} สำเร็จ`);
     setIsReviewing(false);

@@ -445,9 +445,17 @@ export default function Management() {
   const assignWorker = async (logId, stationId) => {
     const finalAssign = stationId === 'Pool' ? null : stationId;
     const droppedWorker = workers.find(w => w.id === logId);
+    const prevAssign = droppedWorker?.assigned_line ?? null;
     setWorkers(prev => prev.map(w => w.id === logId ? { ...w, assigned_line: finalAssign } : w));
     setSelectedWorker(null);
-    await supabase.from('daily_production_logs').update({ assigned_line: finalAssign }).eq('id', logId);
+    // เช็ค error ของการย้ายจุดหลัก — ถ้าล้ม ให้ revert UI กลับ (เดิม optimistic แล้วปล่อยผ่าน
+    // ทำให้ผังโชว์คนอยู่จุดใหม่แต่ DB ยังเป็นจุดเดิม ไม่มีเตือน)
+    const { error: eAssign } = await supabase.from('daily_production_logs').update({ assigned_line: finalAssign }).eq('id', logId);
+    if (eAssign) {
+      toast.error('ย้ายจุดไม่สำเร็จ: ' + eAssign.message);
+      setWorkers(prev => prev.map(w => w.id === logId ? { ...w, assigned_line: prevAssign } : w));
+      return;
+    }
 
     // ── Station assignment log (period-snapped) ──────────────────
     if (droppedWorker?.employee_id) {

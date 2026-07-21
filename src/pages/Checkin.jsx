@@ -382,8 +382,11 @@ export default function Checkin() {
     if (!userData?.user?.id) { toast.error('กรุณา Login ก่อน'); setIsSaving(false); return; }
 
     const { workDateStr } = shiftInfo;
-    const logs = employees.map(emp => {
-      const rec = attendance[emp.id];
+    // บันทึกเฉพาะรายชื่อที่แสดงบนจอ (displayed) ไม่ใช่ roster ที่โหลดมาทั้งหมด —
+    // ไม่งั้นหัวหน้ากะเช้าเปิดหน้าค้างแล้วกดบันทึกตอนเย็น จะทับเช็คชื่อกะดึก/ส่วนอื่นกลับเป็น "ไม่มา"
+    // (สรุปยอด + modal ยืนยัน อ้าง displayed อยู่แล้ว — เขียนให้ตรงกัน)
+    const logs = displayed.map(emp => {
+      const rec = attendance[emp.id] || {};
       return {
         employee_id:    emp.id,
         work_date:      workDateStr,
