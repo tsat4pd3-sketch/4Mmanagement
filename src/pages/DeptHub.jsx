@@ -117,7 +117,7 @@ const DEPTS = [
   {
     key: 'production', code: 'PRD·01', label: 'Production', labelTh: 'ฝ่ายผลิต', icon: '🏭',
     color: '#3dd65c', route: '/dashboard', navGroups: ['ภาพรวม', 'ฝ่ายผลิต'], available: true,
-    desc: 'เช็คชื่อ-PPE, จัดการไลน์ผลิต, Daily Report, OEE, Daily PM',
+    desc: 'เช็คชื่อ-PPE, จัดการไลน์ผลิต, Daily Report, OEE, Daily PM, ใบรายงานของเสีย',
   },
   {
     key: 'logistic', code: 'LOG·02', label: 'Logistic & Store', labelTh: 'คลังวัสดุ & จัดส่ง', icon: '📦',

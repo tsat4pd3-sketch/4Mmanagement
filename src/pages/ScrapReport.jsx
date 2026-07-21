@@ -85,7 +85,8 @@ export default function ScrapReport() {
   useEffect(() => { loadReports(); }, [loadReports]);
 
   useEffect(() => {
-    supabaseDR.from('production_lines').select('name').order('name').then(({ data }) => setLines((data || []).map(l => l.name)));
+    // ⚠️ production_lines อยู่ MAIN project (client supabase) ไม่ใช่ DR — ดึงผิด client = dropdown ว่าง
+    supabase.from('production_lines').select('name').order('name').then(({ data }) => setLines((data || []).map(l => l.name)));
     supabaseDR.from('scrap_defect_types').select('*').eq('is_active', true).order('sort_order').then(({ data }) => setDefectTypes(data || []));
   }, []);
 
