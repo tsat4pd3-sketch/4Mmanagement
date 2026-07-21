@@ -33,7 +33,9 @@ const PLAN_META = {
   day:          { label: 'กะเช้า', color: '#22c55e' },
   night:        { label: '+กะดึก', color: '#8b5cf6' },
   ot:           { label: '+OT', color: '#f59e0b' },
-  holiday_work: { label: '⚠ ทำวันหยุด', color: '#ef4444' },
+  // ม.75: กำลังไม่พอ → "ยกเลิกหยุด 75%" (เรียกมาทำงาน = ค่าแรงปกติ) ก่อนไปเปิด OT วันหยุดจริง (คำสั่ง user 2026-07-21)
+  recall75:     { label: '⚡ ยกเลิกหยุด75% มาทำงาน', color: '#a78bfa' },
+  holiday_work: { label: '⚠ ทำวันหยุด OT', color: '#ef4444' },
 };
 
 export default function ProductionPlan() {
@@ -167,7 +169,9 @@ export default function ProductionPlan() {
       // เดินวัน: กะเช้า 1 shift → กะดึก (ถ้ามี) → OT · วันหยุดทำเฉพาะเมื่อ backlog
       let backlog = 0;
       const days = dates.map(date => {
-        const holiday = calOf(date) !== 'working';
+        const dtype = calOf(date);
+        const holiday = dtype !== 'working';
+        const sd75 = dtype === 'shutdown75';
         const due = loadByDate[date] || 0;
         let need = backlog + due;
         const plan = [];
@@ -175,15 +179,21 @@ export default function ProductionPlan() {
           if (need > 0) { need -= Math.min(need, 1); plan.push('day'); }
           if (need > 0 && hasNight) { need -= Math.min(need, 1); plan.push('night'); }
           if (need > 0) { need -= Math.min(need, OT_SHIFT_FRAC); if (!plan.includes('ot')) plan.push('ot'); }
+        } else if (sd75) {
+          // ม.75: ยกเลิกหยุด (เรียกมาทำงาน ค่าแรงปกติ) — ใช้ได้เต็มกำลังเหมือนวันทำงาน ก่อนคิด OT วันหยุดจริง
+          if (need > 0) { need -= Math.min(need, 1); plan.push('recall75'); }
+          if (need > 0 && hasNight) { need -= Math.min(need, 1); plan.push('night'); }
+          if (need > 0) { need -= Math.min(need, OT_SHIFT_FRAC); if (!plan.includes('ot')) plan.push('ot'); }
         } else if (need > 0) { need -= Math.min(need, 1); plan.push('holiday_work'); }
         backlog = Math.max(0, need);
-        return { date, holiday, dueLoad: due, duePcs: pcsByDate[date] || 0, plan, backlog };
+        return { date, holiday, sd75, dueLoad: due, duePcs: pcsByDate[date] || 0, plan, backlog };
       });
       const otDays = days.filter(d => d.plan.includes('ot')).length;
       const nightDays = days.filter(d => d.plan.includes('night')).length;
+      const recall75Days = days.filter(d => d.plan.includes('recall75')).length;
       const holidayDays = days.filter(d => d.plan.includes('holiday_work')).length;
       const endBacklog = days[days.length - 1]?.backlog || 0;
-      return { line, days, otDays, nightDays, holidayDays, endBacklog, unknownCap, matCount: matSet.size, orderCount: lineOrders.length };
+      return { line, days, otDays, nightDays, recall75Days, holidayDays, endBacklog, unknownCap, matCount: matSet.size, orderCount: lineOrders.length };
     }).filter(r => r.orderCount > 0 || r.unknownCap > 0);
   }, [loading, viewLines, orders, today, capOfMat, lineOfMat, calOf]);
 
@@ -195,10 +205,23 @@ export default function ProductionPlan() {
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     });
     // วันทำงานต่อเดือน (จากปฏิทิน — ไม่มีข้อมูล = ประมาณ 26 วัน/เดือน)
+    // วันทำงาน/เดือน: จ-ศ ที่ไม่ถูกมาร์คเป็นวันหยุด + เสาร์/อาทิตย์ที่มาร์ค working
+    // (เดิมนับเฉพาะวันที่มาร์ค 'working' ชัดๆ — จ-ศ ปกติไม่มีแถวใน DB เลยนับขาด — บั๊กแก้ 2026-07-21)
     const workDaysOf = (mk) => {
-      const days = Object.entries(calMap).filter(([d, t]) => d.startsWith(mk) && t === 'working').length;
-      return days || 26;
+      const [yy, mm] = mk.split('-').map(Number);
+      const nDays = new Date(yy, mm, 0).getDate();
+      let wd = 0;
+      for (let d = 1; d <= nDays; d++) {
+        const key = `${mk}-${String(d).padStart(2, '0')}`;
+        const t = calMap[key];
+        const dow = new Date(yy, mm - 1, d).getDay();
+        if (t) { if (t === 'working') wd++; continue; }
+        if (dow >= 1 && dow <= 5) wd++;
+      }
+      return wd || 26;
     };
+    // วันหยุดจ่าย 75% (ม.75) ในเดือน — กำลังสำรองที่เรียกมาได้ด้วยค่าแรงปกติ ก่อนคิด OT วันหยุด
+    const sd75DaysOf = (mk) => Object.entries(calMap).filter(([d, t]) => d.startsWith(mk) && t === 'shutdown75').length;
     return viewLines.filter(l => !viewLines.some(o => o.parent_line_name === l.name)).map(line => {
       const hasNight = (line.std_night_shift || 0) > 0;
       const rows = months.map(mk => {
@@ -210,16 +233,20 @@ export default function ProductionPlan() {
           if (perShift > 0) shiftsNeeded += qty / perShift; else unknownCap += qty;
         });
         const wd = workDaysOf(mk);
+        const sd75 = sd75DaysOf(mk);
         const dayShifts = wd;                 // 1 กะเช้า/วันทำงาน
         const capShifts = wd * (hasNight ? 2 : 1);
-        // ตัดสิน: ปกติพอ / ต้อง OT / ต้อง+กะดึก / เกินกำลัง
+        const fullCap = capShifts * (1 + OT_SHIFT_FRAC);
+        const sd75Shifts = sd75 * (hasNight ? 2 : 1);   // กำลังจากยกเลิกหยุด ม.75 (ค่าแรงปกติ)
+        // ตัดสิน: ปกติพอ / OT / กะดึก / กะดึก+OT / ยกเลิกหยุด 75% (ก่อน OT วันหยุดเสมอ) / เกินกำลัง
         let verdict, color;
         if (!fcs.length) { verdict = '—'; color = 'var(--muted)'; }
         else if (shiftsNeeded <= dayShifts) { verdict = 'กะเช้าพอ'; color = '#22c55e'; }
         else if (shiftsNeeded <= dayShifts * (1 + OT_SHIFT_FRAC)) { verdict = `ต้องเปิด OT ~${Math.ceil((shiftsNeeded - dayShifts) / OT_SHIFT_FRAC)} วัน`; color = '#f59e0b'; }
         else if (hasNight && shiftsNeeded <= capShifts) { verdict = `ต้องเปิดกะดึก ~${Math.ceil(shiftsNeeded - dayShifts)} วัน`; color = '#8b5cf6'; }
-        else if (hasNight && shiftsNeeded <= capShifts * (1 + OT_SHIFT_FRAC)) { verdict = 'กะดึก + OT เต็มเดือน'; color = '#ef4444'; }
-        else { verdict = '🚨 เกินกำลัง — ต้องเพิ่มไลน์/คน'; color = '#ef4444'; }
+        else if (hasNight && shiftsNeeded <= fullCap) { verdict = 'กะดึก + OT เต็มเดือน'; color = '#ef4444'; }
+        else if (sd75Shifts > 0 && shiftsNeeded <= fullCap + sd75Shifts) { verdict = `⚡ ยกเลิกหยุด 75% มาทำงาน ~${Math.ceil((shiftsNeeded - fullCap) / (hasNight ? 2 : 1))} วัน (ค่าแรงปกติ)`; color = '#a78bfa'; }
+        else { verdict = '🚨 เกินกำลัง — ต้องเพิ่มไลน์/คน' + (sd75 ? ' (รวมยกเลิกหยุด 75% แล้ว)' : ''); color = '#ef4444'; }
         return { mk, pcs, shiftsNeeded, dayShifts, capShifts, verdict, color, unknownCap, fcCount: fcs.length };
       });
       return { line, rows };
@@ -260,7 +287,7 @@ export default function ProductionPlan() {
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังวิเคราะห์กำลังผลิต…</div>
       ) : tab === 'daily' ? (
         daily.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มีออเดอร์ค้างส่งในช่วง {DAILY_HORIZON} วันข้างหน้า สำหรับไลน์ใน scope</div> :
-        daily.map(({ line, days, otDays, nightDays, holidayDays, endBacklog, unknownCap, orderCount }) => (
+        daily.map(({ line, days, otDays, nightDays, recall75Days, holidayDays, endBacklog, unknownCap, orderCount }) => (
           <div key={line.id} style={card}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
               <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{line.name}</span>
@@ -268,30 +295,30 @@ export default function ProductionPlan() {
               {/* สรุปทั้งช่วง */}
               {endBacklog > 0.05
                 ? <span style={chip('#ef4444')}>🚨 ต่อให้เปิดเต็มที่ยังไม่ทัน — ค้าง ~{endBacklog.toFixed(1)} กะ ณ สิ้นช่วง</span>
-                : (otDays + nightDays + holidayDays === 0
+                : (otDays + nightDays + recall75Days + holidayDays === 0
                   ? <span style={chip('#22c55e')}>✅ กะเช้าปกติพอ ไม่ต้องเปิด OT</span>
-                  : <span style={chip('#f59e0b')}>ต้องเปิด: {nightDays ? `กะดึก ${nightDays} วัน · ` : ''}{otDays ? `OT ${otDays} วัน · ` : ''}{holidayDays ? `ทำวันหยุด ${holidayDays} วัน` : ''}</span>)}
+                  : <span style={chip('#f59e0b')}>ต้องเปิด: {nightDays ? `กะดึก ${nightDays} วัน · ` : ''}{otDays ? `OT ${otDays} วัน · ` : ''}{recall75Days ? `ยกเลิกหยุด75% ${recall75Days} วัน · ` : ''}{holidayDays ? `ทำวันหยุด OT ${holidayDays} วัน` : ''}</span>)}
               {unknownCap > 0 && <span style={chip('#94a3b8')} title="พาร์ทที่ยังไม่มีประวัติกำลังผลิต/ไม่รู้จักไลน์">{unknownCap.toLocaleString()} ชิ้นไม่รู้กำลัง</span>}
             </div>
             {/* แถบปฏิทินวันต่อวัน */}
             <div style={{ display: 'flex', gap: 3, overflowX: 'auto', paddingBottom: 4 }}>
               {days.map(d => {
-                const top = d.plan.includes('holiday_work') ? PLAN_META.holiday_work : d.plan.includes('night') ? PLAN_META.night : d.plan.includes('ot') ? PLAN_META.ot : d.plan.includes('day') ? PLAN_META.day : null;
+                const top = d.plan.includes('holiday_work') ? PLAN_META.holiday_work : d.plan.includes('recall75') ? PLAN_META.recall75 : d.plan.includes('night') ? PLAN_META.night : d.plan.includes('ot') ? PLAN_META.ot : d.plan.includes('day') ? PLAN_META.day : null;
                 const dd = new Date(`${d.date}T12:00:00`);
                 return (
-                  <div key={d.date} title={`${fmtDate(d.date)}${d.holiday ? ' (วันหยุด)' : ''}\nดิววันนี้ ${Math.round(d.duePcs).toLocaleString()} ชิ้น (${d.dueLoad.toFixed(2)} กะ)\nแผน: ${d.plan.map(p => PLAN_META[p]?.label || p).join(' ') || (d.holiday ? 'หยุด' : 'ว่าง')}\nค้างยกไป ${d.backlog.toFixed(2)} กะ`}
+                  <div key={d.date} title={`${fmtDate(d.date)}${d.sd75 ? ' (หยุดจ่าย 75% — ม.75)' : d.holiday ? ' (วันหยุด)' : ''}\nดิววันนี้ ${Math.round(d.duePcs).toLocaleString()} ชิ้น (${d.dueLoad.toFixed(2)} กะ)\nแผน: ${d.plan.map(p => PLAN_META[p]?.label || p).join(' ') || (d.holiday ? 'หยุด' : 'ว่าง')}\nค้างยกไป ${d.backlog.toFixed(2)} กะ`}
                     style={{ flexShrink: 0, width: 40, textAlign: 'center' }}>
-                    <div style={{ fontSize: 10, color: d.holiday ? '#ef4444' : 'var(--muted)' }}>{['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][dd.getDay()]}</div>
+                    <div style={{ fontSize: 10, color: d.sd75 ? '#a78bfa' : d.holiday ? '#ef4444' : 'var(--muted)' }}>{['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][dd.getDay()]}</div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)' }}>{dd.getDate()}</div>
                     <div style={{ height: 26, marginTop: 2, borderRadius: 5, background: top ? `${top.color}33` : (d.holiday ? 'var(--bg3)' : 'var(--bg2)'), border: `1px solid ${top ? top.color : 'var(--border2)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>
-                      {top === PLAN_META.holiday_work ? '⚠' : top === PLAN_META.night ? '🌙' : top === PLAN_META.ot ? '⏰' : top === PLAN_META.day ? '☀' : (d.holiday ? '·' : '')}
+                      {top === PLAN_META.holiday_work ? '⚠' : top === PLAN_META.recall75 ? '⚡' : top === PLAN_META.night ? '🌙' : top === PLAN_META.ot ? '⏰' : top === PLAN_META.day ? '☀' : (d.holiday ? '·' : '')}
                     </div>
                   </div>
                 );
               })}
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap', fontSize: 11, color: 'var(--muted)' }}>
-              <span>☀ กะเช้าพอ</span><span>⏰ ต้องเปิด OT</span><span>🌙 ต้องเปิดกะดึก</span><span style={{ color: '#ef4444' }}>⚠ ต้องมาทำวันหยุด</span>
+              <span>☀ กะเช้าพอ</span><span>⏰ ต้องเปิด OT</span><span>🌙 ต้องเปิดกะดึก</span><span style={{ color: '#a78bfa' }}>⚡ ยกเลิกหยุด 75% (ค่าแรงปกติ)</span><span style={{ color: '#ef4444' }}>⚠ ทำวันหยุด OT (×1.5/×2)</span>
             </div>
           </div>
         ))
