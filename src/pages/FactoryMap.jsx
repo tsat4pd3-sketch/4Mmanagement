@@ -252,7 +252,14 @@ export default function FactoryMap() {
     const r = wrapRef.current.getBoundingClientRect();
     return { x: Math.min(100, Math.max(0, ((clientX - r.left) / r.width) * 100)), y: Math.min(100, Math.max(0, ((clientY - r.top) / r.height) * 100)) };
   };
-  const assignableLines = () => lines.map(l => l.name).filter(n => !regions.some(r => r.line_name === n));
+  // ตีกรอบเฉพาะ "ไลน์ใบ" (leaf) — ไลน์แม่ที่มีลูกไม่ต้องตี (จะทับกับลูก) นับแค่ลูก
+  // parent = ชื่อไลน์ที่ถูกอ้างเป็น parent_line_name ของไลน์อื่น
+  const leafNames = useMemo(() => {
+    const parents = new Set(lines.map(l => l.parent_line_name).filter(Boolean));
+    return lines.filter(l => !parents.has(l.name)).map(l => l.name);
+  }, [lines]);
+  const framedLeafCount = regions.filter(r => leafNames.includes(r.line_name)).length;
+  const assignableLines = () => leafNames.filter(n => !regions.some(r => r.line_name === n));
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
@@ -369,7 +376,7 @@ export default function FactoryMap() {
             </>
           )}
           {!drawing && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ลากกลางรูป=ย้าย · ลากจุดมุม=ปรับรูปทรง</span>}
-          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>ตีกรอบแล้ว {regions.length}/{lines.length} ไลน์</span>
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>ตีกรอบแล้ว {framedLeafCount}/{leafNames.length} ไลน์ (เฉพาะไลน์ใบ)</span>
         </div>
       )}
 
