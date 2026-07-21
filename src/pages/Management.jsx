@@ -974,8 +974,9 @@ export default function Management() {
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: 'calc(100vh - 80px)', background: 'var(--bg)', overflow: 'hidden' }}>
       <DowntimeSiren mode="open_15min" />
 
-      {/* MAN / MACHINE / WIP status filters — fixed, sit just left of the global notification bell */}
-      <div style={{ position: 'fixed', top: 10, right: 58, zIndex: 1200, display: 'flex', gap: 6 }}>
+      {/* MAN / MACHINE / WIP filters + โชว์/ซ่อนป้าย — เรียงแนวตั้งใต้ 🔔 (แนวเดียวกับ bell, right:14)
+          ทุกปุ่มขนาดเท่ากัน 36×36 (เครื่องหมายเหมือนกันหมด) · canvas เว้น paddingRight:52 ไม่ให้บอร์ด/ผังลอดใต้ */}
+      <div style={{ position: 'fixed', top: 54, right: 14, zIndex: 1200, display: 'flex', flexDirection: 'column', gap: 6 }}>
         {STATUS_FILTERS.map(f => (
           <button
             key={f.key}
@@ -1006,22 +1007,22 @@ export default function Management() {
             )}
           </button>
         ))}
-        {/* ป้ายชื่อทุกชนิดจุด (คน/เครื่องจักร/WIP) — โชว์/ซ่อน อย่างเดียว label บอก action ที่จะเกิดเมื่อกด
-            (ป้ายเตือน alarm/ต่ำกว่า min โชว์เสมอแม้ซ่อนป้าย) */}
+        {/* โชว์/ซ่อนป้ายชื่อทุกจุด — icon 36×36 เท่าปุ่มอื่น (ป้ายเตือน alarm/ต่ำกว่า min โชว์เสมอ) */}
         <button
           onClick={() => setShowPills(v => !v)}
-          title={'แสดง/ซ่อนป้ายชื่อทุกจุดบนผัง (คน/เครื่องจักร/WIP)\nป้ายเตือน (เครื่อง Downtime / WIP ต่ำกว่า min) แสดงเสมอ'}
+          title={(showPills ? 'ซ่อน' : 'โชว์') + 'ป้ายชื่อทุกจุดบนผัง (คน/เครื่องจักร/WIP)\nป้ายเตือน (เครื่อง Downtime / WIP ต่ำกว่า min) แสดงเสมอ'}
           style={{
-            height: 36, borderRadius: 8, padding: '0 10px',
+            width: 36, height: 36, borderRadius: 8,
             background: showPills ? 'rgba(148,163,184,0.28)' : 'var(--bg3)',
             border: showPills ? '1px solid #94a3b8' : '1px solid var(--border2)',
-            color: showPills ? 'var(--text)' : 'var(--text2)',
-            fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-            cursor: 'pointer', boxShadow: 'var(--shadow-sm)',
+            color: showPills ? 'var(--text)' : 'var(--text2)', fontSize: 16,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', boxShadow: 'var(--shadow-sm)', position: 'relative',
           }}
         >
-          {showPills ? '🏷️ ซ่อนป้าย' : '🏷️ โชว์ป้าย'}
+          🏷️
+          {/* จุดเล็กมุมล่างขวาบอกสถานะ ซ่อน (แดง) / โชว์ (เขียว) */}
+          <span style={{ position: 'absolute', bottom: -3, right: -3, width: 12, height: 12, borderRadius: 6, background: showPills ? '#22c55e' : '#6b7280', border: '2px solid var(--bg)', fontSize: 8, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }} />
         </button>
       </div>
 
@@ -1156,7 +1157,8 @@ export default function Management() {
       </div>
 
       {/* ── Canvas Area ── */}
-      <div ref={canvasAreaRef} style={{ flex: 1, minWidth: 0, position: 'relative', padding: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      {/* paddingRight 52 = เว้นคอลัมน์แนวตั้ง 🔔+filter (right:14, w36) ไม่ให้บอร์ด/ผัง Heijunka ลอดใต้ */}
+      <div ref={canvasAreaRef} style={{ flex: 1, minWidth: 0, position: 'relative', padding: '10px 52px 10px 10px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {autoManAlert && (
           <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', background: 'rgba(77,159,255,0.95)', color: '#fff', padding: '8px 18px', borderRadius: 10, fontSize: 12, fontWeight: 600, zIndex: 200, boxShadow: '0 4px 16px rgba(0,0,0,0.4)', whiteSpace: 'nowrap' }}>
             🆕 Man Change: {autoManAlert.name} — ประจำ {autoManAlert.station} เป็นครั้งแรก
