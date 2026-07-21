@@ -1,16 +1,15 @@
-import { useState, useEffect, useContext, useRef, useCallback } from 'react';
+import { useState, useEffect, useContext, useRef, useCallback, useMemo } from 'react';
 import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 
-/* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ, 2026-07-16 ───────────────
-   รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด "รูปทรงอิสระ" ล้อมพื้นที่แต่ละไลน์ (factory_line_regions.points)
-   รองรับไลน์รูป L / U shape (ไม่ใช่แค่สี่เหลี่ยม) — แต่ละรูประบายสีตามสถานะการผลิต + โชว์ยอด/เป้า
-   - View: ทุก role · Edit (อัปโหลด/วาด/ย้ายจุด/ลบ): can('factory_map','edit')
-   - points = [[x,y],...] เป็น % ของรูปจริง (0-100) — รูปแสดง width:100% height:auto → % ตรงเป๊ะ
-   - วาด: SVG polygon (viewBox 0 0 100 100, preserveAspectRatio=none, stroke non-scaling)
+/* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
+   รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
+   metric: ยอดผลิต / OEE / Downtime / ของเสีย — เลือกดูได้ · มี side panel จัดอันดับไลน์ (ใช้พื้นที่ข้าง)
+   - View: ทุก role · Edit (อัปโหลด/วาด/ย้าย/ลบ): can('factory_map','edit')
+   - points = [[x,y],...] เป็น % ของรูปจริง (0-100) · SVG polygon preserveAspectRatio=none + non-scaling stroke
 */
 
 function getWorkDate() {
@@ -19,17 +18,48 @@ function getWorkDate() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-const STATUS_META = {
-  down:      { color: '#ef4444', label: 'Downtime', blink: true },
-  producing: { color: '#22c55e', label: 'กำลังผลิต' },
-  behind:    { color: '#f59e0b', label: 'ตามหลังเป้า' },
-  idle:      { color: '#6b7280', label: 'ไม่มีแผน/ปิดกะ' },
+// สีตามหมวดสถานะ (คำนวณต่อ metric) — down = แดงกระพริบ (Andon), อื่นๆ นิ่ง
+const CAT = {
+  good: { color: '#22c55e', label: 'ดี' },
+  ok:   { color: '#f59e0b', label: 'เฝ้าระวัง' },
+  bad:  { color: '#ef4444', label: 'ต้องแก้' },
+  down: { color: '#ef4444', label: 'Downtime', blink: true },
+  idle: { color: '#6b7280', label: 'ไม่มีแผน/ปิดกะ' },
+};
+
+// นิยาม metric แต่ละตัว — value(ค่าเรียงอันดับ) · text(บนกรอบ) · cat(หมวดสี) · worstFirst(เรียง side panel)
+const METRICS = {
+  productivity: {
+    label: '📦 ยอดผลิต', worstFirst: true,
+    value: s => s.hasOpen || s.target > 0 ? (s.target > 0 ? Math.round(s.actual / s.target * 100) : 0) : null,
+    text: s => s.target > 0 ? `${s.actual}/${s.target} · ${Math.round(s.actual / s.target * 100)}%` : (s.hasOpen ? '— ไม่มีเป้า' : ''),
+    cat: s => !s.hasOpen && s.target === 0 ? 'idle' : s.target === 0 ? 'ok' : (() => { const p = s.actual / s.target * 100; return p >= 95 ? 'good' : p >= 80 ? 'ok' : 'bad'; })(),
+  },
+  oee: {
+    label: '⚙️ OEE', worstFirst: true,
+    value: s => s.oee,
+    text: s => s.oee != null ? `OEE ${Math.round(s.oee)}%` : (s.hasOpen ? 'รอปิดกะ' : ''),
+    cat: s => s.oee == null ? 'idle' : s.oee >= 80 ? 'good' : s.oee >= 65 ? 'ok' : 'bad',
+  },
+  breakdown: {
+    label: '🔧 Downtime', worstFirst: true, desc: true,
+    value: s => s.dtMin,
+    text: s => s.dtActive ? `🔴 หยุด ${s.dtMin} น.` : s.dtMin > 0 ? `${s.dtMin} นาที` : (s.hasOpen ? 'ไม่มี' : ''),
+    cat: s => s.dtActive ? 'down' : !s.hasOpen && s.dtMin === 0 ? 'idle' : s.dtMin === 0 ? 'good' : s.dtMin < 30 ? 'ok' : 'bad',
+  },
+  ng: {
+    label: '🚫 ของเสีย', worstFirst: true, desc: true,
+    value: s => s.ng,
+    text: s => s.ng > 0 ? `NG ${s.ng}` : (s.hasOpen ? 'NG 0' : ''),
+    cat: s => !s.hasOpen && s.ng === 0 ? 'idle' : s.ng === 0 ? 'good' : s.ng < 20 ? 'ok' : 'bad',
+  },
 };
 
 const round = (v) => Math.round(v * 100) / 100;
 const centroid = (pts) => pts.length
   ? [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length]
   : [50, 50];
+const EMPTY_ST = { actual: 0, target: 0, hasOpen: false, oee: null, dtMin: 0, dtActive: false, ng: 0 };
 
 export default function FactoryMap() {
   const { role } = useContext(UserContext);
@@ -37,24 +67,28 @@ export default function FactoryMap() {
 
   const [imageUrl, setImageUrl] = useState(null);
   const [mapId, setMapId] = useState(null);
-  const [regions, setRegions] = useState([]);        // [{id, line_name, points:[[x,y]...]}]
+  const [regions, setRegions] = useState([]);
   const [lineStatus, setLineStatus] = useState({});
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [aspect, setAspect] = useState(null);
+  const [metric, setMetric] = useState('productivity');
+  const [highlight, setHighlight] = useState(null); // line_name ที่คลิกจาก panel (เน้นชั่วคราว)
 
   const [drawing, setDrawing] = useState(false);
-  const [draft, setDraft] = useState([]);            // จุดที่กำลังวาด [[x,y]...]
-  const [hoverPt, setHoverPt] = useState(null);       // ตำแหน่งเมาส์ระหว่างวาด (preview เส้น)
-  const [snapFirst, setSnapFirst] = useState(false);  // แม่เหล็กดูดจุดแรกอยู่ (ปล่อยคลิก = ปิดรูป)
-  const [assignFor, setAssignFor] = useState(null);   // polygon ที่วาดเสร็จ รอเลือกไลน์ (dropdown)
+  const [draft, setDraft] = useState([]);
+  const [hoverPt, setHoverPt] = useState(null);
+  const [snapFirst, setSnapFirst] = useState(false);
+  const [assignFor, setAssignFor] = useState(null);
   const [assignLine, setAssignLine] = useState('');
   const wrapRef = useRef(null);
-  const dragRef = useRef(null);                       // { id, vi:number|-1, px, py, base:[[x,y]...] }
+  const dragRef = useRef(null);
   const shiftRef = useRef(false);
-  const lastRawRef = useRef(null);                    // ตำแหน่งเมาส์ดิบล่าสุด (ไว้คำนวณใหม่ตอนกด/ปล่อย Shift)
+  const lastRawRef = useRef(null);
+
+  const M = METRICS[metric];
 
   /* ── โหลดผัง + รูปทรง + ไลน์ ── */
   const loadMap = useCallback(async () => {
@@ -71,11 +105,11 @@ export default function FactoryMap() {
   }, []);
   useEffect(() => { loadMap(); }, [loadMap]);
 
-  /* ── สถานะการผลิตรายไลน์ (DR) — refresh 30 วิ ── */
+  /* ── metric รายไลน์ (DR) — refresh 30 วิ · เก็บทุก metric ในรอบเดียว ── */
   const loadStatus = useCallback(async () => {
     const workDate = getWorkDate();
     const { data: sessions } = await supabaseDR
-      .from('production_sessions').select('id, line_name, status').eq('work_date', workDate);
+      .from('production_sessions').select('id, line_name, status, oee, qty_ng, ng_qty').eq('work_date', workDate);
     if (!sessions?.length) { setLineStatus({}); return; }
     const sessIds = sessions.map(s => s.id);
     const [{ data: orders }, { data: dts }] = await Promise.all([
@@ -83,23 +117,45 @@ export default function FactoryMap() {
       supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at').in('session_id', sessIds),
     ]);
     const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
-    const openDtSess = new Set((dts || []).filter(d => !d.ended_at && d.duration_min == null).map(d => d.session_id));
+    const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
     const byLine = {};
     sessions.forEach(s => {
       const os = ordBySess[s.id] || [];
       const target = os.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
       const actual = os.reduce((a, o) => a + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
-      const acc = byLine[s.line_name] || { target: 0, actual: 0, hasOpen: false, down: false };
-      byLine[s.line_name] = { target: acc.target + target, actual: acc.actual + actual, hasOpen: acc.hasOpen || s.status === 'open', down: acc.down || openDtSess.has(s.id) };
+      const dl = dtBySess[s.id] || [];
+      const dtMin = dl.reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
+      const dtActive = dl.some(d => !d.ended_at && d.duration_min == null);
+      const acc = byLine[s.line_name] || { ...EMPTY_ST, oeeSum: 0, oeeN: 0 };
+      byLine[s.line_name] = {
+        actual: acc.actual + actual, target: acc.target + target,
+        hasOpen: acc.hasOpen || s.status === 'open',
+        dtMin: acc.dtMin + Math.round(dtMin), dtActive: acc.dtActive || dtActive,
+        ng: acc.ng + (s.qty_ng ?? s.ng_qty ?? 0),
+        oeeSum: acc.oeeSum + (s.oee != null ? Number(s.oee) : 0), oeeN: acc.oeeN + (s.oee != null ? 1 : 0),
+      };
     });
     const out = {};
-    Object.entries(byLine).forEach(([name, v]) => {
-      const pct = v.target > 0 ? Math.round((v.actual / v.target) * 100) : null;
-      out[name] = { status: v.down ? 'down' : v.hasOpen ? (pct != null && pct < 80 ? 'behind' : 'producing') : 'idle', actual: v.actual, target: v.target, pct };
-    });
+    Object.entries(byLine).forEach(([name, v]) => { out[name] = { ...v, oee: v.oeeN ? Math.round(v.oeeSum / v.oeeN) : null }; });
     setLineStatus(out);
   }, []);
   useEffect(() => { loadStatus(); const t = setInterval(loadStatus, 30000); return () => clearInterval(t); }, [loadStatus]);
+
+  const stOf = (name) => lineStatus[name] || EMPTY_ST;
+  const catColor = (name) => CAT[M.cat(stOf(name))];
+
+  // side panel: ไลน์ที่มีกะวันนี้ ∪ ไลน์ที่ตีกรอบไว้ — เรียงตาม metric (ปัญหาขึ้นบน)
+  const ranked = useMemo(() => {
+    const names = new Set([...Object.keys(lineStatus), ...regions.map(r => r.line_name)]);
+    const arr = [...names].map(name => ({ name, st: stOf(name), val: M.value(stOf(name)), cat: M.cat(stOf(name)) }));
+    arr.sort((a, b) => {
+      const av = a.val, bv = b.val;
+      if (av == null && bv == null) return a.name.localeCompare(b.name);
+      if (av == null) return 1; if (bv == null) return -1;
+      return M.desc ? bv - av : av - bv;
+    });
+    return arr;
+  }, [lineStatus, regions, metric]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── อัปโหลดรูปผัง (บีบเบา 2560/2.5MB/q0.9) ── */
   const handleUpload = async (e) => {
@@ -133,40 +189,28 @@ export default function FactoryMap() {
     const r = wrapRef.current.getBoundingClientRect();
     return { x: Math.min(100, Math.max(0, ((clientX - r.left) / r.width) * 100)), y: Math.min(100, Math.max(0, ((clientY - r.top) / r.height) * 100)) };
   };
-
   const assignableLines = () => lines.map(l => l.name).filter(n => !regions.some(r => r.line_name === n));
 
-  /* ── หาจุดที่จะวาง: แม่เหล็กดูดจุดแรก (ปิดรูป) > Shift ตั้งฉากจากจุดล่าสุด > ปกติ ── */
+  /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
-    if (draft.length >= 3) {
-      const f = draft[0];
-      if (Math.hypot(f[0] - p.x, f[1] - p.y) < 3) return { pt: [f[0], f[1]], snap: true };
-    }
+    if (draft.length >= 3) { const f = draft[0]; if (Math.hypot(f[0] - p.x, f[1] - p.y) < 3) return { pt: [f[0], f[1]], snap: true }; }
     if (shift && draft.length) {
       const last = draft[draft.length - 1];
-      return Math.abs(p.x - last[0]) >= Math.abs(p.y - last[1])
-        ? { pt: [round(p.x), last[1]], snap: false }   // ล็อกแนวนอน (y เท่าจุดเดิม)
-        : { pt: [last[0], round(p.y)], snap: false };  // ล็อกแนวตั้ง (x เท่าจุดเดิม)
+      return Math.abs(p.x - last[0]) >= Math.abs(p.y - last[1]) ? { pt: [round(p.x), last[1]], snap: false } : { pt: [last[0], round(p.y)], snap: false };
     }
     return { pt: [round(p.x), round(p.y)], snap: false };
   };
-
-  /* ── วาดรูปทรงใหม่: คลิกทีละจุด · แม่เหล็กใกล้จุดแรก/กดเสร็จ = ปิดรูป · Shift = เส้นตั้งฉาก ── */
   const onMapClick = (e) => {
     if (!editing || !drawing) return;
     if (e.target.closest('[data-handle]') || e.target.closest('button')) return;
-    const p = pctFromEvent(e.clientX, e.clientY);
-    const { pt, snap } = resolveDrawPoint(p, e.shiftKey);
+    const { pt, snap } = resolveDrawPoint(pctFromEvent(e.clientX, e.clientY), e.shiftKey);
     if (snap) return finishDraw();
     setDraft(prev => [...prev, pt]);
   };
   const onMapMove = (e) => {
     if (drawing) {
       lastRawRef.current = { x: e.clientX, y: e.clientY };
-      if (draft.length) {
-        const { pt, snap } = resolveDrawPoint(pctFromEvent(e.clientX, e.clientY), e.shiftKey);
-        setHoverPt(pt); setSnapFirst(snap);
-      }
+      if (draft.length) { const { pt, snap } = resolveDrawPoint(pctFromEvent(e.clientX, e.clientY), e.shiftKey); setHoverPt(pt); setSnapFirst(snap); }
       return;
     }
     if (dragRef.current) {
@@ -174,14 +218,11 @@ export default function FactoryMap() {
       const d = dragRef.current, dx = p.x - d.px, dy = p.y - d.py;
       setRegions(prev => prev.map(r => {
         if (r.id !== d.id) return r;
-        const pts = d.base.map((pt, i) => (d.vi === -1 || d.vi === i)
-          ? [Math.min(100, Math.max(0, round(pt[0] + dx))), Math.min(100, Math.max(0, round(pt[1] + dy)))]
-          : pt);
+        const pts = d.base.map((pt, i) => (d.vi === -1 || d.vi === i) ? [Math.min(100, Math.max(0, round(pt[0] + dx))), Math.min(100, Math.max(0, round(pt[1] + dy)))] : pt);
         return { ...r, points: pts };
       }));
     }
   };
-  // วาดเสร็จ → เปิด dropdown เลือกไลน์ (ไม่ใช้ window.prompt แล้ว)
   const finishDraw = () => {
     const pts = draft;
     setDraft([]); setHoverPt(null); setSnapFirst(false); setDrawing(false);
@@ -199,7 +240,6 @@ export default function FactoryMap() {
   };
   const cancelDraw = () => { setDraft([]); setHoverPt(null); setSnapFirst(false); setDrawing(false); };
 
-  // กด/ปล่อย Shift ระหว่างวาด → คำนวณ preview ใหม่ทันทีแม้เมาส์ไม่ขยับ
   useEffect(() => {
     if (!drawing) return;
     const recompute = () => {
@@ -231,22 +271,23 @@ export default function FactoryMap() {
   const onImgLoad = (e) => setAspect(e.target.naturalWidth / e.target.naturalHeight);
   const wrapStyle = aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' };
   const ptsStr = (pts) => pts.map(p => `${p[0]},${p[1]}`).join(' ');
+  const flashLine = (name) => { setHighlight(name); setTimeout(() => setHighlight(h => h === name ? null : h), 2000); };
 
   return (
-    <div className="page-content" style={{ maxWidth: 'min(97vw, 2200px)', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+    <div className="page-content" style={{ maxWidth: 'min(98vw, 2400px)', margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div>
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>🗺️ ผังรวมโรงงาน</h2>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>สถานะการผลิตของทุกไลน์บนผังเดียว — อัปเดตอัตโนมัติทุก 30 วินาที</p>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · อัปเดตทุก 30 วินาที</p>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {Object.entries(STATUS_META).map(([k, m]) => (
-            <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)' }}>
-              <span style={{ width: 11, height: 11, borderRadius: 3, background: m.color, display: 'inline-block' }} /> {m.label}
-            </span>
-          ))}
-          {canEdit && <button onClick={() => { setEditing(v => !v); cancelDraw(); }} style={btn(editing)}>{editing ? '✓ เสร็จ' : '✏️ แก้ผัง'}</button>}
-        </div>
+        {canEdit && <button onClick={() => { setEditing(v => !v); cancelDraw(); }} style={btn(editing)}>{editing ? '✓ เสร็จ' : '✏️ แก้ผัง'}</button>}
+      </div>
+
+      {/* เลือก metric */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        {Object.entries(METRICS).map(([k, m]) => (
+          <button key={k} onClick={() => setMetric(k)} style={btn(metric === k)}>{m.label}</button>
+        ))}
       </div>
 
       {editing && (
@@ -258,13 +299,13 @@ export default function FactoryMap() {
           {imageUrl && !drawing && <button onClick={() => { setDrawing(true); setDraft([]); }} disabled={!assignableLines().length} style={btn(false)}>✏️ วาดกรอบไลน์ใหม่</button>}
           {drawing && (
             <>
-              <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>🖊️ คลิกทีละจุดล้อมพื้นที่ไลน์ (L/U ได้) · กดค้าง <b>Shift</b> = เส้นตั้งฉาก · เข้าใกล้จุดแรก = ดูดปิดรูปเอง</span>
+              <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>🖊️ คลิกทีละจุดล้อมพื้นที่ (L/U ได้) · กด <b>Shift</b> = เส้นตั้งฉาก · เข้าใกล้จุดแรก = ดูดปิดรูป</span>
               <button onClick={finishDraw} disabled={draft.length < 3} style={btn(true)}>✓ เสร็จ ({draft.length} จุด)</button>
               <button onClick={() => setDraft(p => p.slice(0, -1))} disabled={!draft.length} style={btn(false)}>↩ ลบจุดล่าสุด</button>
               <button onClick={cancelDraw} style={btn(false)}>✕ ยกเลิก</button>
             </>
           )}
-          {!drawing && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ลากกลางรูป=ย้ายทั้งไลน์ · ลากจุดมุม=ปรับรูปทรง</span>}
+          {!drawing && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ลากกลางรูป=ย้าย · ลากจุดมุม=ปรับรูปทรง</span>}
           <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>ตีกรอบแล้ว {regions.length}/{lines.length} ไลน์</span>
         </div>
       )}
@@ -276,68 +317,85 @@ export default function FactoryMap() {
           ยังไม่มีรูปผังโรงงาน — {canEdit ? 'กด "✏️ แก้ผัง" แล้วอัปโหลดรูป' : 'ให้ผู้ดูแลอัปโหลดรูปผังก่อน'}
         </div>
       ) : (
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          {/* ── ผัง ── */}
+          <div style={{ flex: '1 1 640px', minWidth: 0, display: 'flex', justifyContent: 'center' }}>
           <div ref={wrapRef} onClick={onMapClick} onPointerMove={onMapMove} onPointerUp={endDrag} onPointerCancel={endDrag}
             style={{ position: 'relative', ...wrapStyle, maxHeight: 'calc(100vh - 200px)', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f' }}>
             <img src={imageUrl} alt="ผังโรงงาน" onLoad={onImgLoad} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none', userSelect: 'none' }} />
 
-            {/* SVG รูปทรงไลน์ (preserveAspectRatio=none → % ตรงกับรูป · stroke ไม่ยืดด้วย non-scaling) */}
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
               {regions.map(r => {
-                const st = lineStatus[r.line_name]; const meta = STATUS_META[st?.status || 'idle'];
+                const cat = M.cat(stOf(r.line_name)); const meta = CAT[cat]; const hl = highlight === r.line_name;
                 return (
                   <polygon key={r.id} data-region points={ptsStr(r.points)}
                     className={meta.blink ? 'region-alarm' : undefined}
-                    fill={meta.blink ? undefined : `${meta.color}33`} stroke={meta.blink ? undefined : meta.color}
-                    strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round"
+                    fill={meta.blink ? undefined : `${meta.color}${hl ? '55' : '33'}`} stroke={meta.blink ? undefined : meta.color}
+                    strokeWidth={hl ? '4' : '2'} vectorEffect="non-scaling-stroke" strokeLinejoin="round"
                     style={{ pointerEvents: editing && !drawing ? 'auto' : 'none', cursor: editing && !drawing ? 'move' : 'default' }}
                     onPointerDown={(e) => startDrag(e, r, -1)} />
                 );
               })}
-              {/* draft ระหว่างวาด — เส้น (ปิดลูปเมื่อดูดจุดแรก) */}
               {drawing && draft.length > 0 && (
-                <polyline points={ptsStr(hoverPt ? [...draft, hoverPt] : draft)}
-                  fill={snapFirst ? 'rgba(34,197,94,0.18)' : 'rgba(77,159,255,0.12)'}
-                  stroke={snapFirst ? '#22c55e' : '#4d9fff'} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeDasharray="3 2" />
+                <polyline points={ptsStr(hoverPt ? [...draft, hoverPt] : draft)} fill={snapFirst ? 'rgba(34,197,94,0.18)' : 'rgba(77,159,255,0.12)'} stroke={snapFirst ? '#22c55e' : '#4d9fff'} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeDasharray="3 2" />
               )}
             </svg>
 
-            {/* จุด draft ระหว่างวาด (HTML — คมชัด) + ไฮไลต์จุดแรกเป็นเป้าแม่เหล็ก */}
             {drawing && draft.map((pt, i) => (
-              <div key={`d-${i}`} style={{ position: 'absolute', left: `${pt[0]}%`, top: `${pt[1]}%`,
-                width: i === 0 ? (snapFirst ? 22 : 16) : 11, height: i === 0 ? (snapFirst ? 22 : 16) : 11,
-                transform: 'translate(-50%,-50%)', borderRadius: '50%',
-                background: i === 0 ? (snapFirst ? 'rgba(34,197,94,0.35)' : 'rgba(77,159,255,0.3)') : '#4d9fff',
-                border: `2px solid ${i === 0 ? '#22c55e' : '#fff'}`, pointerEvents: 'none', transition: 'width .1s,height .1s' }} />
+              <div key={`d-${i}`} style={{ position: 'absolute', left: `${pt[0]}%`, top: `${pt[1]}%`, width: i === 0 ? (snapFirst ? 22 : 16) : 11, height: i === 0 ? (snapFirst ? 22 : 16) : 11, transform: 'translate(-50%,-50%)', borderRadius: '50%', background: i === 0 ? (snapFirst ? 'rgba(34,197,94,0.35)' : 'rgba(77,159,255,0.3)') : '#4d9fff', border: `2px solid ${i === 0 ? '#22c55e' : '#fff'}`, pointerEvents: 'none', transition: 'width .1s,height .1s' }} />
             ))}
 
-            {/* ป้ายชื่อ+ยอด ที่ centroid (HTML — ไม่โดน SVG ยืด) */}
+            {/* ป้าย: ชื่อ + ค่า metric ที่ centroid + จุดแดงถ้า downtime ค้าง (โชว์เสมอทุก metric) */}
             {regions.map(r => {
-              const [cx, cy] = centroid(r.points); const st = lineStatus[r.line_name]; const meta = STATUS_META[st?.status || 'idle'];
+              const [cx, cy] = centroid(r.points); const st = stOf(r.line_name); const meta = CAT[M.cat(st)]; const txt = M.text(st);
               return (
                 <div key={`lbl-${r.id}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%,-50%)', textAlign: 'center', pointerEvents: 'none', textShadow: '0 1px 4px rgba(0,0,0,0.95)' }}>
-                  <div style={{ fontSize: 'clamp(11px,1.1vw,15px)', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap' }}>{r.line_name}</div>
-                  {st && st.target > 0 && <div style={{ fontSize: 'clamp(10px,0.95vw,13px)', fontWeight: 700, color: '#fff' }}>{st.actual}/{st.target}{st.pct != null ? ` · ${st.pct}%` : ''}</div>}
-                  {st && <div style={{ display: 'inline-block', fontSize: 'clamp(9px,0.85vw,12px)', fontWeight: 700, color: meta.color, background: 'rgba(0,0,0,0.7)', padding: '0 5px', borderRadius: 3, marginTop: 2 }}>{meta.label}</div>}
+                  <div style={{ fontSize: 'clamp(11px,1.05vw,15px)', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap' }}>
+                    {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{r.line_name}
+                  </div>
+                  {txt && <div style={{ display: 'inline-block', fontSize: 'clamp(10px,0.95vw,13px)', fontWeight: 800, color: meta.color, background: 'rgba(0,0,0,0.72)', padding: '0 6px', borderRadius: 3, marginTop: 2 }}>{txt}</div>}
                 </div>
               );
             })}
 
-            {/* handle มุม + ปุ่มลบ (เฉพาะตอนแก้ไข ไม่ได้วาด) */}
             {editing && !drawing && regions.map(r => {
               const [cx, cy] = centroid(r.points);
               return (
                 <div key={`h-${r.id}`}>
                   {r.points.map((pt, i) => (
-                    <div key={i} data-handle onPointerDown={(e) => startDrag(e, r, i)}
-                      style={{ position: 'absolute', left: `${pt[0]}%`, top: `${pt[1]}%`, width: 14, height: 14, transform: 'translate(-50%,-50%)', background: '#4d9fff', border: '2px solid #fff', borderRadius: 3, cursor: 'grab', touchAction: 'none' }} />
+                    <div key={i} data-handle onPointerDown={(e) => startDrag(e, r, i)} style={{ position: 'absolute', left: `${pt[0]}%`, top: `${pt[1]}%`, width: 14, height: 14, transform: 'translate(-50%,-50%)', background: '#4d9fff', border: '2px solid #fff', borderRadius: 3, cursor: 'grab', touchAction: 'none' }} />
                   ))}
-                  <button onClick={(e) => { e.stopPropagation(); deleteRegion(r.id); }} title={`ลบกรอบ ${r.line_name}`}
-                    style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%,-140%)', width: 22, height: 22, borderRadius: 6, border: 'none', background: 'rgba(239,68,68,0.92)', color: '#fff', fontSize: 13, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+                  <button onClick={(e) => { e.stopPropagation(); deleteRegion(r.id); }} title={`ลบกรอบ ${r.line_name}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%,-140%)', width: 22, height: 22, borderRadius: 6, border: 'none', background: 'rgba(239,68,68,0.92)', color: '#fff', fontSize: 13, cursor: 'pointer', lineHeight: 1 }}>✕</button>
                 </div>
               );
             })}
           </div>
+          </div>
+
+          {/* ── side panel: จัดอันดับไลน์ตาม metric (ใช้พื้นที่ข้าง) ── */}
+          {!editing && (
+            <aside style={{ flex: '0 0 320px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>{M.label} — จัดอันดับ</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>{M.desc ? 'มาก→น้อย (ปัญหาขึ้นบน)' : 'น้อย→มาก (ตามหลังขึ้นบน)'} · คลิกเพื่อเน้นบนผัง</div>
+              {ranked.length === 0 ? (
+                <div style={{ fontSize: 12, color: 'var(--muted)', padding: 16, textAlign: 'center' }}>ยังไม่มีข้อมูลการผลิตวันนี้</div>
+              ) : ranked.map(({ name, st, cat }) => {
+                const meta = CAT[cat]; const txt = M.text(st); const hasRegion = regions.some(r => r.line_name === name);
+                return (
+                  <div key={name} onClick={() => hasRegion && flashLine(name)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 8, marginBottom: 4, cursor: hasRegion ? 'pointer' : 'default', background: highlight === name ? 'var(--bg2)' : 'transparent', border: `1px solid ${highlight === name ? meta.color : 'transparent'}` }}>
+                    <span className={meta.blink ? 'dt-alarm-blink' : undefined} style={{ width: 10, height: 10, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {name}{!hasRegion && <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}> · ยังไม่ตีกรอบ</span>}
+                      </div>
+                      <div style={{ fontSize: 11, color: meta.color, fontWeight: 700 }}>{txt || '—'}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </aside>
+          )}
         </div>
       )}
 
@@ -345,14 +403,12 @@ export default function FactoryMap() {
         <div style={{ marginTop: 12, fontSize: 12, color: 'var(--muted)' }}>ยังไม่ได้ตีกรอบ: <span style={{ color: '#f59e0b' }}>{assignableLines().join(', ')}</span></div>
       )}
 
-      {/* เลือกไลน์ให้รูปที่วาด (dropdown แทน window.prompt) — ปิดจากปุ่มเท่านั้น (กติกา modal ฟอร์ม) */}
       {assignFor && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '22px 24px', width: '100%', maxWidth: 360 }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>🖊️ ตีกรอบให้ไลน์ไหน?</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>เลือกไลน์ที่จะผูกกับรูปที่วาด ({assignFor.length} จุด)</div>
-            <select value={assignLine} onChange={e => setAssignLine(e.target.value)} autoFocus
-              style={{ width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 14, marginBottom: 16 }}>
+            <select value={assignLine} onChange={e => setAssignLine(e.target.value)} autoFocus style={{ width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 14, marginBottom: 16 }}>
               <option value="">— เลือกไลน์ —</option>
               {assignableLines().map(n => <option key={n} value={n}>{n}</option>)}
             </select>
