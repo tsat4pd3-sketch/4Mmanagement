@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -77,10 +78,12 @@ const EMPTY_ST = { actual: 0, target: 0, hasOpen: false, oee: null, oeeLive: fal
 export default function FactoryMap() {
   const { role } = useContext(UserContext);
   const canEdit = can('factory_map', 'edit', role);
+  const navigate = useNavigate();
 
   const [imageUrl, setImageUrl] = useState(null);
   const [mapId, setMapId] = useState(null);
   const [regions, setRegions] = useState([]);
+  const [layoutLines, setLayoutLines] = useState(() => new Set()); // ไลน์ที่มีผังพื้น (line_layouts) → คลิกเจาะดูผังพร้อมคนแบบ Dashboard
   const [lineStatus, setLineStatus] = useState({});   // production metrics (DR)
   const [manpower, setManpower] = useState({});        // คน/เข้างาน (Main)
   const [pmStatus, setPmStatus] = useState({});        // PM เครื่องจักร (DR)
@@ -115,15 +118,17 @@ export default function FactoryMap() {
 
   /* ── โหลดผัง + รูปทรง + ไลน์ ── */
   const loadMap = useCallback(async () => {
-    const [{ data: fm }, { data: rg }, { data: ln }] = await Promise.all([
+    const [{ data: fm }, { data: rg }, { data: ln }, { data: lay }] = await Promise.all([
       supabase.from('factory_map').select('id, image_url').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('factory_line_regions').select('id, line_name, points'),
       supabase.from('production_lines').select('id, name, parent_line_name').order('name'),
+      supabase.from('line_layouts').select('line_name'),
     ]);
     setImageUrl(fm?.image_url || null);
     setMapId(fm?.id || null);
     setRegions((rg || []).map(r => ({ ...r, points: Array.isArray(r.points) ? r.points : [] })));
     setLines(ln || []);
+    setLayoutLines(new Set((lay || []).map(l => l.line_name)));
     setLoading(false);
   }, []);
   useEffect(() => { loadMap(); }, [loadMap]);
@@ -254,6 +259,14 @@ export default function FactoryMap() {
     return m;
   }, [lines]);
   const familyNames = (name) => [name, ...(childrenOf[name] || [])];
+  // ไลน์นี้มีผังพื้น (line_layouts) ไหม → คืนชื่อไลน์ที่จะเปิดผัง (ตัวเอง หรือไลน์ลูกที่มีผัง) · ไม่มี = null
+  const floorMapTarget = (name) => layoutLines.has(name) ? name : (familyNames(name).find(n => layoutLines.has(n)) || null);
+  // คลิกไลน์: มีผังพื้น → ไปหน้า Dashboard เปิดผังไลน์พร้อมพนักงาน · ไม่มีผัง → popup สรุปเมตริก
+  const openLine = (name) => {
+    const t = floorMapTarget(name);
+    if (t) { setHoverLine(null); navigate(`/dashboard?line=${encodeURIComponent(t)}`); }
+    else setDetailLine(name);
+  };
   // ตีกรอบเฉพาะ "ไลน์บนสุด (top-level)" = parent_line_name IS NULL — 1 กรอบ/กลุ่ม (รวมยอดลูกด้วย stOf)
   const topNames = useMemo(() => lines.filter(l => !l.parent_line_name).map(l => l.name), [lines]);
   const stOf = (name) => {
@@ -413,7 +426,7 @@ export default function FactoryMap() {
       <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div>
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>🗺️ ผังรวมโรงงาน</h2>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเจาะดูเต็ม</b> · อัปเดตทุก 30 วินาที</p>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตทุก 30 วินาที</p>
         </div>
         {canEdit && <button onClick={() => { setEditing(v => !v); cancelDraw(); }} style={btn(editing)}>{editing ? '✓ เสร็จ' : '✏️ แก้ผัง'}</button>}
       </div>
@@ -470,7 +483,7 @@ export default function FactoryMap() {
                     fill={meta.blink ? undefined : `${meta.color}${hl ? '5e' : '33'}`} stroke={meta.blink ? undefined : meta.color}
                     strokeWidth={hl ? '4' : '2'} vectorEffect="non-scaling-stroke" strokeLinejoin="round"
                     style={{ pointerEvents: drawing ? 'none' : 'auto', cursor: editing ? 'move' : 'pointer' }}
-                    onClick={(e) => { if (!editing) { e.stopPropagation(); setDetailLine(r.line_name); } }}
+                    onClick={(e) => { if (!editing) { e.stopPropagation(); openLine(r.line_name); } }}
                     onPointerEnter={!editing ? (e) => { if (e.pointerType === 'mouse') { setHoverLine(r.line_name); setHoverXY({ x: e.clientX, y: e.clientY }); } } : undefined}
                     onPointerMove={!editing ? (e) => { if (e.pointerType === 'mouse') setHoverXY({ x: e.clientX, y: e.clientY }); } : undefined}
                     onPointerLeave={!editing ? () => setHoverLine(h => h === r.line_name ? null : h) : undefined}
@@ -540,7 +553,7 @@ export default function FactoryMap() {
                 const meta = CAT[cat]; const txt = M.text(st); const hasRegion = regions.some(r => r.line_name === name);
                 const barW = val == null ? 0 : isPct ? Math.min(100, Math.abs(val)) : Math.round(Math.abs(val) / maxVal * 100);
                 return (
-                  <div key={name} onClick={() => { if (hasRegion) flashLine(name); setDetailLine(name); }}
+                  <div key={name} onClick={() => { if (hasRegion) flashLine(name); openLine(name); }}
                     style={{ padding: '8px 10px', borderRadius: 9, marginBottom: 5, cursor: 'pointer', background: highlight === name ? 'var(--bg2)' : 'var(--bg3)', border: `1px solid ${highlight === name ? meta.color : 'var(--border2)'}` }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                       <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', width: 18, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
@@ -570,6 +583,7 @@ export default function FactoryMap() {
       {/* ── การ์ดพรีวิวลอยตามเม้าส์ (hover) — สรุปทุกมุมมองแบบย่อ, เฉพาะ mouse ── */}
       {hoverLine && !editing && !detailLine && (() => {
         const st = stOf(hoverLine); const kids = childrenOf[hoverLine] || []; const meta = CAT[M.cat(st)];
+        const hasFloor = !!floorMapTarget(hoverLine);
         const W = 264, OFF = 18;
         const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
         const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
@@ -583,14 +597,13 @@ export default function FactoryMap() {
         if (top < 8) top = 8;
         return (
           <div ref={hoverCardRef} style={{ position: 'fixed', left, top, width: W, zIndex: 1100, pointerEvents: 'none',
-            background: 'linear-gradient(160deg, rgba(20,24,36,0.97), rgba(12,15,24,0.97))',
-            border: `1px solid ${meta.color}66`, borderTop: `3px solid ${meta.color}`, borderRadius: 12,
-            boxShadow: `0 12px 34px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03)`, padding: '12px 14px', color: '#fff' }}>
+            background: 'var(--card)', border: `1px solid ${meta.color}66`, borderTop: `3px solid ${meta.color}`, borderRadius: 12,
+            boxShadow: '0 12px 34px rgba(0,0,0,0.5)', padding: '12px 14px', color: 'var(--text)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
               <span className={meta.blink ? 'dt-alarm-blink' : undefined} style={{ width: 11, height: 11, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
-              <div style={{ fontSize: 15, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{hoverLine}</div>
+              <div style={{ fontSize: 15, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text)' }}>{hoverLine}</div>
             </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', marginBottom: 10, marginLeft: 19 }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, marginLeft: 19 }}>
               สถานะ: <span style={{ color: meta.color, fontWeight: 700 }}>{meta.label}</span>{kids.length ? ` · รวม ${kids.length} ไลน์ย่อย` : ''}
             </div>
             <div style={{ display: 'grid', gap: 6 }}>
@@ -598,15 +611,17 @@ export default function FactoryMap() {
                 const c = CAT[m.cat(st)]; const t = m.text(st); const isCur = k === metric;
                 return (
                   <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
-                    background: isCur ? `${c.color}1f` : 'rgba(255,255,255,0.04)', border: isCur ? `1px solid ${c.color}55` : '1px solid transparent',
+                    background: isCur ? `${c.color}22` : 'var(--bg3)', border: isCur ? `1px solid ${c.color}55` : '1px solid var(--border2)',
                     borderRadius: 7, padding: '4px 8px' }}>
-                    <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.72)', fontWeight: isCur ? 800 : 600, whiteSpace: 'nowrap' }}>{m.label}</span>
-                    <span style={{ fontSize: 12.5, fontWeight: 800, color: t ? c.color : 'rgba(255,255,255,0.35)', whiteSpace: 'nowrap' }}>{t || '—'}</span>
+                    <span style={{ fontSize: 12, color: 'var(--text2)', fontWeight: isCur ? 800 : 600, whiteSpace: 'nowrap' }}>{m.label}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: t ? c.color : 'var(--muted)', whiteSpace: 'nowrap' }}>{t || '—'}</span>
                   </div>
                 );
               })}
             </div>
-            <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.5)', marginTop: 9, textAlign: 'center' }}>คลิกเพื่อดูรายละเอียดเต็ม + แยกไลน์ย่อย</div>
+            <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 9, textAlign: 'center', fontWeight: 700 }}>
+              {hasFloor ? '🏭 คลิกเพื่อเปิดผังไลน์ + พนักงาน' : 'คลิกเพื่อดูรายละเอียด + แยกไลน์ย่อย'}
+            </div>
           </div>
         );
       })()}

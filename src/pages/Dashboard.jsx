@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useContext, Fragment } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
@@ -211,6 +212,7 @@ export default function Dashboard() {
   const [stationEmpMap, setStationEmpMap] = useState({});
   const [expandedLine,  setExpandedLine]  = useState(null);
   const [expandedLines, setExpandedLines] = useState(new Set()); // ชื่อไลน์หลักที่กดขยายดูไลน์ย่อยในการ์ดสถานะไลน์ผลิต
+  const [searchParams, setSearchParams] = useSearchParams(); // deep-link ?line=NAME (จากผังรวมโรงงาน) → เปิดผังไลน์นั้น
   const [andonLine, setAndonLine] = useState(null); // { title, names } — เปิด Andon panel เจาะรายละเอียด alarm ของไลน์
   const mapImgRef = useRef(null);
   const [mapBox, setMapBox] = useState({ w: 0, h: 0 });
@@ -686,6 +688,17 @@ export default function Dashboard() {
     walk(layoutLineName);
     return names;
   }, [parentChildrenMap, layouts]);
+
+  // deep-link จากผังรวมโรงงาน: ?line=NAME → เปิดผังไลน์ที่ครอบชื่อนี้ (ตรงชื่อ หรือเป็นลูกในการ์ดของ layout)
+  useEffect(() => {
+    const wanted = searchParams.get('line');
+    if (!wanted || !layouts.length) return;
+    const hit = layouts.find(l => l.line_name === wanted)
+      || layouts.find(l => layoutLineNamesForCard(l.line_name).includes(wanted));
+    if (hit) setExpandedLine(hit.line_name);
+    searchParams.delete('line');           // ล้าง param กันเปิดซ้ำตอน re-render/ปิด modal
+    setSearchParams(searchParams, { replace: true });
+  }, [layouts, searchParams, layoutLineNamesForCard, setSearchParams]);
 
   /* Filter by assignedShift — memoized so the 1s clock tick doesn't re-filter all logs */
   const shiftLogs = useMemo(
