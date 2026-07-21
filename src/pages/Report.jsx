@@ -10,7 +10,7 @@ import {
 } from 'recharts';
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 import { hasPermission, can } from '../utils/permissions';
-import { loadCompanyCalendar, getDayType, DAY_TYPE_META } from '../utils/companyCalendar';
+import { loadCompanyCalendar, getDayType, isOtHolidayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import { otPeriodMeta, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyNames, getLineFamilyIds } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
@@ -265,7 +265,7 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   };
 
   const dayType = calReady ? getDayType(date) : 'working';
-  const isHoliday = dayType !== 'working';
+  const isHoliday = isOtHolidayType(dayType); // shutdown75 (ม.75) ไม่ใช่วันหยุดแบบ OT
 
   const lineName = (lineId) => lines.find(l => String(l.id) === String(lineId))?.name || '';
   const busRouteLabel = (r) => r.employees?.bus_routes ? `${r.employees.bus_routes.code} ${r.employees.bus_routes.name}` : '—';
@@ -4224,7 +4224,7 @@ function AttendanceFormTab() {
   //   (8 หรือ 10 ชม. — ดู src/utils/otPeriods.js) · จองเก่า/ไม่ระบุ = 8 ชม. (ห้ามเดา 10.5 — ไม่มีในกฎ)
   const otHoursForDay = (info, day) => {
     if (!info) return 0;
-    const holiday = calLoaded && getDayType(dayDateStr(day)) !== 'working';
+    const holiday = calLoaded && isOtHolidayType(getDayType(dayDateStr(day))); // ชม. OT วันหยุดเฉพาะ ot15/ot2 — shutdown75 มาทำงาน = ปกติ
     if (holiday) {
       if (!info.present) return 0;
       const meta = otPeriodMeta(info.otPeriod);
