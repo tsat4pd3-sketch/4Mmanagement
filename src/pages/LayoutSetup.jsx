@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import FactoryMap from './FactoryMap'
+import MtnMachineLayout from './MtnMachineLayout'
 
 // ตั้งค่าผัง/Floorplan รวมที่เดียว (หมวดตั้งค่าโปรแกรม) — แยก setup ออกจากหน้า display (2026-07-16)
 //   หลักการ: หน้า display (/factory-map, dashboard) ดู+popup เท่านั้น · การตั้งค่าผังมารวมที่นี่ แยกแท็บตาม POV
@@ -53,7 +54,11 @@ export default function LayoutSetup() {
           : <div style={{ color: 'var(--muted)', padding: 30 }}>🔒 ไม่มีสิทธิ์แก้ผังภาพรวมโรงงาน (ต้องมีสิทธิ์ factory_map:edit)</div>
       )}
       {tab === 'production' && linkCard('/linesetup', '🏭', 'ตั้งค่าผังไลน์ (LineSetup)', 'ผังไลน์ + จุดงาน/เครื่องจักร/WIP — จัดการต่อไลน์')}
-      {tab === 'mtn' && linkCard('/mtn-layout', '🔧', 'ผังเครื่องจักร (ซ่อมบำรุง)', 'แท็บ Facility/Utility — วางเครื่อง/จุดตรวจของ MTN')}
+      {tab === 'mtn' && (
+        can('pm', 'setup', role)
+          ? <MtnMachineLayout setupMode />
+          : <div style={{ color: 'var(--muted)', padding: 30 }}>🔒 ไม่มีสิทธิ์ตั้งค่าผัง MTN (ต้องมีสิทธิ์ pm:setup)</div>
+      )}
       {tab === 'store' && (
         <div style={{ padding: 30, borderRadius: 12, border: '1px dashed var(--border2)', background: 'var(--card)', color: 'var(--muted)', maxWidth: 560 }}>
           📦 <b style={{ color: 'var(--text2)' }}>Store / AMR</b> — เตรียมไว้สำหรับตั้งค่าผังคลัง + เส้นทาง/จุดจอดหุ่น AMR · จะเปิดใช้ตอนเริ่มระบบ AMR management
