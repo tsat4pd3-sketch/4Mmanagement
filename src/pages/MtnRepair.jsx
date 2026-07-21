@@ -806,7 +806,9 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, fullName, reloadMast
   const stockMove = async (part, type) => {
     const q = Number(prompt(type === 'in' ? `รับเข้าอะไหล่ "${part.name}" จำนวนเท่าไร?` : `ปรับยอด "${part.name}" (+เพิ่ม / -ลด)`, type === 'in' ? '1' : '0'));
     if (!Number.isFinite(q) || q === 0) return;
-    const nb = Number(part.stock_qty) + q;
+    // อ่านสต็อกสดก่อนบวก แทนใช้ค่าจาก cache (part.stock_qty อาจเก่า) — ลดโอกาสยอดเพี้ยนจากการปรับพร้อมกัน
+    const { data: fresh } = await supabaseDR.from('mtn_spare_parts').select('stock_qty').eq('id', part.id).maybeSingle();
+    const nb = Number(fresh?.stock_qty ?? part.stock_qty ?? 0) + q;
     const { error } = await supabaseDR.from('mtn_spare_parts').update({ stock_qty: nb }).eq('id', part.id);
     if (error) return toast.error(error.message);
     await supabaseDR.from('mtn_stock_txns').insert({ part_id: part.id, type, qty: q, balance: nb, by_name: fullName, note: type === 'in' ? 'รับเข้า' : 'ปรับยอด' });

@@ -715,10 +715,11 @@ export default function Management() {
     // ใช้ line_name ของสถานีจริง ไม่ใช่ selectedLine เฉยๆ — เพราะตอนนี้ selectedLine อาจเป็นไลน์หลัก
     // (เช่น HYDROFORM) ที่รวมจุดงานจากไลน์ย่อยหลายไลน์ (HDF1/HDF2/...) เข้ามาแสดงพร้อมกัน
     const station = dynamicStations.find(s => String(s.id) === String(stationId));
-    await supabase.from('employee_home_positions').upsert(
+    const { error: eHome } = await supabase.from('employee_home_positions').upsert(
       { employee_id: empId, station_id: stationId, line_name: station?.line_name || selectedLine, updated_at: new Date().toISOString() },
       { onConflict: 'employee_id' }
     );
+    if (eHome) { toast.error('บันทึกสถานีประจำไม่สำเร็จ: ' + eHome.message); return; }
     setHomePositions(prev => ({ ...prev, [empId]: String(stationId) }));
   };
 
