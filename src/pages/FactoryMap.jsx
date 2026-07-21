@@ -336,7 +336,13 @@ export default function FactoryMap() {
     const r = regions.find(x => x.id === id);
     if (r) await supabase.from('factory_line_regions').update({ points: r.points }).eq('id', id);
   };
-  const deleteRegion = async (id) => { setRegions(prev => prev.filter(r => r.id !== id)); await supabase.from('factory_line_regions').delete().eq('id', id); };
+  const deleteRegion = async (id) => {
+    const rg = regions.find(r => r.id === id);
+    if (!window.confirm(`ลบกรอบไลน์ "${rg?.line_name || ''}" ?`)) return;
+    setRegions(prev => prev.filter(r => r.id !== id));
+    const { error } = await supabase.from('factory_line_regions').delete().eq('id', id);
+    if (error) toast.error(error.message);
+  };
 
   const onImgLoad = (e) => setAspect(e.target.naturalWidth / e.target.naturalHeight);
   const wrapStyle = aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' };

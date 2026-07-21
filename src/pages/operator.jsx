@@ -372,9 +372,14 @@ export default function Operator() {
 
   const handleDeleteSkill = async (sd) => {
     if (!window.confirm(`ลบสกิล "${sd.label}"?\nคะแนนสกิลนี้ของพนักงานและ requirement ทุก station จะถูกลบด้วย`)) return;
-    await supabase.from('employee_skills').delete().eq('skill_name', sd.name);
-    await supabase.from('station_requirements').delete().eq('skill_name', sd.name);
-    await supabase.from('skill_definitions').delete().eq('id', sd.id);
+    // ลบลูกก่อน (คะแนน + requirement) แล้วค่อยลบนิยามสกิล + เช็ค error ทุกสเตป
+    // ไม่งั้นถ้าลบลูกไม่สำเร็จแต่ลบนิยามไปแล้ว จะเหลือ skill_name ค้างที่อ้างสกิลที่ไม่มี
+    const e1 = (await supabase.from('employee_skills').delete().eq('skill_name', sd.name)).error;
+    if (e1) { toast.error('ลบคะแนนสกิลไม่สำเร็จ: ' + e1.message); return; }
+    const e2 = (await supabase.from('station_requirements').delete().eq('skill_name', sd.name)).error;
+    if (e2) { toast.error('ลบ requirement ไม่สำเร็จ: ' + e2.message); return; }
+    const e3 = (await supabase.from('skill_definitions').delete().eq('id', sd.id)).error;
+    if (e3) { toast.error('ลบสกิลไม่สำเร็จ: ' + e3.message); return; }
     fetchSkillDefs();
     fetchEmployees();
   };

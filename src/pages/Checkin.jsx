@@ -426,7 +426,7 @@ export default function Checkin() {
       const toUnbook = displayed.filter(emp => !isBooked(emp)).map(emp => emp.id);
 
       if (toBook.length) {
-        await supabase.from('ot_night_bookings').upsert(
+        const { error: eBook } = await supabase.from('ot_night_bookings').upsert(
           toBook.map(empId => ({
             work_date:      bookDate,
             shift:          otShift,
@@ -438,13 +438,15 @@ export default function Checkin() {
           })),
           { onConflict: 'employee_id,work_date,shift' }
         );
+        if (eBook) toast.error('จองรถ OT บางรายการไม่สำเร็จ: ' + eBook.message);
       }
       if (toUnbook.length) {
-        await supabase.from('ot_night_bookings')
+        const { error: eUnbook } = await supabase.from('ot_night_bookings')
           .delete()
           .eq('work_date', bookDate)
           .eq('shift', otShift)
           .in('employee_id', toUnbook);
+        if (eUnbook) toast.error('ยกเลิกจองรถ OT บางรายการไม่สำเร็จ: ' + eUnbook.message);
       }
     }
 

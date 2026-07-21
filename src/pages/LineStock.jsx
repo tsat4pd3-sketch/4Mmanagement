@@ -16,7 +16,10 @@ import { frameMin, breaksToFrame } from '../utils/timeFrame';
    ─────────────────────────────────────────────────────────────────────────── */
 
 function getToday() {
+  // วันงาน (work date) ตัด 08:00 — ก่อน 8 โมงเช้านับเป็นวันก่อนหน้า (กะดึกข้ามวัน)
+  // ไม่งั้นรายการสต็อกช่วง 00:00–07:59 ของกะดึกจะไปตกวันปฏิทินถัดไป ผิดวันงาน
   const now = new Date();
+  if (now.getHours() < 8) now.setDate(now.getDate() - 1);
   return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 }
 
