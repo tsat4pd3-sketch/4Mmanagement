@@ -636,6 +636,9 @@ export default function Dashboard() {
     () => passAll ? layouts : layouts.filter(l => visibleLineNames.has(l.line_name)),
     [layouts, passAll, visibleLineNames],
   );
+  // หัวหน้า/ผู้ใช้ที่ scope แคบ (เห็นไม่กี่ผัง) → โชว์ผังไลน์ตัวเองใหญ่เต็มที่ (แตกไลน์ลูกเป็นการ์ดใหญ่ของใครของมัน)
+  // ภาพรวมทั้งโรงงาน (passAll / หลายผัง) → คงกริดย่อเล็กเหมือนเดิม
+  const floorBig = scopeActive && visibleLayouts.length > 0 && visibleLayouts.length <= 3;
 
   // ── Downtime alarm — รวม downtime ที่ยังค้าง/เพิ่งบันทึกจากทุกกะที่มองเห็น ──
   // ใช้ขับ banner ด้านบน, ป้ายบนการ์ดสถานะไลน์ และจุดเครื่องจักรกระพริบบนผัง
@@ -2032,7 +2035,8 @@ export default function Dashboard() {
       })()}
 
       {/* ── Bottom Grid ─────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isUltra ? 'minmax(0,3fr) minmax(0,1fr)' : 'minmax(0,2fr) minmax(0,1fr)', gap: isWide ? 20 : 16 }}>
+      {/* floorBig (หัวหน้า/scope แคบ) → ผังไลน์ตัวเองเต็มความกว้าง, 4M feed ไปอยู่ล่าง · ภาพรวม → 2 คอลัมน์เหมือนเดิม */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile || floorBig ? '1fr' : isUltra ? 'minmax(0,3fr) minmax(0,1fr)' : 'minmax(0,2fr) minmax(0,1fr)', gap: isWide ? 20 : 16 }}>
 
         {/* Line Floor Maps */}
         <motion.div {...stagger(12)}>
@@ -2045,7 +2049,7 @@ export default function Dashboard() {
                 ยังไม่มีผัง — ไปตั้งค่าที่หน้า <strong>ตั้งค่าผังไลน์</strong>
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : floorBig ? 'repeat(auto-fit, minmax(min(100%, 480px), 1fr))' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
                 {visibleLayouts.map(layout => {
                   const cardLineNames = layoutLineNamesForCard(layout.line_name);
                   const lineWs = workstations.filter(w => cardLineNames.includes(w.line_name));

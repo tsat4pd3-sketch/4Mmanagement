@@ -75,9 +75,11 @@ const centroid = (pts) => pts.length
 const EMPTY_ST = { actual: 0, target: 0, hasOpen: false, oee: null, oeeLive: false, dtMin: 0, dtActive: false, ng: 0,
   headTotal: 0, present: 0, ppeBad: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0 };
 
-export default function FactoryMap() {
+// setupMode=false (default, /factory-map) = display-only (ดู + popup ไม่มีปุ่มแก้ผัง)
+// setupMode=true (/layout-setup แท็บภาพรวมโรงงาน) = โหมดตั้งค่า อัปโหลดรูป/วาด polygon ได้
+export default function FactoryMap({ setupMode = false }) {
   const { role } = useContext(UserContext);
-  const canEdit = can('factory_map', 'edit', role);
+  const canEdit = setupMode && can('factory_map', 'edit', role);
   const navigate = useNavigate();
 
   const [imageUrl, setImageUrl] = useState(null);
@@ -89,7 +91,7 @@ export default function FactoryMap() {
   const [pmStatus, setPmStatus] = useState({});        // PM เครื่องจักร (DR)
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(canEdit); // setup mode + มีสิทธิ์ → เข้าโหมดแก้เลย
   const [uploading, setUploading] = useState(false);
   const [aspect, setAspect] = useState(null);
   const [metric, setMetric] = useState('productivity');

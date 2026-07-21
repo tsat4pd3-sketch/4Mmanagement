@@ -113,20 +113,40 @@ export default function ProductionPlan() {
       const orderRows = [];
       for (let i = 0; i < sessIds.length; i += 300) {
         const { data: po } = await supabaseDR.from('prod_orders')
-          .select('session_id, mat_no, qty_ok, qty').eq('status', 'confirmed').in('session_id', sessIds.slice(i, i + 300));
+          .select('session_id, mat_no, qty_ok, qty, opened_at, confirmed_at').eq('status', 'confirmed').in('session_id', sessIds.slice(i, i + 300));
         if (po) orderRows.push(...po);
       }
-      // sum ต่อ (session, mat) = ยอดของ mat นั้นในกะนั้น
+      // sum ต่อ (session, mat) = ยอด + เวลาวิ่งรวม (นาที) ของ mat นั้นในกะนั้น
       const perSessMat = {};
       orderRows.forEach(o => {
         if (!o.mat_no) return;
         const k = `${o.session_id}|${o.mat_no}`;
-        perSessMat[k] = (perSessMat[k] || 0) + (o.qty_ok ?? o.qty ?? 0);
+        const e = perSessMat[k] || (perSessMat[k] = { qty: 0, runMin: 0 });
+        e.qty += o.qty_ok ?? o.qty ?? 0;
+        if (o.opened_at && o.confirmed_at) {
+          const mn = (new Date(o.confirmed_at) - new Date(o.opened_at)) / 60000;
+          if (mn > 0) e.runMin += mn;
+        }
       });
+      // ── normalize กะที่ "แชร์ไลน์" (วิ่งไม่เต็มกะ) เป็น full-shift equivalent ──
+      // เดิม median ยอด/กะ รวมกะที่พาร์ทวิ่งครึ่งกะ (แชร์กับพาร์ทอื่น) → ยอดต่ำ → กำลังต่ำเกิน →
+      //   OT/backlog เกินจริง (บั๊ก audit 2026-07-21) · แก้: กะวิ่ง 50–90% ของกะ → คูณกลับเป็นเต็มกะ
+      //   แต่ cap ด้วยกำลังทฤษฎีเต็มกะ (shift×60÷CT) กัน over-scale (overstate = วางแผนน้อยไป อันตราย)
+      //   กะวิ่ง <50% = สัญญาณน้อยเกิน extrapolate → ตัดทิ้ง · ไม่มี timestamp = ใช้ค่าดิบเดิม (backward-compat)
+      const SHIFT_MIN = DEFAULT_SHIFT_MIN;
       const outputsByMat = {};
-      Object.entries(perSessMat).forEach(([k, qty]) => {
+      Object.entries(perSessMat).forEach(([k, e]) => {
         const mat = k.split('|')[1];
-        (outputsByMat[mat] = outputsByMat[mat] || []).push(qty);
+        if (e.qty <= 0) return;
+        const rm = Math.min(e.runMin, SHIFT_MIN);
+        let out = e.qty;
+        if (e.runMin > 0 && rm < SHIFT_MIN * 0.5) return;                     // แชร์หนัก — ตัดทิ้ง
+        if (rm >= SHIFT_MIN * 0.5 && rm < SHIFT_MIN * 0.9) {
+          out = e.qty * (SHIFT_MIN / rm);                                     // scale ≤ 2×
+          const ct = pmap[mat]?.ct || 0;
+          if (ct > 0) out = Math.min(out, (SHIFT_MIN * 60) / ct);            // ห้ามเกินกำลังทฤษฎีเต็มกะ
+        }
+        (outputsByMat[mat] = outputsByMat[mat] || []).push(out);
       });
       const cap = {};
       Object.keys(pmap).forEach(mat => {
