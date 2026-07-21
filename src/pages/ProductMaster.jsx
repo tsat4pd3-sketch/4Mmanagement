@@ -228,7 +228,7 @@ export default function ProductMaster() {
       // ชิ้นงานเดียวกัน (ชื่อตรงกัน) ต่างแค่ customer/mat — sync รูปให้ทุก variant อัตโนมัติ
       if (imageFile && payload.name) {
         await supabaseDR.from('dr_products').update({ image_url: imageUrl })
-          .ilike('name', payload.name).neq('id', savedId);
+          .eq('name', payload.name).neq('id', savedId);  // eq ไม่ใช่ ilike — กันชื่อที่มี % _ ไปแมตช์ผิดตัว
       }
       toast.success(ecSource ? '🔄 Engineering Change บันทึกสำเร็จ' : 'บันทึกสำเร็จ');
       setEditing(null); setEcSource(null);
@@ -241,19 +241,21 @@ export default function ProductMaster() {
     }
   };
 
+  // "ลบ" = ปิดใช้งาน (soft-delete) ไม่ลบถาวร — dr_products.id ถูกอ้างโดยประวัติผลิต
+  // (production_sessions/prod_orders/kanban_standards/bom_items) ถ้าลบจริงประวัติจะกำพร้า/ดึงชื่อ-รูปไม่ได้
+  // ปิดใช้งานแล้วซ่อนจากรายการ (โผล่เมื่อกด "แสดงประวัติ") + เปิดกลับได้ · เก็บรูปไว้ (สินค้ายังอยู่)
   const handleDelete = async (id) => {
-    if (!window.confirm('ลบสินค้านี้?')) return;
-    const oldUrl = items.find(i => i.id === id)?.image_url;
-    const { error } = await supabaseDR.from('dr_products').delete().eq('id', id);
+    if (!window.confirm('ปิดใช้งานสินค้านี้?\n\nสินค้าจะถูกซ่อนจากรายการ แต่เก็บประวัติไว้ (เปิดกลับได้จากปุ่ม "แสดงประวัติ")')) return;
+    const { error } = await supabaseDR.from('dr_products').update({ is_active: false }).eq('id', id);
     if (error) { toast.error(error.message); return; }
-    // ลบรูปหลัง DB สำเร็จ (best-effort) — ข้ามถ้าสินค้าอื่น/variant ยังแชร์ URL เดียวกัน (กติกา CLAUDE.md)
-    if (oldUrl?.includes('/product-images/')) {
-      const stillUsed = items.some(i => i.id !== id && i.image_url === oldUrl);
-      const oldPath = decodeURIComponent(oldUrl.split('/product-images/')[1] || '');
-      if (!stillUsed && oldPath) {
-        supabaseDR.storage.from('product-images').remove([oldPath]).catch(() => {});
-      }
-    }
+    toast.success('ปิดใช้งานสินค้าแล้ว');
+    load();
+  };
+
+  const handleReactivate = async (id) => {
+    const { error } = await supabaseDR.from('dr_products').update({ is_active: true }).eq('id', id);
+    if (error) { toast.error(error.message); return; }
+    toast.success('เปิดใช้งานสินค้าแล้ว');
     load();
   };
 
@@ -289,7 +291,7 @@ export default function ProductMaster() {
   /* ── group into families ── */
   const families = useMemo(() => {
     const map = new Map();
-    [...items].sort((a, b) => a.name.localeCompare(b.name, 'th')).forEach(item => {
+    [...items].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'th')).forEach(item => {
       const fid = item.family_id || item.id;
       if (!map.has(fid)) map.set(fid, { family_id: fid, members: [] });
       map.get(fid).members.push(item);
@@ -562,7 +564,9 @@ export default function ProductMaster() {
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'flex-start' }}>
                       {canEdit && active && <button onClick={() => openEC(active)} title="Engineering Change" style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#a855f7', fontWeight: 700 }}>🔄 EC</button>}
                       {canEdit && <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
-                      {canDelete && <button className="tbtn" onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>}
+                      {/* สินค้าที่ปิดใช้งาน (ไม่ใช่ superseded โดย EC) → ปุ่มเปิดกลับ · สินค้าที่ยัง active → ✕ ปิดใช้งาน */}
+                      {canDelete && !item.is_active && !item.superseded_by && <button onClick={() => handleReactivate(item.id)} title="เปิดใช้งานสินค้ากลับ" style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#22c55e', fontWeight: 700 }}>♻️ เปิดใช้งาน</button>}
+                      {canDelete && item.is_active && <button className="tbtn" onClick={() => handleDelete(item.id)} title="ปิดใช้งานสินค้า (เก็บประวัติ)" style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>}
                     </div>
                   )}
                 </div>
@@ -1267,7 +1271,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 
       {/* ══ PICKER MODAL — เลือกพาร์ทจาก Parts Master ══ */}
       {showPicker && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, width: 'min(700px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
             {/* header */}
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
@@ -1341,7 +1345,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 
       {/* ══ EDIT MODAL — แก้ QTY ของ BOM row ══ */}
       {showEdit && editItem && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(380px,100%)' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 2 }}>✏️ แก้ไข BOM</div>
             <div style={{ fontSize: 12, color: '#0ea5e9', fontFamily: 'monospace', fontWeight: 700, marginBottom: 4 }}>{editItem.mat_no}</div>
@@ -1377,7 +1381,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 
       {/* ══ COPY BOM MODAL ══ */}
       {showCopyBom && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 4 }}>📋 คัดลอก BOM จาก Product อื่น</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
@@ -1758,7 +1762,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
 
       {/* ══ ADD / EDIT MODAL ══ */}
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(560px,100%)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
               {editPart ? '✏️ แก้ไขพาร์ท' : '➕ เพิ่มพาร์ทใหม่'}
@@ -2005,7 +2009,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
 
       {/* link modal */}
       {showLink && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 16, fontFamily: 'var(--font-display)' }}>{editLink ? '✏️ แก้ไข' : '➕ ผูก'} Packaging</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -2038,7 +2042,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
 
       {/* master manager modal — ภาชนะ (container_types) ฐานเดียวกับ Rack Center */}
       {showMaster && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(760px,100%)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>🗃 ภาชนะ (Container Types)</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12 }}>ฐานข้อมูลเดียวกับที่ Rack Center ใช้</div>
@@ -2224,7 +2228,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
 
       {/* Modal */}
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 16, fontFamily: 'var(--font-display)' }}>
               🎴 แก้ไข Kanban Std — {form.mat_no}

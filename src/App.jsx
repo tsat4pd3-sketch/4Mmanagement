@@ -17,6 +17,7 @@ const Management   = lazy(() => import('./pages/Management'));
 const Dashboard    = lazy(() => import('./pages/Dashboard'));
 const Operator     = lazy(() => import('./pages/operator'));
 const LineSetup    = lazy(() => import('./pages/LineSetup'));
+const LayoutSetup  = lazy(() => import('./pages/LayoutSetup'));
 const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
 const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
@@ -79,6 +80,7 @@ const NAV_ITEMS = [
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'วิเคราะห์ & รายงาน' },
   { to: '/daily-pm',       icon: '✅', label: 'Daily PM ฝ่ายผลิต',   group: 'ฝ่ายผลิต' },
   { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
+  { to: '/scrap-report',   icon: '♻️', label: 'ใบรายงานของเสีย (Scrap)', group: 'ฝ่ายผลิต' },
   { to: '/lpa',            icon: '📋', label: 'Layer Process Audit', group: 'ฝ่ายผลิต' },
 
   { to: '/line-stock',      icon: '📦', label: 'Store management',       group: 'Logistic - Store' },
@@ -97,7 +99,6 @@ const NAV_ITEMS = [
 
   { to: '/qa',             icon: '🔍', label: 'Quality Control Center', group: 'ควบคุมคุณภาพ QA/QC' },
   { to: '/qa-setup',       icon: '📐', label: 'มาตรฐานการตรวจ & Drawing', group: 'ควบคุมคุณภาพ QA/QC' },
-  { to: '/scrap-report',   icon: '♻️', label: 'ใบรายงานของเสีย (Scrap)', group: 'ควบคุมคุณภาพ QA/QC' },
   { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', group: 'ควบคุมคุณภาพ QA/QC' },
 
   { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'วิเคราะห์ & รายงาน' },
@@ -108,6 +109,7 @@ const NAV_ITEMS = [
   { to: '/ojt-training', icon: '📖', label: 'อบรมสอนงาน OJT',   group: 'พนักงาน & ทักษะ' },
   { to: '/skills-report', icon: '🏅', label: 'Skill Matrix & ค่าฝีมือ', group: 'พนักงาน & ทักษะ' },
   { to: '/products',        icon: '🔩', label: 'Product Master',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/layout-setup', icon: '🗺️', label: 'ตั้งค่าผัง/Floorplan', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'พนักงาน & ทักษะ' },
@@ -299,7 +301,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             style={{
               width: 28, height: 28, borderRadius: 7, flexShrink: 0,
               background: 'var(--bg3)', border: '1px solid var(--border2)',
-              color: 'var(--text2)', fontSize: 13, cursor: 'pointer',
+              color: 'var(--text2)', fontSize: 13, cursor: 'pointer', outline: 'none',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
           >⟨</button>
@@ -312,20 +314,24 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             const groupHasActive = items.some(i => location.pathname === i.to);
             return (
               <div key={group} style={{ marginBottom: 2 }}>
-                {/* หัวหมวด — สว่าง+ใหญ่พออ่านง่าย (เดิม 11px สี muted จางเกิน อ่านยากโดยเฉพาะตัวไทย)
-                    ไม่ใช้ letterSpacing กว้าง/uppercase กับไทย · active = accent, ปกติ = text2 (สว่างกว่า muted) */}
+                {/* หัวหมวด — ปกติ = สี text (ขาวอมเขียว เป็นกลาง อ่านง่าย ไม่กลืนกับเขียว accent)
+                    · หมวดที่เปิดอยู่ = accent + พื้นจาง + ขีดซ้าย ให้รู้ทันทีว่าอยู่หมวดไหน
+                    (เดิมทุกหมวดเป็น text2 เขียวอ่อนเหมือนกันหมด แยก active ไม่ออก) */}
                 <button
                   onClick={() => toggleGroup(group)}
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-                    background: 'none', border: 'none', cursor: 'pointer', padding: '10px 10px 5px',
-                    color: groupHasActive ? 'var(--accent)' : 'var(--text2)',
+                    background: groupHasActive ? 'var(--accent-dim)' : 'none',
+                    border: 'none', borderLeft: `2px solid ${groupHasActive ? 'var(--accent)' : 'transparent'}`,
+                    borderRadius: 'var(--radius)', cursor: 'pointer', padding: '9px 10px 9px 9px',
+                    marginTop: 3,
+                    color: groupHasActive ? 'var(--accent)' : 'var(--text)',
                     fontSize: 13, fontWeight: 800, letterSpacing: '0.01em',
                     fontFamily: 'var(--font-display)',
                   }}
                 >
                   <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</span>
-                  <span style={{ fontSize: 12, opacity: 0.7, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
+                  <span style={{ fontSize: 12, opacity: 0.6, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
                 </button>
                 {!collapsed && items.map(item => (
                   <Link
@@ -638,14 +644,16 @@ function ToggleBtn({ isOpen, onClick }) {
       onClick={onClick}
       title="เปิดเมนู"
       style={{
-        position: 'fixed', top: 14, left: 14,
+        // เครื่องหมายเหมือนปุ่มมุมขวาบน (🔔/filter): 36×36 radius8 bg3 border2
+        // top:10 คงที่ (ฝั่งซ้ายไม่มีช่องว่างสำรองแบบขวา — ถ้าเลื่อนลงจะทับ pool/board)
+        position: 'fixed', top: 10, left: 14,
         zIndex: 1100,
-        width: 34, height: 34, borderRadius: 8,
+        width: 36, height: 36, borderRadius: 8,
         background: 'var(--bg3)',
         border: '1px solid var(--border2)',
         color: 'var(--text2)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 15, cursor: 'pointer',
+        fontSize: 16, cursor: 'pointer', outline: 'none',
         boxShadow: 'var(--shadow-sm)',
       }}
     >
@@ -885,8 +893,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
     });
   }, []);
 
-  const sidebarPx  = isTV ? 280 : 240;
-  const marginLeft = (!isMobile && isOpen) ? sidebarPx : 0;
+  // marginLeft ต้องเท่าความกว้าง nav จริง (var(--sidebar-w)) เป๊ะ — เดิม hardcode 240/280 ไม่ตรง
+  // (nav=252 desktop / 210 tablet / 280 TV) → เนื้อหาโดน sidebar ทับ 12px หรือเหลือช่องว่าง
+  const marginLeft = (!isMobile && isOpen) ? 'var(--sidebar-w)' : 0;
   const role       = userRole; // ไม่ fallback เป็น 'admin' อีกต่อไป — profileLoaded gate ด้านบนรับประกันว่า role ถูก resolve แล้วก่อนถึงจุดนี้
 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
@@ -968,6 +977,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/operator"   element={
                 <RoleRoute path="/operator" userRole={role}><Operator /></RoleRoute>
+              } />
+              <Route path="/layout-setup" element={
+                <RoleRoute path="/layout-setup" userRole={role}><LayoutSetup /></RoleRoute>
               } />
               <Route path="/linesetup"  element={
                 <RoleRoute path="/linesetup" userRole={role}><LineSetup /></RoleRoute>

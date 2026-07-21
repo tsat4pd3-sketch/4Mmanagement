@@ -211,11 +211,16 @@ export default function QAInspectionSetup() {
     const pn = sel?.part_no?.trim();
     if (!pn || pn.includes(',')) return;
     let alive = true;
-    supabaseDR.from('dr_products').select('image_url')
-      .or(`mat_no.eq.${pn},p_no.eq.${pn},code.eq.${pn}`)
-      .not('image_url', 'is', null)
-      .limit(1)
-      .then(({ data }) => { if (alive) setProdImg(data?.[0]?.image_url || null); });
+    // ค้นทีละคอลัมน์ด้วย .eq (parameterized) แทน .or ที่ interpolate ค่าดิบ —
+    // เลขพาร์ทที่มี . / ( ) เป็น metachar ของ PostgREST filter ทำให้ .or พังแล้วรูปไม่ขึ้น
+    (async () => {
+      for (const col of ['mat_no', 'p_no', 'code']) {
+        const { data } = await supabaseDR.from('dr_products').select('image_url')
+          .eq(col, pn).not('image_url', 'is', null).limit(1);
+        if (!alive) return;
+        if (data?.[0]?.image_url) { setProdImg(data[0].image_url); return; }
+      }
+    })();
     return () => { alive = false; };
   }, [sel?.part_no]);
 

@@ -215,8 +215,12 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
     setBusy(o.id);
     const payload = { status: st.next };
     if (st.next === 'shipped') { payload.shipped_at = new Date().toISOString(); payload.shipped_by = fullName || 'Logistic'; }
-    const { error } = await supabaseDR.from('customer_shipping_orders').update(payload).eq('id', o.id);
+    // guard สถานะปัจจุบันแบบ atomic — กันกดรัว/2 เครื่องเลื่อนสถานะเดียวกันซ้ำ
+    // (เครื่องสโตร์ใช้บัญชีร่วม) ถ้าไม่ guard จะหักสต็อก + ยิง Telegram ซ้ำ 2 รอบต่อการส่ง 1 ครั้ง
+    const { data: updated, error } = await supabaseDR.from('customer_shipping_orders')
+      .update(payload).eq('id', o.id).eq('status', o.status).select('id');
     if (error) { toast.error(error.message); setBusy(null); return; }
+    if (!updated || updated.length === 0) { setBusy(null); await load(); return; } // มีคนเลื่อนไปก่อนแล้ว
     // ส่งแล้ว → หักสต็อก FG จากคลังอัตโนมัติเท่าที่มีบันทึกไว้ (ไลน์ที่มีของมากสุดก่อน)
     if (st.next === 'shipped') {
       const entry = fgStock[o.mat_no];
@@ -416,7 +420,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
             <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
             <div style={isMobile ? { minWidth: 780 } : undefined}>
             <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
-              <div style={{ width: chartLeftW, flexShrink: 0, padding: '3px 10px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 2, background: 'var(--bg2)' } : null) }}>ลูกค้า · คลิกชื่อเพื่อย่อ/ขยาย</div>
+              <div style={{ width: chartLeftW, flexShrink: 0, padding: '3px 10px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--bg2)' } : null) }}>ลูกค้า · คลิกชื่อเพื่อย่อ/ขยาย</div>
               <div style={{ flex: 1, position: 'relative', height: 22 }}>
                 {hourMarks.map((m, i) => (i % 2 === 0 &&
                   <span key={m} style={{ position: 'absolute', left: `${((m - tStart) / span) * 100}%`, fontSize: 11, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: m === tStart + span ? 'translateX(-100%)' : 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
@@ -440,7 +444,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
                 <div key={cust} style={{ display: 'flex', borderTop: '1px solid var(--border)' }}>
                   <div onClick={() => setCollapsedCust(m => ({ ...m, [cust]: !m[cust] }))}
                     title={isCol ? 'คลิกเพื่อขยาย' : 'คลิกเพื่อย่อ'}
-                    style={{ width: chartLeftW, flexShrink: 0, padding: '4px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text2)', borderRight: '1px solid var(--border2)', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', cursor: 'pointer', userSelect: 'none', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 2, background: 'var(--card)' } : null) }}>
+                    style={{ width: chartLeftW, flexShrink: 0, padding: '4px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text2)', borderRight: '1px solid var(--border2)', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', cursor: 'pointer', userSelect: 'none', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--card)' } : null) }}>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       <span style={{ color: 'var(--muted)', marginRight: 4 }}>{isCol ? '▸' : '▾'}</span>{cust}
                     </span>
@@ -546,7 +550,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
             return (
               <>
                 <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-                <div style={{ position: 'fixed', left, top, width: W, zIndex: 999, background: 'var(--bg3)', border: `1px solid ${od ? '#ef4444' : st.color}66`, borderRadius: 12, boxShadow: '0 8px 28px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
+                <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${od ? '#ef4444' : st.color}66`, borderRadius: 12, boxShadow: '0 8px 28px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
                   <div style={{ height: 4, background: od ? '#ef4444' : st.color }} />
                   <div style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>

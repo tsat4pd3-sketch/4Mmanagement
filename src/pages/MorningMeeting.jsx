@@ -2,6 +2,7 @@ import { useState, useEffect, useContext, useCallback, useMemo, useRef, Fragment
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
@@ -263,7 +264,9 @@ export default function MorningMeeting() {
       const target = sessTarget(s);
       return {
         shift: sh, actual, target, pct: target > 0 ? pctStr(actual, target) : null,
-        oee: s.status === 'closed' ? s.oee : null, status: s.status,
+        // OEE คำนวณตั้งแต่ "ส่งขอปิดกะ" (pending_close) แล้ว — โชว์ได้เลยแต่ติดป้ายว่ายังไม่ผ่านอนุมัติ
+        // (เดิมโชว์เฉพาะ closed = official จนค่ารอ SV อนุมัติหายไปทั้งที่มีแล้ว)
+        oee: s.oee ?? null, oeePending: s.status !== 'closed', status: s.status,
         ng: s.qty_ng ?? 0,
         // DT บนการ์ด = "นอกแผน" เท่านั้น — ในแผน (นับสต๊อก/ไม่มีแผนผลิต) ไม่ใช่ความเสียหาย
         // ห้ามรวม (เคยรวมแล้วไลน์ไม่มีแผนผลิตโชว์ DT ก้อนใหญ่สีแดง เช่น 569/1620น. ทั้งที่แค่ไม่มีแผน — 2026-07-15)
@@ -542,8 +545,10 @@ export default function MorningMeeting() {
                               title={s.pct == null ? 'ยังไม่ตั้งเป้ากะ/std และไม่มีเป้าใบงานให้เทียบ' : undefined}>
                               {s.pct != null ? `${s.pct}%` : '—'}
                             </span>
-                            <span style={{ ...cell, color: s.oee != null ? '#4d9fff' : 'var(--muted)', fontWeight: s.oee != null ? 800 : 400 }}>
-                              {s.oee != null ? `${Math.round(s.oee)}%` : '—'}
+                            {/* OEE ยังไม่อนุมัติปิดกะ = โชว์สีส้ม+ ~ (ค่าเบื้องต้น หัวหน้ารู้ว่ายังไม่ official) */}
+                            <span title={s.oee != null && s.oeePending ? 'ค่าเบื้องต้น — ยังไม่ผ่านการอนุมัติปิดกะ' : undefined}
+                              style={{ ...cell, color: s.oee == null ? 'var(--muted)' : s.oeePending ? '#f59e0b' : '#4d9fff', fontWeight: s.oee != null ? 800 : 400 }}>
+                              {s.oee != null ? `${s.oeePending ? '~' : ''}${Math.round(s.oee)}%` : '—'}
                             </span>
                             <span style={{ ...cell, color: s.dtMin > 0 ? '#ef4444' : 'var(--muted)', fontWeight: s.dtMin > 0 ? 800 : 400 }}>
                               {s.dtMin > 0 ? `${s.dtMin}น.` : '—'}
@@ -923,7 +928,7 @@ export default function MorningMeeting() {
         <>
           <KpiStrip />
           <SectionHead icon="🏭" title="ผลรายไลน์"
-            extra={`เปิดกะ ${lineResults.filter(r => r.shifts.length).length}/${lineResults.length} ไลน์`} />
+            extra={`เปิดกะ ${lineResults.filter(r => r.shifts.length).length}/${lineResults.length} ไลน์ · ~OEE = รออนุมัติปิดกะ`} />
           <LineCards />
           <SectionHead icon="🔎" title="เจาะปัญหาเมื่อวาน" />
           <MissedPanel />
@@ -949,9 +954,10 @@ export default function MorningMeeting() {
               <button onClick={() => setSlide(s => Math.max(0, s - 1))} disabled={slide === 0} style={{ ...btnSt(false), fontSize: 16, opacity: slide === 0 ? 0.4 : 1 }}>◀</button>
               <span style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 700 }}>{slide + 1}/{slides.length}</span>
               <button onClick={() => setSlide(s => Math.min(slides.length - 1, s + 1))} disabled={slide === slides.length - 1} style={{ ...btnSt(false), fontSize: 16, opacity: slide === slides.length - 1 ? 0.4 : 1 }}>▶</button>
-              <button onClick={() => setGestureOn(v => !v)} style={btnSt(gestureOn)}
+              <button onClick={() => setGestureOn(v => !v)} style={{ ...btnSt(gestureOn), position: 'relative' }}
                 title={'ควบคุมด้วยท่ามือผ่านกล้อง (ประมวลผลในเครื่อง ไม่ส่งภาพออกไปไหน)\n☝️ ชี้นิ้ว ◀/▶ ค้าง = เปลี่ยนวาระ · ชี้ ▲/▼ ค้าง = เลื่อนหน้า\n✋ ปัดซ้าย/ขวา = เปลี่ยนวาระ · 👍 ค้าง = ถัดไป · ✊ ค้าง = ออกจากโหมด'}>
                 {gestureOn ? '📷 ปิดท่ามือ' : '📷 คุมด้วยท่ามือ'}
+                <ToggleDot on={gestureOn} />
               </button>
               <button onClick={() => { setTvMode(false); setGestureOn(false); }} style={{ ...btnSt(false), fontSize: 14 }} title="ออกจากโหมดประชุม (Esc)">✕</button>
             </div>

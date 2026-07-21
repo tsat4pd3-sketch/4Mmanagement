@@ -2,6 +2,7 @@ import { useState, useEffect, useContext, useRef, useMemo, startTransition } fro
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import ToggleDot from '../components/ToggleDot';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
@@ -166,15 +167,18 @@ export default function Operator() {
       doc_url = urlData.publicUrl;
     }
 
+    // เขียนคะแนน + เคลียร์ pending_level ก่อน แล้วค่อยปิดคำขอ — ถ้า upsert ล้ม ห้ามมาร์คคำขอ approved
+    // (เดิมปิดคำขอก่อน ถ้า upsert ล้ม พนักงานค้าง pending_level = farm ต่อไม่ได้ + คำขอหายจากรายการ กู้ไม่ได้)
+    const { error: sErr } = await supabase.from('employee_skills').upsert({
+      employee_id: req.employee_id, skill_name: req.skill_name,
+      score: req.to_level, pending_level: null,
+    }, { onConflict: 'employee_id,skill_name' });
+    if (sErr) { toast.error('บันทึกคะแนนไม่สำเร็จ: ' + sErr.message); setIsReviewing(false); return; }
+
     const { error: rErr } = await supabase.from('skill_level_up_requests').update({
       status: 'approved', reviewed_by: user.id, reviewed_at: new Date().toISOString(), doc_url,
     }).eq('id', req.id);
     if (rErr) { toast.error('ผิดพลาด: ' + rErr.message); setIsReviewing(false); return; }
-
-    await supabase.from('employee_skills').upsert({
-      employee_id: req.employee_id, skill_name: req.skill_name,
-      score: req.to_level, pending_level: null,
-    }, { onConflict: 'employee_id,skill_name' });
 
     toast.success(`อนุมัติ Level ${req.to_level} สำเร็จ`);
     setIsReviewing(false);
@@ -369,9 +373,14 @@ export default function Operator() {
 
   const handleDeleteSkill = async (sd) => {
     if (!window.confirm(`ลบสกิล "${sd.label}"?\nคะแนนสกิลนี้ของพนักงานและ requirement ทุก station จะถูกลบด้วย`)) return;
-    await supabase.from('employee_skills').delete().eq('skill_name', sd.name);
-    await supabase.from('station_requirements').delete().eq('skill_name', sd.name);
-    await supabase.from('skill_definitions').delete().eq('id', sd.id);
+    // ลบลูกก่อน (คะแนน + requirement) แล้วค่อยลบนิยามสกิล + เช็ค error ทุกสเตป
+    // ไม่งั้นถ้าลบลูกไม่สำเร็จแต่ลบนิยามไปแล้ว จะเหลือ skill_name ค้างที่อ้างสกิลที่ไม่มี
+    const e1 = (await supabase.from('employee_skills').delete().eq('skill_name', sd.name)).error;
+    if (e1) { toast.error('ลบคะแนนสกิลไม่สำเร็จ: ' + e1.message); return; }
+    const e2 = (await supabase.from('station_requirements').delete().eq('skill_name', sd.name)).error;
+    if (e2) { toast.error('ลบ requirement ไม่สำเร็จ: ' + e2.message); return; }
+    const e3 = (await supabase.from('skill_definitions').delete().eq('id', sd.id)).error;
+    if (e3) { toast.error('ลบสกิลไม่สำเร็จ: ' + e3.message); return; }
     fetchSkillDefs();
     fetchEmployees();
   };
@@ -395,9 +404,13 @@ export default function Operator() {
   const workTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
   const allEmps = useMemo(() => [...employees, ...inactiveEmployees], [employees, inactiveEmployees]);
   const sectionOpts = useMemo(() => orgSectionOpts.length ? orgSectionOpts : [...new Set(allEmps.map(e => e.section).filter(Boolean))].sort(), [allEmps, orgSectionOpts]);
-  const deptOpts    = useMemo(() => orgDeptNodes.length ? orgDeptNodes.map(n => n.code || n.name) : [...new Set(allEmps.map(e => e.department).filter(Boolean))].sort(), [allEmps, orgDeptNodes]);
-  const groupOpts   = useMemo(() => [...new Set(allEmps.map(e => e.group_name).filter(Boolean))].sort(), [allEmps]);
-  const teamOpts    = useMemo(() => [...new Set(allEmps.map(e => e.team).filter(Boolean))].sort(), [allEmps]);
+  // ตัวเลือก filter ไล่ตามลำดับชั้นองค์กร (cascade — คำสั่ง user 2026-07-21): Dept เฉพาะใน Section ที่เลือก ·
+  // Group เฉพาะใน Section+Dept · Team ตามที่เหลือ — ดึงจากข้อมูลพนักงานจริง (ตรงกับแถวในตารางเสมอ ไม่มีตัวเลือกข้าม section/ซ้ำ)
+  const empsInSec   = useMemo(() => allEmps.filter(e => !filterSection || e.section === filterSection), [allEmps, filterSection]);
+  const deptOpts    = useMemo(() => [...new Set(empsInSec.map(e => e.department).filter(Boolean))].sort(), [empsInSec]);
+  const empsInDept  = useMemo(() => empsInSec.filter(e => !filterDept || e.department === filterDept), [empsInSec, filterDept]);
+  const groupOpts   = useMemo(() => [...new Set(empsInDept.map(e => e.group_name).filter(Boolean))].sort(), [empsInDept]);
+  const teamOpts    = useMemo(() => [...new Set(empsInDept.filter(e => !filterGroup || e.group_name === filterGroup).map(e => e.team).filter(Boolean))].sort(), [empsInDept, filterGroup]);
 
   const displayed = useMemo(() => (showInactive ? inactiveEmployees : employees)
     .filter(emp => !filterSection || emp.section    === filterSection)
@@ -492,8 +505,9 @@ export default function Operator() {
           {/* Section / Group / Team / Grade filters */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             {[
-              { label: 'Section', value: filterSection, opts: sectionOpts, set: setFilterSection },
-              { label: 'Dept',    value: filterDept,    opts: deptOpts,    set: setFilterDept },
+              // เปลี่ยนตัวแม่ = ล้างตัวลูก (กันค้างค่าที่ไม่อยู่ใน scope ใหม่แล้วตารางว่างงงๆ)
+              { label: 'Section', value: filterSection, opts: sectionOpts, set: (v) => { setFilterSection(v); setFilterDept(''); setFilterGroup(''); } },
+              { label: 'Dept',    value: filterDept,    opts: deptOpts,    set: (v) => { setFilterDept(v); setFilterGroup(''); } },
               { label: 'Group',   value: filterGroup,   opts: groupOpts,   set: setFilterGroup },
               { label: 'Team',    value: filterTeam,    opts: teamOpts,    set: setFilterTeam },
             ].map(f => (
@@ -526,8 +540,8 @@ export default function Operator() {
               );
             })}
 
-            {(filterSection || filterGroup || filterTeam || filterGrade) && (
-              <button onClick={() => { setFilterSection(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); }}
+            {(filterSection || filterDept || filterGroup || filterTeam || filterGrade) && (
+              <button onClick={() => { setFilterSection(''); setFilterDept(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); }}
                 style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>
                 ✕ ล้าง
               </button>
@@ -538,6 +552,7 @@ export default function Operator() {
             <span style={{ fontSize: 13, color: 'var(--muted)' }}>ใช้งาน {employees.length} คน</span>
             <button onClick={() => setShowInactive(s => !s)}
               style={{
+                position: 'relative',
                 padding: '6px 12px', borderRadius: 7, border: 'none', fontSize: 12, cursor: 'pointer',
                 background: showInactive ? 'rgba(231,76,60,0.15)' : 'var(--bg3)',
                 color: showInactive ? 'var(--red)' : 'var(--text2)',
@@ -545,6 +560,7 @@ export default function Operator() {
               {showInactive
                 ? `✅ ดูพนักงานใช้งาน (${employees.length})`
                 : `❌ ปิดใช้งาน (${inactiveEmployees.length})`}
+              <ToggleDot on={showInactive} />
             </button>
           </div>
 
@@ -1163,7 +1179,10 @@ export default function Operator() {
                     setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
                   }}>
                     <option value="">— เลือก Line —</option>
+                    {/* cascade ตามลำดับชั้น (2026-07-21): มีแผนก → เฉพาะไลน์ของแผนกนั้น (pattern Register) · มี section → เฉพาะไลน์ section นั้น */}
                     {(scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
+                      .filter(l => !editingEmp.section || l.section === editingEmp.section)
+                      .filter(l => !editingEmp.department || l.name === editingEmp.department || l.parent_line_name === editingEmp.department)
                       .map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                   </select>
                 )}

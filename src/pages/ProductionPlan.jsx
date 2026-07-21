@@ -33,7 +33,9 @@ const PLAN_META = {
   day:          { label: 'กะเช้า', color: '#22c55e' },
   night:        { label: '+กะดึก', color: '#8b5cf6' },
   ot:           { label: '+OT', color: '#f59e0b' },
-  holiday_work: { label: '⚠ ทำวันหยุด', color: '#ef4444' },
+  // ม.75: กำลังไม่พอ → "ยกเลิกหยุด 75%" (เรียกมาทำงาน = ค่าแรงปกติ) ก่อนไปเปิด OT วันหยุดจริง (คำสั่ง user 2026-07-21)
+  recall75:     { label: '⚡ ยกเลิกหยุด75% มาทำงาน', color: '#a78bfa' },
+  holiday_work: { label: '⚠ ทำวันหยุด OT', color: '#ef4444' },
 };
 
 export default function ProductionPlan() {
@@ -46,6 +48,7 @@ export default function ProductionPlan() {
   const [secFilter, setSecFilter] = useState('');
   const [calMap, setCalMap] = useState({});      // date → day_type
   const [prodByMat, setProdByMat] = useState({}); // mat_no → { line, ct }
+  const [pnoToMat, setPnoToMat] = useState({});   // normalize(p_no) → mat_no (map เลขลูกค้า → SAP เหมือนหน้า Planner&Sales)
   const [capByMat, setCapByMat] = useState({});   // mat_no → estimateCapacity result
   const [orders, setOrders] = useState([]);       // open shipping orders (future)
   const [forecasts, setForecasts] = useState([]); // future monthly forecast
@@ -82,7 +85,7 @@ export default function ProductionPlan() {
       const [{ data: cal }, { data: prods }, { data: sess }, { data: ord }, { data: fc }] = await Promise.all([
         supabase.from('company_calendar').select('work_date, day_type')
           .gte('work_date', addDays(today, -2)).lte('work_date', addDays(today, DAILY_HORIZON + 200)),
-        supabaseDR.from('dr_products').select('mat_no, line_name, cycle_time_sec').eq('is_active', true).not('mat_no', 'is', null),
+        supabaseDR.from('dr_products').select('mat_no, line_name, cycle_time_sec, p_no').eq('is_active', true).not('mat_no', 'is', null),
         supabaseDR.from('production_sessions').select('id, line_name, shift, oee').eq('status', 'closed').gte('work_date', histStart).limit(2000),
         supabaseDR.from('customer_shipping_orders').select('mat_no, part_name, customer, qty, due_date, status')
           .neq('status', 'shipped').gte('due_date', today).lte('due_date', addDays(today, DAILY_HORIZON)).limit(2000),
@@ -94,8 +97,13 @@ export default function ProductionPlan() {
       setForecasts(fc || []);
 
       const pmap = {};
-      (prods || []).forEach(p => { if (p.mat_no) pmap[p.mat_no] = { line: p.line_name, ct: p.cycle_time_sec || 0 }; });
+      const pnoMap = {};
+      (prods || []).forEach(p => {
+        if (p.mat_no) pmap[p.mat_no] = { line: p.line_name, ct: p.cycle_time_sec || 0 };
+        if (p.p_no && p.mat_no) { const k = normMat(p.p_no); if (k && !pnoMap[k]) pnoMap[k] = p.mat_no; } // เลขลูกค้า (p_no) → SAP
+      });
       setProdByMat(pmap);
+      setPnoToMat(pnoMap);
 
       // ── กำลังจริงต่อกะ: sum qty ต่อ (session, mat) จากใบปิด แล้ว median ต่อ (mat) ──
       const sessMeta = {}; (sess || []).forEach(s => { sessMeta[s.id] = s; });
@@ -105,20 +113,40 @@ export default function ProductionPlan() {
       const orderRows = [];
       for (let i = 0; i < sessIds.length; i += 300) {
         const { data: po } = await supabaseDR.from('prod_orders')
-          .select('session_id, mat_no, qty_ok, qty').eq('status', 'confirmed').in('session_id', sessIds.slice(i, i + 300));
+          .select('session_id, mat_no, qty_ok, qty, opened_at, confirmed_at').eq('status', 'confirmed').in('session_id', sessIds.slice(i, i + 300));
         if (po) orderRows.push(...po);
       }
-      // sum ต่อ (session, mat) = ยอดของ mat นั้นในกะนั้น
+      // sum ต่อ (session, mat) = ยอด + เวลาวิ่งรวม (นาที) ของ mat นั้นในกะนั้น
       const perSessMat = {};
       orderRows.forEach(o => {
         if (!o.mat_no) return;
         const k = `${o.session_id}|${o.mat_no}`;
-        perSessMat[k] = (perSessMat[k] || 0) + (o.qty_ok ?? o.qty ?? 0);
+        const e = perSessMat[k] || (perSessMat[k] = { qty: 0, runMin: 0 });
+        e.qty += o.qty_ok ?? o.qty ?? 0;
+        if (o.opened_at && o.confirmed_at) {
+          const mn = (new Date(o.confirmed_at) - new Date(o.opened_at)) / 60000;
+          if (mn > 0) e.runMin += mn;
+        }
       });
+      // ── normalize กะที่ "แชร์ไลน์" (วิ่งไม่เต็มกะ) เป็น full-shift equivalent ──
+      // เดิม median ยอด/กะ รวมกะที่พาร์ทวิ่งครึ่งกะ (แชร์กับพาร์ทอื่น) → ยอดต่ำ → กำลังต่ำเกิน →
+      //   OT/backlog เกินจริง (บั๊ก audit 2026-07-21) · แก้: กะวิ่ง 50–90% ของกะ → คูณกลับเป็นเต็มกะ
+      //   แต่ cap ด้วยกำลังทฤษฎีเต็มกะ (shift×60÷CT) กัน over-scale (overstate = วางแผนน้อยไป อันตราย)
+      //   กะวิ่ง <50% = สัญญาณน้อยเกิน extrapolate → ตัดทิ้ง · ไม่มี timestamp = ใช้ค่าดิบเดิม (backward-compat)
+      const SHIFT_MIN = DEFAULT_SHIFT_MIN;
       const outputsByMat = {};
-      Object.entries(perSessMat).forEach(([k, qty]) => {
+      Object.entries(perSessMat).forEach(([k, e]) => {
         const mat = k.split('|')[1];
-        (outputsByMat[mat] = outputsByMat[mat] || []).push(qty);
+        if (e.qty <= 0) return;
+        const rm = Math.min(e.runMin, SHIFT_MIN);
+        let out = e.qty;
+        if (e.runMin > 0 && rm < SHIFT_MIN * 0.5) return;                     // แชร์หนัก — ตัดทิ้ง
+        if (rm >= SHIFT_MIN * 0.5 && rm < SHIFT_MIN * 0.9) {
+          out = e.qty * (SHIFT_MIN / rm);                                     // scale ≤ 2×
+          const ct = pmap[mat]?.ct || 0;
+          if (ct > 0) out = Math.min(out, (SHIFT_MIN * 60) / ct);            // ห้ามเกินกำลังทฤษฎีเต็มกะ
+        }
+        (outputsByMat[mat] = outputsByMat[mat] || []).push(out);
       });
       const cap = {};
       Object.keys(pmap).forEach(mat => {
@@ -132,19 +160,36 @@ export default function ProductionPlan() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [today]);
 
+  /* ── resolve เลขที่ order/forecast อ้าง → mat_no ภายใน (SAP): ตรง → normalize → p_no (เลขลูกค้า) ──
+     เดิม map ผ่าน mat_no อย่างเดียว → order/forecast ที่อ้างเลขลูกค้าถูกทิ้งเงียบ (แก้ 2026-07-21) */
+  const resolveMat = useCallback((x) => {
+    if (!x) return null;
+    if (prodByMat[x]) return x;
+    const nm = normMat(x);
+    const hit = Object.keys(prodByMat).find(m => normMat(m) === nm);
+    if (hit) return hit;
+    return pnoToMat[nm] || null;
+  }, [prodByMat, pnoToMat]);
   /* ── หากำลังต่อกะ (ชิ้น) ของ mat + line ที่ผลิต ── */
   const lineOfMat = useCallback((mat) => {
-    const direct = prodByMat[mat]?.line;
-    if (direct && lineNameSet.has(direct)) return direct;
-    // normalize เทียบ mat ที่ต่างขีด/ช่องว่าง
-    const nm = normMat(mat);
-    const hit = Object.keys(prodByMat).find(m => normMat(m) === nm);
-    return hit && lineNameSet.has(prodByMat[hit].line) ? prodByMat[hit].line : null;
-  }, [prodByMat, lineNameSet]);
+    const rid = resolveMat(mat);
+    const line = rid ? prodByMat[rid]?.line : null;
+    return line && lineNameSet.has(line) ? line : null;
+  }, [resolveMat, prodByMat, lineNameSet]);
   const capOfMat = useCallback((mat) => {
-    const est = capByMat[mat] || capByMat[Object.keys(capByMat).find(m => normMat(m) === normMat(mat)) || ''];
+    const rid = resolveMat(mat);
+    const est = rid ? capByMat[rid] : undefined;
     return { est, perShift: planCapacity(est, capMode) };
-  }, [capByMat, capMode]);
+  }, [resolveMat, capByMat, capMode]);
+  /* ── order/forecast ที่ map ไม่เจอ (ยังไม่ตั้ง SAP/p_no) — ต้องเตือน ไม่ทิ้งเงียบ ── */
+  const unmapped = useMemo(() => {
+    if (loading) return { orders: 0, parts: new Set(), fcParts: new Set() };
+    const parts = new Set(), fcParts = new Set();
+    let ordCnt = 0;
+    orders.forEach(o => { if (!resolveMat(o.mat_no)) { ordCnt++; parts.add(o.mat_no); } });
+    forecasts.forEach(f => { if (!resolveMat(f.mat_no)) fcParts.add(f.mat_no); });
+    return { orders: ordCnt, parts, fcParts };
+  }, [loading, orders, forecasts, resolveMat]);
 
   /* ═══ รายวัน: เดินปฏิทิน จัดสรร shift-load ต่อไลน์ ═══ */
   const daily = useMemo(() => {
@@ -167,7 +212,9 @@ export default function ProductionPlan() {
       // เดินวัน: กะเช้า 1 shift → กะดึก (ถ้ามี) → OT · วันหยุดทำเฉพาะเมื่อ backlog
       let backlog = 0;
       const days = dates.map(date => {
-        const holiday = calOf(date) !== 'working';
+        const dtype = calOf(date);
+        const holiday = dtype !== 'working';
+        const sd75 = dtype === 'shutdown75';
         const due = loadByDate[date] || 0;
         let need = backlog + due;
         const plan = [];
@@ -175,15 +222,24 @@ export default function ProductionPlan() {
           if (need > 0) { need -= Math.min(need, 1); plan.push('day'); }
           if (need > 0 && hasNight) { need -= Math.min(need, 1); plan.push('night'); }
           if (need > 0) { need -= Math.min(need, OT_SHIFT_FRAC); if (!plan.includes('ot')) plan.push('ot'); }
+        } else if (sd75) {
+          // ม.75: ยกเลิกหยุด (เรียกมาทำงาน ค่าแรงปกติ) — ใช้ได้เต็มกำลังเหมือนวันทำงาน ก่อนคิด OT วันหยุดจริง
+          if (need > 0) { need -= Math.min(need, 1); plan.push('recall75'); }
+          if (need > 0 && hasNight) { need -= Math.min(need, 1); plan.push('night'); }
+          if (need > 0) { need -= Math.min(need, OT_SHIFT_FRAC); if (!plan.includes('ot')) plan.push('ot'); }
         } else if (need > 0) { need -= Math.min(need, 1); plan.push('holiday_work'); }
         backlog = Math.max(0, need);
-        return { date, holiday, dueLoad: due, duePcs: pcsByDate[date] || 0, plan, backlog };
+        return { date, holiday, sd75, dueLoad: due, duePcs: pcsByDate[date] || 0, plan, backlog };
       });
       const otDays = days.filter(d => d.plan.includes('ot')).length;
       const nightDays = days.filter(d => d.plan.includes('night')).length;
+      const recall75Days = days.filter(d => d.plan.includes('recall75')).length;
       const holidayDays = days.filter(d => d.plan.includes('holiday_work')).length;
       const endBacklog = days[days.length - 1]?.backlog || 0;
-      return { line, days, otDays, nightDays, holidayDays, endBacklog, unknownCap, matCount: matSet.size, orderCount: lineOrders.length };
+      // มาตรการ ม.75 รายไลน์: วัน shutdown75 ในช่วง — ไลน์นี้หยุดได้กี่วัน / ต้องเรียกมากี่วัน
+      const sd75Total = days.filter(d => d.sd75).length;
+      const sd75Stoppable = days.filter(d => d.sd75 && !d.plan.includes('recall75')).length;
+      return { line, days, otDays, nightDays, recall75Days, holidayDays, endBacklog, sd75Total, sd75Stoppable, unknownCap, matCount: matSet.size, orderCount: lineOrders.length };
     }).filter(r => r.orderCount > 0 || r.unknownCap > 0);
   }, [loading, viewLines, orders, today, capOfMat, lineOfMat, calOf]);
 
@@ -195,10 +251,23 @@ export default function ProductionPlan() {
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     });
     // วันทำงานต่อเดือน (จากปฏิทิน — ไม่มีข้อมูล = ประมาณ 26 วัน/เดือน)
+    // วันทำงาน/เดือน: จ-ศ ที่ไม่ถูกมาร์คเป็นวันหยุด + เสาร์/อาทิตย์ที่มาร์ค working
+    // (เดิมนับเฉพาะวันที่มาร์ค 'working' ชัดๆ — จ-ศ ปกติไม่มีแถวใน DB เลยนับขาด — บั๊กแก้ 2026-07-21)
     const workDaysOf = (mk) => {
-      const days = Object.entries(calMap).filter(([d, t]) => d.startsWith(mk) && t === 'working').length;
-      return days || 26;
+      const [yy, mm] = mk.split('-').map(Number);
+      const nDays = new Date(yy, mm, 0).getDate();
+      let wd = 0;
+      for (let d = 1; d <= nDays; d++) {
+        const key = `${mk}-${String(d).padStart(2, '0')}`;
+        const t = calMap[key];
+        const dow = new Date(yy, mm - 1, d).getDay();
+        if (t) { if (t === 'working') wd++; continue; }
+        if (dow >= 1 && dow <= 5) wd++;
+      }
+      return wd || 26;
     };
+    // วันหยุดจ่าย 75% (ม.75) ในเดือน — กำลังสำรองที่เรียกมาได้ด้วยค่าแรงปกติ ก่อนคิด OT วันหยุด
+    const sd75DaysOf = (mk) => Object.entries(calMap).filter(([d, t]) => d.startsWith(mk) && t === 'shutdown75').length;
     return viewLines.filter(l => !viewLines.some(o => o.parent_line_name === l.name)).map(line => {
       const hasNight = (line.std_night_shift || 0) > 0;
       const rows = months.map(mk => {
@@ -210,16 +279,20 @@ export default function ProductionPlan() {
           if (perShift > 0) shiftsNeeded += qty / perShift; else unknownCap += qty;
         });
         const wd = workDaysOf(mk);
+        const sd75 = sd75DaysOf(mk);
         const dayShifts = wd;                 // 1 กะเช้า/วันทำงาน
         const capShifts = wd * (hasNight ? 2 : 1);
-        // ตัดสิน: ปกติพอ / ต้อง OT / ต้อง+กะดึก / เกินกำลัง
+        const fullCap = capShifts * (1 + OT_SHIFT_FRAC);
+        const sd75Shifts = sd75 * (hasNight ? 2 : 1);   // กำลังจากยกเลิกหยุด ม.75 (ค่าแรงปกติ)
+        // ตัดสิน: ปกติพอ / OT / กะดึก / กะดึก+OT / ยกเลิกหยุด 75% (ก่อน OT วันหยุดเสมอ) / เกินกำลัง
         let verdict, color;
         if (!fcs.length) { verdict = '—'; color = 'var(--muted)'; }
         else if (shiftsNeeded <= dayShifts) { verdict = 'กะเช้าพอ'; color = '#22c55e'; }
         else if (shiftsNeeded <= dayShifts * (1 + OT_SHIFT_FRAC)) { verdict = `ต้องเปิด OT ~${Math.ceil((shiftsNeeded - dayShifts) / OT_SHIFT_FRAC)} วัน`; color = '#f59e0b'; }
         else if (hasNight && shiftsNeeded <= capShifts) { verdict = `ต้องเปิดกะดึก ~${Math.ceil(shiftsNeeded - dayShifts)} วัน`; color = '#8b5cf6'; }
-        else if (hasNight && shiftsNeeded <= capShifts * (1 + OT_SHIFT_FRAC)) { verdict = 'กะดึก + OT เต็มเดือน'; color = '#ef4444'; }
-        else { verdict = '🚨 เกินกำลัง — ต้องเพิ่มไลน์/คน'; color = '#ef4444'; }
+        else if (hasNight && shiftsNeeded <= fullCap) { verdict = 'กะดึก + OT เต็มเดือน'; color = '#ef4444'; }
+        else if (sd75Shifts > 0 && shiftsNeeded <= fullCap + sd75Shifts) { verdict = `⚡ ยกเลิกหยุด 75% มาทำงาน ~${Math.ceil((shiftsNeeded - fullCap) / (hasNight ? 2 : 1))} วัน (ค่าแรงปกติ)`; color = '#a78bfa'; }
+        else { verdict = '🚨 เกินกำลัง — ต้องเพิ่มไลน์/คน' + (sd75 ? ' (รวมยกเลิกหยุด 75% แล้ว)' : ''); color = '#ef4444'; }
         return { mk, pcs, shiftsNeeded, dayShifts, capShifts, verdict, color, unknownCap, fcCount: fcs.length };
       });
       return { line, rows };
@@ -256,11 +329,42 @@ export default function ProductionPlan() {
         กำลังผลิตคำนวณจาก <b>median ยอดดีจริงต่อกะ</b> ใน {HISTORY_DAYS} วันล่าสุด (ตัดค่าโดดอัตโนมัติ) · พาร์ทที่ไม่มีประวัติ fallback เป็น cycle time × OEE
       </div>
 
+      {!loading && (unmapped.orders > 0 || unmapped.fcParts.size > 0) && (
+        <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+          ⚠️ <b>ยังจับคู่เลข SAP ไม่ได้ {unmapped.orders} ออเดอร์ · {unmapped.parts.size} พาร์ท{unmapped.fcParts.size > 0 ? ` · forecast ${unmapped.fcParts.size} พาร์ท` : ''}</b> — พาร์ทเหล่านี้**ไม่ถูกนับในแผน** (ยังไม่ได้ตั้ง `p_no`/SAP ใน Product Master ให้ตรงเลขลูกค้า)
+          {unmapped.parts.size > 0 && <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5, wordBreak: 'break-word' }}>ตัวอย่าง: {[...unmapped.parts].slice(0, 8).join(' · ')}{unmapped.parts.size > 8 ? ' …' : ''}</div>}
+          <div style={{ marginTop: 3, color: 'var(--muted)', fontSize: 11.5 }}>→ ไปตั้ง p_no ที่หน้า Product Master หรือใช้ปุ่ม 🔗 จับคู่เลข SAP ในหน้า Planner &amp; Sales</div>
+        </div>
+      )}
+
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังวิเคราะห์กำลังผลิต…</div>
       ) : tab === 'daily' ? (
-        daily.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มีออเดอร์ค้างส่งในช่วง {DAILY_HORIZON} วันข้างหน้า สำหรับไลน์ใน scope</div> :
-        daily.map(({ line, days, otDays, nightDays, holidayDays, endBacklog, unknownCap, orderCount }) => (
+        daily.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มีออเดอร์ค้างส่งในช่วง {DAILY_HORIZON} วันข้างหน้า สำหรับไลน์ใน scope</div> : <>
+        {/* สรุปมาตรการ ม.75: ไลน์ไหนหยุดได้ / ไลน์ไหน order ไม่ลงต้องเรียกมา (คำสั่ง user 2026-07-21) */}
+        {daily.some(r => r.sd75Total > 0) && (() => {
+          const stoppable = daily.filter(r => r.sd75Total > 0 && r.recall75Days === 0);
+          const mustWork = daily.filter(r => r.recall75Days > 0);
+          return (
+            <div style={{ ...card, borderColor: '#a78bfa66' }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa', marginBottom: 6 }}>⚖️ มาตรการหยุดจ่าย 75% (ม.75) — ช่วง {DAILY_HORIZON} วันข้างหน้า</div>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12 }}>
+                <div style={{ flex: '1 1 260px' }}>
+                  <div style={{ color: '#22c55e', fontWeight: 700, marginBottom: 4 }}>🛑 หยุดตามมาตรการได้ ({stoppable.length} ไลน์)</div>
+                  {stoppable.length === 0 ? <div style={{ color: 'var(--muted)' }}>— ไม่มี —</div>
+                    : stoppable.map(r => <div key={r.line.id} style={{ color: 'var(--text2)' }}>{r.line.name} <span style={{ color: 'var(--muted)' }}>· หยุดได้ทั้ง {r.sd75Total} วัน</span></div>)}
+                </div>
+                <div style={{ flex: '1 1 260px' }}>
+                  <div style={{ color: '#a78bfa', fontWeight: 700, marginBottom: 4 }}>⚡ หยุดไม่ได้ — order ไม่ลด ต้องเรียกมาทำ ({mustWork.length} ไลน์)</div>
+                  {mustWork.length === 0 ? <div style={{ color: 'var(--muted)' }}>— ไม่มี —</div>
+                    : mustWork.map(r => <div key={r.line.id} style={{ color: 'var(--text2)' }}>{r.line.name} <span style={{ color: '#a78bfa', fontWeight: 700 }}>· เรียกมา {r.recall75Days}/{r.sd75Total} วัน</span>{r.sd75Stoppable > 0 && <span style={{ color: 'var(--muted)' }}> (อีก {r.sd75Stoppable} วันหยุดได้)</span>}</div>)}
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>ตัดสินจาก order ค้างส่งจริง ณ ตอนนี้ + กำลังผลิตของแต่ละไลน์ — มาทำงานวัน ม.75 = ค่าแรงปกติ (ไม่ใช่ OT วันหยุด) · ดูวันไหนต้องมาที่แถบปฏิทินของไลน์ด้านล่าง (⚡)</div>
+            </div>
+          );
+        })()}
+        {daily.map(({ line, days, otDays, nightDays, recall75Days, holidayDays, endBacklog, sd75Total, sd75Stoppable, unknownCap, orderCount }) => (
           <div key={line.id} style={card}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
               <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{line.name}</span>
@@ -268,33 +372,37 @@ export default function ProductionPlan() {
               {/* สรุปทั้งช่วง */}
               {endBacklog > 0.05
                 ? <span style={chip('#ef4444')}>🚨 ต่อให้เปิดเต็มที่ยังไม่ทัน — ค้าง ~{endBacklog.toFixed(1)} กะ ณ สิ้นช่วง</span>
-                : (otDays + nightDays + holidayDays === 0
+                : (otDays + nightDays + recall75Days + holidayDays === 0
                   ? <span style={chip('#22c55e')}>✅ กะเช้าปกติพอ ไม่ต้องเปิด OT</span>
-                  : <span style={chip('#f59e0b')}>ต้องเปิด: {nightDays ? `กะดึก ${nightDays} วัน · ` : ''}{otDays ? `OT ${otDays} วัน · ` : ''}{holidayDays ? `ทำวันหยุด ${holidayDays} วัน` : ''}</span>)}
+                  : <span style={chip('#f59e0b')}>ต้องเปิด: {nightDays ? `กะดึก ${nightDays} วัน · ` : ''}{otDays ? `OT ${otDays} วัน · ` : ''}{recall75Days ? `ยกเลิกหยุด75% ${recall75Days} วัน · ` : ''}{holidayDays ? `ทำวันหยุด OT ${holidayDays} วัน` : ''}</span>)}
+              {sd75Total > 0 && (recall75Days > 0
+                ? <span style={chip('#a78bfa')} title="วัน ม.75 ที่มี order ชน/งานค้าง — ต้องเรียกพนักงานมาทำงาน (ค่าแรงปกติ)">⚡ ม.75: หยุดได้ {sd75Stoppable}/{sd75Total} วัน — ต้องเรียกมาทำ {recall75Days} วัน</span>
+                : <span style={chip('#22c55e')} title="ทุกวัน ม.75 ในช่วงนี้ ไลน์นี้ไม่มี order ชน — หยุดตามมาตรการได้">🛑 ม.75: หยุดได้ทั้ง {sd75Total} วัน (order ไม่ชน)</span>)}
               {unknownCap > 0 && <span style={chip('#94a3b8')} title="พาร์ทที่ยังไม่มีประวัติกำลังผลิต/ไม่รู้จักไลน์">{unknownCap.toLocaleString()} ชิ้นไม่รู้กำลัง</span>}
             </div>
             {/* แถบปฏิทินวันต่อวัน */}
             <div style={{ display: 'flex', gap: 3, overflowX: 'auto', paddingBottom: 4 }}>
               {days.map(d => {
-                const top = d.plan.includes('holiday_work') ? PLAN_META.holiday_work : d.plan.includes('night') ? PLAN_META.night : d.plan.includes('ot') ? PLAN_META.ot : d.plan.includes('day') ? PLAN_META.day : null;
+                const top = d.plan.includes('holiday_work') ? PLAN_META.holiday_work : d.plan.includes('recall75') ? PLAN_META.recall75 : d.plan.includes('night') ? PLAN_META.night : d.plan.includes('ot') ? PLAN_META.ot : d.plan.includes('day') ? PLAN_META.day : null;
                 const dd = new Date(`${d.date}T12:00:00`);
                 return (
-                  <div key={d.date} title={`${fmtDate(d.date)}${d.holiday ? ' (วันหยุด)' : ''}\nดิววันนี้ ${Math.round(d.duePcs).toLocaleString()} ชิ้น (${d.dueLoad.toFixed(2)} กะ)\nแผน: ${d.plan.map(p => PLAN_META[p]?.label || p).join(' ') || (d.holiday ? 'หยุด' : 'ว่าง')}\nค้างยกไป ${d.backlog.toFixed(2)} กะ`}
+                  <div key={d.date} title={`${fmtDate(d.date)}${d.sd75 ? ' (หยุดจ่าย 75% — ม.75)' : d.holiday ? ' (วันหยุด)' : ''}\nดิววันนี้ ${Math.round(d.duePcs).toLocaleString()} ชิ้น (${d.dueLoad.toFixed(2)} กะ)\nแผน: ${d.plan.map(p => PLAN_META[p]?.label || p).join(' ') || (d.holiday ? 'หยุด' : 'ว่าง')}\nค้างยกไป ${d.backlog.toFixed(2)} กะ`}
                     style={{ flexShrink: 0, width: 40, textAlign: 'center' }}>
-                    <div style={{ fontSize: 10, color: d.holiday ? '#ef4444' : 'var(--muted)' }}>{['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][dd.getDay()]}</div>
+                    <div style={{ fontSize: 10, color: d.sd75 ? '#a78bfa' : d.holiday ? '#ef4444' : 'var(--muted)' }}>{['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][dd.getDay()]}</div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)' }}>{dd.getDate()}</div>
                     <div style={{ height: 26, marginTop: 2, borderRadius: 5, background: top ? `${top.color}33` : (d.holiday ? 'var(--bg3)' : 'var(--bg2)'), border: `1px solid ${top ? top.color : 'var(--border2)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>
-                      {top === PLAN_META.holiday_work ? '⚠' : top === PLAN_META.night ? '🌙' : top === PLAN_META.ot ? '⏰' : top === PLAN_META.day ? '☀' : (d.holiday ? '·' : '')}
+                      {top === PLAN_META.holiday_work ? '⚠' : top === PLAN_META.recall75 ? '⚡' : top === PLAN_META.night ? '🌙' : top === PLAN_META.ot ? '⏰' : top === PLAN_META.day ? '☀' : (d.holiday ? '·' : '')}
                     </div>
                   </div>
                 );
               })}
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap', fontSize: 11, color: 'var(--muted)' }}>
-              <span>☀ กะเช้าพอ</span><span>⏰ ต้องเปิด OT</span><span>🌙 ต้องเปิดกะดึก</span><span style={{ color: '#ef4444' }}>⚠ ต้องมาทำวันหยุด</span>
+              <span>☀ กะเช้าพอ</span><span>⏰ ต้องเปิด OT</span><span>🌙 ต้องเปิดกะดึก</span><span style={{ color: '#a78bfa' }}>⚡ ยกเลิกหยุด 75% (ค่าแรงปกติ)</span><span style={{ color: '#ef4444' }}>⚠ ทำวันหยุด OT (×1.5/×2)</span>
             </div>
           </div>
-        ))
+        ))}
+        </>
       ) : (
         monthly.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มี forecast สำหรับไลน์ใน scope</div> :
         monthly.map(({ line, rows }) => (

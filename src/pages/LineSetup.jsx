@@ -7,7 +7,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
-import FactoryPlanManager from '../components/FactoryPlanManager';
+import ToggleDot from '../components/ToggleDot';
 
 // ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร → WIP (ตามลำดับ 4M: Man, Machine, Material)
 // ให้ตรงกับปุ่ม filter MAN/MACHINE/WIP ที่หน้า Management — UI-CONVENTIONS §1
@@ -253,8 +253,18 @@ export default function LineSetup() {
     }
     // อ่าน URL ผังก่อนลบ row — จะได้ลบไฟล์ใน storage ตามหลัง DB สำเร็จ (กติกา CLAUDE.md กันไฟล์กำพร้า)
     const { data: delLayout } = await supabase.from('line_layouts').select('image_url').eq('line_name', line.name).maybeSingle();
-    await supabase.from('workstations').delete().eq('line_name', line.name);
-    await supabase.from('line_layouts').delete().eq('line_name', line.name);
+    // ลบลูกให้ครบและเรียงลำดับ FK ให้ถูก ไม่งั้น row กำพร้าค้าง / delete แม่ FK-error แล้วถูกกลืนเงียบ
+    // (เดิมลบ workstations โดยไม่ลบ station_requirements ก่อน + ไม่ลบ wip/machine/flow เลย)
+    const { data: staIds } = await supabase.from('workstations').select('id').eq('line_name', line.name);
+    if (staIds?.length) {
+      const { error: eReq } = await supabase.from('station_requirements').delete().in('station_id', staIds.map(s => s.id));
+      if (eReq) { toast.error('ลบทักษะประจำสถานีไม่สำเร็จ: ' + eReq.message); return; }
+    }
+    // flow_links อ้าง machine_points (from/to) → ลบ links ก่อน points
+    for (const tbl of ['machine_flow_links', 'machine_points', 'wip_buffer_points', 'workstations', 'line_layouts']) {
+      const { error: eDel } = await supabase.from(tbl).delete().eq('line_name', line.name);
+      if (eDel) { toast.error(`ลบ ${tbl} ไม่สำเร็จ: ` + eDel.message); return; }
+    }
     // ลบเฉพาะไฟล์ของไลน์นี้เอง — ข้ามถ้าไลน์อื่น (เช่นไลน์แม่/ลูกที่ยืมผัง) ยังชี้ URL เดียวกันอยู่
     if (delLayout?.image_url?.includes('/employee-photos/layouts/')) {
       const { data: sharers } = await supabase.from('line_layouts').select('line_name').eq('image_url', delLayout.image_url).limit(1);
@@ -264,7 +274,8 @@ export default function LineSetup() {
       }
     }
     await supabase.from('employees').update({ line_id: null }).eq('line_id', line.id);
-    await supabase.from('production_lines').delete().eq('id', line.id);
+    const { error: eLine } = await supabase.from('production_lines').delete().eq('id', line.id);
+    if (eLine) { toast.error('ลบไลน์ไม่สำเร็จ: ' + eLine.message); return; }
     const remaining = lines.filter(l => l.id !== line.id);
     setLines(remaining);
     if (selectedLine === line.name) {
@@ -707,7 +718,6 @@ export default function LineSetup() {
 
   return (
     <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12, height: isMobile ? 'auto' : 'calc(100vh - 40px)' }}>
-      <FactoryPlanManager canEdit={can('pm', 'setup', role) || role === 'admin'} />
       {selectedLine && (
         // paddingRight เว้นที่ให้กระดิ่งแจ้งเตือน (fixed มุมขวาบน) — ไม่งั้นปุ่ม 🏷️ ที่ชิดขวาสุดโดนกระดิ่งทับ
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, paddingRight: 52 }}>
@@ -727,6 +737,7 @@ export default function LineSetup() {
             onClick={() => setShowPills(v => !v)}
             title={'แสดง/ซ่อนป้ายชื่อทุกจุดบนผัง (เหมือนหน้าแสดงผลจริง)\nหมุดที่กำลังเลือก/แก้ไขโชว์ป้ายเสมอ'}
             style={{
+              position: 'relative',
               padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
               marginLeft: 'auto',
               border: `1px solid ${showPills ? 'var(--accent)' : 'var(--border2)'}`,
@@ -734,6 +745,7 @@ export default function LineSetup() {
               color: showPills ? 'var(--accent)' : 'var(--text2)',
             }}>
             {showPills ? '🏷️ ซ่อนป้าย' : '🏷️ โชว์ป้าย'}
+            <ToggleDot on={showPills} />
           </button>
         </div>
       )}
@@ -1101,7 +1113,8 @@ export default function LineSetup() {
             <select value={newLineParent} onChange={e => setNewLineParent(e.target.value)}
               style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: newLineParent ? 'var(--accent)' : 'var(--text2)' }}>
               <option value="">ไม่มีไลน์หลัก (standalone)</option>
-              {lines.filter(l => !l.parent_line_name).map(l => (
+              {/* cascade: เลือก section แล้วเห็นเฉพาะไลน์แม่ของ section นั้น (2026-07-21) */}
+              {lines.filter(l => !l.parent_line_name && (!newLineSection || l.section === newLineSection)).map(l => (
                 <option key={l.id} value={l.name}>ลูกของ {l.name}</option>
               ))}
             </select>
@@ -1483,12 +1496,14 @@ export default function LineSetup() {
                   <button
                     onClick={() => { setConnectMode(v => !v); setConnectFrom(null); }}
                     style={{
+                      position: 'relative',
                       padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
                       border: `1px solid ${connectMode ? '#f97316' : 'var(--border2)'}`,
                       background: connectMode ? 'rgba(249,115,22,0.18)' : 'var(--bg2)',
                       color: connectMode ? '#f97316' : 'var(--text2)',
                     }}>
                     {connectMode ? '✓ กำลังเชื่อม' : '🔗 เชื่อมต่อ'}
+                    <ToggleDot on={connectMode} />
                   </button>
                   )}
                 </div>

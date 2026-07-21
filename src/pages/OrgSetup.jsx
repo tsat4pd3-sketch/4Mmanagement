@@ -109,7 +109,11 @@ export default function OrgSetup() {
   };
 
   const handleDelete = async (node) => {
-    if (!confirm(`ลบ "${node.name}" และโหนดลูกทั้งหมดหรือไม่?`)) return;
+    // กันลบทั้งที่ยังมีลูก — เดิม confirm บอก "ลบลูกทั้งหมด" แต่โค้ดลบแค่ node เดียว (พึ่ง cascade)
+    // ถ้าไม่มี cascade ลูกจะกำพร้า parent_id ค้าง · ให้ย้าย/ลบลูกก่อน หรือกด "ปิดใช้งาน" แทน
+    const childCount = nodes.filter(n => n.parent_id === node.id).length;
+    if (childCount > 0) return toast.error(`ลบไม่ได้: "${node.name}" ยังมีหน่วยงานลูก ${childCount} รายการ — ย้าย/ลบลูกก่อน หรือกด "ปิดใช้งาน" แทน`);
+    if (!confirm(`ลบ "${node.name}" ?\n\n(ถ้าเคยผูกกับข้อมูลอื่นแนะนำ "ปิดใช้งาน" แทนการลบ)`)) return;
     const { error } = await supabase.from('org_nodes').delete().eq('id', node.id);
     if (error) return toast.error('ลบไม่สำเร็จ: ' + error.message);
     toast.success('ลบสำเร็จ');

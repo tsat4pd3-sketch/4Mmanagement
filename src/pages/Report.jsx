@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import ToggleDot from '../components/ToggleDot';
 import { loadDocForms, docFormSync, fullCode } from '../utils/docForms';
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -10,7 +11,7 @@ import {
 } from 'recharts';
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 import { hasPermission, can } from '../utils/permissions';
-import { loadCompanyCalendar, getDayType, DAY_TYPE_META } from '../utils/companyCalendar';
+import { loadCompanyCalendar, getDayType, isOtHolidayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import { otPeriodMeta, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyNames, getLineFamilyIds } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
@@ -171,13 +172,26 @@ function useOrgSections() {
   return orgSections;
 }
 
+// แผนกตามลำดับชั้นองค์กร — คืนฟังก์ชัน deptsOf(section): กรองแผนกด้วย parent_id ของ section (cascade)
+// เดิมคืน list แบนรวมทุก section → dropdown แผนกเลือกข้าม section ได้ + ชื่อซ้ำ (บั๊กแก้ 2026-07-21)
 function useOrgDepts() {
-  const [orgDepts, setOrgDepts] = useState([]);
+  const [tree, setTree] = useState({ secs: [], depts: [] });
   useEffect(() => {
-    supabase.from('org_nodes').select('code, name').eq('kind', 'department').eq('is_active', true).order('name')
-      .then(({ data }) => setOrgDepts((data || []).map(n => n.code || n.name).sort()));
+    Promise.all([
+      supabase.from('org_nodes').select('id, code, name').eq('kind', 'section').eq('is_active', true),
+      supabase.from('org_nodes').select('code, name, parent_id').eq('kind', 'department').eq('is_active', true).order('name'),
+    ]).then(([s1, s2]) => setTree({ secs: s1.data || [], depts: s2.data || [] }));
   }, []);
-  return orgDepts;
+  return useMemo(() => {
+    const nameOf = (n) => n.code || n.name;
+    const all = [...new Set(tree.depts.map(nameOf))].sort();
+    return (sectionCode) => {
+      if (!sectionCode) return all;
+      const sec = tree.secs.find(n => nameOf(n) === sectionCode);
+      if (!sec) return all;
+      return [...new Set(tree.depts.filter(d => d.parent_id === sec.id).map(nameOf))].sort();
+    };
+  }, [tree]);
 }
 
 // แท็บสกิล (index ใน TABS) แยกไปหน้า /skills-report (หมวด พนักงาน & ทักษะ — 2026-07-20)
@@ -230,7 +244,7 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   const canManageMaster = hasPermission('manage_master_data', role);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
-  const orgDeptList    = useOrgDepts();
+  const deptsOf        = useOrgDepts();
 
   const todayStr = getWorkDate();
 
@@ -265,7 +279,7 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   };
 
   const dayType = calReady ? getDayType(date) : 'working';
-  const isHoliday = dayType !== 'working';
+  const isHoliday = isOtHolidayType(dayType); // shutdown75 (ม.75) ไม่ใช่วันหยุดแบบ OT
 
   const lineName = (lineId) => lines.find(l => String(l.id) === String(lineId))?.name || '';
   const busRouteLabel = (r) => r.employees?.bus_routes ? `${r.employees.bus_routes.code} ${r.employees.bus_routes.name}` : '—';
@@ -344,7 +358,9 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">งานที่ทำ</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
-    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
+    w.document.write(html); w.document.close();
   };
 
   return (
@@ -367,20 +383,21 @@ table{border-collapse:collapse;width:100%}
           <option value="day">☀️ กะเช้า</option>
           <option value="night">🌙 กะดึก</option>
         </select>
-        <select value={section} onChange={e => setSection(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+        <select value={section} onChange={e => { setSection(e.target.value); setDeptFilter(''); }} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
           <option value="">— ทุกส่วนงาน —</option>
           {sections.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
           <option value="">— ทุกแผนก —</option>
-          {orgDeptList.map(d => <option key={d} value={d}>{d}</option>)}
+          {deptsOf(section).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           {canManageMaster && (
             <button onClick={() => setShowMaster(v => !v)} style={{
+              position: 'relative',
               padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
               background: showMaster ? 'rgba(245,158,11,0.18)' : 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)',
-            }}>⚙️ จัดการสายรถ/งาน OT</button>
+            }}>⚙️ จัดการสายรถ/งาน OT<ToggleDot on={showMaster} /></button>
           )}
           <CsvBtn onClick={handleExportCsv} />
           {canExport && (
@@ -555,7 +572,7 @@ function DailyTab() {
   const now = new Date();
   const isDay = (now.getHours() * 60 + now.getMinutes()) >= 480 && (now.getHours() * 60 + now.getMinutes()) < 1200;
   const orgSectionList = useOrgSections();
-  const orgDeptList    = useOrgDepts();
+  const deptsOf        = useOrgDepts();
   const [date, setDate]   = useState(getWorkDate());
   const [shift, setShift] = useState(isDay ? 'day' : 'night');
   const [logs, setLogs]   = useState([]);
@@ -682,7 +699,9 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">จุดงาน</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
-    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
+    w.document.write(html); w.document.close();
   };
 
   return (
@@ -695,13 +714,13 @@ table{border-collapse:collapse;width:100%}
           <button style={shiftBtnStyle('night')} onClick={() => setShift('night')}>🌙 กะดึก</button>
           <button style={shiftBtnStyle('all')}   onClick={() => setShift('all')}>ทั้งหมด</button>
         </div>
-        <select value={dailySection} onChange={e => { setDailySection(e.target.value); setDailyLine(''); }} style={selSt}>
+        <select value={dailySection} onChange={e => { setDailySection(e.target.value); setDailyLine(''); setDailyDept(''); }} style={selSt}>
           <option value="">ทุกส่วนงาน</option>
           {dailySections.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <select value={dailyDept} onChange={e => setDailyDept(e.target.value)} style={selSt}>
           <option value="">ทุกแผนก</option>
-          {orgDeptList.map(d => <option key={d} value={d}>{d}</option>)}
+          {deptsOf(dailySection).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
         <select value={dailyLine} onChange={e => setDailyLine(e.target.value)} style={selSt}>
           <option value="">ทุกไลน์</option>
@@ -762,7 +781,7 @@ function PerEmployeeTab() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
-  const orgDeptList    = useOrgDepts();
+  const deptsOf        = useOrgDepts();
   const [employees, setEmployees] = useState([]);
   const [selected, setSelected] = useState('');
   const [logs, setLogs] = useState([]);
@@ -863,19 +882,21 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">จุดงาน</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
-    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
+    w.document.write(html); w.document.close();
   };
 
   return (
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={empSection} onChange={e => setEmpSection(e.target.value)} style={selSt}>
+        <select value={empSection} onChange={e => { setEmpSection(e.target.value); setEmpDept(''); }} style={selSt}>
           <option value="">ทุกส่วนงาน</option>
           {empSections.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <select value={empDept} onChange={e => setEmpDept(e.target.value)} style={selSt}>
           <option value="">ทุกแผนก</option>
-          {orgDeptList.map(d => <option key={d} value={d}>{d}</option>)}
+          {deptsOf(empSection).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
         <select value={empTeam} onChange={e => setEmpTeam(e.target.value)} style={selSt}>
           <option value="">ทุก Team</option>
@@ -1048,7 +1069,9 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">PPE ครบ</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
-    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
+    w.document.write(html); w.document.close();
   };
 
   return (
@@ -1231,7 +1254,9 @@ table{border-collapse:collapse;width:100%}
 <th style="border:1px solid #ccc;padding:4px">%การมาทำงาน</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
-    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+    const w = window.open('', '_blank');
+    if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
+    w.document.write(html); w.document.close();
   };
 
   return (
@@ -1850,9 +1875,10 @@ function FourMTab() {
         )}
         {canManageDoc && (
           <button onClick={() => setShowDocPanel(v => !v)} style={{
+            position: 'relative',
             padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
             background: showDocPanel ? 'rgba(245,158,11,0.18)' : 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)',
-          }}>⚙️ จัดการเอกสาร</button>
+          }}>⚙️ จัดการเอกสาร<ToggleDot on={showDocPanel} /></button>
         )}
       </div>
 
@@ -2146,6 +2172,7 @@ function RadarTooltipContent({ active, payload }) {
 
 /* ── Radar Panel ── */
 function OperatorRadarPanel({ emp, skillDefs, subItemsByskill = {}, lines = [], onClose }) {
+  const vw = useWidth();
   const skillMap = {};
   (emp.employee_skills || []).forEach(s => { skillMap[s.skill_name] = s.score; });
   const [printing, setPrinting] = useState(false);
@@ -2171,16 +2198,18 @@ function OperatorRadarPanel({ emp, skillDefs, subItemsByskill = {}, lines = [], 
         if (cert) certifier = { name: cert.full_name || '', pos: cert.position || 'หัวหน้าส่วน', sig: cert.signature_url || null };
       }
       const dept = emp.department || (lines.find(l => l.id === emp.line_id)?.section) || emp.section || '-';
-      const [imgUrl, assessorSig, certifierSig] = await Promise.all([
+      // โลโก้: doc_forms.logo_url ถ้าอัปโหลด · ไม่งั้นไฟล์ทางการ src/assets/TS logo.png → dataURL (pattern เดียวกับ LPA/OJT)
+      const [imgUrl, assessorSig, certifierSig, logoData] = await Promise.all([
         emp.image_url ? urlToDataUrl(emp.image_url) : Promise.resolve(null),
         assessor.sig  ? urlToDataUrl(assessor.sig)  : Promise.resolve(null),
         certifier.sig ? urlToDataUrl(certifier.sig) : Promise.resolve(null),
+        urlToDataUrl(docFormSync('individual_skill', {}).logo_url || tsLogoUrl),
       ]);
       const html = buildIndividualSkillHtml({
         emp, skillDefs, subItemsByskill, dept,
         assessorName: assessor.name, assessorPos: assessor.pos,
         certifierName: certifier.name, certifierPos: certifier.pos,
-        imgUrl, assessorSig, certifierSig,
+        imgUrl, assessorSig, certifierSig, logoUrl: logoData,
       });
       const w = window.open('', '_blank'); w.document.write(html); w.document.close();
     } catch (e) {
@@ -2201,14 +2230,19 @@ function OperatorRadarPanel({ emp, skillDefs, subItemsByskill = {}, lines = [], 
   /* dynamic gradient based on avg */
   const glowColor = avg >= 80 ? '#22c55e' : avg >= 60 ? '#84cc16' : avg >= 40 ? '#f59e0b' : '#ef4444';
 
+  // จอ landscape (desktop/tablet) → modal ขยายกว้าง 2 คอลัมน์ (UI-CONVENTIONS §5 — ห้ามแคบสูงแล้ว scroll)
+  const wide = vw >= 1024;
+
   return (
-    <div style={{
+    <div onClick={onClose} style={{
       position: 'fixed', inset: 0, zIndex: 2100,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
       background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)',
     }}>
       <div onClick={e => e.stopPropagation()} style={{
-        width: 'min(460px, 94vw)',
+        width: wide ? 'min(96vw, 1040px)' : 'min(460px, 94vw)',
+        maxHeight: '92vh',
+        display: 'flex', flexDirection: 'column',
         background: 'var(--bg2)',
         border: `1px solid ${glowColor}55`,
         borderRadius: 20,
@@ -2224,10 +2258,10 @@ function OperatorRadarPanel({ emp, skillDefs, subItemsByskill = {}, lines = [], 
         `}</style>
 
         {/* Header stripe */}
-        <div style={{ height: 4, background: `linear-gradient(90deg, ${glowColor}, transparent)` }} />
+        <div style={{ height: 4, background: `linear-gradient(90deg, ${glowColor}, transparent)`, flexShrink: 0 }} />
 
-        {/* Profile section */}
-        <div style={{ padding: '20px 24px 12px', display: 'flex', alignItems: 'center', gap: 16 }}>
+        {/* Profile section (full width) */}
+        <div style={{ padding: '20px 24px 12px', display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <img
               src={emp.image_url || ''}
@@ -2267,6 +2301,9 @@ function OperatorRadarPanel({ emp, skillDefs, subItemsByskill = {}, lines = [], 
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', padding: 4, alignSelf: 'flex-start' }}>✕</button>
         </div>
 
+        {/* Body — desktop: 2 คอลัมน์ landscape · mobile: คอลัมน์เดียว · scroll เป็น fallback */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'grid', gridTemplateColumns: wide ? '1fr 1fr' : '1fr', columnGap: 8, alignItems: 'start' }}>
+        <div style={{ minWidth: 0 }}>
         {/* Stat bars row — top 4 non-zero skills */}
         {radarData.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(radarData.length, 4)}, 1fr)`, gap: 6, padding: '0 24px 12px' }}>
@@ -2316,9 +2353,10 @@ function OperatorRadarPanel({ emp, skillDefs, subItemsByskill = {}, lines = [], 
             {printing ? 'กำลังเตรียม...' : '🖨️ พิมพ์ใบประเมินทักษะรายบุคคล (F-PRS-P1-119)'}
           </button>
         </div>
+        </div>{/* /left column */}
 
-        {/* All skill bars grouped by category */}
-        <div style={{ padding: '0 24px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* All skill bars grouped by category (right column on desktop) */}
+        <div style={{ padding: '0 24px 20px', display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
           {catGroups.map(g => {
             const gSkills = g.skills.map(s => ({ subject: s.label, value: skillMap[s.name] ?? 0 })).filter(d => d.value > 0);
             if (gSkills.length === 0) return null;
@@ -2345,7 +2383,8 @@ function OperatorRadarPanel({ emp, skillDefs, subItemsByskill = {}, lines = [], 
               </div>
             );
           })}
-        </div>
+        </div>{/* /right column */}
+        </div>{/* /body */}
       </div>
     </div>
   );
@@ -2357,7 +2396,7 @@ const selSt = { width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 1
 function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilterLine, filterTeam, setFilterTeam, filterDept, setFilterDept }) {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const orgSectionList = useOrgSections();
-  const orgDeptList    = useOrgDepts();
+  const deptsOf        = useOrgDepts();
   // dropdown เหลือเฉพาะใน scope — ข้อมูลจริงถูกบังคับ scope ที่ query ของแต่ละแท็บแล้ว
   // (เดิมโชว์ทุกส่วนงาน/ไลน์ เลือกนอก scope ได้ผลว่างเปล่า ทำให้ผู้ใช้สับสน)
   const scopedLines = useMemo(() => {
@@ -2375,14 +2414,14 @@ function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilt
   const visibleLines = filterSection ? scopedLines.filter(l => l.section === filterSection) : scopedLines;
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-      <select value={filterSection} onChange={e => { setFilterSection(e.target.value); setFilterLine(''); }} style={selSt}>
+      <select value={filterSection} onChange={e => { setFilterSection(e.target.value); setFilterLine(''); setFilterDept && setFilterDept(''); }} style={selSt}>
         <option value="">ทุกส่วนงาน</option>
         {sections.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
       {setFilterDept && (
         <select value={filterDept || ''} onChange={e => setFilterDept(e.target.value)} style={selSt}>
           <option value="">ทุกแผนก</option>
-          {orgDeptList.map(d => <option key={d} value={d}>{d}</option>)}
+          {deptsOf(filterSection).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
       )}
       <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={selSt}>
@@ -2775,7 +2814,7 @@ function calcServiceDuration(startDate) {
   return parts.length ? parts.join(' ') : '< 1 เดือน';
 }
 
-function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps, makerSigUrl, checkerSigUrl, approverSigUrl }) {
+function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, department, headName, maker, checker, approver, totalEmps, makerSigUrl, checkerSigUrl, approverSigUrl, logoUrl }) {
   const today = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
 
   const levelCell = (lv) =>
@@ -2832,7 +2871,7 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
 </style></head><body><div class="page">
   <table style="width:100%;margin-bottom:4px"><tr>
     <td style="vertical-align:top;width:22%">
-      <div style="margin-bottom:6px">${TS_LOGO_HTML}</div>
+      <div style="margin-bottom:6px">${tsLogoHtml(logoUrl)}</div>
       <div style="font-size:9px;line-height:2">
         <div>ฝ่าย : <strong>${dept}</strong></div>
         <div>ส่วน : <strong>${section}</strong></div>
@@ -2940,20 +2979,19 @@ function distributeLevels(score, n) {
   return Array.from({ length: n }, (_, i) => Math.min(4, base + (i < extra ? 1 : 0)));
 }
 
-/* โลโก้ Thai Summit (recreate ด้วย CSS — ไม่ต้องพึ่งไฟล์ภายนอก) */
-const TS_LOGO_HTML = `
+/* โลโก้ Thai Summit — รับ dataURL ที่ resolve แล้ว (doc_forms.logo_url ถ้าอัปโหลด ไม่งั้น
+   ไฟล์ทางการ src/assets/TS logo.png) · handler แปลงเป็น dataURL ผ่าน urlToDataUrl ก่อนส่งเข้ามา */
+function tsLogoHtml(logoUrl) {
+  const src = logoUrl || '';
+  return `
   <div style="display:flex;align-items:center;gap:7px">
-    <div style="display:flex;flex-direction:column;line-height:1">
-      <div style="display:flex">
-        <span style="background:#e30613;color:#fff;font-weight:800;font-size:15px;padding:2px 4px;font-family:Arial">T</span>
-        <span style="background:#1d4ed8;color:#fff;font-weight:800;font-size:15px;padding:2px 4px;font-family:Arial;margin-left:1px">S</span>
-      </div>
-    </div>
-    <div style="line-height:1.15">
-      <div style="font-size:10px;font-weight:800;color:#1d4ed8;letter-spacing:0.02em">THAI SUMMIT</div>
+    <img src="${src}" alt="Thai Summit" style="height:38px;width:auto;object-fit:contain"/>
+    <div style="line-height:1.2">
+      <div style="font-size:10px;font-weight:800;color:#7a1f1f;letter-spacing:0.02em">THAI SUMMIT</div>
       <div style="font-size:7px;font-weight:700;color:#333;letter-spacing:0.06em">AUTOMOTIVE CO.,LTD.</div>
     </div>
   </div>`;
+}
 
 /* radar SVG (N แกน สเกล 0-100) สำหรับฝังในหน้าพิมพ์ (ไม่มี recharts ในหน้าต่างใหม่) */
 function buildRadarSvg(items, opt = {}) {
@@ -3002,7 +3040,7 @@ function buildRadarSvg(items, opt = {}) {
    skillDefs: skill_definitions ทั้งหมด · subItemsByskill: { [skill_name]: [{seq,label,wi_ref}] }
    signers: { assessor:{name,pos,sig}, certifier:{name,pos,sig} }
    imgUrl/assesseeSig/assessorSig/certifierSig: dataURL แปลงแล้ว                          */
-function buildIndividualSkillHtml({ emp, skillDefs, subItemsByskill, dept, assessorName, assessorPos, certifierName, certifierPos, imgUrl, assessorSig, certifierSig }) {
+function buildIndividualSkillHtml({ emp, skillDefs, subItemsByskill, dept, assessorName, assessorPos, certifierName, certifierPos, imgUrl, assessorSig, certifierSig, logoUrl }) {
   const today = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
   const skillMap = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
 
@@ -3097,13 +3135,14 @@ function buildIndividualSkillHtml({ emp, skillDefs, subItemsByskill, dept, asses
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700;800&display=swap');
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Sarabun',sans-serif;font-size:9px;color:#000;background:#fff}
-  .page{padding:6mm}table{border-collapse:collapse}
-  @media print{@page{size:A4 portrait;margin:5mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-</style></head><body><div class="page">
+  body{font-family:'Sarabun',sans-serif;font-size:9px;color:#000;background:#fff;width:200mm;margin:0 auto}
+  .page{padding:0}table{border-collapse:collapse}
+  #fit{transform-origin:top left}
+  @media print{@page{size:A4 portrait;margin:5mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact;width:auto}}
+</style></head><body><div class="page"><div id="fit">
   <!-- header -->
   <table style="width:100%;margin-bottom:4px"><tr>
-    <td style="width:24%;vertical-align:middle">${TS_LOGO_HTML}</td>
+    <td style="width:24%;vertical-align:middle">${tsLogoHtml(logoUrl)}</td>
     <td style="text-align:center;vertical-align:middle">
       <div style="font-size:13px;font-weight:800">ใบประเมินทักษะความสามารถของพนักงานแผนก ${esc(dept || '-')}</div>
     </td>
@@ -3163,8 +3202,29 @@ function buildIndividualSkillHtml({ emp, skillDefs, subItemsByskill, dept, asses
     </td>
   </tr></table>
   <div style="text-align:right;font-size:8px;color:#666;margin-top:3px">${fullCode(docFormSync('individual_skill', { form_code: 'F-PRS-P1-119-0' }))}${docFormSync('individual_skill', {}).effective_date ? ' · Effective Date : ' + docFormSync('individual_skill', {}).effective_date : ''}</div>
-</div>
-<script>window.onload = () => { window.print(); }</script></body></html>`;
+</div></div>
+<script>
+  function fitOnePage() {
+    try {
+      // ย่อ #fit ให้พอดี A4 1 หน้า (สูง 297-2*5 = 287mm) เสมอ — พนักงานสกิลเยอะก็ไม่เกินแผ่น
+      // ใช้ zoom (ไม่ใช่ transform) เพราะ zoom ลดกล่อง layout จริง → print นับหน้าถูก (transform เป็นภาพลวงตา ไม่ลดหน้า)
+      var probe = document.createElement('div');
+      probe.style.cssText = 'height:100mm;position:absolute;visibility:hidden;top:0';
+      document.body.appendChild(probe);
+      var pxPerMm = probe.getBoundingClientRect().height / 100;
+      document.body.removeChild(probe);
+      var avail = 287 * pxPerMm;
+      var el = document.getElementById('fit');
+      var h = el.getBoundingClientRect().height;
+      if (h > avail) { el.style.zoom = (avail / h); }
+    } catch (e) {}
+    window.print();
+  }
+  window.onload = function () {
+    if (document.fonts && document.fonts.ready) { document.fonts.ready.then(fitOnePage); }
+    else { fitOnePage(); }
+  };
+</script></body></html>`;
 }
 
 function MultiSkillFormTab() {
@@ -3270,12 +3330,13 @@ function MultiSkillFormTab() {
       ...msVisibleDefs.map((_, si) => empRows.filter(r => r.levels[si] !== null && r.levels[si] === lv.level).length),
       empRows.filter(r => r.overall === lv.level).length,
     ]);
-    const [mSig, cSig, aSig] = await Promise.all([
+    const [mSig, cSig, aSig, logoData] = await Promise.all([
       makerSig    ? urlToDataUrl(makerSig)    : Promise.resolve(null),
       checkerSig  ? urlToDataUrl(checkerSig)  : Promise.resolve(null),
       approverSig ? urlToDataUrl(approverSig) : Promise.resolve(null),
+      urlToDataUrl(docFormSync('multi_skill', {}).logo_url || tsLogoUrl),
     ]);
-    const html = buildMultiSkillHtml({ empRows, levelCounts, skillDefs: msVisibleDefs, dept, section, department, headName, maker, checker, approver, totalEmps: empRows.length, makerSigUrl: mSig, checkerSigUrl: cSig, approverSigUrl: aSig });
+    const html = buildMultiSkillHtml({ empRows, levelCounts, skillDefs: msVisibleDefs, dept, section, department, headName, maker, checker, approver, totalEmps: empRows.length, makerSigUrl: mSig, checkerSigUrl: cSig, approverSigUrl: aSig, logoUrl: logoData });
     const w = window.open('', '_blank');
     w.document.write(html);
     w.document.close();
@@ -4174,7 +4235,7 @@ function AttendanceFormTab() {
   const canExport = can('report', 'export', role);
   const today   = new Date();
   const orgSectionList = useOrgSections();
-  const orgDeptList    = useOrgDepts();
+  const deptsOf        = useOrgDepts();
   const [year,    setYear]    = useState(today.getFullYear());
   const [month,   setMonth]   = useState(today.getMonth() + 1);
   const [period,  setPeriod]  = useState(2); // 1=1-15, 2=16-end
@@ -4214,7 +4275,7 @@ function AttendanceFormTab() {
   //   (8 หรือ 10 ชม. — ดู src/utils/otPeriods.js) · จองเก่า/ไม่ระบุ = 8 ชม. (ห้ามเดา 10.5 — ไม่มีในกฎ)
   const otHoursForDay = (info, day) => {
     if (!info) return 0;
-    const holiday = calLoaded && getDayType(dayDateStr(day)) !== 'working';
+    const holiday = calLoaded && isOtHolidayType(getDayType(dayDateStr(day))); // ชม. OT วันหยุดเฉพาะ ot15/ot2 — shutdown75 มาทำงาน = ปกติ
     if (holiday) {
       if (!info.present) return 0;
       const meta = otPeriodMeta(info.otPeriod);
@@ -4593,7 +4654,7 @@ function AttendanceFormTab() {
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ส่วนงาน</div>
-          <select value={dept} onChange={e => setDept(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={dept} onChange={e => { setDept(e.target.value); setEmpDept(''); }} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             <option value="">ทุกส่วนงาน</option>
             {attSections.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
@@ -4602,7 +4663,7 @@ function AttendanceFormTab() {
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>แผนก</div>
           <select value={empDept} onChange={e => setEmpDept(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             <option value="">ทุกแผนก</option>
-            {orgDeptList.map(d => <option key={d} value={d}>{d}</option>)}
+            {deptsOf(dept).map(d => <option key={d} value={d}>{d}</option>)}
           </select>
         </div>
         <div>
