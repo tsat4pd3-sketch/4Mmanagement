@@ -226,6 +226,50 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
+    /* ── Checkin Update (แก้กำลังคนระหว่างวัน หลังเช็คชื่อไปแล้ว) ── */
+    if (event === 'checkin_update') {
+      const s = body.summary;
+      if (!s) return new Response('missing summary', { status: 400 });
+      const chat = resolveEvent(routes, 'checkin_update');
+      if (chat === null) return json({ ok: true, skipped: true });
+      const builtin = [
+        `🔄 <b>อัพเดทกำลังคน</b> (แก้ระหว่างวัน)`, ``,
+        `🏭 ไลน์: <b>${s.line_name}</b> · ${s.shift_label}`,
+        `📅 วันที่: ${s.work_date}`, ``,
+        `👥 เข้างาน: <b>${s.present}/${s.total}</b> · ⏰ OT: ${s.ot} · 🏖️ ลา: ${s.leave} · ❌ ขาด: ${s.absent}`,
+        s.changed_names ? `\n✏️ เปลี่ยนแปลง ${s.changed_count} คน:\n${s.changed_names}` : ``,
+        ``, `✍️ แก้โดย: ${s.checked_by}`, `— 4M Management System`,
+      ].filter((l) => l !== ``).join('\n');
+      const message = pick(routes, 'checkin_update', {
+        line_name: s.line_name, shift_label: s.shift_label, work_date: s.work_date,
+        present: s.present, total: s.total, ot: s.ot, leave: s.leave, absent: s.absent,
+        checked_by: s.checked_by, changed_count: s.changed_count, changed_names: s.changed_names,
+      }, builtin);
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
+    }
+
+    /* ── OT Booking (จองรถ OT — ใครทำ OT / งานอะไร / กี่โมง) ── */
+    if (event === 'ot_booking') {
+      const b = body.booking;
+      if (!b) return new Response('missing booking', { status: 400 });
+      const chat = resolveEvent(routes, 'ot_booking');
+      if (chat === null) return json({ ok: true, skipped: true });
+      const builtin = [
+        `🚐 <b>จองรถ OT</b>`, ``,
+        `🏭 ไลน์: <b>${b.line_name}</b>`,
+        `📅 ${b.shift_label} · ${b.date_label} (${b.work_date})`, ``,
+        Number(b.count) > 0 ? `👥 ทำ OT <b>${b.count}</b> คน:\n${b.items}` : `— ยกเลิกการจองรถ OT (ไม่มีคนจองแล้ว) —`,
+        ``, `✍️ จองโดย: ${b.booked_by}`, `— 4M Management System`,
+      ].join('\n');
+      const message = pick(routes, 'ot_booking', {
+        line_name: b.line_name, work_date: b.work_date, date_label: b.date_label,
+        shift_label: b.shift_label, count: b.count, items: b.items, booked_by: b.booked_by,
+      }, builtin);
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
+    }
+
     /* ── Morning meeting summary (หน้า /morning-meeting) ── */
     if (event === 'morning_meeting') {
       const s = body.summary;

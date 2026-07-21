@@ -3,8 +3,8 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
-import { loadCompanyCalendar, getDayType } from '../utils/companyCalendar';
-import { holidayPeriodsForShift, defaultHolidayPeriod } from '../utils/otPeriods';
+import { loadCompanyCalendar, getDayType, isOtHolidayType } from '../utils/companyCalendar';
+import { holidayPeriodsForShift, defaultHolidayPeriod, otPeriodLabel, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import { roleLabel } from '../utils/roleMeta';
@@ -104,6 +104,11 @@ export default function Checkin() {
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
   const [subLineSelections, setSubLineSelections] = useState({}); // { lineName: bool } — modal checkboxes
 
+  /* ── สถานะตั้งต้นตอนโหลด — ใช้เทียบว่าการกดบันทึกแต่ละครั้งเป็น "เช็คชื่อครั้งแรก" /
+     "อัพเดทกำลังคน" / "จองรถ OT" เพื่อยิงแจ้งเตือน Telegram แยกประเภท (กันหัวหน้าแผนกงง
+     ว่าทำไมเช็คชื่อซ้ำ ทั้งที่จริงแค่มาแก้ข้อมูล/จองรถ OT — ดู CLAUDE.md ส่วน Checkin) */
+  const [baseline, setBaseline] = useState({ logIds: new Set(), att: {}, otBook: {}, otTask: {}, otPeriod: {} });
+
   /* ── จองรถ OT แบบอิสระ (ไม่ผูกกับกะที่กำลังเช็คชื่ออยู่) ──
      ใช้กรณีอย่างจันทร์แรกหลังสลับกะ ที่ทีมซึ่งต้องจอง OT ไม่ใช่ทีมที่กำลังเช็คชื่ออยู่ตรงหน้า */
   const [showOtBookModal,  setShowOtBookModal]  = useState(false);
@@ -125,7 +130,8 @@ export default function Checkin() {
   useEffect(() => { loadCompanyCalendar().then(() => setCalLoaded(true)); }, []);
   useEffect(() => { fetchData(); }, [previewNight, calLoaded]);
 
-  const isHolidayDate = (dateStr) => calLoaded && getDayType(dateStr) !== 'working';
+  // "วันหยุดแบบ OT" (ot15/ot2) เท่านั้น — shutdown75 (ม.75) มาทำงาน = ค่าแรงปกติ ไม่เข้า flow จอง OT วันหยุด
+  const isHolidayDate = (dateStr) => calLoaded && isOtHolidayType(getDayType(dateStr));
 
   /* ── วันที่จองรถ "ล่วงหน้าเพิ่ม" ในรอบเช็คชื่อนี้ (เพิ่มเติมจากกลไกเดิม) ──
      กะดึก: คืนถัดไป (nextDateStr) จองได้เสมออยู่แล้ว (กลไกเดิม) — ถ้าคืนถัดๆไปจากนั้นเป็นวันหยุดต่อกัน
@@ -293,6 +299,15 @@ export default function Checkin() {
     setOtExtraBookings(extraBookInit);
     setOtExtraTasks(extraTaskInit);
     setOtExtraPeriods(extraPeriodInit);
+
+    // snapshot ตั้งต้น (สำหรับเทียบตอนบันทึก — ดูคอมเมนต์ที่ประกาศ baseline)
+    setBaseline({
+      logIds:   new Set((logData || []).map(l => l.employee_id)),
+      att:      JSON.parse(JSON.stringify(init)),
+      otBook:   { ...bookInit },
+      otTask:   { ...taskInit },
+      otPeriod: { ...periodInit },
+    });
   };
 
   const toggleOtBooking = (empId) => {
@@ -552,24 +567,78 @@ export default function Checkin() {
       const leave   = shown.filter(e => attendance[e.id]?.leave_type).length;
       const ot      = shown.filter(e => attendance[e.id]?.has_ot).length;
 
-      await fetch(`https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-notification`, {
+      /* ── แยกประเภทแจ้งเตือนตามสิ่งที่เปลี่ยนจริงในการบันทึกครั้งนี้ ──
+         ปุ่ม "บันทึก" ตัวเดียวทำ 3 อย่าง (เช็คชื่อ / แก้กำลังคน / จองรถ OT) — เดิมยิง
+         checkin_summary ทุกครั้ง หัวหน้าแผนกเลยงงว่าหัวหน้ากลุ่มเช็คชื่อซ้ำ ทั้งที่จริง
+         แค่มาลงจอง OT ระหว่างวัน · แยกเป็น 3 event: checkin_summary / checkin_update / ot_booking */
+      const displayedIds = shown.map(e => e.id);
+      const hadAnyLog = displayedIds.some(id => baseline.logIds.has(id));
+      const attKey = (r = {}) => JSON.stringify([
+        !!r.is_present, !!r.has_helmet, !!r.has_boots, !!r.has_gloves,
+        r.leave_type || '', r.leave_duration || '', r.leave_period || '', String(r.leave_hours ?? ''),
+      ]);
+      const attChanged = displayedIds.some(id => attKey(attendance[id]) !== attKey(baseline.att[id]));
+
+      // จอง OT: กะดึกใช้ checkbox (otBookings) · กะเช้าใช้ has_ot — เทียบทั้งสถานะจอง งาน และช่วงเวลา
+      const wasBooked = id => isNight ? !!baseline.otBook[id] : !!baseline.att[id]?.has_ot;
+      const nowBooked = id => isNight ? !!otBookings[id]      : !!attendance[id]?.has_ot;
+      const otChanged = displayedIds.some(id =>
+        wasBooked(id) !== nowBooked(id) ||
+        (nowBooked(id) && ((otTasks[id] || '') !== (baseline.otTask[id] || '') ||
+                           (otPeriods[id] || '') !== (baseline.otPeriod[id] || ''))));
+
+      const post = (event, payload) => fetch(`https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-notification`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-        body: JSON.stringify({
-          event: 'checkin_summary',
-          summary: {
-            line_name:   lineNamesText,
-            shift:       shiftInfo.shift,
-            shift_label: shiftInfo.label,
-            work_date:   workDateStr,
-            start_time:  startTime,
-            has_ot_night: hasOtNight,
-            total:   shown.length,
-            present, absent, leave, ot,
-            checked_by: fullName || 'SV',
-          },
-        }),
+        body: JSON.stringify({ event, ...payload }),
       }).catch(() => {}); // fire-and-forget, ไม่บล็อก
+
+      if (!hadAnyLog) {
+        // ครั้งแรกของวัน = เช็คชื่อเริ่มงาน (แบบเดิม)
+        post('checkin_summary', { summary: {
+          line_name: lineNamesText, shift: shiftInfo.shift, shift_label: shiftInfo.label,
+          work_date: workDateStr, start_time: startTime, has_ot_night: hasOtNight,
+          total: shown.length, present, absent, leave, ot, checked_by: fullName || 'SV',
+        } });
+      } else if (attChanged) {
+        // เคยเช็คชื่อไปแล้ว + ข้อมูลกำลังคนเปลี่ยน = อัพเดทกำลังคนระหว่างวัน
+        const changed = shown.filter(e => attKey(attendance[e.id]) !== attKey(baseline.att[e.id]));
+        const changedNames = changed.slice(0, 15).map(e => {
+          const st = getRowStatus(attendance[e.id]);
+          return `• ${e.name} — ${STATUS_META[st]?.label || (attendance[e.id]?.is_present ? '🟢 มา' : '🔴 ขาด')}`;
+        }).join('\n') + (changed.length > 15 ? `\n…และอีก ${changed.length - 15} คน` : '');
+        post('checkin_update', { summary: {
+          line_name: lineNamesText, shift: shiftInfo.shift, shift_label: shiftInfo.label,
+          work_date: workDateStr, total: shown.length, present, absent, leave, ot,
+          checked_by: fullName || 'SV', changed_count: changed.length, changed_names: changedNames,
+        } });
+      }
+
+      if (otChanged) {
+        // จองรถ OT — แจ้งรายละเอียด ใครทำ OT / งานอะไร / ช่วงเวลาไหน (สำหรับวันจองหลักของกะนี้)
+        const bookDate = isNight ? addDaysToDateStr(workDateStr, 1) : workDateStr;
+        const otShift  = isNight ? 'night' : 'day';
+        const bookHoliday = isHolidayDate(bookDate);
+        const bookedEmps = shown.filter(e => nowBooked(e.id));
+        const taskName = id => taskTypes.find(t => String(t.id) === String(otTasks[id]))?.name || '';
+        const timeOf   = id => bookHoliday ? otPeriodLabel(otPeriods[id] || defaultHolidayPeriod(otShift)) : WEEKDAY_OT_TIME[otShift];
+        const items = bookedEmps.map(e => {
+          const meta = [taskName(e.id), timeOf(e.id)].filter(Boolean).join(' · ');
+          return `• ${e.name}${meta ? ` — ${meta}` : ''}`;
+        }).join('\n');
+        post('ot_booking', { booking: {
+          line_name: lineNamesText, work_date: bookDate, date_label: shortDateLabel(bookDate),
+          shift: otShift, shift_label: otShift === 'night' ? '🌙 กะดึก' : '☀️ กะเช้า',
+          count: bookedEmps.length, booked_by: fullName || 'SV', items,
+        } });
+      }
+
+      // อัพเดท baseline เป็นสถานะล่าสุด — บันทึกครั้งถัดไปเทียบจากตรงนี้ (กันแจ้งซ้ำ)
+      setBaseline({
+        logIds: new Set([...baseline.logIds, ...displayedIds]),
+        att: JSON.parse(JSON.stringify(attendance)),
+        otBook: { ...otBookings }, otTask: { ...otTasks }, otPeriod: { ...otPeriods },
+      });
     } catch (_) { /* non-critical */ }
 
     setIsSaving(false);
@@ -931,7 +1000,7 @@ export default function Checkin() {
       )}
 
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px, 3vw, 22px)', color: 'var(--text)' }}>
             📝 เช็คชื่อ & PPE

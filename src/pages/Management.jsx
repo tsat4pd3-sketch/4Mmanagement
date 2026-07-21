@@ -295,12 +295,13 @@ export default function Management() {
     const ctMap = {};
     const nameMap = {};
     const imgMap = {};
+    const pairMap = {};
     if (matNos.length) {
       const { data: products } = await supabaseDR
         .from('dr_products')
-        .select('mat_no, name, cycle_time_sec, image_url')
+        .select('mat_no, name, cycle_time_sec, image_url, pair_mat_no')
         .in('mat_no', matNos);
-      (products || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; nameMap[p.mat_no] = p.name || ''; imgMap[p.mat_no] = p.image_url || ''; });
+      (products || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; nameMap[p.mat_no] = p.name || ''; imgMap[p.mat_no] = p.image_url || ''; if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; });
     }
     const ordersBySession = {};
     (orders || []).forEach(o => { (ordersBySession[o.session_id] ||= []).push(o); });
@@ -312,7 +313,7 @@ export default function Management() {
     (dtLogs || []).forEach(d => { (dtBySession[d.session_id] ||= []).push(d); });
     const enriched = sessions.map(s => ({ ...s, orders: ordersBySession[s.id] || [], dtLogs: dtBySession[s.id] || [] }));
     const { data: breakPolicies } = await supabaseDR.from('break_policies').select('*').eq('is_active', true);
-    setLineProdData({ sessions: enriched, workDate: dateStr, ctByMatNo: ctMap, nameByMatNo: nameMap, imgByMatNo: imgMap, breakPolicies: breakPolicies || [] });
+    setLineProdData({ sessions: enriched, workDate: dateStr, ctByMatNo: ctMap, nameByMatNo: nameMap, imgByMatNo: imgMap, pairMatByMat: pairMap, breakPolicies: breakPolicies || [] });
   }, [boardDate]);
 
   useEffect(() => {
@@ -1158,6 +1159,7 @@ export default function Management() {
           const ctByMatNo = lineProdData.ctByMatNo || {};
           const nameByMatNo = lineProdData.nameByMatNo || {};
           const imgByMatNo = lineProdData.imgByMatNo || {};
+          const pairMatByMat = lineProdData.pairMatByMat || {};
           const breakPolicies = lineProdData.breakPolicies || [];
           const getBreakIntervals = (half) => breakPolicies
             .filter(p => p.shift === 'both' || (p.shift === 'day' && half.key === 'am') || (p.shift === 'night' && half.key === 'pm'))
@@ -1375,9 +1377,19 @@ export default function Management() {
           // ทั้งที่ไลน์ไม่ parallel) · แยกคิวเฉพาะคนละ sub-line (คนละเครื่องจริง วิ่งขนานได้)
           const positionedByOrder = new Map();
           {
-            const byLine = {};
-            productRows.forEach(r => r.cards.forEach(c => { (byLine[c.line_name || ''] ||= []).push(c); }));
-            Object.values(byLine).forEach(cs => {
+            // งานคู่ RH/LH (pair_mat_no ใน Product Master) ปั๊มด้วยแม่พิมพ์คู่ = ทำพร้อมกัน (parallel)
+            // → คู่ที่มีทั้งสองพาร์ทในไลน์เดียวกันแยกเป็นเลนของตัวเอง คนละคิว เริ่มพร้อมกัน แถบจึงตรงกัน
+            // (พาร์ทไม่มีคู่ยังรวมคิวไลน์เดียวเรียงต่อกัน — 1 ไลน์ทีละใบ · 2026-07-21)
+            const matsInLine = {};
+            productRows.forEach(r => r.cards.forEach(c => { (matsInLine[c.line_name || ''] ||= new Set()).add(c.mat_no); }));
+            const laneKeyOf = (c) => {
+              const line = c.line_name || '';
+              const pm = pairMatByMat[c.mat_no];
+              return (pm && matsInLine[line]?.has(pm)) ? `${line}||${c.mat_no}` : line;
+            };
+            const byLane = {};
+            productRows.forEach(r => r.cards.forEach(c => { (byLane[laneKeyOf(c)] ||= []).push(c); }));
+            Object.values(byLane).forEach(cs => {
               computeQueuedPositionsFull(cs).forEach(item => positionedByOrder.set(item.o.id ?? item.o.prod_no, item));
             });
           }
@@ -2332,7 +2344,7 @@ export default function Management() {
 
       {/* ── Mobile fit popup (after assign) ── */}
       {isMobile && fitPopup && (
-        <div style={{ position: 'fixed', top: 16, left: 16, right: 16, zIndex: 1000, background: 'var(--card)', border: `2px solid ${fitColor(fitPopup.fit.score)}`, borderRadius: 14, padding: '14px 16px', boxShadow: 'var(--shadow-lg)', animation: 'hoverIn 0.25s ease' }}>
+        <div style={{ position: 'fixed', top: 56, left: 16, right: 16, zIndex: 1150, background: 'var(--card)', border: `2px solid ${fitColor(fitPopup.fit.score)}`, borderRadius: 14, padding: '14px 16px', boxShadow: 'var(--shadow-lg)', animation: 'hoverIn 0.25s ease' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <img src={fitPopup.worker.employees?.image_url || ''} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fitColor(fitPopup.fit.score)}`, flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>

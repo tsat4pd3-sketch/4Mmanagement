@@ -7,7 +7,7 @@ import { DAY_TYPE_META } from '../utils/companyCalendar';
 
 const MONTH_NAMES = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 const WEEKDAY_HEAD = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
-const DAY_TYPES = ['working', 'ot15', 'ot2'];
+const DAY_TYPES = ['working', 'ot15', 'ot2', 'shutdown75'];
 
 const toDateStr = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 
@@ -116,7 +116,7 @@ export default function CompanyCalendar() {
 
   return (
     <div className="page-content">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
+      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
         <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
           📅 ปฏิทินบริษัท — วันทำงาน/วันหยุด
         </h2>
@@ -177,7 +177,7 @@ export default function CompanyCalendar() {
 
       {canEdit && (
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14 }}>
-          💡 คลิกที่ตัวเลขวันที่เพื่อสลับสถานะ: วันทำงาน → OT×1.5 → OT×2 → วันทำงาน — การเปลี่ยนสถานะแบบคลิกจะยังไม่บันทึกจนกว่าจะกด "บันทึก" ด้านล่าง
+          💡 คลิกที่ตัวเลขวันที่เพื่อสลับสถานะ: วันทำงาน → OT×1.5 → OT×2 → หยุดจ่าย 75% → วันทำงาน — ยังไม่บันทึกจนกว่าจะกด "บันทึก" ด้านล่าง · <b>หยุดจ่าย 75% (ม.75)</b> = หยุดชั่วคราวเหตุลูกค้าลด order: หยุดได้ค่าจ้าง 75% · มาทำงาน = ค่าแรงปกติ (ไม่ใช่ OT วันหยุด)
         </div>
       )}
 

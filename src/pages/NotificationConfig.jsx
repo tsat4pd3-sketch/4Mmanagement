@@ -19,6 +19,8 @@ const CATEGORY_LABEL = {
 // in the DB = the edge function keeps its rich built-in message.
 const DEFAULT_TEMPLATES = {
   checkin_summary: '✅ เช็คชื่อเสร็จแล้ว\n🏭 ไลน์: {line_name} · {shift_label}\n📅 {work_date}\n👥 เข้างาน: {present}/{total} · OT {ot} · ลา {leave} · ขาด {absent}\n✍️ ตรวจโดย {checked_by}',
+  checkin_update: '🔄 อัพเดทกำลังคน (แก้ระหว่างวัน)\n🏭 ไลน์: {line_name} · {shift_label}\n📅 {work_date}\n👥 เข้างาน: {present}/{total} · OT {ot} · ลา {leave} · ขาด {absent}\n✏️ เปลี่ยน {changed_count} คน:\n{changed_names}\n✍️ แก้โดย {checked_by}',
+  ot_booking: '🚐 จองรถ OT\n🏭 ไลน์: {line_name} · {shift_label}\n📅 {date_label} ({work_date})\n👥 ทำ OT {count} คน:\n{items}\n✍️ จองโดย {booked_by}',
   downtime: '🚨 เครื่องจักร DOWNTIME\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n🛑 {type_name}\n⏱ {duration_min} นาที\n🔩 {mat_no}\n📝 {description}\n👤 {reported_by}',
   downtime_recovered: '✅ เครื่องกลับมารันได้แล้ว\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n⏱ หยุดรวม {duration_min} นาที\n👤 {reported_by}',
   downtime_call_mtn: '📞🔧 เรียกช่าง MTN เข้าหน้างานด่วน\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n🛑 {type_name}\n🕐 เริ่มหยุด {start_time}\n📝 {description}\n🙋 {reported_by}',
@@ -44,6 +46,8 @@ const DEFAULT_TEMPLATES = {
 const COMMON_PH = ['line_name', 'shift_label', 'work_date']
 const PLACEHOLDERS = {
   checkin_summary: [...COMMON_PH, 'present', 'total', 'ot', 'leave', 'absent', 'checked_by', 'start_time'],
+  checkin_update: [...COMMON_PH, 'present', 'total', 'ot', 'leave', 'absent', 'checked_by', 'changed_count', 'changed_names'],
+  ot_booking: ['line_name', 'shift_label', 'work_date', 'date_label', 'count', 'items', 'booked_by'],
   downtime: [...COMMON_PH, 'machine_no', 'machine_name', 'type_name', 'duration_min', 'mat_no', 'description', 'reported_by', 'start_time', 'end_time'],
   downtime_recovered: [...COMMON_PH, 'machine_no', 'machine_name', 'type_name', 'duration_min', 'mat_no', 'description', 'reported_by', 'start_time', 'end_time'],
   downtime_call_mtn: [...COMMON_PH, 'machine_no', 'machine_name', 'type_name', 'description', 'reported_by', 'start_time'],
@@ -90,6 +94,8 @@ const SAMPLE = {
   scope_label: 'PD3', total_actual: 2140, total_target: 2400, achieve_pct: 89, oee_avg: 84,
   ng_total: 32, dt_top: 'รอวัตถุดิบ 45น. · เปลี่ยน Die 20น.', missed_count: 2,
   missed_list: '• Line 60 · REINF FRT SD BDY: 270/360 (ขาด 90)', action_open: 3,
+  changed_count: 2, changed_names: '• สมชาย — 🔴 ขาดงาน\n• สมหญิง — 🟣 ลาเต็มวัน',
+  date_label: 'พ 22/7', booked_by: 'สมชาย',
 }
 const renderPreview = (t) => String(t ?? '').replace(/\{(\w+)\}/g, (_m, k) => (SAMPLE[k] != null ? String(SAMPLE[k]) : ''))
 

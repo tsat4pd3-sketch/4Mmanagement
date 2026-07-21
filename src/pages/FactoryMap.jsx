@@ -1,4 +1,5 @@
-import { useState, useEffect, useContext, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -38,7 +39,7 @@ const METRICS = {
   oee: {
     label: '⚙️ OEE', worstFirst: true,
     value: s => s.oee,
-    text: s => s.oee != null ? `OEE ${Math.round(s.oee)}%` : (s.hasOpen ? 'รอปิดกะ' : ''),
+    text: s => s.oee != null ? `OEE ${Math.round(s.oee)}%${s.oeeLive ? ' (สด)' : ''}` : (s.hasOpen ? 'กำลังเก็บข้อมูล...' : ''),
     cat: s => s.oee == null ? 'idle' : s.oee >= 80 ? 'good' : s.oee >= 65 ? 'ok' : 'bad',
   },
   breakdown: {
@@ -71,16 +72,18 @@ const round = (v) => Math.round(v * 100) / 100;
 const centroid = (pts) => pts.length
   ? [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length]
   : [50, 50];
-const EMPTY_ST = { actual: 0, target: 0, hasOpen: false, oee: null, dtMin: 0, dtActive: false, ng: 0,
+const EMPTY_ST = { actual: 0, target: 0, hasOpen: false, oee: null, oeeLive: false, dtMin: 0, dtActive: false, ng: 0,
   headTotal: 0, present: 0, ppeBad: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0 };
 
 export default function FactoryMap() {
   const { role } = useContext(UserContext);
   const canEdit = can('factory_map', 'edit', role);
+  const navigate = useNavigate();
 
   const [imageUrl, setImageUrl] = useState(null);
   const [mapId, setMapId] = useState(null);
   const [regions, setRegions] = useState([]);
+  const [layoutLines, setLayoutLines] = useState(() => new Set()); // ไลน์ที่มีผังพื้น (line_layouts) → คลิกเจาะดูผังพร้อมคนแบบ Dashboard
   const [lineStatus, setLineStatus] = useState({});   // production metrics (DR)
   const [manpower, setManpower] = useState({});        // คน/เข้างาน (Main)
   const [pmStatus, setPmStatus] = useState({});        // PM เครื่องจักร (DR)
@@ -91,6 +94,10 @@ export default function FactoryMap() {
   const [aspect, setAspect] = useState(null);
   const [metric, setMetric] = useState('productivity');
   const [highlight, setHighlight] = useState(null); // line_name ที่คลิกจาก panel (เน้นชั่วคราว)
+  const [detailLine, setDetailLine] = useState(null); // ไลน์ที่คลิกเจาะดู popup รายละเอียด
+  const [hoverLine, setHoverLine] = useState(null); // ไลน์ที่เม้าส์วาง (การ์ดพรีวิวลอย — เฉพาะ mouse)
+  const [hoverXY, setHoverXY] = useState({ x: 0, y: 0 });
+  const [, setHoverTick] = useState(0); // บังคับ reposition หลังการ์ด mount (ได้ความสูงจริง) กันตกขอบตอนเม้าส์นิ่ง
 
   const [drawing, setDrawing] = useState(false);
   const [draft, setDraft] = useState([]);
@@ -99,23 +106,29 @@ export default function FactoryMap() {
   const [assignFor, setAssignFor] = useState(null);
   const [assignLine, setAssignLine] = useState('');
   const wrapRef = useRef(null);
+  const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
   const dragRef = useRef(null);
   const shiftRef = useRef(false);
   const lastRawRef = useRef(null);
 
   const M = METRICS[metric];
 
+  // การ์ด hover เพิ่ง mount → วัดความสูงจริงแล้ว reposition รอบเดียว (กันตกขอบตอนเม้าส์ไม่ขยับ)
+  useLayoutEffect(() => { if (hoverLine) setHoverTick(t => t + 1); }, [hoverLine]);
+
   /* ── โหลดผัง + รูปทรง + ไลน์ ── */
   const loadMap = useCallback(async () => {
-    const [{ data: fm }, { data: rg }, { data: ln }] = await Promise.all([
+    const [{ data: fm }, { data: rg }, { data: ln }, { data: lay }] = await Promise.all([
       supabase.from('factory_map').select('id, image_url').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('factory_line_regions').select('id, line_name, points'),
       supabase.from('production_lines').select('id, name, parent_line_name').order('name'),
+      supabase.from('line_layouts').select('line_name'),
     ]);
     setImageUrl(fm?.image_url || null);
     setMapId(fm?.id || null);
     setRegions((rg || []).map(r => ({ ...r, points: Array.isArray(r.points) ? r.points : [] })));
     setLines(ln || []);
+    setLayoutLines(new Set((lay || []).map(l => l.line_name)));
     setLoading(false);
   }, []);
   useEffect(() => { loadMap(); }, [loadMap]);
@@ -124,15 +137,44 @@ export default function FactoryMap() {
   const loadStatus = useCallback(async () => {
     const workDate = getWorkDate();
     const { data: sessions } = await supabaseDR
-      .from('production_sessions').select('id, line_name, status, oee, qty_ng, ng_qty').eq('work_date', workDate);
+      .from('production_sessions').select('id, line_name, status, oee, qty_ng, ng_qty, start_time, shift_min').eq('work_date', workDate);
     if (!sessions?.length) { setLineStatus({}); return; }
     const sessIds = sessions.map(s => s.id);
-    const [{ data: orders }, { data: dts }] = await Promise.all([
-      supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target').in('session_id', sessIds),
-      supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at').in('session_id', sessIds),
+    const [{ data: orders }, { data: dts }, { data: prods }] = await Promise.all([
+      supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, qty_ng, mat_no').in('session_id', sessIds),
+      supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at, started_at').in('session_id', sessIds),
+      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec'),
     ]);
+    const ctMap = {}; (prods || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; });
     const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
     const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
+    const nowMs = Date.now();
+
+    // OEE สด (กะยังเปิด) ≈ A×P×Q จากข้อมูลปัจจุบัน — สูตรย่อของ computeSessionOEE (DailyReport/Dashboard)
+    // A = เวลารันจริง/เวลาที่ผ่านไป · P = เวลามาตรฐานที่ผลิตได้/เวลารัน · Q = ดี/ทั้งหมด · (ปิดกะแล้ว = ใช้ค่าที่ stamp ไว้)
+    const liveOee = (s, os, dl) => {
+      if (!s.start_time) return null;
+      const opened = new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime();
+      let elapsed = (nowMs - opened) / 60000;
+      if (s.shift_min) elapsed = Math.min(elapsed, s.shift_min);
+      if (elapsed < 10) return null; // เพิ่งเปิดกะ ยังประเมินไม่ได้
+      const dtM = dl.reduce((a, d) => {
+        if (d.ended_at || d.duration_min != null) return a + (Number(d.duration_min) || 0);
+        return a + (d.started_at ? Math.max(0, (nowMs - new Date(d.started_at).getTime()) / 60000) : 0); // ค้างอยู่ = นับถึงตอนนี้
+      }, 0);
+      const runMin = Math.max(1, elapsed - dtM);
+      let stdMin = 0, produced = 0, ng = 0;
+      os.forEach(o => {
+        const q = o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
+        produced += q; stdMin += q * (ctMap[o.mat_no] || 0) / 60; ng += o.qty_ng || 0;
+      });
+      const A = Math.min(1, runMin / elapsed);
+      const P = Math.min(1, runMin > 0 ? stdMin / runMin : 0);
+      const Q = produced > 0 ? Math.max(0, (produced - ng) / produced) : 1;
+      const oee = Math.round(A * P * Q * 100);
+      return isFinite(oee) ? Math.max(0, Math.min(100, oee)) : null;
+    };
+
     const byLine = {};
     sessions.forEach(s => {
       const os = ordBySess[s.id] || [];
@@ -141,13 +183,17 @@ export default function FactoryMap() {
       const dl = dtBySess[s.id] || [];
       const dtMin = dl.reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
       const dtActive = dl.some(d => !d.ended_at && d.duration_min == null);
+      // ปิดกะแล้ว → ใช้ oee ที่ stamp · ยังเปิด → คำนวณสด
+      const oeeVal = s.oee != null ? Number(s.oee) : liveOee(s, os, dl);
+      const isLive = s.oee == null && oeeVal != null;
       const acc = byLine[s.line_name] || { ...EMPTY_ST, oeeSum: 0, oeeN: 0 };
       byLine[s.line_name] = {
         actual: acc.actual + actual, target: acc.target + target,
         hasOpen: acc.hasOpen || s.status === 'open',
         dtMin: acc.dtMin + Math.round(dtMin), dtActive: acc.dtActive || dtActive,
         ng: acc.ng + (s.qty_ng ?? s.ng_qty ?? 0),
-        oeeSum: acc.oeeSum + (s.oee != null ? Number(s.oee) : 0), oeeN: acc.oeeN + (s.oee != null ? 1 : 0),
+        oeeSum: acc.oeeSum + (oeeVal != null ? oeeVal : 0), oeeN: acc.oeeN + (oeeVal != null ? 1 : 0),
+        oeeLive: acc.oeeLive || isLive,
       };
     });
     const out = {};
@@ -204,12 +250,53 @@ export default function FactoryMap() {
   }, []);
   useEffect(() => { loadPM(); const t = setInterval(loadPM, 300000); return () => clearInterval(t); }, [loadPM]);
 
-  const stOf = (name) => ({ ...EMPTY_ST, ...(lineStatus[name] || {}), ...(manpower[name] || {}), ...(pmStatus[name] || {}) });
+  // ── family rollup: ตีกรอบ "ไลน์บนสุด (top-level)" แล้วรวมยอดของลูกขึ้นมา ──
+  // (ข้อมูลจริง: พนักงาน/บางเมตริกผูกกับไลน์แม่ · บางอันผูกกับลูก → รวมทั้งครอบครัวจึงครบ)
+  // ไลน์ไม่มีลูก = โชว์ตัวเอง (เช่น LINE A 800 Ton) · ไลน์มีลูก = ตัวเอง + ลูกทั้งหมด
+  const childrenOf = useMemo(() => {
+    const m = {};
+    lines.forEach(l => { if (l.parent_line_name) (m[l.parent_line_name] ||= []).push(l.name); });
+    return m;
+  }, [lines]);
+  const familyNames = (name) => [name, ...(childrenOf[name] || [])];
+  // คืนชื่อไลน์ที่จะ "เปิดผังพื้นพร้อมพนักงาน" ให้ — เลือกผังที่มีคนจริง
+  // (ผังไลน์แม่-ลูกคนละรูป · คนอยู่บนผังของไลน์ลูก → ไลน์แม่ว่าง = เด้งไปโชว์ผังลูกที่มีคนแทน) · ไม่มีผังเลย = null
+  const floorMapTarget = (name) => {
+    const cand = familyNames(name).filter(n => layoutLines.has(n));
+    if (!cand.length) return null;
+    const presentOf = (n) => manpower[n]?.present || 0;
+    if (layoutLines.has(name) && presentOf(name) > 0) return name;          // ไลน์แม่มีผัง+คนของตัวเอง → โชว์ตัวเอง
+    const withPeople = cand.filter(n => presentOf(n) > 0).sort((a, b) => presentOf(b) - presentOf(a));
+    if (withPeople.length) return withPeople[0];                            // ไลน์แม่ว่าง → ลูกที่มีคนมากสุด
+    return layoutLines.has(name) ? name : cand[0];                          // ยังไม่มีใครเข้างาน → ผังตัวเอง/ตัวแรก
+  };
+  // คลิกไลน์: มีผังพื้น → เปิดผังไลน์พร้อมพนักงาน (Dashboard) พร้อม from=factory-map เพื่อปิดแล้วเด้งกลับผังรวม · ไม่มีผัง → popup สรุปเมตริก
+  const openLine = (name) => {
+    const t = floorMapTarget(name);
+    if (t) { setHoverLine(null); navigate(`/dashboard?line=${encodeURIComponent(t)}&from=factory-map`); }
+    else setDetailLine(name);
+  };
+  // ตีกรอบเฉพาะ "ไลน์บนสุด (top-level)" = parent_line_name IS NULL — 1 กรอบ/กลุ่ม (รวมยอดลูกด้วย stOf)
+  const topNames = useMemo(() => lines.filter(l => !l.parent_line_name).map(l => l.name), [lines]);
+  const stOf = (name) => {
+    const agg = { ...EMPTY_ST, oeeSum: 0, oeeN: 0 };
+    familyNames(name).forEach(n => {
+      const p = lineStatus[n];
+      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeSum += p.oeeSum || 0; agg.oeeN += p.oeeN || 0; agg.oeeLive = agg.oeeLive || p.oeeLive; }
+      const m = manpower[n];
+      if (m) { agg.headTotal += m.headTotal || 0; agg.present += m.present || 0; agg.ppeBad += m.ppeBad || 0; }
+      const pm = pmStatus[n];
+      if (pm) { agg.pmTotal += pm.pmTotal || 0; agg.pmOverdue += pm.pmOverdue || 0; agg.pmDueSoon += pm.pmDueSoon || 0; }
+    });
+    agg.oee = agg.oeeN ? Math.round(agg.oeeSum / agg.oeeN) : null;
+    return agg;
+  };
   const catColor = (name) => CAT[M.cat(stOf(name))];
 
   // side panel: ไลน์ที่มีกะวันนี้ ∪ ไลน์ที่ตีกรอบไว้ — เรียงตาม metric (ปัญหาขึ้นบน)
   const ranked = useMemo(() => {
-    const names = new Set([...Object.keys(lineStatus), ...Object.keys(manpower), ...Object.keys(pmStatus), ...regions.map(r => r.line_name)]);
+    // แสดงไลน์บนสุด (หน่วยปฏิบัติการ) + กรอบที่วาดไว้ (เผื่อของเดิมที่วาดระดับลูก) — ไม่ลิสต์ลูกแยก (รวมใน rollup แล้ว)
+    const names = new Set([...topNames, ...regions.map(r => r.line_name)]);
     const arr = [...names].map(name => ({ name, st: stOf(name), val: M.value(stOf(name)), cat: M.cat(stOf(name)) }));
     arr.sort((a, b) => {
       const av = a.val, bv = b.val;
@@ -218,7 +305,7 @@ export default function FactoryMap() {
       return M.desc ? bv - av : av - bv;
     });
     return arr;
-  }, [lineStatus, manpower, pmStatus, regions, metric]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lineStatus, manpower, pmStatus, regions, metric, topNames]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── อัปโหลดรูปผัง (บีบเบา 2560/2.5MB/q0.9) ── */
   const handleUpload = async (e) => {
@@ -252,14 +339,8 @@ export default function FactoryMap() {
     const r = wrapRef.current.getBoundingClientRect();
     return { x: Math.min(100, Math.max(0, ((clientX - r.left) / r.width) * 100)), y: Math.min(100, Math.max(0, ((clientY - r.top) / r.height) * 100)) };
   };
-  // ตีกรอบเฉพาะ "ไลน์ใบ" (leaf) — ไลน์แม่ที่มีลูกไม่ต้องตี (จะทับกับลูก) นับแค่ลูก
-  // parent = ชื่อไลน์ที่ถูกอ้างเป็น parent_line_name ของไลน์อื่น
-  const leafNames = useMemo(() => {
-    const parents = new Set(lines.map(l => l.parent_line_name).filter(Boolean));
-    return lines.filter(l => !parents.has(l.name)).map(l => l.name);
-  }, [lines]);
-  const framedLeafCount = regions.filter(r => leafNames.includes(r.line_name)).length;
-  const assignableLines = () => leafNames.filter(n => !regions.some(r => r.line_name === n));
+  const framedTopCount = regions.filter(r => topNames.includes(r.line_name)).length;
+  const assignableLines = () => topNames.filter(n => !regions.some(r => r.line_name === n));
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
@@ -351,10 +432,10 @@ export default function FactoryMap() {
 
   return (
     <div className="page-content" style={{ maxWidth: 'min(98vw, 2400px)', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div>
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>🗺️ ผังรวมโรงงาน</h2>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · อัปเดตทุก 30 วินาที</p>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตทุก 30 วินาที</p>
         </div>
         {canEdit && <button onClick={() => { setEditing(v => !v); cancelDraw(); }} style={btn(editing)}>{editing ? '✓ เสร็จ' : '✏️ แก้ผัง'}</button>}
       </div>
@@ -382,7 +463,7 @@ export default function FactoryMap() {
             </>
           )}
           {!drawing && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ลากกลางรูป=ย้าย · ลากจุดมุม=ปรับรูปทรง</span>}
-          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>ตีกรอบแล้ว {framedLeafCount}/{leafNames.length} ไลน์ (เฉพาะไลน์ใบ)</span>
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>ตีกรอบแล้ว {framedTopCount}/{topNames.length} ไลน์ (กลุ่มบนสุด · รวมยอดลูกให้อัตโนมัติ)</span>
         </div>
       )}
 
@@ -399,19 +480,23 @@ export default function FactoryMap() {
           <div ref={wrapRef} onClick={onMapClick} onPointerMove={onMapMove} onPointerUp={endDrag} onPointerCancel={endDrag}
             style={{ position: 'relative', ...wrapStyle, maxHeight: 'calc(100vh - 200px)', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)', cursor: drawing ? 'crosshair' : 'default', touchAction: 'none', background: '#0a0a0f' }}>
             <img src={imageUrl} alt="ผังโรงงาน" onLoad={onImgLoad} style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none', userSelect: 'none' }} />
-            {/* scrim: หรี่ภาพลงนิดให้กรอบสี+ป้ายเด่น (ไม่งั้นจมไปกับผัง) */}
-            <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.32)', pointerEvents: 'none' }} />
+            {/* scrim บางๆ ให้กรอบเด่นแต่ยังเห็นผังชัด (ไม่หรี่จนภาพหม่น) */}
+            <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.14)', pointerEvents: 'none' }} />
 
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
               {regions.map(r => {
-                const cat = M.cat(stOf(r.line_name)); const meta = CAT[cat]; const hl = highlight === r.line_name;
+                const cat = M.cat(stOf(r.line_name)); const meta = CAT[cat]; const hl = highlight === r.line_name || hoverLine === r.line_name;
                 return (
                   <polygon key={r.id} data-region points={ptsStr(r.points)}
                     className={meta.blink ? 'region-alarm' : undefined}
-                    fill={meta.blink ? undefined : `${meta.color}${hl ? '55' : '33'}`} stroke={meta.blink ? undefined : meta.color}
+                    fill={meta.blink ? undefined : `${meta.color}${hl ? '5e' : '33'}`} stroke={meta.blink ? undefined : meta.color}
                     strokeWidth={hl ? '4' : '2'} vectorEffect="non-scaling-stroke" strokeLinejoin="round"
-                    style={{ pointerEvents: editing && !drawing ? 'auto' : 'none', cursor: editing && !drawing ? 'move' : 'default' }}
-                    onPointerDown={(e) => startDrag(e, r, -1)} />
+                    style={{ pointerEvents: drawing ? 'none' : 'auto', cursor: editing ? 'move' : 'pointer' }}
+                    onClick={(e) => { if (!editing) { e.stopPropagation(); openLine(r.line_name); } }}
+                    onPointerEnter={!editing ? (e) => { if (e.pointerType === 'mouse') { setHoverLine(r.line_name); setHoverXY({ x: e.clientX, y: e.clientY }); } } : undefined}
+                    onPointerMove={!editing ? (e) => { if (e.pointerType === 'mouse') setHoverXY({ x: e.clientX, y: e.clientY }); } : undefined}
+                    onPointerLeave={!editing ? () => setHoverLine(h => h === r.line_name ? null : h) : undefined}
+                    onPointerDown={editing && !drawing ? (e) => startDrag(e, r, -1) : undefined} />
                 );
               })}
               {drawing && draft.length > 0 && (
@@ -427,12 +512,14 @@ export default function FactoryMap() {
             {regions.map(r => {
               const [cx, cy] = centroid(r.points); const st = stOf(r.line_name); const meta = CAT[M.cat(st)]; const txt = M.text(st);
               return (
-                <div key={`lbl-${r.id}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%,-50%)', pointerEvents: 'none' }}>
-                  <div style={{ background: 'rgba(9,11,18,0.86)', border: `2px solid ${meta.color}`, borderRadius: 8, padding: '3px 9px', textAlign: 'center', boxShadow: '0 3px 10px rgba(0,0,0,0.55)', minWidth: 50 }}>
-                    <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', lineHeight: 1.25 }}>
+                <div key={`lbl-${r.id}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%,-50%)', pointerEvents: 'none', maxWidth: '22%' }}>
+                  {/* ป้ายโปร่งแสง + เส้นสีสถานะด้านล่าง — อ่านออกแต่ยังเห็นผังทะลุ (ไม่ทึบทับภาพ)
+                      maxWidth 22% + ellipsis กันชื่อไลน์ยาวล้นทับพื้นที่ไลน์ข้างเคียง */}
+                  <div style={{ background: 'rgba(10,12,20,0.5)', borderBottom: `2.5px solid ${meta.color}`, borderRadius: 5, padding: '1px 7px 2px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)' }}>
+                    <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{r.line_name}
                     </div>
-                    {txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, whiteSpace: 'nowrap', lineHeight: 1.2 }}>{txt}</div>}
+                    {txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2 }}>{txt}</div>}
                   </div>
                 </div>
               );
@@ -475,8 +562,8 @@ export default function FactoryMap() {
                 const meta = CAT[cat]; const txt = M.text(st); const hasRegion = regions.some(r => r.line_name === name);
                 const barW = val == null ? 0 : isPct ? Math.min(100, Math.abs(val)) : Math.round(Math.abs(val) / maxVal * 100);
                 return (
-                  <div key={name} onClick={() => hasRegion && flashLine(name)}
-                    style={{ padding: '8px 10px', borderRadius: 9, marginBottom: 5, cursor: hasRegion ? 'pointer' : 'default', background: highlight === name ? 'var(--bg2)' : 'var(--bg3)', border: `1px solid ${highlight === name ? meta.color : 'var(--border2)'}` }}>
+                  <div key={name} onClick={() => { if (hasRegion) flashLine(name); openLine(name); }}
+                    style={{ padding: '8px 10px', borderRadius: 9, marginBottom: 5, cursor: 'pointer', background: highlight === name ? 'var(--bg2)' : 'var(--bg3)', border: `1px solid ${highlight === name ? meta.color : 'var(--border2)'}` }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                       <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', width: 18, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
                       <span className={meta.blink ? 'dt-alarm-blink' : undefined} style={{ width: 11, height: 11, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
@@ -501,6 +588,119 @@ export default function FactoryMap() {
       {editing && imageUrl && assignableLines().length > 0 && (
         <div style={{ marginTop: 12, fontSize: 12, color: 'var(--muted)' }}>ยังไม่ได้ตีกรอบ: <span style={{ color: '#f59e0b' }}>{assignableLines().join(', ')}</span></div>
       )}
+
+      {/* ── การ์ดพรีวิวลอยตามเม้าส์ (hover) — สรุปทุกมุมมองแบบย่อ, เฉพาะ mouse ── */}
+      {hoverLine && !editing && !detailLine && (() => {
+        const st = stOf(hoverLine); const kids = childrenOf[hoverLine] || []; const meta = CAT[M.cat(st)];
+        const hasFloor = !!floorMapTarget(hoverLine);
+        const W = 264, OFF = 18;
+        const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
+        const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
+        // ความสูงจริงจากรอบก่อน (การ์ดสูงเกือบคงที่) — กันตกขอบล่างแบบแม่นๆ
+        const H = Math.min(hoverCardRef.current?.offsetHeight || 300, vh - 16);
+        // แนวนอน: ถ้าล้นขวา → เด้งไปซ้ายเคอร์เซอร์
+        const left = hoverXY.x + OFF + W > vw - 8 ? Math.max(8, hoverXY.x - OFF - W) : hoverXY.x + OFF;
+        // แนวตั้ง: เกาะเคอร์เซอร์ · ถ้าจะตกขอบล่าง → เด้งหนีขึ้นบน · ไม่ต่ำกว่าขอบบน
+        let top = hoverXY.y - 40;
+        if (top + H > vh - 8) top = vh - H - 8;
+        if (top < 8) top = 8;
+        return (
+          <div ref={hoverCardRef} style={{ position: 'fixed', left, top, width: W, zIndex: 1100, pointerEvents: 'none',
+            background: 'var(--card)', border: `1px solid ${meta.color}66`, borderTop: `3px solid ${meta.color}`, borderRadius: 12,
+            boxShadow: '0 12px 34px rgba(0,0,0,0.5)', padding: '12px 14px', color: 'var(--text)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+              <span className={meta.blink ? 'dt-alarm-blink' : undefined} style={{ width: 11, height: 11, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
+              <div style={{ fontSize: 15, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text)' }}>{hoverLine}</div>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, marginLeft: 19 }}>
+              สถานะ: <span style={{ color: meta.color, fontWeight: 700 }}>{meta.label}</span>{kids.length ? ` · รวม ${kids.length} ไลน์ย่อย` : ''}
+            </div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              {Object.entries(METRICS).map(([k, m]) => {
+                const c = CAT[m.cat(st)]; const t = m.text(st); const isCur = k === metric;
+                return (
+                  <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                    background: isCur ? `${c.color}22` : 'var(--bg3)', border: isCur ? `1px solid ${c.color}55` : '1px solid var(--border2)',
+                    borderRadius: 7, padding: '4px 8px' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text2)', fontWeight: isCur ? 800 : 600, whiteSpace: 'nowrap' }}>{m.label}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: t ? c.color : 'var(--muted)', whiteSpace: 'nowrap' }}>{t || '—'}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 9, textAlign: 'center', fontWeight: 700 }}>
+              {hasFloor ? '🏭 คลิกเพื่อเปิดผังไลน์ + พนักงาน' : 'คลิกเพื่อดูรายละเอียด + แยกไลน์ย่อย'}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── drill-down: คลิกไลน์ → รายละเอียดทุก metric + แยกตามไลน์ลูก ── */}
+      {detailLine && (() => {
+        const st = stOf(detailLine); const kids = childrenOf[detailLine] || [];
+        return (
+          <div onClick={() => setDetailLine(null)} style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '20px 22px', width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>
+                  {st.dtActive && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{detailLine}
+                </div>
+                <button onClick={() => setDetailLine(null)} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', color: 'var(--text2)', fontSize: 15 }}>✕</button>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>รายละเอียดทุกมุมมอง — วันงานปัจจุบัน{kids.length ? ` · รวมยอดไลน์ลูก ${kids.length} ไลน์` : ''}</div>
+
+              {/* การ์ดทุก metric */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8, marginBottom: kids.length ? 18 : 0 }}>
+                {Object.entries(METRICS).map(([k, m]) => {
+                  const cat = m.cat(st); const meta = CAT[cat]; const txt = m.text(st);
+                  return (
+                    <div key={k} style={{ background: 'var(--bg3)', border: `1px solid ${meta.color}55`, borderLeft: `3px solid ${meta.color}`, borderRadius: 8, padding: '9px 11px' }}>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 3 }}>{m.label}</div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: meta.color }}>{txt || '—'}</div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* แยกตามไลน์ลูก */}
+              {kids.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text2)', marginBottom: 8 }}>แยกตามไลน์ย่อย</div>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                      <thead>
+                        <tr style={{ color: 'var(--muted)', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>
+                          <th style={{ textAlign: 'left', padding: '4px 6px' }}>ไลน์</th>
+                          <th style={{ padding: '4px 6px' }}>ผลิต</th>
+                          <th style={{ padding: '4px 6px' }}>คน</th>
+                          <th style={{ padding: '4px 6px' }}>DT (น.)</th>
+                          <th style={{ padding: '4px 6px' }}>NG</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[detailLine, ...kids].map(n => {
+                          const p = lineStatus[n] || {}; const mp = manpower[n] || {};
+                          const self = n === detailLine;
+                          return (
+                            <tr key={n} style={{ borderBottom: '1px solid var(--border2)', color: 'var(--text)', textAlign: 'right' }}>
+                              <td style={{ textAlign: 'left', padding: '5px 6px', fontWeight: self ? 800 : 400, color: self ? 'var(--accent)' : 'var(--text)' }}>{self ? `${n} (ตัวเอง)` : `↳ ${n}`}</td>
+                              <td style={{ padding: '5px 6px' }}>{p.target ? `${p.actual || 0}/${p.target}` : '—'}</td>
+                              <td style={{ padding: '5px 6px' }}>{mp.headTotal ? `${mp.present || 0}/${mp.headTotal}` : '—'}</td>
+                              <td style={{ padding: '5px 6px', color: p.dtMin ? '#f59e0b' : 'inherit' }}>{p.dtMin || 0}</td>
+                              <td style={{ padding: '5px 6px', color: p.ng ? '#ef4444' : 'inherit' }}>{p.ng || 0}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>* คน/PM มักผูกกับไลน์แม่ (ลูกเป็น 0) · ผลิต/DT/NG อาจอยู่ที่ไลน์ลูก — การ์ดด้านบนรวมให้แล้ว</div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {assignFor && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
