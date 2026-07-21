@@ -171,13 +171,26 @@ function useOrgSections() {
   return orgSections;
 }
 
+// แผนกตามลำดับชั้นองค์กร — คืนฟังก์ชัน deptsOf(section): กรองแผนกด้วย parent_id ของ section (cascade)
+// เดิมคืน list แบนรวมทุก section → dropdown แผนกเลือกข้าม section ได้ + ชื่อซ้ำ (บั๊กแก้ 2026-07-21)
 function useOrgDepts() {
-  const [orgDepts, setOrgDepts] = useState([]);
+  const [tree, setTree] = useState({ secs: [], depts: [] });
   useEffect(() => {
-    supabase.from('org_nodes').select('code, name').eq('kind', 'department').eq('is_active', true).order('name')
-      .then(({ data }) => setOrgDepts((data || []).map(n => n.code || n.name).sort()));
+    Promise.all([
+      supabase.from('org_nodes').select('id, code, name').eq('kind', 'section').eq('is_active', true),
+      supabase.from('org_nodes').select('code, name, parent_id').eq('kind', 'department').eq('is_active', true).order('name'),
+    ]).then(([s1, s2]) => setTree({ secs: s1.data || [], depts: s2.data || [] }));
   }, []);
-  return orgDepts;
+  return useMemo(() => {
+    const nameOf = (n) => n.code || n.name;
+    const all = [...new Set(tree.depts.map(nameOf))].sort();
+    return (sectionCode) => {
+      if (!sectionCode) return all;
+      const sec = tree.secs.find(n => nameOf(n) === sectionCode);
+      if (!sec) return all;
+      return [...new Set(tree.depts.filter(d => d.parent_id === sec.id).map(nameOf))].sort();
+    };
+  }, [tree]);
 }
 
 // แท็บสกิล (index ใน TABS) แยกไปหน้า /skills-report (หมวด พนักงาน & ทักษะ — 2026-07-20)
@@ -230,7 +243,7 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   const canManageMaster = hasPermission('manage_master_data', role);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
-  const orgDeptList    = useOrgDepts();
+  const deptsOf        = useOrgDepts();
 
   const todayStr = getWorkDate();
 
@@ -369,13 +382,13 @@ table{border-collapse:collapse;width:100%}
           <option value="day">☀️ กะเช้า</option>
           <option value="night">🌙 กะดึก</option>
         </select>
-        <select value={section} onChange={e => setSection(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+        <select value={section} onChange={e => { setSection(e.target.value); setDeptFilter(''); }} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
           <option value="">— ทุกส่วนงาน —</option>
           {sections.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
           <option value="">— ทุกแผนก —</option>
-          {orgDeptList.map(d => <option key={d} value={d}>{d}</option>)}
+          {deptsOf(section).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           {canManageMaster && (
@@ -557,7 +570,7 @@ function DailyTab() {
   const now = new Date();
   const isDay = (now.getHours() * 60 + now.getMinutes()) >= 480 && (now.getHours() * 60 + now.getMinutes()) < 1200;
   const orgSectionList = useOrgSections();
-  const orgDeptList    = useOrgDepts();
+  const deptsOf        = useOrgDepts();
   const [date, setDate]   = useState(getWorkDate());
   const [shift, setShift] = useState(isDay ? 'day' : 'night');
   const [logs, setLogs]   = useState([]);
@@ -699,13 +712,13 @@ table{border-collapse:collapse;width:100%}
           <button style={shiftBtnStyle('night')} onClick={() => setShift('night')}>🌙 กะดึก</button>
           <button style={shiftBtnStyle('all')}   onClick={() => setShift('all')}>ทั้งหมด</button>
         </div>
-        <select value={dailySection} onChange={e => { setDailySection(e.target.value); setDailyLine(''); }} style={selSt}>
+        <select value={dailySection} onChange={e => { setDailySection(e.target.value); setDailyLine(''); setDailyDept(''); }} style={selSt}>
           <option value="">ทุกส่วนงาน</option>
           {dailySections.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <select value={dailyDept} onChange={e => setDailyDept(e.target.value)} style={selSt}>
           <option value="">ทุกแผนก</option>
-          {orgDeptList.map(d => <option key={d} value={d}>{d}</option>)}
+          {deptsOf(dailySection).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
         <select value={dailyLine} onChange={e => setDailyLine(e.target.value)} style={selSt}>
           <option value="">ทุกไลน์</option>
@@ -766,7 +779,7 @@ function PerEmployeeTab() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
-  const orgDeptList    = useOrgDepts();
+  const deptsOf        = useOrgDepts();
   const [employees, setEmployees] = useState([]);
   const [selected, setSelected] = useState('');
   const [logs, setLogs] = useState([]);
@@ -875,13 +888,13 @@ table{border-collapse:collapse;width:100%}
   return (
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={empSection} onChange={e => setEmpSection(e.target.value)} style={selSt}>
+        <select value={empSection} onChange={e => { setEmpSection(e.target.value); setEmpDept(''); }} style={selSt}>
           <option value="">ทุกส่วนงาน</option>
           {empSections.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <select value={empDept} onChange={e => setEmpDept(e.target.value)} style={selSt}>
           <option value="">ทุกแผนก</option>
-          {orgDeptList.map(d => <option key={d} value={d}>{d}</option>)}
+          {deptsOf(empSection).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
         <select value={empTeam} onChange={e => setEmpTeam(e.target.value)} style={selSt}>
           <option value="">ทุก Team</option>
@@ -2367,7 +2380,7 @@ const selSt = { width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 1
 function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilterLine, filterTeam, setFilterTeam, filterDept, setFilterDept }) {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const orgSectionList = useOrgSections();
-  const orgDeptList    = useOrgDepts();
+  const deptsOf        = useOrgDepts();
   // dropdown เหลือเฉพาะใน scope — ข้อมูลจริงถูกบังคับ scope ที่ query ของแต่ละแท็บแล้ว
   // (เดิมโชว์ทุกส่วนงาน/ไลน์ เลือกนอก scope ได้ผลว่างเปล่า ทำให้ผู้ใช้สับสน)
   const scopedLines = useMemo(() => {
@@ -2385,14 +2398,14 @@ function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilt
   const visibleLines = filterSection ? scopedLines.filter(l => l.section === filterSection) : scopedLines;
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-      <select value={filterSection} onChange={e => { setFilterSection(e.target.value); setFilterLine(''); }} style={selSt}>
+      <select value={filterSection} onChange={e => { setFilterSection(e.target.value); setFilterLine(''); setFilterDept && setFilterDept(''); }} style={selSt}>
         <option value="">ทุกส่วนงาน</option>
         {sections.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
       {setFilterDept && (
         <select value={filterDept || ''} onChange={e => setFilterDept(e.target.value)} style={selSt}>
           <option value="">ทุกแผนก</option>
-          {orgDeptList.map(d => <option key={d} value={d}>{d}</option>)}
+          {deptsOf(filterSection).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
       )}
       <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={selSt}>
@@ -4184,7 +4197,7 @@ function AttendanceFormTab() {
   const canExport = can('report', 'export', role);
   const today   = new Date();
   const orgSectionList = useOrgSections();
-  const orgDeptList    = useOrgDepts();
+  const deptsOf        = useOrgDepts();
   const [year,    setYear]    = useState(today.getFullYear());
   const [month,   setMonth]   = useState(today.getMonth() + 1);
   const [period,  setPeriod]  = useState(2); // 1=1-15, 2=16-end
@@ -4603,7 +4616,7 @@ function AttendanceFormTab() {
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ส่วนงาน</div>
-          <select value={dept} onChange={e => setDept(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={dept} onChange={e => { setDept(e.target.value); setEmpDept(''); }} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             <option value="">ทุกส่วนงาน</option>
             {attSections.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
@@ -4612,7 +4625,7 @@ function AttendanceFormTab() {
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>แผนก</div>
           <select value={empDept} onChange={e => setEmpDept(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             <option value="">ทุกแผนก</option>
-            {orgDeptList.map(d => <option key={d} value={d}>{d}</option>)}
+            {deptsOf(dept).map(d => <option key={d} value={d}>{d}</option>)}
           </select>
         </div>
         <div>

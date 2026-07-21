@@ -1112,7 +1112,8 @@ export default function LineSetup() {
             <select value={newLineParent} onChange={e => setNewLineParent(e.target.value)}
               style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: newLineParent ? 'var(--accent)' : 'var(--text2)' }}>
               <option value="">ไม่มีไลน์หลัก (standalone)</option>
-              {lines.filter(l => !l.parent_line_name).map(l => (
+              {/* cascade: เลือก section แล้วเห็นเฉพาะไลน์แม่ของ section นั้น (2026-07-21) */}
+              {lines.filter(l => !l.parent_line_name && (!newLineSection || l.section === newLineSection)).map(l => (
                 <option key={l.id} value={l.name}>ลูกของ {l.name}</option>
               ))}
             </select>

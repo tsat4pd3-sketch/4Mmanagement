@@ -539,8 +539,8 @@ export default function Operator() {
               );
             })}
 
-            {(filterSection || filterGroup || filterTeam || filterGrade) && (
-              <button onClick={() => { setFilterSection(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); }}
+            {(filterSection || filterDept || filterGroup || filterTeam || filterGrade) && (
+              <button onClick={() => { setFilterSection(''); setFilterDept(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); }}
                 style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>
                 ✕ ล้าง
               </button>
@@ -1176,7 +1176,10 @@ export default function Operator() {
                     setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
                   }}>
                     <option value="">— เลือก Line —</option>
+                    {/* cascade ตามลำดับชั้น (2026-07-21): มีแผนก → เฉพาะไลน์ของแผนกนั้น (pattern Register) · มี section → เฉพาะไลน์ section นั้น */}
                     {(scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
+                      .filter(l => !editingEmp.section || l.section === editingEmp.section)
+                      .filter(l => !editingEmp.department || l.name === editingEmp.department || l.parent_line_name === editingEmp.department)
                       .map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                   </select>
                 )}
