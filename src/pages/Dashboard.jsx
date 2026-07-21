@@ -2155,7 +2155,7 @@ export default function Dashboard() {
           green: { color: '#22c55e', icon: '🟢', label: 'ANDON — GREEN', desc: 'รายการทั้งหมดอนุมัติแล้ว · สถานะปกติ' },
         }[level];
         return (
-          <div className="overlay" style={{ zIndex: 1100 }} onClick={() => setAndonLine(null)}>
+          <div className="overlay" style={{ zIndex: 2000 }} onClick={() => setAndonLine(null)}>
             <div onClick={e => e.stopPropagation()} className={level === 'red' ? 'dt-alarm-banner' : undefined} style={{
               background: 'var(--card)', borderRadius: 16, padding: '20px 24px',
               width: 'min(94vw, 720px)', maxHeight: '90vh', overflowY: 'auto',
@@ -2250,7 +2250,7 @@ export default function Dashboard() {
         return (
           <div
             className="overlay"
-            style={{ zIndex: 1000 }}
+            style={{ zIndex: 2000 }}
           >
             <div
               onClick={e => e.stopPropagation()}

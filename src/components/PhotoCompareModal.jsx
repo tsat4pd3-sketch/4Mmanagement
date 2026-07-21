@@ -199,7 +199,7 @@ export default function PhotoCompareModal({ referenceUrl, title, initialVerdict,
   const alignQuality = align.score == null ? null : align.score < 380 ? 'ดี' : align.score < 1100 ? 'พอใช้' : 'ต่ำ (มุม/แสงต่างมาก)'
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} />
       <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
         style={{ position: 'relative', zIndex: 10, width: '100%', maxWidth: 460, maxHeight: '92vh', display: 'flex', flexDirection: 'column', borderRadius: 12, background: 'var(--bg2)', border: '1px solid var(--border2)', boxShadow: 'var(--shadow-lg)' }}>

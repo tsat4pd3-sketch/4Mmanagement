@@ -889,8 +889,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
     });
   }, []);
 
-  const sidebarPx  = isTV ? 280 : 240;
-  const marginLeft = (!isMobile && isOpen) ? sidebarPx : 0;
+  // marginLeft ต้องเท่าความกว้าง nav จริง (var(--sidebar-w)) เป๊ะ — เดิม hardcode 240/280 ไม่ตรง
+  // (nav=252 desktop / 210 tablet / 280 TV) → เนื้อหาโดน sidebar ทับ 12px หรือเหลือช่องว่าง
+  const marginLeft = (!isMobile && isOpen) ? 'var(--sidebar-w)' : 0;
   const role       = userRole; // ไม่ fallback เป็น 'admin' อีกต่อไป — profileLoaded gate ด้านบนรับประกันว่า role ถูก resolve แล้วก่อนถึงจุดนี้
 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell

@@ -797,7 +797,7 @@ ${issuesHtml}
 
   return (
     <div className="page-content" style={{ maxWidth: 'min(97vw, 1800px)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <div>
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>📋 Layer Process Audit (LPA)</h2>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>แผนตรวจ + บันทึกผล + รายงาน {FORM_NO} — Leader ทุกวัน · Supervisor รายสัปดาห์ · Manager รายเดือน · GM รายไตรมาส</div>

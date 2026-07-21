@@ -27,7 +27,7 @@ export default function InternalTimeBoard({ title, hint, groups, nowMin, breaks 
   const [collapsed, setCollapsed] = useState({});
   const isMobile = useIsMobile();
   const leftW = isMobile ? 96 : LEFT_W;
-  const stickyLabel = (bg) => isMobile ? { position: 'sticky', left: 0, zIndex: 2, background: bg } : null;
+  const stickyLabel = (bg) => isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: bg } : null; // z6 เหนือ now-line(z4)/now-chip(z5) กัน playhead ทับป้ายซ้าย
   const hourMarks = Array.from({ length: 25 }, (_, i) => FRAME_START + i * 60);
   const showNow = nowMin != null && nowMin >= FRAME_START && nowMin <= FRAME_START + SPAN;
   const pct = (m) => ((m - FRAME_START) / SPAN) * 100;
