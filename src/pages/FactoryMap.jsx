@@ -4,7 +4,9 @@ import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
+import { pairAwareTotal } from '../utils/pairTotals';
 import { toast } from '../components/Toast';
+import ToggleDot from '../components/ToggleDot';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -71,6 +73,10 @@ const METRICS = {
 const round = (v) => Math.round(v * 100) / 100;
 const centroid = (pts) => pts.length
   ? [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length]
+  : [50, 50];
+// จุดยึดป้าย = กึ่งกลางแนวนอน + ขอบบนสุดของ polygon → ป้ายเกาะขอบบน ไม่ทับกลางผังไลน์ (2026-07-22)
+const labelAnchor = (pts) => pts.length
+  ? [(Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2, Math.min(...pts.map(p => p[1]))]
   : [50, 50];
 const EMPTY_ST = { actual: 0, target: 0, hasOpen: false, oee: null, oeeLive: false, dtMin: 0, dtActive: false, ng: 0,
   headTotal: 0, present: 0, ppeBad: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0 };
@@ -145,9 +151,10 @@ export default function FactoryMap({ setupMode = false }) {
     const [{ data: orders }, { data: dts }, { data: prods }] = await Promise.all([
       supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, qty_ng, mat_no').in('session_id', sessIds),
       supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at, started_at').in('session_id', sessIds),
-      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec'),
+      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no'),
     ]);
-    const ctMap = {}; (prods || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; });
+    const ctMap = {}, pairMap = {};
+    (prods || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; });
     const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
     const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
     const nowMs = Date.now();
@@ -180,8 +187,18 @@ export default function FactoryMap({ setupMode = false }) {
     const byLine = {};
     sessions.forEach(s => {
       const os = ordBySess[s.id] || [];
-      const target = os.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
-      const actual = os.reduce((a, o) => a + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
+      // นับงานคู่ RH/LH เป็น 1 คู่/stroke (ไม่บวกชิ้น LH+RH ซ้ำในภาพใหญ่) · พาร์ทเดี่ยว/ไม่ระบุ mat = บวกปกติ
+      const perMat = {};
+      os.forEach(o => {
+        if (!o.mat_no) return;
+        const e = perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 });
+        e.target += o.qty_target ?? o.qty ?? 0;
+        e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
+      });
+      const nullOs = os.filter(o => !o.mat_no);
+      const ptot = pairAwareTotal(Object.values(perMat), m => pairMap[m] || null);
+      const target = ptot.target + nullOs.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
+      const actual = ptot.produced + nullOs.reduce((a, o) => a + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
       const dl = dtBySess[s.id] || [];
       const dtMin = dl.reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
       const dtActive = dl.some(d => !d.ended_at && d.duration_min == null);
@@ -439,7 +456,7 @@ export default function FactoryMap({ setupMode = false }) {
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>🗺️ ผังรวมโรงงาน</h2>
           <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตทุก 30 วินาที</p>
         </div>
-        {canEdit && <button onClick={() => { setEditing(v => !v); cancelDraw(); }} style={btn(editing)}>{editing ? '✓ เสร็จ' : '✏️ แก้ผัง'}</button>}
+        {canEdit && <button onClick={() => { setEditing(v => !v); cancelDraw(); }} style={{ ...btn(editing), position: 'relative' }}>{editing ? '✓ เสร็จ' : '✏️ แก้ผัง'}<ToggleDot on={editing} /></button>}
       </div>
 
       {/* เลือก metric */}
@@ -512,9 +529,10 @@ export default function FactoryMap({ setupMode = false }) {
 
             {/* ป้าย = การ์ดทึบมีขอบสีสถานะ (อ่านออกทุกพื้นหลัง) + จุดแดงถ้า downtime ค้าง */}
             {regions.map(r => {
-              const [cx, cy] = centroid(r.points); const st = stOf(r.line_name); const meta = CAT[M.cat(st)]; const txt = M.text(st);
+              const [cx, cy] = labelAnchor(r.points); const st = stOf(r.line_name); const meta = CAT[M.cat(st)]; const txt = M.text(st);
               return (
-                <div key={`lbl-${r.id}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%,-50%)', pointerEvents: 'none', maxWidth: '22%' }}>
+                // เกาะขอบบนของกรอบ (translateY 2px = อยู่ใต้เส้นขอบบนนิดเดียว) ไม่ทับกลางผังไลน์
+                <div key={`lbl-${r.id}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%, 2px)', pointerEvents: 'none', maxWidth: '30%' }}>
                   {/* ป้ายโปร่งแสง + เส้นสีสถานะด้านล่าง — อ่านออกแต่ยังเห็นผังทะลุ (ไม่ทึบทับภาพ)
                       maxWidth 22% + ellipsis กันชื่อไลน์ยาวล้นทับพื้นที่ไลน์ข้างเคียง */}
                   <div style={{ background: 'rgba(10,12,20,0.5)', borderBottom: `2.5px solid ${meta.color}`, borderRadius: 5, padding: '1px 7px 2px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)' }}>

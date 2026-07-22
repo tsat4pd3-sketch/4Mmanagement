@@ -10,6 +10,7 @@ import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
+import { pairAwareTotal } from '../utils/pairTotals';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -396,8 +397,18 @@ export default function Dashboard() {
     const ps = (sessions || []).map(s => {
       const orders  = ordersBySession[s.id] || [];
       const active  = orders.filter(o => !['cancelled','imported'].includes(o.status));
-      const demand  = active.reduce((sum, o) => sum + (o.qty || 0), 0);
-      const actual  = active.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty_ok ?? o.qty ?? 0), 0);
+      // นับงานคู่ RH/LH เป็น 1 คู่/stroke (ไม่บวกชิ้น LH+RH ซ้ำในภาพใหญ่) · พาร์ทเดี่ยว/ไม่ระบุ mat = บวกปกติ
+      const perMatD = {};
+      active.forEach(o => {
+        if (!o.mat_no) return;
+        const e = perMatD[o.mat_no] || (perMatD[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 });
+        e.target += o.qty || 0;
+        e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : 0;
+      });
+      const nullD = active.filter(o => !o.mat_no);
+      const ptotD = pairAwareTotal(Object.values(perMatD), m => pairMap[m] || null);
+      const demand  = ptotD.target + nullD.reduce((sum, o) => sum + (o.qty || 0), 0);
+      const actual  = ptotD.produced + nullD.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty_ok ?? o.qty ?? 0), 0);
       const target  = s.dr_products?.target_per_shift || 0;
       const oeeData = s.status === 'open' ? computeSessionOEE(s) : null;
       // downtime ที่กำลัง alarm (ยังไม่ปิดรายการ = เครื่องยังหยุดอยู่) — เฉพาะกะที่ยังไม่ปิด
@@ -762,6 +773,47 @@ export default function Dashboard() {
   const attendRate    = useMemo(() => totalCapacity > 0 ? Math.round((present.length / totalCapacity) * 100) : 0, [totalCapacity, present]);
   const ppeRate       = useMemo(() => present.length > 0 ? Math.round((ppeReady.length / present.length) * 100) : 0, [present, ppeReady]);
 
+  // ── การ์ดผังไลน์ (Line Floor Maps): นับ "ตามจุดงาน" (คนที่ถูกวางบนสถานีของผังนี้) = ตรงกับหมุดบนรูป ──
+  // KPI ด้านบนสรุปกำลังคนทั้งไลน์ (roster ตาม employees.line_id = ไลน์แม่) ไปแล้ว การ์ดผังจึงไม่ซ้ำเรื่องนั้น
+  // แต่ตอบว่า "จุดงานมีคนเข้าครบมั้ย" แทน · ผังที่ไม่มีใครถูกวาง (ไม่มีหมุดคน) และไม่มีเครื่อง downtime → ซ่อน
+  const floorCards = useMemo(() => visibleLayouts.map(layout => {
+    const cardLineNames = layoutLineNamesForCard(layout.line_name);
+    const lineWs = workstations.filter(w => cardLineNames.includes(w.line_name));
+    let presentPeople = 0, staffedStations = 0;
+    lineWs.forEach(ws => {
+      const emps = (stationEmpMap[String(ws.id)] || []).filter(e => (!shiftEmpIds || shiftEmpIds.has(e.id)) && e.is_present === true);
+      if (emps.length) { staffedStations++; presentPeople += emps.length; }
+    });
+    const hasDtMachine = machinePoints.some(p => cardLineNames.includes(p.line_name) && dtAlarmByMachine[p.machine_no]);
+    return { layout, cardLineNames, lineWs, presentPeople, staffedStations, totalStations: lineWs.length, hasDtMachine };
+  }).filter(c => c.presentPeople > 0 || c.hasDtMachine),
+  [visibleLayouts, layoutLineNamesForCard, workstations, stationEmpMap, shiftEmpIds, machinePoints, dtAlarmByMachine]);
+
+  // placement รายไลน์ (นับตามจุดงาน) — ใช้กับการ์ดสถานะไลน์ย่อย: คนที่ถูกวางบนสถานีของไลน์นั้น + coverage จุดงาน
+  const placementByLineName = useMemo(() => {
+    const m = {};
+    workstations.forEach(ws => {
+      const ln = ws.line_name; if (!ln) return;
+      (m[ln] ||= { people: 0, staffed: 0, total: 0 }).total++;
+      const emps = (stationEmpMap[String(ws.id)] || []).filter(e => (!shiftEmpIds || shiftEmpIds.has(e.id)) && e.is_present === true);
+      if (emps.length) { m[ln].staffed++; m[ln].people += emps.length; }
+    });
+    return m;
+  }, [workstations, stationEmpMap, shiftEmpIds]);
+  const placementForLine = useCallback((name) => {
+    // รวม self + ไลน์ย่อยที่ซ้อนลงไป (parentChildrenMap) — จุดงานอยู่บนไลน์ใบเสมอ
+    const acc = { people: 0, staffed: 0, total: 0 };
+    const seen = new Set();
+    const walk = (n) => {
+      if (seen.has(n)) return; seen.add(n);
+      const p = placementByLineName[n];
+      if (p) { acc.people += p.people; acc.staffed += p.staffed; acc.total += p.total; }
+      (parentChildrenMap[n] || []).forEach(walk);
+    };
+    walk(name);
+    return acc;
+  }, [placementByLineName, parentChildrenMap]);
+
   const isToday = selectedDate === workDateStr;
 
   return (
@@ -1062,6 +1114,11 @@ export default function Dashboard() {
                   </motion.div>
                 );
                 if (!isExpanded) return [card];
+                // นับตามจุดงาน (placement) — โชว์เฉพาะไลน์ย่อยที่มีคนถูกจัดลงจุดงาน หรือมี DT/4M ค้าง
+                // (ตัวที่ไม่มีคนเลย = 0/0 ตาม roster เดิม → ซ่อน กันสับสน · KPI ไลน์แม่สรุปกำลังคนไปแล้ว)
+                const childCards = line._children
+                  .map(cs => ({ cs, pl: placementForLine(cs.name) }))
+                  .filter(({ cs, pl }) => pl.people > 0 || (dtAlarmByLine[cs.name] || []).length > 0 || cs.lineAlerts > 0);
                 const nested = (
                   <motion.div key={`${line.id}-children`} {...stagger(8 + i)} style={{ gridColumn: '1 / -1' }}>
                     <div style={{
@@ -1071,14 +1128,17 @@ export default function Dashboard() {
                       borderRadius: 12, padding: isWide ? '14px 16px' : '12px 14px',
                     }}>
                       <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span>↳ ไลน์ย่อยของ</span>
+                        <span>↳ ไลน์ย่อยที่มีคนเข้าจุดงาน</span>
                         <span style={{ color: 'var(--accent)' }}>{line.name}</span>
-                        <span>({line._children.length})</span>
+                        <span>({childCards.length}/{line._children.length})</span>
                       </div>
+                      {childCards.length === 0 ? (
+                        <div style={{ fontSize: 12, color: 'var(--muted)', padding: '4px 2px' }}>ยังไม่มีคนถูกจัดลงจุดงานของไลน์ย่อย — สรุปกำลังคนรวมดูที่ตัวเลขไลน์แม่ด้านบน</div>
+                      ) : (
                       <div style={{ display: 'grid', gridTemplateColumns: isUltra ? 'repeat(auto-fill, minmax(180px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(170px, 1fr))' : 'repeat(auto-fill, minmax(150px, 1fr))', gap: isMobile ? 8 : 12 }}>
-                        {line._children.map((cs) => {
-                          const cHealthy = cs.rate >= 80 && cs.lineAlerts === 0;
-                          const cWarn    = cs.lineAlerts > 0 || (cs.rate > 0 && cs.rate < 80);
+                        {childCards.map(({ cs, pl }) => {
+                          const cHealthy = pl.total > 0 && pl.staffed >= pl.total && cs.lineAlerts === 0;
+                          const cWarn    = cs.lineAlerts > 0 || (pl.total > 0 && pl.staffed < pl.total);
                           const cColor   = cHealthy ? '#22c55e' : cWarn ? '#f59e0b' : '#555';
                           const csDT     = dtAlarmByLine[cs.name] || [];
                           const csFMPending = fourMLogs.some(f => f.line_name === cs.name && f.status !== 'approved' && f.status !== 'rejected');
@@ -1113,17 +1173,19 @@ export default function Dashboard() {
                                 </div>
                               </div>
                               <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                                <span style={{ fontSize: isWide ? 26 : 20, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>{cs.linePresent}</span>
-                                <span style={{ fontSize: isWide ? 14 : 12, color: 'var(--muted)' }}>/ {cs.lineTotal} คน</span>
+                                <span style={{ fontSize: isWide ? 26 : 20, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>{pl.people}</span>
+                                <span style={{ fontSize: isWide ? 14 : 12, color: 'var(--muted)' }}>คน · {pl.total > 0 ? `${pl.staffed}/${pl.total} จุด` : '—'}</span>
                               </div>
-                              <MiniBar value={cs.linePresent} max={cs.lineTotal} color={cColor} />
+                              <MiniBar value={pl.staffed} max={pl.total || 1} color={cColor} />
                               <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, color: cColor }}>
-                                {cs.lineTotal === 0 ? 'ไม่มีข้อมูล' : `${cs.rate}% Attendance ${cHealthy ? '· ✓ Normal' : cs.lineAlerts > 0 ? '· ⚠ Risk' : ''}`}
+                                {pl.total === 0 ? `${pl.people} คนบนไลน์` : pl.staffed >= pl.total ? '✓ เข้าครบทุกจุด' : `⚠ เข้า ${pl.staffed}/${pl.total} จุด`}
+                                {cs.lineAlerts > 0 ? ' · ⚠ Risk' : ''}
                               </div>
                             </div>
                           );
                         })}
                       </div>
+                      )}
                     </div>
                   </motion.div>
                 );
@@ -2048,17 +2110,15 @@ export default function Dashboard() {
               <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 15 }}>
                 ยังไม่มีผัง — ไปตั้งค่าที่หน้า <strong>ตั้งค่าผังไลน์</strong>
               </div>
+            ) : floorCards.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 15 }}>
+                ยังไม่มีคนถูกจัดลงจุดงานในผังกะนี้ — จัดคนลงจุดงานที่หน้า <strong>จัดการไลน์ผลิต</strong>
+                <div style={{ fontSize: 12, marginTop: 6, opacity: 0.7 }}>(สรุปกำลังคนรวมดูได้ที่การ์ดสถานะไลน์ด้านบน)</div>
+              </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : floorBig ? 'repeat(auto-fit, minmax(min(100%, 480px), 1fr))' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
-                {visibleLayouts.map(layout => {
-                  const cardLineNames = layoutLineNamesForCard(layout.line_name);
-                  const lineWs = workstations.filter(w => cardLineNames.includes(w.line_name));
-                  const lineStaff = lineWs.flatMap(ws => stationEmpMap[String(ws.id)] || []).filter(e => !shiftEmpIds || shiftEmpIds.has(e.id));
-                  // Use lineStats (same source as KPI cards) for the footer counts — sum across sub-lines merged into this card
-                  const cardLineStats = lineStats.filter(l => cardLineNames.includes(l.name));
-                  const footerPresent = cardLineStats.length ? cardLineStats.reduce((s, l) => s + l.linePresent, 0) : lineStaff.filter(e => e.is_present === true).length;
-                  const footerTotal   = cardLineStats.length ? cardLineStats.reduce((s, l) => s + l.lineTotal, 0)   : lineStaff.length;
-                  const footerAbsent  = cardLineStats.length ? (footerTotal - footerPresent) : lineStaff.filter(e => e.is_present === false).length;
+                {floorCards.map(({ layout, cardLineNames, lineWs, presentPeople, staffedStations, totalStations }) => {
+                  const allStaffed = totalStations > 0 && staffedStations >= totalStations;
                   return (
                     <div
                       key={layout.line_name}
@@ -2103,8 +2163,13 @@ export default function Dashboard() {
                           {layout.line_name}
                         </span>
                         <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.12)', padding: '2px 6px', borderRadius: 4 }}>✓ {footerPresent}/{footerTotal}</span>
-                          {footerAbsent > 0 && <span style={{ fontSize: 12, fontWeight: 700, color: '#e74c3c', background: 'rgba(231,76,60,0.12)', padding: '2px 6px', borderRadius: 4 }}>✗ {footerAbsent}</span>}
+                          <span title="จำนวนคนที่เข้าประจำจุดงานบนผังนี้ (นับตามหมุด)" style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', background: 'var(--bg2)', padding: '2px 6px', borderRadius: 4 }}>👷 {presentPeople}</span>
+                          {totalStations > 0 && (
+                            <span title="จุดงานที่มีคนเข้าประจำ / จุดงานทั้งหมดของผังนี้"
+                              style={{ fontSize: 12, fontWeight: 700, color: allStaffed ? '#22c55e' : '#f59e0b', background: allStaffed ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)', padding: '2px 6px', borderRadius: 4 }}>
+                              {allStaffed ? '✓' : '⚠'} {staffedStations}/{totalStations} จุด
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>

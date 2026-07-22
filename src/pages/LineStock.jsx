@@ -2,6 +2,7 @@ import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
 import InternalTimeBoard from '../components/InternalTimeBoard';
 import { frameMin, breaksToFrame } from '../utils/timeFrame';
@@ -228,8 +229,10 @@ function StockTab({ role }) {
           {(pending.length > 0 || canApprove) && (
             <button onClick={() => setShowPending(v => !v)}
               style={{ ...btn(showPending ? '#f59e0b' : 'var(--bg2)', showPending ? '#1a1206' : 'var(--text)'),
+                position: 'relative',
                 border: pending.length > 0 ? '1px solid #f59e0b' : '1px solid var(--border)' }}>
               ⏳ รออนุมัติ{pending.length > 0 ? ` (${pending.length})` : ''}
+              <ToggleDot on={showPending} />
             </button>
           )}
           <button onClick={() => setShowTxn(v => !v)} style={btn(showTxn ? 'var(--accent)' : 'var(--bg2)', showTxn ? '#08130a' : 'var(--text)')}>
