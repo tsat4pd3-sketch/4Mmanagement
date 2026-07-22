@@ -20,7 +20,7 @@ async function getBotToken(): Promise<string | undefined> {
 
 type Route = { enabled: boolean; chats: string[]; template?: string | null };
 // teamChats = ห้องที่แท็กทีมไว้ (JIG MTN/DIE MTN/MTN/PRODUCTION) → ส่งแจ้งเตือนเข้าห้องของทีมนั้นก่อน
-async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Record<string, string[]> }> {
+async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Record<string, string[]>; chatTeam: Map<string, string> }> {
   try {
     const [{ data: rules }, { data: channels }] = await Promise.all([
       supabase.from('notification_rules').select('event_key, is_enabled, channel_ids, channel_id, template'),
@@ -28,12 +28,13 @@ async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Re
     ]);
     const chatById = new Map<string, string>();
     const teamChats: Record<string, string[]> = {};
+    const chatTeam = new Map<string, string>();   // chat_id → ทีมที่แท็กไว้ (ถ้ามี) — ใช้กันรั่วข้ามทีม
     for (const c of channels ?? []) {
       if (!(c.is_active && c.chat_id)) continue;
       const chat = String(c.chat_id).trim();
       chatById.set(String(c.id), chat);
       const team = (c as { team?: string | null }).team;
-      if (team) (teamChats[String(team).trim()] ||= []).push(chat);
+      if (team) { const t = String(team).trim(); (teamChats[t] ||= []).push(chat); chatTeam.set(chat, t); }
     }
     const map: Record<string, Route> = {};
     for (const r of rules ?? []) {
@@ -43,8 +44,8 @@ async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Re
       const chats = [...new Set(ids.map((id) => chatById.get(String(id))).filter((v): v is string => !!v))];
       map[r.event_key as string] = { enabled: r.is_enabled as boolean, chats, template: (r as { template?: string | null }).template };
     }
-    return { map, teamChats };
-  } catch { return { map: {}, teamChats: {} }; }
+    return { map, teamChats, chatTeam };
+  } catch { return { map: {}, teamChats: {}, chatTeam: new Map() }; }
 }
 function resolveEvent(routes: Record<string, Route>, key: string): string[] | null {
   const r = routes[key];
@@ -110,14 +111,25 @@ Deno.serve(async (req) => {
     const { event, mo } = body;
     if (!mo) return json({ error: 'missing mo' }, 400);
     BOT_TOKEN = await getBotToken();
-    const { map: routes, teamChats } = await loadRoutes();
+    const { map: routes, teamChats, chatTeam } = await loadRoutes();
     const baseChat = resolveEvent(routes, event);
     if (baseChat === null) return json({ ok: true, skipped: true }); // event ถูกปิด
 
     const dept = mo.mtn_dept || deptFor(mo.item_type);
-    // แจกให้ถูกทีม: มีห้องของทีมนี้ → ส่งเข้าห้องทีม, ไม่มี → route เดิม (ห้องรวม/fallback)
-    // ตีกลับ (mtn_returned) → เข้าห้องรวมเสมอ (ให้ผู้แจ้ง/ผลิตเห็น ไม่ใช่ห้องทีมช่างที่ตีกลับ)
-    const chat = (event !== 'mtn_returned' && teamChats[dept] && teamChats[dept].length) ? teamChats[dept] : baseChat;
+    // ── routing แบบ "แท็กทีม = exclusive" (กันรั่วข้ามทีม) ──
+    //   ห้องแท็กทีม X → รับเฉพาะ MO ของทีม X · ห้อง "ทุกทีม (รวม)" (ไม่แท็ก) → รับทุกทีม
+    //   ห้องทีมอื่นถูกตัดออกเสมอ แม้ถูกติ๊กไว้ใน rule ของ event (เดิมรั่ว: MO ของ MTN เข้าห้อง PRODUCTION)
+    let chat: string[];
+    if (event === 'mtn_returned') {
+      // ตีกลับ → ให้ผู้แจ้ง/ผลิตเห็น: ใช้ห้องตาม rule ตามที่แอดมินตั้ง (ไม่ผูกทีมช่าง)
+      chat = baseChat;
+    } else {
+      const generalRule = (baseChat || []).filter((c) => !chatTeam.get(c));   // ห้อง "รวม" ที่เลือกไว้ใน event
+      const teamRooms = teamChats[dept] || [];                                 // ห้องของทีมนี้
+      chat = [...new Set([...teamRooms, ...generalRule])];
+      // safety: ถ้าไม่เหลือห้องเลย (rule มีแต่ห้องทีมอื่น + ไม่มีห้องทีมนี้) → ห้อง fallback รวม ห้ามเงียบ/ห้ามรั่วทีมอื่น
+      if (!chat.length) chat = TELEGRAM_CHAT_ID ? [TELEGRAM_CHAT_ID] : [];
+    }
     const v = {
       dept, mo_no: mo.mo_no || '(ยังไม่ออกเลข)', line_name: mo.line_name || '-', item_type: mo.item_type || '-',
       machine_no: mo.machine_no || '', problem: mo.problem_characteristic || '-',
