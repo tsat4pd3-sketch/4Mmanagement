@@ -145,9 +145,15 @@ export default function MachineDatabase() {
       is_active:         editing.is_active,
       updated_at:        new Date().toISOString(),
     };
-    const { error } = editing.id
-      ? await supabaseDR.from('machines').update(payload).eq('id', editing.id)
-      : await supabaseDR.from('machines').insert(payload);
+    const doSave = (p) => editing.id
+      ? supabaseDR.from('machines').update(p).eq('id', editing.id)
+      : supabaseDR.from('machines').insert(p);
+    let { error } = await doSave(payload);
+    // ทน migration ยังไม่ apply: ถ้าไม่มีคอลัมน์ equipment_category → บันทึกแบบเดิม (production เท่านั้น)
+    if (error && /equipment_category/.test(error.message || '')) {
+      const { equipment_category, ...rest } = payload; void equipment_category;
+      ({ error } = await doSave(rest));
+    }
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success('บันทึกสำเร็จ');
