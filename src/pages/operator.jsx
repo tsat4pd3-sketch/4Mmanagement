@@ -7,6 +7,7 @@ import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
+import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
@@ -80,6 +81,7 @@ export default function Operator() {
   const [filterGroup,   setFilterGroup]   = useState('');
   const [filterTeam,    setFilterTeam]    = useState('');
   const [filterGrade,   setFilterGrade]   = useState('');
+  const [filterLabor,   setFilterLabor]   = useState(''); // direct/indirect
   const [lines,           setLines]           = useState([]);
   const [busRoutes,       setBusRoutes]       = useState([]);
   const [levelUpRequests, setLevelUpRequests] = useState([]);
@@ -102,7 +104,7 @@ export default function Operator() {
       .then(({ data }) => { if (alive) setLines(data || []); });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
       .then(({ data }) => { if (alive) setBusRoutes(data || []); });
-    supabase.from('org_nodes').select('id, code, name, kind, parent_id').eq('is_active', true).order('sort_order')
+    supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type').eq('is_active', true).order('sort_order')
       .then(({ data }) => {
         if (!alive) return;
         const orgNodes = data || [];
@@ -404,6 +406,10 @@ export default function Operator() {
   const workTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
   const allEmps = useMemo(() => [...employees, ...inactiveEmployees], [employees, inactiveEmployees]);
   const sectionOpts = useMemo(() => orgSectionOpts.length ? orgSectionOpts : [...new Set(allEmps.map(e => e.section).filter(Boolean))].sort(), [allEmps, orgSectionOpts]);
+  // ประเภทแรงงาน direct/indirect derive จาก department ก่อน แล้ว section (ตั้งที่ผังองค์กร) — laborType.js
+  // ช่างส่วนใหญ่อยู่ระดับแผนก → รวมทั้ง section + department nodes ใน map
+  const laborMap = useMemo(() => buildLaborMap([...orgSectionNodes, ...orgDeptNodes]), [orgSectionNodes, orgDeptNodes]);
+  const empLabor = (emp) => laborTypeOf(emp.section, emp.department, laborMap);
   // ตัวเลือก filter ไล่ตามลำดับชั้นองค์กร (cascade — คำสั่ง user 2026-07-21): Dept เฉพาะใน Section ที่เลือก ·
   // Group เฉพาะใน Section+Dept · Team ตามที่เหลือ — ดึงจากข้อมูลพนักงานจริง (ตรงกับแถวในตารางเสมอ ไม่มีตัวเลือกข้าม section/ซ้ำ)
   const empsInSec   = useMemo(() => allEmps.filter(e => !filterSection || e.section === filterSection), [allEmps, filterSection]);
@@ -417,8 +423,9 @@ export default function Operator() {
     .filter(emp => !filterDept    || emp.department === filterDept)
     .filter(emp => !filterGroup   || emp.group_name === filterGroup)
     .filter(emp => !filterTeam    || emp.team       === filterTeam)
-    .filter(emp => !filterGrade   || getEmpGrade(emp.employee_id_code) === EMP_GRADES[filterGrade]),
-  [employees, inactiveEmployees, showInactive, filterSection, filterDept, filterGroup, filterTeam, filterGrade]);
+    .filter(emp => !filterGrade   || getEmpGrade(emp.employee_id_code) === EMP_GRADES[filterGrade])
+    .filter(emp => !filterLabor   || empLabor(emp) === filterLabor),
+  [employees, inactiveEmployees, showInactive, filterSection, filterDept, filterGroup, filterTeam, filterGrade, filterLabor, laborMap]);
 
   // Only show skill columns where at least one displayed employee has score > 0
   // Must be useMemo — stable reference prevents ResizeObserver useEffect from looping
@@ -540,8 +547,24 @@ export default function Operator() {
               );
             })}
 
-            {(filterSection || filterDept || filterGroup || filterTeam || filterGrade) && (
-              <button onClick={() => { setFilterSection(''); setFilterDept(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); }}
+            {/* Labor type filter chips (Direct/Indirect — ตั้งที่ผังองค์กร) */}
+            <span style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 2px' }} />
+            {['direct', 'indirect'].map(t => {
+              const m = LABOR_META[t];
+              const active = filterLabor === t;
+              return (
+                <button key={t} onClick={() => setFilterLabor(active ? '' : t)}
+                  style={{ padding: '4px 11px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                    border: `1px solid ${active ? m.color : 'var(--border2)'}`,
+                    background: active ? `${m.color}22` : 'var(--bg3)',
+                    color: active ? m.color : 'var(--muted)', transition: 'all 0.15s' }}>
+                  {m.icon} {m.short}
+                </button>
+              );
+            })}
+
+            {(filterSection || filterDept || filterGroup || filterTeam || filterGrade || filterLabor) && (
+              <button onClick={() => { setFilterSection(''); setFilterDept(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); setFilterLabor(''); }}
                 style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>
                 ✕ ล้าง
               </button>
@@ -669,7 +692,12 @@ export default function Operator() {
                     <td style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 1, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>
                       <div style={{ fontWeight: 600 }}>{emp.name}</div>
                     </td>
-                    <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.section    || '—'}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                      {emp.section || '—'}
+                      {emp.section && (() => { const m = laborMeta(empLabor(emp)); return (
+                        <span title={m.label} style={{ marginLeft: 5, fontSize: 10, padding: '0 4px', borderRadius: 3, background: `${m.color}18`, color: m.color, border: `1px solid ${m.color}44`, fontWeight: 700 }}>{m.icon}</span>
+                      ); })()}
+                    </td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.department || '—'}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.group_name || '—'}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.team       || '—'}</td>
