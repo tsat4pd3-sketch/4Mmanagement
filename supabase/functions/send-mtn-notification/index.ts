@@ -116,7 +116,8 @@ Deno.serve(async (req) => {
 
     const dept = mo.mtn_dept || deptFor(mo.item_type);
     // แจกให้ถูกทีม: มีห้องของทีมนี้ → ส่งเข้าห้องทีม, ไม่มี → route เดิม (ห้องรวม/fallback)
-    const chat = (teamChats[dept] && teamChats[dept].length) ? teamChats[dept] : baseChat;
+    // ตีกลับ (mtn_returned) → เข้าห้องรวมเสมอ (ให้ผู้แจ้ง/ผลิตเห็น ไม่ใช่ห้องทีมช่างที่ตีกลับ)
+    const chat = (event !== 'mtn_returned' && teamChats[dept] && teamChats[dept].length) ? teamChats[dept] : baseChat;
     const v = {
       dept, mo_no: mo.mo_no || '(ยังไม่ออกเลข)', line_name: mo.line_name || '-', item_type: mo.item_type || '-',
       machine_no: mo.machine_no || '', problem: mo.problem_characteristic || '-',
@@ -155,6 +156,10 @@ Deno.serve(async (req) => {
         builtin = [`✅ <b>อนุมัติปิดแจ้งซ่อม</b>`, `ไลน์การผลิต: ${v.line_name}`, `ชื่อรายการ: ${equip}`, `ปัญหา: ${v.problem}`, ``,
           `เลขแจ้งซ่อม: <b>${v.mo_no}</b>`, `ช่างซ่อม: ${v.tech_main}`, `วิธีแก้ไข: ${v.solution}`, `ผู้อนุมัติ: ${v.approver}`].join('\n');
         photo = mo.after_img || null; break;
+      case 'mtn_returned':
+        builtin = [`↩️ <b>ตีกลับใบแจ้งซ่อม (ผิดแผนก)</b>`, `ไลน์การผลิต: ${v.line_name}`, `ชื่อรายการ: ${equip}`, `ปัญหา: ${v.problem}`, ``,
+          `🛑 เหตุผลที่ตีกลับ: <b>${mo.reject_reason || '-'}</b>`, mo.returned_from_dept ? `ตีกลับจากทีม: ${mo.returned_from_dept}` : '',
+          ``, `📌 ผู้แจ้ง (${v.reporter_prod || '-'}) โปรดแก้แผนกให้ถูกต้องแล้วส่งใหม่`].filter(Boolean).join('\n'); break;
       default: return json({ error: 'unknown event' }, 400);
     }
     // เด้งบอก "ขั้นต่อไป" ให้ห้องแชททีมรู้ว่าต้องรออะไรต่อ (ตามที่ user ต้องการ)
