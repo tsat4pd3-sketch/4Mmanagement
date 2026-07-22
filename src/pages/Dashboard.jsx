@@ -759,6 +759,22 @@ export default function Dashboard() {
   const attendRate    = useMemo(() => totalCapacity > 0 ? Math.round((present.length / totalCapacity) * 100) : 0, [totalCapacity, present]);
   const ppeRate       = useMemo(() => present.length > 0 ? Math.round((ppeReady.length / present.length) * 100) : 0, [present, ppeReady]);
 
+  // ── การ์ดผังไลน์ (Line Floor Maps): นับ "ตามจุดงาน" (คนที่ถูกวางบนสถานีของผังนี้) = ตรงกับหมุดบนรูป ──
+  // KPI ด้านบนสรุปกำลังคนทั้งไลน์ (roster ตาม employees.line_id = ไลน์แม่) ไปแล้ว การ์ดผังจึงไม่ซ้ำเรื่องนั้น
+  // แต่ตอบว่า "จุดงานมีคนเข้าครบมั้ย" แทน · ผังที่ไม่มีใครถูกวาง (ไม่มีหมุดคน) และไม่มีเครื่อง downtime → ซ่อน
+  const floorCards = useMemo(() => visibleLayouts.map(layout => {
+    const cardLineNames = layoutLineNamesForCard(layout.line_name);
+    const lineWs = workstations.filter(w => cardLineNames.includes(w.line_name));
+    let presentPeople = 0, staffedStations = 0;
+    lineWs.forEach(ws => {
+      const emps = (stationEmpMap[String(ws.id)] || []).filter(e => (!shiftEmpIds || shiftEmpIds.has(e.id)) && e.is_present === true);
+      if (emps.length) { staffedStations++; presentPeople += emps.length; }
+    });
+    const hasDtMachine = machinePoints.some(p => cardLineNames.includes(p.line_name) && dtAlarmByMachine[p.machine_no]);
+    return { layout, cardLineNames, lineWs, presentPeople, staffedStations, totalStations: lineWs.length, hasDtMachine };
+  }).filter(c => c.presentPeople > 0 || c.hasDtMachine),
+  [visibleLayouts, layoutLineNamesForCard, workstations, stationEmpMap, shiftEmpIds, machinePoints, dtAlarmByMachine]);
+
   const isToday = selectedDate === workDateStr;
 
   return (
@@ -2044,17 +2060,15 @@ export default function Dashboard() {
               <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 15 }}>
                 ยังไม่มีผัง — ไปตั้งค่าที่หน้า <strong>ตั้งค่าผังไลน์</strong>
               </div>
+            ) : floorCards.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 15 }}>
+                ยังไม่มีคนถูกจัดลงจุดงานในผังกะนี้ — จัดคนลงจุดงานที่หน้า <strong>จัดการไลน์ผลิต</strong>
+                <div style={{ fontSize: 12, marginTop: 6, opacity: 0.7 }}>(สรุปกำลังคนรวมดูได้ที่การ์ดสถานะไลน์ด้านบน)</div>
+              </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
-                {visibleLayouts.map(layout => {
-                  const cardLineNames = layoutLineNamesForCard(layout.line_name);
-                  const lineWs = workstations.filter(w => cardLineNames.includes(w.line_name));
-                  const lineStaff = lineWs.flatMap(ws => stationEmpMap[String(ws.id)] || []).filter(e => !shiftEmpIds || shiftEmpIds.has(e.id));
-                  // Use lineStats (same source as KPI cards) for the footer counts — sum across sub-lines merged into this card
-                  const cardLineStats = lineStats.filter(l => cardLineNames.includes(l.name));
-                  const footerPresent = cardLineStats.length ? cardLineStats.reduce((s, l) => s + l.linePresent, 0) : lineStaff.filter(e => e.is_present === true).length;
-                  const footerTotal   = cardLineStats.length ? cardLineStats.reduce((s, l) => s + l.lineTotal, 0)   : lineStaff.length;
-                  const footerAbsent  = cardLineStats.length ? (footerTotal - footerPresent) : lineStaff.filter(e => e.is_present === false).length;
+                {floorCards.map(({ layout, cardLineNames, lineWs, presentPeople, staffedStations, totalStations }) => {
+                  const allStaffed = totalStations > 0 && staffedStations >= totalStations;
                   return (
                     <div
                       key={layout.line_name}
@@ -2099,8 +2113,13 @@ export default function Dashboard() {
                           {layout.line_name}
                         </span>
                         <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.12)', padding: '2px 6px', borderRadius: 4 }}>✓ {footerPresent}/{footerTotal}</span>
-                          {footerAbsent > 0 && <span style={{ fontSize: 12, fontWeight: 700, color: '#e74c3c', background: 'rgba(231,76,60,0.12)', padding: '2px 6px', borderRadius: 4 }}>✗ {footerAbsent}</span>}
+                          <span title="จำนวนคนที่เข้าประจำจุดงานบนผังนี้ (นับตามหมุด)" style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', background: 'var(--bg2)', padding: '2px 6px', borderRadius: 4 }}>👷 {presentPeople}</span>
+                          {totalStations > 0 && (
+                            <span title="จุดงานที่มีคนเข้าประจำ / จุดงานทั้งหมดของผังนี้"
+                              style={{ fontSize: 12, fontWeight: 700, color: allStaffed ? '#22c55e' : '#f59e0b', background: allStaffed ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)', padding: '2px 6px', borderRadius: 4 }}>
+                              {allStaffed ? '✓' : '⚠'} {staffedStations}/{totalStations} จุด
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
