@@ -412,8 +412,8 @@ function nextStepFor(order) {
 /* ── พิมพ์ใบ MO — เลือก layout ตามทีมช่าง (JIG/DIE = FM-JIG-008 · MTN/PRODUCTION = FM-MTN-006) ── */
 function printMoReport(o, dparts = []) {
   const dept = o.mtn_dept || deptForItem(o.item_type);
-  // MTN ทั่วไป + PRODUCTION (autonomous) ใช้ฟอร์ม FM-MTN-006 ที่ layout ต่างจาก JIG/DIE
-  if (dept === 'MTN' || dept === 'PRODUCTION') return printMoReportMtn(o, dparts);
+  // เฉพาะทีม MTN ใช้ฟอร์ม FM-MTN-006 · JIG MTN / DIE MTN / PRODUCTION ใช้ FM-JIG-008 เดิม (คำสั่ง user 2026-07-22)
+  if (dept === 'MTN') return printMoReportMtn(o, dparts);
   // เลขฟอร์ม/Rev/Effective จากทะเบียนเอกสาร (/doc-forms) — fallback ค่าเดิม
   const dfMo = docFormSync('mo_report', { form_code: 'FM-JIG-008', rev: 'REV.00', effective_date: '05/12/2025', sig_blocks: ['JIG/MTN APPROVE', 'QA APPROVE', 'PD APPROVE', 'MGR APPROVE'] });
   const moSig = dfMo.sig_blocks || ['JIG/MTN APPROVE', 'QA APPROVE', 'PD APPROVE', 'MGR APPROVE'];
