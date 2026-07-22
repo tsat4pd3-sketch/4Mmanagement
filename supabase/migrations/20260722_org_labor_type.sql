@@ -1,9 +1,10 @@
 -- ══════════════════════════════════════════════════════════════════════════
 -- ประเภทแรงงาน Direct/Indirect ตั้งที่ผังองค์กร (org_nodes.labor_type) · Main · 2026-07-22
 --
--- แนวคิด (คำสั่ง user): ตั้งที่ผังองค์กร — section ที่เกี่ยวกับการผลิต = direct
+-- แนวคิด (คำสั่ง user): ตั้งที่ผังองค์กร — node ที่เกี่ยวกับการผลิต = direct
 -- (ฝ่ายผลิต/operator) · ที่เหลือ = indirect (ช่างซ่อมบำรุง/QA/ธุรการ/ขาย)
--- พนักงาน inherit ประเภทจาก section ของตัวเอง (คุมที่เดียว) — ดู src/utils/laborType.js
+-- ⚠️ ตั้งได้ทั้ง **section และ department** — ช่างส่วนใหญ่อยู่ระดับแผนก (department) ไม่ใช่ section
+-- พนักงาน derive ประเภทจาก department ก่อน แล้ว section (คุมที่เดียว) — ดู src/utils/laborType.js
 --
 -- ช่างซ่อมบำรุง = พนักงาน section MTN/JIG/DIE (indirect) มี employee_skills เหมือน operator
 -- แค่คนละชุดสกิล — รวมฐานข้อมูลคนที่ employees ที่เดียว (ดู CLAUDE.md "Direct/Indirect Labor")
