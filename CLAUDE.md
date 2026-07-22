@@ -221,6 +221,16 @@
 - Register.jsx กรอง LINE โดย: `l.name === department || l.parent_line_name === department`
 - **Dropdown ลำดับชั้น (Section→แผนก→Line→Team) ทุกหน้าต้อง cascade + ล้างตัวลูกเมื่อเปลี่ยนตัวแม่** — กฎเต็มดู `docs/UI-CONVENTIONS.md` §5.3 (เพิ่ม 2026-07-21 หลังพบ Report 5 จุด + operator filter bar โชว์แผนกข้าม section)
 
+### Direct / Indirect Labor + รวมช่างเข้าฐานพนักงาน (2026-07-22)
+
+**คนทุกคนอยู่ที่ `employees` ที่เดียว** — operator (ฝ่ายผลิต) และช่างซ่อมบำรุง เป็น employee เหมือนกัน ต่างกันแค่ **ประเภทแรงงาน** และ **section**
+
+- **ประเภทแรงงานตั้งที่ผังองค์กร** (`org_nodes.labor_type` ระดับ section — 'direct'/'indirect') ตั้งจาก OrgSetup (ฟอร์มแก้ section) · seed default: section ผลิต (PD*/GOR/HYDRO/ASSY/LINE ฯลฯ) = direct, ที่เหลือ = indirect · migration `20260722_org_labor_type.sql`
+- **พนักงาน derive ประเภทจาก section ของตัวเอง** ผ่าน `src/utils/laborType.js` (`buildLaborMap(orgNodes)` → `laborTypeOf(section, laborMap)` · fallback heuristic ตามชื่อ section เมื่อยังไม่ตั้ง) — **ห้าม hardcode ว่า section ไหน direct/indirect ในหน้า** ให้อ่านจาก org_nodes เสมอ
+- แสดง/กรองในหน้า `/operator` (badge 🔧/🗂️ + ปุ่มกรอง Direct/Indirect) — direct = 🔧 เขียว, indirect = 🗂️ ฟ้า
+- **ช่างซ่อมบำรุง = พนักงาน section MTN/JIG/DIE** (indirect) มี `employee_skills` เหมือน operator (สกิลซ่อมบำรุง) · สร้าง section MTN/JIG/DIE ใน OrgSetup แล้วลงทะเบียนช่างที่ Register/operator ปกติ
+- **MtnRepair dropdown "มอบหมายช่าง" ดึงจาก employees ทีมช่าง** (`teamForSection` ใน `mtnTeams.js` map section→ทีม) + รวมกับ `mtn_technicians` เดิม (ช่างเฉพาะกิจนอกฐานพนักงาน — fallback ไม่ลบ) · `assigned_to` ยังเก็บเป็น **ชื่อ (text)** เหมือนเดิม (backward-compatible) · ⚙️ MasterTab: ช่างจากฐานพนักงานแสดง read-only (แก้ที่หน้าพนักงาน) เพิ่มได้เฉพาะช่างเฉพาะกิจ · **MtnRepair อ่าน employees ผ่าน client `supabase` (Main, authenticated)** ไม่ใช่ supabaseDR
+
 ---
 
 ## Role System
