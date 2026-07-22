@@ -286,7 +286,8 @@
 - โหลดผ่าน `loadPermissions()` (cache ใน memory) แล้วเช็คด้วย `hasPermission(key, role)` / `canAccessPage(path, role)` — ไฟล์ `src/utils/permissions.js`
 - `admin` bypass เสมอ (return true ทันทีไม่ query cache) กันกรณี config ผิดจนตัวเองเข้าไม่ได้
 - แก้ได้จากหน้า `/permissions` (`src/pages/PermissionsManagement.jsx`) — ตาราง matrix role × permission key, toggle แล้ว upsert ทันที
-- permission key รูปแบบ `page:/route` สำหรับสิทธิ์เข้าหน้า, `manage_master_data` สำหรับสิทธิ์แก้ master data รวม (แทนที่เช็ค `['admin','manager','supervisor'].includes(role)` แบบ hardcode ที่กระจายอยู่ ~10 ไฟล์เดิม)
+- permission key รูปแบบ `page:/route` สำหรับสิทธิ์เข้าหน้า, `resource:action` สำหรับสิทธิ์ทำงานในหน้า (เช่น `products:create`, `oee:set_target`) — โหลดจาก `permission_catalog` แสดงในแท็บ "สิทธิ์การทำงาน"
+- **legacy `manage_master_data` เกษียณแล้ว (2026-07-22)** — สวิตช์รวมเก่า (แทน `['admin','manager','supervisor'].includes(role)` hardcode ~10 ไฟล์) ถูกแตกเป็นสิทธิ์ย่อยครบแล้ว: `oee:set_target` (ปุ่ม 🎯 ตั้งเป้า OEE) · `ot_master:manage` (Report แผงจองรถ OT — สายรถ/งาน OT) · `management:assign_manpower` (ลากจัดกำลังคนบนผัง) · seed default = admin/mgr/sv เท่าเดิม (พฤติกรรมไม่เปลี่ยน) · migration `20260722_retire_manage_master_data.sql` · แถว `manage_master_data` เดิมใน role_permissions คงไว้แต่ไม่มีโค้ดอ่านแล้ว (เผื่อ rollback) — **ห้ามผูกฟีเจอร์ใหม่กับ manage_master_data อีก**
 - **ต่างจาก scoping ตาม section/line/team** (ด้านล่าง) — permission ตอบว่า "เข้าหน้านี้ได้ไหม/ทำ action นี้ได้ไหม" ส่วน scoping ตอบว่า "เห็นข้อมูลแถวไหนบ้าง" สองเรื่องนี้แยกกันคนละกลไก
 
 ### Section/Line/Team Scoping — รองรับหลาย section ต่อ user แล้ว (2026-07-09)

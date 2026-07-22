@@ -6,7 +6,7 @@ import { toast } from '../components/Toast';
 import DowntimeSiren from '../components/DowntimeSiren';
 import ToggleDot from '../components/ToggleDot';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
-import { hasPermission, can } from '../utils/permissions';
+import { can } from '../utils/permissions';
 import { getLineFamilyNames, getLineFamilyIds, getAncestorNames, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
@@ -809,7 +809,7 @@ export default function Management() {
   /* ── Special Pool Card ── */
   const SpecialCard = ({ worker }) => {
     const task = specialTasks.find(t => t.employee_id === worker.employee_id);
-    const canDrag = hasPermission('manage_master_data', role);
+    const canDrag = can('management', 'assign_manpower', role);
     const isSelected = selectedWorker?.id === worker.id;
     return (
       <div
@@ -1125,7 +1125,7 @@ export default function Management() {
               <span style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>🟡 งานนอกไลน์</span>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>{specialWorkers.length} คน</span>
             </div>
-            {hasPermission('manage_master_data', role) && specialWorkers.length > 0 && (
+            {can('management', 'assign_manpower', role) && specialWorkers.length > 0 && (
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5, fontStyle: 'italic' }}>drag กลับไลน์ผลิตได้</div>
             )}
           </div>

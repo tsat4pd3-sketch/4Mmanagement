@@ -34,7 +34,7 @@ role permission_key allowed updated_at updated_by   unique(role, permission_key)
 | รูปแบบ key | ความหมาย | สถานะ |
 |---|---|---|
 | `page:/products` | เข้าหน้าได้ (RoleRoute + sidebar) | ใช้อยู่ — คงไว้ |
-| `manage_master_data` | ปุ่มแก้ master data (legacy รวมทุกหน้า) | ใช้อยู่ — จะถูกแทนด้วย `resource:action` ใน Phase 2 แล้วค่อย retire |
+| `manage_master_data` | ปุ่มแก้ master data (legacy รวมทุกหน้า) | ~~retired~~ 2026-07-22 — แตกเป็น `oee:set_target`/`ot_master:manage`/`management:assign_manpower` แล้ว ไม่มีโค้ดอ่าน |
 | `resource:action` | สิทธิ์ระดับ action **(ใหม่)** | Phase 0 seed แล้ว |
 
 ### 2.2 `permission_catalog` (ใหม่ — Phase 0)
@@ -117,7 +117,12 @@ Phase 2 จะไล่แทนที่ `hasPermission('manage_master_data', r
 ความคืบหน้า Phase 2 (2026-07-10): Management.jsx — hardcode role array 3 จุด (ปุ่มกำหนด/ถอด/มอบหมาย
 งานนอกไลน์) แทนด้วย `can('management','assign_special_task')` แล้ว (migration:
 `20260710_management_special_task_permission.sql` — apply กับ DB จริงแล้ว seed ตรงพฤติกรรมเดิม a/m/s/l)
-· ที่เหลือคือ `manage_master_data` 3 จุด (Management ×2, Report ×1) ตามแผนเดิม
+
+**✅ manage_master_data เกษียณครบแล้ว (2026-07-22):** 3 จุดสุดท้ายแตกเป็นสิทธิ์ย่อย —
+`oee:set_target` (OEEAnalytics ปุ่ม 🎯), `ot_master:manage` (Report แผงจองรถ OT),
+`management:assign_manpower` (Management ลากจัดกำลังคน ×2 จุด) · migration
+`20260722_retire_manage_master_data.sql` (catalog + seed a/m/s) · ไม่มีโค้ดอ่าน `manage_master_data`
+แล้ว (แถวเดิมใน role_permissions คงไว้เผื่อ rollback) · แถว Legacy ในหน้า /permissions ถูกถอดออก
 
 ### 4.3 Cache & การมีผลทันที
 - `loadPermissions()` โหลดครั้งเดียวตอน login (มีอยู่แล้ว)
