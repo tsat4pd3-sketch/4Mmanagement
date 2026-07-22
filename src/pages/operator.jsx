@@ -406,9 +406,10 @@ export default function Operator() {
   const workTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
   const allEmps = useMemo(() => [...employees, ...inactiveEmployees], [employees, inactiveEmployees]);
   const sectionOpts = useMemo(() => orgSectionOpts.length ? orgSectionOpts : [...new Set(allEmps.map(e => e.section).filter(Boolean))].sort(), [allEmps, orgSectionOpts]);
-  // ประเภทแรงงาน direct/indirect derive จาก section (ตั้งที่ผังองค์กร) — laborType.js
-  const laborMap = useMemo(() => buildLaborMap(orgSectionNodes), [orgSectionNodes]);
-  const empLabor = (emp) => laborTypeOf(emp.section, laborMap);
+  // ประเภทแรงงาน direct/indirect derive จาก department ก่อน แล้ว section (ตั้งที่ผังองค์กร) — laborType.js
+  // ช่างส่วนใหญ่อยู่ระดับแผนก → รวมทั้ง section + department nodes ใน map
+  const laborMap = useMemo(() => buildLaborMap([...orgSectionNodes, ...orgDeptNodes]), [orgSectionNodes, orgDeptNodes]);
+  const empLabor = (emp) => laborTypeOf(emp.section, emp.department, laborMap);
   // ตัวเลือก filter ไล่ตามลำดับชั้นองค์กร (cascade — คำสั่ง user 2026-07-21): Dept เฉพาะใน Section ที่เลือก ·
   // Group เฉพาะใน Section+Dept · Team ตามที่เหลือ — ดึงจากข้อมูลพนักงานจริง (ตรงกับแถวในตารางเสมอ ไม่มีตัวเลือกข้าม section/ซ้ำ)
   const empsInSec   = useMemo(() => allEmps.filter(e => !filterSection || e.section === filterSection), [allEmps, filterSection]);

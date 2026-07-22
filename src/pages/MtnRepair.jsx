@@ -203,12 +203,13 @@ export default function MtnRepair() {
       supabaseDR.from('mtn_item_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('improvements').select('id, line_name, machine_no, title').eq('status', 'monitoring'),
       supabaseDR.from('mtn_labor_rates').select('*').eq('is_active', true).order('sort_order').then(r => r).catch(() => ({ data: [] })),
-      // ช่าง = พนักงาน (Main) ที่ section เป็นทีมช่าง — รวมฐานข้อมูลคนที่ employees ที่เดียว (2026-07-22)
-      supabase.from('employees').select('id, name, section, employee_id_code').eq('is_active', true).order('name'),
+      // ช่าง = พนักงาน (Main) ที่แผนก/ส่วนเป็นทีมช่าง — รวมฐานข้อมูลคนที่ employees ที่เดียว (2026-07-22)
+      supabase.from('employees').select('id, name, section, department, employee_id_code').eq('is_active', true).order('name'),
     ]);
     // แปลงพนักงานทีมช่างเป็นรูปแบบ tech + รวมกับ mtn_technicians เดิม (พนักงานมาก่อน · กันชื่อซ้ำ)
+    // ช่างส่วนใหญ่อยู่ระดับแผนก (department) → เช็คแผนกก่อน แล้ว section
     const empTechs = (emps || [])
-      .map(e => ({ ...e, team: teamForSection(e.section) }))
+      .map(e => ({ ...e, team: teamForSection(e.department) || teamForSection(e.section) }))
       .filter(e => e.team)
       .map(e => ({ id: `emp_${e.id}`, name: e.name, dept: e.team, from_employee: true, emp_code: e.employee_id_code }));
     const empNames = new Set(empTechs.map(t => t.name.trim()));
