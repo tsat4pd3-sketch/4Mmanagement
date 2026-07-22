@@ -74,6 +74,21 @@ const CHECK_RESULTS = ['ตรวจสอบผ่าน', 'ตรวจสอ�
 const QUALITY_OPTS = ['ไม่เกี่ยวกับคุณภาพ', 'เกี่ยวกับคุณภาพ'];
 const QA_RESULTS = ['ผ่านคุณภาพ', 'ไม่ผ่านคุณภาพ'];
 const FOLLOW_OPTS = ['ไม่เกิดปัญหาซ้ำ', 'แจ้งเฝ้าระวัง', 'เกิดปัญหาซ้ำ', 'แก้ไขไม่ได้'];
+// ประเมินความพึงพอใจบริการซ่อม (step 6) — KPI ให้หน่วยงานซ่อม · 5 ด้าน × 3 ระดับ
+const SAT_DIMS = [
+  { key: 'quality',    label: 'คุณภาพงานซ่อม' },
+  { key: 'response',   label: 'ความเร็วในการตอบสนอง' },
+  { key: 'problem',    label: 'ความสามารถในการแก้ไขปัญหา' },
+  { key: 'politeness', label: 'ความสุภาพ / PPE' },
+  { key: 'readiness',  label: 'ความพร้อมในการเข้าแก้ไขปัญหา' },
+];
+const SAT_LEVELS = [
+  { v: 1, t: 'เฉยๆ',    color: '#94a3b8' },
+  { v: 2, t: 'พอใจ',    color: '#f59e0b' },
+  { v: 3, t: 'พอใจมาก', color: '#22c55e' },
+];
+const satLabel = (v) => (SAT_LEVELS.find(l => l.v === Number(v)) || {}).t || '-';
+const satAvg = (s) => { if (!s) return null; const vs = SAT_DIMS.map(d => Number(s[d.key])).filter(v => v >= 1 && v <= 3); return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null; };
 const STEP_EVENT = { 1: 'mtn_reported', 2: 'mtn_assigned', 3: 'mtn_repaired', 4: 'mtn_checked', 5: 'mtn_qa', 6: 'mtn_handover', 7: 'mtn_closed' };
 const STEP_PERM = { 2: 'service', 3: 'service', 4: 'service', 5: 'qa', 6: 'report', 7: 'approve' };
 
@@ -266,7 +281,7 @@ export default function MtnRepair() {
           {can('mtn_repair', 'report', role) && <button onClick={() => setShowReport(true)} style={{ ...btnPri, padding: '9px 16px' }}>➕ แจ้งซ่อมใหม่</button>}
           <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={{ ...inp, width: 170 }}>
             <option value="open">🔵 ยังไม่ปิด (ทั้งหมด)</option><option value="all">ทุกสถานะ</option>
-            {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}<option value="closed">✅ ปิดแล้ว</option>
+            {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
           </select>
           <select value={fDept} onChange={e => setFDept(e.target.value)} style={{ ...inp, width: 150 }}><option value="">ทุกหน่วยงาน</option>{MTN_DEPTS.map(d => <option key={d}>{d}</option>)}</select>
           <select value={fLine} onChange={e => setFLine(e.target.value)} style={{ ...inp, width: 180 }}><option value="">ทุกไลน์</option>{lineOpts.map(n => <option key={n} value={n}>{n}</option>)}</select>
@@ -554,6 +569,14 @@ function DetailDrawer({ order, role, improvements, onOpenImprovement, onClose, o
           </StepBox>
           <StepBox n={6} title="รับมอบ/ติดตาม" done={o.current_step >= 6}>
             <Row k="ติดตามผล" v={o.follow_up} /><Row k="ผู้ตรวจ" v={o.ho_checker} /><Img label="ลายเซ็น" url={o.ho_sign} />
+            {satAvg(o.satisfaction) != null && <div style={{ marginTop: 4 }}>
+              <Row k="ความพึงพอใจเฉลี่ย" v={`${satAvg(o.satisfaction).toFixed(2)}/3 (${Math.round(satAvg(o.satisfaction) / 3 * 100)}%)`} />
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
+                {SAT_DIMS.filter(d => o.satisfaction?.[d.key]).map(d => { const lv = SAT_LEVELS.find(l => l.v === Number(o.satisfaction[d.key])); return (
+                  <span key={d.key} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 6, background: 'var(--bg3)', border: `1px solid ${lv?.color || 'var(--border)'}`, color: 'var(--text2)' }}>{d.label}: <b style={{ color: lv?.color }}>{lv?.t}</b></span>
+                ); })}
+              </div>
+            </div>}
           </StepBox>
           <StepBox n={7} title="อนุมัติปิด" done={o.current_step >= 7}>
             <Row k="อนุมัติเมื่อ" v={o.approve_at && fmtDateTime(o.approve_at)} /><Row k="ผู้อนุมัติ" v={o.approver_name} /><Img label="ลายเซ็นอนุมัติ" url={o.approve_sign} />
@@ -589,6 +612,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, fullName,
     check_result: o.check_result || 'ตรวจสอบผ่าน', check_note: o.check_note || '', quality_related: o.quality_related || 'ไม่เกี่ยวกับคุณภาพ', checker_name: o.checker_name || fullName || '',
     qa_result: o.qa_result || 'ผ่านคุณภาพ', qa_note: o.qa_note || '', qa_checker: o.qa_checker || fullName || '',
     follow_up: o.follow_up || 'ไม่เกิดปัญหาซ้ำ', ho_checker: o.ho_checker || fullName || '',
+    satisfaction: o.satisfaction || {},
     approver_name: o.approver_name || fullName || '',
   }));
   const [afterFile, setAfterFile] = useState(null);
@@ -661,7 +685,8 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, fullName,
         await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
       } else if (step === 6) {
         const s = await resolveSign('ho_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น'); }
-        Object.assign(upd, { follow_up: f.follow_up, ho_checker: f.ho_checker, ho_reporter: o.reporter_prod || fullName, ho_sign: s });
+        { const sat = {}; SAT_DIMS.forEach(d => { const v = Number(f.satisfaction?.[d.key]); if (v >= 1 && v <= 3) sat[d.key] = v; });
+          Object.assign(upd, { follow_up: f.follow_up, ho_checker: f.ho_checker, ho_reporter: o.reporter_prod || fullName, ho_sign: s, satisfaction: Object.keys(sat).length ? sat : null }); }
         if (!editMode) { upd.status = 'handover'; upd.current_step = 6; upd.ho_at = new Date().toISOString(); }
         await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
       } else if (step === 7) {
@@ -725,6 +750,24 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, fullName,
         {step === 6 && <>
           <Field label="ติดตามหลังซ่อม"><select value={f.follow_up} onChange={e => set('follow_up', e.target.value)} style={inp}>{FOLLOW_OPTS.map(r => <option key={r}>{r}</option>)}</select></Field>
           <Field label="ชื่อผู้ตรวจสอบ"><input value={f.ho_checker} onChange={e => set('ho_checker', e.target.value)} style={inp} /></Field>
+          <Field label="ประเมินความพึงพอใจบริการซ่อม (KPI หน่วยงานซ่อม)">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {SAT_DIMS.map(d => (
+                <div key={d.key} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1 1 180px', minWidth: 160, fontSize: 12.5, color: 'var(--text)' }}>{d.label}</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {SAT_LEVELS.map(lv => {
+                      const on = Number(f.satisfaction?.[d.key]) === lv.v;
+                      return <button key={lv.v} type="button" onClick={() => set('satisfaction', { ...f.satisfaction, [d.key]: on ? undefined : lv.v })}
+                        style={{ padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                          border: `1px solid ${on ? lv.color : 'var(--border)'}`, background: on ? lv.color : 'var(--bg3)', color: on ? '#0b0d14' : 'var(--text2)' }}>{lv.t}</button>;
+                    })}
+                  </div>
+                </div>
+              ))}
+              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ให้คะแนนโดยหน่วยงานผู้แจ้ง — ไม่บังคับ ข้ามได้ (เว้นว่าง = ไม่ประเมิน)</div>
+            </div>
+          </Field>
         </>}
         {step === 7 && <>
           <Field label="ชื่อผู้อนุมัติ"><input value={f.approver_name} onChange={e => set('approver_name', e.target.value)} style={inp} /></Field>
@@ -750,7 +793,11 @@ function KpiTab({ orders, scopeLines, lineOpts }) {
     for (const o of rows) { const r = minutesBetween(o.report_at, o.accept_at); if (r != null) resp.push(r); const t = minutesBetween(o.accept_at, o.repair_done_at); if (t != null) ttr.push(t); const b = minutesBetween(o.report_at, o.repair_done_at); if (b != null) bd.push(b); }
     const avg = a => a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : null;
     const byChar = {}; rows.forEach(o => { const k = o.problem_characteristic || 'อื่นๆ'; byChar[k] = (byChar[k] || 0) + 1; });
-    return { n: rows.length, resp: avg(resp), ttr: avg(ttr), bd: avg(bd), pareto: Object.entries(byChar).sort((a, b) => b[1] - a[1]).slice(0, 10) };
+    // ความพึงพอใจ (KPI หน่วยงานซ่อม) — เฉลี่ยรวม + รายด้าน จากใบที่มีการประเมิน
+    const rated = rows.filter(o => satAvg(o.satisfaction) != null);
+    const satOverall = rated.length ? rated.reduce((s, o) => s + satAvg(o.satisfaction), 0) / rated.length : null;
+    const satByDim = SAT_DIMS.map(d => { const vs = rated.map(o => Number(o.satisfaction?.[d.key])).filter(v => v >= 1 && v <= 3); return { label: d.label, avg: vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null, n: vs.length }; });
+    return { n: rows.length, resp: avg(resp), ttr: avg(ttr), bd: avg(bd), pareto: Object.entries(byChar).sort((a, b) => b[1] - a[1]).slice(0, 10), satOverall, satByDim, satN: rated.length };
   }, [rows]);
   const Card = ({ t, v, c }) => <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, flex: 1, minWidth: 160 }}><div style={{ fontSize: 12, color: 'var(--muted)' }}>{t}</div><div style={{ fontSize: 26, fontWeight: 800, color: c || 'var(--text)', marginTop: 2 }}>{v}</div></div>;
   return (
@@ -761,7 +808,18 @@ function KpiTab({ orders, scopeLines, lineOpts }) {
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
         <Card t="งานที่ปิด (ในช่วง)" v={stat.n} /><Card t="เข้าดำเนินการเฉลี่ย (Response)" v={fmtMin(stat.resp)} c="#3b82f6" /><Card t="เวลาซ่อมเฉลี่ย (TTR)" v={fmtMin(stat.ttr)} c="#f59e0b" /><Card t="Breakdown เฉลี่ย" v={fmtMin(stat.bd)} c="#ef4444" />
+        <Card t={`ความพึงพอใจเฉลี่ย (${stat.satN} ใบ)`} v={stat.satOverall != null ? `${Math.round(stat.satOverall / 3 * 100)}%` : '—'} c={stat.satOverall == null ? 'var(--muted)' : stat.satOverall >= 2.5 ? '#22c55e' : stat.satOverall >= 2 ? '#f59e0b' : '#ef4444'} />
       </div>
+      {stat.satN > 0 && <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>ความพึงพอใจบริการซ่อม รายด้าน (KPI หน่วยงานซ่อม)</div>
+        {stat.satByDim.map(d => { const pct = d.avg != null ? Math.round(d.avg / 3 * 100) : 0; const col = d.avg == null ? 'var(--muted)' : d.avg >= 2.5 ? '#22c55e' : d.avg >= 2 ? '#f59e0b' : '#ef4444'; return (
+          <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+            <div style={{ width: 200, fontSize: 12.5, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</div>
+            <div style={{ flex: 1, height: 16, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: col }} /></div>
+            <div style={{ width: 70, textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: col }}>{d.avg != null ? `${d.avg.toFixed(2)}/3` : '—'}</div>
+          </div>
+        ); })}
+      </div>}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>พาเรโต้ ลักษณะปัญหา (Top 10)</div>
         {stat.pareto.map(([k, n]) => { const max = stat.pareto[0][1]; return <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}><div style={{ width: 190, fontSize: 12.5, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k}</div><div style={{ flex: 1, height: 16, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden' }}><div style={{ width: `${(n / max) * 100}%`, height: '100%', background: '#f59e0b' }} /></div><div style={{ width: 34, textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>{n}</div></div>; })}

@@ -312,6 +312,19 @@ Reject → status: "rejected" + reject_reason
 `/planner-sales` (Sales อัพโหลด Forecast 830 / Order 862 + Forecast Planner) ·
 `/customer-demand` = **Delivery** (Shipping Chart + Ship-to Config) · `/rundown-stock` (Balance FG รายวัน)
 
+### รหัส MAT SAP — ภาษากลาง (2026-07-22 · ใช้คำนี้คุยกับ user ให้ตรงกัน)
+
+| ขึ้นต้น | เรียกว่า | คืออะไร | การไหลของ stock |
+|---|---|---|---|
+| **1** (เบอร์ 100 เช่น 10100401) | **FG** (Finished Goods) | งานสำเร็จพร้อมขายลูกค้า | ปิดออเดอร์ → เข้า `FG WAREHOUSE` อัตโนมัติ · **ห้ามจ่ายเข้าไลน์/สโตร์** — หักออกทางเดียวคือกด "ส่งแล้ว" หน้า Delivery (แก้ยอดใช้ ปรับยอด ผ่านคิวอนุมัติ) |
+| **2** (เบอร์ 200) | **พาร์ทย่อยผลิตเอง** (Child — in-house) | ชิ้นส่วนผลิตภายในโรงงาน ส่วนใหญ่จากไลน์ปั๊ม/stamping (`process_type = metal_forming`) เพื่อป้อนไลน์ประกอบ | ปิดออเดอร์ผลิต → เข้า `STORE` อัตโนมัติ → Store จ่ายเข้า mini-store ของไลน์ → backflush เมื่อ FG ปิดออเดอร์ |
+| **3** (เบอร์ 300) | **พาร์ทซื้อภายนอก** (Bought-out) | ชิ้นส่วนซื้อจาก supplier (nut/โบลท์/ชิ้นส่วนสำเร็จ) — **ไม่มีออเดอร์ผลิตภายใน** จึงไม่เข้าจาก trigger ปิดออเดอร์ | รับของเข้า `STORE` ด้วยการบันทึกรับ/ปรับยอดที่หน้า Store → จ่ายเข้าไลน์/backflush เหมือนพาร์ทย่อยปกติ (บนบอร์ด Kanban รวมเรียก "Store Child (200/300)") |
+| **5** (เบอร์ 500) | **วัตถุดิบ** (Raw Mat) | วัตถุดิบตั้งต้น | เบิกจาก Store Raw ไปไลน์ผลิต child (ใบเบิกจาก lot request) |
+| MB3B/RB3B… | เลขพาร์ทลูกค้า (Ford P/N) | ไม่ใช่ MAT SAP | ใช้เป็น key ชั่วคราวเมื่อจับคู่ mat ภายในไม่ได้ (เพิ่ม P/N ใน Product Master แล้วอัพโหลดใหม่เพื่อ map) |
+
+- UI ฝั่ง Store (`LineStock.jsx` helper `isFgMat`): แถว FG ไม่มีปุ่ม "+ จ่าย" (โชว์ "🚚 หักผ่าน Delivery" แทน)
+  และฟอร์มบล็อก type `issue` สำหรับ MAT ขึ้นต้น 1
+
 ### กฎธุรกิจที่ห้ามทำพัง
 
 - **กรอบวันงาน 08:00 → 08:00 วันถัดไป** — order ที่ `ship_time < 08:00` ของวันถัดไปนับเป็นกะดึกของวันงานนี้
@@ -540,6 +553,8 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 หน้า `/mtn-repair` (`MtnRepair.jsx`, กลุ่มการตรวจสอบและซ่อมบำรุง) — **clone ระบบ AppSheet เดิม (Jig MTN) มาอยู่ใน ESM** เพื่อไม่ต้องแยกระบบ + เก็บฐานข้อมูลเดียวกัน · ตารางทั้งหมดอยู่ **DR project** (anon-open ตาม convention)
 
 - **Workflow 7 ขั้น (mirror ของเดิม):** 1 แจ้งซ่อม → 2 รับ/จ่ายงาน (**ออกเลข MO อัตโนมัติ**) → 3 ดำเนินการซ่อม → 4 ตรวจหลังซ่อม → 5 คุณภาพหลังซ่อม (**เฉพาะงานที่ step4 ระบุ "เกี่ยวกับคุณภาพ"** ไม่งั้นข้ามไป step6) → 6 รับมอบ/ติดตาม → 7 อนุมัติปิด (Close MO) · `status`: pending→assigned→repaired→checked→qa→handover→closed · `rejected` (step2 เลือก "Reject MO") · `current_step` 1..7 ใช้คิด % ความคืบหน้า
+- **ประเมินความพึงพอใจบริการซ่อม (step 6 รับมอบ/ติดตาม — KPI หน่วยงานซ่อม · 2026-07-22):** หน่วยงานผู้แจ้งให้คะแนน **5 ด้าน × 3 ระดับ** (เฉยๆ=1/พอใจ=2/พอใจมาก=3): คุณภาพงานซ่อม · ความเร็วในการตอบสนอง · ความสามารถในการแก้ไขปัญหา · ความสุภาพ/PPE · ความพร้อมในการเข้าแก้ไขปัญหา · เก็บ `mtn_orders.satisfaction` jsonb (ด้านที่ไม่ประเมิน = ไม่มี key · **ไม่บังคับ ข้ามได้**) · const กลาง `SAT_DIMS`/`SAT_LEVELS` ใน MtnRepair · **แท็บ 📊 KPI** เพิ่มการ์ด "ความพึงพอใจเฉลี่ย %" + แถบรายด้าน (avg/3 · เขียว≥2.5/เหลือง≥2/แดง) นับเฉพาะใบที่ประเมิน · migration `20260722_mtn_satisfaction.sql` (DR additive)
+- **⚠️ ฟิลเตอร์สถานะไม่ให้ซ้ำ:** dropdown สถานะ render จาก `STATUS_META` (มี `closed: '✅ ปิด MO'` อยู่แล้ว) + `open`/`all` เท่านั้น — **ห้ามเพิ่ม `<option value="closed">` ซ้ำ** (เคยมี "✅ ปิดแล้ว" ซ้ำกับ "✅ ปิด MO" — ลบแล้ว 2026-07-22)
 - **เลข MO auto:** RPC `mtn_assign_mo_no(order_id, prefix)` (SECURITY DEFINER, idempotent — ออกเลขครั้งเดียวต่อใบ) ออกตอน step2 = `PREFIX-DDMMYY-ลำดับรายวัน` · prefix ตามประเภทงานซ่อม: BM(Breakdown)/IM(Improvement)/CM(Corrective)/PM(Preventive)/AM(Autonomous)/RE(Reject) · ลำดับ atomic ต่อวัน (ตาราง `mtn_mo_counter` keyed ด้วย DDMMYY เวลาไทย)
 - **ตาราง (DR):** `mtn_orders` (แถวเดียวต่อใบ เก็บครบ 7 ขั้น) · `mtn_order_parts` (log เบิกอะไหล่ต่อใบ + หัก stock) · master: `mtn_technicians` `mtn_spare_parts` `mtn_problem_types` (cascade ลักษณะปัญหา→รายละเอียด) `mtn_repair_types` `mtn_item_types` · `mtn_mo_counter` · migration `20260714_mtn_work_order.sql` (seed taxonomy 20 + ช่าง 8 + item/repair types)
 - **รูป/ลายเซ็น:** bucket **`mtn-images`** (DR, anon-open, cap 5MB) — รูปก่อน/หลังซ่อม/QA บีบ 1280px q0.85 ก่อนอัปโหลด (helper `resizeImage`) · ลายเซ็นต่อขั้น (step4/5/6/7) วาดใน `SignaturePad` (canvas→PNG) · ลบใบ = ลบไฟล์ที่ผูกทุกอัน (best-effort)
