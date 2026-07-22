@@ -789,6 +789,31 @@ export default function Dashboard() {
   }).filter(c => c.presentPeople > 0 || c.hasDtMachine),
   [visibleLayouts, layoutLineNamesForCard, workstations, stationEmpMap, shiftEmpIds, machinePoints, dtAlarmByMachine]);
 
+  // placement รายไลน์ (นับตามจุดงาน) — ใช้กับการ์ดสถานะไลน์ย่อย: คนที่ถูกวางบนสถานีของไลน์นั้น + coverage จุดงาน
+  const placementByLineName = useMemo(() => {
+    const m = {};
+    workstations.forEach(ws => {
+      const ln = ws.line_name; if (!ln) return;
+      (m[ln] ||= { people: 0, staffed: 0, total: 0 }).total++;
+      const emps = (stationEmpMap[String(ws.id)] || []).filter(e => (!shiftEmpIds || shiftEmpIds.has(e.id)) && e.is_present === true);
+      if (emps.length) { m[ln].staffed++; m[ln].people += emps.length; }
+    });
+    return m;
+  }, [workstations, stationEmpMap, shiftEmpIds]);
+  const placementForLine = useCallback((name) => {
+    // รวม self + ไลน์ย่อยที่ซ้อนลงไป (parentChildrenMap) — จุดงานอยู่บนไลน์ใบเสมอ
+    const acc = { people: 0, staffed: 0, total: 0 };
+    const seen = new Set();
+    const walk = (n) => {
+      if (seen.has(n)) return; seen.add(n);
+      const p = placementByLineName[n];
+      if (p) { acc.people += p.people; acc.staffed += p.staffed; acc.total += p.total; }
+      (parentChildrenMap[n] || []).forEach(walk);
+    };
+    walk(name);
+    return acc;
+  }, [placementByLineName, parentChildrenMap]);
+
   const isToday = selectedDate === workDateStr;
 
   return (
@@ -1089,6 +1114,11 @@ export default function Dashboard() {
                   </motion.div>
                 );
                 if (!isExpanded) return [card];
+                // นับตามจุดงาน (placement) — โชว์เฉพาะไลน์ย่อยที่มีคนถูกจัดลงจุดงาน หรือมี DT/4M ค้าง
+                // (ตัวที่ไม่มีคนเลย = 0/0 ตาม roster เดิม → ซ่อน กันสับสน · KPI ไลน์แม่สรุปกำลังคนไปแล้ว)
+                const childCards = line._children
+                  .map(cs => ({ cs, pl: placementForLine(cs.name) }))
+                  .filter(({ cs, pl }) => pl.people > 0 || (dtAlarmByLine[cs.name] || []).length > 0 || cs.lineAlerts > 0);
                 const nested = (
                   <motion.div key={`${line.id}-children`} {...stagger(8 + i)} style={{ gridColumn: '1 / -1' }}>
                     <div style={{
@@ -1098,14 +1128,17 @@ export default function Dashboard() {
                       borderRadius: 12, padding: isWide ? '14px 16px' : '12px 14px',
                     }}>
                       <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span>↳ ไลน์ย่อยของ</span>
+                        <span>↳ ไลน์ย่อยที่มีคนเข้าจุดงาน</span>
                         <span style={{ color: 'var(--accent)' }}>{line.name}</span>
-                        <span>({line._children.length})</span>
+                        <span>({childCards.length}/{line._children.length})</span>
                       </div>
+                      {childCards.length === 0 ? (
+                        <div style={{ fontSize: 12, color: 'var(--muted)', padding: '4px 2px' }}>ยังไม่มีคนถูกจัดลงจุดงานของไลน์ย่อย — สรุปกำลังคนรวมดูที่ตัวเลขไลน์แม่ด้านบน</div>
+                      ) : (
                       <div style={{ display: 'grid', gridTemplateColumns: isUltra ? 'repeat(auto-fill, minmax(180px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(170px, 1fr))' : 'repeat(auto-fill, minmax(150px, 1fr))', gap: isMobile ? 8 : 12 }}>
-                        {line._children.map((cs) => {
-                          const cHealthy = cs.rate >= 80 && cs.lineAlerts === 0;
-                          const cWarn    = cs.lineAlerts > 0 || (cs.rate > 0 && cs.rate < 80);
+                        {childCards.map(({ cs, pl }) => {
+                          const cHealthy = pl.total > 0 && pl.staffed >= pl.total && cs.lineAlerts === 0;
+                          const cWarn    = cs.lineAlerts > 0 || (pl.total > 0 && pl.staffed < pl.total);
                           const cColor   = cHealthy ? '#22c55e' : cWarn ? '#f59e0b' : '#555';
                           const csDT     = dtAlarmByLine[cs.name] || [];
                           const csFMPending = fourMLogs.some(f => f.line_name === cs.name && f.status !== 'approved' && f.status !== 'rejected');
@@ -1140,17 +1173,19 @@ export default function Dashboard() {
                                 </div>
                               </div>
                               <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                                <span style={{ fontSize: isWide ? 26 : 20, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>{cs.linePresent}</span>
-                                <span style={{ fontSize: isWide ? 14 : 12, color: 'var(--muted)' }}>/ {cs.lineTotal} คน</span>
+                                <span style={{ fontSize: isWide ? 26 : 20, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>{pl.people}</span>
+                                <span style={{ fontSize: isWide ? 14 : 12, color: 'var(--muted)' }}>คน · {pl.total > 0 ? `${pl.staffed}/${pl.total} จุด` : '—'}</span>
                               </div>
-                              <MiniBar value={cs.linePresent} max={cs.lineTotal} color={cColor} />
+                              <MiniBar value={pl.staffed} max={pl.total || 1} color={cColor} />
                               <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, color: cColor }}>
-                                {cs.lineTotal === 0 ? 'ไม่มีข้อมูล' : `${cs.rate}% Attendance ${cHealthy ? '· ✓ Normal' : cs.lineAlerts > 0 ? '· ⚠ Risk' : ''}`}
+                                {pl.total === 0 ? `${pl.people} คนบนไลน์` : pl.staffed >= pl.total ? '✓ เข้าครบทุกจุด' : `⚠ เข้า ${pl.staffed}/${pl.total} จุด`}
+                                {cs.lineAlerts > 0 ? ' · ⚠ Risk' : ''}
                               </div>
                             </div>
                           );
                         })}
                       </div>
+                      )}
                     </div>
                   </motion.div>
                 );
