@@ -180,6 +180,7 @@ export default function MtnRepair() {
   const [problemTypes, setProblemTypes] = useState([]);
   const [repairTypes, setRepairTypes] = useState([]);
   const [itemTypes, setItemTypes] = useState([]);
+  const [laborRates, setLaborRates] = useState([]); // ราคามาตรฐานค่าแรงซ่อม (master)
   const [improvements, setImprovements] = useState([]); // โปรเจคปรับปรุงที่กำลังทำ (cross-ref D)
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -192,7 +193,7 @@ export default function MtnRepair() {
   const [stepModal, setStepModal] = useState(null); // { step, order, editMode }
 
   const loadMasters = useCallback(async () => {
-    const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }] = await Promise.all([
+    const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }, lr] = await Promise.all([
       supabase.from('production_lines').select('id, name, section, parent_line_name, cost_center').order('name'),
       supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_technicians').select('*').eq('is_active', true).order('sort_order'),
@@ -201,10 +202,11 @@ export default function MtnRepair() {
       supabaseDR.from('mtn_repair_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_item_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('improvements').select('id, line_name, machine_no, title').eq('status', 'monitoring'),
+      supabaseDR.from('mtn_labor_rates').select('*').eq('is_active', true).order('sort_order').then(r => r).catch(() => ({ data: [] })),
     ]);
     setLines(ln || []); setMachines(mc || []); setTechs(tc || []);
     setProblemTypes(pt || []); setParts(pp || []); setRepairTypes(rt || []); setItemTypes(it || []);
-    setImprovements(imp || []);
+    setImprovements(imp || []); setLaborRates(lr?.data || []);
     return ln || [];
   }, []);
 
@@ -262,7 +264,7 @@ export default function MtnRepair() {
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
 
-  const cp = { lines, machines, techs, parts, problemTypes, repairTypes, itemTypes, role, fullName, signatureUrl, improvements, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
+  const cp = { lines, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, role, fullName, signatureUrl, improvements, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
 
   return (
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1800px)', margin: '0 auto' }}>
@@ -561,7 +563,7 @@ function printMoReportMtn(o, dparts = []) {
   <table style="table-layout:fixed"><tr>
     <td style="width:56%;padding:0;border:none">
       <table class="tbl"><tr><th style="width:36px">ลำดับ</th><th>รายการใช้อะไหล่และอุปกรณ์</th><th style="width:70px">จำนวน</th><th style="width:110px">คนเบิก</th></tr>${partRows.join('')}</table>
-      <table class="nob" style="margin-top:3px"><tr><td>${cell('(1) ค่าใช้จ่ายในการซ่อม (บาท):', '')}</td></tr><tr><td>${cell('(2) ค่าอะไหล่และอุปกรณ์ (บาท):', '')}</td></tr><tr><td>${cell('รวมค่าใช้จ่ายทั้งหมด (1)+(2):', '')}</td></tr></table>
+      <table class="nob" style="margin-top:3px"><tr><td>${cell('(1) ค่าใช้จ่ายในการซ่อม (บาท):', o.labor_cost != null ? Number(o.labor_cost).toLocaleString() : '')}</td></tr><tr><td>${cell('(2) ค่าอะไหล่และอุปกรณ์ (บาท):', o.parts_cost != null ? Number(o.parts_cost).toLocaleString() : '')}</td></tr><tr><td>${cell('รวมค่าใช้จ่ายทั้งหมด (1)+(2):', (o.labor_cost != null || o.parts_cost != null) ? ((Number(o.labor_cost) || 0) + (Number(o.parts_cost) || 0)).toLocaleString() : '')}</td></tr></table>
     </td>
     <td style="width:44%;padding:0;border:none;padding-left:6px">
       <table class="tbl"><tr><th colspan="4" style="text-align:center">การประเมินความพึงพอใจการให้บริการงานซ่อม${satAv != null ? ` — เฉลี่ย ${Math.round(satAv / 3 * 100)}%` : ''}</th></tr>
@@ -650,6 +652,7 @@ function DetailDrawer({ order, role, improvements, onOpenImprovement, onClose, o
             <Row k="ซ่อมเสร็จเมื่อ" v={o.repair_done_at && fmtDateTime(o.repair_done_at)} /><Row k="สาเหตุ" v={o.root_cause} /><Row k="วิธีแก้ไข" v={o.solution} />
             <Row k="ช่างหลัก / รอง" v={[o.tech_main, o.tech_secondary].filter(Boolean).join(' / ')} />
             {!!dparts.length && <Row k="อะไหล่ที่ใช้" v={dparts.map(p => `${p.part_name} ×${p.qty}${p.unit || ''}`).join(', ')} />}
+            {(o.labor_cost != null || o.parts_cost != null) && <Row k="ค่าใช้จ่าย" v={`ค่าแรง ${(Number(o.labor_cost) || 0).toLocaleString()} + อะไหล่ ${(Number(o.parts_cost) || 0).toLocaleString()} = ${((Number(o.labor_cost) || 0) + (Number(o.parts_cost) || 0)).toLocaleString()} บาท`} />}
             <div style={{ marginTop: 6 }}><Img label="รูปหลังซ่อม" url={o.after_img} /></div>
           </StepBox>
         </div>
@@ -696,12 +699,13 @@ function DetailDrawer({ order, role, improvements, onOpenImprovement, onClose, o
 }
 
 /* ── Step 2-7 action modal (รองรับ editMode) ─────────── */
-function StepModal({ step, order, editMode, techs, repairTypes, parts, fullName, signatureUrl, onClose, onSaved }) {
+function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRates = [], fullName, signatureUrl, onClose, onSaved }) {
   const o = order;
   const [f, setF] = useState(() => ({
     accepted_by: o.accepted_by || fullName || '', repair_type: o.repair_type || 'Breakdown Maintenance', assign_note: o.assign_note || '',
     target_done_at: o.target_done_at ? String(o.target_done_at).slice(0, 10) : '', assigned_to: o.assigned_to || '', reject_reason: o.reject_reason || '',
     root_cause: o.root_cause || '', solution: o.solution || '', tech_main: o.tech_main || '', tech_secondary: o.tech_secondary || '',
+    labor_cost: o.labor_cost ?? '', parts_cost: o.parts_cost ?? '',
     check_result: o.check_result || 'ตรวจสอบผ่าน', check_note: o.check_note || '', quality_related: o.quality_related || 'ไม่เกี่ยวกับคุณภาพ', checker_name: o.checker_name || fullName || '',
     qa_result: o.qa_result || 'ผ่านคุณภาพ', qa_note: o.qa_note || '', qa_checker: o.qa_checker || fullName || '',
     follow_up: o.follow_up || 'ไม่เกิดปัญหาซ้ำ', ho_checker: o.ho_checker || fullName || '',
@@ -744,7 +748,8 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, fullName,
         const { error: eUpd } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
         if (eUpd) { setSaving(false); return toast.error(eUpd.message); }
       } else if (step === 3) {
-        Object.assign(upd, { root_cause: f.root_cause, solution: f.solution, tech_main: f.tech_main, tech_secondary: f.tech_secondary });
+        Object.assign(upd, { root_cause: f.root_cause, solution: f.solution, tech_main: f.tech_main, tech_secondary: f.tech_secondary,
+          labor_cost: f.labor_cost === '' ? null : Number(f.labor_cost), parts_cost: f.parts_cost === '' ? null : Number(f.parts_cost) });
         if (!editMode) { upd.status = 'repaired'; upd.current_step = 3; upd.repair_done_at = new Date().toISOString(); }
         if (afterFile) { const b = await resizeImage(afterFile); upd.after_img = await uploadMtnImg(b, `after/${o.id}-${Date.now()}.jpg`); }
         await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
@@ -827,6 +832,16 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, fullName,
             ))}
             {editMode && <div style={{ fontSize: 11, color: 'var(--muted)' }}>* แก้ไข: เพิ่มอะไหล่ใหม่ได้ (รายการเดิมที่หักสต็อกไปแล้วไม่ถูกลบ)</div>}
           </div>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Field label="(1) ค่าแรงซ่อม (บาท)">
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input type="number" value={f.labor_cost} onChange={e => set('labor_cost', e.target.value)} placeholder="0" style={{ ...inp, flex: 1 }} />
+                {laborRates.length > 0 && <select value="" onChange={e => { if (e.target.value !== '') set('labor_cost', e.target.value); }} style={{ ...inp, width: 150 }} title="เลือกจากราคามาตรฐาน"><option value="">มาตรฐาน…</option>{laborRates.map(r => <option key={r.id} value={r.price}>{r.name} · {r.price} {r.unit}</option>)}</select>}
+              </div>
+            </Field>
+            <Field label="(2) ค่าอะไหล่/อุปกรณ์ (บาท)"><input type="number" value={f.parts_cost} onChange={e => set('parts_cost', e.target.value)} placeholder="0" style={inp} /></Field>
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>รวมค่าใช้จ่าย (1)+(2) = <b style={{ color: 'var(--text)' }}>{((Number(f.labor_cost) || 0) + (Number(f.parts_cost) || 0)).toLocaleString()}</b> บาท · ตั้งราคามาตรฐานที่แท็บ ⚙️ ข้อมูลตั้งต้น → 💰 ค่าแรงมาตรฐาน</div>
         </>}
         {step === 4 && <>
           <Field label="ผลงานหลังซ่อม"><select value={f.check_result} onChange={e => set('check_result', e.target.value)} style={inp}>{CHECK_RESULTS.map(r => <option key={r}>{r}</option>)}</select></Field>
@@ -923,7 +938,7 @@ function KpiTab({ orders, scopeLines, lineOpts }) {
 }
 
 /* ── Master tab (ช่าง / อะไหล่+stock / taxonomy / ชนิดอุปกรณ์) ── */
-function MasterTab({ techs, parts, problemTypes, itemTypes, fullName, reloadMasters }) {
+function MasterTab({ techs, parts, problemTypes, itemTypes, laborRates = [], fullName, reloadMasters }) {
   const [sub, setSub] = useState('tech');
   const reload = () => reloadMasters();
   const addRow = async (table, payload) => { const { error } = await supabaseDR.from(table).insert(payload); if (error) return toast.error(error.message); reload(); };
@@ -991,6 +1006,32 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, fullName, reloadMast
     </div>
   );
 
+  // ── ค่าแรงมาตรฐาน (standard price ค่าแรงซ่อม) ──
+  const [nrate, setNrate] = useState({ name: '', unit: 'บาท/ชม.', price: '', dept: '' });
+  const LaborList = () => (
+    <div>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>ราคามาตรฐานค่าแรงซ่อม — ช่างกรอกไว้ที่นี่ แล้วเลือกมาใส่ในใบ MO ขั้นซ่อม (พิมพ์ลงฟอร์ม FM-MTN-006 ช่องค่าซ่อม)</div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+        <input value={nrate.name} onChange={e => setNrate(p => ({ ...p, name: e.target.value }))} placeholder="ประเภทงาน/ระดับช่าง" style={{ ...inp, width: 240 }} />
+        <input type="number" value={nrate.price} onChange={e => setNrate(p => ({ ...p, price: e.target.value }))} placeholder="ราคา" style={{ ...inp, width: 100 }} />
+        <input value={nrate.unit} onChange={e => setNrate(p => ({ ...p, unit: e.target.value }))} placeholder="หน่วย" style={{ ...inp, width: 110 }} />
+        <select value={nrate.dept} onChange={e => setNrate(p => ({ ...p, dept: e.target.value }))} style={{ ...inp, width: 140 }}><option value="">ทุกทีม</option>{MTN_DEPTS.map(d => <option key={d}>{d}</option>)}</select>
+        <button onClick={() => { if (!nrate.name) return; addRow('mtn_labor_rates', { name: nrate.name, price: Number(nrate.price) || 0, unit: nrate.unit, dept: nrate.dept || null, sort_order: laborRates.length + 1 }); setNrate({ name: '', unit: nrate.unit, price: '', dept: '' }); }} style={btnPri}>+ เพิ่มราคา</button>
+      </div>
+      <div style={{ display: 'grid', gap: 6 }}>
+        {laborRates.map(r => (
+          <div key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+            <input defaultValue={r.name} onBlur={e => e.target.value !== r.name && updRow('mtn_labor_rates', r.id, { name: e.target.value })} style={{ ...inp, flex: '2 1 200px', width: 'auto' }} />
+            <input type="number" defaultValue={r.price} onBlur={e => Number(e.target.value) !== Number(r.price) && updRow('mtn_labor_rates', r.id, { price: Number(e.target.value) || 0 })} style={{ ...inp, width: 100 }} />
+            <input defaultValue={r.unit || ''} onBlur={e => e.target.value !== (r.unit || '') && updRow('mtn_labor_rates', r.id, { unit: e.target.value })} style={{ ...inp, width: 100 }} />
+            <select defaultValue={r.dept || ''} onChange={e => updRow('mtn_labor_rates', r.id, { dept: e.target.value || null })} style={{ ...inp, width: 130 }}><option value="">ทุกทีม</option>{MTN_DEPTS.map(d => <option key={d}>{d}</option>)}</select>
+            <button onClick={() => delRow('mtn_labor_rates', r.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
+          </div>))}
+        {!laborRates.length && <div style={{ color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีราคามาตรฐาน — เพิ่มด้านบน</div>}
+      </div>
+    </div>
+  );
+
   const SimpleList = ({ table, items, fields, addLabel }) => {
     const [nw, setNw] = useState({});
     return (
@@ -1011,11 +1052,12 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, fullName, reloadMast
   return (
     <div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-        {[['tech', '👷 ช่าง (ทุกทีม)'], ['parts', '🔩 อะไหล่ + สต็อก'], ['prob', '🛑 ลักษณะปัญหา'], ['item', '⚙️ ชนิดอุปกรณ์']].map(([k, t]) =>
+        {[['tech', '👷 ช่าง (ทุกทีม)'], ['parts', '🔩 อะไหล่ + สต็อก'], ['labor', '💰 ค่าแรงมาตรฐาน'], ['prob', '🛑 ลักษณะปัญหา'], ['item', '⚙️ ชนิดอุปกรณ์']].map(([k, t]) =>
           <button key={k} onClick={() => setSub(k)} style={{ ...(sub === k ? btnPri : btnGhost), padding: '7px 14px', fontSize: 12.5 }}>{t}</button>)}
       </div>
       {sub === 'tech' && TechList()}
       {sub === 'parts' && PartList()}
+      {sub === 'labor' && LaborList()}
       {sub === 'prob' && <SimpleList table="mtn_problem_types" items={problemTypes} addLabel="เพิ่มปัญหา" fields={[{ k: 'characteristic', ph: 'ลักษณะปัญหา', w: 240 }, { k: 'detail', ph: 'รายละเอียด', w: 320 }]} />}
       {sub === 'item' && <SimpleList table="mtn_item_types" items={itemTypes} addLabel="เพิ่มชนิด" fields={[{ k: 'name', ph: 'ชนิดอุปกรณ์', w: 240 }]} />}
     </div>
