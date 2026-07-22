@@ -62,12 +62,19 @@ export default function DailyPM() {
     const startISO = si.shiftStart.toISOString()
 
     const [{ data: jigRows }, { data: targetRows }, { data: prodChecklists }, { data: lineRows }] = await Promise.all([
-      supabaseDR.from('jigs').select('id, name, machine_no, line_name, jig_no').eq('module', 'mtn').order('line_name').order('name'),
+      supabaseDR.from('jigs').select('id, name, machine_no, line_name, jig_no, equipment_type, equipment_category').eq('module', 'mtn').order('line_name').order('name'),
       supabaseDR.from('pm_daily_line_targets').select('*').eq('is_active', true),
       supabaseDR.from('checklists').select('id').eq('module', 'mtn').eq('department', 'production'),
       supabase.from('production_lines').select('name, parent_line_name').order('name'),
     ])
-    setJigs(jigRows ?? [])
+    // Daily PM = operator ฝ่ายผลิตเช็คเครื่องผลิตรายวัน → แสดงเฉพาะ "เครื่องผลิต"
+    //   ตัด jig/die tooling (งานช่าง JIG/DIE) + facility/utility ออก ไม่ให้ปนในลิสต์ลงทะเบียน (คำสั่ง user 2026-07-22)
+    const prodOnly = (jigRows ?? []).filter(j => {
+      if (j.equipment_category === 'facility' || j.equipment_category === 'utility') return false
+      if (j.equipment_type === 'jig' || j.equipment_type === 'die') return false
+      return true // machine / ไม่ระบุ (legacy) / production
+    })
+    setJigs(prodOnly)
     setTargets(targetRows ?? [])
     setProdLines(lineRows ?? [])
 
