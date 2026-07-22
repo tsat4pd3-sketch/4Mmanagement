@@ -655,7 +655,7 @@ export default function PMCheckData() {
 
   useEffect(() => {
     if (!selectedJig || !userId) return
-    setResults({}); setNotes(''); setTab('record'); setActiveCpId(null); setEvidenceBlobs({})
+    setResults({}); setNotes(''); setTab('record'); setActiveCpId(null)
     // เฟรมรูป 360° (ถ้าไม่มี jig_images → ใช้รูปหลัก image_path เป็นเฟรมเดียว)
     supabaseDR.from('jig_images').select('id, image_path, sort').eq('jig_id', selectedJig.id).order('sort').then(({ data }) => {
       let fr = (data ?? []).map(im => ({ id: im.id, url: getPublicUrl(im.image_path) }))
