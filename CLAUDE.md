@@ -630,17 +630,13 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - ⚠️ **เคยทำ MTN org map แยก (แท็บ "ภาพรวม Org" ใน `/mtn-layout` + component `FactoryPlanManager` ใน LineSetup) แล้วมันซ้ำซ้อนกับ `/factory-map` → ยุบทิ้งแล้ว** (2026-07-16) · `/mtn-layout` เหลือปุ่มลิงก์ "🗺️ ภาพรวมทั้งโรงงาน" → `/factory-map` แทน · **อย่าสร้างผังรวมโรงงานอันใหม่ ให้ต่อยอดที่ `/factory-map`**
 - ตาราง `pm_org_nodes` (migration `20260716_pm_org_nodes.sql`) เป็น vestigial (additive ไม่ลบ แต่ไม่มีโค้ดใช้แล้ว) · ถ้าอยากได้ signal "ใบซ่อม MO ค้าง" บนผังรวม ให้เพิ่มเป็น metric ใน FactoryMap (มี Downtime/PM mode อยู่แล้ว)
 
-## PM Photo-Compare Inspection — ตรวจสภาพเครื่องด้วยการเทียบรูป "จับผิด" (2026-07-15, เฟส 1 ทดลอง)
+## PM Photo-Compare Inspection — ❌ ถอดออกแล้ว (2026-07-22)
 
-ตรวจสภาพเครื่องแบบ *photo-hunt*: เทียบ **รูปมาตรฐาน (สภาพดี)** กับ **สภาพจริงที่ถ่ายตอนตรวจ** เพื่อจับความผิดปกติที่มองเห็น (น้ำมันรั่ว/การ์ดเปิด/ของหาย/สภาพเปลี่ยน) — คนเป็นผู้ตัดสิน เว็บช่วยให้เทียบง่าย · ต่อยอดเข้า `/pm-check` เดิม ไม่ใช่หน้าใหม่
-
-- **รูปมาตรฐาน = `jig_checkpoints.image_path`** (รูปอ้างอิงต่อจุด) — ปุ่ม 📷 โผล่บนแถว attribute/note **ทุกจุด** (2026-07-16): มีรูปแล้ว = "เทียบรูป" · ยังไม่มี = "ตั้งรูปมาตรฐาน" (สีเน้น) → ถ่ายครั้งแรก **ตั้งเป็นมาตรฐาน inline** ไม่ต้องไป PMSetup (`onSetReference` อัปโหลด `reference/<cp>.jpg` → set image_path + อัปเดต state ทันที) · โมดัล default โหมด ⚡ กะพริบ ง่ายสุด, wipe/fade/diff/align/จูนมือ ซ่อนใต้ปุ่ม "⚙️ ตัวช่วยเทียบเพิ่มเติม"
-- **Component: `src/components/PhotoCompareModal.jsx`** — 4 โหมดเทียบ: ↔ แบ่งซ้าย/ขวา (wipe) · ◐ ซ้อนจาง (fade) · 🔍 ไฮไลต์จุดต่าง (diff heatmap ปรับความไวได้) · ⚡ กะพริบสลับ (blink comparator สลับ ref/current 520ms ให้จุดต่างเด้งเข้าตา) · ถ่ายสดพร้อม **ghost overlay** รูปมาตรฐานช่วยเล็งมุม (getUserMedia facingMode environment) หรือ `<input capture>` สำรอง
-- **เฟส 2 — auto-align (2026-07-16):** จัดตำแหน่ง+สเกลรูปปัจจุบันให้ตรงรูปมาตรฐานอัตโนมัติก่อนเทียบ (coarse-to-fine หา s,tx,ty ที่ MSE ต่ำสุดบน grid 80×60 luminance — **dependency-free คำนวณในเครื่อง**) → diff/blink/wipe แม่นขึ้นแม้ถ่ายมุมเบี้ยวเล็กน้อย · มีตัวบอก "ความตรง" (จาก MSE) + จูนมือ (◀▶▲▼ ➕➖ รีเซ็ต) เผื่อ auto ไม่เป๊ะ · อ่านพิกเซลรูปมาตรฐานไม่ได้ (cross-origin taint) → ปิด auto เงียบๆ ใช้จูนมือแทน · **ยังไม่ใช่ AI** (rotation ไม่รองรับ — ghost overlay ช่วยกันเอียงตอนถ่าย)
-- **กฎเหล็กประหยัด storage — เก็บรูป "เฉพาะ NG" เท่านั้น** (ผ่าน = ทิ้งพิกเซล): modal คืน `{ verdict, blob }` · blob ถูกเก็บใน `evidenceBlobs` (state) เฉพาะตอน verdict='ng' · `handleSave` อัปโหลด blob → bucket `jig-images` path `evidence/<inspection_id>/<checkpoint_id>.jpg` แล้ว set `inspection_results.evidence_path` (best-effort try/catch ไม่ล้มการบันทึก) · การเลือก "ปกติ" ลบ blob ทิ้งทันที — **ห้ามเปลี่ยนเป็นเก็บทุกรูป** (250 รูป/วัน × 100KB ≈ 1.1GB/เดือน = เต็มแพลนฟรีใน 1 เดือน · เก็บเฉพาะ NG ~3% = 180MB/ปี)
-- รูปถ่ายบีบ **800px q0.72** ในตัว component (canvas→jpeg) ก่อนอัปโหลด · HistoryModal โชว์ thumbnail หลักฐานใต้ผล NG
-- schema: `20260715_inspection_evidence_photo.sql` (DR — เพิ่มคอลัมน์ `inspection_results.evidence_path` เดียว additive)
-- **เฟสถัดไป (ยังไม่ทำ):** Level 2 auto-diff ที่ align ภาพก่อน · Level 3 AI anomaly detection (ต้องสะสมรูปหลายเดือน + edge box/cloud API) — รูปหลักฐานที่เก็บตอนนี้เป็น data ตั้งต้นให้เทรนทีหลัง
+**ถอดระบบเทียบรูปเงา (photo-hunt / PhotoCompareModal) ออกทั้งหมด** ตามคำสั่ง user: มันไม่ได้เทียบความเหมือนด้วย AI (แค่ wipe/blink/diff เงา) — ไม่คุ้ม · **ใช้ฟีเจอร์ที่มีอยู่พอ = เห็นรูปมาตรฐาน + เห็นจุดที่ต้องเช็ค**
+- ลบ `src/components/PhotoCompareModal.jsx` + ปุ่ม "เทียบรูป/ตั้งรูปมาตรฐาน" + การเก็บรูปหลักฐาน NG (evidenceBlobs) ออกจาก PMCheckData
+- **ยังเหลือ:** `CpImage` แสดง thumbnail รูปมาตรฐาน (`jig_checkpoints.image_path`) คลิกเปิดเต็มจอ บนทุกแถวจุดตรวจ — ผู้ตรวจเห็นรูป+จุดที่ต้องเช็คได้เหมือนเดิม · ตั้งรูปมาตรฐานที่ PMSetup (เหมือนเดิม)
+- คอลัมน์ `inspection_results.evidence_path` (migration `20260715_inspection_evidence_photo.sql`) เป็น vestigial — ไม่เขียนใหม่แล้ว แต่ HistoryModal ยังโชว์รูปหลักฐานเก่าถ้ามี (harmless) · ไม่ต้อง rollback migration
+- **ถ้าจะทำ AI ตรวจสภาพจริง** (YOLO/anomaly) ค่อยเริ่มใหม่เป็นระบบแยก — การเทียบเงาเฉยๆ ไม่เหมาะ (user ยืนยัน)
 
 ---
 
