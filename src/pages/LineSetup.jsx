@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useContext } from 'react';
 import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { can } from '../utils/permissions';
+import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { LINE_TYPES } from '../utils/lineTypes';
 import { markerScale } from '../utils/markerScale';
@@ -39,6 +39,7 @@ export default function LineSetup() {
   // สิทธิ์แก้ไข — role ที่ไม่มี line_setup:edit เห็นหน้าแบบอ่านอย่างเดียว (ดูผัง/รายการได้ แก้ไม่ได้)
   const { role, sections: scopeSecs = [] } = useContext(UserContext);
   const canEdit = can('line_setup', 'edit', role);
+  const canDel  = canDelete('line_setup', 'edit', role);  // สิทธิ์ลบไลน์/จุดงาน แยกจากแก้ไข (fallback = edit ถ้ายังไม่ seed)
   const [lines, setLines] = useState([]);
   const [selectedLine, setSelectedLine] = useState('');
   const [newLineName, setNewLineName] = useState('');
@@ -1098,9 +1099,9 @@ export default function LineSetup() {
                           ))}
                         </select>
                       )}
-                      <button className="tbtn" onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
+                      {canDel && <button className="tbtn" onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
                         style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
-                        title="ลบไลน์">🗑️</button>
+                        title="ลบไลน์">🗑️</button>}
                     </>
                   )}
                 </div>
@@ -1271,7 +1272,7 @@ export default function LineSetup() {
                         : 'ไม่มีสกิลที่กำหนด'}
                     </div>
                   </div>
-                  {canEdit && <button className="tbtn" onClick={() => deleteStation(st.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
+                  {canDel && <button className="tbtn" onClick={() => deleteStation(st.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                 </div>
               );
             })}
@@ -1395,7 +1396,7 @@ export default function LineSetup() {
                             🔔 เรียกเติม
                           </button>
                         )}
-                        {canEdit && <button className="tbtn" onClick={() => deleteWipPoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
+                        {canDel && <button className="tbtn" onClick={() => deleteWipPoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                       </div>
                     </div>
                   );
@@ -1491,7 +1492,7 @@ export default function LineSetup() {
                           <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 700, marginTop: 2 }}>🔀 {p.redundancy_group}</div>
                         )}
                       </div>
-                      {canEdit && <button className="tbtn" onClick={() => deleteMachinePoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
+                      {canDel && <button className="tbtn" onClick={() => deleteMachinePoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                     </div>
                   );
                 })}
@@ -1538,7 +1539,7 @@ export default function LineSetup() {
                     return (
                       <div key={link.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
                         <span style={{ color: 'var(--text)' }}>⚙️ {from?.machine_no || '?'} → {to?.machine_no || '?'}</span>
-                        {canEdit && <button className="tbtn" onClick={() => deleteFlowLink(link.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>🗑️</button>}
+                        {canDel && <button className="tbtn" onClick={() => deleteFlowLink(link.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>🗑️</button>}
                       </div>
                     );
                   })}

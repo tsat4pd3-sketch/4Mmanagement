@@ -53,6 +53,30 @@ export function can(resource, action, role) {
   return hasPermission(`${resource}:${action}`, role);
 }
 
+/**
+ * เช็คว่า permission key นี้ถูก seed ในระบบแล้วหรือยัง (มีอย่างน้อย 1 role ในตาราง)
+ * ใช้เพื่อทำ feature ใหม่แบบ backward-compatible: ถ้ายังไม่ seed → ยังไม่เปิดใช้ (fallback ของเดิม)
+ */
+export function isActionSeeded(resource, action) {
+  if (!cache) return false;
+  const suffix = `:${resource}:${action}`;   // cache key = `${role}:${resource}:${action}`
+  for (const k of cache.keys()) if (k.endsWith(suffix)) return true;
+  return false;
+}
+
+/**
+ * สิทธิ์ "ลบ" แบบแยก — deploy-safe:
+ *   • ถ้า `${resource}:delete` ถูก seed แล้ว → ใช้สิทธิ์ลบแยก (Admin ปรับรายบุคคลได้)
+ *   • ถ้ายังไม่ seed (ก่อน apply migration) → fallback สิทธิ์เดิมที่เคยคุมการลบ (พฤติกรรมไม่เปลี่ยน)
+ * เมื่อ seed ด้วยค่าเท่ากับผู้ถือสิทธิ์เดิม ผลลัพธ์เหมือนเดิมเป๊ะ แต่หลังจากนั้น Admin ปิดเฉพาะ role ได้
+ */
+export function canDelete(resource, fallbackAction, role) {
+  if (role === 'admin') return true;
+  return isActionSeeded(resource, 'delete')
+    ? can(resource, 'delete', role)
+    : can(resource, fallbackAction, role);
+}
+
 /** อ่าน permission ทั้งหมดของ role หนึ่ง ๆ เป็น object { [permission_key]: boolean } — ใช้ในหน้าจัดการสิทธิ์ */
 export function getAllForRole(role) {
   if (!cache) return {};
