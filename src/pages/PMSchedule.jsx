@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useContext } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabaseDR } from '../supabaseClient'
-import { FREQ_LABEL, DEPT_LABEL, dueStatus, STATUS_META, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
+import { FREQ_LABEL, DEPT_LABEL, dueStatus, dueStatusDefer, deferActive, STATUS_META, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
 import useIsMobile from '../utils/useIsMobile'
+import { UserContext } from '../App'
+import { can } from '../utils/permissions'
+import { toast } from '../components/Toast'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -84,8 +87,21 @@ export default function PMSchedule() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('timeline')
+  const [deferFor, setDeferFor] = useState(null)   // แถวที่กำลังเลื่อนแผน
+
+  const { role, fullName, uid } = useContext(UserContext)
+  const canDefer = can('pm', 'setup', role)
 
   const setDept = (d) => setSearchParams({ dept: d })
+
+  // ยกเลิกการเลื่อน (กลับไปใช้วันครบกำหนดเดิม)
+  const cancelDefer = async (r) => {
+    if (!r.plan?.id) return
+    if (!confirm('ยกเลิกการเลื่อนแผน กลับไปวันครบกำหนดเดิม?')) return
+    const { error } = await supabaseDR.from('pm_plans').update({ deferred_to: null, defer_reason: null, defer_agreed_with: null, deferred_by: null, deferred_at: null }).eq('id', r.plan.id)
+    if (error) return toast.error(error.message)
+    toast.success('ยกเลิกการเลื่อนแล้ว'); fetchData()
+  }
 
   const fetchData = async () => {
     setLoading(true)
@@ -106,7 +122,7 @@ export default function PMSchedule() {
       supabaseDR.from('inspections').select('checklist_id, inspected_at').in('checklist_id', clIds).neq('approval_status', 'rejected').order('inspected_at', { ascending: false }),
       // Server-materialized plan (pm_plans, Phase 1). If the table isn't there yet
       // the query just returns null and we fall back to computing due dates live.
-      supabaseDR.from('pm_plans').select('checklist_id, next_due_date, next_due_reason, last_done_at, health_score, plan_type').in('checklist_id', clIds),
+      supabaseDR.from('pm_plans').select('id, checklist_id, next_due_date, next_due_reason, last_done_at, health_score, plan_type, deferred_to, defer_reason, defer_agreed_with, deferred_by, deferred_at, defer_count').in('checklist_id', clIds),
     ])
 
     const jigMap = {}
@@ -123,14 +139,19 @@ export default function PMSchedule() {
       const lastDone = plan?.last_done_at ?? lastInspMap[cl.id] ?? null
       // Prefer the server-materialized next_due_date; fall back to live compute
       // when there's no plan row (or the migration hasn't run yet).
-      const nextDue = plan?.next_due_date ? parseLocalDate(plan.next_due_date) : computeNextDue(lastDone, cl.frequency)
-      const status = dueStatus(nextDue, cl.frequency)
+      const origDue = plan?.next_due_date ? parseLocalDate(plan.next_due_date) : computeNextDue(lastDone, cl.frequency)
+      // การเลื่อนแผนที่ตกลงแล้ว (ถ้ายังไม่ถูกทำหลังเลื่อน) → ใช้วันเลื่อนแทน + สถานะ 'เลื่อนแผน'
+      const isDeferred = deferActive(plan)
+      const deferTo = isDeferred && plan?.deferred_to ? parseLocalDate(plan.deferred_to) : null
+      const nextDue = deferTo || origDue
+      const status = dueStatusDefer(origDue, cl.frequency, deferTo)
       return { cl, eq, lastDone, nextDue, status, reason: plan?.next_due_reason ?? 'time',
-               planType: plan?.plan_type ?? 'time', health: plan?.health_score ?? null }
+               planType: plan?.plan_type ?? 'time', health: plan?.health_score ?? null,
+               plan, isDeferred, deferReason: plan?.defer_reason, deferBy: plan?.deferred_by, deferCount: plan?.defer_count ?? 0 }
     })
 
     built.sort((a, b) => {
-      const ORDER = { overdue: 0, due_soon: 1, never: 2, ok: 3, periodic: 4 }
+      const ORDER = { overdue: 0, due_soon: 1, deferred: 1.5, never: 2, ok: 3, periodic: 4 }
       return (ORDER[a.status] ?? 5) - (ORDER[b.status] ?? 5)
     })
 
@@ -217,7 +238,8 @@ export default function PMSchedule() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ cl, eq, lastDone, nextDue, status, reason, planType, health }) => {
+              {rows.map((r) => {
+                const { cl, eq, lastDone, nextDue, status, reason, planType, health, isDeferred, deferReason, deferBy, deferCount } = r
                 const meta = STATUS_META[status] ?? STATUS_META.ok
                 const isOverdue = status === 'overdue'
                 const isUsage = planType === 'usage' || planType === 'hybrid'
@@ -236,11 +258,16 @@ export default function PMSchedule() {
                     <td style={{ fontSize: 13, color: 'var(--text2)' }}>
                       {lastDone ? new Date(lastDone).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' }) : <span style={{ color: 'var(--muted)' }}>—</span>}
                     </td>
-                    <td style={{ fontSize: 13, color: isOverdue ? '#e05c4a' : 'var(--text2)', fontWeight: isOverdue ? 700 : 400 }}>
+                    <td style={{ fontSize: 13, color: isOverdue ? '#e05c4a' : isDeferred ? '#4a90e0' : 'var(--text2)', fontWeight: (isOverdue || isDeferred) ? 700 : 400 }}>
                       {nextDue ? nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' }) : <span style={{ color: 'var(--muted)' }}>—</span>}
                       {isOverdue && nextDue && (
                         <div style={{ fontSize: 11, color: '#e05c4a' }}>
                           เกิน {Math.abs(daysUntilDue(nextDue))} วัน
+                        </div>
+                      )}
+                      {isDeferred && (
+                        <div style={{ fontSize: 10.5, color: '#4a90e0', marginTop: 2 }}>
+                          ⏭ เลื่อนแผน{deferReason ? ` · ${deferReason}` : ''}{deferCount > 1 ? ` · เลื่อนมา ${deferCount} ครั้ง` : ''}
                         </div>
                       )}
                       {isUsage && (
@@ -266,12 +293,17 @@ export default function PMSchedule() {
                       </span>
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <button
-                        onClick={() => navigate(`/pm-check?dept=${department}&equip=${cl.equipment_id}`)}
-                        style={S.actionBtn(deptColor)}
-                      >
-                        ✓ ตรวจ
-                      </button>
+                      <div style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        {canDefer && r.plan?.id && (isDeferred
+                          ? <button onClick={() => cancelDefer(r)} style={{ ...S.actionBtn('#8b8b96') }} title="ยกเลิกการเลื่อน">✕ ยกเลิกเลื่อน</button>
+                          : <button onClick={() => setDeferFor(r)} style={{ ...S.actionBtn('#4a90e0') }} title="เลื่อนแผน PM (คิวผลิตแน่น ฯลฯ)">⏭ เลื่อนแผน</button>)}
+                        <button
+                          onClick={() => navigate(`/pm-check?dept=${department}&equip=${cl.equipment_id}`)}
+                          style={S.actionBtn(deptColor)}
+                        >
+                          ✓ ตรวจ
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )
@@ -287,6 +319,76 @@ export default function PMSchedule() {
         <BucketView rows={rows} today={today} onCheck={goCheck} />
       )}
 
+      {deferFor && <DeferModal row={deferFor} byName={fullName} byUid={uid} onClose={() => setDeferFor(null)} onSaved={() => { setDeferFor(null); fetchData() }} />}
+    </div>
+  )
+}
+
+// ── Modal เลื่อนแผน PM (คิวผลิตแน่น/ตัดไฟไม่ได้ ฯลฯ) ──
+function DeferModal({ row, byName, byUid, onClose, onSaved }) {
+  const eqName = row.eq?.name ?? '—'
+  const curDue = row.nextDue ? row.nextDue.toISOString().slice(0, 10) : ''
+  // ค่าเริ่มต้นวันเลื่อน = ครบกำหนดเดิม + 30 วัน
+  const suggest = (() => { const d = row.nextDue ? new Date(row.nextDue) : new Date(); d.setDate(d.getDate() + 30); return d.toISOString().slice(0, 10) })()
+  const [toDue, setToDue] = useState(suggest)
+  const [reason, setReason] = useState('')
+  const [agreed, setAgreed] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    if (!toDue) return toast.error('เลือกวันที่เลื่อนไป')
+    if (!reason.trim()) return toast.error('กรอกเหตุผลการเลื่อน')
+    if (!row.plan?.id) return toast.error('ยังไม่มีแผน (pm_plans) ของรายการนี้')
+    setSaving(true)
+    const nowIso = new Date().toISOString()
+    const { error } = await supabaseDR.from('pm_plans').update({
+      deferred_to: toDue, defer_reason: reason.trim(), defer_agreed_with: agreed.trim() || null,
+      deferred_by: byName || null, deferred_at: nowIso, defer_count: (row.deferCount || 0) + 1,
+    }).eq('id', row.plan.id)
+    if (error) { setSaving(false); return toast.error(error.message) }
+    // log ประวัติ
+    await supabaseDR.from('pm_plan_deferrals').insert({
+      plan_id: row.plan.id, checklist_id: row.cl.id, from_due: curDue || null, to_due: toDue,
+      reason: reason.trim(), agreed_with: agreed.trim() || null, by_name: byName || null, by_uid: byUid || null,
+    })
+    // แจ้ง Telegram (best-effort ไม่บล็อก)
+    try {
+      await fetch('https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-notification', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'pm_deferred', pm: {
+          equip: `${row.eq?.machine_no ? row.eq.machine_no + ' ' : ''}${eqName}`.trim(),
+          line_name: row.eq?.line_name || '', from_due: curDue, to_due: toDue,
+          reason: reason.trim(), agreed_with: agreed.trim(), by_name: byName || '', defer_count: (row.deferCount || 0) + 1,
+        } }),
+      })
+    } catch { /* เงียบ */ }
+    setSaving(false); toast.success('บันทึกการเลื่อนแผนแล้ว'); onSaved()
+  }
+
+  const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: 'min(440px,96vw)' }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>⏭ เลื่อนแผน PM</div>
+        <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 14 }}>{eqName}{row.eq?.line_name ? ` · ${row.eq.line_name}` : ''} · ครบกำหนดเดิม {curDue ? new Date(curDue).toLocaleDateString('th-TH') : '—'}</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>เลื่อนไปวันที่
+            <input type="date" value={toDue} onChange={e => setToDue(e.target.value)} style={{ ...inp, marginTop: 4 }} />
+            {toDue && <span style={{ fontSize: 11, color: 'var(--muted)' }}>= {new Date(toDue).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}</span>}
+          </label>
+          <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>เหตุผลการเลื่อน *
+            <textarea value={reason} onChange={e => setReason(e.target.value)} placeholder="เช่น คิวผลิตแน่น ผลิตไม่หยุด / ตัดไฟไม่ได้ช่วงนี้" style={{ ...inp, marginTop: 4, minHeight: 54 }} />
+          </label>
+          <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>ตกลงร่วมกับ (planner / production)
+            <input value={agreed} onChange={e => setAgreed(e.target.value)} placeholder="ชื่อผู้ที่ตกลงเลื่อนด้วย" style={{ ...inp, marginTop: 4 }} />
+          </label>
+          <div style={{ fontSize: 11, color: 'var(--muted)' }}>* บันทึกประวัติการเลื่อนไว้ · รอบ PM ถัดไปยังนับจากวันที่ทำจริง</div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+          <button onClick={save} disabled={saving} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#4a90e0', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>{saving ? 'บันทึก…' : 'บันทึกการเลื่อน'}</button>
+        </div>
+      </div>
     </div>
   )
 }

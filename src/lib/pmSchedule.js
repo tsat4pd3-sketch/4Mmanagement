@@ -62,7 +62,27 @@ export function dueStatus(nextDue, frequency) {
 export const STATUS_META = {
   overdue:   { label: 'เกินกำหนด',      color: '#e05c4a', order: 0 },
   due_soon:  { label: 'ใกล้ครบกำหนด',   color: '#f59a3f', order: 1 },
+  deferred:  { label: 'เลื่อนแผน (ตกลงแล้ว)', color: '#4a90e0', order: 1.5 },
   never:     { label: 'ยังไม่เคยตรวจ',  color: '#9b8de8', order: 2 },
   ok:        { label: 'ตามกำหนด',       color: '#3dd65c', order: 3 },
   periodic:  { label: 'ไม่มีรอบตายตัว', color: '#527855', order: 4 },
+}
+
+// เลื่อนแผน PM แบบตกลงกันแล้ว (คิวผลิตแน่น ฯลฯ) — active เมื่อ deferred_to ตั้งไว้
+// และ "ยังไม่ถูกทำหลังเลื่อน" (last_done ไม่ใหม่กว่า deferred_at) · พอทำ PM รอบใหม่
+// last_done จะใหม่กว่า deferred_at เอง = การเลื่อนถือว่าถูกใช้ไปแล้ว ไม่ค้าง
+export function deferActive(plan) {
+  if (!plan?.deferred_to) return false
+  if (plan.last_done_at && plan.deferred_at && new Date(plan.last_done_at) >= new Date(plan.deferred_at)) return false
+  return true
+}
+
+// สถานะ PM โดยคำนึงถึงการเลื่อนแผน · deferTo = Date ของวันเลื่อน (หรือ null)
+// เลื่อนแล้ว & ยังไม่ถึงวันเลื่อน → 'deferred' (ฟ้า) · เลยวันเลื่อน → 'overdue' (นับจากวันเลื่อน)
+export function dueStatusDefer(nextDue, frequency, deferTo) {
+  if (deferTo) {
+    const base = dueStatus(deferTo, frequency)
+    return base === 'overdue' ? 'overdue' : 'deferred'
+  }
+  return dueStatus(nextDue, frequency)
 }
