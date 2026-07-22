@@ -29,6 +29,11 @@ const inputSt = { width:'100%', padding:'8px 10px', borderRadius:8, border:'1px 
 const btn = (bg, color='#fff') => ({ padding:'8px 16px', borderRadius:8, border:'none', cursor:'pointer', fontSize:13, fontWeight:700, background:bg, color, fontFamily:'var(--font-body)' });
 
 const TYPE_LABEL = { issue:'📦 จ่ายเข้าไลน์', consume:'⚙️ ใช้ผลิต (Auto)', return:'↩️ คืน Store', adjust:'🔧 ปรับยอด' };
+
+/* รหัส MAT SAP (ดู CLAUDE.md "รหัส MAT SAP"): ขึ้นต้น 1 = FG งานสำเร็จพร้อมขาย —
+   อยู่ FG WAREHOUSE รอส่งลูกค้า หักออกทางเดียวคือกด "ส่งแล้ว" หน้า Delivery
+   จึงไม่มีเหตุให้ "จ่ายเข้าไลน์" (ปรับยอด/คืนยังทำได้ ผ่านคิวอนุมัติตามปกติ) */
+const isFgMat = (m) => String(m || '').trim().startsWith('1');
 const TYPE_COLOR = { issue:'#22c55e', consume:'#94a3b8', return:'#f59e0b', adjust:'#a855f7' };
 
 /* ประเภท manual movement ที่ต้องผ่านการอนุมัติ (store review) ก่อนมีผลต่อ on-hand
@@ -154,6 +159,10 @@ function StockTab({ role }) {
     const qty = parseFloat(form.qty);
     if (!qty || qty <= 0) { toast.error('จำนวนต้องมากกว่า 0'); return; }
     const matUpper = form.mat_no.trim().toUpperCase();
+    if (form.type === 'issue' && isFgMat(matUpper)) {
+      toast.error(`MAT ${matUpper} ขึ้นต้นด้วย 1 = FG งานสำเร็จ — ไม่ต้องจ่ายเข้าไลน์ ระบบหักให้อัตโนมัติเมื่อกด "ส่งแล้ว" ที่หน้า 🚚 Delivery (แก้ยอดใช้ 🔧 ปรับยอด)`);
+      return;
+    }
     const isAdjustDown = form.type === 'adjust' && form.dir === 'down';
     // กันสร้างของผี: MAT ที่ไม่มีในฐาน (parts master/BOM) ต้องยืนยันก่อน
     if (!knownMats.has(matUpper) && !bomMap[matUpper]) {
@@ -375,10 +384,17 @@ function StockTab({ role }) {
                               </td>
                               {canIssue && (
                                 <td style={{ padding:'8px 14px', borderTop:'1px solid var(--border)' }}>
-                                  <button onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineName, mat_no: p.mat_no, part_name: p.part_name || bomMap[p.mat_no] || '', type:'issue', work_date:getToday() }); setShowForm(true); }}
-                                    style={{ ...btn('rgba(34,197,94,0.1)', '#22c55e'), padding:'4px 10px', fontSize:11, border:'1px solid rgba(34,197,94,0.3)' }}>
-                                    + จ่าย
-                                  </button>
+                                  {isFgMat(p.mat_no) ? (
+                                    <span title='FG งานสำเร็จ — หักอัตโนมัติเมื่อกด "ส่งแล้ว" ที่หน้า Delivery ไม่ต้องจ่ายเข้าไลน์'
+                                      style={{ fontSize:11, fontWeight:700, color:'var(--muted)', whiteSpace:'nowrap' }}>
+                                      🚚 หักผ่าน Delivery
+                                    </span>
+                                  ) : (
+                                    <button onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineName, mat_no: p.mat_no, part_name: p.part_name || bomMap[p.mat_no] || '', type:'issue', work_date:getToday() }); setShowForm(true); }}
+                                      style={{ ...btn('rgba(34,197,94,0.1)', '#22c55e'), padding:'4px 10px', fontSize:11, border:'1px solid rgba(34,197,94,0.3)' }}>
+                                      + จ่าย
+                                    </button>
+                                  )}
                                 </td>
                               )}
                             </tr>
