@@ -170,7 +170,7 @@ const DateField = ({ label, value, onChange, required }) => (
 
 /* ═══════════════════════════════════════════════════════ */
 export default function MtnRepair() {
-  const { role, lineId, sections: scopeSecs, fullName, signatureUrl } = useContext(UserContext);
+  const { role, lineId, sections: scopeSecs, mtnTeams: userMtnTeams, fullName, signatureUrl } = useContext(UserContext);
   const [tab, setTab] = useState('list');
   const [orders, setOrders] = useState([]);
   const [lines, setLines] = useState([]);
@@ -227,8 +227,8 @@ export default function MtnRepair() {
     return null;
   }, [lines, role, lineId, scopeSecs]);
 
-  // ทีมช่างของ user (จาก section) — ใช้ default คิวงาน + default หน่วยงานตอนแจ้ง
-  const userTeams = useMemo(() => teamsForUser(scopeSecs), [scopeSecs]);
+  // ทีมช่างของ user (จาก profiles.mtn_teams ที่ตั้งใน AddUser · fallback เดาจาก section) — default คิวงาน + default หน่วยงานตอนแจ้ง
+  const userTeams = useMemo(() => teamsForUser(userMtnTeams, scopeSecs), [userMtnTeams, scopeSecs]);
   const teamDefaulted = useRef(false);
   useEffect(() => {
     if (teamDefaulted.current || !lines.length) return;
