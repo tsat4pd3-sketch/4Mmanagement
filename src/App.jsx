@@ -299,12 +299,13 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             onClick={onClose}
             title="พับเมนู"
             style={{
-              width: 28, height: 28, borderRadius: 7, flexShrink: 0,
+              // สัญลักษณ์ show/hide เหมือนกันทั้งระบบ: 32×32 radius8 bg3 border2 · ◀ = พับ
+              width: 32, height: 32, borderRadius: 8, flexShrink: 0,
               background: 'var(--bg3)', border: '1px solid var(--border2)',
-              color: 'var(--text2)', fontSize: 13, cursor: 'pointer', outline: 'none',
+              color: 'var(--text2)', fontSize: 14, cursor: 'pointer', outline: 'none',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
-          >⟨</button>
+          >◀</button>
         </div>
 
         {/* Links */}
@@ -847,7 +848,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userMtnTeams, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved }) {
   const isMobile = useIsMobile();
   const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
   const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 768);
@@ -901,7 +902,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
     return (
-      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName }}>
+      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName }}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
           <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} userPosition={userPosition}
             userEmail={userEmail} userAvatarUrl={userAvatarUrl} onAvatarSaved={onAvatarSaved}
@@ -912,7 +913,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   }
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName }}>
+    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, sidebarOpen: isOpen }}>
       {warnSecsLeft !== null && (
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
@@ -1109,6 +1110,7 @@ export default function App() {
   const [userNotifyEmail,  setUserNotifyEmail]  = useState(null);
   const [userSignatureUrl, setUserSignatureUrl] = useState(null);
   const [userAvatarUrl,    setUserAvatarUrl]    = useState(null); // รูปโปรไฟล์ user (profiles.avatar_url — 2026-07-14)
+  const [userMtnTeams,     setUserMtnTeams]     = useState([]);   // ทีมช่างซ่อมที่ user สังกัด (profiles.mtn_teams — 2026-07-22) แยกคิว MO
   const [showSplash,   setShowSplash]   = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
   // ต้อง resolve ทั้ง profile (role จริง) และ permissions ก่อนค่อย render route tree —
@@ -1159,6 +1161,10 @@ export default function App() {
     setUserSections(effectiveSections(data?.role, data?.sections, data?.section));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
+    // mtn_teams แยก query best-effort — คอลัมน์เพิ่งเพิ่ม (migration 20260722) ถ้ายังไม่ apply ห้ามทำ login พัง
+    supabase.from('profiles').select('mtn_teams').eq('id', user.id).maybeSingle()
+      .then(({ data: mt }) => setUserMtnTeams(Array.isArray(mt?.mtn_teams) ? mt.mtn_teams : []))
+      .catch(() => setUserMtnTeams([]));
     // avatar_url แยก query best-effort — คอลัมน์เพิ่งเพิ่ม (migration 20260714) ถ้ายังไม่ apply ห้ามทำ login พัง
     supabase.from('profiles').select('avatar_url').eq('id', user.id).maybeSingle()
       .then(({ data: av }) => setUserAvatarUrl(av?.avatar_url ?? null))
@@ -1237,6 +1243,7 @@ export default function App() {
                 userTeam={userTeam}
                 userSection={userSection}
                 userSections={userSections}
+                userMtnTeams={userMtnTeams}
                 userPosition={userPosition}
                 userEmail={userEmail}
                 userFullName={userFullName}

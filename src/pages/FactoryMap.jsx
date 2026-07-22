@@ -62,6 +62,13 @@ const METRICS = {
     text: s => s.headTotal > 0 ? `${s.present}/${s.headTotal} คน${s.ppeBad ? ` · ⚠PPE ${s.ppeBad}` : ''}` : '',
     cat: s => s.headTotal === 0 ? 'idle' : (() => { const p = s.present / s.headTotal * 100; return p >= 95 ? 'good' : p >= 80 ? 'ok' : 'bad'; })(),
   },
+  stationfill: {
+    // 🎯 จุดงานเข้าประจำ — % ของจุดงาน (workstations) ที่มีคนเข้าประจำจริง (assigned_line ของ log ที่มาทำงาน)
+    label: '🎯 จุดงานเข้าประจำ', worstFirst: false,
+    value: s => s.stationTotal > 0 ? Math.round(s.stationFilled / s.stationTotal * 100) : null,
+    text: s => s.stationTotal > 0 ? `${s.stationFilled}/${s.stationTotal} จุด` : '',
+    cat: s => !s.stationTotal ? 'idle' : (() => { const p = s.stationFilled / s.stationTotal * 100; return p >= 90 ? 'good' : p >= 70 ? 'ok' : 'bad'; })(),
+  },
   pm: {
     label: '🛠️ PM เครื่องจักร', worstFirst: true, desc: true,
     value: s => s.pmTotal ? s.pmOverdue * 1000 + s.pmDueSoon : null,   // overdue สำคัญกว่า due-soon เสมอ
@@ -74,8 +81,12 @@ const round = (v) => Math.round(v * 100) / 100;
 const centroid = (pts) => pts.length
   ? [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length]
   : [50, 50];
+// จุดยึดป้าย = กึ่งกลางแนวนอน + ขอบบนสุดของ polygon → ป้ายเกาะขอบบน ไม่ทับกลางผังไลน์ (2026-07-22)
+const labelAnchor = (pts) => pts.length
+  ? [(Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2, Math.min(...pts.map(p => p[1]))]
+  : [50, 50];
 const EMPTY_ST = { actual: 0, target: 0, hasOpen: false, oee: null, oeeLive: false, dtMin: 0, dtActive: false, ng: 0,
-  headTotal: 0, present: 0, ppeBad: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0 };
+  headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0 };
 
 // setupMode=false (default, /factory-map) = display-only (ดู + popup ไม่มีปุ่มแก้ผัง)
 // setupMode=true (/layout-setup แท็บภาพรวมโรงงาน) = โหมดตั้งค่า อัปโหลดรูป/วาด polygon ได้
@@ -220,21 +231,39 @@ export default function FactoryMap({ setupMode = false }) {
   /* ── manpower รายไลน์ (Main: employees + daily_production_logs วันนี้) — refresh 60 วิ ── */
   const loadManpower = useCallback(async () => {
     const workDate = getWorkDate();
-    const [{ data: emps }, { data: pls }, { data: logs }] = await Promise.all([
+    const [{ data: emps }, { data: pls }, { data: logs }, { data: ws }] = await Promise.all([
       supabase.from('employees').select('id, line_id').eq('is_active', true),
       supabase.from('production_lines').select('id, name'),
-      supabase.from('daily_production_logs').select('employee_id, is_present, has_helmet, has_boots, has_gloves').eq('work_date', workDate),
+      supabase.from('daily_production_logs').select('employee_id, is_present, has_helmet, has_boots, has_gloves, assigned_line').eq('work_date', workDate),
+      supabase.from('workstations').select('id, line_name'),
     ]);
     const lineOfId = {}; (pls || []).forEach(l => { lineOfId[l.id] = l.name; });
     const empLine = {}; (emps || []).forEach(e => { empLine[e.id] = lineOfId[e.line_id]; });
     const logMap = {}; (logs || []).forEach(l => { logMap[l.employee_id] = l; });
+    // จุดงาน (workstations) ต่อไลน์ + จุดที่มีคนเข้าประจำจริง (assigned_line ของคนที่มาทำงาน)
+    const stationLine = {}; const stationTotal = {};
+    (ws || []).forEach(w => { stationLine[w.id] = w.line_name; if (w.line_name) stationTotal[w.line_name] = (stationTotal[w.line_name] || 0) + 1; });
+    const filledSet = {}; // line_name -> Set(station id)
+    (logs || []).forEach(l => {
+      if (l.is_present && l.assigned_line != null) {
+        const ln = stationLine[l.assigned_line];
+        if (ln) (filledSet[ln] = filledSet[ln] || new Set()).add(l.assigned_line);
+      }
+    });
     const out = {};
     (emps || []).forEach(e => {
       const ln = empLine[e.id]; if (!ln) return;
-      const o = out[ln] || { headTotal: 0, present: 0, ppeBad: 0 };
+      const o = out[ln] || { headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0 };
       o.headTotal++;
       const log = logMap[e.id];
       if (log?.is_present) { o.present++; if (!(log.has_helmet && log.has_boots && log.has_gloves)) o.ppeBad++; }
+      out[ln] = o;
+    });
+    // เติมจำนวนจุดงาน/จุดที่มีคน (รวมไลน์ที่ไม่มีพนักงานสังกัดแต่มี workstations)
+    Object.keys(stationTotal).forEach(ln => {
+      const o = out[ln] || { headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0 };
+      o.stationTotal = stationTotal[ln];
+      o.stationFilled = filledSet[ln]?.size || 0;
       out[ln] = o;
     });
     setManpower(out);
@@ -273,17 +302,28 @@ export default function FactoryMap({ setupMode = false }) {
     lines.forEach(l => { if (l.parent_line_name) (m[l.parent_line_name] ||= []).push(l.name); });
     return m;
   }, [lines]);
+  const parentOf = useMemo(() => {
+    const m = {};
+    lines.forEach(l => { if (l.parent_line_name) m[l.name] = l.parent_line_name; });
+    return m;
+  }, [lines]);
   const familyNames = (name) => [name, ...(childrenOf[name] || [])];
+  // ไล่ขึ้นบรรพบุรุษ (พ่อ→ปู่→...) กันลูปด้วย seen
+  const ancestorNames = (name) => { const out = []; const seen = new Set([name]); let p = parentOf[name]; while (p && !seen.has(p)) { out.push(p); seen.add(p); p = parentOf[p]; } return out; };
   // คืนชื่อไลน์ที่จะ "เปิดผังพื้นพร้อมพนักงาน" ให้ — เลือกผังที่มีคนจริง
-  // (ผังไลน์แม่-ลูกคนละรูป · คนอยู่บนผังของไลน์ลูก → ไลน์แม่ว่าง = เด้งไปโชว์ผังลูกที่มีคนแทน) · ไม่มีผังเลย = null
+  // (ผังไลน์แม่-ลูกคนละรูป · คนอยู่บนผังของไลน์ลูก → ไลน์แม่ว่าง = เด้งไปโชว์ผังลูกที่มีคนแทน)
+  // ไลน์ลูกที่ไม่มีผังของตัวเอง → ไล่ขึ้นใช้ผังของไลน์แม่ (2026-07-22 — เดิมได้ popup ตัน)
   const floorMapTarget = (name) => {
-    const cand = familyNames(name).filter(n => layoutLines.has(n));
-    if (!cand.length) return null;
     const presentOf = (n) => manpower[n]?.present || 0;
-    if (layoutLines.has(name) && presentOf(name) > 0) return name;          // ไลน์แม่มีผัง+คนของตัวเอง → โชว์ตัวเอง
-    const withPeople = cand.filter(n => presentOf(n) > 0).sort((a, b) => presentOf(b) - presentOf(a));
-    if (withPeople.length) return withPeople[0];                            // ไลน์แม่ว่าง → ลูกที่มีคนมากสุด
-    return layoutLines.has(name) ? name : cand[0];                          // ยังไม่มีใครเข้างาน → ผังตัวเอง/ตัวแรก
+    const cand = familyNames(name).filter(n => layoutLines.has(n));
+    if (cand.length) {
+      if (layoutLines.has(name) && presentOf(name) > 0) return name;        // ไลน์แม่มีผัง+คนของตัวเอง → โชว์ตัวเอง
+      const withPeople = cand.filter(n => presentOf(n) > 0).sort((a, b) => presentOf(b) - presentOf(a));
+      if (withPeople.length) return withPeople[0];                          // ไลน์แม่ว่าง → ลูกที่มีคนมากสุด
+      return layoutLines.has(name) ? name : cand[0];                        // ยังไม่มีใครเข้างาน → ผังตัวเอง/ตัวแรก
+    }
+    // ตัวเอง+ลูกไม่มีผัง → ใช้ผังของไลน์แม่ที่ใกล้สุด (ผังกลุ่มเดียวกัน)
+    return ancestorNames(name).find(a => layoutLines.has(a)) || null;
   };
   // คลิกไลน์: มีผังพื้น → เปิดผังไลน์พร้อมพนักงาน (Dashboard) พร้อม from=factory-map เพื่อปิดแล้วเด้งกลับผังรวม · ไม่มีผัง → popup สรุปเมตริก
   const openLine = (name) => {
@@ -299,7 +339,7 @@ export default function FactoryMap({ setupMode = false }) {
       const p = lineStatus[n];
       if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeSum += p.oeeSum || 0; agg.oeeN += p.oeeN || 0; agg.oeeLive = agg.oeeLive || p.oeeLive; }
       const m = manpower[n];
-      if (m) { agg.headTotal += m.headTotal || 0; agg.present += m.present || 0; agg.ppeBad += m.ppeBad || 0; }
+      if (m) { agg.headTotal += m.headTotal || 0; agg.present += m.present || 0; agg.ppeBad += m.ppeBad || 0; agg.stationTotal += m.stationTotal || 0; agg.stationFilled += m.stationFilled || 0; }
       const pm = pmStatus[n];
       if (pm) { agg.pmTotal += pm.pmTotal || 0; agg.pmOverdue += pm.pmOverdue || 0; agg.pmDueSoon += pm.pmDueSoon || 0; }
     });
@@ -525,9 +565,10 @@ export default function FactoryMap({ setupMode = false }) {
 
             {/* ป้าย = การ์ดทึบมีขอบสีสถานะ (อ่านออกทุกพื้นหลัง) + จุดแดงถ้า downtime ค้าง */}
             {regions.map(r => {
-              const [cx, cy] = centroid(r.points); const st = stOf(r.line_name); const meta = CAT[M.cat(st)]; const txt = M.text(st);
+              const [cx, cy] = labelAnchor(r.points); const st = stOf(r.line_name); const meta = CAT[M.cat(st)]; const txt = M.text(st);
               return (
-                <div key={`lbl-${r.id}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%,-50%)', pointerEvents: 'none', maxWidth: '22%' }}>
+                // เกาะขอบบนของกรอบ (translateY 2px = อยู่ใต้เส้นขอบบนนิดเดียว) ไม่ทับกลางผังไลน์
+                <div key={`lbl-${r.id}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%, 2px)', pointerEvents: 'none', maxWidth: '30%' }}>
                   {/* ป้ายโปร่งแสง + เส้นสีสถานะด้านล่าง — อ่านออกแต่ยังเห็นผังทะลุ (ไม่ทึบทับภาพ)
                       maxWidth 22% + ellipsis กันชื่อไลน์ยาวล้นทับพื้นที่ไลน์ข้างเคียง */}
                   <div style={{ background: 'rgba(10,12,20,0.5)', borderBottom: `2.5px solid ${meta.color}`, borderRadius: 5, padding: '1px 7px 2px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)' }}>
@@ -558,7 +599,7 @@ export default function FactoryMap({ setupMode = false }) {
           {!editing && (() => {
             const counts = ranked.reduce((a, r) => { a[r.cat] = (a[r.cat] || 0) + 1; return a; }, {});
             const maxVal = Math.max(1, ...ranked.map(r => (r.val == null ? 0 : Math.abs(r.val))));
-            const isPct = ['productivity', 'oee', 'manpower'].includes(metric);
+            const isPct = ['productivity', 'oee', 'manpower', 'stationfill'].includes(metric);
             return (
             <aside style={{ flex: '0 0 340px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
               <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>{M.label} — จัดอันดับ</div>

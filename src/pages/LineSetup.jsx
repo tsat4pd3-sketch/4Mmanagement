@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, useMemo, useContext } from 'react';
 import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { can } from '../utils/permissions';
+import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
+import { LINE_TYPES } from '../utils/lineTypes';
 import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
@@ -38,6 +39,7 @@ export default function LineSetup() {
   // สิทธิ์แก้ไข — role ที่ไม่มี line_setup:edit เห็นหน้าแบบอ่านอย่างเดียว (ดูผัง/รายการได้ แก้ไม่ได้)
   const { role, sections: scopeSecs = [] } = useContext(UserContext);
   const canEdit = can('line_setup', 'edit', role);
+  const canDel  = canDelete('line_setup', 'edit', role);  // สิทธิ์ลบไลน์/จุดงาน แยกจากแก้ไข (fallback = edit ถ้ายังไม่ seed)
   const [lines, setLines] = useState([]);
   const [selectedLine, setSelectedLine] = useState('');
   const [newLineName, setNewLineName] = useState('');
@@ -101,6 +103,8 @@ export default function LineSetup() {
   const [stdDay,   setStdDay]   = useState(0);
   const [stdNight, setStdNight] = useState(0);
   const [costCenter, setCostCenter] = useState('');
+  const [lineType, setLineType] = useState('');
+  const hasLineTypeCol = useRef(true); // false = DB ยังไม่มีคอลัมน์ line_type (migration 20260722 ยังไม่ apply)
   const [mpSaving, setMpSaving] = useState(false);
 
   // ผู้บันทึก/อนุมัติ ประจำส่วนงาน (ใช้ดึงอัตโนมัติในใบค่าฝีมือ)
@@ -117,7 +121,12 @@ export default function LineSetup() {
   const sectionOptsInScope = scopeSecs.length ? sectionOpts.filter(s => inSectionScope(scopeSecs, s)) : sectionOpts;
 
   const fetchLines = async () => {
-    const { data } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name').order('name');
+    let { data, error } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name, line_type').order('name');
+    if (error) {
+      // คอลัมน์ line_type ยังไม่ถูก apply (migration 20260722) — fallback query แบบเดิม หน้าใช้งานได้ปกติ
+      hasLineTypeCol.current = false;
+      ({ data } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name').order('name'));
+    }
     // mandatory scope filter — role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor/manager ที่ตั้ง sections)
     // เห็น/แก้ได้เฉพาะไลน์ในส่วนงานตัวเอง — หน้านี้เป็นหน้า edit master data ห้ามเห็นข้ามส่วนงาน
     const visible = scopeSecs.length ? (data || []).filter(l => inSectionScope(scopeSecs, l.section)) : (data || []);
@@ -177,6 +186,7 @@ export default function LineSetup() {
       setStdDay(lineObj.std_day_shift ?? 0);
       setStdNight(lineObj.std_night_shift ?? 0);
       setCostCenter(lineObj.cost_center ?? '');
+      setLineType(lineObj.line_type ?? '');
       setSignerHead(lineObj.head_name ?? '');
       if (lineObj.section) {
         const { data: signers } = await supabase.from('section_signers').select('*').eq('section', lineObj.section).maybeSingle();
@@ -210,7 +220,11 @@ export default function LineSetup() {
     setMpSaving(true);
     const { error } = await supabase
       .from('production_lines')
-      .update({ std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0, cost_center: costCenter || null, head_name: signerHead || null })
+      .update({
+        std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0,
+        cost_center: costCenter || null, head_name: signerHead || null,
+        ...(hasLineTypeCol.current ? { line_type: lineType || null } : {}),
+      })
       .eq('id', lineObj.id);
     if (error) toast.error('Error: ' + error.message);
     else await fetchLines();
@@ -1100,9 +1114,9 @@ export default function LineSetup() {
                           ))}
                         </select>
                       )}
-                      <button className="tbtn" onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
+                      {canDel && <button className="tbtn" onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
                         style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
-                        title="ลบไลน์">🗑️</button>
+                        title="ลบไลน์">🗑️</button>}
                     </>
                   )}
                 </div>
@@ -1273,7 +1287,7 @@ export default function LineSetup() {
                         : 'ไม่มีสกิลที่กำหนด'}
                     </div>
                   </div>
-                  {canEdit && <button className="tbtn" onClick={() => deleteStation(st.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
+                  {canDel && <button className="tbtn" onClick={() => deleteStation(st.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                 </div>
               );
             })}
@@ -1397,7 +1411,7 @@ export default function LineSetup() {
                             🔔 เรียกเติม
                           </button>
                         )}
-                        {canEdit && <button className="tbtn" onClick={() => deleteWipPoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
+                        {canDel && <button className="tbtn" onClick={() => deleteWipPoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                       </div>
                     </div>
                   );
@@ -1493,7 +1507,7 @@ export default function LineSetup() {
                           <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 700, marginTop: 2 }}>🔀 {p.redundancy_group}</div>
                         )}
                       </div>
-                      {canEdit && <button className="tbtn" onClick={() => deleteMachinePoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
+                      {canDel && <button className="tbtn" onClick={() => deleteMachinePoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                     </div>
                   );
                 })}
@@ -1540,7 +1554,7 @@ export default function LineSetup() {
                     return (
                       <div key={link.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
                         <span style={{ color: 'var(--text)' }}>⚙️ {from?.machine_no || '?'} → {to?.machine_no || '?'}</span>
-                        {canEdit && <button className="tbtn" onClick={() => deleteFlowLink(link.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>🗑️</button>}
+                        {canDel && <button className="tbtn" onClick={() => deleteFlowLink(link.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>🗑️</button>}
                       </div>
                     );
                   })}
@@ -1588,6 +1602,15 @@ export default function LineSetup() {
                 onChange={e => setCostCenter(e.target.value)}
                 placeholder="เช่น 2140662201"
                 style={{ marginTop: 4, fontSize: 14, fontWeight: 600 }} />
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelSt}>🏭 ประเภทไลน์</label>
+              <select value={lineType} disabled={!canEdit}
+                onChange={e => setLineType(e.target.value)}
+                style={{ marginTop: 4, fontSize: 13, fontWeight: 600 }}>
+                <option value="">— ยังไม่ระบุ —</option>
+                {LINE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
             </div>
             <div style={{ marginBottom: 12 }}>
               <label style={labelSt}>👨‍🔧 หัวหน้างาน (ประจำไลน์นี้)</label>

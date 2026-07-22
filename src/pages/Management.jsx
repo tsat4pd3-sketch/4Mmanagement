@@ -144,7 +144,7 @@ const MAN_CASE_META = {
 };
 
 export default function Management() {
-  const { role, lineId: userLineId, team: userTeam, sections: scopeSecs = [], fullName, user } = useContext(UserContext);
+  const { role, lineId: userLineId, team: userTeam, sections: scopeSecs = [], fullName, user, sidebarOpen = true } = useContext(UserContext);
   const isLeader = role === 'leader';
   const isSupervisor = role === 'supervisor';
 
@@ -1029,8 +1029,10 @@ export default function Management() {
 
   // desktop: marginTop -14 ล้าง paddingTop ของ main → แถบ pool/ผัง เต็มจอเสมอ ขอบบน-ล่างไม่ตัดกลางอากาศ (เนี๊ยบเท่า sidebar)
   // · board box จึงเริ่มที่ ~top10 → 🔔 (top10) เสมอขอบบนตู้พอดี
+  // · ตอนพับ sidebar (ไม่มี sidebar ซ้าย) → เว้น gutter ซ้าย 52 ให้ปุ่ม ☰ (fixed left:14) ไม่ลอยทับหัวตู้/pool
+  const collapsedGutter = !isMobile && !sidebarOpen ? 52 : 0;
   return (
-    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: isMobile ? 'calc(100vh - 14px)' : '100vh', marginTop: isMobile ? 0 : -14, background: 'var(--bg)', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: isMobile ? 'calc(100vh - 14px)' : '100vh', marginTop: isMobile ? 0 : -14, paddingLeft: collapsedGutter, background: 'var(--bg)', overflow: 'hidden' }}>
       <DowntimeSiren mode="open_15min" />
 
       {/* ── ปุ่มกรอง (desktop) — คอลัมน์ต่อจาก 🔔 ตรงกันเป๊ะ (right:14 เท่า 🔔, เริ่มใต้ 🔔 ที่ top10+h36+gap8=54)
@@ -1048,8 +1050,8 @@ export default function Management() {
         {!isMobile && !panelCollapsed && (
           <button
             onClick={() => setPanelCollapsed(true)}
-            title="ย่อ panel"
-            style={{ alignSelf: 'flex-end', marginBottom: 6, flexShrink: 0, width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none' }}>
+            title="ย่อแถบไลน์ผลิต"
+            style={{ alignSelf: 'flex-end', marginBottom: 6, flexShrink: 0, width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none' }}>
             ◀
           </button>
         )}
