@@ -12,7 +12,7 @@ import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { teamsForUser } from '../utils/mtnTeams';
+import { teamsForUser, teamForSection } from '../utils/mtnTeams';
 import { loadDocForms, docFormSync } from '../utils/docForms';
 loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sync) อ่านผ่าน docFormSync
 import { fmtDateTime } from '../utils/dateFormat';
@@ -193,7 +193,7 @@ export default function MtnRepair() {
   const [stepModal, setStepModal] = useState(null); // { step, order, editMode }
 
   const loadMasters = useCallback(async () => {
-    const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }, lr] = await Promise.all([
+    const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }, lr, { data: emps }] = await Promise.all([
       supabase.from('production_lines').select('id, name, section, parent_line_name, cost_center').order('name'),
       supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_technicians').select('*').eq('is_active', true).order('sort_order'),
@@ -203,8 +203,17 @@ export default function MtnRepair() {
       supabaseDR.from('mtn_item_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('improvements').select('id, line_name, machine_no, title').eq('status', 'monitoring'),
       supabaseDR.from('mtn_labor_rates').select('*').eq('is_active', true).order('sort_order').then(r => r).catch(() => ({ data: [] })),
+      // ช่าง = พนักงาน (Main) ที่ section เป็นทีมช่าง — รวมฐานข้อมูลคนที่ employees ที่เดียว (2026-07-22)
+      supabase.from('employees').select('id, name, section, employee_id_code').eq('is_active', true).order('name'),
     ]);
-    setLines(ln || []); setMachines(mc || []); setTechs(tc || []);
+    // แปลงพนักงานทีมช่างเป็นรูปแบบ tech + รวมกับ mtn_technicians เดิม (พนักงานมาก่อน · กันชื่อซ้ำ)
+    const empTechs = (emps || [])
+      .map(e => ({ ...e, team: teamForSection(e.section) }))
+      .filter(e => e.team)
+      .map(e => ({ id: `emp_${e.id}`, name: e.name, dept: e.team, from_employee: true, emp_code: e.employee_id_code }));
+    const empNames = new Set(empTechs.map(t => t.name.trim()));
+    const legacyTechs = (tc || []).filter(t => !empNames.has((t.name || '').trim()));
+    setLines(ln || []); setMachines(mc || []); setTechs([...empTechs, ...legacyTechs]);
     setProblemTypes(pt || []); setParts(pp || []); setRepairTypes(rt || []); setItemTypes(it || []);
     setImprovements(imp || []); setLaborRates(lr?.data || []);
     return ln || [];
@@ -945,22 +954,32 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, laborRates = [], ful
   const updRow = async (table, id, payload) => { const { error } = await supabaseDR.from(table).update(payload).eq('id', id); if (error) return toast.error(error.message); reload(); };
   const delRow = async (table, id) => { if (!confirm('ลบรายการนี้?')) return; const { error } = await supabaseDR.from(table).update({ is_active: false }).eq('id', id); if (error) return toast.error(error.message); reload(); };
 
-  // ── ช่าง (มี dept) ──
+  // ── ช่าง (มี dept) — ช่าง = พนักงานทีมช่าง (จากฐาน employees, แก้ที่หน้าพนักงาน) + ช่างเฉพาะกิจเดิม (mtn_technicians) ──
   const [ntech, setNtech] = useState({ name: '', dept: 'MTN' });
+  const legacyCount = techs.filter(t => !t.from_employee).length;
   const TechList = () => (
     <div>
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px' }}>
+        💡 ช่าง = <b>พนักงานที่ section เป็นทีมช่าง</b> (MTN/JIG/DIE) จากฐานข้อมูลพนักงาน — เพิ่ม/แก้ที่หน้า <b>ฐานข้อมูลพนักงาน</b> (มีสกิลได้เหมือน operator) · ด้านล่างเพิ่มได้เฉพาะ "ช่างเฉพาะกิจ" ที่ไม่ได้อยู่ในฐานพนักงาน
+      </div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-        <input value={ntech.name} onChange={e => setNtech(p => ({ ...p, name: e.target.value }))} placeholder="ชื่อช่าง" style={{ ...inp, width: 260 }} />
+        <input value={ntech.name} onChange={e => setNtech(p => ({ ...p, name: e.target.value }))} placeholder="ชื่อช่างเฉพาะกิจ (นอกฐานพนักงาน)" style={{ ...inp, width: 260 }} />
         <select value={ntech.dept} onChange={e => setNtech(p => ({ ...p, dept: e.target.value }))} style={{ ...inp, width: 150 }}>{MTN_DEPTS.map(d => <option key={d}>{d}</option>)}</select>
-        <button onClick={() => { if (!ntech.name) return; addRow('mtn_technicians', { name: ntech.name, dept: ntech.dept, sort_order: techs.length + 1 }); setNtech({ name: '', dept: ntech.dept }); }} style={btnPri}>+ เพิ่มช่าง</button>
+        <button onClick={() => { if (!ntech.name) return; addRow('mtn_technicians', { name: ntech.name, dept: ntech.dept, sort_order: legacyCount + 1 }); setNtech({ name: '', dept: ntech.dept }); }} style={btnPri}>+ เพิ่มช่างเฉพาะกิจ</button>
       </div>
       {MTN_DEPTS.map(dep => { const list = techs.filter(t => (t.dept || 'MTN') === dep); if (!list.length) return null; return (
         <div key={dep} style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent2)', marginBottom: 4 }}>🏢 {dep} ({list.length})</div>
-          <div style={{ display: 'grid', gap: 6 }}>{list.map(it => (
+          <div style={{ display: 'grid', gap: 6 }}>{list.map(it => it.from_employee ? (
+            <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', opacity: 0.9 }}>
+              <span style={{ flex: '2 1 180px', fontSize: 13 }}>{it.name}{it.emp_code ? <span style={{ color: 'var(--muted)', fontSize: 11 }}> · {it.emp_code}</span> : null}</span>
+              <span style={{ fontSize: 10.5, padding: '1px 7px', borderRadius: 4, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', fontWeight: 700, marginLeft: 'auto' }}>👤 จากฐานพนักงาน</span>
+            </div>
+          ) : (
             <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
               <input defaultValue={it.name} onBlur={e => e.target.value !== it.name && updRow('mtn_technicians', it.id, { name: e.target.value })} style={{ ...inp, flex: '2 1 180px', width: 'auto' }} />
               <select defaultValue={it.dept || 'MTN'} onChange={e => updRow('mtn_technicians', it.id, { dept: e.target.value })} style={{ ...inp, flex: '1 1 120px', width: 'auto' }}>{MTN_DEPTS.map(d => <option key={d}>{d}</option>)}</select>
+              <span style={{ fontSize: 10, color: 'var(--muted)' }}>เฉพาะกิจ</span>
               <button onClick={() => delRow('mtn_technicians', it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
             </div>))}</div>
         </div>); })}
