@@ -21,7 +21,8 @@ create policy "stock_inflow_rules_write" on stock_inflow_rules for all to public
 
 insert into stock_inflow_rules (match_type, match_value, dest_line_name) values
   ('prefix', '1', 'FG WAREHOUSE'),
-  ('prefix', '2', 'STORE')
+  ('prefix', '2', 'STORE'),
+  ('prefix', '3', 'STORE')   -- เบอร์ 300 = พาร์ทย่อยเช่นเดียวกับ 200 (เพิ่ม 2026-07-22 — ⚠️ แถวนี้ยังไม่ apply บน DR: เพิ่มเองได้จาก Store management → ⚙️ รับเข้าอัตโนมัติ หรือรัน insert นี้)
 on conflict (match_type, match_value) do nothing;
 
 -- คอลัมน์อ้างอิง order ต้นทาง (nullable — แถวเดิม/การกรอกมือไม่กระทบ) ใช้กันโพสต์ซ้ำ + ตามรอย
