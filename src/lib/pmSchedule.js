@@ -8,11 +8,14 @@ export const FREQ_LABEL = {
   periodic:  'ตามรอบ',
 }
 
+// ป้ายชื่อทีมช่าง 4 ส่วน — ให้ตรงกับชื่อทีมฝั่ง MtnRepair (MTN/JIG MTN/DIE MTN/PRODUCTION)
+// เพื่อไม่ให้ชื่อทีมปนกันระหว่างหน้า PM กับหน้าแจ้งซ่อม (คำสั่ง user 2026-07-22)
+// key = checklists.department (คงเดิม) · เปลี่ยนเฉพาะข้อความแสดงผล
 export const DEPT_LABEL = {
-  production:      'ฝ่ายผลิต',
-  maintenance:     'ซ่อมบำรุง',
-  jig_maintenance: 'JIG Maintenance',
-  die_maintenance: 'Die Maintenance',
+  production:      'PRODUCTION (ฝ่ายผลิต)',
+  maintenance:     'MTN (ซ่อมบำรุง)',
+  jig_maintenance: 'JIG MTN',
+  die_maintenance: 'DIE MTN',
   qa:              'QA',
 }
 
