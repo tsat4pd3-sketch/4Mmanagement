@@ -13,20 +13,12 @@ import { exportInspectionPDF, resolveSignatureDataUrl } from '../lib/pmExportPDF
 import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } from '../lib/pmTaxonomy'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
+import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
   production: '#3dd65c', qa: '#9b8de8',
 }
-const DEPT_OPTIONS = [
-  { key: 'maintenance', label: 'ซ่อมบำรุง' },
-  { key: 'jig_maintenance', label: 'JIG Maintenance' },
-  { key: 'die_maintenance', label: 'Die Maintenance' },
-  { key: 'production', label: 'ฝ่ายผลิต' },
-]
-// ความรับผิดชอบตามแผนก → ชนิดอุปกรณ์: mtn=machine · jig mtn=jig · die mtn=die
-// ฝ่ายผลิต (production) = Autonomous Maintenance เห็น "ทุกชนิด" (ไม่กรอง)
-const DEPT_EQUIP_TYPE = { maintenance: 'machine', jig_maintenance: 'jig', die_maintenance: 'die' }
 
 function getPublicUrl(path) {
   if (!path) return null
@@ -586,6 +578,16 @@ export default function PMCheckData() {
   const [inspections, setInspections] = useState([])
   const [viewInspection, setViewInspection] = useState(null)
   const [methodIndex, setMethodIndex] = useState({})
+  const [teams, setTeams] = useState(pmTeamsSync())      // ทีมช่าง data-driven (mtn_teams)
+  const [clDeptByJig, setClDeptByJig] = useState({})     // jig_id → Set(department) — ยึด department เป็นหลัก
+
+  useEffect(() => { loadPmTeams().then(setTeams) }, [])
+  // แผนกของแต่ละ jig จาก checklist ที่มีอยู่ (ยึด department เป็นหลักตามที่ user ยืนยัน)
+  useEffect(() => {
+    supabaseDR.from('checklists').select('equipment_id, department').eq('module', 'mtn').then(({ data }) => {
+      const m = {}; (data ?? []).forEach(c => { (m[c.equipment_id] ||= new Set()).add(c.department) }); setClDeptByJig(m)
+    })
+  }, [])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -766,11 +768,13 @@ export default function PMCheckData() {
 
   const deptColor = DEPT_COLORS[department] ?? '#3dd65c'
   const jigImg = selectedJig ? getPublicUrl(selectedJig.image_path) : null
-  // กรองอุปกรณ์ตามความรับผิดชอบของแผนก (ผลิต=ทุกชนิด · แผนก mtn เห็นเฉพาะชนิดที่รับผิดชอบ)
-  // อุปกรณ์เก่าที่ยังไม่ได้ระบุชนิด → นับเป็น machine (โผล่ใต้ "ซ่อมบำรุง")
+  // กรองอุปกรณ์ตามทีม — ยึด "department (checklist)" เป็นหลัก (คำสั่ง user 2026-07-22):
+  //   โผล่ใต้ทีม D ถ้า (ก) มี checklist ของทีม D อยู่แล้ว (ตรงกับหน้า PMSchedule) หรือ
+  //   (ข) ประเภทอุปกรณ์ = ประเภท default ของทีม (ให้เริ่ม checklist ใหม่ได้) · ผลิต = ทุกชนิด
+  const teamEquip = (teams.find(t => t.key === department) || {}).equip_type
   const deptJigs = department === 'production'
     ? jigs
-    : jigs.filter(j => (j.equipment_type || 'machine') === DEPT_EQUIP_TYPE[department])
+    : jigs.filter(j => (teamEquip && (j.equipment_type || 'machine') === teamEquip) || clDeptByJig[j.id]?.has(department))
 
   // จอแคบ: โชว์ทีละคอลัมน์ (ยังไม่เลือก=ลิสต์ · เลือกแล้ว=ฟอร์ม) · desktop โชว์ทั้งคู่เหมือนเดิม
   const showSidebar = !isNarrow || !selectedJig
@@ -785,7 +789,7 @@ export default function PMCheckData() {
           <h2 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', margin: 0, fontFamily: 'var(--font-display)' }}>PM ตรวจสอบ</h2>
         </div>
         <div style={S.deptBar}>
-          {DEPT_OPTIONS.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, DEPT_COLORS[d.key] ?? '#3dd65c')}>{d.label}</button>)}
+          {teams.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, d.color || DEPT_COLORS[d.key] || '#3dd65c')}>{d.icon ? `${d.icon} ` : ''}{d.label}</button>)}
         </div>
         <div style={S.jigList}>
           {department === 'production' ? (() => {
@@ -839,7 +843,7 @@ export default function PMCheckData() {
               ))}
             </>)
           })() : (<>
-            {deptJigs.length === 0 && <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ไม่มีอุปกรณ์ในความรับผิดชอบของแผนกนี้<br /><span style={{ fontSize: 11 }}>({DEPT_OPTIONS.find(d => d.key === department)?.label} = เฉพาะ {DEPT_EQUIP_TYPE[department]})</span></p>}
+            {deptJigs.length === 0 && <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ยังไม่มีอุปกรณ์ในทีมนี้<br /><span style={{ fontSize: 11 }}>({(teams.find(d => d.key === department) || {}).label})</span></p>}
             {deptJigs.map(jig => (
               <div key={jig.id} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{jig.name}</p>
