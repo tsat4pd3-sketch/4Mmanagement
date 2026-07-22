@@ -17,6 +17,7 @@ const Management   = lazy(() => import('./pages/Management'));
 const Dashboard    = lazy(() => import('./pages/Dashboard'));
 const Operator     = lazy(() => import('./pages/operator'));
 const LineSetup    = lazy(() => import('./pages/LineSetup'));
+const LayoutSetup  = lazy(() => import('./pages/LayoutSetup'));
 const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
 const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
@@ -108,6 +109,7 @@ const NAV_ITEMS = [
   { to: '/ojt-training', icon: '📖', label: 'อบรมสอนงาน OJT',   group: 'พนักงาน & ทักษะ' },
   { to: '/skills-report', icon: '🏅', label: 'Skill Matrix & ค่าฝีมือ', group: 'พนักงาน & ทักษะ' },
   { to: '/products',        icon: '🔩', label: 'Product Master',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/layout-setup', icon: '🗺️', label: 'ตั้งค่าผัง/Floorplan', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'พนักงาน & ทักษะ' },
@@ -297,12 +299,13 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             onClick={onClose}
             title="พับเมนู"
             style={{
-              width: 28, height: 28, borderRadius: 7, flexShrink: 0,
+              // สัญลักษณ์ show/hide เหมือนกันทั้งระบบ: 32×32 radius8 bg3 border2 · ◀ = พับ
+              width: 32, height: 32, borderRadius: 8, flexShrink: 0,
               background: 'var(--bg3)', border: '1px solid var(--border2)',
-              color: 'var(--text2)', fontSize: 13, cursor: 'pointer',
+              color: 'var(--text2)', fontSize: 14, cursor: 'pointer', outline: 'none',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
-          >⟨</button>
+          >◀</button>
         </div>
 
         {/* Links */}
@@ -642,14 +645,16 @@ function ToggleBtn({ isOpen, onClick }) {
       onClick={onClick}
       title="เปิดเมนู"
       style={{
-        position: 'fixed', top: 14, left: 14,
+        // เครื่องหมายเหมือนปุ่มมุมขวาบน (🔔/filter): 36×36 radius8 bg3 border2
+        // top:10 คงที่ (ฝั่งซ้ายไม่มีช่องว่างสำรองแบบขวา — ถ้าเลื่อนลงจะทับ pool/board)
+        position: 'fixed', top: 10, left: 14,
         zIndex: 1100,
-        width: 34, height: 34, borderRadius: 8,
+        width: 36, height: 36, borderRadius: 8,
         background: 'var(--bg3)',
         border: '1px solid var(--border2)',
         color: 'var(--text2)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 15, cursor: 'pointer',
+        fontSize: 16, cursor: 'pointer', outline: 'none',
         boxShadow: 'var(--shadow-sm)',
       }}
     >
@@ -908,7 +913,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   }
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName }}>
+    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, sidebarOpen: isOpen }}>
       {warnSecsLeft !== null && (
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
@@ -973,6 +978,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/operator"   element={
                 <RoleRoute path="/operator" userRole={role}><Operator /></RoleRoute>
+              } />
+              <Route path="/layout-setup" element={
+                <RoleRoute path="/layout-setup" userRole={role}><LayoutSetup /></RoleRoute>
               } />
               <Route path="/linesetup"  element={
                 <RoleRoute path="/linesetup" userRole={role}><LineSetup /></RoleRoute>

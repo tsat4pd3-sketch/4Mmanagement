@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useRef, useContext } from 'react'
-import { Link } from 'react-router-dom'
 import imageCompression from 'browser-image-compression'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
@@ -8,6 +7,7 @@ import { dueStatus, STATUS_META, DEPT_LABEL, computeNextDue, daysUntilDue } from
 import { toast } from '../components/Toast'
 import MachineFloorMap from '../components/MachineFloorMap'
 import DowntimeSiren from '../components/DowntimeSiren'
+import FactoryMap from './FactoryMap'
 
 // 'YYYY-MM-DD' (from pm_plans.next_due_date) → local-midnight Date, so day math
 // stays aligned with the Asia/Bangkok calendar (not UTC).
@@ -69,11 +69,14 @@ const S = {
   }),
 }
 
-export default function MtnMachineLayout() {
+// setupMode=false (default, /mtn-layout) = display-only (facility ดูอย่างเดียว ไม่มีปุ่มแก้)
+// setupMode=true (/layout-setup แท็บ MTN) = ตั้งค่า facility ได้ (เพิ่มโซน/อัปรูป/วางจุด)
+export default function MtnMachineLayout({ setupMode = false }) {
   const { role } = useContext(UserContext)
-  // แก้ผัง facility (เพิ่ม/ลบโซน อัปโหลดผัง วาง/ย้ายจุด) ใช้สิทธิ์เดียวกับ PM Setup — ห้าม hardcode role array
-  const canEdit = can('pm', 'setup', role)
-  const [view, setView] = useState('production') // 'production' | 'facility'
+  // แก้ผัง facility (เพิ่ม/ลบโซน อัปโหลดผัง วาง/ย้ายจุด) ใช้สิทธิ์เดียวกับ PM Setup — เฉพาะโหมด setup
+  const canEdit = setupMode && can('pm', 'setup', role)
+  // เปิดหน้ามาเจอ "ภาพรวมทั้งโรงงาน" ก่อน (ฝัง FactoryMap display ตัวเดียวกับ /factory-map) แล้วค่อยเจาะไลน์
+  const [view, setView] = useState(setupMode ? 'facility' : 'overview') // 'overview' | 'production' | 'facility'
   const [dept, setDept] = useState('all')
   const [selId, setSelId] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -269,12 +272,16 @@ export default function MtnMachineLayout() {
           <p style={S.sub}>ดูสถานะ PM บนผังจริง · กรองตามผู้รับผิดชอบ</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Link to="/factory-map" style={{ ...S.viewBtn(false), textDecoration: 'none' }} title="ภาพรวมทุกไลน์ทั้งโรงงาน (ผังรวมโรงงาน)">🗺️ ภาพรวมทั้งโรงงาน</Link>
+          {!setupMode && <button onClick={() => { setView('overview'); setSelId(null) }} style={S.viewBtn(view === 'overview')}>🗺️ ภาพรวมทั้งโรงงาน</button>}
           <button onClick={() => { setView('production'); setSelId(null) }} style={S.viewBtn(view === 'production')}>🏭 ไลน์ผลิต</button>
           <button onClick={() => { setView('facility'); setSelId(null) }} style={S.viewBtn(view === 'facility')}>🔌 Facility / Utility</button>
         </div>
       </div>
 
+      {view === 'overview' ? (
+        <FactoryMap />
+      ) : (
+      <>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button onClick={() => setDept('all')} style={S.chip(dept === 'all', 'var(--accent)')}>ทั้งหมด</button>
         {MTN_DEPTS.map(d => <button key={d} onClick={() => setDept(d)} style={S.chip(dept === d, '#4d9fff')}>{DEPT_ICON[d]} {DEPT_LABEL[d]}</button>)}
@@ -392,6 +399,8 @@ export default function MtnMachineLayout() {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   )
 }

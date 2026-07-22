@@ -20,6 +20,7 @@
 - เปลี่ยน schema / ตาราง / Edge Function / workflow / กฎธุรกิจ → อัพเดท CLAUDE.md ส่วนที่เกี่ยวข้อง
 - เจอกับดัก/บั๊กที่คนถัดไปน่าจะเจอซ้ำ → บันทึกไว้ใน CLAUDE.md (เช่นส่วน "กับดัก CSS")
 - เปลี่ยน DB schema → เขียน migration file ใน `supabase/migrations/` เสมอ
+- **สร้างฟอร์ม/เอกสารพิมพ์ใหม่ทุกตัว → ต้อง register เข้าระบบทะเบียนเอกสาร `/doc-forms` (Document Master)** ให้ admin/doc_control ปรับแต่งได้เอง (เลขฟอร์ม/Rev/Effective/ช่องลายเซ็น/footer/โลโก้) โดยไม่ต้องแก้โค้ด — ขั้นตอนบังคับ: (1) seed แถวใน `doc_forms` (migration) (2) ฟังก์ชันพิมพ์อ่านค่าผ่าน `src/utils/docForms.js` (`getDocForm`/`docFormSync`/`fullCode` + fallback ค่าเดิมในโค้ดเสมอ) (3) โลโก้ผ่าน `urlToDataUrl(docFormSync(key).logo_url || tsLogoUrl)` **ห้าม hardcode เลขฟอร์ม/โลโก้ในโค้ด** (ดูรายละเอียดแถว `/doc-forms` ใน Pages & Routes)
 - **ห้าม**แก้พฤติกรรมระบบแล้วปล่อยให้เอกสารล้าสมัย — เอกสารที่ผิดแย่กว่าไม่มีเอกสาร
 
 ---
@@ -100,7 +101,7 @@
 ### กะการทำงาน
 | Table | คำอธิบาย |
 |-------|---------|
-| `shift_schedules` | ตารางกะ A/B รายสัปดาห์ |
+| `shift_schedules` | ตารางกะ A/B รายสัปดาห์ (line_id, work_date, day_team, **`is_manual`**) · **ไลน์ลูก inherit กะจากไลน์แม่อัตโนมัติ** เว้นแต่ `is_manual=true` (ตั้งเอง) — ตั้งกะไลน์แม่แล้ว save จะ cascade ไปไลน์ลูกที่ยังตามแม่ (`effTeam`/`parentIdOf` ใน ShiftOrganize) · migration `20260721_shift_schedule_inherit.sql` |
 | `shift_overrides` | Override กะรายบุคคล |
 | `shift_merge_events` | Merge กะทั้ง section/line |
 
@@ -218,6 +219,7 @@
 - `production_lines.parent_line_name` = `name` ของ production_line ระดับแผนก (เช่น 'HYDROFORM')
 - Department name ใน org_nodes ต้องตรงกับ parent production_line name เพื่อให้ Register กรอง LINE dropdown ถูก
 - Register.jsx กรอง LINE โดย: `l.name === department || l.parent_line_name === department`
+- **Dropdown ลำดับชั้น (Section→แผนก→Line→Team) ทุกหน้าต้อง cascade + ล้างตัวลูกเมื่อเปลี่ยนตัวแม่** — กฎเต็มดู `docs/UI-CONVENTIONS.md` §5.3 (เพิ่ม 2026-07-21 หลังพบ Report 5 จุด + operator filter bar โชว์แผนกข้าม section)
 
 ---
 
@@ -361,6 +363,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - **flow:** แก้ param ในตาราง (edit ชั่วคราว > param บันทึก > default จาก master) → ค่าคำนวณอัปเดตทันที → **Preview & Apply** → เขียน `kanban_standards` (`min_qty`/`max_qty` = ชิ้น, `qty_per_kanban` = pkg, `total_kanban` = ใบ, `lot_size`) — **Store (LineStock) ดึง min/max ตรงนี้ต่อ = จุดเดียวที่ Store↔Planner sync** · param ที่ใช้จำลง `kanban_calc_params` (รอบหน้า prefill) · **export CSV** (Production แนบตารางสรุป capacity ท้ายไฟล์)
 - **สรุปภาระการผลิต (Production):** Σ work-time/ไลน์ [(setup+lot×CT)×(order/lot)] เทียบ available (ชม./วัน×วันทำงาน) = **%load** ต่อไลน์ (<85 เขียว · 85–100 เหลือง · >100 แดง=เกิน capacity)
 - **⚠️ กุญแจ sync = `mat_no` (เลข SAP ภายใน) เท่านั้น:** ตอนอัพโหลด forecast ระบบ map เลขพาร์ทลูกค้า → SAP ผ่าน **`p_no`** ใน `dr_products`/`kanban_standards` (normalize ตัดขีด/ช่องว่าง · FG ขึ้นต้น 1 ชนะ) · **จับคู่ไม่ได้ = เก็บเลขพาร์ทลูกค้าไว้ใน `mat_no` ไปก่อน** (`PlannerSales.jsx` insert: `mat_no: hit ? hit.mat_no : r.part`) → แถวนั้นคำนวณ kanban ไม่ได้ + Store/Production ที่ใช้เลข SAP จะไม่เห็น · **ปุ่ม 🔗 จับคู่เลข SAP** ในแท็บ (banner เตือน N พาร์ท) เขียน `p_no` ให้ dr_products (auto-map รอบหน้า) + re-point `customer_forecasts.mat_no` เดิม → ต้องเติม p_no ให้ครบ Store/Planner ถึง sync จริง · modal มี **auto-suggest จับคู่ด้วย base part** (`baseOfPart` — ตัด revision token ตัวท้าย ≤2 ตัว แล้วเทียบ p_no ที่มีในระบบ · เช่น forecast `MB3B 16C274 CE` ↔ dr `MB3B-16C274`) ตัวเดียวชัด = เติมให้อัตโนมัติ · กำกวมหลายตัว = โชว์ชิปเขียวให้กดเลือก · พาร์ทที่ไม่มีใน Product Master เลยต้องไปสร้างก่อน
+- **⚠️ Order/Month รวม forecast source เดียว กัน double-count (2026-07-21):** `customer_forecasts.period_month` เก็บ 2 grain ปนกัน — EDI 830 = วันราย週 (`period_month = r.date`) · manual = ต้นเดือน (`monthFirst`) · ตอนรวม Order/Month ต่อ mat ถ้าบวกทุก row จะซ้ำเมื่อ mat มีทั้ง 2 source ในเดือนเดียว → **รวมเฉพาะ source เดียว: EDI 830 (official) ก่อน ไม่มีค่อยใช้ manual** (`fBySrc` ใน KanbanCalcTab `load()`) · weekly ที่คาบเกี่ยวขอบเดือนยังนับตามเดือนที่ `period_month` ตก (calendar-month bucket — accept ได้)
 - **DB:** `kanban_calc_settings` (working_days/efficiency_pct/**hours_per_day**) · `kanban_calc_params` (per-part param + **calc_type/process_count/lot_qty/setup_time_sec** สำหรับ production) · migration `20260710_kanban_auto_calc.sql` + **`20260716_kanban_production_calc.sql`** (DR, additive) — ⚠️ ถ้ายังไม่ apply migration ตัวหลัง: หน้ายังคำนวณ/Preview/Apply เข้า kanban_standards ได้ปกติ แต่ param เฉพาะ production + hours_per_day จะยังไม่ถูกจำข้ามรอบ (โค้ด best-effort + toast เตือน)
 
 ---
@@ -399,6 +402,8 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 > 1. **เปิดเป้าคู่อัตโนมัติ** (DailyReport manual open — สร้าง prod_orders คู่ให้เอง)
 > 2. **OEE `computeOEE`** — จับเป็น product group เดียว/parallel ถูกต้อง (ดูบล็อกด้านบน)
 > 3. **บอร์ด Heijunka (Dashboard + Management)** — วางแถบ **ขนาน (parallel lane)** เริ่มพร้อมกัน แทนการเรียงต่อกัน (helper `laneKeyOf` · 2026-07-21)
+> 4. **สรุปยอด "ภาพใหญ่" นับงานคู่เป็น 1 คู่/stroke** (1 ปั๊ม = 1 คู่ ไม่บวกชิ้น LH+RH ซ้ำ) — util กลาง `src/utils/pairTotals.js` `pairAwareTotal(perMat, pairOf)`: คู่ที่มีทั้ง 2 พาร์ทในชุด → เป้า/ผลิต = **max ของสองข้าง** · พาร์ทเดี่ยว/ไม่ระบุ mat = บวกปกติ · ใช้แล้วที่ DailyReport (ภาพรวมทั้งกะ) / FactoryMap (metric ยอดผลิต) / Dashboard (การ์ด demand/actual) / MorningMeeting (ผลิตจริง-เป้ากะ) / OEEAnalytics (KPI ผลิตวันนี้ panel 3) · **แถบรายพาร์ทยังโชว์แยก RH/LH เหมือนเดิม** · INPUT/material ยังนับชิ้นจริง (เบิกตามชิ้น) · จอสรุปใหม่ที่บวกยอดข้ามพาร์ทให้ใช้ helper นี้ (2026-07-21)
+>    - **หลักการ (trial phase — cutoff ระบบเก่าสิ้นเดือน):** ยอดรวม "ภาพใหญ่" คำนวณ**สด**จาก `prod_orders` ต่อ mat ทุกจอ ไม่แตะ DB/ค่าที่ stamp ตอนปิดกะ — ข้อมูลรายพาร์ท/รายลูกค้า/เจาะราย MAT SAP ยังอยู่ครบใน prod_orders (แยก LH/RH, เสียเท่าไหร่ ดูได้เหมือนเดิม) · **เฉพาะกะที่มีคู่จริงถึง recompute** (blast radius แคบ) — กะไม่มีคู่ใช้ค่า stamped เดิม (MorningMeeting `sessTarget/sessActual`, OEEAnalytics `tdKpi`)
 >
 > **ถ้าไม่ตั้ง `pair_mat_no` หรือ ตั้งข้างเดียว** → อาการ: แถบ LH/RH บนบอร์ดไม่ตรงกัน (LH ต้นกะ RH ท้ายกะ) · OEE นับเวลา run ซ้ำ 2 เท่า · เปิดเป้าคู่ไม่ทำงาน — **เจ ออาการพวกนี้ให้เช็ค `pair_mat_no` ก่อนแก้โค้ด** · เพิ่มฟีเจอร์ที่แตะคู่ RH/LH ให้ยึด `pair_mat_no` เป็นตัวจับคู่เสมอ ห้ามเดาจากชื่อ LH/RH
 
@@ -494,6 +499,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
   - **คลิกกรอบ/แถว panel → เปิดผังไลน์พร้อมพนักงานแบบ Dashboard** (`openLine`): ไลน์ที่มี `line_layouts` → `navigate('/dashboard?line=NAME&from=factory-map')` ให้ Dashboard เปิด Expanded Line Map (deep-link) — ใช้ผังจริงตัวเดียวกัน ไม่ duplicate · ไลน์ที่**ไม่มีผังพื้น** → fallback popup สรุป metric + ตารางแยกไลน์ย่อย (`detailLine`)
   - **⚠️ ผังไลน์แม่-ลูกคนละรูป (คนอยู่บนผังลูก):** `floorMapTarget` เลือกผังที่**มีคนจริง** — ไลน์แม่มีผัง+คนของตัวเอง=โชว์ตัวเอง · ไลน์แม่ว่าง (คนอยู่ไลน์ลูก เช่น GOR→Assy GOR/Laser GOR) = เด้งไปโชว์**ผังลูกที่มีคนมากสุด** (จาก `manpower[n].present`) · ยังไม่มีใครเข้างาน = ผังตัวเอง/ตัวแรก · (การทาบ-สเกลพิกัดลูกลงผังแม่ผังเดียว = future enhancement ยังไม่ทำ)
   - **Dashboard รับ deep-link:** `useSearchParams` อ่าน `?line=NAME` ตอน `layouts` โหลดเสร็จ → หา layout ที่ตรงชื่อ/ครอบชื่อ (`layoutLineNamesForCard`) แล้ว `setExpandedLine` + ล้าง param (`replace:true`) กันเปิดซ้ำ · `from=factory-map` → ปิด modal แล้ว `navigate('/factory-map')` (ไม่ค้างที่ Dashboard) ผ่าน `closeExpandedLine` — backward-compatible (ไม่มี param = ไม่เปลี่ยนพฤติกรรม)
+- **Dashboard "Line Floor Maps" — โหมดใหญ่สำหรับหัวหน้า (2026-07-21):** `floorBig = scopeActive && visibleLayouts.length ≤ 3` → หัวหน้า/ผู้ใช้ scope แคบ เห็นผังไลน์ตัวเอง**ใหญ่เต็มความกว้าง** (bottom grid stack 1 คอลัมน์ + floor grid `auto-fit minmax(480px,1fr)`) แตกไลน์ลูกเป็นการ์ดใหญ่แยกกัน · ภาพรวมทั้งโรงงาน (passAll/หลายผัง) คงกริดย่อ 2-3 คอลัมน์เหมือนเดิม (เหมาะจอ TV ดูรวม)
 - **🔴 downtime ค้างโชว์เสมอทุก metric:** จุดแดงหน้าชื่อไลน์ (แม้ดู metric อื่น) — alarm ต้องไม่ถูกซ่อน · refresh DR ทุก 30 วิ
 - **สิทธิ์:** เข้าดู = ทุก role (`page:/factory-map`) · อัปโหลด/วาด/ลบ = `can('factory_map','edit')` (admin/manager/supervisor)
 - **รูปเก็บ** bucket `employee-photos` path `factory/` — cleanup-orphan-photos whitelist `factory_map.image_url` + สแกนโฟลเดอร์ factory/ แล้ว (กันลบผิด) · เปลี่ยนรูปลบไฟล์เก่าทิ้ง (best-effort)
@@ -505,6 +511,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 หน้า `/production-plan` (กลุ่มฝ่ายผลิต) — จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบ **"กำลังผลิตที่ทำได้จริง"** → บอกว่าต้องเปิดกี่กะ กี่วัน วันไหนเปิด OT/กะดึก/ทำวันหยุด วันไหนไม่ต้อง เพื่อทันดิว · **เฟส 1 อ่านอย่างเดียว ไม่เขียน DB**
 
 - **กำลังผลิต = median(ยอดดีจริงต่อกะ) ใน 60 วันล่าสุด** ต่อ (ไลน์+พาร์ท) — util กลาง `src/utils/capacityModel.js` · median ตัดค่าโดด (วันเทพ/หายนะ) + บวก OEE/เบรค/NG ไว้ในตัว · พาร์ทที่มีประวัติ < 3 กะ fallback = (นาทีกะ×60÷CT)×OEE median ของไลน์ + ติดป้าย "ข้อมูลน้อย" · เลือกโหมดวางแผน **median (สมจริง)** หรือ **P25 (ปลอดภัยไว้ก่อน)**
+  - **normalize กะที่แชร์ไลน์ (2026-07-21):** กะที่พาร์ทวิ่งไม่เต็มกะ (แชร์กับพาร์ทอื่น) ทำให้ยอด/กะต่ำ → median กำลังต่ำเกิน → OT/backlog เกินจริง · ProductionPlan โหลด `opened_at`/`confirmed_at` คิด run-min ต่อ (session,mat) แล้ว: กะวิ่ง **50–90%** ของกะ → คูณกลับเป็นเต็มกะ (scale ≤2×) **cap ด้วยกำลังทฤษฎี `shift×60÷CT` กัน over-scale** (overstate = วางแผนน้อยไป อันตราย) · กะวิ่ง **<50% = ตัดทิ้ง**จาก median (สัญญาณน้อยเกิน) · ไม่มี timestamp = ใช้ค่าดิบเดิม
 - **หน่วยกลาง = shift-load** (qty ÷ กำลังต่อกะ) เพื่อรวมหลายพาร์ทบนไลน์เดียวถูกต้อง (ไลน์มี 1 กะ แต่หลาย product คนละ rate)
 - **แท็บรายวัน:** order ค้างส่ง 21 วันข้างหน้า → เดินปฏิทินวันต่อวัน (greedy: กะเช้า → +กะดึก(ถ้าไลน์มี) → +OT 25% → วันหยุดทำเฉพาะเมื่อ backlog) · **ลำดับใช้วันหยุด (กฎ user 2026-07-21): วัน `shutdown75` (ม.75) = กำลังสำรองที่เรียกได้ด้วยค่าแรงปกติ ใช้เต็มกำลังเหมือนวันทำงาน (⚡ ยกเลิกหยุด75% สีม่วง) ก่อนถึง OT วันหยุด ot15/ot2 (⚠ แดง) เสมอ** — ทั้งแท็บรายวันและ verdict รายเดือน (tier ⚡ อยู่ก่อน 🚨 เกินกำลัง) · แถบปฏิทินระบายสี ☀/⏰/🌙/⚡/⚠ + สรุปต่อไลน์ · endBacklog > 0 = 🚨 เปิดเต็มที่ยังไม่ทัน
 - **แท็บรายเดือน:** forecast 6 เดือนข้างหน้า → กะที่ต้องใช้ (shiftsNeeded) vs วันทำงานในเดือน (จาก company_calendar) → verdict: กะเช้าพอ / ต้อง OT N วัน / ต้องกะดึก / 🚨 เกินกำลังต้องเพิ่มไลน์-คน
@@ -573,6 +580,15 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - อัตรา/วัน อ่านวันทำงานจริงจากปฏิทินบริษัท (`countWorkingDaysInMonth` — fallback 22 เมื่อปฏิทินว่าง · 2026-07-21)
 - **เฟสถัดไป (ยังไม่ทำ):** cron/edge แจ้ง Telegram ผลิต+planner ตอนเข้า window อัตโนมัติ (ตอนนี้เห็นผ่านหน้า + andon เหลืองบน org map)
 
+## ตั้งค่าผัง/Floorplan — แยก display ออกจาก setup (2026-07-16)
+
+**หลักการ:** หน้า display (ผังรวมโรงงาน/Dashboard) = **ดู + popup เท่านั้น** · การตั้งค่าผังทั้งหมดรวมที่ **`/layout-setup` "🗺️ ตั้งค่าผัง/Floorplan"** (หมวดตั้งค่าโปรแกรม) แยกแท็บตาม POV — เตรียมรับ Store/AMR ในอนาคต
+- **`FactoryMap` รับ prop `setupMode`** (default false): `/factory-map` = display-only (canEdit=false, ไม่มีปุ่มแก้ผัง) · `/layout-setup` แท็บภาพรวมโรงงาน = `<FactoryMap setupMode />` (แก้ผัง/วาด polygon ได้)
+- **`MtnMachineLayout` รับ prop `setupMode`** เช่นกัน (default false): `/mtn-layout` = facility display-only (canEdit=false) · `/layout-setup` แท็บ MTN = `<MtnMachineLayout setupMode />` (เพิ่มโซน/อัปรูป/วางจุด facility ได้, default view=facility)
+- **แท็บ:** 🗺️ ภาพรวมโรงงาน (FactoryMap setupMode) · 🏭 ผลิต (ลิงก์ LineSetup — LineSetup ทำหลายอย่างเลยลิงก์ไม่ยกโค้ด) · 🔧 MTN (MtnMachineLayout setupMode ฝังในแท็บ) · 📦 Store/AMR (placeholder รอระบบ AMR) · component `src/pages/LayoutSetup.jsx`
+- สิทธิ์: `page:/layout-setup` (admin/manager/supervisor · admin bypass) · migration `20260716_layout_setup_permission.sql`
+- **หน้า display อื่นที่ควรแยก setup ออก (audit อยู่):** ดูผล review — อย่าฝัง setup/config ในหน้า operational ใหม่ ให้ไปหมวดตั้งค่า
+
 ## ผังรวมโรงงาน — ผังภาพรวมทั้งโรงงานที่เดียว (ยุบรวมแล้ว 2026-07-16)
 
 **ผังรวมโรงงาน = `/factory-map` (FactoryMap) ที่เดียวเท่านั้น** — polygon ต่อไลน์ + หลายโหมด (ยอดผลิต/OEE/Downtime/ของเสีย/คน/**PM เครื่องจักร**) ดู "Factory Master Map" ด้านบน
@@ -629,11 +645,13 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 
 ### Export ฟอร์ม Skill Matrix (ตามฟอร์มกระดาษ Thai Summit — 2026-07-16)
 
-ระบบ export ฟอร์มทักษะได้ 2 แบบใน `/report` ให้เหมือนฟอร์มกระดาษของบริษัท (โลโก้ TS + รหัสฟอร์มสร้างจาก CSS/SVG ไม่พึ่งไฟล์ภายนอก):
+ระบบ export ฟอร์มทักษะได้ 2 แบบใน `/report` (แท็บสกิลอยู่ `/skills-report`) ให้เหมือนฟอร์มกระดาษของบริษัท:
 
 - **สรุปทั้งไลน์** (`MULTI SKILL OF OPERATORS`, รหัส FM-PD1-017) — แท็บ 🏅 Multi-Skill Form · ตารางพนักงาน × สกิล แต่ละช่องเป็น**วงกลมแบ่ง 4 ส่วน 5 ระดับ** (0-24/25-49/50-74/75-99/100 = `MS_LEVELS`+`scoreToLevel`+`skillGaugeSvgStr`) · ลายเซ็น จัดทำ/ตรวจสอบ/อนุมัติ ดึงจาก `profiles` ตาม role ของไลน์ · A3 landscape
 - **รายบุคคล** (`ใบประเมินทักษะฯ`, รหัส F-PRS-P1-119) — แท็บ 📊 Skill Matrix → คลิกพนักงาน → ปุ่ม 🖨️ ใน radar panel (`buildIndividualSkillHtml`) · มี radar SVG (`buildRadarSvg`), รูป+3 ลายเซ็น, ตารางหัวข้อย่อยต่อสกิล + คะแนน 4 ระดับ, สรุป/legend/เกณฑ์/หมายเหตุ · A4 portrait
 - **โหมด Hybrid (สำคัญ):** ระบบเก็บแค่คะแนนเดียว 0-100 ต่อสกิล — ใบรายบุคคลจึง (ก) เอา**ข้อความหัวข้อย่อย**จาก `skill_sub_items` (ถ้าสกิลไม่มี → fallback 1 แถว = ชื่อสกิล) (ข) **ค่าติ๊ก 4 ระดับรายแถว derive จากคะแนน** (`distributeLevels` กระจายระดับให้เฉลี่ย ≈ score/25 เหมือนฟอร์มกระดาษที่หัวข้อเป็นสเต็ป 25%) (ค) **% สรุปกลุ่ม/radar/โดยรวม ใช้คะแนนจริง** (เที่ยงตรง ไม่ปัดเป็น 25) · ถ้าวันหน้าจะเก็บผลประเมินรายหัวข้อจริง (ไม่ derive) ต้องเพิ่มตารางผลประเมิน + UI กรอก แล้วเปลี่ยนที่มาของค่าติ๊ก
+- **โลโก้ Thai Summit** = ไฟล์ทางการ `src/assets/TS logo.png` (ตัวเดียวกับ App/Login/DailyReport/OJT/LPA/MtnRepair ใช้ — import เป็น `tsLogoUrl`) · **override ได้ด้วยรูปที่อัปโหลดใน `/doc-forms` (`doc_forms.logo_url`)** → เป๊ะ 100% · **pattern มาตรฐานทุกฟอร์มพิมพ์:** handler แปลงเป็น dataURL ผ่าน `urlToDataUrl(docFormSync(key).logo_url || tsLogoUrl)` แล้วส่งเข้า builder (`tsLogoHtml(logoUrl)`) — **ห้าม hardcode/วาดโลโก้เอง** (เคยพลาดวาดกล่อง T/S แยก ไม่ตรงตราจริง)
+- **ใบรายบุคคลบังคับ ≤ 1 หน้า A4 เสมอ (2026-07-21):** พนักงานสกิลเยอะ (เช่น LINE APRON ASSY ~20 สกิล) ตารางยาวเกินหน้า → สคริปต์ `fitOnePage()` วัดความสูงจริงเทียบ 287mm แล้วตั้ง **`el.style.zoom`** ให้พอดี 1 หน้า (ใช้ `zoom` ไม่ใช่ `transform: scale` — transform เป็นภาพลวงตา ไม่ลดกล่อง layout → print ยังนับหลายหน้า · zoom ลด layout จริง Chrome นับหน้าถูก) · เคสสกิลน้อยไม่ย่อ คงขนาดเต็ม · รอ `document.fonts.ready` ก่อนวัด กัน webfont ทำความสูงเพี้ยน — **pattern นี้ reuse ได้กับฟอร์มพิมพ์อื่นที่ต้อง fit 1 หน้าแบบ dynamic**
 - helper ทั้งหมดอยู่ใน `src/pages/Report.jsx` · หัวข้อย่อยจัดการที่ `/operator` ⚙️ ปุ่ม 📝 (`SkillSubItemsModal`)
 
 ---

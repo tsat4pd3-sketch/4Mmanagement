@@ -10,6 +10,7 @@ import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
+import { pairAwareTotal } from '../utils/pairTotals';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -396,8 +397,18 @@ export default function Dashboard() {
     const ps = (sessions || []).map(s => {
       const orders  = ordersBySession[s.id] || [];
       const active  = orders.filter(o => !['cancelled','imported'].includes(o.status));
-      const demand  = active.reduce((sum, o) => sum + (o.qty || 0), 0);
-      const actual  = active.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty_ok ?? o.qty ?? 0), 0);
+      // นับงานคู่ RH/LH เป็น 1 คู่/stroke (ไม่บวกชิ้น LH+RH ซ้ำในภาพใหญ่) · พาร์ทเดี่ยว/ไม่ระบุ mat = บวกปกติ
+      const perMatD = {};
+      active.forEach(o => {
+        if (!o.mat_no) return;
+        const e = perMatD[o.mat_no] || (perMatD[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 });
+        e.target += o.qty || 0;
+        e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : 0;
+      });
+      const nullD = active.filter(o => !o.mat_no);
+      const ptotD = pairAwareTotal(Object.values(perMatD), m => pairMap[m] || null);
+      const demand  = ptotD.target + nullD.reduce((sum, o) => sum + (o.qty || 0), 0);
+      const actual  = ptotD.produced + nullD.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty_ok ?? o.qty ?? 0), 0);
       const target  = s.dr_products?.target_per_shift || 0;
       const oeeData = s.status === 'open' ? computeSessionOEE(s) : null;
       // downtime ที่กำลัง alarm (ยังไม่ปิดรายการ = เครื่องยังหยุดอยู่) — เฉพาะกะที่ยังไม่ปิด
@@ -636,6 +647,9 @@ export default function Dashboard() {
     () => passAll ? layouts : layouts.filter(l => visibleLineNames.has(l.line_name)),
     [layouts, passAll, visibleLineNames],
   );
+  // หัวหน้า/ผู้ใช้ที่ scope แคบ (เห็นไม่กี่ผัง) → โชว์ผังไลน์ตัวเองใหญ่เต็มที่ (แตกไลน์ลูกเป็นการ์ดใหญ่ของใครของมัน)
+  // ภาพรวมทั้งโรงงาน (passAll / หลายผัง) → คงกริดย่อเล็กเหมือนเดิม
+  const floorBig = scopeActive && visibleLayouts.length > 0 && visibleLayouts.length <= 3;
 
   // ── Downtime alarm — รวม downtime ที่ยังค้าง/เพิ่งบันทึกจากทุกกะที่มองเห็น ──
   // ใช้ขับ banner ด้านบน, ป้ายบนการ์ดสถานะไลน์ และจุดเครื่องจักรกระพริบบนผัง
@@ -1877,7 +1891,7 @@ export default function Dashboard() {
                         {/* พาร์ทละ 1 บล็อก — ป้าย/รูปใหญ่อันเดียวครอบ 2 แถบเวลา (☀️ 08–20 บน / 🌙 20–08 ล่าง)
                             หัวชั่วโมงแสดงเวลาคู่บน-ล่างในคอลัมน์เดียวกัน (โครงเดียวกับบอร์ดหน้าจัดการไลน์) */}
                         <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
-                          <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3, background: 'var(--bg2)' } : null) }}>
+                          <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--bg2)' } : null) }}>
                             <span>☀️ กะเช้า{isMobile ? '' : ' (แถบบน)'}</span>
                             <span>🌙 กะดึก{isMobile ? '' : ' (แถบล่าง)'}</span>
                           </div>
@@ -1922,7 +1936,7 @@ export default function Dashboard() {
                           return (
                             <div key={row.key} style={{ display: 'flex', borderTop: '1px solid var(--border2)', overflow: 'hidden' }}>
                               {/* Left summary — ป้ายเดียวครอบทั้ง 2 แถบเวลา */}
-                              <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3, background: 'var(--card)' } : null) }}>
+                              <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--card)' } : null) }}>
                                 {row.img && <img src={row.img} alt="" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0 }}>
                                   <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>
@@ -2048,7 +2062,8 @@ export default function Dashboard() {
       })()}
 
       {/* ── Bottom Grid ─────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isUltra ? 'minmax(0,3fr) minmax(0,1fr)' : 'minmax(0,2fr) minmax(0,1fr)', gap: isWide ? 20 : 16 }}>
+      {/* floorBig (หัวหน้า/scope แคบ) → ผังไลน์ตัวเองเต็มความกว้าง, 4M feed ไปอยู่ล่าง · ภาพรวม → 2 คอลัมน์เหมือนเดิม */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile || floorBig ? '1fr' : isUltra ? 'minmax(0,3fr) minmax(0,1fr)' : 'minmax(0,2fr) minmax(0,1fr)', gap: isWide ? 20 : 16 }}>
 
         {/* Line Floor Maps */}
         <motion.div {...stagger(12)}>
@@ -2066,7 +2081,7 @@ export default function Dashboard() {
                 <div style={{ fontSize: 12, marginTop: 6, opacity: 0.7 }}>(สรุปกำลังคนรวมดูได้ที่การ์ดสถานะไลน์ด้านบน)</div>
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : floorBig ? 'repeat(auto-fit, minmax(min(100%, 480px), 1fr))' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
                 {floorCards.map(({ layout, cardLineNames, lineWs, presentPeople, staffedStations, totalStations }) => {
                   const allStaffed = totalStations > 0 && staffedStations >= totalStations;
                   return (

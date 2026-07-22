@@ -10,6 +10,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { MTN_TEAMS, teamForItem } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
+import { pairAwareTotal } from '../utils/pairTotals';
 import EventComments from '../components/EventComments';
 
 // โหลดโลโก้บริษัท (เหมือนหน้าเว็บ) เป็น base64 ครั้งเดียวสำหรับฝัง PDF
@@ -134,7 +135,8 @@ export default function DailyReport() {
 
   return (
     <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+      {/* paddingRight: 52 = เว้นที่ให้ 🔔 (fixed top-right) ไม่ทับแท็บขวาสุด (⚙️ ตั้งค่า) */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12, paddingRight: 52 }}>
         <div>
           <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
             📊 Daily Production Report
@@ -2136,15 +2138,10 @@ function LiveTab({ role }) {
 
             {/* Per-product breakdown — กะเดียวอาจผลิตหลาย MAT.NO จึงต้องแยกสรุปรายชิ้นงาน ไม่รวมเป็นก้อนเดียว */}
             {(() => {
-              const totalTarget    = prodOrders.reduce((s, o) => s + o.qty, 0);
-              // ผลิตได้ = ใบที่ปิดแล้ว + ยอดสะสมของใบ manual ที่ยังเปิดอยู่ (พนักงานอัพเดททุกเบรค — ไม่นับ = เห็น 0 ทั้งกะ)
-              const manualRunning  = prodOrders.filter(o => o.is_manual && o.status === 'open').reduce((s, o) => s + (o.qty_actual || 0), 0);
-              const totalConfirmed = prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0) + manualRunning;
-              const pct = totalTarget > 0 ? Math.min(100, Math.round((totalConfirmed / totalTarget) * 100)) : 0;
-              // ของเสีย/สงสัย ต้องเบิก input ทดแทนเพิ่มเพื่อให้ได้ยอดดีครบเป้า (ซ่อมได้ไม่ต้องเบิกใหม่)
+              // ยอดชิ้นจริงรวม (สำหรับ INPUT/material — ต้องเบิกตามจำนวนชิ้นจริง ไม่ใช่คู่)
+              const totalTargetPieces = prodOrders.reduce((s, o) => s + o.qty, 0);
               const totalNg = defectLogs.reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
-              const totalInputNeeded = totalTarget + totalNg;
-              const barClr = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#4d9fff';
+              const totalInputNeeded = totalTargetPieces + totalNg;
 
               const matNos = Array.from(new Set(prodOrders.map(o => o.mat_no))).filter(Boolean);
               const productRows = matNos.map(matNo => {
@@ -2168,6 +2165,17 @@ function LiveTab({ role }) {
                 const actualEnd   = closedTimes.length ? new Date(Math.max(...closedTimes)) : null;
                 return { matNo, name, target, confirmed, openCnt, closedCnt, ng, dt, ct, rowPct, actualStart, actualEnd };
               }).sort((a, b) => b.target - a.target);
+
+              // สรุปภาพใหญ่: นับงานคู่ RH/LH เป็น 1 คู่/stroke (max ของสองข้าง) ไม่บวกชิ้นซ้ำ · พาร์ทเดี่ยว = บวกปกติ
+              const pairOf = (mat) => products.find(p => p.mat_no === mat)?.pair_mat_no || null;
+              const pt = pairAwareTotal(productRows.map(r => ({ mat_no: r.matNo, target: r.target, produced: r.confirmed })), pairOf);
+              const nullMat = prodOrders.filter(o => !o.mat_no);
+              const totalTarget    = pt.target + nullMat.reduce((s, o) => s + o.qty, 0);
+              const totalConfirmed = pt.produced
+                + nullMat.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)
+                + nullMat.filter(o => o.is_manual && o.status === 'open').reduce((s, o) => s + (o.qty_actual || 0), 0);
+              const pct = totalTarget > 0 ? Math.min(100, Math.round((totalConfirmed / totalTarget) * 100)) : 0;
+              const barClr = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#4d9fff';
 
               const unassignedDT = dtLogs.filter(d => !d.mat_no).reduce((s, d) => s + (d.duration_min || 0), 0);
 
@@ -2221,7 +2229,9 @@ function LiveTab({ role }) {
                   })()}
 
                   {/* ภาพรวมทั้งกะ (รวมทุกชิ้นงาน) */}
-                  <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>📊 ภาพรวมทั้งกะ</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>📊 ภาพรวมทั้งกะ
+                    {pt.hasPair && <span style={{ textTransform: 'none', fontWeight: 500, color: 'var(--muted)', marginLeft: 6 }}>· งานคู่ RH/LH นับเป็น 1 คู่ (1 ปั๊ม) ไม่บวกชิ้นซ้ำ</span>}
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 12, marginBottom: 16 }}>
                     {[
                       { label: 'เปิด Order', value: prodOrders.filter(o => o.status === 'open').length, unit: 'ใบ', color: '#f59e0b' },

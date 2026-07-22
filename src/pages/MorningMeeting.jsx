@@ -2,11 +2,13 @@ import { useState, useEffect, useContext, useCallback, useMemo, useRef, Fragment
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
+import { pairAwareTotal } from '../utils/pairTotals';
 
 // Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷
 const GestureCam = lazy(() => import('../components/GestureCam'));
@@ -62,6 +64,7 @@ export default function MorningMeeting() {
   const [downtimes, setDowntimes]     = useState([]);
   const [defects, setDefects]         = useState([]);
   const [orders, setOrders]           = useState([]);
+  const [pairMat, setPairMat]         = useState({}); // mat_no → pair_mat_no (งานคู่ RH/LH)
   const [fourM, setFourM]             = useState([]);
   const [attendance, setAttendance]   = useState([]);
   const [openDts, setOpenDts]         = useState([]); // เครื่องที่ยังซ่อมค้าง "ตอนนี้" (readiness)
@@ -175,8 +178,14 @@ export default function MorningMeeting() {
           supabaseDR.from('prod_orders').select('*').in('session_id', ids).order('opened_at'),
         ]);
         setDowntimes(dt || []); setDefects(def || []); setOrders(po || []);
+        const mats = [...new Set((po || []).map(o => o.mat_no).filter(Boolean))];
+        if (mats.length) {
+          const { data: prods } = await supabaseDR.from('dr_products').select('mat_no, pair_mat_no').in('mat_no', mats).not('pair_mat_no', 'is', null);
+          const pm = {}; (prods || []).forEach(p => { if (p.mat_no && p.pair_mat_no) pm[p.mat_no] = p.pair_mat_no; });
+          setPairMat(pm);
+        } else setPairMat({});
       } else {
-        setDowntimes([]); setDefects([]); setOrders([]);
+        setDowntimes([]); setDefects([]); setOrders([]); setPairMat({});
       }
 
       // readiness: เครื่องที่ยังซ่อมค้าง "ตอนนี้" — มองจากกะ 3 วันล่าสุด (รวม carry-over ข้ามกะ)
@@ -209,16 +218,28 @@ export default function MorningMeeting() {
   // ❌ ห้าม fallback ไป std_day/night_shift — ค่านั้นคือ "จำนวนคนต่อกะ (headcount)" ไม่ใช่เป้าจำนวนชิ้น
   //    (เช่น HYDROFORM std=14 = 14 คน · GOR=11 · Line60=6) เคยเอามาใช้เป็นเป้าแล้วไลน์ที่ไม่มีใบงาน
   //    โชว์ "0/14 · 0%" ทั้งที่ควรเป็น "ไม่มีเป้า" (2026-07-15) — ไม่มี target_qty และไม่มีใบงาน = คืน 0
+  // งานคู่ RH/LH: กะที่มีทั้ง 2 พาร์ทของคู่ → นับเป็น "คู่/stroke" (max ของสองข้าง) ไม่บวกชิ้นซ้ำ
+  //   กะที่ "ไม่มีงานคู่" → ใช้ค่าเดิมเป๊ะ (stamped ก่อน) เพื่อ blast radius น้อยสุด · แหล่งจริง = ใบงาน (prod_orders)
+  //   detail รายพาร์ท/เจาะราย MAT ยังอ่านจากใบงานตรงๆ ไม่กระทบ
+  const hasPairIn = (os) => os.some(o => o.mat_no && pairMat[o.mat_no] && os.some(x => x.mat_no === pairMat[o.mat_no]));
+  const pairSum = (os, pick) => {
+    const perMat = {}; let nullSum = 0;
+    os.forEach(o => { const v = pick(o); if (!o.mat_no) { nullSum += v; return; } const e = perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 }); e.target += v; });
+    return pairAwareTotal(Object.values(perMat), m => pairMat[m] || null).target + nullSum;
+  };
   const sessTarget = (s) => {
-    if (s.target_qty) return s.target_qty;
     const os = (ordersBySession[s.id] || []).filter(o => !['cancelled', 'imported', 'carry_over'].includes(o.status));
+    if (hasPairIn(os)) return pairSum(os, o => o.qty_target ?? o.qty ?? 0);
+    if (s.target_qty) return s.target_qty;
     return os.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
   };
   // ยอดจริงของกะ: qty_ok (ปิดกะแล้ว) → actual_qty → รวมยอดจริงจากใบงาน (qty_ok ?? qty_actual)
   const sessActual = (s) => {
+    const os = ordersBySession[s.id] || [];
+    if (hasPairIn(os)) return pairSum(os, o => o.qty_ok ?? o.qty_actual ?? 0);
     if (s.qty_ok != null) return s.qty_ok;
     if (s.actual_qty) return s.actual_qty;
-    return (ordersBySession[s.id] || []).reduce((a, o) => a + (o.qty_ok ?? o.qty_actual ?? 0), 0);
+    return os.reduce((a, o) => a + (o.qty_ok ?? o.qty_actual ?? 0), 0);
   };
   const sum = useMemo(() => {
     let actual = 0, target = 0;
@@ -953,9 +974,10 @@ export default function MorningMeeting() {
               <button onClick={() => setSlide(s => Math.max(0, s - 1))} disabled={slide === 0} style={{ ...btnSt(false), fontSize: 16, opacity: slide === 0 ? 0.4 : 1 }}>◀</button>
               <span style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 700 }}>{slide + 1}/{slides.length}</span>
               <button onClick={() => setSlide(s => Math.min(slides.length - 1, s + 1))} disabled={slide === slides.length - 1} style={{ ...btnSt(false), fontSize: 16, opacity: slide === slides.length - 1 ? 0.4 : 1 }}>▶</button>
-              <button onClick={() => setGestureOn(v => !v)} style={btnSt(gestureOn)}
+              <button onClick={() => setGestureOn(v => !v)} style={{ ...btnSt(gestureOn), position: 'relative' }}
                 title={'ควบคุมด้วยท่ามือผ่านกล้อง (ประมวลผลในเครื่อง ไม่ส่งภาพออกไปไหน)\n☝️ ชี้นิ้ว ◀/▶ ค้าง = เปลี่ยนวาระ · ชี้ ▲/▼ ค้าง = เลื่อนหน้า\n✋ ปัดซ้าย/ขวา = เปลี่ยนวาระ · 👍 ค้าง = ถัดไป · ✊ ค้าง = ออกจากโหมด'}>
                 {gestureOn ? '📷 ปิดท่ามือ' : '📷 คุมด้วยท่ามือ'}
+                <ToggleDot on={gestureOn} />
               </button>
               <button onClick={() => { setTvMode(false); setGestureOn(false); }} style={{ ...btnSt(false), fontSize: 14 }} title="ออกจากโหมดประชุม (Esc)">✕</button>
             </div>

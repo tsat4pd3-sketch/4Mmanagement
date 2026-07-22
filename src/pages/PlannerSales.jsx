@@ -746,7 +746,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       supabaseDR.from('kanban_standards').select('mat_no, part_name, customer, qty_per_kanban, min_qty, max_qty, lot_size, total_kanban').eq('is_active', true),
       supabaseDR.from('parts_master').select('mat_no, part_name, qty_per_pkg').eq('is_active', true),
       supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, customer, line_name, name, p_no').eq('is_active', true),
-      supabaseDR.from('customer_forecasts').select('mat_no, qty').gte('period_month', monthRange.start).lt('period_month', monthRange.end),
+      supabaseDR.from('customer_forecasts').select('mat_no, qty, source').gte('period_month', monthRange.start).lt('period_month', monthRange.end),
       supabase.from('company_calendar').select('work_date, day_type').gte('work_date', monthRange.start).lt('work_date', monthRange.end),
     ]);
     // วันทำงานลิงก์ปฏิทินตามเดือนที่เลือก (แก้ทับได้) · efficiency = ค่ากลาง
@@ -756,8 +756,16 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
     setKsMap(Object.fromEntries((ks || []).map(r => [r.mat_no, r])));
     setPmMap(Object.fromEntries((pm || []).map(r => [r.mat_no, r])));
     setDrMap(Object.fromEntries((dr || []).map(r => [r.mat_no, r])));
+    // กัน double-count: mat ที่มีทั้ง EDI 830 (รายสัปดาห์) และ manual (รายเดือน) ในเดือนเดียว
+    // → รวมเฉพาะ source เดียว (EDI 830 official ก่อน · ไม่มีค่อยใช้ manual) แทนการบวกทั้ง 2 grain (2026-07-21)
+    const fBySrc = {};
+    (fc || []).forEach(r => {
+      if (!r.mat_no) return;
+      const e = fBySrc[r.mat_no] || (fBySrc[r.mat_no] = { edi: 0, other: 0 });
+      e[r.source === 'edi_830' ? 'edi' : 'other'] += Number(r.qty) || 0;
+    });
     const fmap = {};
-    (fc || []).forEach(r => { if (r.mat_no) fmap[r.mat_no] = (fmap[r.mat_no] || 0) + (Number(r.qty) || 0); });
+    Object.entries(fBySrc).forEach(([mat, e]) => { fmap[mat] = e.edi > 0 ? e.edi : e.other; });
     setForecast(fmap);
     setEdits({});
     setLoading(false);
