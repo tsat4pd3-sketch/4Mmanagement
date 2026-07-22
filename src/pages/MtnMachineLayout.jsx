@@ -4,6 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { dueStatus, STATUS_META, DEPT_LABEL, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
+import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
 import { toast } from '../components/Toast'
 import MachineFloorMap from '../components/MachineFloorMap'
 import DowntimeSiren from '../components/DowntimeSiren'
@@ -21,8 +22,7 @@ function publicUrl(path) {
   return supabaseDR.storage.from('jig-images').getPublicUrl(path).data.publicUrl
 }
 
-// ทีมช่าง 4 ส่วน (ค่าตรงกับ checklists.department) — เดิมตกหล่น production (แก้ 2026-07-22)
-const MTN_DEPTS = ['maintenance', 'jig_maintenance', 'die_maintenance', 'production']
+// ไอคอน fallback ต่อ department (ตัวจริงมาจากตาราง mtn_teams · data-driven)
 const DEPT_ICON = { maintenance: '🔧', jig_maintenance: '🧩', die_maintenance: '🗜️', production: '🏭' }
 const FACILITY_CATS = ['facility', 'utility']
 
@@ -81,6 +81,8 @@ export default function MtnMachineLayout({ setupMode = false }) {
   // เปิดหน้ามาเจอ "ภาพรวมทั้งโรงงาน" ก่อน (ฝัง FactoryMap display ตัวเดียวกับ /factory-map) แล้วค่อยเจาะไลน์
   const [view, setView] = useState(setupMode ? 'facility' : 'overview') // 'overview' | 'production' | 'facility'
   const [dept, setDept] = useState('all')
+  const [teams, setTeams] = useState(pmTeamsSync()) // ทีมช่าง data-driven (mtn_teams)
+  useEffect(() => { loadPmTeams().then(setTeams) }, [])
   const [selId, setSelId] = useState(null)
   const [loading, setLoading] = useState(false)
 
@@ -287,7 +289,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
       <>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button onClick={() => setDept('all')} style={S.chip(dept === 'all', 'var(--accent)')}>ทั้งหมด</button>
-        {MTN_DEPTS.map(d => <button key={d} onClick={() => setDept(d)} style={S.chip(dept === d, '#4d9fff')}>{DEPT_ICON[d]} {DEPT_LABEL[d]}</button>)}
+        {teams.map(t => <button key={t.key} onClick={() => setDept(t.key)} style={S.chip(dept === t.key, t.color || '#4d9fff')}>{t.icon || DEPT_ICON[t.key] || ''} {t.label || DEPT_LABEL[t.key]}</button>)}
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {Object.entries(STATUS_META).map(([k, m]) => (
