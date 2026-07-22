@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
-import { can } from '../utils/permissions';
+import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection } from '../utils/mtnTeams';
@@ -67,6 +67,7 @@ const STATUS_META = {
   qa:        { label: '🤝 รอรับมอบ',          step: 5, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
   handover:  { label: '✍️ รออนุมัติปิด',      step: 6, color: '#3b82f6', bg: 'rgba(59,130,246,0.14)' },
   closed:    { label: '✅ ปิด MO',            step: 7, color: '#22c55e', bg: 'rgba(34,197,94,0.14)' },
+  returned:  { label: '↩️ ตีกลับ (ผิดแผนก)',   step: 1, color: '#e0894a', bg: 'rgba(224,137,74,0.14)' },
   rejected:  { label: '⛔ Reject MO',         step: 0, color: '#8b8b96', bg: 'rgba(139,139,150,0.14)' },
 };
 const SCOPE_OPTS = [{ v: 'in_line', t: 'ซ่อมในไลน์' }, { v: 'off_line', t: 'ซ่อมนอกไลน์' }];
@@ -595,7 +596,7 @@ function printMoReportMtn(o, dparts = []) {
 }
 
 /* ── Detail drawer ───────────────────────────────────── */
-function DetailDrawer({ order, role, improvements, onOpenImprovement, onClose, onStep }) {
+function DetailDrawer({ order, role, fullName, improvements, onOpenImprovement, onClose, onStep, onReload }) {
   const o = order;
   const m = STATUS_META[o.status] || STATUS_META.pending;
   const next = nextStepFor(o);
@@ -607,6 +608,29 @@ function DetailDrawer({ order, role, improvements, onOpenImprovement, onClose, o
   useEffect(() => { supabaseDR.from('mtn_order_parts').select('*').eq('order_id', o.id).then(({ data }) => setDparts(data || [])); }, [o.id]);
   // แก้ไขได้: หัวหน้า (manage_master) หรือผู้มีสิทธิ์ทำสเตปนั้น
   const canEditStep = (step) => can('mtn_repair', 'manage_master', role) || (STEP_PERM[step] && can('mtn_repair', STEP_PERM[step], role)) || (step === 1 && can('mtn_repair', 'report', role));
+
+  // ── ตีกลับ (returned) → ผู้แจ้งแก้แผนกแล้วส่งใหม่ ──
+  const [resubDept, setResubDept] = useState(dept);
+  const [resubBusy, setResubBusy] = useState(false);
+  const resubmit = async () => {
+    if (!resubDept) return toast.error('เลือกแผนกที่ถูกต้อง');
+    setResubBusy(true);
+    const nowIso = new Date().toISOString();
+    const upd = {
+      status: 'pending', current_step: 1, mtn_dept: resubDept,
+      report_at: nowIso,                                   // รีเซ็ตนาฬิกา — แผนกที่ถูกเริ่มนับใหม่
+      first_report_at: o.first_report_at || o.report_at,   // เก็บเวลาเปิดครั้งแรกไว้อ้างอิง
+      bounce_count: (o.bounce_count || 0) + 1,
+      returned_at: null, reject_reason: null, returned_from_dept: null,
+      accept_at: null, accepted_by: null, repair_type: null, assigned_to: null, assign_note: null, target_done_at: null,
+      updated_at: nowIso,
+    };
+    const { error } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id).eq('status', 'returned');
+    if (error) { setResubBusy(false); return toast.error(error.message); }
+    const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single();
+    notifyMtn(fresh, 'mtn_reported');   // แจ้งทีมใหม่ให้มารับงาน
+    setResubBusy(false); toast.success(`ส่งใหม่ให้ทีม ${resubDept} แล้ว`); onReload && onReload(); onClose();
+  };
 
   const del = async () => {
     if (!confirm('ลบใบแจ้งซ่อมนี้?')) return;
@@ -638,6 +662,25 @@ function DetailDrawer({ order, role, improvements, onOpenImprovement, onClose, o
       {repeatIssue && (
         <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.5)', fontSize: 12.5, color: '#f59e0b' }}>
           ⚠️ ติดตามผลได้ว่า "{o.follow_up}" — ควรเปิดโปรเจคปรับปรุงแก้ที่ต้นเหตุ
+        </div>
+      )}
+      {o.status === 'returned' && (
+        <div style={{ marginBottom: 10, padding: '10px 12px', borderRadius: 8, background: 'rgba(224,137,74,0.12)', border: '1px solid rgba(224,137,74,0.5)' }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: '#e0894a' }}>↩️ ใบนี้ถูกตีกลับ — ผิดแผนก</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text)', margin: '4px 0' }}>เหตุผล: <b>{o.reject_reason || '-'}</b>{o.returned_from_dept ? ` (ตีกลับจากทีม ${o.returned_from_dept})` : ''}</div>
+          {can('mtn_repair', 'report', role) ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>ส่งใหม่ให้ทีม:</span>
+              <select value={resubDept} onChange={e => setResubDept(e.target.value)} style={{ ...inp, width: 160 }}>{MTN_DEPTS.map(d => <option key={d}>{d}</option>)}</select>
+              <button onClick={resubmit} disabled={resubBusy} style={{ ...btnPri, padding: '7px 14px' }}>{resubBusy ? 'กำลังส่ง…' : '✏️ แก้แผนก & ส่งใหม่'}</button>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>เวลาเริ่มนับใหม่ให้แผนกที่ถูก</span>
+            </div>
+          ) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>ผู้แจ้งต้องแก้แผนกแล้วส่งใหม่</div>}
+        </div>
+      )}
+      {o.status !== 'returned' && o.bounce_count > 0 && (
+        <div style={{ marginBottom: 10, padding: '6px 10px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)', fontSize: 11.5, color: '#e0894a' }}>
+          ↩️ ใบนี้เคยถูกตีกลับ {o.bounce_count} ครั้ง{o.first_report_at ? ` · เปิดครั้งแรก ${fmtDateTime(o.first_report_at)}` : ''} — เวลา KPI นับจากรอบล่าสุด
         </div>
       )}
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -696,7 +739,7 @@ function DetailDrawer({ order, role, improvements, onOpenImprovement, onClose, o
       {/* 💬 คอมเมนต์ใต้ใบซ่อม — คุยงานติดใบ + 🔔 mention แจ้งเตือนเข้ากระดิ่ง */}
       <EventComments refKind="mtn_order" refId={o.id} contextLabel={`ใบซ่อม ${o.mo_no || `#${o.id}`}${o.machine_no ? ` (${o.machine_no})` : ''}`} />
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-        {can('mtn_repair', 'manage_master', role) ? <button onClick={del} style={{ ...btnGhost, color: '#ef4444', borderColor: '#ef4444' }}>🗑 ลบใบนี้</button> : <span />}
+        {canDelete('mtn_repair', 'manage_master', role) ? <button onClick={del} style={{ ...btnGhost, color: '#ef4444', borderColor: '#ef4444' }}>🗑 ลบใบนี้</button> : <span />}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {can('improvements', 'manage', role) && <button onClick={() => onOpenImprovement(o)} style={{ ...btnGhost, ...(repeatIssue ? { color: '#a78bfa', borderColor: '#7c6cf0' } : {}) }}>💡 เปิดโปรเจคปรับปรุง</button>}
           <button onClick={() => printMoReport(o, dparts)} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
@@ -748,9 +791,10 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
       const upd = { updated_at: new Date().toISOString() };
       if (step === 2) {
         if (!f.assigned_to && !isReject) { setSaving(false); return toast.error('มอบหมายช่าง'); }
-        if (isReject && !f.reject_reason.trim()) { setSaving(false); return toast.error('ระบุเหตุผล Reject'); }
+        if (isReject && !f.reject_reason.trim()) { setSaving(false); return toast.error('ระบุเหตุผลที่ตีกลับ'); }
         Object.assign(upd, { accept_at: editMode ? o.accept_at : new Date().toISOString(), accepted_by: f.accepted_by, repair_type: f.repair_type, assign_note: f.assign_note, target_done_at: f.target_done_at || null, assigned_to: f.assigned_to });
-        if (!editMode) { if (isReject) { upd.status = 'rejected'; upd.reject_reason = f.reject_reason; } else { upd.status = 'assigned'; upd.current_step = 2; } }
+        // Reject = "ตีกลับให้ผู้แจ้ง" (ผิดแผนก) — เด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ)
+        if (!editMode) { if (isReject) { upd.status = 'returned'; upd.reject_reason = f.reject_reason; upd.returned_at = new Date().toISOString(); upd.returned_from_dept = o.mtn_dept || null; } else { upd.status = 'assigned'; upd.current_step = 2; } }
         else if (isReject) upd.reject_reason = f.reject_reason;
         // ออกเลข MO ก่อนเลื่อนสถานะ — ถ้า RPC ล้ม (เน็ตสะดุด) ใบยังเป็น pending ให้กดสเตป 2 ใหม่ได้
         // (เดิมเลื่อน status→assigned ก่อน แล้ว RPC ล้ม → ใบค้าง assigned + mo_no=null ตลอดกาล ทำสเตป 2 ซ้ำไม่ได้)
@@ -803,7 +847,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
         if (!editMode) { upd.status = 'closed'; upd.current_step = 7; upd.approve_at = new Date().toISOString(); }
         await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
       }
-      if (!editMode) { const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single(); const ev = isReject ? null : STEP_EVENT[step]; if (ev) notifyMtn(fresh, ev); }
+      if (!editMode) { const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single(); const ev = isReject ? 'mtn_returned' : STEP_EVENT[step]; if (ev) notifyMtn(fresh, ev); }
       setSaving(false); toast.success(editMode ? 'แก้ไขแล้ว' : 'บันทึกแล้ว'); onSaved();
     } catch (e) { setSaving(false); toast.error(e.message || 'บันทึกไม่สำเร็จ'); }
   };
@@ -814,7 +858,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
       <div style={{ display: 'grid', gap: 12 }}>
         {step === 2 && <>
           <Field label="ประเภทงานซ่อม" required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{repairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
-          {isReject ? <Field label="เหตุผล Reject" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field> : <>
+          {isReject ? <><div style={{ fontSize: 11.5, color: '#e0894a', background: 'rgba(224,137,74,0.1)', border: '1px solid rgba(224,137,74,0.3)', borderRadius: 8, padding: '7px 10px' }}>↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
             <Field label="ผู้รับปัญหางาน"><input value={f.accepted_by} onChange={e => set('accepted_by', e.target.value)} style={inp} /></Field>
             <Field label="มอบหมายช่างซ่อม" required><select value={f.assigned_to} onChange={e => set('assigned_to', e.target.value)} style={inp}><option value="">— เลือกช่าง —</option>{techs.map(t => <option key={t.id} value={t.name}>{t.name}{t.dept ? ` · ${t.dept}` : ''}</option>)}</select></Field>
             <DateField label="กำหนดเสร็จ" value={f.target_done_at} onChange={v => set('target_done_at', v)} />
