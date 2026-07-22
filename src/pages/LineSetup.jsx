@@ -300,14 +300,29 @@ export default function LineSetup() {
     // Update production_lines (name + children's parent_line_name)
     await supabase.from('production_lines').update({ name }).eq('id', line.id);
     await supabase.from('production_lines').update({ parent_line_name: name }).eq('parent_line_name', old);
-    // Cascade to map/station tables
-    await supabase.from('workstations').update({ line_name: name }).eq('line_name', old);
-    await supabase.from('line_layouts').update({ line_name: name }).eq('line_name', old);
-    await supabase.from('wip_buffer_points').update({ line_name: name }).eq('line_name', old);
-    await supabase.from('machine_points').update({ line_name: name }).eq('line_name', old);
-    await supabase.from('machine_flow_links').update({ line_name: name }).eq('line_name', old);
-    // DR project: machines table
-    await supabaseDR.from('machines').update({ line_name: name }).eq('line_name', old);
+
+    // ── Cascade "ชื่อไลน์" (line_name snapshot) ทุกตารางทั้ง 2 project ────────────────────────────
+    // ⚠️ กฎเหล็ก (2026-07-22): ไลน์ถูกอ้างด้วย "ชื่อ" เป็น text snapshot ในหลายตาราง ไม่ใช่ FK
+    // เปลี่ยนชื่อแล้วไม่ตามไปแก้ทุกที่ = ข้อมูลชื่อเก่า "กำพร้า" ทันที
+    // เคสจริง: เปลี่ยนชื่อไลน์ Laser → "กะที่เปิดค้าง" (production_sessions.line_name = ชื่อเก่า) หลุดจาก
+    // รายการ "กะที่เปิดอยู่" ใน Daily Report เพราะระบบกรองด้วยชื่อไลน์ปัจจุบัน (session ยังเปิดใน DB
+    // แค่ถูกกรองพ้นสายตา) · dr_products.line_name เก่า ทำให้เปิด order/สแกนของไลน์ที่เปลี่ยนชื่อไม่ได้ด้วย
+    // best-effort: ยิงทีละตาราง ไม่ abort ถ้าตารางใด error (บาง deploy ยังไม่มีตาราง/คอลัมน์นั้น)
+    const bump = async (client, table, col = 'line_name') => {
+      try { await client.from(table).update({ [col]: name }).eq(col, old); } catch { /* best-effort */ }
+    };
+    // Main project (client supabase) — ผัง/จุดงาน + 4M + factory map + LPA + action items
+    for (const t of ['workstations', 'line_layouts', 'wip_buffer_points', 'machine_points', 'machine_flow_links',
+                     'four_m_logs', 'factory_line_regions', 'lpa_plans', 'lpa_audits', 'meeting_action_items']) {
+      await bump(supabase, t);
+    }
+    // DR project (client supabaseDR) — production_sessions/dr_products สำคัญสุด (กะที่เปิด + product→line map)
+    for (const t of ['machines', 'production_sessions', 'dr_products', 'line_stock_transactions',
+                     'jigs', 'pm_daily_line_targets', 'mtn_orders', 'improvements', 'scrap_reports']) {
+      await bump(supabaseDR, t);
+    }
+    await bump(supabaseDR, 'pm_plans', 'usage_source_line');
+
     setEditingLineId(null);
     if (selectedLine === old) setSelectedLine(name);
     await fetchLines();

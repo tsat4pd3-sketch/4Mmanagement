@@ -221,6 +221,12 @@
 - Register.jsx กรอง LINE โดย: `l.name === department || l.parent_line_name === department`
 - **Dropdown ลำดับชั้น (Section→แผนก→Line→Team) ทุกหน้าต้อง cascade + ล้างตัวลูกเมื่อเปลี่ยนตัวแม่** — กฎเต็มดู `docs/UI-CONVENTIONS.md` §5.3 (เพิ่ม 2026-07-21 หลังพบ Report 5 จุด + operator filter bar โชว์แผนกข้าม section)
 
+> ### ⚠️ กฎเหล็ก — เปลี่ยนชื่อไลน์ (rename) ต้อง cascade `line_name` ทุกตาราง **2 project** (2026-07-22)
+> **ชื่อไลน์ถูกเก็บเป็น text snapshot (ไม่ใช่ FK) ในหลายสิบตารางทั้ง Main + DR** — `production_lines.name` เป็นแค่ที่เดียว ที่เหลืออ้างด้วยชื่อ · เปลี่ยนชื่อแล้ว**ไม่ตามไปแก้ทุกที่ = ข้อมูลชื่อเก่ากำพร้าเงียบๆ ทันที**
+> **เคสจริงที่เจอ:** เปลี่ยนชื่อไลน์ Laser ใน `/linesetup` → "กะที่เปิดค้าง" หายจากรายการ "กะที่เปิดอยู่" ใน Daily Report (เพราะ `production_sessions.line_name` = ชื่อเก่า แต่หน้ากรองด้วยชื่อไลน์ปัจจุบัน — leader `.in('line_name',[children])`, scoped role `lineMap[s.line_name].section` — session ยังเปิดอยู่ใน DB **แค่ถูกกรองพ้นสายตา** ไม่ได้หาย) · `dr_products.line_name` เก่ายังทำให้เปิด order/สแกนของไลน์ที่เปลี่ยนชื่อไม่ได้ด้วย
+> **`handleRenameLine` (LineSetup.jsx) cascade แล้ว (best-effort ต่อ table):** Main = `workstations, line_layouts, wip_buffer_points, machine_points, machine_flow_links, four_m_logs, factory_line_regions, lpa_plans, lpa_audits, meeting_action_items` · DR = `machines, production_sessions, dr_products, line_stock_transactions, jigs, pm_daily_line_targets, mtn_orders, improvements, scrap_reports` + `pm_plans.usage_source_line` · **เพิ่มตารางใหม่ที่เก็บ `line_name` ต้องมาเติมในลิสต์นี้ด้วย** · `handleDeleteLine` มีช่องโหว่เดียวกัน (ลบไลน์ที่ยังมี session เปิด = orphan) — ยังไม่ปิด, เลี่ยงลบไลน์ที่มีกะเปิดค้าง
+> **กู้ session ที่กำพร้าไปแล้ว (rename ก่อนมี fix):** ใน `/linesetup` เปลี่ยนชื่อไลน์**กลับเป็นชื่อเก่า** (session ชื่อเก่ากลับมาโผล่) แล้ว**เปลี่ยนเป็นชื่อใหม่ที่ต้องการอีกรอบ** — รอบสองจะ cascade `production_sessions` ตามไปด้วย (fix ใหม่) · หรือ UPDATE `production_sessions.line_name` ชื่อเก่า→ใหม่ ตรงใน DR SQL editor
+
 ---
 
 ## Role System
