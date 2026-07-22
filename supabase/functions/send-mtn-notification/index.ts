@@ -157,6 +157,16 @@ Deno.serve(async (req) => {
         photo = mo.after_img || null; break;
       default: return json({ error: 'unknown event' }, 400);
     }
+    // เด้งบอก "ขั้นต่อไป" ให้ห้องแชททีมรู้ว่าต้องรออะไรต่อ (ตามที่ user ต้องการ)
+    const NEXT: Record<string, string> = {
+      mtn_reported: 'รอช่างรับงาน (ขั้น 2)',
+      mtn_assigned: 'รอดำเนินการซ่อม (ขั้น 3)',
+      mtn_repaired: 'รอตรวจสอบหลังซ่อม (ขั้น 4)',
+      mtn_checked: 'รอยืนยันคุณภาพ / รับมอบ (ขั้น 5-6)',
+      mtn_qa: 'รอรับมอบ (ขั้น 6)',
+      mtn_handover: 'รออนุมัติปิด (ขั้น 7)',
+    };
+    if (NEXT[event]) builtin += `\n⏳ ขั้นต่อไป: ${NEXT[event]}`;
     const message = pick(routes, event, v, builtin);
     const sent = photo
       ? await sendTelegramPhoto(photo, message, chat).catch(() => [])
