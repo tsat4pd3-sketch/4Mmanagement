@@ -21,8 +21,9 @@ function publicUrl(path) {
   return supabaseDR.storage.from('jig-images').getPublicUrl(path).data.publicUrl
 }
 
-const MTN_DEPTS = ['maintenance', 'jig_maintenance', 'die_maintenance']
-const DEPT_ICON = { maintenance: '🔧', jig_maintenance: '🧩', die_maintenance: '🗜️' }
+// ทีมช่าง 4 ส่วน (ค่าตรงกับ checklists.department) — เดิมตกหล่น production (แก้ 2026-07-22)
+const MTN_DEPTS = ['maintenance', 'jig_maintenance', 'die_maintenance', 'production']
+const DEPT_ICON = { maintenance: '🔧', jig_maintenance: '🧩', die_maintenance: '🗜️', production: '🏭' }
 const FACILITY_CATS = ['facility', 'utility']
 
 function worstStatus(statuses) {
