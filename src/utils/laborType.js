@@ -7,7 +7,7 @@
 
 // heuristic fallback เมื่อ node ยังไม่ตั้ง labor_type ในผังองค์กร
 const PROD_RE = /PD\s?\d|GOR|HYDRO|ASSY|ASSEMBLY|WELD|PRESS|LASER|BEND|LINE|FENDER|APRON|STAMP|SPOT/i;
-const INDIRECT_RE = /MTN|MAINT|ซ่อม|JIG|DIE|\bQA\b|QC|STORE|คลัง|LOGISTIC|ADMIN|ธุรการ|SALE|ขาย|HR|บุคคล/i;
+const INDIRECT_RE = /MTN|MAINT|ซ่อม|JIG|DIE|\bQA\b|QC|STORE|สโตร์|คลัง|WAREHOUSE|RACK|LOGISTIC|โลจิสติก|PLAN|วางแผน|ADMIN|ธุรการ|SALE|ขาย|HR|บุคคล|ENG|วิศว/i;
 
 export const LABOR_META = {
   direct:   { label: 'Direct (ผลิต)',      short: 'Direct',   icon: '🔧', color: '#22c55e' },
