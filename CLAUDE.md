@@ -156,9 +156,10 @@
 | ฝ่ายผลิต | `/daily-report` | DailyReport | ทุก role |
 | ฝ่ายผลิต | `/production-plan` | ProductionPlan — วางแผนการผลิต (active planner ดู section "Production Plan") | admin/manager/supervisor/leader/planner_store/sale |
 | วิเคราะห์ & รายงาน | `/oee-analytics` | OEEAnalytics | ทุก role |
-| ฝ่ายผลิต | `/daily-pm` | DailyPM | ทุก role |
+| ฝ่ายผลิต | `/daily-checker` | **DailyChecker** — 🗂️ ศูนย์รวมระบบเช็ครายวัน (แท็บ: ✅ PM Daily / 📋 LPA / +ระบบเช็คอื่นในอนาคต) · embed component หน้าเดิมทั้งดุ้น (`DailyPM`/`LayerProcessAudit`) · แท็บโผล่ตามสิทธิ์หน้าย่อย · **สิทธิ์เข้าหน้า piggyback** `page:/daily-pm`‖`page:/lpa` (canAccessPage special-case ใน permissions.js — ไม่ต้อง seed permission ใหม่) · เพิ่มระบบเช็คใหม่ = เพิ่ม entry ใน `TABS` (DailyChecker.jsx) · `?tab=pm\|lpa` deep-link (2026-07-23) | ทุก role (ตามแท็บ) |
+| (ไม่อยู่ใน sidebar) | `/daily-pm` | DailyPM — ยังเป็น route แยก (เป็นแท็บใน Daily Checker + deep-link) | ทุก role |
 | ฝ่ายผลิต | `/improvements` | Improvements (Kaizen — ดู section "Improvements") | ทุก role (manage: admin/mgr/sv/leader) |
-| ฝ่ายผลิต | `/lpa` | LayerProcessAudit — LPA paperless (แผนตรวจ+บันทึกผล+รายงาน FM-QMR-008 — ดู section "Layer Process Audit") | ทุก role (record: mgr/sv/leader/engineer/qa · manage: mgr/sv · delete: mgr) |
+| (ไม่อยู่ใน sidebar) | `/lpa` | LayerProcessAudit — LPA paperless (แท็บใน Daily Checker + deep-link · ดู section "Layer Process Audit") | ทุก role (record: mgr/sv/leader/engineer/qa · manage: mgr/sv · delete: mgr) |
 | Logistic - Store | `/line-stock` | LineStock | ทุก role |
 | Logistic - Store | `/heijunka` | HeijunkaKanban | ทุก role |
 | Logistic - Store | `/rack-center` | RackCenter | ทุก role |
