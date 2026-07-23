@@ -61,7 +61,7 @@ export default function PmCoordination() {
       supabaseDR.from('machines').select('id, machine_no, machine_name, line_name').eq('is_active', true).order('sort_order'),
       supabaseDR.from('pm_coordination_plans').select('*').order('created_at', { ascending: false }).limit(500),
       // แผน PM เดิม (best-effort — ยังไม่มีตารางก็ไม่พัง)
-      supabaseDR.from('pm_plans').select('id, checklist_id, next_due_date, plan_type').eq('is_active', true).then(r => r).catch(() => ({ data: [] })),
+      supabaseDR.from('pm_plans').select('id, checklist_id, next_due_date, plan_type, interval_days, usage_metric, usage_threshold').eq('is_active', true).then(r => r).catch(() => ({ data: [] })),
       supabaseDR.from('checklists').select('id, equipment_id, department, name, frequency').eq('module', 'mtn').then(r => r).catch(() => ({ data: [] })),
     ]);
     setLines(ln || []); setMachines(mc || []);
@@ -81,8 +81,9 @@ export default function PmCoordination() {
       const machine_no = mc2?.machine_no || jig?.machine_no || null;
       const line_name = mc2?.line_name || jig?.line_name || null;
       if (!machine_name && !machine_no) return null;
+      const isUsage = p.plan_type === 'usage' || p.usage_metric || p.usage_threshold != null;
       return { plan_id: p.id, next_due_date: p.next_due_date, department: cl.department, checklist_name: cl.name, frequency: cl.frequency,
-        machine_id: mc2?.id || null, machine_no, machine_name, line_name };
+        machine_id: mc2?.id || null, machine_no, machine_name, line_name, is_usage: isUsage, interval_days: p.interval_days || null };
     }).filter(Boolean).sort((a, b) => String(a.next_due_date || '9999').localeCompare(String(b.next_due_date || '9999')));
     setPmPlans(upcoming);
     const planIds = (pl || []).map(p => p.id);
@@ -109,6 +110,8 @@ export default function PmCoordination() {
     } catch { /* ignore */ }
   }, [loading, canManage]);
 
+  const pmPlanById = useMemo(() => { const m = {}; pmPlans.forEach(p => { m[p.plan_id] = p; }); return m; }, [pmPlans]);
+
   const shown = useMemo(() => {
     return (plans || []).filter(p => {
       if (scopeLines && p.line_name && !scopeLines.has(p.line_name)) return false;
@@ -117,6 +120,24 @@ export default function PmCoordination() {
       return p.status === fStatus;
     });
   }, [plans, scopeLines, fStatus]);
+
+  // ช่วง Production Support ที่กำลังจะถึง (is_support · วันนี้เป็นต้นไป · แผนที่ยังไม่ done/cancelled) — เตือน Production ล่วงหน้า
+  const upcomingSupport = useMemo(() => {
+    const today = todayStr();
+    const planById = {}; (plans || []).forEach(p => { planById[p.id] = p; });
+    const out = [];
+    Object.entries(tasksByPlan).forEach(([pid, tks]) => {
+      const pl = planById[pid];
+      if (!pl || ['done', 'cancelled'].includes(pl.status)) return;
+      if (scopeLines && pl.line_name && !scopeLines.has(pl.line_name)) return;
+      (tks || []).forEach(t => {
+        if (t.is_support && !t.done && t.task_date && t.task_date >= today) {
+          out.push({ ...t, plan: pl });
+        }
+      });
+    });
+    return out.sort((a, b) => String(a.task_date).localeCompare(String(b.task_date)));
+  }, [tasksByPlan, plans, scopeLines]);
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
 
@@ -137,9 +158,26 @@ export default function PmCoordination() {
         <span style={{ fontSize: 12, color: 'var(--muted)', alignSelf: 'center' }}>{shown.length} แผน</span>
       </div>
 
+      {upcomingSupport.length > 0 && (
+        <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 12, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.4)' }}>
+          <div style={{ fontSize: 13.5, fontWeight: 800, color: '#ef4444', marginBottom: 8 }}>🔔 ช่วง Production Support ที่กำลังจะถึง ({upcomingSupport.length})</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {upcomingSupport.map(t => (
+              <div key={t.id} style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontSize: 12.5, flexWrap: 'wrap' }}>
+                <b style={{ color: '#ef4444', minWidth: 90 }}>{beDate(t.task_date)}</b>
+                {(t.time_from || t.time_to) && <span style={{ color: 'var(--accent2)', fontWeight: 700 }}>{t.time_from || ''}{t.time_to ? '–' + t.time_to : ''} น.</span>}
+                <span style={{ color: 'var(--text)' }}>{t.plan.title}{t.plan.machine_name ? ` · ${t.plan.machine_name}` : ''}{t.plan.line_name ? ` · 🏭 ${t.plan.line_name}` : ''}</span>
+                <span style={{ color: 'var(--muted)' }}>— {t.description}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 420px), 1fr))' }}>
         {shown.map(p => (
           <PlanCard key={p.id} plan={p} tasks={tasksByPlan[p.id] || []} canManage={canManage} teams={teams}
+            pmPlan={p.pm_plan_id ? pmPlanById[p.pm_plan_id] : null}
             fullName={fullName} onEdit={() => setEditing({ ...p, tasks: tasksByPlan[p.id] || [] })} onReload={load} />
         ))}
         {!shown.length && <div style={{ color: 'var(--muted)', padding: 24 }}>ไม่มีแผน</div>}
@@ -151,7 +189,7 @@ export default function PmCoordination() {
 }
 
 /* ── การ์ดแผน ─────────────────────────────── */
-function PlanCard({ plan: p, tasks, canManage, fullName, onEdit, onReload }) {
+function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReload }) {
   const m = STATUS_META[p.status] || STATUS_META.draft;
   const doneN = tasks.filter(t => t.done).length;
 
@@ -170,6 +208,21 @@ function PlanCard({ plan: p, tasks, canManage, fullName, onEdit, onReload }) {
   };
   const setStatus = async (status) => {
     await supabaseDR.from('pm_coordination_plans').update({ status, updated_at: new Date().toISOString() }).eq('id', p.id);
+    // ผูกแผน PM เดิม + ปิดเป็น "เสร็จ" → ถามว่าจะ stamp วันทำล่าสุดในระบบแผน PM ด้วยไหม (เลื่อนรอบถัดไป)
+    if (status === 'done' && p.pm_plan_id && pmPlan) {
+      if (confirm('PM ของเครื่องนี้ทำเสร็จจริงแล้ว?\nกด OK เพื่ออัพเดท "วันทำล่าสุด" ในระบบแผน PM (เลื่อนรอบถัดไปให้อัตโนมัติ)')) {
+        const done = todayStr();
+        const patch = { last_done_at: done };
+        // ตามรอบเวลา → เลื่อน next_due = วันทำ + interval_days · ตาม usage → forecast คำนวณเองจาก last_done_at
+        if (!pmPlan.is_usage && pmPlan.interval_days) {
+          const d = new Date(done + 'T00:00:00'); d.setDate(d.getDate() + Number(pmPlan.interval_days));
+          patch.next_due_date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+        const { error } = await supabaseDR.from('pm_plans').update(patch).eq('id', p.pm_plan_id);
+        if (error) toast.error('อัพเดทแผน PM ไม่สำเร็จ: ' + error.message);
+        else toast.success('อัพเดทวันทำล่าสุดในระบบแผน PM แล้ว');
+      }
+    }
     onReload();
   };
   const toggleTask = async (t) => {
