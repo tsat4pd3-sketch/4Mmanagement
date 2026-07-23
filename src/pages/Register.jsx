@@ -30,6 +30,7 @@ export default function Register() {
   const [busRouteId,  setBusRouteId]  = useState('');
   const [orgSections, setOrgSections] = useState([]);
   const [orgDepts,    setOrgDepts]    = useState([]);
+  const [orgLines,    setOrgLines]    = useState([]); // org groups (kind='line') + ref_line_id
   const [teamOpts,    setTeamOpts]    = useState([]);
 
   useEffect(() => {
@@ -46,11 +47,12 @@ export default function Register() {
       });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
       .then(({ data }) => setBusRoutes(data || []));
-    supabase.from('org_nodes').select('id, code, name, kind, parent_id').eq('is_active', true).order('sort_order')
+    supabase.from('org_nodes').select('id, code, name, kind, parent_id, ref_line_id').eq('is_active', true).order('sort_order')
       .then(({ data }) => {
         const nodes = data || [];
         setOrgSections(nodes.filter(n => n.kind === 'section'));
         setOrgDepts(nodes.filter(n => n.kind === 'department'));
+        setOrgLines(nodes.filter(n => n.kind === 'line'));
         const teamCodes = [...new Set(nodes.filter(n => n.kind === 'team').map(n => n.code || n.name))];
         setTeamOpts(teamCodes);
       });
@@ -66,6 +68,9 @@ export default function Register() {
 
   const selectedSectionNode = orgSections.find(s => (s.code || s.name) === section);
   const deptOpts = selectedSectionNode ? orgDepts.filter(d => d.parent_id === selectedSectionNode.id) : [];
+  // กลุ่ม (org_nodes kind='line') ใต้แผนกที่เลือก — cascade จากผังองค์กร
+  const selectedDeptNode = orgDepts.find(d => (d.code || d.name) === department && (!selectedSectionNode || d.parent_id === selectedSectionNode.id));
+  const orgGroupOpts = selectedDeptNode ? orgLines.filter(g => g.parent_id === selectedDeptNode.id) : [];
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -195,8 +200,21 @@ export default function Register() {
           <div>
             <label style={labelSt}>Group / กลุ่ม (Line)</label>
             {(() => {
-              // cascade Section→แผนก→Line (UI-CONVENTIONS §5.3): กรอง section (locked/เลือก) → แผนก
-              //   select ถูก gate disabled จนเลือกแผนก · filterLinesByDept = normalize + fail-open กันชื่อไม่ตรงแล้วว่าง
+              // cascade Section→แผนก→กลุ่ม (UI-CONVENTIONS §5.3): กลุ่มจากผังองค์กร (org_nodes kind='line') ใต้แผนกที่เลือก
+              //   ตั้ง line_id ผ่าน ref_line_id ของกลุ่ม (production ยังทำงาน) · ผังยังไม่มีกลุ่ม → fallback production_lines
+              if (orgGroupOpts.length) {
+                return (
+                  <select value={groupName} disabled={!department} onChange={e => {
+                    const val = e.target.value;
+                    setGroupName(val);
+                    const g = orgGroupOpts.find(x => (x.code || x.name) === val);
+                    setLineId(g?.ref_line_id || null);
+                  }}>
+                    <option value="">{department ? '— เลือกกลุ่ม —' : 'เลือกแผนกก่อน'}</option>
+                    {orgGroupOpts.map(g => <option key={g.id} value={g.code || g.name}>{g.name}</option>)}
+                  </select>
+                );
+              }
               const secFilter = lockedSection || section;
               let lineOpts = secFilter ? lines.filter(l => l.section === secFilter) : lines;
               lineOpts = filterLinesByDept(lineOpts, department);

@@ -96,6 +96,7 @@ export default function Operator() {
   const [orgSectionOpts,  setOrgSectionOpts]  = useState([]);
   const [orgSectionNodes, setOrgSectionNodes] = useState([]);
   const [orgDeptNodes,    setOrgDeptNodes]    = useState([]);
+  const [orgLineNodes,    setOrgLineNodes]    = useState([]); // org groups (kind='line') + ref_line_id
 
   useEffect(() => {
     let alive = true;
@@ -106,7 +107,7 @@ export default function Operator() {
       .then(({ data }) => { if (alive) setLines(data || []); });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
       .then(({ data }) => { if (alive) setBusRoutes(data || []); });
-    supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type').eq('is_active', true).order('sort_order')
+    supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id').eq('is_active', true).order('sort_order')
       .then(({ data }) => {
         if (!alive) return;
         const orgNodes = data || [];
@@ -114,6 +115,7 @@ export default function Operator() {
         setOrgSectionNodes(secNodes);
         setOrgSectionOpts(secNodes.map(n => n.code || n.name));
         setOrgDeptNodes(orgNodes.filter(n => n.kind === 'department'));
+        setOrgLineNodes(orgNodes.filter(n => n.kind === 'line'));
       });
     if (isLeader && userLineId) {
       supabase.from('production_lines').select('name').eq('id', userLineId).single()
@@ -1234,22 +1236,44 @@ export default function Operator() {
                 <label style={labelSt}>Group / กลุ่ม (Line)</label>
                 {isLeader ? (
                   <input type="text" value={editingEmp.group_name || myLineName || ''} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
-                ) : (
-                  <select value={editingEmp.group_name || ''} disabled={!editingEmp.department} onChange={e => {
-                    const val = e.target.value;
-                    const line = lines.find(l => l.name === val);
-                    setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
-                  }}>
-                    {/* cascade Section→แผนก→Line (UI-CONVENTIONS §5.3): gate ต้องเลือกแผนกก่อน (select disabled)
-                        · filterLinesByDept = fail-open กันชื่อแผนกไม่ตรงชื่อไลน์แล้วลิสต์ว่าง */}
-                    <option value="">{editingEmp.department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
-                    {filterLinesByDept(
-                      (scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
-                        .filter(l => !editingEmp.section || l.section === editingEmp.section),
-                      editingEmp.department
-                    ).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                  </select>
-                )}
+                ) : (() => {
+                  // cascade จากผังองค์กร: กลุ่ม (org_nodes kind='line') ใต้แผนกที่เลือก — ตั้ง line_id ผ่าน ref_line_id ให้ production ยังทำงาน
+                  const empSection = lockedScopeSec || editingEmp.section;
+                  const secNode = orgSectionNodes.find(s => (s.code || s.name) === empSection);
+                  const depNode = orgDeptNodes.find(d => (d.code || d.name) === editingEmp.department && (!secNode || d.parent_id === secNode.id));
+                  const orgGroups = depNode ? orgLineNodes.filter(g => g.parent_id === depNode.id) : [];
+                  const cur = editingEmp.group_name || '';
+                  const curInOrg = orgGroups.some(g => (g.code || g.name) === cur);
+                  if (orgGroups.length) {
+                    return (
+                      <select value={cur} disabled={!editingEmp.department} onChange={e => {
+                        const val = e.target.value;
+                        const g = orgGroups.find(x => (x.code || x.name) === val);
+                        // เลือกกลุ่มในผัง → line_id จาก ref_line_id · เลือกค่าเดิม (นอกผัง) → คง line_id เดิม
+                        setEditingEmp({ ...editingEmp, group_name: val, line_id: g ? (g.ref_line_id || null) : editingEmp.line_id });
+                      }}>
+                        <option value="">{editingEmp.department ? '— เลือกกลุ่ม —' : 'เลือกแผนกก่อน'}</option>
+                        {orgGroups.map(g => <option key={g.id} value={g.code || g.name}>{g.name}</option>)}
+                        {cur && !curInOrg && <option value={cur}>{cur} (นอกผัง — ค่าเดิม)</option>}
+                      </select>
+                    );
+                  }
+                  // fallback: ผังยังไม่มีกลุ่มใต้แผนกนี้ → ใช้ production_lines เดิม (normalize + fail-open)
+                  return (
+                    <select value={cur} disabled={!editingEmp.department} onChange={e => {
+                      const val = e.target.value;
+                      const line = lines.find(l => l.name === val);
+                      setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
+                    }}>
+                      <option value="">{editingEmp.department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
+                      {filterLinesByDept(
+                        (scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
+                          .filter(l => !editingEmp.section || l.section === editingEmp.section),
+                        editingEmp.department
+                      ).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                    </select>
+                  );
+                })()}
               </div>
 
               <div>
