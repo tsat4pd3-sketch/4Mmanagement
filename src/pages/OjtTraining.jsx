@@ -92,6 +92,8 @@ export default function OjtTraining() {
   const [employees, setEmployees] = useState([]);
   const [lines, setLines] = useState([]);
   const [orgSections, setOrgSections] = useState([]);
+  const [orgSectionNodes, setOrgSectionNodes] = useState([]);
+  const [orgDeptNodes, setOrgDeptNodes] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [editing, setEditing] = useState(null);   // training draft (มี attendees[])
   const [saving, setSaving] = useState(false);
@@ -111,11 +113,13 @@ export default function OjtTraining() {
     const [{ data: tr }, { data: ln }, { data: org }, { data: profs }] = await Promise.all([
       supabase.from('ojt_trainings').select('*, ojt_training_attendees(id)').order('train_date', { ascending: false }).order('created_at', { ascending: false }).limit(300),
       supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
-      supabase.from('org_nodes').select('code, name, kind').eq('is_active', true),
+      supabase.from('org_nodes').select('id, code, name, kind, parent_id').eq('is_active', true).order('sort_order'),
       supabase.from('profiles').select('id, full_name, signature_url').order('full_name'),
     ]);
     setLines(ln || []);
     setOrgSections((org || []).filter(n => n.kind === 'section').map(n => n.code || n.name).sort());
+    setOrgSectionNodes((org || []).filter(n => n.kind === 'section'));
+    setOrgDeptNodes((org || []).filter(n => n.kind === 'department'));
     setProfiles(profs || []);
     setTrainings(tr || []);
     setLoading(false);
@@ -530,12 +534,28 @@ table{border-collapse:collapse}
                 <div><div style={lb}>ฝ่าย</div><input type="text" value={editing.dept || ''} onChange={e => setF('dept', e.target.value)} style={{ width: '100%' }} /></div>
                 <div>
                   <div style={lb}>ส่วน</div>
-                  <select value={editing.section || ''} onChange={e => setF('section', e.target.value)} style={{ width: '100%' }}>
+                  <select value={editing.section || ''} onChange={e => setEditing(p => ({ ...p, section: e.target.value, department: '' }))} style={{ width: '100%' }}>
                     <option value="">— เลือก —</option>
                     {(effSections.length ? orgSections.filter(s => inSectionScope(effSections, s)) : orgSections).map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
-                <div><div style={lb}>แผนก</div><input type="text" value={editing.department || ''} onChange={e => setF('department', e.target.value)} style={{ width: '100%' }} /></div>
+                <div>
+                  <div style={lb}>แผนก</div>
+                  {(() => {
+                    // cascade: แผนกจากผังองค์กร (org_nodes department) ใต้ส่วนที่เลือก — §5.3
+                    const secNode = orgSectionNodes.find(s => (s.code || s.name) === editing.section);
+                    const depOpts = secNode ? orgDeptNodes.filter(d => d.parent_id === secNode.id) : [];
+                    return (
+                      <select value={editing.department || ''} disabled={!editing.section} onChange={e => setF('department', e.target.value)} style={{ width: '100%' }}>
+                        <option value="">{editing.section ? '— เลือก —' : 'เลือกส่วนก่อน'}</option>
+                        {depOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
+                        {editing.department && !depOpts.some(d => (d.code || d.name) === editing.department) && (
+                          <option value={editing.department}>{editing.department} (นอกผัง — ค่าเดิม)</option>
+                        )}
+                      </select>
+                    );
+                  })()}
+                </div>
                 <div><div style={lb}>ผู้สอนงาน</div><input type="text" value={editing.trainer_name || ''} onChange={e => setF('trainer_name', e.target.value)} style={{ width: '100%' }} /></div>
               </div>
 

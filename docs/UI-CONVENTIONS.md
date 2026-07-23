@@ -182,8 +182,10 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 2. **เปลี่ยนตัวแม่ = ล้างค่าตัวลูกที่เลือกค้าง** (`setChild('')`) — ไม่งั้นค่าค้างนอก scope กรองแล้วได้ผลว่างเปล่า ผู้ใช้งงว่าข้อมูลหาย
 3. ตัวเลือกที่มาจากข้อมูลจริง (เช่น distinct จาก employees) ให้กรองตามตัวแม่ก่อนค่อย distinct — ได้ตัวเลือกที่ match แถวจริงเสมอ + ไม่มีชื่อซ้ำข้าม section
 4. ข้อยกเว้น (ตั้งใจไม่ cascade): ฟอร์ม**กำหนด scope ของ user** (AddUser — เลือกหลาย section + line อิสระ) และ toggle เลือก "section หรือ line อย่างใดอย่างหนึ่ง" (ShiftOrganize merge)
+5. **ระดับ Group/กลุ่ม ในฟอร์มลงทะเบียน/แก้พนักงาน = ดึงจาก `org_nodes` kind='line' (2026-07-22)** ไม่ใช่ `production_lines` ตรงๆ — org group ผูก production_line ผ่าน `ref_line_id` → ตอนเลือกกลุ่มให้ตั้ง `employees.line_id = group.ref_line_id` (production/ผัง/scope ยังทำงาน) · **fallback เป็น `production_lines` (`filterLinesByDept`) เฉพาะเมื่อผังยังไม่มีกลุ่มใต้แผนกนั้น** · ทำแล้ว: Register + operator edit modal
+6. **`employees.section/department/group_name` เป็น free text ไม่ผูก FK** → drift ได้ · **ตัวกรอง (filter bar) ที่ดึง distinct จาก employees ต้องจัดกลุ่ม 2 optgroup: "ในผังองค์กร" (ค่าที่ตรง org_nodes) + "⚠ นอกผัง (ต้องจัดข้อมูล)" (ค่าที่พนักงานกรอกแต่ไม่มีในผัง)** และ**โชว์เฉพาะค่าที่มีพนักงานจริง** (ทุกตัวเลือกเจอคนแน่นอน — กันหัวหน้าหาคนไม่เจอ) · ทำแล้ว: operator filter bar (Dept + Group)
 
-ต้นแบบที่ถูก: `Register.jsx` (ฟอร์ม), `OEEAnalytics.jsx` TargetDashboard (filter bar — มี comment "Cascading Section → Department(group) → Line"), `Report.jsx` hook `useOrgDepts` → `deptsOf(section)`, `operator.jsx` (filter bar + modal)
+ต้นแบบที่ถูก: `Register.jsx` (ฟอร์ม + group จาก org_nodes kind='line'), `OEEAnalytics.jsx` TargetDashboard (filter bar), `Report.jsx` hook `useOrgDepts` → `deptsOf(section)`, `operator.jsx` (filter bar Dept+Group แบบ ในผัง/นอกผัง + modal cascade org_nodes)
 
 ---
 
