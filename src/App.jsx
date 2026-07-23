@@ -554,6 +554,14 @@ function NotificationBell({ userId }) {
 
   const unread = notifs.filter(n => !n.is_read).length;
 
+  // PWA: จำนวนที่ยังไม่อ่าน → badge จุดแดง/เลขบนไอคอนแอปที่ติดตั้ง (Android/desktop Chrome/Edge)
+  // ⚠️ iOS ไม่รองรับ App Badging API (Apple ยังไม่ทำ) — guard ด้วย 'setAppBadge' in navigator · อัปเดตเฉพาะตอนเปิดแอป (ไม่มี SW/push)
+  useEffect(() => {
+    if (!('setAppBadge' in navigator)) return;
+    (unread > 0 ? navigator.setAppBadge(unread) : navigator.clearAppBadge()).catch(() => {});
+  }, [unread]);
+  useEffect(() => () => { navigator.clearAppBadge?.().catch(() => {}); }, []); // ล้าง badge ตอน logout/unmount
+
   const typeColor = { success: '#22c55e', error: '#ef4444', warning: '#f59e0b', info: '#4d9fff' };
 
   return (
