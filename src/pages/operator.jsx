@@ -437,7 +437,24 @@ export default function Operator() {
   }, [orgDeptNodes, orgSectionNodes, filterSection, empsInSec]);
   const deptOpts    = useMemo(() => [...deptOrgList, ...deptLegacyList], [deptOrgList, deptLegacyList]);
   const empsInDept  = useMemo(() => empsInSec.filter(e => !filterDept || e.department === filterDept), [empsInSec, filterDept]);
-  const groupOpts   = useMemo(() => [...new Set(empsInDept.map(e => e.group_name).filter(Boolean))].sort(), [empsInDept]);
+  // ตัวกรองกลุ่ม (Group) = cascade จากผังองค์กร (org_nodes kind='line' ใต้แผนกที่เลือก) เหมือน Dept — โชว์เฉพาะกลุ่มที่มีพนักงานจริง
+  const grpDepNode  = useMemo(() => {
+    const secNode = orgSectionNodes.find(s => (s.code || s.name) === filterSection);
+    return orgDeptNodes.find(d => (d.code || d.name) === filterDept && (!secNode || d.parent_id === secNode.id));
+  }, [orgDeptNodes, orgSectionNodes, filterSection, filterDept]);
+  const groupOrgList = useMemo(() => {
+    const empGroups = new Set(empsInDept.map(e => String(e.group_name || '').trim().toLowerCase()).filter(Boolean));
+    return (grpDepNode ? orgLineNodes.filter(g => g.parent_id === grpDepNode.id) : [])
+      .map(g => g.code || g.name)
+      .filter(name => empGroups.has(String(name).trim().toLowerCase()));
+  }, [orgLineNodes, grpDepNode, empsInDept]);
+  const groupLegacyList = useMemo(() => {
+    const orgAll = new Set((grpDepNode ? orgLineNodes.filter(g => g.parent_id === grpDepNode.id) : [])
+      .map(g => String(g.code || g.name).trim().toLowerCase()));
+    return [...new Set(empsInDept.map(e => e.group_name).filter(Boolean))]
+      .filter(g => !orgAll.has(String(g).trim().toLowerCase())).sort();
+  }, [orgLineNodes, grpDepNode, empsInDept]);
+  const groupOpts   = useMemo(() => [...groupOrgList, ...groupLegacyList], [groupOrgList, groupLegacyList]);
   const teamOpts    = useMemo(() => [...new Set(empsInDept.filter(e => !filterGroup || e.group_name === filterGroup).map(e => e.team).filter(Boolean))].sort(), [empsInDept, filterGroup]);
 
   const displayed = useMemo(() => (showInactive ? inactiveEmployees : employees)
@@ -543,20 +560,24 @@ export default function Operator() {
               <select key={f.label} value={f.value} onChange={e => f.set(e.target.value)}
                 style={{ fontSize: 12, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: f.value ? 'var(--text)' : 'var(--muted)', minWidth: 110 }}>
                 <option value="">{`— ${f.label} —`}</option>
-                {f.label === 'Dept' ? (
-                  <>
-                    {deptOrgList.length > 0 && (
-                      <optgroup label="ในผังองค์กร">
-                        {deptOrgList.map(o => <option key={`o_${o}`} value={o}>{o}</option>)}
-                      </optgroup>
-                    )}
-                    {deptLegacyList.length > 0 && (
-                      <optgroup label="⚠ นอกผัง (ต้องจัดข้อมูล)">
-                        {deptLegacyList.map(o => <option key={`l_${o}`} value={o}>{o}</option>)}
-                      </optgroup>
-                    )}
-                  </>
-                ) : (
+                {(f.label === 'Dept' || f.label === 'Group') ? (() => {
+                  const orgL = f.label === 'Dept' ? deptOrgList : groupOrgList;
+                  const legacyL = f.label === 'Dept' ? deptLegacyList : groupLegacyList;
+                  return (
+                    <>
+                      {orgL.length > 0 && (
+                        <optgroup label="ในผังองค์กร">
+                          {orgL.map(o => <option key={`o_${o}`} value={o}>{o}</option>)}
+                        </optgroup>
+                      )}
+                      {legacyL.length > 0 && (
+                        <optgroup label="⚠ นอกผัง (ต้องจัดข้อมูล)">
+                          {legacyL.map(o => <option key={`l_${o}`} value={o}>{o}</option>)}
+                        </optgroup>
+                      )}
+                    </>
+                  );
+                })() : (
                   f.opts.map(o => <option key={o} value={o}>{o}</option>)
                 )}
               </select>
