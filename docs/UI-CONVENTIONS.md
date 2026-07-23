@@ -134,6 +134,7 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 ### Popup/Modal ต้อง "ขยายกว้าง" ก่อนยอมสูงเกินจอ (2026-07-10)
 - จอ landscape (PC/tablet/TV): modal ที่เนื้อหายาว **ห้ามทำทรงแคบสูงแล้วให้ scroll แนวตั้ง** — ให้ขยายกว้าง `width: min(96vw, 1400-1500px)` แล้วจัดเนื้อหาเป็น **2 คอลัมน์** (`gridTemplateColumns: '1fr 1fr'` เมื่อจอ ≥1100px; header/ปุ่มยืนยัน full-width ด้วย `gridColumn: '1 / -1'`) · `maxHeight: 94vh + overflowY: auto` เป็นแค่ fallback สุดท้าย
 - ต้นแบบ: modal ตรวจสอบคำขอปิดกะ / ปิดกะ ใน `DailyReport.jsx`
+- **CSS กลาง `.modal-2col` (2026-07-21 — อยู่ใน index.css):** ฟอร์มใน modal ติด class นี้ + แบ่งลูกเป็น `.m2c-col` (คอลัมน์) / `.m2c-span` (เต็มแถว เช่น แถวปุ่มบันทึก) → จอ ≥1100px เป็น grid 2 คอลัมน์อัตโนมัติ จอแคบยุบเป็นคอลัมน์เดียว — modal ฟอร์มยาวใหม่ให้ใช้ class นี้แทนเขียน grid เอง (ต้นแบบ: modal แก้ไขพนักงานใน operator.jsx) · กวาดแก้แล้ว 2026-07-21: CAPA/8D + NCR (QualityControl), จ่าย/ปรับ stock + รอบจัดส่ง (LineStock), PMSetup, Improvements, แก้เวลากะ (DailyReport)
 
 ### Section ยาวในหน้า ต้องย่อ/ขยายได้ (minimize/maximize)
 - section รายการยาว (Prod Orders, Downtime, งานเสีย ฯลฯ) ต้องมีปุ่มพับ ▼ ที่หัว section (หัวแสดงชื่อ+จำนวนเสมอ) — จำสถานะใน `localStorage` (`dr_live_collapse_<section>` ฯลฯ) · default = ขยาย ยกเว้น section ว่าง

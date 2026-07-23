@@ -114,7 +114,7 @@ const S = {
   },
   modal: {
     background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 12,
-    width: '100%', maxWidth: 680, maxHeight: '92vh', display: 'flex', flexDirection: 'column',
+    width: '100%', maxWidth: 1000, maxHeight: '92vh', display: 'flex', flexDirection: 'column',
     boxShadow: 'var(--shadow-lg)',
   },
   modalHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 24px', borderBottom: '1px solid var(--border)' },

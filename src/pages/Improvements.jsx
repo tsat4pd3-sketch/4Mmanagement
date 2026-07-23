@@ -698,7 +698,7 @@ export default function Improvements() {
       {/* ── modal สร้าง/แก้ไข (ฟอร์ม — ห้ามปิดจาก backdrop ตาม UI-CONVENTIONS §5) ── */}
       {modal && (
         <div className="overlay">
-          <div className="modal" style={{ width: 'min(880px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
+          <div className="modal" style={{ width: 'min(1150px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{modal.id ? '✏️ แก้ไขโปรเจคปรับปรุง' : '➕ เพิ่มโปรเจคปรับปรุง'}</h3>
               <button onClick={() => setModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
