@@ -3,8 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>ESM — Enterprise Shopfloor Management · Thai Summit Group</title>
+    <!-- PWA: เพิ่มลงหน้าจอโฮม เปิดเหมือนแอป (ชอร์ตคัตมือถือ) — manifest-only ไม่มี service worker
+         (กัน cache ชนกับ version-guard/no-cache ที่มีอยู่ ดู main.jsx + render.yaml) -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#080f08" />
+    <meta name="application-name" content="ESM" />
+    <!-- iOS: apple-touch-icon ต้องเป็น PNG (ไม่รองรับ SVG) + เปิดแบบ standalone -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="ESM" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
