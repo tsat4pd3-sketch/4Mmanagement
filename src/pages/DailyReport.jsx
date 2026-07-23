@@ -194,6 +194,8 @@ function LiveTab({ role }) {
 
   const [showOpen, setShowOpen] = useState(false);
   const [openForm, setOpenForm] = useState(() => { const s = currentShift(); return { work_date: workDate(), line_name: '', shift: s, product_id: '', start_time: shiftStart(s) }; });
+  const [lineFlow, setLineFlow] = useState({});   // line_name → { flow_mode, parallel_stations } (best-effort — ไลน์เครื่องขนาน)
+  const [openMachineNo, setOpenMachineNo] = useState(''); // เครื่องที่จะผูกกับใบที่เปิดถัดไป (เฉพาะไลน์ parallel_machine)
 
   const [showDT, setShowDT]   = useState(false);
   const [moDtPick, setMoDtPick] = useState(null); // { d, team } — เลือกทีมช่างก่อนเปิดใบซ่อมจาก downtime
@@ -317,6 +319,12 @@ function LiveTab({ role }) {
     setLines(ln || []);
     setLineMap(lm);
     setParentChildrenMap(pcm);
+    // โหมดการไหลงานต่อไลน์ (flow_mode) best-effort — ไลน์ parallel_machine ให้เลือกเครื่องตอนเปิด Order
+    supabase.from('production_lines').select('name, flow_mode, parallel_stations').then(({ data }) => {
+      if (!data) return;
+      const fm = {}; data.forEach(l => { fm[l.name] = { flow_mode: l.flow_mode, parallel_stations: l.parallel_stations }; });
+      setLineFlow(fm);
+    }, () => {});
     setProducts(pr || []);
     setDtTypes(dt || []);
     setKanbanStds(ks || []);
@@ -970,6 +978,12 @@ function LiveTab({ role }) {
     return (selSession.start_time || '').slice(0, 5);
   };
 
+  // ผูกเครื่องกับใบ (ไลน์ parallel_machine) — เขียนแยก best-effort กันพังถ้ายังไม่ apply migration prod_orders.machine_no
+  const attachMachine = async (orderId) => {
+    if (!orderId || !openMachineNo) return;
+    try { await supabaseDR.from('prod_orders').update({ machine_no: openMachineNo }).eq('id', orderId); } catch { /* คอลัมน์อาจยังไม่มี */ }
+  };
+
   // insert จริง (ใช้ทั้งจาก handleScanOpen และ handleOverflowForce)
   const doInsertProdOrder = async (prodNo, matNo, qty, std, status = 'open') => {
     const opened_at = backfillOpenedAt();
@@ -986,6 +1000,7 @@ function LiveTab({ role }) {
       opened_by:   fullName,
       ...(opened_at ? { opened_at } : {}),
     }).select().single();
+    if (!error && status === 'open' && data?.id) await attachMachine(data.id);
     return { error, data };
   };
 
@@ -1240,6 +1255,7 @@ function LiveTab({ role }) {
     }).select().single();
     setSavingManual(false);
     if (error) { toast.error(error.message); return; }
+    if (created?.id) await attachMachine(created.id);
     toast.success(manualForm.is_backfill
       ? `เปิดเป้า ${matNo} · ${qty} ชิ้น ✓ (ย้อนหลังตั้งแต่ ${manualForm.backfill_time}) — อัพเดทยอดสะสมได้เลย`
       : `เปิดเป้า ${matNo} · ${qty} ชิ้น ✓ — ให้พนักงานอัพเดทยอดสะสมทุกช่วงเบรค`);
@@ -2390,6 +2406,22 @@ function LiveTab({ role }) {
               </div>
 
               {prodOrdersOpen && (<>
+              {/* ไลน์เครื่องขนาน (parallel_machine) — เลือกเครื่องก่อนเปิด Order เพื่อผูกใบกับเครื่อง (แยกเลนบนบอร์ด + OEE รายเครื่อง) */}
+              {canScan && lineFlow[selSession?.line_name]?.flow_mode === 'parallel_machine' && (() => {
+                const famNames = new Set(getLineFamilyNames(lines, selSession.line_name).map(n => (n || '').toLowerCase()));
+                const lineMachines = machines.filter(m => famNames.has((m.line_name || '').toLowerCase()));
+                return (
+                  <div style={{ marginBottom: 10, padding: '8px 12px', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.35)', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#60a5fa' }}>⚙️ ไลน์เครื่องขนาน — เปิด Order ถัดไปที่เครื่อง:</span>
+                    <select value={openMachineNo} onChange={e => setOpenMachineNo(e.target.value)}
+                      style={{ width: 220, fontSize: 12, fontWeight: 600 }}>
+                      <option value="">— ไม่ระบุเครื่อง (กระจายอัตโนมัติ) —</option>
+                      {lineMachines.map(m => <option key={m.machine_no} value={m.machine_no}>{m.machine_no}{m.machine_name ? ` · ${m.machine_name}` : ''}</option>)}
+                    </select>
+                    {lineMachines.length === 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>(ยังไม่มีเครื่องในทะเบียน — เพิ่มที่ Machine Database)</span>}
+                  </div>
+                );
+              })()}
               {/* Carry-over banner */}
               {carryOrders.length > 0 && canScan && (
                 <div style={{ marginBottom: 10, padding: '10px 14px', background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.4)', borderRadius: 9 }}>
@@ -2437,6 +2469,10 @@ function LiveTab({ role }) {
                           <span style={{ fontSize: 12, color: 'var(--muted)' }}>{o.mat_no}</span>
                           {o.part_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {o.part_name}</span>}
                           {o.customer && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>{o.customer}</span>}
+                          {o.machine_no && (
+                            <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(148,163,184,0.18)', color: '#94a3b8', fontWeight: 700 }}
+                              title="เครื่องที่ใบนี้วิ่ง (ไลน์เครื่องขนาน)">⚙️ {o.machine_no}</span>
+                          )}
                           {isManual && (
                             <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(96,165,250,0.15)', color: '#60a5fa', fontWeight: 700 }}
                               title="ออเดอร์ manual — ไลน์ไม่มี kanban card เปิดเป้าเองไม่ได้สแกน">
