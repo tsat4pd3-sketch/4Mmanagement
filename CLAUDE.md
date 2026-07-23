@@ -643,8 +643,9 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - **สิทธิ์:** ดู = ทุก role (Production ต้องเห็นแผนที่ถูกนัด) · `pm_coord:manage` (สร้าง/แก้/ลบ/แจ้ง/ติ๊ก done) = admin/manager/supervisor/mtn/engineer/leader · migration `20260723_pm_coordination_permission.sql` (Main — page + manage + notification_rule `pm_coordination`)
 - **Scope:** leader = family ไลน์ตัวเอง · role อื่นตาม sections (กรองด้วย `line_name` ของแผน) — pattern มาตรฐาน
 - **🔗 ผูกกับระบบแผน PM เดิม (`pm_plans`) — 2 ทาง (2026-07-23):** (1) ในหน้าสร้างแผนมี dropdown **"สร้างจากแผน PM เดิม"** — เลือกแผน PM ที่มีวันครบกำหนด → เติมเครื่อง/ไลน์/`pm_plan_id` + เพิ่มขั้นงานวันครบกำหนดให้อัตโนมัติ (resolve equipment ผ่าน `checklists.equipment_id` → **jigs (รวม shadow) หรือ machines** — PM model ใช้ jigs เป็นหลัก) (2) หน้า **PM Forecast (`/pm-forecast`)** มีปุ่ม **"🗓️ แผนประสานงาน"** ต่อแถว (เห็นเมื่อ `pm_coord:manage`) → ส่ง prefill ผ่าน `sessionStorage['pmcoord_prefill']` แล้ว navigate มา `/pm-coordination` เปิด modal ผูก plan+เครื่อง+วันคาด PM ให้เลย · การ์ดที่ผูกโชว์ชิป "🔗 ผูกแผน PM" · เก็บ `pm_coordination_plans.pm_plan_id`
+- **🔔 ช่วง Production Support ที่กำลังจะถึง (2026-07-23):** แผงแดงบนหน้ารวมทุกขั้นงานที่ติ๊ก `is_support` ของแผนที่ยังไม่ done/cancelled (วันนี้เป็นต้นไป · scope ตามไลน์) เรียงตามวัน — เตือน Production ล่วงหน้าว่าถูกนัด support วันไหน/เวลาไหน
+- **✅ sync "เสร็จ" กลับระบบแผน PM (2026-07-23):** ปิดแผนที่ผูก `pm_plan_id` เป็น "เสร็จ" → confirm แล้ว stamp `pm_plans.last_done_at = วันนี้` · แผนตามรอบเวลา (ไม่ใช่ usage) เลื่อน `next_due_date = วันทำ + interval_days` ให้อัตโนมัติ · usage → forecast คำนวณเองจาก last_done_at (การทำ PM checklist จริงยังบันทึกที่ PMCheckData แยกกัน — อันนี้แค่ sync วันรอบถัดไป)
 - **ต้อง deploy edge `send-notification`** ให้รู้จัก event `pm_coordination` (ก่อน deploy: กด "แจ้ง" ได้ 400 เงียบ แต่ status ยังเป็น notified — ตัวใบ/พิมพ์ใช้ได้ปกติ)
-- **เฟสถัดไป (ยังไม่ทำ):** ปฏิทินรวมช่วง support เตือน Production ล่วงหน้า · sync สถานะ done กลับ `pm_plans.last_done_at` (ตอนนี้แยกกัน — การทำ PM จริงยังบันทึกที่ PMCheckData)
 
 ## ตั้งค่าผัง/Floorplan — แยก display ออกจาก setup (2026-07-16)
 
