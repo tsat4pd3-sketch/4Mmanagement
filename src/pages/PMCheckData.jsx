@@ -809,7 +809,7 @@ export default function PMCheckData() {
             if (!lineNames.length) return (
               <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>
                 {lineParam ? `ไลน์ ${lineParam} ยังไม่ได้ลงทะเบียนเครื่องตรวจ` : 'ยังไม่มีเครื่องที่ลงทะเบียน Daily PM'}<br />
-                <Link to="/daily-pm" style={{ color: 'var(--accent)', fontWeight: 700 }}>ไปลงทะเบียนที่หน้า Daily PM →</Link>
+                <Link to="/daily-checker?tab=pm" style={{ color: 'var(--accent)', fontWeight: 700 }}>ไปลงทะเบียนที่หน้า Daily PM →</Link>
               </p>
             )
             return (<>

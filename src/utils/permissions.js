@@ -41,6 +41,13 @@ export function hasPermission(permissionKey, role) {
 }
 
 export function canAccessPage(path, role) {
+  // Daily Checker = ศูนย์รวมแท็บ (PM Daily / LPA / ...) — เข้าได้ถ้ามีสิทธิ์แท็บใดแท็บหนึ่ง
+  // (piggyback สิทธิ์เดิม ไม่ต้อง seed page:/daily-checker · แท็บใน DailyChecker.jsx โผล่ตามสิทธิ์ย่อย)
+  if (path === '/daily-checker') {
+    return hasPermission('page:/daily-checker', role)
+        || hasPermission('page:/daily-pm', role)
+        || hasPermission('page:/lpa', role);
+  }
   return hasPermission(`page:${path}`, role);
 }
 
