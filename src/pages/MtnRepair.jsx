@@ -183,6 +183,7 @@ export default function MtnRepair() {
   const [itemTypes, setItemTypes] = useState([]);
   const [laborRates, setLaborRates] = useState([]); // ราคามาตรฐานค่าแรงซ่อม (master)
   const [improvements, setImprovements] = useState([]); // โปรเจคปรับปรุงที่กำลังทำ (cross-ref D)
+  const [supplyByMachineNo, setSupplyByMachineNo] = useState({}); // machine_no → [line_name] (utility/facility จ่ายไลน์ไหน → ผลกระทบเวลาซ่อม/ตัดไฟ)
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const [fStatus, setFStatus] = useState('open');
@@ -194,7 +195,7 @@ export default function MtnRepair() {
   const [stepModal, setStepModal] = useState(null); // { step, order, editMode }
 
   const loadMasters = useCallback(async () => {
-    const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }, lr, { data: emps }] = await Promise.all([
+    const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }, lr, { data: emps }, sup] = await Promise.all([
       supabase.from('production_lines').select('id, name, section, parent_line_name, cost_center').order('name'),
       supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_technicians').select('*').eq('is_active', true).order('sort_order'),
@@ -206,6 +207,8 @@ export default function MtnRepair() {
       supabaseDR.from('mtn_labor_rates').select('*').eq('is_active', true).order('sort_order').then(r => r).catch(() => ({ data: [] })),
       // ช่าง = พนักงาน (Main) ที่แผนก/ส่วนเป็นทีมช่าง — รวมฐานข้อมูลคนที่ employees ที่เดียว (2026-07-22)
       supabase.from('employees').select('id, name, section, department, employee_id_code').eq('is_active', true).order('name'),
+      // supply route: utility/facility จ่ายให้ไลน์ไหน — ใช้โชว์ผลกระทบตอนซ่อม (best-effort ถ้ายังไม่ apply migration)
+      supabaseDR.from('facility_supply_links').select('machine_id, line_name').then(r => r).catch(() => ({ data: [] })),
     ]);
     // แปลงพนักงานทีมช่างเป็นรูปแบบ tech + รวมกับ mtn_technicians เดิม (พนักงานมาก่อน · กันชื่อซ้ำ)
     // ช่างส่วนใหญ่อยู่ระดับแผนก (department) → เช็คแผนกก่อน แล้ว section
@@ -218,6 +221,10 @@ export default function MtnRepair() {
     setLines(ln || []); setMachines(mc || []); setTechs([...empTechs, ...legacyTechs]);
     setProblemTypes(pt || []); setParts(pp || []); setRepairTypes(rt || []); setItemTypes(it || []);
     setImprovements(imp || []); setLaborRates(lr?.data || []);
+    // map machine_id → machine_no → [line_name] เพื่อโชว์ผลกระทบใน DetailDrawer (MO เก็บ machine_no ไม่ใช่ id)
+    const noById = {}; (mc || []).forEach(m => { noById[m.id] = m.machine_no; });
+    const supMap = {}; (sup?.data || []).forEach(s => { const no = noById[s.machine_id]; if (!no) return; (supMap[no] = supMap[no] || []).push(s.line_name); });
+    setSupplyByMachineNo(supMap);
     return ln || [];
   }, []);
 
@@ -275,7 +282,7 @@ export default function MtnRepair() {
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
 
-  const cp = { lines, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, role, fullName, signatureUrl, improvements, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
+  const cp = { lines, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, role, fullName, signatureUrl, improvements, supplyByMachineNo, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
 
   return (
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1800px)', margin: '0 auto' }}>
@@ -596,12 +603,13 @@ function printMoReportMtn(o, dparts = []) {
 }
 
 /* ── Detail drawer ───────────────────────────────────── */
-function DetailDrawer({ order, role, fullName, improvements, onOpenImprovement, onClose, onStep, onReload }) {
+function DetailDrawer({ order, role, fullName, improvements, supplyByMachineNo, onOpenImprovement, onClose, onStep, onReload }) {
   const o = order;
   const m = STATUS_META[o.status] || STATUS_META.pending;
   const next = nextStepFor(o);
   const dept = o.mtn_dept || deptForItem(o.item_type);
   const openImps = (improvements || []).filter(i => i.line_name === o.line_name && (!i.machine_no || i.machine_no === o.machine_no));
+  const affectedLines = (o.machine_no && supplyByMachineNo?.[o.machine_no]) || []; // utility/facility นี้จ่ายไลน์ไหน — ผลกระทบเวลาซ่อม/ตัดไฟ
   const repeatIssue = ['เกิดปัญหาซ้ำ', 'แก้ไขไม่ได้'].includes(o.follow_up);
   const resp = minutesBetween(o.report_at, o.accept_at), ttr = minutesBetween(o.accept_at, o.repair_done_at), bd = minutesBetween(o.report_at, o.repair_done_at);
   const [dparts, setDparts] = useState([]);
@@ -653,6 +661,11 @@ function DetailDrawer({ order, role, fullName, improvements, onOpenImprovement, 
 
   return (
     <ModalShell title={`${o.mo_no || '(ยังไม่ออกเลข MO)'} · ${m.label} · ${dept}`} onClose={onClose} wide>
+      {affectedLines.length > 0 && (
+        <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.5)', fontSize: 12.5, color: '#ef4444', fontWeight: 700 }}>
+          ⚠️ อุปกรณ์นี้จ่ายให้ {affectedLines.length} ไลน์ — หยุดซ่อม/ตัดไฟจะกระทบ: <b>{affectedLines.join(', ')}</b>
+        </div>
+      )}
       {openImps.length > 0 && (
         <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'rgba(124,108,240,0.12)', border: '1px solid rgba(124,108,240,0.4)', fontSize: 12.5, color: '#a78bfa' }}
           title={openImps.map(i => i.title).join('\n')}>

@@ -10,7 +10,7 @@ import {
   ResponsiveContainer, Tooltip,
 } from 'recharts';
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
-import { hasPermission, can } from '../utils/permissions';
+import { can } from '../utils/permissions';
 import { loadCompanyCalendar, getDayType, isOtHolidayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import { otPeriodMeta, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyNames, getLineFamilyIds } from '../utils/lineHierarchy';
@@ -241,7 +241,7 @@ export default function Report({ mode = 'report' }) {
 
 function OtTransportBookingTab({ autoOpenMaster }) {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
-  const canManageMaster = hasPermission('manage_master_data', role);
+  const canManageMaster = can('ot_master', 'manage', role);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
   const deptsOf        = useOrgDepts();

@@ -8,7 +8,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { hasPermission } from '../utils/permissions';
+import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import useIsMobile from '../utils/useIsMobile';
 import OeeInsightPanel from '../components/OeeInsightPanel';
@@ -175,7 +175,7 @@ export default function OEEAnalytics() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const isMobile = useIsMobile(); // ≤768px: grid วิเคราะห์ยุบเป็นคอลัมน์เดียว กันกราฟถูกตัด (desktop ไม่เปลี่ยน)
   const [viewTab, setViewTab] = useState('today'); // today | trend | insight
-  const canSetTarget = hasPermission('manage_master_data', role);
+  const canSetTarget = can('oee', 'set_target', role);
 
   // ── Target OEE/A/P/Q รายกรุ๊ป (ตาราง oee_targets ฝั่ง Main) ──
   const [oeeTargets, setOeeTargets] = useState({});          // { group_name: row }
