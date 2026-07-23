@@ -123,7 +123,7 @@
 ### Layer Process Audit — LPA (FM-QMR-008 — paperless · 2026-07-20)
 | Table | คำอธิบาย | Fields สำคัญ |
 |-------|---------|-------------|
-| `lpa_questions` | คำถาม checklist (seed 23 ข้อมาตรฐาน) — `line_name` null = ทุกไลน์ · category `special` = ข้อเฝ้าระวังปัญหา (สีแดง) ผูกไลน์+ช่วง issue_start/end แสดงเฉพาะช่วงเฝ้าระวัง | category (safety/quality/systemic/visual/special), seq, question, line_name, issue_start/end, is_active |
+| `lpa_questions` | คำถาม checklist (seed 23 ข้อมาตรฐาน) — **โมเดลรายไลน์ (2026-07-23):** `line_name` null = **common ฐาน backfall ทุกไลน์** · `line_name`=ไลน์ = ข้อเฉพาะไลน์นั้น · **`hidden_for_lines[]`** = ไลน์ที่ "ไม่ใช้" ข้อ common นั้น (ซ่อนรายไลน์) → แต่ละไลน์ = common − ข้อที่ซ่อน + ข้อเฉพาะไลน์ · category `special` = ข้อเฝ้าระวังปัญหา (สีแดง) ผูกไลน์+ช่วง issue_start/end | category (safety/quality/systemic/visual/special), seq, question, line_name, **hidden_for_lines[]**, issue_start/end, is_active |
 | `lpa_plans` | แผนตรวจรายเดือน (unique ไลน์+กะ+เดือน) | line_name, shift (day/night), month_key 'YYYY-MM', leader/supervisor/manager/gm_name, stations (list ใช้เติมแผนอัตโนมัติ) |
 | `lpa_plan_days` | รายวันของแผน: สถานีตรวจ + ชั้นที่วางแผน | plan_id (FK cascade), day 1-31, station, plan_leader/supervisor/manager/gm |
 | `lpa_audits` | ผลตรวจ 1 ครั้ง (unique ไลน์+กะ+วัน+ชั้น) | audit_date, layer (leader/supervisor/manager/gm), station, auditor_name/sig_url |
@@ -432,6 +432,28 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - สิ่งที่ย้อนให้: status→open, ล้าง confirmed_by/at + qty_ok, ใบ manual คืน `qty = qty_target` (ยอดสะสม qty_actual คงไว้) + **ถอนแถว stock ที่ trigger `trg_post_confirmed_output` โพสต์อัตโนมัติ** (ลบ `line_stock_transactions` ที่ `ref_order_id`+`created_by='auto'`+`type='issue'` — ตัวกันโพสต์ซ้ำของ trigger เช็คจากแถวนี้ ลบแล้วสแกนปิดใหม่จะโพสต์ให้ใหม่ถูกต้อง)
 - Audit: `prod_orders.reopened_by/reopened_at/reopen_count` (migration `20260715_prod_orders_reopen_log.sql` DR) — การ์ดใบโชว์ชิป "↩️ เคยถอยใบ N ครั้ง · ชื่อ" เสมอ ให้หัวหน้าแผนกตรวจย้อนหลังได้ · update guard `.eq('status','confirmed')` กันถอยซ้ำสองเครื่องพร้อมกัน
 
+### ปฏิเสธคำขอปิดกะ + remark ให้หัวหน้ากลุ่ม (2026-07-23)
+
+leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรวจแล้วเลือก **อนุมัติ** หรือ **✕ ปฏิเสธ** · ตอนปฏิเสธ **บังคับพิมพ์ remark** (modal `showRejectModal` — บอกว่าต้องกลับไปแก้อะไร เช่น NG ไม่ตรง/ลืมปิด Downtime/เวลาผิด) กะกลับเป็น `open` แล้ว **หัวหน้ากลุ่มเห็น banner แดง (static ไม่กระพริบ) พร้อมข้อความ + ชื่อผู้ปฏิเสธ** ในหัว session จนกว่าจะแก้แล้วส่งขอปิดกะใหม่
+- เก็บที่ `production_sessions.close_reject_reason / close_reject_by_name / close_reject_at` (migration `20260723_session_close_reject_reason.sql` DR — additive) · **เขียนเป็น update แยก best-effort (try/catch)** ต่อจากการ revert สถานะ → ยังไม่ apply migration = ปฏิเสธได้ปกติ แค่ยังไม่เก็บข้อความ (ไม่ทำ flow หลักพัง)
+- 2 ทางเข้า reject (ปุ่มหัว session + ปุ่มใน modal ตรวจสอบ) เปิด `showRejectModal` ตัวเดียวกัน — `handleRejectClose` อ่าน `rejectReason` (บังคับไม่ว่าง) · เงื่อนไขเดิมยังอยู่: ปฏิเสธไม่ได้ถ้ายอดยกถูกกะถัดไปรับไปแล้ว (`prod_orders.status='imported'`)
+- notify `closed_rejected` แนบ `reject_reason` (edge function ยังไม่ใช้ field นี้ — backward-compat, banner ในแอปเป็นช่องทางหลัก)
+
+### การ์ด Order ยกยอด — โชว์ผลิตจริง/ยกไป ไม่ใช่เป้าเฉยๆ (2026-07-23)
+
+หัวหน้างานงง: ใบที่ผลิตไม่จบ ยกยอดข้ามกะ การ์ดโชว์ยอด **เป้า** (เช่น 35) เหมือนผลิตครบ ทั้งที่ผลิตจริง 18 ยกไป 17
+- **การ์ด order (`renderOrderRow`) แยกการแสดงยอดตามสถานะ** (เดิมโชว์ `o.qty` ก้อนเดียว label "ชิ้น" เหมือนกันหมด → open(เป้า) กับ confirmed(ผลิตจริง) ดูไม่ออกต่างกัน):
+  - `carry_over` (ยกออก) → **`qty_actual/qty_target` label "ผลิตจริง/เป้า"** + บรรทัด "➡ ยกไป N ชิ้น" (N = เป้า−ผลิตจริง)
+  - `confirmed` → label "ผลิตจริง (ชิ้น)" · `open` ปกติ → "เป้า (ชิ้น)" · carried-in (`carry_over_from_session_id`) → "ยังต้องทำ (ชิ้น)" + "เป้าเดิม X · กะก่อนทำ Y" (parse จาก `carry_over_note` `\d+/\d+`)
+  - `cancelled` → `qty_actual/qty_target` "ทำได้/เป้า"
+- **ภาพรวมทั้งกะ "ผลิตได้" รวม `qty_actual` ของใบ carry_over ด้วย** (เดิมนับแค่ confirmed + manual-open → ผลิตจริงส่วนที่ยกยอดหายจากยอดกะนี้ · เคสจริง live โชว์ 468 แต่ SV review โชว์ 486 = +18 ที่ยกยอด) — productRows `confirmed` + null-mat `totalConfirmed` เพิ่ม carry_over qty_actual · ที่เหลือ (remainQty) ไปนับที่กะถัดไป ไม่ double-count
+
+### เปิดกะผิด (กะเปล่า) — ลบ + ไม่ทิ้ง phantom OEE (2026-07-23)
+
+- **ลบกะเปล่าจากจอ Live ได้เลย** (ปุ่ม 🗑 ลบกะเปล่า ในหัว session) — เห็นเมื่อ `can('daily_report','delete_session')` **และ**กะ `open`/`pending_close` **และไม่มี Order/Downtime/Defect เลย** (guard ซ้ำใน `handleDeleteEmptySession`) · เดิมลบได้เฉพาะกะ **closed** ในแท็บประวัติ (`HistoryTab`) → หัวหน้าหาไม่เจอตอนกะยังเปิด
+- **⚠️ สิทธิ์ `delete_session` seed ให้ `admin` เท่านั้น** (`20260708_phase0_permission_catalog.sql`) — supervisor/หัวหน้าแผนกไม่เห็นปุ่มลบ · ถ้าอยากให้ลบเองได้ admin เปิดที่ `/permissions`
+- **ปิดกะที่ไม่มีผลผลิต (`totalProduced===0 && P==null`) → stamp `oee_a`/`oee_q` = null** (ไม่ใช่ 100/0) ทั้ง handleCloseSession + edit-times recompute · เดิมกะเปล่ามีเวลาเดินกะแต่ไม่มี DT → A=100/Q=100 ค้าง **รั่วเข้าค่าเฉลี่ย %A/%Q ในกราฟเทรนด์** (กรองแค่ != null) · OEE รวมไม่เคยกระทบ (oee=null ถูกกันอยู่แล้ว) · สอดคล้อง cleanup `20260715_oee_null_noproduction_cleanup.sql` (กันตั้งแต่ปิดกะ ไม่ต้องมาไล่ลบทีหลัง)
+
 ---
 
 ## OEE (computeOEE ใน DailyReport) — กฎ P สำหรับหลาย MAT.NO (2026-07-14)
@@ -505,7 +527,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 
 หน้า `/lpa` (`LayerProcessAudit.jsx`, กลุ่มฝ่ายผลิต — ฝ่ายผลิตเป็นผู้ใช้งานหลัก ย้ายจากหมวด QA/QC ตามคำสั่ง user 2026-07-20) — แทนฟอร์มกระดาษ 2 ใบ: **Layer Process Audit Plan** (แผนตรวจรายเดือนต่อไลน์+กะ) + **Layer Process Audit Report FM-QMR-008 Rev.01** · ชั้นผู้ตรวจ 4 ชั้น: Leader ทุกวัน · Supervisor/Engineer รายสัปดาห์ (W1-W4) · Manager รายเดือน · GM รายไตรมาส
 
-- **4 แท็บ:** ✅ บันทึกผลตรวจ (ตอบ Y/N/T/NA รายข้อ + ปุ่ม "ยังไม่ตอบ=Y" · **N/T บังคับกรอกรายละเอียดปัญหา** · ลายเซ็น default จาก profiles.signature_url เซ็นใหม่ได้) · 📅 แผนตรวจ **(มองทีละไตรมาส — เห็น 3 เดือนเรียงกัน · 2026-07-20)** + ปุ่มเลื่อนไตรมาส · 📊 รายงาน (grid คำถาม×วัน + W1-4/M/Q + ลิสต์ปัญหา N/T) · ⚙️ คำถาม (สิทธิ์ manage — คำถามมาตรฐาน + ข้อเฝ้าระวัง special ผูกไลน์+ช่วงวันที่)
+- **4 แท็บ:** ✅ บันทึกผลตรวจ (ตอบ Y/N/T/NA รายข้อ + ปุ่ม "ยังไม่ตอบ=Y" · **N/T บังคับกรอกรายละเอียดปัญหา** · ลายเซ็น default จาก profiles.signature_url เซ็นใหม่ได้) · 📅 แผนตรวจ **(มองทีละไตรมาส — เห็น 3 เดือนเรียงกัน · 2026-07-20)** + ปุ่มเลื่อนไตรมาส · 📊 รายงาน (grid คำถาม×วัน + W1-4/M/Q + ลิสต์ปัญหา N/T) · ⚙️ คำถาม (สิทธิ์ manage — **จัดการรายไลน์ 2026-07-23:** dropdown เลือก "🌐 ทุกไลน์ (common)" หรือรายไลน์ · โหมดไลน์เห็น common (ฐาน) + ข้อเฉพาะไลน์ · ข้อ common กด **🚫 ซ่อนไลน์นี้** ได้ (เขียน `hidden_for_lines[]` ไลน์อื่นไม่กระทบ) · ข้อเฉพาะไลน์ (line_name=ไลน์) เพิ่ม/แก้/ลบเต็มที่ · special ผูกช่วงวันที่ · **ต้อง apply migration `20260723_lpa_question_hidden_for_lines.sql` ก่อน** ปุ่มซ่อนถึงทำงาน — ก่อน apply: เพิ่ม/แก้ข้อรายไลน์ได้ปกติ แค่ซ่อน common ไม่ได้)
   - **สถานีตรวจ (Station for audit) ดึงจาก "จุดงาน (workstations)" อัตโนมัติ (2026-07-20):** ปุ่ม 📍 ดึงจุดงานในไลน์ (`workstations.station_name` ของไลน์+ไลน์ย่อยในครอบครัว — Main project) → เติมเป็นสถานีตั้งต้น แล้วแก้เอง · auto-fill ตอนไลน์ยังไม่มีแผน · **LPA = audit กระบวนการ/คนที่จุดงาน ไม่ใช่ตรวจทุกเครื่องจักร → ใช้ workstations ไม่ใช่ `machines`** (คำสั่ง user — จุดงานต่อไลน์ ~10-20 จุด น้อยกว่าเครื่องจักร) · รายชื่อสถานี+ชื่อผู้ตรวจ (Leader/SV/MGR/GM) เป็น **ชุดเดียวใช้ทั้งไตรมาส**
   - **⚡ เติมแผนทั้งไตรมาส:** กระจายจุดงานให้ **ครบทุกจุดภายในแต่ละเดือน** (สถานี/วัน = `⌈จำนวนจุดงาน ÷ วันทำงาน⌉` — เกิน 1 วันจะใส่หลายสถานีคั่นด้วย `,`) · Leader ทุกวันทำงาน · SV วันทำงานแรกของแต่ละบล็อกสัปดาห์ · MGR 1 วัน/เดือน · GM 1 ครั้ง/ไตรมาส (เดือนแรก) · 💾 บันทึกแผนไตรมาส = upsert `lpa_plans` 3 เดือน + แทน `lpa_plan_days` · สถานะ ○ วางแผน / ● ตรวจแล้ว / ⊗ เลยกำหนด derive จาก lpa_audits · **บันทึกผล/รายงาน/พิมพ์ยังเป็นราย"เดือน"** (เลือกเดือนโฟกัสในไตรมาส)
 - **พิมพ์ 2 ฟอร์ม** (window.open + print): ใบแผน A4 landscape (สัญลักษณ์ ○●⊗ คอลัมน์วันหยุดเขียว สถานีแนวตั้ง) + ใบรายงาน FM-QMR-008 A3 landscape (หมวดแนวตั้ง rowspan, ข้อ special สีแดง + Issue Date, W1-4 เขียว/Monthly เทา/Quarterly เหลือง, แถว Work Station + ลายเซ็นผู้ตรวจรายวัน, legend + Effective Date 12/05/2017)
@@ -993,6 +1015,15 @@ Environment Variables:
   VITE_SUPABASE_URL=https://ewhdfqwfwofivojtsizn.supabase.co
   VITE_SUPABASE_ANON_KEY=<key from Supabase dashboard>
 ```
+
+### PWA — เพิ่มลงหน้าจอโฮม เปิดเหมือนแอป (2026-07-23)
+
+รองรับ "เพิ่มลงหน้าจอโฮม" (iOS Safari / Android Chrome) เปิดแบบ standalone (เต็มจอ ไม่มีแถบ browser มีไอคอนเอง) เหมาะจอหน้าไลน์/มือถือหัวหน้า
+- **manifest-only ตั้งใจ ไม่มี service worker** — เพราะ SW ที่ cache asset จะชนกับ **version-guard/auto-reload** ใน `main.jsx` + no-cache header ใน `render.yaml` (กลไกกัน "จอดำหลัง deploy" — ดู 3 กับดักด้านล่าง) · ถ้าจะเพิ่ม offline/auto-install-prompt (Android banner) ต้องเขียน SW แบบ **network-only ห้าม cache HTML/chunk** ไม่งั้นแอปค้างเวอร์ชันเก่า
+- ไฟล์: `public/manifest.webmanifest` (name/short_name ESM, display standalone, theme/bg `#080f08`) + icons `public/icon-192.png`/`icon-512.png`/`icon-maskable-512.png`/`apple-touch-icon.png` (180 — iOS ต้อง PNG ไม่รับ SVG) · ต้นฉบับไอคอน `public/app-icon.svg` (โลโก้ TS + ESM บนพื้นเขียวเข้ม) · gen จาก TS logo ผ่าน Chromium (สร้างใหม่: rasterize `app-icon.svg` → PNG ขนาดที่ต้องการ)
+- `index.html` `<head>` มี `<link rel=manifest>` + `theme-color` + `apple-touch-icon` + `apple-mobile-web-app-*` (status-bar-style = `default` กันเนื้อหาทับ notch) — **ห้ามถอด**
+- **เปลี่ยนโลโก้/ไอคอน** → แก้ `app-icon.svg` แล้ว rasterize ใหม่ทับ PNG ทั้ง 4 ไฟล์ (ขนาดเดิม) · เปลี่ยนชื่อไฟล์ไอคอนต้องอัพเดท manifest + index.html ด้วย
+- **Badge จุดแดง/เลขบนไอคอนแอป (2026-07-23):** `NotificationBell` (App.jsx) sync `navigator.setAppBadge(unread)`/`clearAppBadge()` ตามจำนวนแจ้งเตือนที่ยังไม่อ่าน (ตาราง `notifications`) · **guard `'setAppBadge' in navigator`** · ✅ Android/desktop Chrome-Edge (ติดตั้ง PWA) · ❌ **iOS ไม่รองรับ App Badging API** (Apple ยังไม่ทำ — iPhone จะไม่เห็นเลขบนไอคอน) · อัปเดต**เฉพาะตอนเปิดแอป**เท่านั้น (ไม่มี service worker/Web Push → ปิดแอปแล้วไม่เด้ง) · ล้าง badge ตอน logout/unmount · ถ้าจะให้เด้งตอนปิดแอป (เหมือน LINE) ต้องเพิ่ม SW network-only + Web Push VAPID (ยังไม่ทำ)
 
 > ⚠️ **กับดักหลัง deploy — จอดำในแท็บที่เปิดค้าง (แก้แล้ว 2026-07-10):** ทุกหน้าเป็น lazy chunk ชื่อไฟล์มี hash
 > deploy ใหม่ = ไฟล์เก่าหายจาก server → แท็บเก่าเปลี่ยนหน้าแล้วโหลด chunk พัง → React ล่มเป็นจอดำเงียบๆ
