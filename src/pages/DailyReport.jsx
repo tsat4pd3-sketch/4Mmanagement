@@ -2236,7 +2236,9 @@ function LiveTab({ role }) {
                 const orderIds  = new Set(orders.map(o => o.id));
                 const target    = orders.reduce((s, o) => s + o.qty, 0);
                 const confirmed = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)
-                  + orders.filter(o => o.is_manual && o.status === 'open').reduce((s, o) => s + (o.qty_actual || 0), 0);
+                  + orders.filter(o => o.is_manual && o.status === 'open').reduce((s, o) => s + (o.qty_actual || 0), 0)
+                  // ใบที่ยกยอดออกไปกะถัดไป — ผลิตจริงส่วนหนึ่ง (qty_actual) นับเป็นผลิตได้ของกะนี้ (ที่เหลือไปทำต่อกะหน้า)
+                  + orders.filter(o => o.status === 'carry_over').reduce((s, o) => s + (o.qty_actual || 0), 0);
                 const openCnt   = orders.filter(o => o.status === 'open').length;
                 const closedCnt = orders.filter(o => o.status === 'confirmed').length;
                 const ng  = defectLogs.filter(d => orderIds.has(d.prod_order_id)).reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
@@ -2260,7 +2262,8 @@ function LiveTab({ role }) {
               const totalTarget    = pt.target + nullMat.reduce((s, o) => s + o.qty, 0);
               const totalConfirmed = pt.produced
                 + nullMat.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)
-                + nullMat.filter(o => o.is_manual && o.status === 'open').reduce((s, o) => s + (o.qty_actual || 0), 0);
+                + nullMat.filter(o => o.is_manual && o.status === 'open').reduce((s, o) => s + (o.qty_actual || 0), 0)
+                + nullMat.filter(o => o.status === 'carry_over').reduce((s, o) => s + (o.qty_actual || 0), 0);
               const pct = totalTarget > 0 ? Math.min(100, Math.round((totalConfirmed / totalTarget) * 100)) : 0;
               const barClr = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#4d9fff';
 
@@ -2472,10 +2475,34 @@ function LiveTab({ role }) {
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--muted)' }}>ทำได้/เป้า</div>
                           </>
+                        ) : carryOver ? (
+                          // ยกยอดออกไปกะถัดไป — ต้องโชว์ให้ชัดว่าผลิตจริงเท่าไหร่ ยกไปเท่าไหร่ (ไม่ใช่โชว์เป้าเฉยๆ = ดูเหมือนผลิตครบ)
+                          <>
+                            <div style={{ fontSize: 18, fontWeight: 900, color: '#22c55e', lineHeight: 1 }}>
+                              {o.qty_actual || 0}<span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>/{o.qty_target ?? o.qty}</span>
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>ผลิตจริง/เป้า</div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', marginTop: 2 }}>➡ ยกไป {Math.max(0, (o.qty_target ?? o.qty) - (o.qty_actual || 0))} ชิ้น</div>
+                          </>
+                        ) : cancelled ? (
+                          <>
+                            <div style={{ fontSize: 18, fontWeight: 900, color: statusColor, lineHeight: 1 }}>
+                              {o.qty_actual || 0}<span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>/{o.qty_target ?? o.qty}</span>
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>ทำได้/เป้า</div>
+                          </>
                         ) : (
+                          // confirmed = ผลิตจริง · open ปกติ/carried-in = เป้าที่ต้องทำ (แยก label ให้ไม่กำกวมกับผลิตจริง)
                           <>
                             <div style={{ fontSize: 20, fontWeight: 900, color: statusColor, lineHeight: 1 }}>{o.qty}</div>
-                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น{isManual && (o.qty_target ?? null) !== null ? ` (เป้า ${o.qty_target})` : ''}</div>
+                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                              {confirmed ? 'ผลิตจริง (ชิ้น)' : isCarried ? 'ยังต้องทำ (ชิ้น)' : 'เป้า (ชิ้น)'}
+                              {isManual && !confirmed && (o.qty_target ?? null) !== null ? ` · เป้า ${o.qty_target}` : ''}
+                            </div>
+                            {isCarried && (() => {
+                              const m = (o.carry_over_note || '').match(/(\d+)\s*\/\s*(\d+)/);
+                              return m ? <div style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', marginTop: 2 }}>เป้าเดิม {m[2]} · กะก่อนทำ {m[1]}</div> : null;
+                            })()}
                           </>
                         )}
                       </div>

@@ -439,6 +439,15 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 - 2 ทางเข้า reject (ปุ่มหัว session + ปุ่มใน modal ตรวจสอบ) เปิด `showRejectModal` ตัวเดียวกัน — `handleRejectClose` อ่าน `rejectReason` (บังคับไม่ว่าง) · เงื่อนไขเดิมยังอยู่: ปฏิเสธไม่ได้ถ้ายอดยกถูกกะถัดไปรับไปแล้ว (`prod_orders.status='imported'`)
 - notify `closed_rejected` แนบ `reject_reason` (edge function ยังไม่ใช้ field นี้ — backward-compat, banner ในแอปเป็นช่องทางหลัก)
 
+### การ์ด Order ยกยอด — โชว์ผลิตจริง/ยกไป ไม่ใช่เป้าเฉยๆ (2026-07-23)
+
+หัวหน้างานงง: ใบที่ผลิตไม่จบ ยกยอดข้ามกะ การ์ดโชว์ยอด **เป้า** (เช่น 35) เหมือนผลิตครบ ทั้งที่ผลิตจริง 18 ยกไป 17
+- **การ์ด order (`renderOrderRow`) แยกการแสดงยอดตามสถานะ** (เดิมโชว์ `o.qty` ก้อนเดียว label "ชิ้น" เหมือนกันหมด → open(เป้า) กับ confirmed(ผลิตจริง) ดูไม่ออกต่างกัน):
+  - `carry_over` (ยกออก) → **`qty_actual/qty_target` label "ผลิตจริง/เป้า"** + บรรทัด "➡ ยกไป N ชิ้น" (N = เป้า−ผลิตจริง)
+  - `confirmed` → label "ผลิตจริง (ชิ้น)" · `open` ปกติ → "เป้า (ชิ้น)" · carried-in (`carry_over_from_session_id`) → "ยังต้องทำ (ชิ้น)" + "เป้าเดิม X · กะก่อนทำ Y" (parse จาก `carry_over_note` `\d+/\d+`)
+  - `cancelled` → `qty_actual/qty_target` "ทำได้/เป้า"
+- **ภาพรวมทั้งกะ "ผลิตได้" รวม `qty_actual` ของใบ carry_over ด้วย** (เดิมนับแค่ confirmed + manual-open → ผลิตจริงส่วนที่ยกยอดหายจากยอดกะนี้ · เคสจริง live โชว์ 468 แต่ SV review โชว์ 486 = +18 ที่ยกยอด) — productRows `confirmed` + null-mat `totalConfirmed` เพิ่ม carry_over qty_actual · ที่เหลือ (remainQty) ไปนับที่กะถัดไป ไม่ double-count
+
 ### เปิดกะผิด (กะเปล่า) — ลบ + ไม่ทิ้ง phantom OEE (2026-07-23)
 
 - **ลบกะเปล่าจากจอ Live ได้เลย** (ปุ่ม 🗑 ลบกะเปล่า ในหัว session) — เห็นเมื่อ `can('daily_report','delete_session')` **และ**กะ `open`/`pending_close` **และไม่มี Order/Downtime/Defect เลย** (guard ซ้ำใน `handleDeleteEmptySession`) · เดิมลบได้เฉพาะกะ **closed** ในแท็บประวัติ (`HistoryTab`) → หัวหน้าหาไม่เจอตอนกะยังเปิด
