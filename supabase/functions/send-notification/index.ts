@@ -535,6 +535,31 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
+    if (event === 'pm_deferred') {
+      const p = body.pm;
+      if (!p) return new Response('missing pm', { status: 400 });
+      const chat = resolveEvent(routes, 'pm_deferred');
+      if (chat === null) return json({ ok: true, skipped: true });
+      const beD = (s: string) => { if (!s) return '-'; const [y, m, d] = String(s).split('-'); return `${+d}/${+m}/${+y + 543}`; };
+      const lines = [
+        `⏭️ <b>เลื่อนแผน PM (ตกลงแล้ว)</b>`, ``,
+        `🔧 เครื่อง/จิ๊ก: <b>${p.equip || '-'}</b>`,
+      ];
+      if (p.line_name) lines.push(`🏭 ไลน์: ${p.line_name}`);
+      lines.push(`📅 จากกำหนดเดิม: ${beD(p.from_due)} → เลื่อนไป <b>${beD(p.to_due)}</b>`);
+      if (p.reason) lines.push(`📝 เหตุผล: ${p.reason}`);
+      if (p.agreed_with) lines.push(`🤝 ตกลงร่วมกับ: ${p.agreed_with}`);
+      if (p.by_name) lines.push(`👤 ผู้บันทึก: ${p.by_name}`);
+      if (Number(p.defer_count) > 1) lines.push(`⚠️ เครื่องนี้ถูกเลื่อนมาแล้ว ${p.defer_count} ครั้ง`);
+      lines.push(``, `— Smart Maintenance`);
+      const message = pick(routes, 'pm_deferred', {
+        equip: p.equip || '', line_name: p.line_name || '', from_due: beD(p.from_due), to_due: beD(p.to_due),
+        reason: p.reason || '', agreed_with: p.agreed_with || '', by_name: p.by_name || '', defer_count: p.defer_count || 1,
+      }, lines.join('\n'));
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
+    }
+
     /* ── Smart Logistic — Customer Demand / Shipping (EDI 830·862) ────────── */
     if (event === 'edi_import') {
       const e = body.edi;

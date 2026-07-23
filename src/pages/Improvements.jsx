@@ -2,7 +2,7 @@ import { useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
-import { can } from '../utils/permissions';
+import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import { fmtDate } from '../utils/dateFormat';
@@ -62,6 +62,7 @@ const EMPTY_FORM = {
 export default function Improvements() {
   const { role, lineId, sections: scopeSecs, fullName } = useContext(UserContext);
   const canManage = can('improvements', 'manage', role);
+  const canDel    = canDelete('improvements', 'manage', role);  // สิทธิ์ลบโปรเจค แยกจากจัดการ
 
   const [lines, setLines] = useState([]);
   const [items, setItems] = useState([]);
@@ -687,7 +688,7 @@ export default function Improvements() {
                     <button onClick={() => setStatus(imp, 'monitoring', imp.result_note)} style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(245,158,11,0.5)', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>👁 ติดตามต่อ</button>
                   )}
                   {canManage && <button onClick={() => openEdit(imp)} style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>✏️ แก้ไข</button>}
-                  {canManage && <button onClick={() => handleDelete(imp)} style={{ padding: '5px 10px', borderRadius: 6, border: 'none', background: 'transparent', color: '#ef4444', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>🗑</button>}
+                  {canDel && <button onClick={() => handleDelete(imp)} style={{ padding: '5px 10px', borderRadius: 6, border: 'none', background: 'transparent', color: '#ef4444', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>🗑</button>}
                 </div>
               </div>
             );

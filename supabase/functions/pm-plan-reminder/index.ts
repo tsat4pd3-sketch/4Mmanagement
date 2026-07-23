@@ -49,7 +49,7 @@ Deno.serve(async () => {
     const today = bangkokToday();
 
     const { data: plans } = await db.from('pm_plans')
-      .select('id, checklist_id, next_due_date, next_due_reason, interval_days')
+      .select('id, checklist_id, next_due_date, next_due_reason, interval_days, deferred_to, deferred_at, last_done_at')
       .eq('is_active', true).not('next_due_date', 'is', null);
     if (!plans || !plans.length) return new Response(JSON.stringify({ ok: true, plans: 0 }), { headers: { 'Content-Type': 'application/json' } });
 
@@ -67,7 +67,9 @@ Deno.serve(async () => {
 
     let fired = 0;
     for (const p of plans) {
-      const due = String(p.next_due_date);
+      // เลื่อนแผน PM แบบตกลงแล้ว (ยังไม่ถูกทำหลังเลื่อน) → เตือนโดยนับถอยหลังไปวันที่เลื่อน แทนวันเดิม
+      const deferActive = p.deferred_to && (!p.last_done_at || (p.deferred_at && new Date(p.last_done_at) < new Date(p.deferred_at)));
+      const due = String(deferActive ? p.deferred_to : p.next_due_date);
       const days = daysBetween(today, due);
       const bucket = stageFor(days);
       if (!bucket) continue;

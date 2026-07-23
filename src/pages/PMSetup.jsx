@@ -7,6 +7,7 @@ import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { FREQ_LABEL, DEPT_LABEL, EQUIP_TYPE_LABEL } from '../lib/pmSchedule'
+import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
 import { getOrCreateChecklist, setChecklistFrequency } from '../lib/pmChecklists'
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
@@ -941,6 +942,8 @@ export default function PMSetup() {
   const [categories, setCategories] = useState([])
   const [methods, setMethods] = useState([])
   const [taxModal, setTaxModal] = useState(null) // 'category' | 'method' | null
+  const [teams, setTeams] = useState(pmTeamsSync()) // ทีมช่าง data-driven (mtn_teams)
+  useEffect(() => { loadPmTeams().then(setTeams) }, [])
 
   const loadTaxonomy = () => {
     fetchCategories().then(setCategories)
@@ -1001,13 +1004,6 @@ export default function PMSetup() {
   const openEdit = (jig) => { setEditJig(jig); setShowModal(true) }
   const handleSaved = () => { setShowModal(false); fetchData() }
 
-  const DEPT_OPTIONS = [
-    { key: 'maintenance', label: 'ซ่อมบำรุง' },
-    { key: 'jig_maintenance', label: 'JIG Maintenance' },
-    { key: 'die_maintenance', label: 'Die Maintenance' },
-    { key: 'production', label: 'ฝ่ายผลิต' },
-  ]
-
   return (
     <div style={S.page}>
       <div style={S.header}>
@@ -1025,7 +1021,7 @@ export default function PMSetup() {
       </div>
 
       <div style={S.deptBar}>
-        {DEPT_OPTIONS.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, DEPT_COLORS[d.key] ?? '#3dd65c')}>{d.label}</button>)}
+        {teams.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, d.color || DEPT_COLORS[d.key] || '#3dd65c')}>{d.icon ? `${d.icon} ` : ''}{d.label}</button>)}
       </div>
 
       {loading ? (

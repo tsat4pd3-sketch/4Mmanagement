@@ -34,7 +34,7 @@
 -- notification_settings (id integer, bot_token text, updated_at timestamptz)
 -- notifications (id uuid, user_id uuid, title text, body text, type text, ref_table text, ref_id uuid, is_read boolean, created_at timestamptz)
 -- operator_special_tasks (id uuid, employee_id uuid, task_type text, note text, assigned_by uuid, work_date date, created_at timestamptz)
--- org_nodes (id uuid, kind text, name text, code text, parent_id uuid, ref_line_id integer, sort_order integer, is_active boolean, created_at timestamptz, cost_center text)
+-- org_nodes (id uuid, kind text, name text, code text, parent_id uuid, ref_line_id integer, sort_order integer, is_active boolean, created_at timestamptz, cost_center text, labor_type text) -- labor_type 'direct'/'indirect' ระดับ section (20260722_org_labor_type.sql) พนักงาน derive จาก section
 -- ot_night_bookings (id uuid, work_date date, employee_id uuid, booked_by uuid, booked_by_name text, created_at timestamptz, shift text, task_type_id uuid, ot_period text)
 -- ot_task_types (id uuid, name text, is_active boolean, sort_order integer, created_at timestamptz)
 -- part_images (id uuid, part_no text, image_path text, file_name text, note text, uploaded_at timestamptz)
