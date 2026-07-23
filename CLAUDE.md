@@ -168,6 +168,7 @@
 | การตรวจสอบและซ่อมบำรุง | `/mtn-repair` | MtnRepair — ใบแจ้งซ่อม MO 7 ขั้น (ดู section "MTN Work-Order") | ทุก role (ดู) · report/service/qa/approve/manage_master ตามสิทธิ์ |
 | การตรวจสอบและซ่อมบำรุง | `/pm-check` | PMCheckData | ทุก role |
 | การตรวจสอบและซ่อมบำรุง | `/pm-schedule` | PMSchedule | ทุก role |
+| การตรวจสอบและซ่อมบำรุง | `/pm-coordination` | PmCoordination — 🗓️ แผนประสานงาน PM ข้ามวัน (แบบเมล MTN แจ้ง Production): งาน PM/แก้เครื่องหลายวัน + ทีมรับผิดชอบแต่ละวัน + ช่วง Production Support → แจ้ง Telegram + พิมพ์ใบ (ดู section "PM Coordination") | ทุก role (ดู) · `pm_coord:manage` = admin/mgr/sv/mtn/engineer/leader |
 | การตรวจสอบและซ่อมบำรุง | `/mtn-layout` | MtnMachineLayout | ทุก role |
 | การตรวจสอบและซ่อมบำรุง | `/pm-setup` | PMSetup | admin/manager/supervisor |
 | ควบคุมคุณภาพ QA/QC | `/qa` | QualityControl | admin/manager/supervisor/leader/qa/doc_control |
@@ -630,6 +631,19 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - สิทธิ์เข้าหน้า: ทุก role (`page:/pm-forecast`, migration `20260716_pm_forecast_permission.sql` Main)
 - อัตรา/วัน อ่านวันทำงานจริงจากปฏิทินบริษัท (`countWorkingDaysInMonth` — fallback 22 เมื่อปฏิทินว่าง · 2026-07-21)
 - **เฟสถัดไป (ยังไม่ทำ):** cron/edge แจ้ง Telegram ผลิต+planner ตอนเข้า window อัตโนมัติ (ตอนนี้เห็นผ่านหน้า + andon เหลืองบน org map)
+
+## PM Coordination — แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production · 2026-07-23)
+
+หน้า `/pm-coordination` (`PmCoordination.jsx`, กลุ่มการตรวจสอบและซ่อมบำรุง) — ทำ **"ใบแจ้งแผน" แบบเมลที่ MTN ส่งประสานงาน** (เช่น "RE: แผนการ Cleaning Cutting Head เครื่อง Laser LS-10") สำหรับงาน PM/แก้เครื่องที่**กินหลายวัน + ต้องประสานหลายฝ่าย** (Production ถอดชุด → MTN ทำ → คืน+Calibration → Production support ปรับคุณภาพช่วงเวลาที่นัด) — ไม่ใช่ซ่อมจบในตัวแบบ MO
+
+- **โครงสร้าง 1 แผน = หัวใบ (เครื่องจาก MachineDatabase + ไลน์ + Remark) + หลายขั้นงาน** แต่ละขั้น: วันที่ · ทีมรับผิดชอบ (production หรือ mtn_teams) · รายละเอียด · ช่วงเวลา (time_from/to optional) · flag **"⚠️ ต้อง Production Support"** (เน้นสีแดงในใบ/เมล) · ติ๊ก done รายขั้นได้
+- **ตาราง (DR):** `pm_coordination_plans` (title/machine_*/line_name/remark/status draft·notified·done·cancelled) + `pm_coordination_tasks` (plan_id cascade, task_date, team, description, time_from/to, is_support, done, sort_order) · migration `20260723_pm_coordination.sql`
+- **แจ้ง Production:** ปุ่ม "📤 แจ้ง Production" → `send-notification` event **`pm_coordination`** (จัดรูปเหมือนเมล: หัวเรื่อง+เครื่อง+ลิสต์ขั้นงานราย日+Remark) → status เป็น `notified` · route category maintenance ปรับห้อง/ปิด/แก้ข้อความที่ `/notification-config`
+- **พิมพ์ใบ** (window.open+print): โลโก้ TS + หัวเรื่อง + เครื่อง/ไลน์ + แผนงานเป็น bullet (ขั้น support สีแดง) + Remark + ช่องเซ็น ผู้จัดทำ(MTN)/รับทราบ(Production)
+- **สิทธิ์:** ดู = ทุก role (Production ต้องเห็นแผนที่ถูกนัด) · `pm_coord:manage` (สร้าง/แก้/ลบ/แจ้ง/ติ๊ก done) = admin/manager/supervisor/mtn/engineer/leader · migration `20260723_pm_coordination_permission.sql` (Main — page + manage + notification_rule `pm_coordination`)
+- **Scope:** leader = family ไลน์ตัวเอง · role อื่นตาม sections (กรองด้วย `line_name` ของแผน) — pattern มาตรฐาน
+- **ต้อง deploy edge `send-notification`** ให้รู้จัก event `pm_coordination` (ก่อน deploy: กด "แจ้ง" ได้ 400 เงียบ แต่ status ยังเป็น notified — ตัวใบ/พิมพ์ใช้ได้ปกติ)
+- **เฟสถัดไป (ยังไม่ทำ):** ผูกกับ `pm_plans`/PM Forecast (สร้างแผนประสานงานจากแผน PM ที่ใกล้ถึงอัตโนมัติ) · ปฏิทินรวมช่วง support เตือน Production ล่วงหน้า
 
 ## ตั้งค่าผัง/Floorplan — แยก display ออกจาก setup (2026-07-16)
 

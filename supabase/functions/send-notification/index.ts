@@ -560,6 +560,40 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
+    if (event === 'pm_coordination') {
+      const p = body.plan;
+      if (!p) return new Response('missing plan', { status: 400 });
+      const chat = resolveEvent(routes, 'pm_coordination');
+      if (chat === null) return json({ ok: true, skipped: true });
+      const beD = (s: string) => { if (!s) return '-'; const [y, m, d] = String(s).split('-'); return `${+d}/${+m}/${+y + 543}`; };
+      const tasks = Array.isArray(p.tasks) ? p.tasks : [];
+      const lines = [
+        `🗓️ <b>แผนประสานงาน PM / งานเครื่องจักร</b>`,
+        `<b>${p.title || '-'}</b>`, ``,
+      ];
+      if (p.machine_name || p.machine_no) lines.push(`🔧 เครื่อง: <b>${[p.machine_name, p.machine_no].filter(Boolean).join(' ')}</b>`);
+      if (p.line_name) lines.push(`🏭 ไลน์: ${p.line_name}`);
+      if (tasks.length) {
+        lines.push(``, `<b>แผนงาน & รายละเอียด</b>`);
+        for (const t of tasks) {
+          const when = beD(t.task_date);
+          const time = (t.time_from || t.time_to) ? ` (${t.time_from || ''}${t.time_to ? '–' + t.time_to : ''} น.)` : '';
+          const team = t.team ? `[${t.team}] ` : '';
+          const flag = t.is_support ? '⚠️ ' : '• ';
+          lines.push(`${flag}${when}${time} — ${team}${t.description || ''}`);
+        }
+      }
+      if (p.remark) lines.push(``, `📌 <b>Remark:</b> ${p.remark}`);
+      if (p.by_name) lines.push(``, `👤 ผู้แจ้ง: ${p.by_name}`);
+      lines.push(``, `— Smart Maintenance`);
+      const message = pick(routes, 'pm_coordination', {
+        title: p.title || '', machine: [p.machine_name, p.machine_no].filter(Boolean).join(' '),
+        line_name: p.line_name || '', remark: p.remark || '', by_name: p.by_name || '',
+      }, lines.join('\n'));
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
+    }
+
     /* ── Smart Logistic — Customer Demand / Shipping (EDI 830·862) ────────── */
     if (event === 'edi_import') {
       const e = body.edi;
