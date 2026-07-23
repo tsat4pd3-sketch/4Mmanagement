@@ -415,7 +415,20 @@ export default function Operator() {
   // ตัวเลือก filter ไล่ตามลำดับชั้นองค์กร (cascade — คำสั่ง user 2026-07-21): Dept เฉพาะใน Section ที่เลือก ·
   // Group เฉพาะใน Section+Dept · Team ตามที่เหลือ — ดึงจากข้อมูลพนักงานจริง (ตรงกับแถวในตารางเสมอ ไม่มีตัวเลือกข้าม section/ซ้ำ)
   const empsInSec   = useMemo(() => allEmps.filter(e => !filterSection || e.section === filterSection), [allEmps, filterSection]);
-  const deptOpts    = useMemo(() => [...new Set(empsInSec.map(e => e.department).filter(Boolean))].sort(), [empsInSec]);
+  // แผนก = cascade จากผังองค์กรจริง (org_nodes ใต้ section ที่เลือก เรียงตามผัง) — ตรงกับ OrgSetup (2026-07-22)
+  //   แยก 2 กลุ่ม: "ในผัง" (org_nodes) กับ "นอกผัง" (legacy = พนักงานกรอกไว้แต่ยังไม่มีในผัง) ให้เห็นชัด + ยังกรองได้ระหว่างจัดข้อมูล
+  const deptOrgList  = useMemo(() => {
+    const secNode = orgSectionNodes.find(s => (s.code || s.name) === filterSection);
+    return orgDeptNodes
+      .filter(d => filterSection ? (secNode && d.parent_id === secNode.id) : true)  // orgDeptNodes เรียง sort_order มาแล้ว
+      .map(d => d.code || d.name);
+  }, [orgDeptNodes, orgSectionNodes, filterSection]);
+  const deptLegacyList = useMemo(() => {
+    const orgSet = new Set(deptOrgList.map(x => String(x).trim().toLowerCase()));
+    return [...new Set(empsInSec.map(e => e.department).filter(Boolean))]
+      .filter(d => !orgSet.has(String(d).trim().toLowerCase())).sort();
+  }, [deptOrgList, empsInSec]);
+  const deptOpts    = useMemo(() => [...deptOrgList, ...deptLegacyList], [deptOrgList, deptLegacyList]);
   const empsInDept  = useMemo(() => empsInSec.filter(e => !filterDept || e.department === filterDept), [empsInSec, filterDept]);
   const groupOpts   = useMemo(() => [...new Set(empsInDept.map(e => e.group_name).filter(Boolean))].sort(), [empsInDept]);
   const teamOpts    = useMemo(() => [...new Set(empsInDept.filter(e => !filterGroup || e.group_name === filterGroup).map(e => e.team).filter(Boolean))].sort(), [empsInDept, filterGroup]);
@@ -523,7 +536,22 @@ export default function Operator() {
               <select key={f.label} value={f.value} onChange={e => f.set(e.target.value)}
                 style={{ fontSize: 12, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: f.value ? 'var(--text)' : 'var(--muted)', minWidth: 110 }}>
                 <option value="">{`— ${f.label} —`}</option>
-                {f.opts.map(o => <option key={o} value={o}>{o}</option>)}
+                {f.label === 'Dept' ? (
+                  <>
+                    {deptOrgList.length > 0 && (
+                      <optgroup label="ในผังองค์กร">
+                        {deptOrgList.map(o => <option key={`o_${o}`} value={o}>{o}</option>)}
+                      </optgroup>
+                    )}
+                    {deptLegacyList.length > 0 && (
+                      <optgroup label="⚠ นอกผัง (ต้องจัดข้อมูล)">
+                        {deptLegacyList.map(o => <option key={`l_${o}`} value={o}>{o}</option>)}
+                      </optgroup>
+                    )}
+                  </>
+                ) : (
+                  f.opts.map(o => <option key={o} value={o}>{o}</option>)
+                )}
               </select>
             ))}
 
