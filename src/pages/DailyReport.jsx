@@ -894,6 +894,20 @@ function LiveTab({ role }) {
     return entries[0]?.[0] || selSession?.dr_products?.process_type || 'common';
   };
 
+  // ทุก process ที่มีอยู่จริงในกะนี้ (ไลน์ผสม เช่น LWR = laser (metal_forming) + Stationary (welding) —
+  // เดิมใช้เสียงข้างมากตัวเดียว ทำให้ประเภท DT/งานเสียของอีก process มองไม่เห็น · คำสั่ง user 2026-07-22)
+  // ใช้กับ "dropdown เลือกประเภท" เท่านั้น — break policy ยังใช้ sessionProcessType() (majority) กันหักเวลาพักซ้ำ
+  const sessionProcessTypesAll = () => {
+    const set = new Set();
+    machines.filter(m => m.line_name === selSession?.line_name && m.process_type).forEach(m => set.add(m.process_type));
+    prodOrders.forEach(o => {
+      const pt = kanbanStds.find(st => st.mat_no === o.mat_no)?.dr_products?.process_type;
+      if (pt) set.add(pt);
+    });
+    if (!set.size) set.add(sessionProcessType());
+    return set;
+  };
+
   // คำนวณ net available time ของกะ (นาที) หลังหักพักเบรค
   const calcNetAvailMin = () => {
     if (!selSession?.start_time) return null;
@@ -3938,8 +3952,8 @@ function LiveTab({ role }) {
 
                 <Field label="ประเภทงานเสีย *">
                   {(() => {
-                    const pt = sessionProcessType();
-                    const filtered = defectTypes.filter(t => !t.process_type || t.process_type === pt || t.process_type === 'common');
+                    const pts = sessionProcessTypesAll();
+                    const filtered = defectTypes.filter(t => !t.process_type || t.process_type === 'common' || pts.has(t.process_type));
                     return (
                       <select value={defectForm.defect_type_id} onChange={e => setDefectForm(f => ({ ...f, defect_type_id: e.target.value }))} style={inputStyle}>
                         <option value="">เลือกประเภท...</option>
@@ -4027,8 +4041,8 @@ function LiveTab({ role }) {
                   {/* Downtime type */}
                   <Field label="ประเภท Downtime *">
                     {(() => {
-                      const pt = sessionProcessType();
-                      const filtered = dtTypes.filter(t => t.process_type === pt || t.process_type === 'common');
+                      const pts = sessionProcessTypesAll();
+                      const filtered = dtTypes.filter(t => !t.process_type || t.process_type === 'common' || pts.has(t.process_type));
                       return (
                         <select autoFocus value={dtForm.downtime_type_id} onChange={e => setDtForm(f => ({ ...f, downtime_type_id: e.target.value }))} style={inputStyle}>
                           <option value="">เลือกประเภท...</option>
