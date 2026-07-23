@@ -41,6 +41,7 @@ export default function PmCoordination() {
   const [teams, setTeams] = useState(pmTeamsSync());
   const [plans, setPlans] = useState([]);
   const [tasksByPlan, setTasksByPlan] = useState({});
+  const [pmPlans, setPmPlans] = useState([]); // แผน PM เดิม (pm_plans) ที่มีวันครบกำหนด — ให้สร้างแผนประสานงานผูกจากตรงนี้
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null); // plan object (new/edit modal)
   const [fStatus, setFStatus] = useState('active'); // active = ยังไม่ done/cancelled
@@ -55,12 +56,35 @@ export default function PmCoordination() {
   }, [lines, role, lineId, scopeSecs]);
 
   const load = useCallback(async () => {
-    const [{ data: ln }, { data: mc }, { data: pl }] = await Promise.all([
+    const [{ data: ln }, { data: mc }, { data: pl }, plansRes, clsRes] = await Promise.all([
       supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
       supabaseDR.from('machines').select('id, machine_no, machine_name, line_name').eq('is_active', true).order('sort_order'),
       supabaseDR.from('pm_coordination_plans').select('*').order('created_at', { ascending: false }).limit(500),
+      // แผน PM เดิม (best-effort — ยังไม่มีตารางก็ไม่พัง)
+      supabaseDR.from('pm_plans').select('id, checklist_id, next_due_date, plan_type').eq('is_active', true).then(r => r).catch(() => ({ data: [] })),
+      supabaseDR.from('checklists').select('id, equipment_id, department, name, frequency').eq('module', 'mtn').then(r => r).catch(() => ({ data: [] })),
     ]);
     setLines(ln || []); setMachines(mc || []);
+    // ผูกแผน PM → อุปกรณ์ (checklist_id → checklists.equipment_id) · equipment เป็น jig (รวม shadow) หรือ machine
+    const clById = {}; (clsRes?.data || []).forEach(c => { clById[c.id] = c; });
+    const mcById = {}; (mc || []).forEach(m => { mcById[m.id] = m; });
+    const eqIds = [...new Set((clsRes?.data || []).map(c => c.equipment_id).filter(Boolean))];
+    let jigById = {};
+    if (eqIds.length) {
+      const { data: jigs } = await supabaseDR.from('jigs').select('id, name, line_name, machine_id, machine_no').in('id', eqIds).then(r => r).catch(() => ({ data: [] }));
+      (jigs || []).forEach(j => { jigById[j.id] = j; });
+    }
+    const upcoming = (plansRes?.data || []).map(p => {
+      const cl = clById[p.checklist_id]; if (!cl) return null;
+      const jig = jigById[cl.equipment_id]; const mc2 = mcById[cl.equipment_id] || (jig?.machine_id ? mcById[jig.machine_id] : null);
+      const machine_name = mc2?.machine_name || jig?.name || null;
+      const machine_no = mc2?.machine_no || jig?.machine_no || null;
+      const line_name = mc2?.line_name || jig?.line_name || null;
+      if (!machine_name && !machine_no) return null;
+      return { plan_id: p.id, next_due_date: p.next_due_date, department: cl.department, checklist_name: cl.name, frequency: cl.frequency,
+        machine_id: mc2?.id || null, machine_no, machine_name, line_name };
+    }).filter(Boolean).sort((a, b) => String(a.next_due_date || '9999').localeCompare(String(b.next_due_date || '9999')));
+    setPmPlans(upcoming);
     const planIds = (pl || []).map(p => p.id);
     let tmap = {};
     if (planIds.length) {
@@ -70,6 +94,20 @@ export default function PmCoordination() {
     setPlans(pl || []); setTasksByPlan(tmap); setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // deep-link prefill จาก PmForecast/PMSchedule (sessionStorage) → เปิด modal สร้างแผนผูก PM plan ทันที
+  useEffect(() => {
+    if (loading || !canManage) return;
+    try {
+      const raw = sessionStorage.getItem('pmcoord_prefill');
+      if (!raw) return;
+      sessionStorage.removeItem('pmcoord_prefill');
+      const d = JSON.parse(raw);
+      setEditing({ _new: true, title: d.title || (d.machine_name ? `PM ${d.machine_name}` : ''), pm_plan_id: d.pm_plan_id || '',
+        machine_id: d.machine_id || '', machine_no: d.machine_no || '', machine_name: d.machine_name || '', line_name: d.line_name || '',
+        tasks: d.next_due_date ? [{ task_date: d.next_due_date, team: d.department || '', description: d.checklist_name ? `PM ตามแผน: ${d.checklist_name}` : 'PM ตามแผน', time_from: '', time_to: '', is_support: false }] : [] });
+    } catch { /* ignore */ }
+  }, [loading, canManage]);
 
   const shown = useMemo(() => {
     return (plans || []).filter(p => {
@@ -82,7 +120,7 @@ export default function PmCoordination() {
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
 
-  const cp = { lines, machines, teams, scopeLines, fullName, role, onClose: () => setEditing(null), onSaved: () => { setEditing(null); load(); } };
+  const cp = { lines, machines, teams, pmPlans, scopeLines, fullName, role, onClose: () => setEditing(null), onSaved: () => { setEditing(null); load(); } };
 
   return (
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1400px)', margin: '0 auto' }}>
@@ -152,6 +190,7 @@ function PlanCard({ plan: p, tasks, canManage, fullName, onEdit, onReload }) {
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
             🔧 {[p.machine_name, p.machine_no].filter(Boolean).join(' ') || '—'}{p.line_name ? ` · 🏭 ${p.line_name}` : ''}
           </div>
+          {p.pm_plan_id && <span style={{ display: 'inline-block', marginTop: 4, fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: 'rgba(74,144,224,0.15)', color: '#4a90e0' }}>🔗 ผูกแผน PM</span>}
         </div>
         <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: m.color + '22', color: m.color, whiteSpace: 'nowrap' }}>{m.label}</span>
       </div>
@@ -190,10 +229,11 @@ function PlanCard({ plan: p, tasks, canManage, fullName, onEdit, onReload }) {
 }
 
 /* ── modal สร้าง/แก้แผน ─────────────────────── */
-function PlanModal({ plan, lines, machines, teams, scopeLines, fullName, onClose, onSaved }) {
+function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, fullName, onClose, onSaved }) {
   const [f, setF] = useState({
     title: plan.title || '', machine_id: plan.machine_id || '', machine_no: plan.machine_no || '',
     machine_name: plan.machine_name || '', line_name: plan.line_name || '', remark: plan.remark || '',
+    pm_plan_id: plan.pm_plan_id || '',
   });
   const [tasks, setTasks] = useState(
     (plan.tasks && plan.tasks.length ? plan.tasks : [{ task_date: todayStr(), team: '', description: '', time_from: '', time_to: '', is_support: false }])
@@ -211,6 +251,18 @@ function PlanModal({ plan, lines, machines, teams, scopeLines, fullName, onClose
     const mc = machines.find(m => m.id === id);
     setF(v => ({ ...v, machine_id: id, machine_no: mc?.machine_no || '', machine_name: mc?.machine_name || '', line_name: mc?.line_name || v.line_name }));
   };
+  // สร้างจากแผน PM เดิม → เติมเครื่อง/ไลน์/ผูก pm_plan_id + เพิ่มขั้นงานวันครบกำหนดให้อัตโนมัติ
+  const fromPmPlan = (planId) => {
+    const pp = pmPlans.find(p => String(p.plan_id) === String(planId));
+    if (!pp) { setF(v => ({ ...v, pm_plan_id: '' })); return; }
+    setF(v => ({ ...v, pm_plan_id: pp.plan_id, machine_id: pp.machine_id || '', machine_no: pp.machine_no || '',
+      machine_name: pp.machine_name || '', line_name: pp.line_name || v.line_name,
+      title: v.title.trim() || (pp.machine_name ? `PM ${pp.machine_name}` : 'แผน PM') }));
+    if (pp.next_due_date) setTasks(ts => {
+      const has = ts.some(t => t.task_date === pp.next_due_date);
+      return has ? ts : [{ task_date: pp.next_due_date, team: pp.department || '', description: pp.checklist_name ? `PM ตามแผน: ${pp.checklist_name}` : 'PM ตามแผน', time_from: '', time_to: '', is_support: false }, ...ts.filter(t => t.description || t.task_date !== todayStr())];
+    });
+  };
   const setTask = (i, k, val) => setTasks(ts => ts.map((t, j) => j === i ? { ...t, [k]: val } : t));
   const addTask = () => setTasks(ts => [...ts, { task_date: todayStr(), team: '', description: '', time_from: '', time_to: '', is_support: false }]);
   const rmTask = (i) => setTasks(ts => ts.filter((_, j) => j !== i));
@@ -220,7 +272,8 @@ function PlanModal({ plan, lines, machines, teams, scopeLines, fullName, onClose
     setBusy(true);
     const nowIso = new Date().toISOString();
     const head = { title: f.title.trim(), machine_id: f.machine_id || null, machine_no: f.machine_no || null,
-      machine_name: f.machine_name || null, line_name: f.line_name || null, remark: f.remark || null, updated_at: nowIso };
+      machine_name: f.machine_name || null, line_name: f.line_name || null, remark: f.remark || null,
+      pm_plan_id: f.pm_plan_id || null, updated_at: nowIso };
     let planId = plan._new ? null : plan.id;
     if (plan._new) {
       const { data, error } = await supabaseDR.from('pm_coordination_plans').insert({ ...head, status: 'draft', created_by: fullName || null }).select('id').single();
@@ -243,6 +296,18 @@ function PlanModal({ plan, lines, machines, teams, scopeLines, fullName, onClose
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 'clamp(8px,3vh,40px) 12px', overflow: 'auto' }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', borderRadius: 14, border: '1px solid var(--border)', width: 'min(760px, 100%)', padding: 18 }}>
         <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)', marginBottom: 12 }}>{plan._new ? '➕ สร้างแผนประสานงาน' : '✏️ แก้ไขแผน'}</div>
+
+        {plan._new && pmPlans.length > 0 && (
+          <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 10, background: 'rgba(74,144,224,0.10)', border: '1px solid rgba(74,144,224,0.4)' }}>
+            <label style={{ ...lbl, color: '#4a90e0' }}>🔗 สร้างจากแผน PM เดิม (ผูกให้อัตโนมัติ + เติมวันครบกำหนด)</label>
+            <select value={f.pm_plan_id} onChange={e => fromPmPlan(e.target.value)} style={inp}>
+              <option value="">— ไม่ผูก (สร้างแผนอิสระ) —</option>
+              {pmPlans.map(p => <option key={p.plan_id} value={p.plan_id}>
+                {[p.machine_name, p.machine_no].filter(Boolean).join(' ')}{p.line_name ? ` · ${p.line_name}` : ''}{p.next_due_date ? ` · ครบ ${beDate(p.next_due_date)}` : ''}{p.checklist_name ? ` · ${p.checklist_name}` : ''}
+              </option>)}
+            </select>
+          </div>
+        )}
 
         <label style={lbl}>หัวเรื่องงาน *</label>
         <input value={f.title} onChange={e => setF(v => ({ ...v, title: e.target.value }))} placeholder="เช่น Cleaning Cutting Head" style={inp} />
