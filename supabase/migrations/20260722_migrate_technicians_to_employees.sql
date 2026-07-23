@@ -1,0 +1,7 @@
+-- ── Main project ──
+-- ย้ายช่างจาก mtn_technicians (DR) เข้าฐานพนักงาน employees (คำสั่ง user 2026-07-22 "ไม่อยากให้มีสองที่")
+-- 14 คน (JIG MTN 7 + MTN 7) · รหัสพนักงานชั่วคราว TECH-JIG-xx / TECH-MTN-xx — user เติมรหัสจริง/ข้อมูลอื่น
+-- ที่หน้าฐานข้อมูลพนักงานเอง · section+department = ชื่อทีม เพื่อให้ MtnRepair จับทีมผ่าน teamForSection
+-- (ข้อมูลจริง insert ผ่าน MCP แล้ว — ไฟล์นี้เก็บเป็นบันทึก · ฝั่ง DR: update mtn_technicians
+--  set is_active=false ทั้งหมด ใน 20260722_deactivate_migrated_mtn_technicians (DR) — แถวเก็บไว้เป็นประวัติ
+--  ช่างเฉพาะกิจใหม่ยังเพิ่มได้จาก ⚙️ MasterTab ตามเดิม)
