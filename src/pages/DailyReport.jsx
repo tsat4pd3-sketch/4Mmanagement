@@ -2001,10 +2001,10 @@ function LiveTab({ role }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: (sessions.length > 1 && !isMobile) ? '220px 1fr' : '1fr', gap: 16 }}>
       {sessions.length > 1 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>กะที่เปิดอยู่ ({sessions.length})</div>
-          {/* §137: list กะยาวเมื่อมีกะค้างไม่ปิดเยอะ → จำกัดความสูง + เลื่อนในตัว กันดันหน้า/ล้นจอ */}
-          <div style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: 4 }}>
+        // §137: sidebar sticky ค้างในจอ + list เลื่อนในตัว — ขอบล่างชิดขอบจอเสมอ (ไม่ตัดกลางอากาศตอนเลื่อนหน้า)
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)' }}>
+          <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4, flexShrink: 0 }}>กะที่เปิดอยู่ ({sessions.length})</div>
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>
           {(() => {
             // Group sessions by parent line (or self if no parent)
             const groups = {};
