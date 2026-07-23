@@ -915,7 +915,7 @@ function NCRTab({ lines, canRecord, canManage, onOpenCapa }) {
       </div>
 
       {createModal && (
-        <Modal title="🚨 เปิด NCR ใหม่" onClose={() => setCreateModal(null)}>
+        <Modal title="🚨 เปิด NCR ใหม่" onClose={() => setCreateModal(null)} width={960}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="วันที่พบ"><input type="date" style={inputSt} value={createModal.report_date} onChange={e => setCreateModal(f => ({ ...f, report_date: e.target.value }))} /></Field>
             <Field label="ไลน์ผลิต">
@@ -1152,7 +1152,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
       </div>
 
       {detail && (
-        <Modal title={detail.id ? `🛠 ${detail.capa_no}` : '🛠 เปิด CAPA / 8D ใหม่'} onClose={() => setDetail(null)} width={700}>
+        <Modal title={detail.id ? `🛠 ${detail.capa_no}` : '🛠 เปิด CAPA / 8D ใหม่'} onClose={() => setDetail(null)} width={1400}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
             <Field label="หัวข้อ *"><input style={inputSt} value={detail.title} onChange={e => setDetail(f => ({ ...f, title: e.target.value }))} disabled={!canRecord} /></Field>
             <Field label="ผู้รับผิดชอบ"><input style={inputSt} value={detail.owner_name || ''} onChange={e => setDetail(f => ({ ...f, owner_name: e.target.value }))} disabled={!canRecord} /></Field>
@@ -1160,10 +1160,11 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
           </div>
           {detail.ncr_no && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>อ้างอิง NCR: <b>{detail.ncr_no}</b></div>}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* D1-D8 เรียง 2 คอลัมน์บนจอกว้าง (UI-CONVENTIONS §5 — เดิมคอลัมน์เดียวสูงยืดต้อง scroll) */}
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 10 }}>
             {D_FIELDS.map(([key, label]) => (
               <Field key={key} label={label}>
-                <textarea rows={2} style={{ ...inputSt, resize: 'vertical' }} value={detail[key] || ''}
+                <textarea rows={3} style={{ ...inputSt, resize: 'vertical' }} value={detail[key] || ''}
                   onChange={e => setDetail(f => ({ ...f, [key]: e.target.value }))} disabled={!canRecord || detail.status === 'closed'} />
               </Field>
             ))}

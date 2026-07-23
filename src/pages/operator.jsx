@@ -3,6 +3,8 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
+import { filterLinesByDept } from '../utils/lineHierarchy';
+import { EMPLOYEE_POSITIONS } from '../utils/employeePositions';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
@@ -1123,11 +1125,13 @@ export default function Operator() {
 
       {editingEmp && (
         <div className="overlay">
-          <div className="modal" style={{ width: 'min(640px, 94vw)', maxHeight: '90vh', overflowY: 'auto' }}>
+          <div className="modal" style={{ width: 'min(1360px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
             <h3 style={{ marginTop: 0, borderBottom: '1px solid var(--border)', paddingBottom: 12, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
               📝 แก้ไขข้อมูลพนักงาน
             </h3>
-            <form onSubmit={handleUpdate} style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+            {/* จอ ≥1100px: ซ้าย = ข้อมูลพนักงาน · ขวา = ระดับทักษะ (landscape ตาม UI-CONVENTIONS §5) */}
+            <form onSubmit={handleUpdate} className="modal-2col" style={{ marginTop: 16 }}>
+              <div className="m2c-col">
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <label style={labelSt}>รหัสพนักงาน</label>
@@ -1144,11 +1148,7 @@ export default function Operator() {
                   <select value={editingEmp.position || ''}
                     onChange={e => setEditingEmp({ ...editingEmp, position: e.target.value })}>
                     <option value="">— เลือก —</option>
-                    <option value="Operator">Operator</option>
-                    <option value="Leader">Leader</option>
-                    <option value="Technician">Technician</option>
-                    <option value="Engineer">Engineer</option>
-                    <option value="QC">QC</option>
+                    {EMPLOYEE_POSITIONS.map(pos => <option key={pos} value={pos}>{pos}</option>)}
                   </select>
                 </div>
               </div>
@@ -1207,11 +1207,12 @@ export default function Operator() {
                     setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
                   }}>
                     <option value="">— เลือก Line —</option>
-                    {/* cascade ตามลำดับชั้น (2026-07-21): มีแผนก → เฉพาะไลน์ของแผนกนั้น (pattern Register) · มี section → เฉพาะไลน์ section นั้น */}
-                    {(scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
-                      .filter(l => !editingEmp.section || l.section === editingEmp.section)
-                      .filter(l => !editingEmp.department || l.name === editingEmp.department || l.parent_line_name === editingEmp.department)
-                      .map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                    {/* cascade: section → แผนก (normalize + fail-open ผ่าน filterLinesByDept — ชื่อแผนกไม่ตรงชื่อไลน์ = โชว์ทั้ง section แทนที่จะว่าง) */}
+                    {filterLinesByDept(
+                      (scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
+                        .filter(l => !editingEmp.section || l.section === editingEmp.section),
+                      editingEmp.department
+                    ).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                   </select>
                 )}
               </div>
@@ -1222,6 +1223,8 @@ export default function Operator() {
                   <option value="">— ไม่ระบุ —</option>
                   {busRoutes.map(r => <option key={r.id} value={r.id}>{r.code} {r.name}</option>)}
                 </select>
+              </div>
+
               </div>
 
               <div style={{ background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>
@@ -1313,7 +1316,7 @@ export default function Operator() {
                   onConfirm={f => { setEditingEmp(prev => ({ ...prev, newPhoto: f })); setEmpCropFile(null); }} />
               )}
 
-              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+              <div className="m2c-span" style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                 <button type="submit" disabled={isSaving}
                   style={{ flex: 2, padding: 12, background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)' }}>
                   {isSaving ? 'กำลังบันทึก...' : '💾 บันทึกข้อมูล'}

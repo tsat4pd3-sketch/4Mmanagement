@@ -3536,7 +3536,7 @@ function LiveTab({ role }) {
           const matNos = Array.from(new Set(prodOrders.map(o => o.mat_no))).filter(Boolean);
           return (
             <div className="overlay" style={{ zIndex: 2000 }}>
-              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(99,102,241,0.5)', borderRadius: 14, padding: 24, width: 'min(95vw,640px)', maxHeight: '90vh', overflowY: 'auto' }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(99,102,241,0.5)', borderRadius: 14, padding: 24, width: 'min(95vw, 900px)', maxHeight: '90vh', overflowY: 'auto' }}>
                 <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#6366f1' }}>✏️ แก้เวลากะ + คำนวณ OEE ใหม่</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>
                   {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)}

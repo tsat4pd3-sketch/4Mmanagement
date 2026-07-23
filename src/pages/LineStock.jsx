@@ -467,11 +467,12 @@ function StockTab({ role }) {
       {/* ── Issue / Adjust modal ── */}
       {showForm && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(480px,100%)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(900px,96vw)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:16, fontFamily:'var(--font-display)' }}>
               {TYPE_LABEL[form.type]}
             </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            {/* จอกว้างเรียง 2 คอลัมน์ ลด scroll (UI-CONVENTIONS §5) — mgrid ยุบคอลัมน์เดียวบนมือถือ */}
+            <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, alignItems:'start' }}>
               {/* Type selector */}
               <div>
                 <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:6 }}>ประเภท</label>
@@ -864,7 +865,7 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
       {/* Modal */}
       {showModal && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(460px,100%)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(760px,96vw)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:16, fontFamily:'var(--font-display)' }}>
               ⏰ {editId ? 'แก้ไขรอบจัดส่ง' : 'เพิ่มรอบจัดส่งใหม่'}
             </div>
