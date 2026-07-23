@@ -439,6 +439,12 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 - 2 ทางเข้า reject (ปุ่มหัว session + ปุ่มใน modal ตรวจสอบ) เปิด `showRejectModal` ตัวเดียวกัน — `handleRejectClose` อ่าน `rejectReason` (บังคับไม่ว่าง) · เงื่อนไขเดิมยังอยู่: ปฏิเสธไม่ได้ถ้ายอดยกถูกกะถัดไปรับไปแล้ว (`prod_orders.status='imported'`)
 - notify `closed_rejected` แนบ `reject_reason` (edge function ยังไม่ใช้ field นี้ — backward-compat, banner ในแอปเป็นช่องทางหลัก)
 
+### เปิดกะผิด (กะเปล่า) — ลบ + ไม่ทิ้ง phantom OEE (2026-07-23)
+
+- **ลบกะเปล่าจากจอ Live ได้เลย** (ปุ่ม 🗑 ลบกะเปล่า ในหัว session) — เห็นเมื่อ `can('daily_report','delete_session')` **และ**กะ `open`/`pending_close` **และไม่มี Order/Downtime/Defect เลย** (guard ซ้ำใน `handleDeleteEmptySession`) · เดิมลบได้เฉพาะกะ **closed** ในแท็บประวัติ (`HistoryTab`) → หัวหน้าหาไม่เจอตอนกะยังเปิด
+- **⚠️ สิทธิ์ `delete_session` seed ให้ `admin` เท่านั้น** (`20260708_phase0_permission_catalog.sql`) — supervisor/หัวหน้าแผนกไม่เห็นปุ่มลบ · ถ้าอยากให้ลบเองได้ admin เปิดที่ `/permissions`
+- **ปิดกะที่ไม่มีผลผลิต (`totalProduced===0 && P==null`) → stamp `oee_a`/`oee_q` = null** (ไม่ใช่ 100/0) ทั้ง handleCloseSession + edit-times recompute · เดิมกะเปล่ามีเวลาเดินกะแต่ไม่มี DT → A=100/Q=100 ค้าง **รั่วเข้าค่าเฉลี่ย %A/%Q ในกราฟเทรนด์** (กรองแค่ != null) · OEE รวมไม่เคยกระทบ (oee=null ถูกกันอยู่แล้ว) · สอดคล้อง cleanup `20260715_oee_null_noproduction_cleanup.sql` (กันตั้งแต่ปิดกะ ไม่ต้องมาไล่ลบทีหลัง)
+
 ---
 
 ## OEE (computeOEE ใน DailyReport) — กฎ P สำหรับหลาย MAT.NO (2026-07-14)

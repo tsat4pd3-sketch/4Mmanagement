@@ -288,6 +288,7 @@ function LiveTab({ role }) {
   const canRequestClose  = can('daily_report', 'request_close', role); // request or direct-close
   const canApproveClose  = can('daily_report', 'approve_close', role); // approve pending_close
   const canScan          = can('daily_report', 'record', role);        // scan open/close, defects, downtime
+  const canDeleteSession = can('daily_report', 'delete_session', role); // ลบกะ (seed: admin — ปรับที่ /permissions)
   // leader แก้ไข/ลบ order, defect, downtime ได้เฉพาะตอนกะยังเปิดอยู่ (ยังไม่ส่งขออนุมัติปิดกะ) —
   // ถ้าส่งขอปิดกะแล้ว (pending_close) ต้องรอ SV อนุมัติ/ปฏิเสธก่อน ถ้าโดนปฏิเสธ สถานะจะกลับเป็น open ให้แก้ไขได้อีก
   const canEditRecords   = canManage || (role === 'leader' && selSession?.status === 'open');
@@ -630,14 +631,16 @@ function LiveTab({ role }) {
       }
       // คำนวณ OEE ใหม่ด้วยเวลาที่แก้
       const totalQtyNg = defectLogs.reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
-      const { A, P, Q, oee, shiftMin } = computeOEE(totalQtyNg, closeEndTime, closeStartTime);
+      const { A, P, Q, oee, shiftMin, totalProduced } = computeOEE(totalQtyNg, closeEndTime, closeStartTime);
       const startChanged = closeStartTime && closeStartTime !== selSession.start_time;
       const endChanged   = closeEndTime   && closeEndTime   !== selSession.end_time;
+      // กะไม่มีผลผลิต → A/Q ไม่มีความหมาย (กันเลข 100/0 รั่วเข้าค่าเฉลี่ย %A/%Q — ดูหมายเหตุใน handleCloseSession)
+      const noProduction = totalProduced === 0 && P == null;
       const update = {
         shift_min: shiftMin,
-        oee_a: parseFloat((A * 100).toFixed(2)),
+        oee_a: noProduction ? null : parseFloat((A * 100).toFixed(2)),
         oee_p: P != null ? parseFloat((P * 100).toFixed(2)) : null,
-        oee_q: parseFloat((Q * 100).toFixed(2)),
+        oee_q: noProduction ? null : parseFloat((Q * 100).toFixed(2)),
         oee:   oee != null ? parseFloat((oee * 100).toFixed(2)) : null,
         ...(startChanged ? { start_time: closeStartTime } : {}),
         ...(endChanged   ? { end_time:   closeEndTime   } : {}),
@@ -1768,6 +1771,14 @@ function LiveTab({ role }) {
     const totalQtyOk      = Math.max(0, totalProducedFinal - totalQtyNg - totalQtySuspect - totalQtyRepair);
 
     const { A, P, Q, oee, shiftMin } = computeOEE(totalQtyNg + totalQtySuspect, closeEndTime, closeStartTime, updatedDtLogs);
+    // กะที่ไม่มีผลผลิตเลย (เปิดผิด/นับสต๊อก) — A/Q ไม่มีความหมายกับ OEE (P/OEE เป็น null อยู่แล้ว)
+    // ต้อง stamp oee_a/oee_q เป็น null ด้วย ไม่งั้นเลข 100/0 รั่วเข้าค่าเฉลี่ย %A/%Q ในกราฟเทรนด์
+    // (สอดคล้อง cleanup migration 20260715_oee_null_noproduction_cleanup.sql — กันไม่ให้ค้างตั้งแต่ปิดกะ)
+    const noProduction = totalProducedFinal === 0 && P == null;
+    const oeeA = noProduction ? null : parseFloat((A * 100).toFixed(2));
+    const oeeP = P != null ? parseFloat((P * 100).toFixed(2)) : null;
+    const oeeQ = noProduction ? null : parseFloat((Q * 100).toFixed(2));
+    const oeeV = oee != null ? parseFloat((oee * 100).toFixed(2)) : null;
     const startTimeChanged = closeStartTime && closeStartTime !== selSession.start_time;
     // Leader → request close (pending_close), SV+ → close directly
     const isLeaderRequest = role === 'leader';
@@ -1785,10 +1796,10 @@ function LiveTab({ role }) {
       qty_suspect:             totalQtySuspect,
       qty_repair:              totalQtyRepair,
       shift_min:               shiftMin,
-      oee_a:                   parseFloat((A * 100).toFixed(2)),
-      oee_p:                   P != null ? parseFloat((P * 100).toFixed(2)) : null,
-      oee_q:                   parseFloat((Q * 100).toFixed(2)),
-      oee:                     oee != null ? parseFloat((oee * 100).toFixed(2)) : null,
+      oee_a:                   oeeA,
+      oee_p:                   oeeP,
+      oee_q:                   oeeQ,
+      oee:                     oeeV,
     } : {
       status:          'closed',
       closed_by_name:  fullName,
@@ -1803,10 +1814,10 @@ function LiveTab({ role }) {
       qty_suspect:     totalQtySuspect,
       qty_repair:      totalQtyRepair,
       shift_min:       shiftMin,
-      oee_a:           parseFloat((A * 100).toFixed(2)),
-      oee_p:           P != null ? parseFloat((P * 100).toFixed(2)) : null,
-      oee_q:           parseFloat((Q * 100).toFixed(2)),
-      oee:             oee != null ? parseFloat((oee * 100).toFixed(2)) : null,
+      oee_a:           oeeA,
+      oee_p:           oeeP,
+      oee_q:           oeeQ,
+      oee:             oeeV,
     };
 
     const { error } = await supabaseDR.from('production_sessions').update(payload).eq('id', selSession.id);
@@ -1958,6 +1969,22 @@ function LiveTab({ role }) {
     load();
     setSelSession(prev => ({ ...prev, status: 'open', close_requested_by_name: null,
       close_reject_reason: reason, close_reject_by_name: fullName }));
+  };
+
+  // ลบกะที่เปิดผิด (เปล่า — ไม่มี Order/Downtime/Defect) ได้จากจอ Live เลย ไม่ต้องปิดกะแล้วไปลบที่ประวัติ
+  const handleDeleteEmptySession = async () => {
+    if (!selSession) return;
+    // กันเหนียว: ลบได้เฉพาะกะที่ไม่มีข้อมูลจริง (กันลบกะที่มีการผลิต/บันทึกไปแล้ว)
+    if (prodOrders.length > 0 || dtLogs.length > 0 || defectLogs.length > 0) {
+      toast.error('กะนี้มีข้อมูลแล้ว (Order/Downtime/Defect) — ลบไม่ได้ ต้องปิดกะแล้วลบที่แท็บประวัติ');
+      return;
+    }
+    if (!window.confirm(`ลบกะ ${selSession.line_name} ${selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} ${fmtDate(selSession.work_date)} ?\n(กะเปล่าที่เปิดผิด — ไม่มีข้อมูลการผลิต)`)) return;
+    const { error } = await supabaseDR.from('production_sessions').delete().eq('id', selSession.id);
+    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
+    toast.success('ลบกะที่เปิดผิดเรียบร้อย');
+    setSelSession(null);
+    load();
   };
 
   const handleDeleteDT = async (id) => {
@@ -2166,6 +2193,15 @@ function LiveTab({ role }) {
                     <button onClick={openEditTimes}
                       style={{ ...cancelBtnStyle, borderColor: '#6366f1', color: '#6366f1', fontWeight: 700 }}>
                       ✏️ แก้เวลากะ
+                    </button>
+                  )}
+
+                  {/* กะเปิดผิด (เปล่า ไม่มี Order/Downtime/Defect) — ลบได้จากจอ Live เลย ไม่ต้องปิดกะแล้วไปลบที่ประวัติ */}
+                  {canDeleteSession && ['open', 'pending_close'].includes(selSession.status)
+                    && prodOrders.length === 0 && dtLogs.length === 0 && defectLogs.length === 0 && (
+                    <button onClick={handleDeleteEmptySession}
+                      style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
+                      🗑 ลบกะเปล่า
                     </button>
                   )}
                 </div>
