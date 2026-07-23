@@ -5,6 +5,8 @@ import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import ImageCropModal from '../components/ImageCropModal';
 import { toast } from '../components/Toast';
+import { filterLinesByDept } from '../utils/lineHierarchy';
+import { EMPLOYEE_POSITIONS } from '../utils/employeePositions';
 
 export default function Register() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
@@ -156,11 +158,7 @@ export default function Register() {
               <label style={labelSt}>ตำแหน่งงาน</label>
               <select value={position} onChange={e => setPosition(e.target.value)}>
                 <option value="">— เลือก —</option>
-                <option value="Operator">Operator</option>
-                <option value="Leader">Leader</option>
-                <option value="Technician">Technician</option>
-                <option value="Engineer">Engineer</option>
-                <option value="QC">QC</option>
+                {EMPLOYEE_POSITIONS.map(pos => <option key={pos} value={pos}>{pos}</option>)}
               </select>
             </div>
             <div>
@@ -199,12 +197,7 @@ export default function Register() {
               let lineOpts = lockedSection
                 ? lines.filter(l => l.section === lockedSection)
                 : lines;
-              if (department) {
-                const filtered = lineOpts.filter(l =>
-                  l.name === department || l.parent_line_name === department
-                );
-                if (filtered.length > 0) lineOpts = filtered;
-              }
+              lineOpts = filterLinesByDept(lineOpts, department); // normalize + fail-open (UI-CONVENTIONS §5.3)
               return (
                 <select value={groupName} onChange={e => {
                   const val = e.target.value;

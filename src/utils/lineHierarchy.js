@@ -97,3 +97,15 @@ export function toHierarchicalOptions(lines) {
   for (const l of lines) if (!placed.has(l.id)) out.push({ line: l, depth: 0 });
   return out;
 }
+
+/* ── จับคู่แผนก (org_nodes department) ↔ ไลน์ (2026-07-21) ──
+   เทียบแบบ normalize (ตัดช่องว่าง/ขีด + UPPERCASE) เพราะชื่อในสองตารางพิมพ์ไม่ตรงกันบ่อย
+   (เช่น org แผนก "LWRBAR" vs ไลน์ "LWR BAR" — เทียบตรงตัวแล้ว dropdown ว่าง เลือกไลน์ไม่ได้)
+   + fail-open: ไม่ match สักไลน์ = คืนลิสต์ที่รับมา (กรองด้วย section แล้ว) ห้ามคืนลิสต์ว่าง */
+export const normOrgName = (s) => String(s || '').toUpperCase().replace(/[\s\-_]+/g, '');
+export const filterLinesByDept = (lineList, department) => {
+  if (!department) return lineList;
+  const nd = normOrgName(department);
+  const matched = lineList.filter(l => normOrgName(l.name) === nd || normOrgName(l.parent_line_name) === nd);
+  return matched.length ? matched : lineList;
+};
