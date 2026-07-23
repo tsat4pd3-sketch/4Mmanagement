@@ -61,6 +61,16 @@ export default function MachineDatabase() {
   const [editing, setEditing]       = useState(null); // machine form object, or null
   const [saving, setSaving]         = useState(false);
   const [facilityAreas, setFacilityAreas] = useState([]); // ชื่อโซน facility (จาก pm_facility_areas) — ตัวเลือก/suggest
+  const [supplyLines, setSupplyLines] = useState([]);     // Supply route: facility/utility นี้จ่ายให้ไลน์ไหนบ้าง (ในฟอร์มแก้ไข)
+  const [supplyByMachine, setSupplyByMachine] = useState({}); // machine_id → [line_name] (โชว์ในลิสต์)
+
+  // โหลด supply route ของ facility/utility ที่กำลังแก้ (utility นี้จ่ายไลน์ไหน)
+  useEffect(() => {
+    const isFac = editing?.equipment_category && editing.equipment_category !== 'production';
+    if (!editing?.id || !isFac) { setSupplyLines([]); return; }
+    supabaseDR.from('facility_supply_links').select('line_name').eq('machine_id', editing.id)
+      .then(({ data }) => setSupplyLines((data || []).map(r => r.line_name))).catch(() => setSupplyLines([]));
+  }, [editing?.id, editing?.equipment_category]);
   const [showTypeManager, setShowTypeManager] = useState(false);
 
   const load = useCallback(async () => {
@@ -75,6 +85,10 @@ export default function MachineDatabase() {
     setLines(ln || []);
     setTypes(mt || []);
     setFacilityAreas((fa?.data || []).map(a => a.name).filter(Boolean));
+    // supply route map (facility/utility → ไลน์ที่จ่าย) — best-effort ถ้าตารางยังไม่ apply
+    supabaseDR.from('facility_supply_links').select('machine_id, line_name')
+      .then(({ data }) => { const m = {}; (data || []).forEach(r => { (m[r.machine_id] ||= []).push(r.line_name); }); setSupplyByMachine(m); })
+      .catch(() => setSupplyByMachine({}));
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -154,8 +168,15 @@ export default function MachineDatabase() {
       const { equipment_category, ...rest } = payload; void equipment_category;
       ({ error } = await doSave(rest));
     }
+    if (error) { setSaving(false); toast.error(error.message); return; }
+    // Supply route: sync ไลน์ที่ facility/utility นี้จ่าย (เฉพาะเครื่องที่มี id แล้ว) — best-effort
+    if (editing.id && (editing.equipment_category || 'production') !== 'production') {
+      try {
+        await supabaseDR.from('facility_supply_links').delete().eq('machine_id', editing.id);
+        if (supplyLines.length) await supabaseDR.from('facility_supply_links').insert(supplyLines.map(ln => ({ machine_id: editing.id, line_name: ln })));
+      } catch { /* ตารางยังไม่ apply — ข้าม */ }
+    }
     setSaving(false);
-    if (error) { toast.error(error.message); return; }
     toast.success('บันทึกสำเร็จ');
     setEditing(null);
     load();
@@ -236,7 +257,10 @@ export default function MachineDatabase() {
                         {item.machine_types.icon || ''} {item.machine_types.label}
                       </span>
                     )}
-                    {!item.machine_type_id && <span style={{ fontSize: 11, color: '#f59e0b' }}>ยังไม่ระบุประเภท</span>}
+                    {item.equipment_category === 'facility' && <span style={{ fontSize: 11, color: '#f59a3f' }}>🔧 Facility</span>}
+                    {item.equipment_category === 'utility' && <span style={{ fontSize: 11, color: '#9b8de8' }}>⚡ Utility</span>}
+                    {!item.machine_type_id && item.equipment_category === 'production' && <span style={{ fontSize: 11, color: '#f59e0b' }}>ยังไม่ระบุประเภท</span>}
+                    {(supplyByMachine[item.id]?.length > 0) && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(74,144,224,0.15)', color: '#4a90e0', fontWeight: 700 }} title={`จ่ายให้: ${supplyByMachine[item.id].join(', ')}`}>🔗 จ่าย {supplyByMachine[item.id].length} ไลน์</span>}
                     {!item.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}>(ปิดใช้)</span>}
                   </div>
                 </div>
@@ -311,6 +335,26 @@ export default function MachineDatabase() {
                   </button>
                 </div>
               </Field>
+              {(editing.equipment_category || 'production') !== 'production' && (
+                <Field label="🔗 จ่ายให้ไลน์ (Supply Route)">
+                  {!editing.id ? (
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>บันทึกเครื่องก่อน แล้วเปิดแก้ไขอีกครั้งเพื่อตั้งไลน์ที่จ่าย</div>
+                  ) : (
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>utility นี้จ่ายให้ไลน์ไหนบ้าง — ถ้าตัดไฟ/มีปัญหาจะรู้ว่ากระทบไลน์ไหน</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 130, overflowY: 'auto', padding: 4, border: '1px solid var(--border)', borderRadius: 8 }}>
+                        {scopedLines.filter(l => !parentChildrenMap[l.name]).map(l => {
+                          const on = supplyLines.includes(l.name);
+                          return <button key={l.id} type="button" onClick={() => setSupplyLines(p => on ? p.filter(x => x !== l.name) : [...p, l.name])}
+                            style={{ padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                              border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? '#071008' : 'var(--text2)' }}>{on ? '✓ ' : ''}{l.name}</button>;
+                        })}
+                      </div>
+                      {supplyLines.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--accent2)', marginTop: 4 }}>กระทบ {supplyLines.length} ไลน์เมื่อ utility นี้หยุด</div>}
+                    </div>
+                  )}
+                </Field>
+              )}
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input type="checkbox" checked={editing.is_active} onChange={e => setEditing(f => ({ ...f, is_active: e.target.checked }))} />
                 <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
