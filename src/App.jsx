@@ -41,6 +41,7 @@ const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
 const DailyPM     = lazy(() => import('./pages/DailyPM'));
 const PmForecast  = lazy(() => import('./pages/PmForecast'));
+const PmCoordination = lazy(() => import('./pages/PmCoordination'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
 const LayerProcessAudit = lazy(() => import('./pages/LayerProcessAudit'));
@@ -94,6 +95,7 @@ const NAV_ITEMS = [
   { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-schedule', icon: '📅', label: 'แผน PM อุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-forecast', icon: '🔧', label: 'PM ล่วงหน้า (Planner)',            group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/pm-coordination', icon: '🗓️', label: 'แผนประสานงาน PM (แจ้งผลิต)',   group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-setup',    icon: '🔩', label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร', group: 'การตรวจสอบและซ่อมบำรุง' },
 
@@ -1077,6 +1079,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/pm-schedule" element={
                 <RoleRoute path="/pm-schedule" userRole={role}><PMSchedule /></RoleRoute>
+              } />
+              <Route path="/pm-coordination" element={
+                <RoleRoute path="/pm-coordination" userRole={role}><PmCoordination /></RoleRoute>
               } />
               <Route path="/pm-forecast" element={
                 <RoleRoute path="/pm-forecast" userRole={role}><PmForecast /></RoleRoute>

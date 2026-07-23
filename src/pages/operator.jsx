@@ -3,10 +3,12 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
+import { filterLinesByDept } from '../utils/lineHierarchy';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
+import { positionOptionsWith } from '../utils/positions';
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 
 
@@ -413,7 +415,20 @@ export default function Operator() {
   // ตัวเลือก filter ไล่ตามลำดับชั้นองค์กร (cascade — คำสั่ง user 2026-07-21): Dept เฉพาะใน Section ที่เลือก ·
   // Group เฉพาะใน Section+Dept · Team ตามที่เหลือ — ดึงจากข้อมูลพนักงานจริง (ตรงกับแถวในตารางเสมอ ไม่มีตัวเลือกข้าม section/ซ้ำ)
   const empsInSec   = useMemo(() => allEmps.filter(e => !filterSection || e.section === filterSection), [allEmps, filterSection]);
-  const deptOpts    = useMemo(() => [...new Set(empsInSec.map(e => e.department).filter(Boolean))].sort(), [empsInSec]);
+  // แผนก = cascade จากผังองค์กรจริง (org_nodes ใต้ section ที่เลือก เรียงตามผัง) — ตรงกับ OrgSetup (2026-07-22)
+  //   แยก 2 กลุ่ม: "ในผัง" (org_nodes) กับ "นอกผัง" (legacy = พนักงานกรอกไว้แต่ยังไม่มีในผัง) ให้เห็นชัด + ยังกรองได้ระหว่างจัดข้อมูล
+  const deptOrgList  = useMemo(() => {
+    const secNode = orgSectionNodes.find(s => (s.code || s.name) === filterSection);
+    return orgDeptNodes
+      .filter(d => filterSection ? (secNode && d.parent_id === secNode.id) : true)  // orgDeptNodes เรียง sort_order มาแล้ว
+      .map(d => d.code || d.name);
+  }, [orgDeptNodes, orgSectionNodes, filterSection]);
+  const deptLegacyList = useMemo(() => {
+    const orgSet = new Set(deptOrgList.map(x => String(x).trim().toLowerCase()));
+    return [...new Set(empsInSec.map(e => e.department).filter(Boolean))]
+      .filter(d => !orgSet.has(String(d).trim().toLowerCase())).sort();
+  }, [deptOrgList, empsInSec]);
+  const deptOpts    = useMemo(() => [...deptOrgList, ...deptLegacyList], [deptOrgList, deptLegacyList]);
   const empsInDept  = useMemo(() => empsInSec.filter(e => !filterDept || e.department === filterDept), [empsInSec, filterDept]);
   const groupOpts   = useMemo(() => [...new Set(empsInDept.map(e => e.group_name).filter(Boolean))].sort(), [empsInDept]);
   const teamOpts    = useMemo(() => [...new Set(empsInDept.filter(e => !filterGroup || e.group_name === filterGroup).map(e => e.team).filter(Boolean))].sort(), [empsInDept, filterGroup]);
@@ -521,7 +536,22 @@ export default function Operator() {
               <select key={f.label} value={f.value} onChange={e => f.set(e.target.value)}
                 style={{ fontSize: 12, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: f.value ? 'var(--text)' : 'var(--muted)', minWidth: 110 }}>
                 <option value="">{`— ${f.label} —`}</option>
-                {f.opts.map(o => <option key={o} value={o}>{o}</option>)}
+                {f.label === 'Dept' ? (
+                  <>
+                    {deptOrgList.length > 0 && (
+                      <optgroup label="ในผังองค์กร">
+                        {deptOrgList.map(o => <option key={`o_${o}`} value={o}>{o}</option>)}
+                      </optgroup>
+                    )}
+                    {deptLegacyList.length > 0 && (
+                      <optgroup label="⚠ นอกผัง (ต้องจัดข้อมูล)">
+                        {deptLegacyList.map(o => <option key={`l_${o}`} value={o}>{o}</option>)}
+                      </optgroup>
+                    )}
+                  </>
+                ) : (
+                  f.opts.map(o => <option key={o} value={o}>{o}</option>)
+                )}
               </select>
             ))}
 
@@ -1123,11 +1153,13 @@ export default function Operator() {
 
       {editingEmp && (
         <div className="overlay">
-          <div className="modal" style={{ width: 'min(640px, 94vw)', maxHeight: '90vh', overflowY: 'auto' }}>
+          <div className="modal" style={{ width: 'min(1360px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
             <h3 style={{ marginTop: 0, borderBottom: '1px solid var(--border)', paddingBottom: 12, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
               📝 แก้ไขข้อมูลพนักงาน
             </h3>
-            <form onSubmit={handleUpdate} style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+            {/* จอ ≥1100px: ซ้าย = ข้อมูลพนักงาน · ขวา = ระดับทักษะ (landscape ตาม UI-CONVENTIONS §5) */}
+            <form onSubmit={handleUpdate} className="modal-2col" style={{ marginTop: 16 }}>
+              <div className="m2c-col">
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <label style={labelSt}>รหัสพนักงาน</label>
@@ -1141,14 +1173,11 @@ export default function Operator() {
                 </div>
                 <div>
                   <label style={labelSt}>ตำแหน่งงาน</label>
+                  {/* ตำแหน่งงาน — master list กลาง (src/utils/positions.js) · ค่าเก่านอกลิสต์ยังโชว์ได้ */}
                   <select value={editingEmp.position || ''}
                     onChange={e => setEditingEmp({ ...editingEmp, position: e.target.value })}>
                     <option value="">— เลือก —</option>
-                    <option value="Operator">Operator</option>
-                    <option value="Leader">Leader</option>
-                    <option value="Technician">Technician</option>
-                    <option value="Engineer">Engineer</option>
-                    <option value="QC">QC</option>
+                    {positionOptionsWith(editingEmp.position).map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
                 </div>
               </div>
@@ -1158,7 +1187,7 @@ export default function Operator() {
                   {lockedScopeSec ? (
                     <input type="text" value={lockedScopeSec} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                   ) : (
-                    <select value={editingEmp.section || ''} onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value, department: '' })}>
+                    <select value={editingEmp.section || ''} onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value, department: '', group_name: '', line_id: null })}>
                       <option value="">— เลือก —</option>
                       {(scopeSecs.length ? orgSectionOpts.filter(s => inSectionScope(scopeSecs, s)) : orgSectionOpts)
                         .map(s => <option key={s} value={s}>{s}</option>)}
@@ -1173,7 +1202,7 @@ export default function Operator() {
                     const deptOpts = secNode ? orgDeptNodes.filter(d => d.parent_id === secNode.id) : [];
                     return (
                       <select value={editingEmp.department || ''} disabled={!empSection}
-                        onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value })}>
+                        onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value, group_name: '', line_id: null })}>
                         <option value="">{empSection ? '— เลือก —' : 'เลือก Section ก่อน'}</option>
                         {deptOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
                       </select>
@@ -1201,17 +1230,19 @@ export default function Operator() {
                 {isLeader ? (
                   <input type="text" value={editingEmp.group_name || myLineName || ''} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                 ) : (
-                  <select value={editingEmp.group_name || ''} onChange={e => {
+                  <select value={editingEmp.group_name || ''} disabled={!editingEmp.department} onChange={e => {
                     const val = e.target.value;
                     const line = lines.find(l => l.name === val);
                     setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
                   }}>
-                    <option value="">— เลือก Line —</option>
-                    {/* cascade ตามลำดับชั้น (2026-07-21): มีแผนก → เฉพาะไลน์ของแผนกนั้น (pattern Register) · มี section → เฉพาะไลน์ section นั้น */}
-                    {(scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
-                      .filter(l => !editingEmp.section || l.section === editingEmp.section)
-                      .filter(l => !editingEmp.department || l.name === editingEmp.department || l.parent_line_name === editingEmp.department)
-                      .map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                    {/* cascade Section→แผนก→Line (UI-CONVENTIONS §5.3): gate ต้องเลือกแผนกก่อน (select disabled)
+                        · filterLinesByDept = fail-open กันชื่อแผนกไม่ตรงชื่อไลน์แล้วลิสต์ว่าง */}
+                    <option value="">{editingEmp.department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
+                    {filterLinesByDept(
+                      (scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
+                        .filter(l => !editingEmp.section || l.section === editingEmp.section),
+                      editingEmp.department
+                    ).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                   </select>
                 )}
               </div>
@@ -1222,6 +1253,8 @@ export default function Operator() {
                   <option value="">— ไม่ระบุ —</option>
                   {busRoutes.map(r => <option key={r.id} value={r.id}>{r.code} {r.name}</option>)}
                 </select>
+              </div>
+
               </div>
 
               <div style={{ background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>
@@ -1313,7 +1346,7 @@ export default function Operator() {
                   onConfirm={f => { setEditingEmp(prev => ({ ...prev, newPhoto: f })); setEmpCropFile(null); }} />
               )}
 
-              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+              <div className="m2c-span" style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                 <button type="submit" disabled={isSaving}
                   style={{ flex: 2, padding: 12, background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)' }}>
                   {isSaving ? 'กำลังบันทึก...' : '💾 บันทึกข้อมูล'}

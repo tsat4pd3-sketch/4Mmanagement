@@ -315,7 +315,7 @@ export default function ShiftOrganize() {
       </div>
 
       {/* Weekly Shift Table — overflowX: ตารางกว้าง ~610px ให้เลื่อนแนวนอนบนมือถือ (desktop ไม่มี scrollbar เพราะพื้นที่พอ) */}
-      <div className="card" style={{ marginBottom: 8, overflowX: 'auto' }}>
+      <div className="card table-sticky" style={{ marginBottom: 8, overflowX: 'auto' }}>
         <table>
           <thead>
             <tr>
@@ -424,7 +424,7 @@ export default function ShiftOrganize() {
         )}
       </div>
 
-      <div className="card" style={{ overflowX: 'auto' }}>
+      <div className="card table-sticky" style={{ overflowX: 'auto' }}>
         <table style={{ minWidth: 500 }}>
           <thead>
             <tr>
@@ -485,7 +485,7 @@ export default function ShiftOrganize() {
           </button>
         )}
       </div>
-      <div className="card" style={{ overflowX: 'auto', marginBottom: 8 }}>
+      <div className="card table-sticky" style={{ overflowX: 'auto', marginBottom: 8 }}>
         <table style={{ minWidth: 560 }}>
           <thead>
             <tr>

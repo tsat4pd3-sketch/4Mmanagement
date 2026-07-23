@@ -335,7 +335,7 @@ function StockTab({ role }) {
 
       {/* ── Stock view ── */}
       {!showTxn && (
-        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+        <div style={{ display:'flex', flexDirection:'column', gap:14, maxHeight:'calc(100vh - 240px)', overflowY:'auto', paddingRight:4 }}>
           {Object.keys(stockByLine).length === 0 ? (
             <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
               ยังไม่มีข้อมูล Stock{lineFilter ? ` ในไลน์ ${lineFilter}` : ''} — กด "+ จ่ายพาร์ทเข้าไลน์" เพื่อเริ่ม
@@ -426,7 +426,7 @@ function StockTab({ role }) {
               </div>
             )}
           </div>
-          <div style={{ overflowX:'auto' }}>
+          <div className="table-sticky" style={{ overflowX:'auto' }}>
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
                 <tr style={{ background:'var(--bg2)' }}>
@@ -467,11 +467,12 @@ function StockTab({ role }) {
       {/* ── Issue / Adjust modal ── */}
       {showForm && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(480px,100%)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(900px,96vw)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:16, fontFamily:'var(--font-display)' }}>
               {TYPE_LABEL[form.type]}
             </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            {/* จอกว้างเรียง 2 คอลัมน์ ลด scroll (UI-CONVENTIONS §5) — mgrid ยุบคอลัมน์เดียวบนมือถือ */}
+            <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, alignItems:'start' }}>
               {/* Type selector */}
               <div>
                 <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:6 }}>ประเภท</label>
@@ -864,7 +865,7 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
       {/* Modal */}
       {showModal && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(460px,100%)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(760px,96vw)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:16, fontFamily:'var(--font-display)' }}>
               ⏰ {editId ? 'แก้ไขรอบจัดส่ง' : 'เพิ่มรอบจัดส่งใหม่'}
             </div>

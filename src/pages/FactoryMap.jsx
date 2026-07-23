@@ -75,6 +75,13 @@ const METRICS = {
     text: s => s.pmTotal ? (s.pmOverdue ? `⚠ เกินกำหนด ${s.pmOverdue}` : s.pmDueSoon ? `ใกล้ครบ ${s.pmDueSoon}` : `PM ปกติ (${s.pmTotal})`) : '',
     cat: s => !s.pmTotal ? 'idle' : s.pmOverdue ? 'bad' : s.pmDueSoon ? 'ok' : 'good',
   },
+  supply: {
+    // 🔗 Supply route — utility/facility จ่ายไลน์นี้ กำลังซ่อม (open MO) = กระทบ (แดงกระพริบ)
+    label: '🔗 Supply Route', worstFirst: true, desc: true,
+    value: s => s.supList.length ? (s.supAtRisk ? 1000 + s.supList.length : s.supList.length) : null,
+    text: s => !s.supList.length ? '' : s.supAtRisk ? `⚠ ${supNames(s.supList, true).join(', ')} ซ่อมอยู่` : `จ่ายโดย ${supNames(s.supList).join(', ')}`,
+    cat: s => !s.supList.length ? 'idle' : s.supAtRisk ? 'down' : 'good',
+  },
 };
 
 const round = (v) => Math.round(v * 100) / 100;
@@ -86,7 +93,10 @@ const labelAnchor = (pts) => pts.length
   ? [(Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2, Math.min(...pts.map(p => p[1]))]
   : [50, 50];
 const EMPTY_ST = { actual: 0, target: 0, hasOpen: false, oee: null, oeeLive: false, dtMin: 0, dtActive: false, ng: 0,
-  headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0 };
+  headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0,
+  supList: [], supAtRisk: false };
+// รวมชื่อ utility ที่จ่ายไลน์นี้ (dedup ตามเลขเครื่อง) เอาที่กำลังซ่อม (atRisk) ก่อน
+const supNames = (list, riskOnly) => [...new Map((list || []).filter(x => !riskOnly || x.atRisk).map(x => [x.no, x.name || x.no])).values()];
 
 // setupMode=false (default, /factory-map) = display-only (ดู + popup ไม่มีปุ่มแก้ผัง)
 // setupMode=true (/layout-setup แท็บภาพรวมโรงงาน) = โหมดตั้งค่า อัปโหลดรูป/วาด polygon ได้
@@ -102,6 +112,7 @@ export default function FactoryMap({ setupMode = false }) {
   const [lineStatus, setLineStatus] = useState({});   // production metrics (DR)
   const [manpower, setManpower] = useState({});        // คน/เข้างาน (Main)
   const [pmStatus, setPmStatus] = useState({});        // PM เครื่องจักร (DR)
+  const [supplyStatus, setSupplyStatus] = useState({}); // supply route: line_name → { suppliers:[{no,name,atRisk}], atRisk } (DR)
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(canEdit); // setup mode + มีสิทธิ์ → เข้าโหมดแก้เลย
@@ -294,6 +305,31 @@ export default function FactoryMap({ setupMode = false }) {
   }, []);
   useEffect(() => { loadPM(); const t = setInterval(loadPM, 300000); return () => clearInterval(t); }, [loadPM]);
 
+  /* ── Supply route (DR: facility_supply_links + machines + open MO) — refresh 30 วิ ──
+     utility/facility จ่ายไลน์ไหน · ถ้ามีใบซ่อม (MO) เปิดค้างบนเครื่องนั้น = ไลน์ที่จ่ายกระทบ (แดง) */
+  const loadSupply = useCallback(async () => {
+    const [links, mcs, mos] = await Promise.all([
+      supabaseDR.from('facility_supply_links').select('machine_id, line_name').then(r => r).catch(() => ({ data: [] })),
+      supabaseDR.from('machines').select('id, machine_no, machine_name').then(r => r).catch(() => ({ data: [] })),
+      supabaseDR.from('mtn_orders').select('machine_no, status').then(r => r).catch(() => ({ data: [] })),
+    ]);
+    const linkRows = links?.data || [];
+    if (!linkRows.length) { setSupplyStatus({}); return; }
+    const byId = {}; (mcs?.data || []).forEach(m => { byId[m.id] = m; });
+    const openNos = new Set((mos?.data || []).filter(o => !['closed', 'rejected'].includes(o.status)).map(o => o.machine_no));
+    const out = {};
+    linkRows.forEach(l => {
+      const mc = byId[l.machine_id]; if (!mc) return;
+      const atRisk = openNos.has(mc.machine_no);
+      const o = out[l.line_name] || { suppliers: [], atRisk: false };
+      o.suppliers.push({ no: mc.machine_no, name: mc.machine_name, atRisk });
+      if (atRisk) o.atRisk = true;
+      out[l.line_name] = o;
+    });
+    setSupplyStatus(out);
+  }, []);
+  useEffect(() => { loadSupply(); const t = setInterval(loadSupply, 30000); return () => clearInterval(t); }, [loadSupply]);
+
   // ── family rollup: ตีกรอบ "ไลน์บนสุด (top-level)" แล้วรวมยอดของลูกขึ้นมา ──
   // (ข้อมูลจริง: พนักงาน/บางเมตริกผูกกับไลน์แม่ · บางอันผูกกับลูก → รวมทั้งครอบครัวจึงครบ)
   // ไลน์ไม่มีลูก = โชว์ตัวเอง (เช่น LINE A 800 Ton) · ไลน์มีลูก = ตัวเอง + ลูกทั้งหมด
@@ -334,8 +370,10 @@ export default function FactoryMap({ setupMode = false }) {
   // ตีกรอบเฉพาะ "ไลน์บนสุด (top-level)" = parent_line_name IS NULL — 1 กรอบ/กลุ่ม (รวมยอดลูกด้วย stOf)
   const topNames = useMemo(() => lines.filter(l => !l.parent_line_name).map(l => l.name), [lines]);
   const stOf = (name) => {
-    const agg = { ...EMPTY_ST, oeeSum: 0, oeeN: 0 };
+    const agg = { ...EMPTY_ST, supList: [], oeeSum: 0, oeeN: 0 };
     familyNames(name).forEach(n => {
+      const sp = supplyStatus[n];
+      if (sp) { agg.supList.push(...sp.suppliers); agg.supAtRisk = agg.supAtRisk || sp.atRisk; }
       const p = lineStatus[n];
       if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeSum += p.oeeSum || 0; agg.oeeN += p.oeeN || 0; agg.oeeLive = agg.oeeLive || p.oeeLive; }
       const m = manpower[n];
@@ -360,7 +398,7 @@ export default function FactoryMap({ setupMode = false }) {
       return M.desc ? bv - av : av - bv;
     });
     return arr;
-  }, [lineStatus, manpower, pmStatus, regions, metric, topNames]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lineStatus, manpower, pmStatus, supplyStatus, regions, metric, topNames]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── อัปโหลดรูปผัง (บีบเบา 2560/2.5MB/q0.9) ── */
   const handleUpload = async (e) => {

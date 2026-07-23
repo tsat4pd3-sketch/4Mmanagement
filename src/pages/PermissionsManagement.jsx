@@ -220,9 +220,8 @@ export default function PermissionsManagement() {
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>;
 
   const pageGroups   = PAGE_GROUPS.map(g => ({ group: g.group, items: g.pages }));
-  const legacyGroup  = { group: 'Legacy (ระบบเดิม — จะถูกแทนด้วยสิทธิ์รายการย่อยด้านบน)', items: [
-    { key: 'manage_master_data', label: 'แก้ไขข้อมูลตั้งค่า (ตารางกะ, เครื่องจักร, Line Stock, Product Master ฯลฯ — สวิตช์รวมแบบเดิม)' },
-  ] };
+  // legacy `manage_master_data` เกษียณแล้ว (2026-07-22) — แตกเป็นสิทธิ์ย่อย oee:set_target /
+  // ot_master:manage / management:assign_manpower · แถวเก่ายังอยู่ใน role_permissions (ไม่มีโค้ดอ่าน) เผื่อ rollback
 
   return (
     <div style={s.page}>
@@ -252,7 +251,7 @@ export default function PermissionsManagement() {
             สิทธิ์รายการย่อยเหล่านี้จะมีผลจริงกับแต่ละหน้า <strong>เมื่อหน้านั้นถูกอัปเดตให้อ่านค่าจากระบบนี้</strong> (กำลังทยอยเปิดใช้ทีละหน้า) —
             ระหว่างนี้หน้าที่ยังไม่อัปเดตจะยึดตามพฤติกรรมเดิม ค่าที่ตั้งไว้ตรงนี้จะถูกใช้ทันทีที่หน้านั้นเปิดใช้ระบบใหม่
           </div>
-          {renderPermTable([...actionGroups, legacyGroup], 'การทำงาน')}
+          {renderPermTable(actionGroups, 'การทำงาน')}
         </>
       )}
     </div>

@@ -6,6 +6,7 @@ import useIsMobile from '../utils/useIsMobile'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
+import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -20,12 +21,6 @@ function parseLocalDate(s) {
   return new Date(y, m - 1, d)
 }
 
-const DEPT_OPTIONS = [
-  { key: 'maintenance', label: 'ซ่อมบำรุง' },
-  { key: 'jig_maintenance', label: 'JIG Maintenance' },
-  { key: 'die_maintenance', label: 'Die Maintenance' },
-  { key: 'production', label: 'ฝ่ายผลิต' },
-]
 
 const VIEW_OPTIONS = [
   { key: 'timeline', label: '📊 Timeline' },
@@ -88,6 +83,8 @@ export default function PMSchedule() {
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('timeline')
   const [deferFor, setDeferFor] = useState(null)   // แถวที่กำลังเลื่อนแผน
+  const [teams, setTeams] = useState(pmTeamsSync()) // ทีมช่าง data-driven (mtn_teams)
+  useEffect(() => { loadPmTeams().then(setTeams) }, [])
 
   const { role, fullName, uid } = useContext(UserContext)
   const canDefer = can('pm', 'setup', role)
@@ -178,10 +175,10 @@ export default function PMSchedule() {
       </div>
 
       <div style={S.deptBar}>
-        {DEPT_OPTIONS.map(d => (
+        {teams.map(d => (
           <button key={d.key} onClick={() => setDept(d.key)}
-            style={S.deptBtn(department === d.key, DEPT_COLORS[d.key] ?? '#3dd65c')}>
-            {d.label}
+            style={S.deptBtn(department === d.key, d.color || DEPT_COLORS[d.key] || '#3dd65c')}>
+            {d.icon ? `${d.icon} ` : ''}{d.label}
           </button>
         ))}
       </div>
@@ -224,7 +221,7 @@ export default function PMSchedule() {
           <p style={{ fontSize: 13, color: 'var(--muted)' }}>ตั้งค่าอุปกรณ์ใน PM Setup ก่อน</p>
         </div>
       ) : view === 'table' ? (
-        <div style={{ overflowX: 'auto' }}>
+        <div className="table-sticky" style={{ overflowX: 'auto' }}>
           <table style={S.table}>
             <thead>
               <tr>
