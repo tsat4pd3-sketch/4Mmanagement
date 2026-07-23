@@ -13,3 +13,15 @@ export const LINE_TYPES = [
 ];
 
 export const lineTypeLabel = (v) => LINE_TYPES.find(t => t.value === v)?.label || null;
+
+/* โหมดการไหลงาน (production_lines.flow_mode · Main project · migration 20260723_line_flow_mode.sql)
+   คนละมิติกับ line_type — บอกว่าไลน์นี้ "ไหลงานยังไง" ใช้กับบอร์ด Heijunka จัดเลนคิว
+   one_piece_flow  = สายเดียวไหลทีละชิ้น → 1 เลน เรียงคิวต่อกัน (ดีฟอลต์ = พฤติกรรมเดิม)
+   parallel_machine = เครื่อง stand-alone หลายตัว วิ่งพร้อมกันคนละรายการ → N เลนขนาน เริ่มพร้อมกัน */
+export const FLOW_MODES = [
+  { value: 'one_piece_flow',  label: '🔁 One-piece flow (เรียงคิวทีละใบ)', short: '🔁 สายเดียว' },
+  { value: 'parallel_machine', label: '⚙️ เครื่องขนาน (วิ่งพร้อมกันหลายเครื่อง)', short: '⚙️ เครื่องขนาน' },
+];
+export const flowModeOf = (v) => v === 'parallel_machine' ? 'parallel_machine' : 'one_piece_flow';
+export const isParallelLine = (v) => flowModeOf(v) === 'parallel_machine';
+export const flowModeShort = (v) => FLOW_MODES.find(t => t.value === flowModeOf(v))?.short || null;

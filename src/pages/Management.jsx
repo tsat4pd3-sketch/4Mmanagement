@@ -314,10 +314,11 @@ export default function Management() {
       .in('line_name', lineNames);
     if (!sessions?.length) { setLineProdData(null); return; }
     const sessionIds = sessions.map(s => s.id);
-    const { data: orders } = await supabaseDR
-      .from('prod_orders')
-      .select('session_id, status, qty, qty_ok, qty_actual, qty_target, is_manual, prod_no, mat_no, opened_at, confirmed_at')
-      .in('session_id', sessionIds);
+    const ordCols = 'session_id, status, qty, qty_ok, qty_actual, qty_target, is_manual, prod_no, mat_no, machine_no, opened_at, confirmed_at';
+    let { data: orders, error: ordErr } = await supabaseDR
+      .from('prod_orders').select(ordCols).in('session_id', sessionIds);
+    // machine_no อาจยังไม่ apply migration (20260723) — retry โดยตัดคอลัมน์ออก
+    if (ordErr) ({ data: orders } = await supabaseDR.from('prod_orders').select(ordCols.replace(', machine_no', '')).in('session_id', sessionIds));
     // production_sessions.product_id ไม่ได้ตั้งค่าเสมอ (กะนึงมีได้หลาย mat_no)
     // จึง fallback ไปหา cycle_time_sec ตรงจาก mat_no ของออเดอร์เอง
     const matNos = [...new Set((orders || []).map(o => o.mat_no).filter(Boolean))];
@@ -377,7 +378,13 @@ export default function Management() {
       // ดึงทุกไลน์เสมอเพื่อ resolve ลำดับชั้น (parent/children) ได้ครบ — scope ไปตัดที่ "รายการให้เลือก" แทน
       // ไม่งั้น leader ที่ผูกกับไลน์หลักจะมองไม่เห็นจุดที่ set ไว้ที่ไลน์ย่อย (และกลับกัน)
       const { data } = await supabase.from('production_lines').select('id, name, section, parent_line_name').order('name');
-      const all = data || [];
+      let all = data || [];
+      // เติมโหมดการไหลงาน (flow_mode/parallel_stations) best-effort — ถ้ายังไม่ apply migration 20260723 ก็ข้าม
+      const { data: flowData } = await supabase.from('production_lines').select('name, flow_mode, parallel_stations');
+      if (flowData) {
+        const fm = {}; flowData.forEach(l => { fm[l.name] = l; });
+        all = all.map(l => ({ ...l, flow_mode: fm[l.name]?.flow_mode, parallel_stations: fm[l.name]?.parallel_stations }));
+      }
       setAllLines(all);
 
       let visible = all;
@@ -1465,13 +1472,29 @@ export default function Management() {
             // (พาร์ทไม่มีคู่ยังรวมคิวไลน์เดียวเรียงต่อกัน — 1 ไลน์ทีละใบ · 2026-07-21)
             const matsInLine = {};
             productRows.forEach(r => r.cards.forEach(c => { (matsInLine[c.line_name || ''] ||= new Set()).add(c.mat_no); }));
-            const laneKeyOf = (c) => {
-              const line = c.line_name || '';
-              const pm = pairMatByMat[c.mat_no];
-              return (pm && matsInLine[line]?.has(pm)) ? `${line}||${c.mat_no}` : line;
+            // ไลน์เครื่องขนาน (flow_mode='parallel_machine') — แตกหลายเลน: ผูกเครื่อง (machine_no)=เลนเครื่องนั้น,
+            // ยังไม่ผูก=กระจาย round-robin N เลน (N = parallel_stations หรือจำนวนเครื่องจาก machine_points) · ดู lineTypes.js
+            const flowByLine = {}; (allLines || []).forEach(l => { flowByLine[l.name] = l; });
+            const machineCountByLine = {};
+            (machinePoints || []).forEach(p => { (machineCountByLine[p.line_name] ||= new Set()).add(p.machine_no); });
+            const stationsOf = (line) => {
+              const l = flowByLine[line];
+              return (l && l.parallel_stations > 0 ? l.parallel_stations : 0) || machineCountByLine[line]?.size || 0;
             };
             const byLane = {};
-            productRows.forEach(r => r.cards.forEach(c => { (byLane[laneKeyOf(c)] ||= []).push(c); }));
+            const rr = {};
+            productRows.forEach(r => r.cards.forEach(c => {
+              const line = c.line_name || '';
+              let key;
+              if (flowByLine[line]?.flow_mode === 'parallel_machine') {
+                if (c.machine_no) key = `${line}||M:${c.machine_no}`;
+                else { const N = stationsOf(line); const i = (rr[line] = (rr[line] ?? -1) + 1); key = N > 0 ? `${line}||P:${i % N}` : `${line}||P:${i}`; }
+              } else {
+                const pm = pairMatByMat[c.mat_no];
+                key = (pm && matsInLine[line]?.has(pm)) ? `${line}||${c.mat_no}` : line;
+              }
+              (byLane[key] ||= []).push(c);
+            }));
             Object.values(byLane).forEach(cs => {
               computeQueuedPositionsFull(cs).forEach(item => positionedByOrder.set(item.o.id ?? item.o.prod_no, item));
             });

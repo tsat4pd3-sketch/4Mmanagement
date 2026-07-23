@@ -4,7 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
-import { LINE_TYPES } from '../utils/lineTypes';
+import { LINE_TYPES, FLOW_MODES } from '../utils/lineTypes';
 import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
@@ -105,6 +105,9 @@ export default function LineSetup() {
   const [costCenter, setCostCenter] = useState('');
   const [lineType, setLineType] = useState('');
   const hasLineTypeCol = useRef(true); // false = DB ยังไม่มีคอลัมน์ line_type (migration 20260722 ยังไม่ apply)
+  const [flowMode, setFlowMode] = useState('one_piece_flow');
+  const [parallelStations, setParallelStations] = useState('');
+  const hasFlowModeCol = useRef(true); // false = DB ยังไม่มีคอลัมน์ flow_mode (migration 20260723 ยังไม่ apply)
   const [mpSaving, setMpSaving] = useState(false);
 
   // ผู้บันทึก/อนุมัติ ประจำส่วนงาน (ใช้ดึงอัตโนมัติในใบค่าฝีมือ)
@@ -121,11 +124,15 @@ export default function LineSetup() {
   const sectionOptsInScope = scopeSecs.length ? sectionOpts.filter(s => inSectionScope(scopeSecs, s)) : sectionOpts;
 
   const fetchLines = async () => {
-    let { data, error } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name, line_type').order('name');
+    let { data, error } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name, line_type, flow_mode, parallel_stations').order('name');
     if (error) {
-      // คอลัมน์ line_type ยังไม่ถูก apply (migration 20260722) — fallback query แบบเดิม หน้าใช้งานได้ปกติ
+      // คอลัมน์ line_type/flow_mode ยังไม่ถูก apply (migration 20260722/20260723) — fallback query แบบเดิม หน้าใช้งานได้ปกติ
       hasLineTypeCol.current = false;
-      ({ data } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name').order('name'));
+      hasFlowModeCol.current = false;
+      let r2 = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name, line_type').order('name');
+      if (r2.error) { r2 = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name').order('name'); }
+      else { hasLineTypeCol.current = true; }
+      data = r2.data;
     }
     // mandatory scope filter — role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor/manager ที่ตั้ง sections)
     // เห็น/แก้ได้เฉพาะไลน์ในส่วนงานตัวเอง — หน้านี้เป็นหน้า edit master data ห้ามเห็นข้ามส่วนงาน
@@ -187,6 +194,8 @@ export default function LineSetup() {
       setStdNight(lineObj.std_night_shift ?? 0);
       setCostCenter(lineObj.cost_center ?? '');
       setLineType(lineObj.line_type ?? '');
+      setFlowMode(lineObj.flow_mode ?? 'one_piece_flow');
+      setParallelStations(lineObj.parallel_stations != null ? String(lineObj.parallel_stations) : '');
       setSignerHead(lineObj.head_name ?? '');
       if (lineObj.section) {
         const { data: signers } = await supabase.from('section_signers').select('*').eq('section', lineObj.section).maybeSingle();
@@ -224,9 +233,24 @@ export default function LineSetup() {
         std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0,
         cost_center: costCenter || null, head_name: signerHead || null,
         ...(hasLineTypeCol.current ? { line_type: lineType || null } : {}),
+        ...(hasFlowModeCol.current ? {
+          flow_mode: flowMode || 'one_piece_flow',
+          parallel_stations: flowMode === 'parallel_machine' && parseInt(parallelStations) > 0 ? parseInt(parallelStations) : null,
+        } : {}),
       })
       .eq('id', lineObj.id);
-    if (error) toast.error('Error: ' + error.message);
+    if (error) {
+      // คอลัมน์ flow_mode ยังไม่ apply — retry โดยตัด field ออก (ไม่ให้ save พังทั้งแผง)
+      if (/flow_mode|parallel_stations/.test(error.message || '')) {
+        hasFlowModeCol.current = false;
+        const { error: e2 } = await supabase.from('production_lines').update({
+          std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0,
+          cost_center: costCenter || null, head_name: signerHead || null,
+          ...(hasLineTypeCol.current ? { line_type: lineType || null } : {}),
+        }).eq('id', lineObj.id);
+        if (e2) toast.error('Error: ' + e2.message); else { toast.info('บันทึกแล้ว (โหมดไหลงานยังไม่ apply migration)'); await fetchLines(); }
+      } else toast.error('Error: ' + error.message);
+    }
     else await fetchLines();
     setMpSaving(false);
   };
@@ -1611,6 +1635,27 @@ export default function LineSetup() {
                 <option value="">— ยังไม่ระบุ —</option>
                 {LINE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelSt}>🔀 รูปแบบการไหลงาน (บอร์ด Heijunka)</label>
+              <select value={flowMode} disabled={!canEdit}
+                onChange={e => setFlowMode(e.target.value)}
+                style={{ marginTop: 4, fontSize: 13, fontWeight: 600 }}>
+                {FLOW_MODES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>
+                {flowMode === 'parallel_machine'
+                  ? 'เครื่อง stand-alone หลายตัววิ่งพร้อมกันคนละรายการ — บอร์ดจะแตกเป็นเลนขนานตามเครื่อง (เลือกเครื่องตอนเปิด Order)'
+                  : 'สายเดียวไหลทีละชิ้น — บอร์ดเรียงคิว 1 ใบต่อครั้ง (ดีฟอลต์)'}
+              </div>
+              {flowMode === 'parallel_machine' && (
+                <div style={{ marginTop: 8 }}>
+                  <label style={{ ...labelSt, fontSize: 11 }}>จำนวนเครื่องขนาน (เว้นว่าง = นับจากทะเบียนเครื่องจักร)</label>
+                  <input type="number" min="1" value={parallelStations} disabled={!canEdit}
+                    onChange={e => setParallelStations(e.target.value)}
+                    placeholder="เช่น 5" style={{ marginTop: 4, width: 120 }} />
+                </div>
+              )}
             </div>
             <div style={{ marginBottom: 12 }}>
               <label style={labelSt}>👨‍🔧 หัวหน้างาน (ประจำไลน์นี้)</label>
