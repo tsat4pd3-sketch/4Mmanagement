@@ -460,6 +460,10 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 
 ---
 
+## Daily Report — ไลน์ผสมหลาย process (welding + metal forming ในไลน์เดียว · 2026-07-22)
+
+**dropdown ประเภท Downtime/งานเสีย ใช้ `sessionProcessTypesAll()` (union ทุก process ที่มีเครื่อง/สินค้าจริงในไลน์)** — เดิมใช้ `sessionProcessType()` (เสียงข้างมากตัวเดียว) ทำให้ไลน์ผสม เช่น LWR (laser=metal_forming + Stationary=welding_assembly) มองไม่เห็นประเภทของอีก process (เคสจริงจาก supervisor Assy2) · ประเภทที่ `process_type` = null/common เห็นเสมอทั้งสอง dropdown · **break policies ยังใช้ majority ตัวเดียว (`sessionProcessType`) โดยตั้งใจ** — union จะหักเวลาพักซ้ำสอง policy · ทางแก้ฝั่งข้อมูล: ประเภทที่อยากให้เห็นทุกไลน์ตั้ง process = "🔗 ทุกกระบวนการ" ใน ⚙️ ตั้งค่า
+
 ## OEE (computeOEE ใน DailyReport) — กฎ P สำหรับหลาย MAT.NO (2026-07-14)
 
 - **ตรวจ parallel ระดับ "product" ไม่ใช่ระดับ MAT.NO** — MAT ที่เป็น product เดียวกันแตกตามลูกค้า (ชื่อชิ้นงานเดียวกัน เช่น FVL/FTM/AAT) คืองานตัวเดียวกันแค่ส่งแยกลูกค้า **ขึ้น parallel กันเองไม่ได้** ระบบรวมเป็นสายเดียวก่อน (จับกลุ่มด้วยชื่อ product จาก kanban_standards→dr_products) แล้วค่อยเช็ค overlap ระหว่าง "คนละ product จริงๆ"
