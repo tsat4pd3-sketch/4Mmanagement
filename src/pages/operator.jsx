@@ -7,6 +7,7 @@ import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
+import { positionOptionsWith } from '../utils/positions';
 
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
@@ -1113,14 +1114,11 @@ export default function Operator() {
                 </div>
                 <div>
                   <label style={labelSt}>ตำแหน่งงาน</label>
+                  {/* ตำแหน่งงาน — master list กลาง (src/utils/positions.js) · ค่าเก่านอกลิสต์ยังโชว์ได้ */}
                   <select value={editingEmp.position || ''}
                     onChange={e => setEditingEmp({ ...editingEmp, position: e.target.value })}>
                     <option value="">— เลือก —</option>
-                    <option value="Operator">Operator</option>
-                    <option value="Leader">Leader</option>
-                    <option value="Technician">Technician</option>
-                    <option value="Engineer">Engineer</option>
-                    <option value="QC">QC</option>
+                    {positionOptionsWith(editingEmp.position).map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
                 </div>
               </div>
@@ -1130,7 +1128,7 @@ export default function Operator() {
                   {lockedScopeSec ? (
                     <input type="text" value={lockedScopeSec} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                   ) : (
-                    <select value={editingEmp.section || ''} onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value, department: '' })}>
+                    <select value={editingEmp.section || ''} onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value, department: '', group_name: '', line_id: null })}>
                       <option value="">— เลือก —</option>
                       {(scopeSecs.length ? orgSectionOpts.filter(s => inSectionScope(scopeSecs, s)) : orgSectionOpts)
                         .map(s => <option key={s} value={s}>{s}</option>)}
@@ -1145,7 +1143,7 @@ export default function Operator() {
                     const deptOpts = secNode ? orgDeptNodes.filter(d => d.parent_id === secNode.id) : [];
                     return (
                       <select value={editingEmp.department || ''} disabled={!empSection}
-                        onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value })}>
+                        onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value, group_name: '', line_id: null })}>
                         <option value="">{empSection ? '— เลือก —' : 'เลือก Section ก่อน'}</option>
                         {deptOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
                       </select>
@@ -1173,13 +1171,13 @@ export default function Operator() {
                 {isLeader ? (
                   <input type="text" value={editingEmp.group_name || myLineName || ''} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                 ) : (
-                  <select value={editingEmp.group_name || ''} onChange={e => {
+                  <select value={editingEmp.group_name || ''} disabled={!editingEmp.department} onChange={e => {
                     const val = e.target.value;
                     const line = lines.find(l => l.name === val);
                     setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
                   }}>
-                    <option value="">— เลือก Line —</option>
-                    {/* cascade ตามลำดับชั้น (2026-07-21): มีแผนก → เฉพาะไลน์ของแผนกนั้น (pattern Register) · มี section → เฉพาะไลน์ section นั้น */}
+                    {/* cascade ลำดับชั้น Section→แผนก→Line (UI-CONVENTIONS §5.3): ต้องเลือกแผนกก่อน แล้วโชว์เฉพาะไลน์ของแผนกนั้น */}
+                    <option value="">{editingEmp.department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
                     {(scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
                       .filter(l => !editingEmp.section || l.section === editingEmp.section)
                       .filter(l => !editingEmp.department || l.name === editingEmp.department || l.parent_line_name === editingEmp.department)

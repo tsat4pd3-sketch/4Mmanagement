@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { accessSummaryForRole } from '../App';
 import { ROLE_OPTIONS, roleLabel } from '../utils/roleMeta';
+import { POSITION_OPTIONS } from '../utils/positions';
 
 // ชื่อ/สี/คำอธิบายชุดสิทธิ์ อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
 // desc = "ลักษณะ/ขอบเขตอำนาจ" ของ role เท่านั้น — ห้ามพิมพ์รายชื่อโมดูล/หน้า
@@ -19,8 +20,8 @@ const TEAM_DESC = {
 };
 
 // ตำแหน่งงานจริงในโรงงาน (แสดงตัวตน/รายงาน/ลายเซ็น) — คนละมิติกับ role ซึ่งเป็น "ชุดสิทธิ์ใช้ระบบ"
-// เป็น dropdown + ตัวเลือก "อื่นๆ (พิมพ์เอง)" — ตำแหน่งใหม่ไม่ต้องแก้โค้ด และเปลี่ยนตัวเลือกได้ตลอด
-const POSITION_SUGGESTIONS = ['ผู้จัดการฝ่าย', 'หัวหน้าแผนก', 'หัวหน้าส่วน', 'หัวหน้าไลน์', 'วิศวกร', 'เจ้าหน้าที่', 'ช่างเทคนิค', 'ธุรการ'];
+// master list กลางใช้ร่วมทุกหน้า (src/utils/positions.js) + ตัวเลือก "อื่นๆ (พิมพ์เอง)" — ห้าม hardcode ซ้ำ
+const POSITION_SUGGESTIONS = POSITION_OPTIONS;
 
 export default function AddUser() {
   const [users,         setUsers]         = useState([]);

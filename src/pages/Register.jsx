@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
+import { positionOptionsWith } from '../utils/positions';
 import ImageCropModal from '../components/ImageCropModal';
 import { toast } from '../components/Toast';
 
@@ -154,13 +155,10 @@ export default function Register() {
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>ตำแหน่งงาน</label>
+              {/* ตำแหน่งงาน — master list กลาง (src/utils/positions.js) ใช้ร่วมทุกหน้า */}
               <select value={position} onChange={e => setPosition(e.target.value)}>
                 <option value="">— เลือก —</option>
-                <option value="Operator">Operator</option>
-                <option value="Leader">Leader</option>
-                <option value="Technician">Technician</option>
-                <option value="Engineer">Engineer</option>
-                <option value="QC">QC</option>
+                {positionOptionsWith(position).map(p => <option key={p} value={p}>{p}</option>)}
               </select>
             </div>
             <div>
@@ -196,23 +194,19 @@ export default function Register() {
           <div>
             <label style={labelSt}>Group / กลุ่ม (Line)</label>
             {(() => {
-              let lineOpts = lockedSection
-                ? lines.filter(l => l.section === lockedSection)
-                : lines;
-              if (department) {
-                const filtered = lineOpts.filter(l =>
-                  l.name === department || l.parent_line_name === department
-                );
-                if (filtered.length > 0) lineOpts = filtered;
-              }
+              // cascade ตามลำดับชั้น Section → แผนก → Line (UI-CONVENTIONS §5.3): ต้องเลือกแผนกก่อน
+              //   แล้วโชว์เฉพาะไลน์ในแผนกนั้น (l.name === แผนก [ไลน์แม่] หรือ parent_line_name === แผนก [ไลน์ลูก])
+              const lineOpts = department
+                ? lines.filter(l => l.name === department || l.parent_line_name === department)
+                : [];
               return (
-                <select value={groupName} onChange={e => {
+                <select value={groupName} disabled={!department} onChange={e => {
                   const val = e.target.value;
                   setGroupName(val);
                   const line = lines.find(l => l.name === val);
                   setLineId(line?.id || null);
                 }}>
-                  <option value="">— เลือก Line —</option>
+                  <option value="">{department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
                   {lineOpts.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                 </select>
               );

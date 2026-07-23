@@ -231,6 +231,8 @@
 > ตัวอย่าง: คน QA ทุกระดับ (technician→manager) ใช้ role `qa` เหมือนกันถ้าทำงานในระบบเหมือนกัน
 > ต่างกันแค่ position · ถ้าวันหน้าระดับต่างกันต้องได้**สิทธิ์**ต่างกันจริง ค่อยเพิ่ม role ใหม่ + แถวใน
 > role_permissions (ระบบรองรับ) — **ห้ามเพิ่ม role ตามชื่อตำแหน่งโดยที่ชุดสิทธิ์ไม่ต่างจาก role เดิม**
+>
+> **ตัวเลือก "ตำแหน่งงาน" (position) รวมศูนย์ที่ `src/utils/positions.js` จุดเดียว (2026-07-22)** — master list ไทยชุดเดียวใช้ร่วมทั้ง **พนักงาน (`employees.position` — Register/operator)** และ **user (`profiles.position` — AddUser)** · `positionOptionsWith(current)` เติมค่าเก่านอกลิสต์ (เช่น Operator/Leader/Technician/Engineer) ไว้หัวลิสต์ให้ยังเลือก/แสดงได้ไม่หาย · AddUser ยังมี "อื่นๆ (พิมพ์เอง)" · **ห้าม hardcode ลิสต์ position ซ้ำในหน้าใดๆ** เพิ่ม/แก้ตำแหน่งแก้ที่ไฟล์นี้ที่เดียว (เดิมกระจาย 3 หน้า ลิสต์ไม่ตรงกัน — operator/Register เป็นอังกฤษ, AddUser เป็นไทย)
 
 11 roles ใน enum `user_role`: `admin, manager, supervisor, leader, qa, document_control, sale, mtn, engineer, planner_store, display`
 
