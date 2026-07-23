@@ -1023,6 +1023,7 @@ Environment Variables:
 - ไฟล์: `public/manifest.webmanifest` (name/short_name ESM, display standalone, theme/bg `#080f08`) + icons `public/icon-192.png`/`icon-512.png`/`icon-maskable-512.png`/`apple-touch-icon.png` (180 — iOS ต้อง PNG ไม่รับ SVG) · ต้นฉบับไอคอน `public/app-icon.svg` (โลโก้ TS + ESM บนพื้นเขียวเข้ม) · gen จาก TS logo ผ่าน Chromium (สร้างใหม่: rasterize `app-icon.svg` → PNG ขนาดที่ต้องการ)
 - `index.html` `<head>` มี `<link rel=manifest>` + `theme-color` + `apple-touch-icon` + `apple-mobile-web-app-*` (status-bar-style = `default` กันเนื้อหาทับ notch) — **ห้ามถอด**
 - **เปลี่ยนโลโก้/ไอคอน** → แก้ `app-icon.svg` แล้ว rasterize ใหม่ทับ PNG ทั้ง 4 ไฟล์ (ขนาดเดิม) · เปลี่ยนชื่อไฟล์ไอคอนต้องอัพเดท manifest + index.html ด้วย
+- **Badge จุดแดง/เลขบนไอคอนแอป (2026-07-23):** `NotificationBell` (App.jsx) sync `navigator.setAppBadge(unread)`/`clearAppBadge()` ตามจำนวนแจ้งเตือนที่ยังไม่อ่าน (ตาราง `notifications`) · **guard `'setAppBadge' in navigator`** · ✅ Android/desktop Chrome-Edge (ติดตั้ง PWA) · ❌ **iOS ไม่รองรับ App Badging API** (Apple ยังไม่ทำ — iPhone จะไม่เห็นเลขบนไอคอน) · อัปเดต**เฉพาะตอนเปิดแอป**เท่านั้น (ไม่มี service worker/Web Push → ปิดแอปแล้วไม่เด้ง) · ล้าง badge ตอน logout/unmount · ถ้าจะให้เด้งตอนปิดแอป (เหมือน LINE) ต้องเพิ่ม SW network-only + Web Push VAPID (ยังไม่ทำ)
 
 > ⚠️ **กับดักหลัง deploy — จอดำในแท็บที่เปิดค้าง (แก้แล้ว 2026-07-10):** ทุกหน้าเป็น lazy chunk ชื่อไฟล์มี hash
 > deploy ใหม่ = ไฟล์เก่าหายจาก server → แท็บเก่าเปลี่ยนหน้าแล้วโหลด chunk พัง → React ล่มเป็นจอดำเงียบๆ
