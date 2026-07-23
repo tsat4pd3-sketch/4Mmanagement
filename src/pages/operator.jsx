@@ -415,19 +415,24 @@ export default function Operator() {
   // ตัวเลือก filter ไล่ตามลำดับชั้นองค์กร (cascade — คำสั่ง user 2026-07-21): Dept เฉพาะใน Section ที่เลือก ·
   // Group เฉพาะใน Section+Dept · Team ตามที่เหลือ — ดึงจากข้อมูลพนักงานจริง (ตรงกับแถวในตารางเสมอ ไม่มีตัวเลือกข้าม section/ซ้ำ)
   const empsInSec   = useMemo(() => allEmps.filter(e => !filterSection || e.section === filterSection), [allEmps, filterSection]);
-  // แผนก = cascade จากผังองค์กรจริง (org_nodes ใต้ section ที่เลือก เรียงตามผัง) — ตรงกับ OrgSetup (2026-07-22)
-  //   แยก 2 กลุ่ม: "ในผัง" (org_nodes) กับ "นอกผัง" (legacy = พนักงานกรอกไว้แต่ยังไม่มีในผัง) ให้เห็นชัด + ยังกรองได้ระหว่างจัดข้อมูล
+  // ตัวกรองแผนก = จัดกลุ่มตามผังองค์กร แต่**โชว์เฉพาะแผนกที่มีพนักงานจริง** (ทุกตัวเลือกเจอคนแน่นอน — หัวหน้าหาคนไม่หาย)
+  //   "ในผัง" = แผนกในผังที่มีพนักงาน · "นอกผัง" = แผนกที่พนักงานกรอกไว้แต่ยังไม่มีในผัง (ต้องจัดข้อมูล) · เรียงตาม sort_order ผัง
   const deptOrgList  = useMemo(() => {
     const secNode = orgSectionNodes.find(s => (s.code || s.name) === filterSection);
+    const empDepts = new Set(empsInSec.map(e => String(e.department || '').trim().toLowerCase()).filter(Boolean));
     return orgDeptNodes
       .filter(d => filterSection ? (secNode && d.parent_id === secNode.id) : true)  // orgDeptNodes เรียง sort_order มาแล้ว
-      .map(d => d.code || d.name);
-  }, [orgDeptNodes, orgSectionNodes, filterSection]);
+      .map(d => d.code || d.name)
+      .filter(name => empDepts.has(String(name).trim().toLowerCase()));  // เฉพาะแผนกที่มีพนักงานจริง
+  }, [orgDeptNodes, orgSectionNodes, filterSection, empsInSec]);
   const deptLegacyList = useMemo(() => {
-    const orgSet = new Set(deptOrgList.map(x => String(x).trim().toLowerCase()));
+    const secNode = orgSectionNodes.find(s => (s.code || s.name) === filterSection);
+    const orgAll = new Set(orgDeptNodes
+      .filter(d => filterSection ? (secNode && d.parent_id === secNode.id) : true)
+      .map(d => String(d.code || d.name).trim().toLowerCase()));
     return [...new Set(empsInSec.map(e => e.department).filter(Boolean))]
-      .filter(d => !orgSet.has(String(d).trim().toLowerCase())).sort();
-  }, [deptOrgList, empsInSec]);
+      .filter(d => !orgAll.has(String(d).trim().toLowerCase())).sort();
+  }, [orgDeptNodes, orgSectionNodes, filterSection, empsInSec]);
   const deptOpts    = useMemo(() => [...deptOrgList, ...deptLegacyList], [deptOrgList, deptLegacyList]);
   const empsInDept  = useMemo(() => empsInSec.filter(e => !filterDept || e.department === filterDept), [empsInSec, filterDept]);
   const groupOpts   = useMemo(() => [...new Set(empsInDept.map(e => e.group_name).filter(Boolean))].sort(), [empsInDept]);
