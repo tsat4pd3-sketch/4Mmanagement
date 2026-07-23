@@ -255,6 +255,10 @@ function LiveTab({ role }) {
 
   // SV review-before-approve modal for pending_close requests
   const [showApproveReview, setShowApproveReview] = useState(false);
+  // SV reject-with-remark modal (บอกหัวหน้ากลุ่มว่าต้องกลับไปแก้อะไร)
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectReason, setRejectReason]       = useState('');
+  const [savingReject, setSavingReject]       = useState(false);
 
   // Close Shift modal (OEE)
   const [showCloseShift, setShowCloseShift] = useState(false);
@@ -1912,7 +1916,9 @@ function LiveTab({ role }) {
       toast.error('ไม่สามารถปฏิเสธได้ — มียอดยกของกะนี้ถูกกะถัดไปรับไปแล้ว กรุณาแก้ไขร่วมกับหัวหน้ากะถัดไปก่อน');
       return;
     }
-    if (!window.confirm('ปฏิเสธคำขอปิดกะ? กะจะกลับสู่สถานะ "กำลังผลิต"')) return;
+    const reason = rejectReason.trim();
+    if (!reason) { toast.error('กรุณาระบุสิ่งที่ต้องกลับไปแก้ไข (remark) ให้หัวหน้ากลุ่มทราบ'); return; }
+    setSavingReject(true);
     // คืนสถานะ order ที่เคยถูกยกยอด/ยกเลิกไว้ตอนขอปิดกะ กลับเป็น open เพื่อให้ leader แก้ไขใหม่ได้
     await supabaseDR.from('prod_orders').update({
       status:                      'open',
@@ -1929,15 +1935,29 @@ function LiveTab({ role }) {
       actual_qty:              0, qty_ok: 0, qty_ng: 0, qty_suspect: 0, qty_repair: 0, ng_qty: 0,
       oee_a: null, oee_p: null, oee_q: null, oee: null,
     }).eq('id', selSession.id);
-    if (error) { toast.error(error.message); return; }
-    toast.info('ปฏิเสธคำขอปิดกะ — กะกลับสู่ "กำลังผลิต"');
+    if (error) { setSavingReject(false); toast.error(error.message); return; }
+    // เก็บ remark แยกเป็น update best-effort — ถ้ายังไม่ได้ apply migration (คอลัมน์ยังไม่มี) การปฏิเสธยังทำงานปกติ
+    // แค่ยังไม่บันทึกข้อความ (ค่อยเก็บได้หลัง migration) — ไม่ให้ feature ใหม่ทำ flow หลักพัง
+    try {
+      await supabaseDR.from('production_sessions').update({
+        close_reject_reason:  reason,
+        close_reject_by_name: fullName,
+        close_reject_at:      new Date().toISOString(),
+      }).eq('id', selSession.id);
+    } catch { /* best-effort: คอลัมน์อาจยังไม่มีก่อน migration */ }
+    setSavingReject(false);
+    setShowRejectModal(false);
+    setRejectReason('');
+    toast.info('ปฏิเสธคำขอปิดกะ — ส่งให้หัวหน้ากลุ่มกลับไปแก้ไข');
     notifyProdClose({
       status: 'closed_rejected', line_name: selSession.line_name, shift: selSession.shift,
       work_date: selSession.work_date, actor: fullName,
       requested_by: selSession.close_requested_by_name,
+      reject_reason: reason,
     });
     load();
-    setSelSession(prev => ({ ...prev, status: 'open', close_requested_by_name: null }));
+    setSelSession(prev => ({ ...prev, status: 'open', close_requested_by_name: null,
+      close_reject_reason: reason, close_reject_by_name: fullName }));
   };
 
   const handleDeleteDT = async (id) => {
@@ -2103,7 +2123,7 @@ function LiveTab({ role }) {
                         style={{ ...saveBtnStyle, background: '#22c55e', fontWeight: 700 }}>
                         🔍 ตรวจสอบ & อนุมัติ
                       </button>
-                      <button onClick={handleRejectClose}
+                      <button onClick={() => { setRejectReason(''); setShowRejectModal(true); }}
                         style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
                         ✕ ปฏิเสธ
                       </button>
@@ -2134,6 +2154,21 @@ function LiveTab({ role }) {
                   )}
                 </div>
               </div>
+
+              {/* คำขอปิดกะถูกปฏิเสธ — โชว์ remark ให้หัวหน้ากลุ่มรู้ว่าต้องกลับไปแก้อะไร (static ไม่กระพริบ) */}
+              {selSession.status === 'open' && selSession.close_reject_reason && (
+                <div style={{ marginTop: 12, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.45)', borderRadius: 8, padding: '10px 14px' }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#ef4444', marginBottom: 4 }}>
+                    ✕ คำขอปิดกะถูกปฏิเสธ — กรุณาแก้ไขแล้วส่งขอปิดกะใหม่
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--text)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+                    📝 {selSession.close_reject_reason}
+                  </div>
+                  {selSession.close_reject_by_name && (
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>— โดย {selSession.close_reject_by_name}</div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Per-product breakdown — กะเดียวอาจผลิตหลาย MAT.NO จึงต้องแยกสรุปรายชิ้นงาน ไม่รวมเป็นก้อนเดียว */}
@@ -2703,6 +2738,29 @@ function LiveTab({ role }) {
 
         {/* ── CLOSE SHIFT / OEE modal ─────────────────────────── */}
         {/* SV review-before-approve — show exactly what the leader submitted before deciding */}
+        {/* Reject-with-remark modal — SV ระบุสิ่งที่ต้องกลับไปแก้ให้หัวหน้ากลุ่มทราบ */}
+        {showRejectModal && selSession && (
+          <div className="overlay" style={{ zIndex: 2200 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.5)', borderRadius: 14, padding: 22, width: 'min(94vw,480px)' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: '#ef4444' }}>✕ ปฏิเสธคำขอปิดกะ</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
+                {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)} · ขอโดย {selSession.close_requested_by_name || '—'}
+              </div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>ระบุสิ่งที่ต้องกลับไปแก้ไข (remark) *</label>
+              <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} autoFocus rows={4}
+                placeholder="เช่น ยอด NG ไม่ตรงกับที่บันทึก / ลืมปิด Downtime เครื่อง / เวลาปิดกะผิด — หัวหน้ากลุ่มจะเห็นข้อความนี้"
+                style={{ width: '100%', marginTop: 6, marginBottom: 14, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }} />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button onClick={() => { setShowRejectModal(false); setRejectReason(''); }} style={cancelBtnStyle}>ยกเลิก</button>
+                <button onClick={handleRejectClose} disabled={savingReject || !rejectReason.trim()}
+                  style={{ ...saveBtnStyle, background: '#ef4444', fontWeight: 700, opacity: (savingReject || !rejectReason.trim()) ? 0.5 : 1 }}>
+                  {savingReject ? 'กำลังส่ง...' : '✕ ยืนยันปฏิเสธ + ส่งกลับแก้ไข'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showApproveReview && selSession && (() => {
           const oeeColor = selSession.oee == null ? 'var(--muted)' : selSession.oee >= 85 ? '#22c55e' : selSession.oee >= 65 ? '#f59e0b' : '#ef4444';
           const confirmedOrders  = prodOrders.filter(o => o.status === 'confirmed');
@@ -2987,7 +3045,7 @@ function LiveTab({ role }) {
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                   <button onClick={() => setShowApproveReview(false)} style={cancelBtnStyle}>ปิด</button>
-                  <button onClick={() => { setShowApproveReview(false); handleRejectClose(); }} style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>✕ ปฏิเสธ</button>
+                  <button onClick={() => { setShowApproveReview(false); setRejectReason(''); setShowRejectModal(true); }} style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>✕ ปฏิเสธ</button>
                   <button onClick={() => { setShowApproveReview(false); handleApproveClose(); }} style={{ ...saveBtnStyle, background: '#22c55e', fontWeight: 700 }}>✅ ยืนยันอนุมัติ</button>
                 </div>
               </div>

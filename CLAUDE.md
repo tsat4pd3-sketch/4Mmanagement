@@ -417,6 +417,13 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - สิ่งที่ย้อนให้: status→open, ล้าง confirmed_by/at + qty_ok, ใบ manual คืน `qty = qty_target` (ยอดสะสม qty_actual คงไว้) + **ถอนแถว stock ที่ trigger `trg_post_confirmed_output` โพสต์อัตโนมัติ** (ลบ `line_stock_transactions` ที่ `ref_order_id`+`created_by='auto'`+`type='issue'` — ตัวกันโพสต์ซ้ำของ trigger เช็คจากแถวนี้ ลบแล้วสแกนปิดใหม่จะโพสต์ให้ใหม่ถูกต้อง)
 - Audit: `prod_orders.reopened_by/reopened_at/reopen_count` (migration `20260715_prod_orders_reopen_log.sql` DR) — การ์ดใบโชว์ชิป "↩️ เคยถอยใบ N ครั้ง · ชื่อ" เสมอ ให้หัวหน้าแผนกตรวจย้อนหลังได้ · update guard `.eq('status','confirmed')` กันถอยซ้ำสองเครื่องพร้อมกัน
 
+### ปฏิเสธคำขอปิดกะ + remark ให้หัวหน้ากลุ่ม (2026-07-23)
+
+leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรวจแล้วเลือก **อนุมัติ** หรือ **✕ ปฏิเสธ** · ตอนปฏิเสธ **บังคับพิมพ์ remark** (modal `showRejectModal` — บอกว่าต้องกลับไปแก้อะไร เช่น NG ไม่ตรง/ลืมปิด Downtime/เวลาผิด) กะกลับเป็น `open` แล้ว **หัวหน้ากลุ่มเห็น banner แดง (static ไม่กระพริบ) พร้อมข้อความ + ชื่อผู้ปฏิเสธ** ในหัว session จนกว่าจะแก้แล้วส่งขอปิดกะใหม่
+- เก็บที่ `production_sessions.close_reject_reason / close_reject_by_name / close_reject_at` (migration `20260723_session_close_reject_reason.sql` DR — additive) · **เขียนเป็น update แยก best-effort (try/catch)** ต่อจากการ revert สถานะ → ยังไม่ apply migration = ปฏิเสธได้ปกติ แค่ยังไม่เก็บข้อความ (ไม่ทำ flow หลักพัง)
+- 2 ทางเข้า reject (ปุ่มหัว session + ปุ่มใน modal ตรวจสอบ) เปิด `showRejectModal` ตัวเดียวกัน — `handleRejectClose` อ่าน `rejectReason` (บังคับไม่ว่าง) · เงื่อนไขเดิมยังอยู่: ปฏิเสธไม่ได้ถ้ายอดยกถูกกะถัดไปรับไปแล้ว (`prod_orders.status='imported'`)
+- notify `closed_rejected` แนบ `reject_reason` (edge function ยังไม่ใช้ field นี้ — backward-compat, banner ในแอปเป็นช่องทางหลัก)
+
 ---
 
 ## OEE (computeOEE ใน DailyReport) — กฎ P สำหรับหลาย MAT.NO (2026-07-14)
