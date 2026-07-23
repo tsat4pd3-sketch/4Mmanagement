@@ -214,6 +214,8 @@ export default function MachineDatabase() {
         <div style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>{filtered.length} เครื่อง</div>
       </div>
 
+      {/* §137: ครอบรายการเครื่อง (จัดกลุ่มตามไลน์) ด้วยความสูงจำกัด + เลื่อนในตัว กันล้นจอเมื่อเครื่องเยอะ */}
+      <div style={{ maxHeight: 'calc(100vh - 230px)', overflowY: 'auto', paddingRight: 4 }}>
       {grouped.length === 0 && (
         <div style={{ textAlign: 'center', padding: 60, color: 'var(--muted)', fontSize: 13 }}>ไม่พบเครื่องจักร</div>
       )}
@@ -251,6 +253,7 @@ export default function MachineDatabase() {
           </div>
         </div>
       ))}
+      </div>
 
       {/* Add/Edit machine modal */}
       {editing && (

@@ -593,13 +593,13 @@ export default function MorningMeeting() {
     </div>
   );
 
-  const MissedPanel = () => (
+  const MissedPanel = ({ bounded } = {}) => (
     <div style={card}>
       <h2 style={h2St}>📉 งานหลุดแผน <span style={chip(missedOrders.length ? '#ef4444' : '#22c55e')}>{missedOrders.length} รายการ</span></h2>
       {missedOrders.length === 0 ? (
         <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 700 }}>✅ ทุกใบงานได้ตามเป้า</div>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflowX: 'auto', ...(bounded ? { maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' } : null) }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ color: 'var(--muted)', textAlign: 'left' }}>
@@ -726,7 +726,7 @@ export default function MorningMeeting() {
     </div>
   );
 
-  const FourMPanel = () => {
+  const FourMPanel = ({ bounded } = {}) => {
     // ย้ายจุดในไลน์เดิมแบบ skill ผ่าน/เคยทำ (same_ok) ที่อนุมัติแล้ว = เรื่อง routine
     // — log จุดงานบันทึกอยู่แล้ว ไม่ต้องไล่ทีละแถวในที่ประชุม ยุบเป็นสรุปต่อไลน์ (กดกางดูรายชื่อได้)
     const routine = fourM.filter(m => m.category === 'Man' && m.change_subtype === 'same_ok' && m.status === 'approved');
@@ -737,7 +737,7 @@ export default function MorningMeeting() {
       <div style={card}>
         <h2 style={h2St}>🔄 4M Change เมื่อวาน <span style={chip('#4d9fff')}>{fourM.length} รายการ</span></h2>
         {fourM.length === 0 ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>— ไม่มีบันทึก 4M —</div> : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, ...(bounded ? { maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' } : null) }}>
             {notable.map(m => {
               const st = FOURM_STATUS[m.status] || { label: m.status, color: '#94a3b8' };
               return (
@@ -781,10 +781,10 @@ export default function MorningMeeting() {
     );
   };
 
-  const ReadinessPanel = () => (
+  const ReadinessPanel = ({ bounded } = {}) => (
     <div style={card}>
       <h2 style={h2St}>☀️ ความพร้อมเช้านี้</h2>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, ...(bounded ? { maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' } : null) }}>
         {/* เครื่องยังซ่อมค้าง — Andon แดง (กระพริบเฉพาะที่ยังค้างจริง ตามกฎ) */}
         {openDts.length > 0 ? openDts.map(d => (
           <div key={d.id} className="dt-alarm-blink" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 8, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.5)' }}>
@@ -820,7 +820,7 @@ export default function MorningMeeting() {
     </div>
   );
 
-  const ActionsPanel = () => (
+  const ActionsPanel = ({ bounded } = {}) => (
     <div style={card}>
       <h2 style={h2St}>
         📌 Action Items <span style={chip(openActions.length ? '#f59e0b' : '#22c55e')}>{openActions.length} ค้าง</span>
@@ -831,7 +831,7 @@ export default function MorningMeeting() {
         )}
       </h2>
       {actions.length === 0 ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>— ยังไม่มี action item —</div> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, ...(bounded ? { maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' } : null) }}>
           {actions.map(a => {
             const st = ACT_STATUS[a.status] || ACT_STATUS.open;
             const overdue = ['open', 'doing'].includes(a.status) && a.due_date && a.due_date < getWorkDate();
@@ -951,13 +951,13 @@ export default function MorningMeeting() {
             extra={`เปิดกะ ${lineResults.filter(r => r.shifts.length).length}/${lineResults.length} ไลน์ · ~OEE = รออนุมัติปิดกะ`} />
           <LineCards />
           <SectionHead icon="🔎" title="เจาะปัญหาเมื่อวาน" />
-          <MissedPanel />
+          <MissedPanel bounded />
           <DtDefectPanel />
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
-            <FourMPanel />
-            <ReadinessPanel />
+            <FourMPanel bounded />
+            <ReadinessPanel bounded />
           </div>
-          <ActionsPanel />
+          <ActionsPanel bounded />
         </>
       )}
 

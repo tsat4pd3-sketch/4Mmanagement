@@ -158,6 +158,7 @@ export default function OrgSetup() {
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>SECTION / ส่วน ({sections.length})</strong>
               <button className="tbtn" onClick={() => openCreate('section', null)} style={addBtnSt}>➕</button>
             </div>
+            <div style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
             {sections.map(s => (
               <div key={s.id} style={itemStyle(selSection === s.id)} onClick={() => setSelSection(s.id)}>
                 <span style={{ fontSize: 13, color: s.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: s.is_active ? 'none' : 'line-through' }}>
@@ -175,6 +176,7 @@ export default function OrgSetup() {
                 🏛️ ขึ้นตรงฝ่าย (ไม่มี Section)
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({orphanDepts.length} แผนก)</span>
               </span>
+            </div>
             </div>
           </div>
 

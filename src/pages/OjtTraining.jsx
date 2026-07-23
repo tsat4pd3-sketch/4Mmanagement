@@ -464,7 +464,7 @@ table{border-collapse:collapse}
       </div>
 
       {loading ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>กำลังโหลด...</div> : (
-        <div className="card" style={{ overflowX: 'auto' }}>
+        <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', minWidth: 760 }}>
             <thead>
               <tr>

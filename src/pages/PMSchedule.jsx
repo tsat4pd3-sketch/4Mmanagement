@@ -221,7 +221,7 @@ export default function PMSchedule() {
           <p style={{ fontSize: 13, color: 'var(--muted)' }}>ตั้งค่าอุปกรณ์ใน PM Setup ก่อน</p>
         </div>
       ) : view === 'table' ? (
-        <div style={{ overflowX: 'auto' }}>
+        <div className="table-sticky" style={{ overflowX: 'auto' }}>
           <table style={S.table}>
             <thead>
               <tr>

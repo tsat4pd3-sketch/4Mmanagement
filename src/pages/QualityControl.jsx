@@ -887,7 +887,7 @@ function NCRTab({ lines, canRecord, canManage, onOpenCapa }) {
         {canRecord && <button style={btnSt('#ef4444')} onClick={() => setCreateModal({ ...EMPTY_NCR, report_date: getWorkDate() })}>🚨 เปิด NCR ใหม่</button>}
       </div>
 
-      <div style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
+      <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead><tr>
             <th style={thSt}>เลขที่</th><th style={thSt}>วันที่</th><th style={thSt}>ไลน์</th><th style={thSt}>Part</th>
@@ -1122,7 +1122,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
         })}>🛠 เปิด CAPA ใหม่</button>}
       </div>
 
-      <div style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
+      <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
           <thead><tr>
             <th style={thSt}>เลขที่</th><th style={thSt}>หัวข้อ</th><th style={thSt}>NCR อ้างอิง</th>
@@ -1280,7 +1280,7 @@ function InstrumentTab({ lines, canManage }) {
         {canManage && <button style={btnSt()} onClick={() => setModal({ ...EMPTY_INST })}>+ เพิ่มเครื่องมือวัด</button>}
       </div>
 
-      <div style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
+      <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
           <thead><tr>
             <th style={thSt}>รหัส</th><th style={thSt}>ชื่อเครื่องมือ</th><th style={thSt}>ชนิด</th><th style={thSt}>Range / Res.</th>

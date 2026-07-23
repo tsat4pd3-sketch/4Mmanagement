@@ -335,7 +335,7 @@ function StockTab({ role }) {
 
       {/* ── Stock view ── */}
       {!showTxn && (
-        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+        <div style={{ display:'flex', flexDirection:'column', gap:14, maxHeight:'calc(100vh - 240px)', overflowY:'auto', paddingRight:4 }}>
           {Object.keys(stockByLine).length === 0 ? (
             <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
               ยังไม่มีข้อมูล Stock{lineFilter ? ` ในไลน์ ${lineFilter}` : ''} — กด "+ จ่ายพาร์ทเข้าไลน์" เพื่อเริ่ม
@@ -426,7 +426,7 @@ function StockTab({ role }) {
               </div>
             )}
           </div>
-          <div style={{ overflowX:'auto' }}>
+          <div className="table-sticky" style={{ overflowX:'auto' }}>
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
                 <tr style={{ background:'var(--bg2)' }}>

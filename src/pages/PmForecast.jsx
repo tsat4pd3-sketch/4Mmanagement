@@ -139,7 +139,7 @@ export default function PmForecast() {
       {loading ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>กำลังคำนวณ...</div>
         : !shown.length ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>ยังไม่มีแผน PM ที่คำนวณได้ (ต้องตั้ง usage_threshold หรือรอบเวลา + มียอดผลิต/forecast)</div>
         : (
-          <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
+          <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 860 }}>
               <thead>
                 <tr style={{ background: 'var(--bg3)', color: 'var(--muted)', textAlign: 'left' }}>

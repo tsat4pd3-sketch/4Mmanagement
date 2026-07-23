@@ -125,7 +125,7 @@ export default function RundownStock() {
               <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>📉 Balance FG รายวัน (เรียงพาร์ทที่จะขาดเร็วสุดขึ้นก่อน)</span>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>ตัวบน = ยอดต้องส่งวันนั้น · ตัวล่าง = Balance สะสม (แดง = จะขาด ต้องผลิตเพิ่ม/เปิด OT)</span>
             </div>
-            <div style={{ overflowX: 'auto' }}>
+            <div className="table-sticky" style={{ overflowX: 'auto' }}>
               <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 900 }}>
                 <thead>
                   <tr style={{ background: 'var(--bg2)' }}>

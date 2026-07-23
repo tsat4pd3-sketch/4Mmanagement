@@ -2002,7 +2002,9 @@ function LiveTab({ role }) {
     <div style={{ display: 'grid', gridTemplateColumns: (sessions.length > 1 && !isMobile) ? '220px 1fr' : '1fr', gap: 16 }}>
       {sessions.length > 1 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>กะที่เปิดอยู่</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>กะที่เปิดอยู่ ({sessions.length})</div>
+          {/* §137: list กะยาวเมื่อมีกะค้างไม่ปิดเยอะ → จำกัดความสูง + เลื่อนในตัว กันดันหน้า/ล้นจอ */}
+          <div style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto', paddingRight: 4 }}>
           {(() => {
             // Group sessions by parent line (or self if no parent)
             const groups = {};
@@ -2033,6 +2035,7 @@ function LiveTab({ role }) {
               </div>
             ));
           })()}
+          </div>
         </div>
       )}
 

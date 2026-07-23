@@ -348,7 +348,7 @@ export default function DailyPM() {
               ยังไม่มีอุปกรณ์ในระบบ — เพิ่มได้ที่หน้า <Link to="/pm-setup?dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตั้งค่า PM → แท็บ ฝ่ายผลิต</Link>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxHeight: 'calc(100vh - 300px)', overflowY: 'auto', paddingRight: 4 }}>
               {Object.entries(jigsByLine).map(([line, lineJigs]) => {
                 const regCount = lineJigs.filter(j => registeredKey.has(`${line}::${j.id}`)).length
                 // อุปกรณ์ที่ยังไม่ระบุไลน์ จับคู่กับ order ของไลน์ไม่ได้ → สถานะ/alarm ไม่ทำงาน
