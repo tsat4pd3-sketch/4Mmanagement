@@ -220,6 +220,7 @@
 - Department name ใน org_nodes ต้องตรงกับ parent production_line name เพื่อให้ Register กรอง LINE dropdown ถูก
 - Register.jsx กรอง LINE โดย: `l.name === department || l.parent_line_name === department`
 - **Dropdown ลำดับชั้น (Section→แผนก→Line→Team) ทุกหน้าต้อง cascade + ล้างตัวลูกเมื่อเปลี่ยนตัวแม่** — กฎเต็มดู `docs/UI-CONVENTIONS.md` §5.3 (เพิ่ม 2026-07-21 หลังพบ Report 5 จุด + operator filter bar โชว์แผนกข้าม section)
+- **⚠️ `employees.department`/`section` เป็น free text ไม่ผูก FK กับ `org_nodes`** — data drift ได้ (เจอจริง: พนักงาน PD4 กรอก department ASSY/ASSY2/ทั่วไป แต่ผัง PD4 = GOR/LWRBAR) · dropdown แผนกใน `/operator` จึง cascade จาก `org_nodes` (แผนกใต้ section เรียงตามผัง = optgroup "ในผังองค์กร") + ต่อท้าย legacy ที่พนักงานกรอกแต่ไม่มีในผัง (optgroup "⚠ นอกผัง") ให้ยังกรองได้ระหว่างจัดข้อมูล (2026-07-22) — **ถ้าอยากให้ตรงผัง 100% ต้องจัด `employees.department` ให้ตรงชื่อแผนกใน org_nodes** (data cleanup แยกจากโค้ด)
 
 ### Direct / Indirect Labor + รวมช่างเข้าฐานพนักงาน (2026-07-22)
 
