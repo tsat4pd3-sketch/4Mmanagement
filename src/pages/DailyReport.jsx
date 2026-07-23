@@ -208,7 +208,7 @@ function LiveTab({ role }) {
   // ค่า default = กางเหมือนเดิม ยกเว้น section ที่ว่างเปล่าเริ่มแบบพับ (autoCollapsed)
   const [liveCollapse, setLiveCollapse] = useState(() => {
     const out = {};
-    ['prod_orders', 'defects', 'downtime', 'mat_breakdown'].forEach(k => {
+    ['prod_orders', 'defects', 'downtime', 'mat_breakdown', 'overdue'].forEach(k => {
       try { const v = localStorage.getItem(`dr_live_collapse_${k}`); if (v != null) out[k] = v === '1'; } catch { /* localStorage ปิดใช้งาน — ใช้ default */ }
     });
     return out;
@@ -2037,18 +2037,31 @@ function LiveTab({ role }) {
       )}
 
       <div>
-        {/* Overdue alert */}
-        {overdueAlert.length > 0 && (
+        {/* Overdue alert — พับ/กางได้ + จำกัดความสูงเลื่อนในตัว (list ยาว 60+ กะจะไม่ล้นจอ · UI-CONVENTIONS §137) */}
+        {overdueAlert.length > 0 && (() => {
+          const open = !liveCollapsed('overdue');
+          return (
           <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 10, padding: '12px 16px', marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#ef4444', marginBottom: 6 }}>⚠ มีกะที่ยังไม่ปิด ({overdueAlert.length} กะ)</div>
-            {overdueAlert.map(o => (
-              <div key={o.id} style={{ fontSize: 12, color: 'var(--text)', marginBottom: 2 }}>
-                • {o.line_name} · {o.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · วันที่ {fmtDate(o.work_date)}
-              </div>
-            ))}
-            <div style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>กะเหล่านี้ค้างจากวันก่อน กรุณาปิด/อนุมัติให้ครบ (เริ่มกะใหม่ของวันนี้ได้ตามปกติ ไม่ต้องรอ)</div>
+            <div onClick={() => toggleLiveCollapse('overdue')} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', fontSize: 13, fontWeight: 800, color: '#ef4444' }}>
+              <span style={{ display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▸</span>
+              ⚠ มีกะที่ยังไม่ปิด ({overdueAlert.length} กะ)
+              <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, opacity: 0.85 }}>{open ? '▾ ซ่อน' : '▸ แสดง'}</span>
+            </div>
+            {open && (
+              <>
+                <div style={{ maxHeight: 240, overflowY: 'auto', marginTop: 6, paddingRight: 4 }}>
+                  {overdueAlert.map(o => (
+                    <div key={o.id} style={{ fontSize: 12, color: 'var(--text)', marginBottom: 2 }}>
+                      • {o.line_name} · {o.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · วันที่ {fmtDate(o.work_date)}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>กะเหล่านี้ค้างจากวันก่อน กรุณาปิด/อนุมัติให้ครบ (เริ่มกะใหม่ของวันนี้ได้ตามปกติ ไม่ต้องรอ)</div>
+              </>
+            )}
           </div>
-        )}
+          );
+        })()}
 
         {sessions.length === 0 && (
           <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--muted)' }}>
