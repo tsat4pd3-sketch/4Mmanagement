@@ -15,8 +15,12 @@ export function teamForSection(section) {
   return null
 }
 
-// รายชื่อทีมที่ user คนนี้สังกัด (จาก sections หลายค่า) — [] = ไม่ผูกทีม
-export function teamsForUser(sections) {
+// รายชื่อทีมที่ user คนนี้สังกัด — [] = ไม่ผูกทีม (เห็นคิวทุกทีม)
+//   1. explicitTeams (profiles.mtn_teams — ตั้งจาก AddUser ตรงๆ 2026-07-22) = source of truth ถ้ามี
+//   2. fallback เดา JIG/DIE/MTN จาก sections (backward-compat กับ user เก่าที่ยังไม่ได้ตั้งทีม)
+export function teamsForUser(explicitTeams, sections) {
+  const valid = (Array.isArray(explicitTeams) ? explicitTeams : []).filter(t => MTN_TEAMS.includes(t))
+  if (valid.length) return [...new Set(valid)]
   const set = new Set()
   for (const sec of sections || []) { const t = teamForSection(sec); if (t) set.add(t) }
   return [...set]

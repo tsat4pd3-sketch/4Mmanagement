@@ -10,7 +10,7 @@ import {
   ResponsiveContainer, Tooltip,
 } from 'recharts';
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
-import { hasPermission, can } from '../utils/permissions';
+import { can } from '../utils/permissions';
 import { loadCompanyCalendar, getDayType, isOtHolidayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import { otPeriodMeta, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyNames, getLineFamilyIds } from '../utils/lineHierarchy';
@@ -241,7 +241,7 @@ export default function Report({ mode = 'report' }) {
 
 function OtTransportBookingTab({ autoOpenMaster }) {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
-  const canManageMaster = hasPermission('manage_master_data', role);
+  const canManageMaster = can('ot_master', 'manage', role);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
   const deptsOf        = useOrgDepts();
@@ -415,7 +415,7 @@ table{border-collapse:collapse;width:100%}
         รายชื่อพนักงานที่จองว่าจะมาทำ OT วันที่ {date} (จากหน้าเช็คชื่อ ทั้งกะเช้า/กะดึก) — ใช้สำหรับธุรการจองรถรับส่ง · รวม <strong style={{ color: 'var(--text)' }}>{filteredRows.length}</strong> คน
       </div>
 
-      <div className="card" style={{ overflowX: 'auto' }}>
+      <div className="card table-sticky" style={{ overflowX: 'auto' }}>
         <table>
           <thead>
             <tr>
@@ -751,7 +751,7 @@ table{border-collapse:collapse;width:100%}
         )} />
       </div>
       {loading ? <Loader /> : (
-        <div className="card" style={{ overflowX: 'auto' }}>
+        <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 500 }}>
             <thead><tr><th>โปรไฟล์</th><th>ID</th><th>ชื่อ</th><th>แผนก</th><th>PPE</th><th>จุดงาน</th></tr></thead>
             <tbody>
@@ -925,7 +925,7 @@ table{border-collapse:collapse;width:100%}
         }} />
       </div>
       {loading ? <Loader /> : (
-        <div className="card" style={{ overflowX: 'auto' }}>
+        <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 400 }}>
             <thead><tr><th>วันที่</th><th>PPE</th><th>จุดงาน</th></tr></thead>
             <tbody>
@@ -1120,7 +1120,7 @@ table{border-collapse:collapse;width:100%}
       )}
 
       {loading ? <Loader /> : (
-        <div className="card" style={{ overflowX: 'auto' }}>
+        <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 520 }}>
             <thead>
               <tr>
@@ -1295,7 +1295,7 @@ table{border-collapse:collapse;width:100%}
         )} />
       </div>
       {loading ? <Loader /> : (
-        <div className="card" style={{ overflowX: 'auto' }}>
+        <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 420 }}>
             <thead><tr><th>ID</th><th>ชื่อ</th><th>มาทำงาน</th><th>%</th></tr></thead>
             <tbody>
@@ -3535,7 +3535,7 @@ function MultiSkillFormTab() {
                 })}
               </div>
             ) : (
-            <div style={{ overflowX: 'auto', position: 'relative' }}>
+            <div className="table-sticky" style={{ overflowX: 'auto', position: 'relative' }}>
             <table style={{ minWidth: 220 + msVisibleDefs.length * 44, borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr>
@@ -4151,7 +4151,7 @@ function SkillAllowanceTab() {
 
       {/* Preview table */}
       {rows.length > 0 && (
-        <div className="card" style={{ overflowX: 'auto' }}>
+        <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
             <div>
               <span style={{ fontWeight: 700, fontSize: 15 }}>ใบสรุปค่าฝีมือ</span>
@@ -4723,7 +4723,7 @@ function AttendanceFormTab() {
 
       {/* Preview */}
       {empRows.length > 0 && (
-        <div className="card" style={{ overflowX: 'auto' }}>
+        <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           {calLoaded && days.every(d => getDayType(dayDateStr(d)) === 'working') && (
             <div style={{ marginBottom: 8, padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)' }}>
               ⚠️ งวดนี้ไม่มีวันหยุดในปฏิทินบริษัทเลย — ถ้าเดือนนี้มีวันหยุดจริง ให้ตั้งค่าที่ "ปฏิทินบริษัท" ก่อนพิมพ์ ไม่งั้นชั่วโมง OT วันหยุด (8/10 ชม.) จะถูกคิดแบบวันทำงานปกติ (2/5 ชม.)

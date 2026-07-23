@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
+import { laborMeta } from '../utils/laborType';
 
 const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม' };
 const COST_CENTER_REQUIRED = ['section', 'department', 'line'];
@@ -16,6 +17,7 @@ export default function OrgSetup() {
   const [formCode, setFormCode] = useState('');
   const [formCostCenter, setFormCostCenter] = useState('');
   const [formRefLineId, setFormRefLineId] = useState('');
+  const [formLaborType, setFormLaborType] = useState('direct'); // section: direct/indirect
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { fetchAll(); }, []);
@@ -64,11 +66,13 @@ export default function OrgSetup() {
 
   const openCreate = (kind, parentId) => {
     setFormName(''); setFormCode(''); setFormCostCenter(''); setFormRefLineId('');
+    setFormLaborType('direct');
     setModal({ kind, parentId, editing: null });
   };
   const openEdit = (node) => {
     setFormName(node.name); setFormCode(node.code || ''); setFormCostCenter(node.cost_center || '');
     setFormRefLineId(node.ref_line_id ? String(node.ref_line_id) : '');
+    setFormLaborType(node.labor_type || 'direct');
     setModal({ kind: node.kind, parentId: node.parent_id, editing: node });
   };
 
@@ -91,6 +95,9 @@ export default function OrgSetup() {
       cost_center: formCostCenter.trim() || null,
       parent_id: modal.parentId || null, // department เลือก "ขึ้นตรงฝ่าย" ได้ = parent_id null
       ref_line_id: modal.kind === 'line' && formRefLineId ? Number(formRefLineId) : null,
+      // ประเภทแรงงาน — ตั้งได้ทั้ง section และ department (ช่างส่วนใหญ่อยู่ระดับแผนก)
+      // พนักงาน derive จาก department ก่อน แล้ว section
+      ...(['section', 'department'].includes(modal.kind) ? { labor_type: formLaborType } : {}),
     };
     const { error } = modal.editing
       ? await supabase.from('org_nodes').update(payload).eq('id', modal.editing.id)
@@ -151,12 +158,14 @@ export default function OrgSetup() {
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>SECTION / ส่วน ({sections.length})</strong>
               <button className="tbtn" onClick={() => openCreate('section', null)} style={addBtnSt}>➕</button>
             </div>
+            <div style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
             {sections.map(s => (
               <div key={s.id} style={itemStyle(selSection === s.id)} onClick={() => setSelSection(s.id)}>
                 <span style={{ fontSize: 13, color: s.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: s.is_active ? 'none' : 'line-through' }}>
                   {s.name}
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({deptsOf(s.id).length} แผนก)</span>
                   {s.cost_center && <CostBadge code={s.cost_center} />}
+                  <LaborBadge type={s.labor_type} />
                 </span>
                 <RowActions node={s} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
               </div>
@@ -167,6 +176,7 @@ export default function OrgSetup() {
                 🏛️ ขึ้นตรงฝ่าย (ไม่มี Section)
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({orphanDepts.length} แผนก)</span>
               </span>
+            </div>
             </div>
           </div>
 
@@ -182,6 +192,7 @@ export default function OrgSetup() {
                   {d.name}
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({linesOf(d.id).length} กลุ่ม)</span>
                   {d.cost_center && <CostBadge code={d.cost_center} />}
+                  <LaborBadge type={d.labor_type} />
                 </span>
                 <RowActions node={d} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
               </div>
@@ -239,6 +250,18 @@ export default function OrgSetup() {
                 </label>
                 <input type="text" value={formCostCenter} onChange={e => setFormCostCenter(e.target.value)} placeholder="เช่น 2140662101" />
               </div>
+              {['section', 'department'].includes(modal.kind) && (
+                <div>
+                  <label style={labelSt}>ประเภทแรงงาน (Direct/Indirect)</label>
+                  <select value={formLaborType} onChange={e => setFormLaborType(e.target.value)}>
+                    <option value="direct">🔧 Direct — ฝ่ายผลิต (operator ทำงานผลิตโดยตรง)</option>
+                    <option value="indirect">🗂️ Indirect — สนับสนุน (ช่างซ่อมบำรุง/QA/ธุรการ/ขาย)</option>
+                  </select>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                    พนักงานใน{modal.kind === 'section' ? 'ส่วน' : 'แผนก'}นี้จะถูกจัดเป็นประเภทนี้อัตโนมัติ{modal.kind === 'section' ? ' (แผนกตั้งทับได้)' : ' (ช่างส่วนใหญ่อยู่ระดับแผนก)'}
+                  </div>
+                </div>
+              )}
               {modal.kind === 'line' && (
                 <div>
                   <label style={labelSt}>ผูกกับไลน์ผลิตจริง (production_lines)</label>
@@ -278,6 +301,16 @@ function CostBadge({ code }) {
   return (
     <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border2)' }}>
       💰{code}
+    </span>
+  );
+}
+
+function LaborBadge({ type }) {
+  if (!type) return null;
+  const m = laborMeta(type);
+  return (
+    <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 4, background: `${m.color}18`, color: m.color, border: `1px solid ${m.color}44`, fontWeight: 600 }}>
+      {m.icon}{m.short}
     </span>
   );
 }

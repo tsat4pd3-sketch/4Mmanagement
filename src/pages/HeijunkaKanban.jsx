@@ -1869,7 +1869,7 @@ export default function HeijunkaKanban() {
         ) : viewMode === 'cards' ? (
           <KanbanCardGrid rowList={view.rowList} kanbanStd={kanbanStd} fmt={fmt} />
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <div className="table-sticky" style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
               <thead>
                 <tr style={{ background: 'var(--bg2)' }}>

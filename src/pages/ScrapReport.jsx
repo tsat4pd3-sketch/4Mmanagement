@@ -15,6 +15,7 @@ import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
+import { canDelete } from '../utils/permissions';
 import { usePerms } from '../utils/usePerms';
 import { exportScrapReportExcel } from '../lib/scrapExportExcel';
 
@@ -66,6 +67,7 @@ export default function ScrapReport() {
   const { can } = usePerms();
   const canRecord = can('scrap', 'record');
   const canManage = can('scrap', 'manage');
+  const canDel    = canDelete('scrap', 'manage', role);  // สิทธิ์ลบใบ แยกจากอนุมัติ (fallback = manage)
 
   const [reports, setReports] = useState([]);
   const [allLines, setAllLines] = useState([]);   // production_lines เต็ม (name/section/parent) ไว้คิด scope
@@ -292,7 +294,7 @@ export default function ScrapReport() {
         {canRecord && <button style={btnSt()} onClick={openNew}>+ เปิดใบใหม่</button>}
       </div>
 
-      <div style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
+      <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead><tr>
             <th style={thSt}>เลขที่</th><th style={thSt}>วันที่</th><th style={thSt}>ไลน์</th>
@@ -310,7 +312,7 @@ export default function ScrapReport() {
                 <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                   <button style={{ ...ghostBtn, padding: '4px 10px' }} onClick={() => doExport(rep)}>⬇ Excel</button>
                   {canRecord && <button style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => openEdit(rep)}>✏️</button>}
-                  {canManage && <button style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4, color: '#ef4444' }} onClick={() => delReport(rep)}>🗑</button>}
+                  {canDel && <button style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4, color: '#ef4444' }} onClick={() => delReport(rep)}>🗑</button>}
                 </td>
               </tr>
             ))}

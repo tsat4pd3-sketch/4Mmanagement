@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, useMemo, useContext } from 'react';
 import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { can } from '../utils/permissions';
+import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
+import { LINE_TYPES } from '../utils/lineTypes';
 import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
@@ -38,6 +39,7 @@ export default function LineSetup() {
   // สิทธิ์แก้ไข — role ที่ไม่มี line_setup:edit เห็นหน้าแบบอ่านอย่างเดียว (ดูผัง/รายการได้ แก้ไม่ได้)
   const { role, sections: scopeSecs = [] } = useContext(UserContext);
   const canEdit = can('line_setup', 'edit', role);
+  const canDel  = canDelete('line_setup', 'edit', role);  // สิทธิ์ลบไลน์/จุดงาน แยกจากแก้ไข (fallback = edit ถ้ายังไม่ seed)
   const [lines, setLines] = useState([]);
   const [selectedLine, setSelectedLine] = useState('');
   const [newLineName, setNewLineName] = useState('');
@@ -101,6 +103,8 @@ export default function LineSetup() {
   const [stdDay,   setStdDay]   = useState(0);
   const [stdNight, setStdNight] = useState(0);
   const [costCenter, setCostCenter] = useState('');
+  const [lineType, setLineType] = useState('');
+  const hasLineTypeCol = useRef(true); // false = DB ยังไม่มีคอลัมน์ line_type (migration 20260722 ยังไม่ apply)
   const [mpSaving, setMpSaving] = useState(false);
 
   // ผู้บันทึก/อนุมัติ ประจำส่วนงาน (ใช้ดึงอัตโนมัติในใบค่าฝีมือ)
@@ -117,7 +121,12 @@ export default function LineSetup() {
   const sectionOptsInScope = scopeSecs.length ? sectionOpts.filter(s => inSectionScope(scopeSecs, s)) : sectionOpts;
 
   const fetchLines = async () => {
-    const { data } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name').order('name');
+    let { data, error } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name, line_type').order('name');
+    if (error) {
+      // คอลัมน์ line_type ยังไม่ถูก apply (migration 20260722) — fallback query แบบเดิม หน้าใช้งานได้ปกติ
+      hasLineTypeCol.current = false;
+      ({ data } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name').order('name'));
+    }
     // mandatory scope filter — role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor/manager ที่ตั้ง sections)
     // เห็น/แก้ได้เฉพาะไลน์ในส่วนงานตัวเอง — หน้านี้เป็นหน้า edit master data ห้ามเห็นข้ามส่วนงาน
     const visible = scopeSecs.length ? (data || []).filter(l => inSectionScope(scopeSecs, l.section)) : (data || []);
@@ -177,6 +186,7 @@ export default function LineSetup() {
       setStdDay(lineObj.std_day_shift ?? 0);
       setStdNight(lineObj.std_night_shift ?? 0);
       setCostCenter(lineObj.cost_center ?? '');
+      setLineType(lineObj.line_type ?? '');
       setSignerHead(lineObj.head_name ?? '');
       if (lineObj.section) {
         const { data: signers } = await supabase.from('section_signers').select('*').eq('section', lineObj.section).maybeSingle();
@@ -210,7 +220,11 @@ export default function LineSetup() {
     setMpSaving(true);
     const { error } = await supabase
       .from('production_lines')
-      .update({ std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0, cost_center: costCenter || null, head_name: signerHead || null })
+      .update({
+        std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0,
+        cost_center: costCenter || null, head_name: signerHead || null,
+        ...(hasLineTypeCol.current ? { line_type: lineType || null } : {}),
+      })
       .eq('id', lineObj.id);
     if (error) toast.error('Error: ' + error.message);
     else await fetchLines();
@@ -300,14 +314,29 @@ export default function LineSetup() {
     // Update production_lines (name + children's parent_line_name)
     await supabase.from('production_lines').update({ name }).eq('id', line.id);
     await supabase.from('production_lines').update({ parent_line_name: name }).eq('parent_line_name', old);
-    // Cascade to map/station tables
-    await supabase.from('workstations').update({ line_name: name }).eq('line_name', old);
-    await supabase.from('line_layouts').update({ line_name: name }).eq('line_name', old);
-    await supabase.from('wip_buffer_points').update({ line_name: name }).eq('line_name', old);
-    await supabase.from('machine_points').update({ line_name: name }).eq('line_name', old);
-    await supabase.from('machine_flow_links').update({ line_name: name }).eq('line_name', old);
-    // DR project: machines table
-    await supabaseDR.from('machines').update({ line_name: name }).eq('line_name', old);
+
+    // ── Cascade "ชื่อไลน์" (line_name snapshot) ทุกตารางทั้ง 2 project ────────────────────────────
+    // ⚠️ กฎเหล็ก (2026-07-22): ไลน์ถูกอ้างด้วย "ชื่อ" เป็น text snapshot ในหลายตาราง ไม่ใช่ FK
+    // เปลี่ยนชื่อแล้วไม่ตามไปแก้ทุกที่ = ข้อมูลชื่อเก่า "กำพร้า" ทันที
+    // เคสจริง: เปลี่ยนชื่อไลน์ Laser → "กะที่เปิดค้าง" (production_sessions.line_name = ชื่อเก่า) หลุดจาก
+    // รายการ "กะที่เปิดอยู่" ใน Daily Report เพราะระบบกรองด้วยชื่อไลน์ปัจจุบัน (session ยังเปิดใน DB
+    // แค่ถูกกรองพ้นสายตา) · dr_products.line_name เก่า ทำให้เปิด order/สแกนของไลน์ที่เปลี่ยนชื่อไม่ได้ด้วย
+    // best-effort: ยิงทีละตาราง ไม่ abort ถ้าตารางใด error (บาง deploy ยังไม่มีตาราง/คอลัมน์นั้น)
+    const bump = async (client, table, col = 'line_name') => {
+      try { await client.from(table).update({ [col]: name }).eq(col, old); } catch { /* best-effort */ }
+    };
+    // Main project (client supabase) — ผัง/จุดงาน + 4M + factory map + LPA + action items
+    for (const t of ['workstations', 'line_layouts', 'wip_buffer_points', 'machine_points', 'machine_flow_links',
+                     'four_m_logs', 'factory_line_regions', 'lpa_plans', 'lpa_audits', 'meeting_action_items']) {
+      await bump(supabase, t);
+    }
+    // DR project (client supabaseDR) — production_sessions/dr_products สำคัญสุด (กะที่เปิด + product→line map)
+    for (const t of ['machines', 'production_sessions', 'dr_products', 'line_stock_transactions',
+                     'jigs', 'pm_daily_line_targets', 'mtn_orders', 'improvements', 'scrap_reports']) {
+      await bump(supabaseDR, t);
+    }
+    await bump(supabaseDR, 'pm_plans', 'usage_source_line');
+
     setEditingLineId(null);
     if (selectedLine === old) setSelectedLine(name);
     await fetchLines();
@@ -1085,9 +1114,9 @@ export default function LineSetup() {
                           ))}
                         </select>
                       )}
-                      <button className="tbtn" onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
+                      {canDel && <button className="tbtn" onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
                         style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
-                        title="ลบไลน์">🗑️</button>
+                        title="ลบไลน์">🗑️</button>}
                     </>
                   )}
                 </div>
@@ -1258,7 +1287,7 @@ export default function LineSetup() {
                         : 'ไม่มีสกิลที่กำหนด'}
                     </div>
                   </div>
-                  {canEdit && <button className="tbtn" onClick={() => deleteStation(st.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
+                  {canDel && <button className="tbtn" onClick={() => deleteStation(st.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                 </div>
               );
             })}
@@ -1382,7 +1411,7 @@ export default function LineSetup() {
                             🔔 เรียกเติม
                           </button>
                         )}
-                        {canEdit && <button className="tbtn" onClick={() => deleteWipPoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
+                        {canDel && <button className="tbtn" onClick={() => deleteWipPoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                       </div>
                     </div>
                   );
@@ -1478,7 +1507,7 @@ export default function LineSetup() {
                           <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 700, marginTop: 2 }}>🔀 {p.redundancy_group}</div>
                         )}
                       </div>
-                      {canEdit && <button className="tbtn" onClick={() => deleteMachinePoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
+                      {canDel && <button className="tbtn" onClick={() => deleteMachinePoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                     </div>
                   );
                 })}
@@ -1525,7 +1554,7 @@ export default function LineSetup() {
                     return (
                       <div key={link.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
                         <span style={{ color: 'var(--text)' }}>⚙️ {from?.machine_no || '?'} → {to?.machine_no || '?'}</span>
-                        {canEdit && <button className="tbtn" onClick={() => deleteFlowLink(link.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>🗑️</button>}
+                        {canDel && <button className="tbtn" onClick={() => deleteFlowLink(link.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>🗑️</button>}
                       </div>
                     );
                   })}
@@ -1573,6 +1602,15 @@ export default function LineSetup() {
                 onChange={e => setCostCenter(e.target.value)}
                 placeholder="เช่น 2140662201"
                 style={{ marginTop: 4, fontSize: 14, fontWeight: 600 }} />
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelSt}>🏭 ประเภทไลน์</label>
+              <select value={lineType} disabled={!canEdit}
+                onChange={e => setLineType(e.target.value)}
+                style={{ marginTop: 4, fontSize: 13, fontWeight: 600 }}>
+                <option value="">— ยังไม่ระบุ —</option>
+                {LINE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
             </div>
             <div style={{ marginBottom: 12 }}>
               <label style={labelSt}>👨‍🔧 หัวหน้างาน (ประจำไลน์นี้)</label>

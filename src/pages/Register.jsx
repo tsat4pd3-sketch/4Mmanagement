@@ -6,6 +6,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { positionOptionsWith } from '../utils/positions';
 import ImageCropModal from '../components/ImageCropModal';
 import { toast } from '../components/Toast';
+import { filterLinesByDept } from '../utils/lineHierarchy';
 
 export default function Register() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
@@ -194,11 +195,11 @@ export default function Register() {
           <div>
             <label style={labelSt}>Group / กลุ่ม (Line)</label>
             {(() => {
-              // cascade ตามลำดับชั้น Section → แผนก → Line (UI-CONVENTIONS §5.3): ต้องเลือกแผนกก่อน
-              //   แล้วโชว์เฉพาะไลน์ในแผนกนั้น (l.name === แผนก [ไลน์แม่] หรือ parent_line_name === แผนก [ไลน์ลูก])
-              const lineOpts = department
-                ? lines.filter(l => l.name === department || l.parent_line_name === department)
-                : [];
+              // cascade Section→แผนก→Line (UI-CONVENTIONS §5.3): กรอง section (locked/เลือก) → แผนก
+              //   select ถูก gate disabled จนเลือกแผนก · filterLinesByDept = normalize + fail-open กันชื่อไม่ตรงแล้วว่าง
+              const secFilter = lockedSection || section;
+              let lineOpts = secFilter ? lines.filter(l => l.section === secFilter) : lines;
+              lineOpts = filterLinesByDept(lineOpts, department);
               return (
                 <select value={groupName} disabled={!department} onChange={e => {
                   const val = e.target.value;

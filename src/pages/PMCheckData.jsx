@@ -13,21 +13,12 @@ import { exportInspectionPDF, resolveSignatureDataUrl } from '../lib/pmExportPDF
 import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } from '../lib/pmTaxonomy'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
-import PhotoCompareModal from '../components/PhotoCompareModal'
+import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
   production: '#3dd65c', qa: '#9b8de8',
 }
-const DEPT_OPTIONS = [
-  { key: 'maintenance', label: 'ซ่อมบำรุง' },
-  { key: 'jig_maintenance', label: 'JIG Maintenance' },
-  { key: 'die_maintenance', label: 'Die Maintenance' },
-  { key: 'production', label: 'ฝ่ายผลิต' },
-]
-// ความรับผิดชอบตามแผนก → ชนิดอุปกรณ์: mtn=machine · jig mtn=jig · die mtn=die
-// ฝ่ายผลิต (production) = Autonomous Maintenance เห็น "ทุกชนิด" (ไม่กรอง)
-const DEPT_EQUIP_TYPE = { maintenance: 'machine', jig_maintenance: 'jig', die_maintenance: 'die' }
 
 function getPublicUrl(path) {
   if (!path) return null
@@ -270,7 +261,7 @@ function VariableRow({ cp, idx, r, onChange, methodIndex }) {
 }
 
 // ─── Attribute / Note Row ────────────────────────────────────────────────────
-function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex, onCompare, hasEvidence }) {
+function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex }) {
   const method = methodIndex?.[cp.checking_method]
   return (
     <div style={S.cpRow(null)}>
@@ -278,13 +269,6 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
         {cp.x_pos != null && <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
         {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}</p>
-        <button onClick={e => { e.stopPropagation(); onCompare?.(cp) }} title={cp.image_path ? 'เทียบรูปมาตรฐานกับสภาพจริง' : 'ยังไม่มีรูปมาตรฐาน — ถ่ายตั้งเป็นมาตรฐานได้เลย'}
-          style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0,
-            border: `1px solid ${hasEvidence ? '#e0a44a' : cp.image_path ? 'var(--border2)' : 'var(--accent)'}`,
-            background: hasEvidence ? 'rgba(224,164,74,0.12)' : cp.image_path ? 'var(--bg3)' : 'var(--accent-dim)',
-            color: hasEvidence ? '#e0a44a' : cp.image_path ? 'var(--text2)' : 'var(--accent)' }}>
-          📷 {cp.image_path ? `เทียบรูป${hasEvidence ? ' 📎' : ''}` : 'ตั้งรูปมาตรฐาน'}
-        </button>
         <CpImage cp={cp} />
         <div style={{ display: 'flex', gap: 4 }}>
           {['ok', 'ng'].map(v => (
@@ -589,13 +573,21 @@ export default function PMCheckData() {
   }, [])
   const [tab, setTab] = useState('record')
   const [results, setResults] = useState({})
-  const [compareCp, setCompareCp] = useState(null)      // จุดที่กำลังเทียบรูป (modal)
-  const [evidenceBlobs, setEvidenceBlobs] = useState({}) // { cpId: Blob } รูป NG รออัปโหลดตอนบันทึก
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [inspections, setInspections] = useState([])
   const [viewInspection, setViewInspection] = useState(null)
   const [methodIndex, setMethodIndex] = useState({})
+  const [teams, setTeams] = useState(pmTeamsSync())      // ทีมช่าง data-driven (mtn_teams)
+  const [clDeptByJig, setClDeptByJig] = useState({})     // jig_id → Set(department) — ยึด department เป็นหลัก
+
+  useEffect(() => { loadPmTeams().then(setTeams) }, [])
+  // แผนกของแต่ละ jig จาก checklist ที่มีอยู่ (ยึด department เป็นหลักตามที่ user ยืนยัน)
+  useEffect(() => {
+    supabaseDR.from('checklists').select('equipment_id, department').eq('module', 'mtn').then(({ data }) => {
+      const m = {}; (data ?? []).forEach(c => { (m[c.equipment_id] ||= new Set()).add(c.department) }); setClDeptByJig(m)
+    })
+  }, [])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -665,7 +657,7 @@ export default function PMCheckData() {
 
   useEffect(() => {
     if (!selectedJig || !userId) return
-    setResults({}); setNotes(''); setTab('record'); setActiveCpId(null); setEvidenceBlobs({})
+    setResults({}); setNotes(''); setTab('record'); setActiveCpId(null)
     // เฟรมรูป 360° (ถ้าไม่มี jig_images → ใช้รูปหลัก image_path เป็นเฟรมเดียว)
     supabaseDR.from('jig_images').select('id, image_path, sort').eq('jig_id', selectedJig.id).order('sort').then(({ data }) => {
       let fr = (data ?? []).map(im => ({ id: im.id, url: getPublicUrl(im.image_path) }))
@@ -736,25 +728,8 @@ export default function PMCheckData() {
         }
         return { inspection_id: insp.id, checkpoint_id: cp.id, value_attribute: r.attr || null, status: r.attr === 'ng' ? 'fail' : r.attr === 'ok' ? 'pass' : null }
       })
-      const { data: insertedRows, error: e2 } = await supabaseDR.from('inspection_results').insert(rows).select('id, checkpoint_id')
+      const { error: e2 } = await supabaseDR.from('inspection_results').insert(rows)
       if (e2) throw e2
-
-      // อัปโหลดรูปหลักฐาน "เฉพาะจุดที่ผิดปกติ (NG)" — ผ่าน = ไม่เก็บพิกเซล (ประหยัด storage)
-      // best-effort: ล้มเหลวไม่ทำให้การบันทึกผลพัง
-      const pendingEvidence = Object.entries(evidenceBlobs)
-      if (pendingEvidence.length) {
-        const ridByCp = Object.fromEntries((insertedRows ?? []).map(r => [r.checkpoint_id, r.id]))
-        for (const [cpId, blob] of pendingEvidence) {
-          const rid = ridByCp[cpId]
-          if (!rid || !blob) continue
-          try {
-            const path = `evidence/${insp.id}/${cpId}.jpg`
-            const { error: ue } = await supabaseDR.storage.from('jig-images').upload(path, blob, { upsert: true, contentType: 'image/jpeg' })
-            if (!ue) await supabaseDR.from('inspection_results').update({ evidence_path: path }).eq('id', rid)
-          } catch { /* เก็บรูปไม่ได้ ไม่ล้มการบันทึก */ }
-        }
-        setEvidenceBlobs({})
-      }
 
       if (overall === 'fail') {
         notifyDepartment(department, { title: 'พบผลตรวจไม่ผ่าน (NG)', body: `${selectedJig.name} — ${formatDate(insp.inspected_at)}`, type: 'error', refTable: 'inspections', refId: insp.id }, userId).catch(() => {})
@@ -793,11 +768,13 @@ export default function PMCheckData() {
 
   const deptColor = DEPT_COLORS[department] ?? '#3dd65c'
   const jigImg = selectedJig ? getPublicUrl(selectedJig.image_path) : null
-  // กรองอุปกรณ์ตามความรับผิดชอบของแผนก (ผลิต=ทุกชนิด · แผนก mtn เห็นเฉพาะชนิดที่รับผิดชอบ)
-  // อุปกรณ์เก่าที่ยังไม่ได้ระบุชนิด → นับเป็น machine (โผล่ใต้ "ซ่อมบำรุง")
+  // กรองอุปกรณ์ตามทีม — ยึด "department (checklist)" เป็นหลัก (คำสั่ง user 2026-07-22):
+  //   โผล่ใต้ทีม D ถ้า (ก) มี checklist ของทีม D อยู่แล้ว (ตรงกับหน้า PMSchedule) หรือ
+  //   (ข) ประเภทอุปกรณ์ = ประเภท default ของทีม (ให้เริ่ม checklist ใหม่ได้) · ผลิต = ทุกชนิด
+  const teamEquip = (teams.find(t => t.key === department) || {}).equip_type
   const deptJigs = department === 'production'
     ? jigs
-    : jigs.filter(j => (j.equipment_type || 'machine') === DEPT_EQUIP_TYPE[department])
+    : jigs.filter(j => (teamEquip && (j.equipment_type || 'machine') === teamEquip) || clDeptByJig[j.id]?.has(department))
 
   // จอแคบ: โชว์ทีละคอลัมน์ (ยังไม่เลือก=ลิสต์ · เลือกแล้ว=ฟอร์ม) · desktop โชว์ทั้งคู่เหมือนเดิม
   const showSidebar = !isNarrow || !selectedJig
@@ -812,7 +789,7 @@ export default function PMCheckData() {
           <h2 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', margin: 0, fontFamily: 'var(--font-display)' }}>PM ตรวจสอบ</h2>
         </div>
         <div style={S.deptBar}>
-          {DEPT_OPTIONS.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, DEPT_COLORS[d.key] ?? '#3dd65c')}>{d.label}</button>)}
+          {teams.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, d.color || DEPT_COLORS[d.key] || '#3dd65c')}>{d.icon ? `${d.icon} ` : ''}{d.label}</button>)}
         </div>
         <div style={S.jigList}>
           {department === 'production' ? (() => {
@@ -866,7 +843,7 @@ export default function PMCheckData() {
               ))}
             </>)
           })() : (<>
-            {deptJigs.length === 0 && <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ไม่มีอุปกรณ์ในความรับผิดชอบของแผนกนี้<br /><span style={{ fontSize: 11 }}>({DEPT_OPTIONS.find(d => d.key === department)?.label} = เฉพาะ {DEPT_EQUIP_TYPE[department]})</span></p>}
+            {deptJigs.length === 0 && <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ยังไม่มีอุปกรณ์ในทีมนี้<br /><span style={{ fontSize: 11 }}>({(teams.find(d => d.key === department) || {}).label})</span></p>}
             {deptJigs.map(jig => (
               <div key={jig.id} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{jig.name}</p>
@@ -941,7 +918,6 @@ export default function PMCheckData() {
                           ) : (
                             <AttrRow cp={cp} idx={idx} methodIndex={methodIndex}
                               value={results[cp.id]?.attr ?? ''} note={results[cp.id]?.note ?? ''}
-                              onCompare={setCompareCp} hasEvidence={!!evidenceBlobs[cp.id]}
                               onChangeAttr={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], attr: v } }))}
                               onChangeNote={v => setResults(prev => ({ ...prev, [cp.id]: { ...prev[cp.id], note: v } }))} />
                           )
@@ -1009,35 +985,6 @@ export default function PMCheckData() {
           <HistoryModal inspection={viewInspection} checkpoints={checkpoints} jig={selectedJig}
             userId={userId} userRole={userRole}
             onClose={() => { setViewInspection(null); if (selectedJig) fetchHistory(selectedJig.id) }} />
-        )}
-        {compareCp && (
-          <PhotoCompareModal
-            referenceUrl={compareCp.image_path ? getPublicUrl(compareCp.image_path) : null}
-            title={compareCp.name}
-            initialVerdict={results[compareCp.id]?.attr}
-            onClose={() => setCompareCp(null)}
-            onSetReference={async (blob) => {
-              // ครั้งแรก: ตั้งรูปมาตรฐานให้จุดนี้เลย (ไม่ต้องไป Setup) — เก็บถาวรที่ jig_checkpoints.image_path
-              try {
-                const path = `reference/${compareCp.id}.jpg`
-                const { error: ue } = await supabaseDR.storage.from('jig-images').upload(path, blob, { upsert: true, contentType: 'image/jpeg' })
-                if (ue) throw ue
-                await supabaseDR.from('jig_checkpoints').update({ image_path: path }).eq('id', compareCp.id)
-                setCheckpoints(prev => prev.map(c => c.id === compareCp.id ? { ...c, image_path: path } : c))
-                setCompareCp(c => c ? { ...c, image_path: path } : c) // เทียบต่อได้ทันทีในโมดัลเดิม
-                toast.success('บันทึกเป็นภาพมาตรฐานแล้ว')
-              } catch (err) { toast.error('บันทึกรูปมาตรฐานไม่สำเร็จ: ' + err.message) }
-            }}
-            onResult={({ verdict, blob }) => {
-              setResults(prev => ({ ...prev, [compareCp.id]: { ...prev[compareCp.id], attr: verdict } }))
-              setEvidenceBlobs(prev => {
-                const next = { ...prev }
-                if (verdict === 'ng' && blob) next[compareCp.id] = blob
-                else delete next[compareCp.id]  // ผ่าน = ไม่เก็บรูป
-                return next
-              })
-              setCompareCp(null)
-            }} />
         )}
       </AnimatePresence>
     </div>
