@@ -1933,6 +1933,7 @@ function LiveTab({ role }) {
     notifyProdClose({
       status: 'closed_approved', line_name: selSession.line_name, shift: selSession.shift,
       work_date: selSession.work_date, actor: fullName,
+      approve_note: approveNote.trim() || null, // หมายเหตุผู้อนุมัติ → โชว์ใน Telegram ด้วย (2026-07-24)
       requested_by: selSession.close_requested_by_name,
       qty_ok: selSession.qty_ok, qty_ng: selSession.qty_ng, oee: selSession.oee,
       // รายละเอียดเพิ่มเติม — อ่านจากค่าที่บันทึกไว้ตอนขอปิดกะ + ข้อมูลกะที่โหลดอยู่

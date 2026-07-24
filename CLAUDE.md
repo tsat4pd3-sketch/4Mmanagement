@@ -444,6 +444,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 ### หมายเหตุผู้อนุมัติปิดกะ (optional · 2026-07-24)
 
 SV กรอก remark ได้ตอนกด ✅ อนุมัติใน modal ตรวจสอบคำขอปิดกะ (ไม่บังคับ — "เผื่อหัวหน้ามีอะไรเพิ่มเติม") → เก็บ `production_sessions.close_approve_note` (migration `20260724_session_close_approve_note.sql` DR — additive · โค้ด update แยก best-effort) · แสดงในแท็บประวัติตอน expand กะ (กล่องฟ้า 📝 + ชื่อผู้อนุมัติ)
+- **remark เข้าแจ้งเตือน Telegram ด้วย (คำสั่ง user 2026-07-24):** client แนบ `approve_note` ใน payload `closed_approved` (reject มี `reject_reason` อยู่แล้ว) · edge `send-notification` ต่อบรรทัด "📝 หมายเหตุผู้อนุมัติ: …" / "📝 เหตุผล: …" ท้ายข้อความ approve/reject — **ต้อง deploy edge `send-notification` ใหม่** (ก่อน deploy: แจ้งเตือน approve/reject ยังส่งปกติ แค่ไม่มีบรรทัดหมายเหตุ — payload field ใหม่ backward-compatible)
 
 ### ปฏิเสธคำขอปิดกะ + remark ให้หัวหน้ากลุ่ม (2026-07-23)
 

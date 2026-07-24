@@ -419,8 +419,8 @@ Deno.serve(async (req) => {
       const map = {
         pending_close:    { title: '🟡 ขอปิดกะ — รอ SV อนุมัติ', extra: '' },
         closed:           { title: '✅ ปิดกะสำเร็จ', extra: '' },
-        closed_approved:  { title: '✅ SV อนุมัติปิดกะแล้ว', extra: `\n🙋 ผู้ขอปิดกะ: ${s.requested_by || '-'}` },
-        closed_rejected:  { title: '❌ SV ปฏิเสธคำขอปิดกะ', extra: `\n🙋 ผู้ขอปิดกะ: ${s.requested_by || '-'}` },
+        closed_approved:  { title: '✅ SV อนุมัติปิดกะแล้ว', extra: `\n🙋 ผู้ขอปิดกะ: ${s.requested_by || '-'}${s.approve_note ? `\n📝 หมายเหตุผู้อนุมัติ: ${s.approve_note}` : ''}` },
+        closed_rejected:  { title: '❌ SV ปฏิเสธคำขอปิดกะ', extra: `\n🙋 ผู้ขอปิดกะ: ${s.requested_by || '-'}${s.reject_reason ? `\n📝 เหตุผล: ${s.reject_reason}` : ''}` },
       };
       const m = map[s.status] ?? { title: `🔔 Production · ${s.status}`, extra: '' };
       const lines = [
