@@ -60,6 +60,11 @@ export default function LineSetup() {
   const [skillDefs, setSkillDefs] = useState([]);
   const [sectionOpts, setSectionOpts] = useState([]);
   const [activeTab, setActiveTab] = useState('stations'); // 'stations' | 'wip' | 'machines'
+  // UX แถบขวา: ค้นหา + พับรายการ (ข้อมูลเยอะ เลื่อนหายาก — 2026-07-24)
+  const [lineSearch, setLineSearch] = useState('');
+  const [lineListOpen, setLineListOpen] = useState(() => { try { return localStorage.getItem('ls_lineList_open') !== '0'; } catch { return true; } });
+  const [pointSearch, setPointSearch] = useState('');
+  const toggleLineList = () => setLineListOpen(o => { const n = !o; try { localStorage.setItem('ls_lineList_open', n ? '1' : '0'); } catch { /* private */ } return n; });
   // ป้ายชื่อบนผัง: โชว์/ซ่อน อย่างเดียว เหมือนหน้า Management เป๊ะ (WYSIWYG)
   const [showPills, setShowPills] = useState(true);
 
@@ -1030,9 +1035,16 @@ export default function LineSetup() {
         padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', flexShrink: 0
       }}>
         <div style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <span style={labelSt}>ไลน์ผลิต ({lines.length})</span>
-          </div>
+          {/* หัวหมวดพับได้ + ตัวนับ — คลิกเพื่อพับ/กางรายการไลน์ (ข้อมูลเยอะ พับเก็บได้) */}
+          <button onClick={toggleLineList}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: 10, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+            <span style={labelSt}>{lineListOpen ? '▼' : '▶'} ไลน์ผลิต ({lines.length})</span>
+          </button>
+          {lineListOpen && lines.length > 6 && (
+            <input value={lineSearch} onChange={e => setLineSearch(e.target.value)} placeholder="🔍 ค้นหาไลน์..."
+              style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+          )}
+          {lineListOpen && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
             {(() => {
               // Build ordered display: parents first, their children indented below
@@ -1045,7 +1057,16 @@ export default function LineSetup() {
                 childLines.filter(c => c.parent_line_name === p.name).forEach(c => ordered.push({ ...c, _isChild: true }));
               });
               orphans.forEach(c => ordered.push({ ...c, _isChild: true, _orphan: true }));
-              return ordered.map(l => (
+              // ค้นหา: โชว์ไลน์ที่ชื่อตรง + คงบริบทลำดับชั้น (ลูกตรง→โชว์แม่ด้วย, แม่ตรง→โชว์ลูกด้วย)
+              const q = lineSearch.trim().toLowerCase();
+              const hit = (n) => n && n.toLowerCase().includes(q);
+              const shown = !q ? ordered : ordered.filter(l =>
+                hit(l.name) ||
+                (l._isChild && hit(l.parent_line_name)) ||
+                (l._isParent && childLines.some(c => c.parent_line_name === l.name && hit(c.name)))
+              );
+              if (!shown.length) return <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', padding: '8px 0' }}>ไม่พบไลน์ที่ค้นหา</div>;
+              return shown.map(l => (
                 <div key={l.id}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6,
@@ -1126,6 +1147,7 @@ export default function LineSetup() {
               <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีไลน์ผลิต</div>
             )}
           </div>
+          )}
           {canEdit && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -1268,8 +1290,12 @@ export default function LineSetup() {
           <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
             รายการจุดงาน ({stations.length})
           </h4>
+          {stations.length > 6 && (
+            <input value={pointSearch} onChange={e => setPointSearch(e.target.value)} placeholder="🔍 ค้นหาจุดงาน..."
+              style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+          )}
           <div style={{ flex: 1, minHeight: showManpower ? 120 : 260, overflowY: 'auto' }}>
-            {stations.map(st => {
+            {stations.filter(st => { const q = pointSearch.trim().toLowerCase(); return !q || (st.station_name || '').toLowerCase().includes(q); }).map(st => {
               const reqs = st.station_requirements || [];
               return (
                 <div key={st.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1388,8 +1414,12 @@ export default function LineSetup() {
               <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
                 รายการจุด WIP ({wipPoints.length})
               </h4>
+              {wipPoints.length > 6 && (
+                <input value={pointSearch} onChange={e => setPointSearch(e.target.value)} placeholder="🔍 ค้นหาจุด WIP..."
+                  style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+              )}
               <div style={{ flex: 1, minHeight: 260, overflowY: 'auto' }}>
-                {wipPoints.map(p => {
+                {wipPoints.filter(p => { const q = pointSearch.trim().toLowerCase(); return !q || (p.point_name || '').toLowerCase().includes(q); }).map(p => {
                   const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
                   return (
                     <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1495,8 +1525,12 @@ export default function LineSetup() {
               <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
                 รายการจุดเครื่องจักร ({machinePoints.length})
               </h4>
+              {machinePoints.length > 6 && (
+                <input value={pointSearch} onChange={e => setPointSearch(e.target.value)} placeholder="🔍 ค้นหาเครื่องจักร (เลข/ชื่อ)..."
+                  style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+              )}
               <div style={{ flex: 1, minHeight: 260, overflowY: 'auto' }}>
-                {machinePoints.map(p => {
+                {machinePoints.filter(p => { const q = pointSearch.trim().toLowerCase(); if (!q) return true; const mc = drMachines.find(m => m.machine_no === p.machine_no); return (p.machine_no || '').toLowerCase().includes(q) || (mc?.machine_name || '').toLowerCase().includes(q); }).map(p => {
                   const mc = drMachines.find(m => m.machine_no === p.machine_no);
                   return (
                     <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
