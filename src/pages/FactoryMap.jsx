@@ -33,10 +33,12 @@ const CAT = {
 // นิยาม metric แต่ละตัว — value(ค่าเรียงอันดับ) · text(บนกรอบ) · cat(หมวดสี) · worstFirst(เรียง side panel)
 const METRICS = {
   productivity: {
+    // เทียบ "เป้า ณ เวลาปัจจุบัน (on-time)" ไม่ใช่เป้าเต็มกะ — % จึงบอกว่า "ทันจังหวะมั้ย" แบบ real-time
+    // ฟอร์แมต: ทำได้ / เป้า ณ เวลานี้ / เป้าเต็มกะ · สี = ทำได้เทียบเป้า ณ เวลานี้
     label: '📦 ยอดผลิต', worstFirst: true,
-    value: s => s.hasOpen || s.target > 0 ? (s.target > 0 ? Math.round(s.actual / s.target * 100) : 0) : null,
-    text: s => s.target > 0 ? `${s.actual}/${s.target} · ${Math.round(s.actual / s.target * 100)}%` : (s.hasOpen ? '— ไม่มีเป้า' : ''),
-    cat: s => !s.hasOpen && s.target === 0 ? 'idle' : s.target === 0 ? 'ok' : (() => { const p = s.actual / s.target * 100; return p >= 95 ? 'good' : p >= 80 ? 'ok' : 'bad'; })(),
+    value: s => (s.hasOpen || s.target > 0) ? (s.onTimeTarget >= 1 ? Math.round(s.actual / s.onTimeTarget * 100) : (s.target > 0 ? 100 : 0)) : null,
+    text: s => s.target > 0 ? `${s.actual}/${Math.round(s.onTimeTarget)}/${s.target}${s.onTimeTarget >= 1 ? ` · ${Math.round(s.actual / s.onTimeTarget * 100)}%` : ''}` : (s.hasOpen ? '— ไม่มีเป้า' : ''),
+    cat: s => !s.hasOpen && s.target === 0 ? 'idle' : s.target === 0 ? 'ok' : s.onTimeTarget < 1 ? 'ok' : (() => { const p = s.actual / s.onTimeTarget * 100; return p >= 95 ? 'good' : p >= 80 ? 'ok' : 'bad'; })(),
   },
   oee: {
     label: '⚙️ OEE', worstFirst: true,
@@ -92,7 +94,7 @@ const centroid = (pts) => pts.length
 const labelAnchor = (pts) => pts.length
   ? [(Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2, Math.min(...pts.map(p => p[1]))]
   : [50, 50];
-const EMPTY_ST = { actual: 0, target: 0, hasOpen: false, oee: null, oeeLive: false, dtMin: 0, dtActive: false, ng: 0,
+const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, hasOpen: false, oee: null, oeeLive: false, dtMin: 0, dtActive: false, ng: 0,
   headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0,
   supList: [], supAtRisk: false };
 // รวมชื่อ utility ที่จ่ายไลน์นี้ (dedup ตามเลขเครื่อง) เอาที่กำลังซ่อม (atRisk) ก่อน
@@ -220,12 +222,21 @@ export default function FactoryMap({ setupMode = false }) {
       const dl = dtBySess[s.id] || [];
       const dtMin = dl.reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
       const dtActive = dl.some(d => !d.ended_at && d.duration_min == null);
+      // เป้า ณ เวลาปัจจุบัน (on-time / pace target) — กะที่ยังเปิด: เป้าเต็ม × สัดส่วนเวลาที่ผ่านไปของกะ
+      // (ควรผลิตได้เท่าไหร่ ณ ตอนนี้ถ้าทำตามจังหวะ) · ปิดกะแล้ว = เต็มกะ (on-time = final)
+      let frac = 1;
+      if (s.status === 'open' && s.start_time) {
+        const opened = new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime();
+        frac = Math.max(0, Math.min(1, ((nowMs - opened) / 60000) / (s.shift_min || 570)));
+      }
+      const onTimeTarget = target * frac;
       // ปิดกะแล้ว → ใช้ oee ที่ stamp · ยังเปิด → คำนวณสด
       const oeeVal = s.oee != null ? Number(s.oee) : liveOee(s, os, dl);
       const isLive = s.oee == null && oeeVal != null;
       const acc = byLine[s.line_name] || { ...EMPTY_ST, oeeSum: 0, oeeN: 0 };
       byLine[s.line_name] = {
         actual: acc.actual + actual, target: acc.target + target,
+        onTimeTarget: acc.onTimeTarget + onTimeTarget,
         hasOpen: acc.hasOpen || s.status === 'open',
         dtMin: acc.dtMin + Math.round(dtMin), dtActive: acc.dtActive || dtActive,
         ng: acc.ng + (s.qty_ng ?? s.ng_qty ?? 0),
@@ -375,7 +386,7 @@ export default function FactoryMap({ setupMode = false }) {
       const sp = supplyStatus[n];
       if (sp) { agg.supList.push(...sp.suppliers); agg.supAtRisk = agg.supAtRisk || sp.atRisk; }
       const p = lineStatus[n];
-      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeSum += p.oeeSum || 0; agg.oeeN += p.oeeN || 0; agg.oeeLive = agg.oeeLive || p.oeeLive; }
+      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.onTimeTarget += p.onTimeTarget || 0; agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeSum += p.oeeSum || 0; agg.oeeN += p.oeeN || 0; agg.oeeLive = agg.oeeLive || p.oeeLive; }
       const m = manpower[n];
       if (m) { agg.headTotal += m.headTotal || 0; agg.present += m.present || 0; agg.ppeBad += m.ppeBad || 0; agg.stationTotal += m.stationTotal || 0; agg.stationFilled += m.stationFilled || 0; }
       const pm = pmStatus[n];
@@ -650,6 +661,11 @@ export default function FactoryMap({ setupMode = false }) {
                 ))}
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{M.desc ? 'มาก → น้อย (ปัญหาขึ้นบน)' : 'น้อย → มาก (ตามหลังขึ้นบน)'} · คลิกแถวเพื่อเน้นบนผัง</div>
+              {metric === 'productivity' && (
+                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBottom: 8, padding: '4px 8px', background: 'var(--bg3)', borderRadius: 6, lineHeight: 1.5 }}>
+                  รูปแบบ <b style={{ color: 'var(--text2)' }}>ทำได้ / เป้า ณ เวลานี้ / เป้าเต็มกะ</b> · % = ทำได้เทียบเป้า ณ เวลานี้ (ทันจังหวะมั้ย)
+                </div>
+              )}
               {ranked.length === 0 ? (
                 <div style={{ fontSize: 12, color: 'var(--muted)', padding: 20, textAlign: 'center' }}>ยังไม่มีข้อมูลวันนี้</div>
               ) : ranked.map(({ name, st, cat, val }, i) => {
@@ -765,7 +781,7 @@ export default function FactoryMap({ setupMode = false }) {
                       <thead>
                         <tr style={{ color: 'var(--muted)', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>
                           <th style={{ textAlign: 'left', padding: '4px 6px' }}>ไลน์</th>
-                          <th style={{ padding: '4px 6px' }}>ผลิต</th>
+                          <th style={{ padding: '4px 6px', whiteSpace: 'nowrap' }} title="ทำได้ / เป้า ณ เวลานี้ / เป้าเต็มกะ">ผลิต (ทำ/ณ เวลานี้/เต็ม)</th>
                           <th style={{ padding: '4px 6px' }}>คน</th>
                           <th style={{ padding: '4px 6px' }}>DT (น.)</th>
                           <th style={{ padding: '4px 6px' }}>NG</th>
@@ -778,7 +794,7 @@ export default function FactoryMap({ setupMode = false }) {
                           return (
                             <tr key={n} style={{ borderBottom: '1px solid var(--border2)', color: 'var(--text)', textAlign: 'right' }}>
                               <td style={{ textAlign: 'left', padding: '5px 6px', fontWeight: self ? 800 : 400, color: self ? 'var(--accent)' : 'var(--text)' }}>{self ? `${n} (ตัวเอง)` : `↳ ${n}`}</td>
-                              <td style={{ padding: '5px 6px' }}>{p.target ? `${p.actual || 0}/${p.target}` : '—'}</td>
+                              <td style={{ padding: '5px 6px', whiteSpace: 'nowrap' }}>{p.target ? `${p.actual || 0}/${Math.round(p.onTimeTarget || 0)}/${p.target}` : '—'}</td>
                               <td style={{ padding: '5px 6px' }}>{mp.headTotal ? `${mp.present || 0}/${mp.headTotal}` : '—'}</td>
                               <td style={{ padding: '5px 6px', color: p.dtMin ? '#f59e0b' : 'inherit' }}>{p.dtMin || 0}</td>
                               <td style={{ padding: '5px 6px', color: p.ng ? '#ef4444' : 'inherit' }}>{p.ng || 0}</td>
