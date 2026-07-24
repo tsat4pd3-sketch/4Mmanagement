@@ -681,7 +681,7 @@ export default function FactoryMap({ setupMode = false }) {
                       <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', width: 18, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
                       <span className={meta.blink ? 'dt-alarm-blink' : undefined} style={{ width: 11, height: 11, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
                       <div style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {name}{!hasRegion && <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}> · ยังไม่ตีกรอบ</span>}
+                        {name}{!hasRegion && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}> · ยังไม่ตีกรอบ</span>}
                       </div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: meta.color, whiteSpace: 'nowrap', flexShrink: 0 }}>{txt || '—'}</div>
                     </div>

@@ -398,7 +398,7 @@ export default function ProductionPlan() {
                 return (
                   <div key={d.date} title={`${fmtDate(d.date)}${d.sd75 ? ' (หยุดจ่าย 75% — ม.75)' : d.holiday ? ' (วันหยุด)' : ''}\nดิววันนี้ ${Math.round(d.duePcs).toLocaleString()} ชิ้น (${d.dueLoad.toFixed(2)} กะ)\nแผน: ${d.plan.map(p => PLAN_META[p]?.label || p).join(' ') || (d.holiday ? 'หยุด' : 'ว่าง')}\nค้างยกไป ${d.backlog.toFixed(2)} กะ`}
                     style={{ flexShrink: 0, width: 40, textAlign: 'center' }}>
-                    <div style={{ fontSize: 10, color: d.sd75 ? '#a78bfa' : d.holiday ? '#ef4444' : 'var(--muted)' }}>{['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][dd.getDay()]}</div>
+                    <div style={{ fontSize: 11, color: d.sd75 ? '#a78bfa' : d.holiday ? '#ef4444' : 'var(--muted)' }}>{['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][dd.getDay()]}</div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)' }}>{dd.getDate()}</div>
                     <div style={{ height: 26, marginTop: 2, borderRadius: 5, background: top ? `${top.color}33` : (d.holiday ? 'var(--bg3)' : 'var(--bg2)'), border: `1px solid ${top ? top.color : 'var(--border2)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>
                       {top === PLAN_META.holiday_work ? '⚠' : top === PLAN_META.recall75 ? '⚡' : top === PLAN_META.night ? '🌙' : top === PLAN_META.ot ? '⏰' : top === PLAN_META.day ? '☀' : (d.holiday ? '·' : '')}
@@ -434,7 +434,7 @@ export default function ProductionPlan() {
                       <td style={td}>{r.fcCount ? Math.round(r.pcs).toLocaleString() : '—'}</td>
                       <td style={td}>{r.fcCount ? r.shiftsNeeded.toFixed(1) : '—'}</td>
                       <td style={td}>{r.dayShifts}{(line.std_night_shift || 0) > 0 ? ` (+ดึก ${r.dayShifts})` : ''}</td>
-                      <td style={{ ...td, textAlign: 'left' }}><span style={chip(r.color)}>{r.verdict}</span>{r.unknownCap > 0 && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--muted)' }}>({r.unknownCap.toLocaleString()} ชิ้นไม่รู้กำลัง)</span>}</td>
+                      <td style={{ ...td, textAlign: 'left' }}><span style={chip(r.color)}>{r.verdict}</span>{r.unknownCap > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--muted)' }}>({r.unknownCap.toLocaleString()} ชิ้นไม่รู้กำลัง)</span>}</td>
                     </tr>
                   ))}
                 </tbody>
