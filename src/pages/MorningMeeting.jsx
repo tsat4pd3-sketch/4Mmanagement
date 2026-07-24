@@ -58,6 +58,7 @@ export default function MorningMeeting() {
 
   const [meetingDate, setMeetingDate] = useState(defaultMeetingDate);
   const [allLines, setAllLines]       = useState([]);
+  const [orgSections, setOrgSections] = useState([]); // ส่วนงานจากผังองค์กร (source of truth) — ไม่เดาจาก production_lines
   const [secFilter, setSecFilter]     = useState('');
   const [loading, setLoading]         = useState(true);
   const [sessions, setSessions]       = useState([]);
@@ -89,10 +90,13 @@ export default function MorningMeeting() {
     return allLines;
   }, [allLines, role, userLineId, scopeSecs]);
 
-  const sectionOpts = useMemo(
-    () => [...new Set(scopedLines.map(l => l.section).filter(Boolean))].sort(),
-    [scopedLines]
-  );
+  // ส่วนงานในตัวเลือก: ยึดผังองค์กรก่อน (กรองตาม scope) → fallback เดาจาก production_lines เมื่อผังยังว่าง
+  const sectionOpts = useMemo(() => {
+    const fromLines = [...new Set(scopedLines.map(l => l.section).filter(Boolean))];
+    const base = orgSections.length ? orgSections : fromLines;
+    const scoped = scopeSecs.length ? base.filter(s => inSectionScope(scopeSecs, s)) : base;
+    return [...new Set(scoped)].sort();
+  }, [scopedLines, orgSections, scopeSecs]);
   const viewLines = useMemo(
     () => (secFilter ? scopedLines.filter(l => l.section === secFilter) : scopedLines),
     [scopedLines, secFilter]
@@ -115,6 +119,9 @@ export default function MorningMeeting() {
         .select('id, name, section, parent_line_name, std_day_shift, std_night_shift')
         .order('name');
       setAllLines(data || []);
+      // ส่วนงานจากผังองค์กร (org_nodes kind='section') — ลิสต์/ลำดับตามผัง ไม่เดาจาก production_lines.section
+      const { data: og } = await supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name');
+      setOrgSections((og || []).map(n => n.code || n.name));
     })();
   }, []);
 

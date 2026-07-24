@@ -45,6 +45,7 @@ export default function ProductionPlan() {
   const [capMode, setCapMode] = useState('median'); // 'median' | 'safe'
   const [loading, setLoading] = useState(true);
   const [allLines, setAllLines] = useState([]);
+  const [orgSections, setOrgSections] = useState([]); // ส่วนงานจากผังองค์กร (source of truth) — ไม่เดาจาก production_lines
   const [secFilter, setSecFilter] = useState('');
   const [calMap, setCalMap] = useState({});      // date → day_type
   const [prodByMat, setProdByMat] = useState({}); // mat_no → { line, ct }
@@ -64,7 +65,13 @@ export default function ProductionPlan() {
     if (scopeSecs.length) return allLines.filter(l => inSectionScope(scopeSecs, l.section));
     return allLines;
   }, [allLines, role, userLineId, scopeSecs]);
-  const sectionOpts = useMemo(() => [...new Set(scopedLines.map(l => l.section).filter(Boolean))].sort(), [scopedLines]);
+  // ส่วนงานในตัวเลือก: ยึดผังองค์กรก่อน (กรองตาม scope) → fallback เดาจาก production_lines เมื่อผังยังว่าง
+  const sectionOpts = useMemo(() => {
+    const fromLines = [...new Set(scopedLines.map(l => l.section).filter(Boolean))];
+    const base = orgSections.length ? orgSections : fromLines;
+    const scoped = scopeSecs.length ? base.filter(s => inSectionScope(scopeSecs, s)) : base;
+    return [...new Set(scoped)].sort();
+  }, [scopedLines, orgSections, scopeSecs]);
   const viewLines = useMemo(() => (secFilter ? scopedLines.filter(l => l.section === secFilter) : scopedLines), [scopedLines, secFilter]);
   const lineNameSet = useMemo(() => new Set(viewLines.map(l => l.name)), [viewLines]);
   const calOf = useCallback((d) => calMap[d] || 'working', [calMap]);
@@ -74,6 +81,9 @@ export default function ProductionPlan() {
       const { data } = await supabase.from('production_lines')
         .select('id, name, section, parent_line_name, std_day_shift, std_night_shift').order('name');
       setAllLines(data || []);
+      // ส่วนงานจากผังองค์กร (org_nodes kind='section') — ลิสต์/ลำดับตามผัง ไม่เดาจาก production_lines.section
+      const { data: og } = await supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name');
+      setOrgSections((og || []).map(n => n.code || n.name));
     })();
   }, []);
 
