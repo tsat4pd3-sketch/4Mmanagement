@@ -21,6 +21,16 @@ import tsLogo from '../assets/TS logo.png';
 import EventComments from '../components/EventComments';
 
 /* ── helpers ─────────────────────────────────────────────── */
+// แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
+// (โลโก้ต่าง origin เช่น Supabase Storage จะพิมพ์ไม่ติดถ้าใช้ <img src=url> ตรงๆ)
+async function logoDataUrl(overrideUrl) {
+  const url = overrideUrl || (/^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo);
+  try {
+    const res = await fetch(url); const blob = await res.blob();
+    return await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+  } catch { return /^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo; }
+}
+
 // รูปแจ้งซ่อม/หลักฐาน MTN — บีบ 1024px q0.8 (~120KB) สมดุลคม/ประหยัด storage (user เลือก B 2026-07-14)
 function resizeImage(file, maxPx = 1024, quality = 0.8) {
   return new Promise((resolve, reject) => {
@@ -232,7 +242,7 @@ export default function MtnRepair() {
 
   const scopeLines = useMemo(() => {
     if (role === 'admin') return null;
-    if (role === 'leader' && lineId) { const self = lines.find(l => l.id === lineId); return self ? new Set(getLineFamilyNames(lines, self.name)) : new Set(); }
+    if (role === 'leader' && lineId) { const self = lines.find(l => String(l.id) === String(lineId)); return self ? new Set(getLineFamilyNames(lines, self.name)) : new Set(); }
     if (scopeSecs?.length) return new Set(lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name));
     return null;
   }, [lines, role, lineId, scopeSecs]);
@@ -433,10 +443,10 @@ function nextStepFor(order) {
 }
 
 /* ── พิมพ์ใบ MO — เลือก layout ตามทีมช่าง (JIG/DIE = FM-JIG-008 · MTN/PRODUCTION = FM-MTN-006) ── */
-function printMoReport(o, dparts = []) {
+function printMoReport(o, dparts = [], logo0) {
   const dept = o.mtn_dept || deptForItem(o.item_type);
   // เฉพาะทีม MTN ใช้ฟอร์ม FM-MTN-006 · JIG MTN / DIE MTN / PRODUCTION ใช้ FM-JIG-008 เดิม (คำสั่ง user 2026-07-22)
-  if (dept === 'MTN') return printMoReportMtn(o, dparts);
+  if (dept === 'MTN') return printMoReportMtn(o, dparts, logo0);
   // เลขฟอร์ม/Rev/Effective จากทะเบียนเอกสาร (/doc-forms) — fallback ค่าเดิม
   const dfMo = docFormSync('mo_report', { form_code: 'FM-JIG-008', rev: 'REV.00', effective_date: '05/12/2025', sig_blocks: ['JIG/MTN APPROVE', 'QA APPROVE', 'PD APPROVE', 'MGR APPROVE'] });
   const moSig = dfMo.sig_blocks || ['JIG/MTN APPROVE', 'QA APPROVE', 'PD APPROVE', 'MGR APPROVE'];
@@ -445,7 +455,7 @@ function printMoReport(o, dparts = []) {
   const esc = (s) => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
   const L = (k, v) => `<div class="f"><span class="fk">${k}</span> <span class="fv">${esc(v)}</span></div>`;
   const statusTh = (STATUS_META[o.status] || {}).label?.replace(/^[^฀-๿]+/, '').trim() || o.status;
-  const logo = /^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo;
+  const logo = logo0 || (/^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo);
   const sign = (title, name, url, dt, dark) => `<td class="sg"><div class="sgh${dark ? ' dk' : ''}">${title}</div><div class="sgimg">${url ? `<img src="${esc(url)}"/>` : ''}</div><div class="sgn">${esc(name || '')}</div><div class="sgd">${dt ? beDT(dt) : ''}</div></td>`;
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>MO ${esc(o.mo_no || '')}</title><style>
     *{box-sizing:border-box} body{font-family:'Sarabun','Tahoma',sans-serif;color:#000;margin:0;padding:8px;font-size:11px}
@@ -517,14 +527,14 @@ function printMoReport(o, dparts = []) {
 }
 
 /* ── พิมพ์ใบ MO — layout ตามฟอร์ม FM-MTN-006 (ทีม MTN / PRODUCTION) ── */
-function printMoReportMtn(o, dparts = []) {
+function printMoReportMtn(o, dparts = [], logo0) {
   const df = docFormSync('mo_report_mtn', { form_code: 'FM-MTN-006', rev: '', effective_date: '', footer_note: 'MAINTENANCE ORDER MO31 08 2015.xls', sig_blocks: ['ผู้ตรวจสอบและรับรอง', 'ผู้อนุมัติ (ผู้จัดการ)'] });
   const moSig = df.sig_blocks || ['ผู้ตรวจสอบและรับรอง', 'ผู้อนุมัติ (ผู้จัดการ)'];
   const beDT = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${+g.year + 543} ${g.hour === '24' ? '00' : g.hour}:${g.minute}`; };
   const beD = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${+g.year + 543}`; };
   const esc = (s) => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
   const dept = o.mtn_dept || deptForItem(o.item_type);
-  const logo = /^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo;
+  const logo = logo0 || (/^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo);
   const done = o.status === 'closed' || o.current_step >= 3;
   const chk = (on) => on ? '☑' : '☐';
   const cell = (k, v) => `<div class="f"><span class="k">${k}</span> <span class="v">${esc(v)}</span></div>`;
@@ -760,7 +770,12 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
         {canDelete('mtn_repair', 'manage_master', role) ? <button onClick={del} style={{ ...btnGhost, color: '#ef4444', borderColor: '#ef4444' }}>🗑 ลบใบนี้</button> : <span />}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {can('improvements', 'manage', role) && <button onClick={() => onOpenImprovement(o)} style={{ ...btnGhost, ...(repeatIssue ? { color: '#a78bfa', borderColor: '#7c6cf0' } : {}) }}>💡 เปิดโปรเจคปรับปรุง</button>}
-          <button onClick={() => printMoReport(o, dparts)} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
+          <button onClick={async () => {
+            const dept = o.mtn_dept || deptForItem(o.item_type);
+            const key = dept === 'MTN' ? 'mo_report_mtn' : 'mo_report';
+            const logo = await logoDataUrl(docFormSync(key).logo_url);
+            printMoReport(o, dparts, logo);
+          }} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
           <button onClick={onClose} style={btnGhost}>ปิด</button>
           {next && can('mtn_repair', next.perm, role) && <button onClick={() => onStep(next.step, false)} style={btnPri}>{next.label}</button>}
         </div>
@@ -1042,7 +1057,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, laborRates = [], mtn
             <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
               <input defaultValue={it.name} onBlur={e => e.target.value !== it.name && updRow('mtn_technicians', it.id, { name: e.target.value })} style={{ ...inp, flex: '2 1 180px', width: 'auto' }} />
               <select defaultValue={it.dept || 'MTN'} onChange={e => updRow('mtn_technicians', it.id, { dept: e.target.value })} style={{ ...inp, flex: '1 1 120px', width: 'auto' }}>{mtnDepts.map(d => <option key={d}>{d}</option>)}</select>
-              <span style={{ fontSize: 10, color: 'var(--muted)' }}>เฉพาะกิจ</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>เฉพาะกิจ</span>
               <button onClick={() => delRow('mtn_technicians', it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
             </div>))}</div>
         </div>); })}
