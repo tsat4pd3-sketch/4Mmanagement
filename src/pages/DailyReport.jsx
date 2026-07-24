@@ -916,7 +916,12 @@ function LiveTab({ role }) {
   // ใช้กับ "dropdown เลือกประเภท" เท่านั้น — break policy ยังใช้ sessionProcessType() (majority) กันหักเวลาพักซ้ำ
   const sessionProcessTypesAll = () => {
     const set = new Set();
-    machines.filter(m => m.line_name === selSession?.line_name && m.process_type).forEach(m => set.add(m.process_type));
+    // ⚠️ ต้องกวาดทั้ง "ครอบครัวไลน์" (แม่+ลูกทั้งหมด) ไม่ใช่ชื่อไลน์ตรงเป๊ะ — กะมักเปิดบนไลน์ลูก (เช่น Laser LWB)
+    // แต่เครื่อง welding (Stationary) ลงทะเบียนใต้ไลน์พี่น้อง/ไลน์แม่ → เทียบตรงตัวแล้วมองไม่เห็น (บั๊กจริง 2026-07-24)
+    if (selSession?.line_name) {
+      const famNames = new Set(getLineFamilyNames(lines, selSession.line_name).map(n => (n || '').trim().toLowerCase()));
+      machines.filter(m => m.process_type && famNames.has((m.line_name || '').trim().toLowerCase())).forEach(m => set.add(m.process_type));
+    }
     prodOrders.forEach(o => {
       const pt = kanbanStds.find(st => st.mat_no === o.mat_no)?.dr_products?.process_type;
       if (pt) set.add(pt);
