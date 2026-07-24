@@ -220,10 +220,10 @@ export default function DailyPM() {
       <div style={{ display: 'flex', paddingRight: 52, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
         <div>
           <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
-            ✅ Daily PM ฝ่ายผลิต
+            🔧 Autonomous Maintenance (AM)
           </h1>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-            ตรวจความพร้อมเครื่องจักร/อุปกรณ์/POKA-YOKE ต้นกะ · {shiftInfo.label} · {shiftInfo.workDateStr}
+            พนักงานตรวจ/ดูแลเครื่องประจำวัน — ความพร้อมเครื่องจักร/อุปกรณ์/POKA-YOKE ต้นกะ · {shiftInfo.label} · {shiftInfo.workDateStr}
             {' · '}เตือนเมื่อเกิน {DAILY_PM_WINDOW_MIN} นาทีหลังยืนยันออร์เดอร์แรก
           </div>
         </div>
@@ -324,7 +324,7 @@ export default function DailyPM() {
         <div>
           {/* คู่มือ 4 ขั้น — ระบบนี้ต่อกัน 3 หน้า มือใหม่หลงง่าย ต้องเห็นภาพรวมก่อน */}
           <div style={{ marginBottom: 14, padding: '12px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>📖 วิธีใช้งาน Daily PM — 4 ขั้น</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>📖 วิธีใช้งาน Autonomous Maintenance (AM) — 4 ขั้น</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8 }}>
               {[
                 { n: '1', title: 'เพิ่มเครื่อง + หัวข้อตรวจ', desc: <>ที่หน้า <Link to="/pm-setup?dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตั้งค่า PM → แท็บ ฝ่ายผลิต</Link> (กด "+ เพิ่มอุปกรณ์" แล้วใส่ชื่อ/ไลน์/หัวข้อที่ต้องตรวจ)</> },
