@@ -96,6 +96,7 @@ export default function Operator() {
   const [orgSectionOpts,  setOrgSectionOpts]  = useState([]);
   const [orgSectionNodes, setOrgSectionNodes] = useState([]);
   const [orgDeptNodes,    setOrgDeptNodes]    = useState([]);
+  const [orgLineNodes,    setOrgLineNodes]    = useState([]); // org groups (kind='line') + ref_line_id
 
   useEffect(() => {
     let alive = true;
@@ -106,7 +107,7 @@ export default function Operator() {
       .then(({ data }) => { if (alive) setLines(data || []); });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
       .then(({ data }) => { if (alive) setBusRoutes(data || []); });
-    supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type').eq('is_active', true).order('sort_order')
+    supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id').eq('is_active', true).order('sort_order')
       .then(({ data }) => {
         if (!alive) return;
         const orgNodes = data || [];
@@ -114,6 +115,7 @@ export default function Operator() {
         setOrgSectionNodes(secNodes);
         setOrgSectionOpts(secNodes.map(n => n.code || n.name));
         setOrgDeptNodes(orgNodes.filter(n => n.kind === 'department'));
+        setOrgLineNodes(orgNodes.filter(n => n.kind === 'line'));
       });
     if (isLeader && userLineId) {
       supabase.from('production_lines').select('name').eq('id', userLineId).single()
@@ -415,22 +417,44 @@ export default function Operator() {
   // ตัวเลือก filter ไล่ตามลำดับชั้นองค์กร (cascade — คำสั่ง user 2026-07-21): Dept เฉพาะใน Section ที่เลือก ·
   // Group เฉพาะใน Section+Dept · Team ตามที่เหลือ — ดึงจากข้อมูลพนักงานจริง (ตรงกับแถวในตารางเสมอ ไม่มีตัวเลือกข้าม section/ซ้ำ)
   const empsInSec   = useMemo(() => allEmps.filter(e => !filterSection || e.section === filterSection), [allEmps, filterSection]);
-  // แผนก = cascade จากผังองค์กรจริง (org_nodes ใต้ section ที่เลือก เรียงตามผัง) — ตรงกับ OrgSetup (2026-07-22)
-  //   แยก 2 กลุ่ม: "ในผัง" (org_nodes) กับ "นอกผัง" (legacy = พนักงานกรอกไว้แต่ยังไม่มีในผัง) ให้เห็นชัด + ยังกรองได้ระหว่างจัดข้อมูล
+  // ตัวกรองแผนก = จัดกลุ่มตามผังองค์กร แต่**โชว์เฉพาะแผนกที่มีพนักงานจริง** (ทุกตัวเลือกเจอคนแน่นอน — หัวหน้าหาคนไม่หาย)
+  //   "ในผัง" = แผนกในผังที่มีพนักงาน · "นอกผัง" = แผนกที่พนักงานกรอกไว้แต่ยังไม่มีในผัง (ต้องจัดข้อมูล) · เรียงตาม sort_order ผัง
   const deptOrgList  = useMemo(() => {
     const secNode = orgSectionNodes.find(s => (s.code || s.name) === filterSection);
+    const empDepts = new Set(empsInSec.map(e => String(e.department || '').trim().toLowerCase()).filter(Boolean));
     return orgDeptNodes
       .filter(d => filterSection ? (secNode && d.parent_id === secNode.id) : true)  // orgDeptNodes เรียง sort_order มาแล้ว
-      .map(d => d.code || d.name);
-  }, [orgDeptNodes, orgSectionNodes, filterSection]);
+      .map(d => d.code || d.name)
+      .filter(name => empDepts.has(String(name).trim().toLowerCase()));  // เฉพาะแผนกที่มีพนักงานจริง
+  }, [orgDeptNodes, orgSectionNodes, filterSection, empsInSec]);
   const deptLegacyList = useMemo(() => {
-    const orgSet = new Set(deptOrgList.map(x => String(x).trim().toLowerCase()));
+    const secNode = orgSectionNodes.find(s => (s.code || s.name) === filterSection);
+    const orgAll = new Set(orgDeptNodes
+      .filter(d => filterSection ? (secNode && d.parent_id === secNode.id) : true)
+      .map(d => String(d.code || d.name).trim().toLowerCase()));
     return [...new Set(empsInSec.map(e => e.department).filter(Boolean))]
-      .filter(d => !orgSet.has(String(d).trim().toLowerCase())).sort();
-  }, [deptOrgList, empsInSec]);
+      .filter(d => !orgAll.has(String(d).trim().toLowerCase())).sort();
+  }, [orgDeptNodes, orgSectionNodes, filterSection, empsInSec]);
   const deptOpts    = useMemo(() => [...deptOrgList, ...deptLegacyList], [deptOrgList, deptLegacyList]);
   const empsInDept  = useMemo(() => empsInSec.filter(e => !filterDept || e.department === filterDept), [empsInSec, filterDept]);
-  const groupOpts   = useMemo(() => [...new Set(empsInDept.map(e => e.group_name).filter(Boolean))].sort(), [empsInDept]);
+  // ตัวกรองกลุ่ม (Group) = cascade จากผังองค์กร (org_nodes kind='line' ใต้แผนกที่เลือก) เหมือน Dept — โชว์เฉพาะกลุ่มที่มีพนักงานจริง
+  const grpDepNode  = useMemo(() => {
+    const secNode = orgSectionNodes.find(s => (s.code || s.name) === filterSection);
+    return orgDeptNodes.find(d => (d.code || d.name) === filterDept && (!secNode || d.parent_id === secNode.id));
+  }, [orgDeptNodes, orgSectionNodes, filterSection, filterDept]);
+  const groupOrgList = useMemo(() => {
+    const empGroups = new Set(empsInDept.map(e => String(e.group_name || '').trim().toLowerCase()).filter(Boolean));
+    return (grpDepNode ? orgLineNodes.filter(g => g.parent_id === grpDepNode.id) : [])
+      .map(g => g.code || g.name)
+      .filter(name => empGroups.has(String(name).trim().toLowerCase()));
+  }, [orgLineNodes, grpDepNode, empsInDept]);
+  const groupLegacyList = useMemo(() => {
+    const orgAll = new Set((grpDepNode ? orgLineNodes.filter(g => g.parent_id === grpDepNode.id) : [])
+      .map(g => String(g.code || g.name).trim().toLowerCase()));
+    return [...new Set(empsInDept.map(e => e.group_name).filter(Boolean))]
+      .filter(g => !orgAll.has(String(g).trim().toLowerCase())).sort();
+  }, [orgLineNodes, grpDepNode, empsInDept]);
+  const groupOpts   = useMemo(() => [...groupOrgList, ...groupLegacyList], [groupOrgList, groupLegacyList]);
   const teamOpts    = useMemo(() => [...new Set(empsInDept.filter(e => !filterGroup || e.group_name === filterGroup).map(e => e.team).filter(Boolean))].sort(), [empsInDept, filterGroup]);
 
   const displayed = useMemo(() => (showInactive ? inactiveEmployees : employees)
@@ -536,20 +560,24 @@ export default function Operator() {
               <select key={f.label} value={f.value} onChange={e => f.set(e.target.value)}
                 style={{ fontSize: 12, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: f.value ? 'var(--text)' : 'var(--muted)', minWidth: 110 }}>
                 <option value="">{`— ${f.label} —`}</option>
-                {f.label === 'Dept' ? (
-                  <>
-                    {deptOrgList.length > 0 && (
-                      <optgroup label="ในผังองค์กร">
-                        {deptOrgList.map(o => <option key={`o_${o}`} value={o}>{o}</option>)}
-                      </optgroup>
-                    )}
-                    {deptLegacyList.length > 0 && (
-                      <optgroup label="⚠ นอกผัง (ต้องจัดข้อมูล)">
-                        {deptLegacyList.map(o => <option key={`l_${o}`} value={o}>{o}</option>)}
-                      </optgroup>
-                    )}
-                  </>
-                ) : (
+                {(f.label === 'Dept' || f.label === 'Group') ? (() => {
+                  const orgL = f.label === 'Dept' ? deptOrgList : groupOrgList;
+                  const legacyL = f.label === 'Dept' ? deptLegacyList : groupLegacyList;
+                  return (
+                    <>
+                      {orgL.length > 0 && (
+                        <optgroup label="ในผังองค์กร">
+                          {orgL.map(o => <option key={`o_${o}`} value={o}>{o}</option>)}
+                        </optgroup>
+                      )}
+                      {legacyL.length > 0 && (
+                        <optgroup label="⚠ นอกผัง (ต้องจัดข้อมูล)">
+                          {legacyL.map(o => <option key={`l_${o}`} value={o}>{o}</option>)}
+                        </optgroup>
+                      )}
+                    </>
+                  );
+                })() : (
                   f.opts.map(o => <option key={o} value={o}>{o}</option>)
                 )}
               </select>
@@ -1229,22 +1257,44 @@ export default function Operator() {
                 <label style={labelSt}>Group / กลุ่ม (Line)</label>
                 {isLeader ? (
                   <input type="text" value={editingEmp.group_name || myLineName || ''} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
-                ) : (
-                  <select value={editingEmp.group_name || ''} disabled={!editingEmp.department} onChange={e => {
-                    const val = e.target.value;
-                    const line = lines.find(l => l.name === val);
-                    setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
-                  }}>
-                    {/* cascade Section→แผนก→Line (UI-CONVENTIONS §5.3): gate ต้องเลือกแผนกก่อน (select disabled)
-                        · filterLinesByDept = fail-open กันชื่อแผนกไม่ตรงชื่อไลน์แล้วลิสต์ว่าง */}
-                    <option value="">{editingEmp.department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
-                    {filterLinesByDept(
-                      (scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
-                        .filter(l => !editingEmp.section || l.section === editingEmp.section),
-                      editingEmp.department
-                    ).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                  </select>
-                )}
+                ) : (() => {
+                  // cascade จากผังองค์กร: กลุ่ม (org_nodes kind='line') ใต้แผนกที่เลือก — ตั้ง line_id ผ่าน ref_line_id ให้ production ยังทำงาน
+                  const empSection = lockedScopeSec || editingEmp.section;
+                  const secNode = orgSectionNodes.find(s => (s.code || s.name) === empSection);
+                  const depNode = orgDeptNodes.find(d => (d.code || d.name) === editingEmp.department && (!secNode || d.parent_id === secNode.id));
+                  const orgGroups = depNode ? orgLineNodes.filter(g => g.parent_id === depNode.id) : [];
+                  const cur = editingEmp.group_name || '';
+                  const curInOrg = orgGroups.some(g => (g.code || g.name) === cur);
+                  if (orgGroups.length) {
+                    return (
+                      <select value={cur} disabled={!editingEmp.department} onChange={e => {
+                        const val = e.target.value;
+                        const g = orgGroups.find(x => (x.code || x.name) === val);
+                        // เลือกกลุ่มในผัง → line_id จาก ref_line_id · เลือกค่าเดิม (นอกผัง) → คง line_id เดิม
+                        setEditingEmp({ ...editingEmp, group_name: val, line_id: g ? (g.ref_line_id || null) : editingEmp.line_id });
+                      }}>
+                        <option value="">{editingEmp.department ? '— เลือกกลุ่ม —' : 'เลือกแผนกก่อน'}</option>
+                        {orgGroups.map(g => <option key={g.id} value={g.code || g.name}>{g.name}</option>)}
+                        {cur && !curInOrg && <option value={cur}>{cur} (นอกผัง — ค่าเดิม)</option>}
+                      </select>
+                    );
+                  }
+                  // fallback: ผังยังไม่มีกลุ่มใต้แผนกนี้ → ใช้ production_lines เดิม (normalize + fail-open)
+                  return (
+                    <select value={cur} disabled={!editingEmp.department} onChange={e => {
+                      const val = e.target.value;
+                      const line = lines.find(l => l.name === val);
+                      setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
+                    }}>
+                      <option value="">{editingEmp.department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
+                      {filterLinesByDept(
+                        (scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
+                          .filter(l => !editingEmp.section || l.section === editingEmp.section),
+                        editingEmp.department
+                      ).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                    </select>
+                  );
+                })()}
               </div>
 
               <div>

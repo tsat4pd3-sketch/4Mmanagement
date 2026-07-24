@@ -1,0 +1,17 @@
+{
+  "name": "ESM — Enterprise Shopfloor Management",
+  "short_name": "ESM",
+  "description": "ระบบบริหารจัดการโรงงาน Thai Summit Group — 4M, เช็คชื่อ-PPE, Daily Report, OEE, PM, ซ่อมบำรุง",
+  "lang": "th",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#080f08",
+  "theme_color": "#080f08",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

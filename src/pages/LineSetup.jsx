@@ -4,7 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
-import { LINE_TYPES } from '../utils/lineTypes';
+import { LINE_TYPES, FLOW_MODES } from '../utils/lineTypes';
 import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
@@ -60,6 +60,11 @@ export default function LineSetup() {
   const [skillDefs, setSkillDefs] = useState([]);
   const [sectionOpts, setSectionOpts] = useState([]);
   const [activeTab, setActiveTab] = useState('stations'); // 'stations' | 'wip' | 'machines'
+  // UX แถบขวา: ค้นหา + พับรายการ (ข้อมูลเยอะ เลื่อนหายาก — 2026-07-24)
+  const [lineSearch, setLineSearch] = useState('');
+  const [lineListOpen, setLineListOpen] = useState(() => { try { return localStorage.getItem('ls_lineList_open') !== '0'; } catch { return true; } });
+  const [pointSearch, setPointSearch] = useState('');
+  const toggleLineList = () => setLineListOpen(o => { const n = !o; try { localStorage.setItem('ls_lineList_open', n ? '1' : '0'); } catch { /* private */ } return n; });
   // ป้ายชื่อบนผัง: โชว์/ซ่อน อย่างเดียว เหมือนหน้า Management เป๊ะ (WYSIWYG)
   const [showPills, setShowPills] = useState(true);
 
@@ -105,6 +110,9 @@ export default function LineSetup() {
   const [costCenter, setCostCenter] = useState('');
   const [lineType, setLineType] = useState('');
   const hasLineTypeCol = useRef(true); // false = DB ยังไม่มีคอลัมน์ line_type (migration 20260722 ยังไม่ apply)
+  const [flowMode, setFlowMode] = useState('one_piece_flow');
+  const [parallelStations, setParallelStations] = useState('');
+  const hasFlowModeCol = useRef(true); // false = DB ยังไม่มีคอลัมน์ flow_mode (migration 20260723 ยังไม่ apply)
   const [mpSaving, setMpSaving] = useState(false);
 
   // ผู้บันทึก/อนุมัติ ประจำส่วนงาน (ใช้ดึงอัตโนมัติในใบค่าฝีมือ)
@@ -121,11 +129,15 @@ export default function LineSetup() {
   const sectionOptsInScope = scopeSecs.length ? sectionOpts.filter(s => inSectionScope(scopeSecs, s)) : sectionOpts;
 
   const fetchLines = async () => {
-    let { data, error } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name, line_type').order('name');
+    let { data, error } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name, line_type, flow_mode, parallel_stations').order('name');
     if (error) {
-      // คอลัมน์ line_type ยังไม่ถูก apply (migration 20260722) — fallback query แบบเดิม หน้าใช้งานได้ปกติ
+      // คอลัมน์ line_type/flow_mode ยังไม่ถูก apply (migration 20260722/20260723) — fallback query แบบเดิม หน้าใช้งานได้ปกติ
       hasLineTypeCol.current = false;
-      ({ data } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name').order('name'));
+      hasFlowModeCol.current = false;
+      let r2 = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name, line_type').order('name');
+      if (r2.error) { r2 = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name').order('name'); }
+      else { hasLineTypeCol.current = true; }
+      data = r2.data;
     }
     // mandatory scope filter — role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor/manager ที่ตั้ง sections)
     // เห็น/แก้ได้เฉพาะไลน์ในส่วนงานตัวเอง — หน้านี้เป็นหน้า edit master data ห้ามเห็นข้ามส่วนงาน
@@ -187,6 +199,8 @@ export default function LineSetup() {
       setStdNight(lineObj.std_night_shift ?? 0);
       setCostCenter(lineObj.cost_center ?? '');
       setLineType(lineObj.line_type ?? '');
+      setFlowMode(lineObj.flow_mode ?? 'one_piece_flow');
+      setParallelStations(lineObj.parallel_stations != null ? String(lineObj.parallel_stations) : '');
       setSignerHead(lineObj.head_name ?? '');
       if (lineObj.section) {
         const { data: signers } = await supabase.from('section_signers').select('*').eq('section', lineObj.section).maybeSingle();
@@ -224,9 +238,24 @@ export default function LineSetup() {
         std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0,
         cost_center: costCenter || null, head_name: signerHead || null,
         ...(hasLineTypeCol.current ? { line_type: lineType || null } : {}),
+        ...(hasFlowModeCol.current ? {
+          flow_mode: flowMode || 'one_piece_flow',
+          parallel_stations: flowMode === 'parallel_machine' && parseInt(parallelStations) > 0 ? parseInt(parallelStations) : null,
+        } : {}),
       })
       .eq('id', lineObj.id);
-    if (error) toast.error('Error: ' + error.message);
+    if (error) {
+      // คอลัมน์ flow_mode ยังไม่ apply — retry โดยตัด field ออก (ไม่ให้ save พังทั้งแผง)
+      if (/flow_mode|parallel_stations/.test(error.message || '')) {
+        hasFlowModeCol.current = false;
+        const { error: e2 } = await supabase.from('production_lines').update({
+          std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0,
+          cost_center: costCenter || null, head_name: signerHead || null,
+          ...(hasLineTypeCol.current ? { line_type: lineType || null } : {}),
+        }).eq('id', lineObj.id);
+        if (e2) toast.error('Error: ' + e2.message); else { toast.info('บันทึกแล้ว (โหมดไหลงานยังไม่ apply migration)'); await fetchLines(); }
+      } else toast.error('Error: ' + error.message);
+    }
     else await fetchLines();
     setMpSaving(false);
   };
@@ -1030,9 +1059,16 @@ export default function LineSetup() {
         padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', flexShrink: 0
       }}>
         <div style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <span style={labelSt}>ไลน์ผลิต ({lines.length})</span>
-          </div>
+          {/* หัวหมวดพับได้ + ตัวนับ — คลิกเพื่อพับ/กางรายการไลน์ (ข้อมูลเยอะ พับเก็บได้) */}
+          <button onClick={toggleLineList}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: 10, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+            <span style={labelSt}>{lineListOpen ? '▼' : '▶'} ไลน์ผลิต ({lines.length})</span>
+          </button>
+          {lineListOpen && lines.length > 6 && (
+            <input value={lineSearch} onChange={e => setLineSearch(e.target.value)} placeholder="🔍 ค้นหาไลน์..."
+              style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+          )}
+          {lineListOpen && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
             {(() => {
               // Build ordered display: parents first, their children indented below
@@ -1045,7 +1081,16 @@ export default function LineSetup() {
                 childLines.filter(c => c.parent_line_name === p.name).forEach(c => ordered.push({ ...c, _isChild: true }));
               });
               orphans.forEach(c => ordered.push({ ...c, _isChild: true, _orphan: true }));
-              return ordered.map(l => (
+              // ค้นหา: โชว์ไลน์ที่ชื่อตรง + คงบริบทลำดับชั้น (ลูกตรง→โชว์แม่ด้วย, แม่ตรง→โชว์ลูกด้วย)
+              const q = lineSearch.trim().toLowerCase();
+              const hit = (n) => n && n.toLowerCase().includes(q);
+              const shown = !q ? ordered : ordered.filter(l =>
+                hit(l.name) ||
+                (l._isChild && hit(l.parent_line_name)) ||
+                (l._isParent && childLines.some(c => c.parent_line_name === l.name && hit(c.name)))
+              );
+              if (!shown.length) return <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', padding: '8px 0' }}>ไม่พบไลน์ที่ค้นหา</div>;
+              return shown.map(l => (
                 <div key={l.id}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6,
@@ -1126,6 +1171,7 @@ export default function LineSetup() {
               <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีไลน์ผลิต</div>
             )}
           </div>
+          )}
           {canEdit && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -1268,8 +1314,12 @@ export default function LineSetup() {
           <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
             รายการจุดงาน ({stations.length})
           </h4>
+          {stations.length > 6 && (
+            <input value={pointSearch} onChange={e => setPointSearch(e.target.value)} placeholder="🔍 ค้นหาจุดงาน..."
+              style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+          )}
           <div style={{ flex: 1, minHeight: showManpower ? 120 : 260, overflowY: 'auto' }}>
-            {stations.map(st => {
+            {stations.filter(st => { const q = pointSearch.trim().toLowerCase(); return !q || (st.station_name || '').toLowerCase().includes(q); }).map(st => {
               const reqs = st.station_requirements || [];
               return (
                 <div key={st.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1388,8 +1438,12 @@ export default function LineSetup() {
               <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
                 รายการจุด WIP ({wipPoints.length})
               </h4>
+              {wipPoints.length > 6 && (
+                <input value={pointSearch} onChange={e => setPointSearch(e.target.value)} placeholder="🔍 ค้นหาจุด WIP..."
+                  style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+              )}
               <div style={{ flex: 1, minHeight: 260, overflowY: 'auto' }}>
-                {wipPoints.map(p => {
+                {wipPoints.filter(p => { const q = pointSearch.trim().toLowerCase(); return !q || (p.point_name || '').toLowerCase().includes(q); }).map(p => {
                   const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
                   return (
                     <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1495,8 +1549,12 @@ export default function LineSetup() {
               <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
                 รายการจุดเครื่องจักร ({machinePoints.length})
               </h4>
+              {machinePoints.length > 6 && (
+                <input value={pointSearch} onChange={e => setPointSearch(e.target.value)} placeholder="🔍 ค้นหาเครื่องจักร (เลข/ชื่อ)..."
+                  style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+              )}
               <div style={{ flex: 1, minHeight: 260, overflowY: 'auto' }}>
-                {machinePoints.map(p => {
+                {machinePoints.filter(p => { const q = pointSearch.trim().toLowerCase(); if (!q) return true; const mc = drMachines.find(m => m.machine_no === p.machine_no); return (p.machine_no || '').toLowerCase().includes(q) || (mc?.machine_name || '').toLowerCase().includes(q); }).map(p => {
                   const mc = drMachines.find(m => m.machine_no === p.machine_no);
                   return (
                     <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1611,6 +1669,27 @@ export default function LineSetup() {
                 <option value="">— ยังไม่ระบุ —</option>
                 {LINE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelSt}>🔀 รูปแบบการไหลงาน (บอร์ด Heijunka)</label>
+              <select value={flowMode} disabled={!canEdit}
+                onChange={e => setFlowMode(e.target.value)}
+                style={{ marginTop: 4, fontSize: 13, fontWeight: 600 }}>
+                {FLOW_MODES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>
+                {flowMode === 'parallel_machine'
+                  ? 'เครื่อง stand-alone หลายตัววิ่งพร้อมกันคนละรายการ — บอร์ดจะแตกเป็นเลนขนานตามเครื่อง (เลือกเครื่องตอนเปิด Order)'
+                  : 'สายเดียวไหลทีละชิ้น — บอร์ดเรียงคิว 1 ใบต่อครั้ง (ดีฟอลต์)'}
+              </div>
+              {flowMode === 'parallel_machine' && (
+                <div style={{ marginTop: 8 }}>
+                  <label style={{ ...labelSt, fontSize: 11 }}>จำนวนเครื่องขนาน (เว้นว่าง = นับจากทะเบียนเครื่องจักร)</label>
+                  <input type="number" min="1" value={parallelStations} disabled={!canEdit}
+                    onChange={e => setParallelStations(e.target.value)}
+                    placeholder="เช่น 5" style={{ marginTop: 4, width: 120 }} />
+                </div>
+              )}
             </div>
             <div style={{ marginBottom: 12 }}>
               <label style={labelSt}>👨‍🔧 หัวหน้างาน (ประจำไลน์นี้)</label>

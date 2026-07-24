@@ -134,6 +134,7 @@ export default function LayerProcessAudit() {
 
   /* questions master */
   const [qEditing, setQEditing] = useState(null);
+  const [qScope, setQScope] = useState(''); // หน้า ⚙️ คำถาม: '' = ทุกไลน์ (common) · ชื่อไลน์ = จัดการเฉพาะไลน์นั้น
   const [printing, setPrinting] = useState(false);
 
   /* ── scope มาตรฐาน: leader → family ไลน์ตัวเอง · role อื่นตาม sections ── */
@@ -223,10 +224,13 @@ export default function LayerProcessAudit() {
   };
   useEffect(() => { loadMonth(); }, [selLine, selShift, selMonth]);
 
-  /* คำถามที่ใช้กับไลน์+วันที่ (special เฉพาะช่วงเฝ้าระวัง) */
+  // ข้อ common (line_name null) ถูกซ่อนเฉพาะไลน์นี้ไหม (hidden_for_lines[] — ตั้งจากหน้า ⚙️ รายไลน์)
+  const hiddenForLine = (q, lineName) => !q.line_name && Array.isArray(q.hidden_for_lines) && q.hidden_for_lines.includes(lineName);
+  /* คำถามที่ใช้กับไลน์+วันที่ (common fallback + ข้อเฉพาะไลน์ − ข้อ common ที่ไลน์นี้ซ่อน · special เฉพาะช่วงเฝ้าระวัง) */
   const questionsFor = (lineName, dstr) => questions.filter(q => {
     if (!q.is_active) return false;
     if (q.line_name && q.line_name !== lineName) return false;
+    if (hiddenForLine(q, lineName)) return false;
     if (q.category === 'special' && dstr) {
       if (q.issue_start && dstr < q.issue_start) return false;
       if (q.issue_end && dstr > q.issue_end) return false;
@@ -239,6 +243,7 @@ export default function LayerProcessAudit() {
     return questions.filter(q => {
       if (!q.is_active) return false;
       if (q.line_name && q.line_name !== lineName) return false;
+      if (hiddenForLine(q, lineName)) return false;
       if (q.category === 'special') {
         if (q.issue_start && last < q.issue_start) return false;
         if (q.issue_end && first > q.issue_end) return false;
@@ -543,6 +548,14 @@ export default function LayerProcessAudit() {
     const { error } = await supabase.from('lpa_questions').update({ is_active: !q.is_active }).eq('id', q.id);
     if (error) { toast.error(error.message); return; }
     setQuestions(prev => prev.map(x => x.id === q.id ? { ...x, is_active: !q.is_active } : x));
+  };
+  // ซ่อน/แสดงข้อ common เฉพาะไลน์ (เขียน hidden_for_lines[]) — ต้อง apply migration 20260723 ก่อน (best-effort)
+  const toggleHideForLine = async (q, line) => {
+    const cur = Array.isArray(q.hidden_for_lines) ? q.hidden_for_lines : [];
+    const next = cur.includes(line) ? cur.filter(x => x !== line) : [...cur, line];
+    const { error } = await supabase.from('lpa_questions').update({ hidden_for_lines: next.length ? next : null }).eq('id', q.id);
+    if (error) { toast.error('บันทึกไม่สำเร็จ (ต้อง apply migration hidden_for_lines ก่อน): ' + error.message); return; }
+    setQuestions(prev => prev.map(x => x.id === q.id ? { ...x, hidden_for_lines: next } : x));
   };
   const deleteQuestion = async (q) => {
     if (!window.confirm(`ลบคำถาม "${q.question.slice(0, 50)}"? (ผลตรวจเก่าเก็บข้อความ snapshot ไว้แล้ว ไม่หาย)`)) return;
@@ -1089,32 +1102,63 @@ ${issuesHtml}
         );
       })()}
 
-      {/* ═════════ คำถาม master ═════════ */}
+      {/* ═════════ คำถาม master — จัดการรายไลน์ (common = ฐาน backfall) ═════════ */}
       {tab === 'questions' && canManage && (
         <div className="card" style={{ padding: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-            <div style={{ fontSize: 12, color: 'var(--muted)' }}>คำถามมาตรฐานใช้ทุกไลน์ · ข้อ "เฝ้าระวังปัญหา" (special) ผูกไลน์ + ช่วงวันที่ แสดงเฉพาะช่วงเฝ้าระวัง</div>
-            <button onClick={() => setQEditing({ category: 'special', seq: (Math.max(0, ...questions.map(q => q.seq)) + 1), question: '', line_name: selLine, issue_start: getWorkDate(), issue_end: '', is_active: true })} style={btnAccent}>➕ เพิ่มคำถาม</button>
+          {/* เลือกขอบเขต: ทุกไลน์ (common) หรือรายไลน์ */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 10 }}>
+            <div>
+              <div style={lb}>จัดการคำถามของ</div>
+              <select value={qScope} onChange={e => setQScope(e.target.value)} style={{ minWidth: 220 }}>
+                <option value="">🌐 ทุกไลน์ (common — ฐานที่ backfall)</option>
+                {visibleLines.map(l => <option key={l.id} value={l.name}>🏭 {l.name}</option>)}
+              </select>
+            </div>
+            <button
+              onClick={() => setQEditing({ category: 'safety', seq: (Math.max(0, ...questions.map(q => q.seq)) + 1), question: '', line_name: qScope || '', issue_start: '', issue_end: '', is_active: true })}
+              style={btnAccent}>➕ เพิ่มคำถาม{qScope ? ` (เฉพาะ ${qScope})` : ' (ทุกไลน์)'}</button>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
+            {qScope
+              ? <>เห็น <b>ข้อ common (ทุกไลน์)</b> เป็นฐาน + <b>ข้อเฉพาะไลน์นี้</b> · ข้อ common สามารถ <b>🚫 ซ่อนเฉพาะไลน์นี้</b> ได้ (ไลน์อื่นไม่กระทบ) · ข้อเฉพาะไลน์แก้/ลบได้เต็มที่</>
+              : <>ข้อ common ใช้ <b>ทุกไลน์เป็นค่าเริ่มต้น</b> (backfall) · แต่ละไลน์ไปเพิ่ม/ซ่อนของตัวเองได้ที่ dropdown ด้านบน · ข้อ "เฝ้าระวังปัญหา" (special) ผูกช่วงวันที่</>}
           </div>
           {CATEGORIES.map(cat => {
-            const catQs = questions.filter(q => q.category === cat.key).sort((a, b) => a.seq - b.seq);
+            // ทุกไลน์: เฉพาะ common (null) · รายไลน์: common (null) + ของไลน์นั้น
+            const catQs = questions.filter(q => q.category === cat.key && (qScope ? (!q.line_name || q.line_name === qScope) : !q.line_name)).sort((a, b) => a.seq - b.seq);
             if (!catQs.length) return null;
             return (
               <div key={cat.key} style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 800, color: cat.key === 'special' ? '#ef4444' : 'var(--text)', padding: '5px 0', borderBottom: '1px solid var(--border)' }}>{cat.full}</div>
-                {catQs.map(q => (
-                  <div key={q.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '5px 0', borderBottom: '1px dashed var(--border)', opacity: q.is_active ? 1 : 0.45 }}>
-                    <div style={{ flex: 1, fontSize: 13, color: cat.key === 'special' ? '#f87171' : 'var(--text2)' }}>
-                      <b>{q.seq}.</b> {q.question}
-                      {q.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · ไลน์ {q.line_name}</span>}
-                      {(q.issue_start || q.issue_end) && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · {thDate(q.issue_start)} - {thDate(q.issue_end)}</span>}
-                      {!q.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}> · ปิดใช้งาน</span>}
+                {catQs.map(q => {
+                  const isCommon = !q.line_name;
+                  const hiddenHere = qScope && isCommon && (q.hidden_for_lines || []).includes(qScope);
+                  const lineOwn = qScope && !isCommon; // ข้อเฉพาะไลน์ที่กำลังดู
+                  return (
+                    <div key={q.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '5px 0', borderBottom: '1px dashed var(--border)', opacity: (q.is_active && !hiddenHere) ? 1 : 0.45 }}>
+                      <div style={{ flex: 1, fontSize: 13, color: cat.key === 'special' ? '#f87171' : 'var(--text2)' }}>
+                        <b>{q.seq}.</b> {q.question}
+                        {qScope && isCommon && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 4, padding: '0 5px', marginLeft: 6 }}>common</span>}
+                        {lineOwn && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-dim)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 5px', marginLeft: 6 }}>เฉพาะไลน์นี้</span>}
+                        {!qScope && q.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · ไลน์ {q.line_name}</span>}
+                        {(q.issue_start || q.issue_end) && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · {thDate(q.issue_start)} - {thDate(q.issue_end)}</span>}
+                        {hiddenHere && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}> · 🚫 ซ่อนไลน์นี้</span>}
+                        {!q.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}> · ปิดใช้งาน</span>}
+                      </div>
+                      {qScope && isCommon ? (
+                        // ข้อ common ในมุมมองรายไลน์ → ซ่อน/แสดงเฉพาะไลน์นี้ (แก้เนื้อหาไปทำที่ "ทุกไลน์")
+                        <button className="tbtn" onClick={() => toggleHideForLine(q, qScope)} style={{ ...btnGray, color: hiddenHere ? 'var(--accent)' : '#ef4444', padding: '4px 10px', fontSize: 12 }}>{hiddenHere ? '👁 แสดงไลน์นี้' : '🚫 ซ่อนไลน์นี้'}</button>
+                      ) : (
+                        // ข้อ common (มุมมองทุกไลน์) หรือข้อเฉพาะไลน์ → แก้/ปิด/ลบเต็มที่
+                        <>
+                          <button className="tbtn" onClick={() => setQEditing({ ...q })} style={{ ...btnGray, padding: '4px 10px', fontSize: 12 }}>✏️</button>
+                          <button className="tbtn" onClick={() => toggleQuestion(q)} style={{ ...btnGray, padding: '4px 10px', fontSize: 12 }}>{q.is_active ? '⏸' : '▶'}</button>
+                          <button className="tbtn" onClick={() => deleteQuestion(q)} style={{ ...btnGray, color: '#ef4444', padding: '4px 10px', fontSize: 12 }}>🗑</button>
+                        </>
+                      )}
                     </div>
-                    <button className="tbtn" onClick={() => setQEditing({ ...q })} style={{ ...btnGray, padding: '4px 10px', fontSize: 12 }}>✏️</button>
-                    <button className="tbtn" onClick={() => toggleQuestion(q)} style={{ ...btnGray, padding: '4px 10px', fontSize: 12 }}>{q.is_active ? '⏸' : '▶'}</button>
-                    <button className="tbtn" onClick={() => deleteQuestion(q)} style={{ ...btnGray, color: '#ef4444', padding: '4px 10px', fontSize: 12 }}>🗑</button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             );
           })}
