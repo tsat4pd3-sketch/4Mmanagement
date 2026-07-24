@@ -438,6 +438,14 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - สิ่งที่ย้อนให้: status→open, ล้าง confirmed_by/at + qty_ok, ใบ manual คืน `qty = qty_target` (ยอดสะสม qty_actual คงไว้) + **ถอนแถว stock ที่ trigger `trg_post_confirmed_output` โพสต์อัตโนมัติ** (ลบ `line_stock_transactions` ที่ `ref_order_id`+`created_by='auto'`+`type='issue'` — ตัวกันโพสต์ซ้ำของ trigger เช็คจากแถวนี้ ลบแล้วสแกนปิดใหม่จะโพสต์ให้ใหม่ถูกต้อง)
 - Audit: `prod_orders.reopened_by/reopened_at/reopen_count` (migration `20260715_prod_orders_reopen_log.sql` DR) — การ์ดใบโชว์ชิป "↩️ เคยถอยใบ N ครั้ง · ชื่อ" เสมอ ให้หัวหน้าแผนกตรวจย้อนหลังได้ · update guard `.eq('status','confirmed')` กันถอยซ้ำสองเครื่องพร้อมกัน
 
+### %A ต้องนับ Downtime ที่กรอกแค่จำนวนนาที (ไม่มีเวลาเริ่ม) — แก้ 2026-07-24
+
+`computeOEE` สาย A แบบแยกตาม MAT ใช้ `dtOverlapMin` (ทับซ้อนช่วงเวลา) ซึ่ง**ข้าม DT ที่ `started_at` = null** (โหมดกรอกแค่นาที) → เคสจริง: หยุดนอกแผน 20 นาทีแต่ %A = 100 (Sup Assy2) · แก้: หลัง loop ต่อ MAT หัก untimedPlanned/untimedUnplanned ที่**ยอดรวม** (`totalNetAvailByMat`/`totalRunMinByMat`) ก่อนหาร — ไม่ต้องรู้ว่าตกช่วง MAT ไหน · fallback ทั้งกะ (ไม่มี order) นับอยู่แล้วผ่าน duration sums
+
+### หมายเหตุผู้อนุมัติปิดกะ (optional · 2026-07-24)
+
+SV กรอก remark ได้ตอนกด ✅ อนุมัติใน modal ตรวจสอบคำขอปิดกะ (ไม่บังคับ — "เผื่อหัวหน้ามีอะไรเพิ่มเติม") → เก็บ `production_sessions.close_approve_note` (migration `20260724_session_close_approve_note.sql` DR — additive · โค้ด update แยก best-effort) · แสดงในแท็บประวัติตอน expand กะ (กล่องฟ้า 📝 + ชื่อผู้อนุมัติ)
+
 ### ปฏิเสธคำขอปิดกะ + remark ให้หัวหน้ากลุ่ม (2026-07-23)
 
 leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรวจแล้วเลือก **อนุมัติ** หรือ **✕ ปฏิเสธ** · ตอนปฏิเสธ **บังคับพิมพ์ remark** (modal `showRejectModal` — บอกว่าต้องกลับไปแก้อะไร เช่น NG ไม่ตรง/ลืมปิด Downtime/เวลาผิด) กะกลับเป็น `open` แล้ว **หัวหน้ากลุ่มเห็น banner แดง (static ไม่กระพริบ) พร้อมข้อความ + ชื่อผู้ปฏิเสธ** ในหัว session จนกว่าจะแก้แล้วส่งขอปิดกะใหม่
