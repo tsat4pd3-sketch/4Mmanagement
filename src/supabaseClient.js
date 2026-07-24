@@ -29,6 +29,7 @@ const DR_AUDIT_TABLES = new Set([
   'pm_daily_line_targets','pm_facility_areas','pm_checking_methods','pm_checkpoint_categories',
   'ship_to_plants','shipping_workflow_steps','dt_alert_config','stock_inflow_rules','lot_post_configs',
   'kanban_calc_settings','kanban_targets','product_packaging','scrap_defect_types',
+  'machine_automation_levels','machine_operation_modes',
 ])
 let drActorName = null
 // เรียกจาก App.jsx เมื่อรู้ตัวตน user (login) — ล้างเป็น null ตอน logout

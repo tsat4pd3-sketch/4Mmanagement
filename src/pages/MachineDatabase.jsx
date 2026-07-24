@@ -5,6 +5,7 @@ import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { loadMachineTraits, activeAutomationLevels, activeOperationModes, automationDisplay, operationDisplay } from '../utils/machineTraits';
 
 /* ─── shared little UI bits ─────────────────────────────────── */
 function Field({ label, children }) {
@@ -29,7 +30,7 @@ const cancelBtnStyle = {
   borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer',
 };
 
-const emptyMachine = { id: null, line_name: '', machine_no: '', machine_name: '', machine_type_id: '', sort_order: 0, is_active: true, equipment_category: 'production' };
+const emptyMachine = { id: null, line_name: '', machine_no: '', machine_name: '', machine_type_id: '', sort_order: 0, is_active: true, equipment_category: 'production', automation_level: '', operation_mode: '', gang_count: '' };
 // หมวดอุปกรณ์ในฐานเครื่องจักร — Facility/Utility ไม่ผูกไลน์ผลิต (ระบบน้ำ/ลม/High Pressure ฯลฯ)
 const EQUIP_CATS = [
   { v: 'production', t: '🏭 ไลน์ผลิต' },
@@ -72,6 +73,9 @@ export default function MachineDatabase() {
       .then(({ data }) => setSupplyLines((data || []).map(r => r.line_name))).catch(() => setSupplyLines([]));
   }, [editing?.id, editing?.equipment_category]);
   const [showTypeManager, setShowTypeManager] = useState(false);
+  const [traitsVer, setTraitsVer] = useState(0); // bump เมื่อโหลด traits เสร็จ (re-render dropdown)
+
+  useEffect(() => { loadMachineTraits().then(() => setTraitsVer(v => v + 1)); }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -140,7 +144,7 @@ export default function MachineDatabase() {
   /* ── machine CRUD ── */
   const openEdit = (item = null) => {
     setEditing(item
-      ? { id: item.id, line_name: item.line_name, machine_no: item.machine_no, machine_name: item.machine_name || '', machine_type_id: item.machine_type_id || '', sort_order: item.sort_order ?? 0, is_active: item.is_active, equipment_category: item.equipment_category || 'production' }
+      ? { id: item.id, line_name: item.line_name, machine_no: item.machine_no, machine_name: item.machine_name || '', machine_type_id: item.machine_type_id || '', sort_order: item.sort_order ?? 0, is_active: item.is_active, equipment_category: item.equipment_category || 'production', automation_level: item.automation_level || '', operation_mode: item.operation_mode || '', gang_count: item.gang_count != null ? String(item.gang_count) : '' }
       : { ...emptyMachine, line_name: filterLine || '', sort_order: machines.length + 1 });
   };
 
@@ -155,6 +159,10 @@ export default function MachineDatabase() {
       machine_name:      editing.machine_name || null,
       machine_type_id:   editing.machine_type_id || null,
       equipment_category: editing.equipment_category || 'production',
+      // ลักษณะเครื่องจักร (data-driven) — เฉพาะเครื่องผลิต
+      automation_level:  (editing.equipment_category || 'production') === 'production' ? (editing.automation_level || null) : null,
+      operation_mode:    (editing.equipment_category || 'production') === 'production' ? (editing.operation_mode || null) : null,
+      gang_count:        editing.operation_mode === 'gang' && parseInt(editing.gang_count) > 0 ? parseInt(editing.gang_count) : null,
       sort_order:        parseInt(editing.sort_order) || 0,
       is_active:         editing.is_active,
       updated_at:        new Date().toISOString(),
@@ -163,9 +171,10 @@ export default function MachineDatabase() {
       ? supabaseDR.from('machines').update(p).eq('id', editing.id)
       : supabaseDR.from('machines').insert(p);
     let { error } = await doSave(payload);
-    // ทน migration ยังไม่ apply: ถ้าไม่มีคอลัมน์ equipment_category → บันทึกแบบเดิม (production เท่านั้น)
-    if (error && /equipment_category/.test(error.message || '')) {
-      const { equipment_category, ...rest } = payload; void equipment_category;
+    // ทน migration ยังไม่ apply: ถ้าไม่มีคอลัมน์ใหม่ → ตัดออกแล้วบันทึกแบบเดิม
+    if (error && /equipment_category|automation_level|operation_mode|gang_count/.test(error.message || '')) {
+      const { equipment_category, automation_level, operation_mode, gang_count, ...rest } = payload;
+      void equipment_category; void automation_level; void operation_mode; void gang_count;
       ({ error } = await doSave(rest));
     }
     if (error) { setSaving(false); toast.error(error.message); return; }
@@ -259,6 +268,8 @@ export default function MachineDatabase() {
                         {item.machine_types.icon || ''} {item.machine_types.label}
                       </span>
                     )}
+                    {item.automation_level && <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }}>{automationDisplay(item.automation_level)}</span>}
+                    {item.operation_mode && <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }}>{operationDisplay(item.operation_mode)}{item.operation_mode === 'gang' && item.gang_count ? ` ×${item.gang_count}` : ''}</span>}
                     {item.equipment_category === 'facility' && <span style={{ fontSize: 11, color: '#f59a3f' }}>🔧 Facility</span>}
                     {item.equipment_category === 'utility' && <span style={{ fontSize: 11, color: '#9b8de8' }}>⚡ Utility</span>}
                     {!item.machine_type_id && item.equipment_category === 'production' && <span style={{ fontSize: 11, color: '#f59e0b' }}>ยังไม่ระบุประเภท</span>}
@@ -338,6 +349,31 @@ export default function MachineDatabase() {
                   </button>
                 </div>
               </Field>
+              {/* ลักษณะเครื่องจักร (data-driven · คนละแกนกับประเภท/กระบวนการ) — เฉพาะเครื่องผลิต */}
+              {(editing.equipment_category || 'production') === 'production' && (() => {
+                void traitsVer; // อ้างถึงเพื่อ re-render เมื่อ traits โหลดเสร็จ
+                return (
+                  <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <Field label="Automation level">
+                      <select value={editing.automation_level} onChange={e => setEditing(f => ({ ...f, automation_level: e.target.value }))} style={inputStyle}>
+                        <option value="">— not set —</option>
+                        {activeAutomationLevels().map(a => <option key={a.key} value={a.key}>{a.icon || ''} {a.label}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="Operation mode">
+                      <select value={editing.operation_mode} onChange={e => setEditing(f => ({ ...f, operation_mode: e.target.value, gang_count: e.target.value === 'gang' ? f.gang_count : '' }))} style={inputStyle}>
+                        <option value="">— not set —</option>
+                        {activeOperationModes().map(o => <option key={o.key} value={o.key}>{o.icon || ''} {o.label}</option>)}
+                      </select>
+                    </Field>
+                    {editing.operation_mode === 'gang' && (
+                      <Field label="Gang count (pieces / stroke)">
+                        <input type="number" min={1} value={editing.gang_count} onChange={e => setEditing(f => ({ ...f, gang_count: e.target.value }))} placeholder="e.g. 4" style={inputStyle} />
+                      </Field>
+                    )}
+                  </div>
+                );
+              })()}
               {(editing.equipment_category || 'production') !== 'production' && (
                 <Field label="🔗 จ่ายให้ไลน์ (Supply Route)">
                   {!editing.id ? (
