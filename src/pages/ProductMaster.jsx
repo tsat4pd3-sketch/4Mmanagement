@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { loadProcessTypes, activeProcessTypes } from '../utils/processTypes';
+loadProcessTypes(); // master กระบวนการ data-driven
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
 import useIsMobile from '../utils/useIsMobile';
@@ -789,8 +791,7 @@ export default function ProductMaster() {
               </div>
               <Field label="ประเภทกระบวนการ *">
                 <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inputSt}>
-                  <option value="welding_assembly">🔥 Welding / Assembly</option>
-                  <option value="metal_forming">⚙ Metal Forming</option>
+                  {activeProcessTypes().map(pt => <option key={pt.key} value={pt.key}>{`${pt.icon || ''} ${pt.label}`.trim()}</option>)}
                 </select>
               </Field>
               <Field label="รูปแบบขึ้นกัมบัง *">

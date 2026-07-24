@@ -69,12 +69,14 @@ export default function SpinAnnotator({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* container หุ้มรูปพอดี (fit-content) กึ่งกลาง — รองรับรูปแนวตั้ง (มือถือ) ไม่เสียพื้นที่ข้าง · WYSIWYG กับจอตรวจ (2026-07-24) */}
       <div ref={boxRef} onPointerDown={pointerDown} onClick={click}
         style={{ position: 'relative', userSelect: 'none', touchAction: 'none', borderRadius: 8, overflow: 'hidden',
-          border: `2px solid ${arming ? 'var(--accent)' : 'var(--border)'}`, cursor: arming ? 'crosshair' : spin ? 'grab' : 'default' }}>
+          border: `2px solid ${arming ? 'var(--accent)' : 'var(--border)'}`, cursor: arming ? 'crosshair' : spin ? 'grab' : 'default',
+          width: 'fit-content', maxWidth: '100%', margin: '0 auto', background: 'var(--bg2)' }}>
         {cur
-          ? <img ref={imgRef} src={cur._preview} alt="frame" draggable={false} onLoad={recalc} style={{ width: '100%', maxHeight: 300, objectFit: 'contain', background: 'var(--bg2)', display: 'block' }} />
-          : <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีรูป — อัปโหลดเฟรมด้านล่าง</div>}
+          ? <img ref={imgRef} src={cur._preview} alt="frame" draggable={false} onLoad={recalc} style={{ display: 'block', maxWidth: '100%', maxHeight: 'min(520px, 72vh)', objectFit: 'contain', background: 'var(--bg2)' }} />
+          : <div style={{ width: 'min(360px, 80vw)', height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีรูป — อัปโหลดเฟรมด้านล่าง</div>}
 
         {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้ ไม่ใช่ % ของ container */}
         {imgBox && (

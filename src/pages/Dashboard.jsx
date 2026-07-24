@@ -295,11 +295,18 @@ export default function Dashboard() {
     const sessionIds = (sessions || []).map(s => s.id);
     let ordersBySession = {}, dtBySession = {}, defectBySession = {};
     if (sessionIds.length > 0) {
-      const [{ data: orders }, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
-        supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, is_manual, prod_no, part_name, mat_no, opened_at, confirmed_at').in('session_id', sessionIds),
+      const ordCols = 'session_id, status, qty, qty_ok, qty_actual, qty_target, is_manual, prod_no, part_name, mat_no, machine_no, opened_at, confirmed_at';
+      const [ordRes, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
+        supabaseDR.from('prod_orders').select(ordCols).in('session_id', sessionIds),
         supabaseDR.from('downtime_logs').select('id, session_id, machine_no, description, duration_min, started_at, ended_at, created_at, dr_downtime_types(category, name_th)').in('session_id', sessionIds),
         supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessionIds),
       ]);
+      // machine_no อาจยังไม่ apply migration (20260723) — retry โดยตัดคอลัมน์ออก ไม่ให้บอร์ดพัง
+      let orders = ordRes.data;
+      if (ordRes.error) {
+        ({ data: orders } = await supabaseDR.from('prod_orders')
+          .select(ordCols.replace(', machine_no', '')).in('session_id', sessionIds));
+      }
       (orders     || []).forEach(o => { (ordersBySession[o.session_id]  ||= []).push(o); });
       (dtLogs     || []).forEach(d => { (dtBySession[d.session_id]      ||= []).push(d); });
       (defectLogs || []).forEach(d => { (defectBySession[d.session_id]  ||= []).push(d); });
@@ -477,7 +484,15 @@ export default function Dashboard() {
 
     setLogs(enriched);
     setFourMLogs(fmData || []);
-    setLines(lineData || []);
+    // เติมโหมดการไหลงาน (flow_mode/parallel_stations) แบบ best-effort — ถ้ายังไม่ apply migration 20260723 ก็ข้ามไป
+    let linesEnriched = lineData || [];
+    const { data: flowData } = await supabase.from('production_lines').select('name, flow_mode, parallel_stations');
+    if (flowData) {
+      const fm = {};
+      flowData.forEach(l => { fm[l.name] = l; });
+      linesEnriched = linesEnriched.map(l => ({ ...l, flow_mode: fm[l.name]?.flow_mode, parallel_stations: fm[l.name]?.parallel_stations }));
+    }
+    setLines(linesEnriched);
     setOrgSections((orgNodeData || []).map(n => n.code || n.name).sort());
 
     // Build line capacity using shift_schedules for correct day/night split
@@ -1568,14 +1583,31 @@ export default function Dashboard() {
                       // (พาร์ทไม่มีคู่ยังรวมคิวไลน์เดียวเรียงต่อกันเหมือนเดิม — 1 ไลน์ทีละใบ · 2026-07-21)
                       const matsInLine = {}; // line → Set(mat_no) ที่มีการ์ดจริง
                       productRows.forEach(r => r.cards.forEach(c => { (matsInLine[c.line_name || ''] ||= new Set()).add(c.mat_no); }));
-                      const laneKeyOf = (c) => {
-                        const line = c.line_name || '';
-                        const pm = pairMatByMat[c.mat_no];
-                        const paired = pm && matsInLine[line]?.has(pm); // คู่ของมันอยู่ในไลน์นี้ด้วยจริง
-                        return paired ? `${line}||${c.mat_no}` : line;
+                      // ไลน์เครื่องขนาน (flow_mode='parallel_machine') — เครื่อง stand-alone หลายตัววิ่งพร้อมกันคนละรายการ
+                      // แตกเป็นหลายเลน: ใบที่ผูกเครื่อง (machine_no) = เลนของเครื่องนั้น · ใบที่ยังไม่ผูก = กระจาย round-robin N เลน
+                      // (N = parallel_stations ที่ตั้งไว้ หรือจำนวนเครื่องจากทะเบียน machine_points) — ดู lineTypes.js/CLAUDE.md
+                      const flowByLine = {}; lines.forEach(l => { flowByLine[l.name] = l; });
+                      const machineCountByLine = {};
+                      (machinePoints || []).forEach(p => { (machineCountByLine[p.line_name] ||= new Set()).add(p.machine_no); });
+                      const stationsOf = (line) => {
+                        const l = flowByLine[line];
+                        return (l && l.parallel_stations > 0 ? l.parallel_stations : 0) || machineCountByLine[line]?.size || 0;
                       };
                       const byLane = {};
-                      productRows.forEach(r => r.cards.forEach(c => { (byLane[laneKeyOf(c)] ||= []).push(c); }));
+                      const rr = {}; // round-robin ต่อไลน์ สำหรับใบที่ยังไม่ผูกเครื่อง
+                      productRows.forEach(r => r.cards.forEach(c => {
+                        const line = c.line_name || '';
+                        let key;
+                        if (flowByLine[line]?.flow_mode === 'parallel_machine') {
+                          if (c.machine_no) key = `${line}||M:${c.machine_no}`;
+                          else { const N = stationsOf(line); const i = (rr[line] = (rr[line] ?? -1) + 1); key = N > 0 ? `${line}||P:${i % N}` : `${line}||P:${i}`; }
+                        } else {
+                          const pm = pairMatByMat[c.mat_no];
+                          const paired = pm && matsInLine[line]?.has(pm); // งานคู่ RH/LH — เลนของตัวเอง เริ่มพร้อมกัน
+                          key = paired ? `${line}||${c.mat_no}` : line;
+                        }
+                        (byLane[key] ||= []).push(c);
+                      }));
                       Object.values(byLane).forEach(cs => {
                         computeQueuedPositionsFull(cs).forEach(item => positionedByOrder.set(item.o.id ?? item.o.prod_no, item));
                       });

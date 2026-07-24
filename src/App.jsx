@@ -28,6 +28,7 @@ const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
 const DailyReport   = lazy(() => import('./pages/DailyReport'));
 const OEEAnalytics  = lazy(() => import('./pages/OEEAnalytics'));
+const ProductHistory = lazy(() => import('./pages/ProductHistory'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
@@ -45,6 +46,8 @@ const PmCoordination = lazy(() => import('./pages/PmCoordination'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
 const LayerProcessAudit = lazy(() => import('./pages/LayerProcessAudit'));
+const DailyChecker = lazy(() => import('./pages/DailyChecker'));
+const PokaYokeCheck = lazy(() => import('./pages/PokaYokeCheck'));
 const DocFormsRegistry = lazy(() => import('./pages/DocFormsRegistry'));
 const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
 const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
@@ -79,10 +82,10 @@ const NAV_ITEMS = [
   { to: '/daily-report',   icon: '📊', label: 'Daily Report',      group: 'ฝ่ายผลิต' },
   { to: '/production-plan', icon: '🗓️', label: 'วางแผนการผลิต',      group: 'ฝ่ายผลิต' },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'วิเคราะห์ & รายงาน' },
-  { to: '/daily-pm',       icon: '✅', label: 'Daily PM ฝ่ายผลิต',   group: 'ฝ่ายผลิต' },
+  { to: '/product-history', icon: '📜', label: 'ประวัติผลิต (by Product)', group: 'วิเคราะห์ & รายงาน' },
+  { to: '/daily-checker',  icon: '✅', label: 'Daily Checker',       group: 'ฝ่ายผลิต' },  // ขมวด PM Daily + LPA + ระบบเช็คอื่น (แท็บใน DailyChecker)
   { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
   { to: '/scrap-report',   icon: '♻️', label: 'ใบรายงานของเสีย (Scrap)', group: 'ฝ่ายผลิต' },
-  { to: '/lpa',            icon: '📋', label: 'Layer Process Audit', group: 'ฝ่ายผลิต' },
 
   { to: '/line-stock',      icon: '📦', label: 'Store management',       group: 'Logistic - Store' },
   { to: '/heijunka',       icon: '🎴', label: 'Kanban Board',             group: 'Logistic - Store' },
@@ -1018,6 +1021,15 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/oee-analytics" element={
                 <RoleRoute path="/oee-analytics" userRole={role}><OEEAnalytics /></RoleRoute>
+              } />
+              <Route path="/product-history" element={
+                <RoleRoute path="/product-history" userRole={role}><ProductHistory /></RoleRoute>
+              } />
+              <Route path="/daily-checker" element={
+                <RoleRoute path="/daily-checker" userRole={role}><DailyChecker /></RoleRoute>
+              } />
+              <Route path="/pokayoke" element={
+                <RoleRoute path="/pokayoke" userRole={role}><PokaYokeCheck /></RoleRoute>
               } />
               <Route path="/daily-pm" element={
                 <RoleRoute path="/daily-pm" userRole={role}><DailyPM /></RoleRoute>

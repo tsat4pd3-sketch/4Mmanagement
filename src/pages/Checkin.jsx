@@ -913,8 +913,13 @@ export default function Checkin() {
     }
   };
 
-  const sections = orgSections.length ? orgSections : [...new Set(lines.map(l => l.section))].sort();
-  const linesForSection = selSection ? lines.filter(l => l.section === selSection) : lines;
+  // กรอง dropdown ตาม scope (leader→family · role อื่น→sections · admin/qa→ทั้งหมด) — กันเห็นส่วนงาน/ไลน์ข้าม scope
+  const sectionsAll = orgSections.length ? orgSections : [...new Set(lines.map(l => l.section))].sort();
+  const sections = scopeSecs.length ? sectionsAll.filter(s => inSectionScope(scopeSecs, s)) : sectionsAll;
+  const famIds = (role === 'leader' && lineId) ? getLineFamilyIds(lines, lineId) : null;
+  const scopedLines = famIds ? lines.filter(l => famIds.has(l.id))
+    : scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines;
+  const linesForSection = selSection ? scopedLines.filter(l => l.section === selSection) : scopedLines;
 
   // เลือกไลน์ = มองแบบเป็นขั้น (hierarchy): ไลน์หลักเห็นรวมพนักงานของไลน์ย่อยทุกไลน์,
   // ไลน์ย่อยเห็นของตัวเอง + พนักงานที่ผูกกับไลน์หลัก (พื้นที่เดียวกัน) — ไม่ใช่กรอง line_id ตรงเป๊ะ

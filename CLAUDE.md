@@ -156,9 +156,10 @@
 | ฝ่ายผลิต | `/daily-report` | DailyReport | ทุก role |
 | ฝ่ายผลิต | `/production-plan` | ProductionPlan — วางแผนการผลิต (active planner ดู section "Production Plan") | admin/manager/supervisor/leader/planner_store/sale |
 | วิเคราะห์ & รายงาน | `/oee-analytics` | OEEAnalytics | ทุก role |
-| ฝ่ายผลิต | `/daily-pm` | DailyPM | ทุก role |
+| ฝ่ายผลิต | `/daily-checker` | **DailyChecker** — 🗂️ ศูนย์รวมระบบเช็ครายวัน (แท็บ: 🔧 Autonomous Maintenance (AM) [=Daily PM ฝ่ายผลิต เดิม · เปลี่ยนชื่อแสดงผลให้ตรงศัพท์ TPM 2026-07-23 · department ยังเป็น `production`] / 🛡️ Poka-Yoke Check [`/pokayoke` — TPM daily poka-yoke verification ด้วยชิ้น master NG · ตาราง `pokayoke_devices`+`pokayoke_checks` Main · สิทธิ์ `pokayoke:record`/`pokayoke:manage` · migration `20260723_pokayoke_check.sql`] / 📋 LPA / +ระบบเช็คอื่นในอนาคต) · embed component หน้าเดิมทั้งดุ้น (`DailyPM`/`LayerProcessAudit`) · แท็บโผล่ตามสิทธิ์หน้าย่อย · **สิทธิ์เข้าหน้า piggyback** `page:/daily-pm`‖`page:/lpa` (canAccessPage special-case ใน permissions.js — ไม่ต้อง seed permission ใหม่) · เพิ่มระบบเช็คใหม่ = เพิ่ม entry ใน `TABS` (DailyChecker.jsx) · `?tab=pm\|lpa` deep-link (2026-07-23) | ทุก role (ตามแท็บ) |
+| (ไม่อยู่ใน sidebar) | `/daily-pm` | DailyPM — ยังเป็น route แยก (เป็นแท็บใน Daily Checker + deep-link) | ทุก role |
 | ฝ่ายผลิต | `/improvements` | Improvements (Kaizen — ดู section "Improvements") | ทุก role (manage: admin/mgr/sv/leader) |
-| ฝ่ายผลิต | `/lpa` | LayerProcessAudit — LPA paperless (แผนตรวจ+บันทึกผล+รายงาน FM-QMR-008 — ดู section "Layer Process Audit") | ทุก role (record: mgr/sv/leader/engineer/qa · manage: mgr/sv · delete: mgr) |
+| (ไม่อยู่ใน sidebar) | `/lpa` | LayerProcessAudit — LPA paperless (แท็บใน Daily Checker + deep-link · ดู section "Layer Process Audit") | ทุก role (record: mgr/sv/leader/engineer/qa · manage: mgr/sv · delete: mgr) |
 | Logistic - Store | `/line-stock` | LineStock | ทุก role |
 | Logistic - Store | `/heijunka` | HeijunkaKanban | ทุก role |
 | Logistic - Store | `/rack-center` | RackCenter | ทุก role |
@@ -306,6 +307,7 @@
 - AddUser.jsx: ช่อง Section เป็น checkbox เลือกหลายอันได้ทุก role และ**ยังเขียน `section` เดี่ยว (= ตัวแรกที่ติ๊ก) คู่กันเสมอ — ห้ามเลิกเขียน** เพื่อให้ revert โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope · supervisor ยังบังคับติ๊กอย่างน้อย 1 (Edge Function `create-user` ยังไม่รู้จัก sections — AddUser update ตามหลังด้วย id ที่ได้กลับมา)
 - หน้าที่ปิดช่องโหว่แล้ว: Management, Checkin, operator, Register, DailyReport (Live/History/Export), Report (ครบทั้ง 10 แท็บ — รายวัน/รายพนักงาน/Log จุดงาน/สรุปช่วงเวลา/4M + สิทธิ์อนุมัติ SV/Skill Matrix/ค่าฝีมือ/ใบบันทึก/Multi-Skill Form/จองรถ OT — 2026-07-10), ShiftOrganize (ตารางกะ/override/merge event/dropdown ใน modal — 2026-07-10), OEEAnalytics, LineSetup, EventLog, Improvements, Dashboard, MachineDatabase (2026-07-12 — user ยืนยัน: Dashboard/MachineDatabase ก็กรอง ใครไม่มี scope เห็นหมดเหมือนเดิม) — pattern: mandatory scope filter ก่อน แล้วค่อย apply free-text filter ทับ
 - หน้าใหม่ที่ query ข้อมูลตาม line/section **ต้องเพิ่ม scope filter แบบเดียวกัน** ไม่งั้นเห็นข้อมูลข้ามส่วนงานโดยไม่ตั้งใจ
+- **⚠️ dropdown ก็ต้อง scope ไม่ใช่แค่ query (audit 2026-07-23):** `<select>` ที่ลิสต์ **ไลน์/ส่วนงาน/พนักงาน** ต้องกรองตาม scope เหมือนกัน (ไม่งั้น supervisor/leader เห็นไลน์ข้ามส่วนงานใน dropdown แม้ข้อมูลกรองแล้ว) · ปิดช่องโหว่ dropdown แล้ว: **DailyReport เปิดกะ** (leaf+optgroup ตาม `openScopeLineNames`), **Checkin** (แถบ section + ไลน์), **MtnRepair** ReportModal (ผ่าน `scopedLineObjs` ใน cp), **PmCoordination** PlanModal, **DailyPM** ทะเบียน (assign/move — เพิ่ม `scopedProdLines`) · ยังเหลือ (primary user = store/logistic ไม่ใช่ผลิต เลยยัง N/A): LineStock/RackCenter line filter — ถ้าให้ leader ใช้ตรงต้องเพิ่ม scope
 - Rollback: `docs/ROLLBACK_MULTI_SECTION_SCOPE.md` — **ห้าม drop คอลัมน์ `sections` ก่อน revert โค้ด** (App.jsx select คอลัมน์นี้ตอน login ถ้า drop ก่อนจะ login ไม่ได้ทั้งระบบ)
 
 ### Auth Session & Auto-Logout (กติกาสำคัญ — 2026-07-14 หลังไล่แก้ "เด้ง login บ่อย")
@@ -418,6 +420,9 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 
 - ปุ่ม "✍️ เปิดเป้า (ไม่มีบาร์โค้ด)" ข้างปุ่ม Scan เปิด Order — leader ตั้งเป้า (เลือกสินค้า + จำนวน) → สร้าง `prod_orders` ที่ `is_manual=true`, `prod_no='MANUAL-HHmmss'`, `qty_target`=เป้า, `qty`=เป้า (ใช้กับ capacity check/บอร์ดเหมือนใบปกติ) · มี ⏪ **เปิดย้อนหลัง**เหมือนใบสแกน (บังคับกรอกเวลา + กันหลุดกรอบกะ + `opened_at` anchor กับ work_date — helper ร่วม `backfillIsoFromTime` · 2026-07-13) · **งานคู่ RH/LH**: สินค้ามี `pair_mat_no` → ถาม confirm แล้วเปิดเป้าคู่ให้อัตโนมัติ (`prod_no`+`P`, ผูก `paired_order_id` สองทาง, sync `opened_at`) รองรับคู่**คนละไลน์** — เปิดเข้า session ที่เปิดอยู่ของไลน์คู่ (วัน/กะเดียวกัน) ถ้าไลน์คู่ยังไม่เปิดกะจะเตือนให้ไปเปิดเอง (2026-07-13)
 - **งานคู่ RH/LH บนบอร์ด Heijunka = แถบวางขนาน ไม่เรียงต่อกัน (2026-07-21):** แม่พิมพ์คู่ปั๊มครั้งเดียวได้ทั้ง LH+RH = ทำพร้อมกัน (parallel) · บอร์ด (Dashboard + Management) จัดคิว **ระดับ sub-line** ปกติ "1 ไลน์ทีละใบ เรียงต่อกัน" แต่**พาร์ทที่มี `pair_mat_no` และคู่ของมันอยู่ในไลน์เดียวกันจริง → แยกเป็นเลนคิวของตัวเอง (parallel) เริ่มพร้อมกัน** แถบ LH/RH จึงตรงกัน (helper `laneKeyOf` ตอนจัดกลุ่ม `byLane` ก่อนเรียก `computeQueuedPositionsFull`) · เดิมไม่เช็ค pair_mat_no เลยจับ LH เรียงหน้า RH เรียงหลังผิด (นับเวลาซ้ำ 2 เท่า) · พาร์ทไม่มีคู่ยังเรียงต่อกันเหมือนเดิม (1 ไลน์ทีละใบ ห้ามซ้อน)
+- **โหมดการไหลงานของไลน์ (`production_lines.flow_mode`) — one-piece flow vs parallel machine (2026-07-23):** ไลน์บางไลน์ (เช่น SUB APRON) มีเครื่อง stand-alone หลายตัว (SP-10/72/74…) วิ่งพร้อมกันคนละรายการ ไม่ใช่สายเดียวไหลทีละชิ้น — เดิมบอร์ดจับ 1 sub-line = 1 เลนเรียงคิว เลยดูเหมือนงานต่อคิวกัน (พนักงาน workaround แตกเป็นไลน์ย่อยแยก) · เพิ่ม `flow_mode` (`one_piece_flow` ดีฟอลต์ / `parallel_machine`) + `parallel_stations` (จำนวนเครื่อง · null = นับจาก `machine_points`) — ตั้งที่ **LineSetup แผง Standard Manpower** (source of truth `src/utils/lineTypes.js` `FLOW_MODES`/`isParallelLine`) · migration `20260723_line_flow_mode.sql` (Main)
+  - **บอร์ด (`byLane` ใน Dashboard+Management) แตกเลนตาม flow_mode:** `parallel_machine` → ใบที่ผูกเครื่อง (`prod_orders.machine_no`) = เลนของเครื่องนั้น (`line||M:no`) · ใบที่ยังไม่ผูก = กระจาย round-robin N เลน (`line||P:i%N`) เริ่มพร้อมกัน · `one_piece_flow` = 1 เลน/ไลน์ เรียงคิวเหมือนเดิม (+ pair RH/LH แยกเลน) · **เลือกเครื่องตอนเปิด Order** → `prod_orders.machine_no` (migration `20260723_prod_orders_machine.sql` DR)
+  - **backward-compatible:** select `flow_mode`/`machine_no` เขียนแบบ best-effort (แยก query / retry ตัดคอลัมน์) — ยังไม่ apply migration บอร์ดไม่พัง (ทุกไลน์เป็น one_piece_flow) · **เพิ่มไลน์ parallel ใหม่ ตั้งที่ LineSetup ไม่ต้องแตกไลน์ย่อยปลอมอีก**
 - พนักงาน**อัพเดทยอดสะสม (`qty_actual`) ทุกช่วงเบรคตาม break policy** จากช่องบนการ์ดใบ — เห็นยอดจริงทุก ~2 ชม. · `qty_updated_at` เก็บเวลาล่าสุด ใบที่ไม่อัพเดท > 2.5 ชม. ขึ้นเตือนเหลือง (นิ่ง — ตาม Andon เหลืองไม่กระพริบ)
 - ปิดใบด้วยปุ่ม "✓ ปิดใบนี้ (ยอดจริง)" (ไม่ต้องสแกน) → `status=confirmed`, **`qty` และ `qty_ok` ถูกแทนด้วยยอดจริง** เพื่อให้ OEE/รายงาน/stock trigger (`coalesce(qty_ok, qty)`) นับจากของที่ผลิตได้จริง — เป้าเดิมยังอยู่ที่ `qty_target`
 - ใบ manual ที่ค้างเปิดตอนปิดกะ เข้า flow ยกยอด/กรอก actual ของ modal ปิดกะเหมือนใบปกติ
@@ -455,6 +460,17 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 - **ปิดกะที่ไม่มีผลผลิต (`totalProduced===0 && P==null`) → stamp `oee_a`/`oee_q` = null** (ไม่ใช่ 100/0) ทั้ง handleCloseSession + edit-times recompute · เดิมกะเปล่ามีเวลาเดินกะแต่ไม่มี DT → A=100/Q=100 ค้าง **รั่วเข้าค่าเฉลี่ย %A/%Q ในกราฟเทรนด์** (กรองแค่ != null) · OEE รวมไม่เคยกระทบ (oee=null ถูกกันอยู่แล้ว) · สอดคล้อง cleanup `20260715_oee_null_noproduction_cleanup.sql` (กันตั้งแต่ปิดกะ ไม่ต้องมาไล่ลบทีหลัง)
 
 ---
+
+## กระบวนการผลิต (process types) — master data-driven (2026-07-23)
+
+**เลิก hardcode รายชื่อกระบวนการแล้ว** (คำสั่ง user — ยืดหยุ่นกับโรงงานอื่น): ตาราง **`process_types`** (DR · migration `20260723_process_types_master.sql`): key (ค่าที่เก็บใน process_type ของตารางอื่น — สร้างแล้วห้ามแก้)/label/icon/color/sort/is_active · seed welding_assembly + metal_forming (ค่าเดิมไม่ต้อง migrate — เทียบด้วย key เหมือนเดิม)
+- **จัดการที่เดียว: Daily Report → ⚙️ ตั้งค่า → แท็บ 🏭 กระบวนการ** (สิทธิ์ `daily_report:setup` — ProcessTypeSetup) — เพิ่มกระบวนการใหม่ (เช่น Laser, Bending) → ไป tag เครื่อง/สินค้า → dropdown ทุกจุดเห็นเอง (logic จับคู่เทียบ key generic อยู่แล้ว)
+- โค้ดอ่านผ่าน **`src/utils/processTypes.js`** (`loadProcessTypes()` cache + `activeProcessTypes()`/`procDisplay()`/`procColor()` + `DEFAULT_PROCESS_TYPES` fallback — ตารางล่ม/ยังไม่ apply = พฤติกรรมเดิม) · **'common' (ทุกกระบวนการ) เป็น sentinel ในโค้ด ไม่อยู่ในตาราง** dropdown เติมเองต่อจุด
+- จุดที่ใช้แล้ว: DailyReport (dropdown ประเภท DT/งานเสีย/นโยบายพัก + กลุ่มแสดงรายการ + product quick manager) · ProductMaster (ฟอร์มสินค้า) — **ห้าม hardcode welding_assembly/metal_forming เพิ่มในหน้าใหม่** อ่านผ่าน util นี้ · หมายเหตุ: `line_type` (production_lines) เป็นคนละตัว ไม่เกี่ยว
+
+## Daily Report — ไลน์ผสมหลาย process (welding + metal forming ในไลน์เดียว · 2026-07-22)
+
+**dropdown ประเภท Downtime/งานเสีย ใช้ `sessionProcessTypesAll()` (union ทุก process ที่มีเครื่อง/สินค้าจริงใน**ครอบครัวไลน์** — แม่+ลูกทั้งหมดผ่าน `getLineFamilyNames` ไม่ใช่ชื่อไลน์ตรงเป๊ะ: กะมักเปิดบนไลน์ลูก แต่เครื่องลงทะเบียนใต้ไลน์พี่น้อง · แก้ 2026-07-24)** — เดิมใช้ `sessionProcessType()` (เสียงข้างมากตัวเดียว) ทำให้ไลน์ผสม เช่น LWR (laser=metal_forming + Stationary=welding_assembly) มองไม่เห็นประเภทของอีก process (เคสจริงจาก supervisor Assy2) · ประเภทที่ `process_type` = null/common เห็นเสมอทั้งสอง dropdown · **break policies ยังใช้ majority ตัวเดียว (`sessionProcessType`) โดยตั้งใจ** — union จะหักเวลาพักซ้ำสอง policy · ทางแก้ฝั่งข้อมูล: ประเภทที่อยากให้เห็นทุกไลน์ตั้ง process = "🔗 ทุกกระบวนการ" ใน ⚙️ ตั้งค่า
 
 ## OEE (computeOEE ใน DailyReport) — กฎ P สำหรับหลาย MAT.NO (2026-07-14)
 
@@ -747,6 +763,28 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 
 ---
 
+## Traceability / Audit Log — ใครแก้อะไรเมื่อไหร่ (2026-07-24)
+
+> ### ⚠️ กฎเหล็ก — ตาราง master/config ที่ "แก้ไขได้" ต้องมี audit
+> เดิมตาราง master ~90% track แค่ `created_at` → แก้ไขแล้วสืบไม่ได้ว่าใคร/เมื่อไหร่/ค่าเก่าอะไร (เจอจริง: `dr_products.line_name` ถูกเปลี่ยนไลน์ สืบไม่ได้) · **ตาราง master/editable ใหม่ทุกตัวต้องผูก audit** (เพิ่มชื่อตารางใน `tbls[]` ของ migration `20260724_audit_log_*.sql`)
+
+- **ตาราง `audit_log` กลาง (ต่อ project)** — เก็บ `table_name, row_pk, action (INSERT/UPDATE/DELETE), actor, changed_fields[], old_data jsonb, new_data jsonb, changed_at` · เขียนโดย generic trigger `fn_audit()` (SECURITY DEFINER) ที่ผูกกับตาราง master · migration `20260724_audit_log_main.sql` + `20260724_audit_log_dr.sql`
+- **`fn_audit()` best-effort เสมอ** — ห่อ insert ด้วย `exception when others then null` → **audit ล้มเหลวห้ามทำ write หลักพัง** (สำคัญมากกับระบบ production) · UPDATE ที่ไม่มีอะไรเปลี่ยนจริง (นอกจาก updated_at) ไม่ log
+- **actor (ใครแก้):** Main (authenticated) = `auth.uid()` → ชื่อจาก `profiles` · **DR เป็น anon เสมอ → `auth.uid()` = null** → actor มาจาก `current_setting('app.actor')` (app ต้อง set — ยังไม่ทำ) หรือคอลัมน์ `updated_by_name` บนแถว (app stamp) · **ตอนนี้ DR เก็บ old→new+เวลาได้ครบ แต่ actor ยังว่างจนกว่าจะ stamp จาก app** (phase ถัดไป: ให้ edit handler ฝั่ง DR ส่ง updated_by_name)
+- **`updated_at` + trigger `fn_set_updated_at()`** เพิ่มให้ตาราง master ที่ผูก audit (BEFORE UPDATE set now())
+- **ดูประวัติ:** หน้า `/product-history` (ProductHistory) โชว์ audit ของ `dr_products` แถวนั้น (line_name/CT/PN เปลี่ยนโดยใคร) · จุดอื่นที่อยากโชว์ audit ให้ query `audit_log` ด้วย `table_name`+`row_pk`
+- **ยังไม่ apply = ไม่พัง** — โค้ดที่อ่าน audit_log ห่อ try/catch (เช่น ProductHistory) · การเขียนตาราง master ทำงานปกติ แค่ยังไม่ถูก log จนกว่าจะ apply migration
+
+## ประวัติผลิต by Product — `/product-history` (2026-07-24)
+
+หน้า ProductHistory (กลุ่มวิเคราะห์ & รายงาน) — เลือกสินค้า (ค้นด้วย mat_no/ชื่อ/PN) → ดูย้อนหลังว่าเคยผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ + ประวัติการแก้ master data
+- **แหล่งข้อมูล (DR):** `prod_orders` embed `production_sessions!inner(line_name, work_date, shift, oee, status)` กรองช่วงวัน · `defect_logs` (NG ต่อใบ) · `audit_log` (การแก้ dr_products)
+- **แสดง:** สรุป (ผลิต/เป้า/NG/กี่ไลน์) · แยกตามไลน์ · trend รายวัน · ตารางใบผลิต (วัน/ไลน์/กะ/เครื่อง/เป้า/ผลิต/NG/สถานะ) · ประวัติแก้ไข (ใครเปลี่ยน line_name/CT เมื่อไหร่)
+- **Scope:** leader = family ไลน์ตัวเอง · role อื่น = ตาม sections (กรอง `production_sessions.line_name`) · สิทธิ์เข้าหน้า `page:/product-history` (ทุก role · migration `20260724_product_history_permission.sql`)
+- **ผลิตได้** = confirmed→`qty_ok??qty` · เปิด→`qty_actual` (สอดคล้องกับการนับใน DailyReport)
+
+---
+
 ## Edge Functions
 
 ### `send-notification`
@@ -805,7 +843,7 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
   - **รูปผัง/layout (LineSetup, MtnMachineLayout) บีบเบากว่ารูปอื่น: 2560px / 2.5MB / q0.9** (2026-07-10) — layout มีจำนวนน้อยทั้งระบบ (≤20 รูป) แต่ต้องซูมอ่านรายละเอียดผังได้ **ห้ามลดกลับไป 1600px/0.5MB** เคยบีบแรงจนเบลอใช้งานไม่ได้ (รูปเดิมที่เบลอไปแล้วต้องอัปโหลดต้นฉบับซ้ำ ระบบไม่มีต้นฉบับเก็บไว้)
 - **GIF (รูปขยับ) ถูกส่งทั้งไฟล์โดยไม่แปลง** เพื่อคงการเคลื่อนไหว (วาดลง canvas จะเหลือเฟรมแรกเฟรมเดียว = การขยับหายเงียบๆ) — จำกัด ≤ 2MB **ทุกจุดที่รับ GIF** (ImageCropModal + LineSetup) **ห้ามถอด cap ออก** (GIF ไม่จำกัดขนาดเฉลี่ย ~4MB เคยกินครึ่ง bucket)
 - **เปลี่ยน/ลบรูปแล้วต้องลบไฟล์เก่าจาก storage เสมอ** (ลบ**หลัง** DB update สำเร็จเท่านั้น + best-effort ห้ามทำ flow หลักพัง) — ทำแล้วใน: DeptHub.jsx (รูปโปรไฟล์ user — bucket `avatars` **แยกจาก employee-photos โดยเจตนา** เพราะ cleanup-orphan-photos สแกน employee-photos เทียบ employees/line_layouts เท่านั้น ไฟล์ avatar ที่ไปอยู่ที่นั่นจะโดนลบ · migration `20260714_profiles_avatar.sql`), operator.jsx (รูปพนักงาน), LineSetup.jsx (ผังไลน์ ทั้งตอนเปลี่ยนผังและตอนลบไลน์ — เฉพาะผังของตัวเอง **ห้ามลบผังที่ยืมแสดงจากไลน์แม่**), ProductMaster.jsx (dr_products + parts_master ทั้งตอนเปลี่ยนรูปและตอนลบสินค้า — มี guard ไม่ลบรูปที่สินค้า/พาร์ทอื่นแชร์ URL เดียวกัน), QAInspectionSetup.jsx (replace/delete drawing + ลบทั้งโฟลเดอร์ตอนลบ part), PMSetup.jsx (ลบ jig = ลบรูปทั้งชุด frame-*/cp-*), SignatureModal.jsx (ลายเซ็นเก่า — เฉพาะโฟลเดอร์ user ตัวเอง), Management.jsx (รูปหลักฐาน OJT แนบทับ = ลบรูปเดิม), MtnMachineLayout.jsx (รูปโซน facility), Improvements.jsx (รูป before/after ทั้งตอนเปลี่ยนและตอนลบโปรเจค) · หน้าใหม่ที่มีการเปลี่ยนรูปต้องทำแบบเดียวกัน ไม่งั้นไฟล์กำพร้าสะสม (เคยค้าง 117 ไฟล์ / 100MB เพราะอัปโหลดชื่อใหม่ `emp_<timestamp>` โดยไม่ลบของเดิม)
-- **อุปกรณ์ PM ใช้ "รูปหลายมุม (spin)" เท่านั้น — ไม่มีโมเดล 3D แล้ว** (ถอดออก 2026-07-10 เพราะเกินจำเป็น + dep หนัก three/occt wasm 7.6MB): PMSetup อัปหลายรูปมุมต่างๆ (SpinAnnotator) ปักหมุดจุดตรวจต่อเฟรม, หน้าตรวจ (JigSpinCheck) ปัดหมุน+auto-play+หมุด sync checklist · คอลัมน์ vestigial `jigs.model_path`/`model_format` และ bucket `jig-images` (cap 40MB + mime GLB) ยังคงอยู่จาก migration เดิม (additive ไม่กระทบ) แต่**ไม่มีโค้ดใช้แล้ว** — ถ้าจะรื้อ 3D กลับมาให้ดู git history (`src/lib/model3d.js`, `src/components/Model3DViewer.jsx`)
+- **อุปกรณ์ PM ใช้ "รูปหลายมุม (spin)" เท่านั้น — ไม่มีโมเดล 3D แล้ว** (ถอดออก 2026-07-10 เพราะเกินจำเป็น + dep หนัก three/occt wasm 7.6MB): PMSetup อัปหลายรูปมุมต่างๆ (SpinAnnotator) ปักหมุดจุดตรวจต่อเฟรม, หน้าตรวจ (JigSpinCheck) ปัดหมุน+auto-play+หมุด sync checklist · **รูป spin บังคับ crop แนวตั้ง 3:4 + ลดขนาด ตอนอัปโหลด (2026-07-24 — คำสั่ง user):** `PMSetup addFrames` → `imageCompression` (normalize EXIF) → `src/utils/cropPortrait.js` (center-crop 3:4, ด้านยาว ≤1200px, q0.82) · รูปถ่ายมือถือ = แนวตั้งอยู่แล้ว, รูปแนวนอนถูก center-crop ให้เป็นแนวตั้งเท่ากันทุกเฟรม (จอตรวจ JigSpinCheck/SpinAnnotator เป็น container แนวตั้ง fit-content — ดู UI-CONVENTIONS §5.1) · คอลัมน์ vestigial `jigs.model_path`/`model_format` และ bucket `jig-images` (cap 40MB + mime GLB) ยังคงอยู่จาก migration เดิม (additive ไม่กระทบ) แต่**ไม่มีโค้ดใช้แล้ว** — ถ้าจะรื้อ 3D กลับมาให้ดู git history (`src/lib/model3d.js`, `src/components/Model3DViewer.jsx`)
 - **Quota Free plan (ต่อ project):** DB 500MB · Storage 1GB · Egress 5GB/เดือน — ตรวจล่าสุด 2026-07-10: Main DB 22MB (~4%), DR DB 18MB (~4%), Storage หลัก ~156MB (~15%) → พนักงาน ≤300 คน + อัตราข้อมูลโตปัจจุบัน อยู่ได้อีกหลายปี ถ้าใกล้เต็มค่อยอัป Pro ($25/เดือน = DB 8GB + Storage 100GB) โดยไม่ต้องย้ายระบบ
 
 ---
@@ -920,6 +958,7 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 2. **ทำงานให้สอดคล้องกับกฎ** — ถ้าสิ่งที่จะทำขัดกับ convention เดิม ให้ทำตาม convention ก่อน เว้นแต่ user สั่งเปลี่ยน (แล้วต้องไล่แก้ทุกจุดที่ใช้ pattern นั้นให้ตรงกัน)
 3. **อัพเดทกฎหลังทำ** — งานที่สร้าง/เปลี่ยน pattern, schema, สิทธิ์, หรือ workflow ที่ session อื่นต้องรู้ → อัพเดทเอกสารที่เกี่ยวข้อง (CLAUDE.md / UI-CONVENTIONS.md / PERMISSIONS-DESIGN.md) **ในคอมมิทเดียวกัน** พร้อมวันที่
 4. build ผ่าน (`npm run build`) ก่อน commit เสมอ · merge เข้า `main` = deploy จริง
+   - **`npm run build` มีด่าน lint กฎ crash ในตัวแล้ว (2026-07-24)** — `eslint.critical.config.js` เช็ค `no-undef` ฯลฯ เฉพาะกฎที่ทำแอปพังตอน runtime (bundler ไม่จับ — เคยเกิดจริง: ใช้ useMemo โดยไม่ import → Daily Report จอขาวทั้งโรงงาน) · lint ไม่ผ่าน = build ไม่ผ่าน ห้าม bypass (`vite build` ตรงๆ) เพื่อหนีด่าน — แก้โค้ดให้ผ่านแทน · **ห้ามเพิ่มกฎ style จุกจิกใน config นี้** (ทำให้คนอยาก bypass ด่านที่กันของพังจริง)
 
 ### QC Agent — ตรวจโค้ดขัดกฎโปรเจค (2026-07-10)
 
