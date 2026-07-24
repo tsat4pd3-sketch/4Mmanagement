@@ -170,9 +170,11 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, ma
 
   return (
     <div style={{ marginBottom: 16 }}>
+      {/* container หุ้มรูปพอดี (fit-content) กึ่งกลาง — รูปแนวตั้ง (ถ่ายจากมือถือ) ไม่มีแถบเทาข้างเสียพื้นที่
+         รูปสูงได้ถึง min(maxH, 76vh) เพื่อใช้พื้นที่แนวตั้งเต็ม โดยเฉพาะมือถือ (2026-07-24) */}
       <div ref={boxRef} onPointerDown={pointerDown}
-        style={{ position: 'relative', userSelect: 'none', touchAction: 'none', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', cursor: spin ? 'grab' : 'default' }}>
-        <img ref={imgRef} src={cur?.url} alt="" draggable={false} onLoad={recalc} style={{ width: '100%', maxHeight: maxH, objectFit: 'contain', background: 'var(--bg2)', display: 'block' }} />
+        style={{ position: 'relative', userSelect: 'none', touchAction: 'none', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', cursor: spin ? 'grab' : 'default', width: 'fit-content', maxWidth: '100%', margin: '0 auto', background: 'var(--bg2)' }}>
+        <img ref={imgRef} src={cur?.url} alt="" draggable={false} onLoad={recalc} style={{ display: 'block', maxWidth: '100%', maxHeight: `min(${maxH}px, 76vh)`, objectFit: 'contain', background: 'var(--bg2)' }} />
         {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้ */}
         {imgBox && (
           <div style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
@@ -885,7 +887,7 @@ export default function PMCheckData() {
                 // จอกว้าง (≥1180px) + มีรูป → 2 คอลัมน์ (รูปซ้ายค้างไว้ · รายการเช็คขวา) ใช้พื้นที่เต็ม
                 const twoCol = isWide && showPhoto
                 const viewerNode = showPhoto
-                  ? <JigSpinCheck frames={frames} checkpoints={checkpoints} results={results} activeCpId={activeCpId} onPinClick={setActiveCpId} maxH={twoCol ? 460 : 300} />
+                  ? <JigSpinCheck frames={frames} checkpoints={checkpoints} results={results} activeCpId={activeCpId} onPinClick={setActiveCpId} maxH={twoCol ? 560 : 480} />
                   : null
 
                 const formNode = (

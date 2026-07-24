@@ -13,11 +13,13 @@ import { canAccessPage } from '../utils/permissions';
 
 const DailyPM           = lazy(() => import('./DailyPM'));
 const LayerProcessAudit = lazy(() => import('./LayerProcessAudit'));
+const PokaYokeCheck     = lazy(() => import('./PokaYokeCheck'));
 
 // เพิ่มระบบเช็คใหม่ตรงนี้ (key/label/หน้าเดิมที่คุมสิทธิ์/component)
 const TABS = [
-  { key: 'pm',  label: '✅ PM Daily (เครื่องผลิต)', page: '/daily-pm', Comp: DailyPM },
-  { key: 'lpa', label: '📋 Layer Process Audit',   page: '/lpa',      Comp: LayerProcessAudit },
+  { key: 'pm',       label: '🔧 Autonomous Maintenance (AM)', page: '/daily-pm', Comp: DailyPM },
+  { key: 'pokayoke', label: '🛡️ Poka-Yoke Check',            page: '/pokayoke', Comp: PokaYokeCheck },
+  { key: 'lpa',      label: '📋 Layer Process Audit (LPA)',   page: '/lpa',      Comp: LayerProcessAudit },
 ];
 
 export default function DailyChecker() {
