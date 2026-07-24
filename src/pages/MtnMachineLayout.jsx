@@ -427,7 +427,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                       <span style={{ fontSize: 11, flexShrink: 0 }}>{m.equipment_category === 'utility' ? '⚡' : '🔧'}</span>
                       <span style={{ fontWeight: 700, color: 'var(--text)' }}>{m.machine_no}</span>
                       <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.machine_name || m.line_name || ''}</span>
-                      <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--accent2)', flexShrink: 0 }}>ฐานเครื่องจักร</span>
+                      <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent2)', flexShrink: 0 }}>ฐานเครื่องจักร</span>
                     </div>
                   ))}
                   {!unplacedJigs.length && !facMachines.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>วางครบแล้ว · เพิ่ม facility/utility ที่ <b>ฐานข้อมูลเครื่องจักร</b> (เลือกหมวด Facility/Utility) แล้วจะมาโผล่ที่นี่ให้วาง</div>}

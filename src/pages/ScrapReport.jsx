@@ -368,7 +368,7 @@ export default function ScrapReport() {
               <tbody>
                 {editor.items.map((it, i) => (
                   <tr key={it._key}>
-                    <td style={tdSt}>{i + 1}{it.src_defect_from_logs && <span title="ดึงจาก Daily Report" style={{ marginLeft: 3, fontSize: 10, color: '#4d9fff' }}>⤵</span>}</td>
+                    <td style={tdSt}>{i + 1}{it.src_defect_from_logs && <span title="ดึงจาก Daily Report" style={{ marginLeft: 3, fontSize: 11, color: '#4d9fff' }}>⤵</span>}</td>
                     <td style={tdSt}><span style={{ fontSize: 10.5, fontWeight: 700, color: it.source === 'sub' ? '#f59e0b' : '#4d9fff' }}>{it.source === 'sub' ? 'ย่อย' : 'หลัก'}</span></td>
                     <td style={tdSt}><input style={{ ...inputSt, width: 120, padding: '5px 7px' }} value={it.part_no} onChange={e => setItem(it._key, { part_no: e.target.value })} /></td>
                     <td style={tdSt}><input style={{ ...inputSt, width: 150, padding: '5px 7px' }} value={it.part_name} onChange={e => setItem(it._key, { part_name: e.target.value })} /></td>
