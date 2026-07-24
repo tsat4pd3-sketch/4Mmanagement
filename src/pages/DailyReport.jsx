@@ -584,20 +584,6 @@ function LiveTab({ role }) {
     loadDT(data.id);
   };
 
-  const handleSaveQty = async () => {
-    if (!selSession) return;
-    setSavingQty(true);
-    const { error } = await supabaseDR.from('production_sessions').update({
-      actual_qty: parseInt(qtyEdit.actual_qty) || 0,
-      qty_ng_rh:  parseInt(qtyEdit.qty_ng_rh)  || 0,
-      qty_ng_lh:  parseInt(qtyEdit.qty_ng_lh)  || 0,
-    }).eq('id', selSession.id);
-    setSavingQty(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success('อัปเดตยอดผลิตแล้ว');
-    setSelSession(s => ({ ...s, ...qtyEdit }));
-  };
-
   // Build datetime string from session work_date + HH:MM time, handling overnight (night shift)
   const buildDT = (timeStr) => {
     if (!timeStr || !selSession) return null;
