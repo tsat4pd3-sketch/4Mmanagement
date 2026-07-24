@@ -51,9 +51,14 @@ const METRICS = {
   },
   breakdown: {
     label: '🔧 Downtime', worstFirst: true, desc: true,
+    // sidebar อันดับ = สะสมทั้งวันงาน (นอกแผน + รวมเวลาที่กำลังหยุด)
     value: s => s.dtMin,
     text: s => s.dtActive ? `🔴 หยุด ${s.dtMin} น.` : s.dtMin > 0 ? `${s.dtMin} นาที` : (s.hasOpen ? 'ไม่มี' : ''),
     cat: s => s.dtActive ? 'down' : !s.hasOpen && s.dtMin === 0 ? 'idle' : s.dtMin === 0 ? 'good' : s.dtMin < 30 ? 'ok' : 'bad',
+    // สีบนแผนที่ = downtime "สะสมเฉพาะชั่วโมงปัจจุบัน" (รีเซ็ตทุกต้นชั่วโมง) — ≤5น.เขียว · ≤15น.เหลือง · >15น.แดง
+    //   กำลังหยุดอยู่ (ยังไม่กลับมารัน) = แดงต่อเนื่อง · เพิ่งกลับมารัน = คิดตามนาทีที่หยุดในชั่วโมงนี้
+    mapCat: s => s.dtActive ? 'down' : !s.hasOpen && s.dtMinHour === 0 ? 'idle' : s.dtMinHour <= 5 ? 'good' : s.dtMinHour <= 15 ? 'ok' : 'bad',
+    mapText: s => s.dtActive ? `🔴 หยุด ${s.dtMinHour} น.` : s.dtMinHour > 0 ? `${s.dtMinHour} น./ชม.นี้` : (s.hasOpen ? '✓ ปกติ' : ''),
   },
   ng: {
     label: '🚫 ของเสีย', worstFirst: true, desc: true,
@@ -97,7 +102,7 @@ const centroid = (pts) => pts.length
 const labelAnchor = (pts) => pts.length
   ? [(Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2, Math.min(...pts.map(p => p[1]))]
   : [50, 50];
-const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, hasOpen: false, oee: null, oeeLive: false, dtMin: 0, dtActive: false, ng: 0,
+const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, hasOpen: false, oee: null, oeeLive: false, dtMin: 0, dtMinHour: 0, dtActive: false, ng: 0,
   headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0,
   supList: [], supAtRisk: false };
 // รวมชื่อ utility ที่จ่ายไลน์นี้ (dedup ตามเลขเครื่อง) เอาที่กำลังซ่อม (atRisk) ก่อน
@@ -173,7 +178,7 @@ export default function FactoryMap({ setupMode = false }) {
     const sessIds = sessions.map(s => s.id);
     const [{ data: orders }, { data: dts }, { data: prods }] = await Promise.all([
       supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, qty_ng, mat_no').in('session_id', sessIds),
-      supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at, started_at').in('session_id', sessIds),
+      supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at, started_at, dr_downtime_types(category)').in('session_id', sessIds),
       supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no'),
     ]);
     const ctMap = {}, pairMap = {};
@@ -181,6 +186,8 @@ export default function FactoryMap({ setupMode = false }) {
     const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
     const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
     const nowMs = Date.now();
+    // ต้นชั่วโมงปัจจุบัน (clock hour) — ใช้คิด downtime "สะสมเฉพาะชั่วโมงนี้" สำหรับสีบนแผนที่
+    const hourStart = (() => { const d = new Date(nowMs); d.setMinutes(0, 0, 0); return d.getTime(); })();
 
     // OEE สด (กะยังเปิด) ≈ A×P×Q จากข้อมูลปัจจุบัน — สูตรย่อของ computeSessionOEE (DailyReport/Dashboard)
     // A = เวลารันจริง/เวลาที่ผ่านไป · P = เวลามาตรฐานที่ผลิตได้/เวลารัน · Q = ดี/ทั้งหมด · (ปิดกะแล้ว = ใช้ค่าที่ stamp ไว้)
@@ -223,8 +230,26 @@ export default function FactoryMap({ setupMode = false }) {
       const target = ptot.target + nullOs.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
       const actual = ptot.produced + nullOs.reduce((a, o) => a + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
       const dl = dtBySess[s.id] || [];
-      const dtMin = dl.reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
-      const dtActive = dl.some(d => !d.ended_at && d.duration_min == null);
+      // Downtime — นับเฉพาะ "นอกแผน" (planned เช่นนับสต็อก ไม่ใช่ loss) + รวมเวลาที่ "กำลังหยุด" (ยังไม่ปิด) จนถึงตอนนี้
+      //   dtMin = สะสมทั้งวันงาน (ใช้ sidebar อันดับ) · dtMinHour = สะสมเฉพาะชั่วโมงปัจจุบัน (ใช้สีบนแผนที่)
+      let dtMin = 0, dtMinHour = 0, dtActive = false;
+      dl.forEach(d => {
+        if (d.dr_downtime_types?.category === 'planned') return;
+        const active = !d.ended_at && d.duration_min == null;
+        if (active) dtActive = true;
+        const s0 = d.started_at ? new Date(d.started_at).getTime() : null;
+        if (s0 != null) {
+          const e0 = d.ended_at ? new Date(d.ended_at).getTime()
+                   : active ? nowMs
+                   : d.duration_min != null ? s0 + Number(d.duration_min) * 60000 : nowMs;
+          dtMin += Math.max(0, (e0 - s0) / 60000);
+          const ov = Math.min(e0, nowMs) - Math.max(s0, hourStart);   // ทับซ้อนกับ [ต้นชั่วโมงนี้, ตอนนี้]
+          if (ov > 0) dtMinHour += ov / 60000;
+        } else {
+          dtMin += Number(d.duration_min) || 0;  // ไม่มี timestamp → นับเข้าสะสมทั้งวันอย่างเดียว
+        }
+      });
+      dtMin = Math.round(dtMin); dtMinHour = Math.round(dtMinHour);
       // เป้า ณ เวลาปัจจุบัน (on-time / pace target) — กะที่ยังเปิด: เป้าเต็ม × สัดส่วนเวลาที่ผ่านไปของกะ
       // (ควรผลิตได้เท่าไหร่ ณ ตอนนี้ถ้าทำตามจังหวะ) · ปิดกะแล้ว = เต็มกะ (on-time = final)
       let frac = 1;
@@ -241,7 +266,7 @@ export default function FactoryMap({ setupMode = false }) {
         actual: acc.actual + actual, target: acc.target + target,
         onTimeTarget: acc.onTimeTarget + onTimeTarget,
         hasOpen: acc.hasOpen || s.status === 'open',
-        dtMin: acc.dtMin + Math.round(dtMin), dtActive: acc.dtActive || dtActive,
+        dtMin: acc.dtMin + dtMin, dtMinHour: acc.dtMinHour + dtMinHour, dtActive: acc.dtActive || dtActive,
         ng: acc.ng + (s.qty_ng ?? s.ng_qty ?? 0),
         oeeSum: acc.oeeSum + (oeeVal != null ? oeeVal : 0), oeeN: acc.oeeN + (oeeVal != null ? 1 : 0),
         oeeLive: acc.oeeLive || isLive,
@@ -389,7 +414,7 @@ export default function FactoryMap({ setupMode = false }) {
       const sp = supplyStatus[n];
       if (sp) { agg.supList.push(...sp.suppliers); agg.supAtRisk = agg.supAtRisk || sp.atRisk; }
       const p = lineStatus[n];
-      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.onTimeTarget += p.onTimeTarget || 0; agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeSum += p.oeeSum || 0; agg.oeeN += p.oeeN || 0; agg.oeeLive = agg.oeeLive || p.oeeLive; }
+      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.onTimeTarget += p.onTimeTarget || 0; agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtMinHour += p.dtMinHour || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeSum += p.oeeSum || 0; agg.oeeN += p.oeeN || 0; agg.oeeLive = agg.oeeLive || p.oeeLive; }
       const m = manpower[n];
       if (m) { agg.headTotal += m.headTotal || 0; agg.present += m.present || 0; agg.ppeBad += m.ppeBad || 0; agg.stationTotal += m.stationTotal || 0; agg.stationFilled += m.stationFilled || 0; }
       const pm = pmStatus[n];
@@ -592,7 +617,7 @@ export default function FactoryMap({ setupMode = false }) {
 
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
               {regions.map(r => {
-                const cat = M.cat(stOf(r.line_name)); const meta = CAT[cat]; const hl = highlight === r.line_name || hoverLine === r.line_name;
+                const cat = (M.mapCat || M.cat)(stOf(r.line_name)); const meta = CAT[cat]; const hl = highlight === r.line_name || hoverLine === r.line_name;
                 return (
                   <polygon key={r.id} data-region points={ptsStr(r.points)}
                     className={meta.blink ? 'region-alarm' : undefined}
@@ -617,7 +642,7 @@ export default function FactoryMap({ setupMode = false }) {
 
             {/* ป้าย = การ์ดทึบมีขอบสีสถานะ (อ่านออกทุกพื้นหลัง) + จุดแดงถ้า downtime ค้าง */}
             {regions.map(r => {
-              const [cx, cy] = labelAnchor(r.points); const st = stOf(r.line_name); const meta = CAT[M.cat(st)]; const txt = M.text(st);
+              const [cx, cy] = labelAnchor(r.points); const st = stOf(r.line_name); const meta = CAT[(M.mapCat || M.cat)(st)]; const txt = (M.mapText || M.text)(st);
               return (
                 // เกาะขอบบนของกรอบ (translateY 2px = อยู่ใต้เส้นขอบบนนิดเดียว) ไม่ทับกลางผังไลน์
                 <div key={`lbl-${r.id}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%, 2px)', pointerEvents: 'none', maxWidth: '30%' }}>
