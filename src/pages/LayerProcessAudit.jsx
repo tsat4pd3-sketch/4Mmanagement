@@ -881,7 +881,7 @@ ${issuesHtml}
                       <tr style={{ fontSize: 12 }}>
                         <th style={{ width: 90 }}>วันที่</th>
                         <th style={{ textAlign: 'left' }}>Station for audit</th>
-                        {LAYERS.map(l => <th key={l.key} style={{ width: 96, textAlign: 'center' }}>{l.label}<div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>{l.freq}</div></th>)}
+                        {LAYERS.map(l => <th key={l.key} style={{ width: 96, textAlign: 'center' }}>{l.label}<div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>{l.freq}</div></th>)}
                       </tr>
                     </thead>
                     <tbody>
@@ -1138,8 +1138,8 @@ ${issuesHtml}
                     <div key={q.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '5px 0', borderBottom: '1px dashed var(--border)', opacity: (q.is_active && !hiddenHere) ? 1 : 0.45 }}>
                       <div style={{ flex: 1, fontSize: 13, color: cat.key === 'special' ? '#f87171' : 'var(--text2)' }}>
                         <b>{q.seq}.</b> {q.question}
-                        {qScope && isCommon && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 4, padding: '0 5px', marginLeft: 6 }}>common</span>}
-                        {lineOwn && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-dim)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 5px', marginLeft: 6 }}>เฉพาะไลน์นี้</span>}
+                        {qScope && isCommon && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 4, padding: '0 5px', marginLeft: 6 }}>common</span>}
+                        {lineOwn && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-dim)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 5px', marginLeft: 6 }}>เฉพาะไลน์นี้</span>}
                         {!qScope && q.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · ไลน์ {q.line_name}</span>}
                         {(q.issue_start || q.issue_end) && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · {thDate(q.issue_start)} - {thDate(q.issue_end)}</span>}
                         {hiddenHere && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}> · 🚫 ซ่อนไลน์นี้</span>}

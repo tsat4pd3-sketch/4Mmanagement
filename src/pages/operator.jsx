@@ -753,7 +753,7 @@ export default function Operator() {
                     <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                       {emp.section || '—'}
                       {emp.section && (() => { const m = laborMeta(empLabor(emp)); return (
-                        <span title={m.label} style={{ marginLeft: 5, fontSize: 10, padding: '0 4px', borderRadius: 3, background: `${m.color}18`, color: m.color, border: `1px solid ${m.color}44`, fontWeight: 700 }}>{m.icon}</span>
+                        <span title={m.label} style={{ marginLeft: 5, fontSize: 11, padding: '0 4px', borderRadius: 3, background: `${m.color}18`, color: m.color, border: `1px solid ${m.color}44`, fontWeight: 700 }}>{m.icon}</span>
                       ); })()}
                     </td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.department || '—'}</td>
@@ -1472,8 +1472,8 @@ function SkillSubItemsModal({ skill, onClose }) {
   };
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 2200, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} className="card" style={{ width: 'min(560px, 96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 20 }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 2200, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div className="card" style={{ width: 'min(560px, 96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
           <h3 style={{ margin: 0, fontSize: 16 }}>📝 หัวข้อการพิจารณา</h3>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>✕</button>

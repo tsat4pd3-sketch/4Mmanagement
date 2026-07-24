@@ -1156,7 +1156,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                             {suggestByCust[u.mat].map(c => (
                               <button key={c.sap} onClick={() => setMapSel(s => ({ ...s, [u.mat]: c.sap }))}
                                 title="แนะนำจาก base part (revision ต่างกัน)"
-                                style={{ fontSize: 10, padding: '2px 6px', borderRadius: 5, cursor: 'pointer', border: '1px solid #22c55e',
+                                style={{ fontSize: 11, padding: '2px 6px', borderRadius: 5, cursor: 'pointer', border: '1px solid #22c55e',
                                   background: mapSel[u.mat] === c.sap ? 'rgba(34,197,94,0.18)' : 'transparent', color: '#22c55e', fontWeight: 700 }}>
                                 💡 {c.sap} · {c.name}
                               </button>
