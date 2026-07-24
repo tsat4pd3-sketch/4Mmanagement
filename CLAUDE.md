@@ -751,6 +751,28 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 
 ---
 
+## Traceability / Audit Log — ใครแก้อะไรเมื่อไหร่ (2026-07-24)
+
+> ### ⚠️ กฎเหล็ก — ตาราง master/config ที่ "แก้ไขได้" ต้องมี audit
+> เดิมตาราง master ~90% track แค่ `created_at` → แก้ไขแล้วสืบไม่ได้ว่าใคร/เมื่อไหร่/ค่าเก่าอะไร (เจอจริง: `dr_products.line_name` ถูกเปลี่ยนไลน์ สืบไม่ได้) · **ตาราง master/editable ใหม่ทุกตัวต้องผูก audit** (เพิ่มชื่อตารางใน `tbls[]` ของ migration `20260724_audit_log_*.sql`)
+
+- **ตาราง `audit_log` กลาง (ต่อ project)** — เก็บ `table_name, row_pk, action (INSERT/UPDATE/DELETE), actor, changed_fields[], old_data jsonb, new_data jsonb, changed_at` · เขียนโดย generic trigger `fn_audit()` (SECURITY DEFINER) ที่ผูกกับตาราง master · migration `20260724_audit_log_main.sql` + `20260724_audit_log_dr.sql`
+- **`fn_audit()` best-effort เสมอ** — ห่อ insert ด้วย `exception when others then null` → **audit ล้มเหลวห้ามทำ write หลักพัง** (สำคัญมากกับระบบ production) · UPDATE ที่ไม่มีอะไรเปลี่ยนจริง (นอกจาก updated_at) ไม่ log
+- **actor (ใครแก้):** Main (authenticated) = `auth.uid()` → ชื่อจาก `profiles` · **DR เป็น anon เสมอ → `auth.uid()` = null** → actor มาจาก `current_setting('app.actor')` (app ต้อง set — ยังไม่ทำ) หรือคอลัมน์ `updated_by_name` บนแถว (app stamp) · **ตอนนี้ DR เก็บ old→new+เวลาได้ครบ แต่ actor ยังว่างจนกว่าจะ stamp จาก app** (phase ถัดไป: ให้ edit handler ฝั่ง DR ส่ง updated_by_name)
+- **`updated_at` + trigger `fn_set_updated_at()`** เพิ่มให้ตาราง master ที่ผูก audit (BEFORE UPDATE set now())
+- **ดูประวัติ:** หน้า `/product-history` (ProductHistory) โชว์ audit ของ `dr_products` แถวนั้น (line_name/CT/PN เปลี่ยนโดยใคร) · จุดอื่นที่อยากโชว์ audit ให้ query `audit_log` ด้วย `table_name`+`row_pk`
+- **ยังไม่ apply = ไม่พัง** — โค้ดที่อ่าน audit_log ห่อ try/catch (เช่น ProductHistory) · การเขียนตาราง master ทำงานปกติ แค่ยังไม่ถูก log จนกว่าจะ apply migration
+
+## ประวัติผลิต by Product — `/product-history` (2026-07-24)
+
+หน้า ProductHistory (กลุ่มวิเคราะห์ & รายงาน) — เลือกสินค้า (ค้นด้วย mat_no/ชื่อ/PN) → ดูย้อนหลังว่าเคยผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ + ประวัติการแก้ master data
+- **แหล่งข้อมูล (DR):** `prod_orders` embed `production_sessions!inner(line_name, work_date, shift, oee, status)` กรองช่วงวัน · `defect_logs` (NG ต่อใบ) · `audit_log` (การแก้ dr_products)
+- **แสดง:** สรุป (ผลิต/เป้า/NG/กี่ไลน์) · แยกตามไลน์ · trend รายวัน · ตารางใบผลิต (วัน/ไลน์/กะ/เครื่อง/เป้า/ผลิต/NG/สถานะ) · ประวัติแก้ไข (ใครเปลี่ยน line_name/CT เมื่อไหร่)
+- **Scope:** leader = family ไลน์ตัวเอง · role อื่น = ตาม sections (กรอง `production_sessions.line_name`) · สิทธิ์เข้าหน้า `page:/product-history` (ทุก role · migration `20260724_product_history_permission.sql`)
+- **ผลิตได้** = confirmed→`qty_ok??qty` · เปิด→`qty_actual` (สอดคล้องกับการนับใน DailyReport)
+
+---
+
 ## Edge Functions
 
 ### `send-notification`
