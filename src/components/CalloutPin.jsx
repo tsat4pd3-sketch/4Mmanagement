@@ -42,9 +42,9 @@ export default function CalloutPin({
       {/* เส้น + ลูกศร (SVG ต่อหมุด — ครอบกล่องรูป, ไม่รับคลิก)
          มี "halo" มืดใต้เส้น + drop-shadow ให้เด้งบนพื้นหลังทุกสี (กันลูกศรจมกับภาพ — 2026-07-24) */}
       <svg style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none', zIndex: 9, opacity: op, filter: 'drop-shadow(0 1px 2.5px rgba(0,0,0,0.9))' }}>
-        {/* casing มืดใต้เส้น (ทำให้เส้นสีเด่นบนพื้นสว่าง/สีใกล้กัน) */}
-        <line x1={px} y1={py} x2={bxA} y2={byA} stroke="rgba(0,0,0,0.55)" strokeWidth={Math.max(4, size * 0.07 + 3)} strokeLinecap="round" />
-        <line x1={px} y1={py} x2={bxA} y2={byA} stroke={color} strokeWidth={Math.max(2, size * 0.09)} strokeLinecap="round" />
+        {/* เส้นเชื่อม: หัวลูกศร (จุดจริง) → วงเลข (ปลายเส้นลอดใต้วงเลขที่วาดทับ) · casing มืดใต้เส้นให้เด่นทุกพื้นหลัง */}
+        <line x1={px} y1={py} x2={bx} y2={by} stroke="rgba(0,0,0,0.55)" strokeWidth={Math.max(4, size * 0.07 + 3)} strokeLinecap="round" />
+        <line x1={px} y1={py} x2={bx} y2={by} stroke={color} strokeWidth={Math.max(2, size * 0.09)} strokeLinecap="round" />
         <polygon points={arrow} fill={color} stroke="#fff" strokeWidth={Math.max(1.6, size * 0.09)} strokeLinejoin="round" />
       </svg>
       {/* วงเลข (ตัวคลิก/ลาก) — หลบจากจุด */}

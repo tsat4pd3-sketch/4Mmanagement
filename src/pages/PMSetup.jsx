@@ -12,6 +12,7 @@ import { getOrCreateChecklist, setChecklistFrequency } from '../lib/pmChecklists
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
 import SpinAnnotator from '../components/SpinAnnotator'
+import cropPortrait from '../utils/cropPortrait'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
 
@@ -496,14 +497,16 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     updateCp(key, { _imgFile: compressed, _imgPreview: URL.createObjectURL(compressed) })
   }
 
-  // spin frames — compress on pick, upload on save
+  // spin frames — บังคับ crop แนวตั้ง 3:4 + ลดขนาด ตอนเลือกรูป (upload ตอน save)
+  //   normalize EXIF orientation ด้วย imageCompression ก่อน แล้ว center-crop เป็นแนวตั้ง (cropPortrait)
   const addFrames = async (fileList) => {
     setImgBusy(true)
     try {
       const added = []
       for (const file of Array.from(fileList)) {
-        const compressed = await imageCompression(file, { maxSizeMB: 0.4, maxWidthOrHeight: 1400 })
-        added.push({ _key: crypto.randomUUID(), _file: compressed, _preview: URL.createObjectURL(compressed), title: null })
+        const norm = await imageCompression(file, { maxSizeMB: 0.5, maxWidthOrHeight: 1600 }) // ปรับ orientation + ลดเบื้องต้น
+        const cropped = await cropPortrait(norm, { ratio: 3 / 4, maxLongSide: 1200, quality: 0.82 })
+        added.push({ _key: crypto.randomUUID(), _file: cropped, _preview: URL.createObjectURL(cropped), title: null })
       }
       setFrames(prev => [...prev, ...added])
     } finally { setImgBusy(false) }
