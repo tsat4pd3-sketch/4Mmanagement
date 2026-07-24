@@ -6,6 +6,8 @@ import { toast } from '../components/Toast'
 import { computeDailyPmStatus, DAILY_PM_STATUS_META, DAILY_PM_WINDOW_MIN } from '../lib/pmDailyStatus'
 import { fmtTime } from '../utils/dateFormat'
 import { can } from '../utils/permissions'
+import { inSectionScope } from '../utils/sectionScope'
+import { getLineFamilyNames } from '../utils/lineHierarchy'
 
 /* ── date / shift (local, Asia/Bangkok = deployment local) ── */
 const toLocalDateStr = (d) =>
@@ -31,13 +33,22 @@ function getShiftInfo(now = new Date()) {
 }
 
 export default function DailyPM() {
-  const { role } = useContext(UserContext)
+  const { role, lineId: userLineId, sections: scopeSecs } = useContext(UserContext)
   const canManage = can('pm', 'setup', role)
 
   const [tab, setTab] = useState('status')
   const [userId, setUserId] = useState(null)
   const [jigs, setJigs] = useState([])
   const [prodLines, setProdLines] = useState([]) // รายชื่อไลน์ผลิต — ใช้กำหนดไลน์ให้อุปกรณ์ที่ยังไม่ระบุ
+  // scope มาตรฐาน: leader→family · role อื่น→sections · admin/qa→ทั้งหมด (กัน dropdown เห็นไลน์ข้าม scope)
+  const scopedProdLines = useMemo(() => {
+    if (role === 'leader' && userLineId) {
+      const fam = getLineFamilyNames(prodLines, Number(userLineId) || userLineId)
+      return prodLines.filter(l => fam.includes(l.name))
+    }
+    if (scopeSecs?.length) return prodLines.filter(l => inSectionScope(scopeSecs, l.section))
+    return prodLines
+  }, [prodLines, role, userLineId, scopeSecs])
   const [targets, setTargets] = useState([])
   const [resultByJig, setResultByJig] = useState({})   // jig_id -> { status }
   const [firstOrderByLine, setFirstOrderByLine] = useState({})  // line_name -> ISO
@@ -65,7 +76,7 @@ export default function DailyPM() {
       supabaseDR.from('jigs').select('id, name, machine_no, line_name, jig_no, equipment_type, equipment_category').eq('module', 'mtn').order('line_name').order('name'),
       supabaseDR.from('pm_daily_line_targets').select('*').eq('is_active', true),
       supabaseDR.from('checklists').select('id').eq('module', 'mtn').eq('department', 'production'),
-      supabase.from('production_lines').select('name, parent_line_name').order('name'),
+      supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
     ])
     // Daily PM = operator ฝ่ายผลิตเช็คเครื่องผลิตรายวัน → แสดงเฉพาะ "เครื่องผลิต"
     //   ตัด jig/die tooling (งานช่าง JIG/DIE) + facility/utility ออก ไม่ให้ปนในลิสต์ลงทะเบียน (คำสั่ง user 2026-07-22)
@@ -385,7 +396,7 @@ export default function DailyPM() {
                                 <select defaultValue="" onClick={e => e.preventDefault()} onChange={e => assignJigLine(j, e.target.value)}
                                   style={{ width: '100%', marginTop: 6, padding: '4px 8px', fontSize: 12, borderRadius: 6, background: 'var(--bg)', border: '1px solid rgba(245,158,11,0.5)', color: 'var(--text)' }}>
                                   <option value="" disabled>📍 เลือกไลน์ให้เครื่องนี้…</option>
-                                  {prodLines.map(l => (
+                                  {scopedProdLines.map(l => (
                                     <option key={l.name} value={l.name}>{l.parent_line_name ? `↳ ${l.name}` : l.name}</option>
                                   ))}
                                 </select>
@@ -395,8 +406,8 @@ export default function DailyPM() {
                                 <select value={line} onClick={e => e.preventDefault()} onChange={e => assignJigLine(j, e.target.value)}
                                   title="ย้ายเครื่องนี้ไปไลน์อื่น — เลือกไลน์ผิดแก้ตรงนี้ได้เลย"
                                   style={{ width: '100%', marginTop: 6, padding: '3px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
-                                  {!prodLines.some(l => l.name === line) && <option value={line}>{line}</option>}
-                                  {prodLines.map(l => (
+                                  {!scopedProdLines.some(l => l.name === line) && <option value={line}>{line}</option>}
+                                  {scopedProdLines.map(l => (
                                     <option key={l.name} value={l.name}>{l.parent_line_name ? `↳ ${l.name}` : l.name}</option>
                                   ))}
                                 </select>

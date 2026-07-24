@@ -395,6 +395,13 @@ function LiveTab({ role }) {
     setLoading(false);
   }, [role, scopeSecs, userLineId]);
 
+  // ไลน์ที่เปิดกะได้ตาม scope (leader→family · role อื่น→sections · admin/qa→null=ทั้งหมด) — กันเปิดกะไลน์ข้ามส่วนงาน
+  const openScopeLineNames = useMemo(() => {
+    if (role === 'leader' && userLineId) return new Set(getLineFamilyNames(lines, Number(userLineId) || userLineId));
+    if (scopeSecs.length) return new Set(lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name));
+    return null; // ไม่จำกัด
+  }, [role, userLineId, scopeSecs, lines]);
+
   const loadDT = useCallback(async (sessionId) => {
     if (!sessionId) return;
     const { data } = await supabaseDR.from('downtime_logs')
@@ -2839,17 +2846,21 @@ function LiveTab({ role }) {
                 <Field label="ไลน์การผลิต">
                   <select value={openForm.line_name} onChange={e => setOpenForm(f => ({ ...f, line_name: e.target.value }))} style={inputStyle}>
                     <option value="">เลือกไลน์...</option>
-                    {lines.filter(l => !l.parent_line_name && !parentChildrenMap[l.name]).map(l => (
+                    {lines.filter(l => !l.parent_line_name && !parentChildrenMap[l.name] && (!openScopeLineNames || openScopeLineNames.has(l.name))).map(l => (
                       <option key={l.id} value={l.name}>{l.name}</option>
                     ))}
-                    {Object.entries(parentChildrenMap).map(([parent, children]) => (
-                      <optgroup key={parent} label={`▸ ${parent}`}>
-                        {children.map(cn => {
-                          const cl = lines.find(l => l.name === cn);
-                          return cl ? <option key={cl.id} value={cl.name}>{cl.name}</option> : null;
-                        })}
-                      </optgroup>
-                    ))}
+                    {Object.entries(parentChildrenMap).map(([parent, children]) => {
+                      const kids = children.filter(cn => !openScopeLineNames || openScopeLineNames.has(cn));
+                      if (!kids.length) return null;
+                      return (
+                        <optgroup key={parent} label={`▸ ${parent}`}>
+                          {kids.map(cn => {
+                            const cl = lines.find(l => l.name === cn);
+                            return cl ? <option key={cl.id} value={cl.name}>{cl.name}</option> : null;
+                          })}
+                        </optgroup>
+                      );
+                    })}
                   </select>
                 </Field>
                 <Field label="กะทำงาน">

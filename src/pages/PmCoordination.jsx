@@ -377,7 +377,7 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
             <label style={lbl}>ไลน์</label>
             <select value={f.line_name} onChange={e => setF(v => ({ ...v, line_name: e.target.value }))} style={inp}>
               <option value="">— เลือกไลน์ —</option>
-              {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+              {lines.filter(l => !scopeLines || scopeLines.has(l.name)).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
             </select>
           </div>
         </div>
