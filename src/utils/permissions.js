@@ -46,6 +46,7 @@ export function canAccessPage(path, role) {
   if (path === '/daily-checker') {
     return hasPermission('page:/daily-checker', role)
         || hasPermission('page:/daily-pm', role)
+        || hasPermission('page:/pokayoke', role)
         || hasPermission('page:/lpa', role);
   }
   return hasPermission(`page:${path}`, role);

@@ -46,6 +46,7 @@ const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
 const LayerProcessAudit = lazy(() => import('./pages/LayerProcessAudit'));
 const DailyChecker = lazy(() => import('./pages/DailyChecker'));
+const PokaYokeCheck = lazy(() => import('./pages/PokaYokeCheck'));
 const DocFormsRegistry = lazy(() => import('./pages/DocFormsRegistry'));
 const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
 const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
@@ -1021,6 +1022,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/daily-checker" element={
                 <RoleRoute path="/daily-checker" userRole={role}><DailyChecker /></RoleRoute>
+              } />
+              <Route path="/pokayoke" element={
+                <RoleRoute path="/pokayoke" userRole={role}><PokaYokeCheck /></RoleRoute>
               } />
               <Route path="/daily-pm" element={
                 <RoleRoute path="/daily-pm" userRole={role}><DailyPM /></RoleRoute>
