@@ -23,6 +23,7 @@ export default function ProductHistory() {
   const [products, setProducts] = useState([]);
   const [lines, setLines]       = useState([]);
   const [search, setSearch]     = useState('');
+  const [filterLine, setFilterLine] = useState('');
   const [selMat, setSelMat]     = useState(null);   // product object
   const [from, setFrom]         = useState(() => addDays(todayStr(), -90));
   const [to, setTo]             = useState(todayStr);
@@ -112,11 +113,35 @@ export default function ProductHistory() {
   }, [rows]);
   const dailyMax = Math.max(1, ...daily.map(d => d.produced));
 
+  // ตัวเลือกสินค้าต้อง scope ด้วย (กฎ dropdown-scope 2026-07-23) — สินค้าไลน์นอก scope ไม่โชว์ให้เลือก
+  // สินค้าที่ยังไม่ระบุไลน์คงโชว์ไว้ (fail-open เฉพาะ null — ไม่ใช่ข้ามส่วนงาน)
+  const scopedProducts = useMemo(() => {
+    if (!scopeLineNames) return products;
+    return products.filter(p => !p.line_name || scopeLineNames.has(p.line_name.trim().toLowerCase()));
+  }, [products, scopeLineNames]);
+
+  const lineOpts = useMemo(() =>
+    [...new Set(scopedProducts.map(p => (p.line_name || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'th')),
+  [scopedProducts]);
+
   const filteredProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return products.slice(0, 50);
-    return products.filter(p => (p.mat_no || '').toLowerCase().includes(q) || (p.name || '').toLowerCase().includes(q) || (p.p_no || '').toLowerCase().includes(q)).slice(0, 50);
-  }, [products, search]);
+    let list = scopedProducts;
+    if (filterLine) list = list.filter(p => (p.line_name || '').trim() === filterLine);
+    if (q) list = list.filter(p => (p.mat_no || '').toLowerCase().includes(q) || (p.name || '').toLowerCase().includes(q) || (p.p_no || '').toLowerCase().includes(q));
+    return list;
+  }, [scopedProducts, filterLine, search]);
+
+  // จัดกลุ่มตามไลน์ให้อ่านง่าย (แทน chip กองรวม) — จำกัด 300 แถวกัน DOM บวม
+  const productGroups = useMemo(() => {
+    const m = new Map();
+    for (const p of filteredProducts.slice(0, 300)) {
+      const k = (p.line_name || '').trim() || '— ไม่ระบุไลน์';
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(p);
+    }
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'th'));
+  }, [filteredProducts]);
 
   const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px' };
   const th = { textAlign: 'left', fontSize: 11, color: 'var(--muted)', fontWeight: 700, padding: '6px 8px', borderBottom: '1px solid var(--border2)', whiteSpace: 'nowrap' };
@@ -140,21 +165,50 @@ export default function ProductHistory() {
             <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ marginTop: 4, width: 150 }} />
           </div>
           <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ไลน์</label>
+            <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ marginTop: 4, width: 200 }}>
+              <option value="">ทุกไลน์</option>
+              {lineOpts.map(l => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ตั้งแต่</label>
+            <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ marginTop: 4, width: 150 }} />
+          </div>
+          <div>
             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ถึง</label>
             <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ marginTop: 4, width: 150 }} />
           </div>
         </div>
-        {/* ผลค้นหา */}
-        <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {filteredProducts.map(p => (
-            <button key={p.id} onClick={() => setSelMat(p)}
-              style={{ fontSize: 11, padding: '5px 10px', borderRadius: 20, cursor: 'pointer', fontWeight: 700,
-                background: selMat?.id === p.id ? 'var(--accent)' : 'var(--bg2)', color: selMat?.id === p.id ? '#08131f' : 'var(--text)',
-                border: `1px solid ${selMat?.id === p.id ? 'var(--accent)' : 'var(--border2)'}` }}>
-              {p.mat_no} · {p.name}{p.line_name ? ` · ${p.line_name}` : ''}
-            </button>
-          ))}
-          {!filteredProducts.length && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่พบสินค้า</span>}
+        {/* ผลค้นหา — ลิสต์จัดกลุ่มตามไลน์ (เลื่อนในกรอบ) แทน chip กองรวม */}
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
+            พบ <b>{filteredProducts.length.toLocaleString()}</b> รายการ{filteredProducts.length > 300 ? ' · แสดง 300 แรก — พิมพ์ค้นหา/เลือกไลน์เพื่อกรองเพิ่ม' : ''} · คลิกสินค้าเพื่อดูประวัติ
+          </div>
+          <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid var(--border2)', borderRadius: 8, background: 'var(--bg2)' }}>
+            {productGroups.map(([line, items]) => (
+              <div key={line}>
+                <div style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--bg3)', padding: '5px 12px',
+                  fontSize: 11, fontWeight: 800, color: 'var(--accent)', borderBottom: '1px solid var(--border2)' }}>
+                  🏭 {line} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· {items.length} รายการ</span>
+                </div>
+                {items.map(p => {
+                  const sel = selMat?.id === p.id;
+                  return (
+                    <div key={p.id} onClick={() => setSelMat(p)}
+                      style={{ display: 'flex', gap: 12, alignItems: 'baseline', padding: '6px 12px', cursor: 'pointer',
+                        borderBottom: '1px solid var(--border)',
+                        background: sel ? 'var(--accent)' : 'transparent', color: sel ? '#08131f' : 'var(--text)' }}>
+                      <span style={{ fontWeight: 800, fontSize: 12, fontFamily: 'ui-monospace, monospace', whiteSpace: 'nowrap', minWidth: 90 }}>{p.mat_no}</span>
+                      <span style={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}{!p.is_active && ' ⛔'}</span>
+                      {p.p_no && <span style={{ fontSize: 11, color: sel ? '#08131f' : 'var(--muted)', whiteSpace: 'nowrap' }}>P/N {p.p_no}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+            {!filteredProducts.length && <div style={{ padding: 16, fontSize: 12, color: 'var(--muted)' }}>ไม่พบสินค้า</div>}
+          </div>
         </div>
       </div>
 
@@ -212,11 +266,14 @@ export default function ProductHistory() {
             <div style={{ ...card, marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>📈 ผลิตรายวัน</div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 100, overflowX: 'auto' }}>
-                {daily.map(d => (
+                {daily.map((d, i) => (
                   <div key={d.d} title={`${d.d} · ผลิต ${d.produced}${d.ng ? ` · NG ${d.ng}` : ''}`}
                     style={{ minWidth: 14, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }}>
                     <div style={{ background: 'var(--accent)', height: `${Math.round(d.produced / dailyMax * 100)}%`, borderRadius: '3px 3px 0 0', minHeight: 2 }} />
-                    <div style={{ fontSize: 8, color: 'var(--muted)', textAlign: 'center', marginTop: 2, whiteSpace: 'nowrap' }}>{fmtDate(d.d)}</div>
+                    {/* ป้ายวันเว้นแท่ง (ฟอนต์ขั้นต่ำ 11px ตาม UI-CONVENTIONS — 8px อ่านไม่ออก) */}
+                    <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 2, whiteSpace: 'nowrap', height: 14, overflow: 'visible' }}>
+                      {i % 2 === 0 ? fmtDate(d.d) : ''}
+                    </div>
                   </div>
                 ))}
               </div>
