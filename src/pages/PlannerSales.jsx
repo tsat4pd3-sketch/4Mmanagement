@@ -962,6 +962,8 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       for (const [cust, sap] of pairs) {
         const name = drMap[sap]?.name || null;
         await supabaseDR.from('dr_products').update({ p_no: cust }).eq('mat_no', sap);                       // future uploads
+        // single source: p_no เก็บซ้ำใน kanban_standards ด้วย — เขียน write-through กันตาราง 2 ฝั่ง map เลข SAP ไม่ตรง (stale → map ผิด)
+        try { await supabaseDR.from('kanban_standards').update({ p_no: cust }).eq('mat_no', sap); } catch { /* best-effort — บางพาร์ทไม่มีแถว kanban */ }
         await supabaseDR.from('customer_forecasts').update({ mat_no: sap, part_name: name }).eq('mat_no', cust); // existing forecast
       }
       toast.success(`🔗 จับคู่ ${pairs.length} พาร์ทเข้าเลข SAP แล้ว — Store/Planner จะ sync ตามเลขเดียวกัน`);
