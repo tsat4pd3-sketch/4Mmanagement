@@ -258,6 +258,20 @@ pattern ร่วมของทุกบอร์ดที่วางราย
   (เช่น ≥1200px = 3 คอลัมน์ 2 แถว · ≥1900px = 6 คอลัมน์แถวเดียว) แทน auto-fill ที่ทิ้งการ์ดเศษ 1-2 ใบท้ายแถว
 - ฟอร์ม/หน้าที่เนื้อหาเป็นคอลัมน์เดียวโดยธรรมชาติ (Login, Register) เป็นข้อยกเว้น — จัดกลางได้ตามเดิม
 
+## 6.6 เอกสารพิมพ์/Export ทุกตัวต้องผ่านระบบ Doc Control (2026-07-30 — คำสั่ง user)
+
+**เอกสารที่ออกจากระบบทุกชนิด** (ฟอร์มพิมพ์ทางการ, ใบรายงาน, สรุปประชุม, Excel export, รายงานภายใน) **ต้องอยู่ในทะเบียนเอกสารกลาง `/doc-forms` (ตาราง `doc_forms` + `doc_form_revisions` — Main project)** ห้ามมีเอกสาร export ที่ไม่มี doc_key และห้ามสร้างระบบทะเบียนแยกใหม่:
+
+- **สร้างเอกสาร export ใหม่ = seed แถว `doc_forms` ใน migration เสมอ** (doc_key ใหม่ + form_name) — ยังไม่มีเลขฟอร์มทางการก็ seed ไว้ก่อน (form_code = null) ให้ doc_control มาเติมทีหลังจากหน้า `/doc-forms` โดยไม่ต้องแก้โค้ด
+- **โค้ดพิมพ์อ่านค่าจากทะเบียนผ่าน `src/utils/docForms.js` เท่านั้น** — `getDocForm(key, {fallback})` / `docFormSync(key)` / `fullCode()` / `getDocFormRevisions(key)` · **fallback ค่าเดิมในโค้ดเสมอ** (ทะเบียนล่ม/แถวหาย = ฟอร์มหน้าตาเดิม ไม่พัง)
+- **2 ระดับการ wire:**
+  - **ฟอร์มทางการ** (มี layout กระดาษ เช่น FM-xxx): วาดหัวฟอร์ม/ช่องลายเซ็น/footer เองตาม layout โดยดึงเลขฟอร์ม/Rev/Effective/sig_blocks/legend/issued_by จาก `getDocForm` — จำนวนช่องลายเซ็นต้องเท่า layout เดิม (เปลี่ยนได้เฉพาะข้อความ)
+  - **รายงานภายใน** (ไม่มี layout ฟอร์มทางการ เช่น สรุปช่วงเวลา/สรุปประชุม): ห่อ html ก่อน `window.open`+print ด้วย **`withDocFoot(html, doc_key)`** — ทะเบียนยังไม่ตั้งเลขฟอร์ม = ไม่เติมอะไร (หน้าตาเดิมเป๊ะ), ตั้งเมื่อไหร่แถบ "เลขฟอร์ม · Effective" โผล่ท้ายเอกสารอัตโนมัติ
+- **โลโก้**: `urlToDataUrl(docFormSync(key).logo_url || tsLogoUrl)` — ห้าม hardcode/วาดโลโก้เอง
+- **ห้าม hardcode เลขฟอร์ม/Rev/Effective ในโค้ด** นอกเหนือจาก fallback default ที่ส่งเข้า `getDocForm`
+- Revision History ของเอกสารแก้ที่ `/doc-forms` (modal แก้ไข → ตาราง 📜) — ฟอร์มที่พิมพ์ตารางประวัติ rev (เช่น Changing Point) อ่านผ่าน `getDocFormRevisions`
+- ตารางเก่า `document_controls`/`document_control_revisions` เลิกใช้แล้ว (ยุบเข้าทะเบียนกลาง 2026-07-30) — ห้ามเขียนเพิ่ม
+
 ## 7. เบ็ดเตล็ดที่เคยกัด
 
 - `index.css` ตั้ง `input{width:100%}` ทั้งแอป — input ใน flex row ต้องกำหนด width เอง (checkbox/radio มี rule ยกเว้น `width:auto` แล้ว — ห้ามลบ)
