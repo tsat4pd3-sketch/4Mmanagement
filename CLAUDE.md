@@ -184,6 +184,7 @@
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/products` | ProductMaster | ทุก role |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/linesetup` | LineSetup | admin/manager/supervisor |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/machine-database` | MachineDatabase | admin/manager/supervisor |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/process-setup` | ProcessSetup — จุดจัดการ master กระบวนการผลิต (process_types) ทางเข้าเสริมนอกจาก Daily Report ⚙️ · component ร่วม `ProcessTypeSetup.jsx` | admin/manager/supervisor |
 | พนักงาน & ทักษะ | `/shift-organize` | ShiftOrganize | admin/manager/supervisor |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/company-calendar` | CompanyCalendar | ทุก role |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/notification-config` | NotificationConfig | admin เท่านั้น |
@@ -474,7 +475,7 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 ## กระบวนการผลิต (process types) — master data-driven (2026-07-23)
 
 **เลิก hardcode รายชื่อกระบวนการแล้ว** (คำสั่ง user — ยืดหยุ่นกับโรงงานอื่น): ตาราง **`process_types`** (DR · migration `20260723_process_types_master.sql`): key (ค่าที่เก็บใน process_type ของตารางอื่น — สร้างแล้วห้ามแก้)/label/icon/color/sort/is_active · seed welding_assembly + metal_forming (ค่าเดิมไม่ต้อง migrate — เทียบด้วย key เหมือนเดิม)
-- **จัดการที่เดียว: Daily Report → ⚙️ ตั้งค่า → แท็บ 🏭 กระบวนการ** (สิทธิ์ `daily_report:setup` — ProcessTypeSetup) — เพิ่มกระบวนการใหม่ (เช่น Laser, Bending) → ไป tag เครื่อง/สินค้า → dropdown ทุกจุดเห็นเอง (logic จับคู่เทียบ key generic อยู่แล้ว)
+- **จัดการได้ 2 ทางเข้า (component เดียว `src/components/ProcessTypeSetup.jsx` — ไม่ duplicate logic · 2026-07-30):** (1) Daily Report → ⚙️ ตั้งค่า → แท็บ 🏭 กระบวนการ (ที่ฝ่ายผลิตใช้งาน) (2) **หน้า `/process-setup` "🏭 กระบวนการผลิต" ในหมวดตั้งค่าโปรแกรม,ฐานข้อมูล** (master กลางอยู่คู่กับ machine/product master · page perm `page:/process-setup` = admin/mgr/sv · migration `20260730_process_setup_permission.sql`) — การ **"แก้"** ยังคุมด้วยสิทธิ์ `daily_report:setup` ใน component ทั้ง 2 ทาง · เพิ่มกระบวนการใหม่ (เช่น Laser, Bending) → ไป tag เครื่อง/สินค้า → dropdown ทุกจุดเห็นเอง (logic จับคู่เทียบ key generic อยู่แล้ว) · **process_type เป็น master กลาง data ถูก centralize แล้ว (ตาราง `process_types` อ่านผ่าน `processTypes.js`) ไม่ผูกกับ Daily Report** — จุดจัดการอยู่ที่ไหนก็มีผลทั้งระบบ
 - โค้ดอ่านผ่าน **`src/utils/processTypes.js`** (`loadProcessTypes()` cache + `activeProcessTypes()`/`procDisplay()`/`procColor()` + `DEFAULT_PROCESS_TYPES` fallback — ตารางล่ม/ยังไม่ apply = พฤติกรรมเดิม) · **'common' (ทุกกระบวนการ) เป็น sentinel ในโค้ด ไม่อยู่ในตาราง** dropdown เติมเองต่อจุด
 - จุดที่ใช้แล้ว: DailyReport (dropdown ประเภท DT/งานเสีย/นโยบายพัก + กลุ่มแสดงรายการ + product quick manager) · ProductMaster (ฟอร์มสินค้า) — **ห้าม hardcode welding_assembly/metal_forming เพิ่มในหน้าใหม่** อ่านผ่าน util นี้ · หมายเหตุ: `line_type` (production_lines) เป็นคนละตัว ไม่เกี่ยว
 
