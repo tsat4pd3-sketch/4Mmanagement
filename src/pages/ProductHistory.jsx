@@ -16,6 +16,25 @@ const fmtDate = s => { if (!s) return '—'; const [, m, d] = s.split('-'); retu
 const fmtDT = t => t ? new Date(t).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 const AUDIT_FIELD_TH = { line_name: 'ไลน์', cycle_time_sec: 'Cycle Time', name: 'ชื่อ', p_no: 'P/N', pair_mat_no: 'คู่ RH/LH', is_active: 'สถานะใช้งาน', customer: 'ลูกค้า' };
 
+const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px' };
+
+// Section ย่อ/ขยายได้ตาม UI-CONVENTIONS (หัวโชว์ชื่อ+จำนวนเสมอ · จำสถานะใน localStorage · default ขยาย ยกเว้นว่าง)
+function CollapseCard({ id, title, count, defaultOpen = true, children }) {
+  // เก็บเฉพาะ override ของ user — defaultOpen เป็นค่าสด (section ว่างตอน mount แล้วข้อมูลมาทีหลังจะกางเอง)
+  const [override, setOverride] = useState(() => localStorage.getItem(`ph_collapse_${id}`));
+  const open = override == null ? defaultOpen : override === '1';
+  const toggle = () => { const v = open ? '0' : '1'; localStorage.setItem(`ph_collapse_${id}`, v); setOverride(v); };
+  return (
+    <div style={{ ...card, marginBottom: 16 }}>
+      <div onClick={toggle} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}>
+        <div style={{ fontSize: 13, fontWeight: 800 }}>{title}{count != null && <span style={{ color: 'var(--muted)', fontWeight: 600 }}> ({count})</span>}</div>
+        <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{open ? '▲' : '▼'}</span>
+      </div>
+      {open && <div style={{ marginTop: 8 }}>{children}</div>}
+    </div>
+  );
+}
+
 export default function ProductHistory() {
   const { role, lineId, sections } = useContext(UserContext);
   const scopeSecs = sections || [];
@@ -25,6 +44,8 @@ export default function ProductHistory() {
   const [search, setSearch]     = useState('');
   const [filterLine, setFilterLine] = useState('');
   const [selMat, setSelMat]     = useState(null);   // product object
+  const [pickerOpen, setPickerOpen] = useState(true);  // เลือกสินค้าแล้วพับลิสต์อัตโนมัติ (ข้อมูลเยอะ)
+  const [showAllRows, setShowAllRows] = useState(false); // ตารางใบผลิตแสดง 150 แรกก่อน
   const [from, setFrom]         = useState(() => addDays(todayStr(), -90));
   const [to, setTo]             = useState(todayStr);
   const [orders, setOrders]     = useState([]);
@@ -143,7 +164,6 @@ export default function ProductHistory() {
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'th'));
   }, [filteredProducts]);
 
-  const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px' };
   const th = { textAlign: 'left', fontSize: 11, color: 'var(--muted)', fontWeight: 700, padding: '6px 8px', borderBottom: '1px solid var(--border2)', whiteSpace: 'nowrap' };
   const td = { fontSize: 12, padding: '6px 8px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' };
 
@@ -180,11 +200,17 @@ export default function ProductHistory() {
             <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ marginTop: 4, width: 150 }} />
           </div>
         </div>
-        {/* ผลค้นหา — ลิสต์จัดกลุ่มตามไลน์ (เลื่อนในกรอบ) แทน chip กองรวม */}
+        {/* ผลค้นหา — ลิสต์จัดกลุ่มตามไลน์ (เลื่อนในกรอบ) · เลือกแล้วพับอัตโนมัติ กดหัวเพื่อกางเปลี่ยนสินค้า */}
         <div style={{ marginTop: 10 }}>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
-            พบ <b>{filteredProducts.length.toLocaleString()}</b> รายการ{filteredProducts.length > 300 ? ' · แสดง 300 แรก — พิมพ์ค้นหา/เลือกไลน์เพื่อกรองเพิ่ม' : ''} · คลิกสินค้าเพื่อดูประวัติ
+          <div onClick={() => setPickerOpen(o => !o)}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none', marginBottom: 6 }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+              พบ <b>{filteredProducts.length.toLocaleString()}</b> รายการ{filteredProducts.length > 300 ? ' · แสดง 300 แรก — พิมพ์ค้นหา/เลือกไลน์เพื่อกรองเพิ่ม' : ''}
+              {pickerOpen ? ' · คลิกสินค้าเพื่อดูประวัติ' : selMat ? ` · เลือกอยู่: ${selMat.mat_no} — กดเพื่อเปลี่ยนสินค้า` : ' · กดเพื่อแสดงรายการ'}
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{pickerOpen ? '▲' : '▼'}</span>
           </div>
+          {pickerOpen && (
           <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid var(--border2)', borderRadius: 8, background: 'var(--bg2)' }}>
             {productGroups.map(([line, items]) => (
               <div key={line}>
@@ -195,7 +221,7 @@ export default function ProductHistory() {
                 {items.map(p => {
                   const sel = selMat?.id === p.id;
                   return (
-                    <div key={p.id} onClick={() => setSelMat(p)}
+                    <div key={p.id} onClick={() => { setSelMat(p); setPickerOpen(false); setShowAllRows(false); }}
                       style={{ display: 'flex', gap: 12, alignItems: 'baseline', padding: '6px 12px', cursor: 'pointer',
                         borderBottom: '1px solid var(--border)',
                         background: sel ? 'var(--accent)' : 'transparent', color: sel ? '#08131f' : 'var(--text)' }}>
@@ -209,6 +235,7 @@ export default function ProductHistory() {
             ))}
             {!filteredProducts.length && <div style={{ padding: 16, fontSize: 12, color: 'var(--muted)' }}>ไม่พบสินค้า</div>}
           </div>
+          )}
         </div>
       </div>
 
@@ -245,8 +272,7 @@ export default function ProductHistory() {
 
           {/* แยกตามไลน์ */}
           {summary.byLine.length > 0 && (
-            <div style={{ ...card, marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>🏭 ผลิตแยกตามไลน์</div>
+            <CollapseCard id="byline" title="🏭 ผลิตแยกตามไลน์" count={summary.byLine.length}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {summary.byLine.map(l => (
                   <div key={l.line} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -258,13 +284,12 @@ export default function ProductHistory() {
                   </div>
                 ))}
               </div>
-            </div>
+            </CollapseCard>
           )}
 
           {/* trend รายวัน */}
           {daily.length > 0 && (
-            <div style={{ ...card, marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>📈 ผลิตรายวัน</div>
+            <CollapseCard id="daily" title="📈 ผลิตรายวัน" count={`${daily.length} วัน`}>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 100, overflowX: 'auto' }}>
                 {daily.map((d, i) => (
                   <div key={d.d} title={`${d.d} · ผลิต ${d.produced}${d.ng ? ` · NG ${d.ng}` : ''}`}
@@ -277,13 +302,13 @@ export default function ProductHistory() {
                   </div>
                 ))}
               </div>
-            </div>
+            </CollapseCard>
           )}
 
-          {/* ตารางใบผลิต */}
-          <div style={{ ...card, marginBottom: 16, overflowX: 'auto' }}>
-            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>📋 รายการใบผลิต ({rows.length})</div>
+          {/* ตารางใบผลิต — ข้อมูลเยอะ: พับได้ + แสดง 150 แถวแรกก่อน */}
+          <CollapseCard id="orders" title="📋 รายการใบผลิต" count={rows.length.toLocaleString()}>
             {loading ? <div style={{ color: 'var(--muted)', fontSize: 12 }}>กำลังโหลด...</div> : rows.length === 0 ? <div style={{ color: 'var(--muted)', fontSize: 12 }}>ไม่มีการผลิตในช่วงนี้</div> : (
+            <div style={{ overflowX: 'auto' }}>
               <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 760 }}>
                 <thead><tr>
                   <th style={th}>วันที่</th><th style={th}>ไลน์</th><th style={th}>กะ</th><th style={th}>เครื่อง</th>
@@ -291,7 +316,7 @@ export default function ProductHistory() {
                   <th style={{ ...th, textAlign: 'right' }}>NG</th><th style={th}>สถานะ</th><th style={th}>เปิด–ปิด</th>
                 </tr></thead>
                 <tbody>
-                  {rows.map(r => (
+                  {(showAllRows ? rows : rows.slice(0, 150)).map(r => (
                     <tr key={r.id}>
                       <td style={td}>{fmtDate(r.work_date)}</td>
                       <td style={{ ...td, fontWeight: 700 }}>{r.line}</td>
@@ -306,12 +331,19 @@ export default function ProductHistory() {
                   ))}
                 </tbody>
               </table>
+              {!showAllRows && rows.length > 150 && (
+                <button onClick={() => setShowAllRows(true)}
+                  style={{ marginTop: 8, fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 8, cursor: 'pointer',
+                    background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
+                  ▼ แสดงอีก {(rows.length - 150).toLocaleString()} ใบ (ทั้งหมด {rows.length.toLocaleString()})
+                </button>
+              )}
+            </div>
             )}
-          </div>
+          </CollapseCard>
 
-          {/* ประวัติการแก้ไขข้อมูลสินค้า (audit) */}
-          <div style={{ ...card }}>
-            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>🕵️ ประวัติการแก้ไขข้อมูลสินค้า (ใครแก้อะไรเมื่อไหร่)</div>
+          {/* ประวัติการแก้ไขข้อมูลสินค้า (audit) — ว่าง = default พับ */}
+          <CollapseCard id="audit" title="🕵️ ประวัติการแก้ไขข้อมูลสินค้า (ใครแก้อะไรเมื่อไหร่)" count={audit.length} defaultOpen={audit.length > 0}>
             {audit.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                 ยังไม่มีประวัติ — ระบบ audit เริ่มเก็บหลัง apply migration <code>20260724_audit_log_dr.sql</code> (การแก้ไขก่อนหน้านั้นไม่ถูกบันทึก)
@@ -332,7 +364,7 @@ export default function ProductHistory() {
                 ))}
               </div>
             )}
-          </div>
+          </CollapseCard>
         </>
       )}
     </div>
