@@ -647,7 +647,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     }
   }
 
-  const deptColor = DEPT_COLORS[department] ?? '#3dd65c'
+  const deptColor = pmTeamsSync().find(t => t.key === department)?.color || DEPT_COLORS[department] || '#3dd65c'
   const pinnedCount = checkpoints.filter(c => c.x_pos != null).length
 
   // จัดกลุ่มสำหรับ render + label "Item.sub" (เช่น 1.3) ให้การ์ดกับ pin ตรงกัน

@@ -18,6 +18,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { canDelete } from '../utils/permissions';
 import { usePerms } from '../utils/usePerms';
 import { exportScrapReportExcel } from '../lib/scrapExportExcel';
+import { docFormSync, loadDocForms, fullCode } from '../utils/docForms';
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
 function localDateStr(d = new Date()) {
@@ -96,6 +97,8 @@ export default function ScrapReport() {
   const [defectPicker, setDefectPicker] = useState(null); // itemKey
   const [sapOptions, setSapOptions] = useState(null);
   const [sapSearch, setSapSearch] = useState('');
+  const [docReady, setDocReady] = useState(false); // ทะเบียนเอกสารโหลดแล้ว → subtitle ดึงเลขฟอร์มจาก registry (doc_key เดียวกับ export)
+  const scrapFormNo = fullCode(docReady ? docFormSync('scrap_report', { form_code: 'FM-PD2-002', rev: 'Rev.06' }) : { form_code: 'FM-PD2-002', rev: 'Rev.06' }) || 'FM-PD2-002 Rev.06';
 
   const loadReports = useCallback(async () => {
     if (scopedLineNames && scopedLineNames.length === 0) { setReports([]); return; } // ถูก scope แต่ไม่มีไลน์ → ว่าง
@@ -111,6 +114,7 @@ export default function ScrapReport() {
     // ⚠️ production_lines อยู่ MAIN project (client supabase) ไม่ใช่ DR — ดึงผิด client = dropdown ว่าง
     supabase.from('production_lines').select('id, name, section, parent_line_name').order('name').then(({ data }) => setAllLines(data || []));
     supabaseDR.from('scrap_defect_types').select('*').eq('is_active', true).order('sort_order').then(({ data }) => setDefectTypes(data || []));
+    loadDocForms().then(() => setDocReady(true));
   }, []);
 
   /* ── SAP / พาร์ทย่อย picker (dr_products main + bom_items sub) ── */
@@ -282,7 +286,7 @@ export default function ScrapReport() {
       <div style={{ marginBottom: 14 }}>
         <h1 style={{ fontSize: 20, fontWeight: 900, margin: 0, fontFamily: 'var(--font-display)' }}>♻️ ใบรายงานของเสีย (Scrap Report)</h1>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
-          FM-PD2-002 Rev.06 — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม
+          {scrapFormNo} — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม
         </div>
       </div>
 

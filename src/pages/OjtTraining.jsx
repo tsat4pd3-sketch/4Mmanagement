@@ -6,7 +6,7 @@ import { toast } from '../components/Toast';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import tsLogoUrl from '../assets/TS logo.png';
-import { getDocForm, fullCode } from '../utils/docForms';
+import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
 
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
@@ -100,6 +100,8 @@ export default function OjtTraining() {
   const [signTarget, setSignTarget] = useState(null); // { idx, title } — แถวที่กำลังเซ็น
   const [empSearch, setEmpSearch] = useState('');
   const [printing, setPrinting] = useState(null);
+  const [docReady, setDocReady] = useState(false); // ทะเบียนเอกสารโหลดแล้ว → subtitle ดึงเลขฟอร์มจาก registry
+  const ojtFormNo = (docReady ? docFormSync('ojt', { form_code: FORM_NO }).form_code : FORM_NO) || FORM_NO;
 
   /* ── scope มาตรฐาน: leader → section ของไลน์ตัวเอง · role อื่นตาม sections ── */
   const leaderLine = useMemo(() => lines.find(l => String(l.id) === String(userLineId)), [lines, userLineId]);
@@ -124,7 +126,7 @@ export default function OjtTraining() {
     setTrainings(tr || []);
     setLoading(false);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadDocForms().then(() => setDocReady(true)); }, []);
 
   // พนักงานสำหรับ picker — scope: leader = ครอบครัวไลน์ตัวเอง · role อื่นตาม sections
   useEffect(() => {
@@ -457,7 +459,7 @@ table{border-collapse:collapse}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexWrap: 'wrap', gap: 10, paddingRight: 52 }}>
         <div>
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>📖 อบรมสอนงาน OJT</h2>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING) — paperless แทนฟอร์ม {FORM_NO}</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING) — paperless แทนฟอร์ม {ojtFormNo}</div>
         </div>
         {canRecord && (
           <button onClick={() => setEditing(emptyDraft())}

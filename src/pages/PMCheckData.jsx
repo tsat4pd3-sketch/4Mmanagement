@@ -771,7 +771,7 @@ export default function PMCheckData() {
       : cp.type === 'measure' ? (r.mval !== '' && r.mval != null) : r.attr !== ''
   })
 
-  const deptColor = DEPT_COLORS[department] ?? '#3dd65c'
+  const deptColor = teams.find(t => t.key === department)?.color || DEPT_COLORS[department] || '#3dd65c'
   const jigImg = selectedJig ? getPublicUrl(selectedJig.image_path) : null
   // กรองอุปกรณ์ตามทีม — ยึด "department (checklist)" เป็นหลัก (คำสั่ง user 2026-07-22):
   //   โผล่ใต้ทีม D ถ้า (ก) มี checklist ของทีม D อยู่แล้ว (ตรงกับหน้า PMSchedule) หรือ
