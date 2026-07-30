@@ -509,10 +509,49 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   );
 }
 
+/* ─── เสียงแจ้งเตือน (Web Audio — ไม่ต้องมีไฟล์เสียง) ───────────
+   เล่นตอนมี notification ใหม่เข้ามาแบบ realtime · เบราว์เซอร์บล็อกเสียงจนกว่าจะมี
+   user gesture → prime AudioContext ตอนแตะจอ/คลิกครั้งแรก · ปิดเสียงได้ (localStorage) */
+let _notifAudioCtx = null;
+function primeNotifAudio() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!_notifAudioCtx) _notifAudioCtx = new AC();
+    if (_notifAudioCtx.state === 'suspended') _notifAudioCtx.resume().catch(() => {});
+  } catch { /* ไม่รองรับ — ข้าม */ }
+}
+function playNotifChime() {
+  if (localStorage.getItem('esm-notif-sound') === 'off') return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!_notifAudioCtx) _notifAudioCtx = new AC();
+    const ctx = _notifAudioCtx;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    const now = ctx.currentTime;
+    // จังหวะ 2 โน้ต A5 → D6 (ding-dong เบาๆ)
+    [{ f: 880, t: 0 }, { f: 1174.66, t: 0.12 }].forEach(({ f, t }) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = f;
+      const s = now + t;
+      gain.gain.setValueAtTime(0, s);
+      gain.gain.linearRampToValueAtTime(0.18, s + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, s + 0.35);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(s);
+      osc.stop(s + 0.4);
+    });
+  } catch { /* เสียงถูกบล็อก — เงียบ ไม่ให้พังหน้า */ }
+}
+
 /* ─── Notification Bell ─────────────────────────────────────── */
 function NotificationBell({ userId }) {
   const [notifs, setNotifs]     = useState([]);
   const [open,   setOpen]       = useState(false);
+  const [muted,  setMuted]      = useState(() => localStorage.getItem('esm-notif-sound') === 'off');
   const dropRef                 = useRef(null);
 
   const load = useCallback(async () => {
@@ -526,15 +565,31 @@ function NotificationBell({ userId }) {
     setNotifs(data || []);
   }, [userId]);
 
+  // เตรียม AudioContext ตอน gesture แรก (เบราว์เซอร์ต้องมี user interaction ก่อนเล่นเสียง)
+  useEffect(() => {
+    const prime = () => primeNotifAudio();
+    window.addEventListener('pointerdown', prime, { once: true });
+    window.addEventListener('keydown', prime, { once: true });
+    return () => { window.removeEventListener('pointerdown', prime); window.removeEventListener('keydown', prime); };
+  }, []);
+
   useEffect(() => {
     load();
     if (!userId) return;
     const ch = supabase
       .channel(`notif-${userId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => load())
+      // INSERT = มี notification ใหม่จริง (initial load ไม่เข้าตรงนี้) → รีโหลด + เล่นเสียง
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => { load(); playNotifChime(); })
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [userId, load]);
+
+  const toggleMute = () => {
+    const next = !muted;
+    setMuted(next);
+    localStorage.setItem('esm-notif-sound', next ? 'off' : 'on');
+    if (!next) { primeNotifAudio(); playNotifChime(); } // เปิดเสียง = เล่นตัวอย่างให้ฟัง
+  };
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -606,13 +661,19 @@ function NotificationBell({ userId }) {
           overflow: 'hidden',
           maxHeight: '70vh', display: 'flex', flexDirection: 'column',
         }}>
-          <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
             <span style={{ fontWeight: 700, fontSize: 13 }}>🔔 แจ้งเตือน</span>
-            {unread > 0 && (
-              <button onClick={markAllRead} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                อ่านทั้งหมด
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <button onClick={toggleMute} title={muted ? 'เปิดเสียงแจ้งเตือน' : 'ปิดเสียงแจ้งเตือน'}
+                style={{ fontSize: 14, background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, opacity: muted ? 0.5 : 1 }}>
+                {muted ? '🔕' : '🔔'}
               </button>
-            )}
+              {unread > 0 && (
+                <button onClick={markAllRead} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                  อ่านทั้งหมด
+                </button>
+              )}
+            </div>
           </div>
 
           <div style={{ overflowY: 'auto', flex: 1 }}>
