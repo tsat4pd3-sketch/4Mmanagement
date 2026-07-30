@@ -13,6 +13,9 @@ import { toast } from '../components/Toast';
 import useIsMobile from '../utils/useIsMobile';
 import OeeInsightPanel from '../components/OeeInsightPanel';
 import { pairAwareTotal } from '../utils/pairTotals';
+import { lazy, Suspense } from 'react';
+
+const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport'));
 
 // ── Colour helpers ───────────────────────────────────────────────
 const oeeColor  = v => v >= 80 ? '#22c55e' : v >= 60 ? '#f59e0b' : '#ef4444';
@@ -176,6 +179,8 @@ export default function OEEAnalytics() {
   const isMobile = useIsMobile(); // ≤768px: grid วิเคราะห์ยุบเป็นคอลัมน์เดียว กันกราฟถูกตัด (desktop ไม่เปลี่ยน)
   const [viewTab, setViewTab] = useState('today'); // today | trend | insight
   const canSetTarget = can('oee', 'set_target', role);
+  const canExportReview = can('oee', 'export_review', role);
+  const [showReviewExport, setShowReviewExport] = useState(false);
 
   // ── Target OEE/A/P/Q รายกรุ๊ป (ตาราง oee_targets ฝั่ง Main) ──
   const [oeeTargets, setOeeTargets] = useState({});          // { group_name: row }
@@ -727,6 +732,12 @@ export default function OEEAnalytics() {
               🎯 ตั้ง Target
             </button>
           )}
+          {canExportReview && (
+            <button style={{ ...s.tab(false), border: '1px solid var(--border2)' }}
+              onClick={() => setShowReviewExport(true)} title="สร้างเด็ค Monthly Performance Review (.pptx) ตาม template TSG จากข้อมูลเดือนที่เลือก">
+              📽️ รายงานเดือน
+            </button>
+          )}
         </div>
       </div>
 
@@ -1210,6 +1221,12 @@ export default function OEEAnalytics() {
           onClose={() => setShowTargetModal(false)}
           onSaved={() => { loadTargets(); setShowTargetModal(false); }}
         />
+      )}
+
+      {showReviewExport && canExportReview && (
+        <Suspense fallback={null}>
+          <MonthlyReviewExport onClose={() => setShowReviewExport(false)} />
+        </Suspense>
       )}
     </div>
   );
