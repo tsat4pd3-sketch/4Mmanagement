@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useContext, useCallback } from 'react';
+import { useState, useEffect, useMemo, useContext, useCallback, Fragment } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
@@ -13,6 +13,8 @@ const todayStr = () => {
 };
 const addDays = (s, n) => { const [y, m, d] = s.split('-').map(Number); const dt = new Date(y, m - 1, d); dt.setDate(dt.getDate() + n); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`; };
 const fmtDate = s => { if (!s) return '—'; const [, m, d] = s.split('-'); return `${+d}/${+m}`; };
+const fmtDayFull = s => { if (!s) return '—'; const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('th-TH', { weekday: 'short', day: '2-digit', month: '2-digit' }); };
+const STATUS_TH = s => s === 'confirmed' ? '✓ ปิด' : s === 'carry_over' ? '➡ ยกยอด' : s === 'cancelled' ? '✕ ยกเลิก' : s === 'open' ? '● ผลิต' : s;
 const fmtDT = t => t ? new Date(t).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 const AUDIT_FIELD_TH = { line_name: 'ไลน์', cycle_time_sec: 'Cycle Time', name: 'ชื่อ', p_no: 'P/N', pair_mat_no: 'คู่ RH/LH', is_active: 'สถานะใช้งาน', customer: 'ลูกค้า' };
 
@@ -45,7 +47,10 @@ export default function ProductHistory() {
   const [filterLine, setFilterLine] = useState('');
   const [selMat, setSelMat]     = useState(null);   // product object
   const [pickerOpen, setPickerOpen] = useState(true);  // เลือกสินค้าแล้วพับลิสต์อัตโนมัติ (ข้อมูลเยอะ)
-  const [showAllRows, setShowAllRows] = useState(false); // ตารางใบผลิตแสดง 150 แรกก่อน
+  const [showAllDays, setShowAllDays] = useState(false); // ตารางใบผลิตแสดง 45 วันแรกก่อน
+  const [openDays, setOpenDays]     = useState(() => new Set());   // drill: วัน → ไลน์·กะ → ใบ
+  const [openShifts, setOpenShifts] = useState(() => new Set());
+  const toggleSet = (setter, key) => setter(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const [from, setFrom]         = useState(() => addDays(todayStr(), -90));
   const [to, setTo]             = useState(todayStr);
   const [orders, setOrders]     = useState([]);
@@ -124,6 +129,23 @@ export default function ProductHistory() {
     const byLine = {};
     rows.forEach(r => { const k = r.line || '—'; (byLine[k] = byLine[k] || { line: k, produced: 0, ng: 0, orders: 0 }); byLine[k].produced += r.produced || 0; byLine[k].ng += r.ng || 0; byLine[k].orders++; });
     return { produced, target, ng, orders: rows.length, linesUsed, byLine: Object.values(byLine).sort((a, b) => b.produced - a.produced) };
+  }, [rows]);
+
+  // โครง drill-down: วัน → (ไลน์·กะ) → รายใบ — วันล่าสุดขึ้นบน
+  const dayGroups = useMemo(() => {
+    const m = new Map();
+    rows.forEach(r => {
+      const d = r.work_date || '—';
+      if (!m.has(d)) m.set(d, { date: d, produced: 0, target: 0, ng: 0, orders: 0, shifts: new Map() });
+      const g = m.get(d);
+      g.produced += r.produced || 0; g.target += r.target || 0; g.ng += r.ng || 0; g.orders++;
+      const sk = `${r.line || '—'}|${r.shift || ''}`;
+      if (!g.shifts.has(sk)) g.shifts.set(sk, { line: r.line, shift: r.shift, produced: 0, target: 0, ng: 0, items: [] });
+      const s = g.shifts.get(sk);
+      s.produced += r.produced || 0; s.target += r.target || 0; s.ng += r.ng || 0; s.items.push(r);
+    });
+    return [...m.values()].sort((a, b) => b.date.localeCompare(a.date))
+      .map(g => ({ ...g, shifts: [...g.shifts.values()].sort((a, b) => String(a.shift).localeCompare(String(b.shift)) || String(a.line).localeCompare(String(b.line))) }));
   }, [rows]);
 
   // trend รายวัน
@@ -217,7 +239,7 @@ export default function ProductHistory() {
                 {items.map(p => {
                   const sel = selMat?.id === p.id;
                   return (
-                    <div key={p.id} onClick={() => { setSelMat(p); setPickerOpen(false); setShowAllRows(false); }}
+                    <div key={p.id} onClick={() => { setSelMat(p); setPickerOpen(false); setShowAllDays(false); setOpenDays(new Set()); setOpenShifts(new Set()); }}
                       style={{ display: 'flex', gap: 12, alignItems: 'baseline', padding: '6px 12px', cursor: 'pointer',
                         borderBottom: '1px solid var(--border)',
                         background: sel ? 'var(--accent)' : 'transparent', color: sel ? '#08131f' : 'var(--text)' }}>
@@ -247,6 +269,11 @@ export default function ProductHistory() {
                   P/N {selMat.p_no || '—'} · ไลน์ปัจจุบัน <b>{selMat.line_name || '—'}</b> · CT {selMat.cycle_time_sec || '—'}s {!selMat.is_active && '· ⛔ ปิดใช้งาน'}
                 </div>
               </div>
+              <button onClick={() => { setSelMat(null); setPickerOpen(true); }}
+                style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                  background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
+                ✕ ปิด — เลือกสินค้าอื่น
+              </button>
             </div>
           </div>
 
@@ -286,52 +313,95 @@ export default function ProductHistory() {
           {/* trend รายวัน */}
           {daily.length > 0 && (
             <CollapseCard id="daily" title="📈 ผลิตรายวัน" count={`${daily.length} วัน`}>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 100, overflowX: 'auto' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 130, overflowX: 'auto' }}>
                 {daily.map((d, i) => (
-                  <div key={d.d} title={`${d.d} · ผลิต ${d.produced}${d.ng ? ` · NG ${d.ng}` : ''}`}
-                    style={{ minWidth: 14, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }}>
-                    <div style={{ background: 'var(--accent)', height: `${Math.round(d.produced / dailyMax * 100)}%`, borderRadius: '3px 3px 0 0', minHeight: 2 }} />
-                    {/* ป้ายวันเว้นแท่ง (ฟอนต์ขั้นต่ำ 11px ตาม UI-CONVENTIONS — 8px อ่านไม่ออก) */}
+                  <div key={d.d} title={`${d.d} · ผลิต ${d.produced.toLocaleString()}${d.ng ? ` · NG ${d.ng}` : ''}`}
+                    style={{ flex: '1 0 14px', maxWidth: 48, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }}>
+                    {/* วันน้อย = โชว์ตัวเลขบนแท่งเลย ไม่ต้องชี้ */}
+                    {daily.length <= 20 && (
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', textAlign: 'center', marginBottom: 2, whiteSpace: 'nowrap' }}>
+                        {d.produced.toLocaleString()}
+                      </div>
+                    )}
+                    <div style={{ background: 'var(--accent)', height: `${Math.max(2, Math.round(d.produced / dailyMax * 78))}%`, borderRadius: '3px 3px 0 0' }} />
+                    {/* ป้ายวันเว้นแท่ง (ฟอนต์ขั้นต่ำ 11px ตาม UI-CONVENTIONS) */}
                     <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 2, whiteSpace: 'nowrap', height: 14, overflow: 'visible' }}>
-                      {i % 2 === 0 ? fmtDate(d.d) : ''}
+                      {(daily.length <= 20 || i % 2 === 0) ? fmtDate(d.d) : ''}
                     </div>
                   </div>
                 ))}
               </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
+                ความสูงแท่ง = จำนวนชิ้นที่ผลิตได้ของวันนั้น (สูงสุดในช่วง = {dailyMax.toLocaleString()} ชิ้น) · แสดงเฉพาะวันที่มีการผลิต · ชี้ที่แท่งเพื่อดูตัวเลข
+              </div>
             </CollapseCard>
           )}
 
-          {/* ตารางใบผลิต — ข้อมูลเยอะ: พับได้ + แสดง 150 แถวแรกก่อน */}
-          <CollapseCard id="orders" title="📋 รายการใบผลิต" count={rows.length.toLocaleString()}>
+          {/* ตารางใบผลิต — drill-down วัน → ไลน์·กะ → รายใบ (รายวันคือระดับหลัก รายใบดูเมื่อต้องเจาะ) */}
+          <CollapseCard id="orders" title="📋 รายการใบผลิต" count={`${dayGroups.length} วัน · ${rows.length.toLocaleString()} ใบ`}>
             {loading ? <div style={{ color: 'var(--muted)', fontSize: 12 }}>กำลังโหลด...</div> : rows.length === 0 ? <div style={{ color: 'var(--muted)', fontSize: 12 }}>ไม่มีการผลิตในช่วงนี้</div> : (
             <div style={{ overflowX: 'auto' }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>คลิกวันเพื่อแตกราย "ไลน์·กะ" · คลิกกะเพื่อแตกรายใบ</div>
               <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 760 }}>
                 <thead><tr>
-                  <th style={th}>วันที่</th><th style={th}>ไลน์</th><th style={th}>กะ</th><th style={th}>เครื่อง</th>
-                  <th style={{ ...th, textAlign: 'right' }}>เป้า</th><th style={{ ...th, textAlign: 'right' }}>ผลิตได้</th>
-                  <th style={{ ...th, textAlign: 'right' }}>NG</th><th style={th}>สถานะ</th><th style={th}>เปิด–ปิด</th>
+                  <th style={th}>วัน → ไลน์·กะ → ใบ</th>
+                  <th style={{ ...th, textAlign: 'right' }}>ใบ</th>
+                  <th style={{ ...th, textAlign: 'right' }}>เป้า</th>
+                  <th style={{ ...th, textAlign: 'right' }}>ผลิตได้</th>
+                  <th style={{ ...th, textAlign: 'right' }}>NG</th>
+                  <th style={th}>สถานะ</th><th style={th}>เปิด–ปิด</th>
                 </tr></thead>
                 <tbody>
-                  {(showAllRows ? rows : rows.slice(0, 150)).map(r => (
-                    <tr key={r.id}>
-                      <td style={td}>{fmtDate(r.work_date)}</td>
-                      <td style={{ ...td, fontWeight: 700 }}>{r.line}</td>
-                      <td style={td}>{r.shift === 'day' ? '☀️' : '🌙'}</td>
-                      <td style={td}>{r.machine_no || '—'}</td>
-                      <td style={{ ...td, textAlign: 'right' }}>{(r.target || 0).toLocaleString()}</td>
-                      <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#22c55e' }}>{(r.produced || 0).toLocaleString()}</td>
-                      <td style={{ ...td, textAlign: 'right', color: r.ng ? '#ef4444' : 'var(--muted)' }}>{r.ng || '—'}</td>
-                      <td style={td}>{r.status === 'confirmed' ? '✓ ปิด' : r.status === 'carry_over' ? '➡ ยกยอด' : r.status === 'cancelled' ? '✕ ยกเลิก' : r.status === 'open' ? '● ผลิต' : r.status}</td>
-                      <td style={{ ...td, color: 'var(--muted)' }}>{fmtDT(r.opened_at)}{r.confirmed_at ? ` – ${fmtDT(r.confirmed_at)}` : ''}</td>
-                    </tr>
-                  ))}
+                  {(showAllDays ? dayGroups : dayGroups.slice(0, 45)).map(g => {
+                    const dOpen = openDays.has(g.date);
+                    return (
+                      <Fragment key={g.date}>
+                        <tr onClick={() => toggleSet(setOpenDays, g.date)} style={{ cursor: 'pointer' }}>
+                          <td style={{ ...td, fontWeight: 800 }}>{dOpen ? '▾' : '▸'} {fmtDayFull(g.date)}</td>
+                          <td style={{ ...td, textAlign: 'right' }}>{g.orders}</td>
+                          <td style={{ ...td, textAlign: 'right' }}>{g.target.toLocaleString()}</td>
+                          <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#22c55e' }}>{g.produced.toLocaleString()}</td>
+                          <td style={{ ...td, textAlign: 'right', color: g.ng ? '#ef4444' : 'var(--muted)' }}>{g.ng || '—'}</td>
+                          <td style={{ ...td, color: 'var(--muted)' }}>{g.shifts.map(s => s.shift === 'day' ? '☀️' : '🌙').join(' ')}</td>
+                          <td style={td}></td>
+                        </tr>
+                        {dOpen && g.shifts.map(s => {
+                          const sk = `${g.date}|${s.line}|${s.shift}`;
+                          const sOpen = openShifts.has(sk);
+                          return (
+                            <Fragment key={sk}>
+                              <tr onClick={() => toggleSet(setOpenShifts, sk)} style={{ cursor: 'pointer', background: 'var(--bg2)' }}>
+                                <td style={{ ...td, paddingLeft: 28, fontWeight: 700 }}>{sOpen ? '▾' : '▸'} {s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {s.line || '—'}</td>
+                                <td style={{ ...td, textAlign: 'right' }}>{s.items.length}</td>
+                                <td style={{ ...td, textAlign: 'right' }}>{s.target.toLocaleString()}</td>
+                                <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#22c55e' }}>{s.produced.toLocaleString()}</td>
+                                <td style={{ ...td, textAlign: 'right', color: s.ng ? '#ef4444' : 'var(--muted)' }}>{s.ng || '—'}</td>
+                                <td style={td}></td><td style={td}></td>
+                              </tr>
+                              {sOpen && s.items.map(r => (
+                                <tr key={r.id}>
+                                  <td style={{ ...td, paddingLeft: 52, color: 'var(--muted)' }}>└ {r.prod_no || 'ใบผลิต'}{r.machine_no ? ` · ${r.machine_no}` : ''}</td>
+                                  <td style={td}></td>
+                                  <td style={{ ...td, textAlign: 'right' }}>{(r.target || 0).toLocaleString()}</td>
+                                  <td style={{ ...td, textAlign: 'right', color: '#22c55e' }}>{(r.produced || 0).toLocaleString()}</td>
+                                  <td style={{ ...td, textAlign: 'right', color: r.ng ? '#ef4444' : 'var(--muted)' }}>{r.ng || '—'}</td>
+                                  <td style={td}>{STATUS_TH(r.status)}</td>
+                                  <td style={{ ...td, color: 'var(--muted)' }}>{fmtDT(r.opened_at)}{r.confirmed_at ? ` – ${fmtDT(r.confirmed_at)}` : ''}</td>
+                                </tr>
+                              ))}
+                            </Fragment>
+                          );
+                        })}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
-              {!showAllRows && rows.length > 150 && (
-                <button onClick={() => setShowAllRows(true)}
+              {!showAllDays && dayGroups.length > 45 && (
+                <button onClick={() => setShowAllDays(true)}
                   style={{ marginTop: 8, fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 8, cursor: 'pointer',
                     background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-                  ▼ แสดงอีก {(rows.length - 150).toLocaleString()} ใบ (ทั้งหมด {rows.length.toLocaleString()})
+                  ▼ แสดงอีก {(dayGroups.length - 45).toLocaleString()} วัน (ทั้งหมด {dayGroups.length.toLocaleString()} วัน)
                 </button>
               )}
             </div>
