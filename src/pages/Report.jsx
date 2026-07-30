@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
-import { loadDocForms, docFormSync, fullCode } from '../utils/docForms';
+import { loadDocForms, docFormSync, fullCode, getDocForm, getDocFormRevisions, withDocFoot } from '../utils/docForms';
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, Tooltip,
@@ -360,7 +360,7 @@ table{border-collapse:collapse;width:100%}
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
     if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
-    w.document.write(html); w.document.close();
+    w.document.write(withDocFoot(html, 'ot_booking')); w.document.close();
   };
 
   return (
@@ -701,7 +701,7 @@ table{border-collapse:collapse;width:100%}
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
     if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
-    w.document.write(html); w.document.close();
+    w.document.write(withDocFoot(html, 'report_daily')); w.document.close();
   };
 
   return (
@@ -884,7 +884,7 @@ table{border-collapse:collapse;width:100%}
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
     if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
-    w.document.write(html); w.document.close();
+    w.document.write(withDocFoot(html, 'report_employee')); w.document.close();
   };
 
   return (
@@ -1071,7 +1071,7 @@ table{border-collapse:collapse;width:100%}
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
     if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
-    w.document.write(html); w.document.close();
+    w.document.write(withDocFoot(html, 'report_station_log')); w.document.close();
   };
 
   return (
@@ -1256,7 +1256,7 @@ table{border-collapse:collapse;width:100%}
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
     if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
-    w.document.write(html); w.document.close();
+    w.document.write(withDocFoot(html, 'report_period_summary')); w.document.close();
   };
 
   return (
@@ -1557,22 +1557,26 @@ function FourMTab() {
       dayMap[item.id][day][shift].push(l);
     }
 
-    // เอกสารควบคุม (เลขฟอร์ม/revision/effective date/legend/ผู้ออกเอกสาร) — มาจาก document_controls
-    // ถ้ายังไม่มีตาราง/ยังไม่ตั้งค่า ให้ fallback เป็นค่าว่าง ไม่ให้ export ล้ม
-    let docCtrl = null;
-    try {
-      const { data } = await supabase.from('document_controls')
-        .select('doc_no, revision, effective_date, legend, issued:issued_by(full_name, signature_url)')
-        .eq('doc_key', 'changing_point_control').maybeSingle();
-      docCtrl = data;
-    } catch { /* ตาราง document_controls อาจยังไม่ถูกสร้าง */ }
+    // เอกสารควบคุม (เลขฟอร์ม/rev/effective/legend/ผู้ออกเอกสาร) — ทะเบียนกลาง doc_forms (2026-07-30)
+    // ยังไม่ตั้งค่า/ทะเบียนล่ม = fallback ค่าว่าง ไม่ให้ export ล้ม
+    const dfCpc = await getDocForm('changing_point', {});
+    let issuedProfile = null;
+    if (dfCpc.issued_by) {
+      try {
+        const { data } = await supabase.from('profiles').select('full_name, signature_url').eq('id', dfCpc.issued_by).maybeSingle();
+        issuedProfile = data;
+      } catch { /* best-effort */ }
+    }
+    const docCtrl = {
+      doc_no: dfCpc.form_code || null, revision: dfCpc.rev || null,
+      effective_date: dfCpc.effective_date || null, legend: dfCpc.legend || null,
+      issued: issuedProfile,
+    };
     const issuedSig = docCtrl?.issued?.signature_url ? await urlToDataUrl(docCtrl.issued.signature_url) : null;
     const logoDataUrl = await getTsLogoDataUrl();
 
     // ประวัติการแก้ไขเอกสาร (ตาราง Production Department ด้านบนซ้ายของฟอร์มจริง)
-    const { data: revisionRows } = await supabase.from('document_control_revisions')
-      .select('seq, record_date, rev, issued_date, description, responsible, approved_name')
-      .eq('doc_key', 'changing_point_control').order('seq');
+    const revisionRows = await getDocFormRevisions('changing_point');
 
     const lineSection = lines.find(li => li.name === line)?.section || '';
 
@@ -1999,7 +2003,9 @@ function FourMTab() {
 }
 
 function DocumentControlPanel() {
-  const DOC_KEY = 'changing_point_control';
+  // ทะเบียนกลาง doc_forms/doc_form_revisions (ย้ายจาก document_controls เดิม 2026-07-30) —
+  // แผงนี้เป็น shortcut ของแท็บ 4M · /doc-forms แก้ค่าชุดเดียวกันได้ (data ชี้ที่เดียวกัน)
+  const DOC_KEY = 'changing_point';
   const [docNo, setDocNo] = useState('');
   const [revision, setRevision] = useState('');
   const [effectiveDate, setEffectiveDate] = useState('');
@@ -2014,12 +2020,12 @@ function DocumentControlPanel() {
   const load = async () => {
     setLoading(true);
     const [{ data: doc }, { data: profs }, { data: revs }] = await Promise.all([
-      supabase.from('document_controls').select('doc_no, revision, effective_date, legend, issued_by').eq('doc_key', DOC_KEY).maybeSingle(),
+      supabase.from('doc_forms').select('form_code, rev, effective_date, legend, issued_by').eq('doc_key', DOC_KEY).maybeSingle(),
       supabase.from('profiles').select('id, full_name').order('full_name'),
-      supabase.from('document_control_revisions').select('id, seq, record_date, rev, issued_date, description, responsible, approved_name').eq('doc_key', DOC_KEY).order('seq'),
+      supabase.from('doc_form_revisions').select('id, seq, record_date, rev, issued_date, description, responsible, approved_name').eq('doc_key', DOC_KEY).order('seq'),
     ]);
-    setDocNo(doc?.doc_no || '');
-    setRevision(doc?.revision || '');
+    setDocNo(doc?.form_code || '');
+    setRevision(doc?.rev || '');
     setEffectiveDate(doc?.effective_date || '');
     setLegend(doc?.legend || '');
     setIssuedBy(doc?.issued_by || '');
@@ -2032,13 +2038,14 @@ function DocumentControlPanel() {
 
   const saveDoc = async () => {
     setSaving(true);
-    const { error } = await supabase.from('document_controls').upsert({
+    const { error } = await supabase.from('doc_forms').upsert({
       doc_key: DOC_KEY,
-      doc_no: docNo.trim() || null,
-      revision: revision.trim() || null,
+      form_code: docNo.trim() || null,
+      rev: revision.trim() || null,
       effective_date: effectiveDate || null,
       legend: legend || null,
       issued_by: issuedBy || null,
+      updated_at: new Date().toISOString(),
     }, { onConflict: 'doc_key' });
     setSaving(false);
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
@@ -2048,7 +2055,7 @@ function DocumentControlPanel() {
 
   const addRevision = async () => {
     if (!newRev.rev.trim()) { toast.error('กรุณาระบุ Rev'); return; }
-    const { error } = await supabase.from('document_control_revisions').insert([{
+    const { error } = await supabase.from('doc_form_revisions').insert([{
       doc_key: DOC_KEY, seq: Math.max(0, ...revisions.map(r => r.seq || 0)) + 1, // max+1 กัน seq ซ้ำหลังลบแถวกลาง
       record_date: newRev.record_date || null,
       rev: newRev.rev.trim(),
@@ -2064,7 +2071,7 @@ function DocumentControlPanel() {
 
   const removeRevision = async (r) => {
     if (!window.confirm(`ลบ Rev "${r.rev}"?`)) return;
-    await supabase.from('document_control_revisions').delete().eq('id', r.id);
+    await supabase.from('doc_form_revisions').delete().eq('id', r.id);
     load();
   };
 
@@ -2551,7 +2558,7 @@ ${catHeaderCells}
 <tr style="background:#e5e7eb">${headerCells}</tr>
 </thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
-          const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+          const w = window.open('', '_blank'); w.document.write(withDocFoot(html, 'skill_matrix')); w.document.close();
         }} disabled={employees.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: employees.length === 0 ? 0.5 : 1 }}>
           🖨️ PDF
         </button>
@@ -4023,7 +4030,7 @@ function SkillAllowanceTab() {
 </html>`;
 
     const w = window.open('', '_blank');
-    w.document.write(html);
+    w.document.write(withDocFoot(html, 'skill_pay_summary'));
     w.document.close();
   };
 
@@ -4606,7 +4613,7 @@ function AttendanceFormTab() {
 </body></html>`;
 
     const w = window.open('', '_blank');
-    w.document.write(html);
+    w.document.write(withDocFoot(html, 'attendance_record'));
     w.document.close();
   };
 

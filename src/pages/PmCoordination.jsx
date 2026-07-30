@@ -7,6 +7,8 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import { toast } from '../components/Toast';
 import tsLogoUrl from '../assets/TS logo.png';
+import { loadDocForms, withDocFoot, docFormSync } from '../utils/docForms';
+loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 /* ── แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production) — 2026-07-23 ──────────────
    ใบแบบเมล "RE: แผนการ ..." — งาน PM/แก้เครื่องหลายวัน + ทีมรับผิดชอบแต่ละวัน
@@ -465,10 +467,10 @@ function printPlan(p, tasks) {
   <div class="sec">แผนงาน &amp; รายละเอียด</div>
   <ul>${rows || '<li>—</li>'}</ul>
   ${p.remark ? `<div class="remark">Remark : ${p.remark}</div>` : ''}
-  <div class="sign"><div>ผู้จัดทำ (Maintenance)</div><div>รับทราบ (Production)</div></div>
+  <div class="sign">${(docFormSync('pm_coordination', { sig_blocks: ['ผู้จัดทำ (Maintenance)', 'รับทราบ (Production)'] }).sig_blocks || []).map(s => `<div>${s}</div>`).join('')}</div>
   </body></html>`;
   const w = window.open('', '_blank');
   if (!w) { toast.error('เปิดหน้าต่างพิมพ์ไม่ได้ (popup ถูกบล็อก)'); return; }
-  w.document.write(html); w.document.close();
+  w.document.write(withDocFoot(html, 'pm_coordination')); w.document.close();
   w.onload = () => { w.focus(); w.print(); };
 }

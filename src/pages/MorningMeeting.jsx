@@ -9,6 +9,8 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
 import { pairAwareTotal } from '../utils/pairTotals';
+import { loadDocForms, withDocFoot } from '../utils/docForms';
+loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 // Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷
 const GestureCam = lazy(() => import('../components/GestureCam'));
@@ -480,7 +482,7 @@ export default function MorningMeeting() {
 <table><tr><th style="${td}">จากวัน</th><th style="${td}">ไลน์</th><th style="${td}">เรื่อง</th><th style="${td}">ผู้รับผิดชอบ</th><th style="${td}">กำหนด</th><th style="${td}">สถานะ</th></tr>${actRows || `<tr><td colspan="6" style="${td}">— ไม่มี —</td></tr>`}</table>
 <p style="margin-top:18px;color:#888">พิมพ์จาก ESM Morning Meeting · ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}</p>
 <script>window.onload = () => window.print();</script></body></html>`;
-    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+    const w = window.open('', '_blank'); w.document.write(withDocFoot(html, 'morning_meeting')); w.document.close();
   };
 
   /* ═══ ส่วนแสดงผลแต่ละวาระ — ใช้ร่วมกันทั้งโหมดปกติและโหมด TV ═══ */

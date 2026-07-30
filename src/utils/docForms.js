@@ -25,6 +25,8 @@ const merge = (r, fb) => ({
   sig_blocks: (Array.isArray(r?.sig_blocks) && r.sig_blocks.length ? r.sig_blocks : fb.sig_blocks) ?? null,
   footer_note: r?.footer_note ?? fb.footer_note ?? '',
   logo_url: r?.logo_url ?? null,
+  legend: r?.legend ?? fb.legend ?? '',
+  issued_by: r?.issued_by ?? null,
 });
 
 /** ใช้ในฟังก์ชันพิมพ์ที่ async ได้ */
@@ -40,3 +42,24 @@ export function docFormSync(key, fallback = {}) {
 
 /** "FM-QMR-008 Rev.01" — เลขฟอร์ม + Rev (ตัดส่วนที่ว่าง) */
 export const fullCode = (df, sep = ' ') => [df.form_code, df.rev].filter(Boolean).join(sep);
+
+/** Revision History ของฟอร์ม (ตาราง doc_form_revisions) — ตารางยังไม่มี/ว่าง = [] ไม่ล้ม */
+export async function getDocFormRevisions(key) {
+  try {
+    const { data } = await supabase.from('doc_form_revisions')
+      .select('id, seq, record_date, rev, issued_date, description, responsible, approved_name')
+      .eq('doc_key', key).order('seq');
+    return data || [];
+  } catch { return []; }
+}
+
+/** แถบท้ายเอกสารมาตรฐาน — ต่อท้าย html ก่อน </body> เมื่อทะเบียนมีเลขฟอร์ม/footer (ไม่ตั้ง = html เดิมเป๊ะ) */
+export function withDocFoot(html, key) {
+  const df = docFormSync(key, {});
+  const code = fullCode(df);
+  if (!code && !df.footer_note) return html;
+  const foot = `<div style="margin-top:8px;font-size:9px;color:#555;display:flex;justify-content:space-between;font-family:'Sarabun',sans-serif">
+    <span>${df.footer_note || ''}</span>
+    <span>${code}${df.effective_date ? ` · Effective: ${df.effective_date}` : ''}</span></div>`;
+  return html.includes('</body>') ? html.replace('</body>', `${foot}</body>`) : html + foot;
+}
