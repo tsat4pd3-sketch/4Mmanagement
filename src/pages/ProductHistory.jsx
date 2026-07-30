@@ -16,6 +16,25 @@ const fmtDate = s => { if (!s) return '—'; const [, m, d] = s.split('-'); retu
 const fmtDT = t => t ? new Date(t).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 const AUDIT_FIELD_TH = { line_name: 'ไลน์', cycle_time_sec: 'Cycle Time', name: 'ชื่อ', p_no: 'P/N', pair_mat_no: 'คู่ RH/LH', is_active: 'สถานะใช้งาน', customer: 'ลูกค้า' };
 
+const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px' };
+
+// Section ย่อ/ขยายได้ตาม UI-CONVENTIONS (หัวโชว์ชื่อ+จำนวนเสมอ · จำสถานะใน localStorage · default ขยาย ยกเว้นว่าง)
+function CollapseCard({ id, title, count, defaultOpen = true, children }) {
+  // เก็บเฉพาะ override ของ user — defaultOpen เป็นค่าสด (section ว่างตอน mount แล้วข้อมูลมาทีหลังจะกางเอง)
+  const [override, setOverride] = useState(() => localStorage.getItem(`ph_collapse_${id}`));
+  const open = override == null ? defaultOpen : override === '1';
+  const toggle = () => { const v = open ? '0' : '1'; localStorage.setItem(`ph_collapse_${id}`, v); setOverride(v); };
+  return (
+    <div style={{ ...card, marginBottom: 16 }}>
+      <div onClick={toggle} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}>
+        <div style={{ fontSize: 13, fontWeight: 800 }}>{title}{count != null && <span style={{ color: 'var(--muted)', fontWeight: 600 }}> ({count})</span>}</div>
+        <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{open ? '▲' : '▼'}</span>
+      </div>
+      {open && <div style={{ marginTop: 8 }}>{children}</div>}
+    </div>
+  );
+}
+
 export default function ProductHistory() {
   const { role, lineId, sections } = useContext(UserContext);
   const scopeSecs = sections || [];
@@ -23,7 +42,10 @@ export default function ProductHistory() {
   const [products, setProducts] = useState([]);
   const [lines, setLines]       = useState([]);
   const [search, setSearch]     = useState('');
+  const [filterLine, setFilterLine] = useState('');
   const [selMat, setSelMat]     = useState(null);   // product object
+  const [pickerOpen, setPickerOpen] = useState(true);  // เลือกสินค้าแล้วพับลิสต์อัตโนมัติ (ข้อมูลเยอะ)
+  const [showAllRows, setShowAllRows] = useState(false); // ตารางใบผลิตแสดง 150 แรกก่อน
   const [from, setFrom]         = useState(() => addDays(todayStr(), -90));
   const [to, setTo]             = useState(todayStr);
   const [orders, setOrders]     = useState([]);
@@ -112,13 +134,36 @@ export default function ProductHistory() {
   }, [rows]);
   const dailyMax = Math.max(1, ...daily.map(d => d.produced));
 
+  // ตัวเลือกสินค้าต้อง scope ด้วย (กฎ dropdown-scope 2026-07-23) — สินค้าไลน์นอก scope ไม่โชว์ให้เลือก
+  // สินค้าที่ยังไม่ระบุไลน์คงโชว์ไว้ (fail-open เฉพาะ null — ไม่ใช่ข้ามส่วนงาน)
+  const scopedProducts = useMemo(() => {
+    if (!scopeLineNames) return products;
+    return products.filter(p => !p.line_name || scopeLineNames.has(p.line_name.trim().toLowerCase()));
+  }, [products, scopeLineNames]);
+
+  const lineOpts = useMemo(() =>
+    [...new Set(scopedProducts.map(p => (p.line_name || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'th')),
+  [scopedProducts]);
+
   const filteredProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return products.slice(0, 50);
-    return products.filter(p => (p.mat_no || '').toLowerCase().includes(q) || (p.name || '').toLowerCase().includes(q) || (p.p_no || '').toLowerCase().includes(q)).slice(0, 50);
-  }, [products, search]);
+    let list = scopedProducts;
+    if (filterLine) list = list.filter(p => (p.line_name || '').trim() === filterLine);
+    if (q) list = list.filter(p => (p.mat_no || '').toLowerCase().includes(q) || (p.name || '').toLowerCase().includes(q) || (p.p_no || '').toLowerCase().includes(q));
+    return list;
+  }, [scopedProducts, filterLine, search]);
 
-  const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px' };
+  // จัดกลุ่มตามไลน์ให้อ่านง่าย (แทน chip กองรวม) — จำกัด 300 แถวกัน DOM บวม
+  const productGroups = useMemo(() => {
+    const m = new Map();
+    for (const p of filteredProducts.slice(0, 300)) {
+      const k = (p.line_name || '').trim() || '— ไม่ระบุไลน์';
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(p);
+    }
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'th'));
+  }, [filteredProducts]);
+
   const th = { textAlign: 'left', fontSize: 11, color: 'var(--muted)', fontWeight: 700, padding: '6px 8px', borderBottom: '1px solid var(--border2)', whiteSpace: 'nowrap' };
   const td = { fontSize: 12, padding: '6px 8px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' };
 
@@ -140,21 +185,57 @@ export default function ProductHistory() {
             <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ marginTop: 4, width: 150 }} />
           </div>
           <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ไลน์</label>
+            <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ marginTop: 4, width: 200 }}>
+              <option value="">ทุกไลน์</option>
+              {lineOpts.map(l => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ตั้งแต่</label>
+            <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ marginTop: 4, width: 150 }} />
+          </div>
+          <div>
             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ถึง</label>
             <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ marginTop: 4, width: 150 }} />
           </div>
         </div>
-        {/* ผลค้นหา */}
-        <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {filteredProducts.map(p => (
-            <button key={p.id} onClick={() => setSelMat(p)}
-              style={{ fontSize: 11, padding: '5px 10px', borderRadius: 20, cursor: 'pointer', fontWeight: 700,
-                background: selMat?.id === p.id ? 'var(--accent)' : 'var(--bg2)', color: selMat?.id === p.id ? '#08131f' : 'var(--text)',
-                border: `1px solid ${selMat?.id === p.id ? 'var(--accent)' : 'var(--border2)'}` }}>
-              {p.mat_no} · {p.name}{p.line_name ? ` · ${p.line_name}` : ''}
-            </button>
-          ))}
-          {!filteredProducts.length && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่พบสินค้า</span>}
+        {/* ผลค้นหา — ลิสต์จัดกลุ่มตามไลน์ (เลื่อนในกรอบ) · เลือกแล้วพับอัตโนมัติ กดหัวเพื่อกางเปลี่ยนสินค้า */}
+        <div style={{ marginTop: 10 }}>
+          <div onClick={() => setPickerOpen(o => !o)}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none', marginBottom: 6 }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+              พบ <b>{filteredProducts.length.toLocaleString()}</b> รายการ{filteredProducts.length > 300 ? ' · แสดง 300 แรก — พิมพ์ค้นหา/เลือกไลน์เพื่อกรองเพิ่ม' : ''}
+              {pickerOpen ? ' · คลิกสินค้าเพื่อดูประวัติ' : selMat ? ` · เลือกอยู่: ${selMat.mat_no} — กดเพื่อเปลี่ยนสินค้า` : ' · กดเพื่อแสดงรายการ'}
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{pickerOpen ? '▲' : '▼'}</span>
+          </div>
+          {pickerOpen && (
+          <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid var(--border2)', borderRadius: 8, background: 'var(--bg2)' }}>
+            {productGroups.map(([line, items]) => (
+              <div key={line}>
+                <div style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--bg3)', padding: '5px 12px',
+                  fontSize: 11, fontWeight: 800, color: 'var(--accent)', borderBottom: '1px solid var(--border2)' }}>
+                  🏭 {line} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· {items.length} รายการ</span>
+                </div>
+                {items.map(p => {
+                  const sel = selMat?.id === p.id;
+                  return (
+                    <div key={p.id} onClick={() => { setSelMat(p); setPickerOpen(false); setShowAllRows(false); }}
+                      style={{ display: 'flex', gap: 12, alignItems: 'baseline', padding: '6px 12px', cursor: 'pointer',
+                        borderBottom: '1px solid var(--border)',
+                        background: sel ? 'var(--accent)' : 'transparent', color: sel ? '#08131f' : 'var(--text)' }}>
+                      <span style={{ fontWeight: 800, fontSize: 12, fontFamily: 'ui-monospace, monospace', whiteSpace: 'nowrap', minWidth: 90 }}>{p.mat_no}</span>
+                      <span style={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}{!p.is_active && ' ⛔'}</span>
+                      {p.p_no && <span style={{ fontSize: 11, color: sel ? '#08131f' : 'var(--muted)', whiteSpace: 'nowrap' }}>P/N {p.p_no}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+            {!filteredProducts.length && <div style={{ padding: 16, fontSize: 12, color: 'var(--muted)' }}>ไม่พบสินค้า</div>}
+          </div>
+          )}
         </div>
       </div>
 
@@ -191,8 +272,7 @@ export default function ProductHistory() {
 
           {/* แยกตามไลน์ */}
           {summary.byLine.length > 0 && (
-            <div style={{ ...card, marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>🏭 ผลิตแยกตามไลน์</div>
+            <CollapseCard id="byline" title="🏭 ผลิตแยกตามไลน์" count={summary.byLine.length}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {summary.byLine.map(l => (
                   <div key={l.line} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -204,29 +284,31 @@ export default function ProductHistory() {
                   </div>
                 ))}
               </div>
-            </div>
+            </CollapseCard>
           )}
 
           {/* trend รายวัน */}
           {daily.length > 0 && (
-            <div style={{ ...card, marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>📈 ผลิตรายวัน</div>
+            <CollapseCard id="daily" title="📈 ผลิตรายวัน" count={`${daily.length} วัน`}>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 100, overflowX: 'auto' }}>
-                {daily.map(d => (
+                {daily.map((d, i) => (
                   <div key={d.d} title={`${d.d} · ผลิต ${d.produced}${d.ng ? ` · NG ${d.ng}` : ''}`}
                     style={{ minWidth: 14, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }}>
                     <div style={{ background: 'var(--accent)', height: `${Math.round(d.produced / dailyMax * 100)}%`, borderRadius: '3px 3px 0 0', minHeight: 2 }} />
-                    <div style={{ fontSize: 8, color: 'var(--muted)', textAlign: 'center', marginTop: 2, whiteSpace: 'nowrap' }}>{fmtDate(d.d)}</div>
+                    {/* ป้ายวันเว้นแท่ง (ฟอนต์ขั้นต่ำ 11px ตาม UI-CONVENTIONS — 8px อ่านไม่ออก) */}
+                    <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 2, whiteSpace: 'nowrap', height: 14, overflow: 'visible' }}>
+                      {i % 2 === 0 ? fmtDate(d.d) : ''}
+                    </div>
                   </div>
                 ))}
               </div>
-            </div>
+            </CollapseCard>
           )}
 
-          {/* ตารางใบผลิต */}
-          <div style={{ ...card, marginBottom: 16, overflowX: 'auto' }}>
-            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>📋 รายการใบผลิต ({rows.length})</div>
+          {/* ตารางใบผลิต — ข้อมูลเยอะ: พับได้ + แสดง 150 แถวแรกก่อน */}
+          <CollapseCard id="orders" title="📋 รายการใบผลิต" count={rows.length.toLocaleString()}>
             {loading ? <div style={{ color: 'var(--muted)', fontSize: 12 }}>กำลังโหลด...</div> : rows.length === 0 ? <div style={{ color: 'var(--muted)', fontSize: 12 }}>ไม่มีการผลิตในช่วงนี้</div> : (
+            <div style={{ overflowX: 'auto' }}>
               <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 760 }}>
                 <thead><tr>
                   <th style={th}>วันที่</th><th style={th}>ไลน์</th><th style={th}>กะ</th><th style={th}>เครื่อง</th>
@@ -234,7 +316,7 @@ export default function ProductHistory() {
                   <th style={{ ...th, textAlign: 'right' }}>NG</th><th style={th}>สถานะ</th><th style={th}>เปิด–ปิด</th>
                 </tr></thead>
                 <tbody>
-                  {rows.map(r => (
+                  {(showAllRows ? rows : rows.slice(0, 150)).map(r => (
                     <tr key={r.id}>
                       <td style={td}>{fmtDate(r.work_date)}</td>
                       <td style={{ ...td, fontWeight: 700 }}>{r.line}</td>
@@ -249,12 +331,19 @@ export default function ProductHistory() {
                   ))}
                 </tbody>
               </table>
+              {!showAllRows && rows.length > 150 && (
+                <button onClick={() => setShowAllRows(true)}
+                  style={{ marginTop: 8, fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 8, cursor: 'pointer',
+                    background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
+                  ▼ แสดงอีก {(rows.length - 150).toLocaleString()} ใบ (ทั้งหมด {rows.length.toLocaleString()})
+                </button>
+              )}
+            </div>
             )}
-          </div>
+          </CollapseCard>
 
-          {/* ประวัติการแก้ไขข้อมูลสินค้า (audit) */}
-          <div style={{ ...card }}>
-            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>🕵️ ประวัติการแก้ไขข้อมูลสินค้า (ใครแก้อะไรเมื่อไหร่)</div>
+          {/* ประวัติการแก้ไขข้อมูลสินค้า (audit) — ว่าง = default พับ */}
+          <CollapseCard id="audit" title="🕵️ ประวัติการแก้ไขข้อมูลสินค้า (ใครแก้อะไรเมื่อไหร่)" count={audit.length} defaultOpen={audit.length > 0}>
             {audit.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                 ยังไม่มีประวัติ — ระบบ audit เริ่มเก็บหลัง apply migration <code>20260724_audit_log_dr.sql</code> (การแก้ไขก่อนหน้านั้นไม่ถูกบันทึก)
@@ -275,7 +364,7 @@ export default function ProductHistory() {
                 ))}
               </div>
             )}
-          </div>
+          </CollapseCard>
         </>
       )}
     </div>

@@ -259,6 +259,7 @@ function LiveTab({ role }) {
 
   // SV review-before-approve modal for pending_close requests
   const [showApproveReview, setShowApproveReview] = useState(false);
+  const [approveNote, setApproveNote] = useState(''); // remark ของ SV ตอนอนุมัติปิดกะ (optional — คำขอ user 2026-07-24)
   // SV reject-with-remark modal (บอกหัวหน้ากลุ่มว่าต้องกลับไปแก้อะไร)
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason]       = useState('');
@@ -1574,6 +1575,14 @@ function LiveTab({ role }) {
       totalRunMinByMat   += matRunMin;
       matRunMinMap[matNo] = matRunMin; // เก็บ run ต่อ MAT.NO — ใช้เป็น denominator ของ P ตอน parallel
     });
+    // DT ที่กรอกแค่จำนวนนาที (ไม่มีเวลาเริ่ม) — dtOverlapMin จับไม่ได้ → เคยหายเงียบจาก %A แบบแยกตาม MAT
+    // (เคสจริง 2026-07-24: หยุดนอกแผน 20 นาทีแต่ %A = 100) — หักที่ยอดรวมแทน (รวมก่อนหาร ไม่ต้องรู้ตกช่วง MAT ไหน)
+    const untimedPlanned   = dtl.filter(d => !d.started_at && d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
+    const untimedUnplanned = dtl.filter(d => !d.started_at && d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
+    if (totalNetAvailByMat > 0 && (untimedPlanned || untimedUnplanned)) {
+      totalNetAvailByMat = Math.max(0, totalNetAvailByMat - untimedPlanned);
+      totalRunMinByMat   = Math.max(0, totalRunMinByMat - untimedPlanned - untimedUnplanned);
+    }
     // ถ้าแยกตาม MAT.NO ไม่ได้เลย (เช่นกะมีแต่ Downtime ไม่มี Order) ให้ fallback กลับไปใช้ช่วงเวลาทั้งกะแบบเดิม
     const A = totalNetAvailByMat > 0 ? Math.min(1, totalRunMinByMat / totalNetAvailByMat)
       : (netAvail > 0 ? Math.min(1, runMin / netAvail) : 0);
@@ -1912,6 +1921,11 @@ function LiveTab({ role }) {
       closed_at:      new Date().toISOString(),
     }).eq('id', selSession.id);
     if (error) { toast.error(error.message); return; }
+    // remark ผู้อนุมัติ (optional) — update แยก best-effort: ยังไม่ apply migration close_approve_note = อนุมัติได้ปกติ
+    if (approveNote.trim()) {
+      try { await supabaseDR.from('production_sessions').update({ close_approve_note: approveNote.trim() }).eq('id', selSession.id); } catch { /* additive */ }
+    }
+    setApproveNote('');
 
     // Line Stock หักโดย DB trigger บน prod_orders (backflush ตอน confirmed) — ไม่หักซ้ำที่นี่
 
@@ -1919,6 +1933,7 @@ function LiveTab({ role }) {
     notifyProdClose({
       status: 'closed_approved', line_name: selSession.line_name, shift: selSession.shift,
       work_date: selSession.work_date, actor: fullName,
+      approve_note: approveNote.trim() || null, // หมายเหตุผู้อนุมัติ → โชว์ใน Telegram ด้วย (2026-07-24)
       requested_by: selSession.close_requested_by_name,
       qty_ok: selSession.qty_ok, qty_ng: selSession.qty_ng, oee: selSession.oee,
       // รายละเอียดเพิ่มเติม — อ่านจากค่าที่บันทึกไว้ตอนขอปิดกะ + ข้อมูลกะที่โหลดอยู่
@@ -3152,7 +3167,7 @@ function LiveTab({ role }) {
                         ))}
                       </div>
                       {dtLogs.some(d => !d.started_at) && (
-                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>⚠ มี Downtime บางรายการไม่ได้ระบุเวลาเริ่ม/จบ จึงไม่แสดงในไทม์ไลน์ (นับรวมในยอด Downtime ด้านบนแล้ว)</div>
+                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>⚠ มี Downtime บางรายการไม่ได้ระบุเวลาเริ่ม/จบ จึงไม่แสดงในไทม์ไลน์ (นับรวมในยอด Downtime และหักใน %A แล้ว)</div>
                       )}
                     </div>
                   );
@@ -3176,9 +3191,12 @@ function LiveTab({ role }) {
                   ✓ Order ที่ปิดสำเร็จ: {confirmedOrders.length} ใบ ({confirmedOrders.reduce((s,o) => s+o.qty, 0)} ชิ้น)
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button onClick={() => setShowApproveReview(false)} style={cancelBtnStyle}>ปิด</button>
                   <button onClick={() => { setShowApproveReview(false); setRejectReason(''); setShowRejectModal(true); }} style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>✕ ปฏิเสธ</button>
+                  <input type="text" value={approveNote} onChange={e => setApproveNote(e.target.value)}
+                    placeholder="📝 หมายเหตุผู้อนุมัติ (ไม่บังคับ) — เช่น ข้อสังเกต/สิ่งที่ให้ไปแก้กะหน้า"
+                    style={{ flex: '1 1 260px', fontSize: 12, padding: '8px 10px', borderRadius: 8 }} />
                   <button onClick={() => { setShowApproveReview(false); handleApproveClose(); }} style={{ ...saveBtnStyle, background: '#22c55e', fontWeight: 700 }}>✅ ยืนยันอนุมัติ</button>
                 </div>
               </div>
@@ -3556,7 +3574,7 @@ function LiveTab({ role }) {
                         ))}
                       </div>
                       {dtLogs.some(d => !d.started_at) && (
-                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>⚠ มี Downtime บางรายการไม่ได้ระบุเวลาเริ่ม/จบ จึงไม่แสดงในไทม์ไลน์ (นับรวมในยอด Downtime ด้านบนแล้ว)</div>
+                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 6 }}>⚠ มี Downtime บางรายการไม่ได้ระบุเวลาเริ่ม/จบ จึงไม่แสดงในไทม์ไลน์ (นับรวมในยอด Downtime และหักใน %A แล้ว)</div>
                       )}
                     </div>
                   );
@@ -4522,6 +4540,12 @@ function HistoryTab({ role }) {
               </div>
               {expanded === s.id && (
                 <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px', background: 'var(--bg2)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* หมายเหตุผู้อนุมัติปิดกะ (ถ้ามี — SV กรอกตอนกดอนุมัติ) */}
+                  {s.close_approve_note && (
+                    <div style={{ fontSize: 12, color: '#93c5fd', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 8, padding: '8px 12px' }}>
+                      📝 หมายเหตุผู้อนุมัติ ({s.closed_by_name || '—'}): <b>{s.close_approve_note}</b>
+                    </div>
+                  )}
                   {/* OEE detail row */}
                   {s.oee != null && (
                     <div style={{ display: 'flex', gap: 20, padding: '8px 12px', background: `${oeeColor}10`, borderRadius: 8, border: `1px solid ${oeeColor}30`, flexWrap: 'wrap' }}>

@@ -18,7 +18,6 @@ import { inSectionScope } from '../utils/sectionScope';
 import { canDelete } from '../utils/permissions';
 import { usePerms } from '../utils/usePerms';
 import { exportScrapReportExcel } from '../lib/scrapExportExcel';
-import { getDocForm } from '../utils/docForms';
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
 function localDateStr(d = new Date()) {
@@ -272,9 +271,8 @@ export default function ScrapReport() {
 
   const doExport = async (rep) => {
     const { data: items } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
-    // เลขฟอร์มจาก Document Master กลาง (doc_control แก้ที่ /doc-forms) · fallback ค่าเดิม
-    const docForm = await getDocForm('scrap_report', { form_code: 'FM-PD2-002', rev: 'Rev.06' });
-    await exportScrapReportExcel({ report: rep, items: items || [], defectTypes, docForm });
+    // เลขฟอร์ม/Rev/ช่องลายเซ็น อ่านจาก Document Master กลางใน lib เอง (getDocForm 'scrap_report')
+    await exportScrapReportExcel({ report: rep, items: items || [], defectTypes });
   };
 
   const STATUS_META = { draft: { label: 'ร่าง', color: '#6b7280' }, submitted: { label: 'ส่งอนุมัติ', color: '#f59e0b' }, approved: { label: 'อนุมัติแล้ว', color: '#22c55e' } };
@@ -371,7 +369,7 @@ export default function ScrapReport() {
               <tbody>
                 {editor.items.map((it, i) => (
                   <tr key={it._key}>
-                    <td style={tdSt}>{i + 1}{it.src_defect_from_logs && <span title="ดึงจาก Daily Report" style={{ marginLeft: 3, fontSize: 10, color: '#4d9fff' }}>⤵</span>}</td>
+                    <td style={tdSt}>{i + 1}{it.src_defect_from_logs && <span title="ดึงจาก Daily Report" style={{ marginLeft: 3, fontSize: 11, color: '#4d9fff' }}>⤵</span>}</td>
                     <td style={tdSt}><span style={{ fontSize: 10.5, fontWeight: 700, color: it.source === 'sub' ? '#f59e0b' : '#4d9fff' }}>{it.source === 'sub' ? 'ย่อย' : 'หลัก'}</span></td>
                     <td style={tdSt}><input style={{ ...inputSt, width: 120, padding: '5px 7px' }} value={it.part_no} onChange={e => setItem(it._key, { part_no: e.target.value })} /></td>
                     <td style={tdSt}><input style={{ ...inputSt, width: 150, padding: '5px 7px' }} value={it.part_name} onChange={e => setItem(it._key, { part_name: e.target.value })} /></td>
