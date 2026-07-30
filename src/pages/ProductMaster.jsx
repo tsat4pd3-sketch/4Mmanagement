@@ -274,8 +274,11 @@ export default function ProductMaster() {
     if (Number(kanbanForm.qty_per_kanban) < 1) { toast.error('Qty ต้องมากกว่า 0'); return; }
     setKanbanSaving(true);
     const payload = { product_id: kanbanForm.product_id || null, mat_no: kanbanForm.mat_no.trim().toUpperCase(), qty_per_kanban: parseInt(kanbanForm.qty_per_kanban), is_active: kanbanForm.is_active };
+    // upsert on mat_no (unique key) แทน insert ตรงๆ — MAT.NO อาจมีแถวค้างอยู่แล้วจาก
+    // Kanban Auto-Calc (Planner&Sales) ที่ product_id=null (ไม่โชว์ในลิสต์สินค้าเพราะกรอง product_id)
+    // insert เฉยๆ จะชน unique constraint → "duplicate key" ทั้งที่จอโชว์ (0) · upsert = adopt แถวเดิม + ผูก product_id
     const { error } = kanbanEditing === 'new'
-      ? await supabaseDR.from('kanban_standards').insert(payload)
+      ? await supabaseDR.from('kanban_standards').upsert(payload, { onConflict: 'mat_no' })
       : await supabaseDR.from('kanban_standards').update(payload).eq('id', kanbanEditing);
     setKanbanSaving(false);
     if (error) { toast.error(error.message); return; }
