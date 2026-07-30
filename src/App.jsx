@@ -989,8 +989,6 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  if (!session) return <Navigate to="/login" replace />;
-
   const handleLogout = async () => {
     // scope 'local' = ออกเฉพาะ browser นี้ (ทุกแท็บของเครื่องนี้ผ่าน localStorage event)
     // ห้ามใช้ default (global) — global จะ revoke refresh token ของ user นี้ "ทุกเครื่อง"
@@ -1018,6 +1016,10 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
       return code;
     });
   }, []);
+
+  // ⚠️ guard นี้ต้องอยู่ "หลัง" hooks ทุกตัว (useAutoLogout/useState/useCallback ด้านบน) —
+  // ถ้าวางก่อน hooks จะเกิด React #310 (hook count เปลี่ยนตอน session null→มีค่า) จอ error
+  if (!session) return <Navigate to="/login" replace />;
 
   // marginLeft ต้องเท่าความกว้าง nav จริง (var(--sidebar-w)) เป๊ะ — เดิม hardcode 240/280 ไม่ตรง
   // (nav=252 desktop / 210 tablet / 280 TV) → เนื้อหาโดน sidebar ทับ 12px หรือเหลือช่องว่าง
