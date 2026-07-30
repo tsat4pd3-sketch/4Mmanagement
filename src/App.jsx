@@ -3,13 +3,14 @@ import { fmtDateTime } from './utils/dateFormat';
 import tsLogo from './assets/TS logo.png';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { supabase, setDrActorName } from './supabaseClient';
-import { ToastContainer } from './components/Toast';
+import { ToastContainer, toast } from './components/Toast';
 import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 import { loadPermissions, canAccessPage } from './utils/permissions';
 import { effectiveSections } from './utils/sectionScope';
 import useIsMobile from './utils/useIsMobile';
+import { pushSupported, getPushState, subscribePush, unsubscribePush } from './utils/webpush';
 
 const Register     = lazy(() => import('./pages/Register'));
 const Checkin      = lazy(() => import('./pages/Checkin'));
@@ -591,6 +592,28 @@ function NotificationBell({ userId }) {
     if (!next) { primeNotifAudio(); playNotifChime(); } // เปิดเสียง = เล่นตัวอย่างให้ฟัง
   };
 
+  // ── Web Push (เด้งเข้ามือถือแม้ปิดแอป) ──
+  const [pushState, setPushState] = useState('default'); // default|subscribed|unsubscribed|denied|unsupported|ios-need-install
+  const [pushBusy,  setPushBusy]  = useState(false);
+  const refreshPush = useCallback(() => { getPushState().then(setPushState).catch(() => {}); }, []);
+  useEffect(() => { refreshPush(); }, [refreshPush]);
+
+  const enablePush = async () => {
+    setPushBusy(true);
+    try {
+      const ok = await subscribePush(userId);
+      if (!ok && Notification.permission === 'denied') toast.error('เบราว์เซอร์บล็อกการแจ้งเตือน — เปิดสิทธิ์ในตั้งค่าเบราว์เซอร์');
+      else if (ok) toast.success('เปิดแจ้งเตือนเข้ามือถือแล้ว 📲');
+    } catch (e) { toast.error(e.message || 'เปิดไม่สำเร็จ'); }
+    finally { setPushBusy(false); refreshPush(); }
+  };
+  const disablePush = async () => {
+    setPushBusy(true);
+    await unsubscribePush();
+    setPushBusy(false); refreshPush();
+    toast.info('ปิดแจ้งเตือนเข้ามือถือแล้ว');
+  };
+
   // Close dropdown on outside click
   useEffect(() => {
     const handler = (e) => { if (dropRef.current && !dropRef.current.contains(e.target)) setOpen(false); };
@@ -675,6 +698,31 @@ function NotificationBell({ userId }) {
               )}
             </div>
           </div>
+
+          {/* ── Web Push: เปิดแจ้งเตือนเข้ามือถือ (เด้งแม้ปิดแอป) ── */}
+          {pushState !== 'unsupported' && (
+            <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border)', fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', background: 'var(--bg2)' }}>
+              {pushState === 'subscribed' ? (
+                <>
+                  <span style={{ color: 'var(--accent)', fontWeight: 600 }}>📲 เปิดแจ้งเตือนเข้ามือถือแล้ว</span>
+                  <button onClick={disablePush} disabled={pushBusy}
+                    style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>ปิด</button>
+                </>
+              ) : pushState === 'denied' ? (
+                <span style={{ color: 'var(--accent2)' }}>🔕 เบราว์เซอร์บล็อกการแจ้งเตือน — เปิดสิทธิ์ในตั้งค่าเบราว์เซอร์ก่อน</span>
+              ) : pushState === 'ios-need-install' ? (
+                <span style={{ color: 'var(--muted)' }}>📲 iPhone: กด “แชร์ → เพิ่มไปยังหน้าจอโฮม” แล้วเปิดจากไอคอนก่อน จึงเปิดแจ้งเตือนได้</span>
+              ) : (
+                <>
+                  <span style={{ color: 'var(--text2)' }}>📲 เด้งแจ้งเตือนเข้ามือถือแม้ปิดแอป</span>
+                  <button onClick={enablePush} disabled={pushBusy}
+                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: '#071008', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
+                    {pushBusy ? 'กำลังเปิด…' : 'เปิด'}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
 
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {notifs.length === 0 ? (
