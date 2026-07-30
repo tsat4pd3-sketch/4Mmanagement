@@ -65,6 +65,13 @@ export default function LineSetup() {
   const [lineListOpen, setLineListOpen] = useState(() => { try { return localStorage.getItem('ls_lineList_open') !== '0'; } catch { return true; } });
   const [pointSearch, setPointSearch] = useState('');
   const toggleLineList = () => setLineListOpen(o => { const n = !o; try { localStorage.setItem('ls_lineList_open', n ? '1' : '0'); } catch { /* private */ } return n; });
+  // พับ/กางไลน์ย่อยราย "ไลน์แม่" (ปุ่ม ▼/▶ หน้าไลน์แม่) — เก็บชื่อไลน์แม่ที่พับอยู่ · จำใน localStorage
+  const [collapsedParents, setCollapsedParents] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('ls_collapsed_parents') || '[]')); } catch { return new Set(); } });
+  const toggleParent = (name) => setCollapsedParents(s => {
+    const n = new Set(s); if (n.has(name)) n.delete(name); else n.add(name);
+    try { localStorage.setItem('ls_collapsed_parents', JSON.stringify([...n])); } catch { /* private */ }
+    return n;
+  });
   // ป้ายชื่อบนผัง: โชว์/ซ่อน อย่างเดียว เหมือนหน้า Management เป๊ะ (WYSIWYG)
   const [showPills, setShowPills] = useState(true);
 
@@ -1084,11 +1091,12 @@ export default function LineSetup() {
               // ค้นหา: โชว์ไลน์ที่ชื่อตรง + คงบริบทลำดับชั้น (ลูกตรง→โชว์แม่ด้วย, แม่ตรง→โชว์ลูกด้วย)
               const q = lineSearch.trim().toLowerCase();
               const hit = (n) => n && n.toLowerCase().includes(q);
-              const shown = !q ? ordered : ordered.filter(l =>
+              const shown = (!q ? ordered : ordered.filter(l =>
                 hit(l.name) ||
                 (l._isChild && hit(l.parent_line_name)) ||
                 (l._isParent && childLines.some(c => c.parent_line_name === l.name && hit(c.name)))
-              );
+              // พับไลน์แม่ = ซ่อนไลน์ย่อยของมัน (ยกเว้นตอนค้นหา — โชว์ผลลัพธ์เสมอ)
+              )).filter(l => q || !(l._isChild && collapsedParents.has(l.parent_line_name)));
               if (!shown.length) return <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', padding: '8px 0' }}>ไม่พบไลน์ที่ค้นหา</div>;
               return shown.map(l => (
                 <div key={l.id}
@@ -1103,7 +1111,17 @@ export default function LineSetup() {
                   onClick={() => { setSelectedLine(l.name); setTempPos(null); setFormData({ id: null, name: '', requirements: {} }); }}
                 >
                   {l._isChild && <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>└</span>}
-                  {l._isParent && <span style={{ fontSize: 11, color: 'var(--accent)', flexShrink: 0 }}>▼</span>}
+                  {l._isParent && (() => {
+                    const nKids = childLines.filter(c => c.parent_line_name === l.name).length;
+                    const col = collapsedParents.has(l.name);
+                    return (
+                      <span onClick={e => { e.stopPropagation(); toggleParent(l.name); }}
+                        title={col ? `กางไลน์ย่อย (${nKids})` : 'พับไลน์ย่อย'}
+                        style={{ fontSize: 11, color: 'var(--accent)', flexShrink: 0, cursor: 'pointer', padding: '2px 4px', borderRadius: 4, userSelect: 'none' }}>
+                        {col ? `▶ ${nKids}` : '▼'}
+                      </span>
+                    );
+                  })()}
                   {editingLineId === l.id ? (
                     <input
                       autoFocus
