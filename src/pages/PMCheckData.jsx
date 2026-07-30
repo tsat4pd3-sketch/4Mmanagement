@@ -10,6 +10,7 @@ import { notifyDepartment, createNotification } from '../lib/pmNotify'
 import { handleDailyPmSave } from '../lib/pmDailyAlarm'
 import { exportInspectionExcel } from '../lib/pmExportExcel'
 import { exportInspectionPDF, resolveSignatureDataUrl } from '../lib/pmExportPDF'
+import { getDocForm } from '../utils/docForms'
 import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } from '../lib/pmTaxonomy'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
@@ -442,8 +443,10 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
     const approver = insp.approved_by ? { email: profMap[insp.approved_by]?.email ?? 'Approver', signature_data: await getSig(insp.approved_by) } : null
     const exporter = { email: currentUserEmail ?? 'Exporter', signature_data: await getSig(userId) }
     const categories = await fetchCategories({ includeInactive: true })
+    // เลขฟอร์ม/Rev/Effective อ่านจาก Document Master กลาง (doc_control แก้ได้ที่ /doc-forms) · fallback ค่าเดิม
+    const docForm = await getDocForm('pm_jig', { form_code: 'FM-JIG-003', rev: 'Rev.00', effective_date: '01/07/2020' })
     await supabaseDR.from('inspections').update({ exported_by: userId, exported_at: new Date().toISOString() }).eq('id', insp.id)
-    return { jig, inspection: insp, checkpoints, results: resultMap, inspector, approver, exporter, categories }
+    return { jig, inspection: insp, checkpoints, results: resultMap, inspector, approver, exporter, categories, docForm }
   }
 
   const handleExport = async (kind) => {

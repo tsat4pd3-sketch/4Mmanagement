@@ -36,7 +36,8 @@ export async function exportScrapReportExcel({ report, items, defectTypes }) {
     ? df.sig_blocks : ['พนักงาน QC', 'หัวหน้าแผนก', 'ผู้จัดการ QA/QC', 'ผู้จัดการผลิต', 'ผู้จัดการทั่วไป'];
   const wb = new ExcelJS.Workbook();
   wb.creator = 'ESM Scrap Report';
-  const ws = wb.addWorksheet('FM-PD2-002', {
+  // ชื่อชีท = เลขฟอร์มจาก Document Master กลาง (fallback ค่าเดิม)
+  const ws = wb.addWorksheet(df.form_code || 'FM-PD2-002', {
     pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
       margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 } },
   });

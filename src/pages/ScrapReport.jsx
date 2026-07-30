@@ -271,6 +271,7 @@ export default function ScrapReport() {
 
   const doExport = async (rep) => {
     const { data: items } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
+    // เลขฟอร์ม/Rev/ช่องลายเซ็น อ่านจาก Document Master กลางใน lib เอง (getDocForm 'scrap_report')
     await exportScrapReportExcel({ report: rep, items: items || [], defectTypes });
   };
 
