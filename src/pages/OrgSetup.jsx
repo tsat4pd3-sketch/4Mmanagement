@@ -33,7 +33,7 @@ export default function OrgSetup() {
     setLoading(true);
     const [{ data: orgData }, { data: lineData }, { data: signerRows }] = await Promise.all([
       supabase.from('org_nodes').select('*').order('sort_order'),
-      supabase.from('production_lines').select('id, name, section').order('name'),
+      supabase.from('production_lines').select('id, name, section, cost_center').order('name'),
       supabase.from('section_signers').select('*'),
     ]);
     setNodes(orgData || []);
@@ -52,6 +52,13 @@ export default function OrgSetup() {
     ? orphanDepts
     : nodes.filter(n => n.kind === 'department' && n.parent_id === sectionId);
   const linesOf = (deptId) => nodes.filter(n => n.kind === 'line' && n.parent_id === deptId);
+  // single source: cost center ระดับไลน์มาจาก production_lines (ตั้งที่หน้าจัดการไลน์) — org group node ที่ผูก ref_line_id ไม่เก็บซ้ำ
+  const lineById = useMemo(() => Object.fromEntries(lines.map(l => [String(l.id), l])), [lines]);
+  const lineCostCenter = (node) => {
+    if (node?.kind === 'line' && node.ref_line_id) { const pl = lineById[String(node.ref_line_id)]; if (pl) return pl.cost_center || ''; }
+    return node?.cost_center || '';
+  };
+  const isLinkedLine = (node) => node?.kind === 'line' && !!node?.ref_line_id;
 
   const parentOptionsFor = (kind) => {
     if (kind === 'department') return sections.map(s => ({ id: s.id, label: s.name }));
@@ -107,7 +114,7 @@ export default function OrgSetup() {
     setModal({ kind, parentId, editing: null });
   };
   const openEdit = (node) => {
-    setFormName(node.name); setFormCode(node.code || ''); setFormCostCenter(node.cost_center || '');
+    setFormName(node.name); setFormCode(node.code || ''); setFormCostCenter(lineCostCenter(node));
     setFormRefLineId(node.ref_line_id ? String(node.ref_line_id) : '');
     setFormLaborType(node.labor_type || 'direct');
     setModal({ kind: node.kind, parentId: node.parent_id, editing: node });
@@ -115,10 +122,13 @@ export default function OrgSetup() {
 
   const handleSave = async () => {
     if (!formName.trim()) return toast.error('กรุณากรอกชื่อ');
-    if (COST_CENTER_REQUIRED.includes(modal.kind) && !formCostCenter.trim()) {
+    // group/line node ที่ผูก production_lines → cost center มาจาก production_lines (single source) ไม่บังคับ/ไม่เช็คซ้ำ
+    const linkedLine = modal.kind === 'line' && !!formRefLineId;
+    const linkedCC = linkedLine ? (lineById[String(formRefLineId)]?.cost_center || '') : '';
+    if (COST_CENTER_REQUIRED.includes(modal.kind) && !linkedLine && !formCostCenter.trim()) {
       return toast.error('กรุณากรอก Cost Center');
     }
-    if (formCostCenter.trim()) {
+    if (!linkedLine && formCostCenter.trim()) {
       const dup = nodes.find(n =>
         n.is_active && n.cost_center && n.cost_center.trim() === formCostCenter.trim() && n.id !== modal.editing?.id
       );
@@ -129,7 +139,7 @@ export default function OrgSetup() {
       kind: modal.kind,
       name: formName.trim(),
       code: formCode.trim() || null,
-      cost_center: formCostCenter.trim() || null,
+      cost_center: linkedLine ? (linkedCC || null) : (formCostCenter.trim() || null),
       parent_id: modal.parentId || null, // department เลือก "ขึ้นตรงฝ่าย" ได้ = parent_id null
       ref_line_id: modal.kind === 'line' && formRefLineId ? Number(formRefLineId) : null,
       // ประเภทแรงงาน — ตั้งได้ทั้ง section และ department (ช่างส่วนใหญ่อยู่ระดับแผนก)
@@ -247,7 +257,7 @@ export default function OrgSetup() {
               <div key={l.id} style={itemStyle(false)}>
                 <span style={{ fontSize: 13, color: l.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: l.is_active ? 'none' : 'line-through' }}>
                   {l.name} {!l.ref_line_id && <span style={{ fontSize: 11, color: '#f59e0b' }}>(ไม่ผูก production_lines)</span>}
-                  {l.cost_center && <CostBadge code={l.cost_center} />}
+                  {lineCostCenter(l) && <CostBadge code={lineCostCenter(l)} />}
                 </span>
                 <RowActions node={l} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
               </div>
@@ -310,9 +320,17 @@ export default function OrgSetup() {
               </div>
               <div>
                 <label style={labelSt}>
-                  Cost Center {COST_CENTER_REQUIRED.includes(modal.kind) ? '(บังคับ)' : '(ไม่บังคับ)'}
+                  Cost Center {modal.kind === 'line' && formRefLineId ? '(จากไลน์ที่ผูก)' : COST_CENTER_REQUIRED.includes(modal.kind) ? '(บังคับ)' : '(ไม่บังคับ)'}
                 </label>
-                <input type="text" value={formCostCenter} onChange={e => setFormCostCenter(e.target.value)} placeholder="เช่น 2140662101" />
+                {modal.kind === 'line' && formRefLineId ? (
+                  <>
+                    <input type="text" value={lineById[String(formRefLineId)]?.cost_center || ''} readOnly disabled
+                      placeholder="— ยังไม่ได้ตั้งที่หน้าจัดการไลน์ —" style={{ opacity: 0.7, cursor: 'not-allowed' }} />
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>🔗 single source — cost center ของไลน์มาจากหน้า <strong>จัดการไลน์</strong> (แก้ที่นั่นที่เดียว)</div>
+                  </>
+                ) : (
+                  <input type="text" value={formCostCenter} onChange={e => setFormCostCenter(e.target.value)} placeholder="เช่น 2140662101" />
+                )}
               </div>
               {['section', 'department'].includes(modal.kind) && (
                 <div>
