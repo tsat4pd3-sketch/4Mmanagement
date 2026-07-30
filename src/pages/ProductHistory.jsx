@@ -148,13 +148,21 @@ export default function ProductHistory() {
       .map(g => ({ ...g, shifts: [...g.shifts.values()].sort((a, b) => String(a.shift).localeCompare(String(b.shift)) || String(a.line).localeCompare(String(b.line))) }));
   }, [rows]);
 
-  // trend รายวัน
+  // trend รายวัน — แกนวันต่อเนื่อง ไม่ข้ามวัน (วันไม่ผลิต = ช่องว่างให้เห็น)
   const daily = useMemo(() => {
     const m = {};
     rows.forEach(r => { if (!r.work_date) return; (m[r.work_date] = m[r.work_date] || { d: r.work_date, produced: 0, ng: 0 }); m[r.work_date].produced += r.produced || 0; m[r.work_date].ng += r.ng || 0; });
-    return Object.values(m).sort((a, b) => a.d.localeCompare(b.d));
-  }, [rows]);
-  const dailyMax = Math.max(1, ...daily.map(d => d.produced));
+    const keys = Object.keys(m).sort();
+    if (!keys.length) return [];
+    // เดินวันแรกที่มีข้อมูล → min(สิ้นช่วงที่เลือก, วันนี้) — เห็นวันหยุด/วันไม่ผลิตคาตา
+    const t = todayStr();
+    let end = to < t ? to : t;
+    if (end < keys[keys.length - 1]) end = keys[keys.length - 1];
+    const out = [];
+    for (let d = keys[0]; d <= end && out.length < 400; d = addDays(d, 1)) out.push(m[d] || { d, produced: 0, ng: 0, empty: true });
+    return out;
+  }, [rows, to]);
+  const dailyMax = Math.max(1, ...daily.map(d => (d.produced || 0) + (d.ng || 0)));
 
   // ตัวเลือกสินค้าต้อง scope ด้วย (กฎ dropdown-scope 2026-07-23) — สินค้าไลน์นอก scope ไม่โชว์ให้เลือก
   // สินค้าที่ยังไม่ระบุไลน์คงโชว์ไว้ (fail-open เฉพาะ null — ไม่ใช่ข้ามส่วนงาน)
@@ -315,15 +323,19 @@ export default function ProductHistory() {
             <CollapseCard id="daily" title="📈 ผลิตรายวัน" count={`${daily.length} วัน`}>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 130, overflowX: 'auto' }}>
                 {daily.map((d, i) => (
-                  <div key={d.d} title={`${d.d} · ผลิต ${d.produced.toLocaleString()}${d.ng ? ` · NG ${d.ng}` : ''}`}
+                  <div key={d.d} title={d.empty ? `${d.d} · ไม่มีการผลิต` : `${d.d} · ผลิตดี ${d.produced.toLocaleString()}${d.ng ? ` · NG ${d.ng.toLocaleString()}` : ''}`}
                     style={{ flex: '1 0 14px', maxWidth: 48, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }}>
                     {/* วันน้อย = โชว์ตัวเลขบนแท่งเลย ไม่ต้องชี้ */}
-                    {daily.length <= 20 && (
+                    {daily.length <= 20 && !d.empty && (
                       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', textAlign: 'center', marginBottom: 2, whiteSpace: 'nowrap' }}>
                         {d.produced.toLocaleString()}
                       </div>
                     )}
-                    <div style={{ background: 'var(--accent)', height: `${Math.max(2, Math.round(d.produced / dailyMax * 78))}%`, borderRadius: '3px 3px 0 0' }} />
+                    {/* แท่งซ้อน: NG แดงอยู่บน · ผลิตดีเขียวอยู่ล่าง · วันไม่ผลิต = ตอเทาเตี้ยๆ */}
+                    {d.ng > 0 && <div style={{ background: '#ef4444', height: `${Math.max(2, Math.round(d.ng / dailyMax * 78))}%`, borderRadius: '3px 3px 0 0' }} />}
+                    <div style={{ background: d.empty ? 'var(--border2)' : 'var(--accent)',
+                      height: d.empty ? 3 : `${Math.max(2, Math.round(d.produced / dailyMax * 78))}%`,
+                      borderRadius: d.ng > 0 ? 0 : '3px 3px 0 0' }} />
                     {/* ป้ายวันเว้นแท่ง (ฟอนต์ขั้นต่ำ 11px ตาม UI-CONVENTIONS) */}
                     <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 2, whiteSpace: 'nowrap', height: 14, overflow: 'visible' }}>
                       {(daily.length <= 20 || i % 2 === 0) ? fmtDate(d.d) : ''}
@@ -332,7 +344,7 @@ export default function ProductHistory() {
                 ))}
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
-                ความสูงแท่ง = จำนวนชิ้นที่ผลิตได้ของวันนั้น (สูงสุดในช่วง = {dailyMax.toLocaleString()} ชิ้น) · แสดงเฉพาะวันที่มีการผลิต · ชี้ที่แท่งเพื่อดูตัวเลข
+                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>■ ผลิตดี</span> · <span style={{ color: '#ef4444', fontWeight: 700 }}>■ NG</span> · แท่งเตี้ยสีเทา = วันนั้นไม่มีการผลิต (แกนวันต่อเนื่อง ไม่ข้ามวัน) · สูงสุดในช่วง = {dailyMax.toLocaleString()} ชิ้น · ชี้ที่แท่งเพื่อดูตัวเลข
               </div>
             </CollapseCard>
           )}
