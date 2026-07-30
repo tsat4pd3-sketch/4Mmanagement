@@ -122,12 +122,8 @@ export default function LineSetup() {
   const hasFlowModeCol = useRef(true); // false = DB ยังไม่มีคอลัมน์ flow_mode (migration 20260723 ยังไม่ apply)
   const [mpSaving, setMpSaving] = useState(false);
 
-  // ผู้บันทึก/อนุมัติ ประจำส่วนงาน (ใช้ดึงอัตโนมัติในใบค่าฝีมือ)
+  // หัวหน้างานประจำไลน์ (head_name) — ใช้ในใบค่าฝีมือ · ผู้เซ็นราย section ย้ายไปตั้งที่ผังองค์กร (OrgSetup)
   const [signerHead,    setSignerHead]    = useState('');
-  const [signerManager, setSignerManager] = useState('');
-  const [signerTA,       setSignerTA]      = useState('');
-  const [signerHRM,      setSignerHRM]     = useState('');
-  const [signersSaving, setSignersSaving] = useState(false);
 
 
   const skillAllowanceTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
@@ -209,30 +205,7 @@ export default function LineSetup() {
       setFlowMode(lineObj.flow_mode ?? 'one_piece_flow');
       setParallelStations(lineObj.parallel_stations != null ? String(lineObj.parallel_stations) : '');
       setSignerHead(lineObj.head_name ?? '');
-      if (lineObj.section) {
-        const { data: signers } = await supabase.from('section_signers').select('*').eq('section', lineObj.section).maybeSingle();
-        setSignerManager(signers?.manager_name || '');
-        setSignerTA(signers?.ta_name || '');
-        setSignerHRM(signers?.hrm_name || '');
-      } else {
-        setSignerManager(''); setSignerTA(''); setSignerHRM('');
-      }
     }
-  };
-
-  const handleSaveSigners = async () => {
-    const lineObj = lines.find(l => l.name === selectedLine);
-    if (!lineObj?.section) return toast.error('ไลน์นี้ยังไม่ได้กำหนดส่วนงาน (section)');
-    setSignersSaving(true);
-    const { error } = await supabase.from('section_signers').upsert({
-      section: lineObj.section,
-      manager_name: signerManager || null,
-      ta_name: signerTA || null,
-      hrm_name: signerHRM || null,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'section' });
-    if (error) toast.error('Error: ' + error.message);
-    setSignersSaving(false);
   };
 
   const handleSaveStdManpower = async () => {
@@ -1730,44 +1703,11 @@ export default function LineSetup() {
           </div>
           )}
 
-          {/* ── ผู้บันทึก/อนุมัติ ประจำส่วนงาน ─────────────────── */}
+          {/* ผู้เซ็นใบค่าฝีมือ ราย section ย้ายไปตั้งที่ผังองค์กร (OrgSetup) — เป็นข้อมูลราย section ไม่ใช่ราย line */}
           <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />
-          <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
-            ✍️ ผู้อนุมัติ ประจำส่วนงาน {lines.find(l => l.name === selectedLine)?.section ? `(${lines.find(l => l.name === selectedLine)?.section})` : ''}
-          </h4>
-          {lines.find(l => l.name === selectedLine)?.section ? (
-            <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 14 }}>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
-                ใช้ดึงอัตโนมัติในใบสรุปค่าฝีมือ — กรอกครั้งเดียวต่อส่วนงาน ใช้ร่วมกันทุกไลน์ในส่วนนี้ (หัวหน้างานแยกตามไลน์ ตั้งค่าด้านบนในช่อง Standard Manpower)
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
-                <div>
-                  <label style={labelSt}>ผู้จัดการต้นสังกัด</label>
-                  <input type="text" value={signerManager} disabled={!canEdit} onChange={e => setSignerManager(e.target.value)} style={{ marginTop: 4 }} />
-                </div>
-                <div>
-                  <label style={labelSt}>เจ้าหน้าที่ TA</label>
-                  <input type="text" value={signerTA} disabled={!canEdit} onChange={e => setSignerTA(e.target.value)} style={{ marginTop: 4 }} />
-                </div>
-                <div>
-                  <label style={labelSt}>ผู้จัดการส่วน HRM</label>
-                  <input type="text" value={signerHRM} disabled={!canEdit} onChange={e => setSignerHRM(e.target.value)} style={{ marginTop: 4 }} />
-                </div>
-              </div>
-              {canEdit && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button onClick={handleSaveSigners} disabled={signersSaving}
-                  style={{ padding: '7px 18px', background: signersSaving ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-                  {signersSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
-                </button>
-              </div>
-              )}
-            </div>
-          ) : (
-            <div style={{ fontSize: 11, color: 'var(--muted)', padding: '8px 0' }}>
-              ไลน์นี้ยังไม่ได้กำหนดส่วนงาน (section) — กำหนดในหน้ารายการไลน์ก่อนเพื่อบันทึกผู้อนุมัติ
-            </div>
-          )}
+          <div style={{ fontSize: 12, color: 'var(--muted)', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 10, padding: '10px 14px' }}>
+            ✍️ ผู้เซ็น/อนุมัติใบค่าฝีมือ (ราย section) ย้ายไปตั้งที่หน้า <a href="/org-setup" style={{ color: 'var(--accent)', fontWeight: 700 }}>ผังองค์กร</a> แล้ว — เพราะเป็นข้อมูลราย "ส่วนงาน" ใช้ร่วมกันทุกไลน์ในส่วนนั้น
+          </div>
 
         </>}
       </div>

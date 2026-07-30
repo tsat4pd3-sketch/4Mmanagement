@@ -19,17 +19,28 @@ export default function OrgSetup() {
   const [formRefLineId, setFormRefLineId] = useState('');
   const [formLaborType, setFormLaborType] = useState('direct'); // section: direct/indirect
   const [saving, setSaving] = useState(false);
+  // ผู้เซ็น/อนุมัติใบค่าฝีมือ ราย section (ย้ายมาจาก LineSetup) — เก็บใน section_signers keyed by production_lines.section
+  const [signersMap, setSignersMap] = useState({});   // sectionKey → {manager_name, ta_name, hrm_name}
+  const [plSecSet, setPlSecSet]     = useState(new Set()); // ค่าจริงของ production_lines.section (ไว้ resolve key ให้ตรงกับใบค่าฝีมือ)
+  const [sgManager, setSgManager]   = useState('');
+  const [sgTA, setSgTA]             = useState('');
+  const [sgHRM, setSgHRM]           = useState('');
+  const [sgSaving, setSgSaving]     = useState(false);
 
   useEffect(() => { fetchAll(); }, []);
 
   const fetchAll = async () => {
     setLoading(true);
-    const [{ data: orgData }, { data: lineData }] = await Promise.all([
+    const [{ data: orgData }, { data: lineData }, { data: signerRows }] = await Promise.all([
       supabase.from('org_nodes').select('*').order('sort_order'),
-      supabase.from('production_lines').select('id, name').order('name'),
+      supabase.from('production_lines').select('id, name, section').order('name'),
+      supabase.from('section_signers').select('*'),
     ]);
     setNodes(orgData || []);
     setLines(lineData || []);
+    setPlSecSet(new Set((lineData || []).map(l => l.section).filter(Boolean)));
+    const sm = {}; (signerRows || []).forEach(r => { sm[r.section] = r; });
+    setSignersMap(sm);
     setLoading(false);
   };
 
@@ -63,6 +74,32 @@ export default function OrgSetup() {
   }, [selSection, nodes]); // eslint-disable-line
 
   const currentLines = selDept ? linesOf(selDept) : [];
+
+  // key ของ section_signers = ค่าที่ production_lines.section ใช้ (= ค่าที่ใบค่าฝีมืออ้างถึง)
+  // resolve จาก node.code / node.name โดยเทียบกับค่าจริงใน production_lines กันคีย์ผิดจนข้อมูลกำพร้า
+  const secKeyOf = (node) => {
+    if (!node) return '';
+    if (node.code && plSecSet.has(node.code)) return node.code;
+    if (node.name && plSecSet.has(node.name)) return node.name;
+    return node.code || node.name || '';
+  };
+  // โหลดชื่อผู้เซ็นของ section ที่เลือกเข้าฟอร์ม
+  useEffect(() => {
+    const node = sections.find(s => s.id === selSection);
+    const row = signersMap[secKeyOf(node)] || {};
+    setSgManager(row.manager_name || ''); setSgTA(row.ta_name || ''); setSgHRM(row.hrm_name || '');
+  }, [selSection, signersMap, plSecSet, sections]); // eslint-disable-line
+  const saveSigners = async () => {
+    const node = sections.find(s => s.id === selSection);
+    const key = secKeyOf(node);
+    if (!key) return toast.error('ส่วนงานนี้ยังไม่มี Code/ชื่อ — ตั้งก่อนบันทึกผู้เซ็น');
+    setSgSaving(true);
+    const row = { section: key, manager_name: sgManager || null, ta_name: sgTA || null, hrm_name: sgHRM || null, updated_at: new Date().toISOString() };
+    const { error } = await supabase.from('section_signers').upsert(row, { onConflict: 'section' });
+    if (error) toast.error('Error: ' + error.message);
+    else { setSignersMap(m => ({ ...m, [key]: row })); toast.success('บันทึกผู้เซ็นแล้ว'); }
+    setSgSaving(false);
+  };
 
   const openCreate = (kind, parentId) => {
     setFormName(''); setFormCode(''); setFormCostCenter(''); setFormRefLineId('');
@@ -217,6 +254,33 @@ export default function OrgSetup() {
             ))}
             {selDept && !currentLines.length && <Empty text="ยังไม่มีกลุ่มในแผนกนี้" />}
           </div>
+
+          {/* ✍️ ผู้เซ็น/อนุมัติใบค่าฝีมือ ราย section (ย้ายมาจาก LineSetup — เป็นข้อมูลราย "ส่วนงาน") */}
+          {selSection && selSection !== ORPHAN && (() => {
+            const node = sections.find(s => s.id === selSection);
+            if (!node) return null;
+            const key = secKeyOf(node);
+            return (
+              <div className="card" style={{ flexBasis: '100%', width: '100%', padding: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
+                  <strong style={{ fontSize: 13, color: 'var(--text2)' }}>✍️ ผู้เซ็น/อนุมัติใบค่าฝีมือ — ส่วน {node.name}{key ? ` (${key})` : ''}</strong>
+                  <button onClick={saveSigners} disabled={sgSaving || !key}
+                    style={{ padding: '7px 18px', background: sgSaving || !key ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: sgSaving || !key ? 'default' : 'pointer' }}>
+                    {sgSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
+                  </button>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
+                  ใช้ดึงชื่อลงช่องลายเซ็น “ใบสรุปค่าฝีมือ” อัตโนมัติ — ตั้งครั้งเดียวต่อส่วนงาน ใช้ร่วมทุกไลน์ในส่วนนี้ (หัวหน้างานรายไลน์ตั้งที่หน้าจัดการไลน์)
+                </div>
+                {!key && <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 8 }}>⚠ ส่วนนี้ยังไม่มี Code/ชื่อที่ตรงกับ production_lines.section — ใบค่าฝีมืออาจดึงไม่เจอ</div>}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+                  <div><label style={labelSt}>ผู้จัดการต้นสังกัด</label><input type="text" value={sgManager} onChange={e => setSgManager(e.target.value)} style={{ marginTop: 4 }} /></div>
+                  <div><label style={labelSt}>เจ้าหน้าที่ TA</label><input type="text" value={sgTA} onChange={e => setSgTA(e.target.value)} style={{ marginTop: 4 }} /></div>
+                  <div><label style={labelSt}>ผู้จัดการส่วน HRM</label><input type="text" value={sgHRM} onChange={e => setSgHRM(e.target.value)} style={{ marginTop: 4 }} /></div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
