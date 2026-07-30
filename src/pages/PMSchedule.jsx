@@ -163,7 +163,9 @@ export default function PMSchedule() {
     return acc
   }, {})
 
-  const deptColor = DEPT_COLORS[department] ?? '#3dd65c'
+  // สี/ป้ายทีม — data-driven จาก mtn_teams (teams) ก่อน แล้ว fallback map เดิม
+  const teamMeta = teams.find(t => t.key === department)
+  const deptColor = teamMeta?.color ?? DEPT_COLORS[department] ?? '#3dd65c'
   const today = atMidnight(new Date())
   const goCheck = (equipId) => navigate(`/pm-check?dept=${department}&equip=${equipId}`)
 
@@ -171,7 +173,7 @@ export default function PMSchedule() {
     <div style={S.page}>
       <div>
         <h1 style={S.h1}>แผน PM</h1>
-        <p style={S.sub}>ตารางการตรวจสอบ · {DEPT_LABEL[department] ?? department}</p>
+        <p style={S.sub}>ตารางการตรวจสอบ · {teamMeta?.label ?? DEPT_LABEL[department] ?? department}</p>
       </div>
 
       <div style={S.deptBar}>

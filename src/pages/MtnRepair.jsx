@@ -12,7 +12,7 @@ import { toast } from '../components/Toast';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { teamsForUser, teamForSection } from '../utils/mtnTeams';
+import { teamsForUser, teamForSection, teamForItem } from '../utils/mtnTeams';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import { loadDocForms, docFormSync } from '../utils/docForms';
 loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sync) อ่านผ่าน docFormSync
@@ -67,7 +67,8 @@ const beEcho = (ymd) => { if (!ymd) return ''; const [y, m, d] = ymd.split('-');
 
 // หน่วยงานซ่อม — fallback เท่านั้น (source of truth = mtn_teams ผ่าน pmTeamsSync().dept_name · ดู CLAUDE.md "ทีมช่างซ่อม 4 ส่วน")
 const MTN_DEPTS = ['JIG MTN', 'DIE MTN', 'MTN', 'PRODUCTION'];
-const deptForItem = (it) => { const s = (it || '').toUpperCase(); if (s.includes('JIG')) return 'JIG MTN'; if (s.includes('DIE')) return 'DIE MTN'; return 'MTN'; };
+// เดา default หน่วยงานจากชนิดอุปกรณ์ — reuse util กลาง (เลิก duplicate logic)
+const deptForItem = teamForItem;
 
 const STATUS_META = {
   pending:   { label: '📣 รอรับงาน',        step: 1, color: '#ef4444', bg: 'rgba(239,68,68,0.14)' },

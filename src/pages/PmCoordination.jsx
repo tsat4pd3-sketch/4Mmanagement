@@ -399,7 +399,6 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
                 <label style={lblS}>ทีมรับผิดชอบ</label>
                 <select value={t.team || ''} onChange={e => setTask(i, 'team', e.target.value)} style={inp}>
                   <option value="">— ทีม —</option>
-                  <option value="production">PRODUCTION (ฝ่ายผลิต)</option>
                   {teams.map(tm => <option key={tm.key} value={tm.key}>{tm.label}</option>)}
                 </select>
               </div>

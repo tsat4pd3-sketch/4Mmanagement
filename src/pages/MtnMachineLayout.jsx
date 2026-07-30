@@ -83,6 +83,9 @@ export default function MtnMachineLayout({ setupMode = false }) {
   const [dept, setDept] = useState('all')
   const [teams, setTeams] = useState(pmTeamsSync()) // ทีมช่าง data-driven (mtn_teams)
   useEffect(() => { loadPmTeams().then(setTeams) }, [])
+  // ป้าย/ไอคอนทีม — data-driven จาก teams ก่อน แล้ว fallback map เดิม
+  const deptIconOf = (k) => teams.find(t => t.key === k)?.icon ?? DEPT_ICON[k] ?? ''
+  const deptLabelOf = (k) => teams.find(t => t.key === k)?.label ?? DEPT_LABEL[k] ?? k
   const [selId, setSelId] = useState(null)
   const [loading, setLoading] = useState(false)
 
@@ -347,7 +350,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                 <button onClick={() => setSelId(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 8px', fontSize: 12, cursor: 'pointer' }}>✕</button>
               </div>
               {selChecklists.length === 0 ? (
-                <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีเช็คลิสต์ PM{dept !== 'all' ? ` ของแผนก ${DEPT_LABEL[dept]}` : ''} สำหรับรายการนี้</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีเช็คลิสต์ PM{dept !== 'all' ? ` ของแผนก ${deptLabelOf(dept)}` : ''} สำหรับรายการนี้</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {selChecklists.map((c, i) => {
@@ -357,7 +360,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, borderTop: i ? '1px dashed var(--border)' : 'none', paddingTop: i ? 6 : 0 }}>
                         <span style={{ width: 9, height: 9, borderRadius: '50%', background: m.color, flexShrink: 0 }} />
                         <span style={{ fontWeight: 700, color: 'var(--text)' }}>{c.eqName ?? selInfo.name}</span>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>{DEPT_ICON[c.dept]} {DEPT_LABEL[c.dept] ?? c.dept}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>{deptIconOf(c.dept)} {deptLabelOf(c.dept)}</span>
                         <span style={{ color: m.color, fontWeight: 700 }}>{m.label}</span>
                         <span style={{ color: 'var(--muted)' }}>{c.nextDue ? `ครบ ${c.nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })}${dd != null ? (dd < 0 ? ` (เกิน ${Math.abs(dd)} วัน)` : ` (อีก ${dd} วัน)`) : ''}` : 'ไม่มีรอบตายตัว'}</span>
                       </div>

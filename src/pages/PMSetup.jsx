@@ -648,6 +648,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   }
 
   const deptColor = pmTeamsSync().find(t => t.key === department)?.color || DEPT_COLORS[department] || '#3dd65c'
+  const deptLabel = pmTeamsSync().find(t => t.key === department)?.label ?? DEPT_LABEL[department] ?? department
   const pinnedCount = checkpoints.filter(c => c.x_pos != null).length
 
   // จัดกลุ่มสำหรับ render + label "Item.sub" (เช่น 1.3) ให้การ์ดกับ pin ตรงกัน
@@ -683,7 +684,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         <div style={S.modalHead}>
           <div>
             <h2 style={S.modalTitle}>{isEdit ? 'แก้ไขอุปกรณ์' : 'เพิ่มอุปกรณ์ใหม่'}</h2>
-            <span style={{ fontSize: 12, color: deptColor }}>{DEPT_LABEL[department] ?? department}</span>
+            <span style={{ fontSize: 12, color: deptColor }}>{deptLabel}</span>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
@@ -781,7 +782,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           )}
 
           <div>
-            <label style={S.label}>ความถี่การตรวจ ({DEPT_LABEL[department]})</label>
+            <label style={S.label}>ความถี่การตรวจ ({deptLabel})</label>
             <div style={S.freqBtns}>
               {Object.entries(FREQ_LABEL).map(([v, lbl]) => <button key={v} onClick={() => setFrequency(v)} style={S.freqBtn(frequency === v)}>{lbl}</button>)}
             </div>
@@ -1012,7 +1013,7 @@ export default function PMSetup() {
       <div style={S.header}>
         <div>
           <h1 style={S.h1}>PM Setup — อุปกรณ์ & จุดตรวจ</h1>
-          <p style={S.sub}>{jigs.length} อุปกรณ์ · แผนก {DEPT_LABEL[department] ?? department}</p>
+          <p style={S.sub}>{jigs.length} อุปกรณ์ · แผนก {teams.find(t => t.key === department)?.label ?? DEPT_LABEL[department] ?? department}</p>
         </div>
         {canSetup && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
