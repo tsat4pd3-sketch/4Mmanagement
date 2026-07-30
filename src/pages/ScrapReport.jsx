@@ -18,6 +18,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { canDelete } from '../utils/permissions';
 import { usePerms } from '../utils/usePerms';
 import { exportScrapReportExcel } from '../lib/scrapExportExcel';
+import { getDocForm } from '../utils/docForms';
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
 function localDateStr(d = new Date()) {
@@ -271,7 +272,9 @@ export default function ScrapReport() {
 
   const doExport = async (rep) => {
     const { data: items } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
-    await exportScrapReportExcel({ report: rep, items: items || [], defectTypes });
+    // เลขฟอร์มจาก Document Master กลาง (doc_control แก้ที่ /doc-forms) · fallback ค่าเดิม
+    const docForm = await getDocForm('scrap_report', { form_code: 'FM-PD2-002', rev: 'Rev.06' });
+    await exportScrapReportExcel({ report: rep, items: items || [], defectTypes, docForm });
   };
 
   const STATUS_META = { draft: { label: 'ร่าง', color: '#6b7280' }, submitted: { label: 'ส่งอนุมัติ', color: '#f59e0b' }, approved: { label: 'อนุมัติแล้ว', color: '#22c55e' } };

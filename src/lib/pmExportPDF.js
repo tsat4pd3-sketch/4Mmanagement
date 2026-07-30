@@ -88,7 +88,7 @@ export async function resolveSignatureDataUrl(publicUrl) {
  */
 export async function exportInspectionPDF({
   jig, inspection, checkpoints, results,
-  inspector, approver, exporter, categories,
+  inspector, approver, exporter, categories, docForm,
 }) {
   const CAT = buildCatMaps(categories)
   const catColor = (cat) => CAT.color[cat] ?? [107, 114, 128]
@@ -490,7 +490,11 @@ export async function exportInspectionPDF({
   doc.text('NG = ผิดปกติ     OK = ปกติ', M + 28, legendY + 11)
 
   doc.setFontSize(6)
-  doc.text(`FM-JIG-003     Rev.00 Eff.date: 01/07/2020`, W - M, H - M, { align: 'right', baseline: 'bottom' })
+  // เลขฟอร์ม/Rev/Effective จาก Document Master กลาง (fallback ค่าเดิม)
+  const _fc = docForm?.form_code || 'FM-JIG-003'
+  const _rev = docForm?.rev || 'Rev.00'
+  const _eff = docForm?.effective_date || '01/07/2020'
+  doc.text(`${_fc}     ${_rev} Eff.date: ${_eff}`, W - M, H - M, { align: 'right', baseline: 'bottom' })
 
   doc.save(`PM_JIG_${jig.jig_no ?? jig.name}_${datePart}.pdf`)
 }
