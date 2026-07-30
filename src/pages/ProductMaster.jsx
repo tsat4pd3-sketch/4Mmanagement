@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
-import { loadProcessTypes, activeProcessTypes } from '../utils/processTypes';
+import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '../utils/processTypes';
 loadProcessTypes(); // master กระบวนการ data-driven
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
@@ -535,8 +535,8 @@ export default function ProductMaster() {
                     {!indented && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
                         <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{item.name}</span>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: item.process_type === 'metal_forming' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.12)', color: item.process_type === 'metal_forming' ? '#fbbf24' : '#22c55e' }}>
-                          {item.process_type === 'metal_forming' ? '⚙ Metal Forming' : '🔥 Welding/Assy'}
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: `${procColor(item.process_type, '#22c55e')}26`, color: procColor(item.process_type, '#22c55e') }}>
+                          {procDisplay(item.process_type)}
                         </span>
                         <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: item.posting_mode === 'lot_accumulate' ? 'rgba(168,85,247,0.15)' : 'rgba(56,189,248,0.12)', color: item.posting_mode === 'lot_accumulate' ? '#a855f7' : '#38bdf8' }}>
                           {item.posting_mode === 'lot_accumulate' ? `📥 สะสม Lot ≥${item.lot_accumulate_threshold ?? '?'}` : '📌 มีกัมบังก็ผลิต'}
@@ -656,8 +656,8 @@ export default function ProductMaster() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
                       <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{partName}</span>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: repItem.process_type === 'metal_forming' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.12)', color: repItem.process_type === 'metal_forming' ? '#fbbf24' : '#22c55e' }}>
-                        {repItem.process_type === 'metal_forming' ? '⚙ Metal Forming' : '🔥 Welding/Assy'}
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: `${procColor(repItem.process_type, '#22c55e')}26`, color: procColor(repItem.process_type, '#22c55e') }}>
+                        {procDisplay(repItem.process_type)}
                       </span>
                       <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: repItem.posting_mode === 'lot_accumulate' ? 'rgba(168,85,247,0.15)' : 'rgba(56,189,248,0.12)', color: repItem.posting_mode === 'lot_accumulate' ? '#a855f7' : '#38bdf8' }}>
                         {repItem.posting_mode === 'lot_accumulate' ? `📥 สะสม Lot ≥${repItem.lot_accumulate_threshold ?? '?'}` : '📌 มีกัมบังก็ผลิต'}
