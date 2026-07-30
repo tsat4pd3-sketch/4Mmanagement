@@ -179,6 +179,45 @@ async function buildTelegramMessage(log: Record<string, unknown>, title: string)
   return lines.join('\n');
 }
 
+// แจ้งเตือน "ในแอป" (กระดิ่ง + เสียง + Web Push ผ่าน trigger trg_notify_push) ให้กลุ่มผู้ใช้
+async function usersByRole(roles: string[]): Promise<string[]> {
+  const { data } = await supabase.from('profiles').select('id').in('role', roles);
+  return (data ?? []).map((p) => p.id as string);
+}
+async function insertNotifications(userIds: string[], title: string, body: string, type: string, refTable?: string, refId?: unknown) {
+  const ids = [...new Set(userIds)].filter(Boolean);
+  if (!ids.length) return;
+  try {
+    await supabase.from('notifications').insert(
+      ids.map((uid) => ({ user_id: uid, title, body, type, ref_table: refTable ?? null, ref_id: refId != null ? String(refId) : null })),
+    );
+  } catch (e) { console.error('insertNotifications', e); }
+}
+// หัวหน้าของ section ไลน์นั้น (supervisor/manager ที่คุม section เดียวกัน) + leader ของไลน์นั้น
+async function headsForLine(lineName: string | undefined): Promise<string[]> {
+  if (!lineName) return [];
+  const { data: line } = await supabase.from('production_lines').select('id, section').eq('name', lineName).maybeSingle();
+  const section = line?.section ? String(line.section).trim().toLowerCase() : null;
+  const lineId = line?.id ?? null;
+  const { data: heads } = await supabase.from('profiles').select('id, role, section, sections, line_id');
+  const ids: string[] = [];
+  for (const p of heads ?? []) {
+    if (p.role === 'supervisor' || p.role === 'manager') {
+      const secs = (Array.isArray(p.sections) && p.sections.length ? p.sections : (p.section ? [p.section] : []))
+        .map((s: string) => String(s).trim().toLowerCase());
+      if (section && secs.includes(section)) ids.push(p.id as string);
+    } else if (p.role === 'leader' && lineId != null && p.line_id === lineId) {
+      ids.push(p.id as string);
+    }
+  }
+  return ids;
+}
+// ผู้รับแจ้งเตือน "เครื่องหยุด" (urgent): ทีมช่างทั้งหมด + หัวหน้าของ section ไลน์นั้น
+async function recipientsForDowntime(lineName?: string): Promise<string[]> {
+  const [mtn, heads] = await Promise.all([usersByRole(['mtn']), headsForLine(lineName)]);
+  return [...mtn, ...heads];
+}
+
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
@@ -379,6 +418,11 @@ Deno.serve(async (req) => {
       }, lines.join('\n'));
       if (d.id) await sendTelegramTracked(message, chat, 'downtime', d.id, 'downtime_call_mtn').catch(console.error);
       else await sendTelegram(message, chat).catch(console.error);
+      // urgent → แจ้งในแอป (กระดิ่ง+เสียง+push) ให้ทีมช่าง
+      await insertNotifications(await recipientsForDowntime(d.line_name),
+        `📞 เรียกช่างด่วน — ${d.machine_no || d.line_name || '-'}`,
+        `${d.line_name || ''} · ${d.type_name || 'Downtime'}${d.description ? ' · ' + d.description : ''}`,
+        'error', 'downtime_logs', d.id);
       return json({ ok: true });
     }
 
@@ -406,6 +450,11 @@ Deno.serve(async (req) => {
       }, lines.join('\n'));
       if (d.id) await sendTelegramTracked(message, chat, 'downtime', d.id, 'downtime_open_15min').catch(console.error);
       else await sendTelegram(message, chat).catch(console.error);
+      // urgent → แจ้งในแอป (กระดิ่ง+เสียง+push) ให้ทีมช่าง
+      await insertNotifications(await recipientsForDowntime(d.line_name),
+        `🚨 เครื่องยังหยุด เกิน ${d.open_min ?? ''} นาที — ${d.machine_no || d.line_name || '-'}`,
+        `${d.line_name || ''} · ${d.type_name || 'Downtime'}`,
+        'error', 'downtime_logs', d.id);
       return json({ ok: true });
     }
 
