@@ -283,6 +283,9 @@ export default function MtnRepair() {
 
   const openCount = useMemo(() => orders.filter(o => !['closed', 'rejected'].includes(o.status) && (!scopeLines || !o.line_name || scopeLines.has(o.line_name))).length, [orders, scopeLines]);
   const lineOpts = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines).map(l => l.name), [lines, scopeLines]);
+  // ⚠️ hook นี้ต้องอยู่ก่อน `if (loading) return` ด้านล่าง — ไม่งั้น hook count เปลี่ยนตอน loading→loaded = React #310 (จอ error)
+  // ไลน์ในฟอร์มแจ้งซ่อม = เฉพาะที่อยู่ใน scope ของผู้แจ้ง (กันเห็นไลน์ข้ามส่วนงาน — pattern มาตรฐาน)
+  const scopedLineObjs = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines), [lines, scopeLines]);
 
   // เปิดโปรเจคปรับปรุงจากใบ MO (เชื่อม B) — ส่ง prefill ผ่าน sessionStorage แล้วไปหน้า /improvements
   const openImprovementFromMo = (o) => {
@@ -295,8 +298,6 @@ export default function MtnRepair() {
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
 
-  // ไลน์ในฟอร์มแจ้งซ่อม = เฉพาะที่อยู่ใน scope ของผู้แจ้ง (กันเห็นไลน์ข้ามส่วนงาน — pattern มาตรฐาน)
-  const scopedLineObjs = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines), [lines, scopeLines]);
   const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, role, fullName, signatureUrl, improvements, supplyByMachineNo, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
 
   return (
