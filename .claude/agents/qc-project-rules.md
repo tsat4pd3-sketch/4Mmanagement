@@ -148,6 +148,11 @@ model: inherit
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่
   ต้องอยู่ใน CLAUDE.md — เทียบโค้ดจริงกับเอกสาร หาจุดที่**เอกสารล้าสมัย** (เอกสารผิดแย่กว่าไม่มี)
 - **G2** Toast ต้อง import singleton จาก `../components/Toast` — ห้ามทำ toast/alert เอง (`window.alert` ยกเว้น confirm)
+- **G3** เอกสาร export ทุกตัว (พิมพ์/PDF/Excel) ต้องผ่านระบบ Doc Control (CLAUDE.md กฎบังคับหัวไฟล์ + UI-CONVENTIONS §6.6):
+  - ฟังก์ชันพิมพ์/export ต้องอ่านเลขฟอร์ม/Rev/Effective ผ่าน `src/utils/docForms.js` (`getDocForm`/`docFormSync`) — **grep หาเลขฟอร์ม hardcode** (pattern `FM-[A-Z]+-\d`, `F-PRS`, `Rev\.\s*\d`) ในโค้ดพิมพ์ที่ไม่ได้เป็น fallback ของ getDocForm = 🔴
+  - รายงานภายในที่ `window.open`+print โดยไม่มี layout ฟอร์มทางการ ต้องห่อด้วย `withDocFoot(html, doc_key)` — จุดพิมพ์ใหม่ที่ไม่ห่อ = 🟡
+  - โลโก้ต้องผ่าน `urlToDataUrl(docFormSync(key).logo_url || tsLogoUrl)` — hardcode/วาดโลโก้เอง = 🟡
+  - ห้ามเขียนตาราง `document_controls`/`document_control_revisions` เพิ่ม (เลิกใช้ 2026-07-30 — ยุบเข้า `doc_forms`/`doc_form_revisions`) = 🔴
 
 ## รูปแบบรายงานผล (return เป็นข้อความล้วน)
 
