@@ -6,6 +6,7 @@ import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadMachineTraits, activeAutomationLevels, activeOperationModes, automationDisplay, operationDisplay } from '../utils/machineTraits';
+import EmojiPicker from '../components/EmojiPicker';
 
 /* ─── shared little UI bits ─────────────────────────────────── */
 function Field({ label, children }) {
@@ -486,8 +487,9 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
               <input autoFocus placeholder="ชื่อประเภท เช่น Robot - Arc Welding" value={form.label}
                 onChange={e => setForm(f => ({ ...f, label: e.target.value }))} style={inputStyle} />
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input placeholder="ไอคอน (emoji)" value={form.icon} maxLength={4}
-                  onChange={e => setForm(f => ({ ...f, icon: e.target.value }))} style={{ ...inputStyle, width: 90 }} />
+                <div style={{ width: 150 }}>
+                  <EmojiPicker value={form.icon} onChange={v => setForm(f => ({ ...f, icon: v }))} style={inputStyle} />
+                </div>
                 <div style={{ display: 'flex', gap: 5 }}>
                   {TYPE_COLORS.map(c => (
                     <button key={c} type="button" onClick={() => setForm(f => ({ ...f, color: c }))}

@@ -14,6 +14,7 @@ import { MTN_TEAMS, teamForItem } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
 import { pairAwareTotal } from '../utils/pairTotals';
 import EventComments from '../components/EventComments';
+import EmojiPicker from '../components/EmojiPicker';
 
 // โหลดโลโก้บริษัท (เหมือนหน้าเว็บ) เป็น base64 ครั้งเดียวสำหรับฝัง PDF
 let tsLogoDataUrlPromise = null;
@@ -5366,7 +5367,7 @@ function ProcessTypeSetup({ role }) {
                   <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} placeholder="เช่น Laser Cutting" style={inputStyle} />
                 </Field>
                 <Field label="ไอคอน (emoji)">
-                  <input value={form.icon || ''} onChange={e => setForm(f => ({ ...f, icon: e.target.value }))} style={inputStyle} />
+                  <EmojiPicker value={form.icon || ''} onChange={v => setForm(f => ({ ...f, icon: v }))} style={inputStyle} />
                 </Field>
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 10 }}>
