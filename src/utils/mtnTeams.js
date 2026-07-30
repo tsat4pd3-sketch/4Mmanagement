@@ -1,7 +1,31 @@
 // ทีมช่างซ่อม 4 ส่วน + การจับคู่กับ section ของ user (2026-07-16)
 //   ใช้แจกใบแจ้งซ่อม MO ให้ถูกทีม: คิวงานแยกทีม + default หน่วยงานตอนแจ้ง + แจ้งเตือน Telegram แยกห้อง
 //   จับคู่จาก profiles.sections (ตามคำสั่ง user) — ผูกกับ section ของคน
+import { pmTeamsSync, DEFAULT_TEAMS } from './pmTeams'
+
 export const MTN_TEAMS = ['JIG MTN', 'DIE MTN', 'MTN', 'PRODUCTION']
+
+// ── Single source: ทีมช่างมี 2 encoding — label (mtn_dept / telegram_channels.team = "JIG MTN")
+//    กับ key (checklists.department = "jig_maintenance") · ตาราง mtn_teams (key ↔ dept_name) เป็นตัวโยง
+//    helper นี้ normalize ค่าใดๆ (label หรือ key) → canonical เพื่อให้เทียบ/กรอง/route ไม่สนว่าเก็บ encoding ไหน
+//    ดึง mapping จาก mtn_teams ที่โหลดไว้ (pmTeamsSync) ก่อน แล้ว fallback DEFAULT_TEAMS (2026-07-30 · F8)
+function teamRows() { const r = pmTeamsSync(); return (r && r.length) ? r : DEFAULT_TEAMS }
+// ค่าใดๆ → mtn_teams.key (canonical) — จับได้ทั้งที่ส่ง key มาตรงๆ หรือส่ง dept_name (label)
+export function teamKeyOf(v) {
+  const s = String(v || '').trim(); if (!s) return ''
+  const low = s.toLowerCase()
+  const hit = teamRows().find(t => String(t.key || '').toLowerCase() === low || String(t.dept_name || '').toLowerCase() === low)
+  return hit ? hit.key : low
+}
+// ค่าใดๆ → mtn_teams.dept_name (label ที่ใช้ใน mtn_dept / telegram_channels.team) — ไว้เขียน/แสดง
+export function deptNameOf(v) {
+  const s = String(v || '').trim(); if (!s) return ''
+  const low = s.toLowerCase()
+  const hit = teamRows().find(t => String(t.key || '').toLowerCase() === low || String(t.dept_name || '').toLowerCase() === low)
+  return hit ? (hit.dept_name || hit.key) : s
+}
+// เทียบ 2 ค่าว่าเป็นทีมเดียวกันไหม (ไม่สน encoding key/label)
+export function sameTeam(a, b) { return teamKeyOf(a) === teamKeyOf(b) }
 
 // section string → ทีมช่าง (null = ไม่เข้าทีมซ่อมทีมใดชัดเจน เช่น QA/ธุรการ/ขาย → เห็นคิวทุกทีม)
 // หมายเหตุ: จับเฉพาะ 3 ทีมซ่อมเฉพาะทาง (JIG/DIE/MTN) — ทีม PRODUCTION (autonomous) เลือกเองตอนแจ้ง
