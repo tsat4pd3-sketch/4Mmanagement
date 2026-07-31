@@ -26,11 +26,11 @@ async function getBotToken(): Promise<string | undefined> {
    Known-but-disabled → skip Telegram. Rooms with no chat_id / inactive are
    dropped; if that leaves no valid room, fall back to legacy TELEGRAM_CHAT_ID
    so existing notifications keep working until each room is configured. */
-type Route = { enabled: boolean; chats: string[]; template?: string | null };
+type Route = { enabled: boolean; chats: string[]; template?: string | null; label?: string; inappRoles?: string[] };
 async function loadRoutes(): Promise<Record<string, Route>> {
   try {
     const [{ data: rules }, { data: channels }] = await Promise.all([
-      supabase.from('notification_rules').select('event_key, is_enabled, channel_ids, channel_id, template'),
+      supabase.from('notification_rules').select('event_key, is_enabled, channel_ids, channel_id, template, label, inapp_roles'),
       supabase.from('telegram_channels').select('id, chat_id, is_active'),
     ]);
     const chatById = new Map<string, string>();
@@ -44,7 +44,9 @@ async function loadRoutes(): Promise<Record<string, Route>> {
         : (r as { channel_id?: string }).channel_id ? [(r as { channel_id: string }).channel_id] : [];
       const chats = [...new Set(ids.map((id) => chatById.get(String(id))).filter((v): v is string => !!v))];
       const template = (r as { template?: string | null }).template;
-      map[r.event_key as string] = { enabled: r.is_enabled as boolean, chats, template };
+      const label = (r as { label?: string }).label;
+      const inappRoles = Array.isArray((r as { inapp_roles?: string[] }).inapp_roles) ? (r as { inapp_roles: string[] }).inapp_roles : [];
+      map[r.event_key as string] = { enabled: r.is_enabled as boolean, chats, template, label, inappRoles };
     }
     return map;
   } catch { return {}; }
@@ -217,6 +219,17 @@ async function recipientsForDowntime(lineName?: string): Promise<string[]> {
   const [mtn, heads] = await Promise.all([usersByRole(['mtn']), headsForLine(lineName)]);
   return [...mtn, ...heads];
 }
+// แจ้งในแอป (กระดิ่ง+เสียง+push) ให้ role ที่ผูกไว้กับเรื่องนี้ในหน้า /notification-config (notification_rules.inapp_roles)
+// data-driven: admin ตั้ง role ผู้รับต่อเรื่องเองได้ ไม่ต้องแก้โค้ด · body = ข้อความ Telegram ที่ตัด HTML แล้ว
+async function notifyInApp(routes: Record<string, Route>, event: string, htmlMessage: string, type = 'info') {
+  const roles = routes[event]?.inappRoles ?? [];
+  if (!roles.length) return;
+  const users = await usersByRole(roles);
+  if (!users.length) return;
+  const title = routes[event]?.label || event;
+  const body = String(htmlMessage).replace(/<[^>]+>/g, '').replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+  await insertNotifications(users, title, body, type);
+}
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
 const json = (body: unknown, status = 200) =>
@@ -262,6 +275,7 @@ Deno.serve(async (req) => {
         checked_by: s.checked_by, start_time: s.start_time,
       }, builtin);
       await sendTelegram(message, chat).catch(console.error);
+      await notifyInApp(routes, 'checkin_summary', message);
       return json({ ok: true });
     }
 
@@ -285,6 +299,7 @@ Deno.serve(async (req) => {
         checked_by: s.checked_by, changed_count: s.changed_count, changed_names: s.changed_names,
       }, builtin);
       await sendTelegram(message, chat).catch(console.error);
+      await notifyInApp(routes, 'checkin_update', message);
       return json({ ok: true });
     }
 
@@ -306,6 +321,7 @@ Deno.serve(async (req) => {
         shift_label: b.shift_label, count: b.count, items: b.items, booked_by: b.booked_by,
       }, builtin);
       await sendTelegram(message, chat).catch(console.error);
+      await notifyInApp(routes, 'ot_booking', message);
       return json({ ok: true });
     }
 
@@ -331,6 +347,7 @@ Deno.serve(async (req) => {
       ].filter((l): l is string => l !== null).join('\n');
       const message = pick(routes, 'morning_meeting', { ...s }, builtin);
       await sendTelegram(message, chat).catch(console.error);
+      await notifyInApp(routes, 'morning_meeting', message);
       return json({ ok: true });
     }
 
@@ -362,6 +379,7 @@ Deno.serve(async (req) => {
         reported_by: d.reported_by || '-', start_time: d.start_time || '', end_time: d.end_time || '',
       }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
+      await notifyInApp(routes, 'downtime', message);
       return json({ ok: true });
     }
 
@@ -391,6 +409,7 @@ Deno.serve(async (req) => {
         reported_by: d.reported_by || '-', start_time: d.start_time || '', end_time: d.end_time || '',
       }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
+      await notifyInApp(routes, 'downtime_recovered', message);
       return json({ ok: true });
     }
 
@@ -524,6 +543,7 @@ Deno.serve(async (req) => {
         requested_by: s.requested_by || '-',
       }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
+      await notifyInApp(routes, 'prod_close', message);
       return json({ ok: true });
     }
 
@@ -553,6 +573,7 @@ Deno.serve(async (req) => {
         missing: Array.isArray(p.missing) ? p.missing.join(', ') : '', ng: ngText,
       }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
+      await notifyInApp(routes, key, message);
       return json({ ok: true });
     }
 
@@ -581,6 +602,7 @@ Deno.serve(async (req) => {
         part_name: p.part_name || '', checklist_name: p.checklist_name || '', frequency: p.frequency || '',
       }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
+      await notifyInApp(routes, 'pm_plan_reminder', message);
       return json({ ok: true });
     }
 
@@ -606,6 +628,7 @@ Deno.serve(async (req) => {
         reason: p.reason || '', agreed_with: p.agreed_with || '', by_name: p.by_name || '', defer_count: p.defer_count || 1,
       }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
+      await notifyInApp(routes, 'pm_deferred', message);
       return json({ ok: true });
     }
 
@@ -640,6 +663,7 @@ Deno.serve(async (req) => {
         line_name: p.line_name || '', remark: p.remark || '', by_name: p.by_name || '',
       }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
+      await notifyInApp(routes, 'pm_coordination', message);
       return json({ ok: true });
     }
 
@@ -660,6 +684,7 @@ Deno.serve(async (req) => {
       lines.push(``, `👤 ผู้อัพโหลด: ${e.uploaded_by || '-'}`, `— Smart Logistic`);
       const message = pick(routes, 'edi_import', { kind_label: kindLabel, ship_tos: e.ship_tos, rows: e.rows, files: e.files, date_from: e.date_from, date_to: e.date_to, unmatched: e.unmatched ?? 0, uploaded_by: e.uploaded_by || '-' }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
+      await notifyInApp(routes, 'edi_import', message);
       return json({ ok: true });
     }
 
@@ -678,6 +703,7 @@ Deno.serve(async (req) => {
       ];
       const message = pick(routes, 'shipping_shipped', { ship_time: s.ship_time || '-', due_date: s.due_date, customer: s.customer || '-', dock_code: s.dock_code || '', mat_no: s.mat_no, customer_part_no: s.customer_part_no || '', part_name: s.part_name || '', qty: s.qty, order_no: s.order_no || '', shipped_by: s.shipped_by || '-' }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
+      await notifyInApp(routes, 'shipping_shipped', message);
       return json({ ok: true });
     }
 
@@ -697,6 +723,7 @@ Deno.serve(async (req) => {
       const itemsText = items.map((it) => `${it.ship_time || '-'} · ${it.customer || '-'} · ${it.mat_no} × ${it.qty}`).join('\n');
       const message = pick(routes, 'shipping_overdue', { work_date: s.work_date, count: s.count, items: itemsText }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
+      await notifyInApp(routes, 'shipping_overdue', message);
       return json({ ok: true });
     }
 
@@ -721,6 +748,7 @@ Deno.serve(async (req) => {
       const itemsText = groups.map((g) => `${g.step_name}: ${(g.items ?? []).map((it) => `${it.ship_time} ${it.mat_no}×${it.qty}`).join(', ')}`).join('\n');
       const message = pick(routes, 'shipping_phase_alert', { work_date: a.work_date, total: a.total, items: itemsText }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
+      await notifyInApp(routes, 'shipping_phase_alert', message);
       return json({ ok: true });
     }
 
