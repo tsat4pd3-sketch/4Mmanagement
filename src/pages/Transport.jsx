@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
-import { supabaseDR } from '../supabaseClient';
+import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { getRoundStatus } from '../utils/deliveryRounds';
+import { routeThroughStops, nodeKind } from '../utils/transportGraph';
 
 /* ─── TRANSPORT — มอบหมายขนส่ง (Teiki-bin phase 1: ก) ─────────────────────────
    ชั้น carrier (คนขับ/ผู้ขน) + สกิลยานพาหนะ + มอบหมาย carrier ให้ "รอบส่ง" ที่มีอยู่
@@ -24,21 +25,32 @@ export default function Transport() {
   const [rounds, setRounds] = useState([]);
   const [deliveries, setDeliveries] = useState([]);
   const [assigns, setAssigns] = useState([]);
+  const [nodes, setNodes] = useState([]);
+  const [edges, setEdges] = useState([]);
+  const [roundStops, setRoundStops] = useState([]);
+  const [imageUrl, setImageUrl] = useState(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [editCarrier, setEditCarrier] = useState(null);
   const [busy, setBusy] = useState(null);
   const workDate = getWorkDate();
 
   const load = useCallback(async () => {
-    const [{ data: veh }, { data: car }, { data: rds }, { data: dlv }, { data: asg }] = await Promise.all([
+    const [{ data: veh }, { data: car }, { data: rds }, { data: dlv }, { data: asg }, { data: nd }, { data: eg }, { data: rs }] = await Promise.all([
       supabaseDR.from('transport_vehicles').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('transport_carriers').select('*').order('name'),
       supabaseDR.from('kanban_delivery_rounds').select('*').eq('is_active', true).order('line_name').order('round_no'),
       supabaseDR.from('kanban_deliveries').select('*').eq('work_date', workDate),
       supabaseDR.from('transport_round_assignments').select('*').eq('work_date', workDate),
+      supabaseDR.from('transport_nodes').select('*'),
+      supabaseDR.from('transport_edges').select('*'),
+      supabaseDR.from('transport_round_stops').select('*').order('seq'),
     ]);
     setVehicles(veh || []); setCarriers(car || []); setRounds(rds || []);
     setDeliveries(dlv || []); setAssigns(asg || []);
+    setNodes(nd || []); setEdges(eg || []); setRoundStops(rs || []);
+    // รูปผังจาก Main (factory_map) — best-effort (ไม่มีรูปก็ใช้ route tab ได้แค่ไม่มีแผนที่)
+    const { data: fm } = await supabase.from('factory_map').select('image_url').order('updated_at', { ascending: false }).limit(1).maybeSingle();
+    setImageUrl(fm?.image_url || null);
   }, [workDate]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { const t = setInterval(() => { load(); setNowMs(Date.now()); }, 60000); return () => clearInterval(t); }, [load]);
@@ -73,6 +85,32 @@ export default function Transport() {
   const nAssigned = byLine.reduce((s, g) => s + g.rounds.filter(r => assignMap[r.id]?.carrier_id).length, 0);
   const nRounds = rounds.length;
 
+  // ─── route tab data ───
+  const nById = useMemo(() => { const m = {}; nodes.forEach(n => { m[n.id] = n; }); return m; }, [nodes]);
+  const stopNodes = useMemo(() => nodes.filter(n => (n.kind === 'stop' || n.kind === 'dock') && n.is_active !== false), [nodes]);
+  const stopsByRound = useMemo(() => {
+    const m = {};
+    roundStops.forEach(s => { (m[s.round_id] = m[s.round_id] || []).push(s); });
+    Object.values(m).forEach(arr => arr.sort((a, b) => a.seq - b.seq));
+    return m;
+  }, [roundStops]);
+  const nRoutes = useMemo(() => Object.values(stopsByRound).filter(a => a.length >= 2).length, [stopsByRound]);
+
+  // เขียนลำดับจุดจอดใหม่ทั้งรอบ (delete-then-insert — กัน unique(round_id,seq) ชน)
+  const saveStops = async (roundId, orderedNodeIds) => {
+    setBusy(roundId);
+    try {
+      await supabaseDR.from('transport_round_stops').delete().eq('round_id', roundId);
+      if (orderedNodeIds.length) {
+        const rows = orderedNodeIds.map((nid, i) => ({ round_id: roundId, seq: i, node_id: nid, updated_by_name: fullName }));
+        const { error } = await supabaseDR.from('transport_round_stops').insert(rows);
+        if (error) throw error;
+      }
+      await load();
+    } catch (err) { toast.error(err.message); }
+    setBusy(null);
+  };
+
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1500px)', margin: '0 auto' }}>
       <div style={{ marginBottom: 16 }}>
@@ -85,7 +123,7 @@ export default function Transport() {
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-        {[['assign', `🗓️ มอบหมายวันนี้ (${nAssigned}/${nRounds})`], ['carriers', `👷 คนขับ/ยานพาหนะ (${carriers.filter(c => c.is_active).length})`]].map(([k, l]) => (
+        {[['assign', `🗓️ มอบหมายวันนี้ (${nAssigned}/${nRounds})`], ['route', `🗺️ เส้นทางรอบส่ง (${nRoutes})`], ['carriers', `👷 คนขับ/ยานพาหนะ (${carriers.filter(c => c.is_active).length})`]].map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} style={{
             padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)',
             background: tab === k ? 'var(--accent)' : 'var(--bg2)', color: tab === k ? '#08130a' : 'var(--text2)',
@@ -146,6 +184,11 @@ export default function Transport() {
         )
       )}
 
+      {tab === 'route' && (
+        <RouteTab byLine={byLine} stopsByRound={stopsByRound} stopNodes={stopNodes} nById={nById}
+          nodes={nodes} edges={edges} imageUrl={imageUrl} canManage={canManage} busy={busy} saveStops={saveStops} />
+      )}
+
       {tab === 'carriers' && (
         <div style={{ ...card }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
@@ -187,6 +230,139 @@ export default function Transport() {
     </div>
   );
 }
+
+// ─── RouteTab — กำหนดจุดจอด (ordered) ต่อรอบส่ง + แสดงเส้นทางที่คำนวณจากกราฟถนน ──
+function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageUrl, canManage, busy, saveStops }) {
+  const [selRound, setSelRound] = useState(null);
+  const rounds = useMemo(() => byLine.flatMap(g => g.rounds.map(r => ({ ...r, _line: g.line }))), [byLine]);
+  const round = rounds.find(r => r.id === selRound) || null;
+  const stops = round ? (stopsByRound[round.id] || []) : [];
+  const stopIds = stops.map(s => s.node_id);
+  const route = useMemo(() => routeThroughStops(nodes, edges, stopIds), [nodes, edges, stopIds]);
+  const hasGraph = nodes.length > 0;
+
+  const setOrder = (ids) => round && saveStops(round.id, ids);
+  const addStop = (nid) => setOrder([...stopIds, nid]);
+  const removeStop = (i) => setOrder(stopIds.filter((_, k) => k !== i));
+  const moveStop = (i, dir) => {
+    const j = i + dir; if (j < 0 || j >= stopIds.length) return;
+    const a = [...stopIds]; [a[i], a[j]] = [a[j], a[i]]; setOrder(a);
+  };
+
+  // polyline ของ route บนผัง (nodePath → จุด %)
+  const routePts = route.nodePath.map(id => nById[id]).filter(Boolean);
+
+  if (!hasGraph) return (
+    <div style={{ ...card, padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+      ยังไม่มีถนน/จุดจอดบนผัง — วาดก่อนที่ <b style={{ color: 'var(--text2)' }}>ตั้งค่าผัง/Floorplan → 📦 Store / AMR</b>
+    </div>
+  );
+
+  return (
+    <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      {/* left: เลือกรอบ + จัดลำดับจุดจอด */}
+      <div style={{ ...card, flex: '0 0 320px', minWidth: 280 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>เลือกรอบส่ง</div>
+        <select value={selRound || ''} onChange={e => setSelRound(e.target.value || null)}
+          style={{ width: '100%', padding: '7px 9px', borderRadius: 8, fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', marginBottom: 12 }}>
+          <option value="">— เลือกรอบ —</option>
+          {byLine.map(g => (
+            <optgroup key={g.line} label={g.line}>
+              {g.rounds.map(r => <option key={r.id} value={r.id}>{r.shift === 'night' ? '🌙' : '☀️'} รอบ {r.round_no} · ส่ง {(r.delivery_time || '').slice(0, 5) || '—'} ({(stopsByRound[r.id] || []).length} จุด)</option>)}
+            </optgroup>
+          ))}
+        </select>
+
+        {!round ? (
+          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>เลือกรอบส่งเพื่อกำหนดจุดจอดตามลำดับ</div>
+        ) : (
+          <>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>ลำดับจุดจอด ({stopIds.length})</div>
+            {stopIds.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>ยังไม่มีจุดจอด — เพิ่มจากด้านล่าง</div>}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 12 }}>
+              {stops.map((s, i) => {
+                const n = nById[s.node_id]; const k = nodeKind(n?.kind);
+                const seg = i > 0 ? route.segments[i - 1] : null;
+                const broken = seg && !seg.ok;
+                return (
+                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, background: 'var(--bg2)', border: `1px solid ${broken ? '#ef4444' : 'var(--border)'}`, borderRadius: 8, padding: '5px 8px' }}>
+                    <span style={{ width: 20, height: 20, borderRadius: '50%', background: k.color, color: '#08130a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, flex: '0 0 auto' }}>{i + 1}</span>
+                    <span style={{ flex: 1, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {k.icon} {n?.name || n?.line_name || '(จุดไม่มีชื่อ)'}
+                      {broken && <span style={{ color: '#ef4444', fontSize: 11 }}> · ⚠ ถนนขาด</span>}
+                    </span>
+                    {canManage && <>
+                      <button onClick={() => moveStop(i, -1)} disabled={i === 0 || busy === round.id} style={miniBtn}>▲</button>
+                      <button onClick={() => moveStop(i, 1)} disabled={i === stopIds.length - 1 || busy === round.id} style={miniBtn}>▼</button>
+                      <button onClick={() => removeStop(i)} disabled={busy === round.id} style={{ ...miniBtn, color: '#ef4444' }}>✕</button>
+                    </>}
+                  </div>
+                );
+              })}
+            </div>
+            {canManage && (
+              <>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 5 }}>➕ เพิ่มจุดจอด</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                  {stopNodes.filter(n => !stopIds.includes(n.id)).map(n => (
+                    <button key={n.id} onClick={() => addStop(n.id)} disabled={busy === round.id} style={{ padding: '4px 9px', borderRadius: 16, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>
+                      {nodeKind(n.kind).icon} {n.name || n.line_name || 'จุด'}
+                    </button>
+                  ))}
+                  {stopNodes.filter(n => !stopIds.includes(n.id)).length === 0 && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>เพิ่มครบทุกจุดจอดแล้ว</span>}
+                </div>
+              </>
+            )}
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border2)', fontSize: 12.5 }}>
+              {stopIds.length < 2 ? (
+                <span style={{ color: 'var(--muted)' }}>ต้องมี ≥ 2 จุดจอดเพื่อคำนวณเส้นทาง</span>
+              ) : route.ok ? (
+                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>✅ เส้นทางรวม ≈ {route.distance.toFixed(1)} หน่วยผัง · {route.nodePath.length - 1} ช่วง</span>
+              ) : (
+                <span style={{ color: '#ef4444', fontWeight: 700 }}>⚠ ถนนขาดช่วง — จุดจอดบางคู่ยังเชื่อมกันไม่ถึง (เพิ่มถนนที่หน้า Store/AMR)</span>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* right: แผนที่เส้นทาง */}
+      <div style={{ flex: '1 1 480px', minWidth: 320 }}>
+        {imageUrl ? (
+          <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)' }}>
+            <img src={imageUrl} alt="แผนที่เส้นทาง" style={{ display: 'block', width: '100%', height: 'auto' }} />
+            <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.35)' }} />
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+              {/* ถนนทั้งหมด (จาง) */}
+              {edges.map(e => { const a = nById[e.a_node], b = nById[e.b_node]; if (!a || !b) return null;
+                return <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#64748b" strokeOpacity="0.4" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />; })}
+              {/* เส้นทางที่เลือก (เด่น) */}
+              {routePts.length > 1 && (
+                <polyline points={routePts.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#4ade80" strokeWidth="3.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+              )}
+            </svg>
+            {/* node markers ทั้งหมด (จาง) + จุดจอดของรอบ (เลขลำดับ) */}
+            {nodes.map(n => { const k = nodeKind(n.kind); const idx = stopIds.indexOf(n.id);
+              return (
+                <div key={n.id} style={{ position: 'absolute', left: `${n.x}%`, top: `${n.y}%`, transform: 'translate(-50%,-50%)',
+                  width: idx >= 0 ? 22 : 10, height: idx >= 0 ? 22 : 10, borderRadius: '50%', background: idx >= 0 ? k.color : '#64748b',
+                  opacity: idx >= 0 ? 1 : 0.55, border: idx >= 0 ? '2px solid #fff' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 11, fontWeight: 800, color: '#08130a', boxShadow: idx >= 0 ? '0 1px 5px rgba(0,0,0,0.5)' : 'none', zIndex: idx >= 0 ? 2 : 1 }}>
+                  {idx >= 0 ? idx + 1 : ''}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{ ...card, padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+            ยังไม่มีรูปผัง — อัปโหลดที่ ตั้งค่าผัง/Floorplan → 🗺️ ภาพรวมโรงงาน (คำนวณระยะยังทำได้จากพิกัดจุด)
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+const miniBtn = { padding: '2px 6px', borderRadius: 6, cursor: 'pointer', fontSize: 11, background: 'var(--card)', color: 'var(--text2)', border: '1px solid var(--border)', flex: '0 0 auto' };
 
 function CarrierModal({ carrier, vehicles, fullName, onClose, onSaved }) {
   const [f, setF] = useState({ ...carrier });

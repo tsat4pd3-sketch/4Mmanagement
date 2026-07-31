@@ -145,3 +145,13 @@ TPS ของจริงยืนยันว่าการขนส่งภ�
 2. **หน่วยงาน** — คนขับ 1 คน = 1 กะ/หลายไลน์? ต้องผูก carrier กับ line/section ไหม (scope)?
 3. **empty_return** — สร้าง job อัตโนมัติเมื่อยืนยันรับของ (ไปพร้อมกล่องเปล่า) หรือคนขับ/ไลน์กดเรียกเอง?
 4. **เริ่มจากจุดไหน** — (ก) ชั้น carrier + assign บนรอบ/คิวที่มีอยู่ (เล็ก เห็นผลเร็ว) → (ข) Dispatch Board รวม → (ค) มือถือคนขับ → (ง) empty_return → (จ) KPI
+
+---
+
+## 7. สถานะการทำ (update log)
+
+- **2026-07-31 · Transport Route Graph (แกนหลัก + ผูก Transport)** — ทำแล้ว:
+  - กราฟถนน node/edge วาดทับ `factory_map` (ฉากหลังเดียวกับ /factory-map) — ตาราง DR `transport_nodes`/`transport_edges`/`transport_round_stops` (migration `20260731_transport_route_graph.sql`)
+  - ตัววาด `src/components/TransportMapEditor.jsx` (แท็บ Store/AMR ใน `/layout-setup`) · pathfinding `src/utils/transportGraph.js` (Dijkstra, pure)
+  - แท็บ 🗺️ เส้นทางรอบส่ง ใน `/transport` — จัดลำดับจุดจอดต่อรอบ + route จริงบนผัง (ระยะ relative "หน่วยผัง")
+  - ยังไม่ทำ: scale calibration (→เมตร), empty_return, เชื่อม AMR fleet จริง (เฟส 3) · ดู CLAUDE.md §"Transport Route Graph"

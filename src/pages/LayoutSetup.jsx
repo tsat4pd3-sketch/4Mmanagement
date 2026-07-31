@@ -5,6 +5,7 @@ import { can } from '../utils/permissions'
 import FactoryMap from './FactoryMap'
 import MtnMachineLayout from './MtnMachineLayout'
 import LineSetup from './LineSetup'
+import TransportMapEditor from '../components/TransportMapEditor'
 
 // ตั้งค่าผัง/Floorplan รวมที่เดียว (หมวดตั้งค่าโปรแกรม) — แยก setup ออกจากหน้า display (2026-07-16)
 //   หลักการ: หน้า display (/factory-map, dashboard) ดู+popup เท่านั้น · การตั้งค่าผังมารวมที่นี่ แยกแท็บตาม POV
@@ -13,7 +14,7 @@ const TABS = [
   { key: 'factory', label: '🗺️ ภาพรวมโรงงาน', desc: 'รูปผังใหญ่ + วาดกรอบ (polygon) ต่อไลน์ — ฐานของหน้า “ผังรวมโรงงาน”' },
   { key: 'production', label: '🏭 ผลิต (ผังไลน์)', desc: 'ผังไลน์ + จุดงาน/เครื่องจักร/WIP ต่อไลน์' },
   { key: 'mtn', label: '🔧 ซ่อมบำรุง (MTN)', desc: 'ผัง Facility + วางเครื่องจักร/จุดตรวจของ MTN' },
-  { key: 'store', label: '📦 Store / AMR', desc: 'ผังคลัง + เส้นทาง/จุดจอดหุ่น AMR (เร็วๆ นี้)' },
+  { key: 'store', label: '📦 Store / AMR', desc: 'วาดถนน/ทางเดินรถ (node/แยก/จุดจอด + เส้นเชื่อม) ทับผังใหญ่ — ฐานคำนวณเส้นทาง Teiki-bin/AMR' },
 ]
 
 export default function LayoutSetup() {
@@ -54,11 +55,7 @@ export default function LayoutSetup() {
           ? <MtnMachineLayout setupMode />
           : <div style={{ color: 'var(--muted)', padding: 30 }}>🔒 ไม่มีสิทธิ์ตั้งค่าผัง MTN (ต้องมีสิทธิ์ pm:setup)</div>
       )}
-      {tab === 'store' && (
-        <div style={{ padding: 30, borderRadius: 12, border: '1px dashed var(--border2)', background: 'var(--card)', color: 'var(--muted)', maxWidth: 560 }}>
-          📦 <b style={{ color: 'var(--text2)' }}>Store / AMR</b> — เตรียมไว้สำหรับตั้งค่าผังคลัง + เส้นทาง/จุดจอดหุ่น AMR · จะเปิดใช้ตอนเริ่มระบบ AMR management
-        </div>
-      )}
+      {tab === 'store' && <TransportMapEditor />}
     </div>
   )
 }
