@@ -432,6 +432,13 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - **บนบอร์ด Heijunka (Dashboard/Management):** การ์ด manual ใช้ไอคอน ✍️ + ยอด `ทำได้/เป้า` และแถบ fill ในการ์ดวิ่งตาม qty_actual (ใบสแกนปกติแสดงเหมือนเดิม)
 - migration: `20260712_prod_orders_manual_mode.sql` (DR, additive — ใบสแกนปกติไม่กระทบ)
 
+### ใบผลิต "ปิดก่อนเปิด" (confirmed_at < opened_at) — กัน 3 ชั้นแล้ว (2026-07-30)
+
+เคยพบ 33 ใบที่ `confirmed_at < opened_at` จาก 2 สาเหตุ: (ก) **clock skew** — เปิดใบใช้ now() ฝั่ง DB (default) แต่ปิดใบใช้ `new Date()` ฝั่งเครื่อง client ที่นาฬิกาช้ากว่า ~25 วิ → ใบสแกนเปิด-ปิดไวติดลบไม่กี่วินาที (ข) **ยิงย้อนหลังกรอกเวลาอนาคต** — guard เดิมกันแค่หลุดกรอบกะ ไม่ได้กันเวลาที่ยังมาไม่ถึง (เจอจริง: ปิด 04:35 กรอกเริ่ม 05:17 → ติดลบได้เป็นชั่วโมง)
+- **ชั้น UI:** handleScanOpen + handleManualOpen บล็อกเวลา backfill ที่ > ตอนนี้ ("ยังมาไม่ถึง")
+- **ชั้น DB (safety net):** trigger `trg_prod_orders_close_time_guard` (BEFORE INSERT/UPDATE) — ใบ backfill ซ่อม `opened_at := confirmed_at` (เวลาปิดคือของจริง) · ใบปกติซ่อม `confirmed_at := opened_at` (เวลาเปิดฝั่ง server คือของจริง) · migration `20260730_prod_orders_close_time_guard.sql` (DR — apply แล้ว + ซ่อมข้อมูลเก่า 33 ใบเป็น 0)
+- โค้ดใหม่ที่เขียน timestamp คู่เปิด-ปิดในตารางอื่น ให้ระวังเรื่องนาฬิกาสองแหล่ง (server default vs client `new Date()`) แบบเดียวกัน
+
 ### ถอยใบที่สแกนปิดไปแล้ว (revert confirmed → open) — 2026-07-15
 
 ปุ่ม **↩️ ถอยใบ** บนใบ `confirmed` ใน DailyReport (เคสจริง: หัวหน้ากลุ่มสแกนปิดเกินยอดที่ผลิตได้/ปิดผิดใบ):
