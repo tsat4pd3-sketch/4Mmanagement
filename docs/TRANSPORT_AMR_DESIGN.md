@@ -107,6 +107,34 @@ TPS ของจริงยืนยันว่าการขนส่งภ�
 5. **หน้าต่างเวลาส่งถูกบล็อก** (เบรค + เงื่อนไขจริง) — board ดันผ่าน + config ช่วงห้ามส่ง
 6. (ภายหลัง) **heijunka pattern/pitch + lot cycle (a:b:c) + P-Q** ใน kanban-calc
 
+## 5.7 Audit ความซ้ำซ้อนทั้งโมดูล Logistic-Store (2026-07-21)
+
+ตรวจ 6 หน้า (Store management / Kanban Board+ทุกแท็บ / Rack Center / Planner&Sales / Rundown / Delivery) — **เจอซ้ำซ้อนจริงเยอะ** โดยเฉพาะ write-path ซ้ำ (เสี่ยง drift/แข่งกันเขียน)
+
+**🔴 HIGH (เขียนซ้ำ 2 ที่ — เสี่ยงข้อมูลเพี้ยน):**
+- **D1 · advance `rack_requests`** อยู่ทั้ง `RackCenter.advance()` (มี realtime+cancel+SLA) **และ** `HeijunkaKanban.advanceRack()` (ไม่มี) → เลื่อนสถานะจาก 2 จอ = แข่งกันเขียน + พฤติกรรมต่างแล้ว
+- **D2 · issue `packaging_withdrawal_requests`** ซ้ำ RackCenter + HeijunkaKanban
+- **D5 · round-status คำนวณ 2 ก๊อป** `getRoundStatus` (Heijunka) vs `statusOf` (LineStock) — **เพี้ยนแล้วที่ขอบ frame** (Heijunka เช็ค past/future work-day, LineStock ไม่เช็ค → กะเดียวกันโชว์สถานะต่างกัน 2 หน้า)
+
+**🟡 MED (view เดียวกันวาดหลายรอบ):**
+- **D6/D7 · บอร์ดรอบส่ง วาด 4-5 ที่ในหน้าเดียว** (PlannerStrip / StoreBoardView / DeliveryTimelineBoard / DeliveryRoundsPanel / UnifiedStoreBoard.fg) + LineStock timeboard · "🏪 Store Board" ≈ "ตู้ Kanban รวม › FG"
+- **D3/D4 · คิว rack/packaging** โผล่ทั้ง RackCenter และ UnifiedStoreBoard
+- **D9 · overdue projection** ซ้ำ (CustomerDemand/Rundown/Planner) · **D10 · on-hand** อ่าน 4 ที่
+
+**⚪ LOW (helper copy-paste):** `custLabel` ×3 · work-date logic ×5 (ทั้งที่มี `getWorkDate()` แล้ว — ผิดกฎ) · addMinutes ×2 · part normalize กระจาย
+
+**4 กลไก overdue/SLA แยกกัน:** round-time · `internal_delivery_sla` (rack) · customer walkback · rundown due-date — #1,#2 คือเรื่องเดียวกัน (ส่งภายในช้า) ทำคนละโมเดล
+
+**แผนยุบรวม (เรียงตามคุ้ม/เสี่ยง):**
+1. **round-status → `utils/deliveryRounds.js`** (export `getRoundStatus`) LineStock import ใช้ — เล็ก เสี่ยงต่ำ แก้ bug เพี้ยนขอบ frame เลย
+2. **helper → utils** (`getWorkDate`/custLabel/addMinutes/normalize) — เสี่ยงต่ำ
+3. **rack/packaging: RackCenter เป็นเจ้าของเดียว** — ลบ `advanceRack`/`issuePkg` ใน Heijunka, แท็บ rack ใน Unified ลิงก์ไป `/rack-center` หรือ import action ร่วม — เสี่ยงกลาง คุ้มสูง (ปิด write ซ้ำ)
+4. **retire `StoreBoardView`** ยุบเข้า Unified + reuse `InternalTimeBoard` แทน timeline ที่เขียนเอง
+
+**อย่ายุบ (คนละโดเมนจริง):** Delivery(customer_shipping_orders) vs รอบส่งภายใน · Planner-forecast vs Rundown-balance vs Delivery-chart · KanbanCalc(วางแผนจำนวนใบ) vs allocation(net demand วันนี้) · ledger `line_stock_transactions` (คนละ type: issue/consume/adjust)
+
+> **ผลต่อ Transport/AMR:** ถ้าเพิ่ม transport แบบไม่ยุบก่อน = บอร์ดที่ 6 ซ้อนของซ้ำเดิม · ควร **ยุบ round-status + rack/packaging ให้เหลือเจ้าของเดียวก่อน** แล้วสร้าง transport job รวมบนฐานที่สะอาด (transport = ตัวรวม queue พวกนี้พอดี)
+
 ## 6. Open decisions (รอเคาะก่อนลงมือ)
 1. **มอบงาน** — เฟส 1 ให้หัวหน้า store มอบเอง หรือ auto-assign ตามรอบ/ไลน์ที่คนขับรับผิดชอบ?
 2. **หน่วยงาน** — คนขับ 1 คน = 1 กะ/หลายไลน์? ต้องผูก carrier กับ line/section ไหม (scope)?
