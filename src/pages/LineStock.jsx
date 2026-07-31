@@ -6,6 +6,7 @@ import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
 import InternalTimeBoard from '../components/InternalTimeBoard';
 import { frameMin, breaksToFrame } from '../utils/timeFrame';
+import { getRoundStatus } from '../utils/deliveryRounds';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
    Store จ่ายพาร์ทเข้าไลน์ → บันทึก transaction type='issue'
@@ -1040,18 +1041,10 @@ function DeliveryTimeBoardTab() {
 
   const nowD = new Date(nowMs);
   const nm = frameMin(`${String(nowD.getHours()).padStart(2, '0')}:${String(nowD.getMinutes()).padStart(2, '0')}`);
-  const statusOf = (r) => {
-    const d = dlvMap[`${r.line_name}|${r.shift}|${r.round_no}`];
-    if (d?.received_status === 'full')    return { label: '✔️ รับครบแล้ว', color: '#22c55e', d };
-    if (d?.received_status === 'partial') return { label: '⚠️ รับไม่ครบ',  color: '#f59e0b', d };
-    if (d)                                return { label: '📦 ส่งแล้ว · รอรับ', color: '#0ea5e9', d };
-    const dlv = frameMin((r.delivery_time || '').slice(0, 5));
-    const cut = frameMin((r.cutoff_time || '').slice(0, 5));
-    const fin = dlv == null ? null : dlv + (r.points_count || 1) * (r.time_per_point_min || 10);
-    if (fin != null && nm > fin)                        return { label: '🔴 ค้างส่ง', color: '#ef4444', d: null };
-    if (cut != null && dlv != null && nm >= cut && nm < dlv) return { label: '⏳ กำลังเตรียม', color: '#0ea5e9', d: null };
-    return { label: '⬜ รอ', color: '#94a3b8', d: null };
-  };
+  const wd = workDateNow();
+  // สถานะรอบส่ง — ใช้ util กลาง (deliveryRounds.js) จุดเดียวกับ Kanban Board · frame-aware ไม่เพี้ยนขอบวันงาน
+  const confirmedSet = useMemo(() => new Set(Object.keys(dlvMap)), [dlvMap]);
+  const statusOf = (r) => getRoundStatus(r, confirmedSet, dlvMap, wd, nowMs);
 
   const groups = useMemo(() => {
     const byLine = {};
@@ -1072,7 +1065,7 @@ function DeliveryTimeBoardTab() {
         }),
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rounds, dlvMap, nm]);
+  }, [rounds, dlvMap, nm, nowMs, confirmedSet]);
 
   return (
     <>
