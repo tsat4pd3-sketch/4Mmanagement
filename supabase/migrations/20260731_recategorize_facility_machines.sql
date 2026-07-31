@@ -18,5 +18,15 @@ begin
        and coalesce(m.equipment_category,'production')='production'
        and (mt.label ilike '%cooling tower%' or mt.label ilike '%compress%'
             or mt.label ilike '%booster%' or mt.label ilike '%chiller%' or mt.label ilike '%คอมเพรส%');
+    -- (3) sync shadow jig (jigs.machine_id → machines) ให้หมวดตรงกับเครื่องต้นทาง (PM layout / DailyPM จะได้ไม่โชว์ปน)
+    if exists (select 1 from information_schema.columns
+               where table_schema='public' and table_name='jigs' and column_name='equipment_category') then
+      update public.jigs j
+         set equipment_category = m.equipment_category
+        from public.machines m
+       where j.machine_id = m.id
+         and m.equipment_category = 'facility'
+         and coalesce(j.equipment_category,'production') <> 'facility';
+    end if;
   end if;
 end $$;
