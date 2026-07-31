@@ -196,12 +196,20 @@ export default function MachineDatabase() {
       : supabaseDR.from('machines').insert(p);
     let { error } = await doSave(payload);
     // ทน migration ยังไม่ apply: ถ้าไม่มีคอลัมน์ใหม่ → ตัดออกแล้วบันทึกแบบเดิม
+    let strippedCat = false;
     if (error && /equipment_category|automation_level|operation_mode|gang_count/.test(error.message || '')) {
+      strippedCat = /equipment_category/.test(error.message || '');
       const { equipment_category, automation_level, operation_mode, gang_count, ...rest } = payload;
       void equipment_category; void automation_level; void operation_mode; void gang_count;
       ({ error } = await doSave(rest));
     }
     if (error) { setSaving(false); toast.error(error.message); return; }
+    // ⚠️ บันทึกหมวด Facility/Utility ไม่ติดเพราะยังไม่ได้ apply migration equipment_category → เตือนแทนที่จะเงียบ
+    if (strippedCat && isFac) {
+      setSaving(false);
+      toast.error('⚠️ ยังไม่ได้ apply migration "machines_equipment_category" — เครื่องถูกบันทึกเป็น "ไลน์ผลิต" ชั่วคราว · apply migration แล้วแก้หมวดเป็น Facility อีกครั้ง');
+      setEditing(null); load(); return;
+    }
     // Supply route: sync ไลน์ที่ facility/utility นี้จ่าย (เฉพาะเครื่องที่มี id แล้ว) — best-effort
     if (editing.id && (editing.equipment_category || 'production') !== 'production') {
       try {
