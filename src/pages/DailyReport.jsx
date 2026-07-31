@@ -1035,6 +1035,12 @@ function LiveTab({ role }) {
         toast.error(`เวลา ${openProdForm.backfill_time} อยู่นอกกรอบกะ${selSession.shift === 'day' ? 'เช้า (08:00–20:00)' : 'ดึก (20:00–08:00)'} — ตรวจเวลาที่เริ่มผลิตอีกครั้ง`);
         return;
       }
+      // กันกรอกเวลา "อนาคต" — เคยเจอจริง: ปิดใบ 04:35 แต่กรอกเวลาเริ่มย้อนหลัง 05:17 → ใบปิดก่อนเปิด 42 นาที
+      const iso = backfillIsoFromTime(openProdForm.backfill_time);
+      if (iso && new Date(iso) > new Date()) {
+        toast.error(`เวลา ${openProdForm.backfill_time} ยังมาไม่ถึง — ยิงย้อนหลังต้องเป็นเวลาที่ผ่านมาแล้วเท่านั้น`);
+        return;
+      }
     }
 
     const dup = prodOrders.find(o => o.prod_no === prodNo);
@@ -1253,6 +1259,11 @@ function LiveTab({ role }) {
     const now = new Date();
     const prodNo = `MANUAL-${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
     const backfillIso = manualForm.is_backfill && manualForm.backfill_time ? backfillIsoFromTime(manualForm.backfill_time) : null;
+    if (backfillIso && new Date(backfillIso) > new Date()) {
+      toast.error(`เวลา ${manualForm.backfill_time} ยังมาไม่ถึง — เปิดย้อนหลังต้องเป็นเวลาที่ผ่านมาแล้วเท่านั้น`);
+      setSavingManual(false);
+      return;
+    }
     const { data: created, error } = await supabaseDR.from('prod_orders').insert({
       session_id: selSession.id,
       prod_no:    prodNo,
