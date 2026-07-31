@@ -8,10 +8,14 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { hasPermission } from '../utils/permissions';
+import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import useIsMobile from '../utils/useIsMobile';
 import OeeInsightPanel from '../components/OeeInsightPanel';
+import { pairAwareTotal } from '../utils/pairTotals';
+import { lazy, Suspense } from 'react';
+
+const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport'));
 
 // ── Colour helpers ───────────────────────────────────────────────
 const oeeColor  = v => v >= 80 ? '#22c55e' : v >= 60 ? '#f59e0b' : '#ef4444';
@@ -174,7 +178,9 @@ export default function OEEAnalytics() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const isMobile = useIsMobile(); // ≤768px: grid วิเคราะห์ยุบเป็นคอลัมน์เดียว กันกราฟถูกตัด (desktop ไม่เปลี่ยน)
   const [viewTab, setViewTab] = useState('today'); // today | trend | insight
-  const canSetTarget = hasPermission('manage_master_data', role);
+  const canSetTarget = can('oee', 'set_target', role);
+  const canExportReview = can('oee', 'export_review', role);
+  const [showReviewExport, setShowReviewExport] = useState(false);
 
   // ── Target OEE/A/P/Q รายกรุ๊ป (ตาราง oee_targets ฝั่ง Main) ──
   const [oeeTargets, setOeeTargets] = useState({});          // { group_name: row }
@@ -235,6 +241,8 @@ export default function OEEAnalytics() {
   const [tdDefects,   setTdDefects]   = useState([]);
   const [tdHistory,   setTdHistory]   = useState([]); // last 10 days, closed sessions, lightweight
   const [tdProductsByMat, setTdProductsByMat] = useState({}); // mat_no -> part name
+  const [tdOrdersBySession, setTdOrdersBySession] = useState({}); // session_id -> prod_orders[] (สำหรับนับงานคู่ RH/LH เป็น 1 คู่)
+  const [tdPairMat, setTdPairMat] = useState({}); // mat_no -> pair_mat_no
   const [shiftSchedMap, setShiftSchedMap] = useState({}); // line_id -> day_team
   const [tdLoading, setTdLoading] = useState(false);
 
@@ -333,18 +341,32 @@ export default function OEEAnalytics() {
       const { data: sess } = await q;
 
       const sessionIds = (sess || []).map(s => s.id);
-      const [{ data: dt }, { data: def }] = await Promise.all([
+      const [{ data: dt }, { data: def }, { data: ord }] = await Promise.all([
         sessionIds.length
           ? supabaseDR.from('downtime_logs').select('*, dr_downtime_types(name_th, category, color)').in('session_id', sessionIds)
           : Promise.resolve({ data: [] }),
         sessionIds.length
           ? supabaseDR.from('defect_logs').select('*, dr_defect_types(name_th, color)').in('session_id', sessionIds)
           : Promise.resolve({ data: [] }),
+        sessionIds.length
+          ? supabaseDR.from('prod_orders').select('session_id, mat_no, status, qty, qty_target, qty_ok, qty_actual').in('session_id', sessionIds)
+          : Promise.resolve({ data: [] }),
       ]);
 
       setTdSessions(sess || []);
       setTdDowntimes(dt || []);
       setTdDefects(def || []);
+      const obs = {};
+      (ord || []).forEach(o => { (obs[o.session_id] || (obs[o.session_id] = [])).push(o); });
+      setTdOrdersBySession(obs);
+      // pair_mat_no ของ mat ที่มีในกะวันนี้ (นับงานคู่ RH/LH เป็น 1 คู่/stroke — ดู pairTotals.js)
+      const mats = [...new Set((ord || []).map(o => o.mat_no).filter(Boolean))];
+      if (mats.length) {
+        const { data: prod } = await supabaseDR.from('dr_products').select('mat_no, pair_mat_no').in('mat_no', mats);
+        const pm = {};
+        (prod || []).forEach(p => { if (p.pair_mat_no) pm[p.mat_no] = p.pair_mat_no; });
+        setTdPairMat(pm);
+      } else setTdPairMat({});
       setLastUpdate(new Date());
 
       // เก็บ mat_no → part name ไว้ map ให้ downtime_logs.mat_no (free text, ไม่ใช่ FK)
@@ -417,14 +439,32 @@ export default function OEEAnalytics() {
   const tdKpi = useMemo(() => {
     const valid = key => tdRows.filter(r => r[key] != null).map(r => r[key]);
     const avg = arr => arr.length ? +(arr.reduce((s, v) => s + v, 0) / arr.length).toFixed(1) : null;
+    // งานคู่ RH/LH (pair_mat_no) นับเป็น 1 คู่/stroke — เฉพาะกะที่มีคู่จริงถึงคำนวณจาก prod_orders ที่เหลือใช้ค่า stamped เดิม
+    const hasPairIn = os => os.some(o => o.mat_no && tdPairMat[o.mat_no] && os.some(x => x.mat_no === tdPairMat[o.mat_no]));
+    const pairSum = (os, pick) => {
+      const perMat = {}; let nullSum = 0;
+      os.forEach(o => { const v = pick(o); if (!o.mat_no) { nullSum += v; return; }
+        (perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, target: 0 })).target += v; });
+      return pairAwareTotal(Object.values(perMat), m => tdPairMat[m] || null).target + nullSum;
+    };
+    const sessTarget = r => {
+      const os = (tdOrdersBySession[r.id] || []).filter(o => !['cancelled','imported','carry_over'].includes(o.status));
+      if (hasPairIn(os)) return pairSum(os, o => o.qty_target ?? o.qty ?? 0);
+      return r.target_qty || 0;
+    };
+    const sessActual = r => {
+      const os = tdOrdersBySession[r.id] || [];
+      if (hasPairIn(os)) return pairSum(os, o => o.qty_ok ?? o.qty_actual ?? 0);
+      return r.totalQty || 0;
+    };
     return {
       oee: avg(valid('calcOEE')), a: avg(valid('calcA')), p: avg(valid('calcP')), q: avg(valid('calcQ')),
-      totalQty: tdRows.reduce((s, r) => s + (r.totalQty || 0), 0),
-      targetQty: tdRows.reduce((s, r) => s + (r.target_qty || 0), 0),
+      totalQty: tdRows.reduce((s, r) => s + sessActual(r), 0),
+      targetQty: tdRows.reduce((s, r) => s + sessTarget(r), 0),
       totalDT: tdDowntimesScoped.reduce((s, d) => s + (d.duration_min || 0), 0),
       totalShiftMin: tdSessionsTeamFiltered.reduce((s, r) => s + (r.shift_min || 0), 0),
     };
-  }, [tdRows, tdDowntimesScoped, tdSessionsTeamFiltered]);
+  }, [tdRows, tdDowntimesScoped, tdSessionsTeamFiltered, tdOrdersBySession, tdPairMat]);
 
   const tdHistoryGrouped = useMemo(() => {
     const map = {};
@@ -690,6 +730,12 @@ export default function OEEAnalytics() {
             <button style={{ ...s.tab(false), color: '#f59e0b', border: '1px solid rgba(245,158,11,0.4)' }}
               onClick={() => setShowTargetModal(true)} title="ตั้ง Target A/P/Q รายกรุ๊ป (OEE = A×P×Q อัตโนมัติ) — ระดับส่วนคำนวณจากค่าเฉลี่ยของกรุ๊ป">
               🎯 ตั้ง Target
+            </button>
+          )}
+          {canExportReview && (
+            <button style={{ ...s.tab(false), border: '1px solid var(--border2)' }}
+              onClick={() => setShowReviewExport(true)} title="สร้างเด็ค Monthly Performance Review (.pptx) ตาม template TSG จากข้อมูลเดือนที่เลือก">
+              📽️ รายงานเดือน
             </button>
           )}
         </div>
@@ -1130,7 +1176,7 @@ export default function OEEAnalytics() {
       {/* Data Table */}
       <div style={s.section}>
         <div style={s.title}>ตารางสรุป</div>
-        <div style={{ overflowX: 'auto' }}>
+        <div className="table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border)', color: 'var(--muted)' }}>
@@ -1175,6 +1221,12 @@ export default function OEEAnalytics() {
           onClose={() => setShowTargetModal(false)}
           onSaved={() => { loadTargets(); setShowTargetModal(false); }}
         />
+      )}
+
+      {showReviewExport && canExportReview && (
+        <Suspense fallback={null}>
+          <MonthlyReviewExport onClose={() => setShowReviewExport(false)} />
+        </Suspense>
       )}
     </div>
   );

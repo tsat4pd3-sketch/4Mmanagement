@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
@@ -21,6 +22,18 @@ function fmtThai(d) { return d ? d.toLocaleDateString('th-TH', { timeZone: 'Asia
 export default function PmForecast() {
   const { role, lineId, sections: scopeSecs } = useContext(UserContext)
   const canManage = can('pm', 'setup', role)
+  const canCoord = can('pm_coord', 'manage', role)
+  const navigate = useNavigate()
+  // สร้าง "แผนประสานงาน PM" (แจ้ง Production) จากแถวนี้ — ส่ง prefill ผ่าน sessionStorage แล้วไป /pm-coordination
+  const toCoordination = (r) => {
+    const d = r.projected
+    const due = d ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d) : null
+    sessionStorage.setItem('pmcoord_prefill', JSON.stringify({
+      pm_plan_id: r.plan.id, machine_name: r.eqName, line_name: r.line, next_due_date: due,
+      checklist_name: r.eqName, title: r.eqName ? `PM ${r.eqName}` : '',
+    }))
+    navigate('/pm-coordination')
+  }
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [onlyWindow, setOnlyWindow] = useState(false)
@@ -139,11 +152,11 @@ export default function PmForecast() {
       {loading ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>กำลังคำนวณ...</div>
         : !shown.length ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>ยังไม่มีแผน PM ที่คำนวณได้ (ต้องตั้ง usage_threshold หรือรอบเวลา + มียอดผลิต/forecast)</div>
         : (
-          <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
+          <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 860 }}>
               <thead>
                 <tr style={{ background: 'var(--bg3)', color: 'var(--muted)', textAlign: 'left' }}>
-                  {['ไลน์ / อุปกรณ์', 'ชนิด', 'ความคืบหน้า', 'คาดวัน PM', 'อีก', 'ระยะ PM (ชม.)', 'lead (วัน)', 'เผื่อ %', 'buffer (ชิ้น)'].map(h => <th key={h} style={{ padding: '9px 10px', fontWeight: 700, whiteSpace: 'nowrap' }}>{h}</th>)}
+                  {['ไลน์ / อุปกรณ์', 'ชนิด', 'ความคืบหน้า', 'คาดวัน PM', 'อีก', 'ระยะ PM (ชม.)', 'lead (วัน)', 'เผื่อ %', 'buffer (ชิ้น)', ...(canCoord ? ['ประสานงาน'] : [])].map(h => <th key={h} style={{ padding: '9px 10px', fontWeight: 700, whiteSpace: 'nowrap' }}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -165,6 +178,7 @@ export default function PmForecast() {
                       <td style={{ padding: '8px 10px' }}>{canManage ? <input type="number" defaultValue={p.lead_time_days ?? 10} onBlur={e => { const v = Number(e.target.value) || 0; if (v !== (p.lead_time_days ?? 10)) saveCfg(p.id, { lead_time_days: v }) }} style={inp} /> : (p.lead_time_days ?? 10)}</td>
                       <td style={{ padding: '8px 10px' }}>{canManage ? <input type="number" defaultValue={p.buffer_margin_pct ?? 15} onBlur={e => { const v = Number(e.target.value) || 0; if (v !== (p.buffer_margin_pct ?? 15)) saveCfg(p.id, { buffer_margin_pct: v }) }} style={inp} /> : (p.buffer_margin_pct ?? 15)}</td>
                       <td style={{ padding: '8px 10px', fontWeight: 800, color: r.inWindow && r.buffer ? 'var(--accent2)' : 'var(--muted)', whiteSpace: 'nowrap' }}>{r.buffer ? r.buffer.toLocaleString() : (p.pm_duration_hours ? '0' : 'ตั้งระยะ PM')}</td>
+                      {canCoord && <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}><button onClick={() => toCoordination(r)} title="สร้างแผนประสานงาน PM (แจ้ง Production)" style={{ background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '5px 10px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>🗓️ แผนประสานงาน</button></td>}
                     </tr>
                   )
                 })}

@@ -98,6 +98,10 @@ model: inherit
 - **F6** hover card เฉพาะ `matchMedia('(hover: hover)')` · popup ทุกอันมีทางปิด
 - **F7** playhead ไทม์ไลน์ใช้ `.now-line`/`.now-chip` — ห้ามวาดเส้นเวลาปัจจุบันเองสีอื่น
 - **F9** ลำดับชนิดจุดที่แสดงเรียงกัน (แท็บ/ปุ่ม filter/legend) ต้องเป็น คน → เครื่องจักร → WIP
+- **F10** dropdown ลำดับชั้นองค์กร (Section→แผนก→Line→Team) ต้อง cascade: ตัวเลือกตัวลูกกรองด้วย
+  ตัวแม่ที่เลือก + เปลี่ยนตัวแม่ต้องล้างค่าตัวลูก (ดู UI-CONVENTIONS §5.3) — จับ: select แผนกที่
+  options มาจาก org_nodes ทั้งหมดโดยไม่กรอง parent_id/section · query org_nodes department ที่ไม่ select
+  parent_id · ข้อยกเว้น: AddUser (กำหนด scope), ShiftOrganize merge (section/line ทางเลือก)
   (ลำดับ 4M: Man, Machine, Material) · ปุ่ม 🏷️ ป้ายชื่อ = โชว์/ซ่อน **สองสถานะเท่านั้น** (default โชว์
   ห้ามมีโหมด auto ซ่อนตามความแน่น) คุมทุกชนิดจุด · label บนปุ่มบอก action ที่จะเกิดเมื่อกด
   (Management + LineSetup + MachineFloorMap ต้อง behavior ตรงกัน — WYSIWYG)
@@ -128,11 +132,27 @@ model: inherit
   · grep: `backdropFilter` ใน Management/Dashboard/LineSetup/MachineFloorMap แล้วเช็คว่าไม่ได้อยู่บน
   marker/pill (อยู่บน overlay ของ modal ชิ้นเดียวได้) · เช่นเดียวกับ `animation` ที่กระพริบ
   `box-shadow` บน element ที่โผล่ตลอด (จำกัดเฉพาะ Andon แดง)
+- **F14** (2026-07-30) ตาราง/ลิสต์ข้อมูลเยอะ = drill-down hierarchy (UI-CONVENTIONS §"ตาราง/ลิสต์
+  ข้อมูลเยอะ"): ตารางรายการดิบหลักร้อยแถว render แบนทั้งก้อน = ผิด — ต้องมีชั้นสรุป (ระดับที่ user
+  ดูบ่อยสุดอยู่บน เช่น รายวัน) คลิกแตกชั้นถัดไป + แถวสรุปโชว์ aggregate ครบ + จำกัดแถวแรกเห็น
+  พร้อมปุ่ม "แสดงอีก N" (ห้ามตัดเงียบ) — จับ: `.map(` บนข้อมูลจาก query ที่ limit หลักพัน
+  ลง `<tr>` ตรงๆ โดยไม่มี slice/จัดกลุ่ม · ตัวเลือก entity ยาวต้องจัดกลุ่ม+เลื่อนในกรอบ
+  ไม่ใช่ chip กองรวม + เลือกแล้วพับ + มีปุ่มย้อนกลับชัดเจน · section พับได้ (CollapseCard pattern)
+- **F15** (2026-07-30) กราฟแท่งรายวัน (UI-CONVENTIONS §"กราฟแท่งรายวัน"): แกนวันต้องต่อเนื่อง
+  ห้ามข้ามวันไม่มีข้อมูล (วันว่าง = ตอเทา + tooltip) · เขียว=ของดี แดง=NG ซ้อนแท่งเดียวกัน ·
+  ต้องมี legend + caption อธิบายความหมาย · ≤20 แท่งโชว์ตัวเลขบนหัวแท่ง (จอทัชไม่มี hover) —
+  จับ: chart ที่ map เฉพาะวันที่มีข้อมูล (`Object.values(byDate)`) โดยไม่เติมวันว่าง ·
+  กราฟที่ NG อยู่แค่ใน tooltip
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่
   ต้องอยู่ใน CLAUDE.md — เทียบโค้ดจริงกับเอกสาร หาจุดที่**เอกสารล้าสมัย** (เอกสารผิดแย่กว่าไม่มี)
 - **G2** Toast ต้อง import singleton จาก `../components/Toast` — ห้ามทำ toast/alert เอง (`window.alert` ยกเว้น confirm)
+- **G3** เอกสาร export ทุกตัว (พิมพ์/PDF/Excel) ต้องผ่านระบบ Doc Control (CLAUDE.md กฎบังคับหัวไฟล์ + UI-CONVENTIONS §6.6):
+  - ฟังก์ชันพิมพ์/export ต้องอ่านเลขฟอร์ม/Rev/Effective ผ่าน `src/utils/docForms.js` (`getDocForm`/`docFormSync`) — **grep หาเลขฟอร์ม hardcode** (pattern `FM-[A-Z]+-\d`, `F-PRS`, `Rev\.\s*\d`) ในโค้ดพิมพ์ที่ไม่ได้เป็น fallback ของ getDocForm = 🔴
+  - รายงานภายในที่ `window.open`+print โดยไม่มี layout ฟอร์มทางการ ต้องห่อด้วย `withDocFoot(html, doc_key)` — จุดพิมพ์ใหม่ที่ไม่ห่อ = 🟡
+  - โลโก้ต้องผ่าน `urlToDataUrl(docFormSync(key).logo_url || tsLogoUrl)` — hardcode/วาดโลโก้เอง = 🟡
+  - ห้ามเขียนตาราง `document_controls`/`document_control_revisions` เพิ่ม (เลิกใช้ 2026-07-30 — ยุบเข้า `doc_forms`/`doc_form_revisions`) = 🔴
 
 ## รูปแบบรายงานผล (return เป็นข้อความล้วน)
 

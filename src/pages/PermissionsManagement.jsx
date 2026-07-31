@@ -24,12 +24,14 @@ const PAGE_GROUPS = [
       { key: 'page:/checkin',       label: 'เช็คชื่อ & PPE' },
       { key: 'page:/management',   label: 'จัดการไลน์ผลิต' },
       { key: 'page:/daily-report', label: 'Daily Report' },
-      { key: 'page:/daily-pm',     label: 'Daily PM ฝ่ายผลิต' },
+      { key: 'page:/daily-checker', label: 'Daily Checker (ศูนย์รวมเช็ค — เข้าได้ถ้ามีสิทธิ์แท็บใดแท็บหนึ่ง)' },
+      { key: 'page:/daily-pm',     label: '— แท็บ Autonomous Maintenance (AM) (ใน Daily Checker)' },
+      { key: 'page:/pokayoke',     label: '— แท็บ Poka-Yoke Check (ใน Daily Checker)' },
       { key: 'page:/morning-meeting', label: 'ประชุมแถวเช้า' },
       { key: 'page:/improvements', label: 'Improvements (Kaizen)' },
       { key: 'page:/oee-analytics', label: 'OEE' },
       { key: 'page:/production-plan', label: 'วางแผนการผลิต' },
-      { key: 'page:/lpa',          label: 'Layer Process Audit (LPA)' },
+      { key: 'page:/lpa',          label: '— แท็บ Layer Process Audit (ใน Daily Checker)' },
     ],
   },
   {
@@ -80,6 +82,7 @@ const PAGE_GROUPS = [
       { key: 'page:/products',          label: 'Product Master' },
       { key: 'page:/linesetup',         label: 'ตั้งค่าผังไลน์' },
       { key: 'page:/machine-database',  label: 'ฐานข้อมูลเครื่องจักร' },
+      { key: 'page:/process-setup',     label: 'กระบวนการผลิต (Process Types)' },
       { key: 'page:/shift-organize',    label: 'ตารางกะ' },
       { key: 'page:/company-calendar',  label: 'ปฏิทินบริษัท' },
       { key: 'page:/notification-config', label: 'ตั้งค่าการแจ้งเตือน' },
@@ -220,9 +223,8 @@ export default function PermissionsManagement() {
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>;
 
   const pageGroups   = PAGE_GROUPS.map(g => ({ group: g.group, items: g.pages }));
-  const legacyGroup  = { group: 'Legacy (ระบบเดิม — จะถูกแทนด้วยสิทธิ์รายการย่อยด้านบน)', items: [
-    { key: 'manage_master_data', label: 'แก้ไขข้อมูลตั้งค่า (ตารางกะ, เครื่องจักร, Line Stock, Product Master ฯลฯ — สวิตช์รวมแบบเดิม)' },
-  ] };
+  // legacy `manage_master_data` เกษียณแล้ว (2026-07-22) — แตกเป็นสิทธิ์ย่อย oee:set_target /
+  // ot_master:manage / management:assign_manpower · แถวเก่ายังอยู่ใน role_permissions (ไม่มีโค้ดอ่าน) เผื่อ rollback
 
   return (
     <div style={s.page}>
@@ -252,7 +254,7 @@ export default function PermissionsManagement() {
             สิทธิ์รายการย่อยเหล่านี้จะมีผลจริงกับแต่ละหน้า <strong>เมื่อหน้านั้นถูกอัปเดตให้อ่านค่าจากระบบนี้</strong> (กำลังทยอยเปิดใช้ทีละหน้า) —
             ระหว่างนี้หน้าที่ยังไม่อัปเดตจะยึดตามพฤติกรรมเดิม ค่าที่ตั้งไว้ตรงนี้จะถูกใช้ทันทีที่หน้านั้นเปิดใช้ระบบใหม่
           </div>
-          {renderPermTable([...actionGroups, legacyGroup], 'การทำงาน')}
+          {renderPermTable(actionGroups, 'การทำงาน')}
         </>
       )}
     </div>

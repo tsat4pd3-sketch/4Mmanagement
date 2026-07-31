@@ -7,6 +7,7 @@
  * หัว/ท้าย/สายอนุมัติ mirror ฟอร์มกระดาษ
  */
 import ExcelJS from 'exceljs';
+import { getDocForm, fullCode } from '../utils/docForms';
 
 const M_COL = { m1: 'J', m2: 'K', m3: 'L', m4: 'M', m5: 'N' };
 const thin = { style: 'thin' };
@@ -26,9 +27,17 @@ function box(ws, ref, value, opt = {}) {
 const merge = (ws, r) => { try { ws.mergeCells(r); } catch { /* already merged */ } };
 
 export async function exportScrapReportExcel({ report, items, defectTypes }) {
+  // เลขฟอร์ม/Rev/ป้ายช่องลายเซ็น อ่านจากทะเบียนเอกสาร (/doc-forms) — fallback = ค่าเดิมในโค้ดเสมอ
+  const df = await getDocForm('scrap_report', {
+    form_code: 'FM-PD2-002', rev: 'Rev.06', title: 'ใบรายงานของเสีย (SCRAP REPORT)',
+    sig_blocks: ['พนักงาน QC', 'หัวหน้าแผนก', 'ผู้จัดการ QA/QC', 'ผู้จัดการผลิต', 'ผู้จัดการทั่วไป'],
+  });
+  const sig = (Array.isArray(df.sig_blocks) && df.sig_blocks.length >= 5)
+    ? df.sig_blocks : ['พนักงาน QC', 'หัวหน้าแผนก', 'ผู้จัดการ QA/QC', 'ผู้จัดการผลิต', 'ผู้จัดการทั่วไป'];
   const wb = new ExcelJS.Workbook();
   wb.creator = 'ESM Scrap Report';
-  const ws = wb.addWorksheet('FM-PD2-002', {
+  // ชื่อชีท = เลขฟอร์มจาก Document Master กลาง (fallback ค่าเดิม)
+  const ws = wb.addWorksheet(df.form_code || 'FM-PD2-002', {
     pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
       margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 } },
   });
@@ -117,24 +126,27 @@ export async function exportScrapReportExcel({ report, items, defectTypes }) {
   // ── ท้ายฟอร์ม: ข้อกำหนด + CODE legend + สายอนุมัติ ──
   let f = totalRow + 2;
   box(ws, `A${f}`, 'ข้อกำหนด', { bold: true, size: 8 });
-  merge(ws, `H${f}:M${f}`); box(ws, `H${f}`, `ผู้ตรวจสอบ  ${report.inspector_name || '.......................................'} (พนักงาน QC)`, { size: 8 });
-  merge(ws, `N${f}:S${f}`); box(ws, `N${f}`, `ผู้ขออนุมัติ  ${report.requester_name || '.......................................'} (หัวหน้าแผนก)`, { size: 8 });
+  merge(ws, `H${f}:M${f}`); box(ws, `H${f}`, `ผู้ตรวจสอบ  ${report.inspector_name || '.......................................'} (${sig[0]})`, { size: 8 });
+  merge(ws, `N${f}:S${f}`); box(ws, `N${f}`, `ผู้ขออนุมัติ  ${report.requester_name || '.......................................'} (${sig[1]})`, { size: 8 });
   f++;
   box(ws, `A${f}`, '  1.ทำลายสภาพก่อนนำไปทิ้ง', { size: 8 });
   f++;
   box(ws, `A${f}`, '  2.ให้ทิ้งภายในเวลา 08.00-16.30 น.ในวันทำงานปกติ', { size: 8 });
-  merge(ws, `H${f}:M${f}`); box(ws, `H${f}`, `ผู้อนุมัติ  ${report.approver_qa_name || '.......................................'} (ผู้จัดการ QA/QC)`, { size: 8 });
-  merge(ws, `N${f}:S${f}`); box(ws, `N${f}`, `ผู้อนุมัติ  ${report.approver_pd_name || '.......................................'} (ผู้จัดการผลิต)`, { size: 8 });
+  merge(ws, `H${f}:M${f}`); box(ws, `H${f}`, `ผู้อนุมัติ  ${report.approver_qa_name || '.......................................'} (${sig[2]})`, { size: 8 });
+  merge(ws, `N${f}:S${f}`); box(ws, `N${f}`, `ผู้อนุมัติ  ${report.approver_pd_name || '.......................................'} (${sig[3]})`, { size: 8 });
   f++;
   const CODES = [
     'A = สินค้าสำเร็จรูป (FINISHED GOODS)', 'B = กึ่งสำเร็จรูป (SEMI PRODUCT)',
     'C = วัตถุดิบ/ชิ้นงาน (RAW MATERIAL & PART)', 'D = ชิ้นงานทดลอง/แม่พิมพ์ (TRY-OUT)', 'E = อื่น ๆ',
   ];
   box(ws, `A${f}`, 'รหัสประเภทชิ้นงาน (CODE)', { bold: true, size: 8 });
-  merge(ws, `N${f}:S${f}`); box(ws, `N${f}`, `ผู้อนุมัติ  ${report.approver_gm_name || '.......................................'} (ผู้จัดการทั่วไป)`, { size: 8 });
+  merge(ws, `N${f}:S${f}`); box(ws, `N${f}`, `ผู้อนุมัติ  ${report.approver_gm_name || '.......................................'} (${sig[4]})`, { size: 8 });
   f++;
   CODES.forEach((t) => { merge(ws, `A${f}:G${f}`); box(ws, `A${f}`, t, { size: 8 }); f++; });
   merge(ws, `A${f}:S${f}`); box(ws, `A${f}`, `สำเนา : ฝ่ายบัญชี BU TSAT4    ผู้ส่งของ ${report.sender_name || '..................'}    ผู้รับของ (HRM) ${report.receiver_name || '..................'}`, { size: 8 });
+  f++;
+  // เลขฟอร์มมุมล่างขวา (อ่านจากทะเบียนเอกสาร)
+  merge(ws, `P${f}:S${f}`); box(ws, `P${f}`, fullCode(df), { size: 8, align: 'right' });
 
   const buf = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });

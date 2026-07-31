@@ -2,14 +2,15 @@ import { createContext, useState, useEffect, useRef, lazy, Suspense, useCallback
 import { fmtDateTime } from './utils/dateFormat';
 import tsLogo from './assets/TS logo.png';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { supabase } from './supabaseClient';
-import { ToastContainer } from './components/Toast';
+import { supabase, setDrActorName } from './supabaseClient';
+import { ToastContainer, toast } from './components/Toast';
 import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 import { loadPermissions, canAccessPage } from './utils/permissions';
 import { effectiveSections } from './utils/sectionScope';
 import useIsMobile from './utils/useIsMobile';
+import { pushSupported, getPushState, subscribePush, unsubscribePush } from './utils/webpush';
 
 const Register     = lazy(() => import('./pages/Register'));
 const Checkin      = lazy(() => import('./pages/Checkin'));
@@ -19,6 +20,7 @@ const Operator     = lazy(() => import('./pages/operator'));
 const LineSetup    = lazy(() => import('./pages/LineSetup'));
 const LayoutSetup  = lazy(() => import('./pages/LayoutSetup'));
 const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
+const ProcessSetup = lazy(() => import('./pages/ProcessSetup'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
 const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
 const PlannerSales   = lazy(() => import('./pages/PlannerSales'));
@@ -28,6 +30,7 @@ const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
 const DailyReport   = lazy(() => import('./pages/DailyReport'));
 const OEEAnalytics  = lazy(() => import('./pages/OEEAnalytics'));
+const ProductHistory = lazy(() => import('./pages/ProductHistory'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
@@ -41,9 +44,12 @@ const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
 const DailyPM     = lazy(() => import('./pages/DailyPM'));
 const PmForecast  = lazy(() => import('./pages/PmForecast'));
+const PmCoordination = lazy(() => import('./pages/PmCoordination'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
 const LayerProcessAudit = lazy(() => import('./pages/LayerProcessAudit'));
+const DailyChecker = lazy(() => import('./pages/DailyChecker'));
+const PokaYokeCheck = lazy(() => import('./pages/PokaYokeCheck'));
 const DocFormsRegistry = lazy(() => import('./pages/DocFormsRegistry'));
 const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
 const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
@@ -78,10 +84,10 @@ const NAV_ITEMS = [
   { to: '/daily-report',   icon: '📊', label: 'Daily Report',      group: 'ฝ่ายผลิต' },
   { to: '/production-plan', icon: '🗓️', label: 'วางแผนการผลิต',      group: 'ฝ่ายผลิต' },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'วิเคราะห์ & รายงาน' },
-  { to: '/daily-pm',       icon: '✅', label: 'Daily PM ฝ่ายผลิต',   group: 'ฝ่ายผลิต' },
+  { to: '/product-history', icon: '📜', label: 'ประวัติผลิต (by Product)', group: 'วิเคราะห์ & รายงาน' },
+  { to: '/daily-checker',  icon: '✅', label: 'Daily Checker',       group: 'ฝ่ายผลิต' },  // ขมวด PM Daily + LPA + ระบบเช็คอื่น (แท็บใน DailyChecker)
   { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
   { to: '/scrap-report',   icon: '♻️', label: 'ใบรายงานของเสีย (Scrap)', group: 'ฝ่ายผลิต' },
-  { to: '/lpa',            icon: '📋', label: 'Layer Process Audit', group: 'ฝ่ายผลิต' },
 
   { to: '/line-stock',      icon: '📦', label: 'Store management',       group: 'Logistic - Store' },
   { to: '/heijunka',       icon: '🎴', label: 'Kanban Board',             group: 'Logistic - Store' },
@@ -94,6 +100,7 @@ const NAV_ITEMS = [
   { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-schedule', icon: '📅', label: 'แผน PM อุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-forecast', icon: '🔧', label: 'PM ล่วงหน้า (Planner)',            group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/pm-coordination', icon: '🗓️', label: 'แผนประสานงาน PM (แจ้งผลิต)',   group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-setup',    icon: '🔩', label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร', group: 'การตรวจสอบและซ่อมบำรุง' },
 
@@ -112,6 +119,7 @@ const NAV_ITEMS = [
   { to: '/layout-setup', icon: '🗺️', label: 'ตั้งค่าผัง/Floorplan', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/process-setup', icon: '🏭', label: 'กระบวนการผลิต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'พนักงาน & ทักษะ' },
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
@@ -299,12 +307,13 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             onClick={onClose}
             title="พับเมนู"
             style={{
-              width: 28, height: 28, borderRadius: 7, flexShrink: 0,
+              // สัญลักษณ์ show/hide เหมือนกันทั้งระบบ: 32×32 radius8 bg3 border2 · ◀ = พับ
+              width: 32, height: 32, borderRadius: 8, flexShrink: 0,
               background: 'var(--bg3)', border: '1px solid var(--border2)',
-              color: 'var(--text2)', fontSize: 13, cursor: 'pointer',
+              color: 'var(--text2)', fontSize: 14, cursor: 'pointer', outline: 'none',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
-          >⟨</button>
+          >◀</button>
         </div>
 
         {/* Links */}
@@ -503,10 +512,49 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   );
 }
 
+/* ─── เสียงแจ้งเตือน (Web Audio — ไม่ต้องมีไฟล์เสียง) ───────────
+   เล่นตอนมี notification ใหม่เข้ามาแบบ realtime · เบราว์เซอร์บล็อกเสียงจนกว่าจะมี
+   user gesture → prime AudioContext ตอนแตะจอ/คลิกครั้งแรก · ปิดเสียงได้ (localStorage) */
+let _notifAudioCtx = null;
+function primeNotifAudio() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!_notifAudioCtx) _notifAudioCtx = new AC();
+    if (_notifAudioCtx.state === 'suspended') _notifAudioCtx.resume().catch(() => {});
+  } catch { /* ไม่รองรับ — ข้าม */ }
+}
+function playNotifChime() {
+  if (localStorage.getItem('esm-notif-sound') === 'off') return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!_notifAudioCtx) _notifAudioCtx = new AC();
+    const ctx = _notifAudioCtx;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    const now = ctx.currentTime;
+    // จังหวะ 2 โน้ต A5 → D6 (ding-dong เบาๆ)
+    [{ f: 880, t: 0 }, { f: 1174.66, t: 0.12 }].forEach(({ f, t }) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = f;
+      const s = now + t;
+      gain.gain.setValueAtTime(0, s);
+      gain.gain.linearRampToValueAtTime(0.18, s + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, s + 0.35);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(s);
+      osc.stop(s + 0.4);
+    });
+  } catch { /* เสียงถูกบล็อก — เงียบ ไม่ให้พังหน้า */ }
+}
+
 /* ─── Notification Bell ─────────────────────────────────────── */
 function NotificationBell({ userId }) {
   const [notifs, setNotifs]     = useState([]);
   const [open,   setOpen]       = useState(false);
+  const [muted,  setMuted]      = useState(() => localStorage.getItem('esm-notif-sound') === 'off');
   const dropRef                 = useRef(null);
 
   const load = useCallback(async () => {
@@ -520,15 +568,53 @@ function NotificationBell({ userId }) {
     setNotifs(data || []);
   }, [userId]);
 
+  // เตรียม AudioContext ตอน gesture แรก (เบราว์เซอร์ต้องมี user interaction ก่อนเล่นเสียง)
+  useEffect(() => {
+    const prime = () => primeNotifAudio();
+    window.addEventListener('pointerdown', prime, { once: true });
+    window.addEventListener('keydown', prime, { once: true });
+    return () => { window.removeEventListener('pointerdown', prime); window.removeEventListener('keydown', prime); };
+  }, []);
+
   useEffect(() => {
     load();
     if (!userId) return;
     const ch = supabase
       .channel(`notif-${userId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => load())
+      // INSERT = มี notification ใหม่จริง (initial load ไม่เข้าตรงนี้) → รีโหลด + เล่นเสียง
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => { load(); playNotifChime(); })
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [userId, load]);
+
+  const toggleMute = () => {
+    const next = !muted;
+    setMuted(next);
+    localStorage.setItem('esm-notif-sound', next ? 'off' : 'on');
+    if (!next) { primeNotifAudio(); playNotifChime(); } // เปิดเสียง = เล่นตัวอย่างให้ฟัง
+  };
+
+  // ── Web Push (เด้งเข้ามือถือแม้ปิดแอป) ──
+  const [pushState, setPushState] = useState('default'); // default|subscribed|unsubscribed|denied|unsupported|ios-need-install
+  const [pushBusy,  setPushBusy]  = useState(false);
+  const refreshPush = useCallback(() => { getPushState().then(setPushState).catch(() => {}); }, []);
+  useEffect(() => { refreshPush(); }, [refreshPush]);
+
+  const enablePush = async () => {
+    setPushBusy(true);
+    try {
+      const ok = await subscribePush(userId);
+      if (!ok && Notification.permission === 'denied') toast.error('เบราว์เซอร์บล็อกการแจ้งเตือน — เปิดสิทธิ์ในตั้งค่าเบราว์เซอร์');
+      else if (ok) toast.success('เปิดแจ้งเตือนเข้ามือถือแล้ว 📲');
+    } catch (e) { toast.error(e.message || 'เปิดไม่สำเร็จ'); }
+    finally { setPushBusy(false); refreshPush(); }
+  };
+  const disablePush = async () => {
+    setPushBusy(true);
+    await unsubscribePush();
+    setPushBusy(false); refreshPush();
+    toast.info('ปิดแจ้งเตือนเข้ามือถือแล้ว');
+  };
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -550,6 +636,14 @@ function NotificationBell({ userId }) {
   };
 
   const unread = notifs.filter(n => !n.is_read).length;
+
+  // PWA: จำนวนที่ยังไม่อ่าน → badge จุดแดง/เลขบนไอคอนแอปที่ติดตั้ง (Android/desktop Chrome/Edge)
+  // ⚠️ iOS ไม่รองรับ App Badging API (Apple ยังไม่ทำ) — guard ด้วย 'setAppBadge' in navigator · อัปเดตเฉพาะตอนเปิดแอป (ไม่มี SW/push)
+  useEffect(() => {
+    if (!('setAppBadge' in navigator)) return;
+    (unread > 0 ? navigator.setAppBadge(unread) : navigator.clearAppBadge()).catch(() => {});
+  }, [unread]);
+  useEffect(() => () => { navigator.clearAppBadge?.().catch(() => {}); }, []); // ล้าง badge ตอน logout/unmount
 
   const typeColor = { success: '#22c55e', error: '#ef4444', warning: '#f59e0b', info: '#4d9fff' };
 
@@ -592,14 +686,45 @@ function NotificationBell({ userId }) {
           overflow: 'hidden',
           maxHeight: '70vh', display: 'flex', flexDirection: 'column',
         }}>
-          <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
             <span style={{ fontWeight: 700, fontSize: 13 }}>🔔 แจ้งเตือน</span>
-            {unread > 0 && (
-              <button onClick={markAllRead} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                อ่านทั้งหมด
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <button onClick={toggleMute} title={muted ? 'เปิดเสียงแจ้งเตือน' : 'ปิดเสียงแจ้งเตือน'}
+                style={{ fontSize: 14, background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, opacity: muted ? 0.5 : 1 }}>
+                {muted ? '🔕' : '🔔'}
               </button>
-            )}
+              {unread > 0 && (
+                <button onClick={markAllRead} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                  อ่านทั้งหมด
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* ── Web Push: เปิดแจ้งเตือนเข้ามือถือ (เด้งแม้ปิดแอป) ── */}
+          {pushState !== 'unsupported' && (
+            <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border)', fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', background: 'var(--bg2)' }}>
+              {pushState === 'subscribed' ? (
+                <>
+                  <span style={{ color: 'var(--accent)', fontWeight: 600 }}>📲 เปิดแจ้งเตือนเข้ามือถือแล้ว</span>
+                  <button onClick={disablePush} disabled={pushBusy}
+                    style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>ปิด</button>
+                </>
+              ) : pushState === 'denied' ? (
+                <span style={{ color: 'var(--accent2)' }}>🔕 เบราว์เซอร์บล็อกการแจ้งเตือน — เปิดสิทธิ์ในตั้งค่าเบราว์เซอร์ก่อน</span>
+              ) : pushState === 'ios-need-install' ? (
+                <span style={{ color: 'var(--muted)' }}>📲 iPhone: กด “แชร์ → เพิ่มไปยังหน้าจอโฮม” แล้วเปิดจากไอคอนก่อน จึงเปิดแจ้งเตือนได้</span>
+              ) : (
+                <>
+                  <span style={{ color: 'var(--text2)' }}>📲 เด้งแจ้งเตือนเข้ามือถือแม้ปิดแอป</span>
+                  <button onClick={enablePush} disabled={pushBusy}
+                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: '#071008', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
+                    {pushBusy ? 'กำลังเปิด…' : 'เปิด'}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
 
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {notifs.length === 0 ? (
@@ -644,14 +769,16 @@ function ToggleBtn({ isOpen, onClick }) {
       onClick={onClick}
       title="เปิดเมนู"
       style={{
-        position: 'fixed', top: 14, left: 14,
+        // เครื่องหมายเหมือนปุ่มมุมขวาบน (🔔/filter): 36×36 radius8 bg3 border2
+        // top:10 คงที่ (ฝั่งซ้ายไม่มีช่องว่างสำรองแบบขวา — ถ้าเลื่อนลงจะทับ pool/board)
+        position: 'fixed', top: 10, left: 14,
         zIndex: 1100,
-        width: 34, height: 34, borderRadius: 8,
+        width: 36, height: 36, borderRadius: 8,
         background: 'var(--bg3)',
         border: '1px solid var(--border2)',
         color: 'var(--text2)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 15, cursor: 'pointer',
+        fontSize: 16, cursor: 'pointer', outline: 'none',
         boxShadow: 'var(--shadow-sm)',
       }}
     >
@@ -845,7 +972,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userMtnTeams, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved }) {
   const isMobile = useIsMobile();
   const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
   const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 768);
@@ -862,13 +989,12 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  if (!session) return <Navigate to="/login" replace />;
-
   const handleLogout = async () => {
     // scope 'local' = ออกเฉพาะ browser นี้ (ทุกแท็บของเครื่องนี้ผ่าน localStorage event)
     // ห้ามใช้ default (global) — global จะ revoke refresh token ของ user นี้ "ทุกเครื่อง"
     // → account ที่ใช้ร่วมกันหลายจุดในโรงงานโดนเด้ง login พร้อมกันทั้งหมดทุกครั้งที่
     // เครื่องใดเครื่องหนึ่ง logout/auto-logout (สาเหตุหลักของ "เด้ง login บ่อย" 2026-07-14)
+    setDrActorName(null);
     await supabase.auth.signOut({ scope: 'local' });
     navigate('/login');
   };
@@ -891,6 +1017,10 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
     });
   }, []);
 
+  // ⚠️ guard นี้ต้องอยู่ "หลัง" hooks ทุกตัว (useAutoLogout/useState/useCallback ด้านบน) —
+  // ถ้าวางก่อน hooks จะเกิด React #310 (hook count เปลี่ยนตอน session null→มีค่า) จอ error
+  if (!session) return <Navigate to="/login" replace />;
+
   // marginLeft ต้องเท่าความกว้าง nav จริง (var(--sidebar-w)) เป๊ะ — เดิม hardcode 240/280 ไม่ตรง
   // (nav=252 desktop / 210 tablet / 280 TV) → เนื้อหาโดน sidebar ทับ 12px หรือเหลือช่องว่าง
   const marginLeft = (!isMobile && isOpen) ? 'var(--sidebar-w)' : 0;
@@ -899,7 +1029,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
     return (
-      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName }}>
+      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName }}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
           <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} userPosition={userPosition}
             userEmail={userEmail} userAvatarUrl={userAvatarUrl} onAvatarSaved={onAvatarSaved}
@@ -910,7 +1040,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   }
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName }}>
+    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, sidebarOpen: isOpen }}>
       {warnSecsLeft !== null && (
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
@@ -982,6 +1112,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/linesetup"  element={
                 <RoleRoute path="/linesetup" userRole={role}><LineSetup /></RoleRoute>
               } />
+              <Route path="/process-setup" element={
+                <RoleRoute path="/process-setup" userRole={role}><ProcessSetup /></RoleRoute>
+              } />
               <Route path="/machine-database" element={
                 <RoleRoute path="/machine-database" userRole={role}><MachineDatabase /></RoleRoute>
               } />
@@ -1005,6 +1138,15 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/oee-analytics" element={
                 <RoleRoute path="/oee-analytics" userRole={role}><OEEAnalytics /></RoleRoute>
+              } />
+              <Route path="/product-history" element={
+                <RoleRoute path="/product-history" userRole={role}><ProductHistory /></RoleRoute>
+              } />
+              <Route path="/daily-checker" element={
+                <RoleRoute path="/daily-checker" userRole={role}><DailyChecker /></RoleRoute>
+              } />
+              <Route path="/pokayoke" element={
+                <RoleRoute path="/pokayoke" userRole={role}><PokaYokeCheck /></RoleRoute>
               } />
               <Route path="/daily-pm" element={
                 <RoleRoute path="/daily-pm" userRole={role}><DailyPM /></RoleRoute>
@@ -1075,6 +1217,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/pm-schedule" element={
                 <RoleRoute path="/pm-schedule" userRole={role}><PMSchedule /></RoleRoute>
               } />
+              <Route path="/pm-coordination" element={
+                <RoleRoute path="/pm-coordination" userRole={role}><PmCoordination /></RoleRoute>
+              } />
               <Route path="/pm-forecast" element={
                 <RoleRoute path="/pm-forecast" userRole={role}><PmForecast /></RoleRoute>
               } />
@@ -1107,6 +1252,7 @@ export default function App() {
   const [userNotifyEmail,  setUserNotifyEmail]  = useState(null);
   const [userSignatureUrl, setUserSignatureUrl] = useState(null);
   const [userAvatarUrl,    setUserAvatarUrl]    = useState(null); // รูปโปรไฟล์ user (profiles.avatar_url — 2026-07-14)
+  const [userMtnTeams,     setUserMtnTeams]     = useState([]);   // ทีมช่างซ่อมที่ user สังกัด (profiles.mtn_teams — 2026-07-22) แยกคิว MO
   const [showSplash,   setShowSplash]   = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
   // ต้อง resolve ทั้ง profile (role จริง) และ permissions ก่อนค่อย render route tree —
@@ -1151,12 +1297,17 @@ export default function App() {
     setUserRole(data?.role ?? null);
     setUserLineId(data?.line_id ?? null);
     setUserFullName(data?.full_name ?? null);
+    setDrActorName(data?.full_name ?? null); // traceability: ฝั่ง DR anon ต้อง stamp ชื่อผู้แก้เอง (ดู supabaseClient.js)
     setUserTeam(data?.team ?? null);
     setUserSection(data?.section ?? null);
     setUserPosition(data?.position ?? null);
     setUserSections(effectiveSections(data?.role, data?.sections, data?.section));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
+    // mtn_teams แยก query best-effort — คอลัมน์เพิ่งเพิ่ม (migration 20260722) ถ้ายังไม่ apply ห้ามทำ login พัง
+    supabase.from('profiles').select('mtn_teams').eq('id', user.id).maybeSingle()
+      .then(({ data: mt }) => setUserMtnTeams(Array.isArray(mt?.mtn_teams) ? mt.mtn_teams : []))
+      .catch(() => setUserMtnTeams([]));
     // avatar_url แยก query best-effort — คอลัมน์เพิ่งเพิ่ม (migration 20260714) ถ้ายังไม่ apply ห้ามทำ login พัง
     supabase.from('profiles').select('avatar_url').eq('id', user.id).maybeSingle()
       .then(({ data: av }) => setUserAvatarUrl(av?.avatar_url ?? null))
@@ -1235,6 +1386,7 @@ export default function App() {
                 userTeam={userTeam}
                 userSection={userSection}
                 userSections={userSections}
+                userMtnTeams={userMtnTeams}
                 userPosition={userPosition}
                 userEmail={userEmail}
                 userFullName={userFullName}

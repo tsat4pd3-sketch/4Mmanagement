@@ -15,8 +15,10 @@ import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
+import { canDelete } from '../utils/permissions';
 import { usePerms } from '../utils/usePerms';
 import { exportScrapReportExcel } from '../lib/scrapExportExcel';
+import { docFormSync, loadDocForms, fullCode } from '../utils/docForms';
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
 function localDateStr(d = new Date()) {
@@ -66,6 +68,7 @@ export default function ScrapReport() {
   const { can } = usePerms();
   const canRecord = can('scrap', 'record');
   const canManage = can('scrap', 'manage');
+  const canDel    = canDelete('scrap', 'manage', role);  // สิทธิ์ลบใบ แยกจากอนุมัติ (fallback = manage)
 
   const [reports, setReports] = useState([]);
   const [allLines, setAllLines] = useState([]);   // production_lines เต็ม (name/section/parent) ไว้คิด scope
@@ -94,6 +97,8 @@ export default function ScrapReport() {
   const [defectPicker, setDefectPicker] = useState(null); // itemKey
   const [sapOptions, setSapOptions] = useState(null);
   const [sapSearch, setSapSearch] = useState('');
+  const [docReady, setDocReady] = useState(false); // ทะเบียนเอกสารโหลดแล้ว → subtitle ดึงเลขฟอร์มจาก registry (doc_key เดียวกับ export)
+  const scrapFormNo = fullCode(docReady ? docFormSync('scrap_report', { form_code: 'FM-PD2-002', rev: 'Rev.06' }) : { form_code: 'FM-PD2-002', rev: 'Rev.06' }) || 'FM-PD2-002 Rev.06';
 
   const loadReports = useCallback(async () => {
     if (scopedLineNames && scopedLineNames.length === 0) { setReports([]); return; } // ถูก scope แต่ไม่มีไลน์ → ว่าง
@@ -109,6 +114,7 @@ export default function ScrapReport() {
     // ⚠️ production_lines อยู่ MAIN project (client supabase) ไม่ใช่ DR — ดึงผิด client = dropdown ว่าง
     supabase.from('production_lines').select('id, name, section, parent_line_name').order('name').then(({ data }) => setAllLines(data || []));
     supabaseDR.from('scrap_defect_types').select('*').eq('is_active', true).order('sort_order').then(({ data }) => setDefectTypes(data || []));
+    loadDocForms().then(() => setDocReady(true));
   }, []);
 
   /* ── SAP / พาร์ทย่อย picker (dr_products main + bom_items sub) ── */
@@ -269,6 +275,7 @@ export default function ScrapReport() {
 
   const doExport = async (rep) => {
     const { data: items } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
+    // เลขฟอร์ม/Rev/ช่องลายเซ็น อ่านจาก Document Master กลางใน lib เอง (getDocForm 'scrap_report')
     await exportScrapReportExcel({ report: rep, items: items || [], defectTypes });
   };
 
@@ -279,7 +286,7 @@ export default function ScrapReport() {
       <div style={{ marginBottom: 14 }}>
         <h1 style={{ fontSize: 20, fontWeight: 900, margin: 0, fontFamily: 'var(--font-display)' }}>♻️ ใบรายงานของเสีย (Scrap Report)</h1>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
-          FM-PD2-002 Rev.06 — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม
+          {scrapFormNo} — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม
         </div>
       </div>
 
@@ -292,7 +299,7 @@ export default function ScrapReport() {
         {canRecord && <button style={btnSt()} onClick={openNew}>+ เปิดใบใหม่</button>}
       </div>
 
-      <div style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
+      <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead><tr>
             <th style={thSt}>เลขที่</th><th style={thSt}>วันที่</th><th style={thSt}>ไลน์</th>
@@ -310,7 +317,7 @@ export default function ScrapReport() {
                 <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                   <button style={{ ...ghostBtn, padding: '4px 10px' }} onClick={() => doExport(rep)}>⬇ Excel</button>
                   {canRecord && <button style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => openEdit(rep)}>✏️</button>}
-                  {canManage && <button style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4, color: '#ef4444' }} onClick={() => delReport(rep)}>🗑</button>}
+                  {canDel && <button style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4, color: '#ef4444' }} onClick={() => delReport(rep)}>🗑</button>}
                 </td>
               </tr>
             ))}
@@ -366,7 +373,7 @@ export default function ScrapReport() {
               <tbody>
                 {editor.items.map((it, i) => (
                   <tr key={it._key}>
-                    <td style={tdSt}>{i + 1}{it.src_defect_from_logs && <span title="ดึงจาก Daily Report" style={{ marginLeft: 3, fontSize: 10, color: '#4d9fff' }}>⤵</span>}</td>
+                    <td style={tdSt}>{i + 1}{it.src_defect_from_logs && <span title="ดึงจาก Daily Report" style={{ marginLeft: 3, fontSize: 11, color: '#4d9fff' }}>⤵</span>}</td>
                     <td style={tdSt}><span style={{ fontSize: 10.5, fontWeight: 700, color: it.source === 'sub' ? '#f59e0b' : '#4d9fff' }}>{it.source === 'sub' ? 'ย่อย' : 'หลัก'}</span></td>
                     <td style={tdSt}><input style={{ ...inputSt, width: 120, padding: '5px 7px' }} value={it.part_no} onChange={e => setItem(it._key, { part_no: e.target.value })} /></td>
                     <td style={tdSt}><input style={{ ...inputSt, width: 150, padding: '5px 7px' }} value={it.part_name} onChange={e => setItem(it._key, { part_name: e.target.value })} /></td>

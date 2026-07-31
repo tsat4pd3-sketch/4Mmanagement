@@ -6,6 +6,8 @@ import { toast } from '../components/Toast'
 import { computeDailyPmStatus, DAILY_PM_STATUS_META, DAILY_PM_WINDOW_MIN } from '../lib/pmDailyStatus'
 import { fmtTime } from '../utils/dateFormat'
 import { can } from '../utils/permissions'
+import { inSectionScope } from '../utils/sectionScope'
+import { getLineFamilyNames } from '../utils/lineHierarchy'
 
 /* ── date / shift (local, Asia/Bangkok = deployment local) ── */
 const toLocalDateStr = (d) =>
@@ -31,13 +33,22 @@ function getShiftInfo(now = new Date()) {
 }
 
 export default function DailyPM() {
-  const { role } = useContext(UserContext)
+  const { role, lineId: userLineId, sections: scopeSecs } = useContext(UserContext)
   const canManage = can('pm', 'setup', role)
 
   const [tab, setTab] = useState('status')
   const [userId, setUserId] = useState(null)
   const [jigs, setJigs] = useState([])
   const [prodLines, setProdLines] = useState([]) // รายชื่อไลน์ผลิต — ใช้กำหนดไลน์ให้อุปกรณ์ที่ยังไม่ระบุ
+  // scope มาตรฐาน: leader→family · role อื่น→sections · admin/qa→ทั้งหมด (กัน dropdown เห็นไลน์ข้าม scope)
+  const scopedProdLines = useMemo(() => {
+    if (role === 'leader' && userLineId) {
+      const fam = getLineFamilyNames(prodLines, Number(userLineId) || userLineId)
+      return prodLines.filter(l => fam.includes(l.name))
+    }
+    if (scopeSecs?.length) return prodLines.filter(l => inSectionScope(scopeSecs, l.section))
+    return prodLines
+  }, [prodLines, role, userLineId, scopeSecs])
   const [targets, setTargets] = useState([])
   const [resultByJig, setResultByJig] = useState({})   // jig_id -> { status }
   const [firstOrderByLine, setFirstOrderByLine] = useState({})  // line_name -> ISO
@@ -62,12 +73,19 @@ export default function DailyPM() {
     const startISO = si.shiftStart.toISOString()
 
     const [{ data: jigRows }, { data: targetRows }, { data: prodChecklists }, { data: lineRows }] = await Promise.all([
-      supabaseDR.from('jigs').select('id, name, machine_no, line_name, jig_no').eq('module', 'mtn').order('line_name').order('name'),
+      supabaseDR.from('jigs').select('id, name, machine_no, line_name, jig_no, equipment_type, equipment_category').eq('module', 'mtn').order('line_name').order('name'),
       supabaseDR.from('pm_daily_line_targets').select('*').eq('is_active', true),
       supabaseDR.from('checklists').select('id').eq('module', 'mtn').eq('department', 'production'),
-      supabase.from('production_lines').select('name, parent_line_name').order('name'),
+      supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
     ])
-    setJigs(jigRows ?? [])
+    // Daily PM = operator ฝ่ายผลิตเช็คเครื่องผลิตรายวัน → แสดงเฉพาะ "เครื่องผลิต"
+    //   ตัด jig/die tooling (งานช่าง JIG/DIE) + facility/utility ออก ไม่ให้ปนในลิสต์ลงทะเบียน (คำสั่ง user 2026-07-22)
+    const prodOnly = (jigRows ?? []).filter(j => {
+      if (j.equipment_category === 'facility' || j.equipment_category === 'utility') return false
+      if (j.equipment_type === 'jig' || j.equipment_type === 'die') return false
+      return true // machine / ไม่ระบุ (legacy) / production
+    })
+    setJigs(prodOnly)
     setTargets(targetRows ?? [])
     setProdLines(lineRows ?? [])
 
@@ -213,10 +231,10 @@ export default function DailyPM() {
       <div style={{ display: 'flex', paddingRight: 52, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
         <div>
           <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
-            ✅ Daily PM ฝ่ายผลิต
+            🔧 Autonomous Maintenance (AM)
           </h1>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-            ตรวจความพร้อมเครื่องจักร/อุปกรณ์/POKA-YOKE ต้นกะ · {shiftInfo.label} · {shiftInfo.workDateStr}
+            พนักงานตรวจ/ดูแลเครื่องประจำวัน — ความพร้อมเครื่องจักร/อุปกรณ์/POKA-YOKE ต้นกะ · {shiftInfo.label} · {shiftInfo.workDateStr}
             {' · '}เตือนเมื่อเกิน {DAILY_PM_WINDOW_MIN} นาทีหลังยืนยันออร์เดอร์แรก
           </div>
         </div>
@@ -317,7 +335,7 @@ export default function DailyPM() {
         <div>
           {/* คู่มือ 4 ขั้น — ระบบนี้ต่อกัน 3 หน้า มือใหม่หลงง่าย ต้องเห็นภาพรวมก่อน */}
           <div style={{ marginBottom: 14, padding: '12px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>📖 วิธีใช้งาน Daily PM — 4 ขั้น</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>📖 วิธีใช้งาน Autonomous Maintenance (AM) — 4 ขั้น</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8 }}>
               {[
                 { n: '1', title: 'เพิ่มเครื่อง + หัวข้อตรวจ', desc: <>ที่หน้า <Link to="/pm-setup?dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตั้งค่า PM → แท็บ ฝ่ายผลิต</Link> (กด "+ เพิ่มอุปกรณ์" แล้วใส่ชื่อ/ไลน์/หัวข้อที่ต้องตรวจ)</> },
@@ -341,7 +359,7 @@ export default function DailyPM() {
               ยังไม่มีอุปกรณ์ในระบบ — เพิ่มได้ที่หน้า <Link to="/pm-setup?dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตั้งค่า PM → แท็บ ฝ่ายผลิต</Link>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxHeight: 'calc(100vh - 300px)', overflowY: 'auto', paddingRight: 4 }}>
               {Object.entries(jigsByLine).map(([line, lineJigs]) => {
                 const regCount = lineJigs.filter(j => registeredKey.has(`${line}::${j.id}`)).length
                 // อุปกรณ์ที่ยังไม่ระบุไลน์ จับคู่กับ order ของไลน์ไม่ได้ → สถานะ/alarm ไม่ทำงาน
@@ -378,7 +396,7 @@ export default function DailyPM() {
                                 <select defaultValue="" onClick={e => e.preventDefault()} onChange={e => assignJigLine(j, e.target.value)}
                                   style={{ width: '100%', marginTop: 6, padding: '4px 8px', fontSize: 12, borderRadius: 6, background: 'var(--bg)', border: '1px solid rgba(245,158,11,0.5)', color: 'var(--text)' }}>
                                   <option value="" disabled>📍 เลือกไลน์ให้เครื่องนี้…</option>
-                                  {prodLines.map(l => (
+                                  {scopedProdLines.map(l => (
                                     <option key={l.name} value={l.name}>{l.parent_line_name ? `↳ ${l.name}` : l.name}</option>
                                   ))}
                                 </select>
@@ -388,8 +406,8 @@ export default function DailyPM() {
                                 <select value={line} onClick={e => e.preventDefault()} onChange={e => assignJigLine(j, e.target.value)}
                                   title="ย้ายเครื่องนี้ไปไลน์อื่น — เลือกไลน์ผิดแก้ตรงนี้ได้เลย"
                                   style={{ width: '100%', marginTop: 6, padding: '3px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
-                                  {!prodLines.some(l => l.name === line) && <option value={line}>{line}</option>}
-                                  {prodLines.map(l => (
+                                  {!scopedProdLines.some(l => l.name === line) && <option value={line}>{line}</option>}
+                                  {scopedProdLines.map(l => (
                                     <option key={l.name} value={l.name}>{l.parent_line_name ? `↳ ${l.name}` : l.name}</option>
                                   ))}
                                 </select>

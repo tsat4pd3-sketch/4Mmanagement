@@ -565,3 +565,13 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 [data-perf="lite"] .person-alarm-amber { box-shadow: none; }
 [data-perf="lite"] .dt-alarm-banner { animation: none; background-color: rgba(239, 68, 68, 0.16); }
 [data-perf="lite"] #noise-overlay { display: none; }
+
+/* ── modal 2 คอลัมน์บนจอกว้าง (UI-CONVENTIONS §5 "ขยายกว้างก่อนยอมสูงเกินจอ" — 2026-07-21) ──
+   ใช้กับ modal ฟอร์มยาว: จอ <1100px = คอลัมน์เดียวเหมือนเดิม · ≥1100px = 2 คอลัมน์
+   ลูกที่ต้องเต็มแถว (หัว/ปุ่มบันทึก) ติด class m2c-span */
+.modal-2col { display: flex; flex-direction: column; gap: 14px; }
+.modal-2col > .m2c-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+@media (min-width: 1100px) {
+  .modal-2col { display: grid; grid-template-columns: 1fr 1.15fr; gap: 20px; align-items: start; }
+  .modal-2col > .m2c-span { grid-column: 1 / -1; }
+}

@@ -179,6 +179,45 @@ async function buildTelegramMessage(log: Record<string, unknown>, title: string)
   return lines.join('\n');
 }
 
+// แจ้งเตือน "ในแอป" (กระดิ่ง + เสียง + Web Push ผ่าน trigger trg_notify_push) ให้กลุ่มผู้ใช้
+async function usersByRole(roles: string[]): Promise<string[]> {
+  const { data } = await supabase.from('profiles').select('id').in('role', roles);
+  return (data ?? []).map((p) => p.id as string);
+}
+async function insertNotifications(userIds: string[], title: string, body: string, type: string, refTable?: string, refId?: unknown) {
+  const ids = [...new Set(userIds)].filter(Boolean);
+  if (!ids.length) return;
+  try {
+    await supabase.from('notifications').insert(
+      ids.map((uid) => ({ user_id: uid, title, body, type, ref_table: refTable ?? null, ref_id: refId != null ? String(refId) : null })),
+    );
+  } catch (e) { console.error('insertNotifications', e); }
+}
+// หัวหน้าของ section ไลน์นั้น (supervisor/manager ที่คุม section เดียวกัน) + leader ของไลน์นั้น
+async function headsForLine(lineName: string | undefined): Promise<string[]> {
+  if (!lineName) return [];
+  const { data: line } = await supabase.from('production_lines').select('id, section').eq('name', lineName).maybeSingle();
+  const section = line?.section ? String(line.section).trim().toLowerCase() : null;
+  const lineId = line?.id ?? null;
+  const { data: heads } = await supabase.from('profiles').select('id, role, section, sections, line_id');
+  const ids: string[] = [];
+  for (const p of heads ?? []) {
+    if (p.role === 'supervisor' || p.role === 'manager') {
+      const secs = (Array.isArray(p.sections) && p.sections.length ? p.sections : (p.section ? [p.section] : []))
+        .map((s: string) => String(s).trim().toLowerCase());
+      if (section && secs.includes(section)) ids.push(p.id as string);
+    } else if (p.role === 'leader' && lineId != null && p.line_id === lineId) {
+      ids.push(p.id as string);
+    }
+  }
+  return ids;
+}
+// ผู้รับแจ้งเตือน "เครื่องหยุด" (urgent): ทีมช่างทั้งหมด + หัวหน้าของ section ไลน์นั้น
+async function recipientsForDowntime(lineName?: string): Promise<string[]> {
+  const [mtn, heads] = await Promise.all([usersByRole(['mtn']), headsForLine(lineName)]);
+  return [...mtn, ...heads];
+}
+
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
@@ -379,6 +418,11 @@ Deno.serve(async (req) => {
       }, lines.join('\n'));
       if (d.id) await sendTelegramTracked(message, chat, 'downtime', d.id, 'downtime_call_mtn').catch(console.error);
       else await sendTelegram(message, chat).catch(console.error);
+      // urgent → แจ้งในแอป (กระดิ่ง+เสียง+push) ให้ทีมช่าง
+      await insertNotifications(await recipientsForDowntime(d.line_name),
+        `📞 เรียกช่างด่วน — ${d.machine_no || d.line_name || '-'}`,
+        `${d.line_name || ''} · ${d.type_name || 'Downtime'}${d.description ? ' · ' + d.description : ''}`,
+        'error', 'downtime_logs', d.id);
       return json({ ok: true });
     }
 
@@ -406,6 +450,11 @@ Deno.serve(async (req) => {
       }, lines.join('\n'));
       if (d.id) await sendTelegramTracked(message, chat, 'downtime', d.id, 'downtime_open_15min').catch(console.error);
       else await sendTelegram(message, chat).catch(console.error);
+      // urgent → แจ้งในแอป (กระดิ่ง+เสียง+push) ให้ทีมช่าง
+      await insertNotifications(await recipientsForDowntime(d.line_name),
+        `🚨 เครื่องยังหยุด เกิน ${d.open_min ?? ''} นาที — ${d.machine_no || d.line_name || '-'}`,
+        `${d.line_name || ''} · ${d.type_name || 'Downtime'}`,
+        'error', 'downtime_logs', d.id);
       return json({ ok: true });
     }
 
@@ -419,8 +468,8 @@ Deno.serve(async (req) => {
       const map = {
         pending_close:    { title: '🟡 ขอปิดกะ — รอ SV อนุมัติ', extra: '' },
         closed:           { title: '✅ ปิดกะสำเร็จ', extra: '' },
-        closed_approved:  { title: '✅ SV อนุมัติปิดกะแล้ว', extra: `\n🙋 ผู้ขอปิดกะ: ${s.requested_by || '-'}` },
-        closed_rejected:  { title: '❌ SV ปฏิเสธคำขอปิดกะ', extra: `\n🙋 ผู้ขอปิดกะ: ${s.requested_by || '-'}` },
+        closed_approved:  { title: '✅ SV อนุมัติปิดกะแล้ว', extra: `\n🙋 ผู้ขอปิดกะ: ${s.requested_by || '-'}${s.approve_note ? `\n📝 หมายเหตุผู้อนุมัติ: ${s.approve_note}` : ''}` },
+        closed_rejected:  { title: '❌ SV ปฏิเสธคำขอปิดกะ', extra: `\n🙋 ผู้ขอปิดกะ: ${s.requested_by || '-'}${s.reject_reason ? `\n📝 เหตุผล: ${s.reject_reason}` : ''}` },
       };
       const m = map[s.status] ?? { title: `🔔 Production · ${s.status}`, extra: '' };
       const lines = [
@@ -530,6 +579,65 @@ Deno.serve(async (req) => {
         stage: p.stage, stage_label: p.stage_label, days: p.days, due_date: p.due_date,
         jig_name: p.jig_name || '', machine_no: p.machine_no || '', line_name: p.line_name || '',
         part_name: p.part_name || '', checklist_name: p.checklist_name || '', frequency: p.frequency || '',
+      }, lines.join('\n'));
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
+    }
+
+    if (event === 'pm_deferred') {
+      const p = body.pm;
+      if (!p) return new Response('missing pm', { status: 400 });
+      const chat = resolveEvent(routes, 'pm_deferred');
+      if (chat === null) return json({ ok: true, skipped: true });
+      const beD = (s: string) => { if (!s) return '-'; const [y, m, d] = String(s).split('-'); return `${+d}/${+m}/${+y + 543}`; };
+      const lines = [
+        `⏭️ <b>เลื่อนแผน PM (ตกลงแล้ว)</b>`, ``,
+        `🔧 เครื่อง/จิ๊ก: <b>${p.equip || '-'}</b>`,
+      ];
+      if (p.line_name) lines.push(`🏭 ไลน์: ${p.line_name}`);
+      lines.push(`📅 จากกำหนดเดิม: ${beD(p.from_due)} → เลื่อนไป <b>${beD(p.to_due)}</b>`);
+      if (p.reason) lines.push(`📝 เหตุผล: ${p.reason}`);
+      if (p.agreed_with) lines.push(`🤝 ตกลงร่วมกับ: ${p.agreed_with}`);
+      if (p.by_name) lines.push(`👤 ผู้บันทึก: ${p.by_name}`);
+      if (Number(p.defer_count) > 1) lines.push(`⚠️ เครื่องนี้ถูกเลื่อนมาแล้ว ${p.defer_count} ครั้ง`);
+      lines.push(``, `— Smart Maintenance`);
+      const message = pick(routes, 'pm_deferred', {
+        equip: p.equip || '', line_name: p.line_name || '', from_due: beD(p.from_due), to_due: beD(p.to_due),
+        reason: p.reason || '', agreed_with: p.agreed_with || '', by_name: p.by_name || '', defer_count: p.defer_count || 1,
+      }, lines.join('\n'));
+      await sendTelegram(message, chat).catch(console.error);
+      return json({ ok: true });
+    }
+
+    if (event === 'pm_coordination') {
+      const p = body.plan;
+      if (!p) return new Response('missing plan', { status: 400 });
+      const chat = resolveEvent(routes, 'pm_coordination');
+      if (chat === null) return json({ ok: true, skipped: true });
+      const beD = (s: string) => { if (!s) return '-'; const [y, m, d] = String(s).split('-'); return `${+d}/${+m}/${+y + 543}`; };
+      const tasks = Array.isArray(p.tasks) ? p.tasks : [];
+      const lines = [
+        `🗓️ <b>แผนประสานงาน PM / งานเครื่องจักร</b>`,
+        `<b>${p.title || '-'}</b>`, ``,
+      ];
+      if (p.machine_name || p.machine_no) lines.push(`🔧 เครื่อง: <b>${[p.machine_name, p.machine_no].filter(Boolean).join(' ')}</b>`);
+      if (p.line_name) lines.push(`🏭 ไลน์: ${p.line_name}`);
+      if (tasks.length) {
+        lines.push(``, `<b>แผนงาน & รายละเอียด</b>`);
+        for (const t of tasks) {
+          const when = beD(t.task_date);
+          const time = (t.time_from || t.time_to) ? ` (${t.time_from || ''}${t.time_to ? '–' + t.time_to : ''} น.)` : '';
+          const team = t.team ? `[${t.team}] ` : '';
+          const flag = t.is_support ? '⚠️ ' : '• ';
+          lines.push(`${flag}${when}${time} — ${team}${t.description || ''}`);
+        }
+      }
+      if (p.remark) lines.push(``, `📌 <b>Remark:</b> ${p.remark}`);
+      if (p.by_name) lines.push(``, `👤 ผู้แจ้ง: ${p.by_name}`);
+      lines.push(``, `— Smart Maintenance`);
+      const message = pick(routes, 'pm_coordination', {
+        title: p.title || '', machine: [p.machine_name, p.machine_no].filter(Boolean).join(' '),
+        line_name: p.line_name || '', remark: p.remark || '', by_name: p.by_name || '',
       }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
       return json({ ok: true });

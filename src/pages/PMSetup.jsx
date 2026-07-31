@@ -7,10 +7,12 @@ import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { FREQ_LABEL, DEPT_LABEL, EQUIP_TYPE_LABEL } from '../lib/pmSchedule'
+import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
 import { getOrCreateChecklist, setChecklistFrequency } from '../lib/pmChecklists'
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
 import SpinAnnotator from '../components/SpinAnnotator'
+import cropPortrait from '../utils/cropPortrait'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
 
@@ -114,7 +116,7 @@ const S = {
   },
   modal: {
     background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 12,
-    width: '100%', maxWidth: 680, maxHeight: '92vh', display: 'flex', flexDirection: 'column',
+    width: '100%', maxWidth: 1000, maxHeight: '92vh', display: 'flex', flexDirection: 'column',
     boxShadow: 'var(--shadow-lg)',
   },
   modalHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 24px', borderBottom: '1px solid var(--border)' },
@@ -495,14 +497,16 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     updateCp(key, { _imgFile: compressed, _imgPreview: URL.createObjectURL(compressed) })
   }
 
-  // spin frames — compress on pick, upload on save
+  // spin frames — บังคับ crop แนวตั้ง 3:4 + ลดขนาด ตอนเลือกรูป (upload ตอน save)
+  //   normalize EXIF orientation ด้วย imageCompression ก่อน แล้ว center-crop เป็นแนวตั้ง (cropPortrait)
   const addFrames = async (fileList) => {
     setImgBusy(true)
     try {
       const added = []
       for (const file of Array.from(fileList)) {
-        const compressed = await imageCompression(file, { maxSizeMB: 0.4, maxWidthOrHeight: 1400 })
-        added.push({ _key: crypto.randomUUID(), _file: compressed, _preview: URL.createObjectURL(compressed), title: null })
+        const norm = await imageCompression(file, { maxSizeMB: 0.5, maxWidthOrHeight: 1600 }) // ปรับ orientation + ลดเบื้องต้น
+        const cropped = await cropPortrait(norm, { ratio: 3 / 4, maxLongSide: 1200, quality: 0.82 })
+        added.push({ _key: crypto.randomUUID(), _file: cropped, _preview: URL.createObjectURL(cropped), title: null })
       }
       setFrames(prev => [...prev, ...added])
     } finally { setImgBusy(false) }
@@ -643,7 +647,8 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     }
   }
 
-  const deptColor = DEPT_COLORS[department] ?? '#3dd65c'
+  const deptColor = pmTeamsSync().find(t => t.key === department)?.color || DEPT_COLORS[department] || '#3dd65c'
+  const deptLabel = pmTeamsSync().find(t => t.key === department)?.label ?? DEPT_LABEL[department] ?? department
   const pinnedCount = checkpoints.filter(c => c.x_pos != null).length
 
   // จัดกลุ่มสำหรับ render + label "Item.sub" (เช่น 1.3) ให้การ์ดกับ pin ตรงกัน
@@ -679,7 +684,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         <div style={S.modalHead}>
           <div>
             <h2 style={S.modalTitle}>{isEdit ? 'แก้ไขอุปกรณ์' : 'เพิ่มอุปกรณ์ใหม่'}</h2>
-            <span style={{ fontSize: 12, color: deptColor }}>{DEPT_LABEL[department] ?? department}</span>
+            <span style={{ fontSize: 12, color: deptColor }}>{deptLabel}</span>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
@@ -777,7 +782,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           )}
 
           <div>
-            <label style={S.label}>ความถี่การตรวจ ({DEPT_LABEL[department]})</label>
+            <label style={S.label}>ความถี่การตรวจ ({deptLabel})</label>
             <div style={S.freqBtns}>
               {Object.entries(FREQ_LABEL).map(([v, lbl]) => <button key={v} onClick={() => setFrequency(v)} style={S.freqBtn(frequency === v)}>{lbl}</button>)}
             </div>
@@ -941,6 +946,8 @@ export default function PMSetup() {
   const [categories, setCategories] = useState([])
   const [methods, setMethods] = useState([])
   const [taxModal, setTaxModal] = useState(null) // 'category' | 'method' | null
+  const [teams, setTeams] = useState(pmTeamsSync()) // ทีมช่าง data-driven (mtn_teams)
+  useEffect(() => { loadPmTeams().then(setTeams) }, [])
 
   const loadTaxonomy = () => {
     fetchCategories().then(setCategories)
@@ -1001,19 +1008,12 @@ export default function PMSetup() {
   const openEdit = (jig) => { setEditJig(jig); setShowModal(true) }
   const handleSaved = () => { setShowModal(false); fetchData() }
 
-  const DEPT_OPTIONS = [
-    { key: 'maintenance', label: 'ซ่อมบำรุง' },
-    { key: 'jig_maintenance', label: 'JIG Maintenance' },
-    { key: 'die_maintenance', label: 'Die Maintenance' },
-    { key: 'production', label: 'ฝ่ายผลิต' },
-  ]
-
   return (
     <div style={S.page}>
       <div style={S.header}>
         <div>
           <h1 style={S.h1}>PM Setup — อุปกรณ์ & จุดตรวจ</h1>
-          <p style={S.sub}>{jigs.length} อุปกรณ์ · แผนก {DEPT_LABEL[department] ?? department}</p>
+          <p style={S.sub}>{jigs.length} อุปกรณ์ · แผนก {teams.find(t => t.key === department)?.label ?? DEPT_LABEL[department] ?? department}</p>
         </div>
         {canSetup && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -1025,7 +1025,7 @@ export default function PMSetup() {
       </div>
 
       <div style={S.deptBar}>
-        {DEPT_OPTIONS.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, DEPT_COLORS[d.key] ?? '#3dd65c')}>{d.label}</button>)}
+        {teams.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, d.color || DEPT_COLORS[d.key] || '#3dd65c')}>{d.icon ? `${d.icon} ` : ''}{d.label}</button>)}
       </div>
 
       {loading ? (

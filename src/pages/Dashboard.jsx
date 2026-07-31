@@ -10,6 +10,7 @@ import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
+import { pairAwareTotal } from '../utils/pairTotals';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -294,11 +295,18 @@ export default function Dashboard() {
     const sessionIds = (sessions || []).map(s => s.id);
     let ordersBySession = {}, dtBySession = {}, defectBySession = {};
     if (sessionIds.length > 0) {
-      const [{ data: orders }, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
-        supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, is_manual, prod_no, part_name, mat_no, opened_at, confirmed_at').in('session_id', sessionIds),
+      const ordCols = 'session_id, status, qty, qty_ok, qty_actual, qty_target, is_manual, prod_no, part_name, mat_no, machine_no, opened_at, confirmed_at';
+      const [ordRes, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
+        supabaseDR.from('prod_orders').select(ordCols).in('session_id', sessionIds),
         supabaseDR.from('downtime_logs').select('id, session_id, machine_no, description, duration_min, started_at, ended_at, created_at, dr_downtime_types(category, name_th)').in('session_id', sessionIds),
         supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessionIds),
       ]);
+      // machine_no อาจยังไม่ apply migration (20260723) — retry โดยตัดคอลัมน์ออก ไม่ให้บอร์ดพัง
+      let orders = ordRes.data;
+      if (ordRes.error) {
+        ({ data: orders } = await supabaseDR.from('prod_orders')
+          .select(ordCols.replace(', machine_no', '')).in('session_id', sessionIds));
+      }
       (orders     || []).forEach(o => { (ordersBySession[o.session_id]  ||= []).push(o); });
       (dtLogs     || []).forEach(d => { (dtBySession[d.session_id]      ||= []).push(d); });
       (defectLogs || []).forEach(d => { (defectBySession[d.session_id]  ||= []).push(d); });
@@ -396,8 +404,18 @@ export default function Dashboard() {
     const ps = (sessions || []).map(s => {
       const orders  = ordersBySession[s.id] || [];
       const active  = orders.filter(o => !['cancelled','imported'].includes(o.status));
-      const demand  = active.reduce((sum, o) => sum + (o.qty || 0), 0);
-      const actual  = active.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty_ok ?? o.qty ?? 0), 0);
+      // นับงานคู่ RH/LH เป็น 1 คู่/stroke (ไม่บวกชิ้น LH+RH ซ้ำในภาพใหญ่) · พาร์ทเดี่ยว/ไม่ระบุ mat = บวกปกติ
+      const perMatD = {};
+      active.forEach(o => {
+        if (!o.mat_no) return;
+        const e = perMatD[o.mat_no] || (perMatD[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 });
+        e.target += o.qty || 0;
+        e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : 0;
+      });
+      const nullD = active.filter(o => !o.mat_no);
+      const ptotD = pairAwareTotal(Object.values(perMatD), m => pairMap[m] || null);
+      const demand  = ptotD.target + nullD.reduce((sum, o) => sum + (o.qty || 0), 0);
+      const actual  = ptotD.produced + nullD.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty_ok ?? o.qty ?? 0), 0);
       const target  = s.dr_products?.target_per_shift || 0;
       const oeeData = s.status === 'open' ? computeSessionOEE(s) : null;
       // downtime ที่กำลัง alarm (ยังไม่ปิดรายการ = เครื่องยังหยุดอยู่) — เฉพาะกะที่ยังไม่ปิด
@@ -466,7 +484,15 @@ export default function Dashboard() {
 
     setLogs(enriched);
     setFourMLogs(fmData || []);
-    setLines(lineData || []);
+    // เติมโหมดการไหลงาน (flow_mode/parallel_stations) แบบ best-effort — ถ้ายังไม่ apply migration 20260723 ก็ข้ามไป
+    let linesEnriched = lineData || [];
+    const { data: flowData } = await supabase.from('production_lines').select('name, flow_mode, parallel_stations');
+    if (flowData) {
+      const fm = {};
+      flowData.forEach(l => { fm[l.name] = l; });
+      linesEnriched = linesEnriched.map(l => ({ ...l, flow_mode: fm[l.name]?.flow_mode, parallel_stations: fm[l.name]?.parallel_stations }));
+    }
+    setLines(linesEnriched);
     setOrgSections((orgNodeData || []).map(n => n.code || n.name).sort());
 
     // Build line capacity using shift_schedules for correct day/night split
@@ -761,6 +787,47 @@ export default function Dashboard() {
   const totalCapacity = useMemo(() => lineStats.reduce((s, l) => s + l.lineTotal, 0) || shiftLogs.length, [lineStats, shiftLogs]);
   const attendRate    = useMemo(() => totalCapacity > 0 ? Math.round((present.length / totalCapacity) * 100) : 0, [totalCapacity, present]);
   const ppeRate       = useMemo(() => present.length > 0 ? Math.round((ppeReady.length / present.length) * 100) : 0, [present, ppeReady]);
+
+  // ── การ์ดผังไลน์ (Line Floor Maps): นับ "ตามจุดงาน" (คนที่ถูกวางบนสถานีของผังนี้) = ตรงกับหมุดบนรูป ──
+  // KPI ด้านบนสรุปกำลังคนทั้งไลน์ (roster ตาม employees.line_id = ไลน์แม่) ไปแล้ว การ์ดผังจึงไม่ซ้ำเรื่องนั้น
+  // แต่ตอบว่า "จุดงานมีคนเข้าครบมั้ย" แทน · ผังที่ไม่มีใครถูกวาง (ไม่มีหมุดคน) และไม่มีเครื่อง downtime → ซ่อน
+  const floorCards = useMemo(() => visibleLayouts.map(layout => {
+    const cardLineNames = layoutLineNamesForCard(layout.line_name);
+    const lineWs = workstations.filter(w => cardLineNames.includes(w.line_name));
+    let presentPeople = 0, staffedStations = 0;
+    lineWs.forEach(ws => {
+      const emps = (stationEmpMap[String(ws.id)] || []).filter(e => (!shiftEmpIds || shiftEmpIds.has(e.id)) && e.is_present === true);
+      if (emps.length) { staffedStations++; presentPeople += emps.length; }
+    });
+    const hasDtMachine = machinePoints.some(p => cardLineNames.includes(p.line_name) && dtAlarmByMachine[p.machine_no]);
+    return { layout, cardLineNames, lineWs, presentPeople, staffedStations, totalStations: lineWs.length, hasDtMachine };
+  }).filter(c => c.presentPeople > 0 || c.hasDtMachine),
+  [visibleLayouts, layoutLineNamesForCard, workstations, stationEmpMap, shiftEmpIds, machinePoints, dtAlarmByMachine]);
+
+  // placement รายไลน์ (นับตามจุดงาน) — ใช้กับการ์ดสถานะไลน์ย่อย: คนที่ถูกวางบนสถานีของไลน์นั้น + coverage จุดงาน
+  const placementByLineName = useMemo(() => {
+    const m = {};
+    workstations.forEach(ws => {
+      const ln = ws.line_name; if (!ln) return;
+      (m[ln] ||= { people: 0, staffed: 0, total: 0 }).total++;
+      const emps = (stationEmpMap[String(ws.id)] || []).filter(e => (!shiftEmpIds || shiftEmpIds.has(e.id)) && e.is_present === true);
+      if (emps.length) { m[ln].staffed++; m[ln].people += emps.length; }
+    });
+    return m;
+  }, [workstations, stationEmpMap, shiftEmpIds]);
+  const placementForLine = useCallback((name) => {
+    // รวม self + ไลน์ย่อยที่ซ้อนลงไป (parentChildrenMap) — จุดงานอยู่บนไลน์ใบเสมอ
+    const acc = { people: 0, staffed: 0, total: 0 };
+    const seen = new Set();
+    const walk = (n) => {
+      if (seen.has(n)) return; seen.add(n);
+      const p = placementByLineName[n];
+      if (p) { acc.people += p.people; acc.staffed += p.staffed; acc.total += p.total; }
+      (parentChildrenMap[n] || []).forEach(walk);
+    };
+    walk(name);
+    return acc;
+  }, [placementByLineName, parentChildrenMap]);
 
   const isToday = selectedDate === workDateStr;
 
@@ -1062,6 +1129,11 @@ export default function Dashboard() {
                   </motion.div>
                 );
                 if (!isExpanded) return [card];
+                // นับตามจุดงาน (placement) — โชว์เฉพาะไลน์ย่อยที่มีคนถูกจัดลงจุดงาน หรือมี DT/4M ค้าง
+                // (ตัวที่ไม่มีคนเลย = 0/0 ตาม roster เดิม → ซ่อน กันสับสน · KPI ไลน์แม่สรุปกำลังคนไปแล้ว)
+                const childCards = line._children
+                  .map(cs => ({ cs, pl: placementForLine(cs.name) }))
+                  .filter(({ cs, pl }) => pl.people > 0 || (dtAlarmByLine[cs.name] || []).length > 0 || cs.lineAlerts > 0);
                 const nested = (
                   <motion.div key={`${line.id}-children`} {...stagger(8 + i)} style={{ gridColumn: '1 / -1' }}>
                     <div style={{
@@ -1071,14 +1143,17 @@ export default function Dashboard() {
                       borderRadius: 12, padding: isWide ? '14px 16px' : '12px 14px',
                     }}>
                       <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span>↳ ไลน์ย่อยของ</span>
+                        <span>↳ ไลน์ย่อยที่มีคนเข้าจุดงาน</span>
                         <span style={{ color: 'var(--accent)' }}>{line.name}</span>
-                        <span>({line._children.length})</span>
+                        <span>({childCards.length}/{line._children.length})</span>
                       </div>
+                      {childCards.length === 0 ? (
+                        <div style={{ fontSize: 12, color: 'var(--muted)', padding: '4px 2px' }}>ยังไม่มีคนถูกจัดลงจุดงานของไลน์ย่อย — สรุปกำลังคนรวมดูที่ตัวเลขไลน์แม่ด้านบน</div>
+                      ) : (
                       <div style={{ display: 'grid', gridTemplateColumns: isUltra ? 'repeat(auto-fill, minmax(180px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(170px, 1fr))' : 'repeat(auto-fill, minmax(150px, 1fr))', gap: isMobile ? 8 : 12 }}>
-                        {line._children.map((cs) => {
-                          const cHealthy = cs.rate >= 80 && cs.lineAlerts === 0;
-                          const cWarn    = cs.lineAlerts > 0 || (cs.rate > 0 && cs.rate < 80);
+                        {childCards.map(({ cs, pl }) => {
+                          const cHealthy = pl.total > 0 && pl.staffed >= pl.total && cs.lineAlerts === 0;
+                          const cWarn    = cs.lineAlerts > 0 || (pl.total > 0 && pl.staffed < pl.total);
                           const cColor   = cHealthy ? '#22c55e' : cWarn ? '#f59e0b' : '#555';
                           const csDT     = dtAlarmByLine[cs.name] || [];
                           const csFMPending = fourMLogs.some(f => f.line_name === cs.name && f.status !== 'approved' && f.status !== 'rejected');
@@ -1113,17 +1188,19 @@ export default function Dashboard() {
                                 </div>
                               </div>
                               <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                                <span style={{ fontSize: isWide ? 26 : 20, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>{cs.linePresent}</span>
-                                <span style={{ fontSize: isWide ? 14 : 12, color: 'var(--muted)' }}>/ {cs.lineTotal} คน</span>
+                                <span style={{ fontSize: isWide ? 26 : 20, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>{pl.people}</span>
+                                <span style={{ fontSize: isWide ? 14 : 12, color: 'var(--muted)' }}>คน · {pl.total > 0 ? `${pl.staffed}/${pl.total} จุด` : '—'}</span>
                               </div>
-                              <MiniBar value={cs.linePresent} max={cs.lineTotal} color={cColor} />
+                              <MiniBar value={pl.staffed} max={pl.total || 1} color={cColor} />
                               <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, color: cColor }}>
-                                {cs.lineTotal === 0 ? 'ไม่มีข้อมูล' : `${cs.rate}% Attendance ${cHealthy ? '· ✓ Normal' : cs.lineAlerts > 0 ? '· ⚠ Risk' : ''}`}
+                                {pl.total === 0 ? `${pl.people} คนบนไลน์` : pl.staffed >= pl.total ? '✓ เข้าครบทุกจุด' : `⚠ เข้า ${pl.staffed}/${pl.total} จุด`}
+                                {cs.lineAlerts > 0 ? ' · ⚠ Risk' : ''}
                               </div>
                             </div>
                           );
                         })}
                       </div>
+                      )}
                     </div>
                   </motion.div>
                 );
@@ -1506,14 +1583,31 @@ export default function Dashboard() {
                       // (พาร์ทไม่มีคู่ยังรวมคิวไลน์เดียวเรียงต่อกันเหมือนเดิม — 1 ไลน์ทีละใบ · 2026-07-21)
                       const matsInLine = {}; // line → Set(mat_no) ที่มีการ์ดจริง
                       productRows.forEach(r => r.cards.forEach(c => { (matsInLine[c.line_name || ''] ||= new Set()).add(c.mat_no); }));
-                      const laneKeyOf = (c) => {
-                        const line = c.line_name || '';
-                        const pm = pairMatByMat[c.mat_no];
-                        const paired = pm && matsInLine[line]?.has(pm); // คู่ของมันอยู่ในไลน์นี้ด้วยจริง
-                        return paired ? `${line}||${c.mat_no}` : line;
+                      // ไลน์เครื่องขนาน (flow_mode='parallel_machine') — เครื่อง stand-alone หลายตัววิ่งพร้อมกันคนละรายการ
+                      // แตกเป็นหลายเลน: ใบที่ผูกเครื่อง (machine_no) = เลนของเครื่องนั้น · ใบที่ยังไม่ผูก = กระจาย round-robin N เลน
+                      // (N = parallel_stations ที่ตั้งไว้ หรือจำนวนเครื่องจากทะเบียน machine_points) — ดู lineTypes.js/CLAUDE.md
+                      const flowByLine = {}; lines.forEach(l => { flowByLine[l.name] = l; });
+                      const machineCountByLine = {};
+                      (machinePoints || []).forEach(p => { (machineCountByLine[p.line_name] ||= new Set()).add(p.machine_no); });
+                      const stationsOf = (line) => {
+                        const l = flowByLine[line];
+                        return (l && l.parallel_stations > 0 ? l.parallel_stations : 0) || machineCountByLine[line]?.size || 0;
                       };
                       const byLane = {};
-                      productRows.forEach(r => r.cards.forEach(c => { (byLane[laneKeyOf(c)] ||= []).push(c); }));
+                      const rr = {}; // round-robin ต่อไลน์ สำหรับใบที่ยังไม่ผูกเครื่อง
+                      productRows.forEach(r => r.cards.forEach(c => {
+                        const line = c.line_name || '';
+                        let key;
+                        if (flowByLine[line]?.flow_mode === 'parallel_machine') {
+                          if (c.machine_no) key = `${line}||M:${c.machine_no}`;
+                          else { const N = stationsOf(line); const i = (rr[line] = (rr[line] ?? -1) + 1); key = N > 0 ? `${line}||P:${i % N}` : `${line}||P:${i}`; }
+                        } else {
+                          const pm = pairMatByMat[c.mat_no];
+                          const paired = pm && matsInLine[line]?.has(pm); // งานคู่ RH/LH — เลนของตัวเอง เริ่มพร้อมกัน
+                          key = paired ? `${line}||${c.mat_no}` : line;
+                        }
+                        (byLane[key] ||= []).push(c);
+                      }));
                       Object.values(byLane).forEach(cs => {
                         computeQueuedPositionsFull(cs).forEach(item => positionedByOrder.set(item.o.id ?? item.o.prod_no, item));
                       });
@@ -1864,7 +1958,7 @@ export default function Dashboard() {
                         {/* พาร์ทละ 1 บล็อก — ป้าย/รูปใหญ่อันเดียวครอบ 2 แถบเวลา (☀️ 08–20 บน / 🌙 20–08 ล่าง)
                             หัวชั่วโมงแสดงเวลาคู่บน-ล่างในคอลัมน์เดียวกัน (โครงเดียวกับบอร์ดหน้าจัดการไลน์) */}
                         <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
-                          <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3, background: 'var(--bg2)' } : null) }}>
+                          <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--bg2)' } : null) }}>
                             <span>☀️ กะเช้า{isMobile ? '' : ' (แถบบน)'}</span>
                             <span>🌙 กะดึก{isMobile ? '' : ' (แถบล่าง)'}</span>
                           </div>
@@ -1909,7 +2003,7 @@ export default function Dashboard() {
                           return (
                             <div key={row.key} style={{ display: 'flex', borderTop: '1px solid var(--border2)', overflow: 'hidden' }}>
                               {/* Left summary — ป้ายเดียวครอบทั้ง 2 แถบเวลา */}
-                              <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3, background: 'var(--card)' } : null) }}>
+                              <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--card)' } : null) }}>
                                 {row.img && <img src={row.img} alt="" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0 }}>
                                   <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>
@@ -2048,17 +2142,15 @@ export default function Dashboard() {
               <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 15 }}>
                 ยังไม่มีผัง — ไปตั้งค่าที่หน้า <strong>ตั้งค่าผังไลน์</strong>
               </div>
+            ) : floorCards.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 15 }}>
+                ยังไม่มีคนถูกจัดลงจุดงานในผังกะนี้ — จัดคนลงจุดงานที่หน้า <strong>จัดการไลน์ผลิต</strong>
+                <div style={{ fontSize: 12, marginTop: 6, opacity: 0.7 }}>(สรุปกำลังคนรวมดูได้ที่การ์ดสถานะไลน์ด้านบน)</div>
+              </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : floorBig ? 'repeat(auto-fit, minmax(min(100%, 480px), 1fr))' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
-                {visibleLayouts.map(layout => {
-                  const cardLineNames = layoutLineNamesForCard(layout.line_name);
-                  const lineWs = workstations.filter(w => cardLineNames.includes(w.line_name));
-                  const lineStaff = lineWs.flatMap(ws => stationEmpMap[String(ws.id)] || []).filter(e => !shiftEmpIds || shiftEmpIds.has(e.id));
-                  // Use lineStats (same source as KPI cards) for the footer counts — sum across sub-lines merged into this card
-                  const cardLineStats = lineStats.filter(l => cardLineNames.includes(l.name));
-                  const footerPresent = cardLineStats.length ? cardLineStats.reduce((s, l) => s + l.linePresent, 0) : lineStaff.filter(e => e.is_present === true).length;
-                  const footerTotal   = cardLineStats.length ? cardLineStats.reduce((s, l) => s + l.lineTotal, 0)   : lineStaff.length;
-                  const footerAbsent  = cardLineStats.length ? (footerTotal - footerPresent) : lineStaff.filter(e => e.is_present === false).length;
+                {floorCards.map(({ layout, cardLineNames, lineWs, presentPeople, staffedStations, totalStations }) => {
+                  const allStaffed = totalStations > 0 && staffedStations >= totalStations;
                   return (
                     <div
                       key={layout.line_name}
@@ -2103,8 +2195,13 @@ export default function Dashboard() {
                           {layout.line_name}
                         </span>
                         <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.12)', padding: '2px 6px', borderRadius: 4 }}>✓ {footerPresent}/{footerTotal}</span>
-                          {footerAbsent > 0 && <span style={{ fontSize: 12, fontWeight: 700, color: '#e74c3c', background: 'rgba(231,76,60,0.12)', padding: '2px 6px', borderRadius: 4 }}>✗ {footerAbsent}</span>}
+                          <span title="จำนวนคนที่เข้าประจำจุดงานบนผังนี้ (นับตามหมุด)" style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', background: 'var(--bg2)', padding: '2px 6px', borderRadius: 4 }}>👷 {presentPeople}</span>
+                          {totalStations > 0 && (
+                            <span title="จุดงานที่มีคนเข้าประจำ / จุดงานทั้งหมดของผังนี้"
+                              style={{ fontSize: 12, fontWeight: 700, color: allStaffed ? '#22c55e' : '#f59e0b', background: allStaffed ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)', padding: '2px 6px', borderRadius: 4 }}>
+                              {allStaffed ? '✓' : '⚠'} {staffedStations}/{totalStations} จุด
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>

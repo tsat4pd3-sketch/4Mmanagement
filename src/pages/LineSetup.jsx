@@ -2,11 +2,13 @@ import { useState, useEffect, useRef, useMemo, useContext } from 'react';
 import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { can } from '../utils/permissions';
+import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
+import { LINE_TYPES, FLOW_MODES } from '../utils/lineTypes';
 import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
+import ToggleDot from '../components/ToggleDot';
 
 // ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร → WIP (ตามลำดับ 4M: Man, Machine, Material)
 // ให้ตรงกับปุ่ม filter MAN/MACHINE/WIP ที่หน้า Management — UI-CONVENTIONS §1
@@ -37,6 +39,7 @@ export default function LineSetup() {
   // สิทธิ์แก้ไข — role ที่ไม่มี line_setup:edit เห็นหน้าแบบอ่านอย่างเดียว (ดูผัง/รายการได้ แก้ไม่ได้)
   const { role, sections: scopeSecs = [] } = useContext(UserContext);
   const canEdit = can('line_setup', 'edit', role);
+  const canDel  = canDelete('line_setup', 'edit', role);  // สิทธิ์ลบไลน์/จุดงาน แยกจากแก้ไข (fallback = edit ถ้ายังไม่ seed)
   const [lines, setLines] = useState([]);
   const [selectedLine, setSelectedLine] = useState('');
   const [newLineName, setNewLineName] = useState('');
@@ -57,6 +60,18 @@ export default function LineSetup() {
   const [skillDefs, setSkillDefs] = useState([]);
   const [sectionOpts, setSectionOpts] = useState([]);
   const [activeTab, setActiveTab] = useState('stations'); // 'stations' | 'wip' | 'machines'
+  // UX แถบขวา: ค้นหา + พับรายการ (ข้อมูลเยอะ เลื่อนหายาก — 2026-07-24)
+  const [lineSearch, setLineSearch] = useState('');
+  const [lineListOpen, setLineListOpen] = useState(() => { try { return localStorage.getItem('ls_lineList_open') !== '0'; } catch { return true; } });
+  const [pointSearch, setPointSearch] = useState('');
+  const toggleLineList = () => setLineListOpen(o => { const n = !o; try { localStorage.setItem('ls_lineList_open', n ? '1' : '0'); } catch { /* private */ } return n; });
+  // พับ/กางไลน์ย่อยราย "ไลน์แม่" (ปุ่ม ▼/▶ หน้าไลน์แม่) — เก็บชื่อไลน์แม่ที่พับอยู่ · จำใน localStorage
+  const [collapsedParents, setCollapsedParents] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('ls_collapsed_parents') || '[]')); } catch { return new Set(); } });
+  const toggleParent = (name) => setCollapsedParents(s => {
+    const n = new Set(s); if (n.has(name)) n.delete(name); else n.add(name);
+    try { localStorage.setItem('ls_collapsed_parents', JSON.stringify([...n])); } catch { /* private */ }
+    return n;
+  });
   // ป้ายชื่อบนผัง: โชว์/ซ่อน อย่างเดียว เหมือนหน้า Management เป๊ะ (WYSIWYG)
   const [showPills, setShowPills] = useState(true);
 
@@ -100,14 +115,15 @@ export default function LineSetup() {
   const [stdDay,   setStdDay]   = useState(0);
   const [stdNight, setStdNight] = useState(0);
   const [costCenter, setCostCenter] = useState('');
+  const [lineType, setLineType] = useState('');
+  const hasLineTypeCol = useRef(true); // false = DB ยังไม่มีคอลัมน์ line_type (migration 20260722 ยังไม่ apply)
+  const [flowMode, setFlowMode] = useState('one_piece_flow');
+  const [parallelStations, setParallelStations] = useState('');
+  const hasFlowModeCol = useRef(true); // false = DB ยังไม่มีคอลัมน์ flow_mode (migration 20260723 ยังไม่ apply)
   const [mpSaving, setMpSaving] = useState(false);
 
-  // ผู้บันทึก/อนุมัติ ประจำส่วนงาน (ใช้ดึงอัตโนมัติในใบค่าฝีมือ)
+  // หัวหน้างานประจำไลน์ (head_name) — ใช้ในใบค่าฝีมือ · ผู้เซ็นราย section ย้ายไปตั้งที่ผังองค์กร (OrgSetup)
   const [signerHead,    setSignerHead]    = useState('');
-  const [signerManager, setSignerManager] = useState('');
-  const [signerTA,       setSignerTA]      = useState('');
-  const [signerHRM,      setSignerHRM]     = useState('');
-  const [signersSaving, setSignersSaving] = useState(false);
 
 
   const skillAllowanceTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
@@ -116,7 +132,16 @@ export default function LineSetup() {
   const sectionOptsInScope = scopeSecs.length ? sectionOpts.filter(s => inSectionScope(scopeSecs, s)) : sectionOpts;
 
   const fetchLines = async () => {
-    const { data } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name').order('name');
+    let { data, error } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name, line_type, flow_mode, parallel_stations').order('name');
+    if (error) {
+      // คอลัมน์ line_type/flow_mode ยังไม่ถูก apply (migration 20260722/20260723) — fallback query แบบเดิม หน้าใช้งานได้ปกติ
+      hasLineTypeCol.current = false;
+      hasFlowModeCol.current = false;
+      let r2 = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name, line_type').order('name');
+      if (r2.error) { r2 = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name').order('name'); }
+      else { hasLineTypeCol.current = true; }
+      data = r2.data;
+    }
     // mandatory scope filter — role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor/manager ที่ตั้ง sections)
     // เห็น/แก้ได้เฉพาะไลน์ในส่วนงานตัวเอง — หน้านี้เป็นหน้า edit master data ห้ามเห็นข้ามส่วนงาน
     const visible = scopeSecs.length ? (data || []).filter(l => inSectionScope(scopeSecs, l.section)) : (data || []);
@@ -176,31 +201,11 @@ export default function LineSetup() {
       setStdDay(lineObj.std_day_shift ?? 0);
       setStdNight(lineObj.std_night_shift ?? 0);
       setCostCenter(lineObj.cost_center ?? '');
+      setLineType(lineObj.line_type ?? '');
+      setFlowMode(lineObj.flow_mode ?? 'one_piece_flow');
+      setParallelStations(lineObj.parallel_stations != null ? String(lineObj.parallel_stations) : '');
       setSignerHead(lineObj.head_name ?? '');
-      if (lineObj.section) {
-        const { data: signers } = await supabase.from('section_signers').select('*').eq('section', lineObj.section).maybeSingle();
-        setSignerManager(signers?.manager_name || '');
-        setSignerTA(signers?.ta_name || '');
-        setSignerHRM(signers?.hrm_name || '');
-      } else {
-        setSignerManager(''); setSignerTA(''); setSignerHRM('');
-      }
     }
-  };
-
-  const handleSaveSigners = async () => {
-    const lineObj = lines.find(l => l.name === selectedLine);
-    if (!lineObj?.section) return toast.error('ไลน์นี้ยังไม่ได้กำหนดส่วนงาน (section)');
-    setSignersSaving(true);
-    const { error } = await supabase.from('section_signers').upsert({
-      section: lineObj.section,
-      manager_name: signerManager || null,
-      ta_name: signerTA || null,
-      hrm_name: signerHRM || null,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'section' });
-    if (error) toast.error('Error: ' + error.message);
-    setSignersSaving(false);
   };
 
   const handleSaveStdManpower = async () => {
@@ -209,9 +214,28 @@ export default function LineSetup() {
     setMpSaving(true);
     const { error } = await supabase
       .from('production_lines')
-      .update({ std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0, cost_center: costCenter || null, head_name: signerHead || null })
+      .update({
+        std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0,
+        cost_center: costCenter || null, head_name: signerHead || null,
+        ...(hasLineTypeCol.current ? { line_type: lineType || null } : {}),
+        ...(hasFlowModeCol.current ? {
+          flow_mode: flowMode || 'one_piece_flow',
+          parallel_stations: flowMode === 'parallel_machine' && parseInt(parallelStations) > 0 ? parseInt(parallelStations) : null,
+        } : {}),
+      })
       .eq('id', lineObj.id);
-    if (error) toast.error('Error: ' + error.message);
+    if (error) {
+      // คอลัมน์ flow_mode ยังไม่ apply — retry โดยตัด field ออก (ไม่ให้ save พังทั้งแผง)
+      if (/flow_mode|parallel_stations/.test(error.message || '')) {
+        hasFlowModeCol.current = false;
+        const { error: e2 } = await supabase.from('production_lines').update({
+          std_day_shift: parseInt(stdDay) || 0, std_night_shift: parseInt(stdNight) || 0,
+          cost_center: costCenter || null, head_name: signerHead || null,
+          ...(hasLineTypeCol.current ? { line_type: lineType || null } : {}),
+        }).eq('id', lineObj.id);
+        if (e2) toast.error('Error: ' + e2.message); else { toast.info('บันทึกแล้ว (โหมดไหลงานยังไม่ apply migration)'); await fetchLines(); }
+      } else toast.error('Error: ' + error.message);
+    }
     else await fetchLines();
     setMpSaving(false);
   };
@@ -299,14 +323,37 @@ export default function LineSetup() {
     // Update production_lines (name + children's parent_line_name)
     await supabase.from('production_lines').update({ name }).eq('id', line.id);
     await supabase.from('production_lines').update({ parent_line_name: name }).eq('parent_line_name', old);
-    // Cascade to map/station tables
-    await supabase.from('workstations').update({ line_name: name }).eq('line_name', old);
-    await supabase.from('line_layouts').update({ line_name: name }).eq('line_name', old);
-    await supabase.from('wip_buffer_points').update({ line_name: name }).eq('line_name', old);
-    await supabase.from('machine_points').update({ line_name: name }).eq('line_name', old);
-    await supabase.from('machine_flow_links').update({ line_name: name }).eq('line_name', old);
-    // DR project: machines table
-    await supabaseDR.from('machines').update({ line_name: name }).eq('line_name', old);
+
+    // ── Cascade "ชื่อไลน์" (line_name snapshot) ทุกตารางทั้ง 2 project ────────────────────────────
+    // ⚠️ กฎเหล็ก (2026-07-22): ไลน์ถูกอ้างด้วย "ชื่อ" เป็น text snapshot ในหลายตาราง ไม่ใช่ FK
+    // เปลี่ยนชื่อแล้วไม่ตามไปแก้ทุกที่ = ข้อมูลชื่อเก่า "กำพร้า" ทันที
+    // เคสจริง: เปลี่ยนชื่อไลน์ Laser → "กะที่เปิดค้าง" (production_sessions.line_name = ชื่อเก่า) หลุดจาก
+    // รายการ "กะที่เปิดอยู่" ใน Daily Report เพราะระบบกรองด้วยชื่อไลน์ปัจจุบัน (session ยังเปิดใน DB
+    // แค่ถูกกรองพ้นสายตา) · dr_products.line_name เก่า ทำให้เปิด order/สแกนของไลน์ที่เปลี่ยนชื่อไม่ได้ด้วย
+    // best-effort: ยิงทีละตาราง ไม่ abort ถ้าตารางใด error (บาง deploy ยังไม่มีตาราง/คอลัมน์นั้น)
+    const bump = async (client, table, col = 'line_name') => {
+      try { await client.from(table).update({ [col]: name }).eq(col, old); } catch { /* best-effort */ }
+    };
+    // Main project (client supabase) — ผัง/จุดงาน + 4M + factory map + LPA + action items + poka-yoke + QA + คำขอ WIP + home position
+    for (const t of ['workstations', 'line_layouts', 'wip_buffer_points', 'machine_points', 'machine_flow_links',
+                     'four_m_logs', 'factory_line_regions', 'lpa_plans', 'lpa_audits', 'meeting_action_items',
+                     'pokayoke_devices', 'wip_replenish_requests', 'employee_home_positions',
+                     'qa_parts', 'qa_characteristics', 'qa_instruments', 'qa_ncr']) {
+      await bump(supabase, t);
+    }
+    // DR project (client supabaseDR) — production_sessions/dr_products สำคัญสุด (กะที่เปิด + product→line map)
+    //   + supply route / PM ประสานงาน / delivery-round / rack (line_name)
+    for (const t of ['machines', 'production_sessions', 'dr_products', 'line_stock_transactions',
+                     'jigs', 'pm_daily_line_targets', 'mtn_orders', 'improvements', 'scrap_reports',
+                     'facility_supply_links', 'pm_coordination_plans', 'kanban_delivery_rounds', 'kanban_deliveries', 'rack_requests']) {
+      await bump(supabaseDR, t);
+    }
+    // คอลัมน์ที่ชื่อไม่ใช่ 'line_name' — ต้องระบุ col เอง
+    await bump(supabaseDR, 'pm_plans', 'usage_source_line');
+    for (const t of ['bom_items', 'child_lot_requests', 'packaging_withdrawal_requests']) {
+      await bump(supabaseDR, t, 'source_line');
+    }
+
     setEditingLineId(null);
     if (selectedLine === old) setSelectedLine(name);
     await fetchLines();
@@ -736,6 +783,7 @@ export default function LineSetup() {
             onClick={() => setShowPills(v => !v)}
             title={'แสดง/ซ่อนป้ายชื่อทุกจุดบนผัง (เหมือนหน้าแสดงผลจริง)\nหมุดที่กำลังเลือก/แก้ไขโชว์ป้ายเสมอ'}
             style={{
+              position: 'relative',
               padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
               marginLeft: 'auto',
               border: `1px solid ${showPills ? 'var(--accent)' : 'var(--border2)'}`,
@@ -743,6 +791,7 @@ export default function LineSetup() {
               color: showPills ? 'var(--accent)' : 'var(--text2)',
             }}>
             {showPills ? '🏷️ ซ่อนป้าย' : '🏷️ โชว์ป้าย'}
+            <ToggleDot on={showPills} />
           </button>
         </div>
       )}
@@ -998,9 +1047,16 @@ export default function LineSetup() {
         padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', flexShrink: 0
       }}>
         <div style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <span style={labelSt}>ไลน์ผลิต ({lines.length})</span>
-          </div>
+          {/* หัวหมวดพับได้ + ตัวนับ — คลิกเพื่อพับ/กางรายการไลน์ (ข้อมูลเยอะ พับเก็บได้) */}
+          <button onClick={toggleLineList}
+            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: 10, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+            <span style={labelSt}>{lineListOpen ? '▼' : '▶'} ไลน์ผลิต ({lines.length})</span>
+          </button>
+          {lineListOpen && lines.length > 6 && (
+            <input value={lineSearch} onChange={e => setLineSearch(e.target.value)} placeholder="🔍 ค้นหาไลน์..."
+              style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+          )}
+          {lineListOpen && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
             {(() => {
               // Build ordered display: parents first, their children indented below
@@ -1013,7 +1069,17 @@ export default function LineSetup() {
                 childLines.filter(c => c.parent_line_name === p.name).forEach(c => ordered.push({ ...c, _isChild: true }));
               });
               orphans.forEach(c => ordered.push({ ...c, _isChild: true, _orphan: true }));
-              return ordered.map(l => (
+              // ค้นหา: โชว์ไลน์ที่ชื่อตรง + คงบริบทลำดับชั้น (ลูกตรง→โชว์แม่ด้วย, แม่ตรง→โชว์ลูกด้วย)
+              const q = lineSearch.trim().toLowerCase();
+              const hit = (n) => n && n.toLowerCase().includes(q);
+              const shown = (!q ? ordered : ordered.filter(l =>
+                hit(l.name) ||
+                (l._isChild && hit(l.parent_line_name)) ||
+                (l._isParent && childLines.some(c => c.parent_line_name === l.name && hit(c.name)))
+              // พับไลน์แม่ = ซ่อนไลน์ย่อยของมัน (ยกเว้นตอนค้นหา — โชว์ผลลัพธ์เสมอ)
+              )).filter(l => q || !(l._isChild && collapsedParents.has(l.parent_line_name)));
+              if (!shown.length) return <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', padding: '8px 0' }}>ไม่พบไลน์ที่ค้นหา</div>;
+              return shown.map(l => (
                 <div key={l.id}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6,
@@ -1026,7 +1092,17 @@ export default function LineSetup() {
                   onClick={() => { setSelectedLine(l.name); setTempPos(null); setFormData({ id: null, name: '', requirements: {} }); }}
                 >
                   {l._isChild && <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>└</span>}
-                  {l._isParent && <span style={{ fontSize: 11, color: 'var(--accent)', flexShrink: 0 }}>▼</span>}
+                  {l._isParent && (() => {
+                    const nKids = childLines.filter(c => c.parent_line_name === l.name).length;
+                    const col = collapsedParents.has(l.name);
+                    return (
+                      <span onClick={e => { e.stopPropagation(); toggleParent(l.name); }}
+                        title={col ? `กางไลน์ย่อย (${nKids})` : 'พับไลน์ย่อย'}
+                        style={{ fontSize: 11, color: 'var(--accent)', flexShrink: 0, cursor: 'pointer', padding: '2px 4px', borderRadius: 4, userSelect: 'none' }}>
+                        {col ? `▶ ${nKids}` : '▼'}
+                      </span>
+                    );
+                  })()}
                   {editingLineId === l.id ? (
                     <input
                       autoFocus
@@ -1082,9 +1158,9 @@ export default function LineSetup() {
                           ))}
                         </select>
                       )}
-                      <button className="tbtn" onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
+                      {canDel && <button className="tbtn" onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
                         style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
-                        title="ลบไลน์">🗑️</button>
+                        title="ลบไลน์">🗑️</button>}
                     </>
                   )}
                 </div>
@@ -1094,6 +1170,7 @@ export default function LineSetup() {
               <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีไลน์ผลิต</div>
             )}
           </div>
+          )}
           {canEdit && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -1110,7 +1187,8 @@ export default function LineSetup() {
             <select value={newLineParent} onChange={e => setNewLineParent(e.target.value)}
               style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: newLineParent ? 'var(--accent)' : 'var(--text2)' }}>
               <option value="">ไม่มีไลน์หลัก (standalone)</option>
-              {lines.filter(l => !l.parent_line_name).map(l => (
+              {/* cascade: เลือก section แล้วเห็นเฉพาะไลน์แม่ของ section นั้น (2026-07-21) */}
+              {lines.filter(l => !l.parent_line_name && (!newLineSection || l.section === newLineSection)).map(l => (
                 <option key={l.id} value={l.name}>ลูกของ {l.name}</option>
               ))}
             </select>
@@ -1235,8 +1313,12 @@ export default function LineSetup() {
           <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
             รายการจุดงาน ({stations.length})
           </h4>
+          {stations.length > 6 && (
+            <input value={pointSearch} onChange={e => setPointSearch(e.target.value)} placeholder="🔍 ค้นหาจุดงาน..."
+              style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+          )}
           <div style={{ flex: 1, minHeight: showManpower ? 120 : 260, overflowY: 'auto' }}>
-            {stations.map(st => {
+            {stations.filter(st => { const q = pointSearch.trim().toLowerCase(); return !q || (st.station_name || '').toLowerCase().includes(q); }).map(st => {
               const reqs = st.station_requirements || [];
               return (
                 <div key={st.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1254,7 +1336,7 @@ export default function LineSetup() {
                         : 'ไม่มีสกิลที่กำหนด'}
                     </div>
                   </div>
-                  {canEdit && <button className="tbtn" onClick={() => deleteStation(st.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
+                  {canDel && <button className="tbtn" onClick={() => deleteStation(st.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                 </div>
               );
             })}
@@ -1355,8 +1437,12 @@ export default function LineSetup() {
               <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
                 รายการจุด WIP ({wipPoints.length})
               </h4>
+              {wipPoints.length > 6 && (
+                <input value={pointSearch} onChange={e => setPointSearch(e.target.value)} placeholder="🔍 ค้นหาจุด WIP..."
+                  style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+              )}
               <div style={{ flex: 1, minHeight: 260, overflowY: 'auto' }}>
-                {wipPoints.map(p => {
+                {wipPoints.filter(p => { const q = pointSearch.trim().toLowerCase(); return !q || (p.point_name || '').toLowerCase().includes(q); }).map(p => {
                   const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
                   return (
                     <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1378,7 +1464,7 @@ export default function LineSetup() {
                             🔔 เรียกเติม
                           </button>
                         )}
-                        {canEdit && <button className="tbtn" onClick={() => deleteWipPoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
+                        {canDel && <button className="tbtn" onClick={() => deleteWipPoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                       </div>
                     </div>
                   );
@@ -1462,8 +1548,12 @@ export default function LineSetup() {
               <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
                 รายการจุดเครื่องจักร ({machinePoints.length})
               </h4>
+              {machinePoints.length > 6 && (
+                <input value={pointSearch} onChange={e => setPointSearch(e.target.value)} placeholder="🔍 ค้นหาเครื่องจักร (เลข/ชื่อ)..."
+                  style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+              )}
               <div style={{ flex: 1, minHeight: 260, overflowY: 'auto' }}>
-                {machinePoints.map(p => {
+                {machinePoints.filter(p => { const q = pointSearch.trim().toLowerCase(); if (!q) return true; const mc = drMachines.find(m => m.machine_no === p.machine_no); return (p.machine_no || '').toLowerCase().includes(q) || (mc?.machine_name || '').toLowerCase().includes(q); }).map(p => {
                   const mc = drMachines.find(m => m.machine_no === p.machine_no);
                   return (
                     <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1474,7 +1564,7 @@ export default function LineSetup() {
                           <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 700, marginTop: 2 }}>🔀 {p.redundancy_group}</div>
                         )}
                       </div>
-                      {canEdit && <button className="tbtn" onClick={() => deleteMachinePoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
+                      {canDel && <button className="tbtn" onClick={() => deleteMachinePoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
                     </div>
                   );
                 })}
@@ -1492,12 +1582,14 @@ export default function LineSetup() {
                   <button
                     onClick={() => { setConnectMode(v => !v); setConnectFrom(null); }}
                     style={{
+                      position: 'relative',
                       padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
                       border: `1px solid ${connectMode ? '#f97316' : 'var(--border2)'}`,
                       background: connectMode ? 'rgba(249,115,22,0.18)' : 'var(--bg2)',
                       color: connectMode ? '#f97316' : 'var(--text2)',
                     }}>
                     {connectMode ? '✓ กำลังเชื่อม' : '🔗 เชื่อมต่อ'}
+                    <ToggleDot on={connectMode} />
                   </button>
                   )}
                 </div>
@@ -1519,7 +1611,7 @@ export default function LineSetup() {
                     return (
                       <div key={link.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
                         <span style={{ color: 'var(--text)' }}>⚙️ {from?.machine_no || '?'} → {to?.machine_no || '?'}</span>
-                        {canEdit && <button className="tbtn" onClick={() => deleteFlowLink(link.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>🗑️</button>}
+                        {canDel && <button className="tbtn" onClick={() => deleteFlowLink(link.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>🗑️</button>}
                       </div>
                     );
                   })}
@@ -1569,6 +1661,36 @@ export default function LineSetup() {
                 style={{ marginTop: 4, fontSize: 14, fontWeight: 600 }} />
             </div>
             <div style={{ marginBottom: 12 }}>
+              <label style={labelSt}>🏭 ประเภทไลน์</label>
+              <select value={lineType} disabled={!canEdit}
+                onChange={e => setLineType(e.target.value)}
+                style={{ marginTop: 4, fontSize: 13, fontWeight: 600 }}>
+                <option value="">— ยังไม่ระบุ —</option>
+                {LINE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelSt}>🔀 รูปแบบการไหลงาน (บอร์ด Heijunka)</label>
+              <select value={flowMode} disabled={!canEdit}
+                onChange={e => setFlowMode(e.target.value)}
+                style={{ marginTop: 4, fontSize: 13, fontWeight: 600 }}>
+                {FLOW_MODES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>
+                {flowMode === 'parallel_machine'
+                  ? 'เครื่อง stand-alone หลายตัววิ่งพร้อมกันคนละรายการ — บอร์ดจะแตกเป็นเลนขนานตามเครื่อง (เลือกเครื่องตอนเปิด Order)'
+                  : 'สายเดียวไหลทีละชิ้น — บอร์ดเรียงคิว 1 ใบต่อครั้ง (ดีฟอลต์)'}
+              </div>
+              {flowMode === 'parallel_machine' && (
+                <div style={{ marginTop: 8 }}>
+                  <label style={{ ...labelSt, fontSize: 11 }}>จำนวนเครื่องขนาน (เว้นว่าง = นับจากทะเบียนเครื่องจักร)</label>
+                  <input type="number" min="1" value={parallelStations} disabled={!canEdit}
+                    onChange={e => setParallelStations(e.target.value)}
+                    placeholder="เช่น 5" style={{ marginTop: 4, width: 120 }} />
+                </div>
+              )}
+            </div>
+            <div style={{ marginBottom: 12 }}>
               <label style={labelSt}>👨‍🔧 หัวหน้างาน (ประจำไลน์นี้)</label>
               <input type="text" value={signerHead} disabled={!canEdit}
                 onChange={e => setSignerHead(e.target.value)}
@@ -1589,44 +1711,11 @@ export default function LineSetup() {
           </div>
           )}
 
-          {/* ── ผู้บันทึก/อนุมัติ ประจำส่วนงาน ─────────────────── */}
+          {/* ผู้เซ็นใบค่าฝีมือ ราย section ย้ายไปตั้งที่ผังองค์กร (OrgSetup) — เป็นข้อมูลราย section ไม่ใช่ราย line */}
           <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />
-          <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
-            ✍️ ผู้อนุมัติ ประจำส่วนงาน {lines.find(l => l.name === selectedLine)?.section ? `(${lines.find(l => l.name === selectedLine)?.section})` : ''}
-          </h4>
-          {lines.find(l => l.name === selectedLine)?.section ? (
-            <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 14 }}>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
-                ใช้ดึงอัตโนมัติในใบสรุปค่าฝีมือ — กรอกครั้งเดียวต่อส่วนงาน ใช้ร่วมกันทุกไลน์ในส่วนนี้ (หัวหน้างานแยกตามไลน์ ตั้งค่าด้านบนในช่อง Standard Manpower)
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
-                <div>
-                  <label style={labelSt}>ผู้จัดการต้นสังกัด</label>
-                  <input type="text" value={signerManager} disabled={!canEdit} onChange={e => setSignerManager(e.target.value)} style={{ marginTop: 4 }} />
-                </div>
-                <div>
-                  <label style={labelSt}>เจ้าหน้าที่ TA</label>
-                  <input type="text" value={signerTA} disabled={!canEdit} onChange={e => setSignerTA(e.target.value)} style={{ marginTop: 4 }} />
-                </div>
-                <div>
-                  <label style={labelSt}>ผู้จัดการส่วน HRM</label>
-                  <input type="text" value={signerHRM} disabled={!canEdit} onChange={e => setSignerHRM(e.target.value)} style={{ marginTop: 4 }} />
-                </div>
-              </div>
-              {canEdit && (
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button onClick={handleSaveSigners} disabled={signersSaving}
-                  style={{ padding: '7px 18px', background: signersSaving ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-                  {signersSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
-                </button>
-              </div>
-              )}
-            </div>
-          ) : (
-            <div style={{ fontSize: 11, color: 'var(--muted)', padding: '8px 0' }}>
-              ไลน์นี้ยังไม่ได้กำหนดส่วนงาน (section) — กำหนดในหน้ารายการไลน์ก่อนเพื่อบันทึกผู้อนุมัติ
-            </div>
-          )}
+          <div style={{ fontSize: 12, color: 'var(--muted)', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 10, padding: '10px 14px' }}>
+            ✍️ ผู้เซ็น/อนุมัติใบค่าฝีมือ (ราย section) ย้ายไปตั้งที่หน้า <a href="/org-setup" style={{ color: 'var(--accent)', fontWeight: 700 }}>ผังองค์กร</a> แล้ว — เพราะเป็นข้อมูลราย "ส่วนงาน" ใช้ร่วมกันทุกไลน์ในส่วนนั้น
+          </div>
 
         </>}
       </div>

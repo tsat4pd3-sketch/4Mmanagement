@@ -641,7 +641,7 @@ function PlannerTab({ refreshKey, custLabel }) {
           ))}
         </div>
         {matRows.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีข้อมูลเดือนนี้</div> : (
-          <div style={{ overflowX: 'auto' }}>
+          <div className="table-sticky" style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
               <thead><tr style={{ background: 'var(--bg2)' }}>
                 {['พาร์ท', 'ลูกค้า', 'Forecast', 'Order จริง', 'Coverage', 'ภาระ (ชม.)'].map(h => (
@@ -962,6 +962,8 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       for (const [cust, sap] of pairs) {
         const name = drMap[sap]?.name || null;
         await supabaseDR.from('dr_products').update({ p_no: cust }).eq('mat_no', sap);                       // future uploads
+        // single source: p_no เก็บซ้ำใน kanban_standards ด้วย — เขียน write-through กันตาราง 2 ฝั่ง map เลข SAP ไม่ตรง (stale → map ผิด)
+        try { await supabaseDR.from('kanban_standards').update({ p_no: cust }).eq('mat_no', sap); } catch { /* best-effort — บางพาร์ทไม่มีแถว kanban */ }
         await supabaseDR.from('customer_forecasts').update({ mat_no: sap, part_name: name }).eq('mat_no', cust); // existing forecast
       }
       toast.success(`🔗 จับคู่ ${pairs.length} พาร์ทเข้าเลข SAP แล้ว — Store/Planner จะ sync ตามเลขเดียวกัน`);
@@ -1056,7 +1058,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       {loading ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div> :
        rows.length === 0 ? <div style={{ ...card, textAlign: 'center', color: 'var(--muted)' }}>ไม่มี forecast ในเดือน {monthLabel(monthRange.start)} — อัปโหลด forecast ที่แท็บ 📤 ก่อน</div> : (
         <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto' }}>
+          <div className="table-sticky" style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
               <thead>
                 <tr style={{ background: 'var(--bg2)' }}>
@@ -1156,7 +1158,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                             {suggestByCust[u.mat].map(c => (
                               <button key={c.sap} onClick={() => setMapSel(s => ({ ...s, [u.mat]: c.sap }))}
                                 title="แนะนำจาก base part (revision ต่างกัน)"
-                                style={{ fontSize: 10, padding: '2px 6px', borderRadius: 5, cursor: 'pointer', border: '1px solid #22c55e',
+                                style={{ fontSize: 11, padding: '2px 6px', borderRadius: 5, cursor: 'pointer', border: '1px solid #22c55e',
                                   background: mapSel[u.mat] === c.sap ? 'rgba(34,197,94,0.18)' : 'transparent', color: '#22c55e', fontWeight: 700 }}>
                                 💡 {c.sap} · {c.name}
                               </button>

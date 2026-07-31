@@ -23,6 +23,8 @@ insert into stock_inflow_rules (match_type, match_value, dest_line_name) values
   ('prefix', '1', 'FG WAREHOUSE'),
   ('prefix', '2', 'STORE')
 on conflict (match_type, match_value) do nothing;
+-- หมายเหตุ (2026-07-22): เบอร์ 300 = พาร์ทซื้อภายนอก (bought-out) ไม่มีออเดอร์ผลิตภายใน
+-- trigger นี้จึงไม่เกี่ยว — รับของเข้า STORE ด้วยการบันทึกรับ/ปรับยอดที่หน้า Store management
 
 -- คอลัมน์อ้างอิง order ต้นทาง (nullable — แถวเดิม/การกรอกมือไม่กระทบ) ใช้กันโพสต์ซ้ำ + ตามรอย
 alter table line_stock_transactions add column if not exists ref_order_id uuid;

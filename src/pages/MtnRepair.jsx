@@ -9,10 +9,11 @@ import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
-import { can } from '../utils/permissions';
+import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { teamsForUser } from '../utils/mtnTeams';
+import { teamsForUser, teamForSection, teamForItem } from '../utils/mtnTeams';
+import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import { loadDocForms, docFormSync } from '../utils/docForms';
 loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sync) อ่านผ่าน docFormSync
 import { fmtDateTime } from '../utils/dateFormat';
@@ -20,6 +21,16 @@ import tsLogo from '../assets/TS logo.png';
 import EventComments from '../components/EventComments';
 
 /* ── helpers ─────────────────────────────────────────────── */
+// แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
+// (โลโก้ต่าง origin เช่น Supabase Storage จะพิมพ์ไม่ติดถ้าใช้ <img src=url> ตรงๆ)
+async function logoDataUrl(overrideUrl) {
+  const url = overrideUrl || (/^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo);
+  try {
+    const res = await fetch(url); const blob = await res.blob();
+    return await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+  } catch { return /^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo; }
+}
+
 // รูปแจ้งซ่อม/หลักฐาน MTN — บีบ 1024px q0.8 (~120KB) สมดุลคม/ประหยัด storage (user เลือก B 2026-07-14)
 function resizeImage(file, maxPx = 1024, quality = 0.8) {
   return new Promise((resolve, reject) => {
@@ -54,9 +65,10 @@ const fmtMin = (m) => (m == null ? '—' : m < 60 ? `${m} นาที` : `${Mat
 // echo วันที่ (input ISO YYYY-MM-DD ค.ศ.) → DD/MM/พ.ศ.
 const beEcho = (ymd) => { if (!ymd) return ''; const [y, m, d] = ymd.split('-'); return `${d}/${m}/${Number(y) + 543}`; };
 
-// หน่วยงานซ่อม + auto จากชนิดอุปกรณ์
+// หน่วยงานซ่อม — fallback เท่านั้น (source of truth = mtn_teams ผ่าน pmTeamsSync().dept_name · ดู CLAUDE.md "ทีมช่างซ่อม 4 ส่วน")
 const MTN_DEPTS = ['JIG MTN', 'DIE MTN', 'MTN', 'PRODUCTION'];
-const deptForItem = (it) => { const s = (it || '').toUpperCase(); if (s.includes('JIG')) return 'JIG MTN'; if (s.includes('DIE')) return 'DIE MTN'; return 'MTN'; };
+// เดา default หน่วยงานจากชนิดอุปกรณ์ — reuse util กลาง (เลิก duplicate logic)
+const deptForItem = teamForItem;
 
 const STATUS_META = {
   pending:   { label: '📣 รอรับงาน',        step: 1, color: '#ef4444', bg: 'rgba(239,68,68,0.14)' },
@@ -67,6 +79,7 @@ const STATUS_META = {
   qa:        { label: '🤝 รอรับมอบ',          step: 5, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
   handover:  { label: '✍️ รออนุมัติปิด',      step: 6, color: '#3b82f6', bg: 'rgba(59,130,246,0.14)' },
   closed:    { label: '✅ ปิด MO',            step: 7, color: '#22c55e', bg: 'rgba(34,197,94,0.14)' },
+  returned:  { label: '↩️ ตีกลับ (ผิดแผนก)',   step: 1, color: '#e0894a', bg: 'rgba(224,137,74,0.14)' },
   rejected:  { label: '⛔ Reject MO',         step: 0, color: '#8b8b96', bg: 'rgba(139,139,150,0.14)' },
 };
 const SCOPE_OPTS = [{ v: 'in_line', t: 'ซ่อมในไลน์' }, { v: 'off_line', t: 'ซ่อมนอกไลน์' }];
@@ -74,6 +87,21 @@ const CHECK_RESULTS = ['ตรวจสอบผ่าน', 'ตรวจสอ�
 const QUALITY_OPTS = ['ไม่เกี่ยวกับคุณภาพ', 'เกี่ยวกับคุณภาพ'];
 const QA_RESULTS = ['ผ่านคุณภาพ', 'ไม่ผ่านคุณภาพ'];
 const FOLLOW_OPTS = ['ไม่เกิดปัญหาซ้ำ', 'แจ้งเฝ้าระวัง', 'เกิดปัญหาซ้ำ', 'แก้ไขไม่ได้'];
+// ประเมินความพึงพอใจบริการซ่อม (step 6) — KPI ให้หน่วยงานซ่อม · 5 ด้าน × 3 ระดับ
+const SAT_DIMS = [
+  { key: 'quality',    label: 'คุณภาพงานซ่อม' },
+  { key: 'response',   label: 'ความเร็วในการตอบสนอง' },
+  { key: 'problem',    label: 'ความสามารถในการแก้ไขปัญหา' },
+  { key: 'politeness', label: 'ความสุภาพ / PPE' },
+  { key: 'readiness',  label: 'ความพร้อมในการเข้าแก้ไขปัญหา' },
+];
+const SAT_LEVELS = [
+  { v: 1, t: 'เฉยๆ',    color: '#94a3b8' },
+  { v: 2, t: 'พอใจ',    color: '#f59e0b' },
+  { v: 3, t: 'พอใจมาก', color: '#22c55e' },
+];
+const satLabel = (v) => (SAT_LEVELS.find(l => l.v === Number(v)) || {}).t || '-';
+const satAvg = (s) => { if (!s) return null; const vs = SAT_DIMS.map(d => Number(s[d.key])).filter(v => v >= 1 && v <= 3); return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null; };
 const STEP_EVENT = { 1: 'mtn_reported', 2: 'mtn_assigned', 3: 'mtn_repaired', 4: 'mtn_checked', 5: 'mtn_qa', 6: 'mtn_handover', 7: 'mtn_closed' };
 const STEP_PERM = { 2: 'service', 3: 'service', 4: 'service', 5: 'qa', 6: 'report', 7: 'approve' };
 
@@ -155,7 +183,7 @@ const DateField = ({ label, value, onChange, required }) => (
 
 /* ═══════════════════════════════════════════════════════ */
 export default function MtnRepair() {
-  const { role, lineId, sections: scopeSecs, fullName, signatureUrl } = useContext(UserContext);
+  const { role, lineId, sections: scopeSecs, mtnTeams: userMtnTeams, fullName, signatureUrl } = useContext(UserContext);
   const [tab, setTab] = useState('list');
   const [orders, setOrders] = useState([]);
   const [lines, setLines] = useState([]);
@@ -165,7 +193,10 @@ export default function MtnRepair() {
   const [problemTypes, setProblemTypes] = useState([]);
   const [repairTypes, setRepairTypes] = useState([]);
   const [itemTypes, setItemTypes] = useState([]);
+  const [laborRates, setLaborRates] = useState([]); // ราคามาตรฐานค่าแรงซ่อม (master)
   const [improvements, setImprovements] = useState([]); // โปรเจคปรับปรุงที่กำลังทำ (cross-ref D)
+  const [mtnDepts, setMtnDepts] = useState(() => pmTeamsSync().map(t => t.dept_name)); // ทีมช่าง data-driven (mtn_teams) — ไม่ hardcode
+  const [supplyByMachineNo, setSupplyByMachineNo] = useState({}); // machine_no → [line_name] (utility/facility จ่ายไลน์ไหน → ผลกระทบเวลาซ่อม/ตัดไฟ)
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const [fStatus, setFStatus] = useState('open');
@@ -177,7 +208,7 @@ export default function MtnRepair() {
   const [stepModal, setStepModal] = useState(null); // { step, order, editMode }
 
   const loadMasters = useCallback(async () => {
-    const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }] = await Promise.all([
+    const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }, lr, { data: emps }, sup] = await Promise.all([
       supabase.from('production_lines').select('id, name, section, parent_line_name, cost_center').order('name'),
       supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_technicians').select('*').eq('is_active', true).order('sort_order'),
@@ -186,22 +217,39 @@ export default function MtnRepair() {
       supabaseDR.from('mtn_repair_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_item_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('improvements').select('id, line_name, machine_no, title').eq('status', 'monitoring'),
+      supabaseDR.from('mtn_labor_rates').select('*').eq('is_active', true).order('sort_order').then(r => r).catch(() => ({ data: [] })),
+      // ช่าง = พนักงาน (Main) ที่แผนก/ส่วนเป็นทีมช่าง — รวมฐานข้อมูลคนที่ employees ที่เดียว (2026-07-22)
+      supabase.from('employees').select('id, name, section, department, employee_id_code').eq('is_active', true).order('name'),
+      // supply route: utility/facility จ่ายให้ไลน์ไหน — ใช้โชว์ผลกระทบตอนซ่อม (best-effort ถ้ายังไม่ apply migration)
+      supabaseDR.from('facility_supply_links').select('machine_id, line_name').then(r => r).catch(() => ({ data: [] })),
     ]);
-    setLines(ln || []); setMachines(mc || []); setTechs(tc || []);
+    // แปลงพนักงานทีมช่างเป็นรูปแบบ tech + รวมกับ mtn_technicians เดิม (พนักงานมาก่อน · กันชื่อซ้ำ)
+    // ช่างส่วนใหญ่อยู่ระดับแผนก (department) → เช็คแผนกก่อน แล้ว section
+    const empTechs = (emps || [])
+      .map(e => ({ ...e, team: teamForSection(e.department) || teamForSection(e.section) }))
+      .filter(e => e.team)
+      .map(e => ({ id: `emp_${e.id}`, name: e.name, dept: e.team, from_employee: true, emp_code: e.employee_id_code }));
+    const empNames = new Set(empTechs.map(t => t.name.trim()));
+    const legacyTechs = (tc || []).filter(t => !empNames.has((t.name || '').trim()));
+    setLines(ln || []); setMachines(mc || []); setTechs([...empTechs, ...legacyTechs]);
     setProblemTypes(pt || []); setParts(pp || []); setRepairTypes(rt || []); setItemTypes(it || []);
-    setImprovements(imp || []);
+    setImprovements(imp || []); setLaborRates(lr?.data || []);
+    // map machine_id → machine_no → [line_name] เพื่อโชว์ผลกระทบใน DetailDrawer (MO เก็บ machine_no ไม่ใช่ id)
+    const noById = {}; (mc || []).forEach(m => { noById[m.id] = m.machine_no; });
+    const supMap = {}; (sup?.data || []).forEach(s => { const no = noById[s.machine_id]; if (!no) return; (supMap[no] = supMap[no] || []).push(s.line_name); });
+    setSupplyByMachineNo(supMap);
     return ln || [];
   }, []);
 
   const scopeLines = useMemo(() => {
     if (role === 'admin') return null;
-    if (role === 'leader' && lineId) { const self = lines.find(l => l.id === lineId); return self ? new Set(getLineFamilyNames(lines, self.name)) : new Set(); }
+    if (role === 'leader' && lineId) { const self = lines.find(l => String(l.id) === String(lineId)); return self ? new Set(getLineFamilyNames(lines, self.name)) : new Set(); }
     if (scopeSecs?.length) return new Set(lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name));
     return null;
   }, [lines, role, lineId, scopeSecs]);
 
-  // ทีมช่างของ user (จาก section) — ใช้ default คิวงาน + default หน่วยงานตอนแจ้ง
-  const userTeams = useMemo(() => teamsForUser(scopeSecs), [scopeSecs]);
+  // ทีมช่างของ user (จาก profiles.mtn_teams ที่ตั้งใน AddUser · fallback เดาจาก section) — default คิวงาน + default หน่วยงานตอนแจ้ง
+  const userTeams = useMemo(() => teamsForUser(userMtnTeams, scopeSecs), [userMtnTeams, scopeSecs]);
   const teamDefaulted = useRef(false);
   useEffect(() => {
     if (teamDefaulted.current || !lines.length) return;
@@ -216,6 +264,7 @@ export default function MtnRepair() {
   }, []);
 
   useEffect(() => {
+    loadPmTeams().then(ts => setMtnDepts(ts.map(t => t.dept_name))); // ทีมช่างจากตาราง mtn_teams (fallback DEFAULT_TEAMS)
     (async () => { setLoading(true); await loadMasters(); await loadOrders(); setLoading(false); })();
     const ch = supabaseDR.channel('mtn-orders-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' }, () => loadOrders()).subscribe();
     return () => { supabaseDR.removeChannel(ch); };
@@ -235,6 +284,9 @@ export default function MtnRepair() {
 
   const openCount = useMemo(() => orders.filter(o => !['closed', 'rejected'].includes(o.status) && (!scopeLines || !o.line_name || scopeLines.has(o.line_name))).length, [orders, scopeLines]);
   const lineOpts = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines).map(l => l.name), [lines, scopeLines]);
+  // ⚠️ hook นี้ต้องอยู่ก่อน `if (loading) return` ด้านล่าง — ไม่งั้น hook count เปลี่ยนตอน loading→loaded = React #310 (จอ error)
+  // ไลน์ในฟอร์มแจ้งซ่อม = เฉพาะที่อยู่ใน scope ของผู้แจ้ง (กันเห็นไลน์ข้ามส่วนงาน — pattern มาตรฐาน)
+  const scopedLineObjs = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines), [lines, scopeLines]);
 
   // เปิดโปรเจคปรับปรุงจากใบ MO (เชื่อม B) — ส่ง prefill ผ่าน sessionStorage แล้วไปหน้า /improvements
   const openImprovementFromMo = (o) => {
@@ -247,7 +299,7 @@ export default function MtnRepair() {
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
 
-  const cp = { lines, machines, techs, parts, problemTypes, repairTypes, itemTypes, role, fullName, signatureUrl, improvements, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
+  const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, role, fullName, signatureUrl, improvements, supplyByMachineNo, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
 
   return (
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1800px)', margin: '0 auto' }}>
@@ -266,9 +318,9 @@ export default function MtnRepair() {
           {can('mtn_repair', 'report', role) && <button onClick={() => setShowReport(true)} style={{ ...btnPri, padding: '9px 16px' }}>➕ แจ้งซ่อมใหม่</button>}
           <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={{ ...inp, width: 170 }}>
             <option value="open">🔵 ยังไม่ปิด (ทั้งหมด)</option><option value="all">ทุกสถานะ</option>
-            {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}<option value="closed">✅ ปิดแล้ว</option>
+            {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
           </select>
-          <select value={fDept} onChange={e => setFDept(e.target.value)} style={{ ...inp, width: 150 }}><option value="">ทุกหน่วยงาน</option>{MTN_DEPTS.map(d => <option key={d}>{d}</option>)}</select>
+          <select value={fDept} onChange={e => setFDept(e.target.value)} style={{ ...inp, width: 150 }}><option value="">ทุกหน่วยงาน</option>{mtnDepts.map(d => <option key={d}>{d}</option>)}</select>
           <select value={fLine} onChange={e => setFLine(e.target.value)} style={{ ...inp, width: 180 }}><option value="">ทุกไลน์</option>{lineOpts.map(n => <option key={n} value={n}>{n}</option>)}</select>
           <input value={fText} onChange={e => setFText(e.target.value)} placeholder="ค้นหา เลข MO/เครื่อง/ปัญหา" style={{ ...inp, width: 230 }} />
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>{shown.length} รายการ</span>
@@ -315,7 +367,7 @@ function MoCard({ o, onOpen }) {
 }
 
 /* ── Step 1: แจ้งซ่อม ─────────────────────────────────── */
-function ReportModal({ lines, machines, itemTypes, problemTypes, fullName, defaultDept, onClose, onSaved }) {
+function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_DEPTS, fullName, defaultDept, onClose, onSaved }) {
   const [f, setF] = useState({
     mtn_dept: defaultDept || 'MTN', repair_scope: 'in_line', line_name: '', item_type: '', machine_no: '', dept_section: '', work_area: '',
     cost_center: '', model: '', customer: '', code: '', want_at: '', problem_characteristic: '', problem_detail: '',
@@ -351,7 +403,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, fullName, defau
   return (
     <ModalShell title="➕ แจ้งซ่อมใหม่ (Step 1)" onClose={onClose} wide>
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <Field label="แจ้งถึงทีมช่าง" required><select value={f.mtn_dept} onChange={e => set('mtn_dept', e.target.value)} style={{ ...inp, borderColor: 'var(--accent)', fontWeight: 700 }}>{MTN_DEPTS.map(d => <option key={d}>{d}</option>)}</select></Field>
+        <Field label="แจ้งถึงทีมช่าง" required><select value={f.mtn_dept} onChange={e => set('mtn_dept', e.target.value)} style={{ ...inp, borderColor: 'var(--accent)', fontWeight: 700 }}>{mtnDepts.map(d => <option key={d}>{d}</option>)}</select></Field>
         <Field label="ประเภทการซ่อม"><select value={f.repair_scope} onChange={e => set('repair_scope', e.target.value)} style={inp}>{SCOPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}</select></Field>
         <Field label="ไลน์การผลิต" required><select value={f.line_name} onChange={e => onLine(e.target.value)} style={inp}><option value="">— เลือก —</option>{lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}</select></Field>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -392,8 +444,11 @@ function nextStepFor(order) {
   }
 }
 
-/* ── พิมพ์ใบ MO — layout 100% ตามฟอร์มเดิม FM-JIG-008 ── */
-function printMoReport(o, dparts = []) {
+/* ── พิมพ์ใบ MO — เลือก layout ตามทีมช่าง (JIG/DIE = FM-JIG-008 · MTN/PRODUCTION = FM-MTN-006) ── */
+function printMoReport(o, dparts = [], logo0) {
+  const dept = o.mtn_dept || deptForItem(o.item_type);
+  // เฉพาะทีม MTN ใช้ฟอร์ม FM-MTN-006 · JIG MTN / DIE MTN / PRODUCTION ใช้ FM-JIG-008 เดิม (คำสั่ง user 2026-07-22)
+  if (dept === 'MTN') return printMoReportMtn(o, dparts, logo0);
   // เลขฟอร์ม/Rev/Effective จากทะเบียนเอกสาร (/doc-forms) — fallback ค่าเดิม
   const dfMo = docFormSync('mo_report', { form_code: 'FM-JIG-008', rev: 'REV.00', effective_date: '05/12/2025', sig_blocks: ['JIG/MTN APPROVE', 'QA APPROVE', 'PD APPROVE', 'MGR APPROVE'] });
   const moSig = dfMo.sig_blocks || ['JIG/MTN APPROVE', 'QA APPROVE', 'PD APPROVE', 'MGR APPROVE'];
@@ -401,9 +456,8 @@ function printMoReport(o, dparts = []) {
   const beD = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${+g.year + 543}`; };
   const esc = (s) => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
   const L = (k, v) => `<div class="f"><span class="fk">${k}</span> <span class="fv">${esc(v)}</span></div>`;
-  const dept = o.mtn_dept || deptForItem(o.item_type);
   const statusTh = (STATUS_META[o.status] || {}).label?.replace(/^[^฀-๿]+/, '').trim() || o.status;
-  const logo = /^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo;
+  const logo = logo0 || (/^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo);
   const sign = (title, name, url, dt, dark) => `<td class="sg"><div class="sgh${dark ? ' dk' : ''}">${title}</div><div class="sgimg">${url ? `<img src="${esc(url)}"/>` : ''}</div><div class="sgn">${esc(name || '')}</div><div class="sgd">${dt ? beDT(dt) : ''}</div></td>`;
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>MO ${esc(o.mo_no || '')}</title><style>
     *{box-sizing:border-box} body{font-family:'Sarabun','Tahoma',sans-serif;color:#000;margin:0;padding:8px;font-size:11px}
@@ -474,19 +528,134 @@ function printMoReport(o, dparts = []) {
   w.document.write(html); w.document.close();
 }
 
+/* ── พิมพ์ใบ MO — layout ตามฟอร์ม FM-MTN-006 (ทีม MTN / PRODUCTION) ── */
+function printMoReportMtn(o, dparts = [], logo0) {
+  const df = docFormSync('mo_report_mtn', { form_code: 'FM-MTN-006', rev: '', effective_date: '', footer_note: 'MAINTENANCE ORDER MO31 08 2015.xls', sig_blocks: ['ผู้ตรวจสอบและรับรอง', 'ผู้อนุมัติ (ผู้จัดการ)'] });
+  const moSig = df.sig_blocks || ['ผู้ตรวจสอบและรับรอง', 'ผู้อนุมัติ (ผู้จัดการ)'];
+  const beDT = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${+g.year + 543} ${g.hour === '24' ? '00' : g.hour}:${g.minute}`; };
+  const beD = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${+g.year + 543}`; };
+  const esc = (s) => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+  const dept = o.mtn_dept || deptForItem(o.item_type);
+  const logo = logo0 || (/^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo);
+  const done = o.status === 'closed' || o.current_step >= 3;
+  const chk = (on) => on ? '☑' : '☐';
+  const cell = (k, v) => `<div class="f"><span class="k">${k}</span> <span class="v">${esc(v)}</span></div>`;
+  // ประเภทงาน (จาก repair_type) — เดาเช็คบ็อกซ์
+  const rt = (o.repair_type || '').toLowerCase();
+  const isImprove = rt.includes('improve') || (o.repair_type || '').includes('ปรับปรุง');
+  // อะไหล่ 5 แถว
+  const partRows = [];
+  for (let i = 0; i < 5; i++) { const p = dparts[i]; partRows.push(`<tr><td class="c">${i + 1}</td><td>${p ? esc(p.part_name) : ''}</td><td class="c">${p ? esc(`${p.qty}${p.unit || ''}`) : ''}</td><td>${p ? esc(o.tech_main || '') : ''}</td></tr>`); }
+  // ประเมินความพึงพอใจ
+  const satRow = (label, key) => { const v = Number((o.satisfaction || {})[key]); return `<tr><td>${esc(label)}</td><td class="c">${chk(v === 1)}</td><td class="c">${chk(v === 2)}</td><td class="c">${chk(v === 3)}</td></tr>`; };
+  const satAv = satAvg(o.satisfaction);
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>MO ${esc(o.mo_no || '')}</title><style>
+    *{box-sizing:border-box} body{font-family:'Sarabun','Tahoma',sans-serif;color:#000;margin:0;padding:8px;font-size:11px}
+    table{border-collapse:collapse;width:100%;table-layout:fixed} td{border:1px solid #000;vertical-align:top;padding:4px 6px}
+    .nob td{border:none;padding:1px 0}
+    .sech{background:#d4d4d4;text-align:center;font-weight:700;padding:3px}
+    .f{padding:1.5px 0;line-height:1.5} .k{font-weight:700} .c{text-align:center}
+    .ttl{text-align:center} .ttl .mo{font-size:26px;font-weight:800;letter-spacing:1px} .co{font-size:11px;font-weight:700}
+    .imgcell{height:150px;text-align:center;padding:3px} .imgcell img{max-width:100%;max-height:142px}
+    .tbl th{border:1px solid #000;background:#ececec;font-weight:700;padding:3px;font-size:10.5px}
+    .signs td{height:96px;text-align:center;padding:0;vertical-align:top}
+    .sgh{background:#d4d4d4;font-weight:700;padding:3px;border-bottom:1px solid #000}
+    .sgimg{height:48px;display:flex;align-items:center;justify-content:center} .sgimg img{max-height:44px;max-width:90%}
+    .sgn{border-top:1px solid #999;padding:2px;font-size:10.5px}
+    .ft{display:flex;justify-content:space-between;font-size:10px;margin-top:4px}
+    @media print{body{padding:0}}
+  </style></head><body>
+  <table>
+    <tr>
+      <td style="width:26%"><table class="nob"><tr><td style="width:48px"><img src="${esc(logo)}" style="width:42px"/></td><td class="co">บริษัท ไทยซัมมิท โอโตโมทีฟ จำกัด (สาขา 1)<br><span style="font-weight:400;font-size:10px">Thai Summit Automotive Co.,Ltd (Branch 1)</span></td></tr></table></td>
+      <td class="ttl" style="width:32%"><div class="mo">M/O</div><div style="font-size:10px">ใบสั่งงานซ่อมบำรุง (MAINTENANCE ORDER)</div></td>
+      <td style="width:42%">${cell('MO NO:', o.mo_no || '-')}${cell('แจ้งถึงหน่วยงาน:', dept)}<div class="f"><span class="k">สถานะ:</span> ${chk(!done)} รอดำเนินการ &nbsp; ${chk(done)} ดำเนินการแล้ว</div></td>
+    </tr>
+  </table>
+  <table>
+    <tr><td class="sech" colspan="2">ส่วนผู้แจ้ง (Requester)</td></tr>
+    <tr>
+      <td style="width:50%"><table class="nob"><tr><td style="width:50%">${cell('จากแผนก/ส่วน:', o.dept_section || o.work_area)}</td><td>${cell('Cost Center:', o.cost_center)}</td></tr></table>
+        ${cell('ชื่อเครื่องจักร:', o.item_type)}${cell('เบอร์/Jig No:', o.machine_no)}${cell('ไลน์การผลิต:', o.line_name)}
+        <div class="f"><span class="k">ประเภทงาน:</span> ${chk(!isImprove)} ซ่อม &nbsp; ${chk(isImprove)} ปรับปรุง &nbsp; ☐ บริการ &nbsp; ☐ สร้าง</div>
+        ${cell('รายละเอียด (ผู้แจ้ง):', o.problem_characteristic)}${cell('อาการ/หมายเหตุ:', o.report_note || o.problem_detail)}
+        <table class="nob"><tr><td style="width:50%">${cell('เปิดงาน:', beDT(o.report_at))}</td><td>${cell('ต้องการเสร็จ:', beD(o.want_at))}</td></tr></table>
+        <table class="nob"><tr><td style="width:50%">${cell('PD ผู้แจ้ง:', o.reporter_prod)}</td><td>${cell('QA ผู้แจ้ง:', o.reporter_qa)}</td></tr></table>
+        ${cell('ผู้ออก M/O (รับรอง):', o.accepted_by)}${cell('วันที่รับรอง:', beD(o.accept_at))}</td>
+      <td style="width:50%"><div class="sech" style="margin:-4px -6px 4px;border-bottom:1px solid #000">รายละเอียดการดำเนินงาน (ซ่อมบำรุง)</div>
+        <table class="nob"><tr><td style="width:50%">${cell('ผู้รับแจ้ง:', o.accepted_by)}</td><td>${cell('ผู้รับผิดชอบ:', o.assigned_to)}</td></tr></table>
+        <table class="nob"><tr><td style="width:50%">${cell('เวลาเริ่ม:', beDT(o.accept_at))}</td><td>${cell('เวลาเสร็จ:', beDT(o.repair_done_at))}</td></tr></table>
+        <div class="f"><span class="k">ประเภท:</span> ${chk(!isImprove)} งานซ่อม &nbsp; ${chk(isImprove)} งานปรับปรุง &nbsp; ☐ อื่นๆ</div>
+        <table class="nob"><tr><td style="width:50%">${cell('ช่างหลัก:', o.tech_main)}</td><td>${cell('ช่างรอง:', o.tech_secondary)}</td></tr></table>
+        ${cell('สาเหตุปัญหา:', o.root_cause)}${cell('วิธีการแก้ไข:', o.solution)}
+        ${cell('ผู้ตรวจเช็ค:', o.checker_name)}${cell('ผลตรวจหลังซ่อม:', o.check_result)}</td>
+    </tr>
+  </table>
+  <table>
+    <tr><td class="sech" style="width:50%">ภาพก่อนซ่อม/ปรับปรุง</td><td class="sech" style="width:50%">ภาพหลังซ่อม/ปรับปรุง</td></tr>
+    <tr><td class="imgcell">${o.before_img ? `<img src="${esc(o.before_img)}"/>` : ''}</td><td class="imgcell">${o.after_img ? `<img src="${esc(o.after_img)}"/>` : ''}</td></tr>
+  </table>
+  <table style="table-layout:fixed"><tr>
+    <td style="width:56%;padding:0;border:none">
+      <table class="tbl"><tr><th style="width:36px">ลำดับ</th><th>รายการใช้อะไหล่และอุปกรณ์</th><th style="width:70px">จำนวน</th><th style="width:110px">คนเบิก</th></tr>${partRows.join('')}</table>
+      <table class="nob" style="margin-top:3px"><tr><td>${cell('(1) ค่าใช้จ่ายในการซ่อม (บาท):', o.labor_cost != null ? Number(o.labor_cost).toLocaleString() : '')}</td></tr><tr><td>${cell('(2) ค่าอะไหล่และอุปกรณ์ (บาท):', o.parts_cost != null ? Number(o.parts_cost).toLocaleString() : '')}</td></tr><tr><td>${cell('รวมค่าใช้จ่ายทั้งหมด (1)+(2):', (o.labor_cost != null || o.parts_cost != null) ? ((Number(o.labor_cost) || 0) + (Number(o.parts_cost) || 0)).toLocaleString() : '')}</td></tr></table>
+    </td>
+    <td style="width:44%;padding:0;border:none;padding-left:6px">
+      <table class="tbl"><tr><th colspan="4" style="text-align:center">การประเมินความพึงพอใจการให้บริการงานซ่อม${satAv != null ? ` — เฉลี่ย ${Math.round(satAv / 3 * 100)}%` : ''}</th></tr>
+        <tr><th style="text-align:left">หัวข้อประเมิน</th><th style="width:44px">เฉยๆ</th><th style="width:44px">พอใจ</th><th style="width:56px">พอใจมาก</th></tr>
+        ${satRow('1. คุณภาพงานซ่อม', 'quality')}${satRow('2. ความเร็วในการตอบสนอง', 'response')}${satRow('3. ความสามารถในการแก้ไขปัญหา', 'problem')}${satRow('4. ความสุภาพ / PPE', 'politeness')}${satRow('5. ความพร้อมในการเข้าแก้ไขปัญหา', 'readiness')}
+      </table>
+    </td>
+  </tr></table>
+  <table class="signs"><tr>
+    <td style="width:50%"><div class="sgh">${esc(moSig[0] || 'ผู้ตรวจสอบและรับรอง')}</div><div class="sgimg">${o.ho_sign ? `<img src="${esc(o.ho_sign)}"/>` : ''}</div><div class="sgn">${esc(o.ho_checker || '')} ${o.ho_at ? '· ' + beD(o.ho_at) : ''}</div></td>
+    <td style="width:50%"><div class="sgh">${esc(moSig[1] || 'ผู้อนุมัติ (ผู้จัดการ)')}</div><div class="sgimg">${o.approve_sign ? `<img src="${esc(o.approve_sign)}"/>` : ''}</div><div class="sgn">${esc(o.approver_name || '')} ${o.approve_at ? '· ' + beD(o.approve_at) : ''}</div></td>
+  </tr></table>
+  <div class="ft"><span>${[df.form_code, df.rev].filter(Boolean).join('-')}</span><span>${df.footer_note || ''}</span><span>${df.effective_date ? 'Effective : ' + df.effective_date : 'Issue Date : ..........'}</span></div>
+  <script>window.onload=function(){setTimeout(function(){window.print()},500)}</script>
+  </body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { toast.error('เบราว์เซอร์บล็อกหน้าต่าง — อนุญาต popup แล้วลองใหม่'); return; }
+  w.document.write(html); w.document.close();
+}
+
 /* ── Detail drawer ───────────────────────────────────── */
-function DetailDrawer({ order, role, improvements, onOpenImprovement, onClose, onStep }) {
+function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvements, supplyByMachineNo, onOpenImprovement, onClose, onStep, onReload }) {
   const o = order;
   const m = STATUS_META[o.status] || STATUS_META.pending;
   const next = nextStepFor(o);
   const dept = o.mtn_dept || deptForItem(o.item_type);
   const openImps = (improvements || []).filter(i => i.line_name === o.line_name && (!i.machine_no || i.machine_no === o.machine_no));
+  const affectedLines = (o.machine_no && supplyByMachineNo?.[o.machine_no]) || []; // utility/facility นี้จ่ายไลน์ไหน — ผลกระทบเวลาซ่อม/ตัดไฟ
   const repeatIssue = ['เกิดปัญหาซ้ำ', 'แก้ไขไม่ได้'].includes(o.follow_up);
   const resp = minutesBetween(o.report_at, o.accept_at), ttr = minutesBetween(o.accept_at, o.repair_done_at), bd = minutesBetween(o.report_at, o.repair_done_at);
   const [dparts, setDparts] = useState([]);
   useEffect(() => { supabaseDR.from('mtn_order_parts').select('*').eq('order_id', o.id).then(({ data }) => setDparts(data || [])); }, [o.id]);
   // แก้ไขได้: หัวหน้า (manage_master) หรือผู้มีสิทธิ์ทำสเตปนั้น
   const canEditStep = (step) => can('mtn_repair', 'manage_master', role) || (STEP_PERM[step] && can('mtn_repair', STEP_PERM[step], role)) || (step === 1 && can('mtn_repair', 'report', role));
+
+  // ── ตีกลับ (returned) → ผู้แจ้งแก้แผนกแล้วส่งใหม่ ──
+  const [resubDept, setResubDept] = useState(dept);
+  const [resubBusy, setResubBusy] = useState(false);
+  const resubmit = async () => {
+    if (!resubDept) return toast.error('เลือกแผนกที่ถูกต้อง');
+    setResubBusy(true);
+    const nowIso = new Date().toISOString();
+    const upd = {
+      status: 'pending', current_step: 1, mtn_dept: resubDept,
+      report_at: nowIso,                                   // รีเซ็ตนาฬิกา — แผนกที่ถูกเริ่มนับใหม่
+      first_report_at: o.first_report_at || o.report_at,   // เก็บเวลาเปิดครั้งแรกไว้อ้างอิง
+      bounce_count: (o.bounce_count || 0) + 1,
+      returned_at: null, reject_reason: null, returned_from_dept: null,
+      accept_at: null, accepted_by: null, repair_type: null, assigned_to: null, assign_note: null, target_done_at: null,
+      updated_at: nowIso,
+    };
+    const { error } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id).eq('status', 'returned');
+    if (error) { setResubBusy(false); return toast.error(error.message); }
+    const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single();
+    notifyMtn(fresh, 'mtn_reported');   // แจ้งทีมใหม่ให้มารับงาน
+    setResubBusy(false); toast.success(`ส่งใหม่ให้ทีม ${resubDept} แล้ว`); onReload && onReload(); onClose();
+  };
 
   const del = async () => {
     if (!confirm('ลบใบแจ้งซ่อมนี้?')) return;
@@ -509,6 +678,11 @@ function DetailDrawer({ order, role, improvements, onOpenImprovement, onClose, o
 
   return (
     <ModalShell title={`${o.mo_no || '(ยังไม่ออกเลข MO)'} · ${m.label} · ${dept}`} onClose={onClose} wide>
+      {affectedLines.length > 0 && (
+        <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.5)', fontSize: 12.5, color: '#ef4444', fontWeight: 700 }}>
+          ⚠️ อุปกรณ์นี้จ่ายให้ {affectedLines.length} ไลน์ — หยุดซ่อม/ตัดไฟจะกระทบ: <b>{affectedLines.join(', ')}</b>
+        </div>
+      )}
       {openImps.length > 0 && (
         <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'rgba(124,108,240,0.12)', border: '1px solid rgba(124,108,240,0.4)', fontSize: 12.5, color: '#a78bfa' }}
           title={openImps.map(i => i.title).join('\n')}>
@@ -518,6 +692,25 @@ function DetailDrawer({ order, role, improvements, onOpenImprovement, onClose, o
       {repeatIssue && (
         <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.5)', fontSize: 12.5, color: '#f59e0b' }}>
           ⚠️ ติดตามผลได้ว่า "{o.follow_up}" — ควรเปิดโปรเจคปรับปรุงแก้ที่ต้นเหตุ
+        </div>
+      )}
+      {o.status === 'returned' && (
+        <div style={{ marginBottom: 10, padding: '10px 12px', borderRadius: 8, background: 'rgba(224,137,74,0.12)', border: '1px solid rgba(224,137,74,0.5)' }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: '#e0894a' }}>↩️ ใบนี้ถูกตีกลับ — ผิดแผนก</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text)', margin: '4px 0' }}>เหตุผล: <b>{o.reject_reason || '-'}</b>{o.returned_from_dept ? ` (ตีกลับจากทีม ${o.returned_from_dept})` : ''}</div>
+          {can('mtn_repair', 'report', role) ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>ส่งใหม่ให้ทีม:</span>
+              <select value={resubDept} onChange={e => setResubDept(e.target.value)} style={{ ...inp, width: 160 }}>{mtnDepts.map(d => <option key={d}>{d}</option>)}</select>
+              <button onClick={resubmit} disabled={resubBusy} style={{ ...btnPri, padding: '7px 14px' }}>{resubBusy ? 'กำลังส่ง…' : '✏️ แก้แผนก & ส่งใหม่'}</button>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>เวลาเริ่มนับใหม่ให้แผนกที่ถูก</span>
+            </div>
+          ) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>ผู้แจ้งต้องแก้แผนกแล้วส่งใหม่</div>}
+        </div>
+      )}
+      {o.status !== 'returned' && o.bounce_count > 0 && (
+        <div style={{ marginBottom: 10, padding: '6px 10px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)', fontSize: 11.5, color: '#e0894a' }}>
+          ↩️ ใบนี้เคยถูกตีกลับ {o.bounce_count} ครั้ง{o.first_report_at ? ` · เปิดครั้งแรก ${fmtDateTime(o.first_report_at)}` : ''} — เวลา KPI นับจากรอบล่าสุด
         </div>
       )}
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -542,6 +735,7 @@ function DetailDrawer({ order, role, improvements, onOpenImprovement, onClose, o
             <Row k="ซ่อมเสร็จเมื่อ" v={o.repair_done_at && fmtDateTime(o.repair_done_at)} /><Row k="สาเหตุ" v={o.root_cause} /><Row k="วิธีแก้ไข" v={o.solution} />
             <Row k="ช่างหลัก / รอง" v={[o.tech_main, o.tech_secondary].filter(Boolean).join(' / ')} />
             {!!dparts.length && <Row k="อะไหล่ที่ใช้" v={dparts.map(p => `${p.part_name} ×${p.qty}${p.unit || ''}`).join(', ')} />}
+            {(o.labor_cost != null || o.parts_cost != null) && <Row k="ค่าใช้จ่าย" v={`ค่าแรง ${(Number(o.labor_cost) || 0).toLocaleString()} + อะไหล่ ${(Number(o.parts_cost) || 0).toLocaleString()} = ${((Number(o.labor_cost) || 0) + (Number(o.parts_cost) || 0)).toLocaleString()} บาท`} />}
             <div style={{ marginTop: 6 }}><Img label="รูปหลังซ่อม" url={o.after_img} /></div>
           </StepBox>
         </div>
@@ -554,6 +748,14 @@ function DetailDrawer({ order, role, improvements, onOpenImprovement, onClose, o
           </StepBox>
           <StepBox n={6} title="รับมอบ/ติดตาม" done={o.current_step >= 6}>
             <Row k="ติดตามผล" v={o.follow_up} /><Row k="ผู้ตรวจ" v={o.ho_checker} /><Img label="ลายเซ็น" url={o.ho_sign} />
+            {satAvg(o.satisfaction) != null && <div style={{ marginTop: 4 }}>
+              <Row k="ความพึงพอใจเฉลี่ย" v={`${satAvg(o.satisfaction).toFixed(2)}/3 (${Math.round(satAvg(o.satisfaction) / 3 * 100)}%)`} />
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
+                {SAT_DIMS.filter(d => o.satisfaction?.[d.key]).map(d => { const lv = SAT_LEVELS.find(l => l.v === Number(o.satisfaction[d.key])); return (
+                  <span key={d.key} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 6, background: 'var(--bg3)', border: `1px solid ${lv?.color || 'var(--border)'}`, color: 'var(--text2)' }}>{d.label}: <b style={{ color: lv?.color }}>{lv?.t}</b></span>
+                ); })}
+              </div>
+            </div>}
           </StepBox>
           <StepBox n={7} title="อนุมัติปิด" done={o.current_step >= 7}>
             <Row k="อนุมัติเมื่อ" v={o.approve_at && fmtDateTime(o.approve_at)} /><Row k="ผู้อนุมัติ" v={o.approver_name} /><Img label="ลายเซ็นอนุมัติ" url={o.approve_sign} />
@@ -567,10 +769,15 @@ function DetailDrawer({ order, role, improvements, onOpenImprovement, onClose, o
       {/* 💬 คอมเมนต์ใต้ใบซ่อม — คุยงานติดใบ + 🔔 mention แจ้งเตือนเข้ากระดิ่ง */}
       <EventComments refKind="mtn_order" refId={o.id} contextLabel={`ใบซ่อม ${o.mo_no || `#${o.id}`}${o.machine_no ? ` (${o.machine_no})` : ''}`} />
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-        {can('mtn_repair', 'manage_master', role) ? <button onClick={del} style={{ ...btnGhost, color: '#ef4444', borderColor: '#ef4444' }}>🗑 ลบใบนี้</button> : <span />}
+        {canDelete('mtn_repair', 'manage_master', role) ? <button onClick={del} style={{ ...btnGhost, color: '#ef4444', borderColor: '#ef4444' }}>🗑 ลบใบนี้</button> : <span />}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {can('improvements', 'manage', role) && <button onClick={() => onOpenImprovement(o)} style={{ ...btnGhost, ...(repeatIssue ? { color: '#a78bfa', borderColor: '#7c6cf0' } : {}) }}>💡 เปิดโปรเจคปรับปรุง</button>}
-          <button onClick={() => printMoReport(o, dparts)} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
+          <button onClick={async () => {
+            const dept = o.mtn_dept || deptForItem(o.item_type);
+            const key = dept === 'MTN' ? 'mo_report_mtn' : 'mo_report';
+            const logo = await logoDataUrl(docFormSync(key).logo_url);
+            printMoReport(o, dparts, logo);
+          }} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
           <button onClick={onClose} style={btnGhost}>ปิด</button>
           {next && can('mtn_repair', next.perm, role) && <button onClick={() => onStep(next.step, false)} style={btnPri}>{next.label}</button>}
         </div>
@@ -580,15 +787,17 @@ function DetailDrawer({ order, role, improvements, onOpenImprovement, onClose, o
 }
 
 /* ── Step 2-7 action modal (รองรับ editMode) ─────────── */
-function StepModal({ step, order, editMode, techs, repairTypes, parts, fullName, signatureUrl, onClose, onSaved }) {
+function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRates = [], fullName, signatureUrl, onClose, onSaved }) {
   const o = order;
   const [f, setF] = useState(() => ({
     accepted_by: o.accepted_by || fullName || '', repair_type: o.repair_type || 'Breakdown Maintenance', assign_note: o.assign_note || '',
     target_done_at: o.target_done_at ? String(o.target_done_at).slice(0, 10) : '', assigned_to: o.assigned_to || '', reject_reason: o.reject_reason || '',
     root_cause: o.root_cause || '', solution: o.solution || '', tech_main: o.tech_main || '', tech_secondary: o.tech_secondary || '',
+    labor_cost: o.labor_cost ?? '', parts_cost: o.parts_cost ?? '',
     check_result: o.check_result || 'ตรวจสอบผ่าน', check_note: o.check_note || '', quality_related: o.quality_related || 'ไม่เกี่ยวกับคุณภาพ', checker_name: o.checker_name || fullName || '',
     qa_result: o.qa_result || 'ผ่านคุณภาพ', qa_note: o.qa_note || '', qa_checker: o.qa_checker || fullName || '',
     follow_up: o.follow_up || 'ไม่เกิดปัญหาซ้ำ', ho_checker: o.ho_checker || fullName || '',
+    satisfaction: o.satisfaction || {},
     approver_name: o.approver_name || fullName || '',
   }));
   const [afterFile, setAfterFile] = useState(null);
@@ -617,9 +826,10 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, fullName,
       const upd = { updated_at: new Date().toISOString() };
       if (step === 2) {
         if (!f.assigned_to && !isReject) { setSaving(false); return toast.error('มอบหมายช่าง'); }
-        if (isReject && !f.reject_reason.trim()) { setSaving(false); return toast.error('ระบุเหตุผล Reject'); }
+        if (isReject && !f.reject_reason.trim()) { setSaving(false); return toast.error('ระบุเหตุผลที่ตีกลับ'); }
         Object.assign(upd, { accept_at: editMode ? o.accept_at : new Date().toISOString(), accepted_by: f.accepted_by, repair_type: f.repair_type, assign_note: f.assign_note, target_done_at: f.target_done_at || null, assigned_to: f.assigned_to });
-        if (!editMode) { if (isReject) { upd.status = 'rejected'; upd.reject_reason = f.reject_reason; } else { upd.status = 'assigned'; upd.current_step = 2; } }
+        // Reject = "ตีกลับให้ผู้แจ้ง" (ผิดแผนก) — เด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ)
+        if (!editMode) { if (isReject) { upd.status = 'returned'; upd.reject_reason = f.reject_reason; upd.returned_at = new Date().toISOString(); upd.returned_from_dept = o.mtn_dept || null; } else { upd.status = 'assigned'; upd.current_step = 2; } }
         else if (isReject) upd.reject_reason = f.reject_reason;
         // ออกเลข MO ก่อนเลื่อนสถานะ — ถ้า RPC ล้ม (เน็ตสะดุด) ใบยังเป็น pending ให้กดสเตป 2 ใหม่ได้
         // (เดิมเลื่อน status→assigned ก่อน แล้ว RPC ล้ม → ใบค้าง assigned + mo_no=null ตลอดกาล ทำสเตป 2 ซ้ำไม่ได้)
@@ -627,7 +837,8 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, fullName,
         const { error: eUpd } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
         if (eUpd) { setSaving(false); return toast.error(eUpd.message); }
       } else if (step === 3) {
-        Object.assign(upd, { root_cause: f.root_cause, solution: f.solution, tech_main: f.tech_main, tech_secondary: f.tech_secondary });
+        Object.assign(upd, { root_cause: f.root_cause, solution: f.solution, tech_main: f.tech_main, tech_secondary: f.tech_secondary,
+          labor_cost: f.labor_cost === '' ? null : Number(f.labor_cost), parts_cost: f.parts_cost === '' ? null : Number(f.parts_cost) });
         if (!editMode) { upd.status = 'repaired'; upd.current_step = 3; upd.repair_done_at = new Date().toISOString(); }
         if (afterFile) { const b = await resizeImage(afterFile); upd.after_img = await uploadMtnImg(b, `after/${o.id}-${Date.now()}.jpg`); }
         await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
@@ -661,7 +872,8 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, fullName,
         await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
       } else if (step === 6) {
         const s = await resolveSign('ho_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น'); }
-        Object.assign(upd, { follow_up: f.follow_up, ho_checker: f.ho_checker, ho_reporter: o.reporter_prod || fullName, ho_sign: s });
+        { const sat = {}; SAT_DIMS.forEach(d => { const v = Number(f.satisfaction?.[d.key]); if (v >= 1 && v <= 3) sat[d.key] = v; });
+          Object.assign(upd, { follow_up: f.follow_up, ho_checker: f.ho_checker, ho_reporter: o.reporter_prod || fullName, ho_sign: s, satisfaction: Object.keys(sat).length ? sat : null }); }
         if (!editMode) { upd.status = 'handover'; upd.current_step = 6; upd.ho_at = new Date().toISOString(); }
         await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
       } else if (step === 7) {
@@ -670,7 +882,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, fullName,
         if (!editMode) { upd.status = 'closed'; upd.current_step = 7; upd.approve_at = new Date().toISOString(); }
         await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
       }
-      if (!editMode) { const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single(); const ev = isReject ? null : STEP_EVENT[step]; if (ev) notifyMtn(fresh, ev); }
+      if (!editMode) { const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single(); const ev = isReject ? 'mtn_returned' : STEP_EVENT[step]; if (ev) notifyMtn(fresh, ev); }
       setSaving(false); toast.success(editMode ? 'แก้ไขแล้ว' : 'บันทึกแล้ว'); onSaved();
     } catch (e) { setSaving(false); toast.error(e.message || 'บันทึกไม่สำเร็จ'); }
   };
@@ -681,7 +893,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, fullName,
       <div style={{ display: 'grid', gap: 12 }}>
         {step === 2 && <>
           <Field label="ประเภทงานซ่อม" required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{repairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
-          {isReject ? <Field label="เหตุผล Reject" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field> : <>
+          {isReject ? <><div style={{ fontSize: 11.5, color: '#e0894a', background: 'rgba(224,137,74,0.1)', border: '1px solid rgba(224,137,74,0.3)', borderRadius: 8, padding: '7px 10px' }}>↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
             <Field label="ผู้รับปัญหางาน"><input value={f.accepted_by} onChange={e => set('accepted_by', e.target.value)} style={inp} /></Field>
             <Field label="มอบหมายช่างซ่อม" required><select value={f.assigned_to} onChange={e => set('assigned_to', e.target.value)} style={inp}><option value="">— เลือกช่าง —</option>{techs.map(t => <option key={t.id} value={t.name}>{t.name}{t.dept ? ` · ${t.dept}` : ''}</option>)}</select></Field>
             <DateField label="กำหนดเสร็จ" value={f.target_done_at} onChange={v => set('target_done_at', v)} />
@@ -709,6 +921,16 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, fullName,
             ))}
             {editMode && <div style={{ fontSize: 11, color: 'var(--muted)' }}>* แก้ไข: เพิ่มอะไหล่ใหม่ได้ (รายการเดิมที่หักสต็อกไปแล้วไม่ถูกลบ)</div>}
           </div>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Field label="(1) ค่าแรงซ่อม (บาท)">
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input type="number" value={f.labor_cost} onChange={e => set('labor_cost', e.target.value)} placeholder="0" style={{ ...inp, flex: 1 }} />
+                {laborRates.length > 0 && <select value="" onChange={e => { if (e.target.value !== '') set('labor_cost', e.target.value); }} style={{ ...inp, width: 150 }} title="เลือกจากราคามาตรฐาน"><option value="">มาตรฐาน…</option>{laborRates.map(r => <option key={r.id} value={r.price}>{r.name} · {r.price} {r.unit}</option>)}</select>}
+              </div>
+            </Field>
+            <Field label="(2) ค่าอะไหล่/อุปกรณ์ (บาท)"><input type="number" value={f.parts_cost} onChange={e => set('parts_cost', e.target.value)} placeholder="0" style={inp} /></Field>
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>รวมค่าใช้จ่าย (1)+(2) = <b style={{ color: 'var(--text)' }}>{((Number(f.labor_cost) || 0) + (Number(f.parts_cost) || 0)).toLocaleString()}</b> บาท · ตั้งราคามาตรฐานที่แท็บ ⚙️ ข้อมูลตั้งต้น → 💰 ค่าแรงมาตรฐาน</div>
         </>}
         {step === 4 && <>
           <Field label="ผลงานหลังซ่อม"><select value={f.check_result} onChange={e => set('check_result', e.target.value)} style={inp}>{CHECK_RESULTS.map(r => <option key={r}>{r}</option>)}</select></Field>
@@ -725,6 +947,24 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, fullName,
         {step === 6 && <>
           <Field label="ติดตามหลังซ่อม"><select value={f.follow_up} onChange={e => set('follow_up', e.target.value)} style={inp}>{FOLLOW_OPTS.map(r => <option key={r}>{r}</option>)}</select></Field>
           <Field label="ชื่อผู้ตรวจสอบ"><input value={f.ho_checker} onChange={e => set('ho_checker', e.target.value)} style={inp} /></Field>
+          <Field label="ประเมินความพึงพอใจบริการซ่อม (KPI หน่วยงานซ่อม)">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {SAT_DIMS.map(d => (
+                <div key={d.key} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1 1 180px', minWidth: 160, fontSize: 12.5, color: 'var(--text)' }}>{d.label}</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {SAT_LEVELS.map(lv => {
+                      const on = Number(f.satisfaction?.[d.key]) === lv.v;
+                      return <button key={lv.v} type="button" onClick={() => set('satisfaction', { ...f.satisfaction, [d.key]: on ? undefined : lv.v })}
+                        style={{ padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                          border: `1px solid ${on ? lv.color : 'var(--border)'}`, background: on ? lv.color : 'var(--bg3)', color: on ? '#0b0d14' : 'var(--text2)' }}>{lv.t}</button>;
+                    })}
+                  </div>
+                </div>
+              ))}
+              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ให้คะแนนโดยหน่วยงานผู้แจ้ง — ไม่บังคับ ข้ามได้ (เว้นว่าง = ไม่ประเมิน)</div>
+            </div>
+          </Field>
         </>}
         {step === 7 && <>
           <Field label="ชื่อผู้อนุมัติ"><input value={f.approver_name} onChange={e => set('approver_name', e.target.value)} style={inp} /></Field>
@@ -750,7 +990,11 @@ function KpiTab({ orders, scopeLines, lineOpts }) {
     for (const o of rows) { const r = minutesBetween(o.report_at, o.accept_at); if (r != null) resp.push(r); const t = minutesBetween(o.accept_at, o.repair_done_at); if (t != null) ttr.push(t); const b = minutesBetween(o.report_at, o.repair_done_at); if (b != null) bd.push(b); }
     const avg = a => a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : null;
     const byChar = {}; rows.forEach(o => { const k = o.problem_characteristic || 'อื่นๆ'; byChar[k] = (byChar[k] || 0) + 1; });
-    return { n: rows.length, resp: avg(resp), ttr: avg(ttr), bd: avg(bd), pareto: Object.entries(byChar).sort((a, b) => b[1] - a[1]).slice(0, 10) };
+    // ความพึงพอใจ (KPI หน่วยงานซ่อม) — เฉลี่ยรวม + รายด้าน จากใบที่มีการประเมิน
+    const rated = rows.filter(o => satAvg(o.satisfaction) != null);
+    const satOverall = rated.length ? rated.reduce((s, o) => s + satAvg(o.satisfaction), 0) / rated.length : null;
+    const satByDim = SAT_DIMS.map(d => { const vs = rated.map(o => Number(o.satisfaction?.[d.key])).filter(v => v >= 1 && v <= 3); return { label: d.label, avg: vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null, n: vs.length }; });
+    return { n: rows.length, resp: avg(resp), ttr: avg(ttr), bd: avg(bd), pareto: Object.entries(byChar).sort((a, b) => b[1] - a[1]).slice(0, 10), satOverall, satByDim, satN: rated.length };
   }, [rows]);
   const Card = ({ t, v, c }) => <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, flex: 1, minWidth: 160 }}><div style={{ fontSize: 12, color: 'var(--muted)' }}>{t}</div><div style={{ fontSize: 26, fontWeight: 800, color: c || 'var(--text)', marginTop: 2 }}>{v}</div></div>;
   return (
@@ -761,7 +1005,18 @@ function KpiTab({ orders, scopeLines, lineOpts }) {
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
         <Card t="งานที่ปิด (ในช่วง)" v={stat.n} /><Card t="เข้าดำเนินการเฉลี่ย (Response)" v={fmtMin(stat.resp)} c="#3b82f6" /><Card t="เวลาซ่อมเฉลี่ย (TTR)" v={fmtMin(stat.ttr)} c="#f59e0b" /><Card t="Breakdown เฉลี่ย" v={fmtMin(stat.bd)} c="#ef4444" />
+        <Card t={`ความพึงพอใจเฉลี่ย (${stat.satN} ใบ)`} v={stat.satOverall != null ? `${Math.round(stat.satOverall / 3 * 100)}%` : '—'} c={stat.satOverall == null ? 'var(--muted)' : stat.satOverall >= 2.5 ? '#22c55e' : stat.satOverall >= 2 ? '#f59e0b' : '#ef4444'} />
       </div>
+      {stat.satN > 0 && <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>ความพึงพอใจบริการซ่อม รายด้าน (KPI หน่วยงานซ่อม)</div>
+        {stat.satByDim.map(d => { const pct = d.avg != null ? Math.round(d.avg / 3 * 100) : 0; const col = d.avg == null ? 'var(--muted)' : d.avg >= 2.5 ? '#22c55e' : d.avg >= 2 ? '#f59e0b' : '#ef4444'; return (
+          <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+            <div style={{ width: 200, fontSize: 12.5, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</div>
+            <div style={{ flex: 1, height: 16, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: col }} /></div>
+            <div style={{ width: 70, textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: col }}>{d.avg != null ? `${d.avg.toFixed(2)}/3` : '—'}</div>
+          </div>
+        ); })}
+      </div>}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>พาเรโต้ ลักษณะปัญหา (Top 10)</div>
         {stat.pareto.map(([k, n]) => { const max = stat.pareto[0][1]; return <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}><div style={{ width: 190, fontSize: 12.5, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k}</div><div style={{ flex: 1, height: 16, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden' }}><div style={{ width: `${(n / max) * 100}%`, height: '100%', background: '#f59e0b' }} /></div><div style={{ width: 34, textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>{n}</div></div>; })}
@@ -772,29 +1027,39 @@ function KpiTab({ orders, scopeLines, lineOpts }) {
 }
 
 /* ── Master tab (ช่าง / อะไหล่+stock / taxonomy / ชนิดอุปกรณ์) ── */
-function MasterTab({ techs, parts, problemTypes, itemTypes, fullName, reloadMasters }) {
+function MasterTab({ techs, parts, problemTypes, itemTypes, laborRates = [], mtnDepts = MTN_DEPTS, fullName, reloadMasters }) {
   const [sub, setSub] = useState('tech');
   const reload = () => reloadMasters();
   const addRow = async (table, payload) => { const { error } = await supabaseDR.from(table).insert(payload); if (error) return toast.error(error.message); reload(); };
   const updRow = async (table, id, payload) => { const { error } = await supabaseDR.from(table).update(payload).eq('id', id); if (error) return toast.error(error.message); reload(); };
   const delRow = async (table, id) => { if (!confirm('ลบรายการนี้?')) return; const { error } = await supabaseDR.from(table).update({ is_active: false }).eq('id', id); if (error) return toast.error(error.message); reload(); };
 
-  // ── ช่าง (มี dept) ──
+  // ── ช่าง (มี dept) — ช่าง = พนักงานทีมช่าง (จากฐาน employees, แก้ที่หน้าพนักงาน) + ช่างเฉพาะกิจเดิม (mtn_technicians) ──
   const [ntech, setNtech] = useState({ name: '', dept: 'MTN' });
+  const legacyCount = techs.filter(t => !t.from_employee).length;
   const TechList = () => (
     <div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-        <input value={ntech.name} onChange={e => setNtech(p => ({ ...p, name: e.target.value }))} placeholder="ชื่อช่าง" style={{ ...inp, width: 260 }} />
-        <select value={ntech.dept} onChange={e => setNtech(p => ({ ...p, dept: e.target.value }))} style={{ ...inp, width: 150 }}>{MTN_DEPTS.map(d => <option key={d}>{d}</option>)}</select>
-        <button onClick={() => { if (!ntech.name) return; addRow('mtn_technicians', { name: ntech.name, dept: ntech.dept, sort_order: techs.length + 1 }); setNtech({ name: '', dept: ntech.dept }); }} style={btnPri}>+ เพิ่มช่าง</button>
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px' }}>
+        💡 ช่าง = <b>พนักงานที่ section เป็นทีมช่าง</b> (MTN/JIG/DIE) จากฐานข้อมูลพนักงาน — เพิ่ม/แก้ที่หน้า <b>ฐานข้อมูลพนักงาน</b> (มีสกิลได้เหมือน operator) · ด้านล่างเพิ่มได้เฉพาะ "ช่างเฉพาะกิจ" ที่ไม่ได้อยู่ในฐานพนักงาน
       </div>
-      {MTN_DEPTS.map(dep => { const list = techs.filter(t => (t.dept || 'MTN') === dep); if (!list.length) return null; return (
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+        <input value={ntech.name} onChange={e => setNtech(p => ({ ...p, name: e.target.value }))} placeholder="ชื่อช่างเฉพาะกิจ (นอกฐานพนักงาน)" style={{ ...inp, width: 260 }} />
+        <select value={ntech.dept} onChange={e => setNtech(p => ({ ...p, dept: e.target.value }))} style={{ ...inp, width: 150 }}>{mtnDepts.map(d => <option key={d}>{d}</option>)}</select>
+        <button onClick={() => { if (!ntech.name) return; addRow('mtn_technicians', { name: ntech.name, dept: ntech.dept, sort_order: legacyCount + 1 }); setNtech({ name: '', dept: ntech.dept }); }} style={btnPri}>+ เพิ่มช่างเฉพาะกิจ</button>
+      </div>
+      {mtnDepts.map(dep => { const list = techs.filter(t => (t.dept || 'MTN') === dep); if (!list.length) return null; return (
         <div key={dep} style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent2)', marginBottom: 4 }}>🏢 {dep} ({list.length})</div>
-          <div style={{ display: 'grid', gap: 6 }}>{list.map(it => (
+          <div style={{ display: 'grid', gap: 6 }}>{list.map(it => it.from_employee ? (
+            <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', opacity: 0.9 }}>
+              <span style={{ flex: '2 1 180px', fontSize: 13 }}>{it.name}{it.emp_code ? <span style={{ color: 'var(--muted)', fontSize: 11 }}> · {it.emp_code}</span> : null}</span>
+              <span style={{ fontSize: 10.5, padding: '1px 7px', borderRadius: 4, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', fontWeight: 700, marginLeft: 'auto' }}>👤 จากฐานพนักงาน</span>
+            </div>
+          ) : (
             <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
               <input defaultValue={it.name} onBlur={e => e.target.value !== it.name && updRow('mtn_technicians', it.id, { name: e.target.value })} style={{ ...inp, flex: '2 1 180px', width: 'auto' }} />
-              <select defaultValue={it.dept || 'MTN'} onChange={e => updRow('mtn_technicians', it.id, { dept: e.target.value })} style={{ ...inp, flex: '1 1 120px', width: 'auto' }}>{MTN_DEPTS.map(d => <option key={d}>{d}</option>)}</select>
+              <select defaultValue={it.dept || 'MTN'} onChange={e => updRow('mtn_technicians', it.id, { dept: e.target.value })} style={{ ...inp, flex: '1 1 120px', width: 'auto' }}>{mtnDepts.map(d => <option key={d}>{d}</option>)}</select>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>เฉพาะกิจ</span>
               <button onClick={() => delRow('mtn_technicians', it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
             </div>))}</div>
         </div>); })}
@@ -840,6 +1105,32 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, fullName, reloadMast
     </div>
   );
 
+  // ── ค่าแรงมาตรฐาน (standard price ค่าแรงซ่อม) ──
+  const [nrate, setNrate] = useState({ name: '', unit: 'บาท/ชม.', price: '', dept: '' });
+  const LaborList = () => (
+    <div>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>ราคามาตรฐานค่าแรงซ่อม — ช่างกรอกไว้ที่นี่ แล้วเลือกมาใส่ในใบ MO ขั้นซ่อม (พิมพ์ลงฟอร์ม FM-MTN-006 ช่องค่าซ่อม)</div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+        <input value={nrate.name} onChange={e => setNrate(p => ({ ...p, name: e.target.value }))} placeholder="ประเภทงาน/ระดับช่าง" style={{ ...inp, width: 240 }} />
+        <input type="number" value={nrate.price} onChange={e => setNrate(p => ({ ...p, price: e.target.value }))} placeholder="ราคา" style={{ ...inp, width: 100 }} />
+        <input value={nrate.unit} onChange={e => setNrate(p => ({ ...p, unit: e.target.value }))} placeholder="หน่วย" style={{ ...inp, width: 110 }} />
+        <select value={nrate.dept} onChange={e => setNrate(p => ({ ...p, dept: e.target.value }))} style={{ ...inp, width: 140 }}><option value="">ทุกทีม</option>{mtnDepts.map(d => <option key={d}>{d}</option>)}</select>
+        <button onClick={() => { if (!nrate.name) return; addRow('mtn_labor_rates', { name: nrate.name, price: Number(nrate.price) || 0, unit: nrate.unit, dept: nrate.dept || null, sort_order: laborRates.length + 1 }); setNrate({ name: '', unit: nrate.unit, price: '', dept: '' }); }} style={btnPri}>+ เพิ่มราคา</button>
+      </div>
+      <div style={{ display: 'grid', gap: 6 }}>
+        {laborRates.map(r => (
+          <div key={r.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+            <input defaultValue={r.name} onBlur={e => e.target.value !== r.name && updRow('mtn_labor_rates', r.id, { name: e.target.value })} style={{ ...inp, flex: '2 1 200px', width: 'auto' }} />
+            <input type="number" defaultValue={r.price} onBlur={e => Number(e.target.value) !== Number(r.price) && updRow('mtn_labor_rates', r.id, { price: Number(e.target.value) || 0 })} style={{ ...inp, width: 100 }} />
+            <input defaultValue={r.unit || ''} onBlur={e => e.target.value !== (r.unit || '') && updRow('mtn_labor_rates', r.id, { unit: e.target.value })} style={{ ...inp, width: 100 }} />
+            <select defaultValue={r.dept || ''} onChange={e => updRow('mtn_labor_rates', r.id, { dept: e.target.value || null })} style={{ ...inp, width: 130 }}><option value="">ทุกทีม</option>{mtnDepts.map(d => <option key={d}>{d}</option>)}</select>
+            <button onClick={() => delRow('mtn_labor_rates', r.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
+          </div>))}
+        {!laborRates.length && <div style={{ color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีราคามาตรฐาน — เพิ่มด้านบน</div>}
+      </div>
+    </div>
+  );
+
   const SimpleList = ({ table, items, fields, addLabel }) => {
     const [nw, setNw] = useState({});
     return (
@@ -857,14 +1148,55 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, fullName, reloadMast
     );
   };
 
+  // ── เลขรัน MO ต่อทีม (ตั้งรหัสทีม + เลขเริ่มต้น เพื่อต่อจากระบบเดิม) ──
+  const [moRows, setMoRows] = useState([]);
+  const [moErr, setMoErr] = useState(false);
+  const ymdToday = (() => { const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', year: '2-digit' }).formatToParts(new Date()); const g = t => p.find(x => x.type === t).value; return `${g('day')}${g('month')}${g('year')}`; })();
+  const loadMoSeq = async () => {
+    try {
+      const [{ data: teams, error: e1 }, { data: seqs }] = await Promise.all([
+        supabaseDR.from('mtn_teams').select('id, dept_name, mo_code, sort_order').eq('is_active', true).order('sort_order'),
+        supabaseDR.from('mtn_mo_seq').select('team_code, last_seq'),
+      ]);
+      if (e1) throw e1;
+      const byCode = {}; (seqs || []).forEach(s => { byCode[s.team_code] = s.last_seq; });
+      setMoRows((teams || []).map(t => ({ ...t, last_seq: byCode[t.mo_code] ?? 0 }))); setMoErr(false);
+    } catch { setMoErr(true); }
+  };
+  useEffect(() => { if (sub === 'mo') loadMoSeq(); }, [sub]); // eslint-disable-line react-hooks/exhaustive-deps
+  const saveMoCode = async (t, code) => { const c = (code || '').trim().toUpperCase(); if (!c) return; const { error } = await supabaseDR.from('mtn_teams').update({ mo_code: c }).eq('id', t.id); if (error) return toast.error(error.message); toast.success('บันทึกรหัสทีมแล้ว'); loadMoSeq(); };
+  const saveMoSeq = async (code, val) => { const n = Math.max(0, parseInt(val, 10) || 0); const { error } = await supabaseDR.from('mtn_mo_seq').upsert({ team_code: code, last_seq: n, updated_at: new Date().toISOString() }, { onConflict: 'team_code' }); if (error) return toast.error(error.message); toast.success('บันทึกเลขล่าสุดแล้ว'); loadMoSeq(); };
+  const MoSeqList = () => (
+    <div>
+      <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.7 }}>
+        เลข MO ออกตอน <b>รับงาน (ขั้น 2)</b> รูปแบบ <code>รหัสทีม-ประเภท-วันเดือนปี-เลขรัน</code> เช่น <b style={{ color: 'var(--accent)' }}>MTN-BM-{ymdToday}-0678</b><br />
+        เลขรัน<b>นับต่อเนื่องต่อทีม</b> (ไม่รีเซ็ตรายวัน) · ตั้ง "เลขล่าสุด" เพื่อ<b>ต่อจากระบบเดิม</b> — เช่น MTN เคยออกถึง 677 → ใส่ <b>677</b> ใบถัดไปจะเป็น 0678
+      </div>
+      {moErr ? <div style={{ color: 'var(--muted)', padding: 16, background: 'var(--bg2)', borderRadius: 8 }}>⚠️ ยังไม่ได้ apply migration เลข MO ต่อทีม (<code>20260724_mtn_mo_per_team.sql</code>) — apply ก่อนถึงจะตั้งค่าได้</div> :
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {moRows.map(t => (
+            <div key={t.id} style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+              <b style={{ flex: '1 1 120px', fontSize: 13 }}>{t.dept_name}</b>
+              <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>รหัส <input defaultValue={t.mo_code || ''} onBlur={e => e.target.value.trim().toUpperCase() !== (t.mo_code || '') && saveMoCode(t, e.target.value)} style={{ ...inp, width: 74, marginLeft: 4, textTransform: 'uppercase', fontWeight: 700 }} /></label>
+              <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>เลขล่าสุด <input type="number" min="0" defaultValue={t.last_seq} onBlur={e => Number(e.target.value) !== t.last_seq && saveMoSeq(t.mo_code, e.target.value)} style={{ ...inp, width: 96, marginLeft: 4 }} /></label>
+              <span style={{ fontSize: 11.5, color: 'var(--accent)' }}>ถัดไป: {t.mo_code}-BM-{ymdToday}-{String((t.last_seq || 0) + 1).padStart(4, '0')}</span>
+            </div>
+          ))}
+          {!moRows.length && <div style={{ color: 'var(--muted)' }}>ยังไม่มีทีมในตาราง mtn_teams</div>}
+        </div>}
+    </div>
+  );
+
   return (
     <div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-        {[['tech', '👷 ช่าง (ทุกทีม)'], ['parts', '🔩 อะไหล่ + สต็อก'], ['prob', '🛑 ลักษณะปัญหา'], ['item', '⚙️ ชนิดอุปกรณ์']].map(([k, t]) =>
+        {[['tech', '👷 ช่าง (ทุกทีม)'], ['parts', '🔩 อะไหล่ + สต็อก'], ['labor', '💰 ค่าแรงมาตรฐาน'], ['mo', '🔢 เลขรัน MO'], ['prob', '🛑 ลักษณะปัญหา'], ['item', '⚙️ ชนิดอุปกรณ์']].map(([k, t]) =>
           <button key={k} onClick={() => setSub(k)} style={{ ...(sub === k ? btnPri : btnGhost), padding: '7px 14px', fontSize: 12.5 }}>{t}</button>)}
       </div>
       {sub === 'tech' && TechList()}
       {sub === 'parts' && PartList()}
+      {sub === 'labor' && LaborList()}
+      {sub === 'mo' && MoSeqList()}
       {sub === 'prob' && <SimpleList table="mtn_problem_types" items={problemTypes} addLabel="เพิ่มปัญหา" fields={[{ k: 'characteristic', ph: 'ลักษณะปัญหา', w: 240 }, { k: 'detail', ph: 'รายละเอียด', w: 320 }]} />}
       {sub === 'item' && <SimpleList table="mtn_item_types" items={itemTypes} addLabel="เพิ่มชนิด" fields={[{ k: 'name', ph: 'ชนิดอุปกรณ์', w: 240 }]} />}
     </div>

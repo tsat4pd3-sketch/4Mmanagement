@@ -5,6 +5,7 @@
 
 อัพเดทล่าสุด: 2026-07-14 (ใหม่ §5.1 หมุดจุดตรวจใช้ `CalloutPin` — ลูกศรชี้จุดจริง + วงเลขหลบข้าง ไม่บังจุด · §6.5 ห้ามเหลือขอบข้างว่างบน landscape · บอร์ดเวลา: HH:00 + ชิป ⏳ ไม่ระบุเวลา · ปุ่ม 🏷️ โชว์/ซ่อน สองสถานะ · pillMaxW/subPillMaxW · ลำดับจุด คน→เครื่องจักร→WIP · mobile: useIsMobile hook / time board เลื่อนแนวนอนบนมือถือ / mgrid·tbtn / pointer-drag)
 อัพเดท 2026-07-15: §5.1 viewer วางจุดต้องซูมได้ (default เต็มความกว้างกรอบ ไม่ใช่ขนาดไฟล์)
+อัพเดท 2026-07-21: ใหม่ §5.3 dropdown ลำดับชั้นองค์กรต้อง cascade + ล้างตัวลูกเมื่อเปลี่ยนตัวแม่
 
 ---
 
@@ -133,10 +134,25 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 ### Popup/Modal ต้อง "ขยายกว้าง" ก่อนยอมสูงเกินจอ (2026-07-10)
 - จอ landscape (PC/tablet/TV): modal ที่เนื้อหายาว **ห้ามทำทรงแคบสูงแล้วให้ scroll แนวตั้ง** — ให้ขยายกว้าง `width: min(96vw, 1400-1500px)` แล้วจัดเนื้อหาเป็น **2 คอลัมน์** (`gridTemplateColumns: '1fr 1fr'` เมื่อจอ ≥1100px; header/ปุ่มยืนยัน full-width ด้วย `gridColumn: '1 / -1'`) · `maxHeight: 94vh + overflowY: auto` เป็นแค่ fallback สุดท้าย
 - ต้นแบบ: modal ตรวจสอบคำขอปิดกะ / ปิดกะ ใน `DailyReport.jsx`
+- **CSS กลาง `.modal-2col` (2026-07-21 — อยู่ใน index.css):** ฟอร์มใน modal ติด class นี้ + แบ่งลูกเป็น `.m2c-col` (คอลัมน์) / `.m2c-span` (เต็มแถว เช่น แถวปุ่มบันทึก) → จอ ≥1100px เป็น grid 2 คอลัมน์อัตโนมัติ จอแคบยุบเป็นคอลัมน์เดียว — modal ฟอร์มยาวใหม่ให้ใช้ class นี้แทนเขียน grid เอง (ต้นแบบ: modal แก้ไขพนักงานใน operator.jsx) · กวาดแก้แล้ว 2026-07-21: CAPA/8D + NCR (QualityControl), จ่าย/ปรับ stock + รอบจัดส่ง (LineStock), PMSetup, Improvements, แก้เวลากะ (DailyReport)
 
 ### Section ยาวในหน้า ต้องย่อ/ขยายได้ (minimize/maximize)
 - section รายการยาว (Prod Orders, Downtime, งานเสีย ฯลฯ) ต้องมีปุ่มพับ ▼ ที่หัว section (หัวแสดงชื่อ+จำนวนเสมอ) — จำสถานะใน `localStorage` (`dr_live_collapse_<section>` ฯลฯ) · default = ขยาย ยกเว้น section ว่าง
 - ลด vertical overflow ของหน้าหลักให้เห็นภาพรวมได้ในจอเดียว แล้วค่อยกดขยายส่วนที่สนใจ
+- ถ้า section ว่างตอน mount แล้วข้อมูลมาทีหลัง (โหลด async) ให้เก็บเฉพาะ "override ของ user" ใน state — default เป็นค่าสด จะได้กางเองเมื่อข้อมูลมา (pattern `CollapseCard` ใน ProductHistory.jsx)
+
+### ตาราง/ลิสต์ข้อมูลเยอะ ต้องเป็น drill-down hierarchy (2026-07-30 — คำสั่ง user)
+รายการดิบหลักร้อยแถวขึ้นไป **ห้าม render แบนทั้งก้อน** — จัดเป็นชั้น "สรุป → เจาะ" (ต้นแบบ: ตารางใบผลิต `ProductHistory.jsx` วัน → ไลน์·กะ → รายใบ):
+- **ระดับบนสุด = ระดับที่ user ดูบ่อยสุด** (เช่น รายวัน — "รายใบไม่ได้เน้นดูบ่อย รายวันสำคัญสุด") · คลิกแถวเพื่อแตกชั้นถัดไป ▸/▾ นำหน้า · ชั้นลึกลง indent เพิ่ม (`paddingLeft` +24-28/ชั้น) + สลับพื้น `var(--bg2)` ให้เห็นระดับ
+- **แถวสรุปทุกชั้นโชว์ aggregate ครบ** (จำนวน/เป้า/ผลิตได้/NG ฯลฯ) — อ่านจบได้โดยไม่ต้องเจาะ ห้ามบังคับ user คลิกเพื่อเห็นตัวเลขรวม
+- **จำกัดจำนวนแถวระดับบนที่แสดงครั้งแรก** + ปุ่ม "▼ แสดงอีก N (ทั้งหมด M)" — ห้ามตัดข้อมูลเงียบๆ และห้ามปล่อย DOM หลายร้อยแถวโดยไม่จำเป็น
+- **ตัวเลือก entity (ลิสต์เลือกสินค้า/พนักงาน/เครื่อง) ที่ยาว:** จัดกลุ่มตามลำดับชั้นที่มีความหมาย (เช่น ตามไลน์) + หัวกลุ่ม sticky + เลื่อนในกรอบ `maxHeight` — ห้ามเป็น chip กองรวม · เลือกแล้ว**พับลิสต์อัตโนมัติ** และต้องมีปุ่มย้อนกลับชัดเจนบนการ์ดที่เลือก ("✕ ปิด — เลือกใหม่") ไม่ใช่แถบตัวหนังสือเล็กๆ
+
+### กราฟแท่งรายวัน/ไทม์ซีรีส์ (2026-07-30 — คำสั่ง user)
+- **แกนวันต่อเนื่อง ห้ามข้ามวันที่ไม่มีข้อมูล** — วันว่างแสดงเป็นตอเทาเตี้ย + tooltip "ไม่มีการผลิต" (เห็นช่วงหยุดคาตา ไม่หลอกว่าผลิตติดกัน) · cap จำนวนแท่ง (~400) กันช่วงยาวทำหน้าค้าง
+- **สีตามความหมายมาตรฐาน: เขียว (`var(--accent)`) = ของดี · แดง = NG** ซ้อนบนแท่งเดียวกัน (สเกลจากยอดรวม) + **legend ใต้กราฟเสมอ**
+- **กราฟต้องมี caption อธิบายว่าความสูง/สีหมายถึงอะไร** — กราฟที่ต้องเดาความหมาย = ไม่ผ่าน · รายการน้อย (≤20 แท่ง) โชว์ตัวเลขบนหัวแท่งเลย ไม่ต้องรอ hover (จอทัชไม่มี hover — ข้อ 4)
+- ป้ายวันใต้แท่งฟอนต์ ≥11px — ถ้าแน่นให้เว้นแท่งเว้นป้าย ไม่ใช่ลดฟอนต์
 
 ## 5.1 Balloon จุดตรวจบน drawing/รูปอ้างอิง (QA `/qa-setup` · PM Setup)
 
@@ -149,11 +165,13 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
   // ฟอนต์เลขใน balloon = max(11, BK*0.42-0.45) · ขอบขาว = max(2, BK*0.07)
   ```
 - **Edge clamp**: ตำแหน่ง*แสดงผล*ต้อง clamp ไม่ให้ balloon ตกขอบรูป (เผื่อ `BK*0.7` ทุกด้าน; anchor แบบห้อยลง `translate(-50%,-100%)` เผื่อหัวบน `BK+4px`) — **ค่าจริงใน DB ไม่เปลี่ยน**
-- **หัก letterbox เสมอ (2026-07-10)**: `<img objectFit:'contain'>` ที่โดน `maxHeight`/สัดส่วน container บีบจะเกิดแถบว่างซ้าย-ขวา/บน-ล่าง → **% ของ container ≠ % ของรูปจริง** ห้ามวาง balloon เป็น % ของ container ตรงๆ — ต้องวัดกล่องรูปจริง (naturalWidth/Height เทียบกล่อง render) ได้ `{ox, oy, rw, rh}` แล้ววาง balloon ใน layer `position:absolute; left:ox; top:oy; width:rw; height:rh` (ใช้ % ของ layer นี้) และ**การแปลงตำแหน่งคลิกวาง pin ต้องวัดจาก layer เดียวกัน** · ใช้ hook กลาง `src/utils/useImgBox.js` (คณิตเดียวกับ `MachineFloorMap.jsx`) — ทั้ง 3 renderer ฝั่ง PM ใช้แล้ว และ `maxHeight` ของรูป **default = 300 เท่ากัน** (จอวางกับจอดูเห็นสัดส่วนเดียวกัน) · ข้อยกเว้น: จอตรวจ (`JigSpinCheck`) โหมด desktop 2 คอลัมน์รับ prop `maxH` ให้สูงขึ้นได้ (เช่น 460) เพราะรูปอยู่คอลัมน์กว้าง — pin ยังตรงเพราะหัก letterbox แล้ว (ไม่มีโมเดล 3D แล้ว — เหลือแค่รูป spin)
+- **หัก letterbox เสมอ (2026-07-10)**: `<img objectFit:'contain'>` ที่โดน `maxHeight`/สัดส่วน container บีบจะเกิดแถบว่างซ้าย-ขวา/บน-ล่าง → **% ของ container ≠ % ของรูปจริง** ห้ามวาง balloon เป็น % ของ container ตรงๆ — ต้องวัดกล่องรูปจริง (naturalWidth/Height เทียบกล่อง render) ได้ `{ox, oy, rw, rh}` แล้ววาง balloon ใน layer `position:absolute; left:ox; top:oy; width:rw; height:rh` (ใช้ % ของ layer นี้) และ**การแปลงตำแหน่งคลิกวาง pin ต้องวัดจาก layer เดียวกัน** · ใช้ hook กลาง `src/utils/useImgBox.js` (คณิตเดียวกับ `MachineFloorMap.jsx`) — ทั้ง 3 renderer ฝั่ง PM ใช้แล้ว · **WYSIWYG จอวาง↔จอตรวจ มาจาก useImgBox (หัก letterbox) ไม่ได้พึ่ง maxHeight เท่ากัน** ดังนั้น maxHeight ปรับให้เหมาะกับพื้นที่/แนวรูปได้อิสระ (ดูบล็อก "รูป spin แนวตั้ง" ด้านล่าง) — pin ยังตรงเสมอ (ไม่มีโมเดล 3D แล้ว — เหลือแค่รูป spin)
 - พิกัดเก็บเป็น **% ของรูป** (`pos_x/pos_y` 0–100 ฝั่ง QA, `x_pos/y_pos` 0–1 ฝั่ง PM) — **ค่าที่เก็บคือ "จุดจริง" ที่ต้องตรวจเสมอ** (ไม่ใช่ตำแหน่งวงเลข)
 - **หมุด = callout ไม่ใช่วงทับจุด (2026-07-14 — คำสั่ง user: วงเลขบังจุดที่จะตรวจ):** ใช้ component กลาง **`src/components/CalloutPin.jsx`** ทุก renderer (QA + PM) — วาด **ลูกศร/จุดเป้าที่พิกัดจริง + เส้นชี้ + วงเลขหลบไปด้านข้าง** (offset อัตโนมัติ หลบขอบรูป: ใกล้ขวา→ซ้าย, ใกล้บน→ล่าง) วงเลขจึงไม่บังจุด · วงเลขคือตัวคลิก/ลาก · จุด+เส้น+ลูกศร `pointerEvents:none`
   - **เลิกใช้ anchor เดิม** (QA `translate(-50%,-50%)` / PM `translate(-50%,-100%)`) — CalloutPin คุมตำแหน่งเองจาก `xPct/yPct` (จุดจริง) + `layerW/layerH` (กล่องรูป) · **ห้ามกลับไปวางวงเลขทับพิกัดตรงๆ**
   - ใช้แล้วครบ**ทั้ง 4 renderer**: `SpinAnnotator.jsx` (วาง), `PMSetup.jsx` (ตั้งค่า), `PMCheckData.jsx` (ตรวจ/ดูผล — JigSpinCheck), `QAInspectionSetup.jsx` (QA drawing) — **แก้ CalloutPin ที่เดียว มีผลทุกหน้า** · หน้าใหม่ที่มีหมุดจุดตรวจให้ reuse component นี้ ห้ามวาดหมุดเอง
+  - **ต้องเด้งบนพื้นหลังทุกสี (2026-07-24 — คำสั่ง user: ลูกศรจมกับภาพ):** CalloutPin วาดเส้นชี้เป็น 2 ชั้น (casing มืด `rgba(0,0,0,0.55)` ใต้ + เส้นสีทับ) + `filter: drop-shadow` ที่ svg + ลูกศรมีขอบขาวหนา — กันเส้น/ลูกศรสีกลืนกับรูปเครื่องจักร (เช่น marker เขียวบนพื้นเขียว) · ปรับความเข้มที่ CalloutPin จุดเดียว
+- **รูป spin ฝั่ง PM = แนวตั้งเป็นหลัก (ถ่ายจากมือถือ) — container หุ้มรูปพอดี (2026-07-24 — คำสั่ง user):** `JigSpinCheck`/`SpinAnnotator` เดิม `<img width:100% maxHeight:300>` ทำให้รูปแนวตั้งมีแถบเทาข้างเสียพื้นที่ · เปลี่ยนเป็น container `width:fit-content; margin:0 auto` + img `maxWidth:100%; maxHeight: min(<maxH>px, 76vh)` (ไม่ใส่ width:100%) → รูปหุ้มพอดีกึ่งกลาง ไม่มีแถบข้าง + สูงได้เต็มจอมือถือ · `maxH`: JigSpinCheck 2 คอลัมน์ 560 / เดี่ยว 480 · SpinAnnotator 520 · **pin ยังตรงเพราะ useImgBox หัก letterbox** (ตอนนี้ letterbox ≈ 0)
 - 1 part/อุปกรณ์มี**หลายรูป/หลายเฟรมได้** — balloon ต้องผูกกับรูปที่มันอยู่ (`drawing_id`/`image_id`) ลบรูป = ถอดตำแหน่ง balloon แต่**ห้ามลบตัวจุดตรวจ** · ฝั่ง PM รองรับ 360° spin (หลายเฟรม/อุปกรณ์) ผ่าน component กลาง `src/components/SpinAnnotator.jsx` — pin ผูกกับเฟรมที่วาง (`image_id`), ลากรูปหมุนเฟรม, reuse component นี้แทนเขียน annotator ใหม่
 - **หน้าตรวจ PM (`PMCheckData` — JigSpinCheck) 2026-07-10:** รูปหลายมุม (spin) + auto-play ▶/⏸ · **หมุด sync กับ checklist**: สีหมุด = สถานะตรวจจริง (เขียว OK/แดง NG/เหลืองเฝ้าระวัง/ยังไม่ตรวจ=สีหมวด) เปลี่ยนสด, คลิกหมุด↔ไฮไลต์+เลื่อนแถวเช็ค, คลิกแถว→หมุนไปเฟรมของจุดนั้น · **ฟิลเตอร์แผนก = ความรับผิดชอบตามชนิดอุปกรณ์** (ผลิต=ทุกชนิด Autonomous · mtn=machine · jig mtn=jig · die mtn=die) กรองรายการอุปกรณ์ ไม่ใช่แค่เปลี่ยน checklist · **responsive**: จอ ≤860px = master-detail (ลิสต์/ฟอร์มทีละอัน + ปุ่มกลับ) · จอ ≥1180px = 2 คอลัมน์ (รูปซ้าย sticky · เช็คขวา) · desktop กว้างปกติไม่แตะ
 - **Viewer วางจุดต้องซูมได้ (2026-07-15 — user: รูปเล็กจนวางจุดไม่ได้):** รูปในหน้า setup/วางจุด **ห้าม render ที่ขนาดไฟล์ธรรมชาติ** (ไฟล์เล็ก/แนวตั้งจะจิ๋ว) — ค่าเริ่มต้น = **เต็มความกว้างกรอบ** (`width: 100%` ของ viewport) + toolbar ซูม ➖/%/➕ (100–400%, step 50%) + ปุ่ม "↺ พอดีกรอบ" · viewport `maxHeight ~75vh; overflow: auto` เลื่อนดูส่วนอื่นได้ · เปลี่ยนแผ่น → รีเซ็ตซูม · พิกัดคลิก/หมุดยังถูกทุกระดับซูมเพราะคำนวณ % จาก wrapper ที่สเกลไปด้วยกัน (BK ก็สเกลตาม ResizeObserver ปกติ) — ต้นแบบ: `QAInspectionSetup.jsx`
@@ -167,6 +185,25 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 - เพิ่ม Part ฝั่ง QA → ดึงจาก `dr_products` + `bom_items` (ดู `QAInspectionSetup.jsx`)
 - เพิ่มอุปกรณ์ฝั่ง PM → ดึงจาก machine master (ดู `PMSetup.jsx` addMode workstation)
 - รูปชิ้นงานที่อัพไว้ใน Product Master (`dr_products.image_url`) ให้ดึงมาแสดงซ้ำได้เลย ไม่อัพใหม่
+
+## 5.3 Dropdown ลำดับชั้นองค์กร ต้อง cascade เสมอ (2026-07-21 — คำสั่ง user)
+
+ทุกชุด select ที่ไล่ระดับ **Section → แผนก/Dept → Group/Line → Team** (ทั้ง filter bar และฟอร์มใน modal):
+
+1. **ตัวเลือกของตัวลูกต้องถูกกรองด้วยตัวแม่ที่เลือกอยู่** — ห้ามโชว์ list แบนรวมทุก section:
+   - แผนกจาก `org_nodes`: กรองด้วย `parent_id` ของ section node (ต้อง select `parent_id` มาด้วย —
+     บั๊กจริงที่เคยเกิด: hook ดึงแค่ `code, name` เลย cascade ไม่ได้ทั้งหน้า Report 5 จุด)
+   - Line จากแผนก: `l.name === department || l.parent_line_name === department` (สูตร Register)
+   - Line จาก section: `l.section === section`
+2. **เปลี่ยนตัวแม่ = ล้างค่าตัวลูกที่เลือกค้าง** (`setChild('')`) — ไม่งั้นค่าค้างนอก scope กรองแล้วได้ผลว่างเปล่า ผู้ใช้งงว่าข้อมูลหาย
+3. ตัวเลือกที่มาจากข้อมูลจริง (เช่น distinct จาก employees) ให้กรองตามตัวแม่ก่อนค่อย distinct — ได้ตัวเลือกที่ match แถวจริงเสมอ + ไม่มีชื่อซ้ำข้าม section
+4. ข้อยกเว้น (ตั้งใจไม่ cascade): ฟอร์ม**กำหนด scope ของ user** (AddUser — เลือกหลาย section + line อิสระ) และ toggle เลือก "section หรือ line อย่างใดอย่างหนึ่ง" (ShiftOrganize merge)
+5. **ระดับ Group/กลุ่ม ในฟอร์มลงทะเบียน/แก้พนักงาน = ดึงจาก `org_nodes` kind='line' (2026-07-22)** ไม่ใช่ `production_lines` ตรงๆ — org group ผูก production_line ผ่าน `ref_line_id` → ตอนเลือกกลุ่มให้ตั้ง `employees.line_id = group.ref_line_id` (production/ผัง/scope ยังทำงาน) · **fallback เป็น `production_lines` (`filterLinesByDept`) เฉพาะเมื่อผังยังไม่มีกลุ่มใต้แผนกนั้น** · ทำแล้ว: Register + operator edit modal
+6. **`employees.section/department/group_name` เป็น free text ไม่ผูก FK** → drift ได้ · **ตัวกรอง (filter bar) ที่ดึง distinct จาก employees ต้องจัดกลุ่ม 2 optgroup: "ในผังองค์กร" (ค่าที่ตรง org_nodes) + "⚠ นอกผัง (ต้องจัดข้อมูล)" (ค่าที่พนักงานกรอกแต่ไม่มีในผัง)** และ**โชว์เฉพาะค่าที่มีพนักงานจริง** (ทุกตัวเลือกเจอคนแน่นอน — กันหัวหน้าหาคนไม่เจอ) · ทำแล้ว: operator filter bar (Dept + Group)
+
+ต้นแบบที่ถูก: `Register.jsx` (ฟอร์ม + group จาก org_nodes kind='line'), `OEEAnalytics.jsx` TargetDashboard (filter bar), `Report.jsx` hook `useOrgDepts` → `deptsOf(section)`, `operator.jsx` (filter bar Dept+Group แบบ ในผัง/นอกผัง + modal cascade org_nodes)
+
+---
 
 ## 6. บอร์ดเวลา (Time boards) — Heijunka / Shipping Chart / Rack Center / Store
 
@@ -221,10 +258,32 @@ pattern ร่วมของทุกบอร์ดที่วางราย
   (เช่น ≥1200px = 3 คอลัมน์ 2 แถว · ≥1900px = 6 คอลัมน์แถวเดียว) แทน auto-fill ที่ทิ้งการ์ดเศษ 1-2 ใบท้ายแถว
 - ฟอร์ม/หน้าที่เนื้อหาเป็นคอลัมน์เดียวโดยธรรมชาติ (Login, Register) เป็นข้อยกเว้น — จัดกลางได้ตามเดิม
 
+## 6.6 เอกสารพิมพ์/Export ทุกตัวต้องผ่านระบบ Doc Control (2026-07-30 — คำสั่ง user)
+
+**เอกสารที่ออกจากระบบทุกชนิด** (ฟอร์มพิมพ์ทางการ, ใบรายงาน, สรุปประชุม, Excel export, รายงานภายใน) **ต้องอยู่ในทะเบียนเอกสารกลาง `/doc-forms` (ตาราง `doc_forms` + `doc_form_revisions` — Main project)** ห้ามมีเอกสาร export ที่ไม่มี doc_key และห้ามสร้างระบบทะเบียนแยกใหม่:
+
+- **สร้างเอกสาร export ใหม่ = seed แถว `doc_forms` ใน migration เสมอ** (doc_key ใหม่ + form_name) — ยังไม่มีเลขฟอร์มทางการก็ seed ไว้ก่อน (form_code = null) ให้ doc_control มาเติมทีหลังจากหน้า `/doc-forms` โดยไม่ต้องแก้โค้ด
+- **โค้ดพิมพ์อ่านค่าจากทะเบียนผ่าน `src/utils/docForms.js` เท่านั้น** — `getDocForm(key, {fallback})` / `docFormSync(key)` / `fullCode()` / `getDocFormRevisions(key)` · **fallback ค่าเดิมในโค้ดเสมอ** (ทะเบียนล่ม/แถวหาย = ฟอร์มหน้าตาเดิม ไม่พัง)
+- **2 ระดับการ wire:**
+  - **ฟอร์มทางการ** (มี layout กระดาษ เช่น FM-xxx): วาดหัวฟอร์ม/ช่องลายเซ็น/footer เองตาม layout โดยดึงเลขฟอร์ม/Rev/Effective/sig_blocks/legend/issued_by จาก `getDocForm` — จำนวนช่องลายเซ็นต้องเท่า layout เดิม (เปลี่ยนได้เฉพาะข้อความ)
+  - **รายงานภายใน** (ไม่มี layout ฟอร์มทางการ เช่น สรุปช่วงเวลา/สรุปประชุม): ห่อ html ก่อน `window.open`+print ด้วย **`withDocFoot(html, doc_key)`** — ทะเบียนยังไม่ตั้งเลขฟอร์ม = ไม่เติมอะไร (หน้าตาเดิมเป๊ะ), ตั้งเมื่อไหร่แถบ "เลขฟอร์ม · Effective" โผล่ท้ายเอกสารอัตโนมัติ
+- **โลโก้**: `urlToDataUrl(docFormSync(key).logo_url || tsLogoUrl)` — ห้าม hardcode/วาดโลโก้เอง
+- **ห้าม hardcode เลขฟอร์ม/Rev/Effective ในโค้ด** นอกเหนือจาก fallback default ที่ส่งเข้า `getDocForm`
+- Revision History ของเอกสารแก้ที่ `/doc-forms` (modal แก้ไข → ตาราง 📜) — ฟอร์มที่พิมพ์ตารางประวัติ rev (เช่น Changing Point) อ่านผ่าน `getDocFormRevisions`
+- ตารางเก่า `document_controls`/`document_control_revisions` เลิกใช้แล้ว (ยุบเข้าทะเบียนกลาง 2026-07-30) — ห้ามเขียนเพิ่ม
+
 ## 7. เบ็ดเตล็ดที่เคยกัด
 
 - `index.css` ตั้ง `input{width:100%}` ทั้งแอป — input ใน flex row ต้องกำหนด width เอง (checkbox/radio มี rule ยกเว้น `width:auto` แล้ว — ห้ามลบ)
 - พื้นที่ว่างแนวบนของทุกหน้า: `main` ใช้ `paddingTop: 14` (ไม่ใช่ 60) — มีแค่ icon cluster fixed มุมขวาบน; แถบควบคุมที่ชิดขวาบนของหน้า ให้เผื่อ `paddingRight` ~52px กันชนไอคอน
+- **กัน overlap มุมขวาบน + ลำดับ z-index (audit ทั้งระบบ 2026-07-21):** `NotificationBell` เป็น `position:fixed top:10 right:14 zIndex:1200` **ทุกหน้า** ลอยทับแถบบนขวา ~50px ของทุกหน้า — กติกาที่ทุกหน้าต้องทำตาม:
+  - **หัว header/toolbar แถวแรก**ที่มีปุ่ม/select ชิดขวา (มักเป็น `justifyContent:space-between`) → **ต้องใส่ `paddingRight: 52`** ไม่งั้นปุ่มขวาสุดมุดใต้ 🔔 (เคยพลาด: DailyReport/OjtTraining/ShiftOrganize — แก้ 2026-07-21)
+  - **float ปุ่มควบคุมเฉพาะหน้ามุมขวาบน** ให้เรียง**แนวตั้งใต้ 🔔** (คอลัมน์เดียวกัน `right:14`, เริ่ม `top:54`, ปุ่ม 36×36 เท่ากันหมด) **แล้ว content ของหน้าเว้น `paddingRight:52`** ไม่ให้ลอดใต้คอลัมน์นั้น — ห้ามวางแนวนอนคร่อมหัว header/บอร์ด (เคยพลาด: Management filter cluster `[👤][⚙️][📦][ซ่อนป้าย]` วางแนวนอน fixed คร่อมหัวบอร์ด Heijunka → เปลี่ยนเป็นคอลัมน์แนวตั้งใต้ bell + board เว้น paddingRight, 2026-07-21)
+  - **ปุ่ม ☰ เปิดเมนู (มุมซ้ายบน ตอนพับ sidebar) ใช้เครื่องหมายเดียวกับ 🔔**: 36×36 `top:10` radius8 bg3 border2 — ให้ 2 มุมบนสมมาตรกัน
+  - **modal ทุกตัว `zIndex ≥ 2000`** (ต้องเหนือ 🔔 z1200) ไม่งั้น bell วาดทับ modal บังปุ่มปิด (เคยพลาด: PMSchedule DayModal z1000 — แก้ 2026-07-21) · popup เกาะ cell (stock/shipping) ใช้ z1300 + click-catcher z998
+  - **ป้าย sticky ซ้ายของ time board (มือถือ) ต้อง `zIndex:6`** เหนือ playhead (`.now-line` z4 / `.now-chip` z5) ไม่งั้น now-line วาดทับป้ายพาร์ท (เคยพลาด: Dashboard mobile board z3 — แก้ 2026-07-21)
+  - ladder รวม: content 1-15 · sticky time-board label 6 · float/bell 500-1300 (🔔=1200) · modal 2000-3200 · popup/siren/tooltip 3000-4000
+- **จุดสถานะเปิด/ปิด — `<ToggleDot on={bool} />` (component กลาง 2026-07-21):** ปุ่ม toggle แบบ on/off (show/hide, กรองเปิด/ปิด, edit-mode) ทุกหน้า **ต้องแปะจุดสถานะมุมล่างขวา** (เขียว=เปิด/แสดง · เทา=ปิด/ซ่อน) ให้ดูออกทันทีที่เดียวทั้งระบบ — `src/components/ToggleDot.jsx` · ปุ่มแม่ต้อง `position:relative` · บนพื้นที่ไม่ใช่ var(--bg) ส่ง prop `ring` = สีพื้น (เช่น rail = `var(--bg2)`) · **ใช้แล้วที่:** Management (filter MAN/MACHINE/WIP + 🏷️), LineSetup (🏷️ ป้าย + 🔗 เชื่อมต่อ), FactoryMap (✏️ แก้ผัง), operator (ดูพนักงานปิดใช้งาน), Report (⚙️ OT master + เอกสาร), Checkin (Preview กะดึก + เฉพาะกะนี้), MorningMeeting (📷 ท่ามือ), LineStock (⏳ รออนุมัติ) · **ปุ่ม toggle on/off ใหม่ให้แปะ ToggleDot เสมอ** — ยกเว้น header collapse ที่มี chevron ▲/▼ อยู่แล้ว (chevron บอกสถานะพอ) และ 1-of-N tab (ไม่ใช่ on/off)
 - ปุ่มพับ sidebar อยู่**ในหัว sidebar** (ปุ่ม ⟨ ข้างโลโก้) — ปุ่มลอย ☰ โชว์เฉพาะตอนพับ ห้ามมีปุ่มลอยทับเนื้อหา
 - เข้าโมดูลจากหน้าหลัก (DeptHub) → sidebar กาง**เฉพาะหมวดของโมดูลที่กด** หมวดอื่นพับอัตโนมัติ (2026-07-10) — การ์ดใน DeptHub ผูกหมวดผ่าน `navGroups` + เรียก `focusSidebarGroups()` จาก App.jsx · เพิ่มการ์ด/หมวดใหม่ต้องใส่ `navGroups` ด้วยเสมอ (ชื่อต้องตรงกับ `NAV_GROUP_ORDER`) · user ยังพับ/กางเองต่อได้ตามปกติ
 - ชิปเมนูย่อยบนการ์ด DeptHub **ดึงจาก `NAV_ITEMS` อัตโนมัติ** ผ่าน `navItemsForGroups(navGroups, role)` (กรองสิทธิ์เหมือน sidebar) และ**คลิกเข้าหน้านั้นได้เลย** (2026-07-10) — **ห้ามพิมพ์รายชื่อเมนูซ้ำใน DeptHub** เพิ่มเมนูใหม่ใน NAV_ITEMS แล้วชิปบนการ์ดอัพเดทเองทั้งหน้า (เคยมี list มือแล้ว drift ไม่ตรงกับ sidebar)

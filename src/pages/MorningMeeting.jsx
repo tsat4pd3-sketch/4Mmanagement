@@ -2,11 +2,15 @@ import { useState, useEffect, useContext, useCallback, useMemo, useRef, Fragment
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
+import { pairAwareTotal } from '../utils/pairTotals';
+import { loadDocForms, withDocFoot } from '../utils/docForms';
+loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 // Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷
 const GestureCam = lazy(() => import('../components/GestureCam'));
@@ -56,12 +60,14 @@ export default function MorningMeeting() {
 
   const [meetingDate, setMeetingDate] = useState(defaultMeetingDate);
   const [allLines, setAllLines]       = useState([]);
+  const [orgSections, setOrgSections] = useState([]); // ส่วนงานจากผังองค์กร (source of truth) — ไม่เดาจาก production_lines
   const [secFilter, setSecFilter]     = useState('');
   const [loading, setLoading]         = useState(true);
   const [sessions, setSessions]       = useState([]);
   const [downtimes, setDowntimes]     = useState([]);
   const [defects, setDefects]         = useState([]);
   const [orders, setOrders]           = useState([]);
+  const [pairMat, setPairMat]         = useState({}); // mat_no → pair_mat_no (งานคู่ RH/LH)
   const [fourM, setFourM]             = useState([]);
   const [attendance, setAttendance]   = useState([]);
   const [openDts, setOpenDts]         = useState([]); // เครื่องที่ยังซ่อมค้าง "ตอนนี้" (readiness)
@@ -86,10 +92,13 @@ export default function MorningMeeting() {
     return allLines;
   }, [allLines, role, userLineId, scopeSecs]);
 
-  const sectionOpts = useMemo(
-    () => [...new Set(scopedLines.map(l => l.section).filter(Boolean))].sort(),
-    [scopedLines]
-  );
+  // ส่วนงานในตัวเลือก: ยึดผังองค์กรก่อน (กรองตาม scope) → fallback เดาจาก production_lines เมื่อผังยังว่าง
+  const sectionOpts = useMemo(() => {
+    const fromLines = [...new Set(scopedLines.map(l => l.section).filter(Boolean))];
+    const base = orgSections.length ? orgSections : fromLines;
+    const scoped = scopeSecs.length ? base.filter(s => inSectionScope(scopeSecs, s)) : base;
+    return [...new Set(scoped)].sort();
+  }, [scopedLines, orgSections, scopeSecs]);
   const viewLines = useMemo(
     () => (secFilter ? scopedLines.filter(l => l.section === secFilter) : scopedLines),
     [scopedLines, secFilter]
@@ -112,6 +121,9 @@ export default function MorningMeeting() {
         .select('id, name, section, parent_line_name, std_day_shift, std_night_shift')
         .order('name');
       setAllLines(data || []);
+      // ส่วนงานจากผังองค์กร (org_nodes kind='section') — ลิสต์/ลำดับตามผัง ไม่เดาจาก production_lines.section
+      const { data: og } = await supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name');
+      setOrgSections((og || []).map(n => n.code || n.name));
     })();
   }, []);
 
@@ -175,8 +187,14 @@ export default function MorningMeeting() {
           supabaseDR.from('prod_orders').select('*').in('session_id', ids).order('opened_at'),
         ]);
         setDowntimes(dt || []); setDefects(def || []); setOrders(po || []);
+        const mats = [...new Set((po || []).map(o => o.mat_no).filter(Boolean))];
+        if (mats.length) {
+          const { data: prods } = await supabaseDR.from('dr_products').select('mat_no, pair_mat_no').in('mat_no', mats).not('pair_mat_no', 'is', null);
+          const pm = {}; (prods || []).forEach(p => { if (p.mat_no && p.pair_mat_no) pm[p.mat_no] = p.pair_mat_no; });
+          setPairMat(pm);
+        } else setPairMat({});
       } else {
-        setDowntimes([]); setDefects([]); setOrders([]);
+        setDowntimes([]); setDefects([]); setOrders([]); setPairMat({});
       }
 
       // readiness: เครื่องที่ยังซ่อมค้าง "ตอนนี้" — มองจากกะ 3 วันล่าสุด (รวม carry-over ข้ามกะ)
@@ -209,16 +227,28 @@ export default function MorningMeeting() {
   // ❌ ห้าม fallback ไป std_day/night_shift — ค่านั้นคือ "จำนวนคนต่อกะ (headcount)" ไม่ใช่เป้าจำนวนชิ้น
   //    (เช่น HYDROFORM std=14 = 14 คน · GOR=11 · Line60=6) เคยเอามาใช้เป็นเป้าแล้วไลน์ที่ไม่มีใบงาน
   //    โชว์ "0/14 · 0%" ทั้งที่ควรเป็น "ไม่มีเป้า" (2026-07-15) — ไม่มี target_qty และไม่มีใบงาน = คืน 0
+  // งานคู่ RH/LH: กะที่มีทั้ง 2 พาร์ทของคู่ → นับเป็น "คู่/stroke" (max ของสองข้าง) ไม่บวกชิ้นซ้ำ
+  //   กะที่ "ไม่มีงานคู่" → ใช้ค่าเดิมเป๊ะ (stamped ก่อน) เพื่อ blast radius น้อยสุด · แหล่งจริง = ใบงาน (prod_orders)
+  //   detail รายพาร์ท/เจาะราย MAT ยังอ่านจากใบงานตรงๆ ไม่กระทบ
+  const hasPairIn = (os) => os.some(o => o.mat_no && pairMat[o.mat_no] && os.some(x => x.mat_no === pairMat[o.mat_no]));
+  const pairSum = (os, pick) => {
+    const perMat = {}; let nullSum = 0;
+    os.forEach(o => { const v = pick(o); if (!o.mat_no) { nullSum += v; return; } const e = perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 }); e.target += v; });
+    return pairAwareTotal(Object.values(perMat), m => pairMat[m] || null).target + nullSum;
+  };
   const sessTarget = (s) => {
-    if (s.target_qty) return s.target_qty;
     const os = (ordersBySession[s.id] || []).filter(o => !['cancelled', 'imported', 'carry_over'].includes(o.status));
+    if (hasPairIn(os)) return pairSum(os, o => o.qty_target ?? o.qty ?? 0);
+    if (s.target_qty) return s.target_qty;
     return os.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
   };
   // ยอดจริงของกะ: qty_ok (ปิดกะแล้ว) → actual_qty → รวมยอดจริงจากใบงาน (qty_ok ?? qty_actual)
   const sessActual = (s) => {
+    const os = ordersBySession[s.id] || [];
+    if (hasPairIn(os)) return pairSum(os, o => o.qty_ok ?? o.qty_actual ?? 0);
     if (s.qty_ok != null) return s.qty_ok;
     if (s.actual_qty) return s.actual_qty;
-    return (ordersBySession[s.id] || []).reduce((a, o) => a + (o.qty_ok ?? o.qty_actual ?? 0), 0);
+    return os.reduce((a, o) => a + (o.qty_ok ?? o.qty_actual ?? 0), 0);
   };
   const sum = useMemo(() => {
     let actual = 0, target = 0;
@@ -452,7 +482,7 @@ export default function MorningMeeting() {
 <table><tr><th style="${td}">จากวัน</th><th style="${td}">ไลน์</th><th style="${td}">เรื่อง</th><th style="${td}">ผู้รับผิดชอบ</th><th style="${td}">กำหนด</th><th style="${td}">สถานะ</th></tr>${actRows || `<tr><td colspan="6" style="${td}">— ไม่มี —</td></tr>`}</table>
 <p style="margin-top:18px;color:#888">พิมพ์จาก ESM Morning Meeting · ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}</p>
 <script>window.onload = () => window.print();</script></body></html>`;
-    const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+    const w = window.open('', '_blank'); w.document.write(withDocFoot(html, 'morning_meeting')); w.document.close();
   };
 
   /* ═══ ส่วนแสดงผลแต่ละวาระ — ใช้ร่วมกันทั้งโหมดปกติและโหมด TV ═══ */
@@ -572,13 +602,13 @@ export default function MorningMeeting() {
     </div>
   );
 
-  const MissedPanel = () => (
+  const MissedPanel = ({ bounded } = {}) => (
     <div style={card}>
       <h2 style={h2St}>📉 งานหลุดแผน <span style={chip(missedOrders.length ? '#ef4444' : '#22c55e')}>{missedOrders.length} รายการ</span></h2>
       {missedOrders.length === 0 ? (
         <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 700 }}>✅ ทุกใบงานได้ตามเป้า</div>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflowX: 'auto', ...(bounded ? { maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' } : null) }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ color: 'var(--muted)', textAlign: 'left' }}>
@@ -705,7 +735,7 @@ export default function MorningMeeting() {
     </div>
   );
 
-  const FourMPanel = () => {
+  const FourMPanel = ({ bounded } = {}) => {
     // ย้ายจุดในไลน์เดิมแบบ skill ผ่าน/เคยทำ (same_ok) ที่อนุมัติแล้ว = เรื่อง routine
     // — log จุดงานบันทึกอยู่แล้ว ไม่ต้องไล่ทีละแถวในที่ประชุม ยุบเป็นสรุปต่อไลน์ (กดกางดูรายชื่อได้)
     const routine = fourM.filter(m => m.category === 'Man' && m.change_subtype === 'same_ok' && m.status === 'approved');
@@ -716,7 +746,7 @@ export default function MorningMeeting() {
       <div style={card}>
         <h2 style={h2St}>🔄 4M Change เมื่อวาน <span style={chip('#4d9fff')}>{fourM.length} รายการ</span></h2>
         {fourM.length === 0 ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>— ไม่มีบันทึก 4M —</div> : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, ...(bounded ? { maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' } : null) }}>
             {notable.map(m => {
               const st = FOURM_STATUS[m.status] || { label: m.status, color: '#94a3b8' };
               return (
@@ -760,10 +790,10 @@ export default function MorningMeeting() {
     );
   };
 
-  const ReadinessPanel = () => (
+  const ReadinessPanel = ({ bounded } = {}) => (
     <div style={card}>
       <h2 style={h2St}>☀️ ความพร้อมเช้านี้</h2>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, ...(bounded ? { maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' } : null) }}>
         {/* เครื่องยังซ่อมค้าง — Andon แดง (กระพริบเฉพาะที่ยังค้างจริง ตามกฎ) */}
         {openDts.length > 0 ? openDts.map(d => (
           <div key={d.id} className="dt-alarm-blink" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 8, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.5)' }}>
@@ -799,7 +829,7 @@ export default function MorningMeeting() {
     </div>
   );
 
-  const ActionsPanel = () => (
+  const ActionsPanel = ({ bounded } = {}) => (
     <div style={card}>
       <h2 style={h2St}>
         📌 Action Items <span style={chip(openActions.length ? '#f59e0b' : '#22c55e')}>{openActions.length} ค้าง</span>
@@ -810,7 +840,7 @@ export default function MorningMeeting() {
         )}
       </h2>
       {actions.length === 0 ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>— ยังไม่มี action item —</div> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, ...(bounded ? { maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' } : null) }}>
           {actions.map(a => {
             const st = ACT_STATUS[a.status] || ACT_STATUS.open;
             const overdue = ['open', 'doing'].includes(a.status) && a.due_date && a.due_date < getWorkDate();
@@ -930,13 +960,13 @@ export default function MorningMeeting() {
             extra={`เปิดกะ ${lineResults.filter(r => r.shifts.length).length}/${lineResults.length} ไลน์ · ~OEE = รออนุมัติปิดกะ`} />
           <LineCards />
           <SectionHead icon="🔎" title="เจาะปัญหาเมื่อวาน" />
-          <MissedPanel />
+          <MissedPanel bounded />
           <DtDefectPanel />
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
-            <FourMPanel />
-            <ReadinessPanel />
+            <FourMPanel bounded />
+            <ReadinessPanel bounded />
           </div>
-          <ActionsPanel />
+          <ActionsPanel bounded />
         </>
       )}
 
@@ -953,9 +983,10 @@ export default function MorningMeeting() {
               <button onClick={() => setSlide(s => Math.max(0, s - 1))} disabled={slide === 0} style={{ ...btnSt(false), fontSize: 16, opacity: slide === 0 ? 0.4 : 1 }}>◀</button>
               <span style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 700 }}>{slide + 1}/{slides.length}</span>
               <button onClick={() => setSlide(s => Math.min(slides.length - 1, s + 1))} disabled={slide === slides.length - 1} style={{ ...btnSt(false), fontSize: 16, opacity: slide === slides.length - 1 ? 0.4 : 1 }}>▶</button>
-              <button onClick={() => setGestureOn(v => !v)} style={btnSt(gestureOn)}
+              <button onClick={() => setGestureOn(v => !v)} style={{ ...btnSt(gestureOn), position: 'relative' }}
                 title={'ควบคุมด้วยท่ามือผ่านกล้อง (ประมวลผลในเครื่อง ไม่ส่งภาพออกไปไหน)\n☝️ ชี้นิ้ว ◀/▶ ค้าง = เปลี่ยนวาระ · ชี้ ▲/▼ ค้าง = เลื่อนหน้า\n✋ ปัดซ้าย/ขวา = เปลี่ยนวาระ · 👍 ค้าง = ถัดไป · ✊ ค้าง = ออกจากโหมด'}>
                 {gestureOn ? '📷 ปิดท่ามือ' : '📷 คุมด้วยท่ามือ'}
+                <ToggleDot on={gestureOn} />
               </button>
               <button onClick={() => { setTvMode(false); setGestureOn(false); }} style={{ ...btnSt(false), fontSize: 14 }} title="ออกจากโหมดประชุม (Esc)">✕</button>
             </div>
