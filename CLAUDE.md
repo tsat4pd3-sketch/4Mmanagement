@@ -800,6 +800,14 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 - **ตารางใบผลิต = drill-down 3 ชั้น: วัน → ไลน์·กะ → รายใบ** (`dayGroups` — รายวันคือระดับหลัก คลิกแตกชั้นถัดไป · แสดง 45 วันแรก + ปุ่มแสดงอีก) · การ์ดสินค้าที่เลือกมีปุ่ม "✕ ปิด — เลือกสินค้าอื่น" กลับไปลิสต์ · กราฟรายวัน: แกนวัน**ต่อเนื่องไม่ข้ามวัน** (วันไม่ผลิต = ตอเทา) · แท่งซ้อนเขียว=ผลิตดี/แดง=NG · ตัวเลขบนแท่งเมื่อ ≤20 วัน + legend (2026-07-30)
 - **ผลิตได้** = confirmed→`qty_ok??qty` · เปิด→`qty_actual` (สอดคล้องกับการนับใน DailyReport)
 
+## สอบกลับ Order — `/order-trace` (Order Traceability · 2026-07-30)
+
+หน้า OrderTrace (กลุ่มวิเคราะห์ & รายงาน) — สแกน/ค้น `prod_no` (บาร์โค้ด kanban) → เห็นทุกเหตุการณ์ของใบนั้น + สถานการณ์รอบข้าง ณ เวลาผลิต · deep-link `?prod=<PROD_NO>` · สิทธิ์ `page:/order-trace` ทุก role (migration `20260730_order_trace_permission.sql`) · scope ตาม pattern มาตรฐาน (leader = family · อื่น = sections — ทั้งผลค้นหาและข้อมูล)
+
+- **แสดง:** การ์ดใบ (เป้า/จริง/OK/NG/สงสัย/ซ่อม, ใครเปิด-ปิด, backfill/ถอยใบ/ใบคู่, OEE กะ) · **Timeline เหตุการณ์เรียงเวลา** (เปิดใบ→ยอดสะสมรายช่วง→NG→Downtime (ไฮไลต์ช่วงทับใบ)→4M→ปิดใบ→เข้าคลัง→ตัดส่ง) · คนเข้างานไลน์วันนั้น+จุดงาน+PPE (`daily_production_logs`+`workstations`) · Downtime+ใบซ่อม MO (`source_downtime_id`→root_cause/solution) · 4M วันนั้น · การตรวจประจำวัน (Daily PM count / Poka-Yoke / LPA) · วัสดุ (child_lot_requests `source_prod_no` → raw_withdrawal_requests) · เส้นทาง stock (เข้าคลัง = hard link `ref_order_id` · ตัดส่ง = ยอดรวมเชิงเวลา) · ใบอื่นในกะ (คลิกกระโดดได้)
+- **ขอบเขต/GAP ของ traceability ทั้งระบบ (audit 2026-07-30):** (1) **ขาแรกจากลูกค้า→order**: ตอนกด "ส่งแล้ว" consume เป็นยอดรวม ไม่บันทึก ref_order_id → ผูก shipment↔ใบผลิตไม่ได้ ต้องใช้ tag บนกล่อง/ช่วงเวลา (2) **วัสดุสุดทางที่เลข MAT**: การรับวัตถุดิบเข้า Store ไม่มีช่อง lot no./heat no. ของ supplier (3) **backflush เชิงปริมาณ**: `source_prod_no` ใน child_lot_requests = ใบที่ trigger สะสมครบล็อต ไม่ใช่ identity รายชิ้น · ตาราง `kanban_scans` เป็น vestigial (ไม่มีโค้ดเขียนแล้ว) — ถ้าจะปิด gap เรียงความคุ้ม: บันทึก ref_order_id ตอน consume ส่งลูกค้า → เพิ่ม lot no. supplier ตอนรับเข้า → lot genealogy รายกล่อง
+- component ร่วม: `src/components/CollapseCard.jsx` (แยกจาก ProductHistory — section ย่อ/ขยาย จำสถานะ localStorage ผ่าน `storePrefix`)
+
 ---
 
 ## Edge Functions
