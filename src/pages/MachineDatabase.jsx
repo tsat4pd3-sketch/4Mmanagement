@@ -39,6 +39,8 @@ const EQUIP_CATS = [
   { v: 'production', t: '🏭 ไลน์ผลิต' },
   { v: 'facility',   t: '🔧 Facility / Utility' },
 ];
+// utility เดิม (ก่อน apply migration รวมหมวด) → นับเป็น facility ทุกที่ · ค่าว่าง = production
+const normCat = (c) => (c === 'utility' ? 'facility' : (c || 'production'));
 const emptyType    = { id: null, label: '', color: '#4d9fff', icon: '', sort_order: 0, is_active: true };
 const TYPE_COLORS  = ['#4d9fff', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#ec4899', '#06b6d4', '#84cc16', '#6b7280'];
 
@@ -135,11 +137,12 @@ export default function MachineDatabase() {
     return pcm;
   }, [scopedLines]);
 
-  // ตัวเลือก dropdown "ไลน์/ระบบ" ปรับตามหมวด — production(หรือทุกหมวด) = ไลน์ผลิต · facility/utility = ชื่อระบบ/พื้นที่ (line_name ของเครื่องหมวดนั้น ที่ไม่มีใน production_lines)
+  // ตัวเลือก dropdown "ไลน์/ระบบ" ปรับตามหมวด — production(หรือทุกหมวด) = ไลน์ผลิต · facility = ชื่อระบบ/พื้นที่ (line_name ของเครื่องหมวดนั้น ที่ไม่มีใน production_lines)
+  // normCat: utility เดิม (ก่อน apply migration รวมหมวด) นับเป็น facility เพื่อให้กรองเจอ
   const catLineNames = useMemo(() => {
-    if (filterCat !== 'facility' && filterCat !== 'utility') return null; // ใช้ dropdown ไลน์ผลิตเดิม
+    if (filterCat !== 'facility') return null; // ใช้ dropdown ไลน์ผลิตเดิม
     const set = new Set();
-    machines.forEach(m => { if ((m.equipment_category || 'production') === filterCat && m.line_name) set.add(m.line_name); });
+    machines.forEach(m => { if (normCat(m.equipment_category) === filterCat && m.line_name) set.add(m.line_name); });
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [machines, filterCat]);
 
@@ -149,7 +152,7 @@ export default function MachineDatabase() {
     const inLine = (m) => !filterLine || m.line_name === filterLine || (kids && kids.includes(m.line_name));
     return machines
       .filter(m => !scopeActive || scopedLineNames.has(m.line_name)) // mandatory scope ก่อน filter อิสระเสมอ
-      .filter(m => !filterCat || (m.equipment_category || 'production') === filterCat) // หมวดอุปกรณ์ (ผลิต/facility/utility)
+      .filter(m => !filterCat || normCat(m.equipment_category) === filterCat) // หมวดอุปกรณ์ (ผลิต/facility — utility เดิมนับเป็น facility)
       .filter(m => showInactive || m.is_active)
       .filter(inLine)
       .filter(m => !filterType || m.machine_type_id === filterType)
