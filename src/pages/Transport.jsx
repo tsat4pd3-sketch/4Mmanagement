@@ -29,6 +29,7 @@ export default function Transport() {
   const [edges, setEdges] = useState([]);
   const [roundStops, setRoundStops] = useState([]);
   const [imageUrl, setImageUrl] = useState(null);
+  const [employees, setEmployees] = useState([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [editCarrier, setEditCarrier] = useState(null);
   const [busy, setBusy] = useState(null);
@@ -54,6 +55,11 @@ export default function Transport() {
   }, [workDate]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { const t = setInterval(() => { load(); setNowMs(Date.now()); }, 60000); return () => clearInterval(t); }, [load]);
+  // ฐานพนักงาน (Main) โหลดครั้งเดียว — ใช้เลือกคนขับจาก employees แทนพิมพ์เอง
+  useEffect(() => {
+    supabase.from('employees').select('id, name, employee_id_code, section').eq('is_active', true).order('name')
+      .then(({ data }) => setEmployees(data || []));
+  }, []);
 
   const vehMap = useMemo(() => { const m = {}; vehicles.forEach(v => { m[v.code] = v; }); return m; }, [vehicles]);
   const vehLabel = (code) => vehMap[code] ? `${vehMap[code].icon} ${vehMap[code].name}` : code;
@@ -224,7 +230,7 @@ export default function Transport() {
       )}
 
       {editCarrier && (
-        <CarrierModal carrier={editCarrier} vehicles={vehicles} fullName={fullName}
+        <CarrierModal carrier={editCarrier} vehicles={vehicles} employees={employees} fullName={fullName}
           onClose={() => setEditCarrier(null)} onSaved={() => { setEditCarrier(null); load(); }} />
       )}
     </div>
@@ -364,11 +370,19 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
 }
 const miniBtn = { padding: '2px 6px', borderRadius: 6, cursor: 'pointer', fontSize: 11, background: 'var(--card)', color: 'var(--text2)', border: '1px solid var(--border)', flex: '0 0 auto' };
 
-function CarrierModal({ carrier, vehicles, fullName, onClose, onSaved }) {
+function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, onSaved }) {
   const [f, setF] = useState({ ...carrier });
   const [saving, setSaving] = useState(false);
+  const [empQ, setEmpQ] = useState('');
   const isNew = !carrier.id;
   const toggleVeh = (code) => setF(p => ({ ...p, vehicles: p.vehicles.includes(code) ? p.vehicles.filter(v => v !== code) : [...p.vehicles, code] }));
+
+  const empMatches = useMemo(() => {
+    const q = empQ.trim().toLowerCase();
+    if (!q) return [];
+    return employees.filter(e => (e.name || '').toLowerCase().includes(q) || (e.employee_id_code || '').toLowerCase().includes(q)).slice(0, 15);
+  }, [empQ, employees]);
+  const pickEmp = (e) => { setF(p => ({ ...p, name: e.name, emp_code: e.employee_id_code || '', section: e.section || p.section })); setEmpQ(''); };
 
   const save = async () => {
     if (!f.name?.trim()) return toast.error('กรอกชื่อคนขับ');
@@ -395,6 +409,20 @@ function CarrierModal({ carrier, vehicles, fullName, onClose, onSaved }) {
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: 'min(94vw, 440px)', maxHeight: '90vh', overflowY: 'auto' }}>
         <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 900, color: 'var(--text)' }}>{isNew ? '➕ เพิ่มคนขับ' : '✏️ แก้ไขคนขับ'}</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+          <div style={{ position: 'relative' }}>
+            <span style={lbl}>🔎 เลือกจากฐานพนักงาน</span>
+            <input value={empQ} onChange={e => setEmpQ(e.target.value)} placeholder="ค้นหาชื่อ / รหัสพนักงาน…" style={inp} />
+            {empMatches.length > 0 && (
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 5, marginTop: 2, maxHeight: 220, overflowY: 'auto', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 6px 20px rgba(0,0,0,0.4)' }}>
+                {empMatches.map(e => (
+                  <button key={e.id} onClick={() => pickEmp(e)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', fontSize: 12.5, background: 'none', border: 'none', borderBottom: '1px solid var(--border2)', color: 'var(--text)', cursor: 'pointer' }}>
+                    {e.name} {e.employee_id_code ? <span style={{ color: 'var(--muted)' }}>· {e.employee_id_code}</span> : ''}{e.section ? <span style={{ color: 'var(--muted)' }}> · {e.section}</span> : ''}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>เลือกแล้วเติมชื่อ+รหัสให้อัตโนมัติ · หรือพิมพ์เองด้านล่างเผื่อคนขับ outsource</div>
+          </div>
           <div><span style={lbl}>ชื่อ *</span><input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} style={inp} /></div>
           <div style={{ display: 'flex', gap: 10 }}>
             <div style={{ flex: 1 }}><span style={lbl}>รหัสพนักงาน</span><input value={f.emp_code || ''} onChange={e => setF({ ...f, emp_code: e.target.value })} style={inp} /></div>
