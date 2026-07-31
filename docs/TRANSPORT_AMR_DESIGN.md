@@ -135,6 +135,11 @@ TPS ของจริงยืนยันว่าการขนส่งภ�
 
 > **ผลต่อ Transport/AMR:** ถ้าเพิ่ม transport แบบไม่ยุบก่อน = บอร์ดที่ 6 ซ้อนของซ้ำเดิม · ควร **ยุบ round-status + rack/packaging ให้เหลือเจ้าของเดียวก่อน** แล้วสร้าง transport job รวมบนฐานที่สะอาด (transport = ตัวรวม queue พวกนี้พอดี)
 
+**✅ สถานะการยุบรวม (2026-07-21):**
+- **D5 round-status → `src/utils/deliveryRounds.js`** — DONE · `getRoundStatus` + helpers (`addMinutes`/`timeStrToMs`/`dayFrameMs`/`roundDeliveryMin`) รวมมาที่นี่ · HeijunkaKanban + LineStock import จากไฟล์นี้ · แก้บั๊กเพี้ยนขอบ frame (LineStock เดิมไม่เช็ควันย้อนหลัง/ล่วงหน้า) — **หน้าใหม่ที่โชว์สถานะรอบส่งต้อง import จาก util นี้ ห้ามเขียน statusOf เอง**
+- **D1/D2 rack advance + packaging issue → RackCenter เจ้าของเดียว** — DONE · ลบ `advanceRack`/`issuePkg` ใน HeijunkaKanban · แท็บ rack ใน Unified Store Board = อ่านอย่างเดียว + ปุ่มลิงก์ "🗃️ จัดการที่ Rack Center →" · เลื่อนสถานะ/จ่าย packaging ทำที่ `/rack-center` เท่านั้น (กันแข่งกันเขียน)
+- ยังเหลือ (ภายหลัง): D6/D7 retire `StoreBoardView` (ยุบเข้า Unified) · helper copy-paste (custLabel/work-date/normalize → utils)
+
 ## 6. Open decisions (รอเคาะก่อนลงมือ)
 1. **มอบงาน** — เฟส 1 ให้หัวหน้า store มอบเอง หรือ auto-assign ตามรอบ/ไลน์ที่คนขับรับผิดชอบ?
 2. **หน่วยงาน** — คนขับ 1 คน = 1 กะ/หลายไลน์? ต้องผูก carrier กับ line/section ไหม (scope)?
