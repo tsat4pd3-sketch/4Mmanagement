@@ -4,6 +4,7 @@ import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import FactoryMap from './FactoryMap'
 import MtnMachineLayout from './MtnMachineLayout'
+import LineSetup from './LineSetup'
 
 // ตั้งค่าผัง/Floorplan รวมที่เดียว (หมวดตั้งค่าโปรแกรม) — แยก setup ออกจากหน้า display (2026-07-16)
 //   หลักการ: หน้า display (/factory-map, dashboard) ดู+popup เท่านั้น · การตั้งค่าผังมารวมที่นี่ แยกแท็บตาม POV
@@ -19,16 +20,6 @@ export default function LayoutSetup() {
   const { role } = useContext(UserContext)
   const [tab, setTab] = useState('factory')
   const cur = TABS.find(t => t.key === tab)
-
-  const linkCard = (to, icon, title, sub) => (
-    <Link to={to} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '18px 20px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--card)', textDecoration: 'none', maxWidth: 560 }}>
-      <span style={{ fontSize: 30 }}>{icon}</span>
-      <div>
-        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{title} <span style={{ color: 'var(--accent)', fontSize: 13 }}>→ เปิดหน้าตั้งค่า</span></div>
-        <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 2 }}>{sub}</div>
-      </div>
-    </Link>
-  )
 
   return (
     <div style={{ padding: 'clamp(12px,3vw,24px)', display: 'flex', flexDirection: 'column', gap: 14, minHeight: '100%' }}>
@@ -53,7 +44,11 @@ export default function LayoutSetup() {
           ? <FactoryMap setupMode />
           : <div style={{ color: 'var(--muted)', padding: 30 }}>🔒 ไม่มีสิทธิ์แก้ผังภาพรวมโรงงาน (ต้องมีสิทธิ์ factory_map:edit)</div>
       )}
-      {tab === 'production' && linkCard('/linesetup', '🏭', 'ตั้งค่าผังไลน์ (LineSetup)', 'ผังไลน์ + จุดงาน/เครื่องจักร/WIP — จัดการต่อไลน์')}
+      {tab === 'production' && (
+        can('line_setup', 'edit', role)
+          ? <LineSetup embedded />
+          : <div style={{ color: 'var(--muted)', padding: 30 }}>🔒 ไม่มีสิทธิ์แก้ผังไลน์ (ต้องมีสิทธิ์ line_setup:edit) — <Link to="/linesetup" style={{ color: 'var(--accent)' }}>เปิดหน้าดูอย่างเดียว</Link></div>
+      )}
       {tab === 'mtn' && (
         can('pm', 'setup', role)
           ? <MtnMachineLayout setupMode />
