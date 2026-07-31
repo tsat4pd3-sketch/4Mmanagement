@@ -3,6 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import CollapseCardBase from '../components/CollapseCard';
 
 // ประวัติผลิตราย Product — ดูย้อนหลังว่าสินค้าตัวหนึ่งผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ (2026-07-24)
 // + ประวัติการแก้ master data ของสินค้านั้น (audit_log — ใครแก้ line_name/CT เมื่อไหร่)
@@ -20,22 +21,8 @@ const AUDIT_FIELD_TH = { line_name: 'ไลน์', cycle_time_sec: 'Cycle Time'
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px' };
 
-// Section ย่อ/ขยายได้ตาม UI-CONVENTIONS (หัวโชว์ชื่อ+จำนวนเสมอ · จำสถานะใน localStorage · default ขยาย ยกเว้นว่าง)
-function CollapseCard({ id, title, count, defaultOpen = true, children }) {
-  // เก็บเฉพาะ override ของ user — defaultOpen เป็นค่าสด (section ว่างตอน mount แล้วข้อมูลมาทีหลังจะกางเอง)
-  const [override, setOverride] = useState(() => localStorage.getItem(`ph_collapse_${id}`));
-  const open = override == null ? defaultOpen : override === '1';
-  const toggle = () => { const v = open ? '0' : '1'; localStorage.setItem(`ph_collapse_${id}`, v); setOverride(v); };
-  return (
-    <div style={{ ...card, marginBottom: 16 }}>
-      <div onClick={toggle} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}>
-        <div style={{ fontSize: 13, fontWeight: 800 }}>{title}{count != null && <span style={{ color: 'var(--muted)', fontWeight: 600 }}> ({count})</span>}</div>
-        <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{open ? '▲' : '▼'}</span>
-      </div>
-      {open && <div style={{ marginTop: 8 }}>{children}</div>}
-    </div>
-  );
-}
+// Section ย่อ/ขยายได้ — ย้ายเป็น component กลาง src/components/CollapseCard.jsx (ใช้ร่วมกับ OrderTrace · 2026-07-30)
+const CollapseCard = (props) => <CollapseCardBase storePrefix="ph" {...props} />;
 
 export default function ProductHistory() {
   const { role, lineId, sections } = useContext(UserContext);
