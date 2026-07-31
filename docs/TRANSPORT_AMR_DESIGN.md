@@ -87,6 +87,26 @@
 
 ---
 
+## 5.5 บทเรียนจาก Toyota TPS (ไปดูงานจริง · 8 บอร์ด · 2026-07-21)
+
+TPS ของจริงยืนยันว่าการขนส่งภายใน = **kanban circulation บน "รอบเวลาตายตัว" (定時定量 TEI-TEI / Teiki-bin milk run)** ขับด้วยการ์ดจริงที่วิ่งผ่าน Kanban Post + Okamochi (heijunka box) แยกบทบาทชัด 3 หน้าที่ + มี catalog ความผิดปกติมาตรฐาน
+
+| บอร์ดที่ดู | แก่น | เรามีแล้ว / ควรเพิ่ม |
+|---|---|---|
+| **Kanban Route** (แผนภาพวงกลม 11 สเตป + K/B Mat'l loop) | ทั้งระบบเป็น **วงจรปิด route ตายตัว** · 3 บทบาท **Kanban Man (pink) / Production (blue) / Logistic (orange)** · มี **TEI-TEI System Flow** (ตารางเวลา cut-off ล่วงหน้า 1 กะ · หน้าต่างส่งถูกกฎหมายรถบรรทุกบล็อก 06-10, 16-20) | 🆕 route + stop จริง + บทบาท |
+| **Kanban Collection Post + Okamochi** (Pattern A/B/C/D × ช่องเวลา 1-11, ธงสี, break time ฝังในpitch) | leveling box ตามเวลา · **เก็บ kanban คืนทุก 2 ชม.** (fixed pitch) · มี route map + P-Q chart + Pattern Group + lot cycle (a:b:c) | ✅ heijunka leveling into rounds · 🆕 kanban post view + return-every-N-hrs |
+| **Manpower/Assignment + LOTO** (Day/White/Yellow, "GO TO line", present/absent) | จัดคน→ไลน์ต่อกะแบบ visual | ✅ = ยืนยันแนวจอ 1 (carrier→line ต้นกะ) |
+| **Real-time per-part KPI** (JI JI KOKUKOKU · Cycle/Setup/Stop/Eff · Pareto · White/Yellow) + Production Control Board (GSPH/EFF) | KPI ราย part-number รายกะ + List of Problem | ✅ OEE/Report เรามีคล้าย |
+| **🎯 Abnormality case of TEI-TEI (17 เคส)** | ตาราง: เคสผิดปกติ → จุด → การกระทำ → **ผล (Shortage/Over stock)** + รูป OK/NG | 🆕 **เพชร — ทำเป็น Abnormality Monitor อัตโนมัติ** |
+
+**สิ่งที่ควรหยิบมา (เรียงตามคุณค่า):**
+1. **🎯 Abnormality Monitor** — encode subset ของ 17 เคสที่ detect ได้จากข้อมูลเรา → auto-andon: เช่น (2) kanban คืน < cut-off, (3-4) คืน ≠ แผน, (11) stock เกิน 1 pack (over), (12-13) order/รับ ก่อน/ช้ากว่าเวลา, (15) **ยอดบน board ≠ actual stock**, (16) ลากเกินระบบ >2 lot, (17) part ไม่เต็ม pallet แต่ใส่ kanban → แต่ละเคสจบด้วย **Shortage/Over stock** ชัดเจน
+2. **Teiki-bin route + stops จริง** — ยก `points_count` (แค่ตัวเลข) → **stop เรียงลำดับบน route** + route map + collection timetable (pitch เช่นทุก 2 ชม.) — ตรงกับที่ AMR ต้องเดินเส้นทางพอดี
+3. **ขา return-kanban / ภาชนะเปล่า = ครึ่งหนึ่งของวงจร** — ยืนยัน `empty_return` ที่วางไว้ ต้อง first-class ไม่ใช่ของแถม
+4. **3 บทบาท** — Logistic (คนขับ) / Kanban Man (คนคัดแยก-จ่ายคัมบังที่ store) / Production — แยกสิทธิ์/หน้าจอ
+5. **หน้าต่างเวลาส่งถูกบล็อก** (เบรค + เงื่อนไขจริง) — board ดันผ่าน + config ช่วงห้ามส่ง
+6. (ภายหลัง) **heijunka pattern/pitch + lot cycle (a:b:c) + P-Q** ใน kanban-calc
+
 ## 6. Open decisions (รอเคาะก่อนลงมือ)
 1. **มอบงาน** — เฟส 1 ให้หัวหน้า store มอบเอง หรือ auto-assign ตามรอบ/ไลน์ที่คนขับรับผิดชอบ?
 2. **หน่วยงาน** — คนขับ 1 คน = 1 กะ/หลายไลน์? ต้องผูก carrier กับ line/section ไหม (scope)?
