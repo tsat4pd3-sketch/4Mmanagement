@@ -56,9 +56,19 @@ export default function MachineDatabase() {
   const [loading, setLoading]       = useState(true);
 
   const [search, setSearch]         = useState('');
+  const [filterCat, setFilterCat]   = useState('');   // '' = ทุกหมวด | production | facility | utility
   const [filterLine, setFilterLine] = useState('');
   const [filterType, setFilterType] = useState('');
   const [showInactive, setShowInactive] = useState(false);
+  // §139 ย่อ/ขยายกลุ่มไลน์ — จำ override ของ user ใน localStorage (default = กาง)
+  const [collapsedGroups, setCollapsedGroups] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('md_group_collapse') || '[]')); } catch { return new Set(); }
+  });
+  const toggleGroup = (name) => setCollapsedGroups(prev => {
+    const next = new Set(prev); next.has(name) ? next.delete(name) : next.add(name);
+    try { localStorage.setItem('md_group_collapse', JSON.stringify([...next])); } catch { /* ignore */ }
+    return next;
+  });
 
   const [editing, setEditing]       = useState(null); // machine form object, or null
   const [saving, setSaving]         = useState(false);
@@ -124,17 +134,26 @@ export default function MachineDatabase() {
     return pcm;
   }, [scopedLines]);
 
+  // ตัวเลือก dropdown "ไลน์/ระบบ" ปรับตามหมวด — production(หรือทุกหมวด) = ไลน์ผลิต · facility/utility = ชื่อระบบ/พื้นที่ (line_name ของเครื่องหมวดนั้น ที่ไม่มีใน production_lines)
+  const catLineNames = useMemo(() => {
+    if (filterCat !== 'facility' && filterCat !== 'utility') return null; // ใช้ dropdown ไลน์ผลิตเดิม
+    const set = new Set();
+    machines.forEach(m => { if ((m.equipment_category || 'production') === filterCat && m.line_name) set.add(m.line_name); });
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [machines, filterCat]);
+
   const filtered = useMemo(() => {
     // เลือกไลน์หลัก (parent) = เห็นเครื่องของไลน์ย่อยทั้งกลุ่มด้วย (ไม่งั้นได้ 0 เพราะเครื่องอยู่ที่ไลน์ย่อย)
     const kids = parentChildrenMap[filterLine];
     const inLine = (m) => !filterLine || m.line_name === filterLine || (kids && kids.includes(m.line_name));
     return machines
       .filter(m => !scopeActive || scopedLineNames.has(m.line_name)) // mandatory scope ก่อน filter อิสระเสมอ
+      .filter(m => !filterCat || (m.equipment_category || 'production') === filterCat) // หมวดอุปกรณ์ (ผลิต/facility/utility)
       .filter(m => showInactive || m.is_active)
       .filter(inLine)
       .filter(m => !filterType || m.machine_type_id === filterType)
       .filter(m => !search.trim() || [m.machine_no, m.machine_name].some(v => (v || '').toLowerCase().includes(search.trim().toLowerCase())));
-  }, [machines, scopeActive, scopedLineNames, showInactive, filterLine, filterType, search, parentChildrenMap]);
+  }, [machines, scopeActive, scopedLineNames, filterCat, showInactive, filterLine, filterType, search, parentChildrenMap]);
 
   const grouped = useMemo(() => {
     const map = {};
@@ -224,15 +243,27 @@ export default function MachineDatabase() {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
         <input placeholder="🔍 ค้นหาหมายเลข/ชื่อเครื่อง" value={search} onChange={e => setSearch(e.target.value)}
           style={{ ...inputStyle, width: 220 }} />
+        {/* หมวดอุปกรณ์ — เปลี่ยนหมวดแล้วล้างไลน์ที่เลือกค้าง (§5.3 cascade) */}
+        <select value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterLine(''); }} style={{ ...inputStyle, width: 150 }}>
+          <option value="">— ทุกหมวด —</option>
+          {EQUIP_CATS.map(c => <option key={c.v} value={c.v}>{c.t}</option>)}
+        </select>
         <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ ...inputStyle, width: 180 }}>
-          <option value="">— ทุกไลน์ —</option>
-          {scopedLines.filter(l => !l.parent_line_name && !parentChildrenMap[l.name]).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-          {Object.entries(parentChildrenMap).map(([parent, children]) => (
-            <optgroup key={parent} label={`▸ ${parent}`}>
-              <option value={parent}>{parent} — ทั้งกลุ่ม</option>
-              {children.map(c => <option key={c} value={c}>{c}</option>)}
-            </optgroup>
-          ))}
+          {catLineNames
+            ? <>
+                <option value="">— ทุกระบบ/พื้นที่ —</option>
+                {catLineNames.map(n => <option key={n} value={n}>{n}</option>)}
+              </>
+            : <>
+                <option value="">— ทุกไลน์ —</option>
+                {scopedLines.filter(l => !l.parent_line_name && !parentChildrenMap[l.name]).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                {Object.entries(parentChildrenMap).map(([parent, children]) => (
+                  <optgroup key={parent} label={`▸ ${parent}`}>
+                    <option value={parent}>{parent} — ทั้งกลุ่ม</option>
+                    {children.map(c => <option key={c} value={c}>{c}</option>)}
+                  </optgroup>
+                ))}
+              </>}
         </select>
         <select value={filterType} onChange={e => setFilterType(e.target.value)} style={{ ...inputStyle, width: 180 }}>
           <option value="">— ทุกประเภท —</option>
@@ -242,6 +273,16 @@ export default function MachineDatabase() {
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           แสดงที่ปิดใช้งาน
         </label>
+        {grouped.length > 1 && (
+          <button type="button" onClick={() => {
+            const allCollapsed = grouped.every(([n]) => collapsedGroups.has(n));
+            const next = allCollapsed ? new Set() : new Set(grouped.map(([n]) => n));
+            setCollapsedGroups(next);
+            try { localStorage.setItem('md_group_collapse', JSON.stringify([...next])); } catch { /* ignore */ }
+          }} style={{ ...inputStyle, width: 'auto', cursor: 'pointer', fontSize: 12, padding: '7px 12px' }}>
+            {grouped.every(([n]) => collapsedGroups.has(n)) ? '▼ กางทั้งหมด' : '▶ ย่อทั้งหมด'}
+          </button>
+        )}
         <div style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>{filtered.length} เครื่อง</div>
       </div>
 
@@ -251,12 +292,17 @@ export default function MachineDatabase() {
         <div style={{ textAlign: 'center', padding: 60, color: 'var(--muted)', fontSize: 13 }}>ไม่พบเครื่องจักร</div>
       )}
 
-      {grouped.map(([lineName, items]) => (
+      {grouped.map(([lineName, items]) => {
+        const isCollapsed = collapsedGroups.has(lineName);
+        return (
         <div key={lineName} style={{ marginBottom: 18, border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-          <div style={{ padding: '10px 16px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button type="button" onClick={() => toggleGroup(lineName)}
+            style={{ width: '100%', textAlign: 'left', padding: '10px 16px', background: 'var(--bg2)', borderBottom: isCollapsed ? 'none' : '1px solid var(--border)', borderTop: 'none', borderLeft: 'none', borderRight: 'none', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', color: 'var(--text)' }}>
+            <span style={{ fontSize: 11, color: 'var(--muted)', width: 12 }}>{isCollapsed ? '▶' : '▼'}</span>
             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>⚙️ {lineName}</span>
             <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>{items.length} เครื่อง</span>
-          </div>
+          </button>
+          {!isCollapsed && (
           <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
             {items.map(item => (
               <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, opacity: item.is_active ? 1 : 0.5 }}>
@@ -287,8 +333,10 @@ export default function MachineDatabase() {
               </div>
             ))}
           </div>
+          )}
         </div>
-      ))}
+        );
+      })}
       </div>
 
       {/* Add/Edit machine modal */}
