@@ -20,6 +20,19 @@ function getWorkDate() {
   if (d.getHours() < 8) d.setDate(d.getDate() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+// วันงานล่าสุดที่ "จบแล้ว" (default ของแผงสรุปทบทวน) — ตรรกะเดียวกับ MorningMeeting
+//   ก่อน 08:00 = work date ปัจจุบัน (ยังเป็นเมื่อวาน) · หลัง 08:00 = ถอย 1 วัน
+function reviewDefaultDate() {
+  const base = getWorkDate();
+  if (new Date().getHours() < 8) return base;
+  const d = new Date(`${base}T00:00:00`); d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+const shiftDate = (s, delta) => { const d = new Date(`${s}T00:00:00`); d.setDate(d.getDate() + delta); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const fmtThaiDate = (s) => { try { return new Date(`${s}T00:00:00`).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }); } catch { return s; } };
+const fmtNum = (n) => (n == null ? '0' : Math.round(n).toLocaleString('en-US'));
+const pctCol = (p) => p == null ? 'var(--muted)' : p >= 95 ? '#22c55e' : p >= 80 ? '#f59e0b' : '#ef4444';
+const oeeCol = (o) => o == null ? 'var(--muted)' : o >= 80 ? '#22c55e' : o >= 65 ? '#f59e0b' : '#ef4444';
 
 // สีตามหมวดสถานะ (คำนวณต่อ metric) — down = แดงกระพริบ (Andon), อื่นๆ นิ่ง
 const CAT = {
@@ -136,6 +149,11 @@ export default function FactoryMap({ setupMode = false }) {
   const [uploading, setUploading] = useState(false);
   const [aspect, setAspect] = useState(null);
   const [metric, setMetric] = useState('productivity');
+  // แผงขวา: 'review' = สรุปทบทวนทั้งวัน (default · ประชุมผู้จัดการ) · 'live' = จัดอันดับสดตาม metric (เดิม)
+  const [panelMode, setPanelMode] = useState('review');
+  const [reviewDate, setReviewDate] = useState(reviewDefaultDate);
+  const [reviewStatus, setReviewStatus] = useState({}); // line_name → full-day aggregate ของ reviewDate
+  const [reviewLoading, setReviewLoading] = useState(false);
   const [highlight, setHighlight] = useState(null); // line_name ที่คลิกจาก panel (เน้นชั่วคราว)
   const [detailLine, setDetailLine] = useState(null); // ไลน์ที่คลิกเจาะดู popup รายละเอียด
   const [hoverLine, setHoverLine] = useState(null); // ไลน์ที่เม้าส์วาง (การ์ดพรีวิวลอย — เฉพาะ mouse)
@@ -400,6 +418,68 @@ export default function FactoryMap({ setupMode = false }) {
   }, []);
   useEffect(() => { loadSupply(); const t = setInterval(loadSupply, 30000); return () => clearInterval(t); }, [loadSupply]);
 
+  /* ── สรุปทบทวนทั้งวัน (กะเช้า+ดึก) ตาม reviewDate — โหลดเมื่อเปลี่ยนวัน/เข้าโหมด review (ไม่ auto refresh) ──
+     ต่างจากผังที่โชว์สด: แผงนี้ใช้ค่าที่ปิดกะแล้ว (OEE ที่ stamp, DT/NG/ผลิตทั้งวัน) ไว้ประชุมผู้จัดการ */
+  const loadReview = useCallback(async () => {
+    setReviewLoading(true);
+    try {
+      const [{ data: sessions }, empRes, plRes, logRes] = await Promise.all([
+        supabaseDR.from('production_sessions').select('id, line_name, status, oee, qty_ng, ng_qty').eq('work_date', reviewDate),
+        supabase.from('employees').select('id, line_id').eq('is_active', true),
+        supabase.from('production_lines').select('id, name'),
+        supabase.from('daily_production_logs').select('employee_id, is_present').eq('work_date', reviewDate),
+      ]);
+      const out = {};
+      const ensure = (ln) => (out[ln] || (out[ln] = { actual: 0, target: 0, oeeSum: 0, oeeN: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0 }));
+      // คนเข้างานของวันนั้น (map พนักงาน→ไลน์ ปัจจุบัน — ยอมรับได้สำหรับทบทวนย้อนหลัง)
+      const lineOfId = {}; (plRes.data || []).forEach(l => { lineOfId[l.id] = l.name; });
+      const presentSet = new Set((logRes.data || []).filter(l => l.is_present).map(l => l.employee_id));
+      (empRes.data || []).forEach(e => {
+        const ln = lineOfId[e.line_id]; if (!ln) return;
+        const o = ensure(ln); o.headTotal++; if (presentSet.has(e.id)) o.present++;
+      });
+      if (sessions?.length) {
+        const sessIds = sessions.map(s => s.id);
+        const [{ data: orders }, { data: dts }, { data: prods }] = await Promise.all([
+          supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', sessIds),
+          supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', sessIds),
+          supabaseDR.from('dr_products').select('mat_no, pair_mat_no'),
+        ]);
+        const pairMap = {}; (prods || []).forEach(p => { if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; });
+        const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
+        const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
+        sessions.forEach(s => {
+          const o = ensure(s.line_name);
+          const os = ordBySess[s.id] || [];
+          // นับงานคู่ RH/LH เป็น 1 คู่/stroke เหมือนภาพใหญ่ (pairAwareTotal)
+          const perMat = {};
+          os.forEach(od => {
+            if (!od.mat_no) return;
+            const e = perMat[od.mat_no] || (perMat[od.mat_no] = { mat_no: od.mat_no, target: 0, produced: 0 });
+            e.target += od.qty_target ?? od.qty ?? 0;
+            e.produced += od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0);
+          });
+          const nullOs = os.filter(od => !od.mat_no);
+          const ptot = pairAwareTotal(Object.values(perMat), m => pairMap[m] || null);
+          o.target += ptot.target + nullOs.reduce((a, od) => a + (od.qty_target ?? od.qty ?? 0), 0);
+          o.actual += ptot.produced + nullOs.reduce((a, od) => a + (od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0)), 0);
+          // Downtime นอกแผนทั้งวัน (ปิดกะแล้ว → duration_min/started+ended มีค่า)
+          (dtBySess[s.id] || []).forEach(d => {
+            if (d.dr_downtime_types?.category === 'planned') return;
+            if (d.duration_min != null) o.dtMin += Number(d.duration_min) || 0;
+            else if (d.started_at && d.ended_at) o.dtMin += Math.max(0, (new Date(d.ended_at) - new Date(d.started_at)) / 60000);
+          });
+          o.ng += s.qty_ng ?? s.ng_qty ?? 0;
+          if (s.oee != null) { o.oeeSum += Number(s.oee); o.oeeN++; }
+        });
+      }
+      Object.values(out).forEach(o => { o.dtMin = Math.round(o.dtMin); o.oee = o.oeeN ? Math.round(o.oeeSum / o.oeeN) : null; });
+      setReviewStatus(out);
+    } catch { setReviewStatus({}); }
+    finally { setReviewLoading(false); }
+  }, [reviewDate]);
+  useEffect(() => { if (panelMode === 'review' && !editing) loadReview(); }, [loadReview, panelMode, editing]);
+
   // ── family rollup: ตีกรอบ "ไลน์บนสุด (top-level)" แล้วรวมยอดของลูกขึ้นมา ──
   // (ข้อมูลจริง: พนักงาน/บางเมตริกผูกกับไลน์แม่ · บางอันผูกกับลูก → รวมทั้งครอบครัวจึงครบ)
   // ไลน์ไม่มีลูก = โชว์ตัวเอง (เช่น LINE A 800 Ton) · ไลน์มีลูก = ตัวเอง + ลูกทั้งหมด
@@ -478,6 +558,38 @@ export default function FactoryMap({ setupMode = false }) {
     });
     return arr;
   }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, regions, metric, topNames]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── สรุปทบทวนรายวัน: rollup ทั้งครอบครัว (แม่+ลูก) เหมือน stOf แต่อ่านจาก reviewStatus ──
+  const reviewOf = (name) => {
+    const agg = { actual: 0, target: 0, oee: null, oeeSum: 0, oeeN: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0 };
+    familyNames(name).forEach(n => {
+      const r = reviewStatus[n]; if (!r) return;
+      agg.actual += r.actual || 0; agg.target += r.target || 0; agg.oeeSum += r.oeeSum || 0; agg.oeeN += r.oeeN || 0;
+      agg.dtMin += r.dtMin || 0; agg.ng += r.ng || 0; agg.present += r.present || 0; agg.headTotal += r.headTotal || 0;
+    });
+    agg.oee = agg.oeeN ? Math.round(agg.oeeSum / agg.oeeN) : null;
+    return agg;
+  };
+  // เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน (ปัญหาก่อน) · ไม่มีเป้าไปท้าย
+  const reviewRanked = useMemo(() => {
+    const names = new Set([...topNames, ...regions.map(r => r.line_name)]);
+    const arr = [...names].map(name => ({ name, r: reviewOf(name) }));
+    arr.sort((a, b) => {
+      const ap = a.r.target > 0 ? a.r.actual / a.r.target : null;
+      const bp = b.r.target > 0 ? b.r.actual / b.r.target : null;
+      if (ap == null && bp == null) return a.name.localeCompare(b.name);
+      if (ap == null) return 1; if (bp == null) return -1;
+      return ap - bp;
+    });
+    return arr;
+  }, [reviewStatus, regions, topNames]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ยอดรวมทั้งโรงงาน (รวมเฉพาะไลน์บนสุด กันนับซ้ำ)
+  const reviewTotals = useMemo(() => {
+    const t = { actual: 0, target: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0, oeeSum: 0, oeeN: 0, oee: null };
+    topNames.forEach(name => { const r = reviewOf(name); t.actual += r.actual; t.target += r.target; t.dtMin += r.dtMin; t.ng += r.ng; t.present += r.present; t.headTotal += r.headTotal; t.oeeSum += r.oeeSum; t.oeeN += r.oeeN; });
+    t.oee = t.oeeN ? Math.round(t.oeeSum / t.oeeN) : null;
+    return t;
+  }, [reviewStatus, topNames]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── อัปโหลดรูปผัง (บีบเบา 2560/2.5MB/q0.9) ── */
   const handleUpload = async (e) => {
@@ -610,7 +722,7 @@ export default function FactoryMap({ setupMode = false }) {
       <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div>
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>🗺️ ผังรวมโรงงาน</h2>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตทุก 30 วินาที</p>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · ผังอัปเดตสดทุก 30 วิ · <b>แผงขวา = สรุปทบทวนทั้งวัน (เลือกวันได้)</b></p>
         </div>
         {canEdit && <button onClick={() => { setEditing(v => !v); cancelDraw(); }} style={{ ...btn(editing), position: 'relative' }}>{editing ? '✓ เสร็จ' : '✏️ แก้ผัง'}<ToggleDot on={editing} /></button>}
       </div>
@@ -715,54 +827,131 @@ export default function FactoryMap({ setupMode = false }) {
           </div>
           </div>
 
-          {/* ── side panel: สรุป + จัดอันดับไลน์ตาม metric (ใช้พื้นที่ข้าง) ── */}
-          {!editing && (() => {
-            const counts = ranked.reduce((a, r) => { a[r.cat] = (a[r.cat] || 0) + 1; return a; }, {});
-            const maxVal = Math.max(1, ...ranked.map(r => (r.val == null ? 0 : Math.abs(r.val))));
-            const isPct = ['productivity', 'oee', 'manpower', 'stationfill'].includes(metric);
-            return (
-            <aside style={{ flex: '0 0 340px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
-              <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>{M.label} — จัดอันดับ</div>
-              {/* สรุปจำนวนไลน์ตามสถานะ */}
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-                {['bad', 'down', 'ok', 'good', 'waiting', 'idle'].filter(c => counts[c]).map(c => (
-                  <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: CAT[c].color, background: `${CAT[c].color}1a`, border: `1px solid ${CAT[c].color}44`, padding: '3px 9px', borderRadius: 20 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: CAT[c].color }} />{counts[c]} {CAT[c].label}
-                  </span>
-                ))}
+          {/* ── side panel: สรุปทบทวนรายวัน (default) / จัดอันดับสด (ใช้พื้นที่ข้าง) ── */}
+          {!editing && (
+            <aside style={{ flex: '0 0 360px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+              {/* สลับโหมดแผง */}
+              <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                <button onClick={() => setPanelMode('review')} style={{ ...miniTab(panelMode === 'review'), flex: 1 }}>📅 สรุปทบทวนรายวัน</button>
+                <button onClick={() => setPanelMode('live')} style={{ ...miniTab(panelMode === 'live'), flex: 1 }}>⚡ สด (จัดอันดับ)</button>
               </div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{M.desc ? 'มาก → น้อย (ปัญหาขึ้นบน)' : 'น้อย → มาก (ตามหลังขึ้นบน)'} · คลิกแถวเพื่อเน้นบนผัง</div>
-              {metric === 'productivity' && (
-                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBottom: 8, padding: '4px 8px', background: 'var(--bg3)', borderRadius: 6, lineHeight: 1.5 }}>
-                  รูปแบบ <b style={{ color: 'var(--text2)' }}>ทำได้ / เป้า ณ เวลานี้ / เป้าเต็มกะ</b> · % = ทำได้เทียบเป้า ณ เวลานี้ (ทันจังหวะมั้ย)
-                </div>
-              )}
-              {ranked.length === 0 ? (
-                <div style={{ fontSize: 12, color: 'var(--muted)', padding: 20, textAlign: 'center' }}>ยังไม่มีข้อมูลวันนี้</div>
-              ) : ranked.map(({ name, st, cat, val }, i) => {
-                const meta = CAT[cat]; const txt = M.text(st); const hasRegion = regions.some(r => r.line_name === name);
-                const barW = val == null ? 0 : isPct ? Math.min(100, Math.abs(val)) : Math.round(Math.abs(val) / maxVal * 100);
-                return (
-                  <div key={name} onClick={() => { if (hasRegion) flashLine(name); openLine(name); }}
-                    style={{ padding: '8px 10px', borderRadius: 9, marginBottom: 5, cursor: 'pointer', background: highlight === name ? 'var(--bg2)' : 'var(--bg3)', border: `1px solid ${highlight === name ? meta.color : 'var(--border2)'}` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', width: 18, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
-                      <span className={meta.blink ? 'dt-alarm-blink' : undefined} style={{ width: 11, height: 11, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
-                      <div style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {name}{!hasRegion && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}> · ยังไม่ตีกรอบ</span>}
-                      </div>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: meta.color, whiteSpace: 'nowrap', flexShrink: 0 }}>{txt || '—'}</div>
-                    </div>
-                    {/* แถบเทียบสัดส่วน */}
-                    <div style={{ height: 5, borderRadius: 3, background: 'var(--bg)', marginTop: 6, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${barW}%`, background: meta.color, borderRadius: 3, transition: 'width .3s' }} />
-                    </div>
+
+              {panelMode === 'review' ? (
+                <>
+                  {/* ตัวเลือกวันที่ */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    <button onClick={() => setReviewDate(d => shiftDate(d, -1))} style={navBtn}>◀</button>
+                    <input type="date" value={reviewDate} max={getWorkDate()} onChange={e => e.target.value && setReviewDate(e.target.value)}
+                      style={{ width: 150, padding: '6px 8px', borderRadius: 8, fontSize: 13, textAlign: 'center' }} />
+                    <button onClick={() => setReviewDate(d => (d < getWorkDate() ? shiftDate(d, 1) : d))} disabled={reviewDate >= getWorkDate()} style={{ ...navBtn, opacity: reviewDate >= getWorkDate() ? 0.4 : 1 }}>▶</button>
                   </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>{fmtThaiDate(reviewDate)}</div>
+                    {reviewDate !== reviewDefaultDate() && <button onClick={() => setReviewDate(reviewDefaultDate())} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11 }}>↺ วันล่าสุด</button>}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>ภาพรวมทั้งวัน (กะเช้า+ดึก) สำหรับประชุมผู้จัดการ · เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน · คลิกแถวเปิดผังไลน์</div>
+
+                  {/* สรุปทั้งโรงงาน */}
+                  {(() => {
+                    const t = reviewTotals; const pct = t.target > 0 ? Math.round(t.actual / t.target * 100) : null;
+                    const stats = [
+                      { label: 'ผลิตได้รวม / เป้า', val: `${fmtNum(t.actual)}/${fmtNum(t.target)}${pct != null ? ` · ${pct}%` : ''}`, color: pctCol(pct) },
+                      { label: 'OEE เฉลี่ย', val: t.oee != null ? `${t.oee}%` : '—', color: oeeCol(t.oee) },
+                      { label: 'Downtime รวม', val: `${fmtNum(t.dtMin)} น.`, color: t.dtMin > 0 ? '#f59e0b' : 'var(--text)' },
+                      { label: 'ของเสียรวม', val: fmtNum(t.ng), color: t.ng > 0 ? '#ef4444' : 'var(--text)' },
+                      { label: 'คนเข้างาน', val: t.headTotal > 0 ? `${t.present}/${t.headTotal}` : '—', color: 'var(--text)' },
+                    ];
+                    return (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 14 }}>
+                        {stats.map(s => (
+                          <div key={s.label} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 10px' }}>
+                            <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 600 }}>{s.label}</div>
+                            <div style={{ fontSize: 15, fontWeight: 800, color: s.color }}>{s.val}</div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
+                  {reviewLoading ? (
+                    <div style={{ fontSize: 12, color: 'var(--muted)', padding: 16, textAlign: 'center' }}>กำลังโหลด...</div>
+                  ) : reviewRanked.every(x => !x.r.target && !x.r.dtMin && !x.r.ng && x.r.oee == null) ? (
+                    <div style={{ fontSize: 12, color: 'var(--muted)', padding: 20, textAlign: 'center' }}>ไม่มีข้อมูลการผลิตของวันที่เลือก</div>
+                  ) : reviewRanked.map(({ name, r }, i) => {
+                    const noData = !r.target && !r.dtMin && !r.ng && r.oee == null;
+                    if (noData) return null;
+                    const hasRegion = regions.some(rg => rg.line_name === name);
+                    const pct = r.target > 0 ? Math.round(r.actual / r.target * 100) : null;
+                    return (
+                      <div key={name} onClick={() => { if (hasRegion) flashLine(name); openLine(name); }}
+                        style={{ padding: '8px 10px', borderRadius: 9, marginBottom: 5, cursor: 'pointer', background: highlight === name ? 'var(--bg2)' : 'var(--bg3)', border: `1px solid ${highlight === name ? pctCol(pct) : 'var(--border2)'}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 5 }}>
+                          <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', width: 18, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
+                          <div style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {name}{!hasRegion && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}> · ยังไม่ตีกรอบ</span>}
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: pctCol(pct), whiteSpace: 'nowrap', flexShrink: 0 }}>{r.target > 0 ? `${fmtNum(r.actual)}/${fmtNum(r.target)} · ${pct}%` : '—'}</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 27 }}>
+                          <Chip label="OEE" val={r.oee != null ? `${r.oee}%` : '—'} color={oeeCol(r.oee)} />
+                          <Chip label="DT" val={`${fmtNum(r.dtMin)}น.`} color={r.dtMin > 0 ? '#f59e0b' : 'var(--muted)'} />
+                          <Chip label="NG" val={fmtNum(r.ng)} color={r.ng > 0 ? '#ef4444' : 'var(--muted)'} />
+                          {r.headTotal > 0 && <Chip label="คน" val={`${r.present}/${r.headTotal}`} color="var(--text2)" />}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </>
+              ) : (() => {
+                // ── โหมดสด (จัดอันดับตาม metric ที่เลือก) — เดิม ──
+                const counts = ranked.reduce((a, r) => { a[r.cat] = (a[r.cat] || 0) + 1; return a; }, {});
+                const maxVal = Math.max(1, ...ranked.map(r => (r.val == null ? 0 : Math.abs(r.val))));
+                const isPct = ['productivity', 'oee', 'manpower', 'stationfill'].includes(metric);
+                return (
+                  <>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>{M.label} — จัดอันดับ (สด)</div>
+                    {/* สรุปจำนวนไลน์ตามสถานะ */}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                      {['bad', 'down', 'ok', 'good', 'waiting', 'idle'].filter(c => counts[c]).map(c => (
+                        <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: CAT[c].color, background: `${CAT[c].color}1a`, border: `1px solid ${CAT[c].color}44`, padding: '3px 9px', borderRadius: 20 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: CAT[c].color }} />{counts[c]} {CAT[c].label}
+                        </span>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{M.desc ? 'มาก → น้อย (ปัญหาขึ้นบน)' : 'น้อย → มาก (ตามหลังขึ้นบน)'} · คลิกแถวเพื่อเน้นบนผัง</div>
+                    {metric === 'productivity' && (
+                      <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBottom: 8, padding: '4px 8px', background: 'var(--bg3)', borderRadius: 6, lineHeight: 1.5 }}>
+                        รูปแบบ <b style={{ color: 'var(--text2)' }}>ทำได้ / เป้า ณ เวลานี้ / เป้าเต็มกะ</b> · % = ทำได้เทียบเป้า ณ เวลานี้ (ทันจังหวะมั้ย)
+                      </div>
+                    )}
+                    {ranked.length === 0 ? (
+                      <div style={{ fontSize: 12, color: 'var(--muted)', padding: 20, textAlign: 'center' }}>ยังไม่มีข้อมูลวันนี้</div>
+                    ) : ranked.map(({ name, st, cat, val }, i) => {
+                      const meta = CAT[cat]; const txt = M.text(st); const hasRegion = regions.some(r => r.line_name === name);
+                      const barW = val == null ? 0 : isPct ? Math.min(100, Math.abs(val)) : Math.round(Math.abs(val) / maxVal * 100);
+                      return (
+                        <div key={name} onClick={() => { if (hasRegion) flashLine(name); openLine(name); }}
+                          style={{ padding: '8px 10px', borderRadius: 9, marginBottom: 5, cursor: 'pointer', background: highlight === name ? 'var(--bg2)' : 'var(--bg3)', border: `1px solid ${highlight === name ? meta.color : 'var(--border2)'}` }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                            <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', width: 18, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
+                            <span className={meta.blink ? 'dt-alarm-blink' : undefined} style={{ width: 11, height: 11, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
+                            <div style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {name}{!hasRegion && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}> · ยังไม่ตีกรอบ</span>}
+                            </div>
+                            <div style={{ fontSize: 13, fontWeight: 800, color: meta.color, whiteSpace: 'nowrap', flexShrink: 0 }}>{txt || '—'}</div>
+                          </div>
+                          {/* แถบเทียบสัดส่วน */}
+                          <div style={{ height: 5, borderRadius: 3, background: 'var(--bg)', marginTop: 6, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${barW}%`, background: meta.color, borderRadius: 3, transition: 'width .3s' }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
                 );
-              })}
+              })()}
             </aside>
-            );
-          })()}
+          )}
         </div>
       )}
 
@@ -916,3 +1105,16 @@ const btn = (active) => ({
   border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}`,
   background: active ? 'var(--accent-dim)' : 'var(--bg3)', color: active ? 'var(--accent)' : 'var(--text2)',
 });
+const miniTab = (active) => ({
+  padding: '7px 10px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+  border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}`,
+  background: active ? 'var(--accent-dim)' : 'var(--bg3)', color: active ? 'var(--accent)' : 'var(--text2)',
+});
+const navBtn = { padding: '6px 11px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' };
+function Chip({ label, val, color }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 20, padding: '2px 8px' }}>
+      <span style={{ color: 'var(--muted)' }}>{label}</span><span style={{ color }}>{val}</span>
+    </span>
+  );
+}
