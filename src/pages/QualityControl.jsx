@@ -357,9 +357,9 @@ function QualityDashboard() {
     }
 
     const ppmTrend = [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, v]) => ({ date: fmtD(date), ppm: v.total ? Math.round(v.ng / v.total * 1e6) : null, ng: v.ng }));
+      .map(([date, v]) => ({ date: fmtD(date), ppm: (v.total + v.ng) ? Math.round(v.ng / (v.total + v.ng) * 1e6) : null, ng: v.ng }));
     const lineRows = [...byLine.entries()]
-      .map(([line, v]) => ({ line, ng: v.ng, ppm: v.total ? Math.round(v.ng / v.total * 1e6) : 0 }))
+      .map(([line, v]) => ({ line, ng: v.ng, ppm: (v.total + v.ng) ? Math.round(v.ng / (v.total + v.ng) * 1e6) : 0 }))
       .sort((a, b) => b.ng - a.ng).slice(0, 12);
     let pareto = [...byType.entries()].map(([name, v]) => ({ name, qty: v.qty, color: v.color }))
       .filter(p => p.qty > 0).sort((a, b) => b.qty - a.qty).slice(0, 10);
@@ -368,8 +368,10 @@ function QualityDashboard() {
     pareto = pareto.map(p => { cum += p.qty; return { ...p, cum: paretoTotal ? +(cum / paretoTotal * 100).toFixed(1) : 0 }; });
     return {
       total, ng,
-      ppm: total ? Math.round(ng / total * 1e6) : null,
-      ftt: total ? +((total - ng) / total * 100).toFixed(2) : null,
+      // total = ยอดสแกน = "ของดี" ล้วน · ผลิตจริงทั้งหมด = total + ng → PPM/FTT ต้องหารด้วยผลิตจริง ไม่ใช่ของดี
+      // (กฎ Q "การ์ดที่สแกน=ของดีล้วน" 2026-08-02 · เดิม ng/total ทำ PPM สูงเกินจริง, (total−ng)/total ทำ FTT ต่ำเกินจริง)
+      ppm: (total + ng) ? Math.round(ng / (total + ng) * 1e6) : null,
+      ftt: (total + ng) ? +(total / (total + ng) * 100).toFixed(2) : null,
       ppmTrend, lineRows, pareto,
     };
   }, [shownSessions, shownSessIds, sessById, orders, defects, lineFilter, productFilter]);
