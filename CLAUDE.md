@@ -489,6 +489,13 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 - ไม่เข้าเกณฑ์ = sequential: P = Σ(qty×CT) ÷ run ทั้งกะ (จับ idle ระหว่างงานด้วย)
 - บั๊กเดิม (ก่อน 2026-07-14) ทำ P ต่ำเกินจริงในกะ multi-MAT — แก้ย้อนหลังใน DB แล้ว 12 กะ (22/06–13/07) ด้วย SQL ที่ replicate สูตรแล้ว validate กับการคำนวณมือ
 
+### ⚠️ กฎ Q (Quality) — การ์ดที่สแกนปิด = "ของดีล้วน" (user ยืนยัน 2026-08-02)
+
+- **ยอดที่สแกนปิดใบงาน (`prod_orders.qty` / `qty_actual` / `qty_ok`) = จำนวน "ของดี" ล้วน** — พนักงานผลิตจนได้ของดีครบเป้า ของเสียที่เกิดระหว่างทางถูกผลิต**เพิ่ม**จนได้ของดีครบ แล้วลง NG แยกที่ `defect_logs` · ตัวอย่าง: order 10 → สแกน 10 (ดี) + NG 1 = ผลิตจริง 11
+- **`Q = ของดี / ผลิตจริงทั้งหมด = totalProduced / (totalProduced + ngQty)`** — **ห้าม** `(ดี − NG)/ดี` (หักซ้ำ ทำ %Q ต่ำเกินจริง: ดี100 NG50 ได้ 50% ที่ถูกคือ 66.7%) · **ยอด "ดี" (qty_ok) = ยอดสแกน ไม่ต้องลบ NG**
+- แก้ครบ 5 จุด (2026-08-02): `DailyReport.jsx` computeOEE Q (Q ที่ stamp) + totalQtyOk · `FactoryMap.jsx`/`Dashboard.jsx` liveOee (Q สด) · `OEEAnalytics.jsx` calcOEE fallback okQty — **จุดใหม่ที่คำนวณ Q ให้ใช้สูตรนี้เท่านั้น**
+- **⚠️ กะที่ปิดไปแล้วมี `oee_q` ที่ stamp ด้วยสูตรเก่า (หักซ้ำ) ค้างอยู่** — ต้อง backfill DR: `oee_q = actual_qty/(actual_qty+qty_ng+qty_suspect)`, `oee = oee_a×oee_p×oee_q` (เฉพาะแถวที่ oee_q not null) ถ้าต้องการเทรนด์ย้อนหลังตรง · ฝั่ง QA (`QualityControl.jsx` FTT/PPM บรรทัด ~360-372) รากเดียวกันแต่ยังไม่แก้ (เป็น KPI คนละกลุ่ม — ตัดสินแยก)
+
 > ### ⚠️ กฎงานคู่ RH/LH — ต้องตั้ง `dr_products.pair_mat_no` ให้ครบ **ทั้ง 2 ทาง** (ทุก session ต้องรู้ · 2026-07-21)
 > งานคู่ (แม่พิมพ์คู่ ปั๊มครั้งเดียวได้ทั้ง LH+RH = ทำพร้อมกัน) ผูกกันด้วย `pair_mat_no` ใน **Product Master (DR `dr_products`)** — LH ต้องชี้ไป RH **และ** RH ต้องชี้กลับมา LH (ตั้งจากหน้า `/products`) · ค่านี้เป็น source of truth เดียวที่ 3 จุดนี้พึ่งพา:
 > 1. **เปิดเป้าคู่อัตโนมัติ** (DailyReport manual open — สร้าง prod_orders คู่ให้เอง)

@@ -209,7 +209,7 @@ export default function FactoryMap({ setupMode = false }) {
       });
       const A = Math.min(1, runMin / elapsed);
       const P = Math.min(1, runMin > 0 ? stdMin / runMin : 0);
-      const Q = produced > 0 ? Math.max(0, (produced - ng) / produced) : 1;
+      const Q = produced > 0 ? produced / (produced + ng) : 1; // produced = ของดี(สแกน) → ดี/(ดี+เสีย) ไม่หักซ้ำ
       const oee = Math.round(A * P * Q * 100);
       return isFinite(oee) ? Math.max(0, Math.min(100, oee)) : null;
     };

@@ -47,7 +47,7 @@ function calcOEE(sessions, downtimes, defects) {
 
     const ngQty = sessionDefects.reduce((a, d) => a + (d.qty_ng || 0), 0) + (s.qty_ng || 0);
     const totalQty = s.actual_qty || 0;
-    const okQty = s.qty_ok || Math.max(0, totalQty - ngQty);
+    const okQty = s.qty_ok || totalQty; // การ์ดที่สแกน = ของดีล้วน → fallback ยอดดี = ยอดผลิต (ไม่หัก NG ซ้ำ)
 
     results.push({
       ...s,
