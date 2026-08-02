@@ -155,16 +155,39 @@ function GaugeRing({ value, size = 168, stroke = 15, color = '#22c55e' }) {
 }
 
 // ── Mini sparkline bar (under A/P/Q kpi) ──────────────────────────
-function MiniTrend({ data, dataKey, color, target }) {
-  const hasData = data.some(d => d[dataKey] != null);
-  if (!hasData) return <div style={{ height: 54, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>ไม่มีข้อมูล</div>;
+// Tooltip ย่อของ sparkline — แตะ/ชี้แท่งเพื่อดูวัน + ค่าจริง (จอทัชแตะได้)
+function MiniTrendTip({ active, payload, label, dataKey, metric }) {
+  if (!active || !payload?.length) return null;
+  const v = payload.find(p => p.dataKey === dataKey)?.value;
   return (
-    <ResponsiveContainer width="100%" height={54}>
-      <BarChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
-        <ReferenceLine y={target} stroke={color} strokeDasharray="3 3" strokeOpacity={0.6} />
-        <Bar dataKey={dataKey} fill={color} radius={[2, 2, 0, 0]} opacity={0.85} />
-      </BarChart>
-    </ResponsiveContainer>
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', fontSize: 11, boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
+      <div style={{ color: 'var(--muted)' }}>{label}</div>
+      <div style={{ fontWeight: 800 }}>{metric} {v != null ? `${v}%` : 'ไม่มีข้อมูล'}</div>
+    </div>
+  );
+}
+
+// Sparkline เทรนด์ 10 วันล่าสุดต่อ metric (A/P/Q) — มี caption + แกนวัน + tooltip ให้อ่านออกโดยไม่ต้องเดา
+// (กฎ UI-CONVENTIONS §กราฟแท่งรายวัน: ต้องมี caption อธิบายความหมาย + แกนวันต่อเนื่อง + วันว่าง = ตอเทา)
+function MiniTrend({ data, dataKey, color, target, metric }) {
+  const hasData = data.some(d => d[dataKey] != null);
+  if (!hasData) return <div style={{ height: 72, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>ไม่มีข้อมูล 10 วันล่าสุด</div>;
+  // วันไม่มีข้อมูล = ตอเทาเตี้ย (ไม่ปล่อยว่างจนดูเหมือนวันหาย) + tooltip บอก "ไม่มีข้อมูล"
+  const rows = data.map(d => ({ ...d, _stub: d[dataKey] == null ? 2 : null }));
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>เทรนด์ 10 วันล่าสุด</div>
+      <ResponsiveContainer width="100%" height={58}>
+        <BarChart data={rows} margin={{ top: 2, right: 2, left: 2, bottom: 0 }} barCategoryGap={1}>
+          <ReferenceLine y={target} stroke={color} strokeDasharray="3 3" strokeOpacity={0.7} />
+          <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} interval="preserveStartEnd" axisLine={false} tickLine={false} height={16} />
+          <YAxis hide domain={[0, 100]} />
+          <Tooltip cursor={{ fill: 'var(--bg3)', opacity: 0.4 }} content={<MiniTrendTip dataKey={dataKey} metric={metric} />} />
+          <Bar dataKey="_stub" stackId="v" fill="var(--border)" radius={[2, 2, 0, 0]} isAnimationActive={false} />
+          <Bar dataKey={dataKey} stackId="v" fill={color} radius={[2, 2, 0, 0]} opacity={0.85} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -820,8 +843,8 @@ export default function OEEAnalytics() {
                 <div key={k} style={{ flex: 1, minWidth: 160 }}>
                   <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{METRIC_LABEL[k]}</div>
                   <div style={{ fontSize: 26, fontWeight: 900, color: tdKpi[k] != null ? METRIC_COLOR_FN[k](tdKpi[k]) : 'var(--muted)' }}>{tdKpi[k] ?? '—'}{tdKpi[k] != null ? '%' : ''}</div>
-                  <MiniTrend data={tdHistoryGrouped} dataKey={k} color={METRIC_COLOR[k]} target={tdTarget[k]} />
-                  <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}>TARGET {tdTarget[k]}%</div>
+                  <MiniTrend data={tdHistoryGrouped} dataKey={k} color={METRIC_COLOR[k]} target={tdTarget[k]} metric={k.toUpperCase()} />
+                  <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}><span style={{ color: METRIC_COLOR[k] }}>╌╌</span> เส้นประ = เป้า {tdTarget[k]}%</div>
                 </div>
               ))}
             </div>
