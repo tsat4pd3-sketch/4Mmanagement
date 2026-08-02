@@ -124,7 +124,14 @@ const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, hasOpen: false, oee: n
   headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0,
   supList: [], supAtRisk: false };
 // รวมชื่อ utility ที่จ่ายไลน์นี้ (dedup ตามเลขเครื่อง) เอาที่กำลังซ่อม (atRisk) ก่อน
-const supNames = (list, riskOnly) => [...new Map((list || []).filter(x => !riskOnly || x.atRisk).map(x => [x.no, x.name || x.no])).values()];
+// รวมชื่อ utility ที่จ่ายไลน์นี้ — dedup ตามเลขเครื่องก่อน แล้วยุบชื่อที่ซ้ำเป็น "ชื่อ ×N" (กันโชว์ชื่อเดียวซ้ำหลายรอบ)
+const supNames = (list, riskOnly) => {
+  const byNo = new Map();
+  (list || []).filter(x => !riskOnly || x.atRisk).forEach(x => { if (!byNo.has(x.no)) byNo.set(x.no, x.name || x.no || '—'); });
+  const cnt = new Map();
+  [...byNo.values()].forEach(nm => cnt.set(nm, (cnt.get(nm) || 0) + 1));
+  return [...cnt.entries()].map(([nm, c]) => c > 1 ? `${nm} ×${c}` : nm);
+};
 
 // setupMode=false (default, /factory-map) = display-only (ดู + popup ไม่มีปุ่มแก้ผัง)
 // setupMode=true (/layout-setup แท็บภาพรวมโรงงาน) = โหมดตั้งค่า อัปโหลดรูป/วาด polygon ได้
@@ -1008,8 +1015,8 @@ export default function FactoryMap({ setupMode = false }) {
                   <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
                     background: isCur ? `${c.color}22` : 'var(--bg3)', border: isCur ? `1px solid ${c.color}55` : '1px solid var(--border2)',
                     borderRadius: 7, padding: '4px 8px' }}>
-                    <span style={{ fontSize: 12, color: 'var(--text2)', fontWeight: isCur ? 800 : 600, whiteSpace: 'nowrap' }}>{m.label}</span>
-                    <span style={{ fontSize: 12.5, fontWeight: 800, color: t ? c.color : 'var(--muted)', whiteSpace: 'nowrap' }}>{t || '—'}</span>
+                    <span style={{ fontSize: 12, color: 'var(--text2)', fontWeight: isCur ? 800 : 600, whiteSpace: 'nowrap', flexShrink: 0 }}>{m.label}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: t ? c.color : 'var(--muted)', minWidth: 0, textAlign: 'right', overflowWrap: 'anywhere', lineHeight: 1.3 }}>{t || '—'}</span>
                   </div>
                 );
               })}
