@@ -36,6 +36,10 @@ export default function TransportMapEditor() {
   const [busy, setBusy] = useState(false)
   const [chainLast, setChainLast] = useState(null)   // โหมดวาดต่อเนื่อง: node id ล่าสุดในเส้นที่กำลังวาด
   const [drawHover, setDrawHover] = useState(null)   // { x, y } ตำแหน่งเคอร์เซอร์ (เส้น preview)
+  const [mpu, setMpu] = useState(null)               // meters per unit (มาตราส่วน)
+  const [scaleMode, setScaleMode] = useState(false)  // กำลังตั้งมาตราส่วน (คลิก 2 จุด)
+  const [scalePts, setScalePts] = useState([])       // [{x,y}...] จุดอ้างอิงมาตราส่วน
+  const [scaleMeters, setScaleMeters] = useState('') // input เมตรจริงของ 2 จุด
 
   const wrapRef = useRef(null)
   const dragRef = useRef(null)                         // { id } กำลังลากย้าย node
@@ -53,16 +57,18 @@ export default function TransportMapEditor() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [{ data: fm }, { data: nd }, { data: eg }, { data: ln }] = await Promise.all([
+    const [{ data: fm }, { data: nd }, { data: eg }, { data: ln }, { data: ts }] = await Promise.all([
       supabase.from('factory_map').select('image_url').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
       supabaseDR.from('transport_nodes').select('*'),
       supabaseDR.from('transport_edges').select('*'),
       supabase.from('production_lines').select('name').order('name'),
+      supabaseDR.from('transport_settings').select('meters_per_unit').eq('id', 1).maybeSingle(),
     ])
     setImageUrl(fm?.image_url || null)
     setNodes(nd || [])
     setEdges(eg || [])
     setLineNames((ln || []).map(l => l.name).filter(Boolean))
+    setMpu(ts?.meters_per_unit ?? null)
     setLoading(false)
   }, [])
   useEffect(() => { load() }, [load])
@@ -213,9 +219,18 @@ export default function TransportMapEditor() {
     setSel(null)
   }
 
+  const addScalePt = (x, y) => setScalePts(prev => prev.length >= 2 ? [{ x, y }] : [...prev, { x, y }])
+  const saveScale = async (metersPerUnit) => {
+    const { error } = await supabaseDR.from('transport_settings')
+      .upsert({ id: 1, meters_per_unit: metersPerUnit, updated_by_name: fullName, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+    if (error) return toast.error(error.message)
+    setMpu(metersPerUnit); setScaleMode(false); setScalePts([]); setScaleMeters(''); toast.success('บันทึกมาตราส่วนแล้ว')
+  }
+
   // ─── pointer handlers ───
   const onMapClick = (e) => {
     if (!canEdit || dragRef.current) return
+    if (scaleMode) { const p = pctFromEvent(e.clientX, e.clientY); addScalePt(+p.x.toFixed(2), +p.y.toFixed(2)); return }
     if (e.target.closest('[data-node]')) return       // คลิกโดนจุด ไม่เพิ่มใหม่ (node handler จัดการ)
     const p = pctFromEvent(e.clientX, e.clientY)
     if (mode === 'node') addNode(p.x, p.y)
@@ -223,6 +238,7 @@ export default function TransportMapEditor() {
   }
   const onNodeClick = (e, node) => {
     e.stopPropagation()
+    if (scaleMode) { addScalePt(node.x, node.y); return }   // ใช้พิกัดจุดเป็นอ้างอิงมาตราส่วน
     if (!canEdit) { setSel({ type: 'node', id: node.id }); return }
     if (mode === 'delete') return delNode(node.id)
     if (mode === 'draw') { drawStep(node.x, node.y, node); return }   // คลิกจุดเดิม = ต่อถนนเข้าจุดนั้น (บรรจบ/สี่แยก)
@@ -235,7 +251,7 @@ export default function TransportMapEditor() {
     setSel({ type: 'node', id: node.id })
   }
   const onNodePointerDown = (e, node) => {
-    if (!canEdit || mode !== 'select') return
+    if (!canEdit || mode !== 'select' || scaleMode) return
     e.stopPropagation()
     dragRef.current = { id: node.id, moved: false }
     e.currentTarget.setPointerCapture?.(e.pointerId)
@@ -299,14 +315,22 @@ export default function TransportMapEditor() {
               </select>
             </label>
           )}
+          <button onClick={() => { setScaleMode(v => !v); setScalePts([]); setScaleMeters('') }}
+            style={btn(scaleMode)}>📏 มาตราส่วน</button>
           <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
             {nodes.length} จุด · {edges.length} เส้น · 📍 {graphStat.stops} จุดจอด{graphStat.isolated ? ` · ⚠ ${graphStat.isolated} จุดยังไม่เชื่อมถนน` : ''}
+            {mpu ? ` · 📏 1 หน่วย ≈ ${mpu.toFixed(2)} ม.` : ' · 📏 ยังไม่ตั้งมาตราส่วน'}
           </span>
         </div>
       ) : (
         <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>🔒 ดูอย่างเดียว (ต้องมีสิทธิ์ transport:manage เพื่อแก้)</div>
       )}
-      {canEdit && (
+      {canEdit && scaleMode && (
+        <div style={{ fontSize: 12, color: '#f0abfc', background: 'rgba(217,70,239,0.1)', border: '1px solid rgba(217,70,239,0.4)', borderRadius: 8, padding: '7px 11px' }}>
+          📏 คลิก 2 จุดบนผังที่รู้ระยะจริง (เช่น ความกว้างช่องจอด/ความยาวไลน์) แล้วกรอกระยะเป็นเมตร — {scalePts.length}/2 จุด
+        </div>
+      )}
+      {canEdit && !scaleMode && (
         <div style={{ fontSize: 12, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px' }}>
           {mode === 'draw' && (chainLast
             ? '✏️ คลิกจุดถัดไปตามแนวถนน — ทางเลี้ยว/หัวโค้งให้คลิกตรงมุมทุกจุด เส้นจะหักตาม (ไม่ตัดทะลุ) · คลิกใกล้จุดเดิม = บรรจบ/สี่แยก · กด "✓ จบเส้น" หรือ Esc เพื่อขึ้นเส้นใหม่'
@@ -357,7 +381,15 @@ export default function TransportMapEditor() {
               <line x1={nById[chainLast].x} y1={nById[chainLast].y} x2={drawHover.x} y2={drawHover.y}
                 stroke="#4ade80" strokeOpacity="0.8" strokeWidth="2" strokeDasharray="3 2" vectorEffect="non-scaling-stroke" />
             )}
+            {/* เส้นอ้างอิงมาตราส่วน */}
+            {scalePts.length === 2 && (
+              <line x1={scalePts[0].x} y1={scalePts[0].y} x2={scalePts[1].x} y2={scalePts[1].y}
+                stroke="#e879f9" strokeWidth="2.5" strokeDasharray="3 2" vectorEffect="non-scaling-stroke" />
+            )}
           </svg>
+          {scalePts.map((p, i) => (
+            <div key={`sp${i}`} style={{ position: 'absolute', left: `${p.x}%`, top: `${p.y}%`, transform: 'translate(-50%,-50%)', width: 14, height: 14, borderRadius: '50%', background: '#e879f9', border: '2px solid #fff', zIndex: 3 }} />
+          ))}
           {/* nodes (HTML markers) */}
           {nodes.map(n => {
             const k = nodeKind(n.kind)
@@ -435,6 +467,29 @@ export default function TransportMapEditor() {
           )}
         </div>
       </div>
+
+      {/* modal ตั้งมาตราส่วน */}
+      {canEdit && scaleMode && scalePts.length === 2 && (() => {
+        const unitDist = Math.hypot(scalePts[0].x - scalePts[1].x, scalePts[0].y - scalePts[1].y)
+        const m = parseFloat(scaleMeters)
+        const ok = m > 0 && unitDist > 1e-6
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: 'min(94vw, 380px)' }}>
+              <h3 style={{ margin: '0 0 10px', fontSize: 16, fontWeight: 900, color: 'var(--text)' }}>📏 ตั้งมาตราส่วน</h3>
+              <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>ระยะ 2 จุดที่เลือก = <b style={{ color: 'var(--text2)' }}>{unitDist.toFixed(2)}</b> หน่วยผัง</div>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ระยะจริงของ 2 จุดนี้ (เมตร)</span>
+              <input type="number" min="0" step="0.1" autoFocus value={scaleMeters} onChange={e => setScaleMeters(e.target.value)}
+                placeholder="เช่น 25" style={inp} />
+              {ok && <div style={{ fontSize: 12.5, color: 'var(--accent)', fontWeight: 700, marginTop: 8 }}>→ 1 หน่วยผัง ≈ {(m / unitDist).toFixed(2)} ม. (ทั้งผังกว้าง ≈ {(m / unitDist * 100).toFixed(0)} ม.)</div>}
+              <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
+                <button onClick={() => setScalePts([])} style={{ padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>เลือกจุดใหม่</button>
+                <button onClick={() => ok && saveScale(m / unitDist)} disabled={!ok} style={{ padding: '8px 18px', borderRadius: 8, cursor: ok ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 700, background: ok ? 'var(--accent)' : 'var(--bg2)', color: ok ? '#08130a' : 'var(--muted)', border: 'none' }}>💾 บันทึก</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
