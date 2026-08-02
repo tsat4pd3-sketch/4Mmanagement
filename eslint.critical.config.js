@@ -8,7 +8,6 @@ import reactHooks from 'eslint-plugin-react-hooks';
 export default [
   {
     files: ['src/**/*.{js,jsx}'],
-    // ลงทะเบียน plugin เฉยๆ (ไม่เปิดกฎ) — ให้ comment eslint-disable react-hooks/* เดิมในโค้ด resolve ได้
     plugins: { 'react-hooks': reactHooks },
     linterOptions: { reportUnusedDisableDirectives: 'off' },
     languageOptions: {
@@ -26,6 +25,9 @@ export default [
       'no-dupe-args': 'error',
       'no-unreachable': 'error',
       'use-isnan': 'error',
+      // hook หลัง early return / ใน if / ใน loop = React #310 (จอ error) — build ไม่จับ เจอตอน runtime
+      // เคสจริง 2026-07-30: MtnRepair (useMemo หลัง `if (loading) return`) + ProtectedLayout (session guard)
+      'react-hooks/rules-of-hooks': 'error',
     },
   },
 ];

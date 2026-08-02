@@ -87,8 +87,71 @@
 
 ---
 
+## 5.5 บทเรียนจาก Toyota TPS (ไปดูงานจริง · 8 บอร์ด · 2026-07-21)
+
+TPS ของจริงยืนยันว่าการขนส่งภายใน = **kanban circulation บน "รอบเวลาตายตัว" (定時定量 TEI-TEI / Teiki-bin milk run)** ขับด้วยการ์ดจริงที่วิ่งผ่าน Kanban Post + Okamochi (heijunka box) แยกบทบาทชัด 3 หน้าที่ + มี catalog ความผิดปกติมาตรฐาน
+
+| บอร์ดที่ดู | แก่น | เรามีแล้ว / ควรเพิ่ม |
+|---|---|---|
+| **Kanban Route** (แผนภาพวงกลม 11 สเตป + K/B Mat'l loop) | ทั้งระบบเป็น **วงจรปิด route ตายตัว** · 3 บทบาท **Kanban Man (pink) / Production (blue) / Logistic (orange)** · มี **TEI-TEI System Flow** (ตารางเวลา cut-off ล่วงหน้า 1 กะ · หน้าต่างส่งถูกกฎหมายรถบรรทุกบล็อก 06-10, 16-20) | 🆕 route + stop จริง + บทบาท |
+| **Kanban Collection Post + Okamochi** (Pattern A/B/C/D × ช่องเวลา 1-11, ธงสี, break time ฝังในpitch) | leveling box ตามเวลา · **เก็บ kanban คืนทุก 2 ชม.** (fixed pitch) · มี route map + P-Q chart + Pattern Group + lot cycle (a:b:c) | ✅ heijunka leveling into rounds · 🆕 kanban post view + return-every-N-hrs |
+| **Manpower/Assignment + LOTO** (Day/White/Yellow, "GO TO line", present/absent) | จัดคน→ไลน์ต่อกะแบบ visual | ✅ = ยืนยันแนวจอ 1 (carrier→line ต้นกะ) |
+| **Real-time per-part KPI** (JI JI KOKUKOKU · Cycle/Setup/Stop/Eff · Pareto · White/Yellow) + Production Control Board (GSPH/EFF) | KPI ราย part-number รายกะ + List of Problem | ✅ OEE/Report เรามีคล้าย |
+| **🎯 Abnormality case of TEI-TEI (17 เคส)** | ตาราง: เคสผิดปกติ → จุด → การกระทำ → **ผล (Shortage/Over stock)** + รูป OK/NG | 🆕 **เพชร — ทำเป็น Abnormality Monitor อัตโนมัติ** |
+
+**สิ่งที่ควรหยิบมา (เรียงตามคุณค่า):**
+1. **🎯 Abnormality Monitor** — encode subset ของ 17 เคสที่ detect ได้จากข้อมูลเรา → auto-andon: เช่น (2) kanban คืน < cut-off, (3-4) คืน ≠ แผน, (11) stock เกิน 1 pack (over), (12-13) order/รับ ก่อน/ช้ากว่าเวลา, (15) **ยอดบน board ≠ actual stock**, (16) ลากเกินระบบ >2 lot, (17) part ไม่เต็ม pallet แต่ใส่ kanban → แต่ละเคสจบด้วย **Shortage/Over stock** ชัดเจน
+2. **Teiki-bin route + stops จริง** — ยก `points_count` (แค่ตัวเลข) → **stop เรียงลำดับบน route** + route map + collection timetable (pitch เช่นทุก 2 ชม.) — ตรงกับที่ AMR ต้องเดินเส้นทางพอดี
+3. **ขา return-kanban / ภาชนะเปล่า = ครึ่งหนึ่งของวงจร** — ยืนยัน `empty_return` ที่วางไว้ ต้อง first-class ไม่ใช่ของแถม
+4. **3 บทบาท** — Logistic (คนขับ) / Kanban Man (คนคัดแยก-จ่ายคัมบังที่ store) / Production — แยกสิทธิ์/หน้าจอ
+5. **หน้าต่างเวลาส่งถูกบล็อก** (เบรค + เงื่อนไขจริง) — board ดันผ่าน + config ช่วงห้ามส่ง
+6. (ภายหลัง) **heijunka pattern/pitch + lot cycle (a:b:c) + P-Q** ใน kanban-calc
+
+## 5.7 Audit ความซ้ำซ้อนทั้งโมดูล Logistic-Store (2026-07-21)
+
+ตรวจ 6 หน้า (Store management / Kanban Board+ทุกแท็บ / Rack Center / Planner&Sales / Rundown / Delivery) — **เจอซ้ำซ้อนจริงเยอะ** โดยเฉพาะ write-path ซ้ำ (เสี่ยง drift/แข่งกันเขียน)
+
+**🔴 HIGH (เขียนซ้ำ 2 ที่ — เสี่ยงข้อมูลเพี้ยน):**
+- **D1 · advance `rack_requests`** อยู่ทั้ง `RackCenter.advance()` (มี realtime+cancel+SLA) **และ** `HeijunkaKanban.advanceRack()` (ไม่มี) → เลื่อนสถานะจาก 2 จอ = แข่งกันเขียน + พฤติกรรมต่างแล้ว
+- **D2 · issue `packaging_withdrawal_requests`** ซ้ำ RackCenter + HeijunkaKanban
+- **D5 · round-status คำนวณ 2 ก๊อป** `getRoundStatus` (Heijunka) vs `statusOf` (LineStock) — **เพี้ยนแล้วที่ขอบ frame** (Heijunka เช็ค past/future work-day, LineStock ไม่เช็ค → กะเดียวกันโชว์สถานะต่างกัน 2 หน้า)
+
+**🟡 MED (view เดียวกันวาดหลายรอบ):**
+- **D6/D7 · บอร์ดรอบส่ง วาด 4-5 ที่ในหน้าเดียว** (PlannerStrip / StoreBoardView / DeliveryTimelineBoard / DeliveryRoundsPanel / UnifiedStoreBoard.fg) + LineStock timeboard · "🏪 Store Board" ≈ "ตู้ Kanban รวม › FG"
+- **D3/D4 · คิว rack/packaging** โผล่ทั้ง RackCenter และ UnifiedStoreBoard
+- **D9 · overdue projection** ซ้ำ (CustomerDemand/Rundown/Planner) · **D10 · on-hand** อ่าน 4 ที่
+
+**⚪ LOW (helper copy-paste):** `custLabel` ×3 · work-date logic ×5 (ทั้งที่มี `getWorkDate()` แล้ว — ผิดกฎ) · addMinutes ×2 · part normalize กระจาย
+
+**4 กลไก overdue/SLA แยกกัน:** round-time · `internal_delivery_sla` (rack) · customer walkback · rundown due-date — #1,#2 คือเรื่องเดียวกัน (ส่งภายในช้า) ทำคนละโมเดล
+
+**แผนยุบรวม (เรียงตามคุ้ม/เสี่ยง):**
+1. **round-status → `utils/deliveryRounds.js`** (export `getRoundStatus`) LineStock import ใช้ — เล็ก เสี่ยงต่ำ แก้ bug เพี้ยนขอบ frame เลย
+2. **helper → utils** (`getWorkDate`/custLabel/addMinutes/normalize) — เสี่ยงต่ำ
+3. **rack/packaging: RackCenter เป็นเจ้าของเดียว** — ลบ `advanceRack`/`issuePkg` ใน Heijunka, แท็บ rack ใน Unified ลิงก์ไป `/rack-center` หรือ import action ร่วม — เสี่ยงกลาง คุ้มสูง (ปิด write ซ้ำ)
+4. **retire `StoreBoardView`** ยุบเข้า Unified + reuse `InternalTimeBoard` แทน timeline ที่เขียนเอง
+
+**อย่ายุบ (คนละโดเมนจริง):** Delivery(customer_shipping_orders) vs รอบส่งภายใน · Planner-forecast vs Rundown-balance vs Delivery-chart · KanbanCalc(วางแผนจำนวนใบ) vs allocation(net demand วันนี้) · ledger `line_stock_transactions` (คนละ type: issue/consume/adjust)
+
+> **ผลต่อ Transport/AMR:** ถ้าเพิ่ม transport แบบไม่ยุบก่อน = บอร์ดที่ 6 ซ้อนของซ้ำเดิม · ควร **ยุบ round-status + rack/packaging ให้เหลือเจ้าของเดียวก่อน** แล้วสร้าง transport job รวมบนฐานที่สะอาด (transport = ตัวรวม queue พวกนี้พอดี)
+
+**✅ สถานะการยุบรวม (2026-07-21):**
+- **D5 round-status → `src/utils/deliveryRounds.js`** — DONE · `getRoundStatus` + helpers (`addMinutes`/`timeStrToMs`/`dayFrameMs`/`roundDeliveryMin`) รวมมาที่นี่ · HeijunkaKanban + LineStock import จากไฟล์นี้ · แก้บั๊กเพี้ยนขอบ frame (LineStock เดิมไม่เช็ควันย้อนหลัง/ล่วงหน้า) — **หน้าใหม่ที่โชว์สถานะรอบส่งต้อง import จาก util นี้ ห้ามเขียน statusOf เอง**
+- **D1/D2 rack advance + packaging issue → RackCenter เจ้าของเดียว** — DONE · ลบ `advanceRack`/`issuePkg` ใน HeijunkaKanban · แท็บ rack ใน Unified Store Board = อ่านอย่างเดียว + ปุ่มลิงก์ "🗃️ จัดการที่ Rack Center →" · เลื่อนสถานะ/จ่าย packaging ทำที่ `/rack-center` เท่านั้น (กันแข่งกันเขียน)
+- ยังเหลือ (ภายหลัง): D6/D7 retire `StoreBoardView` (ยุบเข้า Unified) · helper copy-paste (custLabel/work-date/normalize → utils)
+
 ## 6. Open decisions (รอเคาะก่อนลงมือ)
 1. **มอบงาน** — เฟส 1 ให้หัวหน้า store มอบเอง หรือ auto-assign ตามรอบ/ไลน์ที่คนขับรับผิดชอบ?
 2. **หน่วยงาน** — คนขับ 1 คน = 1 กะ/หลายไลน์? ต้องผูก carrier กับ line/section ไหม (scope)?
 3. **empty_return** — สร้าง job อัตโนมัติเมื่อยืนยันรับของ (ไปพร้อมกล่องเปล่า) หรือคนขับ/ไลน์กดเรียกเอง?
 4. **เริ่มจากจุดไหน** — (ก) ชั้น carrier + assign บนรอบ/คิวที่มีอยู่ (เล็ก เห็นผลเร็ว) → (ข) Dispatch Board รวม → (ค) มือถือคนขับ → (ง) empty_return → (จ) KPI
+
+---
+
+## 7. สถานะการทำ (update log)
+
+- **2026-07-31 · Transport Route Graph (แกนหลัก + ผูก Transport)** — ทำแล้ว:
+  - กราฟถนน node/edge วาดทับ `factory_map` (ฉากหลังเดียวกับ /factory-map) — ตาราง DR `transport_nodes`/`transport_edges`/`transport_round_stops` (migration `20260731_transport_route_graph.sql`)
+  - ตัววาด `src/components/TransportMapEditor.jsx` (แท็บ Store/AMR ใน `/layout-setup`) · pathfinding `src/utils/transportGraph.js` (Dijkstra, pure)
+  - แท็บ 🗺️ เส้นทางรอบส่ง ใน `/transport` — จัดลำดับจุดจอดต่อรอบ + route จริงบนผัง (ระยะ relative "หน่วยผัง")
+  - ยังไม่ทำ: scale calibration (→เมตร), empty_return, เชื่อม AMR fleet จริง (เฟส 3) · ดู CLAUDE.md §"Transport Route Graph"

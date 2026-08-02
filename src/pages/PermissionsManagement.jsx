@@ -82,6 +82,7 @@ const PAGE_GROUPS = [
       { key: 'page:/products',          label: 'Product Master' },
       { key: 'page:/linesetup',         label: 'ตั้งค่าผังไลน์' },
       { key: 'page:/machine-database',  label: 'ฐานข้อมูลเครื่องจักร' },
+      { key: 'page:/process-setup',     label: 'กระบวนการผลิต (Process Types)' },
       { key: 'page:/shift-organize',    label: 'ตารางกะ' },
       { key: 'page:/company-calendar',  label: 'ปฏิทินบริษัท' },
       { key: 'page:/notification-config', label: 'ตั้งค่าการแจ้งเตือน' },

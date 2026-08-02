@@ -86,10 +86,15 @@ const METRICS = {
     cat: s => !s.pmTotal ? 'idle' : s.pmOverdue ? 'bad' : s.pmDueSoon ? 'ok' : 'good',
   },
   supply: {
-    // 🔗 Supply route — utility/facility จ่ายไลน์นี้ กำลังซ่อม (open MO) = กระทบ (แดงกระพริบ)
+    // 🔗 Supply route — ไลน์ผลิต: utility จ่ายไลน์นี้ กำลังซ่อม = กระทบ · โซน facility: เครื่องในโซน down = กระทบไลน์ที่จ่าย
     label: '🔗 Supply Route', worstFirst: true, desc: true,
     value: s => s.supList.length ? (s.supAtRisk ? 1000 + s.supList.length : s.supList.length) : null,
-    text: s => !s.supList.length ? '' : s.supAtRisk ? `⚠ ${supNames(s.supList, true).join(', ')} ซ่อมอยู่` : `จ่ายโดย ${supNames(s.supList).join(', ')}`,
+    text: s => {
+      const feeds = s.isFac && s.supFeeds?.length ? ` → ${s.supFeeds.join(', ')}` : '';
+      if (!s.supList.length) return '';
+      if (s.supAtRisk) return `⚠ ${supNames(s.supList, true).join(', ')} ซ่อมอยู่${feeds}`;
+      return s.isFac ? `ปกติ${feeds ? ' · จ่าย' + feeds : ''}` : `จ่ายโดย ${supNames(s.supList).join(', ')}`;
+    },
     cat: s => !s.supList.length ? 'idle' : s.supAtRisk ? 'down' : 'good',
   },
 };
@@ -123,6 +128,8 @@ export default function FactoryMap({ setupMode = false }) {
   const [manpower, setManpower] = useState({});        // คน/เข้างาน (Main)
   const [pmStatus, setPmStatus] = useState({});        // PM เครื่องจักร (DR)
   const [supplyStatus, setSupplyStatus] = useState({}); // supply route: line_name → { suppliers:[{no,name,atRisk}], atRisk } (DR)
+  const [facilityZones, setFacilityZones] = useState([]); // ชื่อโซน MTN/facility (pm_facility_areas + facility machine line_names) — ตัวเลือกตีกรอบ
+  const [facilitySupply, setFacilitySupply] = useState({}); // zone → { machines:[{no,name,atRisk}], atRisk, feeds:[line] } (มุมมองโซน facility เอง)
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(canEdit); // setup mode + มีสิทธิ์ → เข้าโหมดแก้เลย
@@ -141,6 +148,7 @@ export default function FactoryMap({ setupMode = false }) {
   const [snapFirst, setSnapFirst] = useState(false);
   const [assignFor, setAssignFor] = useState(null);
   const [assignLine, setAssignLine] = useState('');
+  const [newZone, setNewZone] = useState(''); // พิมพ์ชื่อโซน MTN/facility ใหม่ (ไม่มีใน master)
   const wrapRef = useRef(null);
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
   const dragRef = useRef(null);
@@ -166,6 +174,15 @@ export default function FactoryMap({ setupMode = false }) {
     setLines(ln || []);
     setLayoutLines(new Set((lay || []).map(l => l.line_name)));
     setLoading(false);
+    // โซน MTN/facility (ไม่ผูกไลน์ผลิต) — จาก pm_facility_areas + ชื่อระบบของเครื่อง facility/utility
+    Promise.all([
+      supabaseDR.from('pm_facility_areas').select('name').then(r => r).catch(() => ({ data: [] })),
+      supabaseDR.from('machines').select('line_name, equipment_category').then(r => r).catch(() => ({ data: [] })),
+    ]).then(([fa, mc]) => {
+      const set = new Set((fa?.data || []).map(a => a.name).filter(Boolean));
+      (mc?.data || []).forEach(m => { if (m.equipment_category && m.equipment_category !== 'production' && m.line_name) set.add(m.line_name); });
+      setFacilityZones([...set].sort((a, b) => a.localeCompare(b)));
+    });
   }, []);
   useEffect(() => { loadMap(); }, [loadMap]);
 
@@ -349,13 +366,13 @@ export default function FactoryMap({ setupMode = false }) {
   const loadSupply = useCallback(async () => {
     const [links, mcs, mos] = await Promise.all([
       supabaseDR.from('facility_supply_links').select('machine_id, line_name').then(r => r).catch(() => ({ data: [] })),
-      supabaseDR.from('machines').select('id, machine_no, machine_name').then(r => r).catch(() => ({ data: [] })),
+      supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_category').then(r => r).catch(() => ({ data: [] })),
       supabaseDR.from('mtn_orders').select('machine_no, status').then(r => r).catch(() => ({ data: [] })),
     ]);
     const linkRows = links?.data || [];
-    if (!linkRows.length) { setSupplyStatus({}); return; }
     const byId = {}; (mcs?.data || []).forEach(m => { byId[m.id] = m; });
     const openNos = new Set((mos?.data || []).filter(o => !['closed', 'rejected'].includes(o.status)).map(o => o.machine_no));
+    // (ก) มุมมองไลน์ผลิต: utility จ่ายไลน์นี้ กำลังซ่อม = กระทบ (เดิม)
     const out = {};
     linkRows.forEach(l => {
       const mc = byId[l.machine_id]; if (!mc) return;
@@ -366,6 +383,20 @@ export default function FactoryMap({ setupMode = false }) {
       out[l.line_name] = o;
     });
     setSupplyStatus(out);
+    // (ข) มุมมองโซน facility เอง: เครื่องในโซนนี้ down (open MO) มั้ย + จ่ายให้ไลน์ไหนบ้าง
+    const feedsByMachine = {}; linkRows.forEach(l => { (feedsByMachine[l.machine_id] ||= []).push(l.line_name); });
+    const fac = {};
+    (mcs?.data || []).forEach(m => {
+      if (!m.equipment_category || m.equipment_category === 'production' || !m.line_name) return;
+      const atRisk = openNos.has(m.machine_no);
+      const o = fac[m.line_name] || { machines: [], atRisk: false, feeds: new Set() };
+      o.machines.push({ no: m.machine_no, name: m.machine_name, atRisk });
+      (feedsByMachine[m.id] || []).forEach(ln => o.feeds.add(ln));
+      if (atRisk) o.atRisk = true;
+      fac[m.line_name] = o;
+    });
+    Object.values(fac).forEach(o => { o.feeds = [...o.feeds]; });
+    setFacilitySupply(fac);
   }, []);
   useEffect(() => { loadSupply(); const t = setInterval(loadSupply, 30000); return () => clearInterval(t); }, [loadSupply]);
 
@@ -408,6 +439,9 @@ export default function FactoryMap({ setupMode = false }) {
   };
   // ตีกรอบเฉพาะ "ไลน์บนสุด (top-level)" = parent_line_name IS NULL — 1 กรอบ/กลุ่ม (รวมยอดลูกด้วย stOf)
   const topNames = useMemo(() => lines.filter(l => !l.parent_line_name).map(l => l.name), [lines]);
+  // ชื่อไลน์ผลิตทั้งหมด (แม่+ลูก) — กรอบที่ line_name ไม่ตรงไลน์ผลิตใดเลย = โซน MTN/facility
+  const allProdNames = useMemo(() => new Set(lines.map(l => l.name)), [lines]);
+  const isFac = (name) => !allProdNames.has(name);
   const stOf = (name) => {
     const agg = { ...EMPTY_ST, supList: [], oeeSum: 0, oeeN: 0 };
     familyNames(name).forEach(n => {
@@ -420,6 +454,12 @@ export default function FactoryMap({ setupMode = false }) {
       const pm = pmStatus[n];
       if (pm) { agg.pmTotal += pm.pmTotal || 0; agg.pmOverdue += pm.pmOverdue || 0; agg.pmDueSoon += pm.pmDueSoon || 0; }
     });
+    // โซน facility เอง: Supply Route = เครื่องในโซนนี้ down (open MO) มั้ย (มุมมองต่างจากไลน์ผลิตที่เป็น "ถูกจ่าย")
+    if (isFac(name)) {
+      const fs = facilitySupply[name];
+      if (fs) { agg.supList = fs.machines; agg.supAtRisk = fs.atRisk; agg.supFeeds = fs.feeds; agg.isFac = true; }
+      else agg.isFac = true;
+    }
     agg.oee = agg.oeeN ? Math.round(agg.oeeSum / agg.oeeN) : null;
     return agg;
   };
@@ -437,7 +477,7 @@ export default function FactoryMap({ setupMode = false }) {
       return M.desc ? bv - av : av - bv;
     });
     return arr;
-  }, [lineStatus, manpower, pmStatus, supplyStatus, regions, metric, topNames]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, regions, metric, topNames]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── อัปโหลดรูปผัง (บีบเบา 2560/2.5MB/q0.9) ── */
   const handleUpload = async (e) => {
@@ -472,7 +512,9 @@ export default function FactoryMap({ setupMode = false }) {
     return { x: Math.min(100, Math.max(0, ((clientX - r.left) / r.width) * 100)), y: Math.min(100, Math.max(0, ((clientY - r.top) / r.height) * 100)) };
   };
   const framedTopCount = regions.filter(r => topNames.includes(r.line_name)).length;
-  const assignableLines = () => topNames.filter(n => !regions.some(r => r.line_name === n));
+  const framedNames = () => new Set(regions.map(r => r.line_name));
+  const assignableLines = () => { const f = framedNames(); return topNames.filter(n => !f.has(n)); };
+  const assignableFacility = () => { const f = framedNames(); return facilityZones.filter(n => !f.has(n)); };
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
@@ -510,16 +552,17 @@ export default function FactoryMap({ setupMode = false }) {
     const pts = draft;
     setDraft([]); setHoverPt(null); setSnapFirst(false); setDrawing(false);
     if (pts.length < 3) return;
-    if (!assignableLines().length) return toast.error('ทุกไลน์ถูกวางกรอบแล้ว');
-    setAssignLine(''); setAssignFor(pts);
+    setAssignLine(''); setNewZone(''); setAssignFor(pts); // ตีกรอบได้เสมอ (ไลน์ผลิต / โซน facility / พิมพ์ชื่อโซนใหม่)
   };
   const confirmAssign = async () => {
-    if (!assignLine) return toast.error('เลือกไลน์ก่อน');
-    const pts = assignFor; setAssignFor(null);
-    const { data, error } = await supabase.from('factory_line_regions').insert({ line_name: assignLine, points: pts }).select().single();
+    const target = (assignLine === '__new__' ? newZone.trim() : assignLine).trim();
+    if (!target) return toast.error('เลือกไลน์/โซน หรือพิมพ์ชื่อโซนใหม่ก่อน');
+    if (regions.some(r => r.line_name === target)) return toast.error(`"${target}" ถูกตีกรอบไว้แล้ว`);
+    const pts = assignFor; setAssignFor(null); setNewZone('');
+    const { data, error } = await supabase.from('factory_line_regions').insert({ line_name: target, points: pts }).select().single();
     if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
     setRegions(prev => [...prev, { ...data, points: pts }]);
-    toast.success(`ตีกรอบ ${assignLine} แล้ว`);
+    toast.success(`ตีกรอบ ${target} แล้ว`);
   };
   const cancelDraw = () => { setDraft([]); setHoverPt(null); setSnapFirst(false); setDrawing(false); };
 
@@ -585,7 +628,7 @@ export default function FactoryMap({ setupMode = false }) {
             {uploading ? '⏳ กำลังอัปโหลด...' : (imageUrl ? '🖼️ เปลี่ยนรูปผัง' : '🖼️ อัปโหลดรูปผังโรงงาน')}
             <input type="file" accept="image/*" onChange={handleUpload} disabled={uploading} style={{ display: 'none' }} />
           </label>
-          {imageUrl && !drawing && <button onClick={() => { setDrawing(true); setDraft([]); }} disabled={!assignableLines().length} style={btn(false)}>✏️ วาดกรอบไลน์ใหม่</button>}
+          {imageUrl && !drawing && <button onClick={() => { setDrawing(true); setDraft([]); }} style={btn(false)}>✏️ วาดกรอบไลน์ใหม่</button>}
           {drawing && (
             <>
               <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>🖊️ คลิกทีละจุดล้อมพื้นที่ (L/U ได้) · กด <b>Shift</b> = เส้นตั้งฉาก · เข้าใกล้จุดแรก = ดูดปิดรูป</span>
@@ -650,7 +693,7 @@ export default function FactoryMap({ setupMode = false }) {
                       maxWidth 22% + ellipsis กันชื่อไลน์ยาวล้นทับพื้นที่ไลน์ข้างเคียง */}
                   <div style={{ background: 'rgba(10,12,20,0.5)', borderBottom: `2.5px solid ${meta.color}`, borderRadius: 5, padding: '1px 7px 2px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)' }}>
                     <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>
-                      {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{r.line_name}
+                      {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{st.isFac && '🔧 '}{r.line_name}
                     </div>
                     {txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2 }}>{txt}</div>}
                   </div>
@@ -843,16 +886,24 @@ export default function FactoryMap({ setupMode = false }) {
       {assignFor && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '22px 24px', width: '100%', maxWidth: 360 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>🖊️ ตีกรอบให้ไลน์ไหน?</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>เลือกไลน์ที่จะผูกกับรูปที่วาด ({assignFor.length} จุด)</div>
-            <select value={assignLine} onChange={e => setAssignLine(e.target.value)} autoFocus style={{ width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 14, marginBottom: 16 }}>
-              <option value="">— เลือกไลน์ —</option>
-              {assignableLines().map(n => <option key={n} value={n}>{n}</option>)}
+            {(() => { const okAssign = assignLine === '__new__' ? !!newZone.trim() : !!assignLine; const prodOpts = assignableLines(); const facOpts = assignableFacility(); return <>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>🖊️ ตีกรอบให้ไลน์/โซนไหน?</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>เลือกไลน์ผลิต หรือโซน MTN/facility ที่จะผูกกับรูปที่วาด ({assignFor.length} จุด)</div>
+            <select value={assignLine} onChange={e => setAssignLine(e.target.value)} autoFocus style={{ width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 14, marginBottom: newZone !== '' || assignLine === '__new__' ? 8 : 16 }}>
+              <option value="">— เลือกไลน์/โซน —</option>
+              {prodOpts.length > 0 && <optgroup label="🏭 ไลน์ผลิต">{prodOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
+              {facOpts.length > 0 && <optgroup label="🔧 โซน MTN / Facility">{facOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
+              <optgroup label="อื่นๆ"><option value="__new__">➕ พิมพ์ชื่อโซนใหม่…</option></optgroup>
             </select>
+            {assignLine === '__new__' && (
+              <input value={newZone} onChange={e => setNewZone(e.target.value)} autoFocus placeholder="เช่น ห้องปั๊มลม, MTN Workshop, ระบบหล่อเย็น"
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 14, marginBottom: 16, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)', boxSizing: 'border-box' }} />
+            )}
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => setAssignFor(null)} style={{ flex: 1, padding: '11px 0', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>ยกเลิก</button>
-              <button onClick={confirmAssign} disabled={!assignLine} style={{ flex: 2, padding: '11px 0', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: assignLine ? 'pointer' : 'not-allowed', background: assignLine ? 'var(--accent)' : 'var(--muted)', color: '#fff', border: 'none' }}>✓ ตีกรอบ</button>
+              <button onClick={() => { setAssignFor(null); setNewZone(''); }} style={{ flex: 1, padding: '11px 0', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>ยกเลิก</button>
+              <button onClick={confirmAssign} disabled={!okAssign} style={{ flex: 2, padding: '11px 0', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: okAssign ? 'pointer' : 'not-allowed', background: okAssign ? 'var(--accent)' : 'var(--muted)', color: '#fff', border: 'none' }}>✓ ตีกรอบ</button>
             </div>
+            </>; })()}
           </div>
         </div>
       )}

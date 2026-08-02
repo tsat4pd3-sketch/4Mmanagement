@@ -20,16 +20,20 @@ const Operator     = lazy(() => import('./pages/operator'));
 const LineSetup    = lazy(() => import('./pages/LineSetup'));
 const LayoutSetup  = lazy(() => import('./pages/LayoutSetup'));
 const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
+const ProcessSetup = lazy(() => import('./pages/ProcessSetup'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
 const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
 const PlannerSales   = lazy(() => import('./pages/PlannerSales'));
 const RundownStock   = lazy(() => import('./pages/RundownStock'));
+const StoreMonitor   = lazy(() => import('./pages/StoreMonitor'));
+const Transport      = lazy(() => import('./pages/Transport'));
 const Report       = lazy(() => import('./pages/Report'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
 const DailyReport   = lazy(() => import('./pages/DailyReport'));
 const OEEAnalytics  = lazy(() => import('./pages/OEEAnalytics'));
 const ProductHistory = lazy(() => import('./pages/ProductHistory'));
+const OrderTrace = lazy(() => import('./pages/OrderTrace'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
@@ -84,6 +88,7 @@ const NAV_ITEMS = [
   { to: '/production-plan', icon: '🗓️', label: 'วางแผนการผลิต',      group: 'ฝ่ายผลิต' },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'วิเคราะห์ & รายงาน' },
   { to: '/product-history', icon: '📜', label: 'ประวัติผลิต (by Product)', group: 'วิเคราะห์ & รายงาน' },
+  { to: '/order-trace', icon: '🔎', label: 'สอบกลับ Order (Trace)', group: 'วิเคราะห์ & รายงาน' },
   { to: '/daily-checker',  icon: '✅', label: 'Daily Checker',       group: 'ฝ่ายผลิต' },  // ขมวด PM Daily + LPA + ระบบเช็คอื่น (แท็บใน DailyChecker)
   { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
   { to: '/scrap-report',   icon: '♻️', label: 'ใบรายงานของเสีย (Scrap)', group: 'ฝ่ายผลิต' },
@@ -94,6 +99,8 @@ const NAV_ITEMS = [
   { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: 'Logistic - Store' },
   { to: '/rundown-stock',   icon: '📉', label: 'Rundown Stock',             group: 'Logistic - Store' },
   { to: '/customer-demand', icon: '🚚', label: 'Delivery',                  group: 'Logistic - Store' },
+  { to: '/store-monitor',   icon: '🚨', label: 'เฝ้าระวังสต๊อก (Abnormal)',  group: 'Logistic - Store' },
+  { to: '/transport',       icon: '🚚', label: 'มอบหมายขนส่ง (Transport)',   group: 'Logistic - Store' },
 
   { to: '/mtn-repair',  icon: '🛠️', label: 'แจ้งซ่อม MTN (MO)',                group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
@@ -116,8 +123,9 @@ const NAV_ITEMS = [
   { to: '/skills-report', icon: '🏅', label: 'Skill Matrix & ค่าฝีมือ', group: 'พนักงาน & ทักษะ' },
   { to: '/products',        icon: '🔩', label: 'Product Master',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/layout-setup', icon: '🗺️', label: 'ตั้งค่าผัง/Floorplan', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  // /linesetup ย้ายมาฝังในแท็บ "ผลิต (ผังไลน์)" ของ /layout-setup แล้ว — คง route ไว้สำหรับลิงก์เก่า (deep-link) ไม่โชว์ใน sidebar
   { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/process-setup', icon: '🏭', label: 'กระบวนการผลิต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'พนักงาน & ทักษะ' },
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
@@ -987,8 +995,6 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  if (!session) return <Navigate to="/login" replace />;
-
   const handleLogout = async () => {
     // scope 'local' = ออกเฉพาะ browser นี้ (ทุกแท็บของเครื่องนี้ผ่าน localStorage event)
     // ห้ามใช้ default (global) — global จะ revoke refresh token ของ user นี้ "ทุกเครื่อง"
@@ -1016,6 +1022,10 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
       return code;
     });
   }, []);
+
+  // ⚠️ guard นี้ต้องอยู่ "หลัง" hooks ทุกตัว (useAutoLogout/useState/useCallback ด้านบน) —
+  // ถ้าวางก่อน hooks จะเกิด React #310 (hook count เปลี่ยนตอน session null→มีค่า) จอ error
+  if (!session) return <Navigate to="/login" replace />;
 
   // marginLeft ต้องเท่าความกว้าง nav จริง (var(--sidebar-w)) เป๊ะ — เดิม hardcode 240/280 ไม่ตรง
   // (nav=252 desktop / 210 tablet / 280 TV) → เนื้อหาโดน sidebar ทับ 12px หรือเหลือช่องว่าง
@@ -1108,6 +1118,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/linesetup"  element={
                 <RoleRoute path="/linesetup" userRole={role}><LineSetup /></RoleRoute>
               } />
+              <Route path="/process-setup" element={
+                <RoleRoute path="/process-setup" userRole={role}><ProcessSetup /></RoleRoute>
+              } />
               <Route path="/machine-database" element={
                 <RoleRoute path="/machine-database" userRole={role}><MachineDatabase /></RoleRoute>
               } />
@@ -1131,6 +1144,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/oee-analytics" element={
                 <RoleRoute path="/oee-analytics" userRole={role}><OEEAnalytics /></RoleRoute>
+              } />
+              <Route path="/order-trace" element={
+                <RoleRoute path="/order-trace" userRole={role}><OrderTrace /></RoleRoute>
               } />
               <Route path="/product-history" element={
                 <RoleRoute path="/product-history" userRole={role}><ProductHistory /></RoleRoute>
@@ -1194,6 +1210,12 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/rundown-stock" element={
                 <RoleRoute path="/rundown-stock" userRole={role}><RundownStock /></RoleRoute>
+              } />
+              <Route path="/store-monitor" element={
+                <RoleRoute path="/store-monitor" userRole={role}><StoreMonitor /></RoleRoute>
+              } />
+              <Route path="/transport" element={
+                <RoleRoute path="/transport" userRole={role}><Transport /></RoleRoute>
               } />
               <Route path="/rack-center" element={
                 <RoleRoute path="/rack-center" userRole={role}><RackCenter /></RoleRoute>

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { toast } from '../components/Toast'
 import { MTN_TEAMS } from '../utils/mtnTeams'
+import { ROLE_OPTIONS } from '../utils/roleMeta'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
@@ -228,6 +229,12 @@ export default function NotificationConfig() {
     const next = cur.includes(roomId) ? cur.filter(id => id !== roomId) : [...cur, roomId]
     updateRule(rule.event_key, { channel_ids: next })
   }
+  // เลือก role ผู้รับ "ในแอป" (กระดิ่ง+เสียง+push) ต่อเรื่อง — edge อ่าน inapp_roles ไป insert notifications
+  const toggleRuleRole = (rule, role) => {
+    const cur = Array.isArray(rule.inapp_roles) ? rule.inapp_roles : []
+    const next = cur.includes(role) ? cur.filter(r => r !== role) : [...cur, role]
+    updateRule(rule.event_key, { inapp_roles: next })
+  }
 
   /* ── template editor ── */
   const startEditTpl = (rule) => {
@@ -375,6 +382,27 @@ export default function NotificationConfig() {
                       ⚠️ ห้องที่เลือกยังไม่ใส่ chat_id → ตอนนี้จะไปเข้า<b>กลุ่มเดิม</b> ไม่ใช่ห้องนี้ (ไปเติม chat_id ที่ส่วน “ห้องแจ้งเตือน” ด้านบน)
                     </div>
                   )}
+
+                  {/* ── ผู้รับในแอป (กระดิ่ง+เสียง+push) ตาม role ── */}
+                  <div style={{ flexBasis: '100%', borderTop: '1px dashed var(--border)', paddingTop: 8, marginTop: 2 }}>
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
+                      📲 แจ้งในแอปด้วย (กระดิ่ง + เสียง + เด้งเข้ามือถือ) — เลือก role ผู้รับ · ไม่เลือก = เข้าแค่ Telegram
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {ROLE_OPTIONS.filter(r => r.value !== 'display').map(r => {
+                        const on = (rule.inapp_roles || []).includes(r.value)
+                        return (
+                          <label key={r.value}
+                            style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer',
+                              background: on ? 'var(--bg2)' : 'transparent', border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                              color: on ? 'var(--text)' : 'var(--muted)', borderRadius: 999, padding: '3px 9px', userSelect: 'none' }}>
+                            <input type="checkbox" checked={on} onChange={() => toggleRuleRole(rule, r.value)} style={{ flexShrink: 0 }} />
+                            {r.icon ? `${r.icon} ` : ''}{r.label}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
 
                   {/* ── message template editor ── */}
                   <div style={{ flexBasis: '100%', borderTop: '1px dashed var(--border)', paddingTop: 8, marginTop: 2 }}>
