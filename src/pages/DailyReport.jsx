@@ -1676,7 +1676,11 @@ function LiveTab({ role }) {
         P = Math.min(1, totalStdSec / runSec);
       }
     }
-    const Q = totalProduced > 0 ? Math.max(0, (totalProduced - ngQty) / totalProduced) : 1;
+    // Q = ของดี / ผลิตจริง(ดี+เสีย) — การ์ดที่สแกนปิด = "ของดีล้วน" (ผลิตครบเป้าของดี · ของเสียผลิตเพิ่มต่างหาก
+    // แล้วลง NG แยก · user ยืนยัน 2026-08-02) ดังนั้น totalProduced = ของดี, ผลิตจริงทั้งหมด = ของดี + NG
+    // ห้ามใช้ (ดี−NG)/ดี ที่หักซ้ำ → เคยทำ %Q ต่ำเกินจริง (เช่น ดี10 NG1 ได้ 90% ที่ถูกคือ 10/11=90.9%,
+    // เคสหนักดี100 NG50 ได้ 50% ที่ถูก 66.7%)
+    const Q = totalProduced > 0 ? totalProduced / (totalProduced + ngQty) : 1;
     const oee = P != null ? A * P * Q : null;
     return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty, knownQty, unknownQty };
   };
@@ -1819,7 +1823,8 @@ function LiveTab({ role }) {
     const confirmed       = prodOrders.filter(o => o.status === 'confirmed');
     const carryActual     = openOrders.reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || 0), 0);
     const totalProducedFinal = confirmed.reduce((s, o) => s + o.qty, 0) + carryActual;
-    const totalQtyOk      = Math.max(0, totalProducedFinal - totalQtyNg - totalQtySuspect - totalQtyRepair);
+    // ยอดดี = ยอดผลิต (การ์ดที่สแกน = ของดีล้วน · NG/suspect/repair คือของที่ผลิตเพิ่มต่างหาก ไม่หักซ้ำ · 2026-08-02)
+    const totalQtyOk      = totalProducedFinal;
 
     const { A, P, Q, oee, shiftMin } = computeOEE(totalQtyNg + totalQtySuspect, closeEndTime, closeStartTime, updatedDtLogs);
     // กะที่ไม่มีผลผลิตเลย (เปิดผิด/นับสต๊อก) — A/Q ไม่มีความหมายกับ OEE (P/OEE เป็น null อยู่แล้ว)

@@ -396,7 +396,7 @@ export default function Dashboard() {
         : (netAvail > 0 ? Math.min(1, runMin / netAvail) : 0);
       // ไม่มี Cycle Time ของ MAT.NO ที่ผลิตเลย → P คำนวณไม่ได้ ห้าม default เป็น 100%
       const P = knownQty > 0 ? (runMin > 0 ? Math.min(1, producedMin / runMin) : 0) : null;
-      const Q = produced > 0 ? Math.max(0, (produced - ngQty) / produced) : 1;
+      const Q = produced > 0 ? produced / (produced + ngQty) : 1; // produced = ของดี(สแกน) → ดี/(ดี+เสีย) ไม่หักซ้ำ
       const oee = P != null ? A * P * Q : null;
       return { A, P, Q, oee, runMin, netAvail, shiftMin };
     };
