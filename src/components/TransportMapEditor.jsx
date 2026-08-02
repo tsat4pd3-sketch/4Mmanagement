@@ -3,7 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
-import { NODE_KINDS, nodeKind, buildAdj, edgeWeight } from '../utils/transportGraph'
+import { NODE_KINDS, nodeKind, buildAdj, edgeWeight, segIntersect, closestPointOnSeg } from '../utils/transportGraph'
 
 /* ─── TransportMapEditor — วาดกราฟถนน/ทางเดินรถบนผังใหญ่ (Store/AMR) ──────────
    ใช้รูปผังตัวเดียวกับ /factory-map (factory_map ฝั่ง Main) เป็นฉากหลัง
@@ -39,6 +39,9 @@ export default function TransportMapEditor() {
 
   const wrapRef = useRef(null)
   const dragRef = useRef(null)                         // { id } กำลังลากย้าย node
+  const nodesRef = useRef([])                          // sync ล่าสุด (รวม node ที่เพิ่งสร้างในคลิกเดียวกัน) กัน stale
+  useEffect(() => { nodesRef.current = nodes }, [nodes])
+  const getNode = (id) => nodesRef.current.find(n => n.id === id)
 
   const resetChain = () => { setChainLast(null); setDrawHover(null) }
   // Esc = จบเส้นที่กำลังวาด
@@ -84,6 +87,7 @@ export default function TransportMapEditor() {
     const payload = { kind, x: +x.toFixed(2), y: +y.toFixed(2), is_active: true, updated_by_name: fullName }
     const { data, error } = await supabaseDR.from('transport_nodes').insert(payload).select('*').single()
     if (error) { toast.error(error.message); return null }
+    nodesRef.current = [...nodesRef.current, data]   // อัปเดตทันที กัน stale ในคลิกเดียวกัน
     setNodes(p => [...p, data])
     return data
   }
@@ -99,11 +103,26 @@ export default function TransportMapEditor() {
     for (const n of nodes) { if (n.is_active === false) continue; const d = Math.hypot(n.x - x, n.y - y); if (d < bd) { bd = d; best = n } }
     return best
   }
-  // โหมดวาดต่อเนื่อง: คลิก 1 ที = วางจุด (หรือ snap จุดเดิม) + ต่อเส้นจากจุดก่อนหน้า
+  // ถนนเดิมที่ (x,y) อยู่ใกล้ที่สุดในระยะ snap — คืน { edge, pt } หรือ null (ใช้วางจุดลงบนถนน = สามแยก)
+  const nearestEdge = (x, y) => {
+    let best = null, bd = SNAP_PCT
+    for (const e of edges) {
+      if (e.is_active === false) continue
+      const a = nById[e.a_node], b = nById[e.b_node]; if (!a || !b) continue
+      const c = closestPointOnSeg({ x, y }, a, b)
+      if (c.dist < bd) { bd = c.dist; best = { edge: e, pt: { x: c.x, y: c.y } } }
+    }
+    return best
+  }
+  // โหมดวาดต่อเนื่อง: คลิก 1 ที = วางจุด (หรือ snap จุดเดิม/แทรกลงบนถนนเดิม) + ต่อเส้นจากจุดก่อนหน้า
   const drawStep = async (x, y, existing) => {
     setBusy(true)
     let target = existing || nearestNode(x, y)
-    if (!target) target = await createNodeRow(x, y, 'junction')
+    if (!target) {
+      const onEdge = nearestEdge(x, y)
+      target = onEdge ? await splitEdgeAt(onEdge.edge, onEdge.pt)   // คลิกลงบนถนนเดิม → แตกเป็นสามแยก
+        : await createNodeRow(x, y, 'junction')
+    }
     if (target) {
       if (chainLast && chainLast !== target.id) await addEdge(chainLast, target.id, true)
       setChainLast(target.id)
@@ -129,17 +148,57 @@ export default function TransportMapEditor() {
     setEdges(p => p.filter(e => e.a_node !== id && e.b_node !== id))  // cascade ฝั่ง DB แล้ว sync local
     setSel(null)
   }
-  const addEdge = async (a, b, silent = false) => {
-    if (a === b) return
-    if (edges.some(e => (e.a_node === a && e.b_node === b) || (e.a_node === b && e.b_node === a))) {
+  // แทรกถนน 1 เส้น (ไม่ตรวจจุดตัด) — คืน row หรือ null
+  const insertEdge = async (a, b, curEdges) => {
+    if (a === b) return null
+    if ((curEdges || edges).some(e => (e.a_node === a && e.b_node === b) || (e.a_node === b && e.b_node === a))) return null
+    const { data, error } = await supabaseDR.from('transport_edges')
+      .insert({ a_node: a, b_node: b, bidir: true, is_active: true, updated_by_name: fullName }).select('*').single()
+    if (error) { toast.error(error.message); return null }
+    setEdges(p => [...p, data])
+    return data
+  }
+  // ตัดถนนเดิมตรงจุด pt → แทรก node (แยก) + แทน edge เดิมด้วย 2 ท่อน · คืน node ใหม่
+  const splitEdgeAt = async (edge, pt) => {
+    const node = await createNodeRow(pt.x, pt.y, 'junction')
+    if (!node) return null
+    const bidir = edge.bidir !== false
+    await supabaseDR.from('transport_edges').delete().eq('id', edge.id)
+    const { data: two, error } = await supabaseDR.from('transport_edges').insert([
+      { a_node: edge.a_node, b_node: node.id, bidir, is_active: true, updated_by_name: fullName },
+      { a_node: node.id, b_node: edge.b_node, bidir, is_active: true, updated_by_name: fullName },
+    ]).select('*')
+    if (error) { toast.error(error.message); return null }
+    setEdges(p => p.filter(e => e.id !== edge.id).concat(two || []))
+    return node
+  }
+  // เพิ่มถนน a→b พร้อม auto-junction: ถ้าเส้นใหม่ตัดถนนเดิม แทรกแยกตรงจุดตัดแล้วเชื่อมให้ครบ
+  const addEdge = async (aId, bId, silent = false) => {
+    if (aId === bId) return
+    if (edges.some(e => (e.a_node === aId && e.b_node === bId) || (e.a_node === bId && e.b_node === aId))) {
       if (!silent) toast.info('มีถนนเชื่อมคู่นี้แล้ว'); return
     }
-    try {
-      const { data, error } = await supabaseDR.from('transport_edges')
-        .insert({ a_node: a, b_node: b, bidir: true, is_active: true, updated_by_name: fullName }).select('*').single()
-      if (error) throw error
-      setEdges(p => [...p, data])
-    } catch (err) { toast.error(err.message) }
+    const A = getNode(aId), B = getNode(bId)
+    if (!A || !B) return
+    // หา edge เดิมที่ตัดกับ A-B (ข้ามเส้นที่แชร์ปลายกับ A หรือ B อยู่แล้ว)
+    const crossings = []
+    for (const e of edges) {
+      if (e.is_active === false) continue
+      if ([e.a_node, e.b_node].includes(aId) || [e.a_node, e.b_node].includes(bId)) continue
+      const P = getNode(e.a_node), Q = getNode(e.b_node)
+      if (!P || !Q) continue
+      const x = segIntersect(A, B, P, Q)
+      if (x) crossings.push({ edge: e, pt: { x: x.x, y: x.y }, t: x.t })
+    }
+    if (crossings.length === 0) { await insertEdge(aId, bId); return }
+    // เรียงตามระยะจาก A → สร้างแยกทีละจุด + ต่อเป็นลูกโซ่ A—X1—X2—…—B
+    crossings.sort((c1, c2) => c1.t - c2.t)
+    let prev = aId
+    for (const c of crossings) {
+      const jn = await splitEdgeAt(c.edge, c.pt)
+      if (jn) { await insertEdge(prev, jn.id); prev = jn.id }
+    }
+    await insertEdge(prev, bId)
   }
   const patchEdge = async (id, patch) => {
     setEdges(p => p.map(e => e.id === id ? { ...e, ...patch } : e))
