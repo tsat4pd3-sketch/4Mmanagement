@@ -65,6 +65,28 @@ function calcOEE(sessions, downtimes, defects) {
   return results;
 }
 
+// ── ค่าเฉลี่ยถ่วงน้ำหนักตามตำรา OEE ───────────────────────────────
+// A/OEE ถ่วงด้วย "เวลารับภาระ" (loading time = shift − planned DT) · P ถ่วงด้วย "เวลาเดินเครื่อง"
+// (loading × A) · Q ถ่วงด้วย "จำนวนที่ผลิต" (ดี + เสีย) — กะเล็กไม่ถ่วงเท่ากะใหญ่ (เดิมเฉลี่ยธรรมดา
+// mean-of-percentages ทำให้กะผลิต 10 ชิ้นครึ่งชม.มีน้ำหนักเท่ากะทั้งวัน · แก้ 2026-08-02)
+// รับ field ได้ทั้งแบบเต็ม (calcA/plannedMin/totalQty จาก calcOEE) และแบบ history (oee_a/actual_qty/qty_ng)
+const wLoad = it => Math.max(0, (Number(it.shift_min) || 0) - (Number(it.plannedMin) || 0));
+const wRun  = it => wLoad(it) * (((it.calcA != null ? it.calcA : (it.oee_a != null ? +it.oee_a : 100))) / 100);
+const wProd = it => (Number(it.totalQty != null ? it.totalQty : it.actual_qty) || 0) + (Number(it.ngQty != null ? it.ngQty : it.qty_ng) || 0);
+// ถ่วงน้ำหนัก + fallback เป็นเฉลี่ยธรรมดาเมื่อไม่มีน้ำหนัก (กันหารศูนย์ — เช่นกะไม่มี shift_min/ผลผลิต)
+function wavg(items, valFn, wFn) {
+  let sw = 0, swv = 0, n = 0, sum = 0;
+  for (const it of items) {
+    const v = valFn(it);
+    if (v == null) continue;
+    n++; sum += v;
+    const w = wFn(it);
+    if (w > 0) { sw += w; swv += v * w; }
+  }
+  if (!n) return null;
+  return +((sw > 0 ? swv / sw : sum / n)).toFixed(1);
+}
+
 // ── Date helpers ─────────────────────────────────────────────────
 // ⚠️ ห้ามใช้ toISOString() เพื่อคำนวณวันที่ local — จะเพี้ยนข้ามวันเพราะ UTC offset (ดู CLAUDE.md)
 const fmtMonthKey = d => d.slice(0, 7);          // YYYY-MM
@@ -377,7 +399,7 @@ export default function OEEAnalytics() {
     if (isScoped && !(tdScopeLines || []).length) { setTdHistory([]); return; }
     const startStr = dateStrAdd(tdDate, -9);
     let q = supabaseDR.from('production_sessions')
-      .select('work_date, oee, oee_a, oee_p, oee_q, status, line_name, shift')
+      .select('work_date, oee, oee_a, oee_p, oee_q, status, line_name, shift, shift_min, actual_qty, qty_ng')
       .eq('status', 'closed')
       .gte('work_date', startStr).lte('work_date', tdDate)
       .limit(3000);
@@ -432,8 +454,6 @@ export default function OEEAnalytics() {
   const tdRows = useMemo(() => calcOEE(tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped), [tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped]);
 
   const tdKpi = useMemo(() => {
-    const valid = key => tdRows.filter(r => r[key] != null).map(r => r[key]);
-    const avg = arr => arr.length ? +(arr.reduce((s, v) => s + v, 0) / arr.length).toFixed(1) : null;
     // งานคู่ RH/LH (pair_mat_no) นับเป็น 1 คู่/stroke — เฉพาะกะที่มีคู่จริงถึงคำนวณจาก prod_orders ที่เหลือใช้ค่า stamped เดิม
     const hasPairIn = os => os.some(o => o.mat_no && tdPairMat[o.mat_no] && os.some(x => x.mat_no === tdPairMat[o.mat_no]));
     const pairSum = (os, pick) => {
@@ -453,7 +473,8 @@ export default function OEEAnalytics() {
       return r.totalQty || 0;
     };
     return {
-      oee: avg(valid('calcOEE')), a: avg(valid('calcA')), p: avg(valid('calcP')), q: avg(valid('calcQ')),
+      oee: wavg(tdRows, r => r.calcOEE, wLoad), a: wavg(tdRows, r => r.calcA, wLoad),
+      p: wavg(tdRows, r => r.calcP, wRun), q: wavg(tdRows, r => r.calcQ, wProd),
       totalQty: tdRows.reduce((s, r) => s + sessActual(r), 0),
       targetQty: tdRows.reduce((s, r) => s + sessTarget(r), 0),
       totalDT: tdDowntimesScoped.reduce((s, d) => s + (d.duration_min || 0), 0),
@@ -468,13 +489,12 @@ export default function OEEAnalytics() {
     for (let i = 9; i >= 0; i--) {
       const key = dateStrAdd(tdDate, -i);
       const items = map[key] || [];
-      const avg = arr => arr.length ? +(arr.reduce((s, v) => s + v, 0) / arr.length).toFixed(1) : null;
       days.push({
         key, label: fmtDayLabel(key),
-        oee: avg(items.filter(i => i.oee   != null).map(i => +i.oee)),
-        a:   avg(items.filter(i => i.oee_a != null).map(i => +i.oee_a)),
-        p:   avg(items.filter(i => i.oee_p != null).map(i => +i.oee_p)),
-        q:   avg(items.filter(i => i.oee_q != null).map(i => +i.oee_q)),
+        oee: wavg(items, i => i.oee   != null ? +i.oee   : null, wLoad),
+        a:   wavg(items, i => i.oee_a != null ? +i.oee_a : null, wLoad),
+        p:   wavg(items, i => i.oee_p != null ? +i.oee_p : null, wRun),
+        q:   wavg(items, i => i.oee_q != null ? +i.oee_q : null, wProd),
       });
     }
     return days;
@@ -641,15 +661,13 @@ export default function OEEAnalytics() {
       map[key].push(r);
     }
     return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0])).map(([key, items]) => {
-      const valid = items.filter(i => i.calcOEE != null);
-      const avg = arr => arr.length ? +(arr.reduce((s, v) => s + v, 0) / arr.length).toFixed(1) : null;
       return {
         key,
         label: period === 'daily' ? fmtDayLabel(key) : period === 'monthly' ? fmtMonthLabel(key) : `${+key + 543}`,
-        oee:   avg(valid.map(i => i.calcOEE)),
-        a:     avg(items.filter(i => i.calcA != null).map(i => i.calcA)),
-        p:     avg(items.filter(i => i.calcP != null).map(i => i.calcP)),
-        q:     avg(items.filter(i => i.calcQ != null).map(i => i.calcQ)),
+        oee:   wavg(items, i => i.calcOEE, wLoad),
+        a:     wavg(items, i => i.calcA, wLoad),
+        p:     wavg(items, i => i.calcP, wRun),
+        q:     wavg(items, i => i.calcQ, wProd),
         totalQty:   items.reduce((s, i) => s + (i.totalQty || 0), 0),
         ngQty:      items.reduce((s, i) => s + (i.ngQty || 0), 0),
         unplannedMin: items.reduce((s, i) => s + i.unplannedMin, 0),
@@ -660,11 +678,14 @@ export default function OEEAnalytics() {
 
   // ── Overall KPIs ───────────────────────────────────────────────
   const kpi = useMemo(() => {
-    // เฉลี่ยแต่ละตัว (A/P/Q/OEE) จาก "เฉพาะช่วงที่มีค่าของตัวนั้น" — เดิมกรองด้วย oee!=null
-    // แล้วนับ a/p/q ที่เป็น null เป็น 0 ทำให้ค่าเฉลี่ยถูกดึงต่ำผิด
-    const avg = key => { const v = grouped.filter(g => g[key] != null); return v.length ? +(v.reduce((s, g) => s + g[key], 0) / v.length).toFixed(1) : null; };
-    return { oee: avg('oee'), a: avg('a'), p: avg('p'), q: avg('q'), sessions: rows.length, total: rows.reduce((s, r) => s + r.totalQty, 0) };
-  }, [grouped, rows]);
+    // ถ่วงน้ำหนักตรงจากทุกกะใน scope (ไม่ใช่เฉลี่ยของค่าเฉลี่ยรายวันอีกชั้น — mean-of-means ทำให้
+    // วันที่ผลิตน้อยถ่วงเท่าวันที่ผลิตเยอะ) · A/OEE ถ่วงเวลารับภาระ, P ถ่วงเวลาเดินเครื่อง, Q ถ่วงจำนวนผลิต
+    return {
+      oee: wavg(rows, r => r.calcOEE, wLoad), a: wavg(rows, r => r.calcA, wLoad),
+      p: wavg(rows, r => r.calcP, wRun), q: wavg(rows, r => r.calcQ, wProd),
+      sessions: rows.length, total: rows.reduce((s, r) => s + r.totalQty, 0),
+    };
+  }, [rows]);
 
   // ── Downtime Pareto ────────────────────────────────────────────
   const dtPareto = useMemo(() => {
