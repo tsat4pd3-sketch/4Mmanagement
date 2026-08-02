@@ -13,10 +13,12 @@ import { NODE_KINDS, nodeKind, buildAdj, edgeWeight } from '../utils/transportGr
 
 const MODES = [
   ['select', '✋ เลือก/ย้าย'],
-  ['node',   '➕ เพิ่มจุด'],
-  ['edge',   '🔗 เชื่อมถนน'],
+  ['draw',   '✏️ วาดถนนต่อเนื่อง'],
+  ['node',   '➕ เพิ่มจุดเดี่ยว'],
+  ['edge',   '🔗 เชื่อม 2 จุด'],
   ['delete', '🗑 ลบ'],
 ]
+const SNAP_PCT = 2.8   // ระยะ snap เข้าจุดเดิม (หน่วย % ของผัง)
 
 export default function TransportMapEditor() {
   const { role, fullName } = useContext(UserContext)
@@ -32,9 +34,19 @@ export default function TransportMapEditor() {
   const [edgeFrom, setEdgeFrom] = useState(null)     // node id ที่เลือกไว้ตอนเชื่อมถนน
   const [sel, setSel] = useState(null)               // { type:'node'|'edge', id }
   const [busy, setBusy] = useState(false)
+  const [chainLast, setChainLast] = useState(null)   // โหมดวาดต่อเนื่อง: node id ล่าสุดในเส้นที่กำลังวาด
+  const [drawHover, setDrawHover] = useState(null)   // { x, y } ตำแหน่งเคอร์เซอร์ (เส้น preview)
 
   const wrapRef = useRef(null)
   const dragRef = useRef(null)                         // { id } กำลังลากย้าย node
+
+  const resetChain = () => { setChainLast(null); setDrawHover(null) }
+  // Esc = จบเส้นที่กำลังวาด
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') resetChain() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -68,15 +80,34 @@ export default function TransportMapEditor() {
   }
 
   // ─── persist helpers (DR · stamp updated_by_name เอง เหมือน Transport.jsx) ───
+  const createNodeRow = async (x, y, kind) => {
+    const payload = { kind, x: +x.toFixed(2), y: +y.toFixed(2), is_active: true, updated_by_name: fullName }
+    const { data, error } = await supabaseDR.from('transport_nodes').insert(payload).select('*').single()
+    if (error) { toast.error(error.message); return null }
+    setNodes(p => [...p, data])
+    return data
+  }
   const addNode = async (x, y) => {
     setBusy(true)
-    try {
-      const payload = { kind: addKind, x, y, is_active: true, updated_by_name: fullName }
-      const { data, error } = await supabaseDR.from('transport_nodes').insert(payload).select('*').single()
-      if (error) throw error
-      setNodes(p => [...p, data])
-      setSel({ type: 'node', id: data.id })
-    } catch (err) { toast.error(err.message) }
+    const d = await createNodeRow(x, y, addKind)
+    if (d) setSel({ type: 'node', id: d.id })
+    setBusy(false)
+  }
+  // จุดที่ใกล้ (x,y) ที่สุดในระยะ snap — คืน node หรือ null (ใช้ต่อถนน/บรรจบ)
+  const nearestNode = (x, y) => {
+    let best = null, bd = SNAP_PCT
+    for (const n of nodes) { if (n.is_active === false) continue; const d = Math.hypot(n.x - x, n.y - y); if (d < bd) { bd = d; best = n } }
+    return best
+  }
+  // โหมดวาดต่อเนื่อง: คลิก 1 ที = วางจุด (หรือ snap จุดเดิม) + ต่อเส้นจากจุดก่อนหน้า
+  const drawStep = async (x, y, existing) => {
+    setBusy(true)
+    let target = existing || nearestNode(x, y)
+    if (!target) target = await createNodeRow(x, y, 'junction')
+    if (target) {
+      if (chainLast && chainLast !== target.id) await addEdge(chainLast, target.id, true)
+      setChainLast(target.id)
+    }
     setBusy(false)
   }
   const moveNode = async (id, x, y) => {
@@ -98,19 +129,17 @@ export default function TransportMapEditor() {
     setEdges(p => p.filter(e => e.a_node !== id && e.b_node !== id))  // cascade ฝั่ง DB แล้ว sync local
     setSel(null)
   }
-  const addEdge = async (a, b) => {
+  const addEdge = async (a, b, silent = false) => {
     if (a === b) return
     if (edges.some(e => (e.a_node === a && e.b_node === b) || (e.a_node === b && e.b_node === a))) {
-      toast.info('มีถนนเชื่อมคู่นี้แล้ว'); return
+      if (!silent) toast.info('มีถนนเชื่อมคู่นี้แล้ว'); return
     }
-    setBusy(true)
     try {
       const { data, error } = await supabaseDR.from('transport_edges')
         .insert({ a_node: a, b_node: b, bidir: true, is_active: true, updated_by_name: fullName }).select('*').single()
       if (error) throw error
       setEdges(p => [...p, data])
     } catch (err) { toast.error(err.message) }
-    setBusy(false)
   }
   const patchEdge = async (id, patch) => {
     setEdges(p => p.map(e => e.id === id ? { ...e, ...patch } : e))
@@ -127,15 +156,17 @@ export default function TransportMapEditor() {
 
   // ─── pointer handlers ───
   const onMapClick = (e) => {
-    if (!canEdit || mode !== 'node' || dragRef.current) return
-    if (e.target.closest('[data-node]')) return       // คลิกโดนจุด ไม่เพิ่มใหม่
+    if (!canEdit || dragRef.current) return
+    if (e.target.closest('[data-node]')) return       // คลิกโดนจุด ไม่เพิ่มใหม่ (node handler จัดการ)
     const p = pctFromEvent(e.clientX, e.clientY)
-    addNode(+p.x.toFixed(2), +p.y.toFixed(2))
+    if (mode === 'node') addNode(p.x, p.y)
+    else if (mode === 'draw') drawStep(p.x, p.y)
   }
   const onNodeClick = (e, node) => {
     e.stopPropagation()
     if (!canEdit) { setSel({ type: 'node', id: node.id }); return }
     if (mode === 'delete') return delNode(node.id)
+    if (mode === 'draw') { drawStep(node.x, node.y, node); return }   // คลิกจุดเดิม = ต่อถนนเข้าจุดนั้น (บรรจบ/สี่แยก)
     if (mode === 'edge') {
       if (!edgeFrom) { setEdgeFrom(node.id) }
       else if (edgeFrom === node.id) { setEdgeFrom(null) }
@@ -151,10 +182,16 @@ export default function TransportMapEditor() {
     e.currentTarget.setPointerCapture?.(e.pointerId)
   }
   const onMapPointerMove = (e) => {
-    if (!dragRef.current) return
-    const p = pctFromEvent(e.clientX, e.clientY)
-    dragRef.current.moved = true
-    setNodes(prev => prev.map(n => n.id === dragRef.current.id ? { ...n, x: +p.x.toFixed(2), y: +p.y.toFixed(2) } : n))
+    if (dragRef.current) {
+      const p = pctFromEvent(e.clientX, e.clientY)
+      dragRef.current.moved = true
+      setNodes(prev => prev.map(n => n.id === dragRef.current.id ? { ...n, x: +p.x.toFixed(2), y: +p.y.toFixed(2) } : n))
+      return
+    }
+    if (mode === 'draw' && chainLast && e.pointerType === 'mouse') {   // เส้น preview ตามเคอร์เซอร์ (เมาส์เท่านั้น)
+      const p = pctFromEvent(e.clientX, e.clientY)
+      setDrawHover({ x: p.x, y: p.y })
+    }
   }
   const onMapPointerUp = () => {
     const d = dragRef.current
@@ -190,8 +227,11 @@ export default function TransportMapEditor() {
       {canEdit ? (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           {MODES.map(([k, l]) => (
-            <button key={k} onClick={() => { setMode(k); setEdgeFrom(null); setSel(null) }} style={btn(mode === k)}>{l}</button>
+            <button key={k} onClick={() => { setMode(k); setEdgeFrom(null); setSel(null); resetChain() }} style={btn(mode === k)}>{l}</button>
           ))}
+          {mode === 'draw' && chainLast && (
+            <button onClick={resetChain} style={{ padding: '7px 13px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, border: '1.5px solid var(--accent)', background: 'var(--accent)', color: '#08130a' }}>✓ จบเส้น (Esc)</button>
+          )}
           {mode === 'node' && (
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--text2)' }}>
               ชนิดจุด:
@@ -209,8 +249,11 @@ export default function TransportMapEditor() {
       )}
       {canEdit && (
         <div style={{ fontSize: 12, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px' }}>
-          {mode === 'node' && '👉 คลิกบนผังเพื่อวางจุด (แยก/จุดจอด/ท่าโหลด/จุดชาร์จ)'}
-          {mode === 'edge' && (edgeFrom ? '👉 คลิกจุดปลายทางเพื่อเชื่อมถนน (คลิกจุดเดิมซ้ำ = ยกเลิก)' : '👉 คลิกจุดต้นทางเพื่อเริ่มเชื่อมถนน')}
+          {mode === 'draw' && (chainLast
+            ? '✏️ คลิกจุดถัดไปตามแนวถนน — ทางเลี้ยว/หัวโค้งให้คลิกตรงมุมทุกจุด เส้นจะหักตาม (ไม่ตัดทะลุ) · คลิกใกล้จุดเดิม = บรรจบ/สี่แยก · กด "✓ จบเส้น" หรือ Esc เพื่อขึ้นเส้นใหม่'
+            : '✏️ คลิกจุดเริ่มต้นบนแนวถนน แล้วคลิกไล่ไปตามถนน (คลิกทุกมุมที่เลี้ยว) ระบบวางจุด+ต่อเส้นให้อัตโนมัติ')}
+          {mode === 'node' && '👉 คลิกบนผังเพื่อวางจุดเดี่ยว (เลือกชนิดจุดจาก dropdown)'}
+          {mode === 'edge' && (edgeFrom ? '👉 คลิกจุดปลายทางเพื่อเชื่อมถนน (คลิกจุดเดิมซ้ำ = ยกเลิก)' : '👉 คลิกจุดต้นทางเพื่อเริ่มเชื่อม 2 จุด')}
           {mode === 'select' && '👉 คลิกจุด/เส้นเพื่อแก้ไข · ลากจุดเพื่อย้าย'}
           {mode === 'delete' && '👉 คลิกจุด (ลบจุด+ถนนที่ต่ออยู่) หรือคลิกเส้นเพื่อลบถนน'}
         </div>
@@ -219,7 +262,7 @@ export default function TransportMapEditor() {
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* map */}
         <div ref={wrapRef} onClick={onMapClick} onPointerMove={onMapPointerMove} onPointerUp={onMapPointerUp} onPointerCancel={onMapPointerUp}
-          style={{ position: 'relative', flex: '1 1 560px', minWidth: 320, maxWidth: 1100, borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)', touchAction: 'none', cursor: mode === 'node' ? 'crosshair' : 'default' }}>
+          style={{ position: 'relative', flex: '1 1 560px', minWidth: 320, maxWidth: 1100, borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)', touchAction: 'none', cursor: (mode === 'node' || mode === 'draw') ? 'crosshair' : 'default' }}>
           <img src={imageUrl} alt="ผังถนนโรงงาน" style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none', userSelect: 'none' }} />
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.28)', pointerEvents: 'none' }} />
           {/* edges */}
@@ -250,13 +293,18 @@ export default function TransportMapEditor() {
                 </g>
               )
             })}
+            {/* เส้น preview ตอนวาดต่อเนื่อง (จากจุดล่าสุด → เคอร์เซอร์) */}
+            {mode === 'draw' && chainLast && drawHover && nById[chainLast] && (
+              <line x1={nById[chainLast].x} y1={nById[chainLast].y} x2={drawHover.x} y2={drawHover.y}
+                stroke="#4ade80" strokeOpacity="0.8" strokeWidth="2" strokeDasharray="3 2" vectorEffect="non-scaling-stroke" />
+            )}
           </svg>
           {/* nodes (HTML markers) */}
           {nodes.map(n => {
             const k = nodeKind(n.kind)
             const dim = n.is_active === false
             const selected = sel?.type === 'node' && sel.id === n.id
-            const isFrom = edgeFrom === n.id
+            const isFrom = edgeFrom === n.id || (mode === 'draw' && chainLast === n.id)
             return (
               <div key={n.id} data-node onClick={(e) => onNodeClick(e, n)} onPointerDown={(e) => onNodePointerDown(e, n)}
                 title={n.name || k.label}
