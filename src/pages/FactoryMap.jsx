@@ -424,13 +424,14 @@ export default function FactoryMap({ setupMode = false }) {
     setReviewLoading(true);
     try {
       const [{ data: sessions }, empRes, plRes, logRes] = await Promise.all([
-        supabaseDR.from('production_sessions').select('id, line_name, status, oee, qty_ng, ng_qty').eq('work_date', reviewDate),
+        supabaseDR.from('production_sessions').select('id, line_name, status, oee, qty_ng, ng_qty, shift_min').eq('work_date', reviewDate),
         supabase.from('employees').select('id, line_id').eq('is_active', true),
         supabase.from('production_lines').select('id, name'),
         supabase.from('daily_production_logs').select('employee_id, is_present').eq('work_date', reviewDate),
       ]);
       const out = {};
-      const ensure = (ln) => (out[ln] || (out[ln] = { actual: 0, target: 0, oeeSum: 0, oeeN: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0 }));
+      // oeeWSum/oeeWLoad = ถ่วงน้ำหนักด้วยเวลารับภาระ (กฎ OEE: ห้าม mean-of-percentages) · oeeSum/oeeN = fallback เมื่อไม่มีน้ำหนัก
+      const ensure = (ln) => (out[ln] || (out[ln] = { actual: 0, target: 0, oeeWSum: 0, oeeWLoad: 0, oeeSum: 0, oeeN: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0 }));
       // คนเข้างานของวันนั้น (map พนักงาน→ไลน์ ปัจจุบัน — ยอมรับได้สำหรับทบทวนย้อนหลัง)
       const lineOfId = {}; (plRes.data || []).forEach(l => { lineOfId[l.id] = l.name; });
       const presentSet = new Set((logRes.data || []).filter(l => l.is_present).map(l => l.employee_id));
@@ -463,17 +464,24 @@ export default function FactoryMap({ setupMode = false }) {
           const ptot = pairAwareTotal(Object.values(perMat), m => pairMap[m] || null);
           o.target += ptot.target + nullOs.reduce((a, od) => a + (od.qty_target ?? od.qty ?? 0), 0);
           o.actual += ptot.produced + nullOs.reduce((a, od) => a + (od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0)), 0);
-          // Downtime นอกแผนทั้งวัน (ปิดกะแล้ว → duration_min/started+ended มีค่า)
+          // Downtime นอกแผนทั้งวัน (dtMin) + เวลาที่วางแผนหยุด (plannedMin) สำหรับถ่วงน้ำหนัก OEE
+          let plannedMin = 0;
           (dtBySess[s.id] || []).forEach(d => {
-            if (d.dr_downtime_types?.category === 'planned') return;
-            if (d.duration_min != null) o.dtMin += Number(d.duration_min) || 0;
-            else if (d.started_at && d.ended_at) o.dtMin += Math.max(0, (new Date(d.ended_at) - new Date(d.started_at)) / 60000);
+            const mins = d.duration_min != null ? (Number(d.duration_min) || 0)
+              : (d.started_at && d.ended_at ? Math.max(0, (new Date(d.ended_at) - new Date(d.started_at)) / 60000) : 0);
+            if (d.dr_downtime_types?.category === 'planned') plannedMin += mins;
+            else o.dtMin += mins;
           });
           o.ng += s.qty_ng ?? s.ng_qty ?? 0;
-          if (s.oee != null) { o.oeeSum += Number(s.oee); o.oeeN++; }
+          // OEE ถ่วงด้วย "เวลารับภาระ" (shift_min − plannedMin) ตามกฎถ่วงน้ำหนัก OEE
+          if (s.oee != null) {
+            const wLoad = Math.max(0, (s.shift_min || 570) - plannedMin);
+            o.oeeWSum += Number(s.oee) * wLoad; o.oeeWLoad += wLoad;
+            o.oeeSum += Number(s.oee); o.oeeN++;
+          }
         });
       }
-      Object.values(out).forEach(o => { o.dtMin = Math.round(o.dtMin); o.oee = o.oeeN ? Math.round(o.oeeSum / o.oeeN) : null; });
+      Object.values(out).forEach(o => { o.dtMin = Math.round(o.dtMin); o.oee = o.oeeWLoad > 0 ? Math.round(o.oeeWSum / o.oeeWLoad) : (o.oeeN ? Math.round(o.oeeSum / o.oeeN) : null); });
       setReviewStatus(out);
     } catch { setReviewStatus({}); }
     finally { setReviewLoading(false); }
@@ -547,8 +555,8 @@ export default function FactoryMap({ setupMode = false }) {
 
   // side panel: ไลน์ที่มีกะวันนี้ ∪ ไลน์ที่ตีกรอบไว้ — เรียงตาม metric (ปัญหาขึ้นบน)
   const ranked = useMemo(() => {
-    // แสดงไลน์บนสุด (หน่วยปฏิบัติการ) + กรอบที่วาดไว้ (เผื่อของเดิมที่วาดระดับลูก) — ไม่ลิสต์ลูกแยก (รวมใน rollup แล้ว)
-    const names = new Set([...topNames, ...regions.map(r => r.line_name)]);
+    // แสดงไลน์บนสุด (หน่วยปฏิบัติการ) + กรอบที่ไม่ใช่ไลน์ลูก — ไม่ลิสต์ลูกแยก (รวมใน rollup ของแม่แล้ว กันนับซ้ำในสายตา)
+    const names = new Set([...topNames, ...regions.map(r => r.line_name).filter(n => !parentOf[n])]);
     const arr = [...names].map(name => ({ name, st: stOf(name), val: M.value(stOf(name)), cat: M.cat(stOf(name)) }));
     arr.sort((a, b) => {
       const av = a.val, bv = b.val;
@@ -557,22 +565,26 @@ export default function FactoryMap({ setupMode = false }) {
       return M.desc ? bv - av : av - bv;
     });
     return arr;
-  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, regions, metric, topNames]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, regions, metric, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── สรุปทบทวนรายวัน: rollup ทั้งครอบครัว (แม่+ลูก) เหมือน stOf แต่อ่านจาก reviewStatus ──
+  //    OEE ถ่วงน้ำหนักด้วยเวลารับภาระ (oeeWSum/oeeWLoad) — ห้าม mean-of-percentages · fallback = เฉลี่ยธรรมดา
   const reviewOf = (name) => {
-    const agg = { actual: 0, target: 0, oee: null, oeeSum: 0, oeeN: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0 };
+    const agg = { actual: 0, target: 0, oee: null, oeeWSum: 0, oeeWLoad: 0, oeeSum: 0, oeeN: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0 };
     familyNames(name).forEach(n => {
       const r = reviewStatus[n]; if (!r) return;
-      agg.actual += r.actual || 0; agg.target += r.target || 0; agg.oeeSum += r.oeeSum || 0; agg.oeeN += r.oeeN || 0;
+      agg.actual += r.actual || 0; agg.target += r.target || 0;
+      agg.oeeWSum += r.oeeWSum || 0; agg.oeeWLoad += r.oeeWLoad || 0; agg.oeeSum += r.oeeSum || 0; agg.oeeN += r.oeeN || 0;
       agg.dtMin += r.dtMin || 0; agg.ng += r.ng || 0; agg.present += r.present || 0; agg.headTotal += r.headTotal || 0;
     });
-    agg.oee = agg.oeeN ? Math.round(agg.oeeSum / agg.oeeN) : null;
+    agg.oee = agg.oeeWLoad > 0 ? Math.round(agg.oeeWSum / agg.oeeWLoad) : (agg.oeeN ? Math.round(agg.oeeSum / agg.oeeN) : null);
     return agg;
   };
   // เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน (ปัญหาก่อน) · ไม่มีเป้าไปท้าย
+  // ⚠️ ลิสต์เฉพาะ "กลุ่มไลน์บนสุด" (1 แถว/กลุ่ม รวมยอดลูกด้วย reviewOf) — ไม่ลิสต์ไลน์ลูกซ้ำ
+  //    (แม้ลูกจะถูกตีกรอบไว้ก็ตาม เช่น LWR BAR + Laser LWR/Assy LWR → เห็นแค่ LWR BAR ยอดรวม กันนับซ้ำในสายตา · ดูแยกลูกได้ที่ drill-down)
   const reviewRanked = useMemo(() => {
-    const names = new Set([...topNames, ...regions.map(r => r.line_name)]);
+    const names = new Set([...topNames, ...regions.map(r => r.line_name).filter(n => !parentOf[n])]);
     const arr = [...names].map(name => ({ name, r: reviewOf(name) }));
     arr.sort((a, b) => {
       const ap = a.r.target > 0 ? a.r.actual / a.r.target : null;
@@ -582,12 +594,12 @@ export default function FactoryMap({ setupMode = false }) {
       return ap - bp;
     });
     return arr;
-  }, [reviewStatus, regions, topNames]); // eslint-disable-line react-hooks/exhaustive-deps
-  // ยอดรวมทั้งโรงงาน (รวมเฉพาะไลน์บนสุด กันนับซ้ำ)
+  }, [reviewStatus, regions, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ยอดรวมทั้งโรงงาน (รวมเฉพาะไลน์บนสุด กันนับซ้ำ) · OEE ถ่วงน้ำหนักเช่นกัน
   const reviewTotals = useMemo(() => {
-    const t = { actual: 0, target: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0, oeeSum: 0, oeeN: 0, oee: null };
-    topNames.forEach(name => { const r = reviewOf(name); t.actual += r.actual; t.target += r.target; t.dtMin += r.dtMin; t.ng += r.ng; t.present += r.present; t.headTotal += r.headTotal; t.oeeSum += r.oeeSum; t.oeeN += r.oeeN; });
-    t.oee = t.oeeN ? Math.round(t.oeeSum / t.oeeN) : null;
+    const t = { actual: 0, target: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0, oeeWSum: 0, oeeWLoad: 0, oeeSum: 0, oeeN: 0, oee: null };
+    topNames.forEach(name => { const r = reviewOf(name); t.actual += r.actual; t.target += r.target; t.dtMin += r.dtMin; t.ng += r.ng; t.present += r.present; t.headTotal += r.headTotal; t.oeeWSum += r.oeeWSum; t.oeeWLoad += r.oeeWLoad; t.oeeSum += r.oeeSum; t.oeeN += r.oeeN; });
+    t.oee = t.oeeWLoad > 0 ? Math.round(t.oeeWSum / t.oeeWLoad) : (t.oeeN ? Math.round(t.oeeSum / t.oeeN) : null);
     return t;
   }, [reviewStatus, topNames]); // eslint-disable-line react-hooks/exhaustive-deps
 
