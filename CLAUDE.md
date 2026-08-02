@@ -497,6 +497,15 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 - **ฝั่ง QA แก้ตามด้วย (2026-08-02):** `QualityControl.jsx` FTT = `total/(total+ng)` (เดิม `(total−ng)/total` ต่ำเกินจริง) + PPM = `ng/(total+ng)×1e6` (เดิม `ng/total` สูงเกินจริง เพราะ `total`=ยอดสแกน=ของดี ต้องหารด้วยผลิตจริง=ดี+เสีย) ครบ 3 จุด ppm + 1 จุด ftt (บรรทัด ~360-372) · ⚠️ PPM เป็นเมตริกที่อาจอ้างอิงกับลูกค้า — ถ้า QMS นิยาม PPM = ng/ยอดสแกน ให้ revert เฉพาะจุดนี้
 - **⚠️ กะที่ปิดไปแล้วมี `oee_q` ที่ stamp ด้วยสูตรเก่า (หักซ้ำ) ค้างอยู่** — backfill DR แล้ว 2026-08-02 (migration `20260802_backfill_oee_q_no_double_deduct.sql`): `oee_q = actual_qty/(actual_qty+ng)×100`, `oee = oee_a×oee_p×oee_q/1e4` (เฉพาะ closed + oee_a/p/q not null + actual_qty>0 · idempotent แตะเฉพาะแถวที่ค่าต่าง ≥0.05) · **ng นับจาก `defect_logs` (Σ qty_ng+qty_suspect ต่อ session) ไม่ใช่ session column `qty_ng`/`qty_suspect`** — column ไม่น่าเชื่อถือ (เจอ Line 60 21/07 column=0 แต่ defect_logs มี NG 12 → old_q=100 ผิด, ที่ถูก 97.6) · รันจริง 5 กะเปลี่ยน (swing −2.4..+1.0)
 
+### ⚠️ กฎเฉลี่ย OEE รวมหลายกะ — ถ่วงน้ำหนักตามตำรา ห้าม mean-of-percentages (2026-08-02)
+
+- **รวม A/P/Q/OEE ของหลายกะ (KPI/เทรนด์ใน `/oee-analytics`) ต้องถ่วงน้ำหนัก ไม่ใช่เฉลี่ยเปอร์เซ็นต์ตรงๆ** — helper `wavg(items, valFn, wFn)` ใน `OEEAnalytics.jsx` (มี fallback เป็นเฉลี่ยธรรมดาเมื่อไม่มีน้ำหนัก + กันหารศูนย์ + คืน null เมื่อไม่มีค่า valid):
+  - **A, OEE** ถ่วงด้วย **เวลารับภาระ** (`wLoad` = `shift_min − plannedMin`)
+  - **P** ถ่วงด้วย **เวลาเดินเครื่อง** (`wRun` = `wLoad × A/100`)
+  - **Q** ถ่วงด้วย **จำนวนที่ผลิต** (`wProd` = ดี + เสีย)
+- เดิม mean-of-percentages ทำให้กะเล็ก (ผลิต 10 ชิ้นครึ่ง ชม.) ถ่วงเท่ากะทั้งวัน + mean-of-means รายวันทำวันผลิตน้อยถ่วงเท่าวันผลิตเยอะ · ใช้ทั้ง `tdKpi`/`tdTrend`(ภาพรวมวันนี้) + `kpi`/`grouped`(เทรนด์รายวัน/เดือน) · query history ต้อง select `shift_min, actual_qty, qty_ng` เพิ่ม
+- **จุดใหม่ที่รวม OEE หลายกะให้ใช้ `wavg` เท่านั้น ห้ามกลับไป `sum/n`** — mean-of-percentages เป็นข้อผิดพลาดคลาสสิกของ OEE
+
 > ### ⚠️ กฎงานคู่ RH/LH — ต้องตั้ง `dr_products.pair_mat_no` ให้ครบ **ทั้ง 2 ทาง** (ทุก session ต้องรู้ · 2026-07-21)
 > งานคู่ (แม่พิมพ์คู่ ปั๊มครั้งเดียวได้ทั้ง LH+RH = ทำพร้อมกัน) ผูกกันด้วย `pair_mat_no` ใน **Product Master (DR `dr_products`)** — LH ต้องชี้ไป RH **และ** RH ต้องชี้กลับมา LH (ตั้งจากหน้า `/products`) · ค่านี้เป็น source of truth เดียวที่ 3 จุดนี้พึ่งพา:
 > 1. **เปิดเป้าคู่อัตโนมัติ** (DailyReport manual open — สร้าง prod_orders คู่ให้เอง)
