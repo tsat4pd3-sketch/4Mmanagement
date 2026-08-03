@@ -4,6 +4,7 @@ import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { NODE_KINDS, nodeKind, buildAdj, edgeWeight, segIntersect, closestPointOnSeg } from '../utils/transportGraph'
+import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory'
 
 /* ─── TransportMapEditor — วาดกราฟถนน/ทางเดินรถบนผังใหญ่ (Store/AMR) ──────────
    ใช้รูปผังตัวเดียวกับ /factory-map (factory_map ฝั่ง Main) เป็นฉากหลัง
@@ -45,7 +46,41 @@ export default function TransportMapEditor() {
   const dragRef = useRef(null)                         // { id } กำลังลากย้าย node
   const nodesRef = useRef([])                          // sync ล่าสุด (รวม node ที่เพิ่งสร้างในคลิกเดียวกัน) กัน stale
   useEffect(() => { nodesRef.current = nodes }, [nodes])
+  const edgesRef = useRef([])
+  useEffect(() => { edgesRef.current = edges }, [edges])
   const getNode = (id) => nodesRef.current.find(n => n.id === id)
+
+  // ─── Undo/Redo (snapshot ทั้งกราฟก่อนทุก action — restore = diff แล้วเขียนย้อนลง DB) ───
+  const snapOf = () => ({ nodes: nodesRef.current.map(n => ({ ...n })), edges: edgesRef.current.map(e => ({ ...e })) })
+  const NODE_FIELDS = ['kind', 'x', 'y', 'name', 'line_name', 'is_active']
+  const EDGE_FIELDS = ['a_node', 'b_node', 'bidir', 'is_active', 'weight']
+  const pick = (row, fields) => Object.fromEntries(fields.map(f => [f, row[f] ?? null]))
+  const applySnapshot = async (snap) => {
+    const curN = nodesRef.current, curE = edgesRef.current
+    const sN = new Map(snap.nodes.map(n => [n.id, n])), cN = new Map(curN.map(n => [n.id, n]))
+    const sE = new Map(snap.edges.map(e => [e.id, e])), cE = new Map(curE.map(e => [e.id, e]))
+    const delE = curE.filter(e => !sE.has(e.id)).map(e => e.id)
+    const delN = curN.filter(n => !sN.has(n.id)).map(n => n.id)
+    const insN = snap.nodes.filter(n => !cN.has(n.id))
+    const insE = snap.edges.filter(e => !cE.has(e.id))
+    const updN = snap.nodes.filter(n => { const c = cN.get(n.id); return c && NODE_FIELDS.some(f => (c[f] ?? null) !== (n[f] ?? null)) })
+    const updE = snap.edges.filter(e => { const c = cE.get(e.id); return c && EDGE_FIELDS.some(f => (c[f] ?? null) !== (e[f] ?? null)) })
+    try {
+      // ลำดับสำคัญ (FK edge→node): ลบเส้นก่อนจุด · คืนจุดก่อนเส้น
+      if (delE.length) { const { error } = await supabaseDR.from('transport_edges').delete().in('id', delE); if (error) throw error }
+      if (delN.length) { const { error } = await supabaseDR.from('transport_nodes').delete().in('id', delN); if (error) throw error }
+      if (insN.length) { const { error } = await supabaseDR.from('transport_nodes').insert(insN); if (error) throw error }
+      if (insE.length) { const { error } = await supabaseDR.from('transport_edges').insert(insE); if (error) throw error }
+      for (const n of updN) { const { error } = await supabaseDR.from('transport_nodes').update({ ...pick(n, NODE_FIELDS), updated_by_name: fullName }).eq('id', n.id); if (error) throw error }
+      for (const e of updE) { const { error } = await supabaseDR.from('transport_edges').update({ ...pick(e, EDGE_FIELDS), updated_by_name: fullName }).eq('id', e.id); if (error) throw error }
+    } catch (err) { toast.error('ย้อนไม่สำเร็จ: ' + err.message); await load(); return false }
+    nodesRef.current = snap.nodes; edgesRef.current = snap.edges
+    setNodes(snap.nodes); setEdges(snap.edges)
+    setSel(null); setEdgeFrom(null); setChainLast(null); setDrawHover(null)
+    return true
+  }
+  const hist = useUndoHistory({ snapOf, applySnapshot, enabled: canEdit })
+  const { pushHistory, pushSnapshot } = hist
 
   const resetChain = () => { setChainLast(null); setDrawHover(null) }
   // Esc = จบเส้นที่กำลังวาด
@@ -99,6 +134,7 @@ export default function TransportMapEditor() {
   }
   const addNode = async (x, y) => {
     setBusy(true)
+    pushHistory()
     const d = await createNodeRow(x, y, addKind)
     if (d) setSel({ type: 'node', id: d.id })
     setBusy(false)
@@ -123,6 +159,7 @@ export default function TransportMapEditor() {
   // โหมดวาดต่อเนื่อง: คลิก 1 ที = วางจุด (หรือ snap จุดเดิม/แทรกลงบนถนนเดิม) + ต่อเส้นจากจุดก่อนหน้า
   const drawStep = async (x, y, existing) => {
     setBusy(true)
+    pushHistory()
     let target = existing || nearestNode(x, y)
     if (!target) {
       const onEdge = nearestEdge(x, y)
@@ -142,12 +179,14 @@ export default function TransportMapEditor() {
     if (error) toast.error(error.message)
   }
   const patchNode = async (id, patch) => {
+    pushHistory(`patchNode:${id}:${Object.keys(patch).join()}`)
     setNodes(p => p.map(n => n.id === id ? { ...n, ...patch } : n))
     const { error } = await supabaseDR.from('transport_nodes')
       .update({ ...patch, updated_by_name: fullName, updated_at: new Date().toISOString() }).eq('id', id)
     if (error) toast.error(error.message)
   }
   const delNode = async (id) => {
+    pushHistory()
     const { error } = await supabaseDR.from('transport_nodes').delete().eq('id', id)
     if (error) return toast.error(error.message)
     setNodes(p => p.filter(n => n.id !== id))
@@ -186,6 +225,7 @@ export default function TransportMapEditor() {
     }
     const A = getNode(aId), B = getNode(bId)
     if (!A || !B) return
+    if (!silent) pushHistory()   // เรียกจากโหมดเชื่อม 2 จุด (โหมดวาด: drawStep push ให้แล้ว)
     // หา edge เดิมที่ตัดกับ A-B (ข้ามเส้นที่แชร์ปลายกับ A หรือ B อยู่แล้ว)
     const crossings = []
     for (const e of edges) {
@@ -207,12 +247,14 @@ export default function TransportMapEditor() {
     await insertEdge(prev, bId)
   }
   const patchEdge = async (id, patch) => {
+    pushHistory(`patchEdge:${id}:${Object.keys(patch).join()}`)
     setEdges(p => p.map(e => e.id === id ? { ...e, ...patch } : e))
     const { error } = await supabaseDR.from('transport_edges')
       .update({ ...patch, updated_by_name: fullName, updated_at: new Date().toISOString() }).eq('id', id)
     if (error) toast.error(error.message)
   }
   const delEdge = async (id) => {
+    pushHistory()
     const { error } = await supabaseDR.from('transport_edges').delete().eq('id', id)
     if (error) return toast.error(error.message)
     setEdges(p => p.filter(e => e.id !== id))
@@ -253,7 +295,7 @@ export default function TransportMapEditor() {
   const onNodePointerDown = (e, node) => {
     if (!canEdit || mode !== 'select' || scaleMode) return
     e.stopPropagation()
-    dragRef.current = { id: node.id, moved: false }
+    dragRef.current = { id: node.id, moved: false, snap: snapOf() }   // ถ่าย snapshot ก่อนลาก (undo คืนที่เดิม)
     e.currentTarget.setPointerCapture?.(e.pointerId)
   }
   const onMapPointerMove = (e) => {
@@ -271,7 +313,10 @@ export default function TransportMapEditor() {
   const onMapPointerUp = () => {
     const d = dragRef.current
     dragRef.current = null
-    if (d && d.moved) { const n = nById[d.id]; if (n) moveNode(d.id, n.x, n.y) }
+    if (d && d.moved) {
+      if (d.snap) pushSnapshot(d.snap)
+      const n = nById[d.id]; if (n) moveNode(d.id, n.x, n.y)
+    }
   }
   const onEdgeClick = (e, edge) => {
     e.stopPropagation()
@@ -317,6 +362,8 @@ export default function TransportMapEditor() {
           )}
           <button onClick={() => { setScaleMode(v => !v); setScalePts([]); setScaleMeters('') }}
             style={btn(scaleMode)}>📏 มาตราส่วน</button>
+          <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy || busy} style={undoBtnStyle(hist.canUndo && !hist.busy && !busy)} title="ย้อนกลับ (Ctrl+Z)">↩️ Undo</button>
+          <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy || busy} style={undoBtnStyle(hist.canRedo && !hist.busy && !busy)} title="ทำซ้ำ (Ctrl+Y)">↪️ Redo</button>
           <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
             {nodes.length} จุด · {edges.length} เส้น · 📍 {graphStat.stops} จุดจอด{graphStat.isolated ? ` · ⚠ ${graphStat.isolated} จุดยังไม่เชื่อมถนน` : ''}
             {mpu ? ` · 📏 1 หน่วย ≈ ${mpu.toFixed(2)} ม.` : ' · 📏 ยังไม่ตั้งมาตราส่วน'}
