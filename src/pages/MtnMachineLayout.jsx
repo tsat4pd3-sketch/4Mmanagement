@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useContext } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import imageCompression from 'browser-image-compression'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
@@ -69,6 +70,14 @@ const S = {
     display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 8, cursor: 'pointer', marginLeft: child ? 12 : 0, fontSize: 13,
     border: `1px solid ${active ? 'var(--accent)' : 'transparent'}`, background: active ? 'var(--accent-dim)' : 'transparent', color: active ? 'var(--accent)' : 'var(--text2)', fontWeight: active ? 700 : 500,
   }),
+  // ชิป "วางจุด" ท้ายแถวอุปกรณ์ที่ยังไม่วาง — armed แล้วเปลี่ยนเป็น "คลิกบนผัง"
+  placeChip: (armed) => ({
+    marginLeft: 'auto', flexShrink: 0, fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap',
+    padding: '2px 7px', borderRadius: 20,
+    border: `1px solid ${armed ? 'var(--accent)' : 'var(--border2)'}`,
+    background: armed ? 'var(--accent-dim)' : 'var(--bg2)',
+    color: armed ? 'var(--accent)' : 'var(--text2)',
+  }),
 }
 
 // setupMode=false (default, /mtn-layout) = display-only (facility ดูอย่างเดียว ไม่มีปุ่มแก้)
@@ -80,7 +89,13 @@ export default function MtnMachineLayout({ setupMode = false }) {
   // ไม่ผูกกับ setupMode เพราะ mtn เข้า /layout-setup ไม่ได้ แต่ต้องตั้งค่า facility ของตัวเองได้ (2026-07-22)
   const canEdit = can('pm', 'setup', role)
   // เปิดหน้ามาเจอ "ภาพรวมทั้งโรงงาน" ก่อน (ฝัง FactoryMap display ตัวเดียวกับ /factory-map) แล้วค่อยเจาะไลน์
-  const [view, setView] = useState(setupMode ? 'facility' : 'overview') // 'overview' | 'production' | 'facility'
+  // deep-link จากผังรวมโรงงาน: ?view=facility&zone=<ชื่อโซน>&from=factory-map → เปิดแท็บ Facility ที่โซนนั้นเลย
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const deepView = searchParams.get('view')
+  const deepZone = searchParams.get('zone')
+  const cameFrom = searchParams.get('from')
+  const [view, setView] = useState(deepView === 'facility' ? 'facility' : (setupMode ? 'facility' : 'overview')) // 'overview' | 'production' | 'facility'
   const [dept, setDept] = useState('all')
   const [teams, setTeams] = useState(pmTeamsSync()) // ทีมช่าง data-driven (mtn_teams)
   useEffect(() => { loadPmTeams().then(setTeams) }, [])
@@ -184,6 +199,12 @@ export default function MtnMachineLayout({ setupMode = false }) {
   const reloadAreas = async () => {
     const { data } = await supabaseDR.from('pm_facility_areas').select('id, name, image_path, sort_order').order('sort_order').order('created_at')
     setAreas(data || [])
+    // deep-link ?zone=<ชื่อโซน> → เลือกโซนนั้นเลย (เทียบชื่อแบบไม่สนตัวพิมพ์/ช่องว่างหัวท้าย)
+    if (data?.length && deepZone) {
+      const key = String(deepZone).trim().toLowerCase()
+      const hit = data.find(a => String(a.name || '').trim().toLowerCase() === key)
+      if (hit) { setAreaId(hit.id); return }
+    }
     if (data?.length && !areaId) setAreaId(data[0].id)
   }
   const loadFacilityArea = async () => {
@@ -331,6 +352,10 @@ export default function MtnMachineLayout({ setupMode = false }) {
           <p style={S.sub}>ดูสถานะ PM บนผังจริง · กรองตามผู้รับผิดชอบ</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          {/* มาจากผังรวมโรงงาน (คลิกโซน facility) → ปุ่มกลับไปที่เดิม */}
+          {cameFrom === 'factory-map' && (
+            <button onClick={() => navigate('/factory-map')} style={S.viewBtn(false)}>← กลับผังรวมโรงงาน</button>
+          )}
           {!setupMode && <button onClick={() => { setView('overview'); setSelId(null) }} style={S.viewBtn(view === 'overview')}>🗺️ ภาพรวมทั้งโรงงาน</button>}
           <button onClick={() => { setView('production'); setSelId(null) }} style={S.viewBtn(view === 'production')}>🏭 ไลน์ผลิต</button>
           <button onClick={() => { setView('facility'); setSelId(null) }} style={S.viewBtn(view === 'facility')}>🔌 Facility / Utility</button>
@@ -442,7 +467,15 @@ export default function MtnMachineLayout({ setupMode = false }) {
                     </span>
                   </label>
                 )}
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>อุปกรณ์ที่ยังไม่วาง ({unplacedJigs.length + facMachines.length})</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>อุปกรณ์ที่ยังไม่วาง ({unplacedJigs.length + facMachines.length})</div>
+                {/* บอกวิธีวางให้เห็นชัด — เดิมมีแต่ tooltip คนหาไม่เจอว่าต้องกดยังไง (2026-08-03) */}
+                {canEdit && (unplacedJigs.length + facMachines.length) > 0 && (
+                  <div style={{ fontSize: 11, color: facImage ? 'var(--accent)' : 'var(--accent2)', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 7, padding: '5px 8px', marginBottom: 7, lineHeight: 1.5 }}>
+                    {facImage
+                      ? <>วิธีวาง: <b>① กดปุ่ม 📍 วาง</b> ที่อุปกรณ์ → <b>② คลิกตำแหน่งบนผัง</b></>
+                      : <>⚠️ ต้อง <b>อัปโหลดรูปผังโซน</b> ก่อน ถึงจะวางอุปกรณ์ได้</>}
+                  </div>
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {unplacedJigs.map(([id, info]) => {
                     const c = colorFor(info.checklists)
@@ -454,6 +487,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                         <span style={{ width: 9, height: 9, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
                         <span style={{ fontWeight: 700, color: 'var(--text)' }}>{info.jig_no || info.name}</span>
                         {info.jig_no && <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info.name}</span>}
+                        {canEdit && <span style={S.placeChip(armedJig === id)}>{armedJig === id ? '👆 คลิกบนผัง' : '📍 วาง'}</span>}
                       </div>
                     )
                   })}
@@ -466,7 +500,8 @@ export default function MtnMachineLayout({ setupMode = false }) {
                       <span style={{ fontSize: 11, flexShrink: 0 }}>{m.equipment_category === 'utility' ? '⚡' : '🔧'}</span>
                       <span style={{ fontWeight: 700, color: 'var(--text)' }}>{m.machine_no}</span>
                       <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.machine_name || m.line_name || ''}</span>
-                      <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent2)', flexShrink: 0 }}>ฐานเครื่องจักร</span>
+                      <span style={{ fontSize: 10.5, color: 'var(--accent2)', flexShrink: 0 }}>ฐานเครื่องจักร</span>
+                      {canEdit && <span style={S.placeChip(armedMachine === m.id)}>{armedMachine === m.id ? '👆 คลิกบนผัง' : '📍 วาง'}</span>}
                     </div>
                   ))}
                   {!unplacedJigs.length && !facMachines.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>วางครบแล้ว · เพิ่ม facility/utility ที่ <b>ฐานข้อมูลเครื่องจักร</b> (เลือกหมวด Facility/Utility) แล้วจะมาโผล่ที่นี่ให้วาง</div>}

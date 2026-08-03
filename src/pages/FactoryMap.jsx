@@ -550,7 +550,10 @@ export default function FactoryMap({ setupMode = false }) {
     return ancestorNames(name).find(a => layoutLines.has(a)) || null;
   };
   // คลิกไลน์: มีผังพื้น → เปิดผังไลน์พร้อมพนักงาน (Dashboard) พร้อม from=factory-map เพื่อปิดแล้วเด้งกลับผังรวม · ไม่มีผัง → popup สรุปเมตริก
+  // โซน MTN/Facility → เปิดผังเครื่องจักร (ซ่อมบำรุง) แท็บ Facility ของโซนนั้นเลย
+  //   (popup เมตริกผลิตไม่มีความหมายกับโซน facility — ยอด/OEE/คน เป็น "—" หมด · 2026-08-03)
   const openLine = (name) => {
+    if (isFac(name)) { setHoverLine(null); navigate(`/mtn-layout?view=facility&zone=${encodeURIComponent(name)}&from=factory-map`); return; }
     const t = floorMapTarget(name);
     if (t) { setHoverLine(null); navigate(`/dashboard?line=${encodeURIComponent(t)}&from=factory-map`); }
     else setDetailLine(name);
