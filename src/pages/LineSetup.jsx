@@ -296,6 +296,8 @@ export default function LineSetup({ embedded = false } = {}) {
   };
 
   const handleUpdateParent = async (line, parentName) => {
+    // เปลี่ยนโครงสร้าง master (ไลน์แม่) — ยืนยันก่อน กันแตะ dropdown พลาด · ยกเลิก = revert หน้าจอ
+    if (!confirm(`เปลี่ยน "ไลน์แม่" ของ ${line.name} เป็น "${parentName || '(ไม่มี — เป็นไลน์หลัก)'}" ?\n\nกระทบการรวมเครื่อง/ผัง/กำลังผลิตของทั้งกลุ่ม`)) { await fetchLines(); return; }
     await supabase.from('production_lines').update({ parent_line_name: parentName || null }).eq('id', line.id);
     await fetchLines();
   };
@@ -364,6 +366,8 @@ export default function LineSetup({ embedded = false } = {}) {
   };
 
   const handleUpdateSection = async (line, section) => {
+    // เปลี่ยน Section ของไลน์ = กระทบ scope/สิทธิ์การมองเห็น — ยืนยันก่อน · ยกเลิก = revert หน้าจอ
+    if (!confirm(`เปลี่ยน "Section" ของ ${line.name} เป็น "${section || '(ไม่มี)'}" ?\n\nกระทบขอบเขตการมองเห็น (scope) และการผูกใบค่าฝีมือ`)) { await fetchLines(); return; }
     await supabase.from('production_lines').update({ section: section || null }).eq('id', line.id);
     await fetchLines();
   };

@@ -52,6 +52,7 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 3. **Edge clamp**: ตำแหน่ง*แสดงผล*ต้องถูก clamp ไม่ให้วงกลม+ป้ายตกขอบรูป — เผื่อซ้าย/ขวา/บน `size*0.55`, ล่าง `size*1.35` (มีป้ายห้อย) — ตำแหน่งจริงใน DB ไม่เปลี่ยน
 4. Hover card แสดงเฉพาะอุปกรณ์ที่ hover ได้จริง: `window.matchMedia('(hover: hover)').matches` — จอทัชให้ใช้ modal ที่มีปุ่มปิด + popup ทุกชนิดต้องมีทางปิดเสมอ (✕/auto-hide — กติกา backdrop click ดู section 5)
 5. **จุด/marker วางได้เฉพาะบนผังที่เป็น "ผังจริง" ของไลน์นั้น** (2026-07-16) — pos_top/pos_left ผูกกับผังของไลน์ที่จุดนั้นสังกัด · เวลาแสดงผังของไลน์ (โดยเฉพาะไลน์แม่ที่ view รวมไลน์ย่อย) ต้องวาดเฉพาะจุดของไลน์ที่ "ผังจริง" (ของตัวเอง → ไล่ขึ้นไลน์แม่ที่มีผัง) ตรงกับผังที่กำลังแสดง · **ไลน์ย่อยที่มีผังเป็นของตัวเอง = ห้ามเอาจุดไปวางทับผังไลน์แม่ (คนละรูป จะทับกัน/ผิดตำแหน่ง)** ส่วนไลน์ย่อยที่ไม่มีผัง (ยืมรูปไลน์แม่) จุดของมันวางบนผังไลน์แม่ได้ · ต้นแบบ: Dashboard `layoutLineNamesForCard` (ข้ามลูกที่มีผังเอง) / Management `belongsToShownMap` (resolve ผังจริงต่อจุดแล้วเทียบกับผังที่แสดง)
+   - **ผลข้างเคียง + วิธีชดเชย (2026-08-03):** เพราะกฎนี้ คนที่ประจำสถานีของไลน์ย่อยที่มีผังเอง จะ "หาย" จากมุมมองไลน์แม่ (marker อยู่บนผังลูก) — ลูกพี่หน้างานเคยทักว่า "ไลน์ sub part ไม่รวมกำลังคนกับไลน์หลัก" · **ห้ามแก้ด้วยการเอา marker ลูกไปวางบนผังแม่ (พิกัดผิด)** — ให้ชดเชยด้วย **สรุปตัวเลข + แถบรายชื่อแทน**: Management `familyManpower` (แถบ "👷 กำลังคนกลุ่มนี้ N คน" ในแผง pool = รวมทั้งครอบครัว + ต่อไลน์ย่อยที่ผังแยกเป็นรายการกางดูรายชื่อ+สถานีได้) — เห็นกำลังคนรวมครบโดยไม่ทับตำแหน่ง
 6. **⚠️ ห้ามใช้ `backdrop-filter: blur()` กับ marker/ป้าย/การ์ดที่วาดซ้ำหลายอันบนผัง/บอร์ด (2026-07-15)** — `backdrop-filter` บังคับ browser re-render + gaussian-blur พื้นหลังใต้ทุก element **ทุกเฟรม** พอมี marker หลายสิบจุด (คน/สถานี/เครื่อง/การ์ดพนักงานใน pool) GPU ของ Smart TV รับไม่ไหว **เปิดแป๊บเดียวค้างทั้งเครื่อง** (เคยเกิดที่ /management + /dashboard บน TV) → ใช้ `background: rgba(0,0,0,0.75-0.88)` ทึบแทน (อ่านออกเท่ากันบนบอร์ดมืด) · backdrop-filter ใช้ได้เฉพาะ overlay ของ modal ที่มีชิ้นเดียวและเปิดชั่วคราว ไม่ใช่ element ที่ render ซ้ำ · หลักเดียวกันกับ animation ที่กระพริบ `box-shadow` (แพง) — จำกัดเฉพาะ Andon แดงที่จำเป็น อย่าใส่ element ที่โผล่ตลอด
 7. **โหมดเบาจอ TV — `data-perf="lite"` (2026-07-15):** App.jsx ตั้ง `data-perf="lite"` บน `<html>` อัตโนมัติเมื่อ `role === 'display'` (บัญชีที่รันบนจอ TV/บอร์ด GPU อ่อน) · `index.css` override animation ที่กระพริบ `box-shadow` (dt-alarm-blink, person-alarm-red, mo-card-alert, now-line/now-chip glow) ให้กระพริบด้วย **สี/ขอบอย่างเดียว** + ซ่อน `#noise-overlay` — Andon แดงยังกระพริบตามกฎ §2 แต่ไม่รีดเพนต์เบลอ · เพิ่ม animation box-shadow ใหม่ที่ไหน ให้เพิ่ม lite override คู่กันเสมอ
 
@@ -202,6 +203,18 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 6. **`employees.section/department/group_name` เป็น free text ไม่ผูก FK** → drift ได้ · **ตัวกรอง (filter bar) ที่ดึง distinct จาก employees ต้องจัดกลุ่ม 2 optgroup: "ในผังองค์กร" (ค่าที่ตรง org_nodes) + "⚠ นอกผัง (ต้องจัดข้อมูล)" (ค่าที่พนักงานกรอกแต่ไม่มีในผัง)** และ**โชว์เฉพาะค่าที่มีพนักงานจริง** (ทุกตัวเลือกเจอคนแน่นอน — กันหัวหน้าหาคนไม่เจอ) · ทำแล้ว: operator filter bar (Dept + Group)
 
 ต้นแบบที่ถูก: `Register.jsx` (ฟอร์ม + group จาก org_nodes kind='line'), `OEEAnalytics.jsx` TargetDashboard (filter bar), `Report.jsx` hook `useOrgDepts` → `deptsOf(section)`, `operator.jsx` (filter bar Dept+Group แบบ ในผัง/นอกผัง + modal cascade org_nodes)
+
+---
+
+## 5.4 การแก้ข้อมูลโครงสร้าง/master ต้องยืนยันก่อนเขียน (2026-08-03 — คำสั่ง user)
+
+หน้า setup/config (ตั้งค่าโปรแกรม,ฐานข้อมูล ฯลฯ) **ห้ามให้แตะ dropdown/toggle/ปุ่มครั้งเดียวแล้วเขียน DB ทันที** โดยไม่มีจังหวะยืนยัน — คนหลายแผนกมาใช้ เผลอกด/แตะจอทัชพลาด = แก้ master ทันที · เกณฑ์ (กันถามรัวจนรำคาญ):
+
+- **ต้องยืนยัน (`confirm()` หรือ draft+ปุ่มบันทึก):** ลบ · เปลี่ยนโครงสร้าง master (เช่น re-point Section/ไลน์แม่ของ `production_lines`) · **ปิดใช้งาน** (is_active true→false) · เขียนทับก้อนใหญ่ (bulk ทั้งปี/หลายแถว) · ปิดสิทธิ์ (`role_permissions` revoke) · ปิดการแจ้งเตือนทั้งหมวด
+- **ไม่ต้องยืนยัน (additive/ปลอดภัย):** เพิ่มแถวใหม่ · **เปิดใช้งาน**กลับ (is_active false→true) · เปิดสิทธิ์ · แก้ค่าใน draft/form ที่ยังไม่กดบันทึก
+- **`<select>` ที่เปลี่ยน FK ของ master ทันที:** ถ้ายกเลิก confirm ต้อง **re-fetch เพื่อ revert หน้าจอ** (select เป็น controlled component — ไม่ re-render จะค้างค่าที่ผู้ใช้เพิ่งเลือก) · ต้นแบบ: `LineSetup handleUpdateSection/handleUpdateParent` (`await fetchLines(); return`)
+- pattern ที่ดีที่สุด = **draft + แถบบันทึก/ยกเลิก** (ต้นแบบ `CompanyCalendar` คลิกวัน → draft, `ShiftOrganize` สลับกะ → pending + ปุ่ม 💾) · confirm ใช้กับ action เดี่ยวที่ทำไม่บ่อย
+- ทำแล้ว (2026-08-03): LineSetup (Section/Parent dropdown), ShiftOrganize (ลบ override), PermissionsManagement (ปิดสิทธิ์), CompanyCalendar (ตั้งค่าทั้งปี), NotificationConfig (ปิดแจ้งเตือน), OrgSetup (ปิด node), ProductMaster (ปิด part) · **หน้า setup ใหม่ทุกหน้าต้องยึดเกณฑ์นี้** (ไม่งั้น QC หมวด F ตก)
 
 ---
 

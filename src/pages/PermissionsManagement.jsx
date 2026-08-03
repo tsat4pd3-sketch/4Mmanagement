@@ -2,10 +2,11 @@ import { useState, useEffect, useMemo, Fragment } from 'react';
 import { supabase } from '../supabaseClient';
 import { loadPermissions } from '../utils/permissions';
 import { toast } from '../components/Toast';
-import { ROLE_OPTIONS } from '../utils/roleMeta';
+import { PERMISSION_COLUMN_ROLES } from '../utils/roleMeta';
 
 // ชื่อ/สีชุดสิทธิ์อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
-const ROLES = ROLE_OPTIONS;
+// PERMISSION_COLUMN_ROLES = base roles + คอลัมน์ 🛡️ แอดมินหน่วยงาน (bucket ของ flag is_dept_admin)
+const ROLES = PERMISSION_COLUMN_ROLES;
 
 // ชื่อหน้าให้ตรงกับ NAV_ITEMS ใน App.jsx — จัดกลุ่มตามหมวดใน sidebar
 const PAGE_GROUPS = [
@@ -43,6 +44,8 @@ const PAGE_GROUPS = [
       { key: 'page:/planner-sales', label: 'Planner & Sales' },
       { key: 'page:/rundown-stock', label: 'Rundown Stock' },
       { key: 'page:/customer-demand', label: 'Delivery' },
+      { key: 'page:/store-monitor', label: 'เฝ้าระวังสต๊อก (Abnormal)' },
+      { key: 'page:/transport',    label: 'มอบหมายขนส่ง (Transport)' },
     ],
   },
   {
@@ -54,6 +57,7 @@ const PAGE_GROUPS = [
       { key: 'page:/pm-setup',    label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร' },
       { key: 'page:/mtn-layout',  label: 'ผังเครื่องจักร (ซ่อมบำรุง)' },
       { key: 'page:/pm-forecast', label: 'PM ล่วงหน้า (Planner)' },
+      { key: 'page:/pm-coordination', label: 'แผนประสานงาน PM (แจ้งผลิต)' },
     ],
   },
   {
@@ -69,6 +73,8 @@ const PAGE_GROUPS = [
     pages: [
       { key: 'page:/report',    label: 'รายงาน' },
       { key: 'page:/event-log', label: 'CQI-15 Event Log' },
+      { key: 'page:/product-history', label: 'ประวัติผลิต (by Product)' },
+      { key: 'page:/order-trace', label: 'สอบกลับ Order (Trace)' },
     ],
   },
   {
@@ -83,6 +89,7 @@ const PAGE_GROUPS = [
       { key: 'page:/linesetup',         label: 'ตั้งค่าผังไลน์' },
       { key: 'page:/machine-database',  label: 'ฐานข้อมูลเครื่องจักร' },
       { key: 'page:/process-setup',     label: 'กระบวนการผลิต (Process Types)' },
+      { key: 'page:/layout-setup',      label: 'ตั้งค่าผัง/Floorplan' },
       { key: 'page:/shift-organize',    label: 'ตารางกะ' },
       { key: 'page:/company-calendar',  label: 'ปฏิทินบริษัท' },
       { key: 'page:/notification-config', label: 'ตั้งค่าการแจ้งเตือน' },
@@ -131,6 +138,9 @@ export default function PermissionsManagement() {
 
   const toggle = async (permissionKey, role, current) => {
     if (role === 'admin') return; // admin เข้าถึงได้เสมอ แก้ไม่ได้
+    // ยืนยันเฉพาะตอน "ปิดสิทธิ์" (current=true→false) — มีผลทุกเครื่องทันที กันแตะ matrix พลาด
+    // (เปิดสิทธิ์ = additive ไม่ต้องถาม ให้แก้ matrix ลื่น)
+    if (current && !confirm(`ปิดสิทธิ์ "${permissionKey}" ของ role "${role}" ?\n\nมีผลทุกเครื่องทันที — ผู้ใช้ role นี้จะเข้า/ทำสิ่งนี้ไม่ได้`)) return;
     const cellId = `${role}:${permissionKey}`;
     setSaving(prev => ({ ...prev, [cellId]: true }));
     const nextVal = !current;
@@ -238,6 +248,11 @@ export default function PermissionsManagement() {
       <div style={{ ...s.section, fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
         ⚠️ <strong>Admin เข้าถึงได้ทุกอย่างเสมอ</strong> (ล็อกไว้ กันกรณีตั้งค่าผิดจนตัวเองเข้าไม่ได้) —
         การเปลี่ยนแปลงมีผลกับทุกเครื่องที่เปิดระบบอยู่ทันที (sync อัตโนมัติ)
+        <div style={{ marginTop: 6 }}>
+          🛡️ <strong style={{ color: '#eab308' }}>แอดมินหน่วยงาน</strong> = คอลัมน์พิเศษ (ไม่ใช่ role ที่เลือกให้ user) — เป็น "สิทธิ์เพิ่ม" ของคนที่ติ๊ก
+          <strong> "เป็นแอดมินหน่วยงาน"</strong> ในหน้าจัดการผู้ใช้ · คนนั้นได้ <strong>role เดิม + action ที่ติ๊กในคอลัมน์นี้</strong>
+          เฉพาะในหน้าที่ role เดิมเข้าถึงได้ (จำกัด scope หน่วยงานตัวเองตามปกติ ไม่ใช่ admin ระบบ) · แนะนำตั้งเฉพาะแท็บ "สิทธิ์การทำงาน"
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>

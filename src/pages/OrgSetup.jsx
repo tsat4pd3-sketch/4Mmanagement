@@ -157,6 +157,8 @@ export default function OrgSetup() {
   };
 
   const toggleActive = async (node) => {
+    // ยืนยันเฉพาะตอน "ปิดใช้งาน" (กระทบ dropdown/การอ้างอิงทั้งระบบ) — เปิดกลับไม่ต้องถาม
+    if (node.is_active && !confirm(`ปิดใช้งาน "${node.name}" ?\n\nจะหายจาก dropdown/การเลือกในหน้าอื่น (ข้อมูลเดิมยังอยู่ เปิดกลับได้)`)) return;
     const { error } = await supabase.from('org_nodes').update({ is_active: !node.is_active }).eq('id', node.id);
     if (error) return toast.error(error.message);
     fetchAll();

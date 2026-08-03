@@ -97,6 +97,61 @@ export function routeThroughStops(nodes, edges, stopNodeIds) {
   return out
 }
 
+// หา "ลำดับแวะ" ที่ระยะรวมสั้นสุดบนกราฟถนนจริง (TSP เปิด — ไม่ต้องวนกลับจุดเริ่ม)
+//   fixFirst=true (default): ล็อกจุดแรกไว้เป็นต้นทาง (เช่น Store) เรียงเฉพาะจุดที่เหลือ
+//   จุดที่เหลือ ≤ 8 = brute force (การันตีสั้นสุดจริง) · เกินนั้น = nearest-neighbor + 2-opt (ใกล้เคียง)
+//   คืน { order:[nodeId...], distance } · คู่ไหนหากันไม่ถึง (ถนนขาด) = คืน null
+export function bestStopOrder(nodes, edges, stopIds, { fixFirst = true } = {}) {
+  const ids = (stopIds || []).filter(Boolean)
+  if (ids.length < 3) return null
+  const { adj } = buildAdj(nodes, edges)
+  const D = {}
+  for (const a of ids) { D[a] = {}; for (const b of ids) { if (a !== b) D[a][b] = shortestPath(adj, a, b).distance } }
+  const cost = (ord) => {
+    let s = 0
+    for (let i = 1; i < ord.length; i++) { const d = D[ord[i - 1]][ord[i]]; if (!(d < Infinity)) return Infinity; s += d }
+    return s
+  }
+  const head = fixFirst ? [ids[0]] : []
+  const rest = fixFirst ? ids.slice(1) : [...ids]
+  let best = null, bestCost = Infinity
+  if (rest.length <= 8) {
+    const perm = (remain, cur) => {
+      if (!remain.length) {
+        const ord = [...head, ...cur]; const c = cost(ord)
+        if (c < bestCost) { bestCost = c; best = ord }
+        return
+      }
+      for (let i = 0; i < remain.length; i++) perm(remain.slice(0, i).concat(remain.slice(i + 1)), [...cur, remain[i]])
+    }
+    perm(rest, [])
+  } else {
+    // greedy nearest-neighbor จากต้นทาง แล้วขัดเกลาด้วย 2-opt
+    let ord = head.length ? [...head] : [rest[0]]
+    const left = new Set(rest.filter(x => x !== ord[0]))
+    let cur = ord[ord.length - 1]
+    while (left.size) {
+      let pick = null, pd = Infinity
+      for (const x of left) { const d = D[cur][x]; if (d < pd) { pd = d; pick = x } }
+      if (pick == null) pick = left.values().next().value
+      ord.push(pick); left.delete(pick); cur = pick
+    }
+    let improved = true
+    while (improved) {
+      improved = false
+      for (let i = fixFirst ? 1 : 0; i < ord.length - 1; i++) {
+        for (let j = i + 1; j < ord.length; j++) {
+          const cand = ord.slice(0, i).concat(ord.slice(i, j + 1).reverse(), ord.slice(j + 1))
+          if (cost(cand) < cost(ord) - 1e-9) { ord = cand; improved = true }
+        }
+      }
+    }
+    best = ord; bestCost = cost(ord)
+  }
+  if (!best || !(bestCost < Infinity)) return null
+  return { order: best, distance: bestCost }
+}
+
 // จุดตัดของเซกเมนต์ p1p2 กับ p3p4 — คืน {x,y,t} ถ้าตัดกัน "ภายในทั้งสองเส้น" (ไม่นับที่ปลาย), ไม่งั้น null
 //   t = ตำแหน่งบน p1→p2 (0..1) ใช้เรียงลำดับจุดตัดหลายจุด
 export function segIntersect(p1, p2, p3, p4, eps = 1e-6) {
