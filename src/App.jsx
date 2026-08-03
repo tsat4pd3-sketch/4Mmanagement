@@ -1295,7 +1295,7 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const { data, error } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, position, notify_email, signature_url').eq('id', user.id).single();
+    const { data, error } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, position, notify_email, signature_url, is_dept_admin').eq('id', user.id).single();
     // fail-visible: โหลดโปรไฟล์ไม่ได้ = แอปใช้งานไม่ได้อยู่ดี (role null → เมนูหาย, query ฝั่ง Main
     // ล้มหมด กลายเป็น "หน้าผี") — ห้ามปล่อย render ต่อแบบไม่มี role
     if (error || !data) {
@@ -1329,10 +1329,12 @@ export default function App() {
     supabase.from('profiles').select('avatar_url').eq('id', user.id).maybeSingle()
       .then(({ data: av }) => setUserAvatarUrl(av?.avatar_url ?? null))
       .catch(() => setUserAvatarUrl(null));
-    // is_dept_admin แยก query best-effort — คอลัมน์เพิ่งเพิ่ม (migration 20260803) ถ้ายังไม่ apply ห้ามทำ login พัง
-    supabase.from('profiles').select('is_dept_admin').eq('id', user.id).maybeSingle()
-      .then(({ data: da }) => { const v = da?.is_dept_admin === true; setUserIsDeptAdmin(v); setDeptAdmin(v); })
-      .catch(() => { setUserIsDeptAdmin(false); setDeptAdmin(false); });
+    // is_dept_admin อยู่ใน select หลักแล้ว (migration 20260803 apply แล้ว — ยืนยันคอลัมน์มีจริงใน prod)
+    // ตั้ง sync ก่อน render แรก — เดิมแยก query async แล้วมี race: หน้า render ก่อน flag มา ปุ่มแก้ไขไม่โผล่
+    {
+      const v = data?.is_dept_admin === true;
+      setUserIsDeptAdmin(v); setDeptAdmin(v);
+    }
     setProfileLoaded(true);
   };
 
