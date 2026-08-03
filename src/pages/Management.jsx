@@ -609,7 +609,8 @@ export default function Management() {
     if (isMobile || !canHover) return;
     clearTimeout(hoverTimer.current);
     const rect = e.currentTarget.getBoundingClientRect();
-    hoverTimer.current = setTimeout(() => setHoverCard({ worker, fit, rect, stationName }), 180);
+    // hover-intent 500ms — ต้องวางเม้าส์ค้างจริงถึงเด้ง (กันเผลอลากผ่าน marker แล้วการ์ดโผล่รบกวน)
+    hoverTimer.current = setTimeout(() => setHoverCard({ worker, fit, rect, stationName }), 500);
   };
   const onHoverLeave = () => { clearTimeout(hoverTimer.current); setHoverCard(null); };
 
