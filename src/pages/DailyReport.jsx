@@ -1257,7 +1257,14 @@ function LiveTab({ role }) {
     const std = kanbanStds.find(s => s.mat_no === matNo);
     const prod = products.find(p => p.mat_no === matNo);
     const now = new Date();
-    const prodNo = `MANUAL-${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
+    // เลข order manual: MANUAL-YYMMDD-HHmmss-XX
+    //   YYMMDD = วันงานของกะ (selSession.work_date ตัด 08:00 อยู่แล้ว) — กันเลขซ้ำข้ามวัน
+    //   HHmmss = เวลานาฬิกาตอนกดเปิด · XX = สุ่ม 2 ตัว (กันชนกรณี 2 ไลน์กดวินาทีเดียวกัน)
+    //   (prod_no ไม่ unique ในตารางโดยตั้งใจ — ยกยอดข้ามกะสร้างแถวใหม่ด้วย prod_no เดิม · ห้ามใส่ unique index)
+    const p2 = n => n.toString().padStart(2, '0');
+    const ymd = (selSession?.work_date || workDate()).replace(/-/g, '').slice(2);
+    const rnd2 = Array.from({ length: 2 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+    const prodNo = `MANUAL-${ymd}-${p2(now.getHours())}${p2(now.getMinutes())}${p2(now.getSeconds())}-${rnd2}`;
     const backfillIso = manualForm.is_backfill && manualForm.backfill_time ? backfillIsoFromTime(manualForm.backfill_time) : null;
     if (backfillIso && new Date(backfillIso) > new Date()) {
       toast.error(`เวลา ${manualForm.backfill_time} ยังมาไม่ถึง — เปิดย้อนหลังต้องเป็นเวลาที่ผ่านมาแล้วเท่านั้น`);
