@@ -745,7 +745,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       supabaseDR.from('kanban_calc_params').select('*'),
       supabaseDR.from('kanban_standards').select('mat_no, part_name, customer, qty_per_kanban, min_qty, max_qty, lot_size, total_kanban').eq('is_active', true),
       supabaseDR.from('parts_master').select('mat_no, part_name, qty_per_pkg').eq('is_active', true),
-      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, customer, line_name, name, p_no').eq('is_active', true),
+      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, customer, line_name, name, p_no, process_type').eq('is_active', true),
       supabaseDR.from('customer_forecasts').select('mat_no, qty, source').gte('period_month', monthRange.start).lt('period_month', monthRange.end),
       supabase.from('company_calendar').select('work_date, day_type').gte('work_date', monthRange.start).lt('work_date', monthRange.end),
     ]);
@@ -791,8 +791,17 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
     };
   }, [params, edits, pmMap, drMap]);
 
+  // แยกพาร์ทตามกระบวนการผลิต (process_type) — PI (สั่งผลิต press) กับ PW (เบิกถอน) ไม่คำนวณพาร์ทร่วมกัน
+  //   Production = metal_forming (ปั๊ม/lot — งานปั๊มขายตรงเป็น FG เบอร์ 1 ก็เข้าที่นี่ ไม่ดูเลข MAT)
+  //   Withdrawal = welding_assembly + พาร์ทที่ยังไม่ตั้ง process (default) · 'common' = ทั้งสองแท็บ
+  const procMatchesTab = useCallback((proc) => {
+    const p = proc || '';
+    if (p === 'common') return true;
+    return calcType === 'production' ? p === 'metal_forming' : p !== 'metal_forming';
+  }, [calcType]);
+
   const rows = useMemo(() => {
-    const mats = Object.keys(forecast).filter(m => forecast[m] > 0);
+    const mats = Object.keys(forecast).filter(m => forecast[m] > 0 && procMatchesTab(drMap[m]?.process_type));
     return mats.map(mat => {
       const pp = paramOf(mat);
       const r = calcType === 'production'
@@ -813,7 +822,11 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       return { mat, name, line, customer: dr.customer || ks.customer, order: forecast[mat], pp, r, ks, changed };
     }).filter(row => !lineFilter || row.line === lineFilter)
       .sort((a, b) => a.mat.localeCompare(b.mat));
-  }, [forecast, settings, paramOf, drMap, ksMap, pmMap, lineFilter, calcType]);
+  }, [forecast, settings, paramOf, drMap, ksMap, pmMap, lineFilter, calcType, procMatchesTab]);
+
+  // นับพาร์ทที่ถูกกรองออกเพราะเป็นอีกกระบวนการ (โปร่งใส — ไม่ปล่อยหายเงียบ)
+  const otherProcCount = useMemo(() => Object.keys(forecast)
+    .filter(m => forecast[m] > 0 && !procMatchesTab(drMap[m]?.process_type)).length, [forecast, drMap, procMatchesTab]);
 
   const lines = useMemo(() => [...new Set(rows.map(r => r.line).filter(Boolean))].sort(), [rows]);
   const changedRows = rows.filter(r => r.changed);
@@ -991,6 +1004,15 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
           <button key={t.id} onClick={() => { setCalcType(t.id); setPreview(null); }}
             style={{ ...btn(calcType === t.id), fontSize: 12.5 }}>{t.label}</button>
         ))}
+      </div>
+
+      {/* แยกพาร์ทตามกระบวนการผลิต — โปร่งใส ไม่ปล่อยพาร์ทหายเงียบ */}
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, padding: '6px 10px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8 }}>
+        🔎 แยกพาร์ทตาม <b style={{ color: 'var(--text2)' }}>กระบวนการผลิต (process_type)</b> — {calcType === 'production'
+          ? <>แท็บนี้แสดงเฉพาะงาน <b style={{ color: 'var(--text2)' }}>ปั๊ม/ผลิตเป็น lot (metal_forming)</b> · งานปั๊มที่ขายตรงเป็น FG ก็อยู่ที่นี่ (ดูกระบวนการ ไม่ดูเลข MAT)</>
+          : <>แท็บนี้แสดงงาน <b style={{ color: 'var(--text2)' }}>เบิกถอน/ประกอบ</b> (ไม่ใช่ปั๊ม)</>}
+        {otherProcCount > 0 && <> · <span style={{ color: '#f59e0b' }}>ซ่อน {otherProcCount} พาร์ทที่เป็นอีกกระบวนการ</span> (อยู่อีกแท็บ)</>}
+        {' '}· ตั้ง process_type ต่อพาร์ทที่ Product Master
       </div>
 
       {/* controls */}
