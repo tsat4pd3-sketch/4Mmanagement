@@ -694,7 +694,9 @@ function LiveTab({ role }) {
 
   const handleAddDT = async () => {
     if (!selSession || !dtForm.downtime_type_id) { toast.error('เลือกประเภท Downtime'); return; }
-    if (!dtForm.machine_no) { toast.error('เลือกเครื่องจักร'); return; }
+    // นอกแผน (unplanned) ไม่บังคับเลือกเครื่อง — หยุดระดับไลน์/เครื่องยังไม่ลงทะเบียน · ในแผนยังบังคับ
+    const dtCat = dtTypes.find(t => t.id === dtForm.downtime_type_id)?.category;
+    if (dtCat !== 'unplanned' && !dtForm.machine_no) { toast.error('เลือกเครื่องจักร'); return; }
     const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === selSession.line_name);
     if (lineStds.length && !dtForm.mat_no) { toast.error('เลือกชิ้นงาน'); return; }
     const { startedAt, endedAt, durMin } = computeDtTimes();
@@ -4208,6 +4210,9 @@ function LiveTab({ role }) {
         {showDT && selSession && (() => {
           const { startedAt, endedAt, durMin } = computeDtTimes();
           const hasResult = startedAt || durMin;
+          // Downtime นอกแผน (unplanned) มักเป็นการหยุดระดับไลน์ (รอวัตถุดิบ/รอคน/ไฟดับ) หรือเครื่องยังไม่ลงทะเบียน
+          // → ไม่บังคับเลือกเครื่องจักร (คอลัมน์ machine_no เป็น nullable อยู่แล้ว) · ในแผนยังบังคับเหมือนเดิม
+          const dtMachineOptional = dtTypes.find(t => t.id === dtForm.downtime_type_id)?.category === 'unplanned';
           const MODES = [
             { key: 'start_end', label: 'เริ่ม → จบ',   desc: 'กรอกเวลาเริ่มหยุด + เวลากลับมา → คำนวณนาทีอัตโนมัติ' },
             { key: 'start_dur', label: 'เริ่ม + นาที',  desc: 'กรอกเวลาเริ่มหยุด + จำนวนนาที → คำนวณเวลากลับมา' },
@@ -4321,7 +4326,7 @@ function LiveTab({ role }) {
                   )}
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <Field label="เครื่องจักร *">
+                    <Field label={`เครื่องจักร ${dtMachineOptional ? '(ถ้ามี)' : '*'}`}>
                       {(() => {
                         const lineMachines = machines.filter(m => m.line_name === selSession.line_name);
                         if (!lineMachines.length) {
@@ -4365,7 +4370,7 @@ function LiveTab({ role }) {
                   <button onClick={() => setShowDT(false)} style={cancelBtnStyle}>ยกเลิก</button>
                   {(() => {
                     const lineStdsForBtn = kanbanStds.filter(s => s.dr_products?.line_name === selSession?.line_name);
-                    const dtInvalid = !dtForm.downtime_type_id || !hasResult || !dtForm.machine_no || (lineStdsForBtn.length > 0 && !dtForm.mat_no);
+                    const dtInvalid = !dtForm.downtime_type_id || !hasResult || (!dtMachineOptional && !dtForm.machine_no) || (lineStdsForBtn.length > 0 && !dtForm.mat_no);
                     return (
                       <button onClick={handleAddDT} disabled={savingDT || dtInvalid}
                         style={{ ...saveBtnStyle, background: '#ef4444', opacity: (dtInvalid || savingDT) ? 0.5 : 1 }}>

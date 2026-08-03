@@ -454,6 +454,10 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 
 `computeOEE` สาย A แบบแยกตาม MAT ใช้ `dtOverlapMin` (ทับซ้อนช่วงเวลา) ซึ่ง**ข้าม DT ที่ `started_at` = null** (โหมดกรอกแค่นาที) → เคสจริง: หยุดนอกแผน 20 นาทีแต่ %A = 100 (Sup Assy2) · แก้: หลัง loop ต่อ MAT หัก untimedPlanned/untimedUnplanned ที่**ยอดรวม** (`totalNetAvailByMat`/`totalRunMinByMat`) ก่อนหาร — ไม่ต้องรู้ว่าตกช่วง MAT ไหน · fallback ทั้งกะ (ไม่มี order) นับอยู่แล้วผ่าน duration sums
 
+### Downtime นอกแผน — ไม่บังคับเลือกเครื่องจักร (2026-08-03 · คำสั่ง user)
+
+ฟอร์มเพิ่ม Downtime ใน DailyReport เดิมบังคับเลือกเครื่องจักรทุกกรณี → **นอกแผน (`dr_downtime_types.category === 'unplanned'`) ไม่บังคับแล้ว** เพราะเป็นการหยุดระดับไลน์ (รอวัตถุดิบ/รอคน/ไฟดับ/ประชุม) หรือเครื่องยังไม่ลงทะเบียนในฐานข้อมูล (เคสจริง Sub Assy2 เครื่อง SP-xx ยังไม่ลง) · **ในแผน (planned) ยังบังคับเหมือนเดิม** (มัก setup/PM ผูกเครื่อง) · คุมด้วย derived const `dtMachineOptional` — แก้ 3 จุดพร้อมกัน: validation `handleAddDT`, label `เครื่องจักร (ถ้ามี)`/`*`, ปุ่ม disable · `machine_no` เป็น nullable + top-DT aggregation/notification จัดการ null อยู่แล้ว
+
 ### หมายเหตุผู้อนุมัติปิดกะ (optional · 2026-07-24)
 
 SV กรอก remark ได้ตอนกด ✅ อนุมัติใน modal ตรวจสอบคำขอปิดกะ (ไม่บังคับ — "เผื่อหัวหน้ามีอะไรเพิ่มเติม") → เก็บ `production_sessions.close_approve_note` (migration `20260724_session_close_approve_note.sql` DR — additive · โค้ด update แยก best-effort) · แสดงในแท็บประวัติตอน expand กะ (กล่องฟ้า 📝 + ชื่อผู้อนุมัติ)
