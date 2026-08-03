@@ -694,12 +694,8 @@ function LiveTab({ role }) {
 
   const handleAddDT = async () => {
     if (!selSession || !dtForm.downtime_type_id) { toast.error('เลือกประเภท Downtime'); return; }
-    // นอกแผน (unplanned) ไม่บังคับเลือกเครื่อง — หยุดระดับไลน์/เครื่องยังไม่ลงทะเบียน · ในแผนยังบังคับ
-    const dtCat = dtTypes.find(t => t.id === dtForm.downtime_type_id)?.category;
-    if (dtCat !== 'unplanned' && !dtForm.machine_no) { toast.error('เลือกเครื่องจักร'); return; }
-    // นอกแผนเป็นการหยุดระดับไลน์ ไม่ผูกชิ้นงานใดชิ้นงานหนึ่ง → ไม่บังคับเลือกชิ้นงานเหมือนเครื่องจักร
-    const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === selSession.line_name);
-    if (dtCat !== 'unplanned' && lineStds.length && !dtForm.mat_no) { toast.error('เลือกชิ้นงาน'); return; }
+    // เครื่องจักร + ชิ้นงาน ไม่บังคับทุกประเภท — downtime หลายอย่าง (5ส/ประชุม/รอวัตถุดิบ/QA recheck)
+    // เป็นการหยุดระดับไลน์ ไม่ผูกเครื่อง/ชิ้นงานเฉพาะ · ผูกได้ถ้าต้องการ (machine_no/mat_no nullable)
     const { startedAt, endedAt, durMin } = computeDtTimes();
     if (!startedAt && !durMin) { toast.error('กรอกเวลาหรือระยะเวลาอย่างน้อย 1 อย่าง'); return; }
     // ประเภท "อื่นๆ" เปล่าๆ บอกอะไรไม่ได้ในสรุปประชุมเช้า/รายงาน — บังคับระบุสาเหตุจริงเสมอ
@@ -4211,9 +4207,9 @@ function LiveTab({ role }) {
         {showDT && selSession && (() => {
           const { startedAt, endedAt, durMin } = computeDtTimes();
           const hasResult = startedAt || durMin;
-          // Downtime นอกแผน (unplanned) มักเป็นการหยุดระดับไลน์ (รอวัตถุดิบ/รอคน/ไฟดับ) หรือเครื่องยังไม่ลงทะเบียน
-          // → ไม่บังคับเลือกเครื่องจักร (คอลัมน์ machine_no เป็น nullable อยู่แล้ว) · ในแผนยังบังคับเหมือนเดิม
-          const dtMachineOptional = dtTypes.find(t => t.id === dtForm.downtime_type_id)?.category === 'unplanned';
+          // เครื่องจักร + ชิ้นงาน เป็น optional ทุกประเภท downtime — หลายอย่าง (5ส/ประชุม/รอวัตถุดิบ/QA recheck)
+          // เป็นการหยุดระดับไลน์ ไม่ผูกเครื่อง/ชิ้นงานเฉพาะ (machine_no/mat_no nullable · OEE แยกด้วย category)
+          const dtMachineOptional = true;
           const MODES = [
             { key: 'start_end', label: 'เริ่ม → จบ',   desc: 'กรอกเวลาเริ่มหยุด + เวลากลับมา → คำนวณนาทีอัตโนมัติ' },
             { key: 'start_dur', label: 'เริ่ม + นาที',  desc: 'กรอกเวลาเริ่มหยุด + จำนวนนาที → คำนวณเวลากลับมา' },

@@ -461,9 +461,9 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 
 `computeOEE` สาย A แบบแยกตาม MAT ใช้ `dtOverlapMin` (ทับซ้อนช่วงเวลา) ซึ่ง**ข้าม DT ที่ `started_at` = null** (โหมดกรอกแค่นาที) → เคสจริง: หยุดนอกแผน 20 นาทีแต่ %A = 100 (Sup Assy2) · แก้: หลัง loop ต่อ MAT หัก untimedPlanned/untimedUnplanned ที่**ยอดรวม** (`totalNetAvailByMat`/`totalRunMinByMat`) ก่อนหาร — ไม่ต้องรู้ว่าตกช่วง MAT ไหน · fallback ทั้งกะ (ไม่มี order) นับอยู่แล้วผ่าน duration sums
 
-### Downtime นอกแผน — ไม่บังคับเลือกเครื่องจักร (2026-08-03 · คำสั่ง user)
+### Downtime — เครื่องจักร + ชิ้นงาน เป็น optional ทุกประเภท (2026-08-03 · คำสั่ง user)
 
-ฟอร์มเพิ่ม Downtime ใน DailyReport เดิมบังคับเลือก**เครื่องจักร + ชิ้นงาน (mat_no)** ทุกกรณี → **นอกแผน (`dr_downtime_types.category === 'unplanned'`) ไม่บังคับทั้งคู่แล้ว** เพราะเป็นการหยุดระดับไลน์ (รอวัตถุดิบ/รอคน/ไฟดับ/ประชุม) ไม่ผูกเครื่อง/ชิ้นงานใดชิ้นงานหนึ่ง หรือเครื่องยังไม่ลงทะเบียน (เคสจริง Sub Assy2 เครื่อง SP-xx) · **ในแผน (planned) ยังบังคับเหมือนเดิม** (มัก setup/PM ผูกเครื่อง) · คุมด้วย derived const `dtMachineOptional` (unplanned = ทั้งเครื่อง+ชิ้นงาน optional) — แก้ทั้ง 2 ฟิลด์ × 3 จุด: validation `handleAddDT`, label `(ถ้ามี)`/`*`, ปุ่ม disable · `machine_no`/`mat_no` nullable + top-DT aggregation/notification/OEE (แยกด้วย category ไม่ใช่ mat) จัดการ null อยู่แล้ว
+ฟอร์มเพิ่ม Downtime ใน DailyReport เดิมบังคับเลือก**เครื่องจักร + ชิ้นงาน (mat_no)** ทุกกรณี → **ไม่บังคับทั้งคู่ทุกประเภทแล้ว** (`dtMachineOptional = true` เสมอ) เพราะ downtime หลายอย่างเป็นการหยุด**ระดับไลน์** ไม่ผูกเครื่อง/ชิ้นงานเฉพาะ — รอวัตถุดิบ/รอคน/ไฟดับ/ประชุม/**5ส/QA recheck** (หลายอย่างถูกจัด category `planned` เช่น 5ส แต่ก็ไม่ผูกเครื่อง) หรือเครื่องยังไม่ลงทะเบียน (เคสจริง Sub Assy2 SP-xx, Laser LWR) · **⚠️ เดิมลองแยกปลดเฉพาะ unplanned แล้วไม่พอ** — 5ส เป็น planned เลยยังบังคับ (หัวหน้ากลุ่มมองว่า "นอกแผน" แต่ระบบจัด planned) → เลิกแยก planned/unplanned ปลดหมด · คุมด้วย const `dtMachineOptional` (แก้ทั้ง 2 ฟิลด์ × 3 จุด: validation `handleAddDT`, label `(ถ้ามี)`, ปุ่ม disable) · `machine_no`/`mat_no` nullable + top-DT aggregation/notification/OEE (แยกด้วย category ไม่ใช่ mat) จัดการ null อยู่แล้ว · จะผูกเครื่อง/ชิ้นงานก็ยังเลือกได้
 
 ### หมายเหตุผู้อนุมัติปิดกะ (optional · 2026-07-24)
 
