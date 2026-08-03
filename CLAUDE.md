@@ -448,6 +448,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - **ชั้น UI:** handleScanOpen + handleManualOpen บล็อกเวลา backfill ที่ > ตอนนี้ ("ยังมาไม่ถึง")
 - **ชั้น DB (safety net):** trigger `trg_prod_orders_close_time_guard` (BEFORE INSERT/UPDATE) — ใบ backfill ซ่อม `opened_at := confirmed_at` (เวลาปิดคือของจริง) · ใบปกติซ่อม `confirmed_at := opened_at` (เวลาเปิดฝั่ง server คือของจริง) · migration `20260730_prod_orders_close_time_guard.sql` (DR — apply แล้ว + ซ่อมข้อมูลเก่า 33 ใบเป็น 0)
 - โค้ดใหม่ที่เขียน timestamp คู่เปิด-ปิดในตารางอื่น ให้ระวังเรื่องนาฬิกาสองแหล่ง (server default vs client `new Date()`) แบบเดียวกัน
+- **ตรวจแล้ว: การซ่อม 33 ใบไม่กระทบ OEE ที่ stamp ไว้** (audit 2026-08-03 — replicate computeOEE ใน harness แล้วเทียบ timestamp เก่า vs ใหม่ ครบ 16 กะที่เกี่ยวข้อง: ค่า A/P เท่ากันทุกกะ ต่างสุด 0.03 จุด) เพราะ window ติดลบถูก `matEnd <= matStart` ข้ามอยู่แล้วในสูตร และ window ศูนย์หลังซ่อมก็ถูกข้ามแบบเดียวกัน — **ไม่ต้อง recompute ย้อนหลัง** · หมายเหตุ: 8 กะ stamped P ต่างจาก harness 4-19 จุดจากสาเหตุอื่น (CT master/break policy เปลี่ยนหลังปิดกะ / override ตอนปิด) — เป็นเหตุผลที่ห้าม blanket-recompute กะเก่าด้วย master ปัจจุบัน
 
 ### ถอยใบที่สแกนปิดไปแล้ว (revert confirmed → open) — 2026-07-15
 
