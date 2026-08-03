@@ -704,6 +704,13 @@ function LiveTab({ role }) {
       toast.error('ประเภท "อื่นๆ" ต้องระบุรายละเอียด/สาเหตุด้วย — เพื่อให้รายงานและประชุมเช้าอ่านรู้เรื่อง');
       return;
     }
+    // นอกแผน (เครื่องเสีย) ส่วนใหญ่ควรระบุเครื่อง — ไม่บังคับ (พาร์ทหมด/ไฟดับทั้งโรงงานลงเครื่องไม่ได้)
+    // แต่ไม่ปล่อยข้ามเงียบ: ถ้า unplanned แล้วไม่เลือกเครื่อง เด้งถามยืนยันก่อน (planned ไม่ผูกเครื่องอยู่แล้ว ไม่ถาม)
+    const dtCat = dtTypes.find(t => t.id === dtForm.downtime_type_id)?.category;
+    if (dtCat !== 'planned' && !dtForm.machine_no) {
+      const ok = window.confirm('Downtime นอกแผนนี้ยังไม่ได้เลือกเครื่องจักร\nเครื่องเสียส่วนใหญ่ควรระบุเครื่อง (เพื่อออกใบซ่อม/คิด OEE รายเครื่อง)\n\nยืนยันบันทึกโดยไม่เลือกเครื่อง? — เช่น พาร์ทหมด / ไฟดับทั้งโรงงาน');
+      if (!ok) return;
+    }
     setSavingDT(true);
     const { data: { user } } = await supabase.auth.getUser();
 
