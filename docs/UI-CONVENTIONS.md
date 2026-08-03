@@ -206,6 +206,18 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 
 ---
 
+## 5.4 การแก้ข้อมูลโครงสร้าง/master ต้องยืนยันก่อนเขียน (2026-08-03 — คำสั่ง user)
+
+หน้า setup/config (ตั้งค่าโปรแกรม,ฐานข้อมูล ฯลฯ) **ห้ามให้แตะ dropdown/toggle/ปุ่มครั้งเดียวแล้วเขียน DB ทันที** โดยไม่มีจังหวะยืนยัน — คนหลายแผนกมาใช้ เผลอกด/แตะจอทัชพลาด = แก้ master ทันที · เกณฑ์ (กันถามรัวจนรำคาญ):
+
+- **ต้องยืนยัน (`confirm()` หรือ draft+ปุ่มบันทึก):** ลบ · เปลี่ยนโครงสร้าง master (เช่น re-point Section/ไลน์แม่ของ `production_lines`) · **ปิดใช้งาน** (is_active true→false) · เขียนทับก้อนใหญ่ (bulk ทั้งปี/หลายแถว) · ปิดสิทธิ์ (`role_permissions` revoke) · ปิดการแจ้งเตือนทั้งหมวด
+- **ไม่ต้องยืนยัน (additive/ปลอดภัย):** เพิ่มแถวใหม่ · **เปิดใช้งาน**กลับ (is_active false→true) · เปิดสิทธิ์ · แก้ค่าใน draft/form ที่ยังไม่กดบันทึก
+- **`<select>` ที่เปลี่ยน FK ของ master ทันที:** ถ้ายกเลิก confirm ต้อง **re-fetch เพื่อ revert หน้าจอ** (select เป็น controlled component — ไม่ re-render จะค้างค่าที่ผู้ใช้เพิ่งเลือก) · ต้นแบบ: `LineSetup handleUpdateSection/handleUpdateParent` (`await fetchLines(); return`)
+- pattern ที่ดีที่สุด = **draft + แถบบันทึก/ยกเลิก** (ต้นแบบ `CompanyCalendar` คลิกวัน → draft, `ShiftOrganize` สลับกะ → pending + ปุ่ม 💾) · confirm ใช้กับ action เดี่ยวที่ทำไม่บ่อย
+- ทำแล้ว (2026-08-03): LineSetup (Section/Parent dropdown), ShiftOrganize (ลบ override), PermissionsManagement (ปิดสิทธิ์), CompanyCalendar (ตั้งค่าทั้งปี), NotificationConfig (ปิดแจ้งเตือน), OrgSetup (ปิด node), ProductMaster (ปิด part) · **หน้า setup ใหม่ทุกหน้าต้องยึดเกณฑ์นี้** (ไม่งั้น QC หมวด F ตก)
+
+---
+
 ## 6. บอร์ดเวลา (Time boards) — Heijunka / Shipping Chart / Rack Center / Store
 
 pattern ร่วมของทุกบอร์ดที่วางรายการบนแกนเวลา (เพิ่ม 2026-07-10):
