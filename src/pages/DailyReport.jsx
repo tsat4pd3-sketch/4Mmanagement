@@ -697,8 +697,9 @@ function LiveTab({ role }) {
     // นอกแผน (unplanned) ไม่บังคับเลือกเครื่อง — หยุดระดับไลน์/เครื่องยังไม่ลงทะเบียน · ในแผนยังบังคับ
     const dtCat = dtTypes.find(t => t.id === dtForm.downtime_type_id)?.category;
     if (dtCat !== 'unplanned' && !dtForm.machine_no) { toast.error('เลือกเครื่องจักร'); return; }
+    // นอกแผนเป็นการหยุดระดับไลน์ ไม่ผูกชิ้นงานใดชิ้นงานหนึ่ง → ไม่บังคับเลือกชิ้นงานเหมือนเครื่องจักร
     const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === selSession.line_name);
-    if (lineStds.length && !dtForm.mat_no) { toast.error('เลือกชิ้นงาน'); return; }
+    if (dtCat !== 'unplanned' && lineStds.length && !dtForm.mat_no) { toast.error('เลือกชิ้นงาน'); return; }
     const { startedAt, endedAt, durMin } = computeDtTimes();
     if (!startedAt && !durMin) { toast.error('กรอกเวลาหรือระยะเวลาอย่างน้อย 1 อย่าง'); return; }
     // ประเภท "อื่นๆ" เปล่าๆ บอกอะไรไม่ได้ในสรุปประชุมเช้า/รายงาน — บังคับระบุสาเหตุจริงเสมอ
@@ -4344,7 +4345,7 @@ function LiveTab({ role }) {
                         );
                       })()}
                     </Field>
-                    <Field label="ชิ้นงาน (แยก OEE/Downtime ตามชิ้นงาน) *">
+                    <Field label={`ชิ้นงาน (แยก OEE/Downtime ตามชิ้นงาน) ${dtMachineOptional ? '(ถ้ามี)' : '*'}`}>
                       {(() => {
                         const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === selSession.line_name);
                         if (!lineStds.length) return <div style={{ ...inputStyle, color: 'var(--muted)', display: 'flex', alignItems: 'center' }}>— ไม่มีชิ้นงานในไลน์นี้ —</div>;
@@ -4370,7 +4371,7 @@ function LiveTab({ role }) {
                   <button onClick={() => setShowDT(false)} style={cancelBtnStyle}>ยกเลิก</button>
                   {(() => {
                     const lineStdsForBtn = kanbanStds.filter(s => s.dr_products?.line_name === selSession?.line_name);
-                    const dtInvalid = !dtForm.downtime_type_id || !hasResult || (!dtMachineOptional && !dtForm.machine_no) || (lineStdsForBtn.length > 0 && !dtForm.mat_no);
+                    const dtInvalid = !dtForm.downtime_type_id || !hasResult || (!dtMachineOptional && !dtForm.machine_no) || (!dtMachineOptional && lineStdsForBtn.length > 0 && !dtForm.mat_no);
                     return (
                       <button onClick={handleAddDT} disabled={savingDT || dtInvalid}
                         style={{ ...saveBtnStyle, background: '#ef4444', opacity: (dtInvalid || savingDT) ? 0.5 : 1 }}>
