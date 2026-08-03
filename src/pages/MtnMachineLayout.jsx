@@ -65,11 +65,16 @@ const S = {
     padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
     border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border2)'}`, background: active ? 'var(--accent-dim)' : 'var(--bg3)', color: active ? 'var(--accent)' : 'var(--muted)',
   }),
-  side: { width: 240, flexShrink: 0, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, alignSelf: 'flex-start', maxHeight: 600, overflowY: 'auto' },
+  side: { width: 272, flexShrink: 0, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, alignSelf: 'flex-start', maxHeight: 600, overflowY: 'auto' },
   rowBtn: (active, child) => ({
     display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 8, cursor: 'pointer', marginLeft: child ? 12 : 0, fontSize: 13,
     border: `1px solid ${active ? 'var(--accent)' : 'transparent'}`, background: active ? 'var(--accent-dim)' : 'transparent', color: active ? 'var(--accent)' : 'var(--text2)', fontWeight: active ? 700 : 500,
   }),
+  // แถวอุปกรณ์ที่ยังไม่วาง — 2 บรรทัด (เลข+ปุ่มวาง / ชื่อ) กันข้อความบี้ตัดบรรทัดในแถบแคบ
+  unplacedRow: { display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 8px', borderRadius: 7, cursor: 'pointer', fontSize: 12 },
+  unplacedTop: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 },
+  unplacedNo: { fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  unplacedSub: { fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingLeft: 15 },
   // ชิป "วางจุด" ท้ายแถวอุปกรณ์ที่ยังไม่วาง — armed แล้วเปลี่ยนเป็น "คลิกบนผัง"
   placeChip: (armed) => ({
     marginLeft: 'auto', flexShrink: 0, fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap',
@@ -400,7 +405,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
             : <MachineFloorMap
                 imageUrl={view === 'production' ? prodImage : facImage}
                 points={enrichedPoints} selectedId={selId} onSelect={p => setSelId(p.id)}
-                editable={view === 'facility' && canEdit} armed={!!armedJig}
+                editable={view === 'facility' && canEdit} armed={!!armedJig || !!armedMachine}
                 height="clamp(360px, calc(100vh - 260px), 1100px)"
                 onImageClick={placeJig} onMarkerDragEnd={movePoint} onMarkerRemove={removePoint} />}
 
@@ -482,12 +487,13 @@ export default function MtnMachineLayout({ setupMode = false }) {
                     return (
                       <div key={id} onClick={() => { if (!canEdit) return; facImage ? (setArmedJig(id), setArmedMachine(null)) : toast.error('อัปโหลดรูปผังโซนก่อน') }}
                         title={!canEdit ? 'ไม่มีสิทธิ์แก้ผัง' : facImage ? 'คลิกแล้วไปคลิกบนผังเพื่อวาง' : 'อัปโหลดรูปผังก่อน'}
-                        style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', borderRadius: 7, cursor: 'pointer', fontSize: 12,
-                          border: `1px solid ${armedJig === id ? 'var(--accent)' : 'var(--border)'}`, background: armedJig === id ? 'var(--accent-dim)' : 'var(--bg3)' }}>
-                        <span style={{ width: 9, height: 9, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
-                        <span style={{ fontWeight: 700, color: 'var(--text)' }}>{info.jig_no || info.name}</span>
-                        {info.jig_no && <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info.name}</span>}
-                        {canEdit && <span style={S.placeChip(armedJig === id)}>{armedJig === id ? '👆 คลิกบนผัง' : '📍 วาง'}</span>}
+                        style={{ ...S.unplacedRow, border: `1px solid ${armedJig === id ? 'var(--accent)' : 'var(--border)'}`, background: armedJig === id ? 'var(--accent-dim)' : 'var(--bg3)' }}>
+                        <div style={S.unplacedTop}>
+                          <span style={{ width: 9, height: 9, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
+                          <span style={S.unplacedNo}>{info.jig_no || info.name}</span>
+                          {canEdit && <span style={S.placeChip(armedJig === id)}>{armedJig === id ? '👆 คลิกบนผัง' : '📍 วาง'}</span>}
+                        </div>
+                        {info.jig_no && info.name && <div style={S.unplacedSub}>{info.name}</div>}
                       </div>
                     )
                   })}
@@ -495,13 +501,15 @@ export default function MtnMachineLayout({ setupMode = false }) {
                   {facMachines.map(m => (
                     <div key={`m-${m.id}`} onClick={() => { if (!canEdit) return; facImage ? (setArmedMachine(m.id), setArmedJig(null)) : toast.error('อัปโหลดรูปผังโซนก่อน') }}
                       title={!canEdit ? 'ไม่มีสิทธิ์แก้ผัง' : facImage ? 'ดึงจากฐานเครื่องจักร — คลิกแล้ววางบนผัง' : 'อัปโหลดรูปผังก่อน'}
-                      style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', borderRadius: 7, cursor: 'pointer', fontSize: 12,
-                        border: `1px dashed ${armedMachine === m.id ? 'var(--accent)' : 'var(--border2)'}`, background: armedMachine === m.id ? 'var(--accent-dim)' : 'var(--bg2)' }}>
-                      <span style={{ fontSize: 11, flexShrink: 0 }}>{m.equipment_category === 'utility' ? '⚡' : '🔧'}</span>
-                      <span style={{ fontWeight: 700, color: 'var(--text)' }}>{m.machine_no}</span>
-                      <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.machine_name || m.line_name || ''}</span>
-                      <span style={{ fontSize: 10.5, color: 'var(--accent2)', flexShrink: 0 }}>ฐานเครื่องจักร</span>
-                      {canEdit && <span style={S.placeChip(armedMachine === m.id)}>{armedMachine === m.id ? '👆 คลิกบนผัง' : '📍 วาง'}</span>}
+                      style={{ ...S.unplacedRow, border: `1px dashed ${armedMachine === m.id ? 'var(--accent)' : 'var(--border2)'}`, background: armedMachine === m.id ? 'var(--accent-dim)' : 'var(--bg2)' }}>
+                      <div style={S.unplacedTop}>
+                        <span style={{ fontSize: 11, flexShrink: 0 }}>{m.equipment_category === 'utility' ? '⚡' : '🔧'}</span>
+                        <span style={S.unplacedNo}>{m.machine_no}</span>
+                        {canEdit && <span style={S.placeChip(armedMachine === m.id)}>{armedMachine === m.id ? '👆 คลิกบนผัง' : '📍 วาง'}</span>}
+                      </div>
+                      <div style={S.unplacedSub}>
+                        {m.machine_name || m.line_name || ''}<span style={{ color: 'var(--accent2)' }}> · ฐานเครื่องจักร</span>
+                      </div>
                     </div>
                   ))}
                   {!unplacedJigs.length && !facMachines.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>วางครบแล้ว · เพิ่ม facility/utility ที่ <b>ฐานข้อมูลเครื่องจักร</b> (เลือกหมวด Facility/Utility) แล้วจะมาโผล่ที่นี่ให้วาง</div>}
