@@ -292,6 +292,7 @@
 
 - ตาราง `role_permissions (role, permission_key, allowed)` เป็น source of truth เดียวสำหรับ "role ไหนเข้าหน้า/ทำ action ไหนได้บ้าง"
 - โหลดผ่าน `loadPermissions()` (cache ใน memory) แล้วเช็คด้วย `hasPermission(key, role)` / `canAccessPage(path, role)` — ไฟล์ `src/utils/permissions.js`
+- **⚠️ กับดัก Supabase ตัด 1000 แถว/query (เจอจริง 2026-08-03):** `role_permissions` โตเกิน 1000 แถวแล้ว (1,135) — query ที่ไม่ `.range()` ได้แค่ 1000 แถวแรก **แถวที่ seed ทีหลัง (เช่น bucket `dept_admin`) หายเงียบ** = สิทธิ์ใน DB ถูกแต่ปุ่ม/เมนูไม่โผล่ (fail-closed) · แก้แล้ว: `loadPermissions()` + หน้า `/permissions` ดึงแบบแบ่งหน้า · **โค้ดใหม่ที่ select ตารางนี้ (หรือตารางใดที่โตได้เกิน 1000) ต้อง paginate เสมอ**
 - `admin` bypass เสมอ (return true ทันทีไม่ query cache) กันกรณี config ผิดจนตัวเองเข้าไม่ได้
 - แก้ได้จากหน้า `/permissions` (`src/pages/PermissionsManagement.jsx`) — ตาราง matrix role × permission key, toggle แล้ว upsert ทันที
 - permission key รูปแบบ `page:/route` สำหรับสิทธิ์เข้าหน้า, `resource:action` สำหรับสิทธิ์ทำงานในหน้า (เช่น `products:create`, `oee:set_target`) — โหลดจาก `permission_catalog` แสดงในแท็บ "สิทธิ์การทำงาน"
