@@ -144,6 +144,12 @@ model: inherit
   จับ: chart ที่ map เฉพาะวันที่มีข้อมูล (`Object.values(byDate)`) โดยไม่เติมวันว่าง ·
   กราฟที่ NG อยู่แค่ใน tooltip
 
+- **F16** (2026-08-03) editor ผัง/Floorplan ที่เขียนลง DB ทันทีทุก action (วาด/ลาก/ลบ marker,
+  polygon, node/edge) ต้องมี Undo/Redo ผ่าน hook กลาง `src/utils/useUndoHistory.js`
+  (UI-CONVENTIONS §6.7) — จับ: editor ผังใหม่ที่มี insert/delete จาก pointer event
+  โดยไม่ import useUndoHistory · เขียน undo stack เองเฉพาะหน้า = 🟡 ให้ย้ายมาใช้ hook กลาง ·
+  จุดที่ต้องมี: pushHistory ก่อน mutation แรกของ action, clear เมื่อสลับไลน์/โซน/ผัง
+
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่
   ต้องอยู่ใน CLAUDE.md — เทียบโค้ดจริงกับเอกสาร หาจุดที่**เอกสารล้าสมัย** (เอกสารผิดแย่กว่าไม่มี)

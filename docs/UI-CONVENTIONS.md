@@ -272,6 +272,17 @@ pattern ร่วมของทุกบอร์ดที่วางราย
 - Revision History ของเอกสารแก้ที่ `/doc-forms` (modal แก้ไข → ตาราง 📜) — ฟอร์มที่พิมพ์ตารางประวัติ rev (เช่น Changing Point) อ่านผ่าน `getDocFormRevisions`
 - ตารางเก่า `document_controls`/`document_control_revisions` เลิกใช้แล้ว (ยุบเข้าทะเบียนกลาง 2026-07-30) — ห้ามเขียนเพิ่ม
 
+## 6.7 Editor ผัง/Floorplan ทุกตัวต้องมี Undo/Redo (2026-08-03 — คำสั่ง user)
+
+หน้าตั้งค่าผังที่คลิกวาด/ลาก/ลบแล้ว**เขียนลง DB ทันที** (ไม่มีปุ่ม save รวม) เผลอพลาดทีเดียวข้อมูลหายจริง — ต้องมี Undo/Redo เสมอ:
+
+- **hook กลาง `src/utils/useUndoHistory.js`** — undo แบบ snapshot: หน้าให้ `snapOf()` (ก้อนข้อมูลปัจจุบัน deep copy) + `applySnapshot(snap)` (diff ปัจจุบัน vs snapshot แล้ว**เขียนย้อนลง DB** insert/update/delete ตามลำดับ FK) · hook จัดการสแตค 40 ชั้น + ปุ่ม disabled + คีย์ลัด Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y (ข้ามตอน focus ช่องพิมพ์) ให้เอง
+- **จุดที่ต้องเรียก `pushHistory()` = "ก่อน" mutation แรกของทุก action** (วาง/ลบ/บันทึกฟอร์ม/เชื่อมเส้น) · การพิมพ์ต่อเนื่อง (ชื่อจุด) ส่ง tag เดิม → coalesce ใน 1.2 วิ ไม่ push ทุกตัวอักษร · การลากย้าย: ถ่าย snapshot ตอน pointerdown เก็บใน dragRef แล้ว `pushSnapshot(snap)` ตอนปล่อยเมื่อขยับจริง
+- **เปลี่ยน context (สลับไลน์/โซน/ผังคนละแผ่น) → `hist.clear()`** — snapshot ข้ามผังใช้ไม่ได้ ห้ามให้ undo ไปลบของผังอื่น
+- ปุ่มใช้ `undoBtnStyle(enabled)` จากไฟล์เดียวกัน: `↩️ Undo` `↪️ Redo` วางในแถบเครื่องมือของโหมดแก้ไข (แสดงเฉพาะตอนมีสิทธิ์แก้)
+- **ใช้แล้วที่:** TransportMapEditor (ถนน/จุดจอด AMR — node+edge), FactoryMap setupMode (polygon กรอบไลน์), MtnMachineLayout facility (จุดอุปกรณ์บนโซน — เพิ่ม/ลบโซน+อัปรูปไม่เข้า history เพราะไฟล์ storage ย้อนไม่ได้ ใช้ confirm แทน), LineSetup (จุดงาน+ทักษะ/WIP/เครื่องจักร/เส้น flow ของไลน์ที่เลือก)
+- editor ผังตัวใหม่ในอนาคต**ต้องใช้ hook นี้ตั้งแต่แรก** — ห้ามเขียน undo เองเฉพาะหน้า
+
 ## 7. เบ็ดเตล็ดที่เคยกัด
 
 - `index.css` ตั้ง `input{width:100%}` ทั้งแอป — input ใน flex row ต้องกำหนด width เอง (checkbox/radio มี rule ยกเว้น `width:auto` แล้ว — ห้ามลบ)

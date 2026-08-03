@@ -7,6 +7,7 @@ import { can } from '../utils/permissions';
 import { pairAwareTotal } from '../utils/pairTotals';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
+import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -178,6 +179,27 @@ export default function FactoryMap({ setupMode = false }) {
   const wrapRef = useRef(null);
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
   const dragRef = useRef(null);
+  const regionsRef = useRef([]);
+  useEffect(() => { regionsRef.current = regions; }, [regions]);
+
+  // ─── Undo/Redo (โหมดตั้งค่า) — snapshot กรอบไลน์ทั้งชุด restore = diff แล้วเขียนย้อนลง DB ───
+  const regionSnap = () => regionsRef.current.map(r => ({ ...r, points: r.points.map(p => [...p]) }));
+  const applyRegionSnapshot = async (snap) => {
+    const cur = regionsRef.current;
+    const sM = new Map(snap.map(r => [r.id, r])), cM = new Map(cur.map(r => [r.id, r]));
+    const del = cur.filter(r => !sM.has(r.id)).map(r => r.id);
+    const ins = snap.filter(r => !cM.has(r.id)).map(r => ({ id: r.id, line_name: r.line_name, points: r.points }));
+    const upd = snap.filter(r => { const c = cM.get(r.id); return c && (c.line_name !== r.line_name || JSON.stringify(c.points) !== JSON.stringify(r.points)); });
+    try {
+      if (del.length) { const { error } = await supabase.from('factory_line_regions').delete().in('id', del); if (error) throw error; }
+      if (ins.length) { const { error } = await supabase.from('factory_line_regions').insert(ins); if (error) throw error; }
+      for (const r of upd) { const { error } = await supabase.from('factory_line_regions').update({ line_name: r.line_name, points: r.points }).eq('id', r.id); if (error) throw error; }
+    } catch (err) { toast.error('ย้อนไม่สำเร็จ: ' + err.message); return false; }
+    regionsRef.current = snap;
+    setRegions(snap);
+    return true;
+  };
+  const hist = useUndoHistory({ snapOf: regionSnap, applySnapshot: applyRegionSnapshot, enabled: canEdit && editing });
   const shiftRef = useRef(false);
   const lastRawRef = useRef(null);
 
@@ -691,6 +713,7 @@ export default function FactoryMap({ setupMode = false }) {
     if (!target) return toast.error('เลือกไลน์/โซน หรือพิมพ์ชื่อโซนใหม่ก่อน');
     if (regions.some(r => r.line_name === target)) return toast.error(`"${target}" ถูกตีกรอบไว้แล้ว`);
     const pts = assignFor; setAssignFor(null); setNewZone('');
+    hist.pushHistory();
     const { data, error } = await supabase.from('factory_line_regions').insert({ line_name: target, points: pts }).select().single();
     if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
     setRegions(prev => [...prev, { ...data, points: pts }]);
@@ -716,17 +739,21 @@ export default function FactoryMap({ setupMode = false }) {
     e.stopPropagation();
     wrapRef.current?.setPointerCapture?.(e.pointerId);
     const p = pctFromEvent(e.clientX, e.clientY);
-    dragRef.current = { id: region.id, vi, px: p.x, py: p.y, base: region.points.map(pt => [...pt]) };
+    dragRef.current = { id: region.id, vi, px: p.x, py: p.y, base: region.points.map(pt => [...pt]), snap: regionSnap() };
   };
   const endDrag = async () => {
     if (!dragRef.current) return;
-    const id = dragRef.current.id; dragRef.current = null;
-    const r = regions.find(x => x.id === id);
-    if (r) await supabase.from('factory_line_regions').update({ points: r.points }).eq('id', id);
+    const d = dragRef.current; dragRef.current = null;
+    const r = regions.find(x => x.id === d.id);
+    if (!r) return;
+    if (JSON.stringify(r.points) === JSON.stringify(d.base)) return;   // คลิกเฉยๆ ไม่ได้ลาก — ไม่บันทึก/ไม่เข้า history
+    if (d.snap) hist.pushSnapshot(d.snap);
+    await supabase.from('factory_line_regions').update({ points: r.points }).eq('id', d.id);
   };
   const deleteRegion = async (id) => {
     const rg = regions.find(r => r.id === id);
     if (!window.confirm(`ลบกรอบไลน์ "${rg?.line_name || ''}" ?`)) return;
+    hist.pushHistory();
     setRegions(prev => prev.filter(r => r.id !== id));
     const { error } = await supabase.from('factory_line_regions').delete().eq('id', id);
     if (error) toast.error(error.message);
@@ -761,6 +788,8 @@ export default function FactoryMap({ setupMode = false }) {
             <input type="file" accept="image/*" onChange={handleUpload} disabled={uploading} style={{ display: 'none' }} />
           </label>
           {imageUrl && !drawing && <button onClick={() => { setDrawing(true); setDraft([]); }} style={btn(false)}>✏️ วาดกรอบไลน์ใหม่</button>}
+          {!drawing && <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title="ย้อนกลับ (Ctrl+Z)">↩️ Undo</button>}
+          {!drawing && <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="ทำซ้ำ (Ctrl+Y)">↪️ Redo</button>}
           {drawing && (
             <>
               <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>🖊️ คลิกทีละจุดล้อมพื้นที่ (L/U ได้) · กด <b>Shift</b> = เส้นตั้งฉาก · เข้าใกล้จุดแรก = ดูดปิดรูป</span>
