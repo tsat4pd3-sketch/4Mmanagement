@@ -43,6 +43,12 @@ export default function Transport() {
     if (error) return toast.error(error.message);
     setVehicles(vs => vs.map(v => v.code === code ? { ...v, speed_kmh: kmh } : v));
   };
+  // แก้ความจุ (กล่อง/kanban ต่อเที่ยว) — ใช้คำนวณ load รอบส่ง (ต้อง apply migration 20260803 ก่อน)
+  const saveVehCapacity = async (code, cap) => {
+    const { error } = await supabaseDR.from('transport_vehicles').update({ capacity_pkg: cap }).eq('code', code);
+    if (error) return toast.error(error.message.includes('capacity_pkg') ? 'ยังไม่ apply migration ความจุรถ (20260803_transport_vehicle_capacity)' : error.message);
+    setVehicles(vs => vs.map(v => v.code === code ? { ...v, capacity_pkg: cap } : v));
+  };
   const saveDwell = async (min) => {
     setDwellMin(min);
     await supabaseDR.from('transport_settings').upsert({ id: 1, dwell_min: min, updated_by_name: fullName, updated_at: new Date().toISOString() }, { onConflict: 'id' });
@@ -208,7 +214,7 @@ export default function Transport() {
       {tab === 'route' && (
         <RouteTab byLine={byLine} stopsByRound={stopsByRound} stopNodes={stopNodes} nById={nById}
           nodes={nodes} edges={edges} imageUrl={imageUrl} canManage={canManage} busy={busy} saveStops={saveStops}
-          mpu={mpu} vehicles={vehicles} dwellMin={dwellMin} saveVehSpeed={saveVehSpeed} saveDwell={saveDwell} />
+          mpu={mpu} vehicles={vehicles} dwellMin={dwellMin} saveVehSpeed={saveVehSpeed} saveVehCapacity={saveVehCapacity} saveDwell={saveDwell} />
       )}
 
       {tab === 'carriers' && (
@@ -254,7 +260,7 @@ export default function Transport() {
 }
 
 // ─── RouteTab — กำหนดจุดจอด (ordered) ต่อรอบส่ง + แสดงเส้นทางที่คำนวณจากกราฟถนน ──
-function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageUrl, canManage, busy, saveStops, mpu, vehicles = [], dwellMin = 0, saveVehSpeed, saveDwell }) {
+function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageUrl, canManage, busy, saveStops, mpu, vehicles = [], dwellMin = 0, saveVehSpeed, saveVehCapacity, saveDwell }) {
   const [selRound, setSelRound] = useState(null);
   const [vehCode, setVehCode] = useState('');
   const [simFrac, setSimFrac] = useState(0);
@@ -432,6 +438,14 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                         style={{ width: 54, padding: '4px 6px', borderRadius: 6, fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /> กม./ชม.
                     </label>
                   ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{speedKmh || '—'} กม./ชม.</span>}
+                  {canManage ? (
+                    <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      จุ
+                      <input type="number" min="0" step="1" defaultValue={veh?.capacity_pkg || ''} key={'cap' + (veh?.code || '') + String(veh?.capacity_pkg ?? '')}
+                        onBlur={e => { const v = parseFloat(e.target.value); if (v > 0 && veh) saveVehCapacity(veh.code, v); }}
+                        style={{ width: 50, padding: '4px 6px', borderRadius: 6, fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /> กล่อง/เที่ยว
+                    </label>
+                  ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>จุ {veh?.capacity_pkg || '—'} กล่อง/เที่ยว</span>}
                 </div>
                 {totalMin != null ? (
                   <div style={{ fontSize: 12.5, color: 'var(--text)' }}>
