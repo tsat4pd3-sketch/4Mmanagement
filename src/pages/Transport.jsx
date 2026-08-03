@@ -4,7 +4,7 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { getRoundStatus } from '../utils/deliveryRounds';
-import { routeThroughStops, nodeKind } from '../utils/transportGraph';
+import { routeThroughStops, nodeKind, bestStopOrder } from '../utils/transportGraph';
 
 /* ─── TRANSPORT — มอบหมายขนส่ง (Teiki-bin phase 1: ก) ─────────────────────────
    ชั้น carrier (คนขับ/ผู้ขน) + สกิลยานพาหนะ + มอบหมาย carrier ให้ "รอบส่ง" ที่มีอยู่
@@ -295,10 +295,38 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
   // (เดิมผูก [route] ซึ่งเป็น object ใหม่แทบทุก render → กดเล่นแล้วโดน reset ทันที รถไม่วิ่ง)
   const routeKey = route.nodePath.join('>');
   useEffect(() => { setSimRun(false); setSimFrac(0); }, [selRound, routeKey]);
+
+  // ระยะสะสม (หน่วยผัง) ณ จุดจอดแต่ละจุดบน nodePath — ใช้สร้าง timeline "วิ่ง+แวะ"
+  const stopMarks = useMemo(() => {
+    if (!routePts.length) return null;
+    const marks = []; let want = 0, acc = 0;
+    routePts.forEach((p, i) => {
+      if (i > 0) acc += geo.seg[i - 1];
+      if (want < stopIds.length && p.id === stopIds[want]) { marks.push(acc); want++; }
+    });
+    return marks.length === stopIds.length ? marks : null;   // จับคู่ไม่ครบ (เส้นขาด) = ไม่มี timeline
+  }, [routePts, geo, stopIds]);
+
+  // timeline นาทีจำลอง: แวะจุด 1 → วิ่ง → แวะจุด 2 → … (รวมเวลาแวะต่อจุดจริง ไม่ใช่แค่เวลาวิ่ง)
+  const simTimeline = useMemo(() => {
+    if (moveMin == null || !stopMarks || geo.total <= 0) return null;
+    const evs = []; let t = 0;
+    stopMarks.forEach((dist, i) => {
+      if (dwellMin > 0) { evs.push({ kind: 'dwell', start: t, end: t + dwellMin, dist, stopNo: i + 1 }); t += dwellMin; }
+      if (i < stopMarks.length - 1) {
+        const legMin = moveMin * (stopMarks[i + 1] - dist) / geo.total;
+        evs.push({ kind: 'move', start: t, end: t + legMin, d0: dist, d1: stopMarks[i + 1] });
+        t += legMin;
+      }
+    });
+    return evs.length ? { evs, total: t } : null;
+  }, [moveMin, stopMarks, geo, dwellMin]);
+  const simTotalMin = simTimeline?.total ?? moveMin;   // = วิ่ง + แวะ×จำนวนจุด (ตรงกับ "⏱️ เวลา" ที่โชว์)
+
   // animation loop
   useEffect(() => {
     if (!simRun) { if (rafRef.current) cancelAnimationFrame(rafRef.current); return; }
-    const durMs = Math.max(1200, (moveMin || 1) * 250);              // 1 นาทีจำลอง ≈ 250ms (อย่างน้อย 1.2s)
+    const durMs = Math.max(1200, (simTotalMin || 1) * 250);          // 1 นาทีจำลอง ≈ 250ms (อย่างน้อย 1.2s)
     const start = performance.now() - simFrac * durMs;
     const tick = (now) => {
       const f = Math.min(1, (now - start) / durMs);
@@ -310,17 +338,30 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
   }, [simRun]);   // eslint-disable-line react-hooks/exhaustive-deps
 
+  // สถานะจำลอง ณ เวลา f: อยู่ที่ระยะไหน + กำลังแวะจอดจุดไหนอยู่
+  const simState = useMemo(() => {
+    if (simTimeline) {
+      const t = simFrac * simTimeline.total;
+      const ev = simTimeline.evs.find(e => t >= e.start && t <= e.end) || simTimeline.evs[simTimeline.evs.length - 1];
+      if (ev.kind === 'dwell') return { dist: ev.dist, dwellAt: ev.stopNo };
+      const p = (t - ev.start) / ((ev.end - ev.start) || 1);
+      return { dist: ev.d0 + (ev.d1 - ev.d0) * p, dwellAt: null };
+    }
+    return { dist: simFrac * geo.total, dwellAt: null };             // ไม่มี timeline (ยังไม่ตั้ง scale/ความเร็ว) = วิ่งตามระยะเฉยๆ
+  }, [simTimeline, simFrac, geo]);
+
+  const simDist = simState.dist;
   const simPos = useMemo(() => {
     if (routePts.length === 0) return null;
     if (routePts.length === 1 || geo.total === 0) return routePts[0];
-    let target = simFrac * geo.total, acc = 0;
+    let target = simDist, acc = 0;
     for (let i = 0; i < geo.seg.length; i++) {
       if (acc + geo.seg[i] >= target) { const t = (target - acc) / (geo.seg[i] || 1); return { x: routePts[i].x + (routePts[i + 1].x - routePts[i].x) * t, y: routePts[i].y + (routePts[i + 1].y - routePts[i].y) * t }; }
       acc += geo.seg[i];
     }
     return routePts[routePts.length - 1];
-  }, [simFrac, routePts, geo]);
-  const simMinNow = moveMin != null ? (simFrac * moveMin) : null;
+  }, [simDist, routePts, geo]);
+  const simMinNow = simTotalMin != null ? (simFrac * simTotalMin) : null;
   const fmtMin = (m) => m == null ? '—' : (m >= 60 ? `${Math.floor(m / 60)} ชม. ${Math.round(m % 60)} น.` : `${m.toFixed(1)} น.`);
 
   const setOrder = (ids) => round && saveStops(round.id, ids);
@@ -329,6 +370,15 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
   const moveStop = (i, dir) => {
     const j = i + dir; if (j < 0 || j >= stopIds.length) return;
     const a = [...stopIds]; [a[i], a[j]] = [a[j], a[i]]; setOrder(a);
+  };
+  // ✨ หาลำดับแวะที่ระยะรวมสั้นสุด (TSP บนกราฟถนนจริง) — ล็อกจุดแรกเป็นต้นทาง (มักเป็น Store)
+  const optimizeOrder = () => {
+    const res = bestStopOrder(nodes, edges, stopIds);
+    if (!res) return toast.error('เรียงให้ไม่ได้ — ถนนขาดช่วง หรือจุดจอดน้อยกว่า 3 จุด');
+    const cur = route.ok ? route.distance : Infinity;
+    if (res.order.join() === stopIds.join() || res.distance >= cur - 1e-9) return toast.info('ลำดับปัจจุบันสั้นที่สุดแล้ว ✅');
+    setOrder(res.order);
+    toast.success(`✨ เรียงใหม่ให้สั้นสุด: ${cur === Infinity ? '—' : cur.toFixed(1)} → ${res.distance.toFixed(1)} หน่วยผัง`);
   };
 
   if (!hasGraph) return (
@@ -356,7 +406,16 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
           <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>เลือกรอบส่งเพื่อกำหนดจุดจอดตามลำดับ</div>
         ) : (
           <>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>ลำดับจุดจอด ({stopIds.length})</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>ลำดับจุดจอด ({stopIds.length})</span>
+              {canManage && stopIds.length >= 3 && (
+                <button onClick={optimizeOrder} disabled={busy === round.id}
+                  title="ให้ระบบหาลำดับแวะที่ระยะรวมสั้นสุด (จุดแรกคงเป็นต้นทางเดิม)"
+                  style={{ padding: '3px 9px', borderRadius: 14, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, background: 'var(--accent-dim, rgba(74,222,128,.15))', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
+                  ✨ เรียงให้สั้นสุด
+                </button>
+              )}
+            </div>
             {stopIds.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>ยังไม่มีจุดจอด — เพิ่มจากด้านล่าง</div>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 12 }}>
               {stops.map((s, i) => {
@@ -466,7 +525,11 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                     {simRun ? '⏸ หยุด' : '▶ จำลองการวิ่ง'}
                   </button>
                   <button onClick={() => { setSimRun(false); setSimFrac(0); }} style={{ padding: '6px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>↺</button>
-                  {simMinNow != null && <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>⏱ {fmtMin(simMinNow)}</span>}
+                  {simMinNow != null && (
+                    <span style={{ fontSize: 12, color: simState.dwellAt ? '#f59e0b' : 'var(--accent)', fontWeight: 700 }}>
+                      ⏱ {fmtMin(simMinNow)}{simState.dwellAt ? ` · ⏸ แวะจุด ${simState.dwellAt}` : ''}
+                    </span>
+                  )}
                 </div>
                 <div style={{ height: 5, background: 'var(--bg2)', borderRadius: 3, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${simFrac * 100}%`, background: 'var(--accent)', transition: 'width 0.1s linear' }} />
@@ -503,9 +566,13 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                 </div>
               );
             })}
-            {/* จุดจำลองการวิ่ง — ไอคอนตามยานพาหนะที่เลือก */}
+            {/* จุดจำลองการวิ่ง — ไอคอนตามยานพาหนะที่เลือก · แวะจอด = วงส้ม */}
             {simPos && simFrac > 0 && (
-              <div style={{ position: 'absolute', left: `${simPos.x}%`, top: `${simPos.y}%`, transform: 'translate(-50%,-50%)', width: 28, height: 28, borderRadius: '50%', background: '#22d3ee', border: '2px solid #fff', boxShadow: '0 0 12px 3px rgba(34,211,238,0.7)', zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>{veh?.icon || '🚚'}</div>
+              <div title={simState.dwellAt ? `⏸ แวะจอดจุด ${simState.dwellAt} (${dwellMin} น.)` : undefined}
+                style={{ position: 'absolute', left: `${simPos.x}%`, top: `${simPos.y}%`, transform: 'translate(-50%,-50%)', width: 28, height: 28, borderRadius: '50%',
+                  background: simState.dwellAt ? '#f59e0b' : '#22d3ee', border: '2px solid #fff',
+                  boxShadow: simState.dwellAt ? '0 0 12px 3px rgba(245,158,11,0.75)' : '0 0 12px 3px rgba(34,211,238,0.7)',
+                  zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>{veh?.icon || '🚚'}</div>
             )}
           </div>
         ) : (
