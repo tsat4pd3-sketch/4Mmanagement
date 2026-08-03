@@ -456,7 +456,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 
 ### Downtime นอกแผน — ไม่บังคับเลือกเครื่องจักร (2026-08-03 · คำสั่ง user)
 
-ฟอร์มเพิ่ม Downtime ใน DailyReport เดิมบังคับเลือกเครื่องจักรทุกกรณี → **นอกแผน (`dr_downtime_types.category === 'unplanned'`) ไม่บังคับแล้ว** เพราะเป็นการหยุดระดับไลน์ (รอวัตถุดิบ/รอคน/ไฟดับ/ประชุม) หรือเครื่องยังไม่ลงทะเบียนในฐานข้อมูล (เคสจริง Sub Assy2 เครื่อง SP-xx ยังไม่ลง) · **ในแผน (planned) ยังบังคับเหมือนเดิม** (มัก setup/PM ผูกเครื่อง) · คุมด้วย derived const `dtMachineOptional` — แก้ 3 จุดพร้อมกัน: validation `handleAddDT`, label `เครื่องจักร (ถ้ามี)`/`*`, ปุ่ม disable · `machine_no` เป็น nullable + top-DT aggregation/notification จัดการ null อยู่แล้ว
+ฟอร์มเพิ่ม Downtime ใน DailyReport เดิมบังคับเลือก**เครื่องจักร + ชิ้นงาน (mat_no)** ทุกกรณี → **นอกแผน (`dr_downtime_types.category === 'unplanned'`) ไม่บังคับทั้งคู่แล้ว** เพราะเป็นการหยุดระดับไลน์ (รอวัตถุดิบ/รอคน/ไฟดับ/ประชุม) ไม่ผูกเครื่อง/ชิ้นงานใดชิ้นงานหนึ่ง หรือเครื่องยังไม่ลงทะเบียน (เคสจริง Sub Assy2 เครื่อง SP-xx) · **ในแผน (planned) ยังบังคับเหมือนเดิม** (มัก setup/PM ผูกเครื่อง) · คุมด้วย derived const `dtMachineOptional` (unplanned = ทั้งเครื่อง+ชิ้นงาน optional) — แก้ทั้ง 2 ฟิลด์ × 3 จุด: validation `handleAddDT`, label `(ถ้ามี)`/`*`, ปุ่ม disable · `machine_no`/`mat_no` nullable + top-DT aggregation/notification/OEE (แยกด้วย category ไม่ใช่ mat) จัดการ null อยู่แล้ว
 
 ### หมายเหตุผู้อนุมัติปิดกะ (optional · 2026-07-24)
 
