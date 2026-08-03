@@ -97,6 +97,26 @@ export function routeThroughStops(nodes, edges, stopNodeIds) {
   return out
 }
 
+// จุดตัดของเซกเมนต์ p1p2 กับ p3p4 — คืน {x,y,t} ถ้าตัดกัน "ภายในทั้งสองเส้น" (ไม่นับที่ปลาย), ไม่งั้น null
+//   t = ตำแหน่งบน p1→p2 (0..1) ใช้เรียงลำดับจุดตัดหลายจุด
+export function segIntersect(p1, p2, p3, p4, eps = 1e-6) {
+  const d = (p2.x - p1.x) * (p4.y - p3.y) - (p2.y - p1.y) * (p4.x - p3.x)
+  if (Math.abs(d) < eps) return null // ขนาน/ทับกัน
+  const t = ((p3.x - p1.x) * (p4.y - p3.y) - (p3.y - p1.y) * (p4.x - p3.x)) / d
+  const u = ((p3.x - p1.x) * (p2.y - p1.y) - (p3.y - p1.y) * (p2.x - p1.x)) / d
+  if (t < eps || t > 1 - eps || u < eps || u > 1 - eps) return null // ตัดที่ปลาย/นอกเส้น
+  return { x: p1.x + t * (p2.x - p1.x), y: p1.y + t * (p2.y - p1.y), t }
+}
+
+// จุดบนเซกเมนต์ ab ที่ใกล้ p ที่สุด + ระยะ (ใช้ snap วางจุดลงบนถนนเดิม → สามแยก)
+export function closestPointOnSeg(p, a, b) {
+  const vx = b.x - a.x, vy = b.y - a.y
+  const len2 = vx * vx + vy * vy || 1e-9
+  let t = ((p.x - a.x) * vx + (p.y - a.y) * vy) / len2
+  t = Math.max(0, Math.min(1, t))
+  return { x: a.x + t * vx, y: a.y + t * vy, t, dist: Math.hypot(p.x - (a.x + t * vx), p.y - (a.y + t * vy)) }
+}
+
 // ประเมินเวลา (นาที) จากระยะทางผัง — carrier ความเร็ว unitPerMin (หน่วยผัง/นาที)
 //   default = null (ไม่ประเมิน) เพราะยังไม่ได้ calibrate scale
 export const estMinutes = (distance, unitPerMin) =>

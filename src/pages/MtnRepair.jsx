@@ -12,7 +12,7 @@ import { toast } from '../components/Toast';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { teamsForUser, teamForSection, teamForItem } from '../utils/mtnTeams';
+import { teamsForUser, teamForSection, teamForItem, sameTeam } from '../utils/mtnTeams';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import { loadDocForms, docFormSync } from '../utils/docForms';
 loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sync) อ่านผ่าน docFormSync
@@ -277,7 +277,7 @@ export default function MtnRepair() {
     else if (fStatus === 'closed') rows = rows.filter(o => o.status === 'closed');
     else if (fStatus !== 'all') rows = rows.filter(o => o.status === fStatus);
     if (fLine) rows = rows.filter(o => o.line_name === fLine);
-    if (fDept) rows = rows.filter(o => (o.mtn_dept || deptForItem(o.item_type)) === fDept);
+    if (fDept) rows = rows.filter(o => sameTeam(o.mtn_dept || deptForItem(o.item_type), fDept));
     if (fText.trim()) { const t = fText.trim().toLowerCase(); rows = rows.filter(o => [o.mo_no, o.machine_no, o.item_type, o.problem_characteristic, o.report_note, o.line_name].some(v => (v || '').toLowerCase().includes(t))); }
     return rows;
   }, [orders, scopeLines, fStatus, fLine, fDept, fText]);

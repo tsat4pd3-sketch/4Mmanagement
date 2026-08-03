@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
@@ -33,10 +33,23 @@ export default function Transport() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [editCarrier, setEditCarrier] = useState(null);
   const [busy, setBusy] = useState(null);
+  const [mpu, setMpu] = useState(null);            // meters per unit (มาตราส่วนผัง)
+  const [dwellMin, setDwellMin] = useState(0);     // เวลาแวะต่อจุดจอด (นาที)
   const workDate = getWorkDate();
 
+  // แก้ความเร็วยานพาหนะ (km/h)
+  const saveVehSpeed = async (code, kmh) => {
+    const { error } = await supabaseDR.from('transport_vehicles').update({ speed_kmh: kmh }).eq('code', code);
+    if (error) return toast.error(error.message);
+    setVehicles(vs => vs.map(v => v.code === code ? { ...v, speed_kmh: kmh } : v));
+  };
+  const saveDwell = async (min) => {
+    setDwellMin(min);
+    await supabaseDR.from('transport_settings').upsert({ id: 1, dwell_min: min, updated_by_name: fullName, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+  };
+
   const load = useCallback(async () => {
-    const [{ data: veh }, { data: car }, { data: rds }, { data: dlv }, { data: asg }, { data: nd }, { data: eg }, { data: rs }] = await Promise.all([
+    const [{ data: veh }, { data: car }, { data: rds }, { data: dlv }, { data: asg }, { data: nd }, { data: eg }, { data: rs }, { data: settings }] = await Promise.all([
       supabaseDR.from('transport_vehicles').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('transport_carriers').select('*').order('name'),
       supabaseDR.from('kanban_delivery_rounds').select('*').eq('is_active', true).order('line_name').order('round_no'),
@@ -45,10 +58,12 @@ export default function Transport() {
       supabaseDR.from('transport_nodes').select('*'),
       supabaseDR.from('transport_edges').select('*'),
       supabaseDR.from('transport_round_stops').select('*').order('seq'),
+      supabaseDR.from('transport_settings').select('meters_per_unit, dwell_min').eq('id', 1).maybeSingle(),
     ]);
     setVehicles(veh || []); setCarriers(car || []); setRounds(rds || []);
     setDeliveries(dlv || []); setAssigns(asg || []);
     setNodes(nd || []); setEdges(eg || []); setRoundStops(rs || []);
+    setMpu(settings?.meters_per_unit ?? null); setDwellMin(settings?.dwell_min ?? 0);
     // รูปผังจาก Main (factory_map) — best-effort (ไม่มีรูปก็ใช้ route tab ได้แค่ไม่มีแผนที่)
     const { data: fm } = await supabase.from('factory_map').select('image_url').order('updated_at', { ascending: false }).limit(1).maybeSingle();
     setImageUrl(fm?.image_url || null);
@@ -192,7 +207,8 @@ export default function Transport() {
 
       {tab === 'route' && (
         <RouteTab byLine={byLine} stopsByRound={stopsByRound} stopNodes={stopNodes} nById={nById}
-          nodes={nodes} edges={edges} imageUrl={imageUrl} canManage={canManage} busy={busy} saveStops={saveStops} />
+          nodes={nodes} edges={edges} imageUrl={imageUrl} canManage={canManage} busy={busy} saveStops={saveStops}
+          mpu={mpu} vehicles={vehicles} dwellMin={dwellMin} saveVehSpeed={saveVehSpeed} saveDwell={saveDwell} />
       )}
 
       {tab === 'carriers' && (
@@ -238,14 +254,66 @@ export default function Transport() {
 }
 
 // ─── RouteTab — กำหนดจุดจอด (ordered) ต่อรอบส่ง + แสดงเส้นทางที่คำนวณจากกราฟถนน ──
-function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageUrl, canManage, busy, saveStops }) {
+function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageUrl, canManage, busy, saveStops, mpu, vehicles = [], dwellMin = 0, saveVehSpeed, saveDwell }) {
   const [selRound, setSelRound] = useState(null);
+  const [vehCode, setVehCode] = useState('');
+  const [simFrac, setSimFrac] = useState(0);
+  const [simRun, setSimRun] = useState(false);
+  const rafRef = useRef(null);
   const rounds = useMemo(() => byLine.flatMap(g => g.rounds.map(r => ({ ...r, _line: g.line }))), [byLine]);
   const round = rounds.find(r => r.id === selRound) || null;
   const stops = round ? (stopsByRound[round.id] || []) : [];
   const stopIds = stops.map(s => s.node_id);
   const route = useMemo(() => routeThroughStops(nodes, edges, stopIds), [nodes, edges, stopIds]);
   const hasGraph = nodes.length > 0;
+
+  // polyline + ระยะเรขาคณิตสะสม (ไว้จำลองตำแหน่ง)
+  const routePts = useMemo(() => route.nodePath.map(id => nById[id]).filter(Boolean), [route, nById]);
+  const geo = useMemo(() => {
+    const seg = []; let total = 0;
+    for (let i = 1; i < routePts.length; i++) { const d = Math.hypot(routePts[i].x - routePts[i - 1].x, routePts[i].y - routePts[i - 1].y); seg.push(d); total += d; }
+    return { seg, total };
+  }, [routePts]);
+
+  // ระยะจริง + เวลา
+  const veh = vehicles.find(v => v.code === vehCode) || vehicles[0] || null;
+  const speedKmh = veh?.speed_kmh || 0;
+  const realDist = mpu ? route.distance * mpu : null;                 // เมตร
+  const moveMin = (realDist && speedKmh > 0) ? realDist / (speedKmh * 1000 / 60) : null;
+  const dwellTotal = dwellMin > 0 ? dwellMin * stopIds.length : 0;
+  const totalMin = moveMin != null ? moveMin + dwellTotal : null;
+
+  // default เลือกยานพาหนะคันแรก
+  useEffect(() => { if (!vehCode && vehicles.length) setVehCode(vehicles[0].code); }, [vehicles, vehCode]);
+  // reset จำลองเมื่อเปลี่ยนรอบ/เส้นทาง
+  useEffect(() => { setSimRun(false); setSimFrac(0); }, [selRound, route]);
+  // animation loop
+  useEffect(() => {
+    if (!simRun) { if (rafRef.current) cancelAnimationFrame(rafRef.current); return; }
+    const durMs = Math.max(1200, (moveMin || 1) * 250);              // 1 นาทีจำลอง ≈ 250ms (อย่างน้อย 1.2s)
+    const start = performance.now() - simFrac * durMs;
+    const tick = (now) => {
+      const f = Math.min(1, (now - start) / durMs);
+      setSimFrac(f);
+      if (f >= 1) { setSimRun(false); return; }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [simRun]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const simPos = useMemo(() => {
+    if (routePts.length === 0) return null;
+    if (routePts.length === 1 || geo.total === 0) return routePts[0];
+    let target = simFrac * geo.total, acc = 0;
+    for (let i = 0; i < geo.seg.length; i++) {
+      if (acc + geo.seg[i] >= target) { const t = (target - acc) / (geo.seg[i] || 1); return { x: routePts[i].x + (routePts[i + 1].x - routePts[i].x) * t, y: routePts[i].y + (routePts[i + 1].y - routePts[i].y) * t }; }
+      acc += geo.seg[i];
+    }
+    return routePts[routePts.length - 1];
+  }, [simFrac, routePts, geo]);
+  const simMinNow = moveMin != null ? (simFrac * moveMin) : null;
+  const fmtMin = (m) => m == null ? '—' : (m >= 60 ? `${Math.floor(m / 60)} ชม. ${Math.round(m % 60)} น.` : `${m.toFixed(1)} น.`);
 
   const setOrder = (ids) => round && saveStops(round.id, ids);
   const addStop = (nid) => setOrder([...stopIds, nid]);
@@ -254,9 +322,6 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
     const j = i + dir; if (j < 0 || j >= stopIds.length) return;
     const a = [...stopIds]; [a[i], a[j]] = [a[j], a[i]]; setOrder(a);
   };
-
-  // polyline ของ route บนผัง (nodePath → จุด %)
-  const routePts = route.nodePath.map(id => nById[id]).filter(Boolean);
 
   if (!hasGraph) return (
     <div style={{ ...card, padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
@@ -328,6 +393,53 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                 <span style={{ color: '#ef4444', fontWeight: 700 }}>⚠ ถนนขาดช่วง — จุดจอดบางคู่ยังเชื่อมกันไม่ถึง (เพิ่มถนนที่หน้า Store/AMR)</span>
               )}
             </div>
+
+            {stopIds.length >= 2 && route.ok && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed var(--border2)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontSize: 12.5, color: 'var(--text2)' }}>
+                  📏 ระยะจริง: {realDist != null
+                    ? <b style={{ color: 'var(--text)' }}>{realDist >= 1000 ? (realDist / 1000).toFixed(2) + ' กม.' : realDist.toFixed(0) + ' ม.'}</b>
+                    : <span style={{ color: 'var(--muted)' }}>ยังไม่ตั้งมาตราส่วน (ตั้งที่ Store/AMR)</span>}
+                </div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 13 }}>🚗</span>
+                  <select value={vehCode} onChange={e => setVehCode(e.target.value)} style={{ flex: '1 1 110px', padding: '5px 7px', borderRadius: 7, fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                    {vehicles.map(v => <option key={v.code} value={v.code}>{v.icon} {v.name}</option>)}
+                  </select>
+                  {canManage ? (
+                    <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <input type="number" min="0" step="0.5" defaultValue={speedKmh || ''} key={(veh?.code || '') + String(speedKmh)}
+                        onBlur={e => { const v = parseFloat(e.target.value); if (v > 0 && veh) saveVehSpeed(veh.code, v); }}
+                        style={{ width: 54, padding: '4px 6px', borderRadius: 6, fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /> กม./ชม.
+                    </label>
+                  ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{speedKmh || '—'} กม./ชม.</span>}
+                </div>
+                {totalMin != null ? (
+                  <div style={{ fontSize: 12.5, color: 'var(--text)' }}>
+                    ⏱️ เวลา: <b>{fmtMin(totalMin)}</b>
+                    <span style={{ color: 'var(--muted)' }}> (วิ่ง {fmtMin(moveMin)}{dwellTotal > 0 ? ` + แวะ ${fmtMin(dwellTotal)}` : ''})</span>
+                  </div>
+                ) : <div style={{ fontSize: 12, color: 'var(--muted)' }}>⏱️ ตั้งมาตราส่วน + ความเร็ว เพื่อดูเวลา</div>}
+                {canManage && (
+                  <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    เวลาแวะต่อจุด:
+                    <input type="number" min="0" step="0.5" defaultValue={dwellMin || ''} key={'dwell' + dwellMin}
+                      onBlur={e => { const v = parseFloat(e.target.value) || 0; if (v !== dwellMin) saveDwell(v); }}
+                      style={{ width: 50, padding: '4px 6px', borderRadius: 6, fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /> น.
+                  </label>
+                )}
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 2 }}>
+                  <button onClick={() => { if (simFrac >= 1) setSimFrac(0); setSimRun(r => !r); }} style={{ padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: 800, background: 'var(--accent)', color: '#08130a', border: 'none' }}>
+                    {simRun ? '⏸ หยุด' : '▶ จำลองการวิ่ง'}
+                  </button>
+                  <button onClick={() => { setSimRun(false); setSimFrac(0); }} style={{ padding: '6px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>↺</button>
+                  {simMinNow != null && <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>⏱ {fmtMin(simMinNow)}</span>}
+                </div>
+                <div style={{ height: 5, background: 'var(--bg2)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${simFrac * 100}%`, background: 'var(--accent)', transition: 'width 0.1s linear' }} />
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -358,6 +470,10 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                 </div>
               );
             })}
+            {/* จุดจำลองการวิ่ง */}
+            {simPos && simFrac > 0 && (
+              <div style={{ position: 'absolute', left: `${simPos.x}%`, top: `${simPos.y}%`, transform: 'translate(-50%,-50%)', width: 24, height: 24, borderRadius: '50%', background: '#22d3ee', border: '2px solid #fff', boxShadow: '0 0 12px 3px rgba(34,211,238,0.7)', zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>🚚</div>
+            )}
           </div>
         ) : (
           <div style={{ ...card, padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>

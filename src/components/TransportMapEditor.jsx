@@ -3,7 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
-import { NODE_KINDS, nodeKind, buildAdj, edgeWeight } from '../utils/transportGraph'
+import { NODE_KINDS, nodeKind, buildAdj, edgeWeight, segIntersect, closestPointOnSeg } from '../utils/transportGraph'
 
 /* ─── TransportMapEditor — วาดกราฟถนน/ทางเดินรถบนผังใหญ่ (Store/AMR) ──────────
    ใช้รูปผังตัวเดียวกับ /factory-map (factory_map ฝั่ง Main) เป็นฉากหลัง
@@ -36,9 +36,16 @@ export default function TransportMapEditor() {
   const [busy, setBusy] = useState(false)
   const [chainLast, setChainLast] = useState(null)   // โหมดวาดต่อเนื่อง: node id ล่าสุดในเส้นที่กำลังวาด
   const [drawHover, setDrawHover] = useState(null)   // { x, y } ตำแหน่งเคอร์เซอร์ (เส้น preview)
+  const [mpu, setMpu] = useState(null)               // meters per unit (มาตราส่วน)
+  const [scaleMode, setScaleMode] = useState(false)  // กำลังตั้งมาตราส่วน (คลิก 2 จุด)
+  const [scalePts, setScalePts] = useState([])       // [{x,y}...] จุดอ้างอิงมาตราส่วน
+  const [scaleMeters, setScaleMeters] = useState('') // input เมตรจริงของ 2 จุด
 
   const wrapRef = useRef(null)
   const dragRef = useRef(null)                         // { id } กำลังลากย้าย node
+  const nodesRef = useRef([])                          // sync ล่าสุด (รวม node ที่เพิ่งสร้างในคลิกเดียวกัน) กัน stale
+  useEffect(() => { nodesRef.current = nodes }, [nodes])
+  const getNode = (id) => nodesRef.current.find(n => n.id === id)
 
   const resetChain = () => { setChainLast(null); setDrawHover(null) }
   // Esc = จบเส้นที่กำลังวาด
@@ -50,16 +57,18 @@ export default function TransportMapEditor() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [{ data: fm }, { data: nd }, { data: eg }, { data: ln }] = await Promise.all([
+    const [{ data: fm }, { data: nd }, { data: eg }, { data: ln }, { data: ts }] = await Promise.all([
       supabase.from('factory_map').select('image_url').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
       supabaseDR.from('transport_nodes').select('*'),
       supabaseDR.from('transport_edges').select('*'),
       supabase.from('production_lines').select('name').order('name'),
+      supabaseDR.from('transport_settings').select('meters_per_unit').eq('id', 1).maybeSingle(),
     ])
     setImageUrl(fm?.image_url || null)
     setNodes(nd || [])
     setEdges(eg || [])
     setLineNames((ln || []).map(l => l.name).filter(Boolean))
+    setMpu(ts?.meters_per_unit ?? null)
     setLoading(false)
   }, [])
   useEffect(() => { load() }, [load])
@@ -84,6 +93,7 @@ export default function TransportMapEditor() {
     const payload = { kind, x: +x.toFixed(2), y: +y.toFixed(2), is_active: true, updated_by_name: fullName }
     const { data, error } = await supabaseDR.from('transport_nodes').insert(payload).select('*').single()
     if (error) { toast.error(error.message); return null }
+    nodesRef.current = [...nodesRef.current, data]   // อัปเดตทันที กัน stale ในคลิกเดียวกัน
     setNodes(p => [...p, data])
     return data
   }
@@ -99,11 +109,26 @@ export default function TransportMapEditor() {
     for (const n of nodes) { if (n.is_active === false) continue; const d = Math.hypot(n.x - x, n.y - y); if (d < bd) { bd = d; best = n } }
     return best
   }
-  // โหมดวาดต่อเนื่อง: คลิก 1 ที = วางจุด (หรือ snap จุดเดิม) + ต่อเส้นจากจุดก่อนหน้า
+  // ถนนเดิมที่ (x,y) อยู่ใกล้ที่สุดในระยะ snap — คืน { edge, pt } หรือ null (ใช้วางจุดลงบนถนน = สามแยก)
+  const nearestEdge = (x, y) => {
+    let best = null, bd = SNAP_PCT
+    for (const e of edges) {
+      if (e.is_active === false) continue
+      const a = nById[e.a_node], b = nById[e.b_node]; if (!a || !b) continue
+      const c = closestPointOnSeg({ x, y }, a, b)
+      if (c.dist < bd) { bd = c.dist; best = { edge: e, pt: { x: c.x, y: c.y } } }
+    }
+    return best
+  }
+  // โหมดวาดต่อเนื่อง: คลิก 1 ที = วางจุด (หรือ snap จุดเดิม/แทรกลงบนถนนเดิม) + ต่อเส้นจากจุดก่อนหน้า
   const drawStep = async (x, y, existing) => {
     setBusy(true)
     let target = existing || nearestNode(x, y)
-    if (!target) target = await createNodeRow(x, y, 'junction')
+    if (!target) {
+      const onEdge = nearestEdge(x, y)
+      target = onEdge ? await splitEdgeAt(onEdge.edge, onEdge.pt)   // คลิกลงบนถนนเดิม → แตกเป็นสามแยก
+        : await createNodeRow(x, y, 'junction')
+    }
     if (target) {
       if (chainLast && chainLast !== target.id) await addEdge(chainLast, target.id, true)
       setChainLast(target.id)
@@ -129,17 +154,57 @@ export default function TransportMapEditor() {
     setEdges(p => p.filter(e => e.a_node !== id && e.b_node !== id))  // cascade ฝั่ง DB แล้ว sync local
     setSel(null)
   }
-  const addEdge = async (a, b, silent = false) => {
-    if (a === b) return
-    if (edges.some(e => (e.a_node === a && e.b_node === b) || (e.a_node === b && e.b_node === a))) {
+  // แทรกถนน 1 เส้น (ไม่ตรวจจุดตัด) — คืน row หรือ null
+  const insertEdge = async (a, b, curEdges) => {
+    if (a === b) return null
+    if ((curEdges || edges).some(e => (e.a_node === a && e.b_node === b) || (e.a_node === b && e.b_node === a))) return null
+    const { data, error } = await supabaseDR.from('transport_edges')
+      .insert({ a_node: a, b_node: b, bidir: true, is_active: true, updated_by_name: fullName }).select('*').single()
+    if (error) { toast.error(error.message); return null }
+    setEdges(p => [...p, data])
+    return data
+  }
+  // ตัดถนนเดิมตรงจุด pt → แทรก node (แยก) + แทน edge เดิมด้วย 2 ท่อน · คืน node ใหม่
+  const splitEdgeAt = async (edge, pt) => {
+    const node = await createNodeRow(pt.x, pt.y, 'junction')
+    if (!node) return null
+    const bidir = edge.bidir !== false
+    await supabaseDR.from('transport_edges').delete().eq('id', edge.id)
+    const { data: two, error } = await supabaseDR.from('transport_edges').insert([
+      { a_node: edge.a_node, b_node: node.id, bidir, is_active: true, updated_by_name: fullName },
+      { a_node: node.id, b_node: edge.b_node, bidir, is_active: true, updated_by_name: fullName },
+    ]).select('*')
+    if (error) { toast.error(error.message); return null }
+    setEdges(p => p.filter(e => e.id !== edge.id).concat(two || []))
+    return node
+  }
+  // เพิ่มถนน a→b พร้อม auto-junction: ถ้าเส้นใหม่ตัดถนนเดิม แทรกแยกตรงจุดตัดแล้วเชื่อมให้ครบ
+  const addEdge = async (aId, bId, silent = false) => {
+    if (aId === bId) return
+    if (edges.some(e => (e.a_node === aId && e.b_node === bId) || (e.a_node === bId && e.b_node === aId))) {
       if (!silent) toast.info('มีถนนเชื่อมคู่นี้แล้ว'); return
     }
-    try {
-      const { data, error } = await supabaseDR.from('transport_edges')
-        .insert({ a_node: a, b_node: b, bidir: true, is_active: true, updated_by_name: fullName }).select('*').single()
-      if (error) throw error
-      setEdges(p => [...p, data])
-    } catch (err) { toast.error(err.message) }
+    const A = getNode(aId), B = getNode(bId)
+    if (!A || !B) return
+    // หา edge เดิมที่ตัดกับ A-B (ข้ามเส้นที่แชร์ปลายกับ A หรือ B อยู่แล้ว)
+    const crossings = []
+    for (const e of edges) {
+      if (e.is_active === false) continue
+      if ([e.a_node, e.b_node].includes(aId) || [e.a_node, e.b_node].includes(bId)) continue
+      const P = getNode(e.a_node), Q = getNode(e.b_node)
+      if (!P || !Q) continue
+      const x = segIntersect(A, B, P, Q)
+      if (x) crossings.push({ edge: e, pt: { x: x.x, y: x.y }, t: x.t })
+    }
+    if (crossings.length === 0) { await insertEdge(aId, bId); return }
+    // เรียงตามระยะจาก A → สร้างแยกทีละจุด + ต่อเป็นลูกโซ่ A—X1—X2—…—B
+    crossings.sort((c1, c2) => c1.t - c2.t)
+    let prev = aId
+    for (const c of crossings) {
+      const jn = await splitEdgeAt(c.edge, c.pt)
+      if (jn) { await insertEdge(prev, jn.id); prev = jn.id }
+    }
+    await insertEdge(prev, bId)
   }
   const patchEdge = async (id, patch) => {
     setEdges(p => p.map(e => e.id === id ? { ...e, ...patch } : e))
@@ -154,9 +219,18 @@ export default function TransportMapEditor() {
     setSel(null)
   }
 
+  const addScalePt = (x, y) => setScalePts(prev => prev.length >= 2 ? [{ x, y }] : [...prev, { x, y }])
+  const saveScale = async (metersPerUnit) => {
+    const { error } = await supabaseDR.from('transport_settings')
+      .upsert({ id: 1, meters_per_unit: metersPerUnit, updated_by_name: fullName, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+    if (error) return toast.error(error.message)
+    setMpu(metersPerUnit); setScaleMode(false); setScalePts([]); setScaleMeters(''); toast.success('บันทึกมาตราส่วนแล้ว')
+  }
+
   // ─── pointer handlers ───
   const onMapClick = (e) => {
     if (!canEdit || dragRef.current) return
+    if (scaleMode) { const p = pctFromEvent(e.clientX, e.clientY); addScalePt(+p.x.toFixed(2), +p.y.toFixed(2)); return }
     if (e.target.closest('[data-node]')) return       // คลิกโดนจุด ไม่เพิ่มใหม่ (node handler จัดการ)
     const p = pctFromEvent(e.clientX, e.clientY)
     if (mode === 'node') addNode(p.x, p.y)
@@ -164,6 +238,7 @@ export default function TransportMapEditor() {
   }
   const onNodeClick = (e, node) => {
     e.stopPropagation()
+    if (scaleMode) { addScalePt(node.x, node.y); return }   // ใช้พิกัดจุดเป็นอ้างอิงมาตราส่วน
     if (!canEdit) { setSel({ type: 'node', id: node.id }); return }
     if (mode === 'delete') return delNode(node.id)
     if (mode === 'draw') { drawStep(node.x, node.y, node); return }   // คลิกจุดเดิม = ต่อถนนเข้าจุดนั้น (บรรจบ/สี่แยก)
@@ -176,7 +251,7 @@ export default function TransportMapEditor() {
     setSel({ type: 'node', id: node.id })
   }
   const onNodePointerDown = (e, node) => {
-    if (!canEdit || mode !== 'select') return
+    if (!canEdit || mode !== 'select' || scaleMode) return
     e.stopPropagation()
     dragRef.current = { id: node.id, moved: false }
     e.currentTarget.setPointerCapture?.(e.pointerId)
@@ -240,14 +315,22 @@ export default function TransportMapEditor() {
               </select>
             </label>
           )}
+          <button onClick={() => { setScaleMode(v => !v); setScalePts([]); setScaleMeters('') }}
+            style={btn(scaleMode)}>📏 มาตราส่วน</button>
           <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
             {nodes.length} จุด · {edges.length} เส้น · 📍 {graphStat.stops} จุดจอด{graphStat.isolated ? ` · ⚠ ${graphStat.isolated} จุดยังไม่เชื่อมถนน` : ''}
+            {mpu ? ` · 📏 1 หน่วย ≈ ${mpu.toFixed(2)} ม.` : ' · 📏 ยังไม่ตั้งมาตราส่วน'}
           </span>
         </div>
       ) : (
         <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>🔒 ดูอย่างเดียว (ต้องมีสิทธิ์ transport:manage เพื่อแก้)</div>
       )}
-      {canEdit && (
+      {canEdit && scaleMode && (
+        <div style={{ fontSize: 12, color: '#f0abfc', background: 'rgba(217,70,239,0.1)', border: '1px solid rgba(217,70,239,0.4)', borderRadius: 8, padding: '7px 11px' }}>
+          📏 คลิก 2 จุดบนผังที่รู้ระยะจริง (เช่น ความกว้างช่องจอด/ความยาวไลน์) แล้วกรอกระยะเป็นเมตร — {scalePts.length}/2 จุด
+        </div>
+      )}
+      {canEdit && !scaleMode && (
         <div style={{ fontSize: 12, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px' }}>
           {mode === 'draw' && (chainLast
             ? '✏️ คลิกจุดถัดไปตามแนวถนน — ทางเลี้ยว/หัวโค้งให้คลิกตรงมุมทุกจุด เส้นจะหักตาม (ไม่ตัดทะลุ) · คลิกใกล้จุดเดิม = บรรจบ/สี่แยก · กด "✓ จบเส้น" หรือ Esc เพื่อขึ้นเส้นใหม่'
@@ -298,7 +381,15 @@ export default function TransportMapEditor() {
               <line x1={nById[chainLast].x} y1={nById[chainLast].y} x2={drawHover.x} y2={drawHover.y}
                 stroke="#4ade80" strokeOpacity="0.8" strokeWidth="2" strokeDasharray="3 2" vectorEffect="non-scaling-stroke" />
             )}
+            {/* เส้นอ้างอิงมาตราส่วน */}
+            {scalePts.length === 2 && (
+              <line x1={scalePts[0].x} y1={scalePts[0].y} x2={scalePts[1].x} y2={scalePts[1].y}
+                stroke="#e879f9" strokeWidth="2.5" strokeDasharray="3 2" vectorEffect="non-scaling-stroke" />
+            )}
           </svg>
+          {scalePts.map((p, i) => (
+            <div key={`sp${i}`} style={{ position: 'absolute', left: `${p.x}%`, top: `${p.y}%`, transform: 'translate(-50%,-50%)', width: 14, height: 14, borderRadius: '50%', background: '#e879f9', border: '2px solid #fff', zIndex: 3 }} />
+          ))}
           {/* nodes (HTML markers) */}
           {nodes.map(n => {
             const k = nodeKind(n.kind)
@@ -376,6 +467,29 @@ export default function TransportMapEditor() {
           )}
         </div>
       </div>
+
+      {/* modal ตั้งมาตราส่วน */}
+      {canEdit && scaleMode && scalePts.length === 2 && (() => {
+        const unitDist = Math.hypot(scalePts[0].x - scalePts[1].x, scalePts[0].y - scalePts[1].y)
+        const m = parseFloat(scaleMeters)
+        const ok = m > 0 && unitDist > 1e-6
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: 'min(94vw, 380px)' }}>
+              <h3 style={{ margin: '0 0 10px', fontSize: 16, fontWeight: 900, color: 'var(--text)' }}>📏 ตั้งมาตราส่วน</h3>
+              <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>ระยะ 2 จุดที่เลือก = <b style={{ color: 'var(--text2)' }}>{unitDist.toFixed(2)}</b> หน่วยผัง</div>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ระยะจริงของ 2 จุดนี้ (เมตร)</span>
+              <input type="number" min="0" step="0.1" autoFocus value={scaleMeters} onChange={e => setScaleMeters(e.target.value)}
+                placeholder="เช่น 25" style={inp} />
+              {ok && <div style={{ fontSize: 12.5, color: 'var(--accent)', fontWeight: 700, marginTop: 8 }}>→ 1 หน่วยผัง ≈ {(m / unitDist).toFixed(2)} ม. (ทั้งผังกว้าง ≈ {(m / unitDist * 100).toFixed(0)} ม.)</div>}
+              <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
+                <button onClick={() => setScalePts([])} style={{ padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>เลือกจุดใหม่</button>
+                <button onClick={() => ok && saveScale(m / unitDist)} disabled={!ok} style={{ padding: '8px 18px', borderRadius: 8, cursor: ok ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 700, background: ok ? 'var(--accent)' : 'var(--bg2)', color: ok ? '#08130a' : 'var(--muted)', border: 'none' }}>💾 บันทึก</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
