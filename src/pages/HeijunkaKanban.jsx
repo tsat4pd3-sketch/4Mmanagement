@@ -450,7 +450,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
 }
 
 /* ─── Delivery Rounds Panel (compact, for cards/table views) ─────────────── */
-function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onReceive, roundAlloc, workDate, nowMs, canOperate }) {
+function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onReceive, roundAlloc, workDate, nowMs, canOperate, tripsFor }) {
   const [collapsed, setCollapsed] = useState(false);
 
   const confirmedSet = useMemo(() => {
@@ -507,6 +507,16 @@ function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onRece
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                         ตัดยอด {r.cutoff_time?.slice(0,5) || '—'} → ส่ง {r.delivery_time?.slice(0,5) || '—'} · 🎴 {alloc.totalKanban} การ์ด
                       </div>
+                      {(() => {
+                        const tp = tripsFor?.(r.id, alloc.totalKanban);
+                        if (!tp) return null;
+                        return (
+                          <div style={{ fontSize: 11, marginTop: 2, color: tp.trips > 1 ? '#f59e0b' : 'var(--muted)', fontWeight: tp.trips > 1 ? 700 : 400 }}
+                            title={tp.assigned ? 'คิดจากรถของคนขับที่มอบหมายรอบนี้ (หน้า มอบหมายขนส่ง)' : 'ยังไม่มอบหมายคนขับ — คิดจากรถที่จุมากสุด'}>
+                            {tp.veh.icon} {alloc.totalKanban} กล่อง ÷ จุ {tp.cap} = <b>{tp.trips} เที่ยว</b>{tp.assigned ? '' : ' (ยังไม่มอบหมายรถ)'}
+                          </div>
+                        );
+                      })()}
                       {confirmedBy && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 3 }}>✓ {confirmedBy}</div>}
                       {canOperate && !isConf && (
                         <button onClick={() => onConfirm(r, parts)} disabled={confirming === r.id}
@@ -1125,6 +1135,7 @@ export default function HeijunkaKanban() {
   const [lineStock, setLineStock] = useState({});
   const [rounds, setRounds]       = useState([]);
   const [deliveries, setDeliveries] = useState([]);
+  const [transport, setTransport] = useState({ assigns: [], carriers: [], vehicles: [] }); // มอบหมายคนขับ+ความจุรถ (คำนวณเที่ยว)
   const [confirming, setConfirming] = useState(null);
   const [receiveModal, setReceiveModal] = useState(null); // { round, parts, mode }
   const [receiving, setReceiving] = useState(false);
@@ -1388,13 +1399,33 @@ export default function HeijunkaKanban() {
   useEffect(() => { load(); }, [load]);
 
   const loadDeliveries = useCallback(async () => {
-    const [{ data: rds }, { data: dlvs }] = await Promise.all([
+    const [{ data: rds }, { data: dlvs }, { data: asg }, { data: car }, { data: veh }] = await Promise.all([
       supabaseDR.from('kanban_delivery_rounds').select('*').eq('is_active', true).order('line_name').order('round_no'),
       supabaseDR.from('kanban_deliveries').select('*').eq('work_date', workDate),
+      // ฝั่ง Transport (มอบหมายคนขับ + ความจุรถ) — ใช้คำนวณ load กี่เที่ยวต่อรอบ (best-effort)
+      supabaseDR.from('transport_round_assignments').select('round_id, carrier_id').eq('work_date', workDate),
+      supabaseDR.from('transport_carriers').select('id, vehicles').eq('is_active', true),
+      supabaseDR.from('transport_vehicles').select('*').eq('is_active', true).order('sort_order'),
     ]);
     setRounds(rds || []);
     setDeliveries(dlvs || []);
+    setTransport({ assigns: asg || [], carriers: car || [], vehicles: veh || [] });
   }, [workDate]);
+
+  // load รอบส่ง: การ์ด kanban N ใบ (1 การ์ด = 1 กล่อง/packaging) ÷ ความจุรถ = กี่เที่ยว
+  // รถที่ใช้คิด: รอบที่มอบหมายคนขับแล้ว (หน้า /transport) = รถของคนขับคนนั้น · ยังไม่มอบหมาย = รถที่จุมากสุดในระบบ
+  // ยังไม่ตั้งความจุรถเลย (migration 20260803 / ช่อง "จุ กล่อง/เที่ยว" ใน /transport) = ไม่แสดง
+  const tripsFor = useCallback((roundId, cards) => {
+    if (!cards || !transport.vehicles.length) return null;
+    const asg = transport.assigns.find(a => a.round_id === roundId);
+    const carrier = asg?.carrier_id ? transport.carriers.find(c => c.id === asg.carrier_id) : null;
+    const codes = carrier?.vehicles?.length ? carrier.vehicles : transport.vehicles.map(v => v.code);
+    const cand = codes.map(c => transport.vehicles.find(v => v.code === c)).filter(v => v && Number(v.capacity_pkg) > 0);
+    if (!cand.length) return null;
+    const veh = cand.reduce((b, v) => (Number(v.capacity_pkg) > Number(b.capacity_pkg) ? v : b), cand[0]);
+    const cap = Number(veh.capacity_pkg);
+    return { trips: Math.ceil(cards / cap), veh, cap, assigned: !!carrier };
+  }, [transport]);
 
   useEffect(() => { loadDeliveries(); }, [loadDeliveries]);
   useEffect(() => { loadPull(); }, [loadPull]);
@@ -1869,7 +1900,7 @@ export default function HeijunkaKanban() {
       {/* Delivery Rounds Panel — only for cards/table view, board has it built-in */}
       {viewMode !== 'board' && viewMode !== 'pull' && viewMode !== 'unified' && (
         <DeliveryRoundsPanel rounds={rounds} deliveries={deliveries} onConfirm={confirmRound} confirming={confirming}
-          onReceive={openReceive} roundAlloc={view.roundAlloc} workDate={workDate} nowMs={nowMs} canOperate={canOperate} />
+          onReceive={openReceive} roundAlloc={view.roundAlloc} workDate={workDate} nowMs={nowMs} canOperate={canOperate} tripsFor={tripsFor} />
       )}
 
       {receiveModal && (
