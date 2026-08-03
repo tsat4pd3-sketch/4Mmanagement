@@ -5,6 +5,7 @@ import { UserContext } from '../App';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { LINE_TYPES, FLOW_MODES } from '../utils/lineTypes';
+import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
@@ -126,6 +127,59 @@ export default function LineSetup({ embedded = false } = {}) {
   // หัวหน้างานประจำไลน์ (head_name) — ใช้ในใบค่าฝีมือ · ผู้เซ็นราย section ย้ายไปตั้งที่ผังองค์กร (OrgSetup)
   const [signerHead,    setSignerHead]    = useState('');
 
+
+  // ─── Undo/Redo — จุดบนผังไลน์ (จุดงาน+ทักษะ / WIP / เครื่องจักร / เส้น flow) ───
+  // snapshot ทั้ง 4 ชุดของไลน์ที่เลือก · restore = diff แล้วเขียนย้อนลง DB · สลับไลน์ = ล้าง history
+  const mapRef = useRef({ stations: [], wipPoints: [], machinePoints: [], flowLinks: [] });
+  useEffect(() => { mapRef.current = { stations, wipPoints, machinePoints, flowLinks }; }, [stations, wipPoints, machinePoints, flowLinks]);
+  const ST_F = ['line_name', 'station_name', 'pos_top', 'pos_left', 'skill_allowance', 'skill_allowance_type'];
+  const SR_F = ['station_id', 'skill_name', 'min_score'];
+  const WIP_F = ['line_name', 'point_name', 'point_type', 'mat_no', 'material_category', 'packaging_no', 'packaging_type', 'pos_top', 'pos_left', 'min_qty', 'max_qty', 'current_qty'];
+  const MP_F = ['line_name', 'machine_no', 'pos_top', 'pos_left', 'redundancy_group'];
+  const FL_F = ['line_name', 'from_machine_point_id', 'to_machine_point_id'];
+  const pickF = (row, fields) => Object.fromEntries(fields.map(f => [f, row[f] ?? null]));
+  const mapSnap = () => ({
+    line: selectedLine,
+    stations: mapRef.current.stations.map(s => ({ ...s, station_requirements: (s.station_requirements || []).map(r => ({ ...r })) })),
+    wipPoints: mapRef.current.wipPoints.map(p => ({ ...p })),
+    machinePoints: mapRef.current.machinePoints.map(p => ({ ...p })),
+    flowLinks: mapRef.current.flowLinks.map(l => ({ ...l })),
+  });
+  const diffSets = (snapRows, curRows, fields) => {
+    const sM = new Map(snapRows.map(r => [r.id, r])), cM = new Map(curRows.map(r => [r.id, r]));
+    return {
+      del: curRows.filter(r => !sM.has(r.id)).map(r => r.id),
+      ins: snapRows.filter(r => !cM.has(r.id)).map(r => ({ id: r.id, ...pickF(r, fields) })),
+      upd: snapRows.filter(r => { const c = cM.get(r.id); return c && fields.some(f => (c[f] ?? null) !== (r[f] ?? null)); }),
+    };
+  };
+  const applyMapSnapshot = async (snap) => {
+    if (snap.line !== selectedLine) return false;   // สลับไลน์แล้ว (history ถูก clear ตอนสลับอยู่แล้ว — กันเผื่อ)
+    const cur = mapRef.current;
+    const curSr = cur.stations.flatMap(s => s.station_requirements || []);
+    const snapSr = snap.stations.flatMap(s => s.station_requirements || []);
+    const st = diffSets(snap.stations, cur.stations, ST_F);
+    const sr = diffSets(snapSr, curSr, SR_F);
+    const wp = diffSets(snap.wipPoints, cur.wipPoints, WIP_F);
+    const mp = diffSets(snap.machinePoints, cur.machinePoints, MP_F);
+    const fl = diffSets(snap.flowLinks, cur.flowLinks, FL_F);
+    try {
+      // ลำดับตาม FK: ลบ ลูก→แม่ (links/requirements ก่อน points/stations) · คืน แม่→ลูก
+      for (const [tbl, ids] of [['machine_flow_links', fl.del], ['station_requirements', sr.del], ['machine_points', mp.del], ['wip_buffer_points', wp.del], ['workstations', st.del]]) {
+        if (ids.length) { const { error } = await supabase.from(tbl).delete().in('id', ids); if (error) throw error; }
+      }
+      for (const [tbl, rows] of [['workstations', st.ins], ['station_requirements', sr.ins], ['machine_points', mp.ins], ['wip_buffer_points', wp.ins], ['machine_flow_links', fl.ins]]) {
+        if (rows.length) { const { error } = await supabase.from(tbl).insert(rows); if (error) throw error; }
+      }
+      for (const [tbl, rows, fields] of [['workstations', st.upd, ST_F], ['station_requirements', sr.upd, SR_F], ['machine_points', mp.upd, MP_F], ['wip_buffer_points', wp.upd, WIP_F], ['machine_flow_links', fl.upd, FL_F]]) {
+        for (const r of rows) { const { error } = await supabase.from(tbl).update(pickF(r, fields)).eq('id', r.id); if (error) throw error; }
+      }
+    } catch (err) { toast.error('ย้อนไม่สำเร็จ: ' + err.message); await fetchLineData(); return false; }
+    await fetchLineData();
+    return true;
+  };
+  const hist = useUndoHistory({ snapOf: mapSnap, applySnapshot: applyMapSnapshot, enabled: canEdit });
+  useEffect(() => { hist.clear(); }, [selectedLine]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const skillAllowanceTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
 
@@ -460,6 +514,7 @@ export default function LineSetup({ embedded = false } = {}) {
     const onUp = async () => {
       const { kind, id } = dragInfo;
       if (dragMovedRef.current && dragPosRef.current) {
+        hist.pushHistory();   // state ยังเป็นตำแหน่งก่อนลาก (ตอนลากแสดงผ่าน dragPos overlay) — snapshot คืนที่เดิมได้
         const table = kind === 'station' ? 'workstations' : kind === 'wip' ? 'wip_buffer_points' : 'machine_points';
         await supabase.from(table).update({ pos_top: dragPosRef.current.top, pos_left: dragPosRef.current.left }).eq('id', id);
         await fetchLineData();
@@ -576,6 +631,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const handleSaveStation = async () => {
     if (!formData.name) return toast.error('กรุณาระบุชื่อจุดงาน');
+    hist.pushHistory();
     const existingStation = stations.find(s => s.id === formData.id);
     const payload = {
       line_name: selectedLine,
@@ -612,6 +668,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const deleteStation = async (id) => {
     if (!window.confirm('ยืนยันการลบจุดงานนี้?')) return;
+    hist.pushHistory();
     await supabase.from('station_requirements').delete().eq('station_id', id);
     const { error } = await supabase.from('workstations').delete().eq('id', id);
     if (!error) fetchLineData();
@@ -637,6 +694,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const handleSaveWip = async () => {
     if (!wipForm.point_name) return toast.error('กรุณาระบุชื่อจุด WIP');
+    hist.pushHistory();
     const existing = wipPoints.find(p => p.id === wipForm.id);
     const isMaterial = wipForm.point_type === 'material';
     const payload = {
@@ -665,6 +723,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const deleteWipPoint = async (id) => {
     if (!window.confirm('ยืนยันการลบจุด WIP นี้?')) return;
+    hist.pushHistory();
     const { error } = await supabase.from('wip_buffer_points').delete().eq('id', id);
     if (!error) fetchLineData();
   };
@@ -693,6 +752,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const handleSaveMachine = async () => {
     if (!machineForm.machine_no) return toast.error('กรุณาเลือกเครื่องจักร');
+    hist.pushHistory();
     const existing = machinePoints.find(p => p.id === machineForm.id);
     const payload = {
       line_name:   selectedLine,
@@ -712,6 +772,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const deleteMachinePoint = async (id) => {
     if (!window.confirm('ยืนยันการลบจุดเครื่องจักรนี้?')) return;
+    hist.pushHistory();
     const { error } = await supabase.from('machine_points').delete().eq('id', id);
     if (!error) fetchLineData();
   };
@@ -726,6 +787,7 @@ export default function LineSetup({ embedded = false } = {}) {
     );
     setConnectFrom(null);
     if (exists) return;
+    hist.pushHistory();
     const { error } = await supabase.from('machine_flow_links').insert([{
       line_name: selectedLine, from_machine_point_id: connectFrom, to_machine_point_id: id,
     }]);
@@ -735,6 +797,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const deleteFlowLink = async (id) => {
     if (!window.confirm('ยืนยันการลบเส้นเชื่อมต่อนี้?')) return;
+    hist.pushHistory();
     const { error } = await supabase.from('machine_flow_links').delete().eq('id', id);
     if (!error) fetchLineData();
   };
@@ -780,13 +843,19 @@ export default function LineSetup({ embedded = false } = {}) {
               {t.label}
             </button>
           ))}
+          {canEdit && (
+            <>
+              <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={{ ...undoBtnStyle(hist.canUndo && !hist.busy), marginLeft: 'auto' }} title="ย้อนกลับ — จุดบนผังไลน์นี้ (Ctrl+Z)">↩️ Undo</button>
+              <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="ทำซ้ำ (Ctrl+Y)">↪️ Redo</button>
+            </>
+          )}
           <button
             onClick={() => setShowPills(v => !v)}
             title={'แสดง/ซ่อนป้ายชื่อทุกจุดบนผัง (เหมือนหน้าแสดงผลจริง)\nหมุดที่กำลังเลือก/แก้ไขโชว์ป้ายเสมอ'}
             style={{
               position: 'relative',
               padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-              marginLeft: 'auto',
+              marginLeft: canEdit ? 0 : 'auto',
               border: `1px solid ${showPills ? 'var(--accent)' : 'var(--border2)'}`,
               background: showPills ? 'var(--accent-dim)' : 'var(--bg2)',
               color: showPills ? 'var(--accent)' : 'var(--text2)',

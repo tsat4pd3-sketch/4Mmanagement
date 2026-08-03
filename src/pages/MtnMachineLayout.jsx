@@ -6,6 +6,7 @@ import { can } from '../utils/permissions'
 import { dueStatus, STATUS_META, DEPT_LABEL, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
 import { toast } from '../components/Toast'
+import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory'
 import MachineFloorMap from '../components/MachineFloorMap'
 import DowntimeSiren from '../components/DowntimeSiren'
 import FactoryMap from './FactoryMap'
@@ -107,6 +108,32 @@ export default function MtnMachineLayout({ setupMode = false }) {
   const [armedMachine, setArmedMachine] = useState(null) // machine ที่กำลังจะวาง (สร้าง shadow jig ตอนวาง)
   const [busy, setBusy] = useState(false)
   const fileRef = useRef(null)
+
+  // ─── Undo/Redo — เฉพาะจุดอุปกรณ์บนผังโซนปัจจุบัน (pm_facility_points) ───
+  // เพิ่ม/ลบโซน + อัปโหลดรูป ไม่เข้า history (มีไฟล์ใน storage ย้อนคืนไม่ได้ — ใช้ confirm dialog กันพลาดแทน)
+  const facPointsRef = useRef([])
+  useEffect(() => { facPointsRef.current = facPoints }, [facPoints])
+  const areaIdRef = useRef(null)
+  useEffect(() => { areaIdRef.current = areaId }, [areaId])
+  const pointSnap = () => ({ areaId: areaIdRef.current, points: facPointsRef.current.map(p => ({ ...p })) })
+  const applyPointSnapshot = async (snap) => {
+    if (snap.areaId !== areaIdRef.current) return false   // สลับโซนไปแล้ว (กันลบจุดโซนอื่น — history ถูก clear ตอนสลับอยู่แล้ว)
+    const cur = facPointsRef.current
+    const sM = new Map(snap.points.map(p => [p.id, p])), cM = new Map(cur.map(p => [p.id, p]))
+    const del = cur.filter(p => !sM.has(p.id)).map(p => p.id)
+    const ins = snap.points.filter(p => !cM.has(p.id)).map(p => ({ id: p.id, area_id: snap.areaId, jig_id: p.jig_id, pos_top: p.pos_top, pos_left: p.pos_left }))
+    const upd = snap.points.filter(p => { const c = cM.get(p.id); return c && (c.pos_top !== p.pos_top || c.pos_left !== p.pos_left) })
+    try {
+      if (del.length) { const { error } = await supabaseDR.from('pm_facility_points').delete().in('id', del); if (error) throw error }
+      if (ins.length) { const { error } = await supabaseDR.from('pm_facility_points').insert(ins); if (error) throw error }
+      for (const p of upd) { const { error } = await supabaseDR.from('pm_facility_points').update({ pos_top: p.pos_top, pos_left: p.pos_left }).eq('id', p.id); if (error) throw error }
+    } catch (err) { toast.error('ย้อนไม่สำเร็จ: ' + err.message); return false }
+    facPointsRef.current = snap.points
+    setFacPoints(snap.points)
+    return true
+  }
+  const hist = useUndoHistory({ snapOf: pointSnap, applySnapshot: applyPointSnapshot, enabled: canEdit && view === 'facility' })
+  useEffect(() => { hist.clear() }, [areaId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name, parent_line_name').order('name').then(({ data }) => {
@@ -232,17 +259,20 @@ export default function MtnMachineLayout({ setupMode = false }) {
       jigId = jig.id
     }
     if (!jigId) return
+    hist.pushHistory()
     const { error } = await supabaseDR.from('pm_facility_points').insert({ area_id: areaId, jig_id: jigId, pos_top: pct.top, pos_left: pct.left })
     if (error) return toast.error(error.message.includes('duplicate') ? 'อุปกรณ์นี้อยู่บนโซนนี้แล้ว' : error.message)
     setArmedJig(null); setArmedMachine(null); loadFacilityArea()
   }
   const movePoint = async (pointId, pct) => {
     if (!canEdit) return
+    hist.pushHistory()
     setFacPoints(prev => prev.map(p => p.id === pointId ? { ...p, pos_top: pct.top, pos_left: pct.left } : p))
     await supabaseDR.from('pm_facility_points').update({ pos_top: pct.top, pos_left: pct.left }).eq('id', pointId)
   }
   const removePoint = async (pointId) => {
     if (!canEdit) return
+    hist.pushHistory()
     setFacPoints(prev => prev.filter(p => p.id !== pointId))
     await supabaseDR.from('pm_facility_points').delete().eq('id', pointId)
   }
@@ -314,6 +344,12 @@ export default function MtnMachineLayout({ setupMode = false }) {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button onClick={() => setDept('all')} style={S.chip(dept === 'all', 'var(--accent)')}>ทั้งหมด</button>
         {teams.map(t => <button key={t.key} onClick={() => setDept(t.key)} style={S.chip(dept === t.key, t.color || '#4d9fff')}>{t.icon || DEPT_ICON[t.key] || ''} {t.label || DEPT_LABEL[t.key]}</button>)}
+        {view === 'facility' && canEdit && (
+          <>
+            <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title="ย้อนกลับ — จุดบนผังโซนนี้ (Ctrl+Z)">↩️ Undo</button>
+            <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="ทำซ้ำ (Ctrl+Y)">↪️ Redo</button>
+          </>
+        )}
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {Object.entries(STATUS_META).map(([k, m]) => (
