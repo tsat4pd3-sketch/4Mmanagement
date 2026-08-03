@@ -13,6 +13,13 @@ import { supabase } from '../supabaseClient';
 let cache = null; // Map<`${role}:${permission_key}`, boolean>
 let loadingPromise = null;
 
+// แอดมินหน่วยงาน (department admin) — flag ต่อ user ซ้อนบน role เดิม (2026-08-03)
+//   ตั้งจาก App.jsx ตอน fetchProfile (เหมือน setDrActorName) → hasPermission อ่าน bucket 'dept_admin' เพิ่ม
+//   เก็บเป็น module-level กัน thread ผ่าน can() หลายร้อยจุด · ปรับสิทธิ์ bucket ที่ /permissions
+let _deptAdmin = false;
+export function setDeptAdmin(v) { _deptAdmin = !!v; }
+export function isDeptAdminActive() { return _deptAdmin; }
+
 export async function loadPermissions(forceRefresh = false) {
   if (cache && !forceRefresh) return cache;
   if (loadingPromise && !forceRefresh) return loadingPromise;
@@ -37,7 +44,11 @@ export async function loadPermissions(forceRefresh = false) {
 export function hasPermission(permissionKey, role) {
   if (role === 'admin') return true;
   if (!cache) return false; // ยังไม่โหลด → ปิดกั้นไว้ก่อน (fail closed)
-  return cache.get(`${role}:${permissionKey}`) === true;
+  if (cache.get(`${role}:${permissionKey}`) === true) return true;
+  // แอดมินหน่วยงาน — ได้สิทธิ์เพิ่มตาม bucket 'dept_admin' (คุมที่ /permissions)
+  // bucket มีเฉพาะ action (ไม่มี page:*) → ไม่ปลดล็อกหน้าใหม่ scope ยังจำกัดตาม base role
+  if (_deptAdmin && cache.get(`dept_admin:${permissionKey}`) === true) return true;
+  return false;
 }
 
 export function canAccessPage(path, role) {
