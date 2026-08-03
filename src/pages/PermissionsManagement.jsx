@@ -43,6 +43,8 @@ const PAGE_GROUPS = [
       { key: 'page:/planner-sales', label: 'Planner & Sales' },
       { key: 'page:/rundown-stock', label: 'Rundown Stock' },
       { key: 'page:/customer-demand', label: 'Delivery' },
+      { key: 'page:/store-monitor', label: 'เฝ้าระวังสต๊อก (Abnormal)' },
+      { key: 'page:/transport',    label: 'มอบหมายขนส่ง (Transport)' },
     ],
   },
   {
@@ -54,6 +56,7 @@ const PAGE_GROUPS = [
       { key: 'page:/pm-setup',    label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร' },
       { key: 'page:/mtn-layout',  label: 'ผังเครื่องจักร (ซ่อมบำรุง)' },
       { key: 'page:/pm-forecast', label: 'PM ล่วงหน้า (Planner)' },
+      { key: 'page:/pm-coordination', label: 'แผนประสานงาน PM (แจ้งผลิต)' },
     ],
   },
   {
@@ -69,6 +72,8 @@ const PAGE_GROUPS = [
     pages: [
       { key: 'page:/report',    label: 'รายงาน' },
       { key: 'page:/event-log', label: 'CQI-15 Event Log' },
+      { key: 'page:/product-history', label: 'ประวัติผลิต (by Product)' },
+      { key: 'page:/order-trace', label: 'สอบกลับ Order (Trace)' },
     ],
   },
   {
@@ -83,6 +88,7 @@ const PAGE_GROUPS = [
       { key: 'page:/linesetup',         label: 'ตั้งค่าผังไลน์' },
       { key: 'page:/machine-database',  label: 'ฐานข้อมูลเครื่องจักร' },
       { key: 'page:/process-setup',     label: 'กระบวนการผลิต (Process Types)' },
+      { key: 'page:/layout-setup',      label: 'ตั้งค่าผัง/Floorplan' },
       { key: 'page:/shift-organize',    label: 'ตารางกะ' },
       { key: 'page:/company-calendar',  label: 'ปฏิทินบริษัท' },
       { key: 'page:/notification-config', label: 'ตั้งค่าการแจ้งเตือน' },
