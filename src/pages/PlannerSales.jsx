@@ -773,23 +773,26 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
   useEffect(() => { load(); }, [load]);
 
   // ค่าพารามิเตอร์ที่ใช้จริง = edit ชั่วคราว > param ที่บันทึกไว้ > default จาก master/ค่ากลาง
+  // firstPos: ตัวแรกที่มีค่าจริง (>0) จาก master หลายแหล่ง — ไม่ต้องกรอกเองถ้ามีในฐานข้อมูล
+  const firstPos = (...xs) => { for (const x of xs) { const n = Number(x); if (x != null && x !== '' && n > 0) return x; } return ''; };
   const paramOf = useCallback((mat) => {
-    const p = params[mat] || {}, e = edits[mat] || {}, pm = pmMap[mat] || {}, dr = drMap[mat] || {};
+    const p = params[mat] || {}, e = edits[mat] || {}, pm = pmMap[mat] || {}, dr = drMap[mat] || {}, ks = ksMap[mat] || {};
     const g = (k, dflt) => e[k] ?? p[k] ?? dflt;
     return {
       prep_time_min:  g('prep_time_min', 30),
       fluctuation_pct: g('fluctuation_pct', 7),
-      packaging:      g('packaging', pm.qty_per_pkg ?? ''),
+      // PKG (จำนวน/กล่อง) = คุณสมบัติสินค้า → ดึงจาก master: parts_master.qty_per_pkg → kanban_standards.qty_per_kanban
+      packaging:      g('packaging', firstPos(pm.qty_per_pkg, ks.qty_per_kanban)),
       delivery_cycle: g('delivery_cycle', 1),
       capacity_pc_hr: g('capacity_pc_hr', dr.cycle_time_sec ? Math.round(3600 / dr.cycle_time_sec) : ''),
-      lot_size:       g('lot_size', 1),
+      lot_size:       g('lot_size', firstPos(ks.lot_size, 1) || 1),
       safety_days:    g('safety_days', 1),
       // production (Type B)
       process_count:  g('process_count', 1),
       lot_qty:        g('lot_qty', ''),
       setup_time_sec: g('setup_time_sec', 0),
     };
-  }, [params, edits, pmMap, drMap]);
+  }, [params, edits, pmMap, drMap, ksMap]);
 
   // แยกพาร์ทตามกระบวนการผลิต (process_type) — PI (สั่งผลิต press) กับ PW (เบิกถอน) ไม่คำนวณพาร์ทร่วมกัน
   //   Production = metal_forming (ปั๊ม/lot — งานปั๊มขายตรงเป็น FG เบอร์ 1 ก็เข้าที่นี่ ไม่ดูเลข MAT)
