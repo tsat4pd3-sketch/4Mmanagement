@@ -50,7 +50,7 @@ const METRICS = {
   productivity: {
     // เทียบ "เป้า ณ เวลาปัจจุบัน (on-time)" ไม่ใช่เป้าเต็มกะ — % จึงบอกว่า "ทันจังหวะมั้ย" แบบ real-time
     // ฟอร์แมต: ทำได้ / เป้า ณ เวลานี้ / เป้าเต็มกะ · สี = ทำได้เทียบเป้า ณ เวลานี้
-    label: '📦 ยอดผลิต', worstFirst: true,
+    label: '📦 ยอดผลิต', worstFirst: true, facilityNA: true,
     // เป้า 0 = ไม่มี order → ไม่มี pace ให้จัดอันดับ (คืน null → ลงไปท้ายรายการ ไม่ปนกับไลน์ตกจังหวะ)
     value: s => s.target > 0 ? (s.onTimeTarget >= 1 ? Math.round(s.actual / s.onTimeTarget * 100) : 100) : null,
     // แยกให้เห็นชัด: มี order → ทำได้/เป้า ณ เวลานี้/เต็มกะ · เปิดกะแต่ยังไม่มี order · ยังไม่เปิดกะ
@@ -58,13 +58,13 @@ const METRICS = {
     cat: s => s.target > 0 ? (s.onTimeTarget < 1 ? 'ok' : (() => { const p = s.actual / s.onTimeTarget * 100; return p >= 95 ? 'good' : p >= 80 ? 'ok' : 'bad'; })()) : (s.hasOpen ? 'waiting' : 'idle'),
   },
   oee: {
-    label: '⚙️ OEE', worstFirst: true,
+    label: '⚙️ OEE', worstFirst: true, facilityNA: true,
     value: s => s.oee,
     text: s => s.oee != null ? `OEE ${Math.round(s.oee)}%${s.oeeLive ? ' (สด)' : ''}` : (s.hasOpen ? 'กำลังเก็บข้อมูล...' : ''),
     cat: s => s.oee == null ? 'idle' : s.oee >= 80 ? 'good' : s.oee >= 65 ? 'ok' : 'bad',
   },
   breakdown: {
-    label: '🔧 Downtime', worstFirst: true, desc: true,
+    label: '🔧 Downtime', worstFirst: true, desc: true, facilityNA: true,
     // sidebar อันดับ = สะสมทั้งวันงาน (นอกแผน + รวมเวลาที่กำลังหยุด)
     value: s => s.dtMin,
     text: s => s.dtActive ? `🔴 หยุด ${s.dtMin} น.` : s.dtMin > 0 ? `${s.dtMin} นาที` : (s.hasOpen ? 'ไม่มี' : ''),
@@ -75,20 +75,20 @@ const METRICS = {
     mapText: s => s.dtActive ? `🔴 หยุด ${s.dtMinHour} น.` : s.dtMinHour > 0 ? `${s.dtMinHour} น./ชม.นี้` : (s.hasOpen ? '✓ ปกติ' : ''),
   },
   ng: {
-    label: '🚫 ของเสีย', worstFirst: true, desc: true,
+    label: '🚫 ของเสีย', worstFirst: true, desc: true, facilityNA: true,
     value: s => s.ng,
     text: s => s.ng > 0 ? `NG ${s.ng}` : (s.hasOpen ? 'NG 0' : ''),
     cat: s => !s.hasOpen && s.ng === 0 ? 'idle' : s.ng === 0 ? 'good' : s.ng < 20 ? 'ok' : 'bad',
   },
   manpower: {
-    label: '👷 คน/เข้างาน', worstFirst: false,
+    label: '👷 คน/เข้างาน', worstFirst: false, facilityNA: true,
     value: s => s.headTotal > 0 ? Math.round(s.present / s.headTotal * 100) : null,
     text: s => s.headTotal > 0 ? `${s.present}/${s.headTotal} คน${s.ppeBad ? ` · ⚠PPE ${s.ppeBad}` : ''}` : '',
     cat: s => s.headTotal === 0 ? 'idle' : (() => { const p = s.present / s.headTotal * 100; return p >= 95 ? 'good' : p >= 80 ? 'ok' : 'bad'; })(),
   },
   stationfill: {
     // 🎯 จุดงานเข้าประจำ — % ของจุดงาน (workstations) ที่มีคนเข้าประจำจริง (assigned_line ของ log ที่มาทำงาน)
-    label: '🎯 จุดงานเข้าประจำ', worstFirst: false,
+    label: '🎯 จุดงานเข้าประจำ', worstFirst: false, facilityNA: true,
     value: s => s.stationTotal > 0 ? Math.round(s.stationFilled / s.stationTotal * 100) : null,
     text: s => s.stationTotal > 0 ? `${s.stationFilled}/${s.stationTotal} จุด` : '',
     cat: s => !s.stationTotal ? 'idle' : (() => { const p = s.stationFilled / s.stationTotal * 100; return p >= 90 ? 'good' : p >= 70 ? 'ok' : 'bad'; })(),
@@ -582,12 +582,14 @@ export default function FactoryMap({ setupMode = false }) {
     return agg;
   };
   const catColor = (name) => CAT[M.cat(stOf(name))];
+  const regCat = (st) => (st.isFac && M.facilityNA) ? "idle" : (M.mapCat || M.cat)(st);
+  const regText = (st) => (st.isFac && M.facilityNA) ? "🔧 Facility" : (M.mapText || M.text)(st);
 
   // side panel: ไลน์ที่มีกะวันนี้ ∪ ไลน์ที่ตีกรอบไว้ — เรียงตาม metric (ปัญหาขึ้นบน)
   const ranked = useMemo(() => {
     // แสดงไลน์บนสุด (หน่วยปฏิบัติการ) + กรอบที่ไม่ใช่ไลน์ลูก — ไม่ลิสต์ลูกแยก (รวมใน rollup ของแม่แล้ว กันนับซ้ำในสายตา)
     const names = new Set([...topNames, ...regions.map(r => r.line_name).filter(n => !parentOf[n])]);
-    const arr = [...names].map(name => ({ name, st: stOf(name), val: M.value(stOf(name)), cat: M.cat(stOf(name)) }));
+    const arr = [...names].map(name => { const st = stOf(name); return { name, st, val: M.value(st), cat: regCat(st) }; });
     arr.sort((a, b) => {
       const av = a.val, bv = b.val;
       if (av == null && bv == null) return a.name.localeCompare(b.name);
@@ -821,7 +823,7 @@ export default function FactoryMap({ setupMode = false }) {
 
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
               {regions.map(r => {
-                const cat = (M.mapCat || M.cat)(stOf(r.line_name)); const meta = CAT[cat]; const hl = highlight === r.line_name || hoverLine === r.line_name;
+                const cat = regCat(stOf(r.line_name)); const meta = CAT[cat]; const hl = highlight === r.line_name || hoverLine === r.line_name;
                 return (
                   <polygon key={r.id} data-region points={ptsStr(r.points)}
                     className={meta.blink ? 'region-alarm' : undefined}
@@ -846,7 +848,7 @@ export default function FactoryMap({ setupMode = false }) {
 
             {/* ป้าย = การ์ดทึบมีขอบสีสถานะ (อ่านออกทุกพื้นหลัง) + จุดแดงถ้า downtime ค้าง */}
             {regions.map(r => {
-              const [cx, cy] = labelAnchor(r.points); const st = stOf(r.line_name); const meta = CAT[(M.mapCat || M.cat)(st)]; const txt = (M.mapText || M.text)(st);
+              const [cx, cy] = labelAnchor(r.points); const st = stOf(r.line_name); const meta = CAT[regCat(st)]; const txt = regText(st);
               return (
                 // เกาะขอบบนของกรอบ (translateY 2px = อยู่ใต้เส้นขอบบนนิดเดียว) ไม่ทับกลางผังไลน์
                 <div key={`lbl-${r.id}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%, 2px)', pointerEvents: 'none', maxWidth: '30%' }}>
@@ -979,7 +981,7 @@ export default function FactoryMap({ setupMode = false }) {
                     {ranked.length === 0 ? (
                       <div style={{ fontSize: 12, color: 'var(--muted)', padding: 20, textAlign: 'center' }}>ยังไม่มีข้อมูลวันนี้</div>
                     ) : ranked.map(({ name, st, cat, val }, i) => {
-                      const meta = CAT[cat]; const txt = M.text(st); const hasRegion = regions.some(r => r.line_name === name);
+                      const meta = CAT[cat]; const txt = regText(st); const hasRegion = regions.some(r => r.line_name === name);
                       const barW = val == null ? 0 : isPct ? Math.min(100, Math.abs(val)) : Math.round(Math.abs(val) / maxVal * 100);
                       return (
                         <div key={name} onClick={() => { if (hasRegion) flashLine(name); openLine(name); }}
@@ -1039,7 +1041,7 @@ export default function FactoryMap({ setupMode = false }) {
             </div>
             <div style={{ display: 'grid', gap: 6 }}>
               {Object.entries(METRICS).map(([k, m]) => {
-                const c = CAT[m.cat(st)]; const t = m.text(st); const isCur = k === metric;
+                const skip = st.isFac && m.facilityNA; const c = CAT[skip ? "idle" : m.cat(st)]; const t = skip ? "🔧 Facility" : m.text(st); const isCur = k === metric;
                 return (
                   <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
                     background: isCur ? `${c.color}22` : 'var(--bg3)', border: isCur ? `1px solid ${c.color}55` : '1px solid var(--border2)',
@@ -1134,7 +1136,7 @@ export default function FactoryMap({ setupMode = false }) {
               {/* การ์ดทุก metric */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8, marginBottom: kids.length ? 18 : 0 }}>
                 {Object.entries(METRICS).map(([k, m]) => {
-                  const cat = m.cat(st); const meta = CAT[cat]; const txt = m.text(st);
+                  const skip = st.isFac && m.facilityNA; const cat = skip ? "idle" : m.cat(st); const meta = CAT[cat]; const txt = skip ? "🔧 Facility" : m.text(st);
                   return (
                     <div key={k} style={{ background: 'var(--bg3)', border: `1px solid ${meta.color}55`, borderLeft: `3px solid ${meta.color}`, borderRadius: 8, padding: '9px 11px' }}>
                       <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 3 }}>{m.label}</div>
