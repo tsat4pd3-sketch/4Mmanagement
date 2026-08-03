@@ -582,8 +582,17 @@ export default function FactoryMap({ setupMode = false }) {
     return agg;
   };
   const catColor = (name) => CAT[M.cat(stOf(name))];
-  const regCat = (st) => (st.isFac && M.facilityNA) ? "idle" : (M.mapCat || M.cat)(st);
-  const regText = (st) => (st.isFac && M.facilityNA) ? "🔧 Facility" : (M.mapText || M.text)(st);
+  // โซน MTN/facility (metric ผลิต): default เขียว "ปกติ" ถ้าไม่มีเหตุผิดปกติ — แดง/ส้มเฉพาะเมื่อมีเครื่องซ่อม/PM ค้าง (คำสั่ง user)
+  const facHealth = (st) => (st.supAtRisk || st.dtActive) ? 'down' : st.pmOverdue ? 'bad' : st.pmDueSoon ? 'ok' : 'good';
+  const facHealthText = (st) => {
+    if (st.supAtRisk) return '⚠ เครื่องซ่อมอยู่';
+    if (st.dtActive) return '🔴 หยุด';
+    if (st.pmOverdue) return `⚠ PM เกิน ${st.pmOverdue}`;
+    if (st.pmDueSoon) return `PM ใกล้ครบ ${st.pmDueSoon}`;
+    return '🔧 ปกติ';
+  };
+  const regCat = (st) => (st.isFac && M.facilityNA) ? facHealth(st) : (M.mapCat || M.cat)(st);
+  const regText = (st) => (st.isFac && M.facilityNA) ? facHealthText(st) : (M.mapText || M.text)(st);
 
   // side panel: ไลน์ที่มีกะวันนี้ ∪ ไลน์ที่ตีกรอบไว้ — เรียงตาม metric (ปัญหาขึ้นบน)
   const ranked = useMemo(() => {
