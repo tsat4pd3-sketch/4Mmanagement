@@ -5,6 +5,7 @@ import { UserContext } from '../App';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { LINE_TYPES, FLOW_MODES } from '../utils/lineTypes';
+import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
@@ -127,6 +128,59 @@ export default function LineSetup({ embedded = false } = {}) {
   const [signerHead,    setSignerHead]    = useState('');
 
 
+  // ─── Undo/Redo — จุดบนผังไลน์ (จุดงาน+ทักษะ / WIP / เครื่องจักร / เส้น flow) ───
+  // snapshot ทั้ง 4 ชุดของไลน์ที่เลือก · restore = diff แล้วเขียนย้อนลง DB · สลับไลน์ = ล้าง history
+  const mapRef = useRef({ stations: [], wipPoints: [], machinePoints: [], flowLinks: [] });
+  useEffect(() => { mapRef.current = { stations, wipPoints, machinePoints, flowLinks }; }, [stations, wipPoints, machinePoints, flowLinks]);
+  const ST_F = ['line_name', 'station_name', 'pos_top', 'pos_left', 'skill_allowance', 'skill_allowance_type'];
+  const SR_F = ['station_id', 'skill_name', 'min_score'];
+  const WIP_F = ['line_name', 'point_name', 'point_type', 'mat_no', 'material_category', 'packaging_no', 'packaging_type', 'pos_top', 'pos_left', 'min_qty', 'max_qty', 'current_qty'];
+  const MP_F = ['line_name', 'machine_no', 'pos_top', 'pos_left', 'redundancy_group'];
+  const FL_F = ['line_name', 'from_machine_point_id', 'to_machine_point_id'];
+  const pickF = (row, fields) => Object.fromEntries(fields.map(f => [f, row[f] ?? null]));
+  const mapSnap = () => ({
+    line: selectedLine,
+    stations: mapRef.current.stations.map(s => ({ ...s, station_requirements: (s.station_requirements || []).map(r => ({ ...r })) })),
+    wipPoints: mapRef.current.wipPoints.map(p => ({ ...p })),
+    machinePoints: mapRef.current.machinePoints.map(p => ({ ...p })),
+    flowLinks: mapRef.current.flowLinks.map(l => ({ ...l })),
+  });
+  const diffSets = (snapRows, curRows, fields) => {
+    const sM = new Map(snapRows.map(r => [r.id, r])), cM = new Map(curRows.map(r => [r.id, r]));
+    return {
+      del: curRows.filter(r => !sM.has(r.id)).map(r => r.id),
+      ins: snapRows.filter(r => !cM.has(r.id)).map(r => ({ id: r.id, ...pickF(r, fields) })),
+      upd: snapRows.filter(r => { const c = cM.get(r.id); return c && fields.some(f => (c[f] ?? null) !== (r[f] ?? null)); }),
+    };
+  };
+  const applyMapSnapshot = async (snap) => {
+    if (snap.line !== selectedLine) return false;   // สลับไลน์แล้ว (history ถูก clear ตอนสลับอยู่แล้ว — กันเผื่อ)
+    const cur = mapRef.current;
+    const curSr = cur.stations.flatMap(s => s.station_requirements || []);
+    const snapSr = snap.stations.flatMap(s => s.station_requirements || []);
+    const st = diffSets(snap.stations, cur.stations, ST_F);
+    const sr = diffSets(snapSr, curSr, SR_F);
+    const wp = diffSets(snap.wipPoints, cur.wipPoints, WIP_F);
+    const mp = diffSets(snap.machinePoints, cur.machinePoints, MP_F);
+    const fl = diffSets(snap.flowLinks, cur.flowLinks, FL_F);
+    try {
+      // ลำดับตาม FK: ลบ ลูก→แม่ (links/requirements ก่อน points/stations) · คืน แม่→ลูก
+      for (const [tbl, ids] of [['machine_flow_links', fl.del], ['station_requirements', sr.del], ['machine_points', mp.del], ['wip_buffer_points', wp.del], ['workstations', st.del]]) {
+        if (ids.length) { const { error } = await supabase.from(tbl).delete().in('id', ids); if (error) throw error; }
+      }
+      for (const [tbl, rows] of [['workstations', st.ins], ['station_requirements', sr.ins], ['machine_points', mp.ins], ['wip_buffer_points', wp.ins], ['machine_flow_links', fl.ins]]) {
+        if (rows.length) { const { error } = await supabase.from(tbl).insert(rows); if (error) throw error; }
+      }
+      for (const [tbl, rows, fields] of [['workstations', st.upd, ST_F], ['station_requirements', sr.upd, SR_F], ['machine_points', mp.upd, MP_F], ['wip_buffer_points', wp.upd, WIP_F], ['machine_flow_links', fl.upd, FL_F]]) {
+        for (const r of rows) { const { error } = await supabase.from(tbl).update(pickF(r, fields)).eq('id', r.id); if (error) throw error; }
+      }
+    } catch (err) { toast.error('ย้อนไม่สำเร็จ: ' + err.message); await fetchLineData(); return false; }
+    await fetchLineData();
+    return true;
+  };
+  const hist = useUndoHistory({ snapOf: mapSnap, applySnapshot: applyMapSnapshot, enabled: canEdit });
+  useEffect(() => { hist.clear(); }, [selectedLine]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const skillAllowanceTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
 
   // ตัวเลือก Section จำกัดตามขอบเขตส่วนงานของ user (scope ว่าง = เลือกได้ทุกส่วน)
@@ -242,6 +296,8 @@ export default function LineSetup({ embedded = false } = {}) {
   };
 
   const handleUpdateParent = async (line, parentName) => {
+    // เปลี่ยนโครงสร้าง master (ไลน์แม่) — ยืนยันก่อน กันแตะ dropdown พลาด · ยกเลิก = revert หน้าจอ
+    if (!confirm(`เปลี่ยน "ไลน์แม่" ของ ${line.name} เป็น "${parentName || '(ไม่มี — เป็นไลน์หลัก)'}" ?\n\nกระทบการรวมเครื่อง/ผัง/กำลังผลิตของทั้งกลุ่ม`)) { await fetchLines(); return; }
     await supabase.from('production_lines').update({ parent_line_name: parentName || null }).eq('id', line.id);
     await fetchLines();
   };
@@ -310,6 +366,8 @@ export default function LineSetup({ embedded = false } = {}) {
   };
 
   const handleUpdateSection = async (line, section) => {
+    // เปลี่ยน Section ของไลน์ = กระทบ scope/สิทธิ์การมองเห็น — ยืนยันก่อน · ยกเลิก = revert หน้าจอ
+    if (!confirm(`เปลี่ยน "Section" ของ ${line.name} เป็น "${section || '(ไม่มี)'}" ?\n\nกระทบขอบเขตการมองเห็น (scope) และการผูกใบค่าฝีมือ`)) { await fetchLines(); return; }
     await supabase.from('production_lines').update({ section: section || null }).eq('id', line.id);
     await fetchLines();
   };
@@ -337,16 +395,26 @@ export default function LineSetup({ embedded = false } = {}) {
     };
     // Main project (client supabase) — ผัง/จุดงาน + 4M + factory map + LPA + action items + poka-yoke + QA + คำขอ WIP + home position
     for (const t of ['workstations', 'line_layouts', 'wip_buffer_points', 'machine_points', 'machine_flow_links',
-                     'four_m_logs', 'factory_line_regions', 'lpa_plans', 'lpa_audits', 'meeting_action_items',
+                     'four_m_logs', 'factory_line_regions', 'lpa_plans', 'lpa_audits', 'lpa_questions',
+                     'meeting_action_items', 'station_assignment_logs',
                      'pokayoke_devices', 'wip_replenish_requests', 'employee_home_positions',
                      'qa_parts', 'qa_characteristics', 'qa_instruments', 'qa_ncr']) {
       await bump(supabase, t);
     }
+    // lpa_questions.hidden_for_lines เป็น text[] — bump() (eq/update ธรรมดา) ใช้ไม่ได้ ต้องอ่าน-แก้-เขียนรายแถว
+    try {
+      const { data: hid } = await supabase.from('lpa_questions').select('id, hidden_for_lines').contains('hidden_for_lines', [old]);
+      for (const q of hid || []) {
+        const next = (q.hidden_for_lines || []).map(n => (n === old ? name : n));
+        await supabase.from('lpa_questions').update({ hidden_for_lines: next }).eq('id', q.id);
+      }
+    } catch { /* best-effort — คอลัมน์ยังไม่ apply ก็ข้าม */ }
     // DR project (client supabaseDR) — production_sessions/dr_products สำคัญสุด (กะที่เปิด + product→line map)
     //   + supply route / PM ประสานงาน / delivery-round / rack (line_name)
     for (const t of ['machines', 'production_sessions', 'dr_products', 'line_stock_transactions',
-                     'jigs', 'pm_daily_line_targets', 'mtn_orders', 'improvements', 'scrap_reports',
-                     'facility_supply_links', 'pm_coordination_plans', 'kanban_delivery_rounds', 'kanban_deliveries', 'rack_requests']) {
+                     'jigs', 'pm_daily_line_targets', 'pm_daily_alerts', 'mtn_orders', 'improvements', 'scrap_reports',
+                     'facility_supply_links', 'pm_coordination_plans', 'kanban_delivery_rounds', 'kanban_deliveries',
+                     'rack_requests', 'kanban_calc_params', 'transport_nodes']) {
       await bump(supabaseDR, t);
     }
     // คอลัมน์ที่ชื่อไม่ใช่ 'line_name' — ต้องระบุ col เอง
@@ -391,6 +459,30 @@ export default function LineSetup({ embedded = false } = {}) {
       setUsingParentLayout(false);
     } catch (error) { toast.error('Error: ' + error.message); }
     finally { setIsUploading(false); }
+  };
+
+  // ลบรูปผังของไลน์นี้ (เคสเผลออัพรูปทับ) → ไลน์ลูกกลับไปยืมผังไลน์แม่อัตโนมัติ (fetchLineData fallback)
+  const handleDeleteLayout = async () => {
+    if (!layoutImage || usingParentLayout) return; // ผังที่ยืมแสดงจากไลน์แม่ ไม่ใช่ของเรา — ห้ามลบ
+    const lineObj = lines.find(l => l.name === selectedLine);
+    const backTo = lineObj?.parent_line_name
+      ? `จะกลับไปใช้รูปผังของไลน์แม่ "${lineObj.parent_line_name}" แทน`
+      : 'ไลน์นี้จะไม่มีรูปผัง (ไม่มีไลน์แม่ให้ยืม) — จุดงาน/เครื่อง/WIP ที่วางไว้ยังอยู่ครบ';
+    if (!window.confirm(`ลบรูปผังของ "${selectedLine}" ?\n${backTo}`)) return;
+    try {
+      const { error } = await supabase.from('line_layouts').delete().eq('line_name', selectedLine);
+      if (error) throw error;
+      // ลบไฟล์จาก storage หลัง DB สำเร็จ (best-effort) — เฉพาะเมื่อไม่มีไลน์อื่นแชร์ URL เดียวกัน
+      if (layoutImage.includes('/employee-photos/layouts/')) {
+        const { data: sharers } = await supabase.from('line_layouts').select('line_name').eq('image_url', layoutImage).limit(1);
+        if (!sharers?.length) {
+          const oldName = decodeURIComponent(layoutImage.split('/employee-photos/')[1] || '');
+          if (oldName.startsWith('layouts/')) supabase.storage.from('employee-photos').remove([oldName]).catch(() => {});
+        }
+      }
+      toast.success('ลบรูปผังแล้ว');
+      fetchLineData(); // โหลดใหม่ → ไลน์ลูกยืมผังไลน์แม่เอง
+    } catch (err) { toast.error('ลบไม่สำเร็จ: ' + err.message); }
   };
 
   // object-fit: contain ทำให้มีพื้นที่ letterbox (แถบว่าง) รอบรูปจริง — ต้องคำนวณ
@@ -460,6 +552,7 @@ export default function LineSetup({ embedded = false } = {}) {
     const onUp = async () => {
       const { kind, id } = dragInfo;
       if (dragMovedRef.current && dragPosRef.current) {
+        hist.pushHistory();   // state ยังเป็นตำแหน่งก่อนลาก (ตอนลากแสดงผ่าน dragPos overlay) — snapshot คืนที่เดิมได้
         const table = kind === 'station' ? 'workstations' : kind === 'wip' ? 'wip_buffer_points' : 'machine_points';
         await supabase.from(table).update({ pos_top: dragPosRef.current.top, pos_left: dragPosRef.current.left }).eq('id', id);
         await fetchLineData();
@@ -576,6 +669,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const handleSaveStation = async () => {
     if (!formData.name) return toast.error('กรุณาระบุชื่อจุดงาน');
+    hist.pushHistory();
     const existingStation = stations.find(s => s.id === formData.id);
     const payload = {
       line_name: selectedLine,
@@ -612,6 +706,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const deleteStation = async (id) => {
     if (!window.confirm('ยืนยันการลบจุดงานนี้?')) return;
+    hist.pushHistory();
     await supabase.from('station_requirements').delete().eq('station_id', id);
     const { error } = await supabase.from('workstations').delete().eq('id', id);
     if (!error) fetchLineData();
@@ -637,6 +732,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const handleSaveWip = async () => {
     if (!wipForm.point_name) return toast.error('กรุณาระบุชื่อจุด WIP');
+    hist.pushHistory();
     const existing = wipPoints.find(p => p.id === wipForm.id);
     const isMaterial = wipForm.point_type === 'material';
     const payload = {
@@ -665,6 +761,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const deleteWipPoint = async (id) => {
     if (!window.confirm('ยืนยันการลบจุด WIP นี้?')) return;
+    hist.pushHistory();
     const { error } = await supabase.from('wip_buffer_points').delete().eq('id', id);
     if (!error) fetchLineData();
   };
@@ -693,6 +790,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const handleSaveMachine = async () => {
     if (!machineForm.machine_no) return toast.error('กรุณาเลือกเครื่องจักร');
+    hist.pushHistory();
     const existing = machinePoints.find(p => p.id === machineForm.id);
     const payload = {
       line_name:   selectedLine,
@@ -712,6 +810,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const deleteMachinePoint = async (id) => {
     if (!window.confirm('ยืนยันการลบจุดเครื่องจักรนี้?')) return;
+    hist.pushHistory();
     const { error } = await supabase.from('machine_points').delete().eq('id', id);
     if (!error) fetchLineData();
   };
@@ -726,6 +825,7 @@ export default function LineSetup({ embedded = false } = {}) {
     );
     setConnectFrom(null);
     if (exists) return;
+    hist.pushHistory();
     const { error } = await supabase.from('machine_flow_links').insert([{
       line_name: selectedLine, from_machine_point_id: connectFrom, to_machine_point_id: id,
     }]);
@@ -735,6 +835,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const deleteFlowLink = async (id) => {
     if (!window.confirm('ยืนยันการลบเส้นเชื่อมต่อนี้?')) return;
+    hist.pushHistory();
     const { error } = await supabase.from('machine_flow_links').delete().eq('id', id);
     if (!error) fetchLineData();
   };
@@ -780,13 +881,19 @@ export default function LineSetup({ embedded = false } = {}) {
               {t.label}
             </button>
           ))}
+          {canEdit && (
+            <>
+              <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={{ ...undoBtnStyle(hist.canUndo && !hist.busy), marginLeft: 'auto' }} title="ย้อนกลับ — จุดบนผังไลน์นี้ (Ctrl+Z)">↩️ Undo</button>
+              <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="ทำซ้ำ (Ctrl+Y)">↪️ Redo</button>
+            </>
+          )}
           <button
             onClick={() => setShowPills(v => !v)}
             title={'แสดง/ซ่อนป้ายชื่อทุกจุดบนผัง (เหมือนหน้าแสดงผลจริง)\nหมุดที่กำลังเลือก/แก้ไขโชว์ป้ายเสมอ'}
             style={{
               position: 'relative',
               padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-              marginLeft: 'auto',
+              marginLeft: canEdit ? 0 : 'auto',
               border: `1px solid ${showPills ? 'var(--accent)' : 'var(--border2)'}`,
               background: showPills ? 'var(--accent-dim)' : 'var(--bg2)',
               color: showPills ? 'var(--accent)' : 'var(--text2)',
@@ -1203,10 +1310,19 @@ export default function LineSetup({ embedded = false } = {}) {
 
         {selectedLine && <>
           {canEdit && layoutImage && (
-            <label style={{ fontSize: 12, color: 'var(--blue)', cursor: 'pointer', display: 'block', marginBottom: 14, textAlign: 'right' }}>
-              {isUploading ? 'อัปโหลด...' : '🔄 เปลี่ยนรูปภาพ'}
-              <input type="file" hidden onChange={handleUploadImage} disabled={isUploading} />
-            </label>
+            <div style={{ display: 'flex', gap: 14, justifyContent: 'flex-end', alignItems: 'center', marginBottom: 14 }}>
+              {/* ลบได้เฉพาะผังของตัวเอง — ผังที่ยืมจากไลน์แม่ไม่มีปุ่ม (ของแม่ ไปลบที่ไลน์แม่) */}
+              {!usingParentLayout && (
+                <button onClick={handleDeleteLayout}
+                  style={{ fontSize: 12, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-body)' }}>
+                  🗑 ลบรูปผังนี้{lines.find(l => l.name === selectedLine)?.parent_line_name ? ' (กลับไปใช้ผังไลน์แม่)' : ''}
+                </button>
+              )}
+              <label style={{ fontSize: 12, color: 'var(--blue)', cursor: 'pointer' }}>
+                {isUploading ? 'อัปโหลด...' : '🔄 เปลี่ยนรูปภาพ'}
+                <input type="file" hidden onChange={handleUploadImage} disabled={isUploading} />
+              </label>
+            </div>
           )}
           {activeTab === 'stations' && <>
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginBottom: 10 }}>

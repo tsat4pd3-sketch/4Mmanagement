@@ -173,6 +173,7 @@ export default function Management() {
   const [dragOverStation,setDragOverStation]= useState(null);
   const [fitPopup,       setFitPopup]       = useState(null);
   const [hoverCard,      setHoverCard]      = useState(null);
+  const [openSubLine,    setOpenSubLine]    = useState(null); // ไลน์ย่อย (ผังแยก) ที่กางดูรายชื่อคนในแถบสรุปกำลังคนกลุ่ม
   const [selectedWorker, setSelectedWorker] = useState(null);
   const [detailSheet,    setDetailSheet]    = useState(null);
   const [stationModal,   setStationModal]   = useState(null);
@@ -609,7 +610,8 @@ export default function Management() {
     if (isMobile || !canHover) return;
     clearTimeout(hoverTimer.current);
     const rect = e.currentTarget.getBoundingClientRect();
-    hoverTimer.current = setTimeout(() => setHoverCard({ worker, fit, rect, stationName }), 180);
+    // hover-intent 500ms — ต้องวางเม้าส์ค้างจริงถึงเด้ง (กันเผลอลากผ่าน marker แล้วการ์ดโผล่รบกวน)
+    hoverTimer.current = setTimeout(() => setHoverCard({ worker, fit, rect, stationName }), 500);
   };
   const onHoverLeave = () => { clearTimeout(hoverTimer.current); setHoverCard(null); };
 
@@ -795,6 +797,26 @@ export default function Management() {
     if (!specialEmpIds.has(w.employee_id)) return false;
     return matchesTeam(w);
   });
+
+  // กำลังคน "ทั้งกลุ่มไลน์" (รวมไลน์ย่อย) — คนที่ประจำสถานีของครอบครัวไลน์ที่กำลังดู
+  //   onMap = โชว์บนผังที่แสดงอยู่ · hidden = อยู่ไลน์ย่อยที่มีผังของตัวเอง (marker ไม่โผล่บนผังนี้ — เลยรวมเป็นแถบรายชื่อแทน)
+  //   แก้อาการ "ไลน์ sub part ไม่รวมกำลังคนกับไลน์หลัก" (ไลน์ย่อยมีผังเอง marker เลยแยกไปผังตัวเอง ตั้งแต่ 2026-07-16)
+  const familyManpower = useMemo(() => {
+    const viewSet = new Set(viewLineNames);
+    const stById = new Map(dynamicStations.map(s => [String(s.id), s]));
+    const hiddenByLine = {};
+    let onMap = 0, total = 0;
+    workers.forEach(w => {
+      if (!w.assigned_line) return;
+      const st = stById.get(String(w.assigned_line));
+      if (!st || !viewSet.has(st.line_name)) return;
+      total++;
+      if (belongsToShownMap(st.line_name)) onMap++;
+      else (hiddenByLine[st.line_name] ||= []).push({ id: w.id, name: w.employees?.name, code: w.employees?.employee_id_code, image_url: w.employees?.image_url, station: st.station_name || '' });
+    });
+    const hidden = Object.entries(hiddenByLine).map(([lineName, ws]) => ({ lineName, workers: ws })).sort((a, b) => a.lineName.localeCompare(b.lineName));
+    return { total, onMap, hidden, hiddenTotal: hidden.reduce((a, h) => a + h.workers.length, 0) };
+  }, [workers, dynamicStations, viewLineNames, belongsToShownMap]);
 
   const assignSpecialTask = async (worker, taskType) => {
     const today = getWorkDate();
@@ -1098,6 +1120,48 @@ export default function Management() {
           onDrop={!isMobile ? (e) => handleDrop(e, 'Pool') : undefined}
           style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 0 }}
         >
+          {/* ── กำลังคนทั้งกลุ่มไลน์ (รวมไลน์ย่อย) + รายชื่อคนไลน์ย่อยที่มีผังแยก (2026-08-03) ── */}
+          {!isMobile && selectedLine && (familyManpower.total > 0 || familyManpower.hidden.length > 0) && (
+            <div style={{ marginBottom: 8, padding: '8px 10px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, flexShrink: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>👷 กำลังคนกลุ่มนี้</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>{familyManpower.total} คน</span>
+              </div>
+              <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 2 }}>
+                ประจำสถานี · บนผังนี้ {familyManpower.onMap}{familyManpower.hiddenTotal ? ` · ไลน์ย่อย(ผังแยก) ${familyManpower.hiddenTotal}` : ''}
+              </div>
+              {familyManpower.hidden.length > 0 && (
+                <div style={{ marginTop: 7, display: 'grid', gap: 4 }}>
+                  <div style={{ fontSize: 9.5, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ไลน์ย่อย (ผังแยก — ไม่โผล่บนผังนี้)</div>
+                  {familyManpower.hidden.map(h => {
+                    const open = openSubLine === h.lineName;
+                    return (
+                      <div key={h.lineName}>
+                        <div onClick={() => setOpenSubLine(open ? null : h.lineName)}
+                          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '4px 7px', borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border2)' }}>
+                          <span style={{ minWidth: 0, fontSize: 11.5, fontWeight: 700, color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{open ? '▾' : '▸'} {h.lineName}</span>
+                          <span style={{ fontSize: 11.5, fontWeight: 800, color: '#4d9fff', flexShrink: 0, marginLeft: 6 }}>{h.workers.length} คน</span>
+                        </div>
+                        {open && (
+                          <div style={{ padding: '4px 6px 2px 12px', display: 'grid', gap: 3 }}>
+                            {h.workers.map(w => (
+                              <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                                {w.image_url
+                                  ? <img src={w.image_url} alt="" style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', flexShrink: 0 }} />
+                                  : <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--bg3)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 11 }}>👤</span>}
+                                <span style={{ minWidth: 0, color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{w.name || '—'}</span>
+                                {w.station && <span style={{ color: 'var(--muted)', marginLeft: 'auto', flexShrink: 0, whiteSpace: 'nowrap' }}>{w.station}</span>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
           {/* มือถือ + pool ว่างทั้งสองส่วน: ยุบเหลือแถบเดียว คืนพื้นที่ให้ผังคน (desktop เหมือนเดิม) */}
           {isMobile && poolWorkers.length === 0 && specialWorkers.length === 0 ? (
             <div style={{ fontSize: 11, color: 'var(--muted)', padding: '2px 0', display: 'flex', gap: 10, alignItems: 'center' }}>

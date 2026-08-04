@@ -354,7 +354,11 @@ export default function NotificationConfig() {
                 return (
                 <div key={rule.event_key} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', display: 'flex', flexWrap: 'wrap', gap: '10px 14px', alignItems: 'center', justifyContent: 'space-between' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', flex: '1 1 200px', minWidth: 150 }}>
-                    <input type="checkbox" checked={rule.is_enabled} onChange={e => updateRule(rule.event_key, { is_enabled: e.target.checked })} style={{ flexShrink: 0 }} />
+                    <input type="checkbox" checked={rule.is_enabled} onChange={e => {
+                      // ยืนยันเฉพาะตอน "ปิด" การแจ้งเตือนทั้งหมวด (เปิดไม่ต้องถาม)
+                      if (!e.target.checked && !confirm(`ปิดการแจ้งเตือน "${rule.label}" ?\n\nเรื่องนี้จะไม่ส่งเข้า Telegram จนกว่าจะเปิดใหม่`)) return
+                      updateRule(rule.event_key, { is_enabled: e.target.checked })
+                    }} style={{ flexShrink: 0 }} />
                     <span style={{ fontSize: 13, fontWeight: 600, color: rule.is_enabled ? 'var(--text)' : 'var(--muted)' }}>{rule.label}</span>
                   </label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end', flex: '1 1 300px', minWidth: 0, opacity: rule.is_enabled ? 1 : 0.5 }}>

@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import InternalTimeBoard from '../components/InternalTimeBoard';
 import { frameMin, frameMinFromIso, breaksToFrame } from '../utils/timeFrame';
+import { withDocFoot } from '../utils/docForms';
 
 /* ─── RACK CENTER — เรียกภาชนะ/แร็คเปล่าคืนกลับมาใช้ ──────────────────────
    ไลน์ผลิตส่งกล่อง/ถาด/แร็คเปล่ากลับ rack center → ขอภาชนะชุดใหม่กลับมาใช้
@@ -36,6 +38,17 @@ function timeAgo(iso) {
 
 const EMPTY_FORM = { line_name: '', container_type_id: '', qty: '1', note: '' };
 
+// QR เรียกภาชนะ = deep-link URL: /rack-center?line=<ไลน์>&ctype=<code ภาชนะ>&qty=1
+// สแกนด้วยกล้องมือถือ (เปิดลิงก์ตรง) / ปุ่ม 📷 ในแอป / ปืนยิง keyboard-wedge — parse ตัวเดียวกัน
+const parseCallQr = (text) => {
+  try {
+    const u = new URL(String(text).trim(), window.location.origin);
+    const line = u.searchParams.get('line'), ctype = u.searchParams.get('ctype');
+    if (line && ctype) return { line, ctype, qty: u.searchParams.get('qty') || '1' };
+  } catch { /* ไม่ใช่ URL */ }
+  return null;
+};
+
 export default function RackCenter() {
   const { fullName, role } = useContext(UserContext);
   const canOperate = can('rack_center', 'operate', role);
@@ -57,6 +70,9 @@ export default function RackCenter() {
   const [popup,          setPopup]          = useState(null);      // { r, x, y } — คลิกบล็อกบนบอร์ดเวลา
   const [nowMs,          setNowMs]          = useState(() => Date.now());   // นาฬิกาบอร์ดเวลา/SLA
   const [breakPolicies,  setBreakPolicies]  = useState([]);        // เงาเวลาพักบนบอร์ดเวลา
+  const [scanOpen,       setScanOpen]       = useState(false);     // 📷 สแกน QR เรียกภาชนะ
+  const [qrOpen,         setQrOpen]         = useState(false);     // 🏷️ พิมพ์ป้าย QR
+  const [searchParams,   setSearchParams]   = useSearchParams();
 
   const load = useCallback(async () => {
     const [{ data: ln }, { data: ct }, { data: req }, { data: pkg }, { data: slaRow }] = await Promise.all([
@@ -115,6 +131,62 @@ export default function RackCenter() {
     });
     return m;
   }, [filtered, showDone]);
+
+  // เอาผลสแกน/deep-link มาเปิดฟอร์มพร้อมกรอกให้ครบ — เหลือกดยืนยันทีเดียว
+  const applyScan = useCallback((p) => {
+    if (!p) { toast.error('QR นี้ไม่ใช่ QR เรียกภาชนะ'); return false; }
+    const ln = lines.find(l => l.name.trim().toLowerCase() === p.line.trim().toLowerCase());
+    const ct = containerTypes.find(c =>
+      String(c.code || '').trim().toLowerCase() === p.ctype.trim().toLowerCase() || c.id === p.ctype);
+    if (!ln || !ct) { toast.error(`QR ไม่ตรงข้อมูลในระบบ (${!ln ? 'ไลน์ ' + p.line : 'ภาชนะ ' + p.ctype})`); return false; }
+    setForm({ line_name: ln.name, container_type_id: ct.id, qty: String(parseInt(p.qty) || 1), note: '' });
+    setScanOpen(false);
+    setShowForm(true);
+    return true;
+  }, [lines, containerTypes]);
+
+  // deep-link จาก QR ที่สแกนด้วยกล้องมือถือ: /rack-center?line=..&ctype=.. → เปิดฟอร์มให้เลย
+  useEffect(() => {
+    const line = searchParams.get('line'), ctype = searchParams.get('ctype');
+    if (!line || !ctype || !lines.length || !containerTypes.length) return;
+    applyScan({ line, ctype, qty: searchParams.get('qty') || '1' });
+    setSearchParams({}, { replace: true });   // ล้าง param กันเปิดซ้ำตอน refresh
+  }, [lines, containerTypes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 🏷️ พิมพ์แผ่นป้าย QR (ไลน์ × ชนิดภาชนะ) — แปะหน้างานให้สแกนแทนพิมพ์
+  const printQrLabels = async (lineNames, typeIds) => {
+    const combos = [];
+    lineNames.forEach(lnName => typeIds.forEach(tid => {
+      const ct = containerTypes.find(c => c.id === tid);
+      if (ct) combos.push({ line: lnName, ct });
+    }));
+    if (!combos.length) { toast.error('เลือกไลน์และชนิดภาชนะก่อน'); return; }
+    const QRCode = (await import('qrcode')).default;   // lazy chunk — ไม่บวม bundle หลัก
+    const cells = [];
+    for (const c of combos) {
+      const url = `${window.location.origin}/rack-center?line=${encodeURIComponent(c.line)}&ctype=${encodeURIComponent(c.ct.code || c.ct.id)}&qty=1`;
+      const dataUrl = await QRCode.toDataURL(url, { width: 300, margin: 1 });
+      cells.push(`<div class="lb">
+        <img src="${dataUrl}" />
+        <div class="ln">${c.line}</div>
+        <div class="ct">${c.ct.code ? c.ct.code + ' · ' : ''}${c.ct.name}</div>
+        <div class="hint">📱 สแกนเพื่อเรียกภาชนะ</div>
+      </div>`);
+    }
+    const html = `<style>
+      body{font-family:'Sarabun',Tahoma,sans-serif;margin:8mm}
+      .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6mm}
+      .lb{border:1.5px solid #000;border-radius:8px;padding:5mm;text-align:center;page-break-inside:avoid}
+      .lb img{width:38mm;height:38mm}
+      .ln{font-size:15px;font-weight:800;margin-top:2mm}
+      .ct{font-size:12px;margin-top:1mm}
+      .hint{font-size:10px;color:#555;margin-top:1.5mm}
+    </style><div class="grid">${cells.join('')}</div>`;
+    const w = window.open('', '_blank');
+    w.document.write(`<html><head><title>ป้าย QR เรียกภาชนะ</title></head><body>${withDocFoot(html, 'rack_qr_labels')}</body></html>`);
+    w.document.close();
+    setTimeout(() => w.print(), 400);
+  };
 
   const handleRequest = async () => {
     if (!form.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
@@ -194,12 +266,23 @@ export default function RackCenter() {
             แสดงที่รับแล้ว
           </label>
           {canOperate && (
-            <button onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineFilter }); setShowForm(true); }} style={btn('#16a34a')}>
-              🔔 เรียกภาชนะ
-            </button>
+            <>
+              <button onClick={() => setScanOpen(true)} style={btn('var(--bg2)', 'var(--text2)')} title="สแกน QR ที่แปะหน้างาน — กล้องในแอป หรือปืนยิงสแกน">
+                📷 สแกน
+              </button>
+              <button onClick={() => setQrOpen(true)} style={btn('var(--bg2)', 'var(--text2)')} title="พิมพ์แผ่นป้าย QR ไปแปะหน้างาน">
+                🏷️ ป้าย QR
+              </button>
+              <button onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineFilter }); setShowForm(true); }} style={btn('#16a34a')}>
+                🔔 เรียกภาชนะ
+              </button>
+            </>
           )}
         </div>
       </div>
+
+      {scanOpen && <QrScanModal onClose={() => setScanOpen(false)} onResult={(text) => applyScan(parseCallQr(text))} />}
+      {qrOpen && <QrLabelModal lines={lines} containerTypes={containerTypes} onClose={() => setQrOpen(false)} onPrint={printQrLabels} />}
 
       {/* Packaging withdrawal requests (auto จากการผลิต FG) */}
       {(() => {
@@ -299,11 +382,10 @@ export default function RackCenter() {
           {canOperate && slaDraft && (
             <button onClick={async () => {
               const payload = { prepare_within_min: Math.max(1, parseInt(slaDraft.prepare_within_min) || 15), deliver_within_min: Math.max(1, parseInt(slaDraft.deliver_within_min) || 45), updated_at: new Date().toISOString() };
-              // upsert แบบไม่พึ่ง unique constraint: มี row → update, ไม่มี → insert (กัน update no-op เงียบๆ)
-              const { data: existing } = await supabaseDR.from('internal_delivery_sla').select('id').eq('kind', 'rack').maybeSingle();
-              const { error } = existing
-                ? await supabaseDR.from('internal_delivery_sla').update(payload).eq('kind', 'rack')
-                : await supabaseDR.from('internal_delivery_sla').insert({ ...payload, kind: 'rack' });
+              // pkey ของตารางคือ kind (ไม่มีคอลัมน์ id) — upsert ตรงๆ
+              // (เดิม select('id') → 42703 ถูกกลืนเงียบ → นึกว่าไม่มีแถว → insert ซ้ำชน pkey)
+              const { error } = await supabaseDR.from('internal_delivery_sla')
+                .upsert({ ...payload, kind: 'rack' }, { onConflict: 'kind' });
               if (error) toast.error(error.message);
               else { setSla(x => ({ ...x, ...payload })); setSlaDraft(null); toast.success('บันทึก SLA แล้ว'); }
             }} style={btn('#16a34a')}>💾 บันทึก SLA</button>
@@ -440,6 +522,97 @@ export default function RackCenter() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─── 📷 สแกน QR เรียกภาชนะ — กล้องในแอป (BarcodeDetector) + ช่องปืนยิง keyboard-wedge ── */
+function QrScanModal({ onClose, onResult }) {
+  const videoRef = useRef(null);
+  const [camErr, setCamErr] = useState(null);
+  const [manual, setManual] = useState('');
+  useEffect(() => {
+    let stream = null, raf = null, stop = false;
+    if (!('BarcodeDetector' in window)) {
+      setCamErr('เบราว์เซอร์นี้ไม่รองรับสแกนกล้องในแอป — ใช้กล้องมือถือสแกน QR ตรงๆ (เปิดลิงก์เอง) หรือยิงปืนสแกนลงช่องด้านล่าง');
+      return undefined;
+    }
+    (async () => {
+      try {
+        const det = new window.BarcodeDetector({ formats: ['qr_code'] });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        if (stop) { stream.getTracks().forEach(t => t.stop()); return; }
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        const tick = async () => {
+          if (stop) return;
+          try {
+            const codes = await det.detect(videoRef.current);
+            if (codes.length) { onResult(codes[0].rawValue); return; }
+          } catch { /* เฟรมยังไม่พร้อม — ข้าม */ }
+          raf = requestAnimationFrame(tick);
+        };
+        tick();
+      } catch (e) { setCamErr('เปิดกล้องไม่ได้: ' + e.message); }
+    })();
+    return () => { stop = true; if (raf) cancelAnimationFrame(raf); stream?.getTracks().forEach(t => t.stop()); };
+  }, [onResult]);
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+      <div style={{ ...card, width: 'min(94vw, 420px)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>📷 สแกน QR เรียกภาชนะ</span>
+          <button onClick={onClose} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
+        </div>
+        {camErr
+          ? <div style={{ fontSize: 12.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '8px 11px', marginBottom: 10 }}>{camErr}</div>
+          : <video ref={videoRef} playsInline muted style={{ width: '100%', borderRadius: 10, background: '#000', marginBottom: 10 }} />}
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>🔫 ปืนยิงสแกน / วางข้อความ QR แล้วกด Enter</div>
+        <input autoFocus value={manual} onChange={e => setManual(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && manual.trim()) onResult(manual); }}
+          placeholder="ยิงสแกนลงช่องนี้ได้เลย…" style={inputSt} />
+      </div>
+    </div>
+  );
+}
+
+/* ─── 🏷️ เลือกไลน์ × ชนิดภาชนะ → พิมพ์แผ่นป้าย QR แปะหน้างาน ── */
+function QrLabelModal({ lines, containerTypes, onClose, onPrint }) {
+  const [selLines, setSelLines] = useState(() => new Set());
+  const [selTypes, setSelTypes] = useState(() => new Set());
+  const [printing, setPrinting] = useState(false);
+  const toggle = (setter) => (v) => setter(prev => { const s = new Set(prev); if (s.has(v)) s.delete(v); else s.add(v); return s; });
+  const tgLine = toggle(setSelLines), tgType = toggle(setSelTypes);
+  const chip = (on) => ({ padding: '4px 10px', borderRadius: 14, cursor: 'pointer', fontSize: 12, fontWeight: 700,
+    background: on ? 'var(--accent-dim, rgba(74,222,128,.15))' : 'var(--bg2)', color: on ? 'var(--accent)' : 'var(--text2)',
+    border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}` });
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+      <div style={{ ...card, width: 'min(94vw, 560px)', maxHeight: '86vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🏷️ พิมพ์ป้าย QR เรียกภาชนะ</span>
+          <button onClick={onClose} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
+          เลือกไลน์ × ชนิดภาชนะ → ได้แผ่น A4 ป้ายละ 1 คู่ (QR = ลิงก์เปิดฟอร์มกรอกให้ครบ) เอาไปแปะจุดวางภาชนะหน้างาน
+        </div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>🏭 ไลน์ ({selLines.size})</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
+          {lines.map(l => <button key={l.name} onClick={() => tgLine(l.name)} style={chip(selLines.has(l.name))}>{l.name}</button>)}
+        </div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>📦 ชนิดภาชนะ ({selTypes.size})</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 14 }}>
+          {containerTypes.map(c => <button key={c.id} onClick={() => tgType(c.id)} style={chip(selTypes.has(c.id))}>{c.code ? `${c.code} · ` : ''}{c.name}</button>)}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>รวม {selLines.size * selTypes.size} ป้าย</span>
+          <button disabled={printing || !selLines.size || !selTypes.size}
+            onClick={async () => { setPrinting(true); try { await onPrint([...selLines], [...selTypes]); } finally { setPrinting(false); } }}
+            style={{ ...btn(selLines.size && selTypes.size ? '#16a34a' : 'var(--bg2)', selLines.size && selTypes.size ? '#fff' : 'var(--muted)'), cursor: selLines.size && selTypes.size ? 'pointer' : 'not-allowed' }}>
+            {printing ? '...' : '🖨️ พิมพ์ป้าย'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

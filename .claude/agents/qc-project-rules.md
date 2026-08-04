@@ -94,6 +94,10 @@ model: inherit
 - **F3** ฟอนต์ขั้นต่ำ 11-12px — หา `fontSize` ที่ ≤ 10 (ทั้ง `fontSize: 9`, `fontSize: '10px'`)
 - **F4** modal ฟอร์มกรอกข้อมูลห้ามปิดจาก backdrop click · modal รูปผัง fit จอเดียว
   ห้าม object-fit บน img ที่มี marker ทับ
+- **F4.1** (2026-08-03 · §5.4) หน้า setup/config: การ `.update/.delete/.upsert` **โครงสร้าง/master** ที่ผูกกับ
+  onChange/onClick/toggle/drag โดย**ไม่มี confirm หรือ draft+ปุ่มบันทึก** = ผิด · จับ: `<select>`/checkbox/
+  toggle is_active/ปุ่มลบ ที่เขียน DB ทันที · ยืนยันเฉพาะ ลบ/ปิดใช้งาน/เปลี่ยน FK master/bulk/revoke สิทธิ์
+  (เปิดใช้งาน/additive ไม่ต้อง) · grep: `onChange=.*\.(update|delete|upsert)` ในหน้าหมวดตั้งค่าฯ
 - **F5** input ใน flex row/toolbar ต้องกำหนด width เอง (index.css default width:100%)
 - **F6** hover card เฉพาะ `matchMedia('(hover: hover)')` · popup ทุกอันมีทางปิด
 - **F7** playhead ไทม์ไลน์ใช้ `.now-line`/`.now-chip` — ห้ามวาดเส้นเวลาปัจจุบันเองสีอื่น
@@ -143,6 +147,12 @@ model: inherit
   ต้องมี legend + caption อธิบายความหมาย · ≤20 แท่งโชว์ตัวเลขบนหัวแท่ง (จอทัชไม่มี hover) —
   จับ: chart ที่ map เฉพาะวันที่มีข้อมูล (`Object.values(byDate)`) โดยไม่เติมวันว่าง ·
   กราฟที่ NG อยู่แค่ใน tooltip
+
+- **F16** (2026-08-03) editor ผัง/Floorplan ที่เขียนลง DB ทันทีทุก action (วาด/ลาก/ลบ marker,
+  polygon, node/edge) ต้องมี Undo/Redo ผ่าน hook กลาง `src/utils/useUndoHistory.js`
+  (UI-CONVENTIONS §6.7) — จับ: editor ผังใหม่ที่มี insert/delete จาก pointer event
+  โดยไม่ import useUndoHistory · เขียน undo stack เองเฉพาะหน้า = 🟡 ให้ย้ายมาใช้ hook กลาง ·
+  จุดที่ต้องมี: pushHistory ก่อน mutation แรกของ action, clear เมื่อสลับไลน์/โซน/ผัง
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่

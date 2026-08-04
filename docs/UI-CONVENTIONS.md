@@ -52,6 +52,7 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 3. **Edge clamp**: ตำแหน่ง*แสดงผล*ต้องถูก clamp ไม่ให้วงกลม+ป้ายตกขอบรูป — เผื่อซ้าย/ขวา/บน `size*0.55`, ล่าง `size*1.35` (มีป้ายห้อย) — ตำแหน่งจริงใน DB ไม่เปลี่ยน
 4. Hover card แสดงเฉพาะอุปกรณ์ที่ hover ได้จริง: `window.matchMedia('(hover: hover)').matches` — จอทัชให้ใช้ modal ที่มีปุ่มปิด + popup ทุกชนิดต้องมีทางปิดเสมอ (✕/auto-hide — กติกา backdrop click ดู section 5)
 5. **จุด/marker วางได้เฉพาะบนผังที่เป็น "ผังจริง" ของไลน์นั้น** (2026-07-16) — pos_top/pos_left ผูกกับผังของไลน์ที่จุดนั้นสังกัด · เวลาแสดงผังของไลน์ (โดยเฉพาะไลน์แม่ที่ view รวมไลน์ย่อย) ต้องวาดเฉพาะจุดของไลน์ที่ "ผังจริง" (ของตัวเอง → ไล่ขึ้นไลน์แม่ที่มีผัง) ตรงกับผังที่กำลังแสดง · **ไลน์ย่อยที่มีผังเป็นของตัวเอง = ห้ามเอาจุดไปวางทับผังไลน์แม่ (คนละรูป จะทับกัน/ผิดตำแหน่ง)** ส่วนไลน์ย่อยที่ไม่มีผัง (ยืมรูปไลน์แม่) จุดของมันวางบนผังไลน์แม่ได้ · ต้นแบบ: Dashboard `layoutLineNamesForCard` (ข้ามลูกที่มีผังเอง) / Management `belongsToShownMap` (resolve ผังจริงต่อจุดแล้วเทียบกับผังที่แสดง)
+   - **ผลข้างเคียง + วิธีชดเชย (2026-08-03):** เพราะกฎนี้ คนที่ประจำสถานีของไลน์ย่อยที่มีผังเอง จะ "หาย" จากมุมมองไลน์แม่ (marker อยู่บนผังลูก) — ลูกพี่หน้างานเคยทักว่า "ไลน์ sub part ไม่รวมกำลังคนกับไลน์หลัก" · **ห้ามแก้ด้วยการเอา marker ลูกไปวางบนผังแม่ (พิกัดผิด)** — ให้ชดเชยด้วย **สรุปตัวเลข + แถบรายชื่อแทน**: Management `familyManpower` (แถบ "👷 กำลังคนกลุ่มนี้ N คน" ในแผง pool = รวมทั้งครอบครัว + ต่อไลน์ย่อยที่ผังแยกเป็นรายการกางดูรายชื่อ+สถานีได้) — เห็นกำลังคนรวมครบโดยไม่ทับตำแหน่ง
 6. **⚠️ ห้ามใช้ `backdrop-filter: blur()` กับ marker/ป้าย/การ์ดที่วาดซ้ำหลายอันบนผัง/บอร์ด (2026-07-15)** — `backdrop-filter` บังคับ browser re-render + gaussian-blur พื้นหลังใต้ทุก element **ทุกเฟรม** พอมี marker หลายสิบจุด (คน/สถานี/เครื่อง/การ์ดพนักงานใน pool) GPU ของ Smart TV รับไม่ไหว **เปิดแป๊บเดียวค้างทั้งเครื่อง** (เคยเกิดที่ /management + /dashboard บน TV) → ใช้ `background: rgba(0,0,0,0.75-0.88)` ทึบแทน (อ่านออกเท่ากันบนบอร์ดมืด) · backdrop-filter ใช้ได้เฉพาะ overlay ของ modal ที่มีชิ้นเดียวและเปิดชั่วคราว ไม่ใช่ element ที่ render ซ้ำ · หลักเดียวกันกับ animation ที่กระพริบ `box-shadow` (แพง) — จำกัดเฉพาะ Andon แดงที่จำเป็น อย่าใส่ element ที่โผล่ตลอด
 7. **โหมดเบาจอ TV — `data-perf="lite"` (2026-07-15):** App.jsx ตั้ง `data-perf="lite"` บน `<html>` อัตโนมัติเมื่อ `role === 'display'` (บัญชีที่รันบนจอ TV/บอร์ด GPU อ่อน) · `index.css` override animation ที่กระพริบ `box-shadow` (dt-alarm-blink, person-alarm-red, mo-card-alert, now-line/now-chip glow) ให้กระพริบด้วย **สี/ขอบอย่างเดียว** + ซ่อน `#noise-overlay` — Andon แดงยังกระพริบตามกฎ §2 แต่ไม่รีดเพนต์เบลอ · เพิ่ม animation box-shadow ใหม่ที่ไหน ให้เพิ่ม lite override คู่กันเสมอ
 
@@ -156,6 +157,12 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 - **จำกัดจำนวนแถวระดับบนที่แสดงครั้งแรก** + ปุ่ม "▼ แสดงอีก N (ทั้งหมด M)" — ห้ามตัดข้อมูลเงียบๆ และห้ามปล่อย DOM หลายร้อยแถวโดยไม่จำเป็น
 - **ตัวเลือก entity (ลิสต์เลือกสินค้า/พนักงาน/เครื่อง) ที่ยาว:** จัดกลุ่มตามลำดับชั้นที่มีความหมาย (เช่น ตามไลน์) + หัวกลุ่ม sticky + เลื่อนในกรอบ `maxHeight` — ห้ามเป็น chip กองรวม · เลือกแล้ว**พับลิสต์อัตโนมัติ** และต้องมีปุ่มย้อนกลับชัดเจนบนการ์ดที่เลือก ("✕ ปิด — เลือกใหม่") ไม่ใช่แถบตัวหนังสือเล็กๆ
 
+### ⚠️ จัดคอลัมน์ตาราง — ต้องสั่ง `textAlign` ที่ `<th>` เอง (2026-08-03)
+`index.css` มี `th { text-align: left }` เป็น rule ตรง → **ชนะการสืบทอด (`inherit`) จาก `<tr style={{textAlign:'right'}}>` เสมอ** (rule ตรงชนะค่าที่สืบทอดมา ไม่เกี่ยวกับ specificity) · ผลคือ **หัวคอลัมน์ชิดซ้าย แต่ตัวเลขในแถวชิดขวา = เหลื่อมกันทั้งตาราง** (เจอจริงในตารางผลิตรายชิ้นงานของ modal สรุปไลน์)
+- ตารางตัวเลข: ใส่ style ที่ `<th>` ทุกอัน (pattern: const `TH_L`/`TH_R` แล้ว `<th style={TH_R}>`) — **ห้ามหวังพึ่ง textAlign บน `<tr>` อย่างเดียว**
+- คอลัมน์ตัวเลขใส่ **`fontVariantNumeric: 'tabular-nums'`** ที่ `<table>` (เลขกว้างเท่ากัน หลักตรงกัน)
+- การ์ดสรุปที่วางเป็นแถว: บรรทัดคำอธิบายล่างต้อง**จองที่ไว้เสมอ** (`minHeight` + `' '` เมื่อไม่มีค่า) ไม่งั้นการ์ดสูงไม่เท่ากัน
+
 ### กราฟแท่งรายวัน/ไทม์ซีรีส์ (2026-07-30 — คำสั่ง user)
 - **แกนวันต่อเนื่อง ห้ามข้ามวันที่ไม่มีข้อมูล** — วันว่างแสดงเป็นตอเทาเตี้ย + tooltip "ไม่มีการผลิต" (เห็นช่วงหยุดคาตา ไม่หลอกว่าผลิตติดกัน) · cap จำนวนแท่ง (~400) กันช่วงยาวทำหน้าค้าง
 - **สีตามความหมายมาตรฐาน: เขียว (`var(--accent)`) = ของดี · แดง = NG** ซ้อนบนแท่งเดียวกัน (สเกลจากยอดรวม) + **legend ใต้กราฟเสมอ**
@@ -210,6 +217,18 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 6. **`employees.section/department/group_name` เป็น free text ไม่ผูก FK** → drift ได้ · **ตัวกรอง (filter bar) ที่ดึง distinct จาก employees ต้องจัดกลุ่ม 2 optgroup: "ในผังองค์กร" (ค่าที่ตรง org_nodes) + "⚠ นอกผัง (ต้องจัดข้อมูล)" (ค่าที่พนักงานกรอกแต่ไม่มีในผัง)** และ**โชว์เฉพาะค่าที่มีพนักงานจริง** (ทุกตัวเลือกเจอคนแน่นอน — กันหัวหน้าหาคนไม่เจอ) · ทำแล้ว: operator filter bar (Dept + Group)
 
 ต้นแบบที่ถูก: `Register.jsx` (ฟอร์ม + group จาก org_nodes kind='line'), `OEEAnalytics.jsx` TargetDashboard (filter bar), `Report.jsx` hook `useOrgDepts` → `deptsOf(section)`, `operator.jsx` (filter bar Dept+Group แบบ ในผัง/นอกผัง + modal cascade org_nodes)
+
+---
+
+## 5.4 การแก้ข้อมูลโครงสร้าง/master ต้องยืนยันก่อนเขียน (2026-08-03 — คำสั่ง user)
+
+หน้า setup/config (ตั้งค่าโปรแกรม,ฐานข้อมูล ฯลฯ) **ห้ามให้แตะ dropdown/toggle/ปุ่มครั้งเดียวแล้วเขียน DB ทันที** โดยไม่มีจังหวะยืนยัน — คนหลายแผนกมาใช้ เผลอกด/แตะจอทัชพลาด = แก้ master ทันที · เกณฑ์ (กันถามรัวจนรำคาญ):
+
+- **ต้องยืนยัน (`confirm()` หรือ draft+ปุ่มบันทึก):** ลบ · เปลี่ยนโครงสร้าง master (เช่น re-point Section/ไลน์แม่ของ `production_lines`) · **ปิดใช้งาน** (is_active true→false) · เขียนทับก้อนใหญ่ (bulk ทั้งปี/หลายแถว) · ปิดสิทธิ์ (`role_permissions` revoke) · ปิดการแจ้งเตือนทั้งหมวด
+- **ไม่ต้องยืนยัน (additive/ปลอดภัย):** เพิ่มแถวใหม่ · **เปิดใช้งาน**กลับ (is_active false→true) · เปิดสิทธิ์ · แก้ค่าใน draft/form ที่ยังไม่กดบันทึก
+- **`<select>` ที่เปลี่ยน FK ของ master ทันที:** ถ้ายกเลิก confirm ต้อง **re-fetch เพื่อ revert หน้าจอ** (select เป็น controlled component — ไม่ re-render จะค้างค่าที่ผู้ใช้เพิ่งเลือก) · ต้นแบบ: `LineSetup handleUpdateSection/handleUpdateParent` (`await fetchLines(); return`)
+- pattern ที่ดีที่สุด = **draft + แถบบันทึก/ยกเลิก** (ต้นแบบ `CompanyCalendar` คลิกวัน → draft, `ShiftOrganize` สลับกะ → pending + ปุ่ม 💾) · confirm ใช้กับ action เดี่ยวที่ทำไม่บ่อย
+- ทำแล้ว (2026-08-03): LineSetup (Section/Parent dropdown), ShiftOrganize (ลบ override), PermissionsManagement (ปิดสิทธิ์), CompanyCalendar (ตั้งค่าทั้งปี), NotificationConfig (ปิดแจ้งเตือน), OrgSetup (ปิด node), ProductMaster (ปิด part) · **หน้า setup ใหม่ทุกหน้าต้องยึดเกณฑ์นี้** (ไม่งั้น QC หมวด F ตก)
 
 ---
 
@@ -279,6 +298,17 @@ pattern ร่วมของทุกบอร์ดที่วางราย
 - **ห้าม hardcode เลขฟอร์ม/Rev/Effective ในโค้ด** นอกเหนือจาก fallback default ที่ส่งเข้า `getDocForm`
 - Revision History ของเอกสารแก้ที่ `/doc-forms` (modal แก้ไข → ตาราง 📜) — ฟอร์มที่พิมพ์ตารางประวัติ rev (เช่น Changing Point) อ่านผ่าน `getDocFormRevisions`
 - ตารางเก่า `document_controls`/`document_control_revisions` เลิกใช้แล้ว (ยุบเข้าทะเบียนกลาง 2026-07-30) — ห้ามเขียนเพิ่ม
+
+## 6.7 Editor ผัง/Floorplan ทุกตัวต้องมี Undo/Redo (2026-08-03 — คำสั่ง user)
+
+หน้าตั้งค่าผังที่คลิกวาด/ลาก/ลบแล้ว**เขียนลง DB ทันที** (ไม่มีปุ่ม save รวม) เผลอพลาดทีเดียวข้อมูลหายจริง — ต้องมี Undo/Redo เสมอ:
+
+- **hook กลาง `src/utils/useUndoHistory.js`** — undo แบบ snapshot: หน้าให้ `snapOf()` (ก้อนข้อมูลปัจจุบัน deep copy) + `applySnapshot(snap)` (diff ปัจจุบัน vs snapshot แล้ว**เขียนย้อนลง DB** insert/update/delete ตามลำดับ FK) · hook จัดการสแตค 40 ชั้น + ปุ่ม disabled + คีย์ลัด Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y (ข้ามตอน focus ช่องพิมพ์) ให้เอง
+- **จุดที่ต้องเรียก `pushHistory()` = "ก่อน" mutation แรกของทุก action** (วาง/ลบ/บันทึกฟอร์ม/เชื่อมเส้น) · การพิมพ์ต่อเนื่อง (ชื่อจุด) ส่ง tag เดิม → coalesce ใน 1.2 วิ ไม่ push ทุกตัวอักษร · การลากย้าย: ถ่าย snapshot ตอน pointerdown เก็บใน dragRef แล้ว `pushSnapshot(snap)` ตอนปล่อยเมื่อขยับจริง
+- **เปลี่ยน context (สลับไลน์/โซน/ผังคนละแผ่น) → `hist.clear()`** — snapshot ข้ามผังใช้ไม่ได้ ห้ามให้ undo ไปลบของผังอื่น
+- ปุ่มใช้ `undoBtnStyle(enabled)` จากไฟล์เดียวกัน: `↩️ Undo` `↪️ Redo` วางในแถบเครื่องมือของโหมดแก้ไข (แสดงเฉพาะตอนมีสิทธิ์แก้)
+- **ใช้แล้วที่:** TransportMapEditor (ถนน/จุดจอด AMR — node+edge), FactoryMap setupMode (polygon กรอบไลน์), MtnMachineLayout facility (จุดอุปกรณ์บนโซน — เพิ่ม/ลบโซน+อัปรูปไม่เข้า history เพราะไฟล์ storage ย้อนไม่ได้ ใช้ confirm แทน), LineSetup (จุดงาน+ทักษะ/WIP/เครื่องจักร/เส้น flow ของไลน์ที่เลือก)
+- editor ผังตัวใหม่ในอนาคต**ต้องใช้ hook นี้ตั้งแต่แรก** — ห้ามเขียน undo เองเฉพาะหน้า
 
 ## 7. เบ็ดเตล็ดที่เคยกัด
 

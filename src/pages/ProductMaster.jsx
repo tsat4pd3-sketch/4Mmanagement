@@ -57,7 +57,10 @@ function RelatedLinks({ matNo, productId }) {
 }
 
 export default function ProductMaster() {
-  const { role, fullName } = useContext(UserContext);
+  const { role, fullName, isDeptAdmin } = useContext(UserContext);
+  // อ้าง isDeptAdmin เพื่อผูก re-render — can() อ่าน flag จาก module var (_deptAdmin) ที่โหลด async
+  // ถ้าไม่ consume ค่านี้จาก context ปุ่มแก้ไขจะไม่โผล่จนกว่าจะ re-render ด้วยเหตุอื่น (แอดมินหน่วยงานติ๊กแล้วแต่แก้ไม่ได้)
+  void isDeptAdmin;
   const canCreate = can('products', 'create', role);
   const canEdit   = can('products', 'edit', role);
   const canDelete = can('products', 'delete', role);
@@ -1659,6 +1662,8 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
   }
 
   async function toggleActive(p) {
+    // ยืนยันเฉพาะตอน "ปิดใช้งาน" พาร์ท — เปิดกลับไม่ต้องถาม
+    if (p.is_active && !confirm(`ปิดใช้งานพาร์ท "${p.part_no || p.mat_no || ''}" ?\n\nจะหายจากการเลือกใช้ (ข้อมูลเดิมยังอยู่ เปิดกลับได้)`)) return;
     await supabaseDR.from('parts_master').update({ is_active: !p.is_active }).eq('id', p.id);
     load();
   }

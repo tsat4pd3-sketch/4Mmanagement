@@ -694,9 +694,8 @@ function LiveTab({ role }) {
 
   const handleAddDT = async () => {
     if (!selSession || !dtForm.downtime_type_id) { toast.error('เลือกประเภท Downtime'); return; }
-    if (!dtForm.machine_no) { toast.error('เลือกเครื่องจักร'); return; }
-    const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === selSession.line_name);
-    if (lineStds.length && !dtForm.mat_no) { toast.error('เลือกชิ้นงาน'); return; }
+    // เครื่องจักร + ชิ้นงาน ไม่บังคับทุกประเภท — downtime หลายอย่าง (5ส/ประชุม/รอวัตถุดิบ/QA recheck)
+    // เป็นการหยุดระดับไลน์ ไม่ผูกเครื่อง/ชิ้นงานเฉพาะ · ผูกได้ถ้าต้องการ (machine_no/mat_no nullable)
     const { startedAt, endedAt, durMin } = computeDtTimes();
     if (!startedAt && !durMin) { toast.error('กรอกเวลาหรือระยะเวลาอย่างน้อย 1 อย่าง'); return; }
     // ประเภท "อื่นๆ" เปล่าๆ บอกอะไรไม่ได้ในสรุปประชุมเช้า/รายงาน — บังคับระบุสาเหตุจริงเสมอ
@@ -704,6 +703,13 @@ function LiveTab({ role }) {
     if (dtTypeName.includes('อื่น') && !dtForm.description?.trim()) {
       toast.error('ประเภท "อื่นๆ" ต้องระบุรายละเอียด/สาเหตุด้วย — เพื่อให้รายงานและประชุมเช้าอ่านรู้เรื่อง');
       return;
+    }
+    // นอกแผน (เครื่องเสีย) ส่วนใหญ่ควรระบุเครื่อง — ไม่บังคับ (พาร์ทหมด/ไฟดับทั้งโรงงานลงเครื่องไม่ได้)
+    // แต่ไม่ปล่อยข้ามเงียบ: ถ้า unplanned แล้วไม่เลือกเครื่อง เด้งถามยืนยันก่อน (planned ไม่ผูกเครื่องอยู่แล้ว ไม่ถาม)
+    const dtCat = dtTypes.find(t => t.id === dtForm.downtime_type_id)?.category;
+    if (dtCat !== 'planned' && !dtForm.machine_no) {
+      const ok = window.confirm('Downtime นอกแผนนี้ยังไม่ได้เลือกเครื่องจักร\nเครื่องเสียส่วนใหญ่ควรระบุเครื่อง (เพื่อออกใบซ่อม/คิด OEE รายเครื่อง)\n\nยืนยันบันทึกโดยไม่เลือกเครื่อง? — เช่น พาร์ทหมด / ไฟดับทั้งโรงงาน');
+      if (!ok) return;
     }
     setSavingDT(true);
     const { data: { user } } = await supabase.auth.getUser();
@@ -1257,7 +1263,14 @@ function LiveTab({ role }) {
     const std = kanbanStds.find(s => s.mat_no === matNo);
     const prod = products.find(p => p.mat_no === matNo);
     const now = new Date();
-    const prodNo = `MANUAL-${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}`;
+    // เลข order manual: MANUAL-YYMMDD-HHmmss-XX
+    //   YYMMDD = วันงานของกะ (selSession.work_date ตัด 08:00 อยู่แล้ว) — กันเลขซ้ำข้ามวัน
+    //   HHmmss = เวลานาฬิกาตอนกดเปิด · XX = สุ่ม 2 ตัว (กันชนกรณี 2 ไลน์กดวินาทีเดียวกัน)
+    //   (prod_no ไม่ unique ในตารางโดยตั้งใจ — ยกยอดข้ามกะสร้างแถวใหม่ด้วย prod_no เดิม · ห้ามใส่ unique index)
+    const p2 = n => n.toString().padStart(2, '0');
+    const ymd = (selSession?.work_date || workDate()).replace(/-/g, '').slice(2);
+    const rnd2 = Array.from({ length: 2 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+    const prodNo = `MANUAL-${ymd}-${p2(now.getHours())}${p2(now.getMinutes())}${p2(now.getSeconds())}-${rnd2}`;
     const backfillIso = manualForm.is_backfill && manualForm.backfill_time ? backfillIsoFromTime(manualForm.backfill_time) : null;
     if (backfillIso && new Date(backfillIso) > new Date()) {
       toast.error(`เวลา ${manualForm.backfill_time} ยังมาไม่ถึง — เปิดย้อนหลังต้องเป็นเวลาที่ผ่านมาแล้วเท่านั้น`);
@@ -4201,6 +4214,9 @@ function LiveTab({ role }) {
         {showDT && selSession && (() => {
           const { startedAt, endedAt, durMin } = computeDtTimes();
           const hasResult = startedAt || durMin;
+          // เครื่องจักร + ชิ้นงาน เป็น optional ทุกประเภท downtime — หลายอย่าง (5ส/ประชุม/รอวัตถุดิบ/QA recheck)
+          // เป็นการหยุดระดับไลน์ ไม่ผูกเครื่อง/ชิ้นงานเฉพาะ (machine_no/mat_no nullable · OEE แยกด้วย category)
+          const dtMachineOptional = true;
           const MODES = [
             { key: 'start_end', label: 'เริ่ม → จบ',   desc: 'กรอกเวลาเริ่มหยุด + เวลากลับมา → คำนวณนาทีอัตโนมัติ' },
             { key: 'start_dur', label: 'เริ่ม + นาที',  desc: 'กรอกเวลาเริ่มหยุด + จำนวนนาที → คำนวณเวลากลับมา' },
@@ -4314,7 +4330,7 @@ function LiveTab({ role }) {
                   )}
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <Field label="เครื่องจักร *">
+                    <Field label={`เครื่องจักร ${dtMachineOptional ? '(ถ้ามี)' : '*'}`}>
                       {(() => {
                         const lineMachines = machines.filter(m => m.line_name === selSession.line_name);
                         if (!lineMachines.length) {
@@ -4332,7 +4348,7 @@ function LiveTab({ role }) {
                         );
                       })()}
                     </Field>
-                    <Field label="ชิ้นงาน (แยก OEE/Downtime ตามชิ้นงาน) *">
+                    <Field label={`ชิ้นงาน (แยก OEE/Downtime ตามชิ้นงาน) ${dtMachineOptional ? '(ถ้ามี)' : '*'}`}>
                       {(() => {
                         const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === selSession.line_name);
                         if (!lineStds.length) return <div style={{ ...inputStyle, color: 'var(--muted)', display: 'flex', alignItems: 'center' }}>— ไม่มีชิ้นงานในไลน์นี้ —</div>;
@@ -4358,7 +4374,7 @@ function LiveTab({ role }) {
                   <button onClick={() => setShowDT(false)} style={cancelBtnStyle}>ยกเลิก</button>
                   {(() => {
                     const lineStdsForBtn = kanbanStds.filter(s => s.dr_products?.line_name === selSession?.line_name);
-                    const dtInvalid = !dtForm.downtime_type_id || !hasResult || !dtForm.machine_no || (lineStdsForBtn.length > 0 && !dtForm.mat_no);
+                    const dtInvalid = !dtForm.downtime_type_id || !hasResult || (!dtMachineOptional && !dtForm.machine_no) || (!dtMachineOptional && lineStdsForBtn.length > 0 && !dtForm.mat_no);
                     return (
                       <button onClick={handleAddDT} disabled={savingDT || dtInvalid}
                         style={{ ...saveBtnStyle, background: '#ef4444', opacity: (dtInvalid || savingDT) ? 0.5 : 1 }}>
