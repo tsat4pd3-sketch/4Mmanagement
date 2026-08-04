@@ -548,6 +548,8 @@ export default function LayerProcessAudit() {
     setQuestions(qs || []);
   };
   const toggleQuestion = async (q) => {
+    // ปิดใช้งานข้อ = ถอดออกจาก checklist ทุกใบตรวจถัดไป → ยืนยันก่อน (UI-CONVENTIONS §5.4) · เปิดกลับไม่ต้องถาม
+    if (q.is_active && !window.confirm(`ปิดใช้งานข้อ "${q.question}" ?\n\nข้อนี้จะไม่ขึ้นในใบตรวจ LPA ครั้งถัดไป (เปิดกลับได้ภายหลัง)`)) return;
     const { error } = await supabase.from('lpa_questions').update({ is_active: !q.is_active }).eq('id', q.id);
     if (error) { toast.error(error.message); return; }
     setQuestions(prev => prev.map(x => x.id === q.id ? { ...x, is_active: !q.is_active } : x));

@@ -496,13 +496,16 @@ function OtMasterDataPanel() {
     load();
   };
 
+  // ปิดใช้งาน master = หายจาก dropdown จองรถ OT → ยืนยันก่อน (UI-CONVENTIONS §5.4) · เปิดกลับไม่ต้องถาม
   const toggleRouteActive = async (r) => {
+    if (r.is_active && !window.confirm(`ปิดใช้งานสายรถ "${r.name || r.code}" ?\n\nจะไม่ขึ้นให้เลือกตอนจองรถ OT (เปิดกลับได้ภายหลัง)`)) return;
     const { error } = await supabase.from('bus_routes').update({ is_active: !r.is_active }).eq('id', r.id);
     if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
     load();
   };
 
   const toggleTaskActive = async (t) => {
+    if (t.is_active && !window.confirm(`ปิดใช้งานงาน OT "${t.name || t.code}" ?\n\nจะไม่ขึ้นให้เลือกตอนจองรถ OT (เปิดกลับได้ภายหลัง)`)) return;
     const { error } = await supabase.from('ot_task_types').update({ is_active: !t.is_active }).eq('id', t.id);
     if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
     load();
