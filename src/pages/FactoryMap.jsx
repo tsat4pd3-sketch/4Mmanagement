@@ -80,18 +80,24 @@ const METRICS = {
     text: s => s.ng > 0 ? `NG ${s.ng}` : (s.hasOpen ? 'NG 0' : ''),
     cat: s => !s.hasOpen && s.ng === 0 ? 'idle' : s.ng === 0 ? 'good' : s.ng < 20 ? 'ok' : 'bad',
   },
-  manpower: {
-    label: '👷 คน/เข้างาน', worstFirst: false, facilityNA: true,
-    value: s => s.headTotal > 0 ? Math.round(s.present / s.headTotal * 100) : null,
-    text: s => s.headTotal > 0 ? `${s.present}/${s.headTotal} คน${s.ppeBad ? ` · ⚠PPE ${s.ppeBad}` : ''}` : '',
-    cat: s => s.headTotal === 0 ? 'idle' : (() => { const p = s.present / s.headTotal * 100; return p >= 95 ? 'good' : p >= 80 ? 'ok' : 'bad'; })(),
-  },
-  stationfill: {
-    // 🎯 จุดงานเข้าประจำ — % ของจุดงาน (workstations) ที่มีคนเข้าประจำจริง (assigned_line ของ log ที่มาทำงาน)
-    label: '🎯 จุดงานเข้าประจำ', worstFirst: false, facilityNA: true,
-    value: s => s.stationTotal > 0 ? Math.round(s.stationFilled / s.stationTotal * 100) : null,
-    text: s => s.stationTotal > 0 ? `${s.stationFilled}/${s.stationTotal} จุด` : '',
-    cat: s => !s.stationTotal ? 'idle' : (() => { const p = s.stationFilled / s.stationTotal * 100; return p >= 90 ? 'good' : p >= 70 ? 'ok' : 'bad'; })(),
+  people: {
+    // 👷 รวม "คน/เข้างาน" + "จุดงานเข้าประจำ" เป็นแท็บเดียว (2026-08-04 คำสั่ง user) —
+    // ป้าย: คนมา/ทั้งหมด · จุดที่มีคนเข้าประจำ/จุดทั้งหมด · ⚠PPE — สี = ด้านที่แย่กว่า
+    label: '👷 คน & จุดงาน', worstFirst: false, facilityNA: true,
+    value: s => s.headTotal > 0 ? Math.round(s.present / s.headTotal * 100) : (s.stationTotal > 0 ? Math.round(s.stationFilled / s.stationTotal * 100) : null),
+    text: s => {
+      const parts = [];
+      if (s.headTotal > 0) parts.push(`${s.present}/${s.headTotal} คน`);
+      if (s.stationTotal > 0) parts.push(`${s.stationFilled}/${s.stationTotal} จุด`);
+      if (s.ppeBad) parts.push(`⚠PPE ${s.ppeBad}`);
+      return parts.join(' · ');
+    },
+    cat: s => {
+      const rank = { idle: 0, good: 1, ok: 2, bad: 3 };
+      const cM = s.headTotal === 0 ? 'idle' : (() => { const p = s.present / s.headTotal * 100; return p >= 95 ? 'good' : p >= 80 ? 'ok' : 'bad'; })();
+      const cS = !s.stationTotal ? 'idle' : (() => { const p = s.stationFilled / s.stationTotal * 100; return p >= 90 ? 'good' : p >= 70 ? 'ok' : 'bad'; })();
+      return rank[cS] > rank[cM] ? cS : cM;  // เอาด้านที่แย่กว่า
+    },
   },
   pm: {
     label: '🛠️ PM เครื่องจักร', worstFirst: true, desc: true,
@@ -114,6 +120,22 @@ const METRICS = {
 };
 
 const round = (v) => Math.round(v * 100) / 100;
+// convex hull (Andrew monotone chain) — ใช้วาด "กรอบแม่อัตโนมัติ" ล้อมกรอบไลน์ลูกทั้งหมด
+const convexHull = (pts) => {
+  const p = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (p.length <= 3) return p;
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower = [], upper = [];
+  for (const pt of p) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], pt) <= 0) lower.pop(); lower.push(pt); }
+  for (const pt of [...p].reverse()) { while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], pt) <= 0) upper.pop(); upper.push(pt); }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+};
+// ขยาย hull ออกจากจุดศูนย์กลางเล็กน้อย ให้เส้นประไม่ทับขอบกรอบลูกพอดี
+const expandHull = (pts, f = 1.045) => {
+  if (!pts.length) return pts;
+  const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+  return pts.map(([x, y]) => [Math.min(100, Math.max(0, round(cx + (x - cx) * f))), Math.min(100, Math.max(0, round(cy + (y - cy) * f)))]);
+};
 const centroid = (pts) => pts.length
   ? [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length]
   : [50, 50];
@@ -835,6 +857,18 @@ export default function FactoryMap({ setupMode = false }) {
     return out;
   };
   const assignableFacility = () => { const f = framedNames(); return facilityZones.filter(n => !f.has(n)); };
+  // กรอบแม่อัตโนมัติ (2026-08-04): แม่ไม่ได้ตีเอง + ลูกถูกตีแล้ว → เส้นประล้อมกรอบลูกทั้งหมด + ป้ายยอดรวม family
+  // แก้ปัญหา "เช็คชื่อกันที่ไลน์แม่" — ข้อมูลที่ผูกชื่อแม่ (คน ฯลฯ) โผล่บนผังโดยไม่ต้องตีกรอบแม่ทับลูก
+  const autoHulls = useMemo(() => {
+    const f = new Set(regions.map(r => r.line_name));
+    return topNames
+      .filter(t => !f.has(t) && (childrenOf[t] || []).some(c => f.has(c)))
+      .map(t => {
+        const pts = regions.filter(r => (childrenOf[t] || []).includes(r.line_name)).flatMap(r => r.points);
+        return { name: t, hull: expandHull(convexHull(pts)) };
+      })
+      .filter(h => h.hull.length >= 3);
+  }, [regions, topNames, childrenOf]);
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
@@ -986,6 +1020,20 @@ export default function FactoryMap({ setupMode = false }) {
             <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.14)', pointerEvents: 'none' }} />
 
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+              {/* กรอบแม่อัตโนมัติ — เส้นประล้อมลูก (วาดก่อน = อยู่ใต้กรอบลูก คลิก/hover เฉพาะพื้นที่ระหว่างลูก) */}
+              {!editing && autoHulls.map(h => {
+                const meta = CAT[regCat(stOf(h.name))];
+                return (
+                  <polygon key={`hull-${h.name}`} points={ptsStr(h.hull)}
+                    fill={`${meta.color}14`} stroke={meta.color} strokeWidth={hoverLine === h.name || highlight === h.name ? '3' : '1.6'}
+                    strokeDasharray="6 4" vectorEffect="non-scaling-stroke" strokeLinejoin="round" opacity={0.9}
+                    style={{ pointerEvents: drawing ? 'none' : 'auto', cursor: 'pointer' }}
+                    onClick={(e) => { e.stopPropagation(); openLine(h.name); }}
+                    onPointerEnter={(e) => { if (e.pointerType === 'mouse') { setHoverLine(h.name); setHoverXY({ x: e.clientX, y: e.clientY }); } }}
+                    onPointerMove={(e) => { if (e.pointerType === 'mouse') setHoverXY({ x: e.clientX, y: e.clientY }); }}
+                    onPointerLeave={() => setHoverLine(hv => hv === h.name ? null : hv)} />
+                );
+              })}
               {regions.map(r => {
                 const cat = regCat(stOf(r.line_name)); const meta = CAT[cat]; const hl = highlight === r.line_name || hoverLine === r.line_name;
                 return (
@@ -1009,6 +1057,21 @@ export default function FactoryMap({ setupMode = false }) {
             {drawing && draft.map((pt, i) => (
               <div key={`d-${i}`} style={{ position: 'absolute', left: `${pt[0]}%`, top: `${pt[1]}%`, width: i === 0 ? (snapFirst ? 22 : 16) : 11, height: i === 0 ? (snapFirst ? 22 : 16) : 11, transform: 'translate(-50%,-50%)', borderRadius: '50%', background: i === 0 ? (snapFirst ? 'rgba(34,197,94,0.35)' : 'rgba(77,159,255,0.3)') : '#4d9fff', border: `2px solid ${i === 0 ? '#22c55e' : '#fff'}`, pointerEvents: 'none', transition: 'width .1s,height .1s' }} />
             ))}
+
+            {/* ป้ายกลุ่ม (กรอบแม่อัตโนมัติ) — ลอยเหนือเส้นประ บอกยอดรวมทั้ง family (รวมคนที่เช็คชื่อผูกไลน์แม่) */}
+            {!editing && autoHulls.map(h => {
+              const [cx, cy] = labelAnchor(h.hull); const st = stOf(h.name); const meta = CAT[regCat(st)]; const txt = regText(st);
+              return (
+                <div key={`hlbl-${h.name}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%, -108%)', pointerEvents: 'none', maxWidth: '32%' }}>
+                  <div style={{ background: 'rgba(10,12,20,0.62)', border: `1.5px dashed ${meta.color}`, borderRadius: 6, padding: '1px 8px 2px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)' }}>
+                    <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>
+                      {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}▣ {h.name}
+                    </div>
+                    {txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2 }}>{txt}</div>}
+                  </div>
+                </div>
+              );
+            })}
 
             {/* ป้าย = การ์ดทึบมีขอบสีสถานะ (อ่านออกทุกพื้นหลัง) + จุดแดงถ้า downtime ค้าง */}
             {regions.map(r => {
@@ -1130,7 +1193,7 @@ export default function FactoryMap({ setupMode = false }) {
                 // ── โหมดสด (จัดอันดับตาม metric ที่เลือก) — เดิม ──
                 const counts = ranked.reduce((a, r) => { a[r.cat] = (a[r.cat] || 0) + 1; return a; }, {});
                 const maxVal = Math.max(1, ...ranked.map(r => (r.val == null ? 0 : Math.abs(r.val))));
-                const isPct = ['productivity', 'oee', 'manpower', 'stationfill'].includes(metric);
+                const isPct = ['productivity', 'oee', 'people'].includes(metric);
                 return (
                   <>
                     <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>{M.label} — จัดอันดับ (สด)</div>
