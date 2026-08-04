@@ -624,7 +624,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
             <button onClick={() => setSortMode('urgent')} style={btn(sortMode === 'urgent')} title="ใบที่หลุดเฟส/deadline ใกล้สุดขึ้นแถวบน">⚡ ใกล้ดิวก่อน</button>
             <button onClick={() => setSortMode('time')} style={btn(sortMode === 'time')}>🕐 ตามเวลาส่ง</button>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))', gap: 12 }}>
             {cardsSorted.filter(o =>
               cardFilter === 'all' ? true
               : cardFilter === 'shipped' ? o.status === 'shipped'

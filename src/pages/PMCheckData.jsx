@@ -947,7 +947,7 @@ export default function PMCheckData() {
                 )
 
                 return twoCol ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(360px, 1fr) minmax(420px, 640px)', gap: 24, alignItems: 'start', maxWidth: 1500, margin: '0 auto' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(min(360px, 100%), 1fr) minmax(420px, 640px)', gap: 24, alignItems: 'start', maxWidth: 1500, margin: '0 auto' }}>
                     <div style={{ position: 'sticky', top: 0 }}>{viewerNode}</div>
                     <div>{formNode}</div>
                   </div>

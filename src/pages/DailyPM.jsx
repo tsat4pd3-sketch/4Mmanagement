@@ -268,7 +268,7 @@ export default function DailyPM() {
               )
             })}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 14 }}>
             {dashboard.map(row => {
               const meta = DAILY_PM_STATUS_META[row.status] ?? DAILY_PM_STATUS_META.none
               // นาฬิกาของ window ตรวจ: pending = เหลืออีกกี่นาที / orange = เกินมาแล้วกี่นาที

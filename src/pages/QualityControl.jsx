@@ -423,7 +423,7 @@ function QualityDashboard() {
         <KpiCard label="CAPA เกินกำหนด" value={capaOverdue} color={capaOverdue > 0 ? '#ef4444' : '#22c55e'} sub="เลย due date" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(340px, 100%), 1fr))', gap: 14 }}>
         <div style={cardSt}>
           <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>📈 แนวโน้ม PPM รายวัน</div>
           <ResponsiveContainer width="100%" height={240}>
@@ -650,7 +650,7 @@ function SPCTab({ lines, canRecord, canManage }) {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(360px, 100%), 1fr))', gap: 14 }}>
             {/* X-bar chart */}
             <div style={cardSt}>
               <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 8 }}>{sel.subgroup_size === 1 ? '📉 Individuals (I) Chart' : '📉 X̄ Chart'}</div>
@@ -1163,7 +1163,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
           {detail.ncr_no && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>อ้างอิง NCR: <b>{detail.ncr_no}</b></div>}
 
           {/* D1-D8 เรียง 2 คอลัมน์บนจอกว้าง (UI-CONVENTIONS §5 — เดิมคอลัมน์เดียวสูงยืดต้อง scroll) */}
-          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 10 }}>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))', gap: 10 }}>
             {D_FIELDS.map(([key, label]) => (
               <Field key={key} label={label}>
                 <textarea rows={3} style={{ ...inputSt, resize: 'vertical' }} value={detail[key] || ''}

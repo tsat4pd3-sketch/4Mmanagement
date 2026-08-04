@@ -181,7 +181,7 @@ export default function StoreMonitor() {
           ✅ ไม่พบความผิดปกติ — สต๊อกอยู่ในเกณฑ์ min/max และรอบส่งปกติ
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 11 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(290px, 100%), 1fr))', gap: 11 }}>
           {shown.map((f, i) => {
             const red = f.kind === 'shortage';
             const tone = red ? '#ef4444' : '#f59e0b';

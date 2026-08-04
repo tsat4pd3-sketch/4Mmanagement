@@ -82,7 +82,7 @@ const S = {
     background: active ? `${color}18` : 'var(--bg3)',
     color: active ? color : 'var(--muted)',
   }),
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))', gap: 16 },
   card: {
     background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
     overflow: 'hidden', display: 'flex', flexDirection: 'column', transition: 'border-color 0.2s',

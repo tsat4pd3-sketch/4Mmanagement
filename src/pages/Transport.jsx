@@ -163,7 +163,7 @@ export default function Transport() {
             {byLine.map(g => (
               <div key={g.line} style={{ ...card, padding: 0, overflow: 'hidden' }}>
                 <div style={{ padding: '9px 14px', borderBottom: '1px solid var(--border2)', fontWeight: 800, fontSize: 14, color: '#f59e0b', background: 'var(--bg2)' }}>🏭 {g.line}</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 10, padding: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(280px, 100%), 1fr))', gap: 10, padding: 12 }}>
                   {g.rounds.map(r => {
                     const st = getRoundStatus(r, confirmedSet, dlvMap, workDate, nowMs);
                     const asg = assignMap[r.id];
@@ -225,12 +225,12 @@ export default function Transport() {
           {carriers.length === 0 ? (
             <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีคนขับ — กด "➕ เพิ่มคนขับ"</div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 10 }}>
               {carriers.map(c => (
                 <div key={c.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--bg2)', opacity: c.is_active ? 1 : 0.5 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}>
                     <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>👷 {c.name}</span>
-                    {canManage && <button onClick={() => setEditCarrier(c)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>}
+                    {canManage && <button className="tbtn" onClick={() => setEditCarrier(c)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>}
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
                     {c.emp_code ? `${c.emp_code} · ` : ''}{SHIFTS.find(s => s[0] === c.shift)?.[1] || 'ทุกกะ'}{c.section ? ` · ${c.section}` : ''}{!c.is_active ? ' · ⛔ ปิด' : ''}

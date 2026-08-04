@@ -3047,7 +3047,7 @@ function LiveTab({ role }) {
                   return (
                     <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>📦 สรุปแยกตามชิ้นงาน ({rows.length} MAT.NO) — เป้าหมาย vs ควรได้ (เต็มเวลา) vs ผลิตได้จริง</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 6 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(280px, 100%), 1fr))', gap: 6 }}>
                         {rows.map(r => {
                           const overage = ctOverage[r.matNo];
                           return (
@@ -3440,7 +3440,7 @@ function LiveTab({ role }) {
                   return (
                     <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>📦 สรุปแยกตามชิ้นงาน ({rows.length} MAT.NO) — เป้าหมาย vs ควรได้ (เต็มเวลา) vs ผลิตได้จริง</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 6 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(280px, 100%), 1fr))', gap: 6 }}>
                         {rows.map(r => {
                           const overage = ctOverage[r.matNo];
                           return (

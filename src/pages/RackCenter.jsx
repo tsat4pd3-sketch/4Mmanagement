@@ -210,7 +210,7 @@ export default function RackCenter() {
             <div style={{ fontSize: 14, fontWeight: 800, color: '#f59e0b', marginBottom: 10, fontFamily: 'var(--font-display)' }}>
               📦 ใบเบิก Packaging จากการผลิต <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>({pending.length} รายการ)</span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 10 }}>
               {pending.map(p => (
                 <div key={p.id} style={{ background: 'var(--bg2)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 10, padding: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -313,7 +313,7 @@ export default function RackCenter() {
 
       {/* Kanban board: 4 status columns */}
       {view === 'board' && (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(260px, 100%), 1fr))', gap: 14 }}>
         {STATUS_COLS.map(col => (
           <div key={col.key} style={{ ...card, padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '12px 16px', background: 'var(--bg2)', borderBottom: `2px solid ${col.color}40`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

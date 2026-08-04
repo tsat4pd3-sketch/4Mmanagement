@@ -500,7 +500,7 @@ export default function Improvements() {
           ยังไม่มีโปรเจคปรับปรุง{canManage ? ' — กด "➕ เพิ่มโปรเจคปรับปรุง" เลือกปัญหาจากพาเรโต้ได้เลย' : ''}
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 14, marginTop: 14, alignItems: 'stretch' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(360px, 100%), 1fr))', gap: 14, marginTop: 14, alignItems: 'stretch' }}>
           {visibleItems.map(imp => {
             const st = STATUS_META[imp.status] || STATUS_META.monitoring;
             const r = results[imp.id];
@@ -704,7 +704,7 @@ export default function Improvements() {
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{modal.id ? '✏️ แก้ไขโปรเจคปรับปรุง' : '➕ เพิ่มโปรเจคปรับปรุง'}</h3>
               <button onClick={() => setModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 16 }}>
               {/* ซ้าย: ข้อมูลโปรเจค */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ชื่อโปรเจค *

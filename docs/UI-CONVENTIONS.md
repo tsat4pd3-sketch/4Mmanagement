@@ -110,7 +110,15 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
     → จอ ≤600px ยุบเป็นคอลัมน์เดียวอัตโนมัติ (`!important` ชนะ inline เฉพาะจอแคบ) —
     modal/ฟอร์มใหม่ที่มี grid หลายคอลัมน์**ต้องติด class นี้เสมอ**
   - `className="tbtn"` — ปุ่มไอคอนเล็กในตาราง (✏️ 🗑️ ✕ 💾) → จอทัช (`pointer:coarse`)
-    ขยาย hit area ≥40px · เมาส์ไม่เปลี่ยน
+    ขยาย hit area ≥40px · เมาส์ไม่เปลี่ยน · **ปุ่มที่มีแต่ไอคอนไม่มีข้อความ ต้องติด class นี้เสมอ**
+- **⚠️ grid `repeat(auto-fill/auto-fit, minmax(Npx, 1fr))` ต้องเขียนเป็น `minmax(min(Npx, 100%), 1fr)` เสมอ (2026-08-04)**
+  — `minmax(Npx, ...)` เป็น **พื้นแข็ง**: container แคบกว่า N (มือถือ 360–390px ลบ padding เหลือ ~324–354px)
+  track จะไม่ยอมหด → **ดันล้นขอบจอ เลื่อนแนวนอนทั้งหน้า/โดน `body{overflow-x:hidden}` ตัดหาย**
+  · ห่อด้วย `min(Npx, 100%)` แล้ว **desktop เหมือนเดิมเป๊ะ** (container กว้าง → `min()` = N)
+  ส่วนมือถือ track หดตาม container ได้ · ไล่แก้ทุกจุดที่ N ≥ 260 แล้ว 30 จุด 15 ไฟล์ (2026-08-04)
+  · ต่างจาก `mgrid` ที่ยุบ 1 คอลัมน์ตายตัวที่ ≤600px — `min()` เป็น fluid ใช้ได้ทุกความกว้าง ใช้คู่กันได้
+  · **grid 2 คอลัมน์ตายตัวที่มีคอลัมน์ px** (เช่น `minmax(240px,300px) 1fr`) ยังต้อง guard ด้วย
+  `isMobile ? '1fr' : ...` หรือ `mgrid` เหมือนเดิม (min() ช่วยไม่ได้ เพราะสองคอลัมน์รวมกันยังเกิน)
 - **ลาก marker/หมุดต้องใช้ pointer events** (`onPointerDown` + window `pointermove/pointerup/pointercancel`
   + `touchAction:'none'` บน element ระหว่างโหมดแก้ไข) — ห้ามใช้ mouse events อย่างเดียว
   ไม่งั้นจอทัชลากไม่ได้ · ต้นแบบ: `MachineFloorMap.jsx` (2026-07-11), JigSpinCheck ใน `PMCheckData.jsx`

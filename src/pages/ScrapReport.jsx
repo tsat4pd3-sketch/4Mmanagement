@@ -316,8 +316,8 @@ export default function ScrapReport() {
                 <td style={tdSt}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 999, color: STATUS_META[rep.status]?.color, background: `${STATUS_META[rep.status]?.color}1f`, border: `1px solid ${STATUS_META[rep.status]?.color}55` }}>{STATUS_META[rep.status]?.label || rep.status}</span></td>
                 <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                   <button style={{ ...ghostBtn, padding: '4px 10px' }} onClick={() => doExport(rep)}>⬇ Excel</button>
-                  {canRecord && <button style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => openEdit(rep)}>✏️</button>}
-                  {canDel && <button style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4, color: '#ef4444' }} onClick={() => delReport(rep)}>🗑</button>}
+                  {canRecord && <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => openEdit(rep)}>✏️</button>}
+                  {canDel && <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4, color: '#ef4444' }} onClick={() => delReport(rep)}>🗑</button>}
                 </td>
               </tr>
             ))}

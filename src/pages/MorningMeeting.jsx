@@ -534,7 +534,7 @@ export default function MorningMeeting() {
   const LineCards = () => (
     // min 290px ≈ 5 ใบ/แถวบนจอ desktop — กว้างพอให้ชิปยอด/%/OEE/DT จบบรรทัดเดียวเกือบทุกเคส
     // (เดิม 240px ได้ 6 ใบ/แถว การ์ดแคบจนชิปตกบรรทัดบ่อย ดูรก)
-    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(290px, 1fr))', gap: 10 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(min(290px, 100%), 1fr))', gap: 10 }}>
       {lineResults.map(({ line, shifts }) => (
         <div key={line.id} style={{ ...card, height: '100%', minHeight: 126, display: 'flex', flexDirection: 'column', gap: 8, opacity: shifts.length ? 1 : 0.55 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
