@@ -68,6 +68,30 @@ function calcOEE(sessions, downtimes, defects) {
   return results;
 }
 
+/* ── OOE / TEEP — ต่างจาก OEE ที่ "ฐานเวลา" อย่างเดียว (2026-08-04 · คำสั่ง user) ────────────
+   OEE  = ฐาน "เวลารับภาระ" (เวลากะ − พักนโยบาย − หยุดตามแผน)  → ตอนที่ตั้งใจเดิน เดินดีแค่ไหน
+   OOE  = ฐาน "เวลากะทั้งหมด" (รวมพัก + หยุดตามแผน)            → เวลาที่โรงงานเปิด ใช้คุ้มแค่ไหน
+   TEEP = ฐาน "เวลาปฏิทิน 24 ชม./วัน"                          → กำลังผลิตที่มีทั้งหมด ใช้ไปกี่ %
+   ค่าจะเรียง TEEP ≤ OOE ≤ OEE เสมอ (ฐานใหญ่ขึ้น เลขเล็กลง)
+   คิดจาก OEE ที่ stamp ไว้แล้วคูณสัดส่วนฐาน — ไม่คำนวณ A/P/Q ใหม่ (กันได้ตัวเลขคนละชุดกับ Daily Report) */
+const SHIFT_START_MIN = { day: 8 * 60, night: 20 * 60 };
+// เวลาพักตามนโยบายบริษัทที่ตกอยู่ในกรอบกะนั้น (นาที) — นับเฉพาะช่วงที่ทับกับกะจริง
+function policyBreakMin(shift, shiftMin, policies) {
+  const startMin = SHIFT_START_MIN[shift] ?? SHIFT_START_MIN.day;
+  const endMin = startMin + (Number(shiftMin) || 0);
+  let total = 0;
+  for (const p of policies || []) {
+    if (!(p.shift === 'both' || p.shift === shift)) continue;
+    if (p.process_type && p.process_type !== 'common') continue; // นโยบายเฉพาะ process — ข้าม (ไม่รู้ process ของกะที่นี่)
+    const [h, m] = String(p.start_time || '00:00').split(':').map(Number);
+    let bs = h * 60 + m;
+    if (bs < startMin) bs += 1440;                                // พักหลังเที่ยงคืน (กะดึกข้ามวัน)
+    const ov = Math.min(bs + (Number(p.duration_min) || 0), endMin) - Math.max(bs, startMin);
+    if (ov > 0) total += ov;
+  }
+  return total;
+}
+
 // ── ค่าเฉลี่ยถ่วงน้ำหนักตามตำรา OEE ───────────────────────────────
 // A/OEE ถ่วงด้วย "เวลารับภาระ" (loading time = shift − planned DT) · P ถ่วงด้วย "เวลาเดินเครื่อง"
 // (loading × A) · Q ถ่วงด้วย "จำนวนที่ผลิต" (ดี + เสีย) — กะเล็กไม่ถ่วงเท่ากะใหญ่ (เดิมเฉลี่ยธรรมดา
@@ -598,6 +622,11 @@ export default function OEEAnalytics() {
   const [defectTypes,setDefectTypes]= useState([]);
   const [lines,      setLines]      = useState([]);
   const [loading,    setLoading]    = useState(true);
+  const [breakPols,  setBreakPols]  = useState([]); // break_policies — ใช้คิดเวลาพักนโยบายสำหรับ OOE/TEEP
+  useEffect(() => {
+    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true)
+      .then(r => setBreakPols(r.data || []), () => setBreakPols([]));
+  }, []);
 
   // Filters
   const [period,     setPeriod]     = useState('monthly'); // daily|monthly|yearly
@@ -708,12 +737,36 @@ export default function OEEAnalytics() {
   const kpi = useMemo(() => {
     // ถ่วงน้ำหนักตรงจากทุกกะใน scope (ไม่ใช่เฉลี่ยของค่าเฉลี่ยรายวันอีกชั้น — mean-of-means ทำให้
     // วันที่ผลิตน้อยถ่วงเท่าวันที่ผลิตเยอะ) · A/OEE ถ่วงเวลารับภาระ, P ถ่วงเวลาเดินเครื่อง, Q ถ่วงจำนวนผลิต
+    const oee = wavg(rows, r => r.calcOEE, wLoad);
+    // ── ฐานเวลาสำหรับ OOE/TEEP — นับเฉพาะกะที่มี OEE (กะไม่มีผลผลิตไม่ถ่วง) ──
+    const valid = rows.filter(r => r.calcOEE != null && (Number(r.shift_min) || 0) > 0);
+    let sumNetAvail = 0, sumShift = 0, sumBreak = 0, sumPlanned = 0;
+    const lineSet = new Set();
+    valid.forEach(r => {
+      const shiftMin = Number(r.shift_min) || 0;
+      const brk = policyBreakMin(r.shift, shiftMin, breakPols);
+      const plan = Number(r.plannedMin) || 0;
+      sumShift += shiftMin; sumBreak += brk; sumPlanned += plan;
+      sumNetAvail += Math.max(0, shiftMin - brk - plan);
+      lineSet.add(r.line_name);
+    });
+    // TEEP: ฐาน = เวลาปฏิทินทั้งหมดในช่วงที่เลือก × จำนวนไลน์ — **ต้องรวมวันที่ไม่ได้เปิดกะด้วย**
+    // (ตามตำรา "Not Scheduled Time / ไม่มีแผนเปิดกะ" อยู่ในฐาน TEEP — ถ้านับเฉพาะวันที่เปิดกะ TEEP จะสูงเกินจริง)
+    const dayCount = Math.max(1, Math.round((new Date(`${dateTo}T00:00:00`) - new Date(`${dateFrom}T00:00:00`)) / 86400000) + 1);
+    const calMin = lineSet.size * dayCount * 1440;
+    const r1 = (v) => (v == null ? null : +v.toFixed(1));
     return {
-      oee: wavg(rows, r => r.calcOEE, wLoad), a: wavg(rows, r => r.calcA, wLoad),
+      oee, a: wavg(rows, r => r.calcA, wLoad),
       p: wavg(rows, r => r.calcP, wRun), q: wavg(rows, r => r.calcQ, wProd),
+      // OOE/TEEP = OEE × สัดส่วนฐานเวลา → เรียง TEEP ≤ OOE ≤ OEE เสมอ และอธิบายได้ตรงๆ
+      ooe:  oee != null && sumShift > 0 ? r1(oee * (sumNetAvail / sumShift)) : null,
+      teep: oee != null && calMin  > 0 ? r1(oee * (sumNetAvail / calMin))   : null,
+      netAvailMin: Math.round(sumNetAvail), shiftMinTotal: Math.round(sumShift),
+      breakMinTotal: Math.round(sumBreak), plannedMinTotal: Math.round(sumPlanned), calMin,
+      teepLines: lineSet.size, teepDays: dayCount,
       sessions: rows.length, total: rows.reduce((s, r) => s + r.totalQty, 0),
     };
-  }, [rows]);
+  }, [rows, breakPols, dateFrom, dateTo]);
 
   // ── Downtime Pareto ────────────────────────────────────────────
   const dtPareto = useMemo(() => {
@@ -1106,6 +1159,35 @@ export default function OEEAnalytics() {
         <KpiCard label="Quality (Q)"      value={kpi.q}   color={kpi.q   != null ? qColor(kpi.q)   : undefined} sub={`เป้า ≥ ${trTarget.q}% · % ชิ้นงานดี`} />
         <KpiCard label="ผลิตรวม" value={null} sub={`${kpi.total.toLocaleString()} ชิ้น`}
           color="var(--text)" />
+      </div>
+
+      {/* ── OOE / TEEP — ต่างจาก OEE ที่ "ฐานเวลา" · เห็นเวลาที่หายไปกับแผน/ไม่ได้เปิดกะ (2026-08-04) ── */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16, alignItems: 'stretch' }}>
+        <KpiCard label="OOE (Overall Operations Effectiveness)" value={kpi.ooe}
+          color={kpi.ooe != null ? oeeColor(kpi.ooe) : undefined}
+          sub="ฐาน = เวลากะทั้งหมด (รวมพัก + หยุดตามแผน)" />
+        <KpiCard label="TEEP (Total Effective Equipment Performance)" value={kpi.teep}
+          color={kpi.teep != null ? oeeColor(kpi.teep) : undefined}
+          sub={`ฐาน = ปฏิทิน 24 ชม. · ${kpi.teepLines} ไลน์ × ${kpi.teepDays} วัน`} />
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', flex: '2 1 320px', minWidth: 260 }}>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>เวลาที่หายไปก่อนถึง OEE (ในกะ)</div>
+          {kpi.shiftMinTotal > 0 ? (<>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12.5 }}>
+              <span>☕ พักนโยบาย <b style={{ color: 'var(--text)' }}>{kpi.breakMinTotal.toLocaleString()}</b> น.</span>
+              <span>🗓️ หยุดตามแผน <b style={{ color: '#f59e0b' }}>{kpi.plannedMinTotal.toLocaleString()}</b> น.</span>
+              <span>= <b style={{ color: '#f59e0b' }}>{((kpi.breakMinTotal + kpi.plannedMinTotal) / kpi.shiftMinTotal * 100).toFixed(1)}%</b> ของเวลากะ</span>
+            </div>
+            {/* แถบสัดส่วน: เดินได้จริง (OEE) / เสียในเวลารับภาระ / พัก+หยุดตามแผน */}
+            <div style={{ display: 'flex', height: 9, borderRadius: 5, overflow: 'hidden', background: 'var(--bg3)', marginTop: 9 }}>
+              <div style={{ width: `${(kpi.ooe ?? 0)}%`, background: '#22c55e' }} title="เวลาที่สร้างของดีจริง" />
+              <div style={{ width: `${Math.max(0, (kpi.netAvailMin / kpi.shiftMinTotal * 100) - (kpi.ooe ?? 0))}%`, background: '#a855f7' }} title="เสียในเวลารับภาระ (เครื่องเสีย/ช้า/ของเสีย)" />
+              <div style={{ flex: 1, background: '#f59e0b' }} title="พักนโยบาย + หยุดตามแผน" />
+            </div>
+            <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 6, lineHeight: 1.6 }}>
+              🟩 สร้างของดี · 🟪 เสียตอนเดินเครื่อง · 🟧 พัก+หยุดตามแผน (OEE มองไม่เห็นส่วนนี้ — OOE เห็น)
+            </div>
+          </>) : <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีข้อมูล</div>}
+        </div>
       </div>
 
       {/* OEE Trend Chart */}
