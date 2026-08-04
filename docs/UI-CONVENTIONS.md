@@ -224,7 +224,9 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 5. **ระดับ Group/กลุ่ม ในฟอร์มลงทะเบียน/แก้พนักงาน = ดึงจาก `org_nodes` kind='line' (2026-07-22)** ไม่ใช่ `production_lines` ตรงๆ — org group ผูก production_line ผ่าน `ref_line_id` → ตอนเลือกกลุ่มให้ตั้ง `employees.line_id = group.ref_line_id` (production/ผัง/scope ยังทำงาน) · **fallback เป็น `production_lines` (`filterLinesByDept`) เฉพาะเมื่อผังยังไม่มีกลุ่มใต้แผนกนั้น** · ทำแล้ว: Register + operator edit modal
 6. **`employees.section/department/group_name` เป็น free text ไม่ผูก FK** → drift ได้ · **ตัวกรอง (filter bar) ที่ดึง distinct จาก employees ต้องจัดกลุ่ม 2 optgroup: "ในผังองค์กร" (ค่าที่ตรง org_nodes) + "⚠ นอกผัง (ต้องจัดข้อมูล)" (ค่าที่พนักงานกรอกแต่ไม่มีในผัง)** และ**โชว์เฉพาะค่าที่มีพนักงานจริง** (ทุกตัวเลือกเจอคนแน่นอน — กันหัวหน้าหาคนไม่เจอ) · ทำแล้ว: operator filter bar (Dept + Group)
 
-ต้นแบบที่ถูก: `Register.jsx` (ฟอร์ม + group จาก org_nodes kind='line'), `OEEAnalytics.jsx` TargetDashboard (filter bar), `Report.jsx` hook `useOrgDepts` → `deptsOf(section)`, `operator.jsx` (filter bar Dept+Group แบบ ในผัง/นอกผัง + modal cascade org_nodes)
+7. **dropdown ไลน์ตัวเดียว (ไม่ cascade) ต้องเรียงตามลำดับชั้นผ่าน `toHierarchicalOptions(lines)` (`src/utils/lineHierarchy.js`) — 2026-08-04** คืน `[{line, depth}]` เรียงแม่ → ลูกใต้แม่ แล้ว render ย่อหน้าตาม `depth` (`↳`) · **ห้าม `lines.map()` ตรงๆ แล้วเติม `↳` ให้ลูก** — ลิสต์จะเรียงตามลำดับที่ query มา ลูกลอยไปคนละที่กับแม่ (เจอจริง: แผง 🧠 วิเคราะห์สาเหตุ ใน `/oee-analytics` โชว์ `↳ Assy GOR` อยู่**เหนือ** `GOR`, `↳ HDF1/HDF2` เหนือ `HYDROFORM`)
+
+ต้นแบบที่ถูก: `Register.jsx` (ฟอร์ม + group จาก org_nodes kind='line'), `OEEAnalytics.jsx` TargetDashboard (filter bar), `Report.jsx` hook `useOrgDepts` → `deptsOf(section)`, `operator.jsx` (filter bar Dept+Group แบบ ในผัง/นอกผัง + modal cascade org_nodes), `OeeInsightPanel.jsx` (dropdown ไลน์เดี่ยวผ่าน `toHierarchicalOptions`)
 
 ---
 

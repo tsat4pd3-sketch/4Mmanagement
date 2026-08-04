@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { toHierarchicalOptions } from '../utils/lineHierarchy';
 
 /* ── 🧠 OEE Insight Engine — วิเคราะห์ภาพรวมอัตโนมัติ (rule-based + สถิติ) ──
    ตอบ 2 คำถามหลักของ user (2026-07-14):
@@ -28,6 +29,8 @@ const SEV = {
 };
 
 export default function OeeInsightPanel({ lines }) {
+  // ตัวเลือกไลน์เรียงตามผัง: ไลน์แม่ก่อน แล้วไลน์ลูกตามใต้แม่ (ไม่ใช่เรียงชื่อรวดเดียวจนลูกหลุดจากแม่)
+  const lineOpts = useMemo(() => toHierarchicalOptions(lines || []), [lines]);
   const [days, setDays] = useState(30);
   const [selLine, setSelLine] = useState('');
   const [loading, setLoading] = useState(false);
@@ -257,7 +260,10 @@ export default function OeeInsightPanel({ lines }) {
         {/* width กัน index.css select{width:100%} (กับดัก CSS ใน CLAUDE.md) */}
         <select value={selLine} onChange={e => setSelLine(e.target.value)} style={{ width: 'auto', padding: '6px 10px', fontSize: 12, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
           <option value="">— ทุกไลน์ที่มองเห็น —</option>
-          {lines.map(l => <option key={l.id} value={l.name}>{l.parent_line_name ? `↳ ${l.name}` : l.name}</option>)}
+          {/* เรียงตามลำดับชั้นจริง (แม่ → ลูกใต้แม่) ผ่าน util กลาง — เดิม map ตรงๆ ลูกเลยลอยไปคนละที่กับแม่ */}
+          {lineOpts.map(({ line: l, depth }) => (
+            <option key={l.id} value={l.name}>{depth ? `${' '.repeat(depth * 3)}↳ ${l.name}` : l.name}</option>
+          ))}
         </select>
         <select value={days} onChange={e => setDays(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', fontSize: 12, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
           {[14, 30, 60, 90].map(d => <option key={d} value={d}>ย้อนหลัง {d} วัน</option>)}
