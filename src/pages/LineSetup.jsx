@@ -451,6 +451,30 @@ export default function LineSetup({ embedded = false } = {}) {
     finally { setIsUploading(false); }
   };
 
+  // ลบรูปผังของไลน์นี้ (เคสเผลออัพรูปทับ) → ไลน์ลูกกลับไปยืมผังไลน์แม่อัตโนมัติ (fetchLineData fallback)
+  const handleDeleteLayout = async () => {
+    if (!layoutImage || usingParentLayout) return; // ผังที่ยืมแสดงจากไลน์แม่ ไม่ใช่ของเรา — ห้ามลบ
+    const lineObj = lines.find(l => l.name === selectedLine);
+    const backTo = lineObj?.parent_line_name
+      ? `จะกลับไปใช้รูปผังของไลน์แม่ "${lineObj.parent_line_name}" แทน`
+      : 'ไลน์นี้จะไม่มีรูปผัง (ไม่มีไลน์แม่ให้ยืม) — จุดงาน/เครื่อง/WIP ที่วางไว้ยังอยู่ครบ';
+    if (!window.confirm(`ลบรูปผังของ "${selectedLine}" ?\n${backTo}`)) return;
+    try {
+      const { error } = await supabase.from('line_layouts').delete().eq('line_name', selectedLine);
+      if (error) throw error;
+      // ลบไฟล์จาก storage หลัง DB สำเร็จ (best-effort) — เฉพาะเมื่อไม่มีไลน์อื่นแชร์ URL เดียวกัน
+      if (layoutImage.includes('/employee-photos/layouts/')) {
+        const { data: sharers } = await supabase.from('line_layouts').select('line_name').eq('image_url', layoutImage).limit(1);
+        if (!sharers?.length) {
+          const oldName = decodeURIComponent(layoutImage.split('/employee-photos/')[1] || '');
+          if (oldName.startsWith('layouts/')) supabase.storage.from('employee-photos').remove([oldName]).catch(() => {});
+        }
+      }
+      toast.success('ลบรูปผังแล้ว');
+      fetchLineData(); // โหลดใหม่ → ไลน์ลูกยืมผังไลน์แม่เอง
+    } catch (err) { toast.error('ลบไม่สำเร็จ: ' + err.message); }
+  };
+
   // object-fit: contain ทำให้มีพื้นที่ letterbox (แถบว่าง) รอบรูปจริง — ต้องคำนวณ
   // กรอบของรูปที่แสดงผลจริง เพื่อจำกัดไม่ให้วางจุดหรือลากจุดออกนอกรูปที่เห็น
   const getImageGeom = (img) => {
@@ -1276,10 +1300,19 @@ export default function LineSetup({ embedded = false } = {}) {
 
         {selectedLine && <>
           {canEdit && layoutImage && (
-            <label style={{ fontSize: 12, color: 'var(--blue)', cursor: 'pointer', display: 'block', marginBottom: 14, textAlign: 'right' }}>
-              {isUploading ? 'อัปโหลด...' : '🔄 เปลี่ยนรูปภาพ'}
-              <input type="file" hidden onChange={handleUploadImage} disabled={isUploading} />
-            </label>
+            <div style={{ display: 'flex', gap: 14, justifyContent: 'flex-end', alignItems: 'center', marginBottom: 14 }}>
+              {/* ลบได้เฉพาะผังของตัวเอง — ผังที่ยืมจากไลน์แม่ไม่มีปุ่ม (ของแม่ ไปลบที่ไลน์แม่) */}
+              {!usingParentLayout && (
+                <button onClick={handleDeleteLayout}
+                  style={{ fontSize: 12, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-body)' }}>
+                  🗑 ลบรูปผังนี้{lines.find(l => l.name === selectedLine)?.parent_line_name ? ' (กลับไปใช้ผังไลน์แม่)' : ''}
+                </button>
+              )}
+              <label style={{ fontSize: 12, color: 'var(--blue)', cursor: 'pointer' }}>
+                {isUploading ? 'อัปโหลด...' : '🔄 เปลี่ยนรูปภาพ'}
+                <input type="file" hidden onChange={handleUploadImage} disabled={isUploading} />
+              </label>
+            </div>
           )}
           {activeTab === 'stations' && <>
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginBottom: 10 }}>
