@@ -457,7 +457,7 @@ export default function TransportMapEditor() {
                 }}>
                 {n.kind !== 'junction' && <span style={{ pointerEvents: 'none' }}>{k.icon}</span>}
                 {n.name && (
-                  <span style={{ position: 'absolute', top: '105%', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', fontSize: 10, fontWeight: 700, color: '#fff', background: 'rgba(9,11,18,0.82)', padding: '1px 5px', borderRadius: 4, pointerEvents: 'none' }}>{n.name}</span>
+                  <span style={{ position: 'absolute', top: '105%', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', fontSize: 11, fontWeight: 700, color: '#fff', background: 'rgba(9,11,18,0.82)', padding: '1px 5px', borderRadius: 4, pointerEvents: 'none' }}>{n.name}</span>
                 )}
               </div>
             )
@@ -521,7 +521,7 @@ export default function TransportMapEditor() {
         const m = parseFloat(scaleMeters)
         const ok = m > 0 && unitDist > 1e-6
         return (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: 'min(94vw, 380px)' }}>
               <h3 style={{ margin: '0 0 10px', fontSize: 16, fontWeight: 900, color: 'var(--text)' }}>📏 ตั้งมาตราส่วน</h3>
               <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>ระยะ 2 จุดที่เลือก = <b style={{ color: 'var(--text2)' }}>{unitDist.toFixed(2)}</b> หน่วยผัง</div>

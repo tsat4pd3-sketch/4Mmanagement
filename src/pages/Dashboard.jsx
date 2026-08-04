@@ -2429,7 +2429,10 @@ export default function Dashboard() {
                   // (แปลง % เป็น px ตามขนาดจริงของ mapBox ก่อนคำนวณ แล้วแปลงกลับเป็น % ตอน render)
                   const boxW = mapBox.w || 800, boxH = mapBox.h || 450;
                   // ขนาด marker จาก util กลาง (ห้ามตั้งสูตรเองในหน้า — UI-CONVENTIONS §1)
-                  const { MK, SUB } = markerScale(boxW);
+                  // ต้องส่ง machineCount ด้วย (SUB เป็น density-aware) ไม่งั้นวงเครื่องจักรบนผังนี้
+                  // ใหญ่กว่าหน้าอื่น (Management/LineSetup/MachineFloorMap) ที่ส่งครบ — ผิดหลัก WYSIWYG · QC audit 2026-08-03
+                  const mcCount = machinePoints.filter(p => cardLineNames.includes(p.line_name)).length;
+                  const { MK, SUB, subPillFont, subPillMaxW } = markerScale(boxW, { machineCount: mcCount });
                   const MIN_PX_X = MK * 1.2, MIN_PX_Y = MK * 1.6; // ระยะห่างขั้นต่ำรวม nametag+badge
                   const pxMarkers = markers.map(m => ({ ...m, px: m.left / 100 * boxW, py: m.top / 100 * boxH, dox: 0, doy: 0 }));
                   for (let pass = 0; pass < 60; pass++) {
@@ -2574,15 +2577,15 @@ export default function Dashboard() {
                               <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, marginTop: 2 }}>
                               <div style={{
                                 background: 'rgba(0,0,0,0.8)', borderRadius: 4, padding: '1px 6px',
-                                fontSize: Math.max(11, Math.round(MKS * 0.24)), fontWeight: 800, color: '#fff',
-                                whiteSpace: 'nowrap', maxWidth: Math.max(MKS * 1.9, 88), overflow: 'hidden', textOverflow: 'ellipsis',
+                                fontSize: subPillFont, fontWeight: 800, color: '#fff',
+                                whiteSpace: 'nowrap', maxWidth: subPillMaxW, overflow: 'hidden', textOverflow: 'ellipsis',
                               }}>
                                 {p.machine_no}
                               </div>
                               <div style={{
                                 background: 'rgba(239,68,68,0.25)', borderRadius: 3, padding: '0 5px',
                                 fontSize: Math.max(11, Math.round(MKS * 0.2)), fontWeight: 700, color: '#fca5a5',
-                                whiteSpace: 'nowrap', maxWidth: Math.max(MKS * 2, 88), overflow: 'hidden', textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap', maxWidth: subPillMaxW, overflow: 'hidden', textOverflow: 'ellipsis',
                               }}>
                                 {first.dr_downtime_types?.name_th || 'Downtime'}{ongoing && elapsed != null ? ` · ${elapsed} นาที` : ''}
                               </div>
