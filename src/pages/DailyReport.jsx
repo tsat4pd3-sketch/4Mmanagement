@@ -819,14 +819,14 @@ function LiveTab({ role }) {
   // นาที Downtime ที่ทับซ้อนกับช่วงเวลา [startMs, endMs] — ใช้หักจาก "เวลาที่ MAT.NO นี้วิ่งจริง" ก่อนเทียบ %P
   // เทียบด้วยช่วงเวลาจริง (started_at/ended_at) ไม่ใช่แค่ d.mat_no ตรงกัน เพราะ Downtime ของไลน์ร่วม (ไม่ระบุ MAT.NO)
   // ก็กระทบ MAT.NO ที่วิ่งซ้อนอยู่ในช่วงนั้นด้วย — ถ้าไม่หัก จะนับเวลาผลิตจริงเกิน ทำให้ %P เพี้ยน (เช่นเกิน 100%)
-  const dtOverlapMin = (startMs, endMs, pred = () => true, logs = dtLogs) => {
+  const dtOverlapMin = (startMs, endMs, pred = () => true, logs = dtLogs, weightFn = () => 1) => {
     if (!startMs || !endMs || endMs <= startMs) return 0;
     return logs.filter(pred).reduce((sum, d) => {
       if (!d.started_at) return sum;
       const s0 = new Date(d.started_at).getTime();
       const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + (d.duration_min || 0) * 60000;
       const s = Math.max(s0, startMs), e = Math.min(e0, endMs);
-      return e > s ? sum + (e - s) / 60000 : sum;
+      return e > s ? sum + ((e - s) / 60000) * weightFn(d) : sum;
     }, 0);
   };
 
@@ -1547,8 +1547,18 @@ function LiveTab({ role }) {
       if (openedAt && closedAt < openedAt) closedAt = new Date(closedAt.getTime() + 86400000); // กะดึกข้ามวัน
     }
     const shiftMin  = openedAt ? Math.round((closedAt - openedAt) / 60000) : 0;
-    const loggedPlannedDT  = dtl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
-    const loggedUnplannedDT = dtl.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
+    // ไลน์เครื่องขนาน (flow_mode = parallel_machine เช่น LASER-345 เลเซอร์ 3 ตัว): DT ที่ผูกเครื่อง
+    // = เครื่องเดียวหยุด อีก N-1 ตัวยังวิ่ง → หักเวลาไลน์แค่ 1/N ของนาทีที่ลง · DT ไม่ระบุเครื่อง
+    // (ไฟดับ/รอวัตถุดิบทั้งไลน์) = หยุดทั้งไลน์ หักเต็มเหมือนเดิม — เคสจริง 2026-08-04: DT ราย
+    // เครื่อง 3 ตัวถูกบวกรวมแล้วหักจากเวลาไลน์เดียว → %A โดนกดเป็น 0 ทั้งที่ของออก 400 ชิ้น
+    // N = parallel_stations (ตั้งที่ LineSetup) · ไม่ตั้ง = นับเครื่อง active ของไลน์ · lineFlow ยังไม่โหลด = 1 (พฤติกรรมเดิม)
+    const lf = lineFlow[selSession?.line_name] || {};
+    const parallelN = lf.flow_mode === 'parallel_machine'
+      ? (lf.parallel_stations || new Set(machines.filter(m => m.line_name === selSession?.line_name && m.is_active !== false).map(m => m.machine_no)).size || 1)
+      : 1;
+    const dtW = d => (parallelN > 1 && d.machine_no) ? 1 / parallelN : 1;
+    const loggedPlannedDT  = dtl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
+    const loggedUnplannedDT = dtl.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
     const sessionShift  = selSession?.shift || 'day';
     const processType   = sessionProcessType();
     const policyBreakMin = computePolicyBreakMin(openedAt, closedAt, sessionShift, processType);
@@ -1595,8 +1605,8 @@ function LiveTab({ role }) {
       if (matStartMs == null || matEndMs == null || matEndMs <= matStartMs) return;
       const windowMin = (matEndMs - matStartMs) / 60000;
       const matPolicyBreakMin = computePolicyBreakMin(new Date(matStartMs), new Date(matEndMs), sessionShift, processType);
-      const matLoggedPlanned   = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category === 'planned', dtl);
-      const matLoggedUnplanned = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category !== 'planned', dtl);
+      const matLoggedPlanned   = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category === 'planned', dtl, dtW);
+      const matLoggedUnplanned = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category !== 'planned', dtl, dtW);
       const matNetAvail = Math.max(0, windowMin - matPolicyBreakMin - matLoggedPlanned);
       const matRunMin   = Math.max(0, matNetAvail - matLoggedUnplanned);
       totalNetAvailByMat += matNetAvail;
@@ -1605,8 +1615,8 @@ function LiveTab({ role }) {
     });
     // DT ที่กรอกแค่จำนวนนาที (ไม่มีเวลาเริ่ม) — dtOverlapMin จับไม่ได้ → เคยหายเงียบจาก %A แบบแยกตาม MAT
     // (เคสจริง 2026-07-24: หยุดนอกแผน 20 นาทีแต่ %A = 100) — หักที่ยอดรวมแทน (รวมก่อนหาร ไม่ต้องรู้ตกช่วง MAT ไหน)
-    const untimedPlanned   = dtl.filter(d => !d.started_at && d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
-    const untimedUnplanned = dtl.filter(d => !d.started_at && d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
+    const untimedPlanned   = dtl.filter(d => !d.started_at && d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
+    const untimedUnplanned = dtl.filter(d => !d.started_at && d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
     if (totalNetAvailByMat > 0 && (untimedPlanned || untimedUnplanned)) {
       totalNetAvailByMat = Math.max(0, totalNetAvailByMat - untimedPlanned);
       totalRunMinByMat   = Math.max(0, totalRunMinByMat - untimedPlanned - untimedUnplanned);

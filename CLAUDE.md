@@ -458,6 +458,13 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - สิ่งที่ย้อนให้: status→open, ล้าง confirmed_by/at + qty_ok, ใบ manual คืน `qty = qty_target` (ยอดสะสม qty_actual คงไว้) + **ถอนแถว stock ที่ trigger `trg_post_confirmed_output` โพสต์อัตโนมัติ** (ลบ `line_stock_transactions` ที่ `ref_order_id`+`created_by='auto'`+`type='issue'` — ตัวกันโพสต์ซ้ำของ trigger เช็คจากแถวนี้ ลบแล้วสแกนปิดใหม่จะโพสต์ให้ใหม่ถูกต้อง)
 - Audit: `prod_orders.reopened_by/reopened_at/reopen_count` (migration `20260715_prod_orders_reopen_log.sql` DR) — การ์ดใบโชว์ชิป "↩️ เคยถอยใบ N ครั้ง · ชื่อ" เสมอ ให้หัวหน้าแผนกตรวจย้อนหลังได้ · update guard `.eq('status','confirmed')` กันถอยซ้ำสองเครื่องพร้อมกัน
 
+### %A ไลน์เครื่องขนาน (parallel_machine) — DT ผูกเครื่องหักแค่ 1/N (2026-08-04)
+
+ไลน์ที่มีเครื่องหลักหลายตัววิ่งขนาน (เช่น **LASER-345 = เลเซอร์ 3 ตัว LS-03/04/05**) พนักงานลง DT **แยกรายเครื่อง** ถูกต้องแล้ว — แต่ `computeOEE` เดิมบวกนาทีทุกเครื่องรวมแล้วหักจากเวลาไลน์เดียว → DT 3 เครื่องพร้อมกันถูกหัก 3 เท่า **%A โดนกดเป็น 0 ทั้งที่ของออกปกติ** (เจอจริง 2026-08-03: LASER-345 A=0.00, P=100, Q=97)
+- แก้ที่ `computeOEE` + `dtOverlapMin` (รับ `weightFn`): ไลน์ `flow_mode='parallel_machine'` → DT ที่**ระบุเครื่อง** หักน้ำหนัก **1/N** (N = `parallel_stations` ตั้งที่ LineSetup · ไม่ตั้ง = นับเครื่อง active ของไลน์) · DT **ไม่ระบุเครื่อง** (ไฟดับ/รอวัตถุดิบทั้งไลน์) = หยุดทั้งไลน์ หักเต็มเหมือนเดิม · ไลน์ one_piece_flow ไม่กระทบ (N=1)
+- **migration `20260723_line_flow_mode.sql` เพิ่ง apply บน Main จริง 2026-08-04** (ค้างมาตั้งแต่ 2026-07-23 — ก่อนหน้านี้คอลัมน์ไม่มีจริง โค้ด tolerant เลยเงียบ) · LASER-345 ตั้ง `parallel_machine`/stations=3 แล้วผ่าน SQL · ไลน์ขนานอื่น (SUB APRON ฯลฯ) ตั้งเองที่ LineSetup แผง Standard Manpower
+- **กะที่ stamp A=0 ผิดไปแล้ว (pending_close):** SV กด ✕ ปฏิเสธ → หัวหน้ากลุ่มขอปิดกะใหม่ = recompute ด้วยสูตรใหม่เอง (ห้าม blanket-recompute กะเก่าตามกฎเดิม)
+
 ### %A ต้องนับ Downtime ที่กรอกแค่จำนวนนาที (ไม่มีเวลาเริ่ม) — แก้ 2026-07-24
 
 `computeOEE` สาย A แบบแยกตาม MAT ใช้ `dtOverlapMin` (ทับซ้อนช่วงเวลา) ซึ่ง**ข้าม DT ที่ `started_at` = null** (โหมดกรอกแค่นาที) → เคสจริง: หยุดนอกแผน 20 นาทีแต่ %A = 100 (Sup Assy2) · แก้: หลัง loop ต่อ MAT หัก untimedPlanned/untimedUnplanned ที่**ยอดรวม** (`totalNetAvailByMat`/`totalRunMinByMat`) ก่อนหาร — ไม่ต้องรู้ว่าตกช่วง MAT ไหน · fallback ทั้งกะ (ไม่มี order) นับอยู่แล้วผ่าน duration sums
