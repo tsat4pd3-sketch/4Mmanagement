@@ -23,6 +23,8 @@ import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
+import { nextDocNo } from '../utils/qaDocNo';
+import QaCheckSheet from '../components/QaCheckSheet';
 
 /* ── Date helpers (ห้ามใช้ toISOString() หา work date — ดู CLAUDE.md) ─────── */
 function localDateStr(d = new Date()) {
@@ -211,15 +213,8 @@ function Field({ label, children, span }) {
   );
 }
 
-/* running number เช่น NCR-202607-003 — นับจากเลขที่มีอยู่ของเดือนนั้น */
-async function nextDocNo(table, col, prefix) {
-  const ym = getWorkDate().slice(0, 7).replace('-', '');
-  const full = `${prefix}-${ym}-`;
-  const { data } = await supabase.from(table).select(col).like(col, `${full}%`).order(col, { ascending: false }).limit(1);
-  const last = data?.[0]?.[col];
-  const seq = last ? parseInt(last.slice(full.length), 10) + 1 : 1;
-  return `${full}${String(seq).padStart(3, '0')}`;
-}
+/* running number เช่น NCR-202607-003 — ย้ายไป src/utils/qaDocNo.js (2026-08-04)
+   ให้แท็บใบตรวจเรียกใช้ตัวเดียวกันได้โดยไม่เกิด circular import */
 
 /* ════════════════════════════════════════════════════════════════════════
    TAB 1 — Dashboard คุณภาพ (PPM / FTT / Pareto จาก DR project)
@@ -1363,6 +1358,9 @@ function InstrumentTab({ lines, canManage }) {
    ════════════════════════════════════════════════════════════════════════ */
 const TABS = [
   { key: 'dashboard',   icon: '📊', label: 'Dashboard คุณภาพ' },
+  // ใบตรวจ = หน้า "ใช้งาน" ของมาตรฐานที่ตั้งไว้ใน /qa-setup (2026-08-04) — วางถัดจาก Dashboard
+  // เพราะเป็นงานประจำวันที่ QC เปิดบ่อยสุด ส่วน SPC/NCR/CAPA เป็นงานตามหลัง
+  { key: 'sheet',       icon: '✅', label: 'ใบตรวจ (Check Sheet)' },
   { key: 'spc',         icon: '📐', label: 'SPC / Cp-Cpk' },
   { key: 'ncr',         icon: '🚨', label: 'NCR ของเสีย' },
   { key: 'capa',        icon: '🛠', label: 'CAPA / 8D' },
@@ -1394,7 +1392,7 @@ export default function QualityControl() {
           🔍 Quality Control Center
         </h1>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
-          SPC · Process Capability · NCR · 8D CAPA · เครื่องมือวัด — งานประกันคุณภาพตามแนวทาง IATF 16949
+          ใบตรวจตามมาตรฐาน · SPC · Process Capability · NCR · 8D CAPA · เครื่องมือวัด — งานประกันคุณภาพตามแนวทาง IATF 16949
         </div>
       </div>
 
@@ -1411,6 +1409,7 @@ export default function QualityControl() {
       </div>
 
       {tab === 'dashboard' && <QualityDashboard />}
+      {tab === 'sheet' && <QaCheckSheet canRecord={canRecord} />}
       {tab === 'spc' && <SPCTab lines={lines} canRecord={canRecord} canManage={canManage} />}
       {tab === 'ncr' && <NCRTab lines={lines} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
       {tab === 'capa' && <CAPATab canRecord={canRecord} canManage={canManage} prefill={capaPrefill} onPrefillDone={() => setCapaPrefill(null)} />}

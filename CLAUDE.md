@@ -174,8 +174,8 @@
 | การตรวจสอบและซ่อมบำรุง | `/pm-coordination` | PmCoordination — 🗓️ แผนประสานงาน PM ข้ามวัน (แบบเมล MTN แจ้ง Production): งาน PM/แก้เครื่องหลายวัน + ทีมรับผิดชอบแต่ละวัน + ช่วง Production Support → แจ้ง Telegram + พิมพ์ใบ (ดู section "PM Coordination") | ทุก role (ดู) · `pm_coord:manage` = admin/mgr/sv/mtn/engineer/leader |
 | การตรวจสอบและซ่อมบำรุง | `/mtn-layout` | MtnMachineLayout | ทุก role |
 | การตรวจสอบและซ่อมบำรุง | `/pm-setup` | PMSetup | admin/manager/supervisor |
-| ควบคุมคุณภาพ QA/QC | `/qa` | QualityControl | admin/manager/supervisor/leader/qa/doc_control |
-| ควบคุมคุณภาพ QA/QC | `/qa-setup` | QAInspectionSetup | admin/manager/qa |
+| ควบคุมคุณภาพ QA/QC | `/qa` | QualityControl — 6 แท็บ: Dashboard คุณภาพ · **✅ ใบตรวจ (Check Sheet)** · SPC/Cp-Cpk · NCR · CAPA/8D · เครื่องมือวัด (ดู section "QA Inspection — setup → ใบตรวจ") | admin/manager/supervisor/leader/qa/doc_control |
+| ควบคุมคุณภาพ QA/QC | `/qa-setup` | QAInspectionSetup — **หน้า setup เท่านั้น** (มาตรฐาน+drawing+balloon) ผลตรวจจริงอยู่แท็บใบตรวจใน `/qa` | admin/manager/qa |
 | ควบคุมคุณภาพ QA/QC | `/event-log` | EventLog | admin/manager/supervisor/leader/qa (CQI-15 + Approval) |
 | วิเคราะห์ & รายงาน | `/report` | Report | ทุก role (7 tabs: รายวัน/รายพนักงาน/Log จุดงาน/สรุปช่วงเวลา/4M/ใบบันทึก/จองรถ OT + CSV export) · **Changing Point Control Record ย้ายเข้าทะเบียนกลาง `doc_forms`/`doc_form_revisions` doc_key `changing_point` แล้ว (2026-07-30)** — แผง "⚙️ จัดการเอกสาร" ในแท็บ 4M กับหน้า `/doc-forms` แก้ข้อมูลชุดเดียวกัน · ตารางเก่า `document_controls`/`document_control_revisions` เลิกใช้ (คงไว้เป็นประวัติ ห้าม drop จนกว่าจะยืนยันข้อมูลครบ) |
 | พนักงาน & ทักษะ | `/skills-report` | `<Report mode="skills" />` — 3 แท็บสกิลที่แยกจาก /report (Skill Matrix / ค่าฝีมือ / Multi-Skill Form) component อยู่ใน Report.jsx เดิมทั้งหมด (`SKILL_TAB_IDXS`) | ทุก role |
@@ -630,6 +630,28 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 - **export Excel (`src/lib/scrapExportExcel.js`):** ExcelJS วาดตรง layout FM-PD2-002 Rev.06 (หัวบริษัท, ตาราง A-S: ลำดับ/PART NO/NAME/MAT SAP/รูป/MODEL/CODE/BOM/Q'TY/M1-M5/ยืนยัน/รหัสงานเสีย, TOTAL, CODE legend A-E, สายอนุมัติ 5 ขั้น, ผู้ส่ง/รับ HRM) · qty ลงคอลัมน์ M ตาม m_cause · ตรึง 27 แถวเหมือนกระดาษ · **เลขฟอร์ม/Rev/ป้ายช่องลายเซ็น 5 ช่อง อ่านจากทะเบียนเอกสาร `getDocForm('scrap_report', {fallback})` — register แล้ว (`20260724_doc_form_scrap_report.sql`) แก้ที่ /doc-forms ได้ · fullCode พิมพ์มุมล่างขวา (2026-07-24)** · CODE legend A-E เป็น form body ไม่อยู่ใน registry
 - **สิทธิ์:** ดู = `page:/scrap-report` (admin/mgr/sv/leader/qa/doc_control) · `scrap:record` (สร้าง/แก้) = admin/mgr/sv/leader/qa · `scrap:manage` (อนุมัติ/ลบ) = admin/mgr/qa
 - เลขเอกสาร running รายวัน `TSAT4-PDX NNNN/เดือน-ปี` (นับใบในเดือน)
+
+---
+
+## QA Inspection — setup → ใบตรวจ (ปิดช่องว่าง 2026-08-04)
+
+**สายงานคุณภาพแบ่งชัด 2 หน้า — อย่าเอาไปปนกัน:**
+
+| | หน้า | ทำอะไร | ตาราง |
+|---|---|---|---|
+| **ตั้งมาตรฐาน** | `/qa-setup` มาตรฐานการตรวจ & Drawing | part master · อัพโหลด drawing หลายแผ่น · วาง balloon · กำหนดสเปค/Rank/Stage/ความถี่-n ต่อจุด | `qa_parts`, `qa_part_drawings`, `qa_inspection_items` |
+| **ใช้งาน (ตรวจจริง)** | `/qa` แท็บ **✅ ใบตรวจ (Check Sheet)** | เลือกพาร์ท+วันงาน+กะ+รอบ → ตัดสิน ผ่าน/ไม่ผ่าน/ข้าม รายจุด → ปิดใบ | `qa_inspection_sheets`, `qa_inspection_results` |
+
+- **ที่มา (คำสั่ง user):** เดิม `qa_inspection_items` **ไม่ถูกอ่านจากหน้าไหนเลยนอกจากหน้า setup เอง** → จุดชนิด **attribute (GO/NOGO) ไม่มีที่ลงผลเลย** ส่วน variable ไปได้ทางเดียวคือปุ่ม "ส่งเข้า SPC" (คัดลอกไป `qa_characteristics` **แบบไม่ผูก FK กลับ** — แก้สเปคที่ setup ทีหลังไม่ตามไปแก้ฝั่ง SPC) · แท็บใบตรวจปิดช่องว่างนี้ · migration `20260804_qa_inspection_check_sheet.sql` (Main)
+- **1 ใบ = พาร์ท + วันงาน + กะ + รอบที่** (`unique(part_id, work_date, shift, round_no)`) — ความถี่แบบ "3 ชิ้น/กะ" = เปิดหลายรอบในกะเดียวได้ · **สร้างใบเมื่อบันทึกผลจุดแรกเท่านั้น** (ไม่ทิ้งใบเปล่า) · ชนกัน 2 เครื่อง = unique key กันให้ แล้วดึงใบของจริงมาใช้ต่อ
+- **snapshot ชื่อจุด/สเปค/ชนิด ลงในแถวผลเสมอ** (`qa_inspection_results.balloon_no/characteristic/spec_text/item_type`) — มาตรฐานถูกแก้/ลบทีหลังได้ แต่ผลตรวจย้อนหลังต้องอ่านออกเหมือนวันที่ตรวจจริง (`item_id` เป็น `on delete set null`) · หลักเดียวกับ `ojt_training_attendees`/`lpa_audit_answers`
+- **กฎที่คุมไว้ในแอป:** NG **บังคับกรอกรายละเอียด** (ผลตรวจที่ไม่บอกว่าเสียยังไง ใช้ต่อไม่ได้ — หลักเดียวกับ downtime "อื่นๆ") · จุด variable ที่ค่าหลุดสเปคแล้วกด "ผ่าน" = **บล็อก** พาไปฟอร์ม NG แทน (กันบันทึกของเสียเป็นของดี) · **ปิดใบไม่ได้จนกว่าจะตรวจครบทุกจุด** · บันทึกทีละแถวทันที (จอดับ/แบตหมดแล้วไม่หายทั้งใบ)
+- **ปุ่ม "✓ ผ่านทั้งหมดที่ยังไม่ตรวจ"** ลดการกดซ้ำตอนทุกจุดปกติ (pattern เดียวกับ LPA "ยังไม่ตอบ=Y") — ไม่แตะจุดที่บันทึกผลไปแล้ว
+- **NG → เปิด NCR ได้จากในแถว** (prefill พาร์ท/ไลน์/จุด/สเปค/จำนวน · severity จาก Rank: SC=critical · M=major · อื่น=minor) แล้วเก็บ `qa_inspection_results.ncr_id` ผูกกลับ — **เปิดได้แม้ใบปิดแล้ว** (NCR เป็นงานตามหลัง ไม่ใช่การแก้ผลตรวจ)
+- **หมุดบนแบบ sync กับผลตรวจ** (เขียวผ่าน/แดงไม่ผ่าน/เทาข้าม/ยังไม่ตรวจ = สีตาม Rank) แตะหมุด ↔ เลื่อนไปแถวนั้น · ใช้ `CalloutPin` + สูตรรูปพอดีกรอบ 2 แกนตัวเดียวกับ `/qa-setup` (UI-CONVENTIONS §5.1)
+- **สิทธิ์:** ดู = ทุก role ที่เข้า `/qa` ได้ · บันทึก/ปิดใบ/เปิด NCR = `qa:record` · ลบ = `qa:manage` (RLS pattern เดียวกับ `qa_measurements`/`qa_ncr`) · **Scope:** leader = family ไลน์ตัวเอง · role อื่นตาม `sections` — **ตัวเลือกพาร์ทก็ scope ด้วย** (พาร์ทที่ไม่ผูกไลน์ยังเห็นได้ทุกคน)
+- `nextDocNo` ย้ายจาก QualityControl.jsx → **`src/utils/qaDocNo.js`** (ใบตรวจเรียกใช้ตัวเดียวกันโดยไม่เกิด circular import)
+- **ยังไม่ทำ:** ผลตรวจยังไม่ไหลเข้า SPC อัตโนมัติ (จุด variable ที่กรอกค่าในใบตรวจ ยังไม่สร้าง `qa_measurements` ให้เอง — ต้องกด "ส่งเข้า SPC" ที่ setup แล้วกรอกที่แท็บ SPC เหมือนเดิม) · ยังไม่มีฟอร์มพิมพ์ใบตรวจ (ถ้าจะทำ ต้อง register ใน `/doc-forms` ตามกฎเอกสาร)
 
 ---
 
