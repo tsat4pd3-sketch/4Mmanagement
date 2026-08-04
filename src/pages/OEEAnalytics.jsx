@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import {
   LineChart, Line, BarChart, Bar, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  Cell, ReferenceLine, LabelList,
+  ReferenceLine, LabelList,
 } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -12,6 +12,7 @@ import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import useIsMobile from '../utils/useIsMobile';
 import OeeInsightPanel from '../components/OeeInsightPanel';
+import ParetoAbcChart from '../components/ParetoAbcChart';
 import { pairAwareTotal } from '../utils/pairTotals';
 import { lazy, Suspense } from 'react';
 
@@ -1287,65 +1288,13 @@ export default function OEEAnalytics() {
 
       {/* Downtime Pareto + Defect side-by-side */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        {/* Downtime Pareto */}
-        <div style={s.section}>
-          <div style={s.title}>Pareto — Downtime รายประเภท (นาที)</div>
-          {dtPareto.length === 0
-            ? <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>ไม่มีข้อมูล Downtime</div>
-            : (
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={dtPareto} layout="vertical" margin={{ left: 10, right: 30, top: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="m" />
-                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: 'var(--muted)' }} width={120} />
-                  <Tooltip formatter={(v) => [`${v} นาที`]} contentStyle={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }} />
-                  <Bar dataKey="min" name="นาที" radius={[0, 4, 4, 0]}>
-                    {dtPareto.map((d, i) => <Cell key={i} fill={d.color} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            )
-          }
-          {dtPareto.length > 0 && (
-            <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {dtPareto.slice(0, 6).map((d, i) => (
-                <span key={i} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: `${d.color}22`, border: `1px solid ${d.color}55`, color: d.color, fontWeight: 700 }}>
-                  {d.name}: {d.min.toLocaleString()}m
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Downtime Pareto — ABC Analysis (ชื่อบนแกนเฉพาะกลุ่ม A · ที่เหลือดูที่ tooltip/ปุ่มขยาย) */}
+        <ParetoAbcChart title="Pareto — Downtime รายประเภท (นาที)" data={dtPareto} valueKey="min" unit="นาที"
+          emptyText="ไม่มีข้อมูล Downtime" sectionStyle={s.section} titleStyle={s.title} />
 
-        {/* Quality Breakdown */}
-        <div style={s.section}>
-          <div style={s.title}>ของเสียรายประเภท</div>
-          {defectBreakdown.length === 0
-            ? <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>ไม่มีข้อมูลของเสีย</div>
-            : (
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={defectBreakdown} layout="vertical" margin={{ left: 10, right: 30, top: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="ชิ้น" />
-                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: 'var(--muted)' }} width={120} />
-                  <Tooltip formatter={(v) => [`${v} ชิ้น`]} contentStyle={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12 }} />
-                  <Bar dataKey="qty" name="ชิ้น" radius={[0, 4, 4, 0]}>
-                    {defectBreakdown.map((d, i) => <Cell key={i} fill={d.color} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            )
-          }
-          {defectBreakdown.length > 0 && (
-            <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {defectBreakdown.map((d, i) => (
-                <span key={i} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: `${d.color}22`, border: `1px solid ${d.color}55`, color: d.color, fontWeight: 700 }}>
-                  {d.name}: {d.qty.toLocaleString()}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Quality Breakdown — ABC Analysis */}
+        <ParetoAbcChart title="Pareto — ของเสียรายประเภท (ชิ้น)" data={defectBreakdown} valueKey="qty" unit="ชิ้น"
+          emptyText="ไม่มีข้อมูลของเสีย" sectionStyle={s.section} titleStyle={s.title} />
       </div>
 
       {/* A/P/Q Bar comparison by period */}
