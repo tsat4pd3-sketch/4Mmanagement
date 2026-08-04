@@ -136,6 +136,31 @@ const expandHull = (pts, f = 1.045) => {
   const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
   return pts.map(([x, y]) => [Math.min(100, Math.max(0, round(cx + (x - cx) * f))), Math.min(100, Math.max(0, round(cy + (y - cy) * f)))]);
 };
+// เลือกตำแหน่งป้ายกลุ่ม (กรอบแม่อัตโนมัติ) — เลี่ยงทับป้ายลูก: ลอง ใต้/เหนือ/ซ้าย/ขวา ของ hull
+// แล้วเลือกจุดที่ไกลป้ายอื่นสุด (bias ใต้กรอบ — ป้ายลูกเกาะขอบบนเสมอ ใต้จึงว่างโดยธรรมชาติ)
+const hullLabelPos = (hull, avoid) => {
+  const xs = hull.map(p => p[0]), ys = hull.map(p => p[1]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+  const cands = [
+    { x: cx, y: maxY, place: 'below', bias: 2 },
+    { x: cx, y: minY, place: 'above', bias: 0.8 },
+    { x: minX, y: cy, place: 'left', bias: 0 },
+    { x: maxX, y: cy, place: 'right', bias: 0 },
+  ];
+  let best = cands[0], bestScore = -Infinity;
+  for (const c of cands) {
+    const d = avoid.length ? Math.min(...avoid.map(a => Math.hypot(a[0] - c.x, a[1] - c.y))) : 50;
+    const off = (c.y > 97 || c.y < 3 || c.x > 97 || c.x < 3) ? -100 : 0; // ตกขอบผัง = ตัดทิ้ง
+    const score = d + c.bias + off;
+    if (score > bestScore) { bestScore = score; best = c; }
+  }
+  return best;
+};
+const HULL_LBL_TRANSFORM = {
+  below: 'translate(-50%, 6px)', above: 'translate(-50%, -108%)',
+  left: 'translate(calc(-100% - 6px), -50%)', right: 'translate(6px, -50%)',
+};
 const centroid = (pts) => pts.length
   ? [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length]
   : [50, 50];
@@ -869,6 +894,17 @@ export default function FactoryMap({ setupMode = false }) {
       })
       .filter(h => h.hull.length >= 3);
   }, [regions, topNames, childrenOf]);
+  // ตำแหน่งป้ายกลุ่ม — วางทีละกลุ่ม เลี่ยงป้ายลูกทุกใบ + ป้ายกลุ่มที่วางไปแล้ว
+  const hullLabelPlan = useMemo(() => {
+    const avoid = regions.map(r => labelAnchor(r.points));
+    const out = {};
+    autoHulls.forEach(h => {
+      const pos = hullLabelPos(h.hull, avoid);
+      avoid.push([pos.x, pos.y]);
+      out[h.name] = pos;
+    });
+    return out;
+  }, [autoHulls, regions]);
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
@@ -1060,9 +1096,10 @@ export default function FactoryMap({ setupMode = false }) {
 
             {/* ป้ายกลุ่ม (กรอบแม่อัตโนมัติ) — ลอยเหนือเส้นประ บอกยอดรวมทั้ง family (รวมคนที่เช็คชื่อผูกไลน์แม่) */}
             {!editing && autoHulls.map(h => {
-              const [cx, cy] = labelAnchor(h.hull); const st = stOf(h.name); const meta = CAT[regCat(st)]; const txt = regText(st);
+              const pos = hullLabelPlan[h.name] || { x: 50, y: 50, place: 'below' };
+              const st = stOf(h.name); const meta = CAT[regCat(st)]; const txt = regText(st);
               return (
-                <div key={`hlbl-${h.name}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%, -108%)', pointerEvents: 'none', maxWidth: '32%' }}>
+                <div key={`hlbl-${h.name}`} style={{ position: 'absolute', left: `${pos.x}%`, top: `${pos.y}%`, transform: HULL_LBL_TRANSFORM[pos.place], pointerEvents: 'none', maxWidth: '32%' }}>
                   <div style={{ background: 'rgba(10,12,20,0.62)', border: `1.5px dashed ${meta.color}`, borderRadius: 6, padding: '1px 8px 2px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)' }}>
                     <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}▣ {h.name}
