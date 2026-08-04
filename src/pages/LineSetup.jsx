@@ -104,6 +104,7 @@ export default function LineSetup({ embedded = false } = {}) {
   const [machinePoints, setMachinePoints] = useState([]);
   const [machineTempPos, setMachineTempPos] = useState(null);
   const [machineForm, setMachineForm] = useState({ id: null, machine_no: '', redundancy_group: '' });
+  const [placedMachineNos, setPlacedMachineNos] = useState(new Set());
   const [drMachines, setDrMachines] = useState([]);
   const [machineTypes, setMachineTypes] = useState([]);
 
@@ -181,6 +182,11 @@ export default function LineSetup({ embedded = false } = {}) {
   const hist = useUndoHistory({ snapOf: mapSnap, applySnapshot: applyMapSnapshot, enabled: canEdit });
   useEffect(() => { hist.clear(); }, [selectedLine]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // เครื่องที่เลือกวางได้ = ยัง active + ยังไม่ถูกวางบนผังไลน์ใดในครอบครัว (+ ตัวที่กำลังแก้ไขอยู่)
+  const selectableMachines = useMemo(() => drMachines.filter(m =>
+    m.is_active && (m.machine_no === machineForm.machine_no || !placedMachineNos.has(m.machine_no))
+  ), [drMachines, placedMachineNos, machineForm.machine_no]);
+
   const skillAllowanceTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
 
   // ตัวเลือก Section จำกัดตามขอบเขตส่วนงานของ user (scope ว่าง = เลือกได้ทุกส่วน)
@@ -244,6 +250,10 @@ export default function LineSetup({ embedded = false } = {}) {
     const familyLines = [selectedLine, ...lines.filter(l => l.parent_line_name === selectedLine).map(l => l.name)];
     const { data: drMc } = await supabaseDR.from('machines').select('*, machine_types(id, label, color, icon)').in('line_name', familyLines).order('sort_order');
     setDrMachines(drMc || []);
+    // เครื่องที่ถูกวางบนผังไปแล้ว (ทุกไลน์ในครอบครัว ไม่ใช่แค่ไลน์ที่เปิดอยู่) — ซ่อนจาก dropdown กันวางซ้ำ
+    // (ไลน์แม่/ลูกใช้คนละผังได้ ถ้าเช็คแค่ไลน์ปัจจุบันจะเห็นเครื่องที่วางบนผังไลน์พี่น้องไปแล้ว)
+    const { data: placedMp } = await supabase.from('machine_points').select('machine_no').in('line_name', familyLines);
+    setPlacedMachineNos(new Set((placedMp || []).map(p => p.machine_no).filter(Boolean)));
     const { data: drMt } = await supabaseDR.from('machine_types').select('*').order('sort_order');
     setMachineTypes(drMt || []);
     const { data: drPd } = await supabaseDR.from('dr_products').select('mat_no, name').eq('line_name', selectedLine).eq('is_active', true).not('mat_no', 'is', null).order('mat_no');
@@ -1612,14 +1622,15 @@ export default function LineSetup({ embedded = false } = {}) {
               </h4>
               {(machineTempPos || machineForm.id) ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 10, marginBottom: 14 }}>
+                  {/* ซ่อนเครื่องที่วางบนผังไปแล้ว (ทุกไลน์ในครอบครัว) — เหลือเฉพาะที่ยังไม่วาง + ตัวที่กำลังแก้ */}
                   <select value={machineForm.machine_no}
                     onChange={e => setMachineForm({ ...machineForm, machine_no: e.target.value })}>
                     <option value="">-- เลือกเครื่องจักร --</option>
-                    {drMachines.filter(m => m.is_active && !m.machine_type_id).map(m => (
+                    {selectableMachines.filter(m => !m.machine_type_id).map(m => (
                       <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `- ${m.machine_name}` : ''}</option>
                     ))}
                     {machineTypes.map(t => {
-                      const items = drMachines.filter(m => m.is_active && m.machine_type_id === t.id);
+                      const items = selectableMachines.filter(m => m.machine_type_id === t.id);
                       if (!items.length) return null;
                       return (
                         <optgroup key={t.id} label={`${t.icon || ''} ${t.label}`}>
@@ -1630,8 +1641,10 @@ export default function LineSetup({ embedded = false } = {}) {
                       );
                     })}
                   </select>
-                  {drMachines.filter(m => m.is_active).length === 0 && (
+                  {drMachines.filter(m => m.is_active).length === 0 ? (
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มีเครื่องจักรในทะเบียนของไลน์นี้ — เพิ่มได้ที่ 🏭 ฐานข้อมูลเครื่องจักร ด้านบน</div>
+                  ) : selectableMachines.length === 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>เครื่องจักรทุกเครื่องของไลน์นี้ถูกวางบนผังแล้ว — ลบจุดเดิมก่อนถ้าต้องการวางใหม่</div>
                   )}
                   <div>
                     <label style={{ ...labelSt, display: 'block', marginBottom: 4 }}>กลุ่มเครื่องคู่ขนาน (Redundancy Group) — ไม่บังคับ</label>

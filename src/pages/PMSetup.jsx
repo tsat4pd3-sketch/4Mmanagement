@@ -155,6 +155,8 @@ function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageCl
   // pin สเกล/clamp/วางตำแหน่ง อิง "กล่องรูปจริง" หัก letterbox ของ objectFit:contain
   // (docs/UI-CONVENTIONS.md §5.1 — pattern เดียวกับ MachineFloorMap)
   const { imgRef, imgBox, recalc } = useImgBox([imageUrl])
+  const [zoom, setZoom] = useState(1)                 // 1 = เต็มความกว้างกรอบ (ไม่ใช่ขนาดไฟล์) ซูมได้ถึง 4x
+  useEffect(() => { setZoom(1) }, [imageUrl])         // เปลี่ยนรูป → รีเซ็ตซูม
   const PK = Math.round(Math.max(20, Math.min(36, (imgBox?.rw || 500) * 0.04)))
   const pkFont = Math.max(11, Math.round(PK * 0.45))
   const padX = imgBox ? (PK * 0.7 / imgBox.rw) * 100 : 0
@@ -170,34 +172,52 @@ function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageCl
     const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height))
     onImageClick(x, y)
   }
+  const zBtn = {
+    padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border2)',
+    background: 'var(--bg3)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+  }
   return (
-    <div onClick={handleClick} style={{
-      position: 'relative', userSelect: 'none', borderRadius: 8, overflow: 'hidden',
-      border: `2px solid ${activePinKey ? 'var(--accent)' : 'var(--border)'}`,
-      cursor: activePinKey ? 'crosshair' : 'default',
-    }}>
-      <img ref={imgRef} src={imageUrl} alt="JIG" onLoad={recalc} style={{ width: '100%', maxHeight: 300, objectFit: 'contain', background: 'var(--bg2)', display: 'block' }} />
-      {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้ ไม่ใช่ % ของ container */}
-      {imgBox && (
-        <div ref={layerRef} style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
-          {checkpoints.map((cp, i) => {
-            if (cp.x_pos == null || cp.y_pos == null) return null
-            const isActive = activePinKey === cp._key
-            const col = isActive ? 'var(--accent)' : categoryColor(cp.category)
-            return (
-              <CalloutPin key={cp._key} xPct={cp.x_pos * 100} yPct={cp.y_pos * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
-                label={labels?.[i] ?? i + 1} color={col} selected={isActive}
-                title={`${cp.name || `จุด ${i + 1}`} — คลิกเพื่อลบ`}
-                onClick={e => { e.stopPropagation(); onPinRemove(cp._key) }} />
-            )
-          })}
+    <div>
+      {/* ซูมสำหรับวางจุดแม่นๆ — 100% = เต็มความกว้างกรอบ (รูปเล็ก/แนวตั้งไม่จิ๋วอีก · UI-CONVENTIONS §5.1) */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
+        <button type="button" style={zBtn} onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} disabled={zoom <= 1} title="ซูมออก">➖</button>
+        <span style={{ fontSize: 12, fontWeight: 800, minWidth: 46, textAlign: 'center', color: 'var(--text)' }}>{Math.round(zoom * 100)}%</span>
+        <button type="button" style={zBtn} onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))} disabled={zoom >= 4} title="ซูมเข้า">➕</button>
+        {zoom > 1 && <button type="button" style={zBtn} onClick={() => setZoom(1)}>↺ พอดีกรอบ</button>}
+        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{zoom > 1 ? 'เลื่อนดูส่วนอื่นของรูปได้ในกรอบ' : 'ซูมเข้าเพื่อวางจุดละเอียดขึ้น'}</span>
+      </div>
+      <div style={{
+        maxHeight: '75vh', overflow: 'auto', borderRadius: 8,
+        border: `2px solid ${activePinKey ? 'var(--accent)' : 'var(--border)'}`, background: 'var(--bg2)',
+      }}>
+        <div onClick={handleClick} style={{
+          position: 'relative', userSelect: 'none', width: `${zoom * 100}%`,
+          cursor: activePinKey ? 'crosshair' : 'default',
+        }}>
+          <img ref={imgRef} src={imageUrl} alt="JIG" onLoad={recalc} style={{ width: '100%', display: 'block' }} />
+          {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้ ไม่ใช่ % ของ container */}
+          {imgBox && (
+            <div ref={layerRef} style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
+              {checkpoints.map((cp, i) => {
+                if (cp.x_pos == null || cp.y_pos == null) return null
+                const isActive = activePinKey === cp._key
+                const col = isActive ? 'var(--accent)' : categoryColor(cp.category)
+                return (
+                  <CalloutPin key={cp._key} xPct={cp.x_pos * 100} yPct={cp.y_pos * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
+                    label={labels?.[i] ?? i + 1} color={col} selected={isActive}
+                    title={`${cp.name || `จุด ${i + 1}`} — คลิกเพื่อลบ`}
+                    onClick={e => { e.stopPropagation(); onPinRemove(cp._key) }} />
+                )
+              })}
+            </div>
+          )}
+          {activePinKey && (
+            <div style={{ position: 'sticky', bottom: 8, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+              <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: '#071008', fontSize: 11, fontWeight: 700 }}>📍 คลิกที่รูปเพื่อวางตำแหน่ง</span>
+            </div>
+          )}
         </div>
-      )}
-      {activePinKey && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 8, pointerEvents: 'none' }}>
-          <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: '#071008', fontSize: 11, fontWeight: 700 }}>📍 คลิกที่รูปเพื่อวางตำแหน่ง</span>
-        </div>
-      )}
+      </div>
     </div>
   )
 }

@@ -375,7 +375,7 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
         <label style={lbl}>หัวเรื่องงาน *</label>
         <input value={f.title} onChange={e => setF(v => ({ ...v, title: e.target.value }))} placeholder="เช่น Cleaning Cutting Head" style={inp} />
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+        <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
           <div>
             <label style={lbl}>เครื่องจักร (พิมพ์/เลือกหมายเลขเครื่อง)</label>
             <input list="pmcoord-mach" value={f.machine_no} onChange={e => onMachineNoInput(e.target.value)}

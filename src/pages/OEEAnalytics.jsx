@@ -717,7 +717,7 @@ export default function OEEAnalytics() {
       if (!map[key]) map[key] = [];
       map[key].push(r);
     }
-    return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0])).map(([key, items]) => {
+    const out = Object.entries(map).sort((a, b) => a[0].localeCompare(b[0])).map(([key, items]) => {
       return {
         key,
         label: period === 'daily' ? fmtDayLabel(key) : period === 'monthly' ? fmtMonthLabel(key) : `${+key + 543}`,
@@ -731,6 +731,28 @@ export default function OEEAnalytics() {
         count: items.length,
       };
     });
+
+    // แกนวันต่อเนื่อง — วันที่ไม่มีการผลิตต้องมีช่องของตัวเอง (ค่าเป็น null = ตอว่าง)
+    // ไม่งั้นกราฟ "ข้ามวัน" ทำให้ระยะห่างบนแกนไม่ตรงเวลาจริง อ่านเทรนด์ผิด
+    // (UI-CONVENTIONS · pattern เดียวกับกราฟรายวันใน /product-history · QC audit 2026-08-03)
+    // เติมเฉพาะช่องว่างระหว่างวันแรก-วันสุดท้ายที่มีข้อมูล (ไม่ pad หัว-ท้ายช่วงที่เลือก) · cap 400 วันกันช่วงยาวผิดปกติ
+    if (period !== 'daily' || out.length < 2) return out;
+    const dayMs = 86400000;
+    const first = new Date(`${out[0].key}T00:00:00`), last = new Date(`${out[out.length - 1].key}T00:00:00`);
+    const span = Math.round((last - first) / dayMs) + 1;
+    if (!(span > out.length) || span > 400) return out;
+    const byKey = Object.fromEntries(out.map(g => [g.key, g]));
+    const filled = [];
+    for (let t = first.getTime(); t <= last.getTime(); t += dayMs) {
+      const d = new Date(t);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      filled.push(byKey[key] || {
+        key, label: fmtDayLabel(key), empty: true,
+        oee: null, a: null, p: null, q: null,
+        totalQty: 0, ngQty: 0, unplannedMin: 0, count: 0,
+      });
+    }
+    return filled;
   }, [rows, period]);
 
   // ── Overall KPIs ───────────────────────────────────────────────
@@ -1317,7 +1339,8 @@ export default function OEEAnalytics() {
               </tr>
             </thead>
             <tbody>
-              {grouped.map((g, i) => (
+              {/* ตารางโชว์เฉพาะวันที่มีข้อมูลจริง — วันตอว่างที่เติมให้แกนกราฟต่อเนื่อง (empty) ไม่ต้องขึ้นเป็นแถว */}
+              {grouped.filter(g => !g.empty).map((g, i) => (
                 <tr key={g.key} style={{ borderBottom: '1px solid var(--border)', background: i % 2 ? 'var(--bg2)' : 'transparent' }}>
                   <td style={{ padding: '5px 8px', fontWeight: 700, color: 'var(--text)' }}>{period === 'daily' ? g.key : g.label}</td>
                   <td style={{ padding: '5px 8px', textAlign: 'right', color: 'var(--muted)' }}>{g.count}</td>
