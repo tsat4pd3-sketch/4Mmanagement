@@ -247,13 +247,15 @@ export default function FactoryMap({ setupMode = false }) {
       .from('production_sessions').select('id, line_name, status, oee, qty_ng, ng_qty, start_time, shift_min').eq('work_date', workDate);
     if (!sessions?.length) { setLineStatus({}); return; }
     const sessIds = sessions.map(s => s.id);
-    const [{ data: orders }, { data: dts }, { data: prods }] = await Promise.all([
-      supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, qty_ng, mat_no').in('session_id', sessIds),
+    const [{ data: orders }, { data: dts }, { data: prods }, breakRes] = await Promise.all([
+      supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, qty_ng, mat_no, opened_at').in('session_id', sessIds),
       supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at, started_at, dr_downtime_types(category)').in('session_id', sessIds),
-      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no'),
+      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no, process_type'),
+      supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true).then(r => r, () => ({ data: [] })),
     ]);
-    const ctMap = {}, pairMap = {};
-    (prods || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; });
+    const ctMap = {}, pairMap = {}, procMap = {};
+    (prods || []).forEach(p => { ctMap[p.mat_no] = p.cycle_time_sec || 0; if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; procMap[p.mat_no] = p.process_type; });
+    const breaks = breakRes?.data || [];
     const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
     const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
     const nowMs = Date.now();
@@ -303,9 +305,18 @@ export default function FactoryMap({ setupMode = false }) {
       const dl = dtBySess[s.id] || [];
       // Downtime — นับเฉพาะ "นอกแผน" (planned เช่นนับสต็อก ไม่ใช่ loss) + รวมเวลาที่ "กำลังหยุด" (ยังไม่ปิด) จนถึงตอนนี้
       //   dtMin = สะสมทั้งวันงาน (ใช้ sidebar อันดับ) · dtMinHour = สะสมเฉพาะชั่วโมงปัจจุบัน (ใช้สีบนแผนที่)
-      let dtMin = 0, dtMinHour = 0, dtActive = false;
+      let dtMin = 0, dtMinHour = 0, dtActive = false, plannedDtMin = 0;
       dl.forEach(d => {
-        if (d.dr_downtime_types?.category === 'planned') return;
+        if (d.dr_downtime_types?.category === 'planned') {
+          // หยุดตามแผน — ไม่นับเป็น loss แต่ต้องหักออกจาก "เวลาที่มีให้ผลิต" ตอนคิดว่าควรผลิตได้เท่าไหร่
+          const ps = d.started_at ? new Date(d.started_at).getTime() : null;
+          if (ps != null) {
+            const pe = d.ended_at ? new Date(d.ended_at).getTime()
+                     : d.duration_min != null ? ps + Number(d.duration_min) * 60000 : nowMs;
+            plannedDtMin += Math.max(0, (Math.min(pe, nowMs) - ps) / 60000);
+          } else plannedDtMin += Number(d.duration_min) || 0;
+          return;
+        }
         const active = !d.ended_at && d.duration_min == null;
         if (active) dtActive = true;
         const s0 = d.started_at ? new Date(d.started_at).getTime() : null;
@@ -321,14 +332,42 @@ export default function FactoryMap({ setupMode = false }) {
         }
       });
       dtMin = Math.round(dtMin); dtMinHour = Math.round(dtMinHour);
-      // เป้า ณ เวลาปัจจุบัน (on-time / pace target) — กะที่ยังเปิด: เป้าเต็ม × สัดส่วนเวลาที่ผ่านไปของกะ
-      // (ควรผลิตได้เท่าไหร่ ณ ตอนนี้ถ้าทำตามจังหวะ) · ปิดกะแล้ว = เต็มกะ (on-time = final)
-      let frac = 1;
+      // ── "ควรผลิตได้ ณ ตอนนี้" = เวลาที่มีให้ผลิตจริง ÷ CT · เพดาน = เป้าจากใบที่เปิด (2026-08-03 · คำสั่ง user) ──
+      //   ระบบเป็น pull (ขายเท่าไหร่ ผลิตเท่านั้น) → เป้า = ใบที่เปิดแล้ว · ห้ามคาดหวังเกินที่ลูกค้าดึง
+      //   เวลาที่มีให้ผลิต = ตั้งแต่ (เริ่มกะ หรือ เปิดใบแรก แล้วแต่อันหลัง) ถึงตอนนี้ − พักตามแผน − หยุดตามแผน
+      //   เดิมใช้ "เป้าเต็ม × สัดส่วนเวลาของกะ" ซึ่งต่ำเกินจริงในระบบ pull (ใบทยอยเปิด เป้าเลยโตทีหลัง)
+      let onTimeTarget = target;
       if (s.status === 'open' && s.start_time) {
-        const opened = new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime();
-        frac = Math.max(0, Math.min(1, ((nowMs - opened) / 60000) / (s.shift_min || 570)));
+        const shiftStart = new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime();
+        // เปิดใบแรกช้ากว่าเริ่มกะ = เพิ่งเริ่มผลิตตอนนั้น (ก่อนหน้านั้นยังไม่มีงานให้ทำ)
+        const firstOpen = os.reduce((m, o) => { const t = o.opened_at ? new Date(o.opened_at).getTime() : null; return t && (m == null || t < m) ? t : m; }, null);
+        const anchor = Math.max(shiftStart, firstOpen ?? shiftStart);
+        const capMs = shiftStart + (s.shift_min || 570) * 60000;   // ไม่นับเลยเวลาเลิกกะ
+        let availMin = (Math.min(nowMs, capMs) - anchor) / 60000;
+        // หักเวลาพักตามแผนที่ผ่านไปแล้ว (break_policies · เทียบ process ของสินค้าที่วิ่งในกะ)
+        const procOfSess = os.map(o => procMap[o.mat_no]).find(Boolean) || null;
+        breaks.forEach(b => {
+          if (!(b.shift === 'both' || b.shift === s.shift)) return;
+          if (!(b.process_type === 'common' || !b.process_type || b.process_type === procOfSess)) return;
+          const [bh, bm] = String(b.start_time || '00:00').split(':').map(Number);
+          let bStart = new Date(`${workDate}T${String(bh).padStart(2, '0')}:${String(bm).padStart(2, '0')}:00`).getTime();
+          if (bStart < shiftStart) bStart += 86400000;             // พักหลังเที่ยงคืน (กะดึก)
+          const bEnd = bStart + (b.duration_min || 0) * 60000;
+          const ov = Math.min(bEnd, nowMs, capMs) - Math.max(bStart, anchor);
+          if (ov > 0) availMin -= ov / 60000;
+        });
+        // หักหยุดตามแผน (planned downtime) ที่เกิดไปแล้ว — ไม่หัก unplanned (ต้องเห็นว่าตามหลัง)
+        availMin -= plannedDtMin;
+        availMin = Math.max(0, availMin);
+        // CT เฉลี่ยถ่วงตามสัดส่วนเป้าของแต่ละ mat ในกะนี้
+        let ctW = 0, ctQ = 0;
+        Object.values(perMat).forEach(m => { const ct = ctMap[m.mat_no] || 0; if (ct > 0 && m.target > 0) { ctW += ct * m.target; ctQ += m.target; } });
+        const ctAvg = ctQ > 0 ? ctW / ctQ : 0;
+        // มี CT → คิดจากกำลังผลิตจริง · ไม่มี CT (สินค้ายังไม่ตั้ง CT) → ถอยไปสูตรเดิม (สัดส่วนเวลาของกะ)
+        onTimeTarget = ctAvg > 0
+          ? Math.min(target, (availMin * 60) / ctAvg)
+          : target * Math.max(0, Math.min(1, ((nowMs - shiftStart) / 60000) / (s.shift_min || 570)));
       }
-      const onTimeTarget = target * frac;
       // ปิดกะแล้ว → ใช้ oee ที่ stamp · ยังเปิด → คำนวณสด
       const oeeVal = s.oee != null ? Number(s.oee) : liveOee(s, os, dl);
       const isLive = s.oee == null && oeeVal != null;
@@ -1094,7 +1133,8 @@ export default function FactoryMap({ setupMode = false }) {
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{M.desc ? 'มาก → น้อย (ปัญหาขึ้นบน)' : 'น้อย → มาก (ตามหลังขึ้นบน)'} · คลิกแถวเพื่อเน้นบนผัง</div>
                     {metric === 'productivity' && (
                       <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBottom: 8, padding: '4px 8px', background: 'var(--bg3)', borderRadius: 6, lineHeight: 1.5 }}>
-                        รูปแบบ <b style={{ color: 'var(--text2)' }}>ทำได้ / เป้า ณ เวลานี้ / เป้าเต็มกะ</b> · % = ทำได้เทียบเป้า ณ เวลานี้ (ทันจังหวะมั้ย)
+                        รูปแบบ <b style={{ color: 'var(--text2)' }}>ทำได้ / ควรได้ ณ ตอนนี้ / เป้า (ใบที่เปิด)</b><br />
+                        <b style={{ color: 'var(--text2)' }}>ควรได้</b> = เวลาที่มีให้ผลิต (ตั้งแต่เริ่มกะ/เปิดใบแรก − พัก − หยุดตามแผน) ÷ CT · ไม่เกินเป้าที่เปิดใบไว้
                       </div>
                     )}
                     {ranked.length === 0 ? (
