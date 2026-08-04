@@ -819,9 +819,21 @@ export default function FactoryMap({ setupMode = false }) {
     const r = wrapRef.current.getBoundingClientRect();
     return { x: Math.min(100, Math.max(0, ((clientX - r.left) / r.width) * 100)), y: Math.min(100, Math.max(0, ((clientY - r.top) / r.height) * 100)) };
   };
-  const framedTopCount = regions.filter(r => topNames.includes(r.line_name)).length;
   const framedNames = () => new Set(regions.map(r => r.line_name));
-  const assignableLines = () => { const f = framedNames(); return topNames.filter(n => !f.has(n)); };
+  // กลุ่มถือว่า "ตีแล้ว" เมื่อ ตีที่ตัวแม่เอง หรือ ตีรายไลน์ลูกแล้ว (ตีลูกครบ = แม่ไม่ต้องตีซ้ำ — กรอบแม่จะทับลูก)
+  const coveredTop = (top, f) => f.has(top) || (childrenOf[top] || []).some(c => f.has(c));
+  const framedTopCount = (() => { const f = framedNames(); return topNames.filter(n => coveredTop(n, f)).length; })();
+  const assignableLines = () => { const f = framedNames(); return topNames.filter(n => !coveredTop(n, f)); };
+  // กลุ่มที่เริ่มตีเป็นรายไลน์ลูกแล้วแต่ยังไม่ครบ → เสนอไลน์ลูกที่เหลือให้ตีต่อ (ไม่เสนอตัวแม่ซ้ำ)
+  const assignableLeafs = () => {
+    const f = framedNames(); const out = [];
+    topNames.forEach(t => {
+      if (f.has(t)) return;
+      const ch = childrenOf[t] || [];
+      if (ch.length && ch.some(c => f.has(c))) out.push(...ch.filter(c => !f.has(c)));
+    });
+    return out;
+  };
   const assignableFacility = () => { const f = framedNames(); return facilityZones.filter(n => !f.has(n)); };
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
@@ -1607,12 +1619,13 @@ export default function FactoryMap({ setupMode = false }) {
       {assignFor && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '22px 24px', width: '100%', maxWidth: 360 }}>
-            {(() => { const okAssign = assignLine === '__new__' ? !!newZone.trim() : !!assignLine; const prodOpts = assignableLines(); const facOpts = assignableFacility(); return <>
+            {(() => { const okAssign = assignLine === '__new__' ? !!newZone.trim() : !!assignLine; const prodOpts = assignableLines(); const leafOpts = assignableLeafs(); const facOpts = assignableFacility(); return <>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>🖊️ ตีกรอบให้ไลน์/โซนไหน?</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>เลือกไลน์ผลิต หรือโซน MTN/facility ที่จะผูกกับรูปที่วาด ({assignFor.length} จุด)</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>เลือกไลน์ผลิต หรือโซน MTN/facility ที่จะผูกกับรูปที่วาด ({assignFor.length} จุด) · กลุ่มที่ตีรายไลน์ลูกครบแล้วไม่ขึ้นในลิสต์ (ไม่ต้องตีแม่ซ้ำ)</div>
             <select value={assignLine} onChange={e => setAssignLine(e.target.value)} autoFocus style={{ width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 14, marginBottom: newZone !== '' || assignLine === '__new__' ? 8 : 16 }}>
               <option value="">— เลือกไลน์/โซน —</option>
-              {prodOpts.length > 0 && <optgroup label="🏭 ไลน์ผลิต">{prodOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
+              {prodOpts.length > 0 && <optgroup label="🏭 ไลน์ผลิต (ยังไม่มีกรอบ)">{prodOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
+              {leafOpts.length > 0 && <optgroup label="↳ ไลน์ย่อยที่ยังไม่ได้ตี (กลุ่มตีเป็นรายลูก)">{leafOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
               {facOpts.length > 0 && <optgroup label="🔧 โซน MTN / Facility">{facOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
               <optgroup label="อื่นๆ"><option value="__new__">➕ พิมพ์ชื่อโซนใหม่…</option></optgroup>
             </select>
