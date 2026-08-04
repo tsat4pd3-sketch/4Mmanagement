@@ -1371,16 +1371,27 @@ const TABS = [
 
 export default function QualityControl() {
   const { can } = usePerms();
+  const { role, lineId, sections } = useContext(UserContext);
   const canRecord = can('qa', 'record');
   const canManage = can('qa', 'manage');
   const [tab, setTab] = useState('dashboard');
-  const [lines, setLines] = useState([]);
+  const [allLines, setAllLines] = useState([]);
   const [capaPrefill, setCapaPrefill] = useState(null); // NCR → เปิด 8D
 
   useEffect(() => {
-    supabase.from('production_lines').select('name').order('name')
-      .then(({ data }) => setLines((data || []).map(l => l.name)));
+    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
+      .then(({ data }) => setAllLines(data || []));
   }, []);
+  // ลิสต์ไลน์ที่ส่งให้ทุกแท็บ (SPC/NCR/Instrument) ต้อง scope ด้วย — ไม่งั้น leader/supervisor
+  // เลือกไลน์นอกส่วนงานแล้วสร้าง NCR/characteristic ข้ามส่วนงานได้ (กฎ dropdown-scope · QC audit 2026-08-03)
+  const lines = useMemo(() => {
+    if (role === 'leader' && lineId) {
+      const myLine = allLines.find(l => String(l.id) === String(lineId));
+      return myLine ? getLineFamilyNames(allLines, myLine.name) : [];
+    }
+    if (sections?.length) return allLines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
+    return allLines.map(l => l.name);
+  }, [allLines, role, lineId, sections]);
 
   const openCapaFromNcr = useCallback((ncr) => {
     setCapaPrefill(ncr);

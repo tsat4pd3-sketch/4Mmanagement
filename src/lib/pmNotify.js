@@ -1,16 +1,34 @@
 import { supabase } from '../supabaseClient'
 
-// 4M has no per-user "departments[]" — access is gated by `profiles.role`
-// instead. Map each PM checklist department to the 4M roles that should be
-// notified when something needs attention there.
-// ⚠️ เพิ่ม role ใหม่ในระบบแล้วต้องทบทวน map นี้ด้วย — เคย drift: เพิ่ม role `mtn` (2026-07-13)
-// แล้วทีมซ่อมบำรุงไม่ได้รับแจ้งเตือนงาน PM ของแผนกตัวเอง (QC audit 2026-07-14)
-const DEPARTMENT_ROLES = {
-  production:       ['admin', 'manager', 'supervisor', 'leader'],
-  maintenance:       ['admin', 'manager', 'supervisor', 'mtn'],
-  jig_maintenance:   ['admin', 'manager', 'supervisor', 'mtn'],
-  die_maintenance:   ['admin', 'manager', 'supervisor', 'mtn'],
-  qa:                ['admin', 'manager', 'qa'],
+// ผู้รับแจ้งเตือนงาน PM = "role ที่มีสิทธิ์ทำงาน PM จริง" — อ่านจาก role_permissions (data-driven)
+// ไม่ hardcode รายชื่อ role อีกต่อไป: เพิ่ม role ใหม่ / เพิ่มทีมช่างใน mtn_teams แล้วได้รับแจ้งเตือนเอง
+// (เคย drift 2 รอบ: เพิ่ม role `mtn` 2026-07-13 แล้วลืม · role engineer/planner_store ไม่เคยอยู่ในแมพเลย
+//  · ทีมใหม่ใน mtn_teams จะตกไป fallback แล้วเงียบ — QC audit 2026-08-03)
+//   production → ผู้บันทึกผลตรวจ (pm:record) · qa → qa:record · ทีมช่าง (maintenance/jig/die) → pm:record เช่นกัน
+const DEPARTMENT_PERMISSION = {
+  production:      'pm:record',
+  maintenance:     'pm:record',
+  jig_maintenance: 'pm:record',
+  die_maintenance: 'pm:record',
+  qa:              'qa:record',
+}
+// fallback ใช้เมื่ออ่าน role_permissions ไม่ได้ (ตารางล่ม/สิทธิ์) — อย่างน้อยหัวหน้ายังได้รับ
+const FALLBACK_ROLES = ['admin', 'manager']
+
+// คืนรายชื่อ role ที่ได้สิทธิ์ตาม permission key (allowed = true) · admin ได้เสมอ
+async function rolesWithPermission(permissionKey) {
+  try {
+    const { data, error } = await supabase
+      .from('role_permissions')
+      .select('role')
+      .eq('permission_key', permissionKey)
+      .eq('allowed', true)
+    if (error) throw error
+    const roles = [...new Set([...(data ?? []).map(r => r.role), 'admin'])]
+    return roles.length > 1 ? roles : FALLBACK_ROLES
+  } catch {
+    return FALLBACK_ROLES
+  }
 }
 
 export async function createNotification(userId, { title, body, type = 'info', refTable, refId }) {
@@ -28,7 +46,7 @@ export async function createNotification(userId, { title, body, type = 'info', r
 // Notify everyone whose role can act on a checklist department, except the
 // actor who triggered it.
 export async function notifyDepartment(department, { title, body, type = 'info', refTable, refId }, excludeUserId) {
-  const roles = DEPARTMENT_ROLES[department] ?? ['admin', 'manager']
+  const roles = await rolesWithPermission(DEPARTMENT_PERMISSION[department] ?? 'pm:record')
   const { data: profiles, error } = await supabase
     .from('profiles')
     .select('id, role')
