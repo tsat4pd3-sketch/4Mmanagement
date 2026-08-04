@@ -24,8 +24,6 @@ const aColor    = v => v >= 90 ? '#22c55e' : v >= 75 ? '#f59e0b' : '#ef4444';
 const pColor    = v => v >= 85 ? '#22c55e' : v >= 70 ? '#f59e0b' : '#ef4444';
 const qColor    = v => v >= 99 ? '#22c55e' : v >= 95 ? '#f59e0b' : '#ef4444';
 
-const UNPLAN_COLORS = ['#ef4444','#f97316','#eab308','#84cc16','#06b6d4','#8b5cf6','#ec4899','#6b7280','#a78bfa'];
-const PLAN_COLORS   = ['#60a5fa','#34d399','#fb7185','#fbbf24'];
 
 // เป้าหมายมาตรฐาน (fallback) — ใช้เมื่อกรุ๊ปใน scope ยังไม่ถูกตั้ง target ในตาราง oee_targets
 // ตั้งได้เฉพาะ A/P/Q — เป้า OEE ไม่ตั้งเอง คำนวณจาก A×P×Q เสมอ (คำสั่ง user 2026-07-13)
@@ -422,7 +420,7 @@ export default function OEEAnalytics() {
           ? supabaseDR.from('downtime_logs').select('*, dr_downtime_types(name_th, category, color)').in('session_id', sessionIds)
           : Promise.resolve({ data: [] }),
         sessionIds.length
-          ? supabaseDR.from('defect_logs').select('*, dr_defect_types(name_th, color)').in('session_id', sessionIds)
+          ? supabaseDR.from('defect_logs').select('*, dr_defect_types(name_th, color), prod_orders(mat_no, part_name)').in('session_id', sessionIds)
           : Promise.resolve({ data: [] }),
         sessionIds.length
           ? supabaseDR.from('prod_orders').select('session_id, mat_no, status, qty, qty_target, qty_ok, qty_actual').in('session_id', sessionIds)
@@ -695,7 +693,7 @@ export default function OEEAnalytics() {
           ? supabaseDR.from('downtime_logs').select('*, dr_downtime_types(name_th, category, color)').in('session_id', sessionIds)
           : Promise.resolve({ data: [] }),
         sessionIds.length
-          ? supabaseDR.from('defect_logs').select('*, dr_defect_types(name_th, color)').in('session_id', sessionIds)
+          ? supabaseDR.from('defect_logs').select('*, dr_defect_types(name_th, color), prod_orders(mat_no, part_name)').in('session_id', sessionIds)
           : Promise.resolve({ data: [] }),
         supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
         supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
@@ -811,37 +809,40 @@ export default function OEEAnalytics() {
   }, [rows, breakPols, dateFrom, dateTo]);
 
   // ── Downtime Pareto ────────────────────────────────────────────
-  const dtPareto = useMemo(() => {
-    const map = {};
-    for (const d of downtimes) {
-      const name = d.dr_downtime_types?.name_th || 'ไม่ระบุ';
-      const cat  = d.dr_downtime_types?.category || 'unplanned';
-      if (!map[name]) map[name] = { name, min: 0, category: cat };
-      map[name].min += d.duration_min || 0;
-    }
-    return Object.values(map).sort((a, b) => b.min - a.min).map((d, i) => ({
-      ...d, min: +d.min.toFixed(1),
-      color: d.category === 'planned' ? PLAN_COLORS[i % PLAN_COLORS.length] : UNPLAN_COLORS[i % UNPLAN_COLORS.length],
-    }));
-  }, [downtimes]);
-
-  // ── Defect breakdown ───────────────────────────────────────────
-  const defectBreakdown = useMemo(() => {
-    const map = {};
-    for (const d of defects) {
-      const name = d.dr_defect_types?.name_th || 'ไม่ระบุ';
-      const color = d.dr_defect_types?.color || '#6b7280';
-      if (!map[name]) map[name] = { name, qty: 0, color };
-      map[name].qty += (d.qty_ng || 0) + (d.qty_suspect || 0);
-    }
-    // Also add from session-level qty_ng
-    for (const s of rows) {
-      if (s.ngQty > 0 && Object.keys(map).length === 0) {
-        map['NG (รวม)'] = { name: 'NG (รวม)', qty: s.ngQty, color: '#ef4444' };
-      }
-    }
-    return Object.values(map).sort((a, b) => b.qty - a.qty);
-  }, [defects, rows]);
+  // แถวดิบสำหรับ Pareto + เจาะลึก (ParetoAbcChart รวมยอด/จัด ABC/เจาะมิติเอง)
+  //   session → ไลน์/กะ/วัน · downtime_logs → เครื่อง/ชิ้นงาน/ผู้บันทึก/หมายเหตุ
+  const sessById = useMemo(() => Object.fromEntries(rows.map(r => [r.id, r])), [rows]);
+  const dtRecords = useMemo(() => downtimes.map(d => {
+    const s = sessById[d.session_id] || {};
+    return {
+      cat: d.dr_downtime_types?.name_th || 'ไม่ระบุ',
+      value: Number(d.duration_min) || 0,
+      machine: d.machine_no || '', line: s.line_name || '',
+      product: d.mat_no || '', shift: s.shift === 'day' ? 'กะเช้า' : s.shift === 'night' ? 'กะดึก' : '',
+      man: d.reported_by_name || '', date: s.work_date || '',
+      note: d.description || '',
+    };
+  }), [downtimes, sessById]);
+  const defRecords = useMemo(() => defects.map(d => {
+    const s = sessById[d.session_id] || {};
+    return {
+      cat: d.dr_defect_types?.name_th || 'ไม่ระบุ',
+      value: (d.qty_ng || 0) + (d.qty_suspect || 0),
+      product: d.prod_orders?.mat_no || '', line: s.line_name || '',
+      shift: s.shift === 'day' ? 'กะเช้า' : s.shift === 'night' ? 'กะดึก' : '',
+      man: d.reported_by_name || '', date: s.work_date || '',
+      note: d.description || '',
+    };
+  }), [defects, sessById]);
+  const DT_DIMS = [
+    { key: 'machine', label: '⚙️ เครื่องจักร' }, { key: 'line', label: '🏭 ไลน์' },
+    { key: 'product', label: '📦 ชิ้นงาน' }, { key: 'shift', label: '🕐 กะ' },
+    { key: 'man', label: '👤 ผู้บันทึก' }, { key: 'date', label: '📅 วัน' },
+  ];
+  const DEF_DIMS = [
+    { key: 'product', label: '📦 ชิ้นงาน' }, { key: 'line', label: '🏭 ไลน์' },
+    { key: 'shift', label: '🕐 กะ' }, { key: 'man', label: '👤 ผู้บันทึก' }, { key: 'date', label: '📅 วัน' },
+  ];
 
   // ── Styles ─────────────────────────────────────────────────────
   const s = {
@@ -1289,11 +1290,11 @@ export default function OEEAnalytics() {
       {/* Downtime Pareto + Defect side-by-side */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
         {/* Downtime Pareto — ABC Analysis (ชื่อบนแกนเฉพาะกลุ่ม A · ที่เหลือดูที่ tooltip/ปุ่มขยาย) */}
-        <ParetoAbcChart title="Pareto — Downtime รายประเภท (นาที)" data={dtPareto} valueKey="min" unit="นาที"
+        <ParetoAbcChart title="Pareto — Downtime รายประเภท (นาที)" records={dtRecords} dims={DT_DIMS} unit="นาที"
           emptyText="ไม่มีข้อมูล Downtime" sectionStyle={s.section} titleStyle={s.title} />
 
-        {/* Quality Breakdown — ABC Analysis */}
-        <ParetoAbcChart title="Pareto — ของเสียรายประเภท (ชิ้น)" data={defectBreakdown} valueKey="qty" unit="ชิ้น"
+        {/* Quality Breakdown — ABC Analysis + เจาะลึก */}
+        <ParetoAbcChart title="Pareto — ของเสียรายประเภท (ชิ้น)" records={defRecords} dims={DEF_DIMS} unit="ชิ้น"
           emptyText="ไม่มีข้อมูลของเสีย" sectionStyle={s.section} titleStyle={s.title} />
       </div>
 
