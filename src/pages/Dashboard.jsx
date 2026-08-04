@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
-import { isAlarmingDT, dtElapsedMin } from '../utils/downtimeAlarm';
+import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin } from '../utils/downtimeAlarm';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
@@ -299,7 +299,7 @@ export default function Dashboard() {
       const [ordRes, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
         supabaseDR.from('prod_orders').select(ordCols).in('session_id', sessionIds),
         supabaseDR.from('downtime_logs').select('id, session_id, machine_no, description, duration_min, started_at, ended_at, created_at, dr_downtime_types(category, name_th)').in('session_id', sessionIds),
-        supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessionIds),
+        supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, description, dr_defect_types(name_th)').in('session_id', sessionIds),
       ]);
       // machine_no อาจยังไม่ apply migration (20260723) — retry โดยตัดคอลัมน์ออก ไม่ให้บอร์ดพัง
       let orders = ordRes.data;
@@ -422,7 +422,10 @@ export default function Dashboard() {
       const activeDT = ['open', 'pending_close'].includes(s.status)
         ? (dtBySession[s.id] || []).filter(isAlarmingDT)
         : [];
-      return { ...s, orders: active, demand, actual, target, oeeData, activeDT, dtLogs: dtBySession[s.id] || [] };
+      const sessDefects = defectBySession[s.id] || [];
+      return { ...s, orders: active, demand, actual, target, oeeData, activeDT,
+        dtLogs: dtBySession[s.id] || [], defectLogs: sessDefects,
+        ngQty: sessDefects.reduce((a, d) => a + (d.qty_ng || 0) + (d.qty_suspect || 0), 0) };
     });
     setProdStatus(ps);
   }, [boardDate]);
@@ -672,6 +675,32 @@ export default function Dashboard() {
     () => visibleProdStatus.flatMap(s => (s.activeDT || []).map(d => ({ ...d, line_name: s.line_name, shift: s.shift }))),
     [visibleProdStatus],
   );
+  // หยุดตามแผนที่ยังเปิดค้าง — ไม่ Andon (ไม่ใช่ความเสียหาย) แต่ต้องเห็นในแผง Andon ห้ามหายเงียบ
+  const dtPlannedByLine = useMemo(() => {
+    const m = {};
+    visibleProdStatus.forEach(s => {
+      if (!['open', 'pending_close'].includes(s.status)) return;
+      (s.dtLogs || []).filter(d => isOpenDT(d) && isPlannedDT(d))
+        .forEach(d => (m[s.line_name] ||= []).push({ ...d, line_name: s.line_name }));
+    });
+    return m;
+  }, [visibleProdStatus]);
+  // ── Quality รายไลน์ (ของเสียวันนี้) — ใช้ในแผง Andon คู่กับ downtime (2026-08-04 · คำสั่ง user) ──
+  const qualityByLine = useMemo(() => {
+    const m = {};
+    visibleProdStatus.forEach(s => {
+      if (!s.ngQty) return;
+      const e = m[s.line_name] || (m[s.line_name] = { ng: 0, byType: {} });
+      e.ng += s.ngQty;
+      (s.defectLogs || []).forEach(d => {
+        const k = d.dr_defect_types?.name_th || 'ไม่ระบุประเภท';
+        const t = e.byType[k] || (e.byType[k] = { name: k, qty: 0, notes: [] });
+        t.qty += (d.qty_ng || 0) + (d.qty_suspect || 0);
+        if (d.description) t.notes.push(d.description);
+      });
+    });
+    return m;
+  }, [visibleProdStatus]);
   const dtAlarmByMachine = useMemo(() => {
     const m = {};
     dtAlarmList.forEach(d => { if (d.machine_no) (m[d.machine_no] ||= []).push(d); });
@@ -2327,6 +2356,69 @@ export default function Dashboard() {
                   })}
                 </div>
               )}
+
+              {/* หยุดตามแผน — ไม่ใช่ Andon (นับสต๊อก/ไม่มีแผนผลิต/5ส) แต่ต้องเห็น ห้ามซ่อนหาย */}
+              {(() => {
+                const planned = andonLine.names.flatMap(n => dtPlannedByLine[n] || []);
+                if (!planned.length) return null;
+                return (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 7px' }}>
+                      🗓️ หยุดตามแผน · {planned.length} รายการ (ไม่นับเป็น Andon)
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {planned.map(d => {
+                        const el = dtElapsedMin(d, now.getTime());
+                        return (
+                          <div key={d.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 9, padding: '8px 12px', borderRadius: 9, background: 'var(--bg3)', border: '1px solid var(--border2)' }}>
+                            <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text2)' }}>⚙️ {d.machine_no || '—'}</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--muted)' }}>{d.dr_downtime_types?.name_th || 'หยุดตามแผน'}</span>
+                            <span style={{ fontSize: 12, color: 'var(--muted)' }}>📍 {d.line_name}</span>
+                            <span style={{ fontSize: 12, color: 'var(--muted)' }}>เริ่ม {fmtTime(d.started_at || d.created_at)}</span>
+                            {el != null && <span style={{ fontSize: 12, color: 'var(--muted)' }}>⏱ {el} นาที</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ── คุณภาพ (Quality) — ของเสียของไลน์นี้วันนี้ · คู่กับ downtime (2026-08-04 · คำสั่ง user) ── */}
+              {(() => {
+                const q = andonLine.names.reduce((acc, n) => {
+                  const e = qualityByLine[n]; if (!e) return acc;
+                  acc.ng += e.ng;
+                  Object.values(e.byType).forEach(t => {
+                    const x = acc.byType[t.name] || (acc.byType[t.name] = { name: t.name, qty: 0, notes: [] });
+                    x.qty += t.qty; x.notes.push(...t.notes);
+                  });
+                  return acc;
+                }, { ng: 0, byType: {} });
+                const types = Object.values(q.byType).sort((a, b) => b.qty - a.qty);
+                return (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: q.ng > 0 ? '#f59e0b' : 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
+                      🚫 คุณภาพ (Quality) · ของเสียวันนี้ {q.ng.toLocaleString()} ชิ้น
+                    </div>
+                    {types.length === 0 ? (
+                      <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>ไม่มีของเสียวันนี้ 👍</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {types.map(t => (
+                          <div key={t.name} style={{ padding: '8px 12px', borderRadius: 9, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.4)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                              <span style={{ fontSize: 13.5, fontWeight: 800, color: '#fbbf24', minWidth: 0, flex: 1 }}>{t.name}</span>
+                              <span style={{ fontSize: 14, fontWeight: 900, color: '#f59e0b', whiteSpace: 'nowrap' }}>{t.qty.toLocaleString()} ชิ้น</span>
+                            </div>
+                            {t.notes.length > 0 && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3 }}>💬 {t.notes.join(' · ')}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* 4M Alerts */}
               <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
