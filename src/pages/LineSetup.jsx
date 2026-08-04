@@ -395,16 +395,26 @@ export default function LineSetup({ embedded = false } = {}) {
     };
     // Main project (client supabase) — ผัง/จุดงาน + 4M + factory map + LPA + action items + poka-yoke + QA + คำขอ WIP + home position
     for (const t of ['workstations', 'line_layouts', 'wip_buffer_points', 'machine_points', 'machine_flow_links',
-                     'four_m_logs', 'factory_line_regions', 'lpa_plans', 'lpa_audits', 'meeting_action_items',
+                     'four_m_logs', 'factory_line_regions', 'lpa_plans', 'lpa_audits', 'lpa_questions',
+                     'meeting_action_items', 'station_assignment_logs',
                      'pokayoke_devices', 'wip_replenish_requests', 'employee_home_positions',
                      'qa_parts', 'qa_characteristics', 'qa_instruments', 'qa_ncr']) {
       await bump(supabase, t);
     }
+    // lpa_questions.hidden_for_lines เป็น text[] — bump() (eq/update ธรรมดา) ใช้ไม่ได้ ต้องอ่าน-แก้-เขียนรายแถว
+    try {
+      const { data: hid } = await supabase.from('lpa_questions').select('id, hidden_for_lines').contains('hidden_for_lines', [old]);
+      for (const q of hid || []) {
+        const next = (q.hidden_for_lines || []).map(n => (n === old ? name : n));
+        await supabase.from('lpa_questions').update({ hidden_for_lines: next }).eq('id', q.id);
+      }
+    } catch { /* best-effort — คอลัมน์ยังไม่ apply ก็ข้าม */ }
     // DR project (client supabaseDR) — production_sessions/dr_products สำคัญสุด (กะที่เปิด + product→line map)
     //   + supply route / PM ประสานงาน / delivery-round / rack (line_name)
     for (const t of ['machines', 'production_sessions', 'dr_products', 'line_stock_transactions',
-                     'jigs', 'pm_daily_line_targets', 'mtn_orders', 'improvements', 'scrap_reports',
-                     'facility_supply_links', 'pm_coordination_plans', 'kanban_delivery_rounds', 'kanban_deliveries', 'rack_requests']) {
+                     'jigs', 'pm_daily_line_targets', 'pm_daily_alerts', 'mtn_orders', 'improvements', 'scrap_reports',
+                     'facility_supply_links', 'pm_coordination_plans', 'kanban_delivery_rounds', 'kanban_deliveries',
+                     'rack_requests', 'kanban_calc_params', 'transport_nodes']) {
       await bump(supabaseDR, t);
     }
     // คอลัมน์ที่ชื่อไม่ใช่ 'line_name' — ต้องระบุ col เอง
