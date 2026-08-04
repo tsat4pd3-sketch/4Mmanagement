@@ -247,6 +247,12 @@ export default function OEEAnalytics() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const isMobile = useIsMobile(); // ≤768px: grid วิเคราะห์ยุบเป็นคอลัมน์เดียว กันกราฟถูกตัด (desktop ไม่เปลี่ยน)
   const [viewTab, setViewTab] = useState('today'); // today | trend | insight
+  // break_policies — ใช้คิดเวลาพักนโยบายสำหรับ OOE/TEEP (ต้องประกาศก่อน tdKpi/kpi ที่เรียกใช้)
+  const [breakPols, setBreakPols] = useState([]);
+  useEffect(() => {
+    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true)
+      .then(r => setBreakPols(r.data || []), () => setBreakPols([]));
+  }, []);
   const canSetTarget = can('oee', 'set_target', role);
   const canExportReview = can('oee', 'export_review', role);
   const [showReviewExport, setShowReviewExport] = useState(false);
@@ -524,15 +530,33 @@ export default function OEEAnalytics() {
       if (hasPairIn(os)) return pairSum(os, o => o.qty_ok ?? o.qty_actual ?? 0);
       return r.totalQty || 0;
     };
+    // OOE/TEEP ของวันนี้ — ฐาน: OOE = เวลากะทั้งหมด · TEEP = ปฏิทิน 24 ชม. ของไลน์ที่เปิดกะวันนี้
+    const tdOee = wavg(tdRows, r => r.calcOEE, wLoad);
+    const tdValid = tdRows.filter(r => r.calcOEE != null && (Number(r.shift_min) || 0) > 0);
+    let tdNet = 0, tdShift = 0, tdBreak = 0, tdPlanned = 0;
+    const tdLineSet = new Set();
+    tdValid.forEach(r => {
+      const sm = Number(r.shift_min) || 0;
+      const brk = policyBreakMin(r.shift, sm, breakPols);
+      const pl = Number(r.plannedMin) || 0;
+      tdShift += sm; tdBreak += brk; tdPlanned += pl; tdNet += Math.max(0, sm - brk - pl);
+      tdLineSet.add(r.line_name);
+    });
+    const tdCal = tdLineSet.size * 1440;   // วันเดียว = 1,440 นาที/ไลน์
+    const tdR1 = v => (v == null ? null : +v.toFixed(1));
     return {
-      oee: wavg(tdRows, r => r.calcOEE, wLoad), a: wavg(tdRows, r => r.calcA, wLoad),
+      oee: tdOee, a: wavg(tdRows, r => r.calcA, wLoad),
       p: wavg(tdRows, r => r.calcP, wRun), q: wavg(tdRows, r => r.calcQ, wProd),
+      ooe:  tdOee != null && tdShift > 0 ? tdR1(tdOee * (tdNet / tdShift)) : null,
+      teep: tdOee != null && tdCal   > 0 ? tdR1(tdOee * (tdNet / tdCal))   : null,
+      netAvailMin: Math.round(tdNet), shiftMinSum: Math.round(tdShift),
+      breakMinTotal: Math.round(tdBreak), plannedMinTotal: Math.round(tdPlanned), teepLines: tdLineSet.size,
       totalQty: tdRows.reduce((s, r) => s + sessActual(r), 0),
       targetQty: tdRows.reduce((s, r) => s + sessTarget(r), 0),
       totalDT: tdDowntimesScoped.reduce((s, d) => s + (d.duration_min || 0), 0),
       totalShiftMin: tdSessionsTeamFiltered.reduce((s, r) => s + (r.shift_min || 0), 0),
     };
-  }, [tdRows, tdDowntimesScoped, tdSessionsTeamFiltered, tdOrdersBySession, tdPairMat]);
+  }, [tdRows, tdDowntimesScoped, tdSessionsTeamFiltered, tdOrdersBySession, tdPairMat, breakPols]);
 
   const tdHistoryGrouped = useMemo(() => {
     const map = {};
@@ -622,11 +646,6 @@ export default function OEEAnalytics() {
   const [defectTypes,setDefectTypes]= useState([]);
   const [lines,      setLines]      = useState([]);
   const [loading,    setLoading]    = useState(true);
-  const [breakPols,  setBreakPols]  = useState([]); // break_policies — ใช้คิดเวลาพักนโยบายสำหรับ OOE/TEEP
-  useEffect(() => {
-    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true)
-      .then(r => setBreakPols(r.data || []), () => setBreakPols([]));
-  }, []);
 
   // Filters
   const [period,     setPeriod]     = useState('monthly'); // daily|monthly|yearly
@@ -933,6 +952,36 @@ export default function OEEAnalytics() {
                   <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}><span style={{ color: METRIC_COLOR[k] }}>╌╌</span> เส้นประ = เป้า {tdTarget[k]}%</div>
                 </div>
               ))}
+            </div>
+
+            {/* ── OOE / TEEP วันนี้ — ต่างจาก OEE ที่ "ฐานเวลา" (2026-08-04) ── */}
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+              <div style={{ flex: '1 1 150px', minWidth: 140 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>OOE — ใช้เวลากะคุ้มแค่ไหน</div>
+                <div style={{ fontSize: 26, fontWeight: 900, color: tdKpi.ooe != null ? oeeColor(tdKpi.ooe) : 'var(--muted)' }}>{tdKpi.ooe ?? '—'}{tdKpi.ooe != null ? '%' : ''}</div>
+                <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>ฐาน = เวลากะทั้งหมด (รวมพัก + หยุดตามแผน)</div>
+              </div>
+              <div style={{ flex: '1 1 150px', minWidth: 140 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>TEEP — ใช้กำลังผลิตที่มีกี่ %</div>
+                <div style={{ fontSize: 26, fontWeight: 900, color: tdKpi.teep != null ? oeeColor(tdKpi.teep) : 'var(--muted)' }}>{tdKpi.teep ?? '—'}{tdKpi.teep != null ? '%' : ''}</div>
+                <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>ฐาน = ปฏิทิน 24 ชม. · {tdKpi.teepLines} ไลน์</div>
+              </div>
+              <div style={{ flex: '2 1 260px', minWidth: 230 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>เวลาที่หายไปก่อนถึง OEE (ในกะ)</div>
+                {tdKpi.shiftMinSum > 0 ? (<>
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12 }}>
+                    <span>☕ พัก <b style={{ color: 'var(--text)' }}>{tdKpi.breakMinTotal.toLocaleString()}</b> น.</span>
+                    <span>🗓️ หยุดตามแผน <b style={{ color: '#f59e0b' }}>{tdKpi.plannedMinTotal.toLocaleString()}</b> น.</span>
+                    <span>= <b style={{ color: '#f59e0b' }}>{((tdKpi.breakMinTotal + tdKpi.plannedMinTotal) / tdKpi.shiftMinSum * 100).toFixed(1)}%</b> ของเวลากะ</span>
+                  </div>
+                  <div style={{ display: 'flex', height: 9, borderRadius: 5, overflow: 'hidden', background: 'var(--bg3)', marginTop: 8 }}>
+                    <div style={{ width: `${tdKpi.ooe ?? 0}%`, background: '#22c55e' }} title="สร้างของดี" />
+                    <div style={{ width: `${Math.max(0, (tdKpi.netAvailMin / tdKpi.shiftMinSum * 100) - (tdKpi.ooe ?? 0))}%`, background: '#a855f7' }} title="เสียตอนเดินเครื่อง" />
+                    <div style={{ flex: 1, background: '#f59e0b' }} title="พัก + หยุดตามแผน" />
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 5 }}>🟩 สร้างของดี · 🟪 เสียตอนเดินเครื่อง · 🟧 พัก+หยุดตามแผน (OEE ไม่เห็นส่วนนี้)</div>
+                </>) : <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีกะปิด</div>}
+              </div>
             </div>
           </div>
 
