@@ -149,12 +149,39 @@ const S = {
   }),
 }
 
+// ความสูงกรอบดูรูปในหน้าตั้งค่า ≈ 46% ของจอ — เหลือที่ให้ลิสต์จุดตรวจเห็นในจอเดียว (UI-CONVENTIONS §5.1)
+const calcAnnoViewH = () => Math.round(Math.min(620, Math.max(260, (typeof window === 'undefined' ? 900 : window.innerHeight) * 0.46)))
+
 // ─── ImageAnnotator (upload + click-to-pin) ────────────────────────────────────
 function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageClick, onPinRemove }) {
   const layerRef = useRef(null)
   // pin สเกล/clamp/วางตำแหน่ง อิง "กล่องรูปจริง" หัก letterbox ของ objectFit:contain
   // (docs/UI-CONVENTIONS.md §5.1 — pattern เดียวกับ MachineFloorMap)
   const { imgRef, imgBox, recalc } = useImgBox([imageUrl])
+  // ซูม: 1 = พอดีกรอบทั้ง 2 แกน (contain) ไม่ใช่ขนาดไฟล์/เต็มความกว้าง — สูตรเดียวกับ QAInspectionSetup
+  // (UI-CONVENTIONS §5.1 · รูป PM ถูกครอปเป็นแนวตั้ง 3:4 ถ้าเต็มความกว้างจะสูงจนเช็คลิสต์ตกจอ)
+  const boxRef = useRef(null)
+  const [boxW, setBoxW] = useState(0)
+  const [natSize, setNatSize] = useState({ w: 0, h: 0 })
+  const [viewH, setViewH] = useState(() => calcAnnoViewH())
+  const [zoom, setZoom] = useState(1)
+  useEffect(() => { setZoom(1); setNatSize({ w: 0, h: 0 }) }, [imageUrl])   // เปลี่ยนรูป → รีเซ็ตซูม/ขนาดไฟล์
+  useEffect(() => {
+    const on = () => setViewH(calcAnnoViewH())
+    window.addEventListener('resize', on)
+    return () => window.removeEventListener('resize', on)
+  }, [])
+  // วัดความกว้างจาก div นอกที่ไม่ scroll — วัดจากกรอบ scroll เองจะหดตอน scrollbar โผล่ = ขนาดรูปแกว่ง
+  useEffect(() => {
+    const el = boxRef.current
+    if (!el) { setBoxW(0); return }
+    const measure = () => setBoxW(el.clientWidth || 0)
+    const ro = new ResizeObserver(measure)
+    ro.observe(el); measure()
+    return () => ro.disconnect()
+  }, [imageUrl])
+  const fitScale = (natSize.w && natSize.h && boxW) ? Math.min(boxW / natSize.w, viewH / natSize.h) : 0
+  const imgW = fitScale ? Math.round(natSize.w * fitScale * zoom) : 0
   const PK = Math.round(Math.max(20, Math.min(36, (imgBox?.rw || 500) * 0.04)))
   const pkFont = Math.max(11, Math.round(PK * 0.45))
   const padX = imgBox ? (PK * 0.7 / imgBox.rw) * 100 : 0
@@ -170,34 +197,74 @@ function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageCl
     const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height))
     onImageClick(x, y)
   }
+  const zBtn = {
+    padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border2)',
+    background: 'var(--bg3)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+  }
   return (
-    <div onClick={handleClick} style={{
-      position: 'relative', userSelect: 'none', borderRadius: 8, overflow: 'hidden',
-      border: `2px solid ${activePinKey ? 'var(--accent)' : 'var(--border)'}`,
-      cursor: activePinKey ? 'crosshair' : 'default',
-    }}>
-      <img ref={imgRef} src={imageUrl} alt="JIG" onLoad={recalc} style={{ width: '100%', maxHeight: 300, objectFit: 'contain', background: 'var(--bg2)', display: 'block' }} />
-      {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้ ไม่ใช่ % ของ container */}
-      {imgBox && (
-        <div ref={layerRef} style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
-          {checkpoints.map((cp, i) => {
-            if (cp.x_pos == null || cp.y_pos == null) return null
-            const isActive = activePinKey === cp._key
-            const col = isActive ? 'var(--accent)' : categoryColor(cp.category)
-            return (
-              <CalloutPin key={cp._key} xPct={cp.x_pos * 100} yPct={cp.y_pos * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
-                label={labels?.[i] ?? i + 1} color={col} selected={isActive}
-                title={`${cp.name || `จุด ${i + 1}`} — คลิกเพื่อลบ`}
-                onClick={e => { e.stopPropagation(); onPinRemove(cp._key) }} />
-            )
-          })}
+    <div>
+      {/* ซูมสำหรับวางจุดแม่นๆ — 100% = พอดีกรอบทั้ง 2 แกน (UI-CONVENTIONS §5.1) */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
+        <button type="button" style={zBtn} onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} disabled={zoom <= 1} title="ซูมออก">➖</button>
+        <span style={{ fontSize: 12, fontWeight: 800, minWidth: 46, textAlign: 'center', color: 'var(--text)' }}>{Math.round(zoom * 100)}%</span>
+        <button type="button" style={zBtn} onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))} disabled={zoom >= 4} title="ซูมเข้า">➕</button>
+        {zoom > 1 && <button type="button" style={zBtn} onClick={() => setZoom(1)}>↺ พอดีกรอบ</button>}
+        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{zoom > 1 ? 'เลื่อนดูส่วนอื่นของรูปได้ในกรอบ' : 'เห็นรูปเต็มพอดีกรอบ — ซูมเข้าเพื่อวางจุดละเอียดขึ้น'}</span>
+      </div>
+      {/* div นอก = ตัววัดความกว้างที่ใช้ได้ (ไม่ scroll) · div ใน = กรอบดู สูงไม่เกิน viewH
+          · wrapper รูป width:fit-content + margin auto = จัดกลางโดยไม่โดนตัดขอบซ้ายตอนซูมเกินกรอบ */}
+      <div ref={boxRef}>
+      <div style={{
+        maxHeight: viewH, overflow: 'auto', borderRadius: 8,
+        border: `2px solid ${activePinKey ? 'var(--accent)' : 'var(--border)'}`, background: 'var(--bg2)',
+      }}>
+        <div onClick={handleClick} style={{
+          position: 'relative', userSelect: 'none', width: 'fit-content', margin: '0 auto',
+          cursor: activePinKey ? 'crosshair' : 'default',
+        }}>
+          <img src={imageUrl} alt="JIG"
+            // รูปจาก cache บางที onLoad ไม่ยิง → ref อ่าน naturalWidth ให้ด้วย (ไม่งั้น render ที่ขนาดไฟล์ = ล้นกรอบ)
+            // ref เดียวกันต้องส่งต่อให้ useImgBox (imgRef) เพื่อวัดกล่องรูปจริงของ layer หมุด
+            ref={el => {
+              imgRef.current = el
+              if (el?.complete && el.naturalWidth && !natSize.w) setNatSize({ w: el.naturalWidth, h: el.naturalHeight })
+            }}
+            onLoad={e => {
+              const el = e.currentTarget
+              setNatSize({ w: el.naturalWidth || 0, h: el.naturalHeight || 0 })
+              recalc()
+            }}
+            style={{
+              display: 'block', height: 'auto',
+              // fallback ระหว่างยังไม่รู้ขนาดไฟล์: contain ในกรอบไว้ก่อน (px ไม่ใช้ % — wrapper เป็น fit-content)
+              width: imgW ? `${imgW}px` : 'auto',
+              maxWidth: imgW ? 'none' : (boxW ? `${boxW}px` : '100%'),
+              maxHeight: imgW ? 'none' : viewH,
+            }} />
+          {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้ ไม่ใช่ % ของ container */}
+          {imgBox && (
+            <div ref={layerRef} style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
+              {checkpoints.map((cp, i) => {
+                if (cp.x_pos == null || cp.y_pos == null) return null
+                const isActive = activePinKey === cp._key
+                const col = isActive ? 'var(--accent)' : categoryColor(cp.category)
+                return (
+                  <CalloutPin key={cp._key} xPct={cp.x_pos * 100} yPct={cp.y_pos * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
+                    label={labels?.[i] ?? i + 1} color={col} selected={isActive}
+                    title={`${cp.name || `จุด ${i + 1}`} — คลิกเพื่อลบ`}
+                    onClick={e => { e.stopPropagation(); onPinRemove(cp._key) }} />
+                )
+              })}
+            </div>
+          )}
+          {activePinKey && (
+            <div style={{ position: 'sticky', bottom: 8, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+              <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: '#071008', fontSize: 11, fontWeight: 700 }}>📍 คลิกที่รูปเพื่อวางตำแหน่ง</span>
+            </div>
+          )}
         </div>
-      )}
-      {activePinKey && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 8, pointerEvents: 'none' }}>
-          <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: '#071008', fontSize: 11, fontWeight: 700 }}>📍 คลิกที่รูปเพื่อวางตำแหน่ง</span>
-        </div>
-      )}
+      </div>
+      </div>
     </div>
   )
 }

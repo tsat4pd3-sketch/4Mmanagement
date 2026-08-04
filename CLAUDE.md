@@ -190,7 +190,7 @@
 | พนักงาน & ทักษะ | `/shift-organize` | ShiftOrganize | admin/manager/supervisor |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/company-calendar` | CompanyCalendar | ทุก role |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/notification-config` | NotificationConfig | admin เท่านั้น |
-| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/doc-forms` | DocFormsRegistry — 📄 ทะเบียนเอกสาร & ฟอร์ม (Document Master): เลขฟอร์ม/Rev/Effective/ช่องลายเซ็น/footer/**Legend/ผู้ออกเอกสาร (issued_by)/Revision History** ของเอกสาร export ทุกตัว แก้แล้วใบพิมพ์ใช้ทันทีไม่ต้องแก้โค้ด · ฟังก์ชันพิมพ์อ่านผ่าน `src/utils/docForms.js` (`getDocForm`/`docFormSync`/`getDocFormRevisions`/`withDocFoot` + fallback ค่าเดิมในโค้ดเสมอ) · **เอกสาร export ใหม่ทุกตัว (รวมรายงานภายใน) ต้อง: (1) seed แถวใน `doc_forms` (2) อ่านผ่าน util นี้ ห้าม hardcode — รายงานที่ไม่มี layout ฟอร์มทางการ อย่างน้อยห่อ html ด้วย `withDocFoot(html, doc_key)`** (ไม่ตั้งเลขฟอร์มในทะเบียน = หน้าตาเดิมเป๊ะ) · ตาราง `doc_forms` + `doc_form_revisions` (Main — **ทั้งหมด 21 ฟอร์ม ครอบทุกเอกสาร export ตาม audit 2026-07-30**: 9 ฟอร์มควบคุมเดิม + changing_point/cqi15_event_log/pm_coordination/morning_meeting/ot_booking/report_daily/report_employee/report_station_log/report_period_summary/skill_matrix/skill_pay_summary/attendance_record · migration `20260730_doc_control_center.sql`) · sig_blocks: จำนวนช่องต้องเท่า layout เดิม เปลี่ยนได้เฉพาะข้อความ | ทุก role (แก้: `doc_forms:manage` = mgr/doc_control) |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/doc-forms` | DocFormsRegistry — 📄 ทะเบียนเอกสาร & ฟอร์ม (Document Master): เลขฟอร์ม/Rev/Effective/ช่องลายเซ็น/footer/**Legend/ผู้ออกเอกสาร (issued_by)/Revision History** ของเอกสาร export ทุกตัว แก้แล้วใบพิมพ์ใช้ทันทีไม่ต้องแก้โค้ด · ฟังก์ชันพิมพ์อ่านผ่าน `src/utils/docForms.js` (`getDocForm`/`docFormSync`/`getDocFormRevisions`/`withDocFoot` + fallback ค่าเดิมในโค้ดเสมอ) · **เอกสาร export ใหม่ทุกตัว (รวมรายงานภายใน) ต้อง: (1) seed แถวใน `doc_forms` (2) อ่านผ่าน util นี้ ห้าม hardcode — รายงานที่ไม่มี layout ฟอร์มทางการ อย่างน้อยห่อ html ด้วย `withDocFoot(html, doc_key)`** (ไม่ตั้งเลขฟอร์มในทะเบียน = หน้าตาเดิมเป๊ะ) · ตาราง `doc_forms` + `doc_form_revisions` (Main — **ทั้งหมด 24 ฟอร์ม ครอบทุกเอกสาร export**: 9 ฟอร์มควบคุมเดิม + changing_point/cqi15_event_log/pm_coordination/morning_meeting/ot_booking/report_daily/report_employee/report_station_log/report_period_summary/skill_matrix/skill_pay_summary/attendance_record (migration `20260730_doc_control_center.sql`) + **ot_compensation_report/daily_production_report/daily_report_export** (migration `20260804_doc_forms_attendance_dpr.sql` · QC audit 2026-08-04 — เดิม 3 ตัวนี้ hardcode หัวเรื่อง/ช่องลายเซ็น/legend ในโค้ด: Checkin `handleExportForms` 2 ใบ (ชดเชย-OT + บันทึกการมาทำงาน = `attendance_record` ที่ seed ไว้แล้ว) · DailyReport `exportShiftFormPDF` (DPR ประจำกะ) + `exportPDF` (รายงานภายใน 4 ตัว — แถบเลขฟอร์มท้ายหน้า))) · sig_blocks: จำนวนช่องต้องเท่า layout เดิม เปลี่ยนได้เฉพาะข้อความ | ทุก role (แก้: `doc_forms:manage` = mgr/doc_control) |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/permissions` | PermissionsManagement | admin เท่านั้น |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/add-user` | AddUser — จัดการผู้ใช้งาน (ย้ายจากลิงก์พิเศษท้าย sidebar เข้าหมวดตั้งค่าฯ 2026-07-20) | admin เท่านั้น |
 | (ไม่อยู่ใน sidebar) | `/login` | Login | ไม่ต้อง auth |
@@ -1079,6 +1079,20 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 - **เมื่อเพิ่ม/เปลี่ยนกฎใน CLAUDE.md หรือ docs/** ที่ตรวจอัตโนมัติได้ → อัพเดท checklist ใน
   `.claude/agents/qc-project-rules.md` ในคอมมิทเดียวกันด้วย ไม่งั้น QC agent จะตรวจไม่ครบ
 - แนะนำรัน `/qc-audit` ก่อน merge งานใหญ่เข้า main และรันเต็มเป็นระยะเพื่อจับ drift ระหว่าง session ขนาน
+
+#### ผลรอบ audit เต็ม 2026-08-03/04 — แก้ครบแล้ว (บันทึกไว้กัน regress)
+
+| หมวด | ที่แก้ | สาระ |
+|---|---|---|
+| A Date/Time | `PMSchedule.jsx` | modal เลื่อนแผน PM เคยใช้ `toISOString().slice(0,10)` = UTC → วันเลื่อนเพี้ยน 1 วันช่วง 00:00-07:00 ไทย · ใช้ helper `ymd()` local แทน |
+| B Supabase | `LineSetup.jsx` `handleRenameLine` | ขยาย cascade `line_name` อีก 5 ตาราง (Main `lpa_questions`/`station_assignment_logs` · DR `pm_daily_alerts`/`kanban_calc_params`/`transport_nodes`) · `lpa_questions.hidden_for_lines[]` เป็น text[] ต้องอ่าน-แก้-เขียนรายแถวด้วย `.contains()` |
+| C Permissions | `permissions.js` · `operator.jsx` · `pmNotify.js` | bucket `dept_admin` บังคับข้าม key `page:*` ในโค้ด (ไม่พึ่งความถูกต้องของ seed) · แท็บ operator gate ด้วย `can()` แทน role array · ผู้รับแจ้งเตือน PM อ่าน role จาก `role_permissions` (`pm:record`/`qa:record`) ไม่ hardcode |
+| D Scoping | `StoreMonitor.jsx` · `QualityControl.jsx` | 2 หน้านี้เห็นข้ามส่วนงาน — เพิ่ม mandatory scope (leader = family · อื่น = sections) ครอบทั้งลิสต์/ตัวนับ/dropdown |
+| E Storage | `MtnRepair.jsx` | แก้ไขสเตปแล้วอัปรูป/ลายเซ็นทับ = ไฟล์เก่ากำพร้า → ลบไฟล์เดิมหลัง DB update สำเร็จ (best-effort · ข้ามลายเซ็นจากโปรไฟล์ที่ใช้ร่วม) |
+| F UI | `DailyReport` (10 จุด) + PmCoordination/MonthlyReviewExport/TaxonomyManagerModal · `PMSetup` · `StoreMonitor` · `Improvements` · `OEEAnalytics` | ติด `mgrid` ให้ grid ใน modal · ImageAnnotator เพิ่มซูม 100-400% (§5.1) · เลิกเขียน keyframes กระพริบเอง ใช้ `.mo-card-alert` · playhead gantt ใช้ `.now-line` · แกนวันกราฟเทรนด์ต่อเนื่อง (วันไม่ผลิต = ตอว่าง ไม่ข้ามวัน) |
+| G เอกสาร | Checkin/DailyReport + `20260804_doc_forms_attendance_dpr.sql` | ฟอร์ม export 3 ตัวสุดท้ายเข้าทะเบียน `doc_forms` แล้ว (ดูแถว `/doc-forms`) |
+
+- **ค้างรอ user ตัดสินใจ:** `FactoryMap.jsx` ไม่กรอง scope ตาม section/line (ทุก role เห็นทั้งโรงงาน) — ตั้งใจหรือไม่? เป็นผังภาพรวมสำหรับจอ TV/ผู้บริหาร ถ้าตั้งใจให้บันทึกเป็นข้อยกเว้นในหัวข้อ Section Scoping · ถ้าไม่ ต้องเพิ่มตัวกรองแบบหน้าอื่น
 
 ## Design System
 

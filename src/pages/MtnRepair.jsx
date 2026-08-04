@@ -882,6 +882,13 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
         if (!editMode) { upd.status = 'closed'; upd.current_step = 7; upd.approve_at = new Date().toISOString(); }
         await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
       }
+      // ลบไฟล์เก่าที่ถูกแทนที่ (รูปก่อน/หลัง/QA + ลายเซ็นต่อขั้น) — ลบหลัง DB update สำเร็จเท่านั้น + best-effort
+      // ไม่งั้นแก้ไขหลังบันทึกทีไร ไฟล์เดิมกำพร้าค้างใน bucket mtn-images ทุกครั้ง (QC audit 2026-08-03)
+      // ข้ามลายเซ็นที่เป็นของโปรไฟล์ (signatures/<uid>/profile...) — ใช้ร่วมทั้งระบบ ห้ามลบ
+      for (const fld of ['before_img', 'after_img', 'qa_img', 'checker_sign', 'qa_sign', 'ho_sign', 'approve_sign']) {
+        const oldUrl = o[fld], newUrl = upd[fld];
+        if (oldUrl && newUrl && oldUrl !== newUrl && !oldUrl.includes('/profile')) removeMtnImg(oldUrl);
+      }
       if (!editMode) { const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single(); const ev = isReject ? 'mtn_returned' : STEP_EVENT[step]; if (ev) notifyMtn(fresh, ev); }
       setSaving(false); toast.success(editMode ? 'แก้ไขแล้ว' : 'บันทึกแล้ว'); onSaved();
     } catch (e) { setSaving(false); toast.error(e.message || 'บันทึกไม่สำเร็จ'); }

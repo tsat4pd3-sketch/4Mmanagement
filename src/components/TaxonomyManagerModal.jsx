@@ -144,7 +144,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                   </div>
                 </div>
               )}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, alignItems: 'end' }}>
+              <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, alignItems: 'end' }}>
                 <div><label style={lbl}>ลำดับ</label><input type="number" value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: e.target.value }))} style={inp} /></div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text2)', cursor: 'pointer', paddingBottom: 8 }}>
                   <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} /> ใช้งาน

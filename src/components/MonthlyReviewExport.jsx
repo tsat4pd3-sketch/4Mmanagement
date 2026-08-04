@@ -107,7 +107,7 @@ export default function MonthlyReviewExport({ onClose }) {
               {!orgSections.length && <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</span>}
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div><div style={lb}>ผู้นำเสนอ</div><input type="text" value={presenter} onChange={e => setPresenter(e.target.value)} style={{ width: '100%' }} /></div>
             <div><div style={lb}>ตำแหน่ง</div><input type="text" value={presPosition} onChange={e => setPresPosition(e.target.value)} style={{ width: '100%' }} /></div>
           </div>

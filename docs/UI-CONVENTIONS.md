@@ -111,6 +111,8 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
   - `className="mgrid"` — ฟอร์ม grid หลายคอลัมน์ (`1fr 1fr`, `1fr 1fr 1fr` ฯลฯ มักอยู่ใน modal)
     → จอ ≤600px ยุบเป็นคอลัมน์เดียวอัตโนมัติ (`!important` ชนะ inline เฉพาะจอแคบ) —
     modal/ฟอร์มใหม่ที่มี grid หลายคอลัมน์**ต้องติด class นี้เสมอ**
+    · ไล่ติดครบแล้ว 2026-08-04 (QC audit): DailyReport 10 จุด (เลือกทีมช่าง/ปิดกะ/เพิ่ม DT/นโยบายพัก/
+    ฟอร์มสินค้า/kanban), PmCoordination, MonthlyReviewExport, TaxonomyManagerModal
   - `className="tbtn"` — ปุ่มไอคอนเล็กในตาราง (✏️ 🗑️ ✕ 💾) → จอทัช (`pointer:coarse`)
     ขยาย hit area ≥40px · เมาส์ไม่เปลี่ยน · **ปุ่มที่มีแต่ไอคอนไม่มีข้อความ ต้องติด class นี้เสมอ**
 - **⚠️ grid `repeat(auto-fill/auto-fit, minmax(Npx, 1fr))` ต้องเขียนเป็น `minmax(min(Npx, 100%), 1fr)` เสมอ (2026-08-04)**
@@ -193,6 +195,8 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 - **Viewer วางจุดต้องซูมได้ (2026-07-15 — user: รูปเล็กจนวางจุดไม่ได้):** รูปในหน้า setup/วางจุด **ห้าม render ที่ขนาดไฟล์ธรรมชาติ** (ไฟล์เล็ก/แนวตั้งจะจิ๋ว) — ค่าเริ่มต้น = **พอดีกรอบ** + toolbar ซูม ➖/%/➕ (100–400%, step 50%) + ปุ่ม "↺ พอดีกรอบ" · เปลี่ยนแผ่น → รีเซ็ตซูม · พิกัดคลิก/หมุดยังถูกทุกระดับซูมเพราะคำนวณ % จาก wrapper ที่สเกลไปด้วยกัน (BK ก็สเกลตาม ResizeObserver ปกติ) — ต้นแบบ: `QAInspectionSetup.jsx`
   - **แก้ 2026-08-04 (user: "ใหญ่เกินไป ขนาดเป็นในคอม"): 100% = พอดีกรอบ *ทั้ง 2 แกน* (contain) ไม่ใช่เต็มความกว้าง** — ของเดิม `width:100%` + `maxHeight:75vh` ทำให้รูปแนวนอน (อัตราส่วน ~1.9) สูง ~660px บนพาเนล 1230px **ดันตารางจุดตรวจตกจอ ต้องเลื่อนตลอดแม้บน PC** · สูตร: `fit = min(boxW/naturalW, viewH/naturalH)` แล้ว `imgW = naturalW × fit × zoom` (`viewH ≈ 46% ของความสูงจอ` clamp 260–620px, ฟัง `resize`) — สเกลได้**ทั้งขึ้นและลง** รูปเล็ก/แนวตั้งจึงยังถูกขยายเต็มกรอบตามเจตนาเดิมของกฎ 2026-07-15
   - **ห้ามใช้ `object-fit` แก้ปัญหานี้** (ข้อ 5 ด้านบน: กล่อง img ต้องเท่ารูปจริง ไม่งั้นพิกัด % ของหมุดเพี้ยน) — ต้องสั่งขนาด img เป็น px แล้วให้ wrapper `width: fit-content; margin: 0 auto` หุ้มพอดี (จัดกลางด้วย `margin:auto` ไม่ใช่ `justify-content:center` — flex ที่ overflow จะกินขอบซ้ายจนเลื่อนกลับไปดูไม่ได้)
+  - **ทำครบทั้ง 2 หน้าวางจุดแล้ว (2026-08-04)**: QA drawing (`QAInspectionSetup` — ต้นแบบ) + PM `ImageAnnotator` (`PMSetup` — เดิม `maxHeight:300` ไม่มีซูมเลย รูปแนวตั้งจากมือถือจิ๋วจนวางจุดไม่ได้) ใช้สูตร `fitScale`/`imgW`/`viewH` ชุดเดียวกัน · **หน้าใหม่ที่มี viewer วางจุด ให้ลอกสูตรนี้ ห้ามกลับไป `width:100%` + `maxHeight` ตายตัว**
+  - ⚠️ ฝั่ง PM หมุดวางบน layer ของ `useImgBox` → `<img>` ต้องส่ง ref ให้ **ทั้ง** `imgRef` ของ useImgBox และ callback ที่อ่าน `naturalWidth` (ref callback เดียวเซ็ตทั้งคู่) ไม่งั้นอย่างใดอย่างหนึ่งเป็น null แล้วหมุดหาย/รูปล้นกรอบ
   - **วัด `boxW` จาก div นอกที่ไม่ scroll** — ถ้าวัดจากกรอบ scroll เอง พอซูมแล้ว scrollbar โผล่ `clientWidth` จะหด → ขนาดรูปแกว่ง · และรูปที่มาจาก cache บางทีไม่ยิง `onLoad` → ต้องอ่าน `naturalWidth` ผ่าน `ref` callback ด้วย ไม่งั้นตกไป fallback ขนาดไฟล์จริง (ล้นกรอบยิ่งกว่าเดิม)
 - เลขจุดตรวจแบบ text เรียงด้วย natural sort (`localeCompare(..., { numeric: true })`) — H2 มาก่อน H10
 - สี: จุด control พิเศษ (Rank M/SC) = แดง/amber, จุดทั่วไป = น้ำเงิน `#4d9fff`, กำลังวางตำแหน่ง = amber

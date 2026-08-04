@@ -13,23 +13,26 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { MTN_TEAMS, teamForItem } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
 import { pairAwareTotal } from '../utils/pairTotals';
+import { getDocForm, fullCode } from '../utils/docForms';
 import EventComments from '../components/EventComments';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
 
-// โหลดโลโก้บริษัท (เหมือนหน้าเว็บ) เป็น base64 ครั้งเดียวสำหรับฝัง PDF
-let tsLogoDataUrlPromise = null;
-function getTsLogoDataUrl() {
-  if (!tsLogoDataUrlPromise) {
-    tsLogoDataUrlPromise = fetch(tsLogoUrl)
+// โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
+// รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
+const logoDataUrlCache = new Map();
+function getTsLogoDataUrl(url = tsLogoUrl) {
+  const key = url || tsLogoUrl;
+  if (!logoDataUrlCache.has(key)) {
+    logoDataUrlCache.set(key, fetch(key)
       .then(r => r.blob())
       .then(blob => new Promise(resolve => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result);
         reader.readAsDataURL(blob);
       }))
-      .catch(() => null);
+      .catch(() => null));
   }
-  return tsLogoDataUrlPromise;
+  return logoDataUrlCache.get(key);
 }
 
 function notifyProdClose(payload) {
@@ -2849,7 +2852,7 @@ function LiveTab({ role }) {
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
                 🏭 {selSession?.line_name} · {moDtPick.d.machine_no || 'ไม่ระบุเครื่อง'} — ใบซ่อมจะถูกส่งเข้าคิว + แจ้งเตือน Telegram ของทีมที่เลือก
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+              <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
                 {MTN_TEAMS.map(t => (
                   <button key={t} onClick={() => setMoDtPick(p => ({ ...p, team: t }))} style={{
                     padding: '12px 8px', borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer',
@@ -3269,7 +3272,7 @@ function LiveTab({ role }) {
                   {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)} · เริ่ม {selSession.start_time}
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+                <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
                   <Field label="เวลาเริ่มกะจริง (แก้ได้ถ้าตอนเปิดกะ/auto-เดาเวลาผิด)">
                     <TimeInput24 value={closeStartTime} onChange={e => setCloseStartTime(e.target.value)} style={{ fontSize: 16 }} />
                   </Field>
@@ -3772,7 +3775,7 @@ function LiveTab({ role }) {
                 </div>
 
                 {/* เวลาเริ่ม-จบกะ */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
+                <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
                   <Field label="เวลาเริ่มกะ (เริ่มเครื่อง)">
                     <TimeInput24 value={closeStartTime} onChange={e => setCloseStartTime(e.target.value)} style={{ fontSize: 16 }} />
                   </Field>
@@ -4274,7 +4277,7 @@ function LiveTab({ role }) {
                   </Field>
 
                   {/* Time inputs depending on mode */}
-                  <div style={{ display: 'grid', gridTemplateColumns: dtForm.mode === 'start_end' ? '1fr 1fr' : '1fr 1fr', gap: 10 }}>
+                  <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: dtForm.mode === 'start_end' ? '1fr 1fr' : '1fr 1fr', gap: 10 }}>
                     {/* Start time — shown in start_end and start_dur modes */}
                     {(dtForm.mode === 'start_end' || dtForm.mode === 'start_dur') && (
                       <Field label="🔴 เวลาเริ่มหยุด">
@@ -4329,7 +4332,7 @@ function LiveTab({ role }) {
                     </div>
                   )}
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     <Field label={`เครื่องจักร ${dtMachineOptional ? '(ถ้ามี)' : '*'}`}>
                       {(() => {
                         const lineMachines = machines.filter(m => m.line_name === selSession.line_name);
@@ -4957,6 +4960,11 @@ function ExportTab() {
     const { default: autoTable } = await import('jspdf-autotable');
     const { registerThaiFont } = await import('../lib/pdfThaiFont');
 
+    // รายงานภายใน (ไม่มี layout ฟอร์มทางการ) — อย่างน้อยต้องมีแถบเลขฟอร์มจากทะเบียนกลาง
+    // ไม่ตั้งเลขฟอร์มในทะเบียน = ไม่มีแถบ (หน้าตาเดิมเป๊ะ)
+    const dfRep = await getDocForm('daily_report_export', {});
+    const repCode = [fullCode(dfRep), dfRep.effective_date ? `Effective: ${dfRep.effective_date}` : ''].filter(Boolean).join(' · ');
+
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     registerThaiFont(doc);
     const headers = Object.keys(rows[0]);
@@ -4978,6 +4986,16 @@ function ExportTab() {
       margin: { left: 10, right: 10 },
     });
 
+    if (repCode || dfRep.footer_note) {
+      const n = doc.getNumberOfPages();
+      doc.setFontSize(7).setFont('Sarabun', 'normal');
+      for (let p = 1; p <= n; p++) {
+        doc.setPage(p);
+        if (dfRep.footer_note) doc.text(dfRep.footer_note, 10, 203);
+        if (repCode) doc.text(repCode, 287, 203, { align: 'right' });
+      }
+    }
+
     doc.save(filename + '.pdf');
   };
 
@@ -4992,7 +5010,13 @@ function ExportTab() {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     registerThaiFont(doc);
     const PAGE_W = 210, MARGIN = 12, CONTENT_W = PAGE_W - MARGIN * 2;
-    const logoDataUrl = await getTsLogoDataUrl();
+    // เลขฟอร์ม/Rev/หัวเรื่อง/ป้ายช่องลายเซ็น/โลโก้ อ่านจากทะเบียนเอกสารกลาง (/doc-forms) — fallback = ค่าเดิมในโค้ด
+    const df = await getDocForm('daily_production_report', {
+      title: 'DAILY PRODUCTION REPORT',
+      sig_blocks: ['ผู้ผลิต (Operator)', 'หัวหน้างาน (Supervisor)', 'QA / ผู้ตรวจสอบ'],
+    });
+    const dfCode = [fullCode(df), df.effective_date ? `Effective: ${df.effective_date}` : ''].filter(Boolean).join(' · ');
+    const logoDataUrl = await getTsLogoDataUrl(df.logo_url || tsLogoUrl);
 
     sessions.forEach((s, idx) => {
       if (idx > 0) doc.addPage();
@@ -5003,7 +5027,7 @@ function ExportTab() {
       doc.setFontSize(13).setFont('Sarabun', 'bold');
       doc.text('Thai Summit Group', MARGIN + (logoDataUrl ? 13 : 0), y + 4);
       doc.setFontSize(15);
-      doc.text('DAILY PRODUCTION REPORT', PAGE_W / 2, y + 4, { align: 'center' });
+      doc.text(df.title || 'DAILY PRODUCTION REPORT', PAGE_W / 2, y + 4, { align: 'center' });
       doc.setFontSize(9).setFont('Sarabun', 'normal');
       doc.text(`ใบรายงานการผลิตประจำกะ`, PAGE_W / 2, y + 9, { align: 'center' });
       y += 15;
@@ -5118,11 +5142,12 @@ function ExportTab() {
 
       // ── Signature row ─────────────────────────────────────
       if (y > 255) { doc.addPage(); y = MARGIN; }
+      // จำนวนช่องลายเซ็นต้องเท่า layout เดิม (3 ช่อง) — ทะเบียนเปลี่ยนได้เฉพาะข้อความ
       const sigCols = [
         { role: 'ผู้ผลิต (Operator)', name: s.opened_by_name || '' },
         { role: 'หัวหน้างาน (Supervisor)', name: s.closed_by_name || s.close_requested_by_name || '' },
         { role: 'QA / ผู้ตรวจสอบ', name: '' },
-      ];
+      ].map((c, i) => ({ ...c, role: df.sig_blocks?.[i] ?? c.role }));
       const colW = CONTENT_W / 3;
       doc.setFontSize(9).setFont('Sarabun', 'normal');
       sigCols.forEach((c, i) => {
@@ -5135,6 +5160,8 @@ function ExportTab() {
 
       doc.setFontSize(7);
       doc.text(`พิมพ์เมื่อ: ${fmtDateTimeFull(new Date())}`, MARGIN, 290);
+      // ทะเบียนยังไม่ตั้งเลขฟอร์ม = ไม่มีแถบนี้ (หน้าตาเดิมเป๊ะ)
+      if (dfCode) doc.text(dfCode, PAGE_W - MARGIN, 290, { align: 'right' });
     });
 
     doc.save(`shift_form_${filter.date_from}_${filter.date_to}${filter.line_name ? '_' + filter.line_name : ''}.pdf`);
@@ -5554,7 +5581,7 @@ function BreakPolicySetup({ role }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Field label="ชื่อภาษาไทย *"><input autoFocus value={form.name_th} onChange={e => setForm(f => ({ ...f, name_th: e.target.value }))} placeholder="เช่น พักกินข้าว" style={inputStyle} /></Field>
               <Field label="ชื่อภาษาอังกฤษ"><input value={form.name_en} onChange={e => setForm(f => ({ ...f, name_en: e.target.value }))} placeholder="เช่น Lunch Break" style={inputStyle} /></Field>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="เวลาเริ่ม (HH:MM)">
                   <TimeInput24 value={form.start_time} onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))} style={{ fontSize: 16 }} />
                 </Field>
@@ -5918,7 +5945,7 @@ function ProductSetup({ role }) {
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Field label="ชื่อสินค้า / Model *"><input autoFocus value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inputStyle} /></Field>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label={ecSource ? 'MAT.NO ใหม่ (SAP) *' : 'MAT.NO (SAP)'}>
                   <input value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder="เช่น 10100399" style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, borderColor: ecSource ? 'rgba(168,85,247,0.5)' : undefined }} />
                 </Field>
@@ -5931,7 +5958,7 @@ function ProductSetup({ role }) {
                   <input type="date" value={form.effective_from} onChange={e => setForm(f => ({ ...f, effective_from: e.target.value }))} style={inputStyle} />
                 </Field>
               )}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="Customer"><input value={form.customer} onChange={e => setForm(f => ({ ...f, customer: e.target.value }))} placeholder="เช่น FORD" style={inputStyle} /></Field>
                 <Field label="รหัสสินค้า (Code)"><input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="เช่น HDF-001" style={inputStyle} /></Field>
               </div>
@@ -5946,7 +5973,7 @@ function ProductSetup({ role }) {
                   {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                 </select>
               </Field>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="Cycle Time (วินาที)"><input type="number" min="0" step="0.1" value={form.cycle_time_sec} onChange={e => setForm(f => ({ ...f, cycle_time_sec: e.target.value }))} placeholder="เช่น 45.5" style={inputStyle} /></Field>
                 <Field label="Target ต่อกะ (ชิ้น)"><input type="number" min="0" value={form.target_per_shift} onChange={e => setForm(f => ({ ...f, target_per_shift: e.target.value }))} placeholder="เช่น 500" style={inputStyle} /></Field>
               </div>
@@ -5975,7 +6002,7 @@ function ProductSetup({ role }) {
               {kanbanEditing === 'new' ? '+ เพิ่ม MAT.NO / Kanban Standard' : 'แก้ไข Kanban Standard'}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="MAT.NO *">
                   <input autoFocus value={kanbanForm.mat_no} onChange={e => setKanbanForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))}
                     placeholder="เช่น 10100335" style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700 }} />
