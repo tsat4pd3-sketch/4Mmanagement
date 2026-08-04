@@ -57,8 +57,10 @@ export function hasPermission(permissionKey, role) {
   if (!cache) return false; // ยังไม่โหลด → ปิดกั้นไว้ก่อน (fail closed)
   if (cache.get(`${role}:${permissionKey}`) === true) return true;
   // แอดมินหน่วยงาน — ได้สิทธิ์เพิ่มตาม bucket 'dept_admin' (คุมที่ /permissions)
-  // bucket มีเฉพาะ action (ไม่มี page:*) → ไม่ปลดล็อกหน้าใหม่ scope ยังจำกัดตาม base role
-  if (_deptAdmin && cache.get(`dept_admin:${permissionKey}`) === true) return true;
+  // bucket ให้ได้เฉพาะ "action" เท่านั้น — ห้ามปลดล็อกหน้า (page:*) เด็ดขาด แม้ข้อมูล seed จะหลุดมา
+  // (migration หน้าใหม่ที่ seed ด้วย enum_range จะแจก page:* ให้ทุก role ในอีนัมรวม dept_admin ด้วย
+  //  → บังคับกฎในโค้ดที่นี่ ไม่พึ่งความถูกต้องของ seed อย่างเดียว · QC audit 2026-08-03)
+  if (_deptAdmin && !permissionKey.startsWith('page:') && cache.get(`dept_admin:${permissionKey}`) === true) return true;
   return false;
 }
 
