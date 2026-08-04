@@ -105,6 +105,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
   const [jigInfo, setJigInfo] = useState({})   // jig_id → { name, jig_no, checklists }
   const [armedJig, setArmedJig] = useState(null)
   const [facMachines, setFacMachines] = useState([])   // facility/utility จากฐานเครื่องจักร (ยังไม่มี shadow jig)
+  const [placedAnyZone, setPlacedAnyZone] = useState(() => new Set()) // jig_id ที่ถูกวางไว้แล้ว "ทุกโซน" — ลิสต์ยังไม่วางต้องซ่อนของที่วางโซนอื่นแล้ว
   const [armedMachine, setArmedMachine] = useState(null) // machine ที่กำลังจะวาง (สร้าง shadow jig ตอนวาง)
   const [busy, setBusy] = useState(false)
   const fileRef = useRef(null)
@@ -192,6 +193,9 @@ export default function MtnMachineLayout({ setupMode = false }) {
     setFacImage(area?.image_path ? publicUrl(area.image_path) : null)
     const { data: pts } = await supabaseDR.from('pm_facility_points').select('id, jig_id, pos_top, pos_left').eq('area_id', areaId)
     setFacPoints(pts || [])
+    // จุดของ "ทุกโซน" — ใช้ซ่อนอุปกรณ์ที่วางโซนอื่นไปแล้วออกจากลิสต์ "ยังไม่วาง" (กันวางซ้ำ/สับสน)
+    const { data: allPts } = await supabaseDR.from('pm_facility_points').select('jig_id')
+    setPlacedAnyZone(new Set((allPts || []).map(p => p.jig_id)))
     // facility/utility equipment + PM status (all zones share the same equipment pool)
     const { data: jigs } = await supabaseDR.from('jigs').select('id, name, jig_no, equipment_category, machine_id').eq('module', 'mtn').in('equipment_category', FACILITY_CATS)
     const pm = await loadPmForJigs((jigs || []).map(j => j.id))
@@ -319,8 +323,8 @@ export default function MtnMachineLayout({ setupMode = false }) {
   const selLabel = sel ? (view === 'production' ? sel.machine_no : (selInfo?.jig_no || selInfo?.name)) : ''
   const selChecklists = selInfo ? (dept === 'all' ? selInfo.checklists : selInfo.checklists.filter(c => c.dept === dept)) : []
 
-  const placedJigIds = new Set(facPoints.map(p => p.jig_id))
-  const unplacedJigs = Object.entries(jigInfo).filter(([id]) => !placedJigIds.has(id))
+  // ลิสต์ "ยังไม่วาง" = ไม่ถูกวางในโซนไหนเลย (วางโซนอื่นแล้ว = ซ่อน กันวางซ้ำ · คำสั่ง user 2026-08-03)
+  const unplacedJigs = Object.entries(jigInfo).filter(([id]) => !placedAnyZone.has(id))
 
   return (
     <div style={S.page}>
