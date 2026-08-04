@@ -1035,7 +1035,7 @@ export default function FactoryMap({ setupMode = false }) {
                             <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 600 }}>
                               {s.label}{s.explain && <span style={{ color: 'var(--accent)', fontWeight: 800 }}> ⓘ</span>}
                             </div>
-                            <div style={{ fontSize: 15, fontWeight: 800, color: s.color }}>{s.val}</div>
+                            <div style={{ fontSize: 15, fontWeight: 800, color: s.color, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>{s.val}</div>
                             {s.explain && <div style={{ fontSize: 9.5, color: 'var(--muted)' }}>ถ่วงน้ำหนักตามเวลารับภาระ</div>}
                           </div>
                         ))}
@@ -1206,12 +1206,12 @@ export default function FactoryMap({ setupMode = false }) {
 
               {/* ตารางคิดจริง */}
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 460 }}>
-                  <thead><tr style={{ color: 'var(--muted)', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>
-                    <th style={{ textAlign: 'left', padding: '5px 7px' }}>ไลน์ · กะ</th>
-                    <th style={{ padding: '5px 7px' }}>OEE</th>
-                    <th style={{ padding: '5px 7px' }}>เวลารับภาระ</th>
-                    <th style={{ padding: '5px 7px' }}>OEE × เวลา</th>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 460, fontVariantNumeric: 'tabular-nums' }}>
+                  <thead><tr style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
+                    <th style={TH_L}>ไลน์ · กะ</th>
+                    <th style={TH_R}>OEE</th>
+                    <th style={TH_R}>เวลารับภาระ</th>
+                    <th style={TH_R}>OEE × เวลา</th>
                   </tr></thead>
                   <tbody>
                     {rows.map((r, i) => (
@@ -1296,10 +1296,11 @@ export default function FactoryMap({ setupMode = false }) {
                       { k: 'ของเสีย', v: fmtNum(s.ngTotal), sub: s.suspectTotal ? `สงสัย ${fmtNum(s.suspectTotal)}` : '', c: s.ngTotal > 0 ? '#ef4444' : 'var(--text)' },
                       { k: '4M วันนี้', v: fmtNum(s.fourM.length), sub: s.fourM.filter(f => f.status === 'pending' || f.status === 'pending_qa').length ? `ค้าง ${s.fourM.filter(f => f.status === 'pending' || f.status === 'pending_qa').length}` : '', c: 'var(--text)' },
                     ].map(x => (
-                      <div key={x.k} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 9, padding: '9px 11px' }}>
+                      // การ์ดสูงเท่ากันทุกใบ: บรรทัดล่างจองที่ไว้เสมอ (ไม่มี sub ใช้ nbsp) — ไม่งั้นการ์ดเตี้ยไม่เท่ากัน
+                      <div key={x.k} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 9, padding: '9px 11px', display: 'flex', flexDirection: 'column', gap: 1 }}>
                         <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 600 }}>{x.k}</div>
-                        <div style={{ fontSize: 17, fontWeight: 800, color: x.c }}>{x.v}</div>
-                        {x.sub && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{x.sub}</div>}
+                        <div style={{ fontSize: 17, fontWeight: 800, color: x.c, fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>{x.v}</div>
+                        <div style={{ fontSize: 10.5, color: 'var(--muted)', minHeight: 15 }}>{x.sub || ' '}</div>
                       </div>
                     ))}
                   </div>
@@ -1335,10 +1336,11 @@ export default function FactoryMap({ setupMode = false }) {
                   {s.parts.length > 0 && (
                     <StorySection title={`📦 ผลิตรายชิ้นงาน (${s.parts.length})`}>
                       <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 420 }}>
-                          <thead><tr style={{ color: 'var(--muted)', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>
-                            <th style={{ textAlign: 'left', padding: '5px 7px' }}>MAT / ชิ้นงาน</th>
-                            <th style={{ padding: '5px 7px' }}>เป้า</th><th style={{ padding: '5px 7px' }}>ผลิตได้</th><th style={{ padding: '5px 7px' }}>%</th><th style={{ padding: '5px 7px' }}>ใบ</th>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 420, fontVariantNumeric: 'tabular-nums' }}>
+                          {/* ⚠️ index.css มี `th { text-align: left }` — rule ตรงชนะ inherit จาก <tr> ต้องสั่ง textAlign ที่ th เอง ไม่งั้นหัวกับค่าเหลื่อมกัน */}
+                          <thead><tr style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
+                            <th style={TH_L}>MAT / ชิ้นงาน</th>
+                            <th style={TH_R}>เป้า</th><th style={TH_R}>ผลิตได้</th><th style={TH_R}>%</th><th style={TH_R}>ใบ</th>
                           </tr></thead>
                           <tbody>
                             {s.parts.map(p => {
@@ -1529,12 +1531,12 @@ export default function FactoryMap({ setupMode = false }) {
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                       <thead>
-                        <tr style={{ color: 'var(--muted)', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>
-                          <th style={{ textAlign: 'left', padding: '4px 6px' }}>ไลน์</th>
-                          <th style={{ padding: '4px 6px', whiteSpace: 'nowrap' }} title="ทำได้ / เป้า ณ เวลานี้ / เป้าเต็มกะ">ผลิต (ทำ/ณ เวลานี้/เต็ม)</th>
-                          <th style={{ padding: '4px 6px' }}>คน</th>
-                          <th style={{ padding: '4px 6px' }}>DT (น.)</th>
-                          <th style={{ padding: '4px 6px' }}>NG</th>
+                        <tr style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
+                          <th style={TH_L}>ไลน์</th>
+                          <th style={{ ...TH_R, whiteSpace: 'nowrap' }} title="ทำได้ / เป้า ณ เวลานี้ / เป้าเต็มกะ">ผลิต (ทำ/ณ เวลานี้/เต็ม)</th>
+                          <th style={TH_R}>คน</th>
+                          <th style={TH_R}>DT (น.)</th>
+                          <th style={TH_R}>NG</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1601,6 +1603,9 @@ const miniTab = (active) => ({
   background: active ? 'var(--accent-dim)' : 'var(--bg3)', color: active ? 'var(--accent)' : 'var(--text2)',
 });
 const navBtn = { padding: '6px 11px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' };
+// หัวตาราง — ต้องสั่ง textAlign ที่ th เอง (index.css มี `th { text-align: left }` ที่ชนะการสืบทอดจาก <tr>)
+const TH_L = { textAlign: 'left', padding: '5px 7px' };
+const TH_R = { textAlign: 'right', padding: '5px 7px' };
 // หัวข้อย่อยใน modal สรุปเรื่องราวทั้งวัน
 function StorySection({ title, children }) {
   return (
