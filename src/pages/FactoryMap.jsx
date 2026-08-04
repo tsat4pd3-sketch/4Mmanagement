@@ -55,12 +55,6 @@ const METRICS = {
     value: s => s.target > 0 ? (s.onTimeTarget >= 1 ? Math.round(s.actual / s.onTimeTarget * 100) : 100) : null,
     // แยกให้เห็นชัด: มี order → ทำได้/เป้า ณ เวลานี้/เต็มกะ · เปิดกะแต่ยังไม่มี order · ยังไม่เปิดกะ
     text: s => s.target > 0 ? `${s.actual}/${Math.round(s.onTimeTarget)}/${s.target}${s.onTimeTarget >= 1 ? ` · ${Math.round(s.actual / s.onTimeTarget * 100)}%` : ''}` : (s.hasOpen ? '🔵 เปิดกะ · ยังไม่มี order' : '⏸ ยังไม่เปิดกะ'),
-    // ป้ายบนผัง = ฉบับสะอาด (2026-08-04): ตัดเลขกลาง (เป้า ณ เวลานี้) ออก เหลือ "ทำได้/เป้า · %"
-    // — % เทียบเป้า ณ เวลานี้เหมือนเดิม (สีกรอบก็บอกอยู่แล้ว) · ›200% = เปิดเป้าน้อยผิดปกติ ไม่โชว์เลขหลอน
-    // เลข 3 ตัวเต็มยังดูได้ใน hover preview / modal (ใช้ text เดิม)
-    mapText: s => s.target > 0
-      ? `${s.actual.toLocaleString()}/${s.target.toLocaleString()}${s.onTimeTarget >= 1 ? ` · ${(p => p > 200 ? '›200' : Math.round(p))(s.actual / s.onTimeTarget * 100)}%` : ''}`
-      : (s.hasOpen ? 'ยังไม่มี order' : ''),
     cat: s => s.target > 0 ? (s.onTimeTarget < 1 ? 'ok' : (() => { const p = s.actual / s.onTimeTarget * 100; return p >= 95 ? 'good' : p >= 80 ? 'ok' : 'bad'; })()) : (s.hasOpen ? 'waiting' : 'idle'),
   },
   oee: {
@@ -1103,8 +1097,8 @@ export default function FactoryMap({ setupMode = false }) {
                 return (
                   <polygon key={r.id} data-region points={ptsStr(r.points)}
                     className={meta.blink ? 'region-alarm' : undefined}
-                    fill={meta.blink ? undefined : `${meta.color}${hl ? '5e' : '33'}`} stroke={meta.blink ? undefined : meta.color}
-                    strokeWidth={hl ? '4' : '2'} vectorEffect="non-scaling-stroke" strokeLinejoin="round"
+                    fill={meta.blink ? undefined : `${meta.color}${hl ? '55' : '2b'}`} stroke={meta.blink ? undefined : meta.color}
+                    strokeWidth={hl ? '3.5' : '1.75'} vectorEffect="non-scaling-stroke" strokeLinejoin="round"
                     style={{ pointerEvents: drawing ? 'none' : 'auto', cursor: editing ? 'move' : 'pointer' }}
                     onClick={(e) => { if (!editing) { e.stopPropagation(); openLine(r.line_name); } }}
                     onPointerEnter={!editing ? (e) => { if (e.pointerType === 'mouse') { setHoverLine(r.line_name); setHoverXY({ x: e.clientX, y: e.clientY }); } } : undefined}
@@ -1128,11 +1122,11 @@ export default function FactoryMap({ setupMode = false }) {
               const st = stOf(h.name); const meta = CAT[regCat(st)]; const txt = regText(st);
               return (
                 <div key={`hlbl-${h.name}`} style={{ position: 'absolute', left: `${pos.x}%`, top: `${pos.y}%`, transform: HULL_LBL_TRANSFORM[pos.place], pointerEvents: 'none', maxWidth: '32%' }}>
-                  <div style={{ background: 'rgba(10,12,20,0.62)', border: `1.5px dashed ${meta.color}`, borderRadius: 6, padding: '1px 8px 2px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)' }}>
-                    <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>
+                  <div style={{ background: 'linear-gradient(180deg, rgba(8,10,16,0.82), rgba(8,10,16,0.66))', border: `1.5px dashed ${meta.color}`, borderRadius: 7, padding: '2px 9px 3px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: '0 2px 10px rgba(0,0,0,0.35)' }}>
+                    <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}▣ {h.name}
                     </div>
-                    {txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2 }}>{txt}</div>}
+                    {txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25, opacity: 0.95 }}>{txt}</div>}
                   </div>
                 </div>
               );
@@ -1140,19 +1134,17 @@ export default function FactoryMap({ setupMode = false }) {
 
             {/* ป้าย = การ์ดทึบมีขอบสีสถานะ (อ่านออกทุกพื้นหลัง) + จุดแดงถ้า downtime ค้าง */}
             {regions.map(r => {
-              const [cx, cy] = labelAnchor(r.points); const st = stOf(r.line_name); const cat = regCat(st); const meta = CAT[cat]; const txt = regText(st);
-              // ไลน์ยังไม่เปิดกะ/ไม่มีข้อมูล (idle) = ยุบเหลือชื่อจางบรรทัดเดียว — ลด noise บนผัง (2026-08-04)
-              const isIdle = cat === 'idle' && !st.dtActive;
+              const [cx, cy] = labelAnchor(r.points); const st = stOf(r.line_name); const meta = CAT[regCat(st)]; const txt = regText(st);
               return (
                 // เกาะขอบบนของกรอบ (translateY 2px = อยู่ใต้เส้นขอบบนนิดเดียว) ไม่ทับกลางผังไลน์
-                <div key={`lbl-${r.id}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%, 2px)', pointerEvents: 'none', maxWidth: '30%', opacity: isIdle ? 0.6 : 1 }}>
-                  {/* ป้ายโปร่งแสง + เส้นสีสถานะด้านล่าง — อ่านออกแต่ยังเห็นผังทะลุ (ไม่ทึบทับภาพ)
-                      maxWidth 22% + ellipsis กันชื่อไลน์ยาวล้นทับพื้นที่ไลน์ข้างเคียง */}
-                  <div style={{ background: 'rgba(10,12,20,0.5)', borderBottom: `2.5px solid ${meta.color}`, borderRadius: 5, padding: isIdle ? '0px 6px 1px' : '1px 7px 2px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)' }}>
-                    <div style={{ fontSize: isIdle ? 'clamp(10px,0.85vw,12px)' : 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>
-                      {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{st.isFac && '🔧 '}{r.line_name}{isIdle ? ' ⏸' : ''}
+                // ข้อมูลครบทุกตัวเหมือนเดิม (คำสั่ง user 2026-08-04) — ปรับเฉพาะ art design:
+                // การ์ดเนียนขึ้น (ขอบสีรอบใบ+เงา) · ชื่อ/ตัวเลขแยกชั้นน้ำหนัก · เลขใช้ tabular-nums เรียงตรง
+                <div key={`lbl-${r.id}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%, 2px)', pointerEvents: 'none', maxWidth: '30%' }}>
+                  <div style={{ background: 'linear-gradient(180deg, rgba(8,10,16,0.78), rgba(8,10,16,0.58))', border: `1px solid ${meta.color}66`, borderBottom: `2.5px solid ${meta.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: '0 2px 10px rgba(0,0,0,0.35)' }}>
+                    <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>
+                      {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{st.isFac && '🔧 '}{r.line_name}
                     </div>
-                    {!isIdle && txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2 }}>{txt}</div>}
+                    {txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25, opacity: 0.95 }}>{txt}</div>}
                   </div>
                 </div>
               );
