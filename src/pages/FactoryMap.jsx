@@ -136,23 +136,35 @@ const expandHull = (pts, f = 1.045) => {
   const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
   return pts.map(([x, y]) => [Math.min(100, Math.max(0, round(cx + (x - cx) * f))), Math.min(100, Math.max(0, round(cy + (y - cy) * f)))]);
 };
+// จุดอยู่ใน polygon ไหม (ray casting) — ใช้กันป้ายกลุ่มไปตกในกรอบไลน์/hull ของกลุ่มอื่น
+const pointInPoly = (x, y, poly) => {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+};
 // เลือกตำแหน่งป้ายกลุ่ม (กรอบแม่อัตโนมัติ) — เลี่ยงทับป้ายลูก: ลอง ใต้/เหนือ/ซ้าย/ขวา ของ hull
 // แล้วเลือกจุดที่ไกลป้ายอื่นสุด (bias ใต้กรอบ — ป้ายลูกเกาะขอบบนเสมอ ใต้จึงว่างโดยธรรมชาติ)
-const hullLabelPos = (hull, avoid) => {
+// + โทษหนักถ้าจุดตกในกรอบ/hull ของกลุ่มอื่น (เคสจริง: ป้าย GOR ตกในพื้นที่ LWR BAR)
+const hullLabelPos = (hull, avoid, otherPolys = []) => {
   const xs = hull.map(p => p[0]), ys = hull.map(p => p[1]);
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
   const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
   const cands = [
-    { x: cx, y: maxY, place: 'below', bias: 2 },
-    { x: cx, y: minY, place: 'above', bias: 0.8 },
-    { x: minX, y: cy, place: 'left', bias: 0 },
-    { x: maxX, y: cy, place: 'right', bias: 0 },
+    { x: cx, y: maxY, place: 'below', bias: 2, px: cx, py: maxY + 2.5 },
+    { x: cx, y: minY, place: 'above', bias: 0.8, px: cx, py: minY - 2.5 },
+    { x: minX, y: cy, place: 'left', bias: 0, px: minX - 3, py: cy },
+    { x: maxX, y: cy, place: 'right', bias: 0, px: maxX + 3, py: cy },
   ];
   let best = cands[0], bestScore = -Infinity;
   for (const c of cands) {
     const d = avoid.length ? Math.min(...avoid.map(a => Math.hypot(a[0] - c.x, a[1] - c.y))) : 50;
     const off = (c.y > 97 || c.y < 3 || c.x > 97 || c.x < 3) ? -100 : 0; // ตกขอบผัง = ตัดทิ้ง
-    const score = d + c.bias + off;
+    // ตัวป้ายจริงกินพื้นที่ฝั่ง px/py (เลย anchor ออกไปตามทิศ) — ถ้าไปตกในกรอบของกลุ่มอื่น = โทษหนัก
+    const clash = otherPolys.some(poly => pointInPoly(c.px, c.py, poly)) ? -50 : 0;
+    const score = d + c.bias + off + clash;
     if (score > bestScore) { bestScore = score; best = c; }
   }
   return best;
@@ -438,32 +450,36 @@ export default function FactoryMap({ setupMode = false }) {
   /* ── manpower รายไลน์ (Main: employees + daily_production_logs วันนี้) — refresh 60 วิ ── */
   const loadManpower = useCallback(async () => {
     const workDate = getWorkDate();
-    const [{ data: emps }, { data: pls }, { data: logs }, { data: ws }] = await Promise.all([
+    // live = กะปัจจุบันเท่านั้น (คำสั่ง user 2026-08-04) — เดิมนับพนักงานทั้งไลน์ (ทุกทีม 2 กะ)
+    // เป็นตัวหาร + present รวม log ทั้งวัน → เลขโป่ง เช่น 15/33 ทั้งที่กะนี้มี 16 คน
+    const curShift = (() => { const h = new Date().getHours(); return h >= 8 && h < 20 ? 'day' : 'night'; })();
+    const [{ data: emps }, { data: pls }, { data: logsAll }, { data: ws }] = await Promise.all([
       supabase.from('employees').select('id, line_id').eq('is_active', true),
       supabase.from('production_lines').select('id, name'),
-      supabase.from('daily_production_logs').select('employee_id, is_present, has_helmet, has_boots, has_gloves, assigned_line').eq('work_date', workDate),
+      supabase.from('daily_production_logs').select('employee_id, is_present, has_helmet, has_boots, has_gloves, assigned_line, shift').eq('work_date', workDate),
       supabase.from('workstations').select('id, line_name'),
     ]);
+    // log ของกะปัจจุบัน (shift null = log เก่าก่อนมีคอลัมน์ — นับรวมแบบ backward-compat)
+    const logs = (logsAll || []).filter(l => !l.shift || l.shift === curShift);
     const lineOfId = {}; (pls || []).forEach(l => { lineOfId[l.id] = l.name; });
     const empLine = {}; (emps || []).forEach(e => { empLine[e.id] = lineOfId[e.line_id]; });
-    const logMap = {}; (logs || []).forEach(l => { logMap[l.employee_id] = l; });
     // จุดงาน (workstations) ต่อไลน์ + จุดที่มีคนเข้าประจำจริง (assigned_line ของคนที่มาทำงาน)
     const stationLine = {}; const stationTotal = {};
     (ws || []).forEach(w => { stationLine[w.id] = w.line_name; if (w.line_name) stationTotal[w.line_name] = (stationTotal[w.line_name] || 0) + 1; });
     const filledSet = {}; // line_name -> Set(station id)
-    (logs || []).forEach(l => {
+    logs.forEach(l => {
       if (l.is_present && l.assigned_line != null) {
         const ln = stationLine[l.assigned_line];
         if (ln) (filledSet[ln] = filledSet[ln] || new Set()).add(l.assigned_line);
       }
     });
     const out = {};
-    (emps || []).forEach(e => {
-      const ln = empLine[e.id]; if (!ln) return;
+    // ตัวหาร = คนที่ถูกเช็คชื่อในกะนี้ (มา+ขาด+ลา) ไม่ใช่พนักงานทั้งไลน์ — ตรงกับหน้าเช็คชื่อ
+    logs.forEach(l => {
+      const ln = empLine[l.employee_id]; if (!ln) return;
       const o = out[ln] || { headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0 };
       o.headTotal++;
-      const log = logMap[e.id];
-      if (log?.is_present) { o.present++; if (!(log.has_helmet && log.has_boots && log.has_gloves)) o.ppeBad++; }
+      if (l.is_present) { o.present++; if (!(l.has_helmet && l.has_boots && l.has_gloves)) o.ppeBad++; }
       out[ln] = o;
     });
     // เติมจำนวนจุดงาน/จุดที่มีคน (รวมไลน์ที่ไม่มีพนักงานสังกัดแต่มี workstations)
@@ -899,12 +915,18 @@ export default function FactoryMap({ setupMode = false }) {
     const avoid = regions.map(r => labelAnchor(r.points));
     const out = {};
     autoHulls.forEach(h => {
-      const pos = hullLabelPos(h.hull, avoid);
+      const kids = new Set(childrenOf[h.name] || []);
+      // กรอบที่ห้ามให้ป้ายไปตก: กรอบไลน์ที่ไม่ใช่ลูกตัวเอง + hull ของกลุ่มอื่น
+      const otherPolys = [
+        ...regions.filter(r => !kids.has(r.line_name)).map(r => r.points),
+        ...autoHulls.filter(o => o.name !== h.name).map(o => o.hull),
+      ];
+      const pos = hullLabelPos(h.hull, avoid, otherPolys);
       avoid.push([pos.x, pos.y]);
       out[h.name] = pos;
     });
     return out;
-  }, [autoHulls, regions]);
+  }, [autoHulls, regions, childrenOf]);
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
