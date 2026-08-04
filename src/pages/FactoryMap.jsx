@@ -163,6 +163,9 @@ export default function FactoryMap({ setupMode = false }) {
   const [reviewStatus, setReviewStatus] = useState({}); // line_name → full-day aggregate ของ reviewDate
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewDetail, setReviewDetail] = useState(null); // ไลน์แม่ที่คลิกดู breakdown ไลน์ย่อย (โหมด review)
+  const [storyLine, setStoryLine] = useState(null);   // ไลน์ที่คลิกดู "สรุปเรื่องราวทั้งวัน" (modal หลัก)
+  const [story, setStory] = useState(null);           // ข้อมูลสรุปของ storyLine
+  const [storyLoading, setStoryLoading] = useState(false);
   const [highlight, setHighlight] = useState(null); // line_name ที่คลิกจาก panel (เน้นชั่วคราว)
   const [detailLine, setDetailLine] = useState(null); // ไลน์ที่คลิกเจาะดู popup รายละเอียด
   const [hoverLine, setHoverLine] = useState(null); // ไลน์ที่เม้าส์วาง (การ์ดพรีวิวลอย — เฉพาะ mouse)
@@ -518,6 +521,92 @@ export default function FactoryMap({ setupMode = false }) {
   }, [reviewDate]);
   useEffect(() => { if (panelMode === 'review' && !editing) loadReview(); }, [loadReview, panelMode, editing]);
 
+  /* ── สรุปเรื่องราวทั้งวันของไลน์ที่คลิก (modal) — ผลิตรายพาร์ท · Downtime+เหตุผล · ของเสีย · 4M · คน ──
+     วันที่ = วันที่ของแผงทบทวน (โหมด review) หรือวันงานปัจจุบัน (โหมดสด) · โหลดเมื่อเปิด modal เท่านั้น */
+  const storyDate = panelMode === 'review' ? reviewDate : getWorkDate();
+  useEffect(() => {
+    if (!storyLine) { setStory(null); return; }
+    let cancelled = false;
+    (async () => {
+      setStoryLoading(true);
+      const fam = familyNames(storyLine);
+      try {
+        const { data: sessions } = await supabaseDR.from('production_sessions')
+          .select('id, line_name, shift, status, oee, oee_a, oee_p, oee_q, shift_min, start_time, end_time')
+          .eq('work_date', storyDate).in('line_name', fam);
+        const ids = (sessions || []).map(s => s.id);
+        const [ordRes, dtRes, defRes, fourMRes, prodRes] = await Promise.all([
+          ids.length ? supabaseDR.from('prod_orders').select('session_id, mat_no, status, qty, qty_ok, qty_actual, qty_target, is_manual, prod_no, machine_no').in('session_id', ids) : { data: [] },
+          ids.length ? supabaseDR.from('downtime_logs').select('id, session_id, machine_no, description, duration_min, started_at, ended_at, carry_over, dr_downtime_types(name_th, category)').in('session_id', ids) : { data: [] },
+          ids.length ? supabaseDR.from('defect_logs').select('id, session_id, qty_ng, qty_suspect, qty_repair, description, dr_defect_types(name_th), prod_orders(mat_no)').in('session_id', ids) : { data: [] },
+          supabase.from('four_m_logs').select('id, line_name, category, description, status').eq('work_date', storyDate).in('line_name', fam),
+          supabaseDR.from('dr_products').select('mat_no, name, pair_mat_no'),
+        ]);
+        if (cancelled) return;
+        const prodName = {}, pairMap = {};
+        (prodRes.data || []).forEach(p => { prodName[p.mat_no] = p.name; if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; });
+        const sessById = {}; (sessions || []).forEach(s => { sessById[s.id] = s; });
+
+        // ผลิตรายพาร์ท (รวมทุกกะ)
+        const byMat = {};
+        (ordRes.data || []).forEach(o => {
+          const k = o.mat_no || '(ไม่ระบุ MAT)';
+          const e = byMat[k] || (byMat[k] = { mat: k, name: prodName[o.mat_no] || '', target: 0, produced: 0, orders: 0, manual: 0 });
+          e.target += o.qty_target ?? o.qty ?? 0;
+          e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
+          e.orders++; if (o.is_manual) e.manual++;
+        });
+        const parts = Object.values(byMat).sort((a, b) => (b.target || 0) - (a.target || 0));
+        const ptot = pairAwareTotal(Object.values(byMat).filter(p => p.mat !== '(ไม่ระบุ MAT)').map(p => ({ mat_no: p.mat, target: p.target, produced: p.produced })), m => pairMap[m] || null);
+        const nullPart = byMat['(ไม่ระบุ MAT)'];
+        const totTarget = ptot.target + (nullPart?.target || 0);
+        const totProduced = ptot.produced + (nullPart?.produced || 0);
+
+        // Downtime — แยกนอกแผน/ในแผน แล้วรวมตามประเภท+เครื่อง (เก็บ note ของพนักงานไว้ด้วย)
+        const dtRows = (dtRes.data || []).map(d => {
+          const mins = d.duration_min != null ? Number(d.duration_min) || 0
+            : (d.started_at && d.ended_at ? Math.max(0, (new Date(d.ended_at) - new Date(d.started_at)) / 60000) : 0);
+          return { id: d.id, session_id: d.session_id, mins: Math.round(mins), machine: d.machine_no, note: d.description,
+            type: d.dr_downtime_types?.name_th || 'ไม่ระบุประเภท', planned: d.dr_downtime_types?.category === 'planned',
+            open: !d.ended_at && d.duration_min == null, carry_over: d.carry_over, shift: sessById[d.session_id]?.shift };
+        }).sort((a, b) => b.mins - a.mins);
+        const dtUnplanned = dtRows.filter(d => !d.planned);
+        const dtPlanned = dtRows.filter(d => d.planned);
+
+        // ของเสีย — รวมตามประเภท
+        const defByType = {};
+        (defRes.data || []).forEach(d => {
+          const k = d.dr_defect_types?.name_th || 'ไม่ระบุประเภท';
+          const e = defByType[k] || (defByType[k] = { type: k, ng: 0, suspect: 0, repair: 0, notes: [] });
+          e.ng += d.qty_ng || 0; e.suspect += d.qty_suspect || 0; e.repair += d.qty_repair || 0;
+          if (d.description) e.notes.push(d.description);
+        });
+        const defects = Object.values(defByType).sort((a, b) => (b.ng + b.suspect) - (a.ng + a.suspect));
+
+        // สรุปรายกะ
+        const shifts = (sessions || []).map(s => {
+          const sOrders = (ordRes.data || []).filter(o => o.session_id === s.id);
+          const t = sOrders.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
+          const p = sOrders.reduce((a, o) => a + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
+          const dt = dtRows.filter(d => d.session_id === s.id && !d.planned).reduce((a, d) => a + d.mins, 0);
+          const ng = (defRes.data || []).filter(d => d.session_id === s.id).reduce((a, d) => a + (d.qty_ng || 0), 0);
+          return { id: s.id, line: s.line_name, shift: s.shift, status: s.status, oee: s.oee, a: s.oee_a, p: s.oee_p, q: s.oee_q, target: t, produced: p, dt, ng };
+        }).sort((a, b) => (a.shift === 'day' ? 0 : 1) - (b.shift === 'day' ? 0 : 1));
+
+        setStory({
+          totTarget, totProduced, parts,
+          dtUnplanned, dtPlanned,
+          dtUnplannedMin: dtUnplanned.reduce((a, d) => a + d.mins, 0),
+          dtPlannedMin: dtPlanned.reduce((a, d) => a + d.mins, 0),
+          defects, ngTotal: defects.reduce((a, d) => a + d.ng, 0), suspectTotal: defects.reduce((a, d) => a + d.suspect, 0),
+          shifts, fourM: fourMRes.data || [], sessionCount: (sessions || []).length,
+        });
+      } catch { if (!cancelled) setStory(null); }
+      finally { if (!cancelled) setStoryLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [storyLine, storyDate]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── family rollup: ตีกรอบ "ไลน์บนสุด (top-level)" แล้วรวมยอดของลูกขึ้นมา ──
   // (ข้อมูลจริง: พนักงาน/บางเมตริกผูกกับไลน์แม่ · บางอันผูกกับลูก → รวมทั้งครอบครัวจึงครบ)
   // ไลน์ไม่มีลูก = โชว์ตัวเอง (เช่น LINE A 800 Ton) · ไลน์มีลูก = ตัวเอง + ลูกทั้งหมด
@@ -552,11 +641,17 @@ export default function FactoryMap({ setupMode = false }) {
   // คลิกไลน์: มีผังพื้น → เปิดผังไลน์พร้อมพนักงาน (Dashboard) พร้อม from=factory-map เพื่อปิดแล้วเด้งกลับผังรวม · ไม่มีผัง → popup สรุปเมตริก
   // โซน MTN/Facility → เปิดผังเครื่องจักร (ซ่อมบำรุง) แท็บ Facility ของโซนนั้นเลย
   //   (popup เมตริกผลิตไม่มีความหมายกับโซน facility — ยอด/OEE/คน เป็น "—" หมด · 2026-08-03)
+  // ไลน์ผลิต → เปิด "สรุปเรื่องราวทั้งวัน" (ผลิตรายพาร์ท/DT+เหตุผล/ของเสีย/4M) — มีปุ่มไปผังไลน์+พนักงานในนั้น
+  //   (เดิมคลิกแล้วเด้งไปผังคนทันที ซึ่งดูปัญหาของวันไม่ได้ · 2026-08-03 คำสั่ง user)
   const openLine = (name) => {
     if (isFac(name)) { setHoverLine(null); navigate(`/mtn-layout?view=facility&zone=${encodeURIComponent(name)}&from=factory-map`); return; }
+    setHoverLine(null); setStoryLine(name);
+  };
+  // เปิดผังไลน์ + พนักงาน (Dashboard) — จากปุ่มใน modal สรุป
+  const openFloorMap = (name) => {
     const t = floorMapTarget(name);
-    if (t) { setHoverLine(null); navigate(`/dashboard?line=${encodeURIComponent(t)}&from=factory-map`); }
-    else setDetailLine(name);
+    if (t) navigate(`/dashboard?line=${encodeURIComponent(t)}&from=factory-map`);
+    else { setStoryLine(null); setDetailLine(name); }
   };
   // ตีกรอบเฉพาะ "ไลน์บนสุด (top-level)" = parent_line_name IS NULL — 1 กรอบ/กลุ่ม (รวมยอดลูกด้วย stOf)
   const topNames = useMemo(() => lines.filter(l => !l.parent_line_name).map(l => l.name), [lines]);
@@ -1072,6 +1167,178 @@ export default function FactoryMap({ setupMode = false }) {
       })()}
 
       {/* ── drill-down: คลิกไลน์ → รายละเอียดทุก metric + แยกตามไลน์ลูก ── */}
+      {/* ── สรุปเรื่องราวทั้งวันของไลน์ (คลิกไลน์บนผัง/แถบขวา) ── */}
+      {storyLine && (() => {
+        const s = story;
+        const pct = s && s.totTarget > 0 ? Math.round(s.totProduced / s.totTarget * 100) : null;
+        const kids = childrenOf[storyLine] || [];
+        const sh = (v) => v === 'day' ? '☀️ กะเช้า' : v === 'night' ? '🌙 กะดึก' : (v || '—');
+        return (
+          <div onClick={() => setStoryLine(null)} style={{ position: 'fixed', inset: 0, zIndex: 1210, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 860, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+              {/* หัว */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '18px 20px 12px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 19, fontWeight: 800, color: 'var(--text)' }}>📋 {storyLine}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                    สรุปทั้งวัน · {fmtThaiDate(storyDate)}{kids.length ? ` · รวม ${kids.length} ไลน์ย่อย` : ''}{s?.sessionCount ? ` · ${s.sessionCount} กะ` : ''}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
+                  <button onClick={() => openFloorMap(storyLine)} style={{ ...miniTab(false), whiteSpace: 'nowrap' }}>🏭 ผังไลน์ + พนักงาน</button>
+                  <button onClick={() => setStoryLine(null)} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: 'var(--text2)', fontSize: 15 }}>✕</button>
+                </div>
+              </div>
+
+              <div style={{ overflowY: 'auto', padding: '16px 20px 20px' }}>
+                {storyLoading ? (
+                  <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
+                ) : !s || !s.sessionCount ? (
+                  <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีการเปิดกะของไลน์นี้ในวันที่เลือก</div>
+                ) : (<>
+                  {/* สรุปหัวเรื่อง */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px,1fr))', gap: 8, marginBottom: 18 }}>
+                    {[
+                      { k: 'ผลิตได้ / เป้า', v: `${fmtNum(s.totProduced)}/${fmtNum(s.totTarget)}`, sub: pct != null ? `${pct}%` : '', c: pctCol(pct) },
+                      { k: 'Downtime นอกแผน', v: `${fmtNum(s.dtUnplannedMin)} น.`, sub: s.dtPlannedMin ? `ในแผน ${fmtNum(s.dtPlannedMin)} น.` : '', c: s.dtUnplannedMin > 0 ? '#f59e0b' : 'var(--text)' },
+                      { k: 'ของเสีย', v: fmtNum(s.ngTotal), sub: s.suspectTotal ? `สงสัย ${fmtNum(s.suspectTotal)}` : '', c: s.ngTotal > 0 ? '#ef4444' : 'var(--text)' },
+                      { k: '4M วันนี้', v: fmtNum(s.fourM.length), sub: s.fourM.filter(f => f.status === 'pending' || f.status === 'pending_qa').length ? `ค้าง ${s.fourM.filter(f => f.status === 'pending' || f.status === 'pending_qa').length}` : '', c: 'var(--text)' },
+                    ].map(x => (
+                      <div key={x.k} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 9, padding: '9px 11px' }}>
+                        <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 600 }}>{x.k}</div>
+                        <div style={{ fontSize: 17, fontWeight: 800, color: x.c }}>{x.v}</div>
+                        {x.sub && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{x.sub}</div>}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* รายกะ */}
+                  <StorySection title="🕐 แยกตามกะ">
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      {s.shifts.map(x => {
+                        const p = x.target > 0 ? Math.round(x.produced / x.target * 100) : null;
+                        return (
+                          <div key={x.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 11px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <b style={{ fontSize: 12.5, color: 'var(--text)' }}>{sh(x.shift)}</b>
+                              {kids.length > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{x.line}</span>}
+                              {x.status === 'open' && <span style={{ fontSize: 10, color: '#38bdf8', border: '1px solid #38bdf855', borderRadius: 20, padding: '1px 7px' }}>กำลังเปิด</span>}
+                              <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: pctCol(p) }}>{x.target > 0 ? `${fmtNum(x.produced)}/${fmtNum(x.target)} · ${p}%` : `${fmtNum(x.produced)} ชิ้น`}</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                              <Chip label="OEE" val={x.oee != null ? `${Math.round(x.oee)}%` : '—'} color={oeeCol(x.oee)} />
+                              {x.a != null && <Chip label="A" val={`${Math.round(x.a)}%`} color="var(--text2)" />}
+                              {x.p != null && <Chip label="P" val={`${Math.round(x.p)}%`} color="var(--text2)" />}
+                              {x.q != null && <Chip label="Q" val={`${Math.round(x.q)}%`} color="var(--text2)" />}
+                              <Chip label="DT" val={`${fmtNum(x.dt)}น.`} color={x.dt > 0 ? '#f59e0b' : 'var(--muted)'} />
+                              <Chip label="NG" val={fmtNum(x.ng)} color={x.ng > 0 ? '#ef4444' : 'var(--muted)'} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </StorySection>
+
+                  {/* ผลิตรายพาร์ท */}
+                  {s.parts.length > 0 && (
+                    <StorySection title={`📦 ผลิตรายชิ้นงาน (${s.parts.length})`}>
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 420 }}>
+                          <thead><tr style={{ color: 'var(--muted)', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>
+                            <th style={{ textAlign: 'left', padding: '5px 7px' }}>MAT / ชิ้นงาน</th>
+                            <th style={{ padding: '5px 7px' }}>เป้า</th><th style={{ padding: '5px 7px' }}>ผลิตได้</th><th style={{ padding: '5px 7px' }}>%</th><th style={{ padding: '5px 7px' }}>ใบ</th>
+                          </tr></thead>
+                          <tbody>
+                            {s.parts.map(p => {
+                              const pp = p.target > 0 ? Math.round(p.produced / p.target * 100) : null;
+                              return (
+                                <tr key={p.mat} style={{ borderBottom: '1px solid var(--border2)', textAlign: 'right', color: 'var(--text)' }}>
+                                  <td style={{ textAlign: 'left', padding: '6px 7px' }}>
+                                    <div style={{ fontWeight: 700 }}>{p.mat}</div>
+                                    {p.name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.name}</div>}
+                                  </td>
+                                  <td style={{ padding: '6px 7px' }}>{fmtNum(p.target)}</td>
+                                  <td style={{ padding: '6px 7px' }}>{fmtNum(p.produced)}</td>
+                                  <td style={{ padding: '6px 7px', color: pctCol(pp), fontWeight: 700 }}>{pp != null ? `${pp}%` : '—'}</td>
+                                  <td style={{ padding: '6px 7px', color: 'var(--muted)' }}>{p.orders}{p.manual ? ` (✍️${p.manual})` : ''}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </StorySection>
+                  )}
+
+                  {/* Downtime + เหตุผล */}
+                  <StorySection title={`🔧 Downtime นอกแผน (${s.dtUnplanned.length} ครั้ง · ${fmtNum(s.dtUnplannedMin)} นาที)`}>
+                    {s.dtUnplanned.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มี — ไม่มีเครื่องหยุดนอกแผน 👍</div> : (
+                      <div style={{ display: 'grid', gap: 5 }}>
+                        {s.dtUnplanned.map(d => (
+                          <div key={d.id} style={{ background: 'var(--bg3)', borderLeft: `3px solid ${d.open ? '#ef4444' : '#f59e0b'}`, border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 10px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <b style={{ fontSize: 12.5, color: 'var(--text)' }}>{d.type}</b>
+                              {d.machine && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {d.machine}</span>}
+                              {d.open && <span style={{ fontSize: 10, color: '#ef4444', fontWeight: 700 }}>🔴 ยังหยุดอยู่</span>}
+                              {d.carry_over && <span style={{ fontSize: 10, color: 'var(--muted)' }}>ยกข้ามกะ</span>}
+                              <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>{fmtNum(d.mins)} น.</span>
+                            </div>
+                            {d.note && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3 }}>💬 {d.note}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {s.dtPlanned.length > 0 && (
+                      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
+                        ในแผน (ไม่นับเป็น loss): {s.dtPlanned.map(d => `${d.type} ${d.mins}น.`).join(' · ')}
+                      </div>
+                    )}
+                  </StorySection>
+
+                  {/* ของเสีย */}
+                  <StorySection title={`🚫 ของเสีย (${fmtNum(s.ngTotal)} ชิ้น)`}>
+                    {s.defects.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีของเสีย 👍</div> : (
+                      <div style={{ display: 'grid', gap: 5 }}>
+                        {s.defects.map(d => (
+                          <div key={d.type} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 10px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <b style={{ fontSize: 12.5, color: 'var(--text)', minWidth: 0 }}>{d.type}</b>
+                              <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexShrink: 0 }}>
+                                <Chip label="NG" val={fmtNum(d.ng)} color="#ef4444" />
+                                {d.suspect > 0 && <Chip label="สงสัย" val={fmtNum(d.suspect)} color="#f59e0b" />}
+                                {d.repair > 0 && <Chip label="ซ่อม" val={fmtNum(d.repair)} color="var(--text2)" />}
+                              </span>
+                            </div>
+                            {d.notes.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3 }}>💬 {d.notes.join(' · ')}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </StorySection>
+
+                  {/* 4M */}
+                  {s.fourM.length > 0 && (
+                    <StorySection title={`🔄 4M วันนี้ (${s.fourM.length})`}>
+                      <div style={{ display: 'grid', gap: 5 }}>
+                        {s.fourM.map(f => (
+                          <div key={f.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 10px', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', flexShrink: 0 }}>{f.category}</span>
+                            <span style={{ fontSize: 12, color: 'var(--text2)', minWidth: 0, flex: 1 }}>{f.description || '—'}</span>
+                            <span style={{ fontSize: 10.5, flexShrink: 0, color: f.status === 'approved' ? '#22c55e' : f.status === 'rejected' ? '#ef4444' : '#f59e0b' }}>
+                              {f.status === 'approved' ? 'อนุมัติ' : f.status === 'rejected' ? 'ปฏิเสธ' : 'รออนุมัติ'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </StorySection>
+                  )}
+                </>)}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── โหมด review: คลิกไลน์แม่ → maximize breakdown ไลน์ย่อยของวันที่เลือก ── */}
       {reviewDetail && (() => {
         const parent = reviewOf(reviewDetail);
@@ -1237,6 +1504,15 @@ const miniTab = (active) => ({
   background: active ? 'var(--accent-dim)' : 'var(--bg3)', color: active ? 'var(--accent)' : 'var(--text2)',
 });
 const navBtn = { padding: '6px 11px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' };
+// หัวข้อย่อยใน modal สรุปเรื่องราวทั้งวัน
+function StorySection({ title, children }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text2)', marginBottom: 7, paddingBottom: 5, borderBottom: '1px solid var(--border)' }}>{title}</div>
+      {children}
+    </div>
+  );
+}
 function Chip({ label, val, color }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border2)', borderRadius: 20, padding: '2px 8px' }}>
